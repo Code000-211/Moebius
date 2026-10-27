@@ -54,6 +54,12 @@ listen = "127.0.0.1:7172"
 [pi_bolt]
 program = "pi-bolt"
 
+# Moebius acts as its own GitHub App. The key file is read at start; relative paths are inside this file's directory.
+# [github]
+# app_id = 123456
+# private_key_file = "github-app.pem"
+# api_url = "https://api.github.com"
+
 # Agents run on Pi-Bolt. The default workflow starts the Coder.
 # [agents.Coder]
 # model = "qwen3.8-flash-next"
@@ -138,6 +144,14 @@ struct RawPiBolt {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+struct RawGitHub {
+    app_id: u64,
+    private_key_file: PathBuf,
+    api_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Raw {
     data_dir: Option<PathBuf>,
     listen: Option<SocketAddr>,
@@ -151,6 +165,7 @@ struct Raw {
     router: RawRouter,
     #[serde(default)]
     pi_bolt: RawPiBolt,
+    github: Option<RawGitHub>,
     #[serde(default)]
     agents: BTreeMap<String, AgentConfig>,
 }
@@ -163,6 +178,14 @@ pub struct UpstreamConfig {
     pub base_url: String,
     /// The environment variable holding the provider's key.
     pub api_key_env: Option<String>,
+}
+
+/// The GitHub App Moebius acts as.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitHubConfig {
+    pub app_id: u64,
+    pub private_key_file: PathBuf,
+    pub api_url: String,
 }
 
 /// An agent as configured; the harness configuration repository takes this over in M6.
@@ -199,6 +222,7 @@ pub struct Config {
     pub router_listen: SocketAddr,
     pub upstreams: Vec<UpstreamConfig>,
     pub pi_bolt: PathBuf,
+    pub github: Option<GitHubConfig>,
     pub agents: BTreeMap<String, AgentConfig>,
 }
 
@@ -256,6 +280,13 @@ impl Config {
                 .pi_bolt
                 .program
                 .unwrap_or_else(|| PathBuf::from("pi-bolt")),
+            github: raw.github.map(|g| GitHubConfig {
+                app_id: g.app_id,
+                private_key_file: base.join(g.private_key_file),
+                api_url: g
+                    .api_url
+                    .unwrap_or_else(|| "https://api.github.com".to_string()),
+            }),
             agents: raw.agents,
             data_dir,
         })
@@ -340,6 +371,27 @@ mod tests {
         assert!(matches!(
             parse("[router]\nlisten = \"0.0.0.0:7172\""),
             Err(ConfigError::RouterNotLocal(_))
+        ));
+    }
+
+    #[test]
+    fn the_github_app_is_read() {
+        assert_eq!(parse("").unwrap().github, None);
+        let c = parse("[github]\napp_id = 42\nprivate_key_file = \"app.pem\"\n").unwrap();
+        let github = c.github.unwrap();
+        assert_eq!(github.app_id, 42);
+        assert_eq!(github.private_key_file, PathBuf::from("/srv/app.pem"));
+        assert_eq!(github.api_url, "https://api.github.com");
+        let c = parse(
+            "[github]\napp_id = 1\nprivate_key_file = \"/k.pem\"\napi_url = \"http://127.0.0.1:1\"\n",
+        )
+        .unwrap();
+        let github = c.github.unwrap();
+        assert_eq!(github.private_key_file, PathBuf::from("/k.pem"));
+        assert_eq!(github.api_url, "http://127.0.0.1:1");
+        assert!(matches!(
+            parse("[github]\napp_id = 1"),
+            Err(ConfigError::Parse { .. })
         ));
     }
 
