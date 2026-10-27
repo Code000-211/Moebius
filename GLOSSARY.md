@@ -19,6 +19,24 @@ Everything that shapes how a harness works apart from its own code (instructions
 settings), kept in a git repository of its own.
 _Avoid_: harness config, setup, profile
 
+**Router**:
+The part of Moebius that every harness uses as its model provider and that passes each request on to a real provider.
+_Avoid_: proxy, gateway, LLM provider
+
+**MCP gateway**:
+The part of Moebius that every harness uses as its one MCP server and that bundles the MCP servers a person manages in the
+desktop app.
+_Avoid_: MCP proxy, MCP hub
+
+**Rule**:
+Something the work must or must not do, which the router enforces on every tool call a model makes.
+_Avoid_: policy, guardrail, guideline
+
+**Live view**:
+The view of a run as it happens, in the desktop app, in which a person can steer, stop or message it and open a shell in its
+worktree.
+_Avoid_: terminal, console, log
+
 **Board**:
 Moebius's own Kanban board for one GitHub repository, filled from its issues and pull requests; each connected repository
 has its own.
