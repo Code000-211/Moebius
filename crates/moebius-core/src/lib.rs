@@ -9,6 +9,7 @@ pub mod config;
 pub mod decide;
 pub mod forge;
 pub mod repos;
+pub mod router;
 pub mod store;
 
 /// The version of this build of Moebius.
