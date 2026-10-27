@@ -17,6 +17,8 @@ def emit(record):
 
 with open(os.path.join(os.environ["PI_CODING_AGENT_DIR"], "argv.json"), "w") as f:
     json.dump(sys.argv[1:], f)
+with open(os.path.join(os.environ["PI_CODING_AGENT_DIR"], "env.json"), "w") as f:
+    json.dump({k: os.environ.get(k) for k in ("MOEBIUS_CHECK_URL", "MOEBIUS_RUN_TOKEN")}, f)
 
 hanging = False
 for line in sys.stdin.buffer:

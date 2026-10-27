@@ -3,7 +3,8 @@
 //! bus. Records are split on LF only, never on U+2028 or U+2029, which are valid inside JSON strings. The run ends at
 //! `agent_settled`; what the agent changed is committed on the run's branch and the worktree is removed. A run that
 //! changed nothing has failed. A run is stopped with `abort`. Pi runs offline and does not trust configuration found
-//! in the worktree.
+//! in the worktree. The Moebius bridge (`bridge/moebius-bridge.ts`) is loaded into every run before the agent's own
+//! extensions; it asks the check for each tool call and result (see `check`).
 
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -21,6 +22,9 @@ use crate::config::AgentConfig;
 use crate::repos::{Worktree, git};
 use crate::router::{Grant, Protocol, Router};
 use crate::store::{Card, Run};
+
+/// The bridge extension, written into each run's directory.
+const BRIDGE: &str = include_str!("../bridge/moebius-bridge.ts");
 
 /// Starts and stops Pi-Bolt runs.
 pub struct PiBolt {
@@ -81,15 +85,21 @@ impl PiBolt {
         worktree: &Path,
         run_dir: &Path,
         agent_dir: &Path,
+        bridge: &Path,
+        token: &str,
     ) -> Command {
         let mut command = Command::new(&self.program);
         command
             .current_dir(worktree)
             .env("PI_CODING_AGENT_DIR", agent_dir)
+            .env("MOEBIUS_CHECK_URL", &self.router_url)
+            .env("MOEBIUS_RUN_TOKEN", token)
             .args(["--mode", "rpc", "--offline", "--no-approve"])
             .args(["--provider", "moebius", "--model", &agent.model])
             .arg("--session-dir")
-            .arg(run_dir.join("sessions"));
+            .arg(run_dir.join("sessions"))
+            .arg("--extension")
+            .arg(bridge);
         if let Some(thinking) = &agent.thinking {
             command.args(["--thinking", thinking]);
         }
@@ -150,10 +160,20 @@ impl PiBolt {
         let agent_dir = self
             .write_agent_dir(&run_dir, agent, &run.token)
             .map_err(|e| format!("cannot write the agent directory: {e}"))?;
+        let bridge = run_dir.join("moebius-bridge.ts");
+        std::fs::write(&bridge, BRIDGE)
+            .map_err(|e| format!("cannot write the bridge extension: {e}"))?;
         let stderr =
             std::fs::File::create(run_dir.join("stderr.log")).map_err(|e| e.to_string())?;
         let mut child = self
-            .command(agent, &run.worktree.path, &run_dir, &agent_dir)
+            .command(
+                agent,
+                &run.worktree.path,
+                &run_dir,
+                &agent_dir,
+                &bridge,
+                &run.token,
+            )
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::from(stderr))
@@ -531,6 +551,23 @@ mod tests {
         assert!(argv.windows(2).any(|w| w == ["--model", "qwen-local"]));
         assert!(argv.iter().any(|a| a == "--no-approve") && argv.iter().any(|a| a == "--offline"));
         assert!(argv.windows(2).any(|w| w == ["--thinking", "low"]));
+        // The bridge is loaded before the agent's own extensions.
+        let bridge = run_dir.join("moebius-bridge.ts");
+        assert!(
+            argv.windows(2)
+                .any(|w| w == ["--extension", bridge.to_str().unwrap()])
+        );
+        assert_eq!(std::fs::read_to_string(&bridge).unwrap(), BRIDGE);
+        let env: Value =
+            serde_json::from_slice(&std::fs::read(run_dir.join("agent/env.json")).unwrap())
+                .unwrap();
+        assert_eq!(env["MOEBIUS_CHECK_URL"], "http://127.0.0.1:9");
+        assert!(
+            env["MOEBIUS_RUN_TOKEN"]
+                .as_str()
+                .unwrap()
+                .starts_with("moebius-run-")
+        );
         assert!(
             argv.windows(2)
                 .any(|w| w == ["--append-system-prompt", "Be brief."])

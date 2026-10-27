@@ -5,95 +5,23 @@
 //! and the request carrying the tool's result with "Done.". Set `MOEBIUS_PI_BOLT` to the `pi-bolt` executable to run
 //! the test; without it the test is skipped.
 
-use std::path::{Path, PathBuf};
+mod common;
+
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
 
-use axum::http::header;
-use axum::response::IntoResponse;
-use axum::routing::post;
-use moebius_core::config::Config;
+use common::{last_message, origin, recorded_upstream, start, text_answer, tool_call_answer};
 use moebius_core::repos::git;
-use moebius_core::server::Server;
 use serde_json::{Value, json};
-
-fn chunk(delta: Value, finish: Option<&str>) -> String {
-    let c = json!({
-        "id": "chatcmpl-recorded",
-        "object": "chat.completion.chunk",
-        "created": 0,
-        "model": "fake-coder",
-        "choices": [{ "index": 0, "delta": delta, "finish_reason": finish }]
-    });
-    format!("data: {c}\n\n")
-}
-
-fn usage(input: i64, output: i64) -> String {
-    let c = json!({
-        "id": "chatcmpl-recorded",
-        "object": "chat.completion.chunk",
-        "created": 0,
-        "model": "fake-coder",
-        "choices": [],
-        "usage": { "prompt_tokens": input, "completion_tokens": output, "total_tokens": input + output }
-    });
-    format!("data: {c}\n\n")
-}
 
 /// The recorded answer to a request: a tool call first, then "Done." once the tool's result is in.
 fn answer(body: &Value) -> String {
-    let after_tool = body["messages"]
-        .as_array()
-        .and_then(|m| m.last())
-        .is_some_and(|m| m["role"] == "tool");
-    let mut sse = String::new();
-    if after_tool {
-        sse += &chunk(json!({ "role": "assistant", "content": "Done." }), None);
-        sse += &chunk(json!({}), Some("stop"));
-        sse += &usage(300, 2);
+    if last_message(body)["role"] == "tool" {
+        text_answer("Done.", 300)
     } else {
-        let arguments =
-            json!({ "path": "hello.txt", "content": "Hello from Moebius\n" }).to_string();
-        sse += &chunk(
-            json!({ "role": "assistant", "content": null, "tool_calls": [{
-                "index": 0, "id": "call_1", "type": "function",
-                "function": { "name": "write", "arguments": "" }
-            }]}),
-            None,
-        );
-        sse += &chunk(
-            json!({ "tool_calls": [{ "index": 0, "function": { "arguments": arguments } }] }),
-            None,
-        );
-        sse += &chunk(json!({}), Some("tool_calls"));
-        sse += &usage(250, 30);
+        let arguments = json!({ "path": "hello.txt", "content": "Hello from Moebius\n" });
+        tool_call_answer("call_1", "write", &arguments, 250)
     }
-    sse + "data: [DONE]\n\n"
-}
-
-async fn recorded_upstream(requests: Arc<Mutex<Vec<Value>>>) -> String {
-    let app = axum::Router::new().route(
-        "/v1/chat/completions",
-        post(move |axum::Json(body): axum::Json<Value>| async move {
-            let sse = answer(&body);
-            requests.lock().unwrap().push(body);
-            ([(header::CONTENT_TYPE, "text/event-stream")], sse).into_response()
-        }),
-    );
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move { axum::serve(listener, app).await });
-    format!("http://{addr}")
-}
-
-fn origin(dir: &Path) -> PathBuf {
-    let origin = dir.join("origin");
-    std::fs::create_dir_all(&origin).unwrap();
-    git(&origin, &["init", "--quiet", "-b", "main"]).unwrap();
-    std::fs::write(origin.join("README.md"), "A demo repository.\n").unwrap();
-    git(&origin, &["add", "."]).unwrap();
-    git(&origin, &["commit", "--quiet", "-m", "first"]).unwrap();
-    origin
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -105,79 +33,16 @@ async fn an_issue_becomes_a_merged_change_through_a_real_pi_bolt() {
     let dir = tempfile::tempdir().unwrap();
     let origin = origin(dir.path());
     let requests = Arc::new(Mutex::new(Vec::new()));
-    let upstream = recorded_upstream(requests.clone()).await;
-
-    let config_text = format!(
-        "[board]\ntick_ms = 100\n[router]\nlisten = \"127.0.0.1:0\"\n\
-         [[router.upstreams]]\nprotocol = \"openai\"\nbase_url = \"{upstream}\"\n\
-         [pi_bolt]\nprogram = {pi_bolt:?}\n\
-         [agents.Coder]\nmodel = \"fake-coder\"\ntoken_budget = 100000\n",
-        pi_bolt = pi_bolt.to_string_lossy()
-    );
-    let config = Config::parse(&config_text, dir.path(), &dir.path().join("moebius.toml")).unwrap();
-    let api_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let api = format!("http://{}", api_listener.local_addr().unwrap());
-    let router_listener = tokio::net::TcpListener::bind(config.router_listen)
-        .await
-        .unwrap();
-    let router_addr = router_listener.local_addr().unwrap();
-    let server = Arc::new(Server::new(config, router_addr).unwrap());
-    tokio::spawn(server.clone().serve(api_listener, router_listener));
-
-    let client = reqwest::Client::new();
-    let post = |path: String, body: Value| {
-        client
-            .post(format!("{api}{path}"))
-            .bearer_auth(&*server.token)
-            .json(&body)
-            .send()
-    };
-    let repo: Value = post(
-        "/v1/repositories".into(),
-        json!({ "name": "demo", "url": origin.to_str().unwrap() }),
-    )
-    .await
-    .unwrap()
-    .json()
-    .await
-    .unwrap();
-    let card: Value = post(
-        format!("/v1/repositories/{}/issues", repo["id"]),
-        json!({ "title": "Say hello", "body": "Add hello.txt saying hello." }),
-    )
-    .await
-    .unwrap()
-    .json()
-    .await
-    .unwrap();
+    let upstream = recorded_upstream(requests.clone(), answer).await;
+    let started = start(dir.path(), &pi_bolt, &upstream).await;
+    let server = &started.server;
+    let (repo, card) = started
+        .add_issue(&origin, "Say hello", "Add hello.txt saying hello.")
+        .await;
     let card_id = card["id"].as_i64().unwrap();
 
     // The board takes the card from the backlog through a Coder run to "Ready to merge".
-    let deadline = Instant::now() + Duration::from_secs(120);
-    loop {
-        let card = server.app.card(card_id).unwrap();
-        if card.column == "Ready to merge" {
-            break;
-        }
-        let runs = server.app.store.runs_for_card(card_id).unwrap();
-        if let Some(run) = runs.iter().find(|r| r.status == "failed") {
-            let events = server.app.store.events(run.id).unwrap();
-            let stderr = std::fs::read_to_string(
-                server
-                    .config
-                    .data_dir
-                    .join(format!("runs/{}/stderr.log", run.id)),
-            )
-            .unwrap_or_default();
-            panic!("the run failed: {events:#?}\nstderr: {stderr}");
-        }
-        assert!(
-            Instant::now() < deadline,
-            "the card is still in {:?}; runs: {runs:?}",
-            card.column
-        );
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+    started.wait_for_column(card_id, "Ready to merge").await;
 
     let run = server
         .app
@@ -222,12 +87,12 @@ async fn an_issue_becomes_a_merged_change_through_a_real_pi_bolt() {
         .unwrap()
         .pop()
         .unwrap();
-    let merged = post(
-        format!("/v1/changes/{}/merge", change.id),
-        json!({ "reason": "ship it" }),
-    )
-    .await
-    .unwrap();
+    let merged = started
+        .post(
+            &format!("/v1/changes/{}/merge", change.id),
+            json!({ "reason": "ship it" }),
+        )
+        .await;
     assert_eq!(merged.status(), 200);
     let clone = PathBuf::from(repo["path"].as_str().unwrap());
     assert_eq!(
