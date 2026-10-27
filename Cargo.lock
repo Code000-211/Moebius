@@ -376,6 +376,11 @@ version = "0.1.0"
 [[package]]
 name = "moebius-plugin-api"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "once_cell"
