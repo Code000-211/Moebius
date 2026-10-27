@@ -148,7 +148,7 @@ A card that reaches its round limit (default 5) or its token budget stops and go
 
 ## 8. The desktop app
 
-Native, GPU-rendered, written in Rust (ADR 0003), built to [`docs/design.md`](design.md). Screens:
+Native, GPU-rendered, written in Rust with iced (ADR 0003, ADR 0011), built to [`docs/design.md`](design.md). Screens:
 
 - **Board** per repository: columns with their scripts, cards with round, tokens and state; red for blocked and broken rules.
 - **Live view** of a run: the stream of text and tool calls with each check's decision, code with highlighting, a shell in
@@ -184,7 +184,6 @@ Native, GPU-rendered, written in Rust (ADR 0003), built to [`docs/design.md`](de
 
 ## 11. Open questions
 
-- The desktop app's UI framework (gpui or iced).
 - Exact formats of the plugin API messages and the desktop API; both are designed in M0.
 - How the router's model catalogue is configured (which provider models map to which model class).
 - How a person approves a proposal that changes Moebius itself, as opposed to a harness configuration.
