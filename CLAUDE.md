@@ -40,6 +40,14 @@ executable; CI installs one.
   closed.
 - Secrets never reach the store or a log unredacted (`blobs::redact`).
 
+## Documentation
+
+Moebius is built to be extended by people and agents who have not read its code, so every contract is documented
+exactly in `docs/reference/` (column scripts, `rules.md`, configuration, plugin API, bridge protocol, desktop API) and
+shown in `examples/`. A change to a contract updates its reference and examples in the same commit; tests check that
+every route, script function and configuration key is in the reference. Each module starts with a doc comment saying
+what it is for and how it fits in.
+
 ## Commits
 
 One commit per issue, imperative subject, a body that says what and why, then `Closes #<n>` and the session's
