@@ -16,3 +16,9 @@ and most valuable labels, because the person is the one the model is meant to st
 - A trained decision model first runs in shadow and takes over one kind of decision at a time, only once it decides that kind
   at least as well as whoever decides now on judgements held back from training; the takeover is a proposal a person merges.
 - Recording is part of the core's store (ADR 0009); exporting and training are plugins.
+- Scripts reach a decision point through `moebius.decide(kind, context, options)` in the script API, and the core records the
+  judgement whoever answers it: a fixed rule, the teacher model or the decision model. A script decides nothing on its own
+  that the core does not see.
+- A refused tool call never shows what it would have done, which teaches the model nothing but caution. In the trial window,
+  Moebius therefore replays a sample of refused calls that can be undone in a throwaway copy of the worktree and records the
+  result as the judgement's outcome; calls that reach beyond the worktree (a push, a deploy, the network) are never replayed.

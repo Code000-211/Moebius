@@ -82,6 +82,11 @@ A trained decision model deciding alongside whoever decides now, without effect,
 once it has shown it decides that kind at least as well.
 _Avoid_: dry run, canary, A/B test
 
+**Replay**:
+Running a refused tool call that can be undone in a throwaway copy of its worktree during the trial window, to learn what it
+would have done.
+_Avoid_: counterfactual, sandbox run, re-run
+
 **Live view**:
 The view of a run as it happens, in the desktop app, in which a person can steer, stop or message it and open a shell in its
 worktree.
