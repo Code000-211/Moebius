@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Moebius usage</title>
+
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&amp;family=Manrope:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;background:#EDF2F7}
+a{color:#0F766E;text-decoration:none}a:hover{color:#115E59}
+.mono{font-family:'JetBrains Mono',monospace}
+.side{flex:0 0 248px;display:flex;flex-direction:column;background:#F7F8FA;border-right:1px solid #E2E6EC}
+.sgrp{display:flex;flex-direction:column;gap:1px;padding:10px}
+.sdiv{height:1px;background:#E2E6EC;margin:0 14px}
+.sh{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;font-weight:700;color:#6B7380;padding:2px 10px 6px}
+.it{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:9px;font-size:14.5px;color:#3A424D}
+.it:hover{background:#EEF1F5;color:#0F172A}
+.cur{background:#E7EBF0;color:#0F172A;font-weight:600}
+.ic{width:16px;height:16px;flex:0 0 16px;color:#64748B}
+.cur .ic{color:#0F172A}
+.r{margin-left:auto;font-family:'Manrope',sans-serif;font-variant-numeric:tabular-nums;font-size:12px;color:#64748B;font-weight:400}
+.badge{margin-left:auto;font-size:12px;font-weight:700;color:#FFFFFF;background:#B45309;border-radius:999px;padding:1px 8px}
+.ldot{width:8px;height:8px;border-radius:50%;flex:0 0 8px}
+.search{display:flex;align-items:center;gap:8px;width:100%;font:inherit;font-size:14px;color:#64748B;background:#FFFFFF;border:1px solid #E2E6EC;border-radius:10px;padding:8px 10px;text-align:left}
+.kbd{margin-left:auto;font-family:'Manrope',sans-serif;font-variant-numeric:tabular-nums;font-size:11px;color:#64748B;border:1px solid #E2E6EC;border-radius:5px;padding:0 5px}
+.mini{font:inherit;width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;border-radius:7px;border:1px solid #E2E6EC;background:#FFFFFF;color:#475569;padding:0;flex:0 0 26px}
+.toprow{display:flex;align-items:center;gap:9px;padding:0 4px 0 6px}
+.foot{margin-top:auto;display:flex;flex-direction:column;gap:6px;padding:14px 20px 18px;border-top:1px solid #E2E6EC}
+.folded{flex-basis:68px}
+.folded .lbl,.folded .r,.folded .sh,.folded .kbd,.folded .hide{display:none}
+.folded .toprow{flex-direction:column;gap:10px;padding:0}
+.folded .it,.folded .search{justify-content:center;padding:8px 0;gap:4px}
+.folded .badge{margin-left:0;padding:0 5px;font-size:11px}
+.folded .foot{padding:14px 12px 18px}
+.box{display:flex;flex-direction:column;gap:14px;background:#FFFFFF;border:1px solid #CBD5E1;border-radius:16px;padding:16px 18px;min-width:0}
+.bt{margin:0;font-size:16px;font-weight:700;color:#0F172A}
+.bs{font-size:13.5px;color:#475569}
+.kpi{display:flex;flex-direction:column;gap:4px;background:#FFFFFF;border:1px solid #CBD5E1;border-radius:16px;padding:14px 16px;min-width:0}
+.kl{font-size:13px;font-weight:600;color:#6B7380}
+.kv{font-family:'Manrope',system-ui,sans-serif;font-size:28px;font-weight:700;letter-spacing:-.01em;color:#0F172A;font-variant-numeric:tabular-nums}
+.ks{font-size:13px;color:#475569}
+.chipf{font:inherit;font-size:13.5px;font-weight:600;padding:6px 12px;border-radius:999px;border:1px solid #CBD5E1;background:#FFFFFF;color:#334155}
+.leg{display:flex;flex-wrap:wrap;gap:14px;font-size:13.5px;color:#334155}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.ax{font-family:'Manrope',sans-serif;font-variant-numeric:tabular-nums;font-size:11px;color:#64748B}
+.hrow{display:grid;grid-template-columns:minmax(150px,230px) minmax(0,1fr) 120px;gap:12px;align-items:center;font-size:14px;color:#0F172A}
+.htrack{height:14px;border-radius:4px;background:#F1F5F9;overflow:hidden}
+.hbar{height:14px;border-radius:0 4px 4px 0}
+.hv{font-family:'Manrope',sans-serif;font-variant-numeric:tabular-nums;font-size:12.5px;color:#334155;text-align:right;font-variant-numeric:tabular-nums}
+.hint{display:flex;flex-direction:column;gap:4px;padding:11px 13px;border:1px solid #E2E8F0;border-radius:12px;background:#F7F9FC}
+.hint b{font-size:14px;color:#0F172A}
+.hint span{font-size:13.5px;color:#475569;line-height:1.5}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th{text-align:left;font-size:12.5px;font-weight:700;color:#6B7380;padding:8px 10px;border-bottom:1px solid #CBD5E1}
+td{padding:9px 10px;border-bottom:1px dashed #E2E8F0;color:#0F172A}
+td.n,th.n{text-align:right;font-family:'Manrope',sans-serif;font-variant-numeric:tabular-nums;font-variant-numeric:tabular-nums}
+</style>
+</helmet>
+<div style="display: flex; flex-wrap: wrap; min-height: 1500px; background: #EDF2F7; color: #0F172A; font-family: 'Manrope', system-ui, sans-serif">
+
+  <nav class="{{sideCls}}" aria-label="Moebius">
+    <div style="display: flex; flex-direction: column; gap: 12px; padding: 16px 12px 8px">
+      <div class="toprow">
+        <svg width="22" height="16" viewBox="0 0 26 18" aria-hidden="true"><path d="M13 9 C 9 1, 2 1, 2 9 C 2 17, 9 17, 13 9 C 17 1, 24 1, 24 9 C 24 17, 17 17, 13 9" fill="none" stroke="#0F172A" stroke-width="2.2"></path></svg>
+        <span class="lbl" style="font-size: 16.5px; font-weight: 700">Moebius</span>
+        <span class="hide" style="margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: #0F5E57"><span class="ldot" style="background: #0F766E"></span>Online</span>
+        <button type="button" class="mini" aria-label="{{toggleLabel}}" title="{{toggleLabel}}" onClick="{{toggle}}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="2"></rect><path d="M6 2.5v11"></path></svg></button>
+      </div>
+      <button type="button" class="search" aria-label="Search or run a command"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.5 10.5L14 14"></path></svg><span class="lbl">Search or run…</span><span class="kbd">⌘K</span></button>
+    </div>
+    <div class="sgrp">
+      <a class="it" href="inbox.html" title="Inbox" style="font-weight: 600; color: #0F172A"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 9h3l1 2h4l1-2h3"></path><path d="M2 9l2-5h8l2 5v4H2z"></path></svg><span class="lbl">Inbox</span><span class="badge">6</span></a>
+    </div>
+    <div class="sdiv"></div>
+    <div class="sgrp">
+      <div class="sh"><span>Boards</span><button type="button" class="mini" aria-label="Add a repository"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M8 3v10M3 8h10"></path></svg></button></div>
+      <a class="it" href="board.html" title="radiance"><span class="ldot" style="background: #0F766E"></span><span class="lbl">radiance</span><span class="r">3 live</span></a>
+      <a class="it" href="board.html" title="moebius"><span class="ldot" style="background: #0F766E"></span><span class="lbl">moebius</span><span class="r">1 live</span></a>
+      <a class="it" href="board.html" title="dotfiles"><span class="ldot" style="background: #CBD5E1"></span><span class="lbl">dotfiles</span><span class="r">Idle</span></a>
+    </div>
+    <div class="sdiv"></div>
+    <div class="sgrp">
+      <div class="sh"><span>Build</span></div>
+      <a class="it" href="agents.html" title="Agents"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="5" width="10" height="8" rx="2"></rect><path d="M8 2v3M6 9h.01M10 9h.01"></path></svg><span class="lbl">Agents</span><span class="r">5</span></a>
+      <a class="it" href="agents.html" title="Skills"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2.5 3.5h4a1.5 1.5 0 0 1 1.5 1.5v8.5a1 1 0 0 0-1-1H2.5z"></path><path d="M13.5 3.5h-4A1.5 1.5 0 0 0 8 5v8.5a1 1 0 0 1 1-1h4.5z"></path></svg><span class="lbl">Skills</span><span class="r">12</span></a>
+      <a class="it" href="agents.html" title="MCP servers"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 2v3M10 2v3M4.5 5h7v2.5a3.5 3.5 0 0 1-7 0zM8 11v3"></path></svg><span class="lbl">MCP servers</span><span class="r">4</span></a>
+      <a class="it" href="agents.html" title="Rules"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 2l5 2v4c0 3-2.2 5-5 6-2.8-1-5-3-5-6V4z"></path></svg><span class="lbl">Rules</span><span class="r">14</span></a>
+    </div>
+    <div class="sdiv"></div>
+    <div class="sgrp">
+      <div class="sh"><span>Improve</span></div>
+      <a class="it" href="inbox.html" title="Retro"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 8a5 5 0 1 0 1.5-3.5"></path><path d="M3 2.5V5h2.5"></path></svg><span class="lbl">Retro</span><span class="r">23:30</span></a>
+      <a class="it" href="inbox.html" title="Experiments"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 2h4M7 2v4l-3.5 6.5a1 1 0 0 0 .9 1.5h7.2a1 1 0 0 0 .9-1.5L9 6V2"></path></svg><span class="lbl">Experiments</span><span class="r">1 live</span></a>
+      <a class="it" href="inbox.html" title="Decision model"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 2v12M4.5 14h7M3 5h10M3 5l-1.5 4h3zM13 5l-1.5 4h3z"></path></svg><span class="lbl">Decision model</span><span class="r">Shadow</span></a>
+      <a class="it cur" href="usage.html" title="Usage"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2.5 13.5h11M4.5 11V8M8 11V4M11.5 11V6.5"></path></svg><span class="lbl">Usage</span><span class="r">1.8M</span></a>
+    </div>
+    <div class="sdiv"></div>
+    <div class="sgrp">
+      <div class="sh"><span>Setup</span></div>
+      <a class="it" href="agents.html" title="Models"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1.5"></rect><path d="M6 2v2M10 2v2M6 12v2M10 12v2M2 6h2M2 10h2M12 6h2M12 10h2"></path></svg><span class="lbl">Models</span></a>
+      <a class="it" href="agents.html" title="Plugins"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 5h3a1.5 1.5 0 1 1 3 0h3v3a1.5 1.5 0 1 0 0 3v3H3z"></path></svg><span class="lbl">Plugins</span><span class="r">11</span></a>
+      <a class="it" href="agents.html" title="Settings"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="2.2"></circle><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"></path></svg><span class="lbl">Settings</span></a>
+    </div>
+    <div class="foot" title="Tokens today: 1.8M of 8M">
+      <div class="hide" style="display: flex; justify-content: space-between; font-size: 13px; color: #3A424D"><span>Tokens today</span><span style="font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums">1.8M / 8M</span></div>
+      <div style="height: 5px; border-radius: 3px; background: #E2E8F0"><div style="width: 22%; height: 5px; border-radius: 3px; background: #0F766E"></div></div>
+    </div>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px; padding: 20px 24px">
+    <header style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px">
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <h1 style="margin: 0; font-size: 24px; font-weight: 700">Usage</h1>
+        <span style="font-size: 14.5px; color: #475569">Which models ran when, how many tokens went where, and what the models spent their time on.</span>
+      </div>
+      <span style="font-size: 12.5px; color: #64748B">Example data · today until 14:40</span>
+    </header>
+    <div style="display: flex; flex-wrap: wrap; gap: 8px">
+      <button type="button" class="chipf" style="background: #0F172A; border-color: #0F172A; color: #FFFFFF">Today</button>
+      <button type="button" class="chipf">7 days</button>
+      <button type="button" class="chipf">30 days</button>
+      <span style="width: 1px; background: #CBD5E1; margin: 2px 4px"></span>
+      <button type="button" class="chipf">All boards</button>
+      <button type="button" class="chipf">All agents</button>
+      <button type="button" class="chipf">All models</button>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px">
+      <div class="kpi"><span class="kl">Tokens</span><span class="kv">1.84M</span><span class="ks">23% of the 8M daily budget</span></div>
+      <div class="kpi"><span class="kl">Model calls</span><span class="kv">1,284</span><span class="ks">1,430 tokens per call on average</span></div>
+      <div class="kpi"><span class="kl">From cache</span><span class="kv">61%</span><span class="ks">Input tokens served from cache</span></div>
+      <div class="kpi"><span class="kl">Model time</span><span class="kv">3 h 12 m</span><span class="ks">Across 9 runs and 1 autoresearch</span></div>
+    </div>
+
+    <section class="box" aria-label="Tokens per day">
+      <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 10px">
+        <h2 class="bt">Tokens per day</h2>
+        <span class="bs">148M tokens on 135 days since June · busiest day Mon 21 Sep with 2.52M</span>
+      </div>
+      <div style="overflow-x: auto">
+        <svg viewBox="0 0 840 160" style="width: 100%; min-width: 720px; height: auto; display: block" role="img" aria-label="Tokens per day over the last year, one square per day coloured by the model that used the most tokens that day and darker the more tokens were used: Flash leads most weekdays, the local model most weekends, Frontier a few days.">
+<rect x="34" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 02 Nov · no runs</title></rect>
+<rect x="34" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 03 Nov · no runs</title></rect>
+<rect x="34" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 04 Nov · no runs</title></rect>
+<rect x="34" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 05 Nov · no runs</title></rect>
+<rect x="34" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 06 Nov · no runs</title></rect>
+<rect x="34" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 07 Nov · no runs</title></rect>
+<rect x="34" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 08 Nov · no runs</title></rect>
+<text x="34" y="14" font-family="Manrope, sans-serif" font-size="11" fill="#64748B">Nov</text>
+<rect x="49" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 09 Nov · no runs</title></rect>
+<rect x="49" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 10 Nov · no runs</title></rect>
+<rect x="49" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 11 Nov · no runs</title></rect>
+<rect x="49" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 12 Nov · no runs</title></rect>
+<rect x="49" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 13 Nov · no runs</title></rect>
+<rect x="49" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 14 Nov · no runs</title></rect>
+<rect x="49" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 15 Nov · no runs</title></rect>
+<rect x="64" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 16 Nov · no runs</title></rect>
+<rect x="64" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 17 Nov · no runs</title></rect>
+<rect x="64" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 18 Nov · no runs</title></rect>
+<rect x="64" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 19 Nov · no runs</title></rect>
+<rect x="64" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 20 Nov · no runs</title></rect>
+<rect x="64" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 21 Nov · no runs</title></rect>
+<rect x="64" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 22 Nov · no runs</title></rect>
+<rect x="79" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 23 Nov · no runs</title></rect>
+<rect x="79" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 24 Nov · no runs</title></rect>
+<rect x="79" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 25 Nov · no runs</title></rect>
+<rect x="79" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 26 Nov · no runs</title></rect>
+<rect x="79" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 27 Nov · no runs</title></rect>
+<rect x="79" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 28 Nov · no runs</title></rect>
+<rect x="79" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 29 Nov · no runs</title></rect>
+<rect x="94" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 30 Nov · no runs</title></rect>
+<rect x="94" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 01 Dec · no runs</title></rect>
+<rect x="94" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 02 Dec · no runs</title></rect>
+<rect x="94" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 03 Dec · no runs</title></rect>
+<rect x="94" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 04 Dec · no runs</title></rect>
+<rect x="94" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 05 Dec · no runs</title></rect>
+<rect x="94" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 06 Dec · no runs</title></rect>
+<rect x="109" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 07 Dec · no runs</title></rect>
+<rect x="109" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 08 Dec · no runs</title></rect>
+<rect x="109" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 09 Dec · no runs</title></rect>
+<rect x="109" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 10 Dec · no runs</title></rect>
+<rect x="109" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 11 Dec · no runs</title></rect>
+<rect x="109" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 12 Dec · no runs</title></rect>
+<rect x="109" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 13 Dec · no runs</title></rect>
+<text x="109" y="14" font-family="Manrope, sans-serif" font-size="11" fill="#64748B">Dec</text>
+<rect x="124" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 14 Dec · no runs</title></rect>
+<rect x="124" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 15 Dec · no runs</title></rect>
+<rect x="124" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 16 Dec · no runs</title></rect>
+<rect x="124" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 17 Dec · no runs</title></rect>
+<rect x="124" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 18 Dec · no runs</title></rect>
+<rect x="124" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 19 Dec · no runs</title></rect>
+<rect x="124" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 20 Dec · no runs</title></rect>
+<rect x="139" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 21 Dec · no runs</title></rect>
+<rect x="139" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 22 Dec · no runs</title></rect>
+<rect x="139" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 23 Dec · no runs</title></rect>
+<rect x="139" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 24 Dec · no runs</title></rect>
+<rect x="139" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 25 Dec · no runs</title></rect>
+<rect x="139" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 26 Dec · no runs</title></rect>
+<rect x="139" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 27 Dec · no runs</title></rect>
+<rect x="154" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 28 Dec · no runs</title></rect>
+<rect x="154" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 29 Dec · no runs</title></rect>
+<rect x="154" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 30 Dec · no runs</title></rect>
+<rect x="154" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 31 Dec · no runs</title></rect>
+<rect x="154" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 01 Jan · no runs</title></rect>
+<rect x="154" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 02 Jan · no runs</title></rect>
+<rect x="154" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 03 Jan · no runs</title></rect>
+<rect x="169" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 04 Jan · no runs</title></rect>
+<rect x="169" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 05 Jan · no runs</title></rect>
+<rect x="169" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 06 Jan · no runs</title></rect>
+<rect x="169" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 07 Jan · no runs</title></rect>
+<rect x="169" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 08 Jan · no runs</title></rect>
+<rect x="169" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 09 Jan · no runs</title></rect>
+<rect x="169" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 10 Jan · no runs</title></rect>
+<text x="169" y="14" font-family="Manrope, sans-serif" font-size="11" fill="#64748B">Jan</text>
+<rect x="184" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 11 Jan · no runs</title></rect>
+<rect x="184" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 12 Jan · no runs</title></rect>
+<rect x="184" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 13 Jan · no runs</title></rect>
+<rect x="184" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 14 Jan · no runs</title></rect>
+<rect x="184" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 15 Jan · no runs</title></rect>
+<rect x="184" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 16 Jan · no runs</title></rect>
+<rect x="184" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 17 Jan · no runs</title></rect>
+<rect x="199" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 18 Jan · no runs</title></rect>
+<rect x="199" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 19 Jan · no runs</title></rect>
+<rect x="199" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 20 Jan · no runs</title></rect>
+<rect x="199" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 21 Jan · no runs</title></rect>
+<rect x="199" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 22 Jan · no runs</title></rect>
+<rect x="199" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 23 Jan · no runs</title></rect>
+<rect x="199" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 24 Jan · no runs</title></rect>
+<rect x="214" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 25 Jan · no runs</title></rect>
+<rect x="214" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 26 Jan · no runs</title></rect>
+<rect x="214" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 27 Jan · no runs</title></rect>
+<rect x="214" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 28 Jan · no runs</title></rect>
+<rect x="214" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 29 Jan · no runs</title></rect>
+<rect x="214" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 30 Jan · no runs</title></rect>
+<rect x="214" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 31 Jan · no runs</title></rect>
+<rect x="229" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 01 Feb · no runs</title></rect>
+<rect x="229" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 02 Feb · no runs</title></rect>
+<rect x="229" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 03 Feb · no runs</title></rect>
+<rect x="229" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 04 Feb · no runs</title></rect>
+<rect x="229" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 05 Feb · no runs</title></rect>
+<rect x="229" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 06 Feb · no runs</title></rect>
+<rect x="229" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 07 Feb · no runs</title></rect>
+<text x="229" y="14" font-family="Manrope, sans-serif" font-size="11" fill="#64748B">Feb</text>
+<rect x="244" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 08 Feb · no runs</title></rect>
+<rect x="244" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 09 Feb · no runs</title></rect>
+<rect x="244" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 10 Feb · no runs</title></rect>
+<rect x="244" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 11 Feb · no runs</title></rect>
+<rect x="244" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 12 Feb · no runs</title></rect>
+<rect x="244" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 13 Feb · no runs</title></rect>
+<rect x="244" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 14 Feb · no runs</title></rect>
+<rect x="259" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 15 Feb · no runs</title></rect>
+<rect x="259" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 16 Feb · no runs</title></rect>
+<rect x="259" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 17 Feb · no runs</title></rect>
+<rect x="259" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 18 Feb · no runs</title></rect>
+<rect x="259" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 19 Feb · no runs</title></rect>
+<rect x="259" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 20 Feb · no runs</title></rect>
+<rect x="259" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 21 Feb · no runs</title></rect>
+<rect x="274" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 22 Feb · no runs</title></rect>
+<rect x="274" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 23 Feb · no runs</title></rect>
+<rect x="274" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 24 Feb · no runs</title></rect>
+<rect x="274" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 25 Feb · no runs</title></rect>
+<rect x="274" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 26 Feb · no runs</title></rect>
+<rect x="274" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 27 Feb · no runs</title></rect>
+<rect x="274" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 28 Feb · no runs</title></rect>
+<rect x="289" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 01 Mar · no runs</title></rect>
+<rect x="289" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 02 Mar · no runs</title></rect>
+<rect x="289" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 03 Mar · no runs</title></rect>
+<rect x="289" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 04 Mar · no runs</title></rect>
+<rect x="289" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 05 Mar · no runs</title></rect>
+<rect x="289" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 06 Mar · no runs</title></rect>
+<rect x="289" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 07 Mar · no runs</title></rect>
+<text x="289" y="14" font-family="Manrope, sans-serif" font-size="11" fill="#64748B">Mar</text>
+<rect x="304" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 08 Mar · no runs</title></rect>
+<rect x="304" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 09 Mar · no runs</title></rect>
+<rect x="304" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 10 Mar · no runs</title></rect>
+<rect x="304" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 11 Mar · no runs</title></rect>
+<rect x="304" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 12 Mar · no runs</title></rect>
+<rect x="304" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 13 Mar · no runs</title></rect>
+<rect x="304" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 14 Mar · no runs</title></rect>
+<rect x="319" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 15 Mar · no runs</title></rect>
+<rect x="319" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 16 Mar · no runs</title></rect>
+<rect x="319" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 17 Mar · no runs</title></rect>
+<rect x="319" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 18 Mar · no runs</title></rect>
+<rect x="319" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 19 Mar · no runs</title></rect>
+<rect x="319" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 20 Mar · no runs</title></rect>
+<rect x="319" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 21 Mar · no runs</title></rect>
+<rect x="334" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 22 Mar · no runs</title></rect>
+<rect x="334" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 23 Mar · no runs</title></rect>
+<rect x="334" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 24 Mar · no runs</title></rect>
+<rect x="334" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 25 Mar · no runs</title></rect>
+<rect x="334" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 26 Mar · no runs</title></rect>
+<rect x="334" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 27 Mar · no runs</title></rect>
+<rect x="334" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 28 Mar · no runs</title></rect>
+<rect x="349" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 29 Mar · no runs</title></rect>
+<rect x="349" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 30 Mar · no runs</title></rect>
+<rect x="349" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 31 Mar · no runs</title></rect>
+<rect x="349" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 01 Apr · no runs</title></rect>
+<rect x="349" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 02 Apr · no runs</title></rect>
+<rect x="349" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 03 Apr · no runs</title></rect>
+<rect x="349" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 04 Apr · no runs</title></rect>
+<rect x="364" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 05 Apr · no runs</title></rect>
+<rect x="364" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 06 Apr · no runs</title></rect>
+<rect x="364" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 07 Apr · no runs</title></rect>
+<rect x="364" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 08 Apr · no runs</title></rect>
+<rect x="364" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 09 Apr · no runs</title></rect>
+<rect x="364" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 10 Apr · no runs</title></rect>
+<rect x="364" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 11 Apr · no runs</title></rect>
+<text x="364" y="14" font-family="Manrope, sans-serif" font-size="11" fill="#64748B">Apr</text>
+<rect x="379" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 12 Apr · no runs</title></rect>
+<rect x="379" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 13 Apr · no runs</title></rect>
+<rect x="379" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 14 Apr · no runs</title></rect>
+<rect x="379" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 15 Apr · no runs</title></rect>
+<rect x="379" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 16 Apr · no runs</title></rect>
+<rect x="379" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 17 Apr · no runs</title></rect>
+<rect x="379" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 18 Apr · no runs</title></rect>
+<rect x="394" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 19 Apr · no runs</title></rect>
+<rect x="394" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 20 Apr · no runs</title></rect>
+<rect x="394" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 21 Apr · no runs</title></rect>
+<rect x="394" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 22 Apr · no runs</title></rect>
+<rect x="394" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 23 Apr · no runs</title></rect>
+<rect x="394" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 24 Apr · no runs</title></rect>
+<rect x="394" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 25 Apr · no runs</title></rect>
+<rect x="409" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 26 Apr · no runs</title></rect>
+<rect x="409" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 27 Apr · no runs</title></rect>
+<rect x="409" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 28 Apr · no runs</title></rect>
+<rect x="409" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 29 Apr · no runs</title></rect>
+<rect x="409" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 30 Apr · no runs</title></rect>
+<rect x="409" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 01 May · no runs</title></rect>
+<rect x="409" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 02 May · no runs</title></rect>
+<rect x="424" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 03 May · no runs</title></rect>
+<rect x="424" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 04 May · no runs</title></rect>
+<rect x="424" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 05 May · no runs</title></rect>
+<rect x="424" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 06 May · no runs</title></rect>
+<rect x="424" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 07 May · no runs</title></rect>
+<rect x="424" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 08 May · no runs</title></rect>
+<rect x="424" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 09 May · no runs</title></rect>
+<text x="424" y="14" font-family="Manrope, sans-serif" font-size="11" fill="#64748B">May</text>
+<rect x="439" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 10 May · no runs</title></rect>
+<rect x="439" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 11 May · no runs</title></rect>
+<rect x="439" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 12 May · no runs</title></rect>
+<rect x="439" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 13 May · no runs</title></rect>
+<rect x="439" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 14 May · no runs</title></rect>
+<rect x="439" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 15 May · no runs</title></rect>
+<rect x="439" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 16 May · no runs</title></rect>
+<rect x="454" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 17 May · no runs</title></rect>
+<rect x="454" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 18 May · no runs</title></rect>
+<rect x="454" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 19 May · no runs</title></rect>
+<rect x="454" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 20 May · no runs</title></rect>
+<rect x="454" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 21 May · no runs</title></rect>
+<rect x="454" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 22 May · no runs</title></rect>
+<rect x="454" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 23 May · no runs</title></rect>
+<rect x="469" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 24 May · no runs</title></rect>
+<rect x="469" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 25 May · no runs</title></rect>
+<rect x="469" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 26 May · no runs</title></rect>
+<rect x="469" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 27 May · no runs</title></rect>
+<rect x="469" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 28 May · no runs</title></rect>
+<rect x="469" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 29 May · no runs</title></rect>
+<rect x="469" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 30 May · no runs</title></rect>
+<rect x="484" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 31 May · no runs</title></rect>
+<rect x="484" y="37" width="12" height="12" rx="3" fill="#EEF2F6"><title>Mon 01 Jun · no runs</title></rect>
+<rect x="484" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 02 Jun · no runs</title></rect>
+<rect x="484" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 03 Jun · no runs</title></rect>
+<rect x="484" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 04 Jun · no runs</title></rect>
+<rect x="484" y="97" width="12" height="12" rx="3" fill="#EEF2F6"><title>Fri 05 Jun · no runs</title></rect>
+<rect x="484" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 06 Jun · no runs</title></rect>
+<rect x="499" y="22" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sun 07 Jun · no runs</title></rect>
+<rect x="499" y="37" width="12" height="12" rx="3" fill="#aeccef"><title>Mon 08 Jun · 0.40M tokens · mostly Sonnet 5.5 (50%)</title></rect>
+<rect x="499" y="52" width="12" height="12" rx="3" fill="#aeccef"><title>Tue 09 Jun · 0.62M tokens · mostly Sonnet 5.5 (77%)</title></rect>
+<rect x="499" y="67" width="12" height="12" rx="3" fill="#EEF2F6"><title>Wed 10 Jun · no runs</title></rect>
+<rect x="499" y="82" width="12" height="12" rx="3" fill="#aeccef"><title>Thu 11 Jun · 0.49M tokens · mostly Sonnet 5.5 (61%)</title></rect>
+<rect x="499" y="97" width="12" height="12" rx="3" fill="#f7c6b2"><title>Fri 12 Jun · 0.34M tokens · mostly Opus 5.5 (68%)</title></rect>
+<rect x="499" y="112" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sat 13 Jun · 0.21M tokens · mostly Qwen3.8 Flash Next · local (60%)</title></rect>
+<text x="499" y="14" font-family="Manrope, sans-serif" font-size="11" fill="#64748B">Jun</text>
+<rect x="514" y="22" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sun 14 Jun · 0.12M tokens · mostly Qwen3.8 Flash Next · local (52%)</title></rect>
+<rect x="514" y="37" width="12" height="12" rx="3" fill="#aeccef"><title>Mon 15 Jun · 0.48M tokens · mostly Sonnet 5.5 (57%)</title></rect>
+<rect x="514" y="52" width="12" height="12" rx="3" fill="#aeccef"><title>Tue 16 Jun · 0.62M tokens · mostly Sonnet 5.5 (66%)</title></rect>
+<rect x="514" y="67" width="12" height="12" rx="3" fill="#aeccef"><title>Wed 17 Jun · 0.68M tokens · mostly Sonnet 5.5 (50%)</title></rect>
+<rect x="514" y="82" width="12" height="12" rx="3" fill="#aeccef"><title>Thu 18 Jun · 0.66M tokens · mostly Sonnet 5.5 (65%)</title></rect>
+<rect x="514" y="97" width="12" height="12" rx="3" fill="#aeccef"><title>Fri 19 Jun · 0.60M tokens · mostly Sonnet 5.5 (62%)</title></rect>
+<rect x="514" y="112" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sat 20 Jun · 0.20M tokens · mostly Qwen3.8 Flash Next · local (72%)</title></rect>
+<rect x="529" y="22" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sun 21 Jun · 0.18M tokens · mostly Qwen3.8 Flash Next · local (76%)</title></rect>
+<rect x="529" y="37" width="12" height="12" rx="3" fill="#aeccef"><title>Mon 22 Jun · 0.59M tokens · mostly Sonnet 5.5 (50%)</title></rect>
+<rect x="529" y="52" width="12" height="12" rx="3" fill="#a8e1cc"><title>Tue 23 Jun · 0.47M tokens · mostly Qwen3.8 Flash Next · local (52%)</title></rect>
+<rect x="529" y="67" width="12" height="12" rx="3" fill="#f3a485"><title>Wed 24 Jun · 0.97M tokens · mostly Opus 5.5 (50%)</title></rect>
+<rect x="529" y="82" width="12" height="12" rx="3" fill="#a8e1cc"><title>Thu 25 Jun · 0.89M tokens · mostly Qwen3.8 Flash Next · local (58%)</title></rect>
+<rect x="529" y="97" width="12" height="12" rx="3" fill="#aeccef"><title>Fri 26 Jun · 0.64M tokens · mostly Sonnet 5.5 (73%)</title></rect>
+<rect x="529" y="112" width="12" height="12" rx="3" fill="#aeccef"><title>Sat 27 Jun · 0.25M tokens · mostly Sonnet 5.5 (63%)</title></rect>
+<rect x="544" y="22" width="12" height="12" rx="3" fill="#aeccef"><title>Sun 28 Jun · 0.31M tokens · mostly Sonnet 5.5 (57%)</title></rect>
+<rect x="544" y="37" width="12" height="12" rx="3" fill="#a8e1cc"><title>Mon 29 Jun · 0.88M tokens · mostly Qwen3.8 Flash Next · local (57%)</title></rect>
+<rect x="544" y="52" width="12" height="12" rx="3" fill="#7faee6"><title>Tue 30 Jun · 0.95M tokens · mostly Sonnet 5.5 (78%)</title></rect>
+<rect x="544" y="67" width="12" height="12" rx="3" fill="#aeccef"><title>Wed 01 Jul · 0.79M tokens · mostly Sonnet 5.5 (49%)</title></rect>
+<rect x="544" y="82" width="12" height="12" rx="3" fill="#a8e1cc"><title>Thu 02 Jul · 0.63M tokens · mostly Qwen3.8 Flash Next · local (60%)</title></rect>
+<rect x="544" y="97" width="12" height="12" rx="3" fill="#aeccef"><title>Fri 03 Jul · 0.77M tokens · mostly Sonnet 5.5 (62%)</title></rect>
+<rect x="544" y="112" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sat 04 Jul · 0.28M tokens · mostly Qwen3.8 Flash Next · local (61%)</title></rect>
+<rect x="559" y="22" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sun 05 Jul · 0.40M tokens · mostly Qwen3.8 Flash Next · local (59%)</title></rect>
+<rect x="559" y="37" width="12" height="12" rx="3" fill="#7faee6"><title>Mon 06 Jul · 1.03M tokens · mostly Sonnet 5.5 (50%)</title></rect>
+<rect x="559" y="52" width="12" height="12" rx="3" fill="#aeccef"><title>Tue 07 Jul · 0.66M tokens · mostly Sonnet 5.5 (63%)</title></rect>
+<rect x="559" y="67" width="12" height="12" rx="3" fill="#7faee6"><title>Wed 08 Jul · 1.17M tokens · mostly Sonnet 5.5 (52%)</title></rect>
+<rect x="559" y="82" width="12" height="12" rx="3" fill="#aeccef"><title>Thu 09 Jul · 0.87M tokens · mostly Sonnet 5.5 (78%)</title></rect>
+<rect x="559" y="97" width="12" height="12" rx="3" fill="#f7c6b2"><title>Fri 10 Jul · 0.65M tokens · mostly Opus 5.5 (68%)</title></rect>
+<rect x="559" y="112" width="12" height="12" rx="3" fill="#EEF2F6"><title>Sat 11 Jul · no runs</title></rect>
+<text x="559" y="14" font-family="Manrope, sans-serif" font-size="11" fill="#64748B">Jul</text>
+<rect x="574" y="22" width="12" height="12" rx="3" fill="#aeccef"><title>Sun 12 Jul · 0.46M tokens · mostly Sonnet 5.5 (73%)</title></rect>
+<rect x="574" y="37" width="12" height="12" rx="3" fill="#7faee6"><title>Mon 13 Jul · 1.04M tokens · mostly Sonnet 5.5 (63%)</title></rect>
+<rect x="574" y="52" width="12" height="12" rx="3" fill="#7faee6"><title>Tue 14 Jul · 1.12M tokens · mostly Sonnet 5.5 (54%)</title></rect>
+<rect x="574" y="67" width="12" height="12" rx="3" fill="#7faee6"><title>Wed 15 Jul · 0.97M tokens · mostly Sonnet 5.5 (51%)</title></rect>
+<rect x="574" y="82" width="12" height="12" rx="3" fill="#aeccef"><title>Thu 16 Jul · 0.60M tokens · mostly Sonnet 5.5 (59%)</title></rect>
+<rect x="574" y="97" width="12" height="12" rx="3" fill="#7faee6"><title>Fri 17 Jul · 1.15M tokens · mostly Sonnet 5.5 (60%)</title></rect>
+<rect x="574" y="112" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sat 18 Jul · 0.26M tokens · mostly Qwen3.8 Flash Next · local (59%)</title></rect>
+<rect x="589" y="22" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sun 19 Jul · 0.37M tokens · mostly Qwen3.8 Flash Next · local (62%)</title></rect>
+<rect x="589" y="37" width="12" height="12" rx="3" fill="#7faee6"><title>Mon 20 Jul · 1.08M tokens · mostly Sonnet 5.5 (71%)</title></rect>
+<rect x="589" y="52" width="12" height="12" rx="3" fill="#76cfaf"><title>Tue 21 Jul · 0.96M tokens · mostly Qwen3.8 Flash Next · local (53%)</title></rect>
+<rect x="589" y="67" width="12" height="12" rx="3" fill="#f3a485"><title>Wed 22 Jul · 1.14M tokens · mostly Opus 5.5 (59%)</title></rect>
+<rect x="589" y="82" width="12" height="12" rx="3" fill="#aeccef"><title>Thu 23 Jul · 0.80M tokens · mostly Sonnet 5.5 (64%)</title></rect>
+<rect x="589" y="97" width="12" height="12" rx="3" fill="#7faee6"><title>Fri 24 Jul · 0.96M tokens · mostly Sonnet 5.5 (75%)</title></rect>
+<rect x="589" y="112" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sat 25 Jul · 0.33M tokens · mostly Qwen3.8 Flash Next · local (72%)</title></rect>
+<rect x="604" y="22" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sun 26 Jul · 0.32M tokens · mostly Qwen3.8 Flash Next · local (68%)</title></rect>
+<rect x="604" y="37" width="12" height="12" rx="3" fill="#f3a485"><title>Mon 27 Jul · 0.92M tokens · mostly Opus 5.5 (75%)</title></rect>
+<rect x="604" y="52" width="12" height="12" rx="3" fill="#7faee6"><title>Tue 28 Jul · 0.90M tokens · mostly Sonnet 5.5 (73%)</title></rect>
+<rect x="604" y="67" width="12" height="12" rx="3" fill="#7faee6"><title>Wed 29 Jul · 0.95M tokens · mostly Sonnet 5.5 (48%)</title></rect>
+<rect x="604" y="82" width="12" height="12" rx="3" fill="#5090dd"><title>Thu 30 Jul · 1.76M tokens · mostly Sonnet 5.5 (54%)</title></rect>
+<rect x="604" y="97" width="12" height="12" rx="3" fill="#7faee6"><title>Fri 31 Jul · 1.46M tokens · mostly Sonnet 5.5 (77%)</title></rect>
+<rect x="604" y="112" width="12" height="12" rx="3" fill="#aeccef"><title>Sat 01 Aug · 0.53M tokens · mostly Sonnet 5.5 (50%)</title></rect>
+<rect x="619" y="22" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sun 02 Aug · 0.34M tokens · mostly Qwen3.8 Flash Next · local (54%)</title></rect>
+<rect x="619" y="37" width="12" height="12" rx="3" fill="#7faee6"><title>Mon 03 Aug · 1.28M tokens · mostly Sonnet 5.5 (48%)</title></rect>
+<rect x="619" y="52" width="12" height="12" rx="3" fill="#76cfaf"><title>Tue 04 Aug · 1.29M tokens · mostly Qwen3.8 Flash Next · local (50%)</title></rect>
+<rect x="619" y="67" width="12" height="12" rx="3" fill="#5090dd"><title>Wed 05 Aug · 1.71M tokens · mostly Sonnet 5.5 (70%)</title></rect>
+<rect x="619" y="82" width="12" height="12" rx="3" fill="#5090dd"><title>Thu 06 Aug · 1.63M tokens · mostly Sonnet 5.5 (73%)</title></rect>
+<rect x="619" y="97" width="12" height="12" rx="3" fill="#ef8359"><title>Fri 07 Aug · 1.52M tokens · mostly Opus 5.5 (71%)</title></rect>
+<rect x="619" y="112" width="12" height="12" rx="3" fill="#aeccef"><title>Sat 08 Aug · 0.44M tokens · mostly Sonnet 5.5 (71%)</title></rect>
+<text x="619" y="14" font-family="Manrope, sans-serif" font-size="11" fill="#64748B">Aug</text>
+<rect x="634" y="22" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sun 09 Aug · 0.35M tokens · mostly Qwen3.8 Flash Next · local (66%)</title></rect>
+<rect x="634" y="37" width="12" height="12" rx="3" fill="#5090dd"><title>Mon 10 Aug · 1.89M tokens · mostly Sonnet 5.5 (74%)</title></rect>
+<rect x="634" y="52" width="12" height="12" rx="3" fill="#ef8359"><title>Tue 11 Aug · 1.54M tokens · mostly Opus 5.5 (52%)</title></rect>
+<rect x="634" y="67" width="12" height="12" rx="3" fill="#7faee6"><title>Wed 12 Aug · 1.49M tokens · mostly Sonnet 5.5 (71%)</title></rect>
+<rect x="634" y="82" width="12" height="12" rx="3" fill="#ef8359"><title>Thu 13 Aug · 1.63M tokens · mostly Opus 5.5 (61%)</title></rect>
+<rect x="634" y="97" width="12" height="12" rx="3" fill="#1baf7a"><title>Fri 14 Aug · 2.07M tokens · mostly Qwen3.8 Flash Next · local (48%)</title></rect>
+<rect x="634" y="112" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sat 15 Aug · 0.41M tokens · mostly Qwen3.8 Flash Next · local (66%)</title></rect>
+<rect x="649" y="22" width="12" height="12" rx="3" fill="#aeccef"><title>Sun 16 Aug · 0.45M tokens · mostly Sonnet 5.5 (49%)</title></rect>
+<rect x="649" y="37" width="12" height="12" rx="3" fill="#2a78d6"><title>Mon 17 Aug · 2.03M tokens · mostly Sonnet 5.5 (66%)</title></rect>
+<rect x="649" y="52" width="12" height="12" rx="3" fill="#44bd92"><title>Tue 18 Aug · 1.93M tokens · mostly Qwen3.8 Flash Next · local (76%)</title></rect>
+<rect x="649" y="67" width="12" height="12" rx="3" fill="#5090dd"><title>Wed 19 Aug · 1.54M tokens · mostly Sonnet 5.5 (48%)</title></rect>
+<rect x="649" y="82" width="12" height="12" rx="3" fill="#2a78d6"><title>Thu 20 Aug · 2.04M tokens · mostly Sonnet 5.5 (72%)</title></rect>
+<rect x="649" y="97" width="12" height="12" rx="3" fill="#5090dd"><title>Fri 21 Aug · 1.96M tokens · mostly Sonnet 5.5 (71%)</title></rect>
+<rect x="649" y="112" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sat 22 Aug · 0.38M tokens · mostly Qwen3.8 Flash Next · local (64%)</title></rect>
+<rect x="664" y="22" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sun 23 Aug · 0.59M tokens · mostly Qwen3.8 Flash Next · local (65%)</title></rect>
+<rect x="664" y="37" width="12" height="12" rx="3" fill="#7faee6"><title>Mon 24 Aug · 1.01M tokens · mostly Sonnet 5.5 (51%)</title></rect>
+<rect x="664" y="52" width="12" height="12" rx="3" fill="#44bd92"><title>Tue 25 Aug · 1.64M tokens · mostly Qwen3.8 Flash Next · local (77%)</title></rect>
+<rect x="664" y="67" width="12" height="12" rx="3" fill="#f3a485"><title>Wed 26 Aug · 1.04M tokens · mostly Opus 5.5 (67%)</title></rect>
+<rect x="664" y="82" width="12" height="12" rx="3" fill="#5090dd"><title>Thu 27 Aug · 1.67M tokens · mostly Sonnet 5.5 (65%)</title></rect>
+<rect x="664" y="97" width="12" height="12" rx="3" fill="#2a78d6"><title>Fri 28 Aug · 2.10M tokens · mostly Sonnet 5.5 (64%)</title></rect>
+<rect x="664" y="112" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sat 29 Aug · 0.78M tokens · mostly Qwen3.8 Flash Next · local (65%)</title></rect>
+<rect x="679" y="22" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sun 30 Aug · 0.79M tokens · mostly Qwen3.8 Flash Next · local (61%)</title></rect>
+<rect x="679" y="37" width="12" height="12" rx="3" fill="#7faee6"><title>Mon 31 Aug · 1.17M tokens · mostly Sonnet 5.5 (55%)</title></rect>
+<rect x="679" y="52" width="12" height="12" rx="3" fill="#5090dd"><title>Tue 01 Sep · 1.63M tokens · mostly Sonnet 5.5 (51%)</title></rect>
+<rect x="679" y="67" width="12" height="12" rx="3" fill="#2a78d6"><title>Wed 02 Sep · 2.33M tokens · mostly Sonnet 5.5 (69%)</title></rect>
+<rect x="679" y="82" width="12" height="12" rx="3" fill="#5090dd"><title>Thu 03 Sep · 1.56M tokens · mostly Sonnet 5.5 (62%)</title></rect>
+<rect x="679" y="97" width="12" height="12" rx="3" fill="#7faee6"><title>Fri 04 Sep · 1.36M tokens · mostly Sonnet 5.5 (63%)</title></rect>
+<rect x="679" y="112" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sat 05 Sep · 0.45M tokens · mostly Qwen3.8 Flash Next · local (70%)</title></rect>
+<rect x="694" y="22" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sun 06 Sep · 0.60M tokens · mostly Qwen3.8 Flash Next · local (54%)</title></rect>
+<rect x="694" y="37" width="12" height="12" rx="3" fill="#5090dd"><title>Mon 07 Sep · 1.59M tokens · mostly Sonnet 5.5 (58%)</title></rect>
+<rect x="694" y="52" width="12" height="12" rx="3" fill="#5090dd"><title>Tue 08 Sep · 1.89M tokens · mostly Sonnet 5.5 (58%)</title></rect>
+<rect x="694" y="67" width="12" height="12" rx="3" fill="#ef8359"><title>Wed 09 Sep · 1.83M tokens · mostly Opus 5.5 (51%)</title></rect>
+<rect x="694" y="82" width="12" height="12" rx="3" fill="#eb6834"><title>Thu 10 Sep · 2.54M tokens · mostly Opus 5.5 (51%)</title></rect>
+<rect x="694" y="97" width="12" height="12" rx="3" fill="#f3a485"><title>Fri 11 Sep · 1.17M tokens · mostly Opus 5.5 (53%)</title></rect>
+<rect x="694" y="112" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sat 12 Sep · 0.51M tokens · mostly Qwen3.8 Flash Next · local (77%)</title></rect>
+<text x="694" y="14" font-family="Manrope, sans-serif" font-size="11" fill="#64748B">Sep</text>
+<rect x="709" y="22" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sun 13 Sep · 0.73M tokens · mostly Qwen3.8 Flash Next · local (65%)</title></rect>
+<rect x="709" y="37" width="12" height="12" rx="3" fill="#2a78d6"><title>Mon 14 Sep · 2.44M tokens · mostly Sonnet 5.5 (50%)</title></rect>
+<rect x="709" y="52" width="12" height="12" rx="3" fill="#7faee6"><title>Tue 15 Sep · 1.47M tokens · mostly Sonnet 5.5 (76%)</title></rect>
+<rect x="709" y="67" width="12" height="12" rx="3" fill="#7faee6"><title>Wed 16 Sep · 1.16M tokens · mostly Sonnet 5.5 (73%)</title></rect>
+<rect x="709" y="82" width="12" height="12" rx="3" fill="#7faee6"><title>Thu 17 Sep · 1.44M tokens · mostly Sonnet 5.5 (56%)</title></rect>
+<rect x="709" y="97" width="12" height="12" rx="3" fill="#2a78d6"><title>Fri 18 Sep · 2.36M tokens · mostly Sonnet 5.5 (65%)</title></rect>
+<rect x="709" y="112" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sat 19 Sep · 0.59M tokens · mostly Qwen3.8 Flash Next · local (49%)</title></rect>
+<rect x="724" y="22" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sun 20 Sep · 0.65M tokens · mostly Qwen3.8 Flash Next · local (53%)</title></rect>
+<rect x="724" y="37" width="12" height="12" rx="3" fill="#f3a485"><title>Mon 21 Sep · 1.44M tokens · mostly Opus 5.5 (68%)</title></rect>
+<rect x="724" y="52" width="12" height="12" rx="3" fill="#5090dd"><title>Tue 22 Sep · 1.51M tokens · mostly Sonnet 5.5 (64%)</title></rect>
+<rect x="724" y="67" width="12" height="12" rx="3" fill="#1baf7a"><title>Wed 23 Sep · 2.07M tokens · mostly Qwen3.8 Flash Next · local (56%)</title></rect>
+<rect x="724" y="82" width="12" height="12" rx="3" fill="#EEF2F6"><title>Thu 24 Sep · no runs</title></rect>
+<rect x="724" y="97" width="12" height="12" rx="3" fill="#5090dd"><title>Fri 25 Sep · 1.81M tokens · mostly Sonnet 5.5 (55%)</title></rect>
+<rect x="724" y="112" width="12" height="12" rx="3" fill="#aeccef"><title>Sat 26 Sep · 0.86M tokens · mostly Sonnet 5.5 (61%)</title></rect>
+<rect x="739" y="22" width="12" height="12" rx="3" fill="#aeccef"><title>Sun 27 Sep · 0.72M tokens · mostly Sonnet 5.5 (64%)</title></rect>
+<rect x="739" y="37" width="12" height="12" rx="3" fill="#5090dd"><title>Mon 28 Sep · 1.51M tokens · mostly Sonnet 5.5 (54%)</title></rect>
+<rect x="739" y="52" width="12" height="12" rx="3" fill="#2a78d6"><title>Tue 29 Sep · 2.31M tokens · mostly Sonnet 5.5 (60%)</title></rect>
+<rect x="739" y="67" width="12" height="12" rx="3" fill="#1baf7a"><title>Wed 30 Sep · 2.55M tokens · mostly Qwen3.8 Flash Next · local (48%)</title></rect>
+<rect x="739" y="82" width="12" height="12" rx="3" fill="#7faee6"><title>Thu 01 Oct · 1.15M tokens · mostly Sonnet 5.5 (53%)</title></rect>
+<rect x="739" y="97" width="12" height="12" rx="3" fill="#7faee6"><title>Fri 02 Oct · 1.13M tokens · mostly Sonnet 5.5 (64%)</title></rect>
+<rect x="739" y="112" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sat 03 Oct · 0.72M tokens · mostly Qwen3.8 Flash Next · local (57%)</title></rect>
+<rect x="754" y="22" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sun 04 Oct · 0.39M tokens · mostly Qwen3.8 Flash Next · local (48%)</title></rect>
+<rect x="754" y="37" width="12" height="12" rx="3" fill="#f3a485"><title>Mon 05 Oct · 1.45M tokens · mostly Opus 5.5 (65%)</title></rect>
+<rect x="754" y="52" width="12" height="12" rx="3" fill="#EEF2F6"><title>Tue 06 Oct · no runs</title></rect>
+<rect x="754" y="67" width="12" height="12" rx="3" fill="#2a78d6"><title>Wed 07 Oct · 2.39M tokens · mostly Sonnet 5.5 (58%)</title></rect>
+<rect x="754" y="82" width="12" height="12" rx="3" fill="#5090dd"><title>Thu 08 Oct · 1.63M tokens · mostly Sonnet 5.5 (54%)</title></rect>
+<rect x="754" y="97" width="12" height="12" rx="3" fill="#7faee6"><title>Fri 09 Oct · 1.42M tokens · mostly Sonnet 5.5 (74%)</title></rect>
+<rect x="754" y="112" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sat 10 Oct · 0.41M tokens · mostly Qwen3.8 Flash Next · local (48%)</title></rect>
+<text x="754" y="14" font-family="Manrope, sans-serif" font-size="11" fill="#64748B">Oct</text>
+<rect x="769" y="22" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sun 11 Oct · 0.53M tokens · mostly Qwen3.8 Flash Next · local (78%)</title></rect>
+<rect x="769" y="37" width="12" height="12" rx="3" fill="#5090dd"><title>Mon 12 Oct · 1.85M tokens · mostly Sonnet 5.5 (70%)</title></rect>
+<rect x="769" y="52" width="12" height="12" rx="3" fill="#1baf7a"><title>Tue 13 Oct · 2.24M tokens · mostly Qwen3.8 Flash Next · local (71%)</title></rect>
+<rect x="769" y="67" width="12" height="12" rx="3" fill="#1baf7a"><title>Wed 14 Oct · 2.54M tokens · mostly Qwen3.8 Flash Next · local (68%)</title></rect>
+<rect x="769" y="82" width="12" height="12" rx="3" fill="#7faee6"><title>Thu 15 Oct · 1.27M tokens · mostly Sonnet 5.5 (64%)</title></rect>
+<rect x="769" y="97" width="12" height="12" rx="3" fill="#44bd92"><title>Fri 16 Oct · 2.00M tokens · mostly Qwen3.8 Flash Next · local (52%)</title></rect>
+<rect x="769" y="112" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sat 17 Oct · 0.85M tokens · mostly Qwen3.8 Flash Next · local (74%)</title></rect>
+<rect x="784" y="22" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sun 18 Oct · 0.79M tokens · mostly Qwen3.8 Flash Next · local (76%)</title></rect>
+<rect x="784" y="37" width="12" height="12" rx="3" fill="#2a78d6"><title>Mon 19 Oct · 2.13M tokens · mostly Sonnet 5.5 (50%)</title></rect>
+<rect x="784" y="52" width="12" height="12" rx="3" fill="#7faee6"><title>Tue 20 Oct · 1.09M tokens · mostly Sonnet 5.5 (51%)</title></rect>
+<rect x="784" y="67" width="12" height="12" rx="3" fill="#5090dd"><title>Wed 21 Oct · 1.62M tokens · mostly Sonnet 5.5 (48%)</title></rect>
+<rect x="784" y="82" width="12" height="12" rx="3" fill="#5090dd"><title>Thu 22 Oct · 2.00M tokens · mostly Sonnet 5.5 (48%)</title></rect>
+<rect x="784" y="97" width="12" height="12" rx="3" fill="#ef8359"><title>Fri 23 Oct · 1.74M tokens · mostly Opus 5.5 (76%)</title></rect>
+<rect x="784" y="112" width="12" height="12" rx="3" fill="#a8e1cc"><title>Sat 24 Oct · 0.65M tokens · mostly Qwen3.8 Flash Next · local (71%)</title></rect>
+<rect x="799" y="22" width="12" height="12" rx="3" fill="#aeccef"><title>Sun 25 Oct · 0.62M tokens · mostly Sonnet 5.5 (55%)</title></rect>
+<rect x="799" y="37" width="12" height="12" rx="3" fill="#1baf7a"><title>Mon 26 Oct · 2.15M tokens · mostly Qwen3.8 Flash Next · local (62%)</title></rect>
+<rect x="799" y="52" width="12" height="12" rx="3" fill="#5090dd"><title>Tue 27 Oct · 1.84M tokens · mostly Sonnet 5.5 (61%)</title></rect>
+<text x="28" y="47" text-anchor="end" font-family="Manrope, sans-serif" font-size="11" fill="#64748B">Mon</text>
+<text x="28" y="77" text-anchor="end" font-family="Manrope, sans-serif" font-size="11" fill="#64748B">Wed</text>
+<text x="28" y="107" text-anchor="end" font-family="Manrope, sans-serif" font-size="11" fill="#64748B">Fri</text>
+<rect x="34" y="139" width="12" height="12" rx="3" fill="#aeccef"></rect>
+<rect x="48" y="139" width="12" height="12" rx="3" fill="#7faee6"></rect>
+<rect x="62" y="139" width="12" height="12" rx="3" fill="#5090dd"></rect>
+<rect x="76" y="139" width="12" height="12" rx="3" fill="#2a78d6"></rect>
+<text x="96" y="149" font-family="Manrope, sans-serif" font-size="11.5" fill="#334155">Sonnet 5.5</text>
+<rect x="186.0" y="139" width="12" height="12" rx="3" fill="#a8e1cc"></rect>
+<rect x="200.0" y="139" width="12" height="12" rx="3" fill="#76cfaf"></rect>
+<rect x="214.0" y="139" width="12" height="12" rx="3" fill="#44bd92"></rect>
+<rect x="228.0" y="139" width="12" height="12" rx="3" fill="#1baf7a"></rect>
+<text x="248.0" y="149" font-family="Manrope, sans-serif" font-size="11.5" fill="#334155">Qwen3.8 Flash Next · local</text>
+<rect x="440.4" y="139" width="12" height="12" rx="3" fill="#f7c6b2"></rect>
+<rect x="454.4" y="139" width="12" height="12" rx="3" fill="#f3a485"></rect>
+<rect x="468.4" y="139" width="12" height="12" rx="3" fill="#ef8359"></rect>
+<rect x="482.4" y="139" width="12" height="12" rx="3" fill="#eb6834"></rect>
+<text x="502.4" y="149" font-family="Manrope, sans-serif" font-size="11.5" fill="#334155">Opus 5.5</text>
+<text x="814" y="149" text-anchor="end" font-family="Manrope, sans-serif" font-size="11" fill="#64748B">Lighter means fewer tokens, darker means more</text>
+        </svg>
+      </div>
+    </section>
+
+    <section class="box" aria-label="Tokens by model">
+      <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 10px">
+        <h2 class="bt">Tokens by model</h2>
+        <span class="bs">1.84M today across 4 models</span>
+      </div>
+      <div style="display: flex; gap: 2px; height: 16px">
+        <div style="flex: 0 0 52%; background: #2a78d6; border-radius: 8px 0 0 8px" title="Sonnet 5.5 · 960k tokens · 52%"></div>
+        <div style="flex: 0 0 12%; background: #eb6834" title="Opus 5.5 · 225k tokens · 12%"></div>
+        <div style="flex: 0 0 27%; background: #1baf7a" title="Qwen3.8 Flash Next · local · 500k tokens · 27%"></div>
+        <div style="flex: 1 1 auto; background: #eda100; border-radius: 0 8px 8px 0" title="Haiku 5.5 · 160k tokens · 9%"></div>
+      </div>
+      <div style="overflow-x: auto">
+        <table>
+          <thead><tr><th>Model</th><th>Class</th><th>Used for</th><th class="n">Tokens</th><th class="n">Share</th><th class="n">Calls</th><th class="n">Tokens per call</th><th class="n">From cache</th></tr></thead>
+          <tbody>
+            <tr><td><span class="sw" style="background: #2a78d6"></span>Sonnet 5.5</td><td>Flash</td><td>Coder, Reviewer</td><td class="n">960k</td><td class="n">52%</td><td class="n">690</td><td class="n">1,390</td><td class="n">64%</td></tr>
+            <tr><td><span class="sw" style="background: #eb6834"></span>Opus 5.5</td><td>Frontier</td><td>Grilling, teacher model</td><td class="n">225k</td><td class="n">12%</td><td class="n">142</td><td class="n">1,580</td><td class="n">66%</td></tr>
+            <tr><td><span class="sw" style="background: #1baf7a"></span>Qwen3.8 Flash Next</td><td>Local · Radiance</td><td>Autoresearch, Retro, trials</td><td class="n">500k</td><td class="n">27%</td><td class="n">246</td><td class="n">2,030</td><td class="n">55%</td></tr>
+            <tr><td><span class="sw" style="background: #eda100"></span>Haiku 5.5</td><td>Flash</td><td>Compaction, summaries</td><td class="n">160k</td><td class="n">9%</td><td class="n">206</td><td class="n">780</td><td class="n">48%</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div style="display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 14px; align-items: start">
+      <section class="box" aria-label="Where the tokens go">
+        <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 10px"><h2 class="bt">Where the tokens go</h2><span class="bs">1.84M today</span></div>
+        <div style="display: flex; flex-direction: column; gap: 9px">
+          <sc-for list="{{tokenUse}}" as="u" hint-placeholder-count="8">
+            <div class="hrow" title="{{u.tip}}"><span>{{u.name}}</span><div class="htrack"><div class="hbar" style="{{u.bar}}"></div></div><span class="hv">{{u.val}}</span></div>
+          </sc-for>
+        </div>
+      </section>
+      <section class="box" aria-label="Where to save">
+        <h2 class="bt">Where to save</h2>
+        <div class="hint"><b>Test and build output · 240k</b><span>70% of it is passing test lines. If the bridge kept only failures and the summary, about 170k tokens a day would go.</span></div>
+        <div class="hint"><b>File reads · 330k</b><span>41 reads took whole files over 1,000 lines. Reading line ranges would save about 120k.</span></div>
+        <div class="hint"><b>Guard checks · 120k</b><span>The trained decision model can take these over; it is waiting in the inbox.</span></div>
+        <span class="bs">Tonight's Retro can turn these into proposals.</span>
+      </section>
+    </div>
+
+    <div style="display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 14px; align-items: start">
+      <section class="box" aria-label="Where the model time goes">
+        <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 10px"><h2 class="bt">Where the model time goes</h2><span class="bs">3 h 12 m today</span></div>
+        <div style="display: flex; flex-direction: column; gap: 9px">
+          <sc-for list="{{timeUse}}" as="u" hint-placeholder-count="6">
+            <div class="hrow" title="{{u.tip}}"><span>{{u.name}}</span><div class="htrack"><div class="hbar" style="{{u.bar}}"></div></div><span class="hv">{{u.val}}</span></div>
+          </sc-for>
+        </div>
+      </section>
+      <section class="box" aria-label="Slowest tools">
+        <h2 class="bt">Longest tool waits</h2>
+        <table>
+          <thead><tr><th>Tool call</th><th class="n">Calls</th><th class="n">Waited</th></tr></thead>
+          <tbody>
+            <tr><td class="mono" style="font-size: 12.5px">ctest (radiance)</td><td class="n">31</td><td class="n">41 m</td></tr>
+            <tr><td class="mono" style="font-size: 12.5px">cmake --build</td><td class="n">22</td><td class="n">27 m</td></tr>
+            <tr><td class="mono" style="font-size: 12.5px">bench (gpu-bench)</td><td class="n">7</td><td class="n">11 m</td></tr>
+            <tr><td class="mono" style="font-size: 12.5px">cargo test (moebius)</td><td class="n">12</td><td class="n">5 m</td></tr>
+          </tbody>
+        </table>
+      </section>
+    </div>
+
+    <section class="box" aria-label="By agent">
+      <h2 class="bt">By agent</h2>
+      <div style="overflow-x: auto">
+        <table>
+          <thead><tr><th>Agent</th><th class="n">Calls</th><th class="n">Tokens</th><th class="n">From cache</th><th class="n">Tokens per merged change</th><th class="n">Model time</th></tr></thead>
+          <tbody>
+            <tr><td>Coder</td><td class="n">702</td><td class="n">1.12M</td><td class="n">64%</td><td class="n">380k</td><td class="n">1 h 58 m</td></tr>
+            <tr><td>Autoresearcher</td><td class="n">188</td><td class="n">290k</td><td class="n">52%</td><td class="n">—</td><td class="n">38 m</td></tr>
+            <tr><td>Reviewer</td><td class="n">214</td><td class="n">260k</td><td class="n">58%</td><td class="n">90k</td><td class="n">22 m</td></tr>
+            <tr><td>Guard (teacher model)</td><td class="n">120</td><td class="n">120k</td><td class="n">71%</td><td class="n">—</td><td class="n">6 m</td></tr>
+            <tr><td>Grilling partner</td><td class="n">60</td><td class="n">50k</td><td class="n">44%</td><td class="n">—</td><td class="n">8 m</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1500}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const folded = !!(this.state && this.state.folded);
+    const sonnet = [20,10,5,0,0,0,30,60,140,150,150,150,120,140,140];
+    const opus = [30,30,0,0,0,0,0,10,30,25,30,20,10,25,15];
+    const local = [60,70,80,70,40,20,10,5,10,15,20,15,10,20,55];
+    const max = 300;
+    const seg = (v, c) => 'height: ' + Math.round(v / max * 200) + 'px; background: ' + c + '; border-radius: 3px';
+    const hours = [];
+    for (let i = 0; i < 24; i++) {
+      const a = sonnet[i] || 0, b = opus[i] || 0, c = local[i] || 0;
+      const hh = (i < 10 ? '0' : '') + i;
+      hours.push({
+        label: i % 3 === 0 ? hh : '',
+        s1: seg(a, '#2a78d6'), s2: seg(b, '#eb6834'), s3: seg(c, '#1baf7a'),
+        tip: i < 15 ? hh + ':00 · Flash ' + a + 'k · Frontier ' + b + 'k · Local ' + c + 'k tokens' : hh + ':00 · not yet'
+      });
+    }
+    const lane = (name, color, arr, perK) => {
+      const ticks = [];
+      arr.forEach((v, h) => {
+        const n = Math.round(v / perK);
+        for (let j = 0; j < n; j++) {
+          const left = ((h + (j + 0.5) / Math.max(n, 1)) / 24 * 100).toFixed(2);
+          ticks.push({ style: 'position: absolute; top: 4px; bottom: 4px; width: 2px; border-radius: 1px; left: ' + left + '%; background: ' + color, tip: name + ' · around ' + (h < 10 ? '0' : '') + h + ':00' });
+        }
+      });
+      return { name, sw: 'background: ' + color, ticks };
+    };
+    const lanes = [
+      lane('Flash', '#2a78d6', sonnet, 10),
+      lane('Frontier', '#eb6834', opus, 5),
+      lane('Local · Radiance', '#1baf7a', local, 8)
+    ];
+    const bars = (rows, total, unit) => rows.map(r => ({
+      name: r[0],
+      val: r[2] + ' · ' + Math.round(r[1] / total * 100) + '%',
+      bar: 'width: ' + (r[1] / rows[0][1] * 100).toFixed(1) + '%; background: #2a78d6',
+      tip: r[0] + ': ' + r[2] + ' (' + Math.round(r[1] / total * 100) + '% of ' + unit + ')'
+    }));
+    const tokenUse = bars([
+      ['Context sent again (cached)', 610, '610k'],
+      ['File reads', 330, '330k'],
+      ['Test and build output', 240, '240k'],
+      ['Thinking', 210, '210k'],
+      ['Code written', 150, '150k'],
+      ['Guard checks', 120, '120k'],
+      ['Retro and trials', 110, '110k'],
+      ['Compaction summaries', 70, '70k']
+    ], 1840, 'all tokens');
+    const timeUse = bars([
+      ['Waiting for tools', 84, '1 h 24 m'],
+      ['Writing output', 38, '38 m'],
+      ['Thinking', 31, '31 m'],
+      ['Reading the prompt', 22, '22 m'],
+      ['Rate limits and retries', 11, '11 m'],
+      ['Guard checks', 6, '6 m']
+    ], 192, 'model time');
+    return {
+      sideCls: folded ? 'side folded' : 'side',
+      toggleLabel: folded ? 'Expand the sidebar' : 'Collapse the sidebar',
+      toggle: () => this.setState({ folded: !folded }),
+      hours, lanes, tokenUse, timeUse
+    };
+  }
+}
+</script>
+</body>
+</html>

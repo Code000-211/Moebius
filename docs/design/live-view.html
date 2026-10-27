@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Moebius live view</title>
+
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&amp;family=Manrope:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;background:#EDF2F7}
+a{color:#0F766E;text-decoration:none}a:hover{color:#115E59}
+.mono{font-family:'JetBrains Mono',monospace}
+.side{flex:0 0 248px;display:flex;flex-direction:column;background:#F7F8FA;border-right:1px solid #E2E6EC}
+.sgrp{display:flex;flex-direction:column;gap:1px;padding:10px}
+.sdiv{height:1px;background:#E2E6EC;margin:0 14px}
+.sh{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;font-weight:700;color:#6B7380;padding:2px 10px 6px}
+.it{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:9px;font-size:14.5px;color:#3A424D}
+.it:hover{background:#EEF1F5;color:#0F172A}
+.cur{background:#E7EBF0;color:#0F172A;font-weight:600}
+.ic{width:16px;height:16px;flex:0 0 16px;color:#64748B}
+.cur .ic{color:#0F172A}
+.r{margin-left:auto;font-family:'Manrope',sans-serif;font-variant-numeric:tabular-nums;font-size:12px;color:#64748B;font-weight:400}
+.badge{margin-left:auto;font-size:12px;font-weight:700;color:#FFFFFF;background:#B45309;border-radius:999px;padding:1px 8px}
+.ldot{width:8px;height:8px;border-radius:50%;flex:0 0 8px}
+.search{display:flex;align-items:center;gap:8px;width:100%;font:inherit;font-size:14px;color:#64748B;background:#FFFFFF;border:1px solid #E2E6EC;border-radius:10px;padding:8px 10px;text-align:left}
+.kbd{margin-left:auto;font-family:'Manrope',sans-serif;font-variant-numeric:tabular-nums;font-size:11px;color:#64748B;border:1px solid #E2E6EC;border-radius:5px;padding:0 5px}
+.mini{font:inherit;width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;border-radius:7px;border:1px solid #E2E6EC;background:#FFFFFF;color:#475569;padding:0;flex:0 0 26px}
+.toprow{display:flex;align-items:center;gap:9px;padding:0 4px 0 6px}
+.foot{margin-top:auto;display:flex;flex-direction:column;gap:6px;padding:14px 20px 18px;border-top:1px solid #E2E6EC}
+.folded{flex-basis:68px}
+.folded .lbl,.folded .r,.folded .sh,.folded .kbd,.folded .hide{display:none}
+.folded .toprow{flex-direction:column;gap:10px;padding:0}
+.folded .it,.folded .search{justify-content:center;padding:8px 0;gap:4px}
+.folded .badge{margin-left:0;padding:0 5px;font-size:11px}
+.folded .foot{padding:14px 12px 18px}
+.tool{display:flex;flex-direction:column;gap:8px;background:#F7F9FC;border:1px solid #E2E8F0;border-radius:12px;padding:10px 12px}
+.trow{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.tname{font-family:'JetBrains Mono',monospace;font-size:12.5px;color:#0F172A;background:#F1F5F9;padding:2px 8px;border-radius:999px}
+.arg{font-family:'JetBrains Mono',monospace;font-size:12.5px;color:#475569;min-width:0;overflow-wrap:anywhere}
+.tag{font-family:'Manrope',sans-serif;font-variant-numeric:tabular-nums;font-size:12px;font-weight:600;padding:2px 9px;border-radius:999px;border:1px solid #CBD5E1;color:#475569;white-space:nowrap}
+.ta{border-color:#99D5CD;background:#E6F5F3;color:#0F5E57}
+.tr{border-color:#E5786B;background:#FCEDEB;color:#9B2C22;font-weight:600}
+.code{border:1px solid #E2E8F0;border-radius:10px;overflow:hidden;background:#FFFFFF}
+.fh{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;padding:6px 10px;background:#F7F9FC;border-bottom:1px solid #E2E8F0;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#475569}
+.src{margin:0;padding:4px 0;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.6;color:#1E293B;overflow-x:auto}
+.ln{display:block;white-space:pre;padding-right:12px}
+.no{display:inline-block;width:34px;padding-right:8px;text-align:right;color:#94A3B8;user-select:none}
+.mk{display:inline-block;width:16px;text-align:center;color:#94A3B8}
+.del{background:#FCEDEB}.del .mk{color:#B42318}.del .no{color:#D7867B}
+.add{background:#E6F6EC}.add .mk{color:#15803D}.add .no{color:#6FB389}
+.kw{color:#7C3AED}.ty{color:#0369A1}.fn{color:#0F766E}.nu{color:#B45309}.cm{color:#64748B;font-style:italic}
+.term{margin:0;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.6;color:#E2E8F0;background:#1E293B;border-radius:10px;padding:10px 12px;white-space:pre-wrap}
+.term .dim{color:#94A3B8}.term .ok{color:#4ADE80}.term .pa{color:#7DD3FC}.term .run{color:#FBBF24}
+.cur2{display:inline-block;width:7px;height:14px;background:#E2E8F0;vertical-align:-2px;margin-left:2px}
+.say{font-size:15px;line-height:1.55;color:#0F172A;max-width:72ch;margin:0}
+.k{font-size:12.5px;font-weight:600;color:#6B7380}
+.v{font-size:14.5px;color:#0F172A}
+.kv{display:flex;flex-direction:column;gap:3px;padding:10px 0;border-top:1px dashed #CBD5E1}
+.ms{font-family:'Manrope',sans-serif;font-variant-numeric:tabular-nums;font-size:11.5px;color:#64748B}
+.btn{font:inherit;font-size:14px;font-weight:600;padding:8px 14px;border-radius:10px;border:1px solid #CBD5E1;background:#FFFFFF;color:#0F172A}
+</style>
+</helmet>
+<div style="display: flex; flex-wrap: wrap; min-height: 900px; background: #EDF2F7; color: #0F172A; font-family: 'Manrope', system-ui, sans-serif">
+
+  <nav class="{{sideCls}}" aria-label="Moebius">
+    <div style="display: flex; flex-direction: column; gap: 12px; padding: 16px 12px 8px">
+      <div class="toprow">
+        <svg width="22" height="16" viewBox="0 0 26 18" aria-hidden="true"><path d="M13 9 C 9 1, 2 1, 2 9 C 2 17, 9 17, 13 9 C 17 1, 24 1, 24 9 C 24 17, 17 17, 13 9" fill="none" stroke="#0F172A" stroke-width="2.2"></path></svg>
+        <span class="lbl" style="font-size: 16.5px; font-weight: 700">Moebius</span>
+        <span class="hide" style="margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: #0F5E57"><span class="ldot" style="background: #0F766E"></span>Online</span>
+        <button type="button" class="mini" aria-label="{{toggleLabel}}" title="{{toggleLabel}}" onClick="{{toggle}}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="2"></rect><path d="M6 2.5v11"></path></svg></button>
+      </div>
+      <button type="button" class="search" aria-label="Search or run a command"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.5 10.5L14 14"></path></svg><span class="lbl">Search or run…</span><span class="kbd">⌘K</span></button>
+    </div>
+    <div class="sgrp">
+      <a class="it" href="inbox.html" title="Inbox" style="font-weight: 600; color: #0F172A"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 9h3l1 2h4l1-2h3"></path><path d="M2 9l2-5h8l2 5v4H2z"></path></svg><span class="lbl">Inbox</span><span class="badge">6</span></a>
+    </div>
+    <div class="sdiv"></div>
+    <div class="sgrp">
+      <div class="sh"><span>Boards</span><button type="button" class="mini" aria-label="Add a repository"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M8 3v10M3 8h10"></path></svg></button></div>
+      <a class="it cur" href="board.html" title="radiance"><span class="ldot" style="background: #0F766E"></span><span class="lbl">radiance</span><span class="r">3 live</span></a>
+      <a class="it" href="board.html" title="moebius"><span class="ldot" style="background: #0F766E"></span><span class="lbl">moebius</span><span class="r">1 live</span></a>
+      <a class="it" href="board.html" title="dotfiles"><span class="ldot" style="background: #CBD5E1"></span><span class="lbl">dotfiles</span><span class="r">Idle</span></a>
+    </div>
+    <div class="sdiv"></div>
+    <div class="sgrp">
+      <div class="sh"><span>Build</span></div>
+      <a class="it" href="agents.html" title="Agents"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="5" width="10" height="8" rx="2"></rect><path d="M8 2v3M6 9h.01M10 9h.01"></path></svg><span class="lbl">Agents</span><span class="r">5</span></a>
+      <a class="it" href="agents.html" title="Skills"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2.5 3.5h4a1.5 1.5 0 0 1 1.5 1.5v8.5a1 1 0 0 0-1-1H2.5z"></path><path d="M13.5 3.5h-4A1.5 1.5 0 0 0 8 5v8.5a1 1 0 0 1 1-1h4.5z"></path></svg><span class="lbl">Skills</span><span class="r">12</span></a>
+      <a class="it" href="agents.html" title="MCP servers"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 2v3M10 2v3M4.5 5h7v2.5a3.5 3.5 0 0 1-7 0zM8 11v3"></path></svg><span class="lbl">MCP servers</span><span class="r">4</span></a>
+      <a class="it" href="agents.html" title="Rules"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 2l5 2v4c0 3-2.2 5-5 6-2.8-1-5-3-5-6V4z"></path></svg><span class="lbl">Rules</span><span class="r">14</span></a>
+    </div>
+    <div class="sdiv"></div>
+    <div class="sgrp">
+      <div class="sh"><span>Improve</span></div>
+      <a class="it" href="inbox.html" title="Retro"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 8a5 5 0 1 0 1.5-3.5"></path><path d="M3 2.5V5h2.5"></path></svg><span class="lbl">Retro</span><span class="r">23:30</span></a>
+      <a class="it" href="inbox.html" title="Experiments"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 2h4M7 2v4l-3.5 6.5a1 1 0 0 0 .9 1.5h7.2a1 1 0 0 0 .9-1.5L9 6V2"></path></svg><span class="lbl">Experiments</span><span class="r">1 live</span></a>
+      <a class="it" href="inbox.html" title="Decision model"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 2v12M4.5 14h7M3 5h10M3 5l-1.5 4h3zM13 5l-1.5 4h3z"></path></svg><span class="lbl">Decision model</span><span class="r">Shadow</span></a>
+      <a class="it" href="usage.html" title="Usage"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2.5 13.5h11M4.5 11V8M8 11V4M11.5 11V6.5"></path></svg><span class="lbl">Usage</span><span class="r">1.8M</span></a>
+    </div>
+    <div class="sdiv"></div>
+    <div class="sgrp">
+      <div class="sh"><span>Setup</span></div>
+      <a class="it" href="agents.html" title="Models"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1.5"></rect><path d="M6 2v2M10 2v2M6 12v2M10 12v2M2 6h2M2 10h2M12 6h2M12 10h2"></path></svg><span class="lbl">Models</span></a>
+      <a class="it" href="agents.html" title="Plugins"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 5h3a1.5 1.5 0 1 1 3 0h3v3a1.5 1.5 0 1 0 0 3v3H3z"></path></svg><span class="lbl">Plugins</span><span class="r">11</span></a>
+      <a class="it" href="agents.html" title="Settings"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="2.2"></circle><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"></path></svg><span class="lbl">Settings</span></a>
+    </div>
+    <div class="foot" title="Tokens today: 1.8M of 8M">
+      <div class="hide" style="display: flex; justify-content: space-between; font-size: 13px; color: #3A424D"><span>Tokens today</span><span style="font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums">1.8M / 8M</span></div>
+      <div style="height: 5px; border-radius: 3px; background: #E2E8F0"><div style="width: 22%; height: 5px; border-radius: 3px; background: #0F766E"></div></div>
+    </div>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px; padding: 20px 24px">
+    <header style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px">
+      <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0">
+        <span style="font-size: 13px; color: #64748B"><a href="board.html">radiance</a> / #48</span>
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px"><h1 style="margin: 0; font-size: 24px; font-weight: 700">MTP drafter: cap the candidate tree depth</h1><span class="tag ta">Live · round 2 of 5</span></div>
+        <span style="font-size: 14px; color: #475569">Coder on Pi-Bolt · started 6 min ago · <span style="color: #B42318; font-weight: 600">1 rule broken</span></span>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 8px"><button type="button" class="btn">Open shell in worktree</button><button type="button" class="btn" style="border-color: #E5786B; background: #FCEDEB; color: #9B2C22">Stop run</button></div>
+    </header>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start">
+      <section aria-label="Run stream" style="flex: 999 1 520px; min-width: 0; display: flex; flex-direction: column; background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 16px">
+        <div style="display: flex; flex-direction: column; gap: 12px; padding: 16px">
+          <p class="say">Review found that the tree can grow past what the verify kernel handles. I'll find where the depth is set and cap it.</p>
+          <div class="tool"><div class="trow"><span class="tname">read</span><span class="arg">core/sched/mtp_tree.cpp</span><span style="flex: 1 1 auto"></span><span class="tag ta">Allowed</span><span class="ms">Pattern · 2 ms</span></div></div>
+          <div class="tool" style="border: 1.5px solid #E5786B; background: #FEF3F2">
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 700; color: #B42318"><span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #D92D20"></span>Rule broken: <span class="mono" style="font-size: 12.5px">no-vendor-edits</span></div>
+            <div class="trow"><span class="tname" style="background: #FFFFFF">edit</span><span class="arg" style="color: #9B2C22; text-decoration: line-through">vendor/hipcub/block_scan.hpp</span><span style="flex: 1 1 auto"></span><span class="tag tr">Blocked</span><span class="ms">Teacher · 0.4 s</span></div>
+            <div style="font-size: 14px; color: #3F1D19">Never edit files under <span class="mono" style="font-size: 12.5px">vendor/</span>; change upstream code through <span class="mono" style="font-size: 12.5px">patches/</span>. The call did not run; the model got the rule back and finds another way.</div>
+          </div>
+          <p class="say">Right, vendor code is off limits. The cap belongs in our own tree builder.</p>
+          <div class="tool">
+            <div class="trow"><span class="tname">edit</span><span class="arg">core/sched/mtp_tree.cpp</span><span style="flex: 1 1 auto"></span><span class="tag ta">Allowed</span><span class="ms">Teacher · 0.6 s</span></div>
+            <div class="code">
+              <div class="fh"><span>core/sched/mtp_tree.cpp</span><span>@@ -141,5 +141,6 @@ build_tree()</span></div>
+              <pre class="src"><span class="ln"><span class="no">141</span><span class="no">141</span><span class="mk"> </span>  <span class="kw">for</span> (<span class="ty">int</span> d = <span class="nu">0</span>; d &lt; cfg.draft_len; ++d) {</span><span class="ln"><span class="no">142</span><span class="no">142</span><span class="mk"> </span>    <span class="cm">// each level holds at most top_k children per node</span></span><span class="ln del"><span class="no">143</span><span class="no"></span><span class="mk">-</span>    <span class="kw">const</span> <span class="ty">int</span> max_depth = cfg.draft_len;</span><span class="ln add"><span class="no"></span><span class="no">143</span><span class="mk">+</span>    <span class="kw">const</span> <span class="ty">int</span> max_depth = <span class="ty">std</span>::<span class="fn">min</span>(cfg.draft_len, kMaxVerifyDepth);</span><span class="ln add"><span class="no"></span><span class="no">144</span><span class="mk">+</span>    <span class="cm">// the verify kernel handles trees up to depth 6</span></span><span class="ln"><span class="no">144</span><span class="no">145</span><span class="mk"> </span>    <span class="kw">if</span> (d &gt;= max_depth) <span class="kw">break</span>;</span></pre>
+            </div>
+          </div>
+          <div class="tool">
+            <div class="trow"><span class="tname">bash</span><span class="arg">cmake --build build -j &amp;&amp; ctest -R tree</span><span style="flex: 1 1 auto"></span><span class="tag ta">Running · 14 s</span></div>
+            <pre class="term"><span class="dim">[ 92%]</span> Linking CXX executable <span class="pa">build/tests/test_tree</span>
+<span class="dim">[100%]</span> Built target test_tree
+<span class="dim">Test #7:</span> tree.depth_cap ............   <span class="ok">Passed</span>    <span class="dim">0.31 sec</span>
+<span class="dim">Test #8:</span> tree.winner_walk ..........   <span class="run">running</span><span class="cur2"> </span></pre>
+          </div>
+        </div>
+        <form style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 16px; border-top: 1px dashed #CBD5E1">
+          <label for="mixsteer" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Message this run</label>
+          <input id="mixsteer" type="text" placeholder="Steer this run, for example: also add a test for depth 0" style="flex: 1 1 320px; min-width: 0; font: inherit; font-size: 14.5px; padding: 10px 12px; border-radius: 10px; border: 1px solid #CBD5E1; background: #FFFFFF; color: #0F172A">
+          <button type="submit" class="btn" style="border-color: #B45309; background: #B45309; color: #FFFFFF">Steer</button>
+          <span class="ms" style="flex: 1 1 100%">The run keeps going while you type. Steering is saved as a judgement.</span>
+        </form>
+      </section>
+
+      <aside aria-label="Run details" style="flex: 1 1 260px; max-width: 320px; display: flex; flex-direction: column; background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 16px; padding: 14px 18px">
+        <h2 style="margin: 0; font-size: 16px; font-weight: 700; padding-bottom: 8px">This run</h2>
+        <div class="kv">
+          <span class="k">Round</span>
+          <div style="display: flex; gap: 3px"><span style="flex: 1 1 0; height: 4px; border-radius: 2px; background: #0F766E"></span><span style="flex: 1 1 0; height: 4px; border-radius: 2px; background: #0F766E"></span><span style="flex: 1 1 0; height: 4px; border-radius: 2px; background: #E2E8F0"></span><span style="flex: 1 1 0; height: 4px; border-radius: 2px; background: #E2E8F0"></span><span style="flex: 1 1 0; height: 4px; border-radius: 2px; background: #E2E8F0"></span></div>
+          <span class="v">2 of 5 · round 1: 2 review findings</span>
+        </div>
+        <div class="kv">
+          <span class="k">Token budget</span>
+          <span class="v" style="font-variant-numeric: tabular-nums">412k / 1.5M tokens</span>
+          <div style="height: 5px; border-radius: 3px; background: #E2E8F0"><div style="width: 27%; height: 5px; border-radius: 3px; background: #0F766E"></div></div>
+        </div>
+        <div class="kv"><span class="k">Agent</span><span class="v"><a href="agents.html">Coder</a> · Pi-Bolt 1.0.5</span></div>
+        <div class="kv"><span class="k">Judgements</span><span class="v">37 saved · <span style="color: #B42318; font-weight: 600">1 rule broken</span></span></div>
+        <div class="kv"><span class="k">Rules</span><span class="v">14 global · 3 from this repo</span></div>
+        <div class="kv"><span class="k">Branch</span><span class="v mono" style="font-size: 12.5px; overflow-wrap: anywhere">moebius/48-tree-depth</span></div>
+      </aside>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const folded = !!(this.state && this.state.folded);
+    return {
+      sideCls: folded ? 'side folded' : 'side',
+      toggleLabel: folded ? 'Expand the sidebar' : 'Collapse the sidebar',
+      toggle: () => this.setState({ folded: !folded })
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -2,6 +2,10 @@
 
 The look the desktop app is built to, as agreed on the mockup
 ([Moebius Desktop](https://claude.ai/artifact/4mxF2AbS9tNP39BJyRNPGJ): board, live view, inbox, agents and usage).
+The agreed screens are kept in [`docs/design/`](design/) as HTML (open in a browser) and PNG (1440 × 900):
+[board](design/board.png), [live view](design/live-view.png), [inbox](design/inbox.png), [agents](design/agents.png) and
+[usage](design/usage.png). Their numbers are made up; the app shows the server's. Where a screen and the rules below
+disagree, the rules win. The chat screen has no mockup; it follows the live view's conversation and these rules.
 
 ## Type
 

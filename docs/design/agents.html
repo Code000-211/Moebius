@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Moebius agents</title>
+
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&amp;family=Manrope:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;background:#EDF2F7}
+a{color:#0F766E;text-decoration:none}a:hover{color:#115E59}
+.mono{font-family:'JetBrains Mono',monospace}
+.side{flex:0 0 248px;display:flex;flex-direction:column;background:#F7F8FA;border-right:1px solid #E2E6EC}
+.sgrp{display:flex;flex-direction:column;gap:1px;padding:10px}
+.sdiv{height:1px;background:#E2E6EC;margin:0 14px}
+.sh{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;font-weight:700;color:#6B7380;padding:2px 10px 6px}
+.it{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:9px;font-size:14.5px;color:#3A424D}
+.it:hover{background:#EEF1F5;color:#0F172A}
+.cur{background:#E7EBF0;color:#0F172A;font-weight:600}
+.ic{width:16px;height:16px;flex:0 0 16px;color:#64748B}
+.cur .ic{color:#0F172A}
+.r{margin-left:auto;font-family:'Manrope',sans-serif;font-variant-numeric:tabular-nums;font-size:12px;color:#64748B;font-weight:400}
+.badge{margin-left:auto;font-size:12px;font-weight:700;color:#FFFFFF;background:#B45309;border-radius:999px;padding:1px 8px}
+.ldot{width:8px;height:8px;border-radius:50%;flex:0 0 8px}
+.search{display:flex;align-items:center;gap:8px;width:100%;font:inherit;font-size:14px;color:#64748B;background:#FFFFFF;border:1px solid #E2E6EC;border-radius:10px;padding:8px 10px;text-align:left}
+.kbd{margin-left:auto;font-family:'Manrope',sans-serif;font-variant-numeric:tabular-nums;font-size:11px;color:#64748B;border:1px solid #E2E6EC;border-radius:5px;padding:0 5px}
+.mini{font:inherit;width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;border-radius:7px;border:1px solid #E2E6EC;background:#FFFFFF;color:#475569;padding:0;flex:0 0 26px}
+.toprow{display:flex;align-items:center;gap:9px;padding:0 4px 0 6px}
+.foot{margin-top:auto;display:flex;flex-direction:column;gap:6px;padding:14px 20px 18px;border-top:1px solid #E2E6EC}
+.folded{flex-basis:68px}
+.folded .lbl,.folded .r,.folded .sh,.folded .kbd,.folded .hide{display:none}
+.folded .toprow{flex-direction:column;gap:10px;padding:0}
+.folded .it,.folded .search{justify-content:center;padding:8px 0;gap:4px}
+.folded .badge{margin-left:0;padding:0 5px;font-size:11px}
+.folded .foot{padding:14px 12px 18px}
+.ag{display:flex;flex-direction:column;gap:3px;padding:12px 14px;border:1px solid #CBD5E1;border-radius:12px;background:#FFFFFF;color:#0F172A}
+.agn{display:flex;justify-content:space-between;align-items:center;font-size:15.5px;font-weight:700}
+.box{display:flex;flex-direction:column;gap:12px;background:#FFFFFF;border:1px solid #CBD5E1;border-radius:16px;padding:16px 18px;min-width:0}
+.bh{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px}
+.bt{font-size:16px;font-weight:700;color:#0F172A;margin:0}
+.k{font-family:'Manrope',sans-serif;font-variant-numeric:tabular-nums;font-size:12px;color:#64748B}
+.item{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-top:1px dashed #CBD5E1;font-size:15px;color:#0F172A}
+.item label{display:flex;align-items:center;gap:10px;cursor:pointer}
+.item input{width:18px;height:18px;accent-color:#0F766E}
+.tag{font-family:'Manrope',sans-serif;font-variant-numeric:tabular-nums;font-size:12px;font-weight:600;padding:2px 9px;border-radius:999px;border:1px solid #CBD5E1;color:#475569;white-space:nowrap}
+.ta{border-color:#99D5CD;background:#E6F5F3;color:#0F5E57}
+.th{border-color:#F2C793;background:#FDF3E6;color:#92400E}
+.add{font:inherit;font-size:14px;font-weight:600;padding:7px 12px;border-radius:10px;border:1px dashed #94A3B8;background:#F7F9FC;color:#334155;align-self:flex-start}
+.field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.field label{font-size:13px;font-weight:600;color:#475569}
+.field select{font:inherit;font-size:15px;padding:9px 11px;border-radius:10px;border:1px solid #CBD5E1;background:#FFFFFF;color:#0F172A}
+.btn{font:inherit;font-size:14px;font-weight:600;padding:8px 14px;border-radius:10px;border:1px solid #CBD5E1;background:#FFFFFF;color:#0F172A}
+.pri{border-color:#B45309;background:#B45309;color:#FFFFFF}
+</style>
+</helmet>
+<div style="display: flex; flex-wrap: wrap; min-height: 1080px; background: #EDF2F7; color: #0F172A; font-family: 'Manrope', system-ui, sans-serif; font-size: 15px">
+
+  <nav class="{{sideCls}}" aria-label="Moebius">
+    <div style="display: flex; flex-direction: column; gap: 12px; padding: 16px 12px 8px">
+      <div class="toprow">
+        <svg width="22" height="16" viewBox="0 0 26 18" aria-hidden="true"><path d="M13 9 C 9 1, 2 1, 2 9 C 2 17, 9 17, 13 9 C 17 1, 24 1, 24 9 C 24 17, 17 17, 13 9" fill="none" stroke="#0F172A" stroke-width="2.2"></path></svg>
+        <span class="lbl" style="font-size: 16.5px; font-weight: 700">Moebius</span>
+        <span class="hide" style="margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: #0F5E57"><span class="ldot" style="background: #0F766E"></span>Online</span>
+        <button type="button" class="mini" aria-label="{{toggleLabel}}" title="{{toggleLabel}}" onClick="{{toggle}}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="2"></rect><path d="M6 2.5v11"></path></svg></button>
+      </div>
+      <button type="button" class="search" aria-label="Search or run a command"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.5 10.5L14 14"></path></svg><span class="lbl">Search or run…</span><span class="kbd">⌘K</span></button>
+    </div>
+    <div class="sgrp">
+      <a class="it" href="inbox.html" title="Inbox" style="font-weight: 600; color: #0F172A"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 9h3l1 2h4l1-2h3"></path><path d="M2 9l2-5h8l2 5v4H2z"></path></svg><span class="lbl">Inbox</span><span class="badge">6</span></a>
+    </div>
+    <div class="sdiv"></div>
+    <div class="sgrp">
+      <div class="sh"><span>Boards</span><button type="button" class="mini" aria-label="Add a repository"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M8 3v10M3 8h10"></path></svg></button></div>
+      <a class="it" href="board.html" title="radiance"><span class="ldot" style="background: #0F766E"></span><span class="lbl">radiance</span><span class="r">3 live</span></a>
+      <a class="it" href="board.html" title="moebius"><span class="ldot" style="background: #0F766E"></span><span class="lbl">moebius</span><span class="r">1 live</span></a>
+      <a class="it" href="board.html" title="dotfiles"><span class="ldot" style="background: #CBD5E1"></span><span class="lbl">dotfiles</span><span class="r">Idle</span></a>
+    </div>
+    <div class="sdiv"></div>
+    <div class="sgrp">
+      <div class="sh"><span>Build</span></div>
+      <a class="it cur" href="agents.html" title="Agents"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="5" width="10" height="8" rx="2"></rect><path d="M8 2v3M6 9h.01M10 9h.01"></path></svg><span class="lbl">Agents</span><span class="r">5</span></a>
+      <a class="it" href="agents.html" title="Skills"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2.5 3.5h4a1.5 1.5 0 0 1 1.5 1.5v8.5a1 1 0 0 0-1-1H2.5z"></path><path d="M13.5 3.5h-4A1.5 1.5 0 0 0 8 5v8.5a1 1 0 0 1 1-1h4.5z"></path></svg><span class="lbl">Skills</span><span class="r">12</span></a>
+      <a class="it" href="agents.html" title="MCP servers"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 2v3M10 2v3M4.5 5h7v2.5a3.5 3.5 0 0 1-7 0zM8 11v3"></path></svg><span class="lbl">MCP servers</span><span class="r">4</span></a>
+      <a class="it" href="agents.html" title="Rules"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 2l5 2v4c0 3-2.2 5-5 6-2.8-1-5-3-5-6V4z"></path></svg><span class="lbl">Rules</span><span class="r">14</span></a>
+    </div>
+    <div class="sdiv"></div>
+    <div class="sgrp">
+      <div class="sh"><span>Improve</span></div>
+      <a class="it" href="inbox.html" title="Retro"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 8a5 5 0 1 0 1.5-3.5"></path><path d="M3 2.5V5h2.5"></path></svg><span class="lbl">Retro</span><span class="r">23:30</span></a>
+      <a class="it" href="inbox.html" title="Experiments"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 2h4M7 2v4l-3.5 6.5a1 1 0 0 0 .9 1.5h7.2a1 1 0 0 0 .9-1.5L9 6V2"></path></svg><span class="lbl">Experiments</span><span class="r">1 live</span></a>
+      <a class="it" href="inbox.html" title="Decision model"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 2v12M4.5 14h7M3 5h10M3 5l-1.5 4h3zM13 5l-1.5 4h3z"></path></svg><span class="lbl">Decision model</span><span class="r">Shadow</span></a>
+      <a class="it" href="usage.html" title="Usage"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2.5 13.5h11M4.5 11V8M8 11V4M11.5 11V6.5"></path></svg><span class="lbl">Usage</span><span class="r">1.8M</span></a>
+    </div>
+    <div class="sdiv"></div>
+    <div class="sgrp">
+      <div class="sh"><span>Setup</span></div>
+      <a class="it" href="agents.html" title="Models"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1.5"></rect><path d="M6 2v2M10 2v2M6 12v2M10 12v2M2 6h2M2 10h2M12 6h2M12 10h2"></path></svg><span class="lbl">Models</span></a>
+      <a class="it" href="agents.html" title="Plugins"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 5h3a1.5 1.5 0 1 1 3 0h3v3a1.5 1.5 0 1 0 0 3v3H3z"></path></svg><span class="lbl">Plugins</span><span class="r">11</span></a>
+      <a class="it" href="agents.html" title="Settings"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="2.2"></circle><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"></path></svg><span class="lbl">Settings</span></a>
+    </div>
+    <div class="foot" title="Tokens today: 1.8M of 8M">
+      <div class="hide" style="display: flex; justify-content: space-between; font-size: 13px; color: #3A424D"><span>Tokens today</span><span style="font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums">1.8M / 8M</span></div>
+      <div style="height: 5px; border-radius: 3px; background: #E2E8F0"><div style="width: 22%; height: 5px; border-radius: 3px; background: #0F766E"></div></div>
+    </div>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 18px; padding: 20px 24px">
+    <header style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px">
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <h1 style="margin: 0; font-size: 24px; font-weight: 700">Agents</h1>
+        <span style="font-size: 14.5px; color: #475569">What each run works with: instructions, skills, MCP servers and harness extensions. Versioned, so the Retro can propose changes to them.</span>
+      </div>
+      <button type="button" class="btn">New agent</button>
+    </header>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start">
+      <section aria-label="All agents" style="flex: 1 1 250px; max-width: 290px; display: flex; flex-direction: column; gap: 8px">
+        <a class="ag" href="agents.html" style="border: 1.5px solid #0F766E"><span class="agn">Coder<span class="tag ta">3 live</span></span><span class="k">Pi-Bolt · code, ci-fix</span></a>
+        <a class="ag" href="agents.html"><span class="agn">Reviewer<span class="tag">Idle</span></span><span class="k">Pi-Bolt · review</span></a>
+        <a class="ag" href="agents.html"><span class="agn">Grilling partner<span class="tag">Idle</span></span><span class="k">Pi-Bolt · grilling</span></a>
+        <a class="ag" href="agents.html"><span class="agn">Autoresearcher<span class="tag ta">1 live</span></span><span class="k">Pi-Bolt · gpu-bench</span></a>
+        <a class="ag" href="agents.html"><span class="agn">Retro analyst<span class="tag">23:30</span></span><span class="k">Pi-Bolt · retro</span></a>
+      </section>
+
+      <section aria-label="Coder" style="flex: 999 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 14px">
+        <div class="box">
+          <div class="bh">
+            <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px"><h2 style="margin: 0; font-size: 21px; font-weight: 700">Coder</h2><span class="tag">Harness: Pi-Bolt 1.0.5</span><span class="k">Version 14 · changed by a merged proposal 2 days ago</span></div>
+            <div style="display: flex; gap: 8px"><button type="button" class="btn">Duplicate</button><button type="button" class="btn pri">Save</button></div>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px">
+            <div class="field"><label for="ag-model">Model</label><select id="ag-model"><option>Sonnet 5.5 · Flash · router</option></select></div>
+            <div class="field"><label for="ag-think">Thinking</label><select id="ag-think"><option>High</option></select></div>
+            <div class="field"><label for="ag-budget">Token budget per card</label><select id="ag-budget"><option>1.5M tokens · 5 rounds</option></select></div>
+          </div>
+          <div class="k">Used by the columns <span style="color: #0F172A">code.luau</span> and <span style="color: #0F172A">ci-fix.luau</span> on 3 boards · 1.12M tokens today · <a href="usage.html">Usage</a></div>
+        </div>
+
+        <div class="box">
+          <div class="bh"><h3 class="bt">Instructions</h3><span class="k">Markdown · added to the harness's system prompt</span></div>
+          <pre style="margin: 0; font-family: 'JetBrains Mono', monospace; font-size: 13.5px; line-height: 1.65; color: #1E293B; background: #F7F9FC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 12px 14px; white-space: pre-wrap"><span style="color: #7C3AED"># Coder</span>
+You work on one card at a time, in its own worktree.
+
+<span style="color: #0F766E">-</span> Run the tests that cover what you changed before you say you are done.
+<span style="color: #0F766E">-</span> If an edit fails, read the file again before the next edit.
+<span style="color: #0F766E">-</span> Keep the change to what the card asks for; note anything else in the change description.</pre>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px">
+          <div class="box">
+            <div class="bh"><h3 class="bt">Skills</h3><span class="k">3 of 12 on</span></div>
+            <div class="item"><label for="sk1"><input id="sk1" type="checkbox" checked="checked">radiance-kernels</label><span class="tag">Repo</span></div>
+            <div class="item"><label for="sk2"><input id="sk2" type="checkbox" checked="checked">hip-debug</label><span class="tag">Global</span></div>
+            <div class="item"><label for="sk3"><input id="sk3" type="checkbox" checked="checked">write-tests-first</label><span class="tag">Global</span></div>
+            <div class="item"><label for="sk4"><input id="sk4" type="checkbox">grill-with-docs</label><span class="tag">Global</span></div>
+            <button type="button" class="add">Add skill</button>
+          </div>
+          <div class="box">
+            <div class="bh"><h3 class="bt">MCP servers</h3><span class="k">Through the MCP gateway</span></div>
+            <div class="item"><label for="mc1"><input id="mc1" type="checkbox" checked="checked">docs-search</label><span class="tag ta">Connected</span></div>
+            <div class="item"><label for="mc2"><input id="mc2" type="checkbox" checked="checked">rocm-profiler</label><span class="tag ta">Connected</span></div>
+            <div class="item"><label for="mc3"><input id="mc3" type="checkbox">postgres-dev</label><span class="tag">Off</span></div>
+            <button type="button" class="add">Add MCP server</button>
+          </div>
+          <div class="box">
+            <div class="bh"><h3 class="bt">Pi-Bolt extensions</h3><span class="k">Only for this harness</span></div>
+            <div class="item"><label for="ex1"><input id="ex1" type="checkbox" checked="checked" disabled="disabled">moebius-bridge</label><span class="tag">Required</span></div>
+            <div class="item"><label for="ex2"><input id="ex2" type="checkbox" checked="checked">opensec-pi-todo</label><span class="tag">Npm</span></div>
+            <div class="item"><label for="ex3"><input id="ex3" type="checkbox" checked="checked">opensec-pi-fff</label><span class="tag">Compiled in</span></div>
+            <button type="button" class="add">Add extension</button>
+          </div>
+        </div>
+
+        <div class="box" style="border-color: #F2C793; background: #FFFBF5">
+          <div class="bh"><h3 class="bt">From the Retro</h3><span class="tag th">1 open proposal</span></div>
+          <div style="font-size: 15px; color: #334155">Turn on <span class="mono" style="font-size: 13.5px; color: #0F172A">write-tests-first</span> for cards labelled <span class="mono" style="font-size: 13.5px; color: #0F172A">bug</span>: 4 of 6 bug fixes this week went back to coding because no test covered the bug. The trial on those 4 cards needed one round fewer each.</div>
+          <a href="inbox.html" style="font-size: 14.5px; font-weight: 600">Open in inbox</a>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1080}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const folded = !!(this.state && this.state.folded);
+    return {
+      sideCls: folded ? 'side folded' : 'side',
+      toggleLabel: folded ? 'Expand the sidebar' : 'Collapse the sidebar',
+      toggle: () => this.setState({ folded: !folded })
+    };
+  }
+}
+</script>
+</body>
+</html>
