@@ -481,27 +481,40 @@ impl Store {
         })
     }
 
+    fn runs_where(&self, clause: &str, param: rusqlite::types::Value) -> Result<Vec<Run>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT id, card_id, agent, harness, purpose, status, worktree, started_at, ended_at
+             FROM runs WHERE {clause} ORDER BY id"
+        ))?;
+        let rows = stmt.query_map([param], |r| {
+            Ok(Run {
+                id: r.get(0)?,
+                card_id: r.get(1)?,
+                agent: r.get(2)?,
+                harness: r.get(3)?,
+                purpose: r.get(4)?,
+                status: r.get(5)?,
+                worktree: r.get(6)?,
+                started_at: r.get(7)?,
+                ended_at: r.get(8)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     pub fn run(&self, id: i64) -> Result<Option<Run>> {
-        Ok(self
-            .conn()
-            .query_row(
-                "SELECT id, card_id, agent, harness, purpose, status, worktree, started_at, ended_at FROM runs WHERE id = ?1",
-                [id],
-                |r| {
-                    Ok(Run {
-                        id: r.get(0)?,
-                        card_id: r.get(1)?,
-                        agent: r.get(2)?,
-                        harness: r.get(3)?,
-                        purpose: r.get(4)?,
-                        status: r.get(5)?,
-                        worktree: r.get(6)?,
-                        started_at: r.get(7)?,
-                        ended_at: r.get(8)?,
-                    })
-                },
-            )
-            .optional()?)
+        Ok(self.runs_where("id = ?1", id.into())?.pop())
+    }
+
+    /// The runs of a card, oldest first.
+    pub fn runs_for_card(&self, card_id: i64) -> Result<Vec<Run>> {
+        self.runs_where("card_id = ?1", card_id.into())
+    }
+
+    /// The runs that have not ended.
+    pub fn active_runs(&self) -> Result<Vec<Run>> {
+        self.runs_where("ended_at IS NULL AND ?1", 1.into())
     }
 
     pub fn set_run_status(&self, id: i64, status: &str) -> Result<()> {
@@ -660,6 +673,14 @@ impl Store {
             params![outcome, judgement_id],
         )?;
         Ok(())
+    }
+
+    /// Sets `outcome` on every judgement made for the card that has none yet; returns how many were set.
+    pub fn set_missing_outcomes(&self, card_id: i64, outcome: &str) -> Result<usize> {
+        Ok(self.conn().execute(
+            "UPDATE judgements SET outcome = ?1 WHERE card_id = ?2 AND outcome IS NULL",
+            params![outcome, card_id],
+        )?)
     }
 
     // Inbox

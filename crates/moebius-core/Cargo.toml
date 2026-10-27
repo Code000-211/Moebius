@@ -18,6 +18,7 @@ toml = "1.1.8"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal"] }
 axum = { version = "0.8.9", features = ["ws"] }
 getrandom = "0.3"
+mlua = { version = "0.11.6", features = ["luau"] }
 
 [lints]
 workspace = true
