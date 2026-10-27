@@ -199,7 +199,7 @@ The server runs on a multi-threaded tokio runtime.
 | `crates/moebius-desktop/src/client.rs` | The desktop API client: typed health and snapshot, and the event stream as an iced subscription that reconnects with a backoff. |
 | `crates/moebius-desktop/src/settings.rs` | The address and token, saved in the config directory with mode 0600. |
 | `crates/moebius-desktop/src/theme.rs` | Every colour, size, radius and spacing of `docs/design.md`, and the bundled fonts (Manrope, JetBrains Mono). |
-| `crates/moebius-desktop/src/sidebar.rs`, `connect.rs`, `board.rs`, `soon.rs`, `page.rs`, `icons.rs` | The sidebar, the connect screen and Settings page, the board page, the "comes with M<n>" page, the page header and box, the icons. |
+| `crates/moebius-desktop/src/sidebar.rs`, `connect.rs`, `board.rs`, `soon.rs`, `page.rs`, `icons.rs` | The sidebar, the connect screen and Settings page, the board page (its columns and cards, and the page a click on a card opens), the "comes with M<n>" page, the page header and box, the icons. |
 | `api.rs` | The desktop API: routes, token check, the event WebSocket. |
 | `app.rs` | The core put together; the operations on cards, changes and issues, each published on the bus, including publishing a change and running its checks. |
 | `blobs.rs` | The content-addressed blob store and secret redaction. |

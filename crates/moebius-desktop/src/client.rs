@@ -67,6 +67,49 @@ pub struct Card {
     pub note: Option<String>,
     #[serde(default)]
     pub retried_after: Option<i64>,
+    /// The `code` rounds and the tokens since the card was last retried.
+    #[serde(default)]
+    pub rounds: i64,
+    #[serde(default)]
+    pub tokens: i64,
+    /// The card's latest run.
+    #[serde(default)]
+    pub run: Option<Run>,
+    /// The numbers of the issues that block the card.
+    #[serde(default)]
+    pub blocked_by: Vec<i64>,
+    /// How many tool calls of the latest run were refused.
+    #[serde(default)]
+    pub refusals: i64,
+    /// The card's open change.
+    #[serde(default)]
+    pub change: Option<CardChange>,
+}
+
+impl Card {
+    /// Whether the card's latest run is working.
+    pub fn is_live(&self) -> bool {
+        self.run
+            .as_ref()
+            .is_some_and(|run| matches!(run.status.as_str(), "starting" | "running"))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Run {
+    pub id: i64,
+    pub agent: String,
+    pub purpose: String,
+    /// `starting`, `running`, `waiting`, `succeeded`, `failed` or `stopped`.
+    pub status: String,
+}
+
+/// The open change of a card, as far as the board shows it.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct CardChange {
+    pub id: i64,
+    /// `pending`, `success`, `failure` or `none`.
+    pub checks: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -91,6 +134,9 @@ pub struct Board {
     pub repository: Repository,
     #[serde(default)]
     pub cards: Vec<Card>,
+    /// The most `code` rounds a card gets; 0 when the server does not say.
+    #[serde(default)]
+    pub round_limit: i64,
     /// The reason each waiting card waits, by card id.
     #[serde(default)]
     pub waiting: HashMap<i64, String>,
@@ -112,6 +158,13 @@ pub struct InboxItem {
     pub at: i64,
 }
 
+impl Board {
+    /// How many runs are working on the board's cards.
+    pub fn live_runs(&self) -> usize {
+        self.cards.iter().filter(|card| card.is_live()).count()
+    }
+}
+
 /// Everything the app shows, as `GET /v1/snapshot` answers.
 #[derive(Debug, Clone, PartialEq, Default, Deserialize)]
 pub struct Snapshot {
@@ -120,23 +173,6 @@ pub struct Snapshot {
     #[serde(default)]
     pub inbox: Vec<InboxItem>,
 }
-
-/// One run of a card, as far as the shell needs it.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-struct Run {
-    status: String,
-}
-
-/// The snapshot and the number of runs working on each repository's cards. The snapshot has no runs, so they are read
-/// from the cards that can have one.
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct Overview {
-    pub snapshot: Snapshot,
-    pub live_runs: HashMap<i64, usize>,
-}
-
-/// A card in one of these columns of the default workflow has no run going on.
-const COLUMNS_WITHOUT_RUNS: [&str; 2] = ["Backlog", "Done"];
 
 /// An event of `GET /v1/events`.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -201,30 +237,6 @@ impl Client {
 
     pub async fn snapshot(&self) -> Result<Snapshot, ClientError> {
         self.get("/v1/snapshot").await
-    }
-
-    /// The snapshot with the live runs of each repository.
-    pub async fn overview(&self) -> Result<Overview, ClientError> {
-        let snapshot = self.snapshot().await?;
-        let mut live_runs = HashMap::new();
-        for board in &snapshot.boards {
-            let mut live = 0;
-            for card in &board.cards {
-                if COLUMNS_WITHOUT_RUNS.contains(&card.column.as_str()) {
-                    continue;
-                }
-                let runs: Vec<Run> = self.get(&format!("/v1/cards/{}/runs", card.id)).await?;
-                live += runs
-                    .iter()
-                    .filter(|run| matches!(run.status.as_str(), "starting" | "running"))
-                    .count();
-            }
-            live_runs.insert(board.repository.id, live);
-        }
-        Ok(Overview {
-            snapshot,
-            live_runs,
-        })
     }
 }
 
@@ -301,7 +313,12 @@ mod tests {
         {"repository": {"id": 1, "name": "demo", "path": "/srv/.moebius/repos/demo", "forge": "none",
                         "default_branch": "main", "github": null, "trusted": []},
          "cards": [{"id": 1, "repository_id": 1, "number": 1, "title": "Add a feature", "body": "", "author": "person",
-                    "column": "Backlog", "created_at": 1790000000, "added_later": true}],
+                    "column": "Backlog", "created_at": 1790000000, "added_later": true},
+                   {"id": 2, "repository_id": 1, "number": 2, "title": "Work", "column": "In progress",
+                    "rounds": 2, "tokens": 900, "blocked_by": [1], "refusals": 1,
+                    "run": {"id": 4, "agent": "Coder", "purpose": "code", "status": "running"},
+                    "change": {"id": 3, "state": "open", "checks": "pending", "review_verdict": null}}],
+         "round_limit": 5,
          "waiting": {"1": "needs a person"},
          "changes": []}
       ],
@@ -318,6 +335,15 @@ mod tests {
         assert_eq!(board.cards[0].column, "Backlog");
         assert_eq!(board.cards[0].note, None);
         assert_eq!(board.waiting[&1], "needs a person");
+        assert_eq!(
+            (board.cards[0].rounds, board.cards[0].run.as_ref()),
+            (0, None)
+        );
+        let work = &board.cards[1];
+        assert_eq!((work.rounds, work.tokens, work.refusals), (2, 900, 1));
+        assert_eq!(work.blocked_by, [1]);
+        assert_eq!(work.change.as_ref().unwrap().checks, "pending");
+        assert_eq!((board.round_limit, board.live_runs()), (5, 1));
         assert_eq!(snapshot.inbox[0].kind, "approve_issue");
     }
 

@@ -10,12 +10,13 @@ use futures_util::{Stream, StreamExt};
 use moebius_core::config::Config;
 use moebius_core::repos::git;
 use moebius_core::server::Server;
+use moebius_core::store::Usage;
 use moebius_desktop::client::{Client, ClientError, StreamEvent, events};
 use moebius_desktop::settings::Settings;
 use serde_json::json;
 
-/// A server with no agents on a free port; returns the settings that connect to it.
-async fn start(dir: &Path) -> Settings {
+/// A server with no agents on a free port; returns the settings that connect to it and the server.
+async fn start(dir: &Path) -> (Settings, Arc<Server>) {
     let config = Config::parse(
         "[router]\nlisten = \"127.0.0.1:0\"\n",
         dir,
@@ -30,8 +31,8 @@ async fn start(dir: &Path) -> Settings {
     let router_addr = router_listener.local_addr().unwrap();
     let server = Arc::new(Server::new(config, router_addr).unwrap());
     let token = server.token.to_string();
-    tokio::spawn(server.serve(api_listener, router_listener));
-    Settings { address, token }
+    tokio::spawn(server.clone().serve(api_listener, router_listener));
+    (Settings { address, token }, server)
 }
 
 fn origin(dir: &Path) -> std::path::PathBuf {
@@ -68,7 +69,7 @@ async fn next(stream: &mut (impl Stream<Item = StreamEvent> + Unpin)) -> StreamE
 #[tokio::test(flavor = "multi_thread")]
 async fn the_client_reads_the_snapshot_and_follows_the_events() {
     let dir = tempfile::tempdir().unwrap();
-    let settings = start(dir.path()).await;
+    let (settings, _) = start(dir.path()).await;
     let origin = origin(dir.path());
     let repository = post(
         &settings,
@@ -79,11 +80,11 @@ async fn the_client_reads_the_snapshot_and_follows_the_events() {
 
     let client = Client::new(settings.clone());
     assert!(!client.health().await.unwrap().version.is_empty());
-    let overview = client.overview().await.unwrap();
-    let board = &overview.snapshot.boards[0];
+    let snapshot = client.snapshot().await.unwrap();
+    let board = &snapshot.boards[0];
     assert_eq!(board.repository.name, "demo");
     assert_eq!(board.repository.default_branch, "main");
-    assert_eq!(overview.live_runs[&board.repository.id], 0);
+    assert_eq!(board.live_runs(), 0);
 
     let mut stream = Box::pin(events(settings.clone()));
     assert_eq!(next(&mut stream).await, StreamEvent::Connected);
@@ -104,9 +105,54 @@ async fn the_client_reads_the_snapshot_and_follows_the_events() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn the_snapshot_of_a_real_server_has_what_the_board_shows_of_a_card_in_progress() {
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, server) = start(dir.path()).await;
+    let origin = origin(dir.path());
+    let repository = post(
+        &settings,
+        "/v1/repositories",
+        json!({"name": "demo", "url": origin.to_str().unwrap()}),
+    )
+    .await;
+    let id = repository["id"].as_i64().unwrap();
+    let store = &server.app.store;
+    let card = store
+        .add_card(id, "Add a feature", "", "person", "In progress")
+        .unwrap();
+    store.set_dependencies(card.id, &[41].into()).unwrap();
+    let run = store
+        .add_run(Some(card.id), "Coder", "test", "code")
+        .unwrap();
+    store.set_run_status(run.id, "running").unwrap();
+    let usage = Usage {
+        run_id: Some(run.id),
+        model: "fake".into(),
+        input_tokens: 1200,
+        output_tokens: 300,
+        cached_tokens: 0,
+    };
+    store.add_usage(&usage).unwrap();
+
+    let snapshot = Client::new(settings).snapshot().await.unwrap();
+    let board = &snapshot.boards[0];
+    assert_eq!(board.round_limit, 5);
+    assert_eq!(board.live_runs(), 1);
+    let shown = &board.cards[0];
+    assert_eq!((shown.rounds, shown.tokens), (1, 1500));
+    assert_eq!(shown.blocked_by, [41]);
+    let run = shown.run.as_ref().unwrap();
+    assert_eq!(
+        (run.agent.as_str(), run.status.as_str()),
+        ("Coder", "running")
+    );
+    assert!(shown.is_live());
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_wrong_token_is_not_accepted() {
     let dir = tempfile::tempdir().unwrap();
-    let mut settings = start(dir.path()).await;
+    let (mut settings, _) = start(dir.path()).await;
     settings.token = "not the token".to_string();
 
     let client = Client::new(settings.clone());
@@ -115,7 +161,7 @@ async fn a_wrong_token_is_not_accepted() {
         ClientError::Unauthorized
     );
     assert_eq!(
-        client.overview().await.unwrap_err(),
+        client.snapshot().await.unwrap_err(),
         ClientError::Unauthorized
     );
     let mut stream = Box::pin(events(settings));

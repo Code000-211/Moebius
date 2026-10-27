@@ -33,6 +33,12 @@ pub mod columns {
     pub const DONE: &str = "Done";
 }
 
+/// The runs of a card that count: a retry gives the card a fresh start, so what ran before it no longer does.
+pub fn runs_since_retry<'a>(runs: &'a [Run], card: &Card) -> impl Iterator<Item = &'a Run> {
+    let retried_after = card.retried_after;
+    runs.iter().filter(move |r| Some(r.id) > retried_after)
+}
+
 /// How long after a publish a change without checks for its commit is taken to be waiting for them; after that, the
 /// repository has no checks (in seconds).
 const CHECKS_GRACE: i64 = 120;
@@ -643,6 +649,18 @@ impl App {
                 json!({ "card": card_id, "reason": reason }),
             ));
         }
+    }
+
+    /// The numbers of the issues that block the card and are not done yet; an issue with no card counts as not done.
+    pub fn blocked_by(&self, card: &Card) -> Result<Vec<i64>> {
+        let mut blocked_by = Vec::new();
+        for number in self.store.dependencies(card.id)? {
+            let blocker = self.store.card_by_number(card.repository_id, number)?;
+            if blocker.is_none_or(|b| b.column != columns::DONE) {
+                blocked_by.push(number);
+            }
+        }
+        Ok(blocked_by)
     }
 
     /// Why each waiting card among `cards` waits.

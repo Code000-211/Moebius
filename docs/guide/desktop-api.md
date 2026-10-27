@@ -45,7 +45,8 @@ CARD=$(curl -s -X POST -H "$AUTH" -H "$JSON" \
 ## Follow the board
 
 `GET /v1/snapshot` is everything: the boards with their cards and changes, the reasons waiting cards wait, and the open
-inbox. A card is in the column named by `column`.
+inbox. Each card also carries what a board shows of it: its rounds and tokens, its latest run, what blocks it, its
+refused tool calls and its open change's checks (see the reference). A card is in the column named by `column`.
 
 ```sh
 curl -s -H "$AUTH" $API/v1/snapshot \

@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use iced::widget::{container, row};
 use iced::{Element, Length, Subscription, Task};
 
-use crate::client::{self, Client, ClientError, Overview, StreamEvent};
+use crate::client::{self, Client, ClientError, Snapshot, StreamEvent};
 use crate::settings::{self, Settings};
 use crate::{board, connect, sidebar, soon, theme};
 
@@ -100,11 +100,15 @@ pub enum Message {
     TokenChanged(String),
     Submit,
     /// The settings were tried against the server.
-    Checked(Result<(Settings, Overview), ClientError>),
-    /// The overview was read again, the `u64`-th time asked.
-    Loaded(u64, Result<Overview, ClientError>),
+    Checked(Result<(Settings, Snapshot), ClientError>),
+    /// The snapshot was read again, the `u64`-th time asked.
+    Loaded(u64, Result<Snapshot, ClientError>),
     Stream(StreamEvent),
     Select(Page),
+    /// A card of the board was clicked: its run is shown.
+    OpenCard(i64),
+    /// Back from a card's run to the board.
+    CloseCard,
     ToggleSidebar,
     ChangeConnection,
 }
@@ -116,19 +120,21 @@ pub struct App {
     screen: Screen,
     form: Form,
     connection: Connection,
-    overview: Overview,
+    snapshot: Snapshot,
     /// The page the person chose; the first board, or the Inbox, until then.
     page: Option<Page>,
+    /// The card whose run is shown instead of the board.
+    opened: Option<i64>,
     collapsed: bool,
-    /// Counts the reads of the overview, so that an older answer never replaces a newer one.
+    /// Counts the reads of the snapshot, so that an older answer never replaces a newer one.
     requested: u64,
     shown: u64,
 }
 
-async fn check(settings: Settings) -> Result<(Settings, Overview), ClientError> {
+async fn check(settings: Settings) -> Result<(Settings, Snapshot), ClientError> {
     let client = Client::new(settings.clone());
     client.health().await?;
-    Ok((settings, client.overview().await?))
+    Ok((settings, client.snapshot().await?))
 }
 
 impl App {
@@ -144,8 +150,9 @@ impl App {
             screen: Screen::Connect,
             form: Form::default(),
             connection: Connection::Connecting,
-            overview: Overview::default(),
+            snapshot: Snapshot::default(),
             page: None,
+            opened: None,
             collapsed: false,
             requested: 0,
             shown: 0,
@@ -169,8 +176,8 @@ impl App {
         }
     }
 
-    /// An app that shows `overview` as if connected to a server, for the render tests.
-    pub fn with_overview(overview: Overview) -> Self {
+    /// An app that shows `snapshot` as if connected to a server, for the render tests.
+    pub fn with_snapshot(snapshot: Snapshot) -> Self {
         let (mut app, _) = Self::start(None);
         app.settings = Some(Settings {
             address: "http://127.0.0.1:7171".to_string(),
@@ -178,7 +185,7 @@ impl App {
         });
         app.screen = Screen::Main;
         app.connection = Connection::Online;
-        app.overview = overview;
+        app.snapshot = snapshot;
         app
     }
 
@@ -187,12 +194,12 @@ impl App {
             Message::AddressChanged(address) => self.form.address = address,
             Message::TokenChanged(token) => self.form.token = token,
             Message::Submit => return self.submit(),
-            Message::Checked(Ok((settings, overview))) => return self.adopt(settings, overview),
+            Message::Checked(Ok((settings, snapshot))) => return self.adopt(settings, snapshot),
             Message::Checked(Err(e)) => self.show_connect_error(&e),
-            Message::Loaded(count, Ok(overview)) => {
+            Message::Loaded(count, Ok(snapshot)) => {
                 if count > self.shown {
                     self.shown = count;
-                    self.overview = overview;
+                    self.snapshot = snapshot;
                 }
             }
             Message::Loaded(_, Err(ClientError::Unauthorized)) => {
@@ -200,7 +207,12 @@ impl App {
             }
             Message::Loaded(_, Err(_)) => self.connection = Connection::Offline,
             Message::Stream(event) => return self.on_stream(event),
-            Message::Select(page) => self.page = Some(page),
+            Message::Select(page) => {
+                self.page = Some(page);
+                self.opened = None;
+            }
+            Message::OpenCard(id) => self.opened = Some(id),
+            Message::CloseCard => self.opened = None,
             Message::ToggleSidebar => self.collapsed = !self.collapsed,
             Message::ChangeConnection => {
                 self.form.error = None;
@@ -229,7 +241,7 @@ impl App {
     }
 
     /// The server took the settings: save them if they are new and show the shell.
-    fn adopt(&mut self, settings: Settings, overview: Overview) -> Task<Message> {
+    fn adopt(&mut self, settings: Settings, snapshot: Snapshot) -> Task<Message> {
         if self.settings.as_ref() != Some(&settings) {
             let saved = match &self.settings_path {
                 Some(path) => settings::save(path, &settings),
@@ -247,7 +259,7 @@ impl App {
             ..Form::default()
         };
         self.settings = Some(settings);
-        self.overview = overview;
+        self.snapshot = snapshot;
         self.screen = Screen::Main;
         self.connection = Connection::Connecting;
         Task::none()
@@ -283,7 +295,7 @@ impl App {
         }
     }
 
-    /// Reads the overview again.
+    /// Reads the snapshot again.
     fn reload(&mut self) -> Task<Message> {
         let Some(settings) = self.settings.clone() else {
             return Task::none();
@@ -291,7 +303,7 @@ impl App {
         self.requested += 1;
         let count = self.requested;
         Task::perform(
-            async move { Client::new(settings).overview().await },
+            async move { Client::new(settings).snapshot().await },
             move |result| Message::Loaded(count, result),
         )
     }
@@ -314,7 +326,7 @@ impl App {
 
     /// The page shown: the one chosen if it still exists, else the first board, else the Inbox.
     pub fn page(&self) -> Page {
-        let boards = &self.overview.snapshot.boards;
+        let boards = &self.snapshot.boards;
         match self.page {
             Some(Page::Board(id)) if boards.iter().any(|b| b.repository.id == id) => {
                 Page::Board(id)
@@ -332,7 +344,7 @@ impl App {
             Screen::Main => {
                 let page = self.page();
                 row![
-                    sidebar::view(&self.overview, self.connection, &page, self.collapsed),
+                    sidebar::view(&self.snapshot, self.connection, &page, self.collapsed),
                     container(self.page_view(page))
                         .padding(theme::PAGE_PADDING)
                         .width(Length::Fill)
@@ -346,15 +358,16 @@ impl App {
     fn page_view(&self, page: Page) -> Element<'_, Message> {
         match page {
             Page::Board(id) => {
+                let Some(board) = self.snapshot.boards.iter().find(|b| b.repository.id == id)
+                else {
+                    return soon::view(page);
+                };
                 match self
-                    .overview
-                    .snapshot
-                    .boards
-                    .iter()
-                    .find(|b| b.repository.id == id)
+                    .opened
+                    .and_then(|id| board.cards.iter().find(|card| card.id == id))
                 {
-                    Some(board) => board::view(board, &self.overview),
-                    None => soon::view(page),
+                    Some(card) => board::run_page(board, card),
+                    None => board::view(board, &self.snapshot.inbox),
                 }
             }
             Page::Settings => connect::settings_page(self.settings.as_ref()),

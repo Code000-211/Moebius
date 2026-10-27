@@ -233,6 +233,7 @@ impl Server {
             app: self.app.clone(),
             runs: self.harness.clone(),
             token: self.token.clone(),
+            round_limit: self.config.round_limit,
         };
         let board = {
             let server = self.clone();

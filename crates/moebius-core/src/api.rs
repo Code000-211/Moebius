@@ -1,7 +1,7 @@
 //! The desktop API (spec 2 and 3): HTTP and a WebSocket event stream on the private address, behind a token.
 //!
 //! - `GET /v1/health`: the server's version.
-//! - `GET /v1/snapshot`: every repository with its cards, and the open inbox.
+//! - `GET /v1/snapshot`: every repository with its cards (and what the board shows of each), and the open inbox.
 //! - `GET /v1/events`: a WebSocket on which every [`AppEvent`] arrives as one JSON text message.
 //! - `POST /v1/repositories` `{name, url}`: clones a repository without a forge. With `forge: "github"`, `github:
 //!   "owner/repo"` and optionally `trusted: [logins]` it is a repository whose issues are polled from GitHub.
@@ -35,8 +35,8 @@ use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast::error::RecvError;
 
-use crate::app::{App, AppError, Chat, HistoryEntry, PERSON};
-use crate::board::Runs;
+use crate::app::{App, AppError, Chat, HistoryEntry, PERSON, columns, runs_since_retry};
+use crate::board::{Runs, latest_review};
 use crate::bus::AppEvent;
 use crate::forge::ForgeError;
 use crate::pibolt::MOEBIUS_AGENT;
@@ -50,6 +50,8 @@ pub struct ApiState {
     /// The harness, for steering and stopping runs.
     pub runs: Arc<dyn Runs>,
     pub token: Arc<str>,
+    /// The most `code` rounds a card gets, which boards show next to a card's rounds.
+    pub round_limit: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -60,10 +62,48 @@ pub struct Health {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Board {
     pub repository: Repository,
-    pub cards: Vec<Card>,
+    pub cards: Vec<CardView>,
+    /// The most `code` rounds a card gets.
+    pub round_limit: u32,
     /// Why each waiting card waits, by card id.
     pub waiting: BTreeMap<i64, String>,
     pub changes: Vec<Change>,
+}
+
+/// A card with what a board shows of it, so that a client needs one read for a board.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CardView {
+    #[serde(flatten)]
+    pub card: Card,
+    /// The `code` rounds and the tokens since the card was last retried, as column scripts see them.
+    pub rounds: i64,
+    pub tokens: i64,
+    /// The card's latest run.
+    pub run: Option<RunView>,
+    /// The numbers of the issues that block the card and are not done.
+    pub blocked_by: Vec<i64>,
+    /// How many tool calls of the latest run were refused.
+    pub refusals: i64,
+    /// The card's open change.
+    pub change: Option<ChangeView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunView {
+    pub id: i64,
+    pub agent: String,
+    pub purpose: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChangeView {
+    pub id: i64,
+    pub state: String,
+    /// `pending`, `success`, `failure` or `none`, as column scripts see it.
+    pub checks: String,
+    /// `approve` or `changes` once a review finished since the latest `code` run.
+    pub review_verdict: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -277,14 +317,61 @@ async fn health() -> axum::Json<Health> {
     })
 }
 
+/// What a board shows of a card. A card in Done carries none of it, which keeps the snapshot cheap to read on every
+/// event.
+fn card_view(app: &App, card: Card) -> crate::app::Result<CardView> {
+    let mut view = CardView {
+        card,
+        rounds: 0,
+        tokens: 0,
+        run: None,
+        blocked_by: Vec::new(),
+        refusals: 0,
+        change: None,
+    };
+    if view.card.column == columns::DONE {
+        return Ok(view);
+    }
+    let runs = app.store.runs_for_card(view.card.id)?;
+    view.rounds = runs_since_retry(&runs, &view.card)
+        .filter(|r| r.purpose == "code")
+        .count() as i64;
+    view.tokens = app.store.tokens_for_card(view.card.id)?;
+    view.blocked_by = app.blocked_by(&view.card)?;
+    if let Some(run) = runs.last() {
+        view.refusals = app.store.refused_tool_calls(run.id)?;
+        view.run = Some(RunView {
+            id: run.id,
+            agent: run.agent.clone(),
+            purpose: run.purpose.clone(),
+            status: run.status.clone(),
+        });
+    }
+    if let Some(change) = app.store.open_change(view.card.id)? {
+        view.change = Some(ChangeView {
+            id: change.id,
+            state: change.state.clone(),
+            checks: app.checks_of(&change)?.to_string(),
+            review_verdict: latest_review(&runs).map(|r| r.verdict.to_string()),
+        });
+    }
+    Ok(view)
+}
+
 async fn snapshot(State(state): State<ApiState>) -> Result<axum::Json<Snapshot>, ApiError> {
-    blocking(&state.app, |app| {
+    let round_limit = state.round_limit;
+    blocking(&state.app, move |app| {
         let mut boards = Vec::new();
         for repository in app.store.repositories()? {
             let cards = app.store.cards(repository.id)?;
+            let waiting = app.waiting(&cards);
             boards.push(Board {
-                waiting: app.waiting(&cards),
-                cards,
+                waiting,
+                cards: cards
+                    .into_iter()
+                    .map(|card| card_view(app, card))
+                    .collect::<Result<_, _>>()?,
+                round_limit,
                 changes: app.store.changes(repository.id)?,
                 repository,
             });
@@ -534,7 +621,7 @@ mod tests {
     use crate::pibolt::PiBolt;
     use crate::repos::git;
     use crate::router::{Protocol, Router};
-    use crate::store::Store;
+    use crate::store::{Store, Usage};
     use futures_util::StreamExt;
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
@@ -582,6 +669,7 @@ mod tests {
             app: Arc::new(App::new(store, host, &dir.path().join("data"))),
             runs: Arc::new(pi),
             token: token.into(),
+            round_limit: 5,
         };
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -669,7 +757,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(snap.boards.len(), 1);
-        assert_eq!(snap.boards[0].cards[0].title, "First");
+        assert_eq!(snap.boards[0].cards[0].card.title, "First");
 
         assert_eq!(get("/v1/snapshot", "wrong").await.unwrap().status(), 401);
         let bare = client
@@ -711,6 +799,134 @@ mod tests {
             .headers_mut()
             .insert("authorization", "Bearer nope".parse().unwrap());
         assert!(tokio_tungstenite::connect_async(wrong).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn the_snapshot_holds_what_a_board_shows_of_each_card() {
+        let (dir, state, addr) = start().await;
+        let app = &state.app;
+        let repo = app
+            .add_repository("demo", origin(dir.path()).to_str().unwrap())
+            .unwrap();
+        let store = &app.store;
+        let blocker = store
+            .add_card(repo.id, "Blocker", "", "person", "Ready")
+            .unwrap();
+        let card = store
+            .add_card(repo.id, "Work", "", "person", "In progress")
+            .unwrap();
+        let done = store
+            .add_card(repo.id, "Done", "", "person", "Done")
+            .unwrap();
+        // Blocked by an open card and by an issue that has no card; the card of a done issue does not block.
+        store
+            .set_dependencies(card.id, &[blocker.number, 99, done.number].into())
+            .unwrap();
+        store
+            .set_dependencies(done.id, &[blocker.number].into())
+            .unwrap();
+
+        // An earlier round, a retry after it, then a round, its review, and a second review that is working.
+        let before = store
+            .add_run(Some(card.id), "Coder", "test", "code")
+            .unwrap();
+        store.set_run_status(before.id, "failed").unwrap();
+        store.set_card_retried(card.id).unwrap();
+        let code = store
+            .add_run(Some(card.id), "Coder", "test", "code")
+            .unwrap();
+        store.set_run_status(code.id, "succeeded").unwrap();
+        let review = store
+            .add_run(Some(card.id), "Reviewer", "test", "review")
+            .unwrap();
+        store
+            .set_run_summary(review.id, "Looks right.\nVERDICT: approve")
+            .unwrap();
+        store.set_run_status(review.id, "succeeded").unwrap();
+        let live = store
+            .add_run(Some(card.id), "Reviewer", "test", "review")
+            .unwrap();
+        store.set_run_status(live.id, "running").unwrap();
+        for (tool, decision) in [("bash", "refuse"), ("read", "allow")] {
+            let event = serde_json::json!({"tool": tool, "decision": decision});
+            app.record_run_event(live.id, "tool_check", &event).unwrap();
+        }
+        for (run, input, output) in [(before.id, 1000, 1), (code.id, 100, 50), (live.id, 7, 3)] {
+            let usage = Usage {
+                run_id: Some(run),
+                model: "fake".into(),
+                input_tokens: input,
+                output_tokens: output,
+                cached_tokens: 0,
+            };
+            store.add_usage(&usage).unwrap();
+        }
+        let change = store
+            .add_change(repo.id, Some(card.id), "moebius/card-2", None, "abc")
+            .unwrap();
+        store
+            .set_local_checks(change.id, "failure", "abc", None)
+            .unwrap();
+        store
+            .add_inbox_item("stuck", Some(card.id), "Work", &serde_json::json!({}))
+            .unwrap();
+
+        let snap: Snapshot = reqwest::Client::new()
+            .get(format!("http://{addr}/v1/snapshot"))
+            .bearer_auth(&*state.token)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let board = snap
+            .boards
+            .iter()
+            .find(|b| b.repository.id == repo.id)
+            .unwrap();
+        assert_eq!(board.round_limit, 5);
+        let view = |number| {
+            board
+                .cards
+                .iter()
+                .find(|c| c.card.number == number)
+                .unwrap()
+        };
+
+        let shown = view(card.number);
+        assert_eq!((shown.rounds, shown.tokens), (1, 160));
+        assert_eq!(shown.blocked_by, [blocker.number, 99]);
+        // The latest run is the one working, and one of its two tool calls was refused.
+        let run = shown.run.as_ref().unwrap();
+        assert_eq!(
+            (run.id, run.agent.as_str(), run.status.as_str()),
+            (live.id, "Reviewer", "running")
+        );
+        assert_eq!(shown.refusals, 1);
+        let change = shown.change.as_ref().unwrap();
+        assert_eq!(
+            (change.state.as_str(), change.checks.as_str()),
+            ("open", "failure")
+        );
+        assert_eq!(change.review_verdict.as_deref(), Some("approve"));
+        assert_eq!(snap.inbox[0].card_id, Some(card.id));
+
+        let blocked = view(blocker.number);
+        assert_eq!(
+            (
+                blocked.rounds,
+                blocked.run.as_ref(),
+                blocked.change.as_ref()
+            ),
+            (0, None, None)
+        );
+        // A card in Done carries no details.
+        let finished = view(done.number);
+        assert_eq!(
+            (finished.rounds, finished.tokens, finished.blocked_by.len()),
+            (0, 0, 0)
+        );
     }
 
     #[tokio::test]
@@ -780,7 +996,7 @@ mod tests {
             .iter()
             .find(|b| b.repository.id == repo.id)
             .unwrap();
-        assert_eq!(board.cards[0].column, "Done");
+        assert_eq!(board.cards[0].card.column, "Done");
         assert!(board.waiting.is_empty());
         assert_eq!(board.changes[0].state, "merged");
         assert!(snap.inbox.is_empty());

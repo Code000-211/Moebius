@@ -38,7 +38,7 @@ use std::time::{Duration, Instant};
 
 use mlua::{Lua, Table, Value, VmState};
 
-use crate::app::{App, AppError, PERSON, columns};
+use crate::app::{App, AppError, PERSON, columns, runs_since_retry};
 use crate::decide::Question;
 use crate::repos::git;
 use crate::store::{Card, Repository, Run};
@@ -91,9 +91,9 @@ pub trait Runs: Send + Sync {
 
 /// What a review run concluded: `verdict` is `approve` or `changes`, and `findings` is what it found.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Review {
-    verdict: &'static str,
-    findings: String,
+pub struct Review {
+    pub verdict: &'static str,
+    pub findings: String,
 }
 
 /// Reads the verdict from the end of a review run's summary: a last line `VERDICT: approve` or `VERDICT: changes`,
@@ -119,6 +119,13 @@ fn verdict(summary: Option<&str>) -> Review {
         verdict,
         findings: findings.into(),
     }
+}
+
+/// The review that counts: the latest finished one after the latest `code` run.
+pub fn latest_review(runs: &[Run]) -> Option<Review> {
+    let mut since_code = runs.iter().rev().take_while(|r| r.purpose != "code");
+    let run = since_code.find(|r| r.purpose == "review" && r.status == "succeeded")?;
+    Some(verdict(run.summary.as_deref()))
 }
 
 /// A column and the script behind it.
@@ -352,25 +359,9 @@ impl Engine {
         t.set("note", card.note.as_deref())?;
         t.set("change", change_table(&self.app, lua, card.id)?)?;
         t.set("trusted", self.app.is_trusted(card))?;
-        let mut blocked_by = Vec::new();
-        for number in self
-            .app
-            .store
-            .dependencies(card.id)
-            .map_err(mlua::Error::external)?
-        {
-            let blocker = self
-                .app
-                .store
-                .card_by_number(card.repository_id, number)
-                .map_err(mlua::Error::external)?;
-            if blocker.is_none_or(|b| b.column != columns::DONE) {
-                blocked_by.push(number);
-            }
-        }
+        let blocked_by = self.app.blocked_by(card).map_err(mlua::Error::external)?;
         t.set("blocked_by", blocked_by)?;
-        // A retry gives the card a fresh start: what ran before it no longer counts.
-        let since_retry = || runs.iter().filter(|r| Some(r.id) > card.retried_after);
+        let since_retry = || runs_since_retry(&runs, card);
         let count = |purpose: &str| since_retry().filter(|r| r.purpose == purpose).count();
         t.set("rounds", count("code"))?;
         t.set("reviews", count("review"))?;
@@ -395,10 +386,7 @@ impl Engine {
             r.set("summary", run.summary.as_deref())?;
             t.set("run", r)?;
         }
-        // The review that counts is the latest finished one after the latest code run.
-        let mut since_code = runs.iter().rev().take_while(|r| r.purpose != "code");
-        if let Some(run) = since_code.find(|r| r.purpose == "review" && r.status == "succeeded") {
-            let review = verdict(run.summary.as_deref());
+        if let Some(review) = latest_review(&runs) {
             let v = lua.create_table()?;
             v.set("verdict", review.verdict)?;
             v.set("findings", review.findings)?;

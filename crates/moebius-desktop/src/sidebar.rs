@@ -6,7 +6,7 @@ use iced::widget::{button, column, container, row, scrollable, space, text, tool
 use iced::{Border, Center, Color, Element, Length, Padding};
 
 use crate::app::{Connection, Message, Page};
-use crate::client::Overview;
+use crate::client::Snapshot;
 use crate::icons::{self, Icon};
 use crate::theme;
 
@@ -43,7 +43,7 @@ enum Trailing {
 }
 
 pub fn view<'a>(
-    overview: &'a Overview,
+    snapshot: &'a Snapshot,
     connection: Connection,
     page: &Page,
     collapsed: bool,
@@ -51,18 +51,14 @@ pub fn view<'a>(
     let inbox = item(
         Lead::Icon(Icon::Inbox),
         "Inbox",
-        Trailing::Badge(overview.snapshot.inbox.len()),
+        Trailing::Badge(snapshot.inbox.len()),
         Page::Inbox,
         page,
         collapsed,
     );
-    let boards = overview.snapshot.boards.iter().map(|board| {
+    let boards = snapshot.boards.iter().map(|board| {
         let repository = &board.repository;
-        let live = overview
-            .live_runs
-            .get(&repository.id)
-            .copied()
-            .unwrap_or_default();
+        let live = board.live_runs();
         let (dot, trailing) = if live > 0 {
             (theme::TEAL, format!("{live} live"))
         } else {

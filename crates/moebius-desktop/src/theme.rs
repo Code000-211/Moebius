@@ -29,6 +29,14 @@ pub const AMBER_FILL: Color = hex(0xFDF3E6);
 pub const RED: Color = hex(0xD92D20);
 pub const RED_TEXT: Color = hex(0x9B2C22);
 pub const RED_FILL: Color = hex(0xFEF3F2);
+/// The colours of the tags of a card: border, fill and text, one set for each of the three roles.
+pub const TEAL_BORDER: Color = hex(0x99D5CD);
+pub const AMBER_BORDER: Color = hex(0xF2C793);
+pub const AMBER_TEXT: Color = hex(0x92400E);
+pub const RED_BORDER: Color = hex(0xE5786B);
+pub const RED_TAG_FILL: Color = hex(0xFCEDEB);
+/// The part of a progress bar that is not done.
+pub const TRACK: Color = hex(0xE2E8F0);
 /// The validated categorical order of the charts.
 pub const CHART: [Color; 4] = [hex(0x2A78D6), hex(0xEB6834), hex(0x1BAF7A), hex(0xEDA100)];
 
@@ -50,6 +58,9 @@ pub const BODY: f32 = 14.5;
 pub const CONTEXT: f32 = 14.0;
 pub const BREADCRUMB: f32 = 13.0;
 pub const LABEL: f32 = 12.0;
+/// The number above a card, a column's script and its count.
+pub const SMALL: f32 = 11.5;
+pub const COLUMN_NAME: f32 = 14.5;
 pub const APP_NAME: f32 = 16.5;
 pub const GROUP_LABEL: f32 = 12.5;
 pub const CODE: f32 = 12.5;
@@ -60,6 +71,7 @@ pub const RADIUS_CARD: f32 = 12.0;
 pub const RADIUS_CONTROL: f32 = 10.0;
 pub const RADIUS_ITEM: f32 = 9.0;
 pub const RADIUS_SMALL: f32 = 7.0;
+pub const RADIUS_SEGMENT: f32 = 2.0;
 pub const RADIUS_ROUND: f32 = 999.0;
 
 // Spacing and layout.

@@ -1137,6 +1137,16 @@ impl Store {
         })
     }
 
+    /// How many tool calls of a run were refused.
+    pub fn refused_tool_calls(&self, run_id: i64) -> Result<i64> {
+        Ok(self.conn().query_row(
+            "SELECT COUNT(*) FROM events WHERE run_id = ?1 AND kind = 'tool_check'
+               AND json_extract(data, '$.decision') = 'refuse'",
+            [run_id],
+            |r| r.get(0),
+        )?)
+    }
+
     /// The items not resolved yet, oldest first.
     pub fn inbox(&self) -> Result<Vec<InboxItem>> {
         self.inbox_where("resolved_at IS NULL AND ?1", 1.into())

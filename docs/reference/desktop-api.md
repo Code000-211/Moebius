@@ -77,7 +77,9 @@ Everything the app shows. Response:
     {"repository": {"id": 1, "name": "demo", "path": "/srv/.moebius/repos/demo", "forge": "none",
                     "default_branch": "main", "github": null, "trusted": []},
      "cards": [{"id": 1, "repository_id": 1, "number": 1, "title": "Add a feature", "body": "", "author": "person",
-                "column": "Backlog", "created_at": 1790000000}],
+                "column": "Backlog", "created_at": 1790000000, "note": null, "retried_after": null,
+                "rounds": 0, "tokens": 0, "run": null, "blocked_by": [], "refusals": 0, "change": null}],
+     "round_limit": 5,
      "waiting": {},
      "changes": []}
   ],
@@ -85,7 +87,19 @@ Everything the app shows. Response:
 }
 ```
 
-`boards` has one entry per repository, with all its cards and changes. `waiting` maps the id of each card whose column
+`boards` has one entry per repository, with all its cards and changes. `round_limit` is the most `code` rounds a card
+gets. Each entry of `cards` is a `Card` with what a board shows of it, so that a client needs no other read:
+
+| Field | Meaning |
+|---|---|
+| `rounds`, `tokens` | The card's `code` runs and the tokens of all its runs since it was last retried, as `card.rounds` and `card.tokens` in [column scripts](column-scripts.md). |
+| `run` | The card's latest run, `{"id", "agent", "purpose", "status"}`, or null when it has none. A board counts the runs working on it from the cards whose `run.status` is `starting` or `running`. |
+| `blocked_by` | The numbers of the issues that block the card and are not done yet, as `card.blocked_by`. |
+| `refusals` | How many tool calls of the latest run were refused (its `tool_check` run events with the decision `refuse`). |
+| `change` | The card's open change, `{"id", "state", "checks", "review_verdict"}`, or null. `checks` is `pending`, `success`, `failure` or `none`, as `card.change.checks`; `review_verdict` is `approve` or `changes` once a review ended since the latest `code` run, else null. Whether the change conflicts is not in the snapshot. |
+
+A card in `Done` has `rounds` and `tokens` 0, no `run`, no `change`, no blockers and no refusals: the snapshot is read on
+every event, and a finished card shows none of it. `waiting` maps the id of each card whose column
 script is waiting (`moebius.wait`, `ask`, `stuck`) to the reason, as text; a card that does not wait has no entry. The
 reasons are kept in memory, so after a restart they are missing until the board engine's next tick; `card_waiting`
 (below) keeps them current. `inbox` holds the items that are not
