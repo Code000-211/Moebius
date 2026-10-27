@@ -78,7 +78,7 @@ impl Repos {
         } else {
             std::fs::create_dir_all(&self.clones)?;
             let target = path.to_string_lossy().into_owned();
-            git(&self.clones, &["clone", "--quiet", url, &target])?;
+            git(&self.clones, &["clone", "--quiet", "--", url, &target])?;
         }
         Ok(path)
     }

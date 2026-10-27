@@ -1,10 +1,12 @@
 //! The core of Moebius: everything that is not a plugin (see `docs/adr/0009-what-belongs-in-the-core.md`).
 
 pub mod api;
+pub mod app;
 pub mod blobs;
 pub mod bus;
 pub mod config;
 pub mod decide;
+pub mod forge;
 pub mod repos;
 pub mod store;
 

@@ -427,6 +427,24 @@ impl Store {
             .optional()?)
     }
 
+    /// The changes of a repository, oldest first.
+    pub fn changes(&self, repository_id: i64) -> Result<Vec<Change>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, repository_id, card_id, branch, state FROM changes WHERE repository_id = ?1 ORDER BY id",
+        )?;
+        let rows = stmt.query_map([repository_id], |r| {
+            Ok(Change {
+                id: r.get(0)?,
+                repository_id: r.get(1)?,
+                card_id: r.get(2)?,
+                branch: r.get(3)?,
+                state: r.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     pub fn set_change_state(&self, id: i64, state: &str) -> Result<()> {
         self.conn().execute(
             "UPDATE changes SET state = ?1 WHERE id = ?2",
@@ -706,6 +724,15 @@ impl Store {
         self.conn().execute(
             "UPDATE inbox_items SET resolved_at = ?1 WHERE id = ?2",
             params![now(), id],
+        )?;
+        Ok(())
+    }
+
+    /// Resolves every open item about a card, such as its "ready to merge" once it is merged.
+    pub fn resolve_inbox_for_card(&self, card_id: i64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE inbox_items SET resolved_at = ?1 WHERE card_id = ?2 AND resolved_at IS NULL",
+            params![now(), card_id],
         )?;
         Ok(())
     }

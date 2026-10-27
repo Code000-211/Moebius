@@ -7,9 +7,13 @@ use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
 use moebius_core::api::{self, ApiState};
-use moebius_core::bus::Bus;
+use moebius_core::app::App;
 use moebius_core::config::{self, Config};
 use moebius_core::store::Store;
+use moebius_plugin_api::Host;
+
+/// How long a call into a plugin may take before it counts as refused.
+const PLUGIN_TIME_LIMIT: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// Moebius runs coding-agent harnesses from a repository's issues to changes that are ready to merge.
 #[derive(Debug, Parser)]
@@ -90,9 +94,9 @@ fn prepare(config: &Config) -> Result<ApiState, String> {
     let store = Store::open(&config.data_dir).map_err(|e| format!("cannot open the store: {e}"))?;
     let token = api::load_or_create_token(&config.token_file)
         .map_err(|e| format!("cannot read {}: {e}", config.token_file.display()))?;
+    let host = Arc::new(Host::new(PLUGIN_TIME_LIMIT));
     Ok(ApiState {
-        store: Arc::new(store),
-        bus: Bus::new(),
+        app: Arc::new(App::new(Arc::new(store), host, &config.data_dir)),
         token: token.into(),
     })
 }
