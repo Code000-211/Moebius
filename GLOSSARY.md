@@ -19,6 +19,11 @@ Everything that shapes how a harness works apart from its own code (instructions
 settings), kept in a git repository of its own.
 _Avoid_: harness config, setup, profile
 
+**Bridge**:
+The part of Moebius that lives inside a harness, as an extension of that harness, and through which Moebius checks every tool
+call before it runs.
+_Avoid_: Moebius extension, hook, plugin, adapter
+
 **Router**:
 The part of Moebius that every harness uses as its model provider and that passes each request on to a real provider.
 _Avoid_: proxy, gateway, LLM provider
@@ -29,8 +34,8 @@ desktop app.
 _Avoid_: MCP proxy, MCP hub
 
 **Rule**:
-Something the work must or must not do, which the router enforces on every tool call a model makes; a call that breaks one
-goes back to the model to find another way, and the run does not stop.
+Something the work must or must not do, which Moebius enforces on every tool call; a call that breaks one goes back to the
+model to find another way, and the run does not stop.
 _Avoid_: policy, guardrail, guideline
 
 **Decision model**:
