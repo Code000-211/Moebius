@@ -5,6 +5,7 @@ pub mod app;
 pub mod blobs;
 pub mod board;
 pub mod bus;
+pub mod check;
 pub mod config;
 pub mod decide;
 pub mod forge;

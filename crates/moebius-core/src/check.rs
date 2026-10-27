@@ -1,0 +1,347 @@
+//! The tool-call check (spec 3.2, ADR 0007): the endpoints the harness's bridge calls on the router's listener. Every
+//! tool call of a run is asked before it runs, and every tool result is reported before the model sees it. The run's
+//! token (`Authorization: Bearer <token>`, the one the harness uses for the model) authenticates the bridge; an
+//! unknown or missing token gets 401.
+//!
+//! - `POST /moebius/check` takes `{ "tool", "input", "tool_call_id" }` and answers
+//!   `{ "decision": "allow" | "refuse", "reason" }`. The call goes through `decide("tool_call")` and leaves one
+//!   judgement; a refusal's reason names the rule. Anything that fails while deciding answers refuse, and when even
+//!   that cannot be answered the status is 500, which the bridge must treat as a refusal.
+//! - `POST /moebius/result` takes `{ "content": [ { "type": "text", "text" }, .. ] }` (Pi's tool result blocks; the
+//!   bridge may add `tool_call_id`, `tool` and `is_error`, which are not read) and answers `{ "content": [..] }` with
+//!   the secrets removed from every text block and other blocks unchanged.
+
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
+use axum::Json;
+use axum::Router as Routes;
+use axum::extract::State;
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Response};
+use axum::routing::post;
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+
+use crate::app::App;
+use crate::bus::AppEvent;
+use crate::decide::Question;
+use crate::router::{Grant, Router};
+
+#[derive(Clone)]
+struct Check {
+    app: Arc<App>,
+    router: Arc<Router>,
+}
+
+/// The check endpoints, authenticated by the tokens `router` issued.
+pub fn routes(app: Arc<App>, router: Arc<Router>) -> Routes {
+    Routes::new()
+        .route("/moebius/check", post(check))
+        .route("/moebius/result", post(result))
+        .with_state(Check { app, router })
+}
+
+#[derive(Debug, Deserialize)]
+struct CheckRequest {
+    tool: String,
+    input: Value,
+    tool_call_id: String,
+}
+
+#[derive(Debug, Serialize)]
+struct CheckReply {
+    decision: String,
+    reason: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ResultRequest {
+    content: Vec<Value>,
+}
+
+#[derive(Debug, Serialize)]
+struct ResultReply {
+    content: Vec<Value>,
+}
+
+fn unauthorized() -> Response {
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(json!({ "error": "not a run's token" })),
+    )
+        .into_response()
+}
+
+async fn check(
+    State(state): State<Check>,
+    headers: HeaderMap,
+    Json(request): Json<CheckRequest>,
+) -> Response {
+    let Some(grant) = state.router.grant(&headers) else {
+        return unauthorized();
+    };
+    let reply = tokio::task::spawn_blocking(move || ask(&state.app, &grant, &request)).await;
+    match reply {
+        Ok(Some(reply)) => Json(reply).into_response(),
+        _ => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "cannot decide" })),
+        )
+            .into_response(),
+    }
+}
+
+/// Decides one tool call and stores and publishes the `tool_check` run event. None when the store fails.
+fn ask(app: &App, grant: &Grant, request: &CheckRequest) -> Option<CheckReply> {
+    let question = tool_call_question(app, grant, request)?;
+    let decision = app.decisions.decide(&question).ok()?;
+    let event = json!({
+        "tool": request.tool,
+        "tool_call_id": request.tool_call_id,
+        "decision": decision.choice,
+        "reason": decision.reason,
+    });
+    let _ = app.store.append_event(grant.run_id, "tool_check", &event);
+    app.bus.publish(AppEvent::new(
+        "run_event",
+        json!({ "run": grant.run_id, "kind": "tool_check", "data": event }),
+    ));
+    Some(CheckReply {
+        decision: decision.choice,
+        reason: decision.reason,
+    })
+}
+
+/// The `tool_call` question for one call. Its context is what a decider can read, all as text:
+///
+/// - `tool`: the tool's name, such as `bash`.
+/// - `input`: the call's arguments as JSON text.
+/// - `tool_call_id`: the harness's id of the call.
+/// - `worktree`: the run's worktree path, when it has one.
+/// - `card_title`, `card_body`: the card the run works on, when it has one.
+fn tool_call_question(app: &App, grant: &Grant, request: &CheckRequest) -> Option<Question> {
+    let mut context = BTreeMap::from([
+        ("tool".to_string(), request.tool.clone()),
+        ("input".to_string(), request.input.to_string()),
+        ("tool_call_id".to_string(), request.tool_call_id.clone()),
+    ]);
+    if let Some(worktree) = app.store.run(grant.run_id).ok()?.and_then(|r| r.worktree) {
+        context.insert("worktree".into(), worktree);
+    }
+    if let Some(card_id) = grant.card_id
+        && let Some(card) = app.store.card(card_id).ok()?
+    {
+        context.insert("card_title".into(), card.title);
+        context.insert("card_body".into(), card.body);
+    }
+    Some(Question {
+        kind: "tool_call".into(),
+        context,
+        options: vec!["allow".into(), "refuse".into()],
+        fail_closed: "refuse".into(),
+        run_id: Some(grant.run_id),
+        card_id: grant.card_id,
+    })
+}
+
+async fn result(
+    State(state): State<Check>,
+    headers: HeaderMap,
+    Json(request): Json<ResultRequest>,
+) -> Response {
+    if state.router.grant(&headers).is_none() {
+        return unauthorized();
+    }
+    let content = request
+        .content
+        .into_iter()
+        .map(|mut block| {
+            if block["type"] == "text"
+                && let Some(text) = block["text"].as_str()
+            {
+                block["text"] = json!(crate::blobs::redact(text));
+            }
+            block
+        })
+        .collect();
+    Json(ResultReply { content }).into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use moebius_plugin_api::{Call, DecideRequest, Host, Kind, Manifest, Plugin, PluginError};
+    use std::time::Duration;
+
+    /// Allows `ls`, refuses everything else naming a rule.
+    struct Rules;
+    impl Plugin for Rules {
+        fn manifest(&self) -> Manifest {
+            Manifest {
+                name: "rules".into(),
+                version: "0".into(),
+                kinds: vec![Kind::Decider],
+            }
+        }
+        fn call(&self, call: Call) -> Result<Value, PluginError> {
+            let r: DecideRequest = serde_json::from_value(call.params).unwrap();
+            Ok(if r.context["input"].contains("\"ls\"") {
+                json!({"choice": "allow", "reason": "rule read-only: listing is harmless"})
+            } else {
+                json!({"choice": "refuse", "reason": "rule no-rm: rm is destructive"})
+            })
+        }
+    }
+
+    struct Setup {
+        _dir: tempfile::TempDir,
+        app: Arc<App>,
+        url: String,
+        token: String,
+        run: i64,
+    }
+
+    async fn setup(route: bool) -> Setup {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(crate::store::Store::in_memory(dir.path()).unwrap());
+        let repo = store
+            .add_repository("demo", "/srv/demo", "none", "main")
+            .unwrap();
+        let card = store
+            .add_card(repo.id, "Fix it", "It is broken", "person", "In progress")
+            .unwrap();
+        let run = store
+            .add_run(Some(card.id), "Coder", "pi-bolt", "code")
+            .unwrap();
+        store.set_run_worktree(run.id, "/srv/wt/1").unwrap();
+        let mut host = Host::new(Duration::from_secs(30));
+        host.add(Rules);
+        let mut app = App::new(store.clone(), Arc::new(host), dir.path());
+        if route {
+            app.decisions.route("tool_call", "rules");
+        }
+        let app = Arc::new(app);
+        let router = Arc::new(Router::new(store, vec![]));
+        let token = router.issue_token(Grant {
+            run_id: run.id,
+            card_id: Some(card.id),
+            budget: None,
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let served = routes(app.clone(), router);
+        tokio::spawn(async move { axum::serve(listener, served).await });
+        Setup {
+            _dir: dir,
+            app,
+            url,
+            token,
+            run: run.id,
+        }
+    }
+
+    async fn check_call(s: &Setup, command: &str) -> Value {
+        reqwest::Client::new()
+            .post(format!("{}/moebius/check", s.url))
+            .bearer_auth(&s.token)
+            .json(&json!({"tool": "bash", "input": {"command": command}, "tool_call_id": "call-1"}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn an_allowed_call_leaves_one_judgement_with_its_context() {
+        let s = setup(true).await;
+        let reply = check_call(&s, "ls").await;
+        assert_eq!(reply["decision"], "allow");
+        let judgements = s.app.store.judgements("tool_call").unwrap();
+        assert_eq!(judgements.len(), 1);
+        assert_eq!(judgements[0].run_id, Some(s.run));
+        let context: BTreeMap<String, String> =
+            serde_json::from_str(&s.app.store.blobs().get(&judgements[0].context[0]).unwrap())
+                .unwrap();
+        assert_eq!(context["tool"], "bash");
+        assert!(context["input"].contains("\"ls\""));
+        assert_eq!(context["worktree"], "/srv/wt/1");
+        assert_eq!(context["card_title"], "Fix it");
+        assert_eq!(context["card_body"], "It is broken");
+    }
+
+    #[tokio::test]
+    async fn a_refusal_names_its_rule_and_is_stored_as_a_run_event() {
+        let s = setup(true).await;
+        let mut bus = s.app.bus.subscribe();
+        let reply = check_call(&s, "rm -rf /").await;
+        assert_eq!(reply["decision"], "refuse");
+        assert!(reply["reason"].as_str().unwrap().contains("rule no-rm"));
+        let events = s.app.store.events(s.run).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].kind, "tool_check");
+        assert_eq!(events[0].data["tool_call_id"], "call-1");
+        assert_eq!(events[0].data["decision"], "refuse");
+        let published = bus.recv().await.unwrap();
+        assert_eq!(published.kind, "run_event");
+        assert_eq!(published.data["kind"], "tool_check");
+    }
+
+    #[tokio::test]
+    async fn without_a_decider_a_call_is_refused_and_still_judged() {
+        let s = setup(false).await;
+        let reply = check_call(&s, "ls").await;
+        assert_eq!(reply["decision"], "refuse");
+        assert!(reply["reason"].as_str().unwrap().starts_with("refused: "));
+        assert_eq!(s.app.store.judgements("tool_call").unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_result_comes_back_without_secrets() {
+        let s = setup(true).await;
+        let key = format!("sk-ant-{}", "k".repeat(30));
+        let image = json!({"type": "image", "data": key, "mimeType": "image/png"});
+        let reply: Value = reqwest::Client::new()
+            .post(format!("{}/moebius/result", s.url))
+            .bearer_auth(&s.token)
+            .json(&json!({
+                "tool_call_id": "call-1", "tool": "bash", "is_error": false,
+                "content": [{"type": "text", "text": format!("KEY={key}")}, image],
+            }))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(reply["content"][0]["text"], "KEY=[redacted:anthropic-key]");
+        assert_eq!(reply["content"][1], image);
+    }
+
+    #[tokio::test]
+    async fn an_unknown_or_missing_token_is_refused() {
+        let s = setup(true).await;
+        let client = reqwest::Client::new();
+        let bodies = [
+            (
+                "check",
+                json!({"tool": "bash", "input": {}, "tool_call_id": "c"}),
+            ),
+            ("result", json!({"content": []})),
+        ];
+        for (endpoint, body) in bodies {
+            let url = format!("{}/moebius/{endpoint}", s.url);
+            let unknown = client
+                .post(&url)
+                .bearer_auth("moebius-run-nope")
+                .json(&body);
+            let missing = client.post(&url).json(&body);
+            for request in [unknown, missing] {
+                assert_eq!(request.send().await.unwrap().status(), 401, "{endpoint}");
+            }
+        }
+        assert!(s.app.store.judgements("tool_call").unwrap().is_empty());
+    }
+}

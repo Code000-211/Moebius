@@ -13,6 +13,7 @@ use crate::api::{self, ApiState};
 use crate::app::{App, columns};
 use crate::board::{Engine, Limits, Workflow};
 use crate::bus::AppEvent;
+use crate::check;
 use crate::config::Config;
 use crate::forge::GitHubForge;
 use crate::github::GitHub;
@@ -214,9 +215,14 @@ impl Server {
                 }
             }
         };
+        let router_routes = self
+            .router
+            .clone()
+            .routes()
+            .merge(check::routes(self.app.clone(), self.router.clone()));
         tokio::select! {
             served = api::serve(api_listener, state) => served,
-            served = self.router.clone().serve(router_listener) => served,
+            served = axum::serve(router_listener, router_routes) => served,
             () = board => Ok(()),
             () = poll => Ok(()),
         }

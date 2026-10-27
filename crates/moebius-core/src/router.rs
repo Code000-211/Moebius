@@ -5,6 +5,8 @@
 //!
 //! - `POST /v1/chat/completions`: OpenAI chat completions, streamed or not.
 //! - `POST /v1/messages`: Anthropic messages, streamed or not.
+//!
+//! The server serves these routes together with the tool-call check (`check`) on one listener.
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -109,12 +111,8 @@ impl Router {
             .with_state(self)
     }
 
-    /// Serves the router on `listener`, which should be on localhost.
-    pub async fn serve(self: Arc<Self>, listener: tokio::net::TcpListener) -> std::io::Result<()> {
-        axum::serve(listener, self.routes()).await
-    }
-
-    fn grant(&self, headers: &HeaderMap) -> Option<Grant> {
+    /// What the token in the request's headers allows, or none for an unknown or missing token.
+    pub fn grant(&self, headers: &HeaderMap) -> Option<Grant> {
         let token = headers
             .get(header::AUTHORIZATION)
             .and_then(|v| v.to_str().ok())
@@ -553,7 +551,8 @@ data: [DONE]\n\n";
         ));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
-        tokio::spawn(router.clone().serve(listener));
+        let routes = router.clone().routes();
+        tokio::spawn(async move { axum::serve(listener, routes).await });
         Setup {
             _dir: dir,
             store,
