@@ -13,6 +13,11 @@ and most valuable labels, because the person is the one the model is meant to st
 
 - Judgements keep their full context, stored as content-addressed blocks so that what repeats costs almost nothing, with
   secrets removed when they are captured. They stay on the server and leave it only in an export a person starts.
+- Judgements are kept in full, without a time limit; whether a limit is needed is decided once real runs show how much they
+  take. What the decision model sees of a judgement (the rule, the call, the last steps, a summary of the card) is cut from the
+  full context when it is trained, so that the cut can change and old judgements can be trained on again. Judgements are not
+  deleted after training, because their outcomes arrive days later, held-back judgements are what shadowing is measured on,
+  and a model trained only on each new day forgets what it learnt before.
 - A trained decision model first runs in shadow and takes over one kind of decision at a time, only once it decides that kind
   at least as well as whoever decides now on judgements held back from training; the takeover is a proposal a person merges.
 - Recording is part of the core's store (ADR 0009); exporting and training are plugins.
