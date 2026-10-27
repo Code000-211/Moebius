@@ -517,6 +517,21 @@ impl Store {
         self.runs_where("ended_at IS NULL AND ?1", 1.into())
     }
 
+    /// Ends every run that has not ended as failed, with an event saying why; returns them. For a server that
+    /// starts again, since no run outlives the server that drove it.
+    pub fn fail_unended_runs(&self, why: &str) -> Result<Vec<Run>> {
+        let runs = self.active_runs()?;
+        for run in &runs {
+            self.append_event(
+                run.id,
+                "moebius_error",
+                &serde_json::json!({ "message": why }),
+            )?;
+            self.set_run_status(run.id, "failed")?;
+        }
+        Ok(runs)
+    }
+
     pub fn set_run_status(&self, id: i64, status: &str) -> Result<()> {
         let ended = matches!(status, "succeeded" | "failed" | "stopped").then(now);
         self.conn().execute(

@@ -24,6 +24,9 @@ pub mod columns {
     pub const DONE: &str = "Done";
 }
 
+/// The author of issues a person created in the desktop app; their cards are trusted.
+pub const PERSON: &str = "person";
+
 /// Why an operation failed.
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {

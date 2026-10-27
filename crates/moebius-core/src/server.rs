@@ -2,6 +2,7 @@
 //! board engine, which runs every card's column script on a fixed tick.
 
 use std::net::SocketAddr;
+use std::path::Path;
 use std::sync::Arc;
 
 use moebius_plugin_api::Host;
@@ -13,12 +14,41 @@ use crate::app::{App, columns};
 use crate::board::{Engine, Limits, Workflow};
 use crate::bus::AppEvent;
 use crate::config::Config;
-use crate::pibolt::{AgentProfile, PiBolt};
+use crate::pibolt::PiBolt;
+use crate::repos::Worktree;
 use crate::router::{Router, Upstream};
 use crate::store::Store;
 
 /// How long a call into a plugin may take before it counts as refused.
 const PLUGIN_TIME_LIMIT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Runs the last server left unended died with it: they are failed, so the board starts them again, and their
+/// worktrees removed.
+fn end_runs_of_a_previous_server(app: &App) -> Result<(), String> {
+    let runs = app
+        .store
+        .fail_unended_runs("the server stopped while the run was going")
+        .map_err(|e| format!("cannot end the runs of the last start: {e}"))?;
+    for run in runs {
+        let (Some(worktree), Some(card_id)) = (run.worktree, run.card_id) else {
+            continue;
+        };
+        let repository = app
+            .card(card_id)
+            .ok()
+            .and_then(|card| app.store.repository(card.repository_id).ok().flatten());
+        if let Some(repository) = repository {
+            let worktree = Worktree {
+                path: worktree.into(),
+                branch: format!("moebius/run-{}", run.id),
+            };
+            let _ = app
+                .repos
+                .remove_worktree(Path::new(&repository.path), &worktree);
+        }
+    }
+    Ok(())
+}
 
 pub struct Server {
     pub config: Config,
@@ -45,6 +75,7 @@ impl Server {
             Arc::new(Host::new(PLUGIN_TIME_LIMIT)),
             &config.data_dir,
         ));
+        end_runs_of_a_previous_server(&app)?;
 
         let mut upstreams = Vec::new();
         for upstream in &config.upstreams {
@@ -63,29 +94,11 @@ impl Server {
         }
         let router = Arc::new(Router::new(store, upstreams));
 
-        let agents = config
-            .agents
-            .iter()
-            .map(|(name, a)| {
-                (
-                    name.clone(),
-                    AgentProfile {
-                        model: a.model.clone(),
-                        thinking: a.thinking.clone(),
-                        instructions: a.instructions.clone(),
-                        skills: a.skills.clone(),
-                        extensions: a.extensions.clone(),
-                        protocol: a.protocol,
-                        token_budget: a.token_budget,
-                    },
-                )
-            })
-            .collect();
         let harness = Arc::new(PiBolt::new(
             config.pi_bolt.clone(),
             format!("http://{router_addr}"),
             router.clone(),
-            agents,
+            config.agents.clone(),
         ));
         let engine = Arc::new(Engine::new(
             app.clone(),
@@ -163,5 +176,59 @@ impl Server {
             served = self.router.clone().serve(router_listener) => served,
             () = board => Ok(()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::repos::git;
+
+    #[test]
+    fn runs_left_going_by_a_previous_server_are_failed_and_cleaned_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config::parse("", dir.path(), &dir.path().join("moebius.toml")).unwrap();
+        let origin = dir.path().join("origin");
+        std::fs::create_dir_all(&origin).unwrap();
+        git(&origin, &["init", "--quiet", "-b", "main"]).unwrap();
+        git(
+            &origin,
+            &["commit", "--quiet", "--allow-empty", "-m", "first"],
+        )
+        .unwrap();
+
+        // A server that dies while a run is going.
+        let first = Server::new(config.clone(), "127.0.0.1:1".parse().unwrap()).unwrap();
+        let repo = first
+            .app
+            .add_repository("demo", origin.to_str().unwrap())
+            .unwrap();
+        let card = first
+            .app
+            .create_issue(repo.id, "Card", "", crate::app::PERSON)
+            .unwrap();
+        let run = first
+            .app
+            .store
+            .add_run(Some(card.id), "Coder", "pi-bolt", "code")
+            .unwrap();
+        let worktree = first
+            .app
+            .repos
+            .add_worktree("demo", Path::new(&repo.path), run.id, "main")
+            .unwrap();
+        first
+            .app
+            .store
+            .set_run_worktree(run.id, &worktree.path.to_string_lossy())
+            .unwrap();
+        first.app.store.set_run_status(run.id, "running").unwrap();
+        drop(first);
+
+        let second = Server::new(config, "127.0.0.1:1".parse().unwrap()).unwrap();
+        let run = second.app.store.run(run.id).unwrap().unwrap();
+        assert_eq!(run.status, "failed");
+        assert!(second.app.store.active_runs().unwrap().is_empty());
+        assert!(!worktree.path.exists());
     }
 }

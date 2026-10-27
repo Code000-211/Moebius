@@ -40,7 +40,6 @@ pub struct Decisions {
     store: Arc<Store>,
     host: Arc<Host>,
     by_kind: BTreeMap<String, String>,
-    default: Option<String>,
 }
 
 impl Decisions {
@@ -49,7 +48,6 @@ impl Decisions {
             store,
             host,
             by_kind: BTreeMap::new(),
-            default: None,
         }
     }
 
@@ -59,21 +57,11 @@ impl Decisions {
         self
     }
 
-    /// Lets `plugin` answer every kind without a route of its own.
-    pub fn route_rest(&mut self, plugin: &str) -> &mut Self {
-        self.default = Some(plugin.to_string());
-        self
-    }
-
     /// Asks the decider for the question's kind and records the judgement. A decider that is missing, times out,
     /// panics, fails or answers outside the options gives the fail-closed option, and the judgement says why.
     pub fn decide(&self, question: &Question) -> Result<Decision> {
         let context = self.keep_context(question)?;
-        let decider = self
-            .by_kind
-            .get(&question.kind)
-            .or(self.default.as_ref())
-            .cloned();
+        let decider = self.by_kind.get(&question.kind).cloned();
         let answer = match &decider {
             None => Err(format!("no decider answers {:?}", question.kind)),
             Some(plugin) => self
@@ -113,7 +101,7 @@ impl Decisions {
             context.blob,
             choice.to_string(),
             reason.to_string(),
-            "person".to_string(),
+            crate::app::PERSON.to_string(),
             false,
         )
     }
@@ -205,7 +193,7 @@ mod tests {
     fn setup() -> (tempfile::TempDir, Arc<Store>, Decisions) {
         let dir = tempfile::tempdir().unwrap();
         let store = Arc::new(Store::in_memory(dir.path()).unwrap());
-        let mut host = Host::new(Duration::from_millis(500));
+        let mut host = Host::new(Duration::from_secs(30));
         host.add(Refuser).add(Broken);
         let mut d = Decisions::new(store.clone(), Arc::new(host));
         d.route("tool_call", "refuser")

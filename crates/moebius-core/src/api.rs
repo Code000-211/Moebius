@@ -23,7 +23,7 @@ use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast::error::RecvError;
 
-use crate::app::{App, AppError};
+use crate::app::{App, AppError, PERSON};
 use crate::bus::AppEvent;
 use crate::store::{Card, Change, InboxItem, Repository};
 
@@ -65,14 +65,12 @@ pub struct NewIssue {
     pub body: String,
 }
 
+/// The body of a person's decision: why they made it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Merge {
+pub struct Reason {
     #[serde(default)]
     pub reason: String,
 }
-
-/// A person's approval carries the same body as a merge: a reason.
-pub type Approval = Merge;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Merged {
@@ -215,7 +213,7 @@ async fn create_issue(
     axum::Json(issue): axum::Json<NewIssue>,
 ) -> Result<axum::Json<Card>, ApiError> {
     blocking(&state.app, move |app| {
-        app.create_issue(id, &issue.title, &issue.body, "person")
+        app.create_issue(id, &issue.title, &issue.body, PERSON)
     })
     .await
 }
@@ -223,7 +221,7 @@ async fn create_issue(
 async fn approve_issue(
     State(state): State<ApiState>,
     UrlPath(id): UrlPath<i64>,
-    axum::Json(approval): axum::Json<Approval>,
+    axum::Json(approval): axum::Json<Reason>,
 ) -> Result<axum::Json<Card>, ApiError> {
     blocking(&state.app, move |app| {
         app.approve_issue(id, &approval.reason)
@@ -234,7 +232,7 @@ async fn approve_issue(
 async fn merge_change(
     State(state): State<ApiState>,
     UrlPath(id): UrlPath<i64>,
-    axum::Json(merge): axum::Json<Merge>,
+    axum::Json(merge): axum::Json<Reason>,
 ) -> Result<axum::Json<Merged>, ApiError> {
     blocking(&state.app, move |app| {
         app.merge_change(id, &merge.reason)

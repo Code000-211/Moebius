@@ -1,7 +1,7 @@
 //! The content-addressed blob store: large and repeating content (contexts, diffs, logs) kept once on disk under the
 //! SHA-256 of its bytes, with secrets removed before anything is written.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::LazyLock;
 
 use regex::Regex;
@@ -81,15 +81,12 @@ impl BlobStore {
         }
         std::fs::read_to_string(self.path(id))
     }
-
-    pub fn root(&self) -> &Path {
-        &self.root
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn blobs_round_trip_and_are_stored_once() {

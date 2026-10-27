@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # A stand-in for `pi-bolt --mode rpc` in tests: it speaks Pi's RPC protocol (JSON Lines, split on LF only).
-# A prompt containing "[hang]" waits for `abort`; any other prompt writes a file and settles.
+# A prompt containing "[hang]" waits for `abort`, one containing "[nothing]" settles without changing anything, and
+# any other prompt writes a file and settles.
 import json
 import os
 import sys
@@ -30,11 +31,12 @@ for line in sys.stdin.buffer:
             continue
         emit({"type": "message_update",
               "assistantMessageEvent": {"type": "text_delta", "contentIndex": 0, "delta": "line one line two"}})
-        emit({"type": "tool_execution_start", "toolCallId": "t1", "toolName": "write",
-              "args": {"path": "done.txt"}})
-        with open("done.txt", "w") as f:
-            f.write("done\n")
-        emit({"type": "tool_execution_end", "toolCallId": "t1", "toolName": "write", "isError": False})
+        if "[nothing]" not in command["message"]:
+            emit({"type": "tool_execution_start", "toolCallId": "t1", "toolName": "write",
+                  "args": {"path": "done.txt"}})
+            with open("done.txt", "w") as f:
+                f.write("done\n")
+            emit({"type": "tool_execution_end", "toolCallId": "t1", "toolName": "write", "isError": False})
         emit({"type": "agent_end", "messages": [], "willRetry": False})
         emit({"type": "agent_settled", "aborted": False})
     elif kind == "abort":

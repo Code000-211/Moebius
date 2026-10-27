@@ -72,7 +72,7 @@ pub enum Envelope {
 pub struct DecideRequest {
     /// The kind of decision, such as `tool_call` or `move_card`.
     pub kind: String,
-    /// The context, keyed by name; values are blob ids or short text.
+    /// The context, keyed by name, in full (secrets removed).
     pub context: BTreeMap<String, String>,
     /// The choices the decider must pick from.
     pub options: Vec<String>,
@@ -88,8 +88,6 @@ pub struct Decision {
 /// Why a plugin's own code refused or failed a call.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, Serialize, Deserialize)]
 pub enum PluginError {
-    #[error("the plugin does not offer {0}")]
-    Unsupported(String),
     #[error("bad parameters: {0}")]
     BadParams(String),
     #[error("{0}")]
@@ -145,27 +143,10 @@ impl Host {
         self
     }
 
-    pub fn manifests(&self) -> Vec<Manifest> {
-        self.plugins.values().map(|p| p.manifest()).collect()
-    }
-
-    /// The names of the plugins of one kind.
-    pub fn of_kind(&self, kind: Kind) -> Vec<String> {
-        self.plugins
-            .iter()
-            .filter(|(_, p)| p.manifest().kinds.contains(&kind))
-            .map(|(name, _)| name.clone())
-            .collect()
-    }
-
-    /// Calls `plugin` with the host's time limit.
+    /// Calls `plugin`, cutting it off after the host's time limit. A plugin that hangs keeps its thread, but its
+    /// answer is never used.
     pub fn call(&self, plugin: &str, call: Call) -> Result<Value, Refusal> {
-        self.call_within(plugin, call, self.limit)
-    }
-
-    /// Calls `plugin`, cutting it off after `limit`. A plugin that hangs keeps its thread, but its answer is never
-    /// used.
-    pub fn call_within(&self, plugin: &str, call: Call, limit: Duration) -> Result<Value, Refusal> {
+        let limit = self.limit;
         let target = self
             .plugins
             .get(plugin)
@@ -267,8 +248,13 @@ mod tests {
         }
     }
 
+    /// A host whose limit is far beyond what an answering, failing or panicking plugin needs, even with backtraces on.
     fn host() -> Host {
-        let mut host = Host::new(Duration::from_millis(200));
+        host_within(Duration::from_secs(30))
+    }
+
+    fn host_within(limit: Duration) -> Host {
+        let mut host = Host::new(limit);
         for name in ["answers", "hangs", "panics", "fails", "strays"] {
             host.add(Test(name));
         }
@@ -292,7 +278,7 @@ mod tests {
     #[test]
     fn a_hanging_plugin_is_cut_off_and_refused() {
         let started = std::time::Instant::now();
-        let r = host().decide("hangs", &request());
+        let r = host_within(Duration::from_millis(200)).decide("hangs", &request());
         assert!(matches!(r, Err(Refusal::TimedOut { millis: 200, .. })));
         assert!(started.elapsed() < Duration::from_secs(5));
     }
@@ -322,7 +308,6 @@ mod tests {
             host.call("answers", Call::new(Kind::Forge, "issues", ())),
             Err(Refusal::WrongKind { .. })
         ));
-        assert_eq!(host.of_kind(Kind::Decider).len(), 5);
     }
 
     #[test]

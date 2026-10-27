@@ -11,10 +11,11 @@
 //! - `moebius.record_outcome(outcome) -> count`: sets the outcome of the card's judgements that have none.
 //! - `moebius.runs_active()`, `moebius.run_limit`, `moebius.round_limit`: the limits.
 //!
-//! Scripts have no file system, network, processes or `require`; each call has a time and a memory limit. A
-//! repository overrides a column's script with `.moebius/<script>` on its default branch.
+//! Scripts have no file system, network, processes or `require`; each call has a memory limit and a time limit. The
+//! time limit counts only the time spent in the script, not the time Moebius spends on its behalf (starting a run, a
+//! decider thinking). A repository overrides a column's script with `.moebius/<script>` on its default branch.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::rc::Rc;
@@ -23,29 +24,16 @@ use std::time::{Duration, Instant};
 
 use mlua::{Lua, Table, Value, VmState};
 
-use crate::app::{App, AppError, columns};
+use crate::app::{App, AppError, PERSON, columns};
 use crate::decide::Question;
 use crate::repos::git;
 use crate::store::{Card, Run};
 
-/// Reads a string argument a script passed.
-trait FromLuaArg: Sized {
-    fn from_lua_arg(value: Option<Value>) -> mlua::Result<Self>;
-}
-
-impl FromLuaArg for String {
-    fn from_lua_arg(value: Option<Value>) -> mlua::Result<Self> {
-        match value {
-            Some(Value::String(s)) => Ok(s.to_str()?.to_string()),
-            _ => Err(mlua::Error::runtime("expected a string")),
-        }
-    }
-}
-
 /// Starts runs for the engine. The real one drives a harness (Pi-Bolt); tests use a fake.
 pub trait Runs: Send + Sync {
     /// Starts a run for `card` and returns it without waiting for it to end.
-    fn start(&self, app: &App, card: &Card, agent: &str, purpose: &str) -> Result<Run, String>;
+    fn start(&self, app: &Arc<App>, card: &Card, agent: &str, purpose: &str)
+    -> Result<Run, String>;
 }
 
 /// A column and the script behind it.
@@ -98,7 +86,7 @@ impl Default for Workflow {
 pub struct Limits {
     pub run_limit: u32,
     pub round_limit: u32,
-    /// How long one script call may run.
+    /// How long one script call may run, not counting the calls it makes into Moebius.
     pub script_time: Duration,
     /// How much memory one script call may use.
     pub script_memory: usize,
@@ -245,11 +233,11 @@ impl Engine {
         ] {
             globals.raw_set(unsafe_global, Value::Nil)?;
         }
-        globals.raw_set("moebius", self.api(&lua, card, effects)?)?;
+        let deadline = Rc::new(Cell::new(Instant::now() + self.limits.script_time));
+        globals.raw_set("moebius", self.api(&lua, card, effects, deadline.clone())?)?;
         lua.sandbox(true)?;
-        let deadline = Instant::now() + self.limits.script_time;
         lua.set_interrupt(move |_| {
-            if Instant::now() > deadline {
+            if Instant::now() > deadline.get() {
                 Err(mlua::Error::runtime("the script ran out of time"))
             } else {
                 Ok(VmState::Continue)
@@ -273,7 +261,7 @@ impl Engine {
         t.set("body", card.body.as_str())?;
         t.set("author", card.author.as_str())?;
         t.set("column", card.column.as_str())?;
-        t.set("trusted", card.author == "person")?;
+        t.set("trusted", card.author == PERSON)?;
         t.set(
             "rounds",
             runs.iter().filter(|r| r.purpose == "code").count(),
@@ -289,13 +277,19 @@ impl Engine {
         Ok(t)
     }
 
-    fn api(&self, lua: &Lua, card: &Card, effects: Rc<RefCell<Effects>>) -> mlua::Result<Table> {
+    fn api(
+        &self,
+        lua: &Lua,
+        card: &Card,
+        effects: Rc<RefCell<Effects>>,
+        deadline: Rc<Cell<Instant>>,
+    ) -> mlua::Result<Table> {
         let m = lua.create_table()?;
         m.set("run_limit", self.limits.run_limit)?;
         m.set("round_limit", self.limits.round_limit)?;
         let card_id = card.id;
 
-        let app = self.app.clone();
+        let (app, clock) = (self.app.clone(), deadline.clone());
         m.set(
             "decide",
             lua.create_function(
@@ -306,9 +300,8 @@ impl Engine {
                     Vec<String>,
                     String,
                 )| {
-                    let decision = app
-                        .decisions
-                        .decide(&Question {
+                    let decision = outside_script(&clock, || {
+                        app.decisions.decide(&Question {
                             kind,
                             context,
                             options,
@@ -316,23 +309,24 @@ impl Engine {
                             run_id: None,
                             card_id: Some(card_id),
                         })
-                        .map_err(mlua::Error::external)?;
+                    })
+                    .map_err(mlua::Error::external)?;
                     Ok((decision.choice, decision.reason))
                 },
             )?,
         )?;
 
-        let (app, runs, fx, card_copy) = (
+        let (app, runs, fx, card_copy, clock) = (
             self.app.clone(),
             self.runs.clone(),
             effects.clone(),
             card.clone(),
+            deadline,
         );
         m.set(
             "start_run",
             lua.create_function(move |_, (agent, purpose): (String, String)| {
-                let run = runs
-                    .start(&app, &card_copy, &agent, &purpose)
+                let run = outside_script(&clock, || runs.start(&app, &card_copy, &agent, &purpose))
                     .map_err(mlua::Error::runtime)?;
                 fx.borrow_mut().started_run = Some(run.id);
                 Ok(run.id)
@@ -387,36 +381,25 @@ impl Engine {
             })?,
         )?;
 
-        for (name, fixed_kind) in [("ask", None), ("stuck", Some("stuck"))] {
-            let (app, fx, title) = (self.app.clone(), effects.clone(), card.title.clone());
-            m.set(
-                name,
-                lua.create_function(move |_, args: mlua::MultiValue| {
-                    let mut args = args.into_iter();
-                    let kind = match fixed_kind {
-                        Some(kind) => kind.to_string(),
-                        None => String::from_lua_arg(args.next())?,
-                    };
-                    let reason = String::from_lua_arg(args.next())?;
-                    let open = app
-                        .store
-                        .has_open_inbox_item(card_id, &kind)
-                        .map_err(mlua::Error::external)?;
-                    if !open {
-                        app.store
-                            .add_inbox_item(
-                                &kind,
-                                Some(card_id),
-                                &title,
-                                &serde_json::json!({ "reason": reason }),
-                            )
-                            .map_err(mlua::Error::external)?;
-                    }
-                    fx.borrow_mut().waiting = Some(reason);
-                    Ok(())
-                })?,
-            )?;
-        }
+        let (app, fx, title) = (self.app.clone(), effects.clone(), card.title.clone());
+        m.set(
+            "ask",
+            lua.create_function(move |_, (kind, reason): (String, String)| {
+                to_inbox_once(&app, card_id, &title, &kind, &reason)?;
+                fx.borrow_mut().waiting = Some(reason);
+                Ok(())
+            })?,
+        )?;
+
+        let (app, fx, title) = (self.app.clone(), effects.clone(), card.title.clone());
+        m.set(
+            "stuck",
+            lua.create_function(move |_, reason: String| {
+                to_inbox_once(&app, card_id, &title, "stuck", &reason)?;
+                fx.borrow_mut().waiting = Some(reason);
+                Ok(())
+            })?,
+        )?;
 
         let app = self.app.clone();
         m.set(
@@ -444,6 +427,39 @@ impl Engine {
     }
 }
 
+/// Runs `f` on the script's behalf: the time it takes does not count against the script's time limit.
+fn outside_script<T>(deadline: &Cell<Instant>, f: impl FnOnce() -> T) -> T {
+    let started = Instant::now();
+    let result = f();
+    deadline.set(deadline.get() + started.elapsed());
+    result
+}
+
+/// Puts the card in the inbox as `kind`, unless an item of that kind is already open for it.
+fn to_inbox_once(
+    app: &App,
+    card_id: i64,
+    title: &str,
+    kind: &str,
+    reason: &str,
+) -> mlua::Result<()> {
+    let open = app
+        .store
+        .has_open_inbox_item(card_id, kind)
+        .map_err(mlua::Error::external)?;
+    if !open {
+        app.store
+            .add_inbox_item(
+                kind,
+                Some(card_id),
+                title,
+                &serde_json::json!({ "reason": reason }),
+            )
+            .map_err(mlua::Error::external)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -454,7 +470,13 @@ mod tests {
     struct FakeHarness;
 
     impl Runs for FakeHarness {
-        fn start(&self, app: &App, card: &Card, agent: &str, purpose: &str) -> Result<Run, String> {
+        fn start(
+            &self,
+            app: &Arc<App>,
+            card: &Card,
+            agent: &str,
+            purpose: &str,
+        ) -> Result<Run, String> {
             let store = &app.store;
             let run = store
                 .add_run(Some(card.id), agent, "fake", purpose)
@@ -507,9 +529,7 @@ mod tests {
     #[test]
     fn the_default_workflow_moves_a_card_from_backlog_to_done() {
         let (_dir, app, engine, repo) = setup();
-        let card = app
-            .create_issue(repo, "Add a feature", "", "person")
-            .unwrap();
+        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
 
         // Backlog -> Ready -> In progress, where the Coder run starts.
         let step = engine.settle(card.id).unwrap();
@@ -536,6 +556,39 @@ mod tests {
                 .iter()
                 .all(|j| j.outcome.as_deref() == Some("merged"))
         );
+    }
+
+    /// A harness that takes longer to start a run than a script may run.
+    struct SlowHarness;
+
+    impl Runs for SlowHarness {
+        fn start(
+            &self,
+            app: &Arc<App>,
+            card: &Card,
+            agent: &str,
+            purpose: &str,
+        ) -> Result<Run, String> {
+            std::thread::sleep(Duration::from_millis(600));
+            FakeHarness.start(app, card, agent, purpose)
+        }
+    }
+
+    #[test]
+    fn time_spent_starting_a_run_does_not_count_against_the_script() {
+        let (_dir, app, _, repo) = setup();
+        let engine = Engine::new(
+            app.clone(),
+            Arc::new(SlowHarness),
+            Workflow::default(),
+            Limits {
+                script_time: Duration::from_millis(300),
+                ..Limits::default()
+            },
+        );
+        let card = app.create_issue(repo, "Slow", "", PERSON).unwrap();
+        let step = engine.settle(card.id).unwrap();
+        assert!(step.started_run.is_some());
     }
 
     #[test]
@@ -576,7 +629,7 @@ mod tests {
         .unwrap();
         git(&clone, &["add", "."]).unwrap();
         git(&clone, &["commit", "--quiet", "-m", "hold"]).unwrap();
-        let card = app.create_issue(repo, "Held", "", "person").unwrap();
+        let card = app.create_issue(repo, "Held", "", PERSON).unwrap();
         let step = engine.settle(card.id).unwrap();
         assert_eq!(app.card(card.id).unwrap().column, "Ready");
         assert_eq!(step.waiting.as_deref(), Some("held by the repository"));
@@ -596,7 +649,7 @@ mod tests {
     #[test]
     fn a_script_cannot_reach_files_network_or_processes() {
         let (_dir, app, engine, repo) = setup();
-        let card = app.create_issue(repo, "Escape", "", "person").unwrap();
+        let card = app.create_issue(repo, "Escape", "", PERSON).unwrap();
         let probe = r#"
             function on_card(card)
               local reached = {}
@@ -623,7 +676,7 @@ mod tests {
     #[test]
     fn a_script_that_loops_or_floods_memory_is_cut_off() {
         let (_dir, app, engine, repo) = setup();
-        let card = app.create_issue(repo, "Loop", "", "person").unwrap();
+        let card = app.create_issue(repo, "Loop", "", PERSON).unwrap();
         let started = Instant::now();
         let e = run(&engine, &card, "function on_card(c) while true do end end").unwrap_err();
         assert!(e.contains("ran out of time"), "{e}");

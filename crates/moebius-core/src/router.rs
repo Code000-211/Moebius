@@ -140,6 +140,27 @@ impl Router {
         }
     }
 
+    /// A refusal when the grant's budget is spent or its usage cannot be read.
+    async fn check_budget(self: Arc<Self>, protocol: Protocol, grant: &Grant) -> Option<Response> {
+        let budget = grant.budget?;
+        let g = grant.clone();
+        match tokio::task::spawn_blocking(move || self.spent(&g)).await {
+            Ok(Ok(spent)) if spent >= budget => Some(error(
+                protocol,
+                StatusCode::TOO_MANY_REQUESTS,
+                "budget_exceeded",
+                &format!("the token budget of {budget} is spent ({spent} used)"),
+            )),
+            Ok(Ok(_)) => None,
+            _ => Some(error(
+                protocol,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "api_error",
+                "cannot read usage",
+            )),
+        }
+    }
+
     async fn forward(
         self: Arc<Self>,
         protocol: Protocol,
@@ -155,29 +176,8 @@ impl Router {
                 "not a run's token",
             );
         };
-        if let Some(budget) = grant.budget {
-            let store = self.clone();
-            let g = grant.clone();
-            let spent = tokio::task::spawn_blocking(move || store.spent(&g)).await;
-            match spent {
-                Ok(Ok(spent)) if spent >= budget => {
-                    return error(
-                        protocol,
-                        StatusCode::TOO_MANY_REQUESTS,
-                        "budget_exceeded",
-                        &format!("the token budget of {budget} is spent ({spent} used)"),
-                    );
-                }
-                Ok(Ok(_)) => {}
-                _ => {
-                    return error(
-                        protocol,
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "api_error",
-                        "cannot read usage",
-                    );
-                }
-            }
+        if let Some(refusal) = self.clone().check_budget(protocol, &grant).await {
+            return refusal;
         }
         let Some(upstream) = self
             .upstreams
@@ -292,8 +292,7 @@ impl Router {
             }
             Body::from(bytes).into_response()
         };
-        *response.status_mut() =
-            StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+        *response.status_mut() = status;
         if let Some(ct) = content_type {
             response.headers_mut().insert(header::CONTENT_TYPE, ct);
         }
