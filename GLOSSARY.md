@@ -29,8 +29,13 @@ desktop app.
 _Avoid_: MCP proxy, MCP hub
 
 **Rule**:
-Something the work must or must not do, which the router enforces on every tool call a model makes.
+Something the work must or must not do, which the router enforces on every tool call a model makes; a call that breaks one
+goes back to the model to find another way, and the run does not stop.
 _Avoid_: policy, guardrail, guideline
+
+**Decision model**:
+The model that judges whether a tool call breaks a rule, trained on the judgements Moebius records.
+_Avoid_: judge, classifier, guard model
 
 **Live view**:
 The view of a run as it happens, in the desktop app, in which a person can steer, stop or message it and open a shell in its
