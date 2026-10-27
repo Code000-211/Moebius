@@ -63,6 +63,11 @@ Something the work must or must not do, which Moebius enforces on every tool cal
 model to find another way, and the run does not stop.
 _Avoid_: policy, guardrail, guideline
 
+**Model class**:
+How Moebius groups the models the router reaches: Frontier for the strongest models, Flash for the fast and cheaper ones, and
+Local for models running on one's own hardware.
+_Avoid_: tier, model size, Sonnet class, Opus class
+
 **Decision point**:
 A place where Moebius or a person chooses between options, such as whether a tool call may run, whether a review passed,
 whether an outside issue may start or whether a proposal is accepted.
