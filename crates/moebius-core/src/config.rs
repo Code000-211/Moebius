@@ -263,7 +263,17 @@ impl Config {
 
     /// Reads `path`, or uses every default when the file does not exist.
     pub fn load(path: &Path) -> Result<Self, ConfigError> {
-        let base = path.parent().map(Path::to_path_buf).unwrap_or_default();
+        // Paths are made absolute here, since the server runs git and harnesses in other directories.
+        let parent = path.parent().unwrap_or(Path::new(""));
+        let base = std::path::absolute(if parent.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            parent
+        })
+        .map_err(|source| ConfigError::Read {
+            path: path.to_path_buf(),
+            source,
+        })?;
         match std::fs::read_to_string(path) {
             Ok(text) => Self::parse(&text, &base, path),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Self::parse("", &base, path),
@@ -347,6 +357,13 @@ mod tests {
             parse("unknown = 1"),
             Err(ConfigError::Parse { .. })
         ));
+    }
+
+    #[test]
+    fn a_relative_config_path_gives_absolute_paths() {
+        let c = Config::load(Path::new("moebius-does-not-exist.toml")).unwrap();
+        assert!(c.data_dir.is_absolute(), "{}", c.data_dir.display());
+        assert!(c.token_file.is_absolute());
     }
 
     #[test]
