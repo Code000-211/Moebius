@@ -16,7 +16,11 @@ changes ready to merge. Read `GLOSSARY.md` for the words, `docs/spec.md` for wha
 - `crates/moebius-core/skill/SKILL.md` and `src/skill.rs`: the `moebius` skill of the Moebius agent, which is `SKILL.md`
   plus every page of `docs/guide/` and `docs/reference/`. Add a new page to the list in `skill.rs`; a test fails if you
   forget.
-- `crates/moebius-desktop`: the iced desktop app (built to `docs/design.md`).
+- `crates/moebius-desktop`: the iced desktop app (built to `docs/design.md`). It talks to the server only through the
+  desktop API and does not depend on `moebius-core` (a dev-dependency starts a real server in its tests). `app.rs` is
+  the state, messages and view, `client.rs` the API client and event stream, `settings.rs` the saved address and token,
+  `theme.rs` every colour and size, `sidebar.rs` and one module per screen. `tests/snapshots/` holds the pictures its
+  render tests compare against (delete one to store a new picture).
 - `docs/guide/`: how to build on Moebius, one how-to per page (column scripts, workflows, rules, agents, plugins,
   extensions, the desktop API). Every `luau` block in it is a complete column script that `tests/guide.rs` runs; read it
   before you build anything for a user, and keep it in step with the code.

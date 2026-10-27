@@ -16,8 +16,8 @@ Milestones M0 to M5 are done (see [`docs/spec.md`](docs/spec.md) section 10). To
 - checks every tool call against built-in rules and rules written in prose, and refuses the ones that break a rule;
 - records every decision as a judgement and every model request's tokens as usage.
 
-Not built yet: the desktop app (`moebius-desktop` is a
-placeholder), the usage page and the editing of agents in the app, self-improvement and the decision model.
+The desktop app has its shell so far (connection, sidebar, fonts and colours); the screens come with M6 and M7.
+Not built yet: the usage page and the editing of agents in the app, self-improvement and the decision model.
 
 ## Quick start
 
@@ -73,6 +73,18 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/
 The answer is the merge commit, and the card is in `Done`. For a repository on GitHub, see the `[github]` table and the
 `forge` field of `POST /v1/repositories`.
 
+## The desktop app
+
+```sh
+cargo run -p moebius-desktop
+```
+
+On the first start the app asks for the server's address (`http://127.0.0.1:7171` by default) and its token (the content
+of the server's `token` file) and saves them in `<config dir>/moebius/desktop.toml` (on Linux
+`~/.config/moebius/desktop.toml`), readable by you only. The token is not shown again in full. If the server cannot be
+reached or does not accept the token, the app asks again. The address is plain HTTP, so keep the server on a private
+network. The window needs a GPU or a software Vulkan/OpenGL driver; the app finds it when it starts.
+
 ## Where everything is
 
 | Path | What |
@@ -80,7 +92,7 @@ The answer is the merge commit, and the card is in `Done`. For a repository on G
 | `crates/moebius-core/` | Everything the server does. `src/` has one module per part; `workflow/` the built-in column scripts; `bridge/` the Pi extension that checks tool calls. |
 | `crates/moebius-plugin-api/` | The plugin trait and the host that calls plugins with a time limit, failing closed. |
 | `crates/moebius/` | The `moebius` binary (`init`, `serve`, `check-script`). |
-| `crates/moebius-desktop/` | The desktop app, not built yet. |
+| `crates/moebius-desktop/` | The desktop app (iced), built to `docs/design.md`; it uses only the desktop API. |
 | `examples/` | A column script, rules, a decider plugin and a Pi extension that run in CI. |
 | `docs/` | Documentation, below. |
 

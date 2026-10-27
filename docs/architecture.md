@@ -30,7 +30,8 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
   server about every tool call.
 - The router is part of the server. Each Pi process has it as its only model provider and holds a per-run token. The
   router forwards requests to the upstreams in the configuration and counts the tokens.
-- The desktop app (`crates/moebius-desktop`) is not built yet. Any HTTP client can stand in for it.
+- The desktop app (`crates/moebius-desktop`) is an iced app that talks to the server only through the desktop API
+  (HTTP and the event WebSocket) and does not depend on `moebius-core`. Any HTTP client can stand in for it.
 
 ## The life of a card
 
@@ -193,7 +194,12 @@ The server runs on a multi-threaded tokio runtime.
 |---|---|
 | `crates/moebius/src/main.rs` | The `moebius` binary: `init` writes the example configuration, `serve` starts the server, `check-script` runs a column script once against a made-up card (`board::check_script`). |
 | `crates/moebius-plugin-api/src/lib.rs` | The `Plugin` trait, the call and decision types, the `Host` that calls plugins with a time limit and fails closed. |
-| `crates/moebius-desktop/src/main.rs` | A placeholder for the desktop app. |
+| `crates/moebius-desktop/src/main.rs` | The desktop app's start: fonts, theme, window. |
+| `crates/moebius-desktop/src/app.rs` | The app's state, `Message`, `update` and view: the connection, the page shown, reading the snapshot again on events. |
+| `crates/moebius-desktop/src/client.rs` | The desktop API client: typed health and snapshot, and the event stream as an iced subscription that reconnects with a backoff. |
+| `crates/moebius-desktop/src/settings.rs` | The address and token, saved in the config directory with mode 0600. |
+| `crates/moebius-desktop/src/theme.rs` | Every colour, size, radius and spacing of `docs/design.md`, and the bundled fonts (Manrope, JetBrains Mono). |
+| `crates/moebius-desktop/src/sidebar.rs`, `connect.rs`, `board.rs`, `soon.rs`, `page.rs`, `icons.rs` | The sidebar, the connect screen and Settings page, the board page, the "comes with M<n>" page, the page header and box, the icons. |
 | `api.rs` | The desktop API: routes, token check, the event WebSocket. |
 | `app.rs` | The core put together; the operations on cards, changes and issues, each published on the bus, including publishing a change and running its checks. |
 | `blobs.rs` | The content-addressed blob store and secret redaction. |
