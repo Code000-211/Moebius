@@ -3,8 +3,13 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use std::sync::Arc;
+
 use clap::{Parser, Subcommand};
+use moebius_core::api::{self, ApiState};
+use moebius_core::bus::Bus;
 use moebius_core::config::{self, Config};
+use moebius_core::store::Store;
 
 /// Moebius runs coding-agent harnesses from a repository's issues to changes that are ready to merge.
 #[derive(Debug, Parser)]
@@ -56,29 +61,45 @@ fn run(cli: Cli) -> Result<(), String> {
         }
         Some(Command::Serve) => {
             let config = Config::load(&cli.config).map_err(|e| e.to_string())?;
-            std::fs::create_dir_all(&config.data_dir)
-                .map_err(|e| format!("cannot create {}: {e}", config.data_dir.display()))?;
-            let store = moebius_core::store::Store::open(&config.data_dir)
-                .map_err(|e| format!("cannot open the store: {e}"))?;
-            println!(
-                "moebius {}: store opened at schema version {}",
-                moebius_core::VERSION,
-                store.schema_version().map_err(|e| e.to_string())?
-            );
-            println!(
-                "moebius {} configured: data in {}, app API on {}",
-                moebius_core::VERSION,
-                config.data_dir.display(),
-                config.listen
-            );
-            Ok(())
+            let state = prepare(&config)?;
+            let runtime = tokio::runtime::Runtime::new()
+                .map_err(|e| format!("cannot start the runtime: {e}"))?;
+            runtime.block_on(async {
+                let listener = tokio::net::TcpListener::bind(config.listen)
+                    .await
+                    .map_err(|e| format!("cannot listen on {}: {e}", config.listen))?;
+                println!(
+                    "moebius {}: data in {}, app API on {}",
+                    moebius_core::VERSION,
+                    config.data_dir.display(),
+                    config.listen
+                );
+                tokio::select! {
+                    served = api::serve(listener, state) => served.map_err(|e| e.to_string()),
+                    _ = tokio::signal::ctrl_c() => Ok(()),
+                }
+            })
         }
     }
 }
 
+/// Creates the data directory, opens the store and reads (or creates) the app's token.
+fn prepare(config: &Config) -> Result<ApiState, String> {
+    std::fs::create_dir_all(&config.data_dir)
+        .map_err(|e| format!("cannot create {}: {e}", config.data_dir.display()))?;
+    let store = Store::open(&config.data_dir).map_err(|e| format!("cannot open the store: {e}"))?;
+    let token = api::load_or_create_token(&config.token_file)
+        .map_err(|e| format!("cannot read {}: {e}", config.token_file.display()))?;
+    Ok(ApiState {
+        store: Arc::new(store),
+        bus: Bus::new(),
+        token: token.into(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{Cli, Command, run};
+    use super::{Cli, Command, prepare, run};
     use clap::{CommandFactory, Parser};
 
     #[test]
@@ -97,7 +118,7 @@ mod tests {
     }
 
     #[test]
-    fn init_writes_the_example_and_refuses_to_overwrite_it() {
+    fn init_writes_the_example_and_the_server_prepares_its_data() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("moebius.toml");
         let cli = |c| Cli {
@@ -110,8 +131,8 @@ mod tests {
             moebius_core::config::EXAMPLE
         );
         assert!(run(cli(Command::Init)).is_err());
-        run(cli(Command::Serve)).unwrap();
-        assert!(dir.path().join(".moebius").is_dir());
+        prepare(&moebius_core::config::Config::load(&path).unwrap()).unwrap();
+        assert!(dir.path().join(".moebius/token").is_file());
         assert!(dir.path().join(".moebius/moebius.sqlite").is_file());
     }
 }
