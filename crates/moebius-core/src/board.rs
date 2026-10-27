@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 
 use mlua::{Lua, Table, Value, VmState};
 
-use crate::app::{App, AppError, PERSON, columns};
+use crate::app::{App, AppError, columns};
 use crate::decide::Question;
 use crate::repos::git;
 use crate::store::{Card, Run};
@@ -261,7 +261,7 @@ impl Engine {
         t.set("body", card.body.as_str())?;
         t.set("author", card.author.as_str())?;
         t.set("column", card.column.as_str())?;
-        t.set("trusted", card.author == PERSON)?;
+        t.set("trusted", self.app.is_trusted(card))?;
         t.set(
             "rounds",
             runs.iter().filter(|r| r.purpose == "code").count(),
@@ -463,6 +463,7 @@ fn to_inbox_once(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::PERSON;
     use crate::store::Store;
     use moebius_plugin_api::Host;
 

@@ -1,7 +1,9 @@
 //! The GitHub App Moebius acts as: it signs a JWT with the app's private key and exchanges it for an installation
-//! token per repository owner, which it keeps until shortly before it expires.
+//! token per repository owner, which it keeps until shortly before it expires. It also lists a repository's issues,
+//! asking GitHub only for what changed since the last time.
 
 use std::collections::HashMap;
+use std::sync::Mutex as StdMutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
@@ -30,6 +32,26 @@ pub enum GitHubError {
     },
     #[error("GitHub sent an expiry that is not a time: {0}")]
     ExpiresAt(String),
+    #[error("{0:?} is not a GitHub repository as owner/repo")]
+    Repository(String),
+}
+
+/// An issue as GitHub lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Issue {
+    pub number: i64,
+    pub title: String,
+    pub body: Option<String>,
+    /// `open` or `closed`.
+    pub state: String,
+    pub user: User,
+    /// Present on the items of the issues list that are pull requests.
+    pull_request: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct User {
+    pub login: String,
 }
 
 #[derive(Serialize)]
@@ -62,6 +84,8 @@ pub struct GitHub {
     app_id: u64,
     key: EncodingKey,
     tokens: Mutex<HashMap<String, CachedToken>>,
+    /// The ETag of the last full answer to the issues list, per repository.
+    etags: StdMutex<HashMap<String, String>>,
 }
 
 impl GitHub {
@@ -73,6 +97,7 @@ impl GitHub {
             app_id,
             key: EncodingKey::from_rsa_pem(private_key_pem).map_err(GitHubError::Key)?,
             tokens: Mutex::new(HashMap::new()),
+            etags: StdMutex::new(HashMap::new()),
         })
     }
 
@@ -130,28 +155,104 @@ impl GitHub {
             .map_err(GitHubError::Sign)
     }
 
+    /// The issues of the repository `github` (`owner/repo`), pull requests left out; none when nothing changed since
+    /// the last call. Open and closed issues come in pages of a hundred, which are followed to the end.
+    pub async fn issues(&self, github: &str) -> Result<Option<Vec<Issue>>, GitHubError> {
+        let (owner, repo) = github
+            .split_once('/')
+            .ok_or_else(|| GitHubError::Repository(github.to_string()))?;
+        let token = self.installation_token(owner, repo).await?;
+        let known = self.etags().get(github).cloned();
+        let mut url = format!(
+            "{}/repos/{github}/issues?state=all&per_page=100",
+            self.api_url
+        );
+        let mut issues = Vec::new();
+        let mut etag = None;
+        loop {
+            let mut request = self.http.get(&url);
+            if let (Some(known), None) = (&known, &etag) {
+                request = request.header("If-None-Match", known);
+            }
+            let response = Self::authorize(request, &token).send().await?;
+            if response.status() == reqwest::StatusCode::NOT_MODIFIED {
+                return Ok(None);
+            }
+            let response = Self::succeeded(response).await?;
+            if etag.is_none() {
+                etag = Some(
+                    response
+                        .headers()
+                        .get("etag")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or_default()
+                        .to_string(),
+                );
+            }
+            let next = self.next_page(response.headers());
+            let page: Vec<Issue> = response.json().await?;
+            issues.extend(page.into_iter().filter(|i| i.pull_request.is_none()));
+            match next {
+                Some(next) => url = next,
+                None => break,
+            }
+        }
+        if let Some(etag) = etag.filter(|e| !e.is_empty()) {
+            self.etags().insert(github.to_string(), etag);
+        }
+        Ok(Some(issues))
+    }
+
+    /// Forgets the ETag of `github`, so the next call to [`GitHub::issues`] lists the issues again.
+    pub fn forget_issues_etag(&self, github: &str) {
+        self.etags().remove(github);
+    }
+
+    fn etags(&self) -> std::sync::MutexGuard<'_, HashMap<String, String>> {
+        self.etags
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// The next page of a list, if the `Link` header names one on this API (the token is sent nowhere else).
+    fn next_page(&self, headers: &reqwest::header::HeaderMap) -> Option<String> {
+        let link = headers.get("link")?.to_str().ok()?;
+        link.split(',')
+            .find(|part| part.contains("rel=\"next\""))
+            .and_then(|part| part.split_once('<')?.1.split_once('>'))
+            .map(|(url, _)| url.to_string())
+            .filter(|url| url.starts_with(&self.api_url))
+    }
+
     /// Sends `request` with `bearer` as its credential and reads the JSON answer.
     async fn send<T: serde::de::DeserializeOwned>(
         &self,
         request: reqwest::RequestBuilder,
         bearer: &str,
     ) -> Result<T, GitHubError> {
-        let response = request
+        let response = Self::authorize(request, bearer).send().await?;
+        Ok(Self::succeeded(response).await?.json().await?)
+    }
+
+    fn authorize(request: reqwest::RequestBuilder, bearer: &str) -> reqwest::RequestBuilder {
+        request
             .bearer_auth(bearer)
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "moebius")
             .header("X-GitHub-Api-Version", "2022-11-28")
-            .send()
-            .await?;
+    }
+
+    /// The response if GitHub answered with a success, an error with GitHub's explanation otherwise.
+    async fn succeeded(response: reqwest::Response) -> Result<reqwest::Response, GitHubError> {
         let status = response.status();
-        if !status.is_success() {
-            return Err(GitHubError::Status {
-                url: response.url().to_string(),
-                status,
-                body: response.text().await.unwrap_or_default(),
-            });
+        if status.is_success() {
+            return Ok(response);
         }
-        Ok(response.json().await?)
+        Err(GitHubError::Status {
+            url: response.url().to_string(),
+            status,
+            body: response.text().await.unwrap_or_default(),
+        })
     }
 }
 
@@ -161,8 +262,9 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use axum::Router;
-    use axum::extract::{Path, State};
+    use axum::extract::{Path, Query, State};
     use axum::http::{HeaderMap, StatusCode};
+    use axum::response::IntoResponse;
     use axum::routing::{get, post};
     use jsonwebtoken::{DecodingKey, Validation};
     use serde_json::json;
@@ -177,6 +279,8 @@ mod tests {
     struct Fake {
         token_lifetime: Duration,
         exchanges: AtomicUsize,
+        /// The `If-None-Match` of each request for the first page of issues.
+        asked_for_issues: StdMutex<Vec<Option<String>>>,
     }
 
     #[derive(Deserialize)]
@@ -222,6 +326,7 @@ mod tests {
         let fake = Arc::new(Fake {
             token_lifetime,
             exchanges: AtomicUsize::new(0),
+            asked_for_issues: StdMutex::new(Vec::new()),
         });
         let app = Router::new()
             .route(
@@ -251,6 +356,46 @@ mod tests {
                                 "expires_at": expires.format(&Rfc3339).unwrap(),
                             })),
                         ))
+                    },
+                ),
+            )
+            .route(
+                "/repos/{owner}/{repo}/issues",
+                get(
+                    |State(fake): State<Arc<Fake>>,
+                     headers: HeaderMap,
+                     Query(query): Query<HashMap<String, String>>| async move {
+                        assert_eq!(
+                            headers.get("authorization").unwrap(),
+                            "Bearer ghs_token1"
+                        );
+                        assert_eq!(query["state"], "all");
+                        assert_eq!(query["per_page"], "100");
+                        let issue = |number: u64| {
+                            json!({ "number": number, "title": "Issue", "body": null,
+                                    "state": "open", "user": { "login": "leon" } })
+                        };
+                        if query.contains_key("page") {
+                            return axum::Json(json!([issue(3)])).into_response();
+                        }
+                        let asked = headers
+                            .get("if-none-match")
+                            .map(|v| v.to_str().unwrap().to_string());
+                        fake.asked_for_issues.lock().unwrap().push(asked.clone());
+                        if asked.as_deref() == Some("\"v1\"") {
+                            return StatusCode::NOT_MODIFIED.into_response();
+                        }
+                        let host = headers.get("host").unwrap().to_str().unwrap();
+                        let next = format!(
+                            "<http://{host}/repos/acme/widgets/issues?state=all&per_page=100&page=2>; rel=\"next\""
+                        );
+                        let pull_request = json!({ "number": 2, "title": "A pull request", "body": "",
+                                "state": "open", "user": { "login": "leon" }, "pull_request": {} });
+                        (
+                            [("etag", "\"v1\"".to_string()), ("link", next)],
+                            axum::Json(json!([issue(1), pull_request])),
+                        )
+                            .into_response()
                     },
                 ),
             )
@@ -313,6 +458,32 @@ mod tests {
         assert!(matches!(
             GitHub::new(&url, APP_ID, b"not a key"),
             Err(GitHubError::Key(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn issues_are_listed_page_by_page_without_pull_requests_and_only_when_changed() {
+        let (url, fake) = serve(Duration::from_secs(3600)).await;
+        let github = client(&url);
+        let issues = github.issues("acme/widgets").await.unwrap().unwrap();
+        assert_eq!(
+            issues.iter().map(|i| i.number).collect::<Vec<_>>(),
+            [1, 3],
+            "the pull request is left out and the second page is followed"
+        );
+        assert_eq!(issues[0].body, None);
+        assert_eq!(issues[0].user.login, "leon");
+
+        assert_eq!(github.issues("acme/widgets").await.unwrap(), None);
+        github.forget_issues_etag("acme/widgets");
+        assert!(github.issues("acme/widgets").await.unwrap().is_some());
+        assert_eq!(
+            *fake.asked_for_issues.lock().unwrap(),
+            [None, Some("\"v1\"".to_string()), None]
+        );
+        assert!(matches!(
+            github.issues("widgets").await,
+            Err(GitHubError::Repository(_))
         ));
     }
 }

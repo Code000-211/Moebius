@@ -59,6 +59,7 @@ program = "pi-bolt"
 # app_id = 123456
 # private_key_file = "github-app.pem"
 # api_url = "https://api.github.com"
+# poll_seconds = 30                       # how often each GitHub repository's issues are polled
 
 # Agents run on Pi-Bolt. The default workflow starts the Coder.
 # [agents.Coder]
@@ -148,6 +149,7 @@ struct RawGitHub {
     app_id: u64,
     private_key_file: PathBuf,
     api_url: Option<String>,
+    poll_seconds: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -186,6 +188,8 @@ pub struct GitHubConfig {
     pub app_id: u64,
     pub private_key_file: PathBuf,
     pub api_url: String,
+    /// How often the issues of each GitHub repository are polled.
+    pub poll: Duration,
 }
 
 /// An agent as configured; the harness configuration repository takes this over in M6.
@@ -286,6 +290,7 @@ impl Config {
                 api_url: g
                     .api_url
                     .unwrap_or_else(|| "https://api.github.com".to_string()),
+                poll: Duration::from_secs(g.poll_seconds.unwrap_or(30).max(1)),
             }),
             agents: raw.agents,
             data_dir,
@@ -382,13 +387,15 @@ mod tests {
         assert_eq!(github.app_id, 42);
         assert_eq!(github.private_key_file, PathBuf::from("/srv/app.pem"));
         assert_eq!(github.api_url, "https://api.github.com");
+        assert_eq!(github.poll, Duration::from_secs(30));
         let c = parse(
-            "[github]\napp_id = 1\nprivate_key_file = \"/k.pem\"\napi_url = \"http://127.0.0.1:1\"\n",
+            "[github]\napp_id = 1\nprivate_key_file = \"/k.pem\"\napi_url = \"http://127.0.0.1:1\"\npoll_seconds = 5\n",
         )
         .unwrap();
         let github = c.github.unwrap();
         assert_eq!(github.private_key_file, PathBuf::from("/k.pem"));
         assert_eq!(github.api_url, "http://127.0.0.1:1");
+        assert_eq!(github.poll, Duration::from_secs(5));
         assert!(matches!(
             parse("[github]\napp_id = 1"),
             Err(ConfigError::Parse { .. })

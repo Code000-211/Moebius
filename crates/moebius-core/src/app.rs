@@ -1,16 +1,18 @@
 //! The core put together: the store, the event bus, the repositories, the forges and the decision points, and the
 //! operations the desktop API and the board engine perform on them. Every change to a card is published on the bus.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use moebius_plugin_api::Host;
+use regex::Regex;
 use serde_json::json;
 
 use crate::bus::{AppEvent, Bus};
 use crate::decide::{Decisions, Question};
 use crate::forge::{Forge, NoForge};
+use crate::github::Issue;
 use crate::repos::{GitError, Repos};
 use crate::store::{Card, Change, Repository, Store, StoreError};
 
@@ -38,6 +40,30 @@ pub enum AppError {
     NotFound(String),
     #[error("{0}")]
     Invalid(String),
+}
+
+/// The issue numbers an issue's body says it is blocked by: "blocked by #12", "Blocked by: #3, #4".
+fn blocked_by(body: &str) -> BTreeSet<i64> {
+    static BLOCKED: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i)blocked by:?[ \t]*((?:#\d+[ \t,]*)+)").unwrap());
+    static NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"#(\d+)").unwrap());
+    BLOCKED
+        .captures_iter(body)
+        .flat_map(|blocked| {
+            NUMBER
+                .captures_iter(&blocked[1])
+                .filter_map(|n| n[1].parse().ok())
+                .collect::<Vec<i64>>()
+        })
+        .collect()
+}
+
+/// Whether `name` is made of letters, digits and `-_.` only.
+fn is_plain_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
 }
 
 pub type Result<T> = std::result::Result<T, AppError>;
@@ -88,24 +114,104 @@ impl App {
 
     /// Clones `url` and adds it as a repository without a forge.
     pub fn add_repository(&self, name: &str, url: &str) -> Result<Repository> {
-        if name.is_empty()
-            || !name
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
-            || name.starts_with('.')
+        let (path, branch) = self.clone_repository(name, url)?;
+        let repository = self.store.add_repository(name, &path, "none", &branch)?;
+        self.bus
+            .publish(AppEvent::new("repository_added", json!(repository)));
+        Ok(repository)
+    }
+
+    /// Clones `url` and adds it as a repository whose issues are polled from GitHub as `github` (`owner/repo`).
+    /// Issues by the logins in `trusted` need no approval. The clone is made without the app's credentials, so
+    /// private repositories cannot be cloned yet.
+    pub fn add_github_repository(
+        &self,
+        name: &str,
+        url: &str,
+        github: &str,
+        trusted: &[String],
+    ) -> Result<Repository> {
+        if !github
+            .split_once('/')
+            .is_some_and(|(owner, repo)| is_plain_name(owner) && is_plain_name(repo))
         {
+            return Err(AppError::Invalid(format!(
+                "{github:?} is not a GitHub repository as owner/repo"
+            )));
+        }
+        let (path, branch) = self.clone_repository(name, url)?;
+        let repository = self
+            .store
+            .add_github_repository(name, &path, &branch, github, trusted)?;
+        self.bus
+            .publish(AppEvent::new("repository_added", json!(repository)));
+        Ok(repository)
+    }
+
+    /// Clones `url` as the repository `name` and returns the clone's path and default branch.
+    fn clone_repository(&self, name: &str, url: &str) -> Result<(String, String)> {
+        if !is_plain_name(name) || name.starts_with('.') {
             return Err(AppError::Invalid(format!(
                 "{name:?} is not a repository name"
             )));
         }
         let clone = self.repos.clone_or_fetch(name, url)?;
         let branch = self.repos.default_branch(&clone)?;
-        let repository =
-            self.store
-                .add_repository(name, &clone.to_string_lossy(), "none", &branch)?;
-        self.bus
-            .publish(AppEvent::new("repository_added", json!(repository)));
-        Ok(repository)
+        Ok((clone.to_string_lossy().into_owned(), branch))
+    }
+
+    /// Whether the issue behind `card` may move on without a person's approval: a person created it in the desktop
+    /// app, or its author is one of the repository's trusted GitHub logins. Anything unknown is not trusted.
+    pub fn is_trusted(&self, card: &Card) -> bool {
+        let Ok(Some(repository)) = self.store.repository(card.repository_id) else {
+            return false;
+        };
+        if repository.forge == "none" {
+            return card.author == PERSON;
+        }
+        repository
+            .trusted
+            .iter()
+            .any(|login| login.eq_ignore_ascii_case(&card.author))
+    }
+
+    /// Brings the cards of `repository` in line with its GitHub issues: open issues get a card in the backlog,
+    /// changed titles and bodies are copied, closed issues move their card to done, and "blocked by #n" in a body
+    /// becomes the card's dependencies. A closed issue without a card is not worth one.
+    pub fn sync_issues(&self, repository: &Repository, issues: &[Issue]) -> Result<()> {
+        for issue in issues {
+            let body = issue.body.as_deref().unwrap_or_default();
+            let card = match self.store.card_by_number(repository.id, issue.number)? {
+                Some(card) => {
+                    if card.title != issue.title || card.body != body {
+                        self.store.set_card_text(card.id, &issue.title, body)?;
+                        self.bus
+                            .publish(AppEvent::new("card_updated", json!(self.card(card.id)?)));
+                    }
+                    card
+                }
+                None if issue.state == "open" => {
+                    let card = self.store.add_numbered_card(
+                        repository.id,
+                        issue.number,
+                        &issue.title,
+                        body,
+                        &issue.user.login,
+                        columns::BACKLOG,
+                    )?;
+                    self.bus.publish(AppEvent::new("card_added", json!(card)));
+                    card
+                }
+                None => continue,
+            };
+            let mut blockers = blocked_by(body);
+            blockers.remove(&issue.number);
+            self.store.set_dependencies(card.id, &blockers)?;
+            if issue.state == "closed" && card.column != columns::DONE {
+                self.move_card(card.id, columns::DONE)?;
+            }
+        }
+        Ok(())
     }
 
     /// Creates an issue in a repository without a forge: a new card in the backlog.
@@ -233,5 +339,56 @@ impl App {
             self.move_card(card_id, columns::DONE)?;
         }
         Ok(commit)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::store::Store;
+    use moebius_plugin_api::Host;
+
+    #[test]
+    fn blockers_are_read_from_a_body() {
+        let numbers = |body| blocked_by(body).into_iter().collect::<Vec<_>>();
+        assert_eq!(numbers("Needs the parser.\n\nblocked by #12"), [12]);
+        assert_eq!(numbers("Blocked by: #3, #4\nBLOCKED BY #9 #3"), [3, 4, 9]);
+        assert_eq!(numbers("Fixes #5, not blocked by anything"), [] as [i64; 0]);
+    }
+
+    #[test]
+    fn who_is_trusted_depends_on_the_repository() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(Store::in_memory(&dir.path().join("blobs")).unwrap());
+        let app = App::new(
+            store.clone(),
+            Arc::new(Host::new(std::time::Duration::from_secs(1))),
+            dir.path(),
+        );
+        let local = store
+            .add_repository("local", "/srv/local", "none", "main")
+            .unwrap();
+        let remote = store
+            .add_github_repository(
+                "remote",
+                "/srv/remote",
+                "main",
+                "acme/remote",
+                &["Leon".into()],
+            )
+            .unwrap();
+        let card = |repository: &Repository, author| {
+            store
+                .add_card(repository.id, "Card", "", author, columns::BACKLOG)
+                .unwrap()
+        };
+        assert!(app.is_trusted(&card(&local, PERSON)));
+        assert!(!app.is_trusted(&card(&local, "leon")));
+        assert!(app.is_trusted(&card(&remote, "leon")), "logins ignore case");
+        assert!(!app.is_trusted(&card(&remote, "mallory")));
+        assert!(
+            !app.is_trusted(&card(&remote, PERSON)),
+            "a GitHub user named like the desktop's person is an outsider"
+        );
     }
 }

@@ -1,5 +1,6 @@
 //! The store: records in SQLite and large content in the blob store (see `docs/spec.md`, section 3.1).
 
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -23,7 +24,8 @@ pub enum StoreError {
 pub type Result<T> = std::result::Result<T, StoreError>;
 
 /// Each entry migrates the schema from the version before it; the schema's version is `PRAGMA user_version`.
-const MIGRATIONS: &[&str] = &[r#"
+const MIGRATIONS: &[&str] = &[
+    r#"
 CREATE TABLE repositories (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
@@ -104,7 +106,17 @@ CREATE TABLE usage (
 CREATE INDEX events_by_run ON events (run_id, seq);
 CREATE INDEX judgements_by_kind ON judgements (kind, at);
 CREATE INDEX usage_by_run ON usage (run_id);
-"#];
+"#,
+    r#"
+ALTER TABLE repositories ADD COLUMN github TEXT;
+ALTER TABLE repositories ADD COLUMN trusted TEXT NOT NULL DEFAULT '[]';
+CREATE TABLE dependencies (
+    card_id INTEGER NOT NULL REFERENCES cards(id),
+    blocked_by INTEGER NOT NULL,
+    PRIMARY KEY (card_id, blocked_by)
+);
+"#,
+];
 
 pub fn now() -> i64 {
     SystemTime::now()
@@ -119,6 +131,10 @@ pub struct Repository {
     pub path: String,
     pub forge: String,
     pub default_branch: String,
+    /// The repository's name on GitHub, as `owner/repo`; none for other forges.
+    pub github: Option<String>,
+    /// The GitHub logins whose issues move on without a person's approval.
+    pub trusted: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -280,10 +296,43 @@ impl Store {
         forge: &str,
         default_branch: &str,
     ) -> Result<Repository> {
+        self.insert_repository(name, path, forge, default_branch, None, &[])
+    }
+
+    /// Adds a repository whose issues live on GitHub as `github` (`owner/repo`); `trusted` are the logins whose
+    /// issues need no approval.
+    pub fn add_github_repository(
+        &self,
+        name: &str,
+        path: &str,
+        default_branch: &str,
+        github: &str,
+        trusted: &[String],
+    ) -> Result<Repository> {
+        self.insert_repository(name, path, "github", default_branch, Some(github), trusted)
+    }
+
+    fn insert_repository(
+        &self,
+        name: &str,
+        path: &str,
+        forge: &str,
+        default_branch: &str,
+        github: Option<&str>,
+        trusted: &[String],
+    ) -> Result<Repository> {
         let conn = self.conn();
         conn.execute(
-            "INSERT INTO repositories (name, path, forge, default_branch) VALUES (?1, ?2, ?3, ?4)",
-            params![name, path, forge, default_branch],
+            "INSERT INTO repositories (name, path, forge, default_branch, github, trusted)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                name,
+                path,
+                forge,
+                default_branch,
+                github,
+                serde_json::to_string(trusted)?
+            ],
         )?;
         Ok(Repository {
             id: conn.last_insert_rowid(),
@@ -291,21 +340,32 @@ impl Store {
             path: path.into(),
             forge: forge.into(),
             default_branch: default_branch.into(),
+            github: github.map(Into::into),
+            trusted: trusted.to_vec(),
         })
     }
 
     pub fn repositories(&self) -> Result<Vec<Repository>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
-            "SELECT id, name, path, forge, default_branch FROM repositories ORDER BY id",
+            "SELECT id, name, path, forge, default_branch, github, trusted FROM repositories ORDER BY id",
         )?;
         let rows = stmt.query_map([], |r| {
+            let trusted: String = r.get(6)?;
             Ok(Repository {
                 id: r.get(0)?,
                 name: r.get(1)?,
                 path: r.get(2)?,
                 forge: r.get(3)?,
                 default_branch: r.get(4)?,
+                github: r.get(5)?,
+                trusted: serde_json::from_str(&trusted).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        6,
+                        rusqlite::types::Type::Text,
+                        e.into(),
+                    )
+                })?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -332,6 +392,32 @@ impl Store {
             [repository_id],
             |r| r.get(0),
         )?;
+        Self::insert_card(&conn, repository_id, number, title, body, author, column)
+    }
+
+    /// Adds a card with the number of its issue on the forge.
+    pub fn add_numbered_card(
+        &self,
+        repository_id: i64,
+        number: i64,
+        title: &str,
+        body: &str,
+        author: &str,
+        column: &str,
+    ) -> Result<Card> {
+        let conn = self.conn();
+        Self::insert_card(&conn, repository_id, number, title, body, author, column)
+    }
+
+    fn insert_card(
+        conn: &Connection,
+        repository_id: i64,
+        number: i64,
+        title: &str,
+        body: &str,
+        author: &str,
+        column: &str,
+    ) -> Result<Card> {
         let at = now();
         conn.execute(
             "INSERT INTO cards (repository_id, number, title, body, author, column_name, created_at)
@@ -350,12 +436,12 @@ impl Store {
         })
     }
 
-    fn cards_where(&self, clause: &str, param: i64) -> Result<Vec<Card>> {
+    fn cards_where(&self, clause: &str, params: impl rusqlite::Params) -> Result<Vec<Card>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(&format!(
             "SELECT id, repository_id, number, title, body, author, column_name, created_at FROM cards WHERE {clause} ORDER BY id"
         ))?;
-        let rows = stmt.query_map([param], |r| {
+        let rows = stmt.query_map(params, |r| {
             Ok(Card {
                 id: r.get(0)?,
                 repository_id: r.get(1)?,
@@ -371,11 +457,53 @@ impl Store {
     }
 
     pub fn card(&self, id: i64) -> Result<Option<Card>> {
-        Ok(self.cards_where("id = ?1", id)?.pop())
+        Ok(self.cards_where("id = ?1", [id])?.pop())
     }
 
     pub fn cards(&self, repository_id: i64) -> Result<Vec<Card>> {
-        self.cards_where("repository_id = ?1", repository_id)
+        self.cards_where("repository_id = ?1", [repository_id])
+    }
+
+    /// The card of issue `number` in a repository.
+    pub fn card_by_number(&self, repository_id: i64, number: i64) -> Result<Option<Card>> {
+        Ok(self
+            .cards_where(
+                "repository_id = ?1 AND number = ?2",
+                [repository_id, number],
+            )?
+            .pop())
+    }
+
+    pub fn set_card_text(&self, id: i64, title: &str, body: &str) -> Result<()> {
+        self.conn().execute(
+            "UPDATE cards SET title = ?1, body = ?2 WHERE id = ?3",
+            params![title, body, id],
+        )?;
+        Ok(())
+    }
+
+    /// Replaces the numbers of the issues that block a card.
+    pub fn set_dependencies(&self, card_id: i64, blocked_by: &BTreeSet<i64>) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        tx.execute("DELETE FROM dependencies WHERE card_id = ?1", [card_id])?;
+        for number in blocked_by {
+            tx.execute(
+                "INSERT INTO dependencies (card_id, blocked_by) VALUES (?1, ?2)",
+                [card_id, *number],
+            )?;
+        }
+        Ok(tx.commit()?)
+    }
+
+    /// The numbers of the issues that block a card, in order.
+    pub fn dependencies(&self, card_id: i64) -> Result<Vec<i64>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT blocked_by FROM dependencies WHERE card_id = ?1 ORDER BY blocked_by",
+        )?;
+        let rows = stmt.query_map([card_id], |r| r.get(0))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
     pub fn move_card(&self, id: i64, column: &str) -> Result<()> {
@@ -842,6 +970,59 @@ mod tests {
             Store::open(dir.path()).unwrap().schema_version().unwrap(),
             MIGRATIONS.len()
         );
+    }
+
+    #[test]
+    fn a_database_at_schema_one_is_migrated_and_keeps_its_repositories() {
+        let dir = tempfile::tempdir().unwrap();
+        {
+            let conn = Connection::open(dir.path().join("moebius.sqlite")).unwrap();
+            conn.execute_batch(MIGRATIONS[0]).unwrap();
+            conn.pragma_update(None, "user_version", 1).unwrap();
+            conn.execute(
+                "INSERT INTO repositories (name, path, forge, default_branch) VALUES ('old', '/srv/old', 'none', 'main')",
+                [],
+            )
+            .unwrap();
+        }
+        let s = Store::open(dir.path()).unwrap();
+        assert_eq!(s.schema_version().unwrap(), 2);
+        let old = &s.repositories().unwrap()[0];
+        assert_eq!((old.name.as_str(), old.github.clone()), ("old", None));
+        assert!(old.trusted.is_empty());
+    }
+
+    #[test]
+    fn github_repositories_numbered_cards_and_dependencies_round_trip() {
+        let (_dir, s) = store();
+        let trusted = vec!["leon".to_string()];
+        let repo = s
+            .add_github_repository("widgets", "/srv/widgets", "main", "acme/widgets", &trusted)
+            .unwrap();
+        assert_eq!(s.repository(repo.id).unwrap(), Some(repo.clone()));
+        assert_eq!(
+            (repo.forge.as_str(), repo.github.as_deref(), &repo.trusted),
+            ("github", Some("acme/widgets"), &trusted)
+        );
+
+        let card = s
+            .add_numbered_card(repo.id, 41, "Issue", "body", "leon", "Backlog")
+            .unwrap();
+        assert_eq!(s.card_by_number(repo.id, 41).unwrap(), Some(card.clone()));
+        assert_eq!(s.card_by_number(repo.id, 42).unwrap(), None);
+        s.set_card_text(card.id, "Renamed", "new body").unwrap();
+        let stored = s.card(card.id).unwrap().unwrap();
+        assert_eq!(
+            (stored.title.as_str(), stored.body.as_str()),
+            ("Renamed", "new body")
+        );
+
+        s.set_dependencies(card.id, &BTreeSet::from([9, 3]))
+            .unwrap();
+        assert_eq!(s.dependencies(card.id).unwrap(), [3, 9]);
+        s.set_dependencies(card.id, &BTreeSet::from([9, 12]))
+            .unwrap();
+        assert_eq!(s.dependencies(card.id).unwrap(), [9, 12]);
     }
 
     #[test]
