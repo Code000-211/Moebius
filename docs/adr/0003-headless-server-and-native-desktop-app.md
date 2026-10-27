@@ -6,6 +6,6 @@ engine (neither Electron nor a system WebView), because Orca, built the other wa
 
 ## Consequences
 
-- The server is reachable only from a private network, and nothing on it is public. Moebius acts on GitHub as its own GitHub
-  App, but with the App's webhooks turned off: it learns of changes on GitHub by polling, about every 30 seconds, because
-  receiving webhooks would need an address GitHub can reach from the internet.
+- The server is reachable only from a private network, and nothing on it is public. Forges therefore learn nothing by
+  pushing to Moebius: the GitHub forge acts as its own GitHub App with the App's webhooks turned off and polls GitHub about
+  every 30 seconds, because receiving webhooks would need an address GitHub can reach from the internet.

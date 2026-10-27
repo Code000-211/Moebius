@@ -3,7 +3,7 @@
 There is no workflow definition apart from the board: a workflow is its columns and the behaviour behind each of them (what
 happens to a card that enters, how many cards a column holds at once, where a card goes next), written as scripts in a script
 language built into Moebius. Moebius ships a default workflow, which a repository can replace in its own `.moebius/`
-directory. Moebius reads that directory only from the repository's default branch, so that a pull request cannot run scripts
+directory. Moebius reads that directory only from the repository's default branch, so that a proposed change cannot run scripts
 of its own on the server.
 
 ## Consequences

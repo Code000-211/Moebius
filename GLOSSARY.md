@@ -1,14 +1,33 @@
 # Moebius
 
-Moebius is an orchestration layer: it takes work from GitHub, hands it to coding-agent harnesses and improves how they work
-from what each day of work teaches it.
+Moebius is an orchestration layer: it takes work from a repository's issues, hands it to coding-agent harnesses and improves
+how they work from what each day of work teaches it.
 
 ## Language
 
 **Moebius**:
-The orchestration layer: one lean, headless program that runs permanently on a server, holds the board, talks to GitHub,
-schedules the work and drives the harnesses.
+The orchestration layer: one lean, headless program that runs permanently on a server, holds the boards, schedules the work
+and drives the harnesses.
 _Avoid_: meta-harness, harness, daemon, platform
+
+**Core**:
+The part of Moebius that is not a plugin: repositories, runs and their scheduling, the boards, the inbox, the check every
+tool call passes and the guarantees no plugin may break.
+_Avoid_: kernel, engine, base
+
+**Repository**:
+A git repository Moebius works in, with its branches, worktrees and merges; how its issues and changes are hosted is up to its
+forge, if it has one.
+_Avoid_: repo, project, codebase
+
+**Forge**:
+A plugin that connects a repository to the place where its issues and changes are hosted, such as GitHub, Codeberg or GitLab;
+a repository without one keeps its issues and changes in Moebius.
+_Avoid_: host, source, provider
+
+**Change**:
+A branch proposed for merging into a repository, which a forge shows as a pull request or merge request.
+_Avoid_: pull request, merge request, PR
 
 **Harness**:
 A coding-agent program that Moebius drives to do the work, such as Pi-Bolt.
@@ -58,13 +77,11 @@ worktree.
 _Avoid_: terminal, console, log
 
 **Board**:
-Moebius's own Kanban board for one GitHub repository, filled from its issues and pull requests; each connected repository
-has its own.
+Moebius's own Kanban board for one repository, filled from its issues and changes; each repository has its own.
 _Avoid_: project, GitHub Project
 
 **Card**:
-One GitHub issue on the board, or a pull request that belongs to no issue; a pull request that closes an issue belongs to
-that issue's card.
+One issue on the board, or a change that belongs to no issue; a change that closes an issue belongs to that issue's card.
 _Avoid_: task, ticket, item
 
 **Run**:
@@ -83,8 +100,7 @@ _Avoid_: hook, plugin, automation
 
 **Workflow**:
 The columns a card goes through on its own and the behaviour behind them, by default coding and then testing and review, and
-back to coding while anything is still wrong, until its pull request is ready to merge; a person steps in only before the
-merge.
+back to coding while anything is still wrong, until its change is ready to merge; a person steps in only before the merge.
 _Avoid_: pipeline, process, flow
 
 **Autoresearch**:
@@ -103,8 +119,8 @@ until it is understood; it ends in a set of issues the person confirms before Mo
 _Avoid_: shaping, session, interview
 
 **Trusted author**:
-A GitHub user whose issues start the workflow without anyone's approval; issues from anyone else wait until a person
-approves them.
+A person whose issues start the workflow without anyone's approval; issues from anyone else wait until a person approves
+them.
 _Avoid_: collaborator, maintainer, allowlisted user
 
 **Inbox**:
