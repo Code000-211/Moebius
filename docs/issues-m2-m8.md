@@ -1,0 +1,175 @@
+# Issues: M2 to M8
+
+The milestones after M1 of [`docs/spec.md`](spec.md), cut so that each is one card. Every milestone ends with a review
+issue: all tests run many times, the code read for bugs, overengineering and readability, and what is found fixed.
+
+## M2 · GitHub
+
+### 13. GitHub App authentication
+Moebius acts as its own GitHub App with webhooks off: from the app id and private key (`[github]` in the configuration,
+the key from a file) it signs a JWT (RS256) and exchanges it for an installation token per repository owner, cached
+until shortly before it expires.
+**Done when** a test against a fake GitHub API signs a JWT the fake verifies and gets, caches and renews a token.
+
+### 14. Issues by polling
+A repository with the GitHub forge is polled about every 30 seconds with conditional requests (ETag). Open issues become
+cards; issues from trusted authors (per repository) move on by themselves, others wait in the inbox for approval; a
+closed issue moves its card to done; "blocked by #n" in an issue's body becomes a dependency.
+**Done when** a fake GitHub serves issues, a second poll sends `If-None-Match` and changes nothing on 304, and trusted
+and outside issues land where they should.
+
+### 15. Changes as pull requests
+A run's branch is pushed to GitHub with the installation token and offered as a pull request that closes its issue; the
+pull request's state, checks and reviews are polled; a pull request merged on GitHub moves its card to done, and a
+person can merge it from the app through the GitHub API.
+**Done when** a test pushes to a local bare remote, opens a pull request on the fake GitHub, and a merge there moves the
+card to done.
+
+### 16. Dependencies
+A card waits in Ready until every card it is blocked by is done; `ready.luau` sees the card's dependencies.
+**Done when** a card blocked by another starts only after the other is done.
+
+### 17. Review of M2
+
+## M3 · Rules
+
+### 18. The tool-call check
+An endpoint on localhost for the bridge: every tool call of a run is asked before it runs (`allow` or `refuse` with the
+rule), every tool result is reported and comes back with secrets removed. Each call goes through `decide("tool_call")`
+and leaves a judgement; the run's token authenticates the bridge.
+**Done when** a check and a result round-trip in a test, a refusal names its rule, and an unknown token is refused.
+
+### 19. Rules and the pattern decider
+Rules come from the harness configuration's `rules.md` and a repository's `.moebius/rules.md` on its default branch.
+Fixed patterns (destructive commands, secrets in commands, paths a rule forbids) are checked first by a compiled-in
+decider.
+**Done when** `rm -rf /`, `git push --force` and writing outside the worktree are refused with their rule, and ordinary
+calls are allowed.
+
+### 20. The teacher model
+Rules in prose are checked by the teacher model through the router: it gets the rules, the call and its context, and
+answers allow or refuse with the rule. A teacher that fails, times out or answers nonsense refuses (fail closed).
+**Done when** a recorded teacher refuses a call that breaks a prose rule and its judgement names the teacher.
+
+### 21. The bridge for Pi-Bolt
+A Pi extension shipped with Moebius and loaded into every run: on `tool_call` it asks the check and blocks with the rule
+on a refusal; on `tool_result` it replaces the result with the redacted one. A run never waits for a person: a refusal
+is an answer, and the run goes on.
+**Done when** a real `pi-bolt` against a recorded upstream tries `rm -rf /`, is refused with the rule, and finishes the
+issue anyway.
+
+### 22. Review of M3
+
+## M4 · The loop
+
+### 23. Review by the Reviewer
+In review, a Reviewer run reads the change and ends with a verdict (approve or changes with findings). Findings send the
+card back to In progress, and the next Coder round gets them in its prompt.
+**Done when** a card goes code → review → code → review → ready to merge in a test with a fake harness.
+
+### 24. CI and conflicts
+For GitHub, the card waits in review for the pull request's checks; failures go back to coding with the failing checks.
+Without a forge, a repository may name its checks in `.moebius/checks` (a command run in the worktree). A change that
+no longer merges cleanly goes back to coding with the conflict.
+**Done when** failing checks and a conflict each send a card back with what failed in the next prompt.
+
+### 25. Limits and the inbox
+A card that reaches its round limit or its token budget stops and goes to the inbox as stuck; a daily token budget stops
+new runs. A person can retry a stuck card, reject a change, steer a run with a message, and stop a run, through the
+desktop API; each is a recorded decision.
+**Done when** each limit stops a card in a test and each action works through the API.
+
+### 26. Run events through the API
+The events of a run (`GET /v1/runs/{id}/events`), the runs of a card, and a card's history, for the live view.
+**Done when** a test client reads a finished run's events and a running run's new ones arrive on the stream.
+
+### 27. Review of M4
+
+## M5 · Desktop app
+
+### 28. The desktop app's shell
+An iced app built to `docs/design.md`: connection settings (address and token), the API client and event stream, the
+collapsible grouped sidebar, the fonts (Manrope, JetBrains Mono for code) and colours.
+**Done when** the app connects to a server, shows its repositories in the sidebar, and a headless render test draws it.
+
+### 29. Board
+One board per repository: columns with their cards (number, title, round, tokens, state), red for blocked and broken
+rules, amber for what needs the person; a card opens its live view.
+**Done when** the board renders a snapshot and moves cards on events.
+
+### 30. Live view
+A run's stream of text and tool calls with each check's decision, code with highlighting, steering and stopping, and a
+shell in the worktree (a terminal on the server, shown with alacritty_terminal).
+**Done when** a finished run's events render, a steer message reaches the run, and the shell echoes a command.
+
+### 31. Inbox
+Everything that needs the person in one column, filterable, with its actions (merge, approve, retry, reject).
+**Done when** merging and approving from the inbox work against a test server.
+
+### 32. Review of M5
+
+## M6 · Agents and usage
+
+### 33. The harness configuration repository
+The server clones a configured git repository holding `agents/<name>.toml`, `agents/<name>.md`, `skills/`, `rules.md`
+and `mcp.toml`; agents come from it, and edits through the API are commits to it.
+**Done when** an agent defined in the repository runs, and an edit through the API is a commit.
+
+### 34. Skills and MCP servers
+An agent's skills are passed to Pi; its MCP servers (from `mcp.toml`) are given to the run, behind the router's token.
+**Done when** a run gets exactly its agent's skills and MCP servers.
+
+### 35. Agents screen
+The agent list and editor (model, thinking, token budget, instructions, skills, MCP servers, extensions) and the open
+proposals for an agent.
+**Done when** editing an agent in the app is a commit in the configuration repository.
+
+### 36. Usage
+The usage API (tokens per day by leading model, tokens by model, by agent, where the time goes) and the usage screen with
+the daily heatmap.
+**Done when** the API's numbers match the stored usage and the screen renders them.
+
+### 37. Review of M6
+
+## M7 · Self-improvement
+
+### 38. The Retro
+At `retro_at`, the day's errors are collected without a model (failed tool calls, refusals, aborted and failed runs,
+steering, CI failures, review findings) into a report; the Retro analyst agent turns it into proposals: changes to the
+harness configuration, each a branch.
+**Done when** a day with errors produces a report and a recorded Retro analyst produces a proposal branch.
+
+### 39. Trials
+In the trial window, each proposal is tried on the task its error happened in, on its own branch; it is positive when
+the error is gone and nothing got worse (tests, rounds, tokens). Positive proposals go to the inbox as changes to merge.
+**Done when** a positive and a negative trial are told apart in a test.
+
+### 40. Replays
+In the trial window, a sample of refused, reversible tool calls is run in a throwaway copy of the worktree; what happens
+becomes the judgement's outcome.
+**Done when** a replayed refusal gets an outcome and the original worktree is untouched.
+
+### 41. Autoresearch
+From a brief a person confirms, a baseline is measured, then the Autoresearcher proposes levers and an experiment runs
+for each; every lever kept becomes its own change. It ends when the brief's budget is spent or a person stops it.
+**Done when** a brief with a measurable command runs a baseline and two experiments and keeps the better one.
+
+### 42. Grilling
+An interactive run with the Grilling partner agent through the app; it ends in a set of issues the person confirms, or
+in a research report.
+**Done when** a grilling session through the API ends in confirmed issues that become cards.
+
+### 43. Review of M7
+
+## M8 · Decision model
+
+### 44. Training-set export
+Judgements with their full contexts and outcomes are exported as JSON Lines, per kind, for fine-tuning.
+**Done when** an export contains every judgement with its context and outcome.
+
+### 45. Shadowing and takeover proposals
+A decision model (an OpenAI-compatible endpoint) decides alongside the teacher for a kind; agreement is measured; when it
+agrees often enough, a takeover proposal for that kind goes to the inbox, and merging it routes the kind to the model.
+**Done when** a shadowing model's agreement is measured and a takeover proposal routes the kind.
+
+### 46. Final review
