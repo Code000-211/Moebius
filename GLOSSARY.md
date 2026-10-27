@@ -125,8 +125,9 @@ step of an autoresearch are experiments, which differ only in how they measure.
 _Avoid_: attempt, probe, A/B test
 
 **Autoresearch**:
-A loop, bounded by its brief, in which a harness keeps finding new levers on its own, researching where improvement may lie,
-and runs an experiment for each against a benchmark, keeping only the ones that improve the metric.
+A loop, bounded by its brief, that first measures a baseline for anything measurable and then has a harness keep finding new
+levers on its own (in the code and profiles, in its own history of experiments, in papers and on the web), running an
+experiment for each and keeping only those that improve the metric; each lever kept becomes a change of its own.
 _Avoid_: optimisation run, experiment loop, auto-tuning
 
 **Lever**:
@@ -135,7 +136,8 @@ _Avoid_: hypothesis, knob, candidate
 
 **Brief**:
 What an autoresearch is to achieve and within which bounds (the metric and its direction, the benchmark, the files in scope,
-where it runs and how many iterations it may take), confirmed by a person before it starts.
+where it runs and the budget it may spend), confirmed by a person before it starts; the autoresearch ends when the budget is
+spent or a person stops it.
 _Avoid_: spec, plan, config
 
 **Grilling**:
