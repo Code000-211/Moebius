@@ -151,8 +151,17 @@ where it runs and the budget it may spend), confirmed by a person before it star
 spent or a person stops it.
 _Avoid_: spec, plan, config
 
+**Chat**:
+An interactive run without a card: a person writes to an agent and it answers; it can be continued, steered and stopped.
+_Avoid_: conversation, session, thread
+
+**Moebius agent**:
+The bundled agent that knows Moebius from its guide and builds what a person asks for (column scripts, rules, agents,
+extensions), offering it as a change; a new chat's default agent.
+_Avoid_: assistant, helper, copilot
+
 **Grilling**:
-A conversation in which a person and a harness work an idea out, the harness researching and questioning its feasibility,
+A chat in which a person and a harness work an idea out, the harness researching and questioning its feasibility,
 until it is understood; it ends in a set of issues the person confirms before Moebius creates them, or in a research report.
 _Avoid_: shaping, session, interview
 

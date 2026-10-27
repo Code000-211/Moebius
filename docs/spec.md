@@ -23,8 +23,10 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
 - **Rules** checked on every tool call: fixed patterns and the teacher model; nothing waits for a person.
 - **Judgements** recorded at every decision point, in full, with export of a training set.
 - **Self-improvement** as a bundled plugin: the Retro, proposals, trials, autoresearch and shadowing.
-- **Grilling** that ends in issues a person confirms, or in a research report.
-- The desktop app's five screens: board, live view, inbox, agents, usage.
+- **Chat** with any agent, and the **Moebius agent**, which knows Moebius from the guide (`docs/guide/`) and builds
+  column scripts, rules, agents and extensions on request, offered as changes.
+- **Grilling** (a chat with the Grilling partner) that ends in issues a person confirms, or in a research report.
+- The desktop app's six screens: board, live view, inbox, chat, agents, usage.
 
 ### Not in the first version
 
@@ -117,7 +119,9 @@ steer, stop) go through the same record.
   `mcp.toml`. Changes made in the desktop app are commits to it; proposals are branches on it.
 - A repository can add rules in `.moebius/rules.md` and override columns in `.moebius/`; both are read from its default branch
   only.
-- Default agents: Coder, Reviewer, Grilling partner, Autoresearcher, Retro analyst.
+- Default agents: Coder, Reviewer, Moebius, Grilling partner, Autoresearcher, Retro analyst.
+- A **chat** is an interactive run without a card: the person writes, the agent answers, and the chat can be continued,
+  steered and stopped. The Moebius agent is a new chat's default; what it builds is offered as a change to merge.
 
 ## 6. The default workflow
 
@@ -154,6 +158,8 @@ Native, GPU-rendered, written in Rust with iced (ADR 0003, ADR 0011), built to [
 - **Live view** of a run: the stream of text and tool calls with each check's decision, code with highlighting, a shell in
   the worktree, steering and stopping.
 - **Inbox**: everything that needs the person, one column, filterable.
+- **Chat**: a conversation with an agent, the Moebius agent by default, with code highlighted, tool calls with their
+  checks, and the changes the agent offers.
 - **Agents**: the agent list and editor (model, thinking, token budget, instructions, skills, MCP servers, extensions), and
   open proposals for the agent.
 - **Usage**: tokens per day by leading model, tokens by model, where the tokens go, where to save, where the model time goes,
@@ -177,10 +183,11 @@ Native, GPU-rendered, written in Rust with iced (ADR 0003, ADR 0011), built to [
 | M2 GitHub | GitHub forge with polling, changes as pull requests, trusted authors, dependencies | The same flow works on a GitHub repository, from issue to pull request. |
 | M3 Rules | Bridge in Pi-Bolt, tool-call check, patterns, teacher model, judgements | A call that breaks a rule is refused with the rule and the run goes on; every decision has a judgement. |
 | M4 The loop | Review, CI, conflicts, round limit, token budgets, inbox | Cards go back and forth between coding and review on their own and stop at their limits. |
-| M5 Desktop app | Board, live view, inbox | A person can follow and steer a run and merge from the app. |
-| M6 Agents and usage | Harness configuration repository, agents, skills, MCP gateway, usage page | Agents are edited in the app and the usage page shows real numbers. |
-| M7 Self-improvement | Retro, proposals, trials, replays, autoresearch, grilling | A proposal tried overnight is waiting in the inbox in the morning. |
-| M8 Decision model | Training-set export, shadowing, takeover proposals | A trained model can shadow the teacher model and be proposed to take over. |
+| M5 Chat and the Moebius agent | Chats, the Moebius guide, the Moebius agent | A person asks the Moebius agent for a column script in a chat and gets it as a change. |
+| M6 Desktop app | Board, live view, inbox, chat | A person can follow and steer a run, chat, and merge from the app. |
+| M7 Agents and usage | Harness configuration repository, agents, skills, MCP gateway, usage page | Agents are edited in the app and the usage page shows real numbers. |
+| M8 Self-improvement | Retro, proposals, trials, replays, autoresearch, grilling | A proposal tried overnight is waiting in the inbox in the morning. |
+| M9 Decision model | Training-set export, shadowing, takeover proposals | A trained model can shadow the teacher model and be proposed to take over. |
 
 ## 11. Open questions
 

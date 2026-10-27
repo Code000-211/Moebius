@@ -2,7 +2,7 @@
 
 Moebius is an orchestration layer that drives coding-agent harnesses (Pi-Bolt first) from a repository's issues to
 changes ready to merge. Read `GLOSSARY.md` for the words, `docs/spec.md` for what is built, `docs/adr/` for why, and
-`docs/issues-m0-m1.md` / `docs/issues-m2-m8.md` for the work, issue by issue.
+`docs/issues-m0-m1.md` / `docs/issues-m2-m9.md` for the work, issue by issue.
 
 ## Layout
 
