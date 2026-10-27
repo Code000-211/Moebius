@@ -40,6 +40,17 @@ pub const TRACK: Color = hex(0xE2E8F0);
 /// The validated categorical order of the charts.
 pub const CHART: [Color; 4] = [hex(0x2A78D6), hex(0xEB6834), hex(0x1BAF7A), hex(0xEDA100)];
 
+/// The pill of a tool's name, and the fills of a diff, with the marks of its rows.
+pub const HEAD_PILL: Color = hex(0xF1F5F9);
+pub const DIFF_REMOVED: Color = hex(0xFCEDEB);
+pub const DIFF_ADDED: Color = hex(0xE6F6EC);
+pub const DIFF_REMOVED_MARK: Color = hex(0xB42318);
+pub const DIFF_ADDED_MARK: Color = hex(0x15803D);
+/// The dark block that shows what a tool printed.
+pub const TERMINAL: Color = hex(0x1E293B);
+pub const TERMINAL_TEXT: Color = hex(0xE2E8F0);
+pub const TERMINAL_DIM: Color = hex(0x94A3B8);
+
 // The sidebar of the mockups.
 pub const SIDEBAR: Color = hex(0xF7F8FA);
 pub const SIDEBAR_LINE: Color = hex(0xE2E6EC);
@@ -64,6 +75,7 @@ pub const COLUMN_NAME: f32 = 14.5;
 pub const APP_NAME: f32 = 16.5;
 pub const GROUP_LABEL: f32 = 12.5;
 pub const CODE: f32 = 12.5;
+pub const CODE_SMALL: f32 = 12.0;
 
 // Shape.
 pub const RADIUS_BOX: f32 = 16.0;

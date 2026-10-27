@@ -11,7 +11,8 @@ use moebius_core::config::Config;
 use moebius_core::repos::git;
 use moebius_core::server::Server;
 use moebius_core::store::Usage;
-use moebius_desktop::client::{Client, ClientError, StreamEvent, events};
+use moebius_desktop::client::{Client, ClientError, RunEvent, StreamEvent, events};
+use moebius_desktop::conversation::{Conversation, Entry, Said};
 use moebius_desktop::settings::Settings;
 use serde_json::json;
 
@@ -181,4 +182,128 @@ async fn a_server_that_is_not_there_cannot_be_reached() {
         client.health().await.unwrap_err(),
         ClientError::Unreachable(address)
     );
+}
+
+/// A server whose Coder is the fake Pi of `moebius-core`, which keeps a run going on a prompt that says `[hang]`.
+async fn start_with_fake_pi(dir: &Path) -> (Settings, Arc<Server>) {
+    let fake_pi = Path::new(env!("CARGO_MANIFEST_DIR")).join("../moebius-core/testdata/fake-pi");
+    let config = Config::parse(
+        &format!(
+            "[board]\ntick_ms = 100\n[router]\nlisten = \"127.0.0.1:0\"\n[pi_bolt]\nprogram = {fake_pi:?}\n\
+             [agents.Coder]\nmodel = \"fake-coder\"\ntoken_budget = 100000\n"
+        ),
+        dir,
+        &dir.join("moebius.toml"),
+    )
+    .unwrap();
+    let api_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = format!("http://{}", api_listener.local_addr().unwrap());
+    let router_listener = tokio::net::TcpListener::bind(config.router_listen)
+        .await
+        .unwrap();
+    let router_addr = router_listener.local_addr().unwrap();
+    let server = Arc::new(Server::new(config, router_addr).unwrap());
+    let token = server.token.to_string();
+    tokio::spawn(server.clone().serve(api_listener, router_listener));
+    (Settings { address, token }, server)
+}
+
+/// The next `run_event` of `run` on the stream.
+async fn next_run_event(
+    stream: &mut (impl Stream<Item = StreamEvent> + Unpin),
+    run: i64,
+) -> RunEvent {
+    loop {
+        if let StreamEvent::Event(event) = next(stream).await
+            && event.kind == "run_event"
+            && event.data["run"] == run
+        {
+            return serde_json::from_value(event.data).unwrap();
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_live_view_loads_follows_steers_and_stops_a_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, _) = start_with_fake_pi(dir.path()).await;
+    let origin = origin(dir.path());
+    let repository = post(
+        &settings,
+        "/v1/repositories",
+        json!({"name": "demo", "url": origin.to_str().unwrap()}),
+    )
+    .await;
+    post(
+        &settings,
+        &format!("/v1/repositories/{}/issues", repository["id"]),
+        json!({"title": "Add a feature", "body": "[hang]"}),
+    )
+    .await;
+
+    // The board starts the card; its run keeps going.
+    let client = Client::new(settings.clone());
+    let run = loop {
+        let snapshot = client.snapshot().await.unwrap();
+        if let Some(run) = snapshot.boards[0].cards[0].run.clone()
+            && run.status == "running"
+        {
+            break run;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
+
+    // The events stored so far are loaded as a page.
+    let mut conversation = Conversation::default();
+    let mut stream = Box::pin(events(settings.clone()));
+    assert_eq!(next(&mut stream).await, StreamEvent::Connected);
+    // The agent has started once its first record is stored.
+    loop {
+        let page = client.run_events(run.id, 0).await.unwrap();
+        if page.iter().any(|event| event.kind == "agent_start") {
+            page.into_iter().for_each(|event| conversation.push(event));
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(client.run(run.id).await.unwrap().status, "running");
+
+    // A steer through the client is stored and echoed by the fake Pi, and both arrive on the stream.
+    client.steer(run.id, "also test depth 0").await.unwrap();
+    let (mut steered, mut echoed) = (false, false);
+    while !(steered && echoed) {
+        let event = next_run_event(&mut stream, run.id).await;
+        steered |= event.kind == "steered";
+        echoed |= event.kind == "response" && event.data["echo"] == "also test depth 0";
+        conversation.push(event);
+    }
+    assert!(conversation.entries().iter().any(|entry| {
+        matches!(entry, Entry::Person(Said::Steered, message) if message == "also test depth 0")
+    }));
+
+    // The page and the stream together are the whole stored run.
+    let mut stored = Conversation::default();
+    for event in client.run_events(run.id, 0).await.unwrap() {
+        stored.push(event);
+    }
+    assert_eq!(stored.entries(), conversation.entries());
+    assert_eq!(stored.last_seq(), conversation.last_seq());
+
+    // Stopping ends the run; a steer after that is refused with the server's message.
+    client.stop(run.id).await.unwrap();
+    loop {
+        if let StreamEvent::Event(event) = next(&mut stream).await
+            && event.kind == "run_ended"
+        {
+            assert_eq!(event.data["status"], "stopped");
+            break;
+        }
+    }
+    match client.steer(run.id, "too late").await.unwrap_err() {
+        ClientError::Server { status, message } => {
+            assert_eq!(status, 422);
+            assert!(message.contains("not running"), "{message}");
+        }
+        other => panic!("{other:?}"),
+    }
 }

@@ -196,10 +196,12 @@ The server runs on a multi-threaded tokio runtime.
 | `crates/moebius-plugin-api/src/lib.rs` | The `Plugin` trait, the call and decision types, the `Host` that calls plugins with a time limit and fails closed. |
 | `crates/moebius-desktop/src/main.rs` | The desktop app's start: fonts, theme, window. |
 | `crates/moebius-desktop/src/app.rs` | The app's state, `Message`, `update` and view: the connection, the page shown, reading the snapshot again on events. |
-| `crates/moebius-desktop/src/client.rs` | The desktop API client: typed health and snapshot, and the event stream as an iced subscription that reconnects with a backoff. |
+| `crates/moebius-desktop/src/client.rs` | The desktop API client: typed health, snapshot, runs, run events, judgements and history, steer and stop, and the event stream as an iced subscription that reconnects with a backoff. |
 | `crates/moebius-desktop/src/settings.rs` | The address and token, saved in the config directory with mode 0600. |
 | `crates/moebius-desktop/src/theme.rs` | Every colour, size, radius and spacing of `docs/design.md`, and the bundled fonts (Manrope, JetBrains Mono). |
-| `crates/moebius-desktop/src/sidebar.rs`, `connect.rs`, `board.rs`, `soon.rs`, `page.rs`, `icons.rs` | The sidebar, the connect screen and Settings page, the board page (its columns and cards, and the page a click on a card opens), the "comes with M<n>" page, the page header and box, the icons. |
+| `crates/moebius-desktop/src/sidebar.rs`, `connect.rs`, `board.rs`, `soon.rs`, `page.rs`, `icons.rs` | The sidebar, the connect screen and Settings page, the board page (its columns and cards), the "comes with M<n>" page, the page header and box, the icons. |
+| `crates/moebius-desktop/src/conversation.rs` | Folds a run's events into a conversation (text, tool calls with their checks, steers, errors); pure, takes events in any order and drops repeats. |
+| `crates/moebius-desktop/src/live.rs`, `history.rs` | What a click on a card opens: the live view of its latest run (conversation, steer, stop, the run's panel), or the card's history when it has no run. |
 | `api.rs` | The desktop API: routes, token check, the event WebSocket. |
 | `app.rs` | The core put together; the operations on cards, changes and issues, each published on the bus, including publishing a change and running its checks. |
 | `blobs.rs` | The content-addressed blob store and secret redaction. |

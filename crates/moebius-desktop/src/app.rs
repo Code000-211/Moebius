@@ -2,13 +2,15 @@
 //! the views of the shell. The state is plain data; `update` is the only place it changes.
 
 use std::path::PathBuf;
+use std::time::Duration;
 
 use iced::widget::{container, row};
 use iced::{Element, Length, Subscription, Task};
 
-use crate::client::{self, Client, ClientError, Snapshot, StreamEvent};
+use crate::client::{self, Client, ClientError, HistoryEntry, RunEvent, Snapshot, StreamEvent};
+use crate::live::{self, Live};
 use crate::settings::{self, Settings};
-use crate::{board, connect, sidebar, soon, theme};
+use crate::{board, connect, history, sidebar, soon, theme};
 
 /// What the sidebar says about the connection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,12 +107,26 @@ pub enum Message {
     Loaded(u64, Result<Snapshot, ClientError>),
     Stream(StreamEvent),
     Select(Page),
-    /// A card of the board was clicked: its run is shown.
+    /// A card of the board was clicked: its latest run is shown, or its history when it has no run.
     OpenCard(i64),
-    /// Back from a card's run to the board.
+    /// Back from a card's page to the board.
     CloseCard,
+    Live(live::Message),
+    /// The history of the card was read.
+    History(i64, Result<Vec<HistoryEntry>, ClientError>),
     ToggleSidebar,
     ChangeConnection,
+}
+
+/// What a click on a card opened instead of the board.
+enum Opened {
+    Run(Box<Live>),
+    /// A card without a run: its history, once read, and the time it was read.
+    History {
+        card: i64,
+        entries: Option<Vec<HistoryEntry>>,
+        now: i64,
+    },
 }
 
 pub struct App {
@@ -123,8 +139,8 @@ pub struct App {
     snapshot: Snapshot,
     /// The page the person chose; the first board, or the Inbox, until then.
     page: Option<Page>,
-    /// The card whose run is shown instead of the board.
-    opened: Option<i64>,
+    /// The card's page shown instead of the board.
+    opened: Option<Opened>,
     collapsed: bool,
     /// Counts the reads of the snapshot, so that an older answer never replaces a newer one.
     requested: u64,
@@ -211,8 +227,25 @@ impl App {
                 self.page = Some(page);
                 self.opened = None;
             }
-            Message::OpenCard(id) => self.opened = Some(id),
+            Message::OpenCard(id) => return self.open(id),
             Message::CloseCard => self.opened = None,
+            Message::Live(message) => {
+                if let Some(Opened::Run(live)) = &mut self.opened {
+                    return live.update(message, self.settings.as_ref());
+                }
+            }
+            Message::History(id, Ok(entries)) => {
+                if let Some(Opened::History {
+                    card,
+                    entries: shown,
+                    ..
+                }) = &mut self.opened
+                    && *card == id
+                {
+                    *shown = Some(entries);
+                }
+            }
+            Message::History(_, Err(_)) => {}
             Message::ToggleSidebar => self.collapsed = !self.collapsed,
             Message::ChangeConnection => {
                 self.form.error = None;
@@ -279,7 +312,14 @@ impl App {
         match event {
             StreamEvent::Connected => {
                 self.connection = Connection::Online;
-                self.reload()
+                // Events are not replayed: the run shown reads what it missed.
+                let missed = match (&self.opened, &self.settings) {
+                    (Some(Opened::Run(live)), Some(settings)) => {
+                        live::load(settings.clone(), live.card, live.run_id(), live.last_seq())
+                    }
+                    _ => Task::none(),
+                };
+                Task::batch([self.reload(), missed])
             }
             StreamEvent::Disconnected(_) => {
                 self.connection = Connection::Offline;
@@ -289,9 +329,71 @@ impl App {
                 self.show_connect_error(&ClientError::Unauthorized);
                 Task::none()
             }
-            // The steps of a run come in great numbers and change nothing the shell shows.
-            StreamEvent::Event(event) if event.kind == "run_event" => Task::none(),
-            StreamEvent::Event(_) => self.reload(),
+            StreamEvent::Event(event) if event.kind == "run_event" => {
+                self.on_run_event(&event.data)
+            }
+            StreamEvent::Event(event) => {
+                if event.kind == "run_ended"
+                    && let Some(Opened::Run(live)) = &mut self.opened
+                    && event.data["run"] == live.run_id()
+                {
+                    live.on_ended(event.data["status"].as_str().unwrap_or_default());
+                }
+                self.reload()
+            }
+        }
+    }
+
+    /// A step of a run. The steps of a run come in great numbers and change nothing the shell shows, except in the
+    /// live view of that run.
+    fn on_run_event(&mut self, data: &serde_json::Value) -> Task<Message> {
+        let (Some(Opened::Run(live)), Some(settings)) = (&mut self.opened, &self.settings) else {
+            return Task::none();
+        };
+        let Ok(event) = serde_json::from_value::<RunEvent>(data.clone()) else {
+            return Task::none();
+        };
+        if data["run"] != live.run_id() {
+            return Task::none();
+        }
+        if live.on_event(event) {
+            live.reload_judgements(settings.clone())
+        } else {
+            Task::none()
+        }
+    }
+
+    /// Opens a card's page: the live view of its latest run, or its history.
+    fn open(&mut self, id: i64) -> Task<Message> {
+        let Some(settings) = self.settings.clone() else {
+            return Task::none();
+        };
+        let Some(card) = self
+            .snapshot
+            .boards
+            .iter()
+            .flat_map(|board| &board.cards)
+            .find(|card| card.id == id)
+        else {
+            return Task::none();
+        };
+        match card.run.clone() {
+            Some(run) => {
+                let task = live::load(settings, id, run.id, 0);
+                self.opened = Some(Opened::Run(Box::new(Live::new(id, run))));
+                task
+            }
+            None => {
+                self.opened = Some(Opened::History {
+                    card: id,
+                    entries: None,
+                    now: live::now(),
+                });
+                Task::perform(
+                    async move { Client::new(settings).history(id).await },
+                    move |entries| Message::History(id, entries),
+                )
+            }
         }
     }
 
@@ -311,10 +413,17 @@ impl App {
     pub fn subscription(&self) -> Subscription<Message> {
         match (&self.screen, &self.settings) {
             (Screen::Main, Some(settings)) => {
-                Subscription::run_with(settings.clone(), |settings| {
+                let stream = Subscription::run_with(settings.clone(), |settings| {
                     client::events(settings.clone())
                 })
-                .map(Message::Stream)
+                .map(Message::Stream);
+                // The time a run started is told as how long ago, so the page needs the clock while it is open.
+                let clock = match self.opened {
+                    Some(Opened::Run(_)) => iced::time::every(Duration::from_secs(30))
+                        .map(|_| Message::Live(live::Message::Tick(live::now()))),
+                    _ => Subscription::none(),
+                };
+                Subscription::batch([stream, clock])
             }
             _ => Subscription::none(),
         }
@@ -362,13 +471,16 @@ impl App {
                 else {
                     return soon::view(page);
                 };
-                match self
-                    .opened
-                    .and_then(|id| board.cards.iter().find(|card| card.id == id))
-                {
-                    Some(card) => board::run_page(board, card),
-                    None => board::view(board, &self.snapshot.inbox),
+                let card_of = |id| board.cards.iter().find(|card| card.id == id);
+                match &self.opened {
+                    Some(Opened::Run(live)) => {
+                        card_of(live.card).map(|card| live.view(board, card))
+                    }
+                    Some(Opened::History { card, entries, now }) => card_of(*card)
+                        .map(|card| history::view(board, card, entries.as_deref(), *now)),
+                    None => None,
                 }
+                .unwrap_or_else(|| board::view(board, &self.snapshot.inbox))
             }
             Page::Settings => connect::settings_page(self.settings.as_ref()),
             page => soon::view(page),

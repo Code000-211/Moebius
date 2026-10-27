@@ -102,6 +102,43 @@ pub struct Run {
     pub purpose: String,
     /// `starting`, `running`, `waiting`, `succeeded`, `failed` or `stopped`.
     pub status: String,
+    /// The harness that runs the agent, as `GET /v1/runs/{id}` says; the snapshot's short form has none.
+    #[serde(default)]
+    pub harness: String,
+    #[serde(default)]
+    pub started_at: i64,
+}
+
+/// One stored event of a run, as `GET /v1/runs/{id}/events` lists it and the stream's `run_event` carries it.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct RunEvent {
+    pub seq: i64,
+    pub kind: String,
+    #[serde(default)]
+    pub data: serde_json::Value,
+    #[serde(default)]
+    pub at: i64,
+}
+
+/// A recorded decision, as far as the live view matches it to a tool call.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Judgement {
+    pub kind: String,
+    pub choice: String,
+    #[serde(default)]
+    pub reason: String,
+    pub decider: String,
+    #[serde(default)]
+    pub run: Option<i64>,
+}
+
+/// One entry of a card's timeline.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct HistoryEntry {
+    pub at: i64,
+    pub kind: String,
+    #[serde(default)]
+    pub data: serde_json::Value,
 }
 
 /// The open change of a card, as far as the board shows it.
@@ -174,6 +211,9 @@ pub struct Snapshot {
     pub inbox: Vec<InboxItem>,
 }
 
+/// How many events one request for a run's events asks for.
+const EVENT_PAGE: usize = 500;
+
 /// An event of `GET /v1/events`.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct ServerEvent {
@@ -207,9 +247,27 @@ impl Client {
     }
 
     async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T, ClientError> {
-        let response = self
+        let request = self.http.get(format!("{}{path}", self.settings.address));
+        self.send(request).await
+    }
+
+    async fn post<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: serde_json::Value,
+    ) -> Result<T, ClientError> {
+        let request = self
             .http
-            .get(format!("{}{path}", self.settings.address))
+            .post(format!("{}{path}", self.settings.address))
+            .json(&body);
+        self.send(request).await
+    }
+
+    async fn send<T: DeserializeOwned>(
+        &self,
+        request: reqwest::RequestBuilder,
+    ) -> Result<T, ClientError> {
+        let response = request
             .bearer_auth(&self.settings.token)
             .send()
             .await
@@ -237,6 +295,54 @@ impl Client {
 
     pub async fn snapshot(&self) -> Result<Snapshot, ClientError> {
         self.get("/v1/snapshot").await
+    }
+
+    pub async fn run(&self, id: i64) -> Result<Run, ClientError> {
+        self.get(&format!("/v1/runs/{id}")).await
+    }
+
+    /// Every event of a run with a `seq` above `after`, read in pages.
+    pub async fn run_events(&self, id: i64, after: i64) -> Result<Vec<RunEvent>, ClientError> {
+        let mut events: Vec<RunEvent> = Vec::new();
+        loop {
+            let from = events.last().map_or(after, |event| event.seq);
+            let page: Vec<RunEvent> = self
+                .get(&format!(
+                    "/v1/runs/{id}/events?after={from}&limit={EVENT_PAGE}"
+                ))
+                .await?;
+            let last = page.len() < EVENT_PAGE;
+            events.extend(page);
+            if last {
+                return Ok(events);
+            }
+        }
+    }
+
+    /// The decisions recorded for a card, oldest first.
+    pub async fn judgements(&self, card: i64) -> Result<Vec<Judgement>, ClientError> {
+        let mut judgements: Vec<Judgement> = self
+            .get(&format!("/v1/judgements?card={card}&limit=1000"))
+            .await?;
+        judgements.reverse();
+        Ok(judgements)
+    }
+
+    pub async fn history(&self, card: i64) -> Result<Vec<HistoryEntry>, ClientError> {
+        self.get(&format!("/v1/cards/{card}/history")).await
+    }
+
+    pub async fn steer(&self, run: i64, message: &str) -> Result<Run, ClientError> {
+        self.post(
+            &format!("/v1/runs/{run}/steer"),
+            serde_json::json!({ "message": message }),
+        )
+        .await
+    }
+
+    pub async fn stop(&self, run: i64) -> Result<Run, ClientError> {
+        self.post(&format!("/v1/runs/{run}/stop"), serde_json::json!({}))
+            .await
     }
 }
 

@@ -6,11 +6,11 @@
 use iced::font::Weight;
 use iced::widget::text::Wrapping;
 use iced::widget::{button, column, container, row, scrollable, space, text};
-use iced::{Alignment, Border, Color, Element, Length, Padding};
+use iced::{Alignment, Border, Element, Length, Padding};
 
 use crate::app::Message;
 use crate::client::{Board, Card, InboxItem};
-use crate::page;
+use crate::page::{self, Tone, tag};
 use crate::theme;
 
 /// The columns of the default workflow, left to right, each with the script behind it.
@@ -224,66 +224,6 @@ fn tokens(n: i64) -> String {
     }
 }
 
-#[derive(Clone, Copy)]
-enum Tone {
-    Plain,
-    Teal,
-    Amber,
-    Red,
-}
-
-impl Tone {
-    /// Border, fill and text of a tag.
-    fn colors(self) -> (Color, Color, Color) {
-        match self {
-            Tone::Plain => (theme::LINE, Color::TRANSPARENT, theme::TEXT_SECONDARY),
-            Tone::Teal => (theme::TEAL_BORDER, theme::TEAL_FILL, theme::ONLINE_TEXT),
-            Tone::Amber => (theme::AMBER_BORDER, theme::AMBER_FILL, theme::AMBER_TEXT),
-            Tone::Red => (theme::RED_BORDER, theme::RED_TAG_FILL, theme::RED_TEXT),
-        }
-    }
-}
-
-/// A tag; a red one has a red dot.
-fn tag<'a>(label: String, tone: Tone) -> Element<'a, Message> {
-    let (border, fill, color) = tone.colors();
-    let label = text(label)
-        .size(theme::LABEL)
-        .font(theme::manrope(Weight::Semibold))
-        .wrapping(Wrapping::None)
-        .color(color);
-    let content: Element<'a, Message> = if matches!(tone, Tone::Red) {
-        row![
-            container(space().width(7).height(7)).style(|_| container::Style {
-                background: Some(theme::RED.into()),
-                border: Border {
-                    radius: 3.5.into(),
-                    ..Border::default()
-                },
-                ..container::Style::default()
-            }),
-            label,
-        ]
-        .spacing(6)
-        .align_y(Alignment::Center)
-        .into()
-    } else {
-        label.into()
-    };
-    container(content)
-        .padding([2, 9])
-        .style(move |_| container::Style {
-            background: Some(fill.into()),
-            border: Border {
-                color: border,
-                width: 1.0,
-                radius: theme::RADIUS_ROUND.into(),
-            },
-            ..container::Style::default()
-        })
-        .into()
-}
-
 /// The tags of a card: what runs, what it costs, what stops it, how its change stands and who it waits for.
 fn tags<'a>(card: &Card, inbox_kind: Option<&str>, next: bool) -> Vec<Element<'a, Message>> {
     let mut tags = Vec::new();
@@ -407,49 +347,5 @@ fn card_view<'a>(
     .width(Length::Fill)
     .on_press(Message::OpenCard(card.id))
     .style(|_, _| button::Style::default())
-    .into()
-}
-
-/// What a click on a card opens until the live view exists (issue #35): the card and its latest run, with the way back.
-pub fn run_page<'a>(board: &'a Board, card: &'a Card) -> Element<'a, Message> {
-    let line = match &card.run {
-        Some(run) => format!(
-            "Run {} · {} · {} · {}",
-            run.id, run.agent, run.purpose, run.status
-        ),
-        None => "No run yet".to_string(),
-    };
-    let back = button(
-        text("Back to the board")
-            .size(theme::CONTEXT)
-            .font(theme::manrope(Weight::Semibold)),
-    )
-    .padding([8, 14])
-    .on_press(Message::CloseCard)
-    .style(|_, _| button::Style {
-        background: Some(theme::SURFACE.into()),
-        text_color: theme::TEXT,
-        border: Border {
-            color: theme::LINE,
-            width: 1.0,
-            radius: theme::RADIUS_CONTROL.into(),
-        },
-        ..button::Style::default()
-    });
-    column![
-        page::header(
-            &board.repository.name,
-            &card.title,
-            None,
-            page::context(line),
-            back.into()
-        ),
-        page::boxed(
-            "Live view",
-            page::body("The live view of this run comes with issue #35.")
-        ),
-    ]
-    .spacing(theme::PAGE_GAP)
-    .width(Length::Fill)
     .into()
 }
