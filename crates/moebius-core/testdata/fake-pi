@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+# A stand-in for `pi-bolt --mode rpc` in tests: it speaks Pi's RPC protocol (JSON Lines, split on LF only).
+# A prompt containing "[hang]" waits for `abort`; any other prompt writes a file and settles.
+import json
+import os
+import sys
+
+out = sys.stdout.buffer
+
+
+def emit(record):
+    # ensure_ascii=False writes U+2028 as raw bytes, as Pi does.
+    out.write(json.dumps(record, ensure_ascii=False).encode("utf-8") + b"\n")
+    out.flush()
+
+
+with open(os.path.join(os.environ["PI_CODING_AGENT_DIR"], "argv.json"), "w") as f:
+    json.dump(sys.argv[1:], f)
+
+hanging = False
+for line in sys.stdin.buffer:
+    command = json.loads(line.split(b"\n")[0])
+    kind = command.get("type")
+    if kind == "prompt":
+        emit({"id": command.get("id"), "type": "response", "command": "prompt", "success": True,
+              "data": {"disposition": "started"}})
+        emit({"type": "agent_start"})
+        if "[hang]" in command["message"]:
+            hanging = True
+            continue
+        emit({"type": "message_update",
+              "assistantMessageEvent": {"type": "text_delta", "contentIndex": 0, "delta": "line one line two"}})
+        emit({"type": "tool_execution_start", "toolCallId": "t1", "toolName": "write",
+              "args": {"path": "done.txt"}})
+        with open("done.txt", "w") as f:
+            f.write("done\n")
+        emit({"type": "tool_execution_end", "toolCallId": "t1", "toolName": "write", "isError": False})
+        emit({"type": "agent_end", "messages": [], "willRetry": False})
+        emit({"type": "agent_settled", "aborted": False})
+    elif kind == "abort":
+        emit({"id": command.get("id"), "type": "response", "command": "abort", "success": True})
+        if hanging:
+            emit({"type": "agent_end", "messages": [], "willRetry": False})
+            emit({"type": "agent_settled", "aborted": True})

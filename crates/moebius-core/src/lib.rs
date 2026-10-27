@@ -8,6 +8,7 @@ pub mod bus;
 pub mod config;
 pub mod decide;
 pub mod forge;
+pub mod pibolt;
 pub mod repos;
 pub mod router;
 pub mod store;
