@@ -28,3 +28,4 @@ jobs:
             | PIBOLT_YES=1 PIBOLT_EXTENSIONS=no sh
           echo "MOEBIUS_PI_BOLT=$HOME/.local/bin/pi-bolt" >> "$GITHUB_ENV"
       - run: cargo test --workspace
+      - run: cargo run -p moebius-plugin-api --example allow_reads

@@ -13,6 +13,11 @@ changes ready to merge. Read `GLOSSARY.md` for the words, `docs/spec.md` for wha
 - `crates/moebius-plugin-api`: the plugin trait and the host that calls plugins with a time limit, failing closed.
 - `crates/moebius`: the `moebius` binary (`init`, `serve`).
 - `crates/moebius-desktop`: the iced desktop app (built to `docs/design.md`).
+- `README.md` says what Moebius is and how to run it; `docs/architecture.md` says how a card moves and which module does
+  what; `docs/reference/` holds one exact reference per contract; `examples/` holds the examples that run in CI (the
+  decider plugin is `crates/moebius-plugin-api/examples/allow_reads.rs`).
+- `AGENTS.md` is a copy of this file for agents that read that name. Edit `CLAUDE.md`, then copy it below the first line of
+  `AGENTS.md`; a test fails if they differ.
 
 ## Checks
 
@@ -26,6 +31,7 @@ cargo test --workspace
 
 The end-to-end test (`crates/moebius-core/tests/first_card.rs`) runs only when `MOEBIUS_PI_BOLT` names a `pi-bolt`
 executable; CI installs one.
+CI also runs the plugin example: `cargo run -p moebius-plugin-api --example allow_reads`.
 
 ## Style
 
@@ -43,10 +49,10 @@ executable; CI installs one.
 ## Documentation
 
 Moebius is built to be extended by people and agents who have not read its code, so every contract is documented
-exactly in `docs/reference/` (column scripts, `rules.md`, configuration, plugin API, bridge protocol, desktop API) and
-shown in `examples/`. A change to a contract updates its reference and examples in the same commit; tests check that
-every route, script function and configuration key is in the reference. Each module starts with a doc comment saying
-what it is for and how it fits in.
+exactly in `docs/reference/` (column scripts, `rules.md`, configuration, plugin API, bridge protocol, router, desktop API) and
+shown in `examples/`. A change to a contract updates its reference and examples in the same commit; tests
+(`crates/moebius-core/tests/reference.rs`) check that every route, script function, `card` field, configuration key and
+event kind is in the reference. Each module starts with a doc comment saying what it is for and how it fits in.
 
 ## Commits
 

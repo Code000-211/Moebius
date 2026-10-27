@@ -27,6 +27,11 @@ run_limit = 3
 # When the daily Retro runs, as HH:MM in the server's local time.
 retro_at = "23:30"
 
+# Rules every run must follow, as Markdown with one section per rule (a heading `## name` and its text); relative paths are inside this
+# file's directory. A repository adds its own in .moebius/rules.md but cannot replace these. Without the file, only
+# the built-in rules apply. The harness configuration repository takes this over in M7.
+# rules_file = "rules.md"
+
 # The daily stretch in which trials, replays and autoresearch may run without asking.
 [trial_window]
 start = "00:00"
@@ -53,11 +58,6 @@ listen = "127.0.0.1:7172"
 
 [pi_bolt]
 program = "pi-bolt"
-
-# Rules every run must follow, as Markdown with one section per rule (a heading `## name` and its text); relative paths are inside this
-# file's directory. A repository adds its own in .moebius/rules.md but cannot replace these. Without the file, only
-# the built-in rules apply. The harness configuration repository takes this over in M7.
-# rules_file = "rules.md"
 
 # The teacher model checks the rules written in prose (a rule the built-in patterns cannot see) on every tool call.
 # It is asked through the router, so its tokens are counted against the run being checked, and it needs an upstream for
