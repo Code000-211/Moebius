@@ -43,6 +43,22 @@ pub fn redact(text: &str) -> String {
     out
 }
 
+/// `value` with every string in it redacted, keys included.
+pub fn redact_json(value: &serde_json::Value) -> serde_json::Value {
+    use serde_json::Value;
+    match value {
+        Value::String(text) => Value::String(redact(text)),
+        Value::Array(items) => Value::Array(items.iter().map(redact_json).collect()),
+        Value::Object(fields) => Value::Object(
+            fields
+                .iter()
+                .map(|(key, value)| (redact(key), redact_json(value)))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
 /// Blobs on disk, at `<root>/<first two hex digits>/<rest>`.
 #[derive(Debug, Clone)]
 pub struct BlobStore {

@@ -935,7 +935,9 @@ impl Store {
     }
 
     /// Appends an event to a run and returns its sequence number.
+    /// Stores an event of a run, with every secret in it redacted, and returns its `seq`.
     pub fn append_event(&self, run_id: i64, kind: &str, data: &serde_json::Value) -> Result<i64> {
+        let data = &crate::blobs::redact_json(data);
         let conn = self.conn();
         let seq: i64 = conn.query_row(
             "SELECT COALESCE(MAX(seq), 0) + 1 FROM events WHERE run_id = ?1",
@@ -1239,6 +1241,22 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path()).unwrap();
         (dir, store)
+    }
+
+    #[test]
+    fn secrets_in_run_events_are_redacted_before_they_are_stored() {
+        let (_dir, s) = store();
+        let run = s.add_run(None, "Coder", "pi-bolt", "code").unwrap();
+        let key = format!("sk-ant-api03-{}", "x".repeat(40));
+        let event =
+            json!({ "result": { "content": [{ "type": "text", "text": format!("KEY={key}") }] } });
+        s.append_event(run.id, "tool_execution_end", &event)
+            .unwrap();
+        let stored = s.events(run.id).unwrap().pop().unwrap().data;
+        assert_eq!(
+            stored["result"]["content"][0]["text"],
+            "KEY=[redacted:anthropic-key]"
+        );
     }
 
     #[test]
