@@ -158,7 +158,7 @@ impl Engine {
             .repository(card.repository_id)
             .map_err(AppError::from)?
             .ok_or_else(|| AppError::NotFound(format!("repository {}", card.repository_id)))?;
-        let spec = format!("{}:.moebius/{}", repository.default_branch, column.script);
+        let spec = format!("{}:.moebius/{}", repository.base_ref(), column.script);
         if let Ok(source) = git(Path::new(&repository.path), &["show", &spec]) {
             return Ok(source);
         }
@@ -189,11 +189,11 @@ impl Engine {
                 message: e.to_string(),
             })?;
         let mut effects = effects.take();
-        if let Some(to) = effects.move_to.take() {
-            if to != card.column {
-                self.app.move_card(card_id, &to)?;
-                effects.moved = Some(to);
-            }
+        if let Some(to) = effects.move_to.take()
+            && to != card.column
+        {
+            self.app.move_card(card_id, &to)?;
+            effects.moved = Some(to);
         }
         Ok(Step {
             moved: effects.moved,

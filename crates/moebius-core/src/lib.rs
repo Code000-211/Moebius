@@ -10,6 +10,7 @@ pub mod decide;
 pub mod forge;
 pub mod github;
 pub mod pibolt;
+pub mod poll;
 pub mod repos;
 pub mod router;
 pub mod server;

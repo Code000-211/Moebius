@@ -1,6 +1,5 @@
 //! The server put together (spec 2): the store and the core, the desktop API, the router, the Pi-Bolt harness, the
-//! board engine, which runs every card's column script on a fixed tick, and the poll of GitHub's issues and pull
-//! requests.
+//! board engine, which runs every card's column script on a fixed tick, and the poll of GitHub.
 
 use std::net::SocketAddr;
 use std::path::Path;
@@ -16,11 +15,12 @@ use crate::board::{Engine, Limits, Workflow};
 use crate::bus::AppEvent;
 use crate::config::Config;
 use crate::forge::GitHubForge;
-use crate::github::{CheckRun, GitHub};
+use crate::github::GitHub;
 use crate::pibolt::PiBolt;
+use crate::poll;
 use crate::repos::Worktree;
 use crate::router::{Router, Upstream};
-use crate::store::{Repository, Store};
+use crate::store::Store;
 
 /// How long a call into a plugin may take before it counts as refused.
 const PLUGIN_TIME_LIMIT: std::time::Duration = std::time::Duration::from_secs(30);
@@ -51,32 +51,6 @@ fn end_runs_of_a_previous_server(app: &App) -> Result<(), String> {
         }
     }
     Ok(())
-}
-
-/// How the check runs of a commit add up: `failure` if any failed, `pending` if any is still going, `success`
-/// otherwise; none when there are no checks at all.
-fn summarise_checks(runs: &[CheckRun]) -> Option<&'static str> {
-    const FAILED: [&str; 5] = [
-        "failure",
-        "timed_out",
-        "cancelled",
-        "action_required",
-        "startup_failure",
-    ];
-    if runs.is_empty() {
-        return None;
-    }
-    if runs.iter().any(|run| {
-        run.conclusion
-            .as_deref()
-            .is_some_and(|c| FAILED.contains(&c))
-    }) {
-        return Some("failure");
-    }
-    if runs.iter().any(|run| run.status != "completed") {
-        return Some("pending");
-    }
-    Some("success")
 }
 
 pub struct Server {
@@ -197,100 +171,11 @@ impl Server {
         }
     }
 
-    /// Polls the issues and pull requests of every GitHub repository once; a repository that fails is reported on the bus and tried
-    /// again at the next poll.
+    /// Polls every GitHub repository once (see `poll`).
     pub async fn poll_github(&self) {
-        let Some(github) = &self.github else { return };
-        let Ok(repositories) = self.app.store.repositories() else {
-            return;
-        };
-        for repository in repositories {
-            let Some(name) = repository.github.clone() else {
-                continue;
-            };
-            let polled = match self.poll_issues(github, repository.clone(), &name).await {
-                Ok(()) => self.poll_pull_requests(github, &repository, &name).await,
-                Err(message) => Err(message),
-            };
-            if let Err(message) = polled {
-                self.app.bus.publish(AppEvent::new(
-                    "forge_error",
-                    json!({ "repository": name, "message": message }),
-                ));
-            }
+        if let Some(github) = &self.github {
+            poll::poll_github(&self.app, github).await;
         }
-    }
-
-    /// Lists the issues of `repository` on GitHub as `name` and syncs them into the board, unless nothing changed.
-    async fn poll_issues(
-        &self,
-        github: &GitHub,
-        repository: Repository,
-        name: &str,
-    ) -> Result<(), String> {
-        let Some(issues) = github.issues(name).await.map_err(|e| e.to_string())? else {
-            return Ok(());
-        };
-        let app = self.app.clone();
-        let synced = tokio::task::spawn_blocking(move || app.sync_issues(&repository, &issues))
-            .await
-            .map_err(|e| e.to_string())?;
-        // GitHub would answer "not modified" next time; the issues are listed again so the sync is retried.
-        synced
-            .inspect_err(|_| github.forget_issues_etag(name))
-            .map_err(|e| e.to_string())
-    }
-
-    /// Reads the pull request of each open change of `repository` on GitHub as `name`: a merged one finishes its
-    /// change, one closed without a merge closes it, and for any other the checks and the latest review are recorded.
-    async fn poll_pull_requests(
-        &self,
-        github: &GitHub,
-        repository: &Repository,
-        name: &str,
-    ) -> Result<(), String> {
-        let store = self.app.store.clone();
-        let id = repository.id;
-        let changes = tokio::task::spawn_blocking(move || store.open_pull_requests(id))
-            .await
-            .map_err(|e| e.to_string())?
-            .map_err(|e| e.to_string())?;
-        for change in changes {
-            let Some(number) = change.pull_request else {
-                continue;
-            };
-            let pull_request = github
-                .pull_request(name, number)
-                .await
-                .map_err(|e| e.to_string())?;
-            let app = self.app.clone();
-            let done = if pull_request.merged {
-                let commit = pull_request.merge_commit_sha;
-                tokio::task::spawn_blocking(move || app.change_merged(&change, commit.as_deref()))
-                    .await
-            } else if pull_request.state == "closed" {
-                tokio::task::spawn_blocking(move || app.change_closed(&change)).await
-            } else {
-                let checks = github
-                    .check_runs(name, &pull_request.head.sha)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                let review = github
-                    .reviews(name, number)
-                    .await
-                    .map_err(|e| e.to_string())?
-                    .pop()
-                    .map(|review| review.state.to_lowercase());
-                let checks = summarise_checks(&checks);
-                tokio::task::spawn_blocking(move || {
-                    app.record_change_status(&change, checks, review.as_deref())
-                })
-                .await
-            };
-            done.map_err(|e| e.to_string())?
-                .map_err(|e| e.to_string())?;
-        }
-        Ok(())
     }
 
     /// Serves the desktop API and the router, ticks the board and polls GitHub, until the future is dropped.
@@ -350,8 +235,9 @@ mod tests {
 
     use super::*;
     use crate::board::Runs;
+    use crate::forge::Forge;
     use crate::repos::git;
-    use crate::store::{Card, Change, Run};
+    use crate::store::{Card, Change, Repository, Run};
 
     #[test]
     fn runs_left_going_by_a_previous_server_are_failed_and_cleaned_up() {
@@ -669,6 +555,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_poll_brings_the_clone_up_to_date_so_new_work_starts_from_the_merged_default_branch()
+    {
+        let f = Fixture::new().await;
+        f.fake.set_issues("\"v1\"", vec![]);
+        // A pull request merged on GitHub: the default branch moves on without the clone.
+        let elsewhere = f._dir.path().join("elsewhere");
+        git(
+            f._dir.path(),
+            &["clone", "--quiet", f.remote.to_str().unwrap(), "elsewhere"],
+        )
+        .unwrap();
+        git(
+            &elsewhere,
+            &[
+                "commit",
+                "--quiet",
+                "--allow-empty",
+                "-m",
+                "merged on GitHub",
+            ],
+        )
+        .unwrap();
+        git(&elsewhere, &["push", "--quiet", "origin", "main"]).unwrap();
+        let merged = git(&elsewhere, &["rev-parse", "HEAD"]).unwrap();
+
+        f.server.poll_github().await;
+        let clone = Path::new(&f.repository.path);
+        assert_eq!(f.repository.base_ref(), "origin/main");
+        assert_eq!(git(clone, &["rev-parse", "origin/main"]).unwrap(), merged);
+    }
+
+    #[tokio::test]
     async fn issues_become_cards_and_an_unchanged_list_changes_nothing() {
         let f = Fixture::new().await;
         f.fake.set_issues(
@@ -907,33 +825,23 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn a_push_to_a_web_address_carries_the_installation_token_in_one_header_only() {
+    async fn git_reaches_a_web_address_with_the_installation_token_and_a_local_one_without() {
         let f = Fixture::new().await;
         let (repos, github) = (f.server.app.repos.clone(), f.server.github.clone().unwrap());
-        let (clone, repository) = (f.repository.path.clone(), f.repository.clone());
-        let header = tokio::task::spawn_blocking(move || {
+        let (web, local) = tokio::task::spawn_blocking(move || {
             let forge = GitHubForge::new(github, repos, tokio::runtime::Handle::current());
-            git(
-                Path::new(&clone),
-                &[
-                    "remote",
-                    "set-url",
-                    "origin",
-                    "https://github.com/acme/widgets.git",
-                ],
-            )
-            .unwrap();
-            let header =
-                forge.push_header(Path::new(&clone), repository.github.as_deref().unwrap());
-            header.unwrap()
+            let web = forge.auth("https://github.com/acme/widgets.git", "acme/widgets");
+            let local = forge.auth("/srv/widgets.git", "acme/widgets");
+            (web.unwrap(), local.unwrap())
         })
         .await
         .unwrap();
         assert_eq!(
-            header.unwrap(),
-            "Authorization: Basic eC1hY2Nlc3MtdG9rZW46Z2hzX3Rva2Vu",
+            web.as_deref(),
+            Some("Authorization: Basic eC1hY2Nlc3MtdG9rZW46Z2hzX3Rva2Vu"),
             "x-access-token:ghs_token"
         );
+        assert_eq!(local, None);
     }
 
     #[tokio::test]

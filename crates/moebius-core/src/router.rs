@@ -280,15 +280,15 @@ impl Router {
                     );
                 }
             };
-            if status.is_success() {
-                if let Ok(value) = serde_json::from_slice::<Value>(&bytes) {
-                    let mut usage = Counted::default();
-                    usage.read(&value, protocol);
-                    if let Some(m) = value.get("model").and_then(Value::as_str) {
-                        usage.model = Some(m.to_string());
-                    }
-                    meter.record(usage);
+            if status.is_success()
+                && let Ok(value) = serde_json::from_slice::<Value>(&bytes)
+            {
+                let mut usage = Counted::default();
+                usage.read(&value, protocol);
+                if let Some(m) = value.get("model").and_then(Value::as_str) {
+                    usage.model = Some(m.to_string());
                 }
+                meter.record(usage);
             }
             Body::from(bytes).into_response()
         };

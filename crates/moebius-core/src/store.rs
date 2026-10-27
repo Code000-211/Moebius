@@ -158,6 +158,17 @@ pub struct Repository {
     pub trusted: Vec<String>,
 }
 
+impl Repository {
+    /// Where new work starts and scripts are read from: the default branch as the forge has it. For GitHub that is
+    /// `origin`'s, which the poll keeps up to date; without a forge it is the clone's own.
+    pub fn base_ref(&self) -> String {
+        match self.forge.as_str() {
+            "none" => self.default_branch.clone(),
+            _ => format!("origin/{}", self.default_branch),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Card {
     pub id: i64,

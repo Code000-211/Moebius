@@ -225,7 +225,7 @@ impl Runs for PiBolt {
         let clone = PathBuf::from(&repository.path);
         let worktree = app
             .repos
-            .add_worktree(&repository.name, &clone, run.id, &repository.default_branch)
+            .add_worktree(&repository.name, &clone, run.id, &repository.base_ref())
             .map_err(|e| fail(e.to_string()))?;
         let token = self.router.issue_token(Grant {
             run_id: run.id,

@@ -56,6 +56,13 @@ fn git_with_config(dir: &Path, args: &[&str], config: &[(&str, &str)]) -> Result
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
+/// The configuration that adds `auth` as an HTTP header to one git command.
+fn auth_config(auth: Option<&str>) -> Vec<(&str, &str)> {
+    auth.map(|header| ("http.extraHeader", header))
+        .into_iter()
+        .collect()
+}
+
 /// A worktree made for one run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Worktree {
@@ -84,20 +91,23 @@ impl Repos {
     }
 
     /// Clones `url` as `name`, or fetches if the clone already exists. Returns the clone's path.
-    pub fn clone_or_fetch(&self, name: &str, url: &str) -> Result<PathBuf> {
+    pub fn clone_or_fetch(&self, name: &str, url: &str, auth: Option<&str>) -> Result<PathBuf> {
         let path = self.clone_path(name);
         if path.join(".git").exists() {
-            self.fetch(&path)?;
+            self.fetch(&path, auth)?;
         } else {
             std::fs::create_dir_all(&self.clones)?;
             let target = path.to_string_lossy().into_owned();
-            git(&self.clones, &["clone", "--quiet", "--", url, &target])?;
+            let args = ["clone", "--quiet", "--", url, &target];
+            git_with_config(&self.clones, &args, &auth_config(auth))?;
         }
         Ok(path)
     }
 
-    pub fn fetch(&self, clone: &Path) -> Result<()> {
-        git(clone, &["fetch", "--quiet", "--prune", "origin"]).map(drop)
+    /// Fetches `origin`, with `auth` as an extra HTTP header if the remote needs one.
+    pub fn fetch(&self, clone: &Path, auth: Option<&str>) -> Result<()> {
+        let args = ["fetch", "--quiet", "--prune", "origin"];
+        git_with_config(clone, &args, &auth_config(auth)).map(drop)
     }
 
     /// The URL of the clone's remote `origin`.
@@ -105,9 +115,10 @@ impl Repos {
         git(clone, &["remote", "get-url", "origin"])
     }
 
-    /// Pushes `branch` to `origin` with `config` (git configuration for this push only, such as credentials).
-    pub fn push(&self, clone: &Path, branch: &str, config: &[(&str, &str)]) -> Result<()> {
-        git_with_config(clone, &["push", "--quiet", "origin", branch], config).map(drop)
+    /// Pushes `branch` to `origin`, with `auth` as an extra HTTP header if the remote needs one.
+    pub fn push(&self, clone: &Path, branch: &str, auth: Option<&str>) -> Result<()> {
+        let args = ["push", "--quiet", "origin", branch];
+        git_with_config(clone, &args, &auth_config(auth)).map(drop)
     }
 
     /// The branch checked out in the clone, which Moebius treats as its default branch.
@@ -189,12 +200,12 @@ mod tests {
         let origin = origin(dir.path());
         let repos = Repos::new(&dir.path().join("data"));
         let clone = repos
-            .clone_or_fetch("demo", origin.to_str().unwrap())
+            .clone_or_fetch("demo", origin.to_str().unwrap(), None)
             .unwrap();
         assert_eq!(repos.default_branch(&clone).unwrap(), "main");
         // A second call fetches instead of cloning.
         repos
-            .clone_or_fetch("demo", origin.to_str().unwrap())
+            .clone_or_fetch("demo", origin.to_str().unwrap(), None)
             .unwrap();
 
         let wt = repos.add_worktree("demo", &clone, 7, "main").unwrap();
@@ -222,22 +233,18 @@ mod tests {
         .unwrap();
         let repos = Repos::new(&dir.path().join("data"));
         let clone = repos
-            .clone_or_fetch("demo", bare.to_str().unwrap())
+            .clone_or_fetch("demo", bare.to_str().unwrap(), None)
             .unwrap();
         assert_eq!(repos.origin_url(&clone).unwrap(), bare.to_str().unwrap());
         let wt = repos.add_worktree("demo", &clone, 3, "main").unwrap();
         commit(&wt.path, "feature.txt", "new\n");
         repos.remove_worktree(&clone, &wt).unwrap();
 
-        repos.push(&clone, &wt.branch, &[]).unwrap();
+        repos.push(&clone, &wt.branch, None).unwrap();
         assert!(git(&bare, &["rev-parse", "--verify", "moebius/run-3"]).is_ok());
-        // Configuration given to a push is not kept.
+        // A header given to a push is not kept.
         repos
-            .push(
-                &clone,
-                &wt.branch,
-                &[("http.extraHeader", "Authorization: secret")],
-            )
+            .push(&clone, &wt.branch, Some("Authorization: secret"))
             .unwrap();
         let config = std::fs::read_to_string(clone.join(".git/config")).unwrap();
         assert!(!config.contains("secret"));
@@ -249,7 +256,7 @@ mod tests {
         let origin = origin(dir.path());
         let repos = Repos::new(&dir.path().join("data"));
         let clone = repos
-            .clone_or_fetch("demo", origin.to_str().unwrap())
+            .clone_or_fetch("demo", origin.to_str().unwrap(), None)
             .unwrap();
         let wt = repos.add_worktree("demo", &clone, 1, "main").unwrap();
         commit(&wt.path, "feature.txt", "new\n");
@@ -266,7 +273,7 @@ mod tests {
         let origin = origin(dir.path());
         let repos = Repos::new(&dir.path().join("data"));
         let clone = repos
-            .clone_or_fetch("demo", origin.to_str().unwrap())
+            .clone_or_fetch("demo", origin.to_str().unwrap(), None)
             .unwrap();
         let wt = repos.add_worktree("demo", &clone, 2, "main").unwrap();
         commit(&wt.path, "README.md", "theirs\n");

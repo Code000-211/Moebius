@@ -8,7 +8,8 @@ changes ready to merge. Read `GLOSSARY.md` for the words, `docs/spec.md` for wha
 
 - `crates/moebius-core`: everything the server does. `app.rs` ties the store, bus, repositories, forges and decisions
   together; `server.rs` wires the API, router, harness and board engine; one module per part (`store`, `blobs`, `repos`,
-  `forge`, `decide`, `board`, `router`, `pibolt`, `api`, `config`). Column scripts are in `workflow/*.luau`.
+  `forge`, `github` (the API client), `poll` (GitHub without webhooks), `decide`, `board`, `router`, `pibolt`, `api`,
+  `config`). Column scripts are in `workflow/*.luau`.
 - `crates/moebius-plugin-api`: the plugin trait and the host that calls plugins with a time limit, failing closed.
 - `crates/moebius`: the `moebius` binary (`init`, `serve`).
 - `crates/moebius-desktop`: the iced desktop app (built to `docs/design.md`).

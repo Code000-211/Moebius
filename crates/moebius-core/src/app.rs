@@ -101,6 +101,11 @@ impl App {
         self.forges.insert(forge.name(), forge);
     }
 
+    /// Brings the repository's clone up to date with its forge.
+    pub fn refresh(&self, repository: &Repository) -> Result<()> {
+        Ok(self.forge(repository)?.refresh(repository)?)
+    }
+
     fn forge(&self, repository: &Repository) -> Result<&dyn Forge> {
         self.forges
             .get(repository.forge.as_str())
@@ -133,7 +138,7 @@ impl App {
 
     /// Clones `url` and adds it as a repository without a forge.
     pub fn add_repository(&self, name: &str, url: &str) -> Result<Repository> {
-        let (path, branch) = self.clone_repository(name, url)?;
+        let (path, branch) = self.clone_repository(name, url, None)?;
         let repository = self.store.add_repository(name, &path, "none", &branch)?;
         self.bus
             .publish(AppEvent::new("repository_added", json!(repository)));
@@ -141,8 +146,8 @@ impl App {
     }
 
     /// Clones `url` and adds it as a repository whose issues are polled from GitHub as `github` (`owner/repo`).
-    /// Issues by the logins in `trusted` need no approval. The clone is made without the app's credentials, so
-    /// private repositories cannot be cloned yet.
+    /// Issues by the logins in `trusted` need no approval. With the GitHub App set up, the clone authenticates as
+    /// its installation, so private repositories work too.
     pub fn add_github_repository(
         &self,
         name: &str,
@@ -158,7 +163,11 @@ impl App {
                 "{github:?} is not a GitHub repository as owner/repo"
             )));
         }
-        let (path, branch) = self.clone_repository(name, url)?;
+        let auth = match self.forges.get("github") {
+            Some(forge) => forge.auth(url, github)?,
+            None => None,
+        };
+        let (path, branch) = self.clone_repository(name, url, auth.as_deref())?;
         let repository = self
             .store
             .add_github_repository(name, &path, &branch, github, trusted)?;
@@ -168,13 +177,18 @@ impl App {
     }
 
     /// Clones `url` as the repository `name` and returns the clone's path and default branch.
-    fn clone_repository(&self, name: &str, url: &str) -> Result<(String, String)> {
+    fn clone_repository(
+        &self,
+        name: &str,
+        url: &str,
+        auth: Option<&str>,
+    ) -> Result<(String, String)> {
         if !is_plain_name(name) || name.starts_with('.') {
             return Err(AppError::Invalid(format!(
                 "{name:?} is not a repository name"
             )));
         }
-        let clone = self.repos.clone_or_fetch(name, url)?;
+        let clone = self.repos.clone_or_fetch(name, url, auth)?;
         let branch = self.repos.default_branch(&clone)?;
         Ok((clone.to_string_lossy().into_owned(), branch))
     }
