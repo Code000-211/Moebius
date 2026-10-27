@@ -9,6 +9,8 @@
 //! - `moebius.ask(kind, reason)`: puts the card in the inbox for a person (once) and leaves it where it is.
 //! - `moebius.stuck(reason)`: puts the card in the inbox as stuck (once).
 //! - `moebius.record_outcome(outcome) -> count`: sets the outcome of the card's judgements that have none.
+//! - `card.blocked_by`: the numbers of the issues blocking the card that are not done yet (an issue with no card counts
+//!   as not done); empty when nothing blocks.
 //! - `moebius.runs_active()`, `moebius.run_limit`, `moebius.round_limit`: the limits.
 //!
 //! Scripts have no file system, network, processes or `require`; each call has a memory limit and a time limit. The
@@ -262,6 +264,23 @@ impl Engine {
         t.set("author", card.author.as_str())?;
         t.set("column", card.column.as_str())?;
         t.set("trusted", self.app.is_trusted(card))?;
+        let mut blocked_by = Vec::new();
+        for number in self
+            .app
+            .store
+            .dependencies(card.id)
+            .map_err(mlua::Error::external)?
+        {
+            let blocker = self
+                .app
+                .store
+                .card_by_number(card.repository_id, number)
+                .map_err(mlua::Error::external)?;
+            if blocker.is_none_or(|b| b.column != columns::DONE) {
+                blocked_by.push(number);
+            }
+        }
+        t.set("blocked_by", blocked_by)?;
         t.set(
             "rounds",
             runs.iter().filter(|r| r.purpose == "code").count(),
@@ -634,6 +653,37 @@ mod tests {
         let step = engine.settle(card.id).unwrap();
         assert_eq!(app.card(card.id).unwrap().column, "Ready");
         assert_eq!(step.waiting.as_deref(), Some("held by the repository"));
+    }
+
+    #[test]
+    fn a_blocked_card_waits_in_ready_until_its_blocker_is_done() {
+        let (_dir, app, engine, repo) = setup();
+        let blocker = app.create_issue(repo, "First", "", PERSON).unwrap();
+        let card = app.create_issue(repo, "Second", "", PERSON).unwrap();
+        app.store
+            .set_dependencies(card.id, &[blocker.number].into())
+            .unwrap();
+
+        let reason = format!("waiting for #{}", blocker.number);
+        for _ in 0..2 {
+            let step = engine.settle(card.id).unwrap();
+            assert_eq!(app.card(card.id).unwrap().column, "Ready");
+            assert_eq!(step.waiting.as_deref(), Some(reason.as_str()));
+        }
+
+        app.store.move_card(blocker.id, columns::DONE).unwrap();
+        engine.settle(card.id).unwrap();
+        assert_eq!(app.card(card.id).unwrap().column, "In progress");
+    }
+
+    #[test]
+    fn a_card_blocked_by_an_issue_without_a_card_waits() {
+        let (_dir, app, engine, repo) = setup();
+        let card = app.create_issue(repo, "Second", "", PERSON).unwrap();
+        app.store.set_dependencies(card.id, &[99].into()).unwrap();
+        let step = engine.settle(card.id).unwrap();
+        assert_eq!(app.card(card.id).unwrap().column, "Ready");
+        assert_eq!(step.waiting.as_deref(), Some("waiting for #99"));
     }
 
     fn run(engine: &Engine, card: &Card, source: &str) -> Result<Step, String> {
