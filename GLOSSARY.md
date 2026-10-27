@@ -34,8 +34,18 @@ goes back to the model to find another way, and the run does not stop.
 _Avoid_: policy, guardrail, guideline
 
 **Decision model**:
-The model that judges whether a tool call breaks a rule, trained on the judgements Moebius records.
+The model that judges whether a tool call breaks a rule and answers the questions a harness asks during a run; until one has
+been trained on Moebius's own judgements, a teacher model takes its place.
 _Avoid_: judge, classifier, guard model
+
+**Teacher model**:
+A strong general model, reached through the router, that stands in for the decision model and whose judgements train it.
+_Avoid_: base model, oracle
+
+**Judgement**:
+One recorded decision of the decision model or the teacher model, with what it judged, what it decided and why, later marked
+right or wrong from the outcome of the work and from the Retro.
+_Avoid_: verdict, label, decision log
 
 **Live view**:
 The view of a run as it happens, in the desktop app, in which a person can steer, stop or message it and open a shell in its
