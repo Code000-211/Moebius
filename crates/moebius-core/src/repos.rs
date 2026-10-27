@@ -27,13 +27,26 @@ const IDENTITY: [&str; 4] = [
 
 /// Runs git in `dir` and returns its trimmed standard output.
 pub fn git(dir: &Path, args: &[&str]) -> Result<String> {
-    let output = Command::new("git")
+    git_with_config(dir, args, &[])
+}
+
+/// Runs git in `dir` with the configuration `config` (name and value) for this command only. It is handed over in
+/// the environment, so a credential in it shows up neither in `.git/config`, nor in an error message.
+fn git_with_config(dir: &Path, args: &[&str], config: &[(&str, &str)]) -> Result<String> {
+    let mut command = Command::new("git");
+    command
         .args(IDENTITY)
         .arg("-C")
         .arg(dir)
         .args(args)
         .env("GIT_TERMINAL_PROMPT", "0")
-        .output()?;
+        .env("GIT_CONFIG_COUNT", config.len().to_string());
+    for (i, (name, value)) in config.iter().enumerate() {
+        command
+            .env(format!("GIT_CONFIG_KEY_{i}"), name)
+            .env(format!("GIT_CONFIG_VALUE_{i}"), value);
+    }
+    let output = command.output()?;
     if !output.status.success() {
         return Err(GitError::Failed {
             args: args.join(" "),
@@ -85,6 +98,16 @@ impl Repos {
 
     pub fn fetch(&self, clone: &Path) -> Result<()> {
         git(clone, &["fetch", "--quiet", "--prune", "origin"]).map(drop)
+    }
+
+    /// The URL of the clone's remote `origin`.
+    pub fn origin_url(&self, clone: &Path) -> Result<String> {
+        git(clone, &["remote", "get-url", "origin"])
+    }
+
+    /// Pushes `branch` to `origin` with `config` (git configuration for this push only, such as credentials).
+    pub fn push(&self, clone: &Path, branch: &str, config: &[(&str, &str)]) -> Result<()> {
+        git_with_config(clone, &["push", "--quiet", "origin", branch], config).map(drop)
     }
 
     /// The branch checked out in the clone, which Moebius treats as its default branch.
@@ -180,6 +203,44 @@ mod tests {
         repos.remove_worktree(&clone, &wt).unwrap();
         assert!(!wt.path.exists());
         assert!(git(&clone, &["rev-parse", "--verify", "moebius/run-7"]).is_ok());
+    }
+
+    #[test]
+    fn a_branch_is_pushed_to_origin() {
+        let dir = tempfile::tempdir().unwrap();
+        let bare = dir.path().join("bare.git");
+        git(
+            dir.path(),
+            &["init", "--quiet", "--bare", "-b", "main", "bare.git"],
+        )
+        .unwrap();
+        let origin = origin(dir.path());
+        git(
+            &origin,
+            &["push", "--quiet", bare.to_str().unwrap(), "main"],
+        )
+        .unwrap();
+        let repos = Repos::new(&dir.path().join("data"));
+        let clone = repos
+            .clone_or_fetch("demo", bare.to_str().unwrap())
+            .unwrap();
+        assert_eq!(repos.origin_url(&clone).unwrap(), bare.to_str().unwrap());
+        let wt = repos.add_worktree("demo", &clone, 3, "main").unwrap();
+        commit(&wt.path, "feature.txt", "new\n");
+        repos.remove_worktree(&clone, &wt).unwrap();
+
+        repos.push(&clone, &wt.branch, &[]).unwrap();
+        assert!(git(&bare, &["rev-parse", "--verify", "moebius/run-3"]).is_ok());
+        // Configuration given to a push is not kept.
+        repos
+            .push(
+                &clone,
+                &wt.branch,
+                &[("http.extraHeader", "Authorization: secret")],
+            )
+            .unwrap();
+        let config = std::fs::read_to_string(clone.join(".git/config")).unwrap();
+        assert!(!config.contains("secret"));
     }
 
     #[test]

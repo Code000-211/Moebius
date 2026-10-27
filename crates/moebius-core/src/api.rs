@@ -26,6 +26,8 @@ use tokio::sync::broadcast::error::RecvError;
 
 use crate::app::{App, AppError, PERSON};
 use crate::bus::AppEvent;
+use crate::forge::ForgeError;
+use crate::repos::GitError;
 use crate::store::{Card, Change, InboxItem, Repository};
 
 /// What the API needs from the core.
@@ -101,7 +103,7 @@ impl From<AppError> for ApiError {
         let status = match e {
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::Invalid(_) => StatusCode::UNPROCESSABLE_ENTITY,
-            AppError::Git(crate::repos::GitError::Conflict { .. }) => StatusCode::CONFLICT,
+            AppError::Forge(ForgeError::Git(GitError::Conflict { .. })) => StatusCode::CONFLICT,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
         Self(status, e.to_string())

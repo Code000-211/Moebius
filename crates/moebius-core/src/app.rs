@@ -11,7 +11,7 @@ use serde_json::json;
 
 use crate::bus::{AppEvent, Bus};
 use crate::decide::{Decisions, Question};
-use crate::forge::{Forge, NoForge};
+use crate::forge::{Forge, ForgeError, NoForge};
 use crate::github::Issue;
 use crate::repos::{GitError, Repos};
 use crate::store::{Card, Change, Repository, Store, StoreError};
@@ -36,6 +36,8 @@ pub enum AppError {
     Store(#[from] StoreError),
     #[error(transparent)]
     Git(#[from] GitError),
+    #[error(transparent)]
+    Forge(#[from] ForgeError),
     #[error("{0} not found")]
     NotFound(String),
     #[error("{0}")]
@@ -92,6 +94,23 @@ impl App {
             data_dir: data_dir.to_path_buf(),
             forges,
         }
+    }
+
+    /// Makes `forge` available to the repositories that name it.
+    pub fn add_forge(&mut self, forge: Box<dyn Forge>) {
+        self.forges.insert(forge.name(), forge);
+    }
+
+    fn forge(&self, repository: &Repository) -> Result<&dyn Forge> {
+        self.forges
+            .get(repository.forge.as_str())
+            .map(|forge| &**forge)
+            .ok_or_else(|| {
+                AppError::Invalid(format!(
+                    "{} needs the forge {}, which is not set up",
+                    repository.name, repository.forge
+                ))
+            })
     }
 
     fn repository(&self, id: i64) -> Result<Repository> {
@@ -277,12 +296,15 @@ impl App {
         self.card(card_id)
     }
 
-    /// Offers the work on `branch` as a change for the card and puts it in the inbox, ready to merge.
+    /// Offers the work on `branch` as a change for the card, through the repository's forge, and puts it in the
+    /// inbox, ready to merge.
     pub fn offer_change(&self, card_id: i64, branch: &str) -> Result<Change> {
         let card = self.card(card_id)?;
-        let change = self
-            .store
-            .add_change(card.repository_id, Some(card_id), branch)?;
+        let repository = self.repository(card.repository_id)?;
+        let pull_request = self.forge(&repository)?.offer(&repository, &card, branch)?;
+        let change =
+            self.store
+                .add_change(card.repository_id, Some(card_id), branch, pull_request)?;
         self.store.add_inbox_item(
             "ready_to_merge",
             Some(card_id),
@@ -305,10 +327,7 @@ impl App {
             )));
         }
         let repository = self.repository(change.repository_id)?;
-        let forge = self
-            .forges
-            .get(repository.forge.as_str())
-            .ok_or_else(|| AppError::NotFound(format!("forge {}", repository.forge)))?;
+        let forge = self.forge(&repository)?;
         self.decisions.record_person(
             &Question {
                 kind: "merge".into(),
@@ -329,16 +348,62 @@ impl App {
             None => format!("Merge {}", change.branch),
         };
         let commit = forge.merge(&repository, &change, &message)?;
-        self.store.set_change_state(change_id, "merged")?;
+        self.change_merged(&change, Some(&commit))?;
+        Ok(commit)
+    }
+
+    /// A change is merged, here or on the forge: its inbox items are resolved and its card is done.
+    pub fn change_merged(&self, change: &Change, commit: Option<&str>) -> Result<()> {
+        self.store.set_change_state(change.id, "merged")?;
         self.bus.publish(AppEvent::new(
             "change_merged",
-            json!({ "change": change_id, "commit": commit }),
+            json!({ "change": change.id, "commit": commit }),
         ));
         if let Some(card_id) = change.card_id {
             self.store.resolve_inbox_for_card(card_id)?;
             self.move_card(card_id, columns::DONE)?;
         }
-        Ok(commit)
+        Ok(())
+    }
+
+    /// A change's pull request was closed on the forge without being merged: the change is closed and the person is
+    /// told.
+    pub fn change_closed(&self, change: &Change) -> Result<()> {
+        self.store.set_change_state(change.id, "closed")?;
+        self.bus.publish(AppEvent::new(
+            "change_closed",
+            json!({ "change": change.id }),
+        ));
+        if let Some(card_id) = change.card_id {
+            let card = self.card(card_id)?;
+            self.store.resolve_inbox_for_card(card_id)?;
+            self.store.add_inbox_item(
+                "change_closed",
+                Some(card_id),
+                &card.title,
+                &json!({ "change": change.id, "pull_request": change.pull_request }),
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Records the checks and review of a change's pull request, and publishes the change if they differ from what
+    /// was known.
+    pub fn record_change_status(
+        &self,
+        change: &Change,
+        checks: Option<&str>,
+        review: Option<&str>,
+    ) -> Result<()> {
+        if change.checks.as_deref() == checks && change.review.as_deref() == review {
+            return Ok(());
+        }
+        self.store.set_change_status(change.id, checks, review)?;
+        self.bus.publish(AppEvent::new(
+            "change_updated",
+            json!(self.change(change.id)?),
+        ));
+        Ok(())
     }
 }
 

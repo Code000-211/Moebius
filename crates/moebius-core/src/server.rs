@@ -1,5 +1,6 @@
 //! The server put together (spec 2): the store and the core, the desktop API, the router, the Pi-Bolt harness, the
-//! board engine, which runs every card's column script on a fixed tick, and the poll of GitHub's issues.
+//! board engine, which runs every card's column script on a fixed tick, and the poll of GitHub's issues and pull
+//! requests.
 
 use std::net::SocketAddr;
 use std::path::Path;
@@ -14,7 +15,8 @@ use crate::app::{App, columns};
 use crate::board::{Engine, Limits, Workflow};
 use crate::bus::AppEvent;
 use crate::config::Config;
-use crate::github::GitHub;
+use crate::forge::GitHubForge;
+use crate::github::{CheckRun, GitHub};
 use crate::pibolt::PiBolt;
 use crate::repos::Worktree;
 use crate::router::{Router, Upstream};
@@ -51,6 +53,32 @@ fn end_runs_of_a_previous_server(app: &App) -> Result<(), String> {
     Ok(())
 }
 
+/// How the check runs of a commit add up: `failure` if any failed, `pending` if any is still going, `success`
+/// otherwise; none when there are no checks at all.
+fn summarise_checks(runs: &[CheckRun]) -> Option<&'static str> {
+    const FAILED: [&str; 5] = [
+        "failure",
+        "timed_out",
+        "cancelled",
+        "action_required",
+        "startup_failure",
+    ];
+    if runs.is_empty() {
+        return None;
+    }
+    if runs.iter().any(|run| {
+        run.conclusion
+            .as_deref()
+            .is_some_and(|c| FAILED.contains(&c))
+    }) {
+        return Some("failure");
+    }
+    if runs.iter().any(|run| run.status != "completed") {
+        return Some("pending");
+    }
+    Some("success")
+}
+
 pub struct Server {
     pub config: Config,
     pub app: Arc<App>,
@@ -73,11 +101,27 @@ impl Server {
         );
         let token = api::load_or_create_token(&config.token_file)
             .map_err(|e| format!("cannot read {}: {e}", config.token_file.display()))?;
-        let app = Arc::new(App::new(
+        let mut app = App::new(
             store.clone(),
             Arc::new(Host::new(PLUGIN_TIME_LIMIT)),
             &config.data_dir,
-        ));
+        );
+        let github = match &config.github {
+            Some(g) => {
+                let key = std::fs::read(&g.private_key_file)
+                    .map_err(|e| format!("cannot read {}: {e}", g.private_key_file.display()))?;
+                let github =
+                    Arc::new(GitHub::new(&g.api_url, g.app_id, &key).map_err(|e| e.to_string())?);
+                app.add_forge(Box::new(GitHubForge::new(
+                    github.clone(),
+                    app.repos.clone(),
+                    tokio::runtime::Handle::current(),
+                )));
+                Some(github)
+            }
+            None => None,
+        };
+        let app = Arc::new(app);
         end_runs_of_a_previous_server(&app)?;
 
         let mut upstreams = Vec::new();
@@ -113,16 +157,6 @@ impl Server {
                 ..Limits::default()
             },
         ));
-        let github = match &config.github {
-            Some(g) => {
-                let key = std::fs::read(&g.private_key_file)
-                    .map_err(|e| format!("cannot read {}: {e}", g.private_key_file.display()))?;
-                Some(Arc::new(
-                    GitHub::new(&g.api_url, g.app_id, &key).map_err(|e| e.to_string())?,
-                ))
-            }
-            None => None,
-        };
         Ok(Self {
             config,
             app,
@@ -163,7 +197,7 @@ impl Server {
         }
     }
 
-    /// Polls the issues of every GitHub repository once; a repository that fails is reported on the bus and tried
+    /// Polls the issues and pull requests of every GitHub repository once; a repository that fails is reported on the bus and tried
     /// again at the next poll.
     pub async fn poll_github(&self) {
         let Some(github) = &self.github else { return };
@@ -174,7 +208,11 @@ impl Server {
             let Some(name) = repository.github.clone() else {
                 continue;
             };
-            if let Err(message) = self.poll_issues(github, repository, &name).await {
+            let polled = match self.poll_issues(github, repository.clone(), &name).await {
+                Ok(()) => self.poll_pull_requests(github, &repository, &name).await,
+                Err(message) => Err(message),
+            };
+            if let Err(message) = polled {
                 self.app.bus.publish(AppEvent::new(
                     "forge_error",
                     json!({ "repository": name, "message": message }),
@@ -201,6 +239,58 @@ impl Server {
         synced
             .inspect_err(|_| github.forget_issues_etag(name))
             .map_err(|e| e.to_string())
+    }
+
+    /// Reads the pull request of each open change of `repository` on GitHub as `name`: a merged one finishes its
+    /// change, one closed without a merge closes it, and for any other the checks and the latest review are recorded.
+    async fn poll_pull_requests(
+        &self,
+        github: &GitHub,
+        repository: &Repository,
+        name: &str,
+    ) -> Result<(), String> {
+        let store = self.app.store.clone();
+        let id = repository.id;
+        let changes = tokio::task::spawn_blocking(move || store.open_pull_requests(id))
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
+        for change in changes {
+            let Some(number) = change.pull_request else {
+                continue;
+            };
+            let pull_request = github
+                .pull_request(name, number)
+                .await
+                .map_err(|e| e.to_string())?;
+            let app = self.app.clone();
+            let done = if pull_request.merged {
+                let commit = pull_request.merge_commit_sha;
+                tokio::task::spawn_blocking(move || app.change_merged(&change, commit.as_deref()))
+                    .await
+            } else if pull_request.state == "closed" {
+                tokio::task::spawn_blocking(move || app.change_closed(&change)).await
+            } else {
+                let checks = github
+                    .check_runs(name, &pull_request.head.sha)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let review = github
+                    .reviews(name, number)
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .pop()
+                    .map(|review| review.state.to_lowercase());
+                let checks = summarise_checks(&checks);
+                tokio::task::spawn_blocking(move || {
+                    app.record_change_status(&change, checks, review.as_deref())
+                })
+                .await
+            };
+            done.map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
     }
 
     /// Serves the desktop API and the router, ticks the board and polls GitHub, until the future is dropped.
@@ -252,7 +342,7 @@ impl Server {
 mod tests {
     use std::sync::Mutex;
 
-    use axum::extract::State;
+    use axum::extract::{Path as UrlPath, State};
     use axum::http::{HeaderMap, StatusCode};
     use axum::response::IntoResponse;
     use axum::routing::{get, post};
@@ -261,7 +351,7 @@ mod tests {
     use super::*;
     use crate::board::Runs;
     use crate::repos::git;
-    use crate::store::{Card, Run};
+    use crate::store::{Card, Change, Run};
 
     #[test]
     fn runs_left_going_by_a_previous_server_are_failed_and_cleaned_up() {
@@ -316,6 +406,16 @@ mod tests {
     struct FakeGitHub {
         issues: Mutex<(String, Vec<Value>)>,
         asked: Mutex<Vec<Option<String>>>,
+        pulls: Mutex<Pulls>,
+    }
+
+    /// The pull requests of the fake: what it was asked to open and merge, and what it answers about pull request 7.
+    struct Pulls {
+        opened: Vec<Value>,
+        merged: Vec<Value>,
+        pull: Value,
+        check_runs: Vec<Value>,
+        reviews: Vec<Value>,
     }
 
     impl FakeGitHub {
@@ -326,6 +426,16 @@ mod tests {
         fn asked(&self) -> Vec<Option<String>> {
             self.asked.lock().unwrap().clone()
         }
+
+        /// Makes pull request 7 look as `state` (`open` or `closed`) and `merged` say.
+        fn set_pull(&self, state: &str, merged: bool) {
+            self.pulls.lock().unwrap().pull = pull(state, merged);
+        }
+    }
+
+    fn pull(state: &str, merged: bool) -> Value {
+        json!({ "number": 7, "state": state, "merged": merged,
+                "merge_commit_sha": merged.then_some("c0ffee"), "head": { "sha": "deadbeef" } })
     }
 
     fn issue(number: u64, state: &str, login: &str, body: &str) -> Value {
@@ -337,6 +447,13 @@ mod tests {
         let fake = Arc::new(FakeGitHub {
             issues: Mutex::new((String::new(), Vec::new())),
             asked: Mutex::new(Vec::new()),
+            pulls: Mutex::new(Pulls {
+                opened: Vec::new(),
+                merged: Vec::new(),
+                pull: pull("open", false),
+                check_runs: Vec::new(),
+                reviews: Vec::new(),
+            }),
         });
         let app = axum::Router::new()
             .route(
@@ -375,6 +492,49 @@ mod tests {
                     },
                 ),
             )
+            .route(
+                "/repos/acme/widgets/pulls",
+                post(
+                    |State(fake): State<Arc<FakeGitHub>>, axum::Json(body): axum::Json<Value>| async move {
+                        fake.pulls.lock().unwrap().opened.push(body);
+                        (StatusCode::CREATED, axum::Json(json!({ "number": 7 })))
+                    },
+                ),
+            )
+            .route(
+                "/repos/acme/widgets/pulls/{number}",
+                get(
+                    |State(fake): State<Arc<FakeGitHub>>, UrlPath(number): UrlPath<u64>| async move {
+                        assert_eq!(number, 7);
+                        axum::Json(fake.pulls.lock().unwrap().pull.clone())
+                    },
+                ),
+            )
+            .route(
+                "/repos/acme/widgets/commits/{sha}/check-runs",
+                get(
+                    |State(fake): State<Arc<FakeGitHub>>, UrlPath(sha): UrlPath<String>| async move {
+                        assert_eq!(sha, "deadbeef", "the checks of the pull request's head");
+                        let runs = fake.pulls.lock().unwrap().check_runs.clone();
+                        axum::Json(json!({ "total_count": runs.len(), "check_runs": runs }))
+                    },
+                ),
+            )
+            .route(
+                "/repos/acme/widgets/pulls/{number}/reviews",
+                get(|State(fake): State<Arc<FakeGitHub>>| async move {
+                    axum::Json(fake.pulls.lock().unwrap().reviews.clone())
+                }),
+            )
+            .route(
+                "/repos/acme/widgets/pulls/{number}/merge",
+                axum::routing::put(
+                    |State(fake): State<Arc<FakeGitHub>>, axum::Json(body): axum::Json<Value>| async move {
+                        fake.pulls.lock().unwrap().merged.push(body);
+                        axum::Json(json!({ "sha": "c0ffee", "merged": true }))
+                    },
+                ),
+            )
             .with_state(fake.clone());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
@@ -406,6 +566,8 @@ mod tests {
         fake: Arc<FakeGitHub>,
         engine: Engine,
         repository: Repository,
+        /// The bare repository the clone's `origin` is.
+        remote: std::path::PathBuf,
     }
 
     impl Fixture {
@@ -429,11 +591,17 @@ mod tests {
                 &["commit", "--quiet", "--allow-empty", "-m", "first"],
             )
             .unwrap();
+            let remote = dir.path().join("remote.git");
+            git(
+                dir.path(),
+                &["clone", "--quiet", "--bare", "origin", "remote.git"],
+            )
+            .unwrap();
             let repository = server
                 .app
                 .add_github_repository(
                     "widgets",
-                    origin.to_str().unwrap(),
+                    remote.to_str().unwrap(),
                     "acme/widgets",
                     &["leon".to_string()],
                 )
@@ -450,7 +618,34 @@ mod tests {
                 fake,
                 engine,
                 repository,
+                remote,
             }
+        }
+
+        /// Polls issue 1 into a card and has a run's work on its branch offered as a change, on a thread that may
+        /// block, as the board does.
+        async fn offered_change(&self) -> Change {
+            self.fake
+                .set_issues("\"v1\"", vec![issue(1, "open", "leon", "Do it.")]);
+            self.server.poll_github().await;
+            let card = self.card(1).unwrap();
+            let app = self.server.app.clone();
+            let repository = self.repository.clone();
+            tokio::task::spawn_blocking(move || {
+                let clone = Path::new(&repository.path);
+                let worktree = app.repos.add_worktree("widgets", clone, 1, "main").unwrap();
+                std::fs::write(worktree.path.join("feature.txt"), "done\n").unwrap();
+                git(&worktree.path, &["add", "."]).unwrap();
+                git(&worktree.path, &["commit", "--quiet", "-m", "Add it"]).unwrap();
+                app.repos.remove_worktree(clone, &worktree).unwrap();
+                app.offer_change(card.id, &worktree.branch).unwrap()
+            })
+            .await
+            .unwrap()
+        }
+
+        fn change(&self, id: i64) -> Change {
+            self.server.app.store.change(id).unwrap().unwrap()
         }
 
         fn card(&self, number: i64) -> Option<Card> {
@@ -588,5 +783,176 @@ mod tests {
         let error = events.try_recv().unwrap();
         assert_eq!(error.kind, "forge_error");
         assert_eq!(error.data["repository"], "acme/missing");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_offered_change_is_pushed_and_opened_as_a_pull_request() {
+        let f = Fixture::new().await;
+        let change = f.offered_change().await;
+
+        assert!(git(&f.remote, &["rev-parse", "--verify", "moebius/run-1"]).is_ok());
+        assert_eq!(change.pull_request, Some(7));
+        assert_eq!(f.change(change.id).pull_request, Some(7));
+        let opened = f.fake.pulls.lock().unwrap().opened.clone();
+        assert_eq!(opened.len(), 1);
+        assert_eq!(
+            (
+                opened[0]["title"].as_str(),
+                opened[0]["head"].as_str(),
+                opened[0]["base"].as_str()
+            ),
+            (Some("Issue 1"), Some("moebius/run-1"), Some("main"))
+        );
+        assert!(
+            opened[0]["body"]
+                .as_str()
+                .unwrap()
+                .starts_with("Closes #1\n")
+        );
+        assert_eq!(f.card(1).unwrap().column, "Ready to merge");
+        assert!(
+            f.server
+                .app
+                .store
+                .has_open_inbox_item(f.card(1).unwrap().id, "ready_to_merge")
+                .unwrap()
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_pull_request_merged_on_github_moves_its_card_to_done() {
+        let f = Fixture::new().await;
+        let change = f.offered_change().await;
+
+        f.fake.set_pull("closed", true);
+        f.server.poll_github().await;
+
+        let change = f.change(change.id);
+        assert_eq!(change.state, "merged");
+        assert_eq!(f.card(1).unwrap().column, "Done");
+        assert!(f.server.app.store.inbox().unwrap().is_empty());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_pull_request_closed_without_a_merge_closes_the_change_and_tells_the_person_once() {
+        let f = Fixture::new().await;
+        let change = f.offered_change().await;
+
+        f.fake.set_pull("closed", false);
+        f.server.poll_github().await;
+        f.server.poll_github().await;
+
+        assert_eq!(f.change(change.id).state, "closed");
+        let inbox = f.server.app.store.inbox().unwrap();
+        assert_eq!(
+            inbox.iter().map(|i| i.kind.as_str()).collect::<Vec<_>>(),
+            ["change_closed"]
+        );
+        assert_eq!(f.card(1).unwrap().column, "Ready to merge");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn checks_and_the_latest_review_are_recorded_when_they_change() {
+        let f = Fixture::new().await;
+        let change = f.offered_change().await;
+        let run = |status: &str, conclusion: Option<&str>| json!({ "status": status, "conclusion": conclusion });
+
+        {
+            let mut pulls = f.fake.pulls.lock().unwrap();
+            pulls.check_runs = vec![run("completed", Some("success")), run("in_progress", None)];
+            pulls.reviews = vec![
+                json!({ "state": "COMMENTED" }),
+                json!({ "state": "APPROVED" }),
+            ];
+        }
+        let mut events = f.server.app.bus.subscribe();
+        f.server.poll_github().await;
+        let stored = f.change(change.id);
+        assert_eq!(
+            (stored.checks.as_deref(), stored.review.as_deref()),
+            (Some("pending"), Some("approved"))
+        );
+        assert_eq!(events.try_recv().unwrap().kind, "change_updated");
+
+        f.fake.pulls.lock().unwrap().check_runs = vec![
+            run("completed", Some("success")),
+            run("completed", Some("failure")),
+        ];
+        f.server.poll_github().await;
+        assert_eq!(f.change(change.id).checks.as_deref(), Some("failure"));
+        assert_eq!(events.try_recv().unwrap().kind, "change_updated");
+
+        f.server.poll_github().await;
+        assert!(events.try_recv().is_err(), "nothing changed");
+        assert_eq!(f.change(change.id).state, "open");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_person_merges_a_pull_request_from_the_app() {
+        let f = Fixture::new().await;
+        let change = f.offered_change().await;
+
+        let app = f.server.app.clone();
+        let commit = tokio::task::spawn_blocking(move || app.merge_change(change.id, "looks good"))
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(commit, "c0ffee");
+        let merged = f.fake.pulls.lock().unwrap().merged.clone();
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0]["commit_title"], "Merge #1: Issue 1");
+        assert_eq!(f.change(change.id).state, "merged");
+        assert_eq!(f.card(1).unwrap().column, "Done");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_push_to_a_web_address_carries_the_installation_token_in_one_header_only() {
+        let f = Fixture::new().await;
+        let (repos, github) = (f.server.app.repos.clone(), f.server.github.clone().unwrap());
+        let (clone, repository) = (f.repository.path.clone(), f.repository.clone());
+        let header = tokio::task::spawn_blocking(move || {
+            let forge = GitHubForge::new(github, repos, tokio::runtime::Handle::current());
+            git(
+                Path::new(&clone),
+                &[
+                    "remote",
+                    "set-url",
+                    "origin",
+                    "https://github.com/acme/widgets.git",
+                ],
+            )
+            .unwrap();
+            let header =
+                forge.push_header(Path::new(&clone), repository.github.as_deref().unwrap());
+            header.unwrap()
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            header.unwrap(),
+            "Authorization: Basic eC1hY2Nlc3MtdG9rZW46Z2hzX3Rva2Vu",
+            "x-access-token:ghs_token"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_github_repository_cannot_offer_a_change_without_the_github_app() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config::parse("", dir.path(), &dir.path().join("moebius.toml")).unwrap();
+        let server = Server::new(config, "127.0.0.1:1".parse().unwrap()).unwrap();
+        let store = &server.app.store;
+        let repository = store
+            .add_github_repository("widgets", "/srv/widgets", "main", "acme/widgets", &[])
+            .unwrap();
+        let card = store
+            .add_numbered_card(repository.id, 1, "Card", "", "leon", "In progress")
+            .unwrap();
+        let error = server
+            .app
+            .offer_change(card.id, "moebius/run-1")
+            .unwrap_err();
+        assert!(error.to_string().contains("forge github"), "{error}");
+        assert!(store.changes(repository.id).unwrap().is_empty());
     }
 }

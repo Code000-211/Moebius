@@ -116,7 +116,28 @@ CREATE TABLE dependencies (
     PRIMARY KEY (card_id, blocked_by)
 );
 "#,
+    r#"
+ALTER TABLE changes ADD COLUMN pull_request INTEGER;
+ALTER TABLE changes ADD COLUMN checks TEXT;
+ALTER TABLE changes ADD COLUMN review TEXT;
+"#,
 ];
+
+const CHANGE_COLUMNS: &str =
+    "id, repository_id, card_id, branch, state, pull_request, checks, review";
+
+fn change_from_row(r: &rusqlite::Row) -> rusqlite::Result<Change> {
+    Ok(Change {
+        id: r.get(0)?,
+        repository_id: r.get(1)?,
+        card_id: r.get(2)?,
+        branch: r.get(3)?,
+        state: r.get(4)?,
+        pull_request: r.get(5)?,
+        checks: r.get(6)?,
+        review: r.get(7)?,
+    })
+}
 
 pub fn now() -> i64 {
     SystemTime::now()
@@ -156,6 +177,12 @@ pub struct Change {
     pub card_id: Option<i64>,
     pub branch: String,
     pub state: String,
+    /// The number of the change's pull request on GitHub.
+    pub pull_request: Option<i64>,
+    /// `pending`, `success` or `failure` once the pull request's checks are known.
+    pub checks: Option<String>,
+    /// The state of the pull request's latest review, such as `approved`, once there is one.
+    pub review: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -521,11 +548,12 @@ impl Store {
         repository_id: i64,
         card_id: Option<i64>,
         branch: &str,
+        pull_request: Option<i64>,
     ) -> Result<Change> {
         let conn = self.conn();
         conn.execute(
-            "INSERT INTO changes (repository_id, card_id, branch, state, created_at) VALUES (?1, ?2, ?3, 'open', ?4)",
-            params![repository_id, card_id, branch, now()],
+            "INSERT INTO changes (repository_id, card_id, branch, state, pull_request, created_at) VALUES (?1, ?2, ?3, 'open', ?4, ?5)",
+            params![repository_id, card_id, branch, pull_request, now()],
         )?;
         Ok(Change {
             id: conn.last_insert_rowid(),
@@ -533,6 +561,9 @@ impl Store {
             card_id,
             branch: branch.into(),
             state: "open".into(),
+            pull_request,
+            checks: None,
+            review: None,
         })
     }
 
@@ -540,17 +571,9 @@ impl Store {
         Ok(self
             .conn()
             .query_row(
-                "SELECT id, repository_id, card_id, branch, state FROM changes WHERE id = ?1",
+                &format!("SELECT {CHANGE_COLUMNS} FROM changes WHERE id = ?1"),
                 [id],
-                |r| {
-                    Ok(Change {
-                        id: r.get(0)?,
-                        repository_id: r.get(1)?,
-                        card_id: r.get(2)?,
-                        branch: r.get(3)?,
-                        state: r.get(4)?,
-                    })
-                },
+                change_from_row,
             )
             .optional()?)
     }
@@ -558,19 +581,35 @@ impl Store {
     /// The changes of a repository, oldest first.
     pub fn changes(&self, repository_id: i64) -> Result<Vec<Change>> {
         let conn = self.conn();
-        let mut stmt = conn.prepare(
-            "SELECT id, repository_id, card_id, branch, state FROM changes WHERE repository_id = ?1 ORDER BY id",
-        )?;
-        let rows = stmt.query_map([repository_id], |r| {
-            Ok(Change {
-                id: r.get(0)?,
-                repository_id: r.get(1)?,
-                card_id: r.get(2)?,
-                branch: r.get(3)?,
-                state: r.get(4)?,
-            })
-        })?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {CHANGE_COLUMNS} FROM changes WHERE repository_id = ?1 ORDER BY id"
+        ))?;
+        let rows = stmt.query_map([repository_id], change_from_row)?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// The open changes of a repository that have a pull request, oldest first.
+    pub fn open_pull_requests(&self, repository_id: i64) -> Result<Vec<Change>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {CHANGE_COLUMNS} FROM changes \
+             WHERE repository_id = ?1 AND state = 'open' AND pull_request IS NOT NULL ORDER BY id"
+        ))?;
+        let rows = stmt.query_map([repository_id], change_from_row)?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub fn set_change_status(
+        &self,
+        id: i64,
+        checks: Option<&str>,
+        review: Option<&str>,
+    ) -> Result<()> {
+        self.conn().execute(
+            "UPDATE changes SET checks = ?1, review = ?2 WHERE id = ?3",
+            params![checks, review, id],
+        )?;
+        Ok(())
     }
 
     pub fn set_change_state(&self, id: i64, state: &str) -> Result<()> {
@@ -986,7 +1025,7 @@ mod tests {
             .unwrap();
         }
         let s = Store::open(dir.path()).unwrap();
-        assert_eq!(s.schema_version().unwrap(), 2);
+        assert_eq!(s.schema_version().unwrap(), 3);
         let old = &s.repositories().unwrap()[0];
         assert_eq!((old.name.as_str(), old.github.clone()), ("old", None));
         assert!(old.trusted.is_empty());
@@ -1044,9 +1083,32 @@ mod tests {
         assert_eq!(s.card(a.id).unwrap().unwrap().column, "Ready");
         assert_eq!(s.cards(repo.id).unwrap().len(), 2);
 
-        let change = s.add_change(repo.id, Some(a.id), "moebius/1").unwrap();
+        let change = s
+            .add_change(repo.id, Some(a.id), "moebius/1", None)
+            .unwrap();
         s.set_change_state(change.id, "merged").unwrap();
         assert_eq!(s.change(change.id).unwrap().unwrap().state, "merged");
+
+        let pull = s
+            .add_change(repo.id, Some(b.id), "moebius/2", Some(9))
+            .unwrap();
+        assert_eq!(
+            s.open_pull_requests(repo.id).unwrap(),
+            std::slice::from_ref(&pull)
+        );
+        s.set_change_status(pull.id, Some("failure"), Some("approved"))
+            .unwrap();
+        let stored = s.change(pull.id).unwrap().unwrap();
+        assert_eq!(
+            (
+                stored.pull_request,
+                stored.checks.as_deref(),
+                stored.review.as_deref()
+            ),
+            (Some(9), Some("failure"), Some("approved"))
+        );
+        s.set_change_state(pull.id, "closed").unwrap();
+        assert!(s.open_pull_requests(repo.id).unwrap().is_empty());
 
         let run = s.add_run(Some(a.id), "Coder", "pi-bolt", "code").unwrap();
         s.set_run_worktree(run.id, "/srv/wt/1").unwrap();

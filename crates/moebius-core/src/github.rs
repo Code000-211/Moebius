@@ -1,13 +1,15 @@
 //! The GitHub App Moebius acts as: it signs a JWT with the app's private key and exchanges it for an installation
 //! token per repository owner, which it keeps until shortly before it expires. It also lists a repository's issues,
-//! asking GitHub only for what changed since the last time.
+//! asking GitHub only for what changed since the last time, and opens, reads and merges pull requests.
 
 use std::collections::HashMap;
 use std::sync::Mutex as StdMutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
+use reqwest::Method;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use tokio::sync::Mutex;
@@ -52,6 +54,52 @@ pub struct Issue {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct User {
     pub login: String,
+}
+
+/// A pull request as GitHub describes it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct PullRequest {
+    /// `open` or `closed`.
+    pub state: String,
+    pub merged: bool,
+    pub merge_commit_sha: Option<String>,
+    pub head: Head,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Head {
+    pub sha: String,
+}
+
+/// A check run of a commit.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct CheckRun {
+    /// `queued`, `in_progress` or `completed`.
+    pub status: String,
+    /// How a completed check ended, such as `success` or `failure`.
+    pub conclusion: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct CheckRuns {
+    check_runs: Vec<CheckRun>,
+}
+
+/// A review of a pull request.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Review {
+    /// Upper case, such as `APPROVED`, `CHANGES_REQUESTED` or `COMMENTED`.
+    pub state: String,
+}
+
+#[derive(Deserialize)]
+struct Created {
+    number: i64,
+}
+
+#[derive(Deserialize)]
+struct Merged {
+    sha: String,
 }
 
 #[derive(Serialize)]
@@ -201,6 +249,95 @@ impl GitHub {
             self.etags().insert(github.to_string(), etag);
         }
         Ok(Some(issues))
+    }
+
+    /// Opens a pull request in `github` that asks for `head` to be merged into `base`, and returns its number.
+    pub async fn open_pull_request(
+        &self,
+        github: &str,
+        title: &str,
+        head: &str,
+        base: &str,
+        body: &str,
+    ) -> Result<i64, GitHubError> {
+        let request = json!({ "title": title, "head": head, "base": base, "body": body });
+        let created: Created = self
+            .repository_call(github, Method::POST, "/pulls", Some(&request))
+            .await?;
+        Ok(created.number)
+    }
+
+    pub async fn pull_request(
+        &self,
+        github: &str,
+        number: i64,
+    ) -> Result<PullRequest, GitHubError> {
+        self.repository_call(github, Method::GET, &format!("/pulls/{number}"), None)
+            .await
+    }
+
+    /// The check runs of the commit `sha`.
+    pub async fn check_runs(&self, github: &str, sha: &str) -> Result<Vec<CheckRun>, GitHubError> {
+        let runs: CheckRuns = self
+            .repository_call(
+                github,
+                Method::GET,
+                &format!("/commits/{sha}/check-runs?per_page=100"),
+                None,
+            )
+            .await?;
+        Ok(runs.check_runs)
+    }
+
+    /// The reviews of a pull request, oldest first.
+    pub async fn reviews(&self, github: &str, number: i64) -> Result<Vec<Review>, GitHubError> {
+        self.repository_call(
+            github,
+            Method::GET,
+            &format!("/pulls/{number}/reviews?per_page=100"),
+            None,
+        )
+        .await
+    }
+
+    /// Merges a pull request with a merge commit titled `title` and returns the commit's sha.
+    pub async fn merge_pull_request(
+        &self,
+        github: &str,
+        number: i64,
+        title: &str,
+    ) -> Result<String, GitHubError> {
+        let request = json!({ "commit_title": title, "merge_method": "merge" });
+        let merged: Merged = self
+            .repository_call(
+                github,
+                Method::PUT,
+                &format!("/pulls/{number}/merge"),
+                Some(&request),
+            )
+            .await?;
+        Ok(merged.sha)
+    }
+
+    /// Calls the API at `/repos/{github}{path}` with the installation's token and reads the JSON answer.
+    async fn repository_call<T: serde::de::DeserializeOwned>(
+        &self,
+        github: &str,
+        method: Method,
+        path: &str,
+        body: Option<&serde_json::Value>,
+    ) -> Result<T, GitHubError> {
+        let (owner, repo) = github
+            .split_once('/')
+            .ok_or_else(|| GitHubError::Repository(github.to_string()))?;
+        let token = self.installation_token(owner, repo).await?;
+        let mut request = self
+            .http
+            .request(method, format!("{}/repos/{github}{path}", self.api_url));
+        if let Some(body) = body {
+            request = request.json(body);
+        }
+        self.send(request, &token).await
     }
 
     /// Forgets the ETag of `github`, so the next call to [`GitHub::issues`] lists the issues again.
