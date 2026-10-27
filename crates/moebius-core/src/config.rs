@@ -54,6 +54,11 @@ listen = "127.0.0.1:7172"
 [pi_bolt]
 program = "pi-bolt"
 
+# Rules every run must follow, as Markdown with one section per rule (a heading `## name` and its text); relative paths are inside this
+# file's directory. A repository adds its own in .moebius/rules.md but cannot replace these. Without the file, only
+# the built-in rules apply. The harness configuration repository takes this over in M7.
+# rules_file = "rules.md"
+
 # Moebius acts as its own GitHub App. The key file is read at start; relative paths are inside this file's directory.
 # [github]
 # app_id = 123456
@@ -167,6 +172,7 @@ struct Raw {
     router: RawRouter,
     #[serde(default)]
     pi_bolt: RawPiBolt,
+    rules_file: Option<PathBuf>,
     github: Option<RawGitHub>,
     #[serde(default)]
     agents: BTreeMap<String, AgentConfig>,
@@ -226,6 +232,8 @@ pub struct Config {
     pub router_listen: SocketAddr,
     pub upstreams: Vec<UpstreamConfig>,
     pub pi_bolt: PathBuf,
+    /// The server's rules (see `rules`), if it has any.
+    pub rules_file: Option<PathBuf>,
     pub github: Option<GitHubConfig>,
     pub agents: BTreeMap<String, AgentConfig>,
 }
@@ -284,6 +292,7 @@ impl Config {
                 .pi_bolt
                 .program
                 .unwrap_or_else(|| PathBuf::from("pi-bolt")),
+            rules_file: raw.rules_file.map(|file| base.join(file)),
             github: raw.github.map(|g| GitHubConfig {
                 app_id: g.app_id,
                 private_key_file: base.join(g.private_key_file),
@@ -371,12 +380,19 @@ mod tests {
         assert_eq!(c.router_listen, "127.0.0.1:9100".parse().unwrap());
         assert_eq!(c.upstreams[0].protocol, Protocol::Anthropic);
         assert_eq!(c.pi_bolt, PathBuf::from("/opt/pi-bolt"));
+        assert_eq!(c.rules_file, None);
         assert_eq!(c.agents["Coder"].protocol, Protocol::OpenAi);
         assert_eq!(c.agents["Coder"].token_budget, Some(100));
         assert!(matches!(
             parse("[router]\nlisten = \"0.0.0.0:7172\""),
             Err(ConfigError::RouterNotLocal(_))
         ));
+    }
+
+    #[test]
+    fn the_rules_file_is_relative_to_the_configuration() {
+        let c = parse("rules_file = \"rules.md\"").unwrap();
+        assert_eq!(c.rules_file, Some(PathBuf::from("/srv/rules.md")));
     }
 
     #[test]

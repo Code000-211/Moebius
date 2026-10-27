@@ -10,10 +10,12 @@ pub mod config;
 pub mod decide;
 pub mod forge;
 pub mod github;
+pub mod guard;
 pub mod pibolt;
 pub mod poll;
 pub mod repos;
 pub mod router;
+pub mod rules;
 pub mod server;
 pub mod store;
 

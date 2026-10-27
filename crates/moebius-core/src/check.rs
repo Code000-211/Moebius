@@ -12,6 +12,7 @@
 //!   the secrets removed from every text block and other blocks unchanged.
 
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use axum::Json;
@@ -27,19 +28,25 @@ use crate::app::App;
 use crate::bus::AppEvent;
 use crate::decide::Question;
 use crate::router::{Grant, Router};
+use crate::rules;
 
 #[derive(Clone)]
 struct Check {
     app: Arc<App>,
     router: Arc<Router>,
+    rules_file: Option<PathBuf>,
 }
 
-/// The check endpoints, authenticated by the tokens `router` issued.
-pub fn routes(app: Arc<App>, router: Arc<Router>) -> Routes {
+/// The check endpoints, authenticated by the tokens `router` issued. `rules_file` is the server's rules file.
+pub fn routes(app: Arc<App>, router: Arc<Router>, rules_file: Option<PathBuf>) -> Routes {
     Routes::new()
         .route("/moebius/check", post(check))
         .route("/moebius/result", post(result))
-        .with_state(Check { app, router })
+        .with_state(Check {
+            app,
+            router,
+            rules_file,
+        })
 }
 
 #[derive(Debug, Deserialize)]
@@ -81,7 +88,10 @@ async fn check(
     let Some(grant) = state.router.grant(&headers) else {
         return unauthorized();
     };
-    let reply = tokio::task::spawn_blocking(move || ask(&state.app, &grant, &request)).await;
+    let reply = tokio::task::spawn_blocking(move || {
+        ask(&state.app, state.rules_file.as_deref(), &grant, &request)
+    })
+    .await;
     match reply {
         Ok(Some(reply)) => Json(reply).into_response(),
         _ => (
@@ -93,8 +103,13 @@ async fn check(
 }
 
 /// Decides one tool call and stores and publishes the `tool_check` run event. None when the store fails.
-fn ask(app: &App, grant: &Grant, request: &CheckRequest) -> Option<CheckReply> {
-    let question = tool_call_question(app, grant, request)?;
+fn ask(
+    app: &App,
+    rules_file: Option<&Path>,
+    grant: &Grant,
+    request: &CheckRequest,
+) -> Option<CheckReply> {
+    let question = tool_call_question(app, rules_file, grant, request)?;
     let decision = app.decisions.decide(&question).ok()?;
     let event = json!({
         "tool": request.tool,
@@ -120,7 +135,13 @@ fn ask(app: &App, grant: &Grant, request: &CheckRequest) -> Option<CheckReply> {
 /// - `tool_call_id`: the harness's id of the call.
 /// - `worktree`: the run's worktree path, when it has one.
 /// - `card_title`, `card_body`: the card the run works on, when it has one.
-fn tool_call_question(app: &App, grant: &Grant, request: &CheckRequest) -> Option<Question> {
+/// - `rules`: the rules that apply, as Markdown (`## <name>` and the rule's text), the server's first (see `rules`).
+fn tool_call_question(
+    app: &App,
+    rules_file: Option<&Path>,
+    grant: &Grant,
+    request: &CheckRequest,
+) -> Option<Question> {
     let mut context = BTreeMap::from([
         ("tool".to_string(), request.tool.clone()),
         ("input".to_string(), request.input.to_string()),
@@ -129,12 +150,16 @@ fn tool_call_question(app: &App, grant: &Grant, request: &CheckRequest) -> Optio
     if let Some(worktree) = app.store.run(grant.run_id).ok()?.and_then(|r| r.worktree) {
         context.insert("worktree".into(), worktree);
     }
+    let mut repository = None;
     if let Some(card_id) = grant.card_id
         && let Some(card) = app.store.card(card_id).ok()?
     {
+        repository = app.store.repository(card.repository_id).ok()?;
         context.insert("card_title".into(), card.title);
         context.insert("card_body".into(), card.body);
     }
+    let rules = rules::applicable(rules_file, repository.as_ref());
+    context.insert("rules".into(), rules::to_markdown(&rules));
     Some(Question {
         kind: "tool_call".into(),
         context,
@@ -171,6 +196,7 @@ async fn result(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Config;
     use moebius_plugin_api::{Call, DecideRequest, Host, Kind, Manifest, Plugin, PluginError};
     use std::time::Duration;
 
@@ -230,7 +256,7 @@ mod tests {
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
-        let served = routes(app.clone(), router);
+        let served = routes(app.clone(), router, None);
         tokio::spawn(async move { axum::serve(listener, served).await });
         Setup {
             _dir: dir,
@@ -296,6 +322,84 @@ mod tests {
         assert_eq!(reply["decision"], "refuse");
         assert!(reply["reason"].as_str().unwrap().starts_with("refused: "));
         assert_eq!(s.app.store.judgements("tool_call").unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_server_judges_calls_with_the_guard_and_hands_it_the_rules() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("rules.md"),
+            "## be-kind\nBe kind in commit messages.\n",
+        )
+        .unwrap();
+        let config = Config::parse(
+            "rules_file = \"rules.md\"",
+            dir.path(),
+            &dir.path().join("moebius.toml"),
+        )
+        .unwrap();
+        let server = crate::server::Server::new(config, "127.0.0.1:1".parse().unwrap()).unwrap();
+        let repo = server
+            .app
+            .store
+            .add_repository("demo", "/srv/demo", "none", "main")
+            .unwrap();
+        let card = server
+            .app
+            .store
+            .add_card(repo.id, "Fix it", "", "person", "In progress")
+            .unwrap();
+        let run = server
+            .app
+            .store
+            .add_run(Some(card.id), "Coder", "pi-bolt", "code")
+            .unwrap();
+        server
+            .app
+            .store
+            .set_run_worktree(run.id, "/srv/wt/1")
+            .unwrap();
+        let token = server.router.issue_token(Grant {
+            run_id: run.id,
+            card_id: Some(card.id),
+            budget: None,
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let served = routes(
+            server.app.clone(),
+            server.router.clone(),
+            server.config.rules_file.clone(),
+        );
+        tokio::spawn(async move { axum::serve(listener, served).await });
+        let s = Setup {
+            _dir: dir,
+            app: server.app.clone(),
+            url,
+            token,
+            run: run.id,
+        };
+
+        let refused = check_call(&s, "rm -rf /").await;
+        assert_eq!(refused["decision"], "refuse");
+        assert!(
+            refused["reason"]
+                .as_str()
+                .unwrap()
+                .starts_with("no-destructive-commands: ")
+        );
+        assert_eq!(check_call(&s, "ls").await["decision"], "allow");
+
+        let judgements = s.app.store.judgements("tool_call").unwrap();
+        assert_eq!(judgements.len(), 2);
+        assert_eq!(judgements[0].decider, "guard");
+        let context: BTreeMap<String, String> =
+            serde_json::from_str(&s.app.store.blobs().get(&judgements[0].context[0]).unwrap())
+                .unwrap();
+        assert_eq!(
+            context["rules"],
+            "## be-kind\nBe kind in commit messages.\n"
+        );
     }
 
     #[tokio::test]

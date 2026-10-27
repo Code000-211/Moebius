@@ -17,6 +17,7 @@ use crate::check;
 use crate::config::Config;
 use crate::forge::GitHubForge;
 use crate::github::GitHub;
+use crate::guard::{self, Guard};
 use crate::pibolt::PiBolt;
 use crate::poll;
 use crate::repos::Worktree;
@@ -76,11 +77,10 @@ impl Server {
         );
         let token = api::load_or_create_token(&config.token_file)
             .map_err(|e| format!("cannot read {}: {e}", config.token_file.display()))?;
-        let mut app = App::new(
-            store.clone(),
-            Arc::new(Host::new(PLUGIN_TIME_LIMIT)),
-            &config.data_dir,
-        );
+        let mut host = Host::new(PLUGIN_TIME_LIMIT);
+        host.add(Guard);
+        let mut app = App::new(store.clone(), Arc::new(host), &config.data_dir);
+        app.decisions.route("tool_call", guard::NAME);
         let github = match &config.github {
             Some(g) => {
                 let key = std::fs::read(&g.private_key_file)
@@ -215,11 +215,11 @@ impl Server {
                 }
             }
         };
-        let router_routes = self
-            .router
-            .clone()
-            .routes()
-            .merge(check::routes(self.app.clone(), self.router.clone()));
+        let router_routes = self.router.clone().routes().merge(check::routes(
+            self.app.clone(),
+            self.router.clone(),
+            self.config.rules_file.clone(),
+        ));
         tokio::select! {
             served = api::serve(api_listener, state) => served,
             served = axum::serve(router_listener, router_routes) => served,
