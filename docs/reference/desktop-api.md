@@ -40,11 +40,14 @@ These objects appear in the responses. All ids are numbers; times are Unix secon
 `Repository`: `id`, `name`, `path` (the clone on the server), `forge` (`none` or `github`), `default_branch`, `github`
 (`owner/repo` or null), `trusted` (array of GitHub logins).
 
-`Card`: `id`, `repository_id`, `number`, `title`, `body`, `author`, `column`, `created_at`.
+`Card`: `id`, `repository_id`, `number`, `title`, `body`, `author`, `column`, `created_at`, `note` (why the card was sent
+back to coding, or null).
 
 `Change`: `id`, `repository_id`, `card_id` (or null), `branch`, `state` (`open`, `merged` or `closed`), `pull_request`
 (the number on GitHub, or null), `checks` (`pending`, `success`, `failure` or null), `review` (the latest review's state in
-lower case, such as `approved`, or null).
+lower case, such as `approved`, or null), `head` (the published commit), `published_at`, `checks_head` (the commit
+`checks` are for), `failed_checks` (the failing checks of a pull request, one per line, or null) and `check_output` (the
+end of the output of the repository's own checks, or null). A change's `branch` is `moebius/card-<number>`.
 
 `InboxItem`: `id`, `kind`, `card_id` (or null), `title`, `data` (an object that depends on the kind), `resolved_at` (null
 in the snapshot, which holds only open items), `at`. Kinds the core adds: `approve_issue` (`data.reason`), `stuck`
@@ -158,8 +161,8 @@ branch does not merge cleanly; `500` the forge failed.
 | `card_updated` | The title or body of a GitHub issue changed. | The `Card`. |
 | `card_moved` | A card moved to another column. | `{"card": id, "from": column, "to": column}` |
 | `card_waiting` | The reason a card waits changed: set, replaced, or cleared because the card moved or its script did not wait. Not sent when it stays the same. | `{"card": id, "reason": string or null}` |
-| `change_offered` | A run's work was offered as a change. | The `Change`. |
-| `change_updated` | The checks or review of a change's pull request changed. | The `Change`. |
+| `change_offered` | A card's change was offered to a person to merge. | The `Change`. |
+| `change_updated` | A change was published or published again, its checks started or ended, or the checks or review of its pull request changed. | The `Change`. |
 | `change_merged` | A change was merged, here or on GitHub. | `{"change": id, "commit": sha or null}` |
 | `change_closed` | A change's pull request was closed on GitHub without a merge. | `{"change": id}` |
 | `run_started` | A harness process for a run started. | `{"run": id, "card": id}` |

@@ -54,6 +54,15 @@ yet.
 | `board.tick_ms` | integer | `2000` | Milliseconds between two runs of the column scripts over all cards. A value below 50 is raised to 50. |
 | `board.round_limit` | integer | `5` | How many `code` rounds a card gets before the default `code.luau` marks it stuck. Scripts read it as `moebius.round_limit`. |
 
+## `[checks]`
+
+A repository without a forge may name its own checks in `.moebius/checks` on its default branch, see
+[column scripts](column-scripts.md).
+
+| Key | Type | Default | Meaning and validation |
+|---|---|---|---|
+| `checks.timeout_seconds` | integer | `1800` | How long the checks of one change may run. After that they are stopped, with everything they started, and count as failed. At least 1, else the file is refused. |
+
 ## `[router]`
 
 The router is the only model provider the harnesses see, see [router](router.md). The check endpoints of the bridge are

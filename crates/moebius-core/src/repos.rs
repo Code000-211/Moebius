@@ -33,6 +33,22 @@ pub fn git(dir: &Path, args: &[&str]) -> Result<String> {
 /// Runs git in `dir` with the configuration `config` (name and value) for this command only. It is handed over in
 /// the environment, so a credential in it shows up neither in `.git/config`, nor in an error message.
 fn git_with_config(dir: &Path, args: &[&str], config: &[(&str, &str)]) -> Result<String> {
+    let output = git_output(dir, args, config)?;
+    if !output.status.success() {
+        return Err(GitError::Failed {
+            args: args.join(" "),
+            stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        });
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// Runs git as `git_with_config` does and returns what it printed, whatever its exit status.
+fn git_output(
+    dir: &Path,
+    args: &[&str],
+    config: &[(&str, &str)],
+) -> std::io::Result<std::process::Output> {
     let mut command = Command::new("git");
     command
         .args(IDENTITY)
@@ -46,14 +62,7 @@ fn git_with_config(dir: &Path, args: &[&str], config: &[(&str, &str)]) -> Result
             .env(format!("GIT_CONFIG_KEY_{i}"), name)
             .env(format!("GIT_CONFIG_VALUE_{i}"), value);
     }
-    let output = command.output()?;
-    if !output.status.success() {
-        return Err(GitError::Failed {
-            args: args.join(" "),
-            stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
-        });
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    command.output()
 }
 
 /// The configuration that adds `auth` as an HTTP header to one git command.
@@ -145,11 +154,63 @@ impl Repos {
         Ok(Worktree { path, branch })
     }
 
-    /// Removes a run's worktree; its branch is kept, since the change lives on it.
-    pub fn remove_worktree(&self, clone: &Path, worktree: &Worktree) -> Result<()> {
-        let target = worktree.path.to_string_lossy().into_owned();
+    /// Creates a throwaway worktree named `name` with `rev` checked out and no branch. A leftover of the same name is
+    /// removed first.
+    pub fn add_detached_worktree(
+        &self,
+        repository: &str,
+        clone: &Path,
+        name: &str,
+        rev: &str,
+    ) -> Result<PathBuf> {
+        let path = self.worktrees.join(repository).join(name);
+        std::fs::create_dir_all(path.parent().expect("worktrees have a parent"))?;
+        if path.exists() {
+            std::fs::remove_dir_all(&path)?;
+        }
+        git(clone, &["worktree", "prune"])?;
+        let target = path.to_string_lossy().into_owned();
+        git(
+            clone,
+            &["worktree", "add", "--quiet", "--detach", &target, rev],
+        )?;
+        Ok(path)
+    }
+
+    /// Removes a worktree; the branch of a run's worktree is kept, since the change lives on it.
+    pub fn remove_worktree(&self, clone: &Path, worktree: &Path) -> Result<()> {
+        let target = worktree.to_string_lossy().into_owned();
         git(clone, &["worktree", "remove", "--force", &target])?;
         git(clone, &["worktree", "prune"]).map(drop)
+    }
+
+    /// Points `branch` at `rev`, creating it if need be.
+    pub fn point_branch(&self, clone: &Path, branch: &str, rev: &str) -> Result<()> {
+        git(clone, &["branch", "--force", branch, rev]).map(drop)
+    }
+
+    /// The files that conflict when `branch` is merged into `base`, one per line; none if it merges cleanly. Nothing
+    /// is checked out or changed.
+    pub fn conflicts(&self, clone: &Path, base: &str, branch: &str) -> Result<Option<String>> {
+        let args = ["merge-tree", "--write-tree", "--name-only", base, branch];
+        let output = git_output(clone, &args, &[])?;
+        let text = String::from_utf8_lossy(&output.stdout);
+        match output.status.code() {
+            Some(0) => Ok(None),
+            // The first line is the tree; the conflicting files follow up to the first empty line. Without a tree, git
+            // could not merge at all, such as for a branch that does not exist.
+            Some(1) if !text.is_empty() => Ok(Some(
+                text.lines()
+                    .skip(1)
+                    .take_while(|line| !line.is_empty())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            )),
+            _ => Err(GitError::Failed {
+                args: args.join(" "),
+                stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            }),
+        }
     }
 
     /// Merges `branch` into the default branch checked out in the clone and returns the merge commit. A conflict
@@ -211,7 +272,7 @@ mod tests {
         let wt = repos.add_worktree("demo", &clone, 7, "main").unwrap();
         assert_eq!(wt.branch, "moebius/run-7");
         assert!(wt.path.join("README.md").is_file());
-        repos.remove_worktree(&clone, &wt).unwrap();
+        repos.remove_worktree(&clone, &wt.path).unwrap();
         assert!(!wt.path.exists());
         assert!(git(&clone, &["rev-parse", "--verify", "moebius/run-7"]).is_ok());
     }
@@ -238,7 +299,7 @@ mod tests {
         assert_eq!(repos.origin_url(&clone).unwrap(), bare.to_str().unwrap());
         let wt = repos.add_worktree("demo", &clone, 3, "main").unwrap();
         commit(&wt.path, "feature.txt", "new\n");
-        repos.remove_worktree(&clone, &wt).unwrap();
+        repos.remove_worktree(&clone, &wt.path).unwrap();
 
         repos.push(&clone, &wt.branch, None).unwrap();
         assert!(git(&bare, &["rev-parse", "--verify", "moebius/run-3"]).is_ok());
@@ -260,7 +321,7 @@ mod tests {
             .unwrap();
         let wt = repos.add_worktree("demo", &clone, 1, "main").unwrap();
         commit(&wt.path, "feature.txt", "new\n");
-        repos.remove_worktree(&clone, &wt).unwrap();
+        repos.remove_worktree(&clone, &wt.path).unwrap();
 
         let sha = repos.merge(&clone, &wt.branch, "Merge run 1").unwrap();
         assert_eq!(git(&clone, &["rev-parse", "main"]).unwrap(), sha);
@@ -285,5 +346,61 @@ mod tests {
         ));
         assert_eq!(git(&clone, &["rev-parse", "main"]).unwrap(), before);
         assert_eq!(git(&clone, &["status", "--porcelain"]).unwrap(), "");
+    }
+
+    #[test]
+    fn conflicts_are_found_without_touching_anything() {
+        let dir = tempfile::tempdir().unwrap();
+        let origin = origin(dir.path());
+        let repos = Repos::new(&dir.path().join("data"));
+        let clone = repos
+            .clone_or_fetch("demo", origin.to_str().unwrap(), None)
+            .unwrap();
+        let wt = repos.add_worktree("demo", &clone, 4, "main").unwrap();
+        commit(&wt.path, "feature.txt", "new\n");
+        commit(&wt.path, "README.md", "theirs\n");
+        repos.remove_worktree(&clone, &wt.path).unwrap();
+        assert_eq!(repos.conflicts(&clone, "main", &wt.branch).unwrap(), None);
+
+        commit(&clone, "README.md", "ours\n");
+        commit(&clone, "feature.txt", "ours too\n");
+        let before = git(&clone, &["rev-parse", "main"]).unwrap();
+        assert_eq!(
+            repos.conflicts(&clone, "main", &wt.branch).unwrap(),
+            Some("README.md\nfeature.txt".into())
+        );
+        assert_eq!(git(&clone, &["rev-parse", "main"]).unwrap(), before);
+        assert_eq!(git(&clone, &["status", "--porcelain"]).unwrap(), "");
+        assert!(repos.conflicts(&clone, "main", "nonexistent").is_err());
+    }
+
+    #[test]
+    fn a_branch_is_moved_forward_and_a_commit_is_checked_out_in_a_throwaway_worktree() {
+        let dir = tempfile::tempdir().unwrap();
+        let origin = origin(dir.path());
+        let repos = Repos::new(&dir.path().join("data"));
+        let clone = repos
+            .clone_or_fetch("demo", origin.to_str().unwrap(), None)
+            .unwrap();
+        let wt = repos.add_worktree("demo", &clone, 5, "main").unwrap();
+        commit(&wt.path, "feature.txt", "new\n");
+        repos.remove_worktree(&clone, &wt.path).unwrap();
+
+        repos
+            .point_branch(&clone, "moebius/card-1", &wt.branch)
+            .unwrap();
+        let head = git(&clone, &["rev-parse", "moebius/card-1"]).unwrap();
+        assert_eq!(git(&clone, &["rev-parse", &wt.branch]).unwrap(), head);
+
+        let checkout = repos
+            .add_detached_worktree("demo", &clone, "checks-1", &head)
+            .unwrap();
+        assert!(checkout.join("feature.txt").is_file());
+        // A leftover of an earlier attempt is replaced.
+        let again = repos
+            .add_detached_worktree("demo", &clone, "checks-1", &head)
+            .unwrap();
+        repos.remove_worktree(&clone, &again).unwrap();
+        assert!(!again.exists());
     }
 }

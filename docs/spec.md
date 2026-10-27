@@ -169,7 +169,7 @@ Native, GPU-rendered, written in Rust with iced (ADR 0003, ADR 0011), built to [
 
 - Nothing on the server is reachable from the internet; the app authenticates with a token.
 - Provider keys live in the router only; harnesses never see them.
-- Scripts and rules come only from a repository's default branch and from the harness configuration repository.
+- Scripts, rules and the repository's own checks (`.moebius/checks`) come only from a repository's default branch and from the harness configuration repository, never from the change being checked.
 - Outside issues never start work without a person's approval; trusted authors are configured per repository.
 - Secrets are removed from tool output before the model sees it and before anything is stored.
 - Shell commands from scripts run only where the configuration allows them.

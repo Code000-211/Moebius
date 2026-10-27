@@ -42,6 +42,11 @@ end = "06:00"
 tick_ms = 2000
 round_limit = 5
 
+# A repository without a forge names its own checks in .moebius/checks on its default branch: a command run in a
+# worktree of the change before it is reviewed. They are stopped after timeout_seconds (at least 1) and then fail.
+[checks]
+timeout_seconds = 1800
+
 # The router: the only model provider the harnesses see (ADR 0006). It listens on localhost only.
 [router]
 listen = "127.0.0.1:7172"
@@ -106,6 +111,8 @@ pub enum ConfigError {
     RouterNotLocal(SocketAddr),
     #[error("teacher.timeout_seconds must be between 1 and {max}, not {value}")]
     TeacherTimeout { value: u64, max: u64 },
+    #[error("checks.timeout_seconds must be at least 1")]
+    ChecksTimeout,
     #[error("{name} is not a valid agent name")]
     AgentName { name: String },
 }
@@ -137,6 +144,12 @@ impl TimeOfDay {
 struct RawWindow {
     start: Option<String>,
     end: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawChecks {
+    timeout_seconds: Option<u64>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -192,6 +205,8 @@ struct Raw {
     trial_window: Option<RawWindow>,
     #[serde(default)]
     board: RawBoard,
+    #[serde(default)]
+    checks: RawChecks,
     #[serde(default)]
     router: RawRouter,
     #[serde(default)]
@@ -263,6 +278,8 @@ pub struct Config {
     pub trial_window: (TimeOfDay, TimeOfDay),
     pub board_tick: Duration,
     pub round_limit: u32,
+    /// How long a repository's own checks may run.
+    pub checks_timeout: Duration,
     pub router_listen: SocketAddr,
     pub upstreams: Vec<UpstreamConfig>,
     pub pi_bolt: PathBuf,
@@ -328,6 +345,10 @@ impl Config {
             }
             None => None,
         };
+        let checks_timeout = raw.checks.timeout_seconds.unwrap_or(1800);
+        if checks_timeout == 0 {
+            return Err(ConfigError::ChecksTimeout);
+        }
         let window = raw.trial_window.unwrap_or(RawWindow {
             start: None,
             end: None,
@@ -348,6 +369,7 @@ impl Config {
             ),
             board_tick: Duration::from_millis(raw.board.tick_ms.unwrap_or(2000).max(50)),
             round_limit: raw.board.round_limit.unwrap_or(5),
+            checks_timeout: Duration::from_secs(checks_timeout),
             router_listen,
             upstreams: raw.router.upstreams,
             // A bare name is looked up on the PATH; anything with a directory in it is a path.
@@ -514,6 +536,13 @@ mod tests {
     }
 
     #[test]
+    fn the_time_the_checks_may_take_defaults_to_half_an_hour() {
+        assert_eq!(parse("").unwrap().checks_timeout, Duration::from_secs(1800));
+        let c = parse("[checks]\ntimeout_seconds = 5").unwrap();
+        assert_eq!(c.checks_timeout, Duration::from_secs(5));
+    }
+
+    #[test]
     fn the_teacher_is_read_and_its_timeout_stays_below_the_plugin_limit() {
         assert_eq!(parse("").unwrap().teacher, None);
         let c = parse("[teacher]\nmodel = \"m\"\n").unwrap();
@@ -554,6 +583,10 @@ mod tests {
             })
         ));
         assert!(matches!(parse("run_limit = 0"), Err(ConfigError::RunLimit)));
+        assert!(matches!(
+            parse("[checks]\ntimeout_seconds = 0"),
+            Err(ConfigError::ChecksTimeout)
+        ));
         assert!(matches!(
             parse("unknown = 1"),
             Err(ConfigError::Parse { .. })

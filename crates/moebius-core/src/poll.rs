@@ -105,35 +105,67 @@ async fn poll_pull_requests(
                 .map_err(|e| e.to_string())?
                 .pop()
                 .map(|review| review.state.to_lowercase());
-            let checks = summarise_checks(&checks);
-            blocking(move || app.record_change_status(&change, checks, review.as_deref())).await?;
+            let (summary, failed) = (summarise_checks(&checks), failed_checks(&checks));
+            blocking(move || {
+                app.record_change_status(
+                    &change,
+                    summary,
+                    &pull_request.head.sha,
+                    failed.as_deref(),
+                    review.as_deref(),
+                )
+            })
+            .await?;
         }
     }
     Ok(())
 }
 
+/// The conclusions that make a check run a failure.
+const FAILED: [&str; 5] = [
+    "failure",
+    "timed_out",
+    "cancelled",
+    "action_required",
+    "startup_failure",
+];
+
+fn failed(run: &CheckRun) -> bool {
+    run.conclusion
+        .as_deref()
+        .is_some_and(|c| FAILED.contains(&c))
+}
+
 /// How the check runs of a commit add up: `failure` if any failed, `pending` if any is still going, `success`
 /// otherwise; none when there are no checks at all.
 fn summarise_checks(runs: &[CheckRun]) -> Option<&'static str> {
-    const FAILED: [&str; 5] = [
-        "failure",
-        "timed_out",
-        "cancelled",
-        "action_required",
-        "startup_failure",
-    ];
     if runs.is_empty() {
         return None;
     }
-    if runs.iter().any(|run| {
-        run.conclusion
-            .as_deref()
-            .is_some_and(|c| FAILED.contains(&c))
-    }) {
+    if runs.iter().any(failed) {
         return Some("failure");
     }
     if runs.iter().any(|run| run.status != "completed") {
         return Some("pending");
     }
     Some("success")
+}
+
+/// The failed check runs, one per line: name, how it ended, what it says and where to read more.
+fn failed_checks(runs: &[CheckRun]) -> Option<String> {
+    let lines: Vec<String> = runs
+        .iter()
+        .filter(|run| failed(run))
+        .map(|run| {
+            let mut line = format!("{}: {}", run.name, run.conclusion.as_deref().unwrap_or(""));
+            if let Some(title) = run.output.as_ref().and_then(|o| o.title.as_deref()) {
+                line.push_str(&format!(", {title}"));
+            }
+            if let Some(url) = &run.details_url {
+                line.push_str(&format!(" ({url})"));
+            }
+            line
+        })
+        .collect();
+    (!lines.is_empty()).then(|| lines.join("\n"))
 }

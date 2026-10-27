@@ -4,16 +4,20 @@
 //! - `moebius.decide(kind, context, options, fail_closed) -> choice, reason`: a decision point (always recorded).
 //! - `moebius.start_run(agent, purpose, note) -> run id`: starts a run for the card; `note` is added to its prompt.
 //! - `moebius.has_agent(name)`: whether an agent of that name is configured.
-//! - `moebius.move(column)`: moves the card when the script returns.
+//! - `moebius.move(column, note)`: moves the card when the script returns; `note` says why, for the next `code` run.
 //! - `moebius.wait(reason)`: leaves the card where it is.
-//! - `moebius.offer_change()`: offers the card's latest successful `code` run as a change; the card moves to "Ready to
-//!   merge".
+//! - `moebius.publish_change() -> change`: publishes the card's latest successful `code` run on the branch of its
+//!   change (once per commit) and returns the change, as `card.change` is.
+//! - `moebius.run_checks() -> change`: starts the repository's own checks on the change, if it has any.
+//! - `moebius.offer_change()`: publishes the change and offers it to a person; the card moves to "Ready to merge".
 //! - `moebius.ask(kind, reason)`: puts the card in the inbox for a person (once) and leaves it where it is.
 //! - `moebius.stuck(reason)`: puts the card in the inbox as stuck (once).
 //! - `moebius.record_outcome(outcome) -> count`: sets the outcome of the card's judgements that have none.
 //! - `card.blocked_by`: the numbers of the issues blocking the card that are not done yet (an issue with no card counts
 //!   as not done); empty when nothing blocks.
 //! - `card.review`: the verdict and findings of the review since the card's latest `code` run, if there is one.
+//! - `card.note`: why the card went back to coding, if it did and no `code` run has succeeded since.
+//! - `card.change`: the card's open change: its checks, the failing ones and whether it still merges cleanly.
 //! - `moebius.runs_active()`, `moebius.run_limit`, `moebius.round_limit`: the limits.
 //!
 //! Scripts have no file system, network, processes or `require`; each call has a memory limit and a time limit. The
@@ -179,6 +183,7 @@ pub struct Engine {
 #[derive(Default)]
 struct Effects {
     move_to: Option<String>,
+    note: Option<String>,
     moved: Option<String>,
     waiting: Option<String>,
     started_run: Option<i64>,
@@ -236,6 +241,19 @@ impl Engine {
         if let Some(to) = effects.move_to.take()
             && to != card.column
         {
+            if let Some(note) = &effects.note {
+                self.app
+                    .store
+                    .set_card_note(card_id, note)
+                    .map_err(AppError::from)?;
+            }
+            if card.column == columns::READY_TO_MERGE {
+                // The change is no longer waiting for a person.
+                self.app
+                    .store
+                    .resolve_inbox_for_card(card_id)
+                    .map_err(AppError::from)?;
+            }
             self.app.move_card(card_id, &to)?;
             effects.moved = Some(to);
         }
@@ -285,6 +303,9 @@ impl Engine {
         let deadline = Rc::new(Cell::new(Instant::now() + self.limits.script_time));
         globals.raw_set("moebius", self.api(&lua, card, effects, deadline.clone())?)?;
         lua.sandbox(true)?;
+        // Describing the card takes git, which is not the script's time.
+        let card_table = self.card_table(&lua, card)?;
+        deadline.set(Instant::now() + self.limits.script_time);
         lua.set_interrupt(move |_| {
             if Instant::now() > deadline.get() {
                 Err(mlua::Error::runtime("the script ran out of time"))
@@ -294,7 +315,7 @@ impl Engine {
         });
         lua.load(source).set_name(name).exec()?;
         let on_card: mlua::Function = lua.globals().get("on_card")?;
-        on_card.call::<()>(self.card_table(&lua, card)?)
+        on_card.call::<()>(card_table)
     }
 
     fn card_table(&self, lua: &Lua, card: &Card) -> mlua::Result<Table> {
@@ -310,6 +331,8 @@ impl Engine {
         t.set("body", card.body.as_str())?;
         t.set("author", card.author.as_str())?;
         t.set("column", card.column.as_str())?;
+        t.set("note", card.note.as_deref())?;
+        t.set("change", change_table(&self.app, lua, card.id)?)?;
         t.set("trusted", self.app.is_trusted(card))?;
         let mut blocked_by = Vec::new();
         for number in self
@@ -428,11 +451,13 @@ impl Engine {
         );
         m.set(
             "move",
-            lua.create_function(move |_, column: String| {
+            lua.create_function(move |_, (column, note): (String, Option<String>)| {
                 if !names.contains(&column) {
                     return Err(mlua::Error::runtime(format!("no column {column:?}")));
                 }
-                fx.borrow_mut().move_to = Some(column);
+                let mut fx = fx.borrow_mut();
+                fx.move_to = Some(column);
+                fx.note = note;
                 Ok(())
             })?,
         )?;
@@ -446,16 +471,33 @@ impl Engine {
             })?,
         )?;
 
+        let (app, clock) = (self.app.clone(), deadline.clone());
+        m.set(
+            "publish_change",
+            lua.create_function(move |lua, ()| {
+                outside_script(&clock, || {
+                    app.publish_change(card_id).map_err(mlua::Error::external)?;
+                    change_table(&app, lua, card_id)
+                })
+            })?,
+        )?;
+
+        let (app, clock) = (self.app.clone(), deadline.clone());
+        m.set(
+            "run_checks",
+            lua.create_function(move |lua, ()| {
+                outside_script(&clock, || {
+                    app.run_checks(card_id).map_err(mlua::Error::external)?;
+                    change_table(&app, lua, card_id)
+                })
+            })?,
+        )?;
+
         let (app, fx, clock) = (self.app.clone(), effects.clone(), deadline);
         m.set(
             "offer_change",
             lua.create_function(move |_, ()| {
-                let branch = app
-                    .store
-                    .code_branch(card_id)
-                    .map_err(mlua::Error::external)?
-                    .ok_or_else(|| mlua::Error::runtime("the card has no code run to offer"))?;
-                let change = outside_script(&clock, || app.offer_change(card_id, &branch))
+                let change = outside_script(&clock, || app.offer_change(card_id))
                     .map_err(mlua::Error::external)?;
                 let mut fx = fx.borrow_mut();
                 fx.moved = Some(columns::READY_TO_MERGE.into());
@@ -510,6 +552,45 @@ impl Engine {
     }
 }
 
+/// The card's open change as scripts see it, or nothing when the card has none. How its checks stand is for its current
+/// commit; what failed is left out when that is of an older one.
+fn change_table(app: &App, lua: &Lua, card_id: i64) -> mlua::Result<Option<Table>> {
+    let Some(change) = app
+        .store
+        .open_change(card_id)
+        .map_err(mlua::Error::external)?
+    else {
+        return Ok(None);
+    };
+    let repository = app
+        .store
+        .repository(change.repository_id)
+        .map_err(mlua::Error::external)?
+        .ok_or_else(|| mlua::Error::runtime("the change's repository is gone"))?;
+    let current = change.checks_head == change.head;
+    let c = lua.create_table()?;
+    c.set("branch", change.branch.as_str())?;
+    c.set("base", repository.base_ref())?;
+    c.set("pull_request", change.pull_request)?;
+    c.set(
+        "checks",
+        app.checks_of(&change).map_err(mlua::Error::external)?,
+    )?;
+    c.set(
+        "failed_checks",
+        change.failed_checks.as_deref().filter(|_| current),
+    )?;
+    c.set(
+        "check_output",
+        change.check_output.as_deref().filter(|_| current),
+    )?;
+    c.set(
+        "conflict",
+        app.conflict_of(&change).map_err(mlua::Error::external)?,
+    )?;
+    Ok(Some(c))
+}
+
 /// Runs `f` on the script's behalf: the time it takes does not count against the script's time limit.
 fn outside_script<T>(deadline: &Cell<Instant>, f: impl FnOnce() -> T) -> T {
     let started = Instant::now();
@@ -560,6 +641,8 @@ mod tests {
         answers: Mutex<VecDeque<String>>,
         /// The note of each run started, in order.
         notes: Mutex<Vec<Option<String>>>,
+        /// Files, as path and text, that each `code` run also commits.
+        files: Vec<(&'static str, &'static str)>,
     }
 
     impl FakeHarness {
@@ -567,7 +650,7 @@ mod tests {
             Self {
                 reviewer: true,
                 answers: Mutex::new(answers.iter().map(|a| a.to_string()).collect()),
-                notes: Mutex::default(),
+                ..Self::default()
             }
         }
     }
@@ -598,6 +681,10 @@ mod tests {
                 .map_err(|e| e.to_string())?;
             if purpose == "code" {
                 std::fs::write(wt.path.join(format!("run-{}.txt", run.id)), &card.title).unwrap();
+                for (path, text) in &self.files {
+                    std::fs::create_dir_all(wt.path.join(path).parent().unwrap()).unwrap();
+                    std::fs::write(wt.path.join(path), text).unwrap();
+                }
                 git(&wt.path, &["add", "."]).unwrap();
                 git(&wt.path, &["commit", "--quiet", "-m", &card.title]).unwrap();
                 store.set_run_summary(run.id, "Done.").unwrap();
@@ -607,7 +694,7 @@ mod tests {
                     .set_run_summary(run.id, &answer.unwrap_or("VERDICT: approve".into()))
                     .unwrap();
             }
-            app.repos.remove_worktree(clone, &wt).unwrap();
+            app.repos.remove_worktree(clone, &wt.path).unwrap();
             store.set_run_status(run.id, "succeeded").unwrap();
             Ok(store.run(run.id).unwrap().unwrap())
         }
@@ -685,7 +772,7 @@ mod tests {
         assert_eq!(runs.len(), 1);
         assert_eq!(runs[0].summary.as_deref(), Some("Done."));
         let change = app.store.changes(repo).unwrap().pop().unwrap();
-        assert_eq!(change.branch, runs[0].branch());
+        assert_eq!(change.branch, "moebius/card-1");
         app.merge_change(change.id, "fine").unwrap();
         assert_eq!(app.card(card.id).unwrap().column, "Done");
         engine.settle(card.id).unwrap();
@@ -735,9 +822,10 @@ mod tests {
             [None, None, Some("There is no test.".to_string()), None]
         );
 
-        // The change is the second code run's branch, which carries the first run's work too.
+        // The change is one branch that carries both rounds' work.
         let change = app.store.changes(repo).unwrap().pop().unwrap();
-        assert_eq!(change.branch, runs[2].branch());
+        assert_eq!(app.store.changes(repo).unwrap().len(), 1);
+        assert_eq!(change.branch, "moebius/card-1");
         let clone = Path::new(&app.store.repository(repo).unwrap().unwrap().path).to_owned();
         for run in [&runs[0], &runs[2]] {
             let file = format!("{}:run-{}.txt", change.branch, run.id);
@@ -822,6 +910,175 @@ mod tests {
         assert_eq!(verdict(None).verdict, "changes");
     }
 
+    /// Commits `text` as `path` on the repository's default branch, as someone merging elsewhere would.
+    fn commit_to_base(app: &App, repo: i64, path: &str, text: &str) {
+        let clone = std::path::PathBuf::from(&app.store.repository(repo).unwrap().unwrap().path);
+        std::fs::create_dir_all(clone.join(path).parent().unwrap()).unwrap();
+        std::fs::write(clone.join(path), text).unwrap();
+        git(&clone, &["add", "."]).unwrap();
+        git(&clone, &["commit", "--quiet", "-m", path]).unwrap();
+    }
+
+    /// Waits until the repository's checks of the card's change have ended.
+    fn wait_for_checks(app: &App, card: &Card) {
+        let give_up = Instant::now() + Duration::from_secs(60);
+        while app
+            .store
+            .open_change(card.id)
+            .unwrap()
+            .unwrap()
+            .checks
+            .as_deref()
+            == Some("pending")
+        {
+            assert!(Instant::now() < give_up, "the checks never ended");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    fn note(app: &App, card: &Card) -> Option<String> {
+        app.card(card.id).unwrap().note
+    }
+
+    #[test]
+    fn failing_checks_send_the_card_back_with_their_output_and_passing_ones_let_it_on() {
+        let harness = Arc::new(FakeHarness::default());
+        let (dir, app, engine, repo) = setup_with_harness(None, harness.clone());
+        let count = dir.path().join("count.txt");
+        let checks = format!(
+            "echo x >> {}\necho 'boom: 3 tests failed'\nexit 1\n",
+            count.display()
+        );
+        commit_to_base(&app, repo, ".moebius/checks", &checks);
+        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+
+        engine.settle(card.id).unwrap();
+        engine.tick(card.id).unwrap();
+        assert_eq!(column(&app, &card), "In review");
+        let step = engine.tick(card.id).unwrap();
+        assert_eq!(step.waiting.as_deref(), Some("waiting for the checks"));
+        // Asked again, whether they still run or ended, they are not started again.
+        app.run_checks(card.id).unwrap();
+        wait_for_checks(&app, &card);
+
+        // The checks failed: the card goes back to coding and the next round is told what failed.
+        engine.tick(card.id).unwrap();
+        assert_eq!(column(&app, &card), "In progress");
+        assert!(
+            note(&app, &card)
+                .unwrap()
+                .starts_with("The checks failed:\nboom: 3 tests failed")
+        );
+        engine.tick(card.id).unwrap();
+        let notes = harness.notes.lock().unwrap().clone();
+        assert_eq!(notes.len(), 2);
+        assert!(
+            notes[1]
+                .as_deref()
+                .unwrap()
+                .contains("boom: 3 tests failed")
+        );
+        assert_eq!(note(&app, &card), None, "the round succeeded");
+        let leftovers = std::fs::read_dir(dir.path().join("data/worktrees/demo"))
+            .unwrap()
+            .filter(|e| {
+                e.as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("checks")
+            })
+            .count();
+        assert_eq!(leftovers, 0, "the checks' worktree is removed");
+
+        // The repository fixes its checks; the second round's commit is published on the same branch and checked.
+        commit_to_base(&app, repo, ".moebius/checks", "ls run-*.txt\n");
+        engine.tick(card.id).unwrap();
+        engine.tick(card.id).unwrap();
+        wait_for_checks(&app, &card);
+        assert_eq!(app.store.changes(repo).unwrap().len(), 1);
+        engine.tick(card.id).unwrap();
+        assert_eq!(column(&app, &card), "Ready to merge");
+        let change = app.store.changes(repo).unwrap().pop().unwrap();
+        assert_eq!(app.checks_of(&change).unwrap(), "success");
+        assert_eq!(std::fs::read_to_string(count).unwrap(), "x\n");
+    }
+
+    #[test]
+    fn a_repository_without_checks_has_none_and_the_card_goes_on() {
+        let (_dir, app, engine, repo) = setup();
+        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        engine.settle(card.id).unwrap();
+        engine.settle(card.id).unwrap();
+        assert_eq!(column(&app, &card), "Ready to merge");
+        let change = app.store.changes(repo).unwrap().pop().unwrap();
+        assert_eq!(app.checks_of(&change).unwrap(), "none");
+        assert_eq!(change.checks, None);
+    }
+
+    #[test]
+    fn the_checks_are_read_from_the_default_branch_not_from_the_change() {
+        let harness = Arc::new(FakeHarness {
+            files: vec![(".moebius/checks", "exit 1\n")],
+            ..FakeHarness::default()
+        });
+        let (_dir, app, engine, repo) = setup_with_harness(None, harness);
+        commit_to_base(&app, repo, ".moebius/checks", "exit 0\n");
+        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        engine.settle(card.id).unwrap();
+        engine.tick(card.id).unwrap();
+        engine.tick(card.id).unwrap();
+        wait_for_checks(&app, &card);
+        engine.tick(card.id).unwrap();
+        assert_eq!(column(&app, &card), "Ready to merge");
+        let change = app.store.changes(repo).unwrap().pop().unwrap();
+        assert_eq!(app.checks_of(&change).unwrap(), "success");
+    }
+
+    #[test]
+    fn a_change_that_no_longer_merges_goes_back_with_the_conflicting_files() {
+        let harness = Arc::new(FakeHarness::default());
+        let (_dir, app, engine, repo) = setup_with_harness(None, harness.clone());
+        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        engine.settle(card.id).unwrap();
+        // The base meanwhile took a different file of the same name.
+        commit_to_base(&app, repo, "run-1.txt", "something else\n");
+        engine.tick(card.id).unwrap();
+        assert_eq!(column(&app, &card), "In review");
+        engine.tick(card.id).unwrap();
+        assert_eq!(column(&app, &card), "In progress");
+        let note = note(&app, &card).unwrap();
+        assert!(note.contains("run-1.txt"), "{note}");
+        assert!(
+            note.contains("Merge main into your branch and resolve the conflicts"),
+            "{note}"
+        );
+
+        engine.tick(card.id).unwrap();
+        assert_eq!(harness.notes.lock().unwrap()[1].as_deref(), Some(&*note));
+    }
+
+    #[test]
+    fn a_conflict_that_appears_while_the_change_waits_to_be_merged_sends_it_back() {
+        let (_dir, app, engine, repo) = setup();
+        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        engine.settle(card.id).unwrap();
+        engine.settle(card.id).unwrap();
+        assert_eq!(column(&app, &card), "Ready to merge");
+        assert_eq!(app.store.inbox().unwrap().len(), 1);
+        let step = engine.tick(card.id).unwrap();
+        assert_eq!(
+            step.waiting.as_deref(),
+            Some("waiting for a person to merge")
+        );
+
+        commit_to_base(&app, repo, "run-1.txt", "something else\n");
+        engine.tick(card.id).unwrap();
+        assert_eq!(column(&app, &card), "In progress");
+        assert!(note(&app, &card).unwrap().contains("run-1.txt"));
+        assert!(app.store.inbox().unwrap().is_empty());
+    }
+
     /// A harness that takes longer to start a run than a script may run.
     struct SlowHarness;
 
@@ -868,11 +1125,12 @@ mod tests {
             "none"
         }
 
-        fn offer(
+        fn publish(
             &self,
             _: &crate::store::Repository,
             _: &Card,
             _: &str,
+            _: Option<i64>,
         ) -> Result<Option<i64>, crate::forge::ForgeError> {
             std::thread::sleep(Duration::from_millis(600));
             Ok(None)

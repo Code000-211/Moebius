@@ -272,7 +272,9 @@ impl Runs for PiBolt {
         if let Err(e) = self.launch(app, card, config, running.clone(), &prompt) {
             // Nothing reads this run: undo what was set up for it.
             self.router.revoke_token(&running.token);
-            let _ = app.repos.remove_worktree(&running.clone, &running.worktree);
+            let _ = app
+                .repos
+                .remove_worktree(&running.clone, &running.worktree.path);
             return Err(fail(e));
         }
         Ok(app
@@ -323,7 +325,7 @@ fn prompt_for(card: &Card, purpose: &str, note: Option<&str>) -> String {
     });
     prompt.push('\n');
     if let Some(note) = note {
-        prompt.push_str("\nNotes from the last review:\n\n");
+        prompt.push_str("\nNotes from the last round:\n\n");
         prompt.push_str(note);
         prompt.push('\n');
     }
@@ -459,7 +461,7 @@ impl Reader {
         let _ = self
             .app
             .repos
-            .remove_worktree(&self.run.clone, &self.run.worktree);
+            .remove_worktree(&self.run.clone, &self.run.worktree.path);
         let _ = self.app.store.set_run_status(self.run.id, status);
         lock(&self.lives).remove(&self.run.id);
         self.app.bus.publish(AppEvent::new(
@@ -675,10 +677,10 @@ mod tests {
         let prompt = prompt_of(&review);
         assert!(prompt.contains("Work on issue #1: Write done.txt"));
         assert!(prompt.contains("VERDICT: approve"));
-        assert!(prompt.contains("Notes from the last review:\n\nCheck the edge."));
+        assert!(prompt.contains("Notes from the last round:\n\nCheck the edge."));
         let prompt = prompt_of(&code);
         assert!(prompt.contains("Moebius commits what you leave"));
-        assert!(!prompt.contains("Notes from the last review"));
+        assert!(!prompt.contains("Notes from the last round"));
     }
 
     #[test]

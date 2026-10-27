@@ -440,12 +440,20 @@ mod tests {
         // What a Coder run does, by hand: a worktree, a commit, the change offered.
         let app = state.app.clone();
         let clone = std::path::PathBuf::from(&repo.path);
-        let wt = app.repos.add_worktree("demo", &clone, 1, "main").unwrap();
+        let run = app
+            .store
+            .add_run(Some(card.id), "Coder", "test", "code")
+            .unwrap();
+        app.store.set_run_status(run.id, "succeeded").unwrap();
+        let wt = app
+            .repos
+            .add_worktree("demo", &clone, run.id, "main")
+            .unwrap();
         std::fs::write(wt.path.join("feature.txt"), "done\n").unwrap();
         git(&wt.path, &["add", "."]).unwrap();
         git(&wt.path, &["commit", "--quiet", "-m", "Add the feature"]).unwrap();
-        app.repos.remove_worktree(&clone, &wt).unwrap();
-        let change = app.offer_change(card.id, &wt.branch).unwrap();
+        app.repos.remove_worktree(&clone, &wt.path).unwrap();
+        let change = app.offer_change(card.id).unwrap();
         assert_eq!(app.card(card.id).unwrap().column, "Ready to merge");
         assert_eq!(app.store.inbox().unwrap().len(), 1);
 

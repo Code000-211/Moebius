@@ -70,25 +70,42 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
    `failed` when a `code` run changed nothing or anything went wrong, `stopped` when aborted), removes the worktree
    (the branch stays) and publishes `run_ended`. The text of the agent's final answer, reported in Pi's `agent_end`
    event, was stored as the run's summary when that event came (`Store::set_run_summary`).
-9. **The change is reviewed.** On a later tick `code.luau` sees the succeeded `code` run and moves the card to
-   `In review`. `review.luau` starts a `Reviewer` run (purpose `review`) in a worktree on the code run's branch; the
-   run commits nothing. Its summary ends with `VERDICT: approve` or `VERDICT: changes` (`board::verdict`, which
-   treats a missing verdict as `changes`), and the scripts see it as `card.review`. `changes` moves the card back to
-   `In progress`, where `code.luau` starts the next `Coder` round on top of the first one's branch, with the findings
-   in its prompt, and the card is reviewed again. Without a configured `Reviewer` the step is skipped.
-10. **The change is offered.** When the review approves, `review.luau` calls
-   `moebius.offer_change`, which calls `App::offer_change` for the branch of the latest successful `code` run. The
-   forge offers the branch (`NoForge`: nothing to do;
-   `GitHubForge::offer`: push, then open a pull request). The change is stored (`Store::add_change`), a `ready_to_merge`
-   inbox item added, `change_offered` published and the card moved to `Ready to merge`. A `code` or `review` run
-   that failed or was stopped gets another run until `board.round_limit`, then the card is stuck in the inbox.
-11. **GitHub reports.** `poll::poll_pull_requests` reads each open change's pull request: checks and review are recorded
-    (`App::record_change_status`, `change_updated`), a merged pull request calls `App::change_merged`, a closed one
-    calls `App::change_closed`.
-12. **A person merges.** `POST /v1/changes/{id}/merge` calls `App::merge_change`: it records a judgement by `person`,
+9. **The change is published.** On a later tick `code.luau` sees the succeeded `code` run (and no `card.note`) and moves
+   the card to `In review`. `review.luau` calls `moebius.publish_change`, which calls `App::publish_change`: the branch
+   `moebius/card-<number>` is pointed at the latest successful `code` run's commit (`Repos::point_branch`; each round's
+   branch descends from the last, so the branch only moves forward) and the forge publishes it (`Forge::publish`:
+   `NoForge` does nothing; `GitHubForge` pushes and, the first time, opens the pull request). The change is stored
+   (`Store::add_change`, later `Store::set_change_head`) with the published commit and time, and `change_updated` is
+   published. A card has one change, one branch and one pull request for all its rounds.
+10. **The change is checked.** On GitHub the poll records the check runs of the pull request's head commit
+    (`poll::poll_pull_requests`, `App::record_change_status`), with the head they are for and the failing ones. Without
+    a forge, `moebius.run_checks` calls `App::run_checks`: if `.moebius/checks` exists on the default branch, a thread
+    runs it with `sh -c` in a throwaway worktree of the change's commit (`App::check_change`, `execute`) with the time
+    limit `checks.timeout_seconds`, and records `success` or `failure` with the end of the output, redacted
+    (`Store::set_local_checks`). `App::checks_of` gives scripts `card.change.checks`: checks for another commit than the
+    published one do not count, and on GitHub the change is `pending` for a grace period after the publish and then
+    `none`. `App::conflict_of` asks `git merge-tree` whether the change still merges into the default branch
+    (`Repos::conflicts`).
+11. **The change is sent back or reviewed.** `review.luau` waits while the checks are `pending`. Failing checks or a
+    conflict move the card back to `In progress` with a note (`moebius.move(column, note)`, stored on the card by
+    `Engine::tick` as `cards.note`); `code.luau` starts the next `Coder` round on top of the previous branch with the
+    note in its prompt (`prompt_for`), and `Store::set_run_status` clears the note when a `code` run succeeds. Then the
+    `Reviewer`, if configured, starts a run (purpose `review`) in a worktree on the code run's branch; the run commits
+    nothing. Its summary ends with `VERDICT: approve` or `VERDICT: changes` (`board::verdict`, which treats a missing
+    verdict as `changes`), and the scripts see it as `card.review`. `changes` sends the card back with the findings as
+    the note.
+12. **The change is offered.** When the checks and the review allow it, `review.luau` calls `moebius.offer_change`, which
+    calls `App::offer_change`: it publishes the change if need be, adds a `ready_to_merge` inbox item, publishes
+    `change_offered` and moves the card to `Ready to merge`. While the card waits there, `merge.luau` sends it back to
+    `In progress` with the conflict if the default branch moved and the change no longer merges; leaving `Ready to
+    merge` resolves the inbox item. A `code` or `review` run that failed or was stopped gets another run until
+    `board.round_limit`, then the card is stuck in the inbox.
+13. **GitHub reports.** `poll::poll_pull_requests` reads each open change's pull request: checks and review are recorded
+    (`change_updated`), a merged pull request calls `App::change_merged`, a closed one calls `App::change_closed`.
+14. **A person merges.** `POST /v1/changes/{id}/merge` calls `App::merge_change`: it records a judgement by `person`,
     the forge merges (`Repos::merge`, a `--no-ff` merge, or `GitHub::merge_pull_request`), and `App::change_merged`
     marks the change merged, resolves the inbox, publishes `change_merged` and moves the card to `Done`.
-13. **Done.** `done.luau` calls `moebius.record_outcome("merged")`, so every judgement made for the card gets an outcome.
+15. **Done.** `done.luau` calls `moebius.record_outcome("merged")`, so every judgement made for the card gets an outcome.
 
 At start, `Server::new` ends the runs a previous server left going (`end_runs_of_a_previous_server`): they are marked
 `failed` and their worktrees removed, so the board starts them again.
@@ -101,9 +118,9 @@ start; its version is `PRAGMA user_version`.
 | Record | Holds |
 |---|---|
 | `repositories` | Name, clone path, forge (`none` or `github`), default branch, GitHub name and trusted logins. |
-| `cards` | One per issue: number (unique per repository), title, body, author, column. |
+| `cards` | One per issue: number (unique per repository), title, body, author, column, note (why it went back to coding). |
 | `dependencies` | For a card, the issue numbers it is blocked by. |
-| `changes` | A branch offered for merge: card, state (`open`, `merged`, `closed`), pull request number, checks, review. |
+| `changes` | A card's branch `moebius/card-<number>`: card, state (`open`, `merged`, `closed`), pull request number, the published commit and time, checks with the commit they are for, failing checks, output of the repository's own checks, review. |
 | `runs` | One per harness run: card, agent, harness, purpose, status, worktree, start and end, summary (the agent's final answer). |
 | `events` | Everything a run emitted, numbered per run, as JSON. |
 | `judgements` | One per decision: kind, context (blob ids), options, choice, reason, decider, run, card, outcome. |
@@ -124,6 +141,7 @@ The server runs on a multi-threaded tokio runtime.
   shared between threads.
 - Every plugin call runs on a thread of its own, started by the `Host` for that call, with a time limit. The teacher uses a
   blocking HTTP client there.
+- A repository's own checks run on a thread of their own per change (`App::run_checks`), so the board is not blocked.
 - Each Pi run has one reader thread (`pibolt.rs`), and `PiBolt::stop` starts a short thread that kills Pi when it does not
   settle in time.
 - The store is one SQLite connection behind a mutex. Calls are short and take it one at a time.
@@ -137,7 +155,7 @@ The server runs on a multi-threaded tokio runtime.
 | `crates/moebius-plugin-api/src/lib.rs` | The `Plugin` trait, the call and decision types, the `Host` that calls plugins with a time limit and fails closed. |
 | `crates/moebius-desktop/src/main.rs` | A placeholder for the desktop app. |
 | `api.rs` | The desktop API: routes, token check, the event WebSocket. |
-| `app.rs` | The core put together; the operations on cards, changes and issues, each published on the bus. |
+| `app.rs` | The core put together; the operations on cards, changes and issues, each published on the bus, including publishing a change and running its checks. |
 | `blobs.rs` | The content-addressed blob store and secret redaction. |
 | `board.rs` | The board engine: the Luau sandbox, the `moebius` table and the default workflow. |
 | `bus.rs` | The event bus behind the event stream. |
@@ -149,7 +167,7 @@ The server runs on a multi-threaded tokio runtime.
 | `guard.rs` | The `guard` decider: built-in pattern rules and the teacher model. |
 | `pibolt.rs` | The Pi-Bolt harness: starting, reading and stopping runs. |
 | `poll.rs` | The poll of GitHub: issues, pull requests, checks, reviews. |
-| `repos.rs` | Clones, worktrees, pushes and merges through the `git` command line. |
+| `repos.rs` | Clones, worktrees, branches, pushes, merges and conflict checks through the `git` command line. |
 | `router.rs` | The router: model endpoints, run tokens, usage, budgets. |
 | `rules.rs` | The `rules.md` format and where rules come from. |
 | `server.rs` | Wires everything from the configuration and runs the loops. |

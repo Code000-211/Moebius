@@ -2,19 +2,24 @@
 //! operations the desktop API and the board engine perform on them. Every change to a card is published on the bus.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::io::{Read, Seek, SeekFrom};
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::{Arc, LazyLock, Mutex};
+use std::time::{Duration, Instant};
 
 use moebius_plugin_api::Host;
 use regex::Regex;
 use serde_json::json;
 
+use crate::blobs::redact;
 use crate::bus::{AppEvent, Bus};
 use crate::decide::{Decisions, Question};
 use crate::forge::{Forge, ForgeError, NoForge};
 use crate::github::Issue;
-use crate::repos::{GitError, Repos};
-use crate::store::{Card, Change, Repository, Store, StoreError};
+use crate::repos::{GitError, Repos, git};
+use crate::store::{Card, Change, Repository, Store, StoreError, now};
 
 /// The columns of the default workflow (spec 6).
 pub mod columns {
@@ -25,6 +30,13 @@ pub mod columns {
     pub const READY_TO_MERGE: &str = "Ready to merge";
     pub const DONE: &str = "Done";
 }
+
+/// How long after a publish a change without checks for its commit is taken to be waiting for them; after that, the
+/// repository has no checks (in seconds).
+const CHECKS_GRACE: i64 = 120;
+
+/// How much of the end of the output of a repository's checks is kept.
+const CHECK_OUTPUT: usize = 4096;
 
 /// The author of issues a person created in the desktop app; their cards are trusted.
 pub const PERSON: &str = "person";
@@ -76,6 +88,10 @@ pub struct App {
     pub repos: Repos,
     pub decisions: Decisions,
     pub data_dir: PathBuf,
+    /// How long a repository's own checks may run.
+    pub checks_timeout: Duration,
+    /// The checks going now, as change and commit.
+    checking: Mutex<BTreeSet<(i64, String)>>,
     /// Why each waiting card waits, as its column script last said (`moebius.wait`, `ask`, `stuck`). Not stored: a
     /// reason is rebuilt by the next tick after a restart.
     waiting: Mutex<HashMap<i64, String>>,
@@ -95,6 +111,8 @@ impl App {
             bus: Bus::new(),
             repos,
             data_dir: data_dir.to_path_buf(),
+            checks_timeout: Duration::from_secs(1800),
+            checking: Mutex::default(),
             waiting: Mutex::default(),
             forges,
         }
@@ -350,25 +368,178 @@ impl App {
             .collect()
     }
 
-    /// Offers the work on `branch` as a change for the card, through the repository's forge, and puts it in the
-    /// inbox, ready to merge.
-    pub fn offer_change(&self, card_id: i64, branch: &str) -> Result<Change> {
+    /// Publishes the work of the card's latest successful `code` run on the branch of its change, `moebius/card-<number>`,
+    /// through the repository's forge: the first time that creates the change, later it updates it. Each round's branch
+    /// descends from the last, so the branch only ever moves forward. Does nothing when this work is published.
+    pub fn publish_change(&self, card_id: i64) -> Result<Change> {
         let card = self.card(card_id)?;
         let repository = self.repository(card.repository_id)?;
-        let pull_request = self.forge(&repository)?.offer(&repository, &card, branch)?;
-        let change =
-            self.store
-                .add_change(card.repository_id, Some(card_id), branch, pull_request)?;
+        let forge = self.forge(&repository)?;
+        let code_branch = self
+            .store
+            .code_branch(card_id)?
+            .ok_or_else(|| AppError::Invalid("the card has no code run to publish".into()))?;
+        let clone = Path::new(&repository.path);
+        let head = git(clone, &["rev-parse", &code_branch])?;
+        let existing = self.store.open_change(card_id)?;
+        if let Some(change) = existing.as_ref().filter(|c| c.head.as_ref() == Some(&head)) {
+            return Ok(change.clone());
+        }
+        let branch = format!("moebius/card-{}", card.number);
+        self.repos.point_branch(clone, &branch, &head)?;
+        let pull_request = existing.as_ref().and_then(|c| c.pull_request);
+        let pull_request = forge.publish(&repository, &card, &branch, pull_request)?;
+        let change = match existing {
+            Some(change) => {
+                self.store.set_change_head(change.id, &head, now())?;
+                self.change(change.id)?
+            }
+            None => self.store.add_change(
+                card.repository_id,
+                Some(card_id),
+                &branch,
+                pull_request,
+                &head,
+            )?,
+        };
+        self.bus
+            .publish(AppEvent::new("change_updated", json!(change)));
+        Ok(change)
+    }
+
+    /// Publishes the card's change and puts it in the inbox, ready to merge.
+    pub fn offer_change(&self, card_id: i64) -> Result<Change> {
+        let change = self.publish_change(card_id)?;
+        let card = self.card(card_id)?;
         self.store.add_inbox_item(
             "ready_to_merge",
             Some(card_id),
             &card.title,
-            &json!({ "change": change.id, "branch": branch }),
+            &json!({ "change": change.id, "branch": change.branch }),
         )?;
         self.bus
             .publish(AppEvent::new("change_offered", json!(change)));
         self.move_card(card_id, columns::READY_TO_MERGE)?;
         Ok(change)
+    }
+
+    /// How the checks of the change stand for its current commit: `pending`, `success`, `failure` or `none`. Checks
+    /// recorded for an older commit do not count; on GitHub the change then waits for its checks for a while after
+    /// it was published, so that a pushed commit is not taken for one without CI.
+    pub fn checks_of(&self, change: &Change) -> Result<&'static str> {
+        let recorded = change
+            .checks
+            .as_deref()
+            .filter(|_| change.checks_head == change.head);
+        Ok(match recorded {
+            Some("success") => "success",
+            Some("failure") => "failure",
+            Some(_) => "pending",
+            None if self.repository(change.repository_id)?.forge == "github"
+                && now() - change.published_at.unwrap_or(0) < CHECKS_GRACE =>
+            {
+                "pending"
+            }
+            None => "none",
+        })
+    }
+
+    /// The files that keep the change from merging cleanly into the repository's default branch, one per line; none
+    /// when it merges cleanly.
+    pub fn conflict_of(&self, change: &Change) -> Result<Option<String>> {
+        let repository = self.repository(change.repository_id)?;
+        Ok(self.repos.conflicts(
+            Path::new(&repository.path),
+            &repository.base_ref(),
+            &change.branch,
+        )?)
+    }
+
+    /// Runs the repository's own checks, the command in `.moebius/checks` on its default branch (never on the change's,
+    /// so that its author cannot change them), on the card's change. They run on a thread of their own, in a throwaway
+    /// worktree; meanwhile the change's checks are `pending`. Does nothing for a repository on a forge, which has its
+    /// own checks, or without that file, or when the checks already ran or are running for the change's commit.
+    pub fn run_checks(self: &Arc<Self>, card_id: i64) -> Result<Change> {
+        // Held while the change is read: checks that end record their result before they are removed from the set,
+        // so a change read under the lock is final when its checks are not in the set.
+        let mut checking = self.checking.lock().expect("checks are not poisoned");
+        let change = self
+            .store
+            .open_change(card_id)?
+            .ok_or_else(|| AppError::Invalid("the card has no change to check".into()))?;
+        let repository = self.repository(change.repository_id)?;
+        let Some(head) = change.head.clone().filter(|_| repository.forge == "none") else {
+            return Ok(change);
+        };
+        let spec = format!("{}:.moebius/checks", repository.base_ref());
+        let Ok(script) = git(Path::new(&repository.path), &["show", &spec]) else {
+            return Ok(change);
+        };
+        let key = (change.id, head.clone());
+        let finished = change.checks_head.as_ref() == Some(&head)
+            && change.checks.as_deref().is_some_and(|c| c != "pending");
+        if finished || checking.contains(&key) {
+            return Ok(change);
+        }
+        self.store
+            .set_local_checks(change.id, "pending", &head, None)?;
+        checking.insert(key.clone());
+        drop(checking);
+        let app = self.clone();
+        let (checked, running) = (change.clone(), key.clone());
+        let started = std::thread::Builder::new()
+            .name(format!("checks of change {}", change.id))
+            .spawn(move || {
+                app.check_change(&repository, &checked, &head, &script);
+                app.checking
+                    .lock()
+                    .expect("checks are not poisoned")
+                    .remove(&running);
+            });
+        if let Err(e) = started {
+            // Nothing runs, so the next call starts the checks again.
+            self.checking
+                .lock()
+                .expect("checks are not poisoned")
+                .remove(&key);
+            return Err(AppError::Invalid(format!("cannot start the checks: {e}")));
+        }
+        let change = self.change(change.id)?;
+        self.bus
+            .publish(AppEvent::new("change_updated", json!(change)));
+        Ok(change)
+    }
+
+    /// Runs `script` on `head` in a worktree of its own and records how it ended, unless the change has moved on.
+    fn check_change(&self, repository: &Repository, change: &Change, head: &str, script: &str) {
+        let clone = Path::new(&repository.path);
+        // Named by commit too, as checks of an older commit may still be going when a newer one is published.
+        let name = format!("checks-{}-{}", change.id, &head[..12.min(head.len())]);
+        let (succeeded, output) =
+            match self
+                .repos
+                .add_detached_worktree(&repository.name, clone, &name, head)
+            {
+                Ok(worktree) => {
+                    let log = self.data_dir.join(format!("{name}.log"));
+                    let result = execute(script, &worktree, &log, self.checks_timeout);
+                    let _ = std::fs::remove_file(&log);
+                    let _ = self.repos.remove_worktree(clone, &worktree);
+                    result
+                }
+                Err(e) => (false, format!("cannot make a worktree for the checks: {e}")),
+            };
+        let current = self.change(change.id);
+        if current.is_ok_and(|c| c.head.as_deref() == Some(head)) {
+            let checks = if succeeded { "success" } else { "failure" };
+            let _ = self
+                .store
+                .set_local_checks(change.id, checks, head, Some(&output));
+            if let Ok(change) = self.change(change.id) {
+                self.bus
+                    .publish(AppEvent::new("change_updated", json!(change)));
+            }
+        }
     }
 
     /// A person merges a change: the decision is recorded, the forge merges, and the card moves to done.
@@ -441,24 +612,90 @@ impl App {
         Ok(())
     }
 
-    /// Records the checks and review of a change's pull request, and publishes the change if they differ from what
-    /// was known.
+    /// Records the checks of a change's pull request for its head commit `checks_head`, the failing ones, and the
+    /// latest review, and publishes the change if they differ from what was known.
     pub fn record_change_status(
         &self,
         change: &Change,
         checks: Option<&str>,
+        checks_head: &str,
+        failed_checks: Option<&str>,
         review: Option<&str>,
     ) -> Result<()> {
-        if change.checks.as_deref() == checks && change.review.as_deref() == review {
+        if change.checks.as_deref() == checks
+            && change.checks_head.as_deref() == Some(checks_head)
+            && change.failed_checks.as_deref() == failed_checks
+            && change.review.as_deref() == review
+        {
             return Ok(());
         }
-        self.store.set_change_status(change.id, checks, review)?;
+        self.store
+            .set_change_status(change.id, checks, checks_head, failed_checks, review)?;
         self.bus.publish(AppEvent::new(
             "change_updated",
             json!(self.change(change.id)?),
         ));
         Ok(())
     }
+}
+
+/// Runs `script` with `sh -c` in `dir`, writing its output to `log`, and stops it (and what it started) after
+/// `timeout`. Returns whether it succeeded and the end of its output with secrets removed.
+fn execute(script: &str, dir: &Path, log: &Path, timeout: Duration) -> (bool, String) {
+    let run = || -> std::io::Result<(bool, bool)> {
+        let file = std::fs::File::create(log)?;
+        let mut child = Command::new("sh")
+            .args(["-c", script])
+            .current_dir(dir)
+            .stdin(Stdio::null())
+            .stdout(file.try_clone()?)
+            .stderr(file)
+            .process_group(0)
+            .spawn()?;
+        let deadline = Instant::now() + timeout;
+        loop {
+            if let Some(status) = child.try_wait()? {
+                return Ok((status.success(), false));
+            }
+            if Instant::now() >= deadline {
+                let group = format!("-{}", child.id());
+                let _ = Command::new("kill").args(["-KILL", "--", &group]).status();
+                child.wait()?;
+                return Ok((false, true));
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    };
+    match run() {
+        Ok((succeeded, timed_out)) => {
+            let mut output = tail(log);
+            if timed_out {
+                output.push_str(&format!(
+                    "\nThe checks were stopped after {} seconds.",
+                    timeout.as_secs()
+                ));
+            }
+            (succeeded, output)
+        }
+        Err(e) => (false, format!("cannot run the checks: {e}")),
+    }
+}
+
+/// The end of the file `log`, without secrets, as much as is kept of the output of checks.
+fn tail(log: &Path) -> String {
+    let Ok(mut file) = std::fs::File::open(log) else {
+        return String::new();
+    };
+    // Read more than is kept, so that a secret cut in two by the start is still whole when it is redacted.
+    let len = file.metadata().map_or(0, |m| m.len());
+    let _ = file.seek(SeekFrom::Start(len.saturating_sub(4 * CHECK_OUTPUT as u64)));
+    let mut bytes = Vec::new();
+    let _ = file.read_to_end(&mut bytes);
+    let text = redact(&String::from_utf8_lossy(&bytes));
+    let start = (text.len().saturating_sub(CHECK_OUTPUT)..)
+        .find(|&i| text.is_char_boundary(i))
+        .unwrap_or(text.len());
+    text[start..].trim().to_string()
 }
 
 #[cfg(test)]
@@ -473,6 +710,33 @@ mod tests {
         assert_eq!(numbers("Needs the parser.\n\nblocked by #12"), [12]);
         assert_eq!(numbers("Blocked by: #3, #4\nBLOCKED BY #9 #3"), [3, 4, 9]);
         assert_eq!(numbers("Fixes #5, not blocked by anything"), [] as [i64; 0]);
+    }
+
+    #[test]
+    fn checks_are_stopped_after_their_time_and_their_output_is_cut_and_cleaned() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("log");
+        let run =
+            |script: &str, seconds| execute(script, dir.path(), &log, Duration::from_secs(seconds));
+
+        let (succeeded, output) = run("echo started; sleep 30", 1);
+        assert!(!succeeded);
+        assert_eq!(output, "started\nThe checks were stopped after 1 seconds.");
+
+        let token = format!("ghp_{}", "a".repeat(36));
+        let (succeeded, output) = run(
+            &format!("yes line | head -c 20000; echo {token}; echo END"),
+            30,
+        );
+        assert!(succeeded);
+        assert!(output.len() <= CHECK_OUTPUT, "{}", output.len());
+        assert!(
+            output.ends_with("[redacted:github-token]\nEND"),
+            "{output:?}"
+        );
+
+        let (succeeded, output) = run("echo nope >&2; exit 3", 30);
+        assert_eq!((succeeded, output.as_str()), (false, "nope"));
     }
 
     #[test]

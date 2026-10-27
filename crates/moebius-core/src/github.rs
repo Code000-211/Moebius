@@ -74,10 +74,19 @@ pub struct Head {
 /// A check run of a commit.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct CheckRun {
+    pub name: String,
+    pub details_url: Option<String>,
     /// `queued`, `in_progress` or `completed`.
     pub status: String,
     /// How a completed check ended, such as `success` or `failure`.
     pub conclusion: Option<String>,
+    pub output: Option<CheckOutput>,
+}
+
+/// What a check run says about itself.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct CheckOutput {
+    pub title: Option<String>,
 }
 
 #[derive(Deserialize)]

@@ -122,10 +122,18 @@ ALTER TABLE changes ADD COLUMN checks TEXT;
 ALTER TABLE changes ADD COLUMN review TEXT;
 "#,
     "ALTER TABLE runs ADD COLUMN summary TEXT;",
+    r#"
+ALTER TABLE cards ADD COLUMN note TEXT;
+ALTER TABLE changes ADD COLUMN head TEXT;
+ALTER TABLE changes ADD COLUMN published_at INTEGER;
+ALTER TABLE changes ADD COLUMN checks_head TEXT;
+ALTER TABLE changes ADD COLUMN failed_checks TEXT;
+ALTER TABLE changes ADD COLUMN check_output TEXT;
+"#,
 ];
 
-const CHANGE_COLUMNS: &str =
-    "id, repository_id, card_id, branch, state, pull_request, checks, review";
+const CHANGE_COLUMNS: &str = "id, repository_id, card_id, branch, state, pull_request, checks, review, \
+     head, published_at, checks_head, failed_checks, check_output";
 
 fn change_from_row(r: &rusqlite::Row) -> rusqlite::Result<Change> {
     Ok(Change {
@@ -137,6 +145,11 @@ fn change_from_row(r: &rusqlite::Row) -> rusqlite::Result<Change> {
         pull_request: r.get(5)?,
         checks: r.get(6)?,
         review: r.get(7)?,
+        head: r.get(8)?,
+        published_at: r.get(9)?,
+        checks_head: r.get(10)?,
+        failed_checks: r.get(11)?,
+        check_output: r.get(12)?,
     })
 }
 
@@ -180,6 +193,8 @@ pub struct Card {
     pub author: String,
     pub column: String,
     pub created_at: i64,
+    /// Why the card went back to coding, for the next `code` run; cleared when a `code` run succeeds.
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -191,10 +206,20 @@ pub struct Change {
     pub state: String,
     /// The number of the change's pull request on GitHub.
     pub pull_request: Option<i64>,
-    /// `pending`, `success` or `failure` once the pull request's checks are known.
+    /// `pending`, `success` or `failure` once the checks are known, for the commit `checks_head`.
     pub checks: Option<String>,
     /// The state of the pull request's latest review, such as `approved`, once there is one.
     pub review: Option<String>,
+    /// The commit of `branch` that was last published.
+    pub head: Option<String>,
+    /// When `head` was published, in seconds since the epoch.
+    pub published_at: Option<i64>,
+    /// The commit `checks` were read or run for.
+    pub checks_head: Option<String>,
+    /// The failing checks of the pull request, one per line.
+    pub failed_checks: Option<String>,
+    /// The end of the output of the repository's own checks, secrets removed.
+    pub check_output: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -481,13 +506,14 @@ impl Store {
             author: author.into(),
             column: column.into(),
             created_at: at,
+            note: None,
         })
     }
 
     fn cards_where(&self, clause: &str, params: impl rusqlite::Params) -> Result<Vec<Card>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(&format!(
-            "SELECT id, repository_id, number, title, body, author, column_name, created_at FROM cards WHERE {clause} ORDER BY id"
+            "SELECT id, repository_id, number, title, body, author, column_name, created_at, note FROM cards WHERE {clause} ORDER BY id"
         ))?;
         let rows = stmt.query_map(params, |r| {
             Ok(Card {
@@ -499,6 +525,7 @@ impl Store {
                 author: r.get(5)?,
                 column: r.get(6)?,
                 created_at: r.get(7)?,
+                note: r.get(8)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -554,6 +581,14 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
+    pub fn set_card_note(&self, id: i64, note: &str) -> Result<()> {
+        self.conn().execute(
+            "UPDATE cards SET note = ?1 WHERE id = ?2",
+            params![note, id],
+        )?;
+        Ok(())
+    }
+
     pub fn move_card(&self, id: i64, column: &str) -> Result<()> {
         self.conn().execute(
             "UPDATE cards SET column_name = ?1 WHERE id = ?2",
@@ -570,11 +605,14 @@ impl Store {
         card_id: Option<i64>,
         branch: &str,
         pull_request: Option<i64>,
+        head: &str,
     ) -> Result<Change> {
         let conn = self.conn();
+        let at = now();
         conn.execute(
-            "INSERT INTO changes (repository_id, card_id, branch, state, pull_request, created_at) VALUES (?1, ?2, ?3, 'open', ?4, ?5)",
-            params![repository_id, card_id, branch, pull_request, now()],
+            "INSERT INTO changes (repository_id, card_id, branch, state, pull_request, head, published_at, created_at) \
+             VALUES (?1, ?2, ?3, 'open', ?4, ?5, ?6, ?6)",
+            params![repository_id, card_id, branch, pull_request, head, at],
         )?;
         Ok(Change {
             id: conn.last_insert_rowid(),
@@ -585,7 +623,35 @@ impl Store {
             pull_request,
             checks: None,
             review: None,
+            head: Some(head.into()),
+            published_at: Some(at),
+            checks_head: None,
+            failed_checks: None,
+            check_output: None,
         })
+    }
+
+    /// The card's open change, if it has one.
+    pub fn open_change(&self, card_id: i64) -> Result<Option<Change>> {
+        Ok(self
+            .conn()
+            .query_row(
+                &format!(
+                    "SELECT {CHANGE_COLUMNS} FROM changes WHERE card_id = ?1 AND state = 'open' ORDER BY id DESC"
+                ),
+                [card_id],
+                change_from_row,
+            )
+            .optional()?)
+    }
+
+    /// Records that `head` of the change's branch was published just now.
+    pub fn set_change_head(&self, id: i64, head: &str, published_at: i64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE changes SET head = ?1, published_at = ?2 WHERE id = ?3",
+            params![head, published_at, id],
+        )?;
+        Ok(())
     }
 
     pub fn change(&self, id: i64) -> Result<Option<Change>> {
@@ -620,15 +686,34 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
+    /// Records what the forge says about the change's pull request: checks of the commit `checks_head`, the failing
+    /// ones, and the latest review.
     pub fn set_change_status(
         &self,
         id: i64,
         checks: Option<&str>,
+        checks_head: &str,
+        failed_checks: Option<&str>,
         review: Option<&str>,
     ) -> Result<()> {
         self.conn().execute(
-            "UPDATE changes SET checks = ?1, review = ?2 WHERE id = ?3",
-            params![checks, review, id],
+            "UPDATE changes SET checks = ?1, checks_head = ?2, failed_checks = ?3, review = ?4 WHERE id = ?5",
+            params![checks, checks_head, failed_checks, review, id],
+        )?;
+        Ok(())
+    }
+
+    /// Records the repository's own checks of the commit `head`: how they stand and the end of their output.
+    pub fn set_local_checks(
+        &self,
+        id: i64,
+        checks: &str,
+        head: &str,
+        output: Option<&str>,
+    ) -> Result<()> {
+        self.conn().execute(
+            "UPDATE changes SET checks = ?1, checks_head = ?2, check_output = ?3 WHERE id = ?4",
+            params![checks, head, output, id],
         )?;
         Ok(())
     }
@@ -724,10 +809,18 @@ impl Store {
 
     pub fn set_run_status(&self, id: i64, status: &str) -> Result<()> {
         let ended = matches!(status, "succeeded" | "failed" | "stopped").then(now);
-        self.conn().execute(
+        let conn = self.conn();
+        conn.execute(
             "UPDATE runs SET status = ?1, ended_at = COALESCE(?2, ended_at) WHERE id = ?3",
             params![status, ended, id],
         )?;
+        if status == "succeeded" {
+            // The note the run was started with has been dealt with.
+            conn.execute(
+                "UPDATE cards SET note = NULL WHERE id = (SELECT card_id FROM runs WHERE id = ?1 AND purpose = 'code')",
+                [id],
+            )?;
+        }
         Ok(())
     }
 
@@ -1112,6 +1205,29 @@ mod tests {
     }
 
     #[test]
+    fn a_note_stays_on_the_card_until_a_code_run_succeeds() {
+        let (_dir, s) = store();
+        let repo = s
+            .add_repository("radiance", "/srv/radiance", "none", "main")
+            .unwrap();
+        let card = s.add_card(repo.id, "First", "", "leon", "Backlog").unwrap();
+        assert_eq!(card.note, None);
+        s.set_card_note(card.id, "Fix the lint.").unwrap();
+        let note = || s.card(card.id).unwrap().unwrap().note;
+        assert_eq!(note().as_deref(), Some("Fix the lint."));
+
+        let review = s.add_run(Some(card.id), "Reviewer", "x", "review").unwrap();
+        s.set_run_status(review.id, "succeeded").unwrap();
+        let failed = s.add_run(Some(card.id), "Coder", "x", "code").unwrap();
+        s.set_run_status(failed.id, "failed").unwrap();
+        assert_eq!(note().as_deref(), Some("Fix the lint."));
+
+        let coded = s.add_run(Some(card.id), "Coder", "x", "code").unwrap();
+        s.set_run_status(coded.id, "succeeded").unwrap();
+        assert_eq!(note(), None);
+    }
+
+    #[test]
     fn records_round_trip() {
         let (_dir, s) = store();
         let repo = s
@@ -1131,20 +1247,26 @@ mod tests {
         assert_eq!(s.cards(repo.id).unwrap().len(), 2);
 
         let change = s
-            .add_change(repo.id, Some(a.id), "moebius/1", None)
+            .add_change(repo.id, Some(a.id), "moebius/1", None, "abc")
             .unwrap();
         s.set_change_state(change.id, "merged").unwrap();
         assert_eq!(s.change(change.id).unwrap().unwrap().state, "merged");
 
         let pull = s
-            .add_change(repo.id, Some(b.id), "moebius/2", Some(9))
+            .add_change(repo.id, Some(b.id), "moebius/2", Some(9), "def")
             .unwrap();
         assert_eq!(
             s.open_pull_requests(repo.id).unwrap(),
             std::slice::from_ref(&pull)
         );
-        s.set_change_status(pull.id, Some("failure"), Some("approved"))
-            .unwrap();
+        s.set_change_status(
+            pull.id,
+            Some("failure"),
+            "def",
+            Some("lint: failure"),
+            Some("approved"),
+        )
+        .unwrap();
         let stored = s.change(pull.id).unwrap().unwrap();
         assert_eq!(
             (
@@ -1153,6 +1275,13 @@ mod tests {
                 stored.review.as_deref()
             ),
             (Some(9), Some("failure"), Some("approved"))
+        );
+        assert_eq!(
+            (
+                stored.checks_head.as_deref(),
+                stored.failed_checks.as_deref()
+            ),
+            (Some("def"), Some("lint: failure"))
         );
         s.set_change_state(pull.id, "closed").unwrap();
         assert!(s.open_pull_requests(repo.id).unwrap().is_empty());

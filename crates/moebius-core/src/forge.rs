@@ -27,13 +27,15 @@ pub enum ForgeError {
 pub trait Forge: Send + Sync {
     /// The name repositories refer to it by, such as `none` or `github`.
     fn name(&self) -> &'static str;
-    /// Offers the work of `card` on `branch` as a change and returns the number of the pull request made for it, if
-    /// the forge has them.
-    fn offer(
+    /// Makes the work of `card` on `branch` known to the forge, and returns the number of the pull request for it if
+    /// the forge has them. Called again when `branch` has moved on; `pull_request` is the number returned before, so
+    /// the forge updates the change it offered instead of offering another.
+    fn publish(
         &self,
         repository: &Repository,
         card: &Card,
         branch: &str,
+        pull_request: Option<i64>,
     ) -> Result<Option<i64>, ForgeError>;
     /// Merges `change` into the repository's default branch and returns the merge commit.
     fn merge(
@@ -67,7 +69,14 @@ impl Forge for NoForge {
         "none"
     }
 
-    fn offer(&self, _: &Repository, _: &Card, _: &str) -> Result<Option<i64>, ForgeError> {
+    /// The clone is where changes are merged; there is nothing to publish to.
+    fn publish(
+        &self,
+        _: &Repository,
+        _: &Card,
+        _: &str,
+        _: Option<i64>,
+    ) -> Result<Option<i64>, ForgeError> {
         Ok(None)
     }
 
@@ -88,7 +97,8 @@ impl Forge for NoForge {
     }
 }
 
-/// The forge for repositories on GitHub: a change is a branch pushed with the installation's token and a pull request.
+/// The forge for repositories on GitHub: a change is a branch pushed with the installation's token and a pull request,
+/// which later pushes update.
 /// The GitHub client is asynchronous, so the methods wait for it on `runtime`; they must be called from a thread that
 /// may block, never from an async task.
 pub struct GitHubForge {
@@ -124,16 +134,20 @@ impl Forge for GitHubForge {
         "github"
     }
 
-    fn offer(
+    fn publish(
         &self,
         repository: &Repository,
         card: &Card,
         branch: &str,
+        pull_request: Option<i64>,
     ) -> Result<Option<i64>, ForgeError> {
         let name = Self::github_name(repository)?;
         let clone = Path::new(&repository.path);
         let header = self.origin_auth(clone, name)?;
         self.repos.push(clone, branch, header.as_deref())?;
+        if pull_request.is_some() {
+            return Ok(pull_request);
+        }
         let body = format!("Closes #{}\n\nMade by Moebius.", card.number);
         let number = self.runtime.block_on(self.github.open_pull_request(
             name,

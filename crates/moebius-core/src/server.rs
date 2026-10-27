@@ -20,7 +20,6 @@ use crate::github::GitHub;
 use crate::guard::{self, Guard, Teacher};
 use crate::pibolt::PiBolt;
 use crate::poll;
-use crate::repos::Worktree;
 use crate::router::{Router, Upstream};
 use crate::store::Store;
 
@@ -44,13 +43,9 @@ fn end_runs_of_a_previous_server(app: &App) -> Result<(), String> {
             .ok()
             .and_then(|card| app.store.repository(card.repository_id).ok().flatten());
         if let Some(repository) = repository {
-            let worktree = Worktree {
-                path: worktree.into(),
-                branch: format!("moebius/run-{}", run.id),
-            };
             let _ = app
                 .repos
-                .remove_worktree(Path::new(&repository.path), &worktree);
+                .remove_worktree(Path::new(&repository.path), Path::new(&worktree));
         }
     }
     Ok(())
@@ -102,6 +97,7 @@ impl Server {
         let mut host = Host::new(PLUGIN_TIME_LIMIT);
         host.add(Guard::new(teacher));
         let mut app = App::new(store.clone(), Arc::new(host), &config.data_dir);
+        app.checks_timeout = config.checks_timeout;
         app.decisions.route("tool_call", guard::NAME);
         let github = match &config.github {
             Some(g) => {
@@ -245,7 +241,7 @@ mod tests {
     use serde_json::Value;
 
     use super::*;
-    use crate::board::Runs;
+    use crate::board::{Runs, Step};
     use crate::forge::Forge;
     use crate::repos::git;
     use crate::store::{Card, Change, Repository, Run};
@@ -328,11 +324,20 @@ mod tests {
         fn set_pull(&self, state: &str, merged: bool) {
             self.pulls.lock().unwrap().pull = pull(state, merged);
         }
+
+        /// Makes the head of pull request 7 the commit `sha`, as a push does.
+        fn set_head(&self, sha: &str) {
+            self.pulls.lock().unwrap().pull["head"]["sha"] = json!(sha);
+        }
     }
 
     fn pull(state: &str, merged: bool) -> Value {
         json!({ "number": 7, "state": state, "merged": merged,
                 "merge_commit_sha": merged.then_some("c0ffee"), "head": { "sha": "deadbeef" } })
+    }
+
+    fn check(name: &str, status: &str, conclusion: &str) -> Value {
+        json!({ "name": name, "status": status, "conclusion": conclusion })
     }
 
     fn issue(number: u64, state: &str, login: &str, body: &str) -> Value {
@@ -411,8 +416,12 @@ mod tests {
                 "/repos/acme/widgets/commits/{sha}/check-runs",
                 get(
                     |State(fake): State<Arc<FakeGitHub>>, UrlPath(sha): UrlPath<String>| async move {
-                        assert_eq!(sha, "deadbeef", "the checks of the pull request's head");
-                        let runs = fake.pulls.lock().unwrap().check_runs.clone();
+                        let pulls = fake.pulls.lock().unwrap();
+                        assert_eq!(
+                            pulls.pull["head"]["sha"], sha,
+                            "the checks of the pull request's head"
+                        );
+                        let runs = pulls.check_runs.clone();
                         axum::Json(json!({ "total_count": runs.len(), "check_runs": runs }))
                     },
                 ),
@@ -466,7 +475,7 @@ mod tests {
         _dir: tempfile::TempDir,
         server: Server,
         fake: Arc<FakeGitHub>,
-        engine: Engine,
+        engine: Arc<Engine>,
         repository: Repository,
         /// The bare repository the clone's `origin` is.
         remote: std::path::PathBuf,
@@ -508,12 +517,12 @@ mod tests {
                     &["leon".to_string()],
                 )
                 .unwrap();
-            let engine = Engine::new(
+            let engine = Arc::new(Engine::new(
                 server.app.clone(),
                 Arc::new(IdleRuns),
                 crate::board::Workflow::default(),
                 crate::board::Limits::default(),
-            );
+            ));
             Self {
                 _dir: dir,
                 server,
@@ -524,26 +533,67 @@ mod tests {
             }
         }
 
-        /// Polls issue 1 into a card and has a run's work on its branch offered as a change, on a thread that may
-        /// block, as the board does.
-        async fn offered_change(&self) -> Change {
+        /// Polls issue 1 into a card, which waits in review with a succeeded `code` run that added `feature.txt`.
+        async fn card_in_review(&self) -> Card {
             self.fake
                 .set_issues("\"v1\"", vec![issue(1, "open", "leon", "Do it.")]);
             self.server.poll_github().await;
             let card = self.card(1).unwrap();
-            let app = self.server.app.clone();
-            let repository = self.repository.clone();
+            self.code(&card, "feature.txt").await;
+            self.server
+                .app
+                .store
+                .move_card(card.id, "In review")
+                .unwrap();
+            card
+        }
+
+        /// Has a succeeded `code` run of the card add `file` on top of its work so far, as a round of the Coder does.
+        async fn code(&self, card: &Card, file: &'static str) {
+            let (app, repository, card) = (
+                self.server.app.clone(),
+                self.repository.clone(),
+                card.clone(),
+            );
             tokio::task::spawn_blocking(move || {
+                let store = &app.store;
+                let run = store
+                    .add_run(Some(card.id), "Coder", "test", "code")
+                    .unwrap();
                 let clone = Path::new(&repository.path);
-                let worktree = app.repos.add_worktree("widgets", clone, 1, "main").unwrap();
-                std::fs::write(worktree.path.join("feature.txt"), "done\n").unwrap();
+                let base = store
+                    .code_branch(card.id)
+                    .unwrap()
+                    .unwrap_or_else(|| repository.base_ref());
+                let worktree = app
+                    .repos
+                    .add_worktree("widgets", clone, run.id, &base)
+                    .unwrap();
+                std::fs::write(worktree.path.join(file), "done\n").unwrap();
                 git(&worktree.path, &["add", "."]).unwrap();
-                git(&worktree.path, &["commit", "--quiet", "-m", "Add it"]).unwrap();
-                app.repos.remove_worktree(clone, &worktree).unwrap();
-                app.offer_change(card.id, &worktree.branch).unwrap()
+                git(&worktree.path, &["commit", "--quiet", "-m", file]).unwrap();
+                app.repos.remove_worktree(clone, &worktree.path).unwrap();
+                store.set_run_status(run.id, "succeeded").unwrap();
             })
             .await
-            .unwrap()
+            .unwrap();
+        }
+
+        /// Runs the card's column script until it leaves the card, on a thread that may block, as the board does.
+        async fn settle(&self, card: &Card) -> Step {
+            let (engine, id) = (self.engine.clone(), card.id);
+            tokio::task::spawn_blocking(move || engine.settle(id).unwrap())
+                .await
+                .unwrap()
+        }
+
+        /// Polls issue 1 into a card and has its work offered as a change.
+        async fn offered_change(&self) -> Change {
+            let card = self.card_in_review().await;
+            let app = self.server.app.clone();
+            tokio::task::spawn_blocking(move || app.offer_change(card.id).unwrap())
+                .await
+                .unwrap()
         }
 
         fn change(&self, id: i64) -> Change {
@@ -724,7 +774,7 @@ mod tests {
         let f = Fixture::new().await;
         let change = f.offered_change().await;
 
-        assert!(git(&f.remote, &["rev-parse", "--verify", "moebius/run-1"]).is_ok());
+        assert!(git(&f.remote, &["rev-parse", "--verify", "moebius/card-1"]).is_ok());
         assert_eq!(change.pull_request, Some(7));
         assert_eq!(f.change(change.id).pull_request, Some(7));
         let opened = f.fake.pulls.lock().unwrap().opened.clone();
@@ -735,7 +785,7 @@ mod tests {
                 opened[0]["head"].as_str(),
                 opened[0]["base"].as_str()
             ),
-            (Some("Issue 1"), Some("moebius/run-1"), Some("main"))
+            (Some("Issue 1"), Some("moebius/card-1"), Some("main"))
         );
         assert!(
             opened[0]["body"]
@@ -789,7 +839,10 @@ mod tests {
     async fn checks_and_the_latest_review_are_recorded_when_they_change() {
         let f = Fixture::new().await;
         let change = f.offered_change().await;
-        let run = |status: &str, conclusion: Option<&str>| json!({ "status": status, "conclusion": conclusion });
+        let run = |status: &str, conclusion: Option<&str>| {
+            json!({ "name": "ci", "status": status, "conclusion": conclusion,
+                    "details_url": "https://ci/1", "output": { "title": "3 tests failed" } })
+        };
 
         {
             let mut pulls = f.fake.pulls.lock().unwrap();
@@ -813,7 +866,13 @@ mod tests {
             run("completed", Some("failure")),
         ];
         f.server.poll_github().await;
-        assert_eq!(f.change(change.id).checks.as_deref(), Some("failure"));
+        let stored = f.change(change.id);
+        assert_eq!(stored.checks.as_deref(), Some("failure"));
+        assert_eq!(stored.checks_head.as_deref(), Some("deadbeef"));
+        assert_eq!(
+            stored.failed_checks.as_deref(),
+            Some("ci: failure, 3 tests failed (https://ci/1)")
+        );
         assert_eq!(events.try_recv().unwrap().kind, "change_updated");
 
         f.server.poll_github().await;
@@ -860,6 +919,108 @@ mod tests {
         assert_eq!(local, None);
     }
 
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_change_waits_for_the_checks_of_its_head_and_goes_back_when_they_fail() {
+        let f = Fixture::new().await;
+        let card = f.card_in_review().await;
+
+        // The change is published and, with no checks recorded for it yet, waits for them.
+        let step = f.settle(&card).await;
+        assert_eq!(step.waiting.as_deref(), Some("waiting for the checks"));
+        let change = f.server.app.store.open_change(card.id).unwrap().unwrap();
+        assert_eq!(change.pull_request, Some(7));
+        let head = change.head.clone().unwrap();
+
+        // Checks of an older commit do not count.
+        f.fake.set_head("older");
+        f.fake.pulls.lock().unwrap().check_runs = vec![check("build", "completed", "success")];
+        f.server.poll_github().await;
+        let step = f.settle(&card).await;
+        assert_eq!(step.waiting.as_deref(), Some("waiting for the checks"));
+
+        // The head moves to the published commit and its checks fail: the card goes back, told which.
+        f.fake.set_head(&head);
+        f.fake.pulls.lock().unwrap().check_runs = vec![
+            check("build", "completed", "success"),
+            check("lint", "completed", "failure"),
+        ];
+        f.server.poll_github().await;
+        f.settle(&card).await;
+        let card = f.server.app.card(card.id).unwrap();
+        assert_eq!(card.column, "In progress");
+        let note = card.note.unwrap();
+        assert!(
+            note.starts_with("The checks failed:\nlint: failure"),
+            "{note}"
+        );
+        assert!(!note.contains("build"), "{note}");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_change_without_checks_goes_on_once_the_grace_period_is_over() {
+        let f = Fixture::new().await;
+        let card = f.card_in_review().await;
+        f.settle(&card).await;
+        assert_eq!(f.card(1).unwrap().column, "In review");
+
+        let store = &f.server.app.store;
+        let change = store.open_change(card.id).unwrap().unwrap();
+        let long_ago = crate::store::now() - 3 * 60;
+        store
+            .set_change_head(change.id, change.head.as_deref().unwrap(), long_ago)
+            .unwrap();
+        f.settle(&card).await;
+        assert_eq!(f.card(1).unwrap().column, "Ready to merge");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_card_keeps_one_branch_and_one_pull_request_across_rounds() {
+        let f = Fixture::new().await;
+        let card = f.card_in_review().await;
+        let app = f.server.app.clone();
+        let publish = || {
+            let app = app.clone();
+            async move {
+                tokio::task::spawn_blocking(move || app.publish_change(card.id).unwrap())
+                    .await
+                    .unwrap()
+            }
+        };
+        let first = publish().await;
+        f.code(&card, "second.txt").await;
+        let second = publish().await;
+
+        assert_eq!(f.fake.pulls.lock().unwrap().opened.len(), 1);
+        assert_eq!(second.id, first.id);
+        assert_eq!(second.pull_request, Some(7));
+        assert_eq!(second.branch, "moebius/card-1");
+        // The branch on GitHub moved forward from the first round's commit to the second's.
+        let (first_head, second_head) = (first.head.unwrap(), second.head.unwrap());
+        assert_ne!(first_head, second_head);
+        assert_eq!(
+            git(&f.remote, &["rev-parse", "moebius/card-1"]).unwrap(),
+            second_head
+        );
+        assert!(
+            git(
+                &f.remote,
+                &["merge-base", "--is-ancestor", &first_head, &second_head]
+            )
+            .is_ok()
+        );
+
+        // Checks recorded for the first commit say nothing about the second.
+        let stored = f.change(first.id);
+        app.store
+            .set_change_status(stored.id, Some("success"), &first_head, None, None)
+            .unwrap();
+        assert_eq!(app.checks_of(&f.change(first.id)).unwrap(), "pending");
+        app.store
+            .set_change_status(stored.id, Some("success"), &second_head, None, None)
+            .unwrap();
+        assert_eq!(app.checks_of(&f.change(first.id)).unwrap(), "success");
+    }
+
     #[tokio::test]
     async fn a_github_repository_cannot_offer_a_change_without_the_github_app() {
         let dir = tempfile::tempdir().unwrap();
@@ -872,10 +1033,7 @@ mod tests {
         let card = store
             .add_numbered_card(repository.id, 1, "Card", "", "leon", "In progress")
             .unwrap();
-        let error = server
-            .app
-            .offer_change(card.id, "moebius/run-1")
-            .unwrap_err();
+        let error = server.app.offer_change(card.id).unwrap_err();
         assert!(error.to_string().contains("forge github"), "{error}");
         assert!(store.changes(repository.id).unwrap().is_empty());
     }
