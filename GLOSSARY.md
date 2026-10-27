@@ -33,6 +33,12 @@ _Avoid_: pull request, merge request, PR
 A coding-agent program that Moebius drives to do the work, such as Pi-Bolt.
 _Avoid_: substrate, worker, bot
 
+**Agent**:
+A named setup that a run uses on one harness: its instructions, skills, MCP servers, extensions of that harness, model and
+thinking level, such as a coder, a reviewer or the Retro's analyst; everything but the extensions carries over to another
+harness.
+_Avoid_: profile, persona, role, bot
+
 **Harness configuration**:
 Everything that shapes how a harness works apart from its own code (instructions such as `AGENTS.md`, skills, extensions,
 settings), kept in a git repository of its own.
@@ -101,9 +107,9 @@ One issue on the board, or a change that belongs to no issue; a change that clos
 _Avoid_: task, ticket, item
 
 **Run**:
-One use of a harness for one purpose, such as working on one card in its own worktree; a card has as many runs as its
-workflow needs.
-_Avoid_: job, agent, session, execution
+One use of a harness, as one agent, for one purpose, such as working on one card in its own worktree; a card has as many
+runs as its workflow needs.
+_Avoid_: job, session, execution
 
 **Column**:
 A stage on the board with its own behaviour: what happens to a card that enters it, how many cards it may hold at once and
