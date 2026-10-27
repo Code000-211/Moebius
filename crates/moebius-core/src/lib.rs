@@ -5,6 +5,7 @@ pub mod blobs;
 pub mod bus;
 pub mod config;
 pub mod decide;
+pub mod repos;
 pub mod store;
 
 /// The version of this build of Moebius.
