@@ -57,9 +57,14 @@ Something the work must or must not do, which Moebius enforces on every tool cal
 model to find another way, and the run does not stop.
 _Avoid_: policy, guardrail, guideline
 
+**Decision point**:
+A place where Moebius or a person chooses between options, such as whether a tool call may run, whether a review passed,
+whether an outside issue may start or whether a proposal is accepted.
+_Avoid_: hook, checkpoint, gate
+
 **Decision model**:
-The model that judges whether a tool call breaks a rule and answers the questions a harness asks during a run; until one has
-been trained on Moebius's own judgements, a teacher model takes its place.
+The one model that decides at every decision point that is not left to a person; until one has been trained on Moebius's own
+judgements, a teacher model takes its place.
 _Avoid_: judge, classifier, guard model
 
 **Teacher model**:
@@ -67,9 +72,15 @@ A strong general model, reached through the router, that stands in for the decis
 _Avoid_: base model, oracle
 
 **Judgement**:
-One recorded decision of the decision model or the teacher model, with what it judged, what it decided and why, later marked
-right or wrong from the outcome of the work and from the Retro.
+The record of one choice at a decision point, by whoever made it (a pattern, a script, the teacher model, the decision model
+or a person), with its full context, the options, the choice and why, later marked right or wrong from how the work turned
+out and from the Retro.
 _Avoid_: verdict, label, decision log
+
+**Shadowing**:
+A trained decision model deciding alongside whoever decides now, without effect, so that it takes over a kind of decision only
+once it has shown it decides that kind at least as well.
+_Avoid_: dry run, canary, A/B test
 
 **Live view**:
 The view of a run as it happens, in the desktop app, in which a person can steer, stop or message it and open a shell in its
