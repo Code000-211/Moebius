@@ -158,6 +158,13 @@ The server runs on a multi-threaded tokio runtime.
 - The store is one SQLite connection behind a mutex. Calls are short and take it one at a time.
 - The event bus is a tokio broadcast channel of 1024 events; a slow listener loses the oldest and is told with `lagged`.
 
+## Known limits
+
+- The server runs on Unix (Linux, macOS): local checks run in their own process group so that a check that runs too
+  long is stopped with everything it started. The desktop app does not share this limit.
+- Times in the store are whole seconds. A card's history keeps entries from the same second in the order of their kinds
+  (moves, runs, decisions, inbox items), not necessarily the order they happened in.
+
 ## Modules
 
 | Module | What it is for |

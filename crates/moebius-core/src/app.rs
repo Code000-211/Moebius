@@ -512,10 +512,7 @@ impl App {
 
     /// Why the card waits now, or none when it does not. Publishes `card_waiting` when that is not what it was.
     pub fn set_waiting(&self, card_id: i64, reason: Option<String>) {
-        let mut waiting = self
-            .waiting
-            .lock()
-            .expect("waiting reasons are not poisoned");
+        let mut waiting = self.waiting.lock().unwrap_or_else(|e| e.into_inner());
         let before = match &reason {
             Some(reason) => waiting.insert(card_id, reason.clone()),
             None => waiting.remove(&card_id),
@@ -530,10 +527,7 @@ impl App {
 
     /// Why each waiting card among `cards` waits.
     pub fn waiting(&self, cards: &[Card]) -> BTreeMap<i64, String> {
-        let waiting = self
-            .waiting
-            .lock()
-            .expect("waiting reasons are not poisoned");
+        let waiting = self.waiting.lock().unwrap_or_else(|e| e.into_inner());
         cards
             .iter()
             .filter_map(|card| Some((card.id, waiting.get(&card.id)?.clone())))

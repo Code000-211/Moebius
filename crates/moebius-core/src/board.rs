@@ -790,15 +790,9 @@ mod tests {
         let repo = app
             .add_repository("demo", origin.to_str().unwrap())
             .unwrap();
-        let engine = Engine::new(
-            app.clone(),
-            harness,
-            Workflow::default(),
-            Limits {
-                script_time: Duration::from_millis(300),
-                ..Limits::default()
-            },
-        );
+        // The real limits: a short time limit would make tests fail on a busy machine. Only the tests of the limit
+        // itself shorten it.
+        let engine = Engine::new(app.clone(), harness, Workflow::default(), Limits::default());
         (dir, app, engine, repo.id)
     }
 
@@ -970,10 +964,7 @@ mod tests {
             app.clone(),
             Arc::new(FakeHarness::default()),
             Workflow::default(),
-            Limits {
-                script_time: Duration::from_millis(300),
-                ..limits
-            },
+            limits,
         )
     }
 
@@ -1633,7 +1624,14 @@ mod tests {
 
     #[test]
     fn a_script_that_loops_or_floods_memory_is_cut_off() {
-        let (_dir, app, engine, repo) = setup();
+        let (_dir, app, _, repo) = setup();
+        let engine = engine_with(
+            &app,
+            Limits {
+                script_time: Duration::from_millis(300),
+                ..Limits::default()
+            },
+        );
         let card = app.create_issue(repo, "Loop", "", PERSON).unwrap();
         let started = Instant::now();
         let e = run(&engine, &card, "function on_card(c) while true do end end").unwrap_err();
