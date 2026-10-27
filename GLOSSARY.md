@@ -36,12 +36,12 @@ _Avoid_: substrate, worker, bot
 **Agent**:
 A named setup that a run uses on one harness: its instructions, skills, MCP servers, extensions of that harness, model and
 thinking level, such as a coder, a reviewer or the Retro's analyst; everything but the extensions carries over to another
-harness.
+harness. Agents are kept, versioned, in the harness configuration, so that the Retro can propose changes to them.
 _Avoid_: profile, persona, role, bot
 
 **Harness configuration**:
-Everything that shapes how a harness works apart from its own code (instructions such as `AGENTS.md`, skills, extensions,
-settings), kept in a git repository of its own.
+Everything that shapes how a harness works apart from its own code (the agents, and the instructions, skills, extensions
+and settings they draw on), kept in a git repository of its own.
 _Avoid_: harness config, setup, profile
 
 **Bridge**:
