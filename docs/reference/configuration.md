@@ -105,7 +105,7 @@ GitHub cannot be polled or merged.
 
 ## `[agents.<name>]`
 
-One table per agent. The default workflow starts an agent named `Coder`, so a server that runs it needs `[agents.Coder]`.
+One table per agent. The default workflow starts an agent named `Coder`, so a server that runs it needs `[agents.Coder]`. It also starts an agent named `Reviewer` when there is one; without it changes are offered unreviewed.
 A name is made of letters, digits, `-` and `_` and must not be empty, else the file is refused.
 
 | Key | Type | Default | Meaning and validation |

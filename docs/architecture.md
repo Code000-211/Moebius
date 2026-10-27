@@ -48,11 +48,13 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
    item (`moebius.ask`) until a person calls `POST /v1/cards/{id}/approve` (`App::approve_issue`), which records a
    judgement by `person` and moves the card to `Ready`.
 4. **Ready to In progress.** `ready.luau` waits for blockers and for a free run slot, then moves the card.
-5. **A run starts.** `code.luau` calls `moebius.start_run("Coder", "code")`, which calls `PiBolt::start` (the `Runs`
-   trait). It stores the run (`Store::add_run`), makes a worktree on branch `moebius/run-<id>` from the default branch
+5. **A run starts.** `code.luau` calls `moebius.start_run("Coder", "code", note)`, which calls `PiBolt::start` (the
+   `Runs` trait). It stores the run (`Store::add_run`), makes a worktree on branch `moebius/run-<id>` from the branch of the
+   card's latest successful `code` run (`Store::code_branch`), or from the default branch when it has none
    (`Repos::add_worktree`), issues the run's token (`Router::issue_token`, carrying the agent's budget), writes the run's
    agent directory and the bridge to `<data_dir>/runs/<id>/`, spawns Pi-Bolt (`PiBolt::launch`), sets the run `running`,
-   publishes `run_started` and sends the prompt (`prompt_for`).
+   publishes `run_started` and sends the prompt (`prompt_for`: the issue, the instructions for the run's purpose, and
+   the note if there is one).
 6. **Pi works.** A thread per run (`Reader::read`) reads Pi's records: each is stored (`Store::append_event`) and
    published as `run_event`. Pi asks the model through the router (`Router::forward`), which counts the tokens and may
    refuse with 429.
@@ -64,21 +66,29 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
    event, and returned. A refusal goes back to the model as the tool's result and the run goes on. The result of each
    tool is cleaned of secrets through `/moebius/result` (`check::result`).
 8. **The run ends.** At `agent_settled`, `Reader::end` closes Pi's standard input, revokes the token, commits what the
-   agent left (`commit`: `git add --all` and a commit by Moebius), sets the status (`succeeded`, `failed` when nothing
-   changed or anything went wrong, `stopped` when aborted), removes the worktree (the branch stays) and publishes
-   `run_ended`.
-9. **The change is offered.** On a later tick `code.luau` sees `card.run.status == "succeeded"` and calls
-   `moebius.offer_change`, which calls `App::offer_change`. The forge offers the branch (`NoForge`: nothing to do;
+   agent left (`commit`: `git add --all` and a commit by Moebius; only for `code` runs), sets the status (`succeeded`,
+   `failed` when a `code` run changed nothing or anything went wrong, `stopped` when aborted), removes the worktree
+   (the branch stays) and publishes `run_ended`. The text of the agent's final answer, reported in Pi's `agent_end`
+   event, was stored as the run's summary when that event came (`Store::set_run_summary`).
+9. **The change is reviewed.** On a later tick `code.luau` sees the succeeded `code` run and moves the card to
+   `In review`. `review.luau` starts a `Reviewer` run (purpose `review`) in a worktree on the code run's branch; the
+   run commits nothing. Its summary ends with `VERDICT: approve` or `VERDICT: changes` (`board::verdict`, which
+   treats a missing verdict as `changes`), and the scripts see it as `card.review`. `changes` moves the card back to
+   `In progress`, where `code.luau` starts the next `Coder` round on top of the first one's branch, with the findings
+   in its prompt, and the card is reviewed again. Without a configured `Reviewer` the step is skipped.
+10. **The change is offered.** When the review approves, `review.luau` calls
+   `moebius.offer_change`, which calls `App::offer_change` for the branch of the latest successful `code` run. The
+   forge offers the branch (`NoForge`: nothing to do;
    `GitHubForge::offer`: push, then open a pull request). The change is stored (`Store::add_change`), a `ready_to_merge`
-   inbox item added, `change_offered` published and the card moved to `Ready to merge`. A run that failed or was stopped
-   gets another `Coder` run until `board.round_limit`, then the card is stuck in the inbox.
-10. **GitHub reports.** `poll::poll_pull_requests` reads each open change's pull request: checks and review are recorded
+   inbox item added, `change_offered` published and the card moved to `Ready to merge`. A `code` or `review` run
+   that failed or was stopped gets another run until `board.round_limit`, then the card is stuck in the inbox.
+11. **GitHub reports.** `poll::poll_pull_requests` reads each open change's pull request: checks and review are recorded
     (`App::record_change_status`, `change_updated`), a merged pull request calls `App::change_merged`, a closed one
     calls `App::change_closed`.
-11. **A person merges.** `POST /v1/changes/{id}/merge` calls `App::merge_change`: it records a judgement by `person`,
+12. **A person merges.** `POST /v1/changes/{id}/merge` calls `App::merge_change`: it records a judgement by `person`,
     the forge merges (`Repos::merge`, a `--no-ff` merge, or `GitHub::merge_pull_request`), and `App::change_merged`
     marks the change merged, resolves the inbox, publishes `change_merged` and moves the card to `Done`.
-12. **Done.** `done.luau` calls `moebius.record_outcome("merged")`, so every judgement made for the card gets an outcome.
+13. **Done.** `done.luau` calls `moebius.record_outcome("merged")`, so every judgement made for the card gets an outcome.
 
 At start, `Server::new` ends the runs a previous server left going (`end_runs_of_a_previous_server`): they are marked
 `failed` and their worktrees removed, so the board starts them again.
@@ -94,7 +104,7 @@ start; its version is `PRAGMA user_version`.
 | `cards` | One per issue: number (unique per repository), title, body, author, column. |
 | `dependencies` | For a card, the issue numbers it is blocked by. |
 | `changes` | A branch offered for merge: card, state (`open`, `merged`, `closed`), pull request number, checks, review. |
-| `runs` | One per harness run: card, agent, harness, purpose, status, worktree, start and end. |
+| `runs` | One per harness run: card, agent, harness, purpose, status, worktree, start and end, summary (the agent's final answer). |
 | `events` | Everything a run emitted, numbered per run, as JSON. |
 | `judgements` | One per decision: kind, context (blob ids), options, choice, reason, decider, run, card, outcome. |
 | `inbox_items` | What needs a person: kind, card, title, data, resolved or not. |

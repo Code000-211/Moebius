@@ -76,7 +76,7 @@ program = "pi-bolt"
 # api_url = "https://api.github.com"
 # poll_seconds = 30                       # how often each GitHub repository's issues are polled
 
-# Agents run on Pi-Bolt. The default workflow starts the Coder.
+# Agents run on Pi-Bolt. The default workflow starts the Coder, and the Reviewer when there is one.
 # [agents.Coder]
 # model = "qwen3.8-flash-next"
 # protocol = "openai"

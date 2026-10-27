@@ -121,6 +121,7 @@ ALTER TABLE changes ADD COLUMN pull_request INTEGER;
 ALTER TABLE changes ADD COLUMN checks TEXT;
 ALTER TABLE changes ADD COLUMN review TEXT;
 "#,
+    "ALTER TABLE runs ADD COLUMN summary TEXT;",
 ];
 
 const CHANGE_COLUMNS: &str =
@@ -207,6 +208,15 @@ pub struct Run {
     pub worktree: Option<String>,
     pub started_at: i64,
     pub ended_at: Option<i64>,
+    /// What the agent answered last, once the harness has reported it.
+    pub summary: Option<String>,
+}
+
+impl Run {
+    /// The branch the run's work is committed on.
+    pub fn branch(&self) -> String {
+        format!("moebius/run-{}", self.id)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -656,13 +666,14 @@ impl Store {
             worktree: None,
             started_at: at,
             ended_at: None,
+            summary: None,
         })
     }
 
     fn runs_where(&self, clause: &str, param: rusqlite::types::Value) -> Result<Vec<Run>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(&format!(
-            "SELECT id, card_id, agent, harness, purpose, status, worktree, started_at, ended_at
+            "SELECT id, card_id, agent, harness, purpose, status, worktree, started_at, ended_at, summary
              FROM runs WHERE {clause} ORDER BY id"
         ))?;
         let rows = stmt.query_map([param], |r| {
@@ -676,6 +687,7 @@ impl Store {
                 worktree: r.get(6)?,
                 started_at: r.get(7)?,
                 ended_at: r.get(8)?,
+                summary: r.get(9)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -717,6 +729,24 @@ impl Store {
             params![status, ended, id],
         )?;
         Ok(())
+    }
+
+    pub fn set_run_summary(&self, id: i64, summary: &str) -> Result<()> {
+        self.conn().execute(
+            "UPDATE runs SET summary = ?1 WHERE id = ?2",
+            params![summary, id],
+        )?;
+        Ok(())
+    }
+
+    /// The branch of the card's latest successful `code` run, where its work stands.
+    pub fn code_branch(&self, card_id: i64) -> Result<Option<String>> {
+        Ok(self
+            .runs_for_card(card_id)?
+            .iter()
+            .rev()
+            .find(|r| r.purpose == "code" && r.status == "succeeded")
+            .map(Run::branch))
     }
 
     pub fn set_run_worktree(&self, id: i64, worktree: &str) -> Result<()> {
@@ -1034,9 +1064,15 @@ mod tests {
                 [],
             )
             .unwrap();
+            conn.execute(
+                "INSERT INTO runs (agent, harness, purpose, status, started_at) VALUES ('Coder', 'pi-bolt', 'code', 'succeeded', 1)",
+                [],
+            )
+            .unwrap();
         }
         let s = Store::open(dir.path()).unwrap();
-        assert_eq!(s.schema_version().unwrap(), 3);
+        assert_eq!(s.schema_version().unwrap(), MIGRATIONS.len());
+        assert_eq!(s.run(1).unwrap().unwrap().summary, None);
         let old = &s.repositories().unwrap()[0];
         assert_eq!((old.name.as_str(), old.github.clone()), ("old", None));
         assert!(old.trusted.is_empty());

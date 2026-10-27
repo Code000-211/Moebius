@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # A stand-in for `pi-bolt --mode rpc` in tests: it speaks Pi's RPC protocol (JSON Lines, split on LF only).
 # A prompt containing "[hang]" waits for `abort`, one containing "[nothing]" settles without changing anything, and
-# any other prompt writes a file and settles.
+# a prompt for the reviewer changes nothing and answers with a verdict; any other prompt writes a file and settles.
+# The prompt is kept in prompt.txt next to argv.json. The final answer is reported in agent_end, as Pi does.
 import json
 import os
 import sys
@@ -31,15 +32,25 @@ for line in sys.stdin.buffer:
         if "[hang]" in command["message"]:
             hanging = True
             continue
+        with open(os.path.join(os.environ["PI_CODING_AGENT_DIR"], "prompt.txt"), "w") as f:
+            f.write(command["message"])
+        reviewing = "You are the reviewer" in command["message"]
         emit({"type": "message_update",
               "assistantMessageEvent": {"type": "text_delta", "contentIndex": 0, "delta": "line one line two"}})
-        if "[nothing]" not in command["message"]:
+        if "[nothing]" not in command["message"] and not reviewing:
             emit({"type": "tool_execution_start", "toolCallId": "t1", "toolName": "write",
                   "args": {"path": "done.txt"}})
             with open("done.txt", "w") as f:
                 f.write("done\n")
             emit({"type": "tool_execution_end", "toolCallId": "t1", "toolName": "write", "isError": False})
-        emit({"type": "agent_end", "messages": [], "willRetry": False})
+        answer = "Looks fine.\nVERDICT: approve" if reviewing else "line one line two"
+        emit({"type": "agent_end", "willRetry": False, "messages": [
+            {"role": "user", "content": command["message"]},
+            {"role": "assistant", "content": [{"type": "text", "text": "Working on it."},
+                                              {"type": "toolCall", "id": "t1", "name": "write", "arguments": {}}]},
+            {"role": "toolResult", "toolCallId": "t1", "content": [{"type": "text", "text": "ok"}]},
+            {"role": "assistant", "content": [{"type": "thinking", "thinking": "hm"},
+                                              {"type": "text", "text": answer}]}]})
         emit({"type": "agent_settled", "aborted": False})
     elif kind == "abort":
         emit({"id": command.get("id"), "type": "response", "command": "abort", "success": True})

@@ -2,15 +2,18 @@
 //! time. A script defines `on_card(card)` and acts through the `moebius` table:
 //!
 //! - `moebius.decide(kind, context, options, fail_closed) -> choice, reason`: a decision point (always recorded).
-//! - `moebius.start_run(agent, purpose) -> run id`: starts a run for the card.
+//! - `moebius.start_run(agent, purpose, note) -> run id`: starts a run for the card; `note` is added to its prompt.
+//! - `moebius.has_agent(name)`: whether an agent of that name is configured.
 //! - `moebius.move(column)`: moves the card when the script returns.
 //! - `moebius.wait(reason)`: leaves the card where it is.
-//! - `moebius.offer_change()`: offers the card's last run as a change; the card moves to "Ready to merge".
+//! - `moebius.offer_change()`: offers the card's latest successful `code` run as a change; the card moves to "Ready to
+//!   merge".
 //! - `moebius.ask(kind, reason)`: puts the card in the inbox for a person (once) and leaves it where it is.
 //! - `moebius.stuck(reason)`: puts the card in the inbox as stuck (once).
 //! - `moebius.record_outcome(outcome) -> count`: sets the outcome of the card's judgements that have none.
 //! - `card.blocked_by`: the numbers of the issues blocking the card that are not done yet (an issue with no card counts
 //!   as not done); empty when nothing blocks.
+//! - `card.review`: the verdict and findings of the review since the card's latest `code` run, if there is one.
 //! - `moebius.runs_active()`, `moebius.run_limit`, `moebius.round_limit`: the limits.
 //!
 //! Scripts have no file system, network, processes or `require`; each call has a memory limit and a time limit. The
@@ -34,8 +37,49 @@ use crate::store::{Card, Run};
 /// Starts runs for the engine. The real one drives a harness (Pi-Bolt); tests use a fake.
 pub trait Runs: Send + Sync {
     /// Starts a run for `card` and returns it without waiting for it to end.
-    fn start(&self, app: &Arc<App>, card: &Card, agent: &str, purpose: &str)
-    -> Result<Run, String>;
+    fn start(
+        &self,
+        app: &Arc<App>,
+        card: &Card,
+        agent: &str,
+        purpose: &str,
+        note: Option<&str>,
+    ) -> Result<Run, String>;
+
+    /// Whether an agent of this name is configured.
+    fn has_agent(&self, name: &str) -> bool;
+}
+
+/// What a review run concluded: `verdict` is `approve` or `changes`, and `findings` is what it found.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Review {
+    verdict: &'static str,
+    findings: String,
+}
+
+/// Reads the verdict from the end of a review run's summary: a last line `VERDICT: approve` or `VERDICT: changes`,
+/// with the findings before it. A summary without a verdict, or with another one, asks for changes, because work that
+/// was not reviewed is not approved.
+fn verdict(summary: Option<&str>) -> Review {
+    let text = summary.unwrap_or("").trim_end();
+    let (findings, last) = text.rsplit_once('\n').unwrap_or(("", text));
+    let said = last
+        .trim()
+        .strip_prefix("VERDICT:")
+        .map(|v| v.trim().to_ascii_lowercase());
+    let (verdict, findings) = match said.as_deref() {
+        Some("approve") => ("approve", findings.trim()),
+        Some("changes") if !findings.trim().is_empty() => ("changes", findings.trim()),
+        Some("changes") => (
+            "changes",
+            "The review asked for changes but gave no findings.",
+        ),
+        _ => ("changes", "The review gave no verdict."),
+    };
+    Review {
+        verdict,
+        findings: findings.into(),
+    }
 }
 
 /// A column and the script behind it.
@@ -284,17 +328,26 @@ impl Engine {
             }
         }
         t.set("blocked_by", blocked_by)?;
-        t.set(
-            "rounds",
-            runs.iter().filter(|r| r.purpose == "code").count(),
-        )?;
+        let count = |purpose: &str| runs.iter().filter(|r| r.purpose == purpose).count();
+        t.set("rounds", count("code"))?;
+        t.set("reviews", count("review"))?;
         if let Some(run) = runs.last() {
             let r = lua.create_table()?;
             r.set("id", run.id)?;
             r.set("agent", run.agent.as_str())?;
             r.set("purpose", run.purpose.as_str())?;
             r.set("status", run.status.as_str())?;
+            r.set("summary", run.summary.as_deref())?;
             t.set("run", r)?;
+        }
+        // The review that counts is the latest finished one after the latest code run.
+        let mut since_code = runs.iter().rev().take_while(|r| r.purpose != "code");
+        if let Some(run) = since_code.find(|r| r.purpose == "review" && r.status == "succeeded") {
+            let review = verdict(run.summary.as_deref());
+            let v = lua.create_table()?;
+            v.set("verdict", review.verdict)?;
+            v.set("findings", review.findings)?;
+            t.set("review", v)?;
         }
         Ok(t)
     }
@@ -347,12 +400,22 @@ impl Engine {
         );
         m.set(
             "start_run",
-            lua.create_function(move |_, (agent, purpose): (String, String)| {
-                let run = outside_script(&clock, || runs.start(&app, &card_copy, &agent, &purpose))
+            lua.create_function(
+                move |_, (agent, purpose, note): (String, String, Option<String>)| {
+                    let run = outside_script(&clock, || {
+                        runs.start(&app, &card_copy, &agent, &purpose, note.as_deref())
+                    })
                     .map_err(mlua::Error::runtime)?;
-                fx.borrow_mut().started_run = Some(run.id);
-                Ok(run.id)
-            })?,
+                    fx.borrow_mut().started_run = Some(run.id);
+                    Ok(run.id)
+                },
+            )?,
+        )?;
+
+        let runs = self.runs.clone();
+        m.set(
+            "has_agent",
+            lua.create_function(move |_, name: String| Ok(runs.has_agent(&name)))?,
         )?;
 
         let (fx, names) = (
@@ -387,16 +450,13 @@ impl Engine {
         m.set(
             "offer_change",
             lua.create_function(move |_, ()| {
-                let run = app
+                let branch = app
                     .store
-                    .runs_for_card(card_id)
+                    .code_branch(card_id)
                     .map_err(mlua::Error::external)?
-                    .pop()
-                    .ok_or_else(|| mlua::Error::runtime("the card has no run to offer"))?;
-                let change = outside_script(&clock, || {
-                    app.offer_change(card_id, &format!("moebius/run-{}", run.id))
-                })
-                .map_err(mlua::Error::external)?;
+                    .ok_or_else(|| mlua::Error::runtime("the card has no code run to offer"))?;
+                let change = outside_script(&clock, || app.offer_change(card_id, &branch))
+                    .map_err(mlua::Error::external)?;
                 let mut fx = fx.borrow_mut();
                 fx.moved = Some(columns::READY_TO_MERGE.into());
                 fx.move_to = None;
@@ -489,9 +549,28 @@ mod tests {
     use crate::app::PERSON;
     use crate::store::Store;
     use moebius_plugin_api::Host;
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
 
-    /// A harness that finishes at once: it commits a file on the run's branch.
-    struct FakeHarness;
+    /// A harness that finishes at once. A `code` run commits a file on a branch that starts where a real run's would;
+    /// a `review` run changes nothing and ends with the next of `answers`, or an approval when there are none left.
+    #[derive(Default)]
+    struct FakeHarness {
+        reviewer: bool,
+        answers: Mutex<VecDeque<String>>,
+        /// The note of each run started, in order.
+        notes: Mutex<Vec<Option<String>>>,
+    }
+
+    impl FakeHarness {
+        fn with_reviewer(answers: &[&str]) -> Self {
+            Self {
+                reviewer: true,
+                answers: Mutex::new(answers.iter().map(|a| a.to_string()).collect()),
+                notes: Mutex::default(),
+            }
+        }
+    }
 
     impl Runs for FakeHarness {
         fn start(
@@ -500,27 +579,41 @@ mod tests {
             card: &Card,
             agent: &str,
             purpose: &str,
+            note: Option<&str>,
         ) -> Result<Run, String> {
+            self.notes.lock().unwrap().push(note.map(String::from));
             let store = &app.store;
             let run = store
                 .add_run(Some(card.id), agent, "fake", purpose)
                 .map_err(|e| e.to_string())?;
             let repo = store.repository(card.repository_id).unwrap().unwrap();
             let clone = Path::new(&repo.path);
+            let base = store
+                .code_branch(card.id)
+                .unwrap()
+                .unwrap_or_else(|| repo.base_ref());
             let wt = app
                 .repos
-                .add_worktree(&repo.name, clone, run.id, &repo.default_branch)
+                .add_worktree(&repo.name, clone, run.id, &base)
                 .map_err(|e| e.to_string())?;
-            std::fs::write(
-                wt.path.join(format!("card-{}.txt", card.number)),
-                &card.title,
-            )
-            .unwrap();
-            git(&wt.path, &["add", "."]).unwrap();
-            git(&wt.path, &["commit", "--quiet", "-m", &card.title]).unwrap();
+            if purpose == "code" {
+                std::fs::write(wt.path.join(format!("run-{}.txt", run.id)), &card.title).unwrap();
+                git(&wt.path, &["add", "."]).unwrap();
+                git(&wt.path, &["commit", "--quiet", "-m", &card.title]).unwrap();
+                store.set_run_summary(run.id, "Done.").unwrap();
+            } else {
+                let answer = self.answers.lock().unwrap().pop_front();
+                store
+                    .set_run_summary(run.id, &answer.unwrap_or("VERDICT: approve".into()))
+                    .unwrap();
+            }
             app.repos.remove_worktree(clone, &wt).unwrap();
             store.set_run_status(run.id, "succeeded").unwrap();
             Ok(store.run(run.id).unwrap().unwrap())
+        }
+
+        fn has_agent(&self, name: &str) -> bool {
+            name == "Coder" || (self.reviewer && name == "Reviewer")
         }
     }
 
@@ -531,6 +624,13 @@ mod tests {
     /// A setup whose forge for repositories without one is `forge`, if given.
     fn setup_with(
         forge: Option<Box<dyn crate::forge::Forge>>,
+    ) -> (tempfile::TempDir, Arc<App>, Engine, i64) {
+        setup_with_harness(forge, Arc::new(FakeHarness::default()))
+    }
+
+    fn setup_with_harness(
+        forge: Option<Box<dyn crate::forge::Forge>>,
+        harness: Arc<FakeHarness>,
     ) -> (tempfile::TempDir, Arc<App>, Engine, i64) {
         let dir = tempfile::tempdir().unwrap();
         let origin = dir.path().join("origin");
@@ -551,7 +651,7 @@ mod tests {
             .unwrap();
         let engine = Engine::new(
             app.clone(),
-            Arc::new(FakeHarness),
+            harness,
             Workflow::default(),
             Limits {
                 script_time: Duration::from_millis(300),
@@ -580,7 +680,12 @@ mod tests {
             Some("waiting for a person to merge")
         );
 
+        // This server has no Reviewer, so the change was offered without a review run.
+        let runs = app.store.runs_for_card(card.id).unwrap();
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].summary.as_deref(), Some("Done."));
         let change = app.store.changes(repo).unwrap().pop().unwrap();
+        assert_eq!(change.branch, runs[0].branch());
         app.merge_change(change.id, "fine").unwrap();
         assert_eq!(app.card(card.id).unwrap().column, "Done");
         engine.settle(card.id).unwrap();
@@ -593,6 +698,130 @@ mod tests {
         );
     }
 
+    fn column(app: &App, card: &Card) -> String {
+        app.card(card.id).unwrap().column
+    }
+
+    #[test]
+    fn a_card_goes_back_to_coding_until_the_reviewer_approves() {
+        let harness = Arc::new(FakeHarness::with_reviewer(&[
+            "There is no test.\nVERDICT: changes",
+            "Fine now.\nVERDICT: approve",
+        ]));
+        let (_dir, app, engine, repo) = setup_with_harness(None, harness.clone());
+        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+
+        // Round one: coded, then reviewed, and the review wants changes.
+        engine.settle(card.id).unwrap();
+        assert_eq!(column(&app, &card), "In progress");
+        let step = engine.settle(card.id).unwrap();
+        assert_eq!(column(&app, &card), "In review");
+        assert_eq!(step.waiting.as_deref(), Some("reviewing"));
+
+        // Back in progress, the next Coder round starts with the findings.
+        let step = engine.settle(card.id).unwrap();
+        assert_eq!(column(&app, &card), "In progress");
+        assert_eq!(step.waiting.as_deref(), Some("coding, round 2"));
+        engine.settle(card.id).unwrap();
+        assert_eq!(column(&app, &card), "In review");
+        engine.settle(card.id).unwrap();
+        assert_eq!(column(&app, &card), "Ready to merge");
+
+        let runs = app.store.runs_for_card(card.id).unwrap();
+        let purposes: Vec<_> = runs.iter().map(|r| r.purpose.as_str()).collect();
+        assert_eq!(purposes, ["code", "review", "code", "review"]);
+        assert_eq!(
+            *harness.notes.lock().unwrap(),
+            [None, None, Some("There is no test.".to_string()), None]
+        );
+
+        // The change is the second code run's branch, which carries the first run's work too.
+        let change = app.store.changes(repo).unwrap().pop().unwrap();
+        assert_eq!(change.branch, runs[2].branch());
+        let clone = Path::new(&app.store.repository(repo).unwrap().unwrap().path).to_owned();
+        for run in [&runs[0], &runs[2]] {
+            let file = format!("{}:run-{}.txt", change.branch, run.id);
+            assert_eq!(git(&clone, &["show", &file]).unwrap(), "Add a feature");
+        }
+    }
+
+    #[test]
+    fn a_review_without_a_verdict_sends_the_card_back_to_coding() {
+        let harness = Arc::new(FakeHarness::with_reviewer(&["Looks fine to me."]));
+        let (_dir, app, engine, repo) = setup_with_harness(None, harness.clone());
+        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        engine.settle(card.id).unwrap();
+        engine.settle(card.id).unwrap();
+        engine.settle(card.id).unwrap();
+        assert_eq!(column(&app, &card), "In progress");
+        assert_eq!(
+            harness.notes.lock().unwrap()[2].as_deref(),
+            Some("The review gave no verdict.")
+        );
+    }
+
+    #[test]
+    fn a_failed_review_is_tried_again_until_the_round_limit() {
+        let harness = Arc::new(FakeHarness::with_reviewer(&[]));
+        let (_dir, app, engine, repo) = setup_with_harness(None, harness);
+        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        engine.settle(card.id).unwrap();
+        // The code run is done and the card moves to review.
+        engine.tick(card.id).unwrap();
+        assert_eq!(column(&app, &card), "In review");
+        let fail_latest = || {
+            let run = app.store.runs_for_card(card.id).unwrap().pop().unwrap();
+            app.store.set_run_status(run.id, "failed").unwrap();
+        };
+        for tries in 1..=Limits::default().round_limit {
+            engine.settle(card.id).unwrap();
+            let reviews = |app: &App| {
+                let runs = app.store.runs_for_card(card.id).unwrap();
+                runs.iter().filter(|r| r.purpose == "review").count()
+            };
+            assert_eq!(reviews(&app), tries as usize);
+            fail_latest();
+        }
+        let step = engine.settle(card.id).unwrap();
+        assert_eq!(column(&app, &card), "In review");
+        assert_eq!(step.waiting.as_deref(), Some("the round limit is reached"));
+        assert_eq!(app.store.inbox().unwrap()[0].kind, "stuck");
+    }
+
+    #[test]
+    fn a_review_run_is_read_for_its_verdict() {
+        let review = |text: &str| {
+            let r = verdict(Some(text));
+            (r.verdict, r.findings)
+        };
+        assert_eq!(
+            review("Good.\nVERDICT: approve\n"),
+            ("approve", "Good.".into())
+        );
+        assert_eq!(review("VERDICT: approve"), ("approve", "".into()));
+        assert_eq!(
+            review("Line one\nLine two\n  VERDICT:  Changes  "),
+            ("changes", "Line one\nLine two".into())
+        );
+        assert_eq!(
+            review("VERDICT: changes").1,
+            "The review asked for changes but gave no findings."
+        );
+        for text in [
+            "",
+            "All good",
+            "VERDICT: approve\nand more",
+            "VERDICT: maybe",
+        ] {
+            assert_eq!(
+                review(text),
+                ("changes", "The review gave no verdict.".into()),
+                "{text:?}"
+            );
+        }
+        assert_eq!(verdict(None).verdict, "changes");
+    }
+
     /// A harness that takes longer to start a run than a script may run.
     struct SlowHarness;
 
@@ -603,9 +832,14 @@ mod tests {
             card: &Card,
             agent: &str,
             purpose: &str,
+            note: Option<&str>,
         ) -> Result<Run, String> {
             std::thread::sleep(Duration::from_millis(600));
-            FakeHarness.start(app, card, agent, purpose)
+            FakeHarness::default().start(app, card, agent, purpose, note)
+        }
+
+        fn has_agent(&self, name: &str) -> bool {
+            FakeHarness::default().has_agent(name)
         }
     }
 

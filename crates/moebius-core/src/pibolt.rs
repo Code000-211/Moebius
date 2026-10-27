@@ -1,8 +1,10 @@
 //! The Pi-Bolt harness (spec 4): each run is `pi-bolt --mode rpc` in the run's worktree, with the router as its only
 //! provider. The prompt goes in as one JSON line; every record Pi writes is stored as a run event and published on the
 //! bus. Records are split on LF only, never on U+2028 or U+2029, which are valid inside JSON strings. The run ends at
-//! `agent_settled`; what the agent changed is committed on the run's branch and the worktree is removed. A run that
-//! changed nothing has failed. A run is stopped with `abort`. Pi runs offline and does not trust configuration found
+//! `agent_settled`; what the agent changed is committed on the run's branch and the worktree is removed. A `code` run
+//! that changed nothing has failed; other runs, such as a review, are not committed. A run starts from the branch of the
+//! card's latest successful `code` run, so it sees the work so far. The text of the agent's final answer is kept as
+//! the run's summary. A run is stopped with `abort`. Pi runs offline and does not trust configuration found
 //! in the worktree. The Moebius bridge (`bridge/moebius-bridge.ts`) is loaded into every run before the agent's own
 //! extensions; it asks the check for each tool call and result (see `check`).
 
@@ -152,6 +154,7 @@ impl PiBolt {
         card: &Card,
         agent: &AgentConfig,
         run: RunningRun,
+        prompt: &str,
     ) -> Result<(), String> {
         app.store
             .set_run_worktree(run.id, &run.worktree.path.to_string_lossy())
@@ -194,7 +197,7 @@ impl PiBolt {
         ));
         send(
             &live.stdin,
-            &json!({ "id": "moebius-prompt", "type": "prompt", "message": prompt_for(card) }),
+            &json!({ "id": "moebius-prompt", "type": "prompt", "message": prompt }),
         );
         let reader = Reader {
             app: app.clone(),
@@ -220,6 +223,7 @@ impl Runs for PiBolt {
         card: &Card,
         agent: &str,
         purpose: &str,
+        note: Option<&str>,
     ) -> Result<Run, String> {
         let config = self
             .agents
@@ -243,9 +247,14 @@ impl Runs for PiBolt {
         };
 
         let clone = PathBuf::from(&repository.path);
+        let base = match app.store.code_branch(card.id) {
+            Ok(Some(branch)) => branch,
+            Ok(None) => repository.base_ref(),
+            Err(e) => return Err(fail(e.to_string())),
+        };
         let worktree = app
             .repos
-            .add_worktree(&repository.name, &clone, run.id, &repository.base_ref())
+            .add_worktree(&repository.name, &clone, run.id, &base)
             .map_err(|e| fail(e.to_string()))?;
         let token = self.router.issue_token(Grant {
             run_id: run.id,
@@ -257,8 +266,10 @@ impl Runs for PiBolt {
             clone,
             worktree,
             token,
+            purpose: purpose.to_string(),
         };
-        if let Err(e) = self.launch(app, card, config, running.clone()) {
+        let prompt = prompt_for(card, purpose, note);
+        if let Err(e) = self.launch(app, card, config, running.clone(), &prompt) {
             // Nothing reads this run: undo what was set up for it.
             self.router.revoke_token(&running.token);
             let _ = app.repos.remove_worktree(&running.clone, &running.worktree);
@@ -270,6 +281,10 @@ impl Runs for PiBolt {
             .map_err(|e| e.to_string())?
             .expect("the run exists"))
     }
+
+    fn has_agent(&self, name: &str) -> bool {
+        self.agents.contains_key(name)
+    }
 }
 
 /// What a started run holds until it ends.
@@ -279,21 +294,53 @@ struct RunningRun {
     clone: PathBuf,
     worktree: Worktree,
     token: String,
+    purpose: String,
 }
 
-/// The prompt for a card.
-fn prompt_for(card: &Card) -> String {
+/// What a `code` run is told after the issue.
+const CODE_PROMPT: &str = "You are in a git worktree on the issue's own branch. Make the change, run what checks the \
+     repository has, and stop when the issue is done. Moebius commits what you leave in the worktree.";
+
+/// What a `review` run is told after the issue.
+const REVIEW_PROMPT: &str = "You are the reviewer. You are in a git worktree on the branch that holds the change for \
+     this issue. Review that change against the issue: is it correct, is it tested, and does it do what the issue \
+     asks? Do not edit any files. Write your findings, then end your answer with one last line, either \
+     `VERDICT: approve` or `VERDICT: changes`.";
+
+/// The prompt for a run of `card`; `note` is added under a heading of its own.
+fn prompt_for(card: &Card, purpose: &str, note: Option<&str>) -> String {
     let mut prompt = format!("Work on issue #{}: {}\n", card.number, card.title);
     if !card.body.trim().is_empty() {
         prompt.push('\n');
         prompt.push_str(&card.body);
         prompt.push('\n');
     }
-    prompt.push_str(
-        "\nYou are in a git worktree on the issue's own branch. Make the change, run what checks the repository has, \
-         and stop when the issue is done. Moebius commits what you leave in the worktree.\n",
-    );
+    prompt.push('\n');
+    prompt.push_str(if purpose == "review" {
+        REVIEW_PROMPT
+    } else {
+        CODE_PROMPT
+    });
+    prompt.push('\n');
+    if let Some(note) = note {
+        prompt.push_str("\nNotes from the last review:\n\n");
+        prompt.push_str(note);
+        prompt.push('\n');
+    }
     prompt
+}
+
+/// The text of the last assistant message in an `agent_end` record, if it has any.
+fn final_answer(agent_end: &Value) -> Option<String> {
+    let messages = agent_end["messages"].as_array()?;
+    let last = messages.iter().rev().find(|m| m["role"] == "assistant")?;
+    let text: String = last["content"]
+        .as_array()?
+        .iter()
+        .filter(|block| block["type"] == "text")
+        .filter_map(|block| block["text"].as_str())
+        .collect();
+    Some(text)
 }
 
 /// Writes one JSON line to Pi; false when its stdin is closed or broken.
@@ -376,6 +423,11 @@ impl Reader {
                 ending = Err(format!("pi-bolt refused the prompt: {}", value["error"]));
                 break;
             }
+            if kind == "agent_end"
+                && let Some(answer) = final_answer(&value)
+            {
+                let _ = self.app.store.set_run_summary(self.run.id, &answer);
+            }
             if kind == "agent_settled" {
                 ending = Ok(value["aborted"] == true);
                 break;
@@ -396,6 +448,7 @@ impl Reader {
         self.router.revoke_token(&self.run.token);
         let status = match ending {
             Ok(true) => "stopped",
+            Ok(false) if self.run.purpose != "code" => "succeeded",
             Ok(false) => match commit(&self.run.worktree.path, &self.card) {
                 Ok(true) => "succeeded",
                 Ok(false) => self.failed("the agent changed nothing"),
@@ -511,10 +564,12 @@ mod tests {
         let card = app
             .create_issue(repo, "Write done.txt", "", "person")
             .unwrap();
-        let run = pi.start(&app, &card, "Coder", "code").unwrap();
+        let run = pi.start(&app, &card, "Coder", "code", None).unwrap();
         assert_eq!(run.status, "running");
         let run = wait_until_ended(&app, run.id);
         assert_eq!(run.status, "succeeded");
+        // The summary is the text of the last assistant message that agent_end reports.
+        assert_eq!(run.summary.as_deref(), Some("line one line two"));
 
         let events = app.store.events(run.id).unwrap();
         let kinds: Vec<_> = events.iter().map(|e| e.kind.as_str()).collect();
@@ -586,12 +641,53 @@ mod tests {
     }
 
     #[test]
+    fn a_review_run_starts_from_the_code_branch_and_commits_nothing() {
+        let (_dir, app, mut pi, repo) = setup();
+        pi.agents
+            .insert("Reviewer".into(), pi.agents["Coder"].clone());
+        let card = app
+            .create_issue(repo, "Write done.txt", "", "person")
+            .unwrap();
+        let code = pi.start(&app, &card, "Coder", "code", None).unwrap();
+        let code = wait_until_ended(&app, code.id);
+
+        let review = pi
+            .start(&app, &card, "Reviewer", "review", Some("Check the edge."))
+            .unwrap();
+        let review = wait_until_ended(&app, review.id);
+        // Nothing was changed, and that is no failure for a review.
+        assert_eq!(review.status, "succeeded");
+        assert_eq!(
+            review.summary.as_deref(),
+            Some("Looks fine.\nVERDICT: approve")
+        );
+        let clone = PathBuf::from(&app.store.repository(repo).unwrap().unwrap().path);
+        assert_eq!(
+            git(&clone, &["rev-parse", &review.branch()]).unwrap(),
+            git(&clone, &["rev-parse", &code.branch()]).unwrap()
+        );
+        assert_eq!(app.store.code_branch(card.id).unwrap(), Some(code.branch()));
+
+        let prompt_of = |run: &Run| {
+            let file = format!("runs/{}/agent/prompt.txt", run.id);
+            std::fs::read_to_string(app.data_dir.join(file)).unwrap()
+        };
+        let prompt = prompt_of(&review);
+        assert!(prompt.contains("Work on issue #1: Write done.txt"));
+        assert!(prompt.contains("VERDICT: approve"));
+        assert!(prompt.contains("Notes from the last review:\n\nCheck the edge."));
+        let prompt = prompt_of(&code);
+        assert!(prompt.contains("Moebius commits what you leave"));
+        assert!(!prompt.contains("Notes from the last review"));
+    }
+
+    #[test]
     fn a_run_can_be_stopped() {
         let (_dir, app, pi, repo) = setup();
         let card = app
             .create_issue(repo, "Please [hang]", "", "person")
             .unwrap();
-        let run = pi.start(&app, &card, "Coder", "code").unwrap();
+        let run = pi.start(&app, &card, "Coder", "code", None).unwrap();
         // Wait until Pi has taken the prompt.
         let deadline = Instant::now() + Duration::from_secs(20);
         while app.store.events(run.id).unwrap().len() < 2 {
@@ -614,7 +710,7 @@ mod tests {
         let card = app
             .create_issue(repo, "Do [nothing]", "", "person")
             .unwrap();
-        let run = pi.start(&app, &card, "Coder", "code").unwrap();
+        let run = pi.start(&app, &card, "Coder", "code", None).unwrap();
         let run = wait_until_ended(&app, run.id);
         assert_eq!(run.status, "failed");
         let last = app.store.events(run.id).unwrap().pop().unwrap();
@@ -625,9 +721,9 @@ mod tests {
     fn an_unknown_agent_or_a_missing_program_fails_cleanly() {
         let (_dir, app, mut pi, repo) = setup();
         let card = app.create_issue(repo, "Anything", "", "person").unwrap();
-        assert!(pi.start(&app, &card, "Nobody", "code").is_err());
+        assert!(pi.start(&app, &card, "Nobody", "code", None).is_err());
         pi.program = PathBuf::from("/nonexistent/pi-bolt");
-        assert!(pi.start(&app, &card, "Coder", "code").is_err());
+        assert!(pi.start(&app, &card, "Coder", "code", None).is_err());
         let run = app.store.runs_for_card(card.id).unwrap().pop().unwrap();
         assert_eq!(run.status, "failed");
         assert!(!PathBuf::from(run.worktree.unwrap()).exists());

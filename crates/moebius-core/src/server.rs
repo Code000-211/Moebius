@@ -449,10 +449,15 @@ mod tests {
             card: &Card,
             agent: &str,
             purpose: &str,
+            _: Option<&str>,
         ) -> Result<Run, String> {
             app.store
                 .add_run(Some(card.id), agent, "idle", purpose)
                 .map_err(|e| e.to_string())
+        }
+
+        fn has_agent(&self, _: &str) -> bool {
+            false
         }
     }
 
