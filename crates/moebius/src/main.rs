@@ -58,6 +58,13 @@ fn run(cli: Cli) -> Result<(), String> {
             let config = Config::load(&cli.config).map_err(|e| e.to_string())?;
             std::fs::create_dir_all(&config.data_dir)
                 .map_err(|e| format!("cannot create {}: {e}", config.data_dir.display()))?;
+            let store = moebius_core::store::Store::open(&config.data_dir)
+                .map_err(|e| format!("cannot open the store: {e}"))?;
+            println!(
+                "moebius {}: store opened at schema version {}",
+                moebius_core::VERSION,
+                store.schema_version().map_err(|e| e.to_string())?
+            );
             println!(
                 "moebius {} configured: data in {}, app API on {}",
                 moebius_core::VERSION,
@@ -105,5 +112,6 @@ mod tests {
         assert!(run(cli(Command::Init)).is_err());
         run(cli(Command::Serve)).unwrap();
         assert!(dir.path().join(".moebius").is_dir());
+        assert!(dir.path().join(".moebius/moebius.sqlite").is_file());
     }
 }
