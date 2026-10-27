@@ -119,10 +119,19 @@ The columns a card goes through on its own and the behaviour behind them, by def
 back to coding while anything is still wrong, until its change is ready to merge; a person steps in only before the merge.
 _Avoid_: pipeline, process, flow
 
+**Experiment**:
+Changing one thing on a branch of its own, measuring the result and keeping the change only if it is better; a trial and each
+step of an autoresearch are experiments, which differ only in how they measure.
+_Avoid_: attempt, probe, A/B test
+
 **Autoresearch**:
-A bounded loop in which runs change something, measure it against a benchmark and keep only the changes that improve the
-metric.
+A loop, bounded by its brief, in which a harness keeps finding new levers on its own, researching where improvement may lie,
+and runs an experiment for each against a benchmark, keeping only the ones that improve the metric.
 _Avoid_: optimisation run, experiment loop, auto-tuning
+
+**Lever**:
+One idea for a change that might improve an autoresearch's metric, found by the harness that runs it.
+_Avoid_: hypothesis, knob, candidate
 
 **Brief**:
 What an autoresearch is to achieve and within which bounds (the metric and its direction, the benchmark, the files in scope,
@@ -149,6 +158,11 @@ A unit of extension that can add to or replace any part of Moebius; it runs eith
 Moebius.
 _Avoid_: extension (that word belongs to Pi-Bolt), addon, module
 
+**Bundled plugin**:
+A plugin that ships with every installation of Moebius and is on by default, such as the GitHub forge or self-improvement,
+but that can still be removed.
+_Avoid_: built-in, default plugin, core plugin
+
 **Desktop app**:
 The native, GPU-rendered client through which a person works with a Moebius that runs on a server.
 _Avoid_: UI, frontend, dashboard
@@ -166,9 +180,9 @@ never applied without the user's approval.
 _Avoid_: suggestion, fix, patch, edit
 
 **Trial**:
-A repeat of the task an error happened in, with one Proposal applied on its own branch; it is positive when the error no
-longer occurs and the result is no worse.
-_Avoid_: test, probe, experiment
+The experiment that tests one proposal: the task the error happened in, repeated with the proposal applied; it is positive
+when the error no longer occurs and the result is no worse.
+_Avoid_: test, probe
 
 **Trial window**:
 The daily stretch of time in which Moebius may run trials without asking.

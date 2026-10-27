@@ -14,6 +14,11 @@ then keeps its issues and changes itself, and a person merges in the desktop app
 - The core enforces, for every plugin call, a time limit and a failure that blocks rather than lets through, so that no plugin
   can make a run wait (ADR 0008) or let an unchecked tool call pass (ADR 0007).
 - Budgets are enforced in the core from the usage the router reports, so that a budget does not depend on a plugin behaving.
+- Self-improvement is what Moebius is named for, so it ships with every installation and is on by default: the improvement
+  plugin holds the Retro, proposals, the experiments behind trials and autoresearch, and the takeover of decisions by a trained
+  decision model after shadowing. It is still a plugin, so that anyone who does not want it can remove it completely, and the
+  core never depends on it. Other plugins may add to it (their own error detectors and kinds of proposals); the loop itself
+  is not replaced piece by piece.
 - Subscription logins are a plugin of their own, installed separately, so that their risk under the providers' terms stays out
   of the core and out of every installation that does not want it.
 - In the first version the plugins Moebius ships are compiled in, against the same API that process plugins will use over
