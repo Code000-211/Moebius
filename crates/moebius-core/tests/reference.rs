@@ -181,6 +181,7 @@ fn the_documentation_the_readme_and_claude_md_point_to_exists() {
         "docs/reference/bridge-protocol.md",
         "docs/reference/router.md",
         "docs/reference/desktop-api.md",
+        "docs/guide/README.md",
         "examples/README.md",
         "examples/rules.md",
         "examples/scripts/ready-large-cards-alone.luau",

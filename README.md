@@ -93,6 +93,8 @@ The answer is the merge commit, and the card is in `Done`. For a repository on G
   [configuration](docs/reference/configuration.md), [plugin API](docs/reference/plugin-api.md),
   [bridge protocol](docs/reference/bridge-protocol.md), [router](docs/reference/router.md),
   [desktop API](docs/reference/desktop-api.md).
+- [`docs/guide/`](docs/guide/README.md): the guide, how to build on Moebius step by step (column scripts, workflows,
+  rules, agents, plugins, extensions, the desktop API), with examples that tests run.
 - [`examples/README.md`](examples/README.md): the examples.
 - [`docs/issues-m0-m1.md`](docs/issues-m0-m1.md), [`docs/issues-m2-m9.md`](docs/issues-m2-m9.md): the work, issue by issue.
 - [`docs/design.md`](docs/design.md): the look of the desktop app.

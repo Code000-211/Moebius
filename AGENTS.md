@@ -14,6 +14,9 @@ changes ready to merge. Read `GLOSSARY.md` for the words, `docs/spec.md` for wha
 - `crates/moebius-plugin-api`: the plugin trait and the host that calls plugins with a time limit, failing closed.
 - `crates/moebius`: the `moebius` binary (`init`, `serve`).
 - `crates/moebius-desktop`: the iced desktop app (built to `docs/design.md`).
+- `docs/guide/`: how to build on Moebius, one how-to per page (column scripts, workflows, rules, agents, plugins,
+  extensions, the desktop API). Every `luau` block in it is a complete column script that `tests/guide.rs` runs; read it
+  before you build anything for a user, and keep it in step with the code.
 - `README.md` says what Moebius is and how to run it; `docs/architecture.md` says how a card moves and which module does
   what; `docs/reference/` holds one exact reference per contract; `examples/` holds the examples that run in CI (the
   decider plugin is `crates/moebius-plugin-api/examples/allow_reads.rs`).
