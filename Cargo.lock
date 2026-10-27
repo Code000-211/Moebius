@@ -359,6 +359,7 @@ name = "moebius-core"
 version = "0.1.0"
 dependencies = [
  "hex",
+ "moebius-plugin-api",
  "regex",
  "rusqlite",
  "serde",

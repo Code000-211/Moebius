@@ -2,6 +2,7 @@
 
 pub mod blobs;
 pub mod config;
+pub mod decide;
 pub mod store;
 
 /// The version of this build of Moebius.
