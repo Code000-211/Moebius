@@ -168,7 +168,8 @@ fail-closed option `refuse`. All context values are strings:
 | `card_id` | when the run has a card | The card's id, as decimal text. |
 | `worktree` | when the run has a worktree | The absolute path of the run's worktree. |
 | `card_title`, `card_body` | when the card is found | The card's title and body. |
-| `rules` | always | The rules that apply as Markdown (`## <name>` and the text), possibly empty. See [rules](rules.md). |
+| `rules` | unless `rules_error` is set | The rules that apply as Markdown (`## <name>` and the text), possibly empty. See [rules](rules.md). |
+| `rules_error` | when the server's rules file exists but cannot be read | Why it cannot (a message). The guard refuses every call then. |
 
 A decider for `tool_call` that refuses should say which rule it applied at the start of `reason`, followed by a colon,
 as the guard does (`no-force-push: ...`).

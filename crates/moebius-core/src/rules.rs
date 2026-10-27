@@ -4,7 +4,8 @@
 //! The server's rules file comes first, then the repository's `.moebius/rules.md` on its default branch. A repository
 //! may add rules but not weaken them: one named like a server rule is dropped, so the server's text stands.
 
-use std::path::Path;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 use crate::repos::git;
 use crate::store::Repository;
@@ -16,7 +17,7 @@ pub struct Rule {
     pub text: String,
 }
 
-/// The rules a `rules.md` lists.
+/// The rules a `rules.md` lists. When a name is repeated the first rule of that name stands.
 pub fn parse(markdown: &str) -> Vec<Rule> {
     let mut rules: Vec<Rule> = Vec::new();
     for line in markdown.lines() {
@@ -33,7 +34,8 @@ pub fn parse(markdown: &str) -> Vec<Rule> {
     for rule in &mut rules {
         rule.text = rule.text.trim().to_string();
     }
-    rules.retain(|rule| !rule.name.is_empty());
+    let mut seen = HashSet::new();
+    rules.retain(|rule| !rule.name.is_empty() && seen.insert(rule.name.clone()));
     rules
 }
 
@@ -46,13 +48,33 @@ pub fn to_markdown(rules: &[Rule]) -> String {
         .join("\n")
 }
 
-/// The rules that apply to a run: the server's, then those the repository adds. A missing, unset or unreadable file
-/// gives no rules.
-pub fn applicable(server_file: Option<&Path>, repository: Option<&Repository>) -> Vec<Rule> {
-    let mut rules = server_file
-        .and_then(|file| std::fs::read_to_string(file).ok())
-        .map(|text| parse(&text))
-        .unwrap_or_default();
+/// The server's rules file could not be read.
+#[derive(Debug, thiserror::Error)]
+#[error("cannot read the rules file {}: {source}", path.display())]
+pub struct RulesError {
+    path: PathBuf,
+    source: std::io::Error,
+}
+
+/// The rules that apply to a run: the server's, then those the repository adds, each name once. An unset or missing
+/// file gives no rules; a server file that exists but cannot be read is an error, so that nothing runs unchecked.
+pub fn applicable(
+    server_file: Option<&Path>,
+    repository: Option<&Repository>,
+) -> Result<Vec<Rule>, RulesError> {
+    let mut rules = Vec::new();
+    if let Some(path) = server_file {
+        match std::fs::read_to_string(path) {
+            Ok(text) => rules = parse(&text),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(source) => {
+                return Err(RulesError {
+                    path: path.into(),
+                    source,
+                });
+            }
+        }
+    }
     if let Some(repository) = repository {
         let spec = format!("{}:.moebius/rules.md", repository.base_ref());
         if let Ok(text) = git(Path::new(&repository.path), &["show", &spec]) {
@@ -63,7 +85,7 @@ pub fn applicable(server_file: Option<&Path>, repository: Option<&Repository>) -
             }
         }
     }
-    rules
+    Ok(rules)
 }
 
 #[cfg(test)]
@@ -159,7 +181,7 @@ mod tests {
         // A working-tree edit that is not committed is not read.
         std::fs::write(clone.join(".moebius/rules.md"), "## sneaky\nx\n").unwrap();
 
-        let rules = applicable(Some(&file), Some(&repository));
+        let rules = applicable(Some(&file), Some(&repository)).unwrap();
         assert_eq!(
             rules,
             vec![
@@ -173,7 +195,41 @@ mod tests {
     fn missing_files_give_no_rules() {
         let dir = tempfile::tempdir().unwrap();
         let repository = repository(dir.path(), None);
-        assert!(applicable(None, None).is_empty());
-        assert!(applicable(Some(&dir.path().join("nope.md")), Some(&repository)).is_empty());
+        assert!(applicable(None, None).unwrap().is_empty());
+        let missing = dir.path().join("nope.md");
+        assert!(
+            applicable(Some(&missing), Some(&repository))
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_server_file_that_cannot_be_read_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let invalid = dir.path().join("invalid.md");
+        std::fs::write(&invalid, [0xff, 0xfe]).unwrap();
+        for file in [dir.path(), invalid.as_path()] {
+            let error = applicable(Some(file), None).unwrap_err();
+            assert!(error.to_string().contains("cannot read the rules file"));
+        }
+    }
+
+    #[test]
+    fn the_first_rule_of_a_name_stands_in_either_file() {
+        assert_eq!(
+            parse("## a\none\n## b\nb\n## a\ntwo\n"),
+            vec![rule("a", "one"), rule("b", "b")]
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("rules.md");
+        std::fs::write(&file, "## a\nserver\n## a\nagain\n").unwrap();
+        let clone = dir.path().join("clone");
+        std::fs::create_dir(&clone).unwrap();
+        let repository = repository(&clone, Some("## c\none\n## c\ntwo\n## a\nmine\n"));
+        assert_eq!(
+            applicable(Some(&file), Some(&repository)).unwrap(),
+            vec![rule("a", "server"), rule("c", "one")]
+        );
     }
 }

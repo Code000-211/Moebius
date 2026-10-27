@@ -11,6 +11,7 @@
 //!
 //! Every request carries `Authorization: Bearer <token>`; anything else is answered with 401.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -46,6 +47,8 @@ pub struct Health {
 pub struct Board {
     pub repository: Repository,
     pub cards: Vec<Card>,
+    /// Why each waiting card waits, by card id.
+    pub waiting: BTreeMap<i64, String>,
     pub changes: Vec<Change>,
 }
 
@@ -195,8 +198,10 @@ async fn snapshot(State(state): State<ApiState>) -> Result<axum::Json<Snapshot>,
     blocking(&state.app, |app| {
         let mut boards = Vec::new();
         for repository in app.store.repositories()? {
+            let cards = app.store.cards(repository.id)?;
             boards.push(Board {
-                cards: app.store.cards(repository.id)?,
+                waiting: app.waiting(&cards),
+                cards,
                 changes: app.store.changes(repository.id)?,
                 repository,
             });
@@ -470,6 +475,7 @@ mod tests {
             .find(|b| b.repository.id == repo.id)
             .unwrap();
         assert_eq!(board.cards[0].column, "Done");
+        assert!(board.waiting.is_empty());
         assert_eq!(board.changes[0].state, "merged");
         assert!(snap.inbox.is_empty());
         let judgements = app.store.judgements("merge").unwrap();
@@ -485,6 +491,21 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(again.status(), 422);
+    }
+
+    #[tokio::test]
+    async fn a_repository_name_that_is_taken_is_refused_before_cloning() {
+        let (_dir, state, addr) = start().await;
+        let response = reqwest::Client::new()
+            .post(format!("http://{addr}/v1/repositories"))
+            .bearer_auth(&*state.token)
+            .json(&serde_json::json!({"name": "radiance", "url": "/nowhere"}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 422);
+        assert!(response.text().await.unwrap().contains("is taken"));
+        assert!(!state.app.data_dir.join("repos/radiance").exists());
     }
 
     #[tokio::test]

@@ -17,13 +17,12 @@ Keys of a table are written with the table's name, such as `board.tick_ms`. A ke
 
 ## Paths
 
-A relative path is resolved against the directory that holds the configuration file, made absolute when the file is
-read. Exceptions:
+A relative path (including `agents.<name>.skills` and `extensions`) is resolved against the directory that holds the
+configuration file, made absolute when the file is read. Exceptions:
 
 - `token_file` is resolved against `data_dir`.
-- `pi_bolt.program` is not resolved at all: a bare name such as `pi-bolt` is looked up on the `PATH`, and a relative
-  path with a slash is relative to the server's working directory. Use an absolute path.
-- `agents.<name>.skills` and `agents.<name>.extensions` are passed to the harness as written. Use absolute paths.
+- `pi_bolt.program` is resolved only when it contains a directory (`./bin/pi-bolt`, `tools/pi-bolt`); a bare name such as
+  `pi-bolt` is looked up on the `PATH`.
 
 An absolute path is used as it is.
 

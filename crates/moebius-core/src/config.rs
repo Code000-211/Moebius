@@ -232,7 +232,7 @@ pub struct TeacherConfig {
     pub timeout: Duration,
 }
 
-/// An agent as configured; the harness configuration repository takes this over in M6.
+/// An agent as configured; the harness configuration repository takes this over in M7.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AgentConfig {
@@ -277,7 +277,7 @@ pub struct Config {
 impl Config {
     /// Parses a configuration whose relative paths are resolved against `base`.
     pub fn parse(text: &str, base: &Path, origin: &Path) -> Result<Self, ConfigError> {
-        let raw: Raw = toml::from_str(text).map_err(|source| ConfigError::Parse {
+        let mut raw: Raw = toml::from_str(text).map_err(|source| ConfigError::Parse {
             path: origin.to_path_buf(),
             source,
         })?;
@@ -302,6 +302,15 @@ impl Config {
         }) {
             return Err(ConfigError::AgentName { name: name.clone() });
         }
+        for agent in raw.agents.values_mut() {
+            for path in agent.skills.iter_mut().chain(&mut agent.extensions) {
+                *path = base.join(&path);
+            }
+        }
+        let pi_bolt = raw
+            .pi_bolt
+            .program
+            .unwrap_or_else(|| PathBuf::from("pi-bolt"));
         let teacher = match raw.teacher {
             Some(t) => {
                 let seconds = t.timeout_seconds.unwrap_or(20);
@@ -341,10 +350,12 @@ impl Config {
             round_limit: raw.board.round_limit.unwrap_or(5),
             router_listen,
             upstreams: raw.router.upstreams,
-            pi_bolt: raw
-                .pi_bolt
-                .program
-                .unwrap_or_else(|| PathBuf::from("pi-bolt")),
+            // A bare name is looked up on the PATH; anything with a directory in it is a path.
+            pi_bolt: if pi_bolt.components().count() > 1 {
+                base.join(pi_bolt)
+            } else {
+                pi_bolt
+            },
             rules_file: raw.rules_file.map(|file| base.join(file)),
             github: raw.github.map(|g| GitHubConfig {
                 app_id: g.app_id,
@@ -441,6 +452,36 @@ mod tests {
             parse("[router]\nlisten = \"0.0.0.0:7172\""),
             Err(ConfigError::RouterNotLocal(_))
         ));
+    }
+
+    #[test]
+    fn the_harness_and_the_agents_files_are_relative_to_the_configuration() {
+        let program = |program: &str| {
+            parse(&format!("[pi_bolt]\nprogram = \"{program}\"\n"))
+                .unwrap()
+                .pi_bolt
+        };
+        assert_eq!(program("pi-bolt"), PathBuf::from("pi-bolt"));
+        assert_eq!(
+            program("./bin/pi-bolt"),
+            PathBuf::from("/srv/./bin/pi-bolt")
+        );
+        assert_eq!(
+            program("tools/pi-bolt"),
+            PathBuf::from("/srv/tools/pi-bolt")
+        );
+        assert_eq!(program("/opt/pi-bolt"), PathBuf::from("/opt/pi-bolt"));
+
+        let c = parse(
+            "[agents.Coder]\nmodel = \"m\"\nskills = [\"skills/a\", \"/abs/b\"]\nextensions = [\"ext.js\"]\n",
+        )
+        .unwrap();
+        let coder = &c.agents["Coder"];
+        assert_eq!(
+            coder.skills,
+            [PathBuf::from("/srv/skills/a"), PathBuf::from("/abs/b")]
+        );
+        assert_eq!(coder.extensions, [PathBuf::from("/srv/ext.js")]);
     }
 
     #[test]

@@ -195,6 +195,9 @@ impl Engine {
             self.app.move_card(card_id, &to)?;
             effects.moved = Some(to);
         }
+        // A card that moved no longer waits for what it waited for.
+        let waiting = effects.waiting.clone().filter(|_| effects.moved.is_none());
+        self.app.set_waiting(card_id, waiting);
         Ok(Step {
             moved: effects.moved,
             waiting: effects.waiting,
@@ -340,7 +343,7 @@ impl Engine {
             self.runs.clone(),
             effects.clone(),
             card.clone(),
-            deadline,
+            deadline.clone(),
         );
         m.set(
             "start_run",
@@ -380,7 +383,7 @@ impl Engine {
             })?,
         )?;
 
-        let (app, fx) = (self.app.clone(), effects.clone());
+        let (app, fx, clock) = (self.app.clone(), effects.clone(), deadline);
         m.set(
             "offer_change",
             lua.create_function(move |_, ()| {
@@ -390,9 +393,10 @@ impl Engine {
                     .map_err(mlua::Error::external)?
                     .pop()
                     .ok_or_else(|| mlua::Error::runtime("the card has no run to offer"))?;
-                let change = app
-                    .offer_change(card_id, &format!("moebius/run-{}", run.id))
-                    .map_err(mlua::Error::external)?;
+                let change = outside_script(&clock, || {
+                    app.offer_change(card_id, &format!("moebius/run-{}", run.id))
+                })
+                .map_err(mlua::Error::external)?;
                 let mut fx = fx.borrow_mut();
                 fx.moved = Some(columns::READY_TO_MERGE.into());
                 fx.move_to = None;
@@ -521,6 +525,13 @@ mod tests {
     }
 
     fn setup() -> (tempfile::TempDir, Arc<App>, Engine, i64) {
+        setup_with(None)
+    }
+
+    /// A setup whose forge for repositories without one is `forge`, if given.
+    fn setup_with(
+        forge: Option<Box<dyn crate::forge::Forge>>,
+    ) -> (tempfile::TempDir, Arc<App>, Engine, i64) {
         let dir = tempfile::tempdir().unwrap();
         let origin = dir.path().join("origin");
         std::fs::create_dir_all(&origin).unwrap();
@@ -530,7 +541,11 @@ mod tests {
         git(&origin, &["commit", "--quiet", "-m", "first"]).unwrap();
         let store = Arc::new(Store::in_memory(&dir.path().join("blobs")).unwrap());
         let host = Arc::new(Host::new(Duration::from_secs(1)));
-        let app = Arc::new(App::new(store, host, &dir.path().join("data")));
+        let mut app = App::new(store, host, &dir.path().join("data"));
+        if let Some(forge) = forge {
+            app.add_forge(forge);
+        }
+        let app = Arc::new(app);
         let repo = app
             .add_repository("demo", origin.to_str().unwrap())
             .unwrap();
@@ -609,6 +624,88 @@ mod tests {
         let card = app.create_issue(repo, "Slow", "", PERSON).unwrap();
         let step = engine.settle(card.id).unwrap();
         assert!(step.started_run.is_some());
+    }
+
+    /// A forge that takes longer to offer a change than a script may run.
+    struct SlowForge;
+
+    impl crate::forge::Forge for SlowForge {
+        fn name(&self) -> &'static str {
+            "none"
+        }
+
+        fn offer(
+            &self,
+            _: &crate::store::Repository,
+            _: &Card,
+            _: &str,
+        ) -> Result<Option<i64>, crate::forge::ForgeError> {
+            std::thread::sleep(Duration::from_millis(600));
+            Ok(None)
+        }
+
+        fn merge(
+            &self,
+            _: &crate::store::Repository,
+            _: &crate::store::Change,
+            _: &str,
+        ) -> Result<String, crate::forge::ForgeError> {
+            unreachable!("nothing is merged")
+        }
+
+        fn refresh(&self, _: &crate::store::Repository) -> Result<(), crate::forge::ForgeError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn time_spent_offering_a_change_does_not_count_against_the_script() {
+        let (_dir, app, engine, repo) = setup_with(Some(Box::new(SlowForge)));
+        let card = app.create_issue(repo, "Slow", "", PERSON).unwrap();
+        engine.settle(card.id).unwrap();
+        engine.settle(card.id).unwrap();
+        assert_eq!(app.card(card.id).unwrap().column, "Ready to merge");
+    }
+
+    #[test]
+    fn why_a_card_waits_is_kept_and_published_only_when_it_changes() {
+        let (_dir, app, engine, repo) = setup();
+        let mut events = app.bus.subscribe();
+        let card = app
+            .create_issue(repo, "Please add", "", "stranger")
+            .unwrap();
+        let reason = "waiting for a person to approve the issue";
+        for _ in 0..3 {
+            engine.settle(card.id).unwrap();
+        }
+        let cards = app.store.cards(repo).unwrap();
+        assert_eq!(
+            app.waiting(&cards),
+            BTreeMap::from([(card.id, reason.into())])
+        );
+
+        // Only the first tick changed the reason, so only one event says so.
+        let mut waiting = Vec::new();
+        while let Ok(event) = events.try_recv() {
+            if event.kind == "card_waiting" {
+                waiting.push(event.data);
+            }
+        }
+        assert_eq!(
+            waiting,
+            vec![serde_json::json!({"card": card.id, "reason": reason})]
+        );
+
+        // Once the card moves it waits for something else or for nothing.
+        app.approve_issue(card.id, "fine").unwrap();
+        assert!(app.waiting(&cards).is_empty());
+        let cleared = std::iter::from_fn(|| events.try_recv().ok())
+            .find(|event| event.kind == "card_waiting")
+            .unwrap();
+        assert_eq!(
+            cleared.data,
+            serde_json::json!({"card": card.id, "reason": null})
+        );
     }
 
     #[test]

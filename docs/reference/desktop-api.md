@@ -68,13 +68,17 @@ Everything the app shows. Response:
                     "default_branch": "main", "github": null, "trusted": []},
      "cards": [{"id": 1, "repository_id": 1, "number": 1, "title": "Add a feature", "body": "", "author": "person",
                 "column": "Backlog", "created_at": 1790000000}],
+     "waiting": {},
      "changes": []}
   ],
   "inbox": []
 }
 ```
 
-`boards` has one entry per repository, with all its cards and changes. `inbox` holds the items that are not
+`boards` has one entry per repository, with all its cards and changes. `waiting` maps the id of each card whose column
+script is waiting (`moebius.wait`, `ask`, `stuck`) to the reason, as text; a card that does not wait has no entry. The
+reasons are kept in memory, so after a restart they are missing until the board engine's next tick; `card_waiting`
+(below) keeps them current. `inbox` holds the items that are not
 resolved yet, oldest first.
 
 ### `GET /v1/events`
@@ -99,8 +103,8 @@ Request:
 | `trusted` | array of strings | GitHub logins whose issues need no approval. Only with the forge `github`. |
 
 Response: the `Repository`. Errors: `422` for an invalid name, a `github` that is not `owner/repo`, or a combination other
-than "no forge, no `github`, no `trusted`" and "forge `github` with `github`"; `500` when the clone fails or the name is
-taken.
+than "no forge, no `github`, no `trusted`" and "forge `github` with `github`"; `422` also when the name is taken (nothing is
+cloned then); `500` when the clone fails.
 
 ```sh
 curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
@@ -153,6 +157,7 @@ branch does not merge cleanly; `500` the forge failed.
 | `card_added` | An issue became a card: created through the API or found on GitHub. | The `Card`. |
 | `card_updated` | The title or body of a GitHub issue changed. | The `Card`. |
 | `card_moved` | A card moved to another column. | `{"card": id, "from": column, "to": column}` |
+| `card_waiting` | The reason a card waits changed: set, replaced, or cleared because the card moved or its script did not wait. Not sent when it stays the same. | `{"card": id, "reason": string or null}` |
 | `change_offered` | A run's work was offered as a change. | The `Change`. |
 | `change_updated` | The checks or review of a change's pull request changed. | The `Change`. |
 | `change_merged` | A change was merged, here or on GitHub. | `{"change": id, "commit": sha or null}` |

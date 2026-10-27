@@ -40,8 +40,11 @@ Two files, read afresh for every tool call:
 
 The server's rules come first, then the repository's. A repository adds rules and cannot weaken the server's: a rule in
 the repository's file whose name equals the name of a rule already listed (compared exactly, case included) is dropped,
-and the first one stands. That also drops a repeated name within the repository's own file. A file that is missing or
-cannot be read gives no rules.
+and the first one stands. The same goes for a name repeated within either file: the first rule of that name stands. A file
+that is missing gives no rules, and so does a repository file that cannot be read (it is not committed, or git fails).
+A server file that exists but cannot be read (permissions, a directory, text that is not UTF-8) is different: nothing
+could be checked against it, so the question carries a `rules_error` instead of `rules` and the guard refuses every
+tool call, with the reason `the rules cannot be read, so no call is allowed: <why>` and the decider `guard/patterns`.
 
 The built-in rules below are not in any `rules.md`; they always apply.
 
@@ -49,6 +52,7 @@ The built-in rules below are not in any `rules.md`; they always apply.
 
 The guard (`guard/…` in a judgement's decider) judges a `tool_call` question in two steps.
 
+0. A question with a `rules_error` (above) is refused at once.
 1. The built-in rules are tested in the order below, with fixed patterns. The first one the call breaks refuses it. The
    judgement's decider is `guard/patterns`. The teacher is not asked.
 2. The rules from the files above (the prose rules) are judged by the teacher model.
@@ -67,22 +71,43 @@ All other tools pass them. The run's worktree is the directory a run works in; a
 `..` resolved without touching the disk, it is the worktree or below it. A run without a worktree has no place that is
 its own, so every path is outside.
 
-For `bash`, the command is cut into simple commands at `;`, `|`, `&`, new lines, parentheses and backticks. In each,
-quotes around words are removed, and leading `sudo`, `env`, `command` and words like `NAME=value` are skipped. The first
-remaining word is the command.
+For `bash`, the command is cut into simple commands at `;`, `|`, `&`, new lines, parentheses and backticks outside
+quotes. In each, quotes around words are removed (a quoted space stays in its word), and leading `sudo`, `env`,
+`command` and words like `NAME=value` are skipped. The first remaining word is the command. Redirects (`>`, `>>`,
+`2>`, `&>`; not `2>&1` or `>&2`) are not words but the files the command writes to.
+
+The patterns follow what a command line does to its surroundings:
+
+- `cd <dir>` moves a virtual working directory for the simple commands after it, starting at the worktree. Relative
+  paths (of `rm`, redirects and `tee`) resolve against it. `cd` alone, `cd ~`, `cd $HOME` and `cd -` leave the worktree.
+- `bash`, `sh`, `zsh` or `dash` with `-c` (also in a flag group such as `-lc`) and `eval` are looked into: the words after
+  `-c` (or after `eval`), joined with spaces, are judged as a command line with the same rules, in the directory the
+  shell starts in. Shells nest at most 4 deep; a command that nests deeper is refused (as `no-destructive-commands`,
+  the first rule), whatever it does.
+- `xargs <command> ...` is judged as that command with those words (not what it reads from its input).
 
 | Name | Refuses | Allowed near misses |
 |---|---|---|
 | `no-destructive-commands` | `bash`: `rm` with a recursive flag (`-r`, `-R`, `-rf`, `-fr`, `-r -f`, `--recursive`) and a target outside the worktree, where `~`, `$HOME` and `${HOME}` at the start of a target count as outside, and so does `..` and a sibling directory such as `/srv/wt/10` next to `/srv/wt/1`; `dd` with an `of=/dev/...` argument; any command whose name starts with `mkfs`; a fork bomb such as `:(){ :\|:& };:`. Reason: `commands that delete recursively outside the worktree, format a disk, overwrite a device or exhaust the machine are never run`. | `rm -rf ./target`, `rm -rf build/`, `rm -rf /srv/wt/1/target` (inside), `rm file.txt` and `rm -f /tmp/x` (not recursive), `dd if=/dev/zero of=./disk.img`, `echo mkfs`, `ls /`. |
 | `no-force-push` | `bash`: `git push` (after any `-C <dir>` or `-c <name=value>` options) with an argument that starts with `--force` (so `--force-with-lease` too), a short-flag group containing `f` (`-f`, `-uf`), or a refspec starting with `+` (`+main`). Reason: `git push --force rewrites history on the remote`. | `git push`, `git push origin HEAD`, `git push -u origin feature`, `git commit -m "push -f"`, `echo git push --force`, `git log --format=%h origin/+main`. |
-| `stay-in-the-worktree` | `write` and `edit`: a `path` outside the worktree, a `path` that starts with `~`, `$HOME` or `${HOME}`, or no `path` string at all. Reason: `files are written only inside the run's worktree`. | Relative paths inside (`src/main.rs`, `./a/../b.txt`), absolute paths inside the worktree, and any `read` of any path. |
+| `stay-in-the-worktree` | `write` and `edit`: a `path` outside the worktree, a `path` that starts with `~`, `$HOME` or `${HOME}`, or no `path` string at all. `bash`: a redirect (`> path`, `>> path`, `2> path`, `&> path`) or a file given to `tee` (`tee [-a] path...`) whose target resolves, with the virtual working directory, outside the worktree. Output to `/dev/null`, `/dev/stdout`, `/dev/stderr` and anything under `/tmp/` is allowed, because tests and build tools use them. Reason: `files are written only inside the run's worktree`. | Relative paths inside (`src/main.rs`, `./a/../b.txt`), absolute paths inside the worktree, and any `read` of any path. `echo hi > out.txt`, `cargo test 2>&1 \| tee /tmp/log`, `cmd > /dev/null 2>&1`. |
 | `no-secrets-in-commands` | `bash`: a command that contains a secret, that is, text the redaction would replace: a PEM private key block, `sk-ant-` followed by 20 or more of `A-Za-z0-9_-`, `sk-` (or `sk-proj-`) followed by 20 or more of those, `ghp_`, `gho_`, `ghu_`, `ghs_` or `ghr_` followed by 30 or more letters and digits, `github_pat_` followed by 40 or more of `A-Za-z0-9_`, `AKIA` followed by 16 capitals and digits. Reason: `a command must not contain a secret; read it from the environment instead`. | `curl -H "x-api-key: $ANTHROPIC_API_KEY" ...` (a variable, not the key). A `write` whose content holds a key is not refused; the content of results is redacted instead. |
 
 A refusal's reason is `<name>: <reason>`, for example `no-force-push: git push --force rewrites history on the remote`.
 
-What the patterns do not see: file writes made by a shell (`echo x > /etc/passwd`, `sed -i`), `cd` into another
-directory before a relative `rm`, and commands in scripts the model writes first and runs later. The prose rules and the
-teacher are the answer to those.
+Examples that are refused: `cd / && rm -rf *`, `cd ~ && rm -rf .`, `bash -c "rm -rf /"`, `sh -c 'git push -f'`,
+`eval rm -rf /`, `echo x > /etc/passwd`, `echo x >> ../outside.txt`, `ls | tee /etc/x`. Examples that are allowed:
+`cd src && rm -rf build`, `bash -c "cargo build"`.
+
+## Known limits
+
+The patterns are a first line only. What they cannot see is for the teacher and the prose rules:
+
+- Writes a shell makes other than by redirect and `tee` (`sed -i`, `cp`, `mv`, `git -C /elsewhere`), a command run
+  through a script file the agent writes and then runs, variables and command substitutions (`rm -rf "$DIR"`, `$(...)`),
+  and anything inside a quoted string that is not run as a shell by `bash -c` or `eval`.
+- The run's token is in Pi's environment (`MOEBIUS_RUN_TOKEN`) and so visible to the commands the agent runs. It gives no
+  more than Pi already has: its own model calls and checks.
 
 ## Prose rules and the teacher
 

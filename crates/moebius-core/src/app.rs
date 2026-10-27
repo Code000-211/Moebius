@@ -1,9 +1,9 @@
 //! The core put together: the store, the event bus, the repositories, the forges and the decision points, and the
 //! operations the desktop API and the board engine perform on them. Every change to a card is published on the bus.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use moebius_plugin_api::Host;
 use regex::Regex;
@@ -76,6 +76,9 @@ pub struct App {
     pub repos: Repos,
     pub decisions: Decisions,
     pub data_dir: PathBuf,
+    /// Why each waiting card waits, as its column script last said (`moebius.wait`, `ask`, `stuck`). Not stored: a
+    /// reason is rebuilt by the next tick after a restart.
+    waiting: Mutex<HashMap<i64, String>>,
     forges: BTreeMap<&'static str, Box<dyn Forge>>,
 }
 
@@ -92,6 +95,7 @@ impl App {
             bus: Bus::new(),
             repos,
             data_dir: data_dir.to_path_buf(),
+            waiting: Mutex::default(),
             forges,
         }
     }
@@ -186,6 +190,11 @@ impl App {
         if !is_plain_name(name) || name.starts_with('.') {
             return Err(AppError::Invalid(format!(
                 "{name:?} is not a repository name"
+            )));
+        }
+        if self.store.repositories()?.iter().any(|r| r.name == name) {
+            return Err(AppError::Invalid(format!(
+                "the repository name {name:?} is taken"
             )));
         }
         let clone = self.repos.clone_or_fetch(name, url, auth)?;
@@ -307,7 +316,38 @@ impl App {
             "card_moved",
             json!({ "card": card_id, "from": from, "to": column }),
         ));
+        self.set_waiting(card_id, None);
         self.card(card_id)
+    }
+
+    /// Why the card waits now, or none when it does not. Publishes `card_waiting` when that is not what it was.
+    pub fn set_waiting(&self, card_id: i64, reason: Option<String>) {
+        let mut waiting = self
+            .waiting
+            .lock()
+            .expect("waiting reasons are not poisoned");
+        let before = match &reason {
+            Some(reason) => waiting.insert(card_id, reason.clone()),
+            None => waiting.remove(&card_id),
+        };
+        if before != reason {
+            self.bus.publish(AppEvent::new(
+                "card_waiting",
+                json!({ "card": card_id, "reason": reason }),
+            ));
+        }
+    }
+
+    /// Why each waiting card among `cards` waits.
+    pub fn waiting(&self, cards: &[Card]) -> BTreeMap<i64, String> {
+        let waiting = self
+            .waiting
+            .lock()
+            .expect("waiting reasons are not poisoned");
+        cards
+            .iter()
+            .filter_map(|card| Some((card.id, waiting.get(&card.id)?.clone())))
+            .collect()
     }
 
     /// Offers the work on `branch` as a change for the card, through the repository's forge, and puts it in the

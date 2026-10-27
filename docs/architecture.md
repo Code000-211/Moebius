@@ -58,7 +58,7 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
    refuse with 429.
 7. **Every tool call is checked.** The bridge posts to `/moebius/check` (`check::check`). On a blocking thread,
    `check::ask` builds the `tool_call` question (`tool_call_question`, with the applicable rules from
-   `rules::applicable`), and `Decisions::decide` asks the `guard` plugin through the `Host` on a thread of its own with
+   `rules::applicable`, or the `rules_error` when the server's rules file cannot be read), and `Decisions::decide` asks the `guard` plugin through the `Host` on a thread of its own with
    a time limit. `Guard::call` tests the built-in patterns, then the prose rules with the teacher model (`Teacher::judge`,
    which calls the router with a token for this run). The answer is stored as one judgement, as a `tool_check` run
    event, and returned. A refusal goes back to the model as the tool's result and the run goes on. The result of each

@@ -17,10 +17,13 @@ use std::sync::Arc;
 
 use axum::Json;
 use axum::Router as Routes;
+use axum::body::Bytes;
 use axum::extract::State;
+use axum::extract::rejection::JsonRejection;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -80,13 +83,19 @@ fn unauthorized() -> Response {
         .into_response()
 }
 
-async fn check(
-    State(state): State<Check>,
-    headers: HeaderMap,
-    Json(request): Json<CheckRequest>,
-) -> Response {
+/// The body as JSON. It is read after the token is checked, so that a caller without one learns nothing about the
+/// body; a body that is not what the endpoint takes is answered 400 or 422.
+fn parse<T: DeserializeOwned>(body: &Bytes) -> Result<T, JsonRejection> {
+    Json::<T>::from_bytes(body).map(|Json(value)| value)
+}
+
+async fn check(State(state): State<Check>, headers: HeaderMap, body: Bytes) -> Response {
     let Some(grant) = state.router.grant(&headers) else {
         return unauthorized();
+    };
+    let request: CheckRequest = match parse(&body) {
+        Ok(request) => request,
+        Err(rejection) => return rejection.into_response(),
     };
     let reply = tokio::task::spawn_blocking(move || {
         ask(&state.app, state.rules_file.as_deref(), &grant, &request)
@@ -138,6 +147,8 @@ fn ask(
 /// - `worktree`: the run's worktree path, when it has one.
 /// - `card_title`, `card_body`: the card the run works on, when it has one.
 /// - `rules`: the rules that apply, as Markdown (`## <name>` and the rule's text), the server's first (see `rules`).
+/// - `rules_error`: instead of `rules`, why the server's rules file cannot be read. The guard refuses every call
+///   then.
 fn tool_call_question(
     app: &App,
     rules_file: Option<&Path>,
@@ -164,8 +175,10 @@ fn tool_call_question(
         context.insert("card_title".into(), card.title);
         context.insert("card_body".into(), card.body);
     }
-    let rules = rules::applicable(rules_file, repository.as_ref());
-    context.insert("rules".into(), rules::to_markdown(&rules));
+    match rules::applicable(rules_file, repository.as_ref()) {
+        Ok(rules) => context.insert("rules".into(), rules::to_markdown(&rules)),
+        Err(error) => context.insert("rules_error".into(), error.to_string()),
+    };
     Some(Question {
         kind: "tool_call".into(),
         context,
@@ -176,14 +189,14 @@ fn tool_call_question(
     })
 }
 
-async fn result(
-    State(state): State<Check>,
-    headers: HeaderMap,
-    Json(request): Json<ResultRequest>,
-) -> Response {
+async fn result(State(state): State<Check>, headers: HeaderMap, body: Bytes) -> Response {
     if state.router.grant(&headers).is_none() {
         return unauthorized();
     }
+    let request: ResultRequest = match parse(&body) {
+        Ok(request) => request,
+        Err(rejection) => return rejection.into_response(),
+    };
     let content = request
         .content
         .into_iter()
@@ -456,5 +469,88 @@ mod tests {
             }
         }
         assert!(s.app.store.judgements("tool_call").unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_token_is_checked_before_the_body() {
+        let s = setup(true).await;
+        let client = reqwest::Client::new();
+        for endpoint in ["check", "result"] {
+            let url = format!("{}/moebius/{endpoint}", s.url);
+            let bad_bodies = [
+                client.post(&url).body("not json"),
+                client.post(&url).json(&json!({"wrong": 1})),
+                client
+                    .post(&url)
+                    .header("content-type", "text/plain")
+                    .body("{}"),
+            ];
+            for request in bad_bodies {
+                assert_eq!(request.send().await.unwrap().status(), 401, "{endpoint}");
+            }
+            let with_token = |body: &'static str| {
+                client
+                    .post(&url)
+                    .bearer_auth(&s.token)
+                    .header("content-type", "application/json")
+                    .body(body)
+            };
+            let syntax = with_token("not json").send().await.unwrap().status();
+            let shape = with_token("{\"wrong\": 1}").send().await.unwrap().status();
+            assert_eq!((syntax.as_u16(), shape.as_u16()), (400, 422), "{endpoint}");
+        }
+    }
+
+    #[tokio::test]
+    async fn rules_that_cannot_be_read_refuse_every_call_through_the_guard() {
+        let dir = tempfile::tempdir().unwrap();
+        // A directory where the rules file should be.
+        std::fs::create_dir(dir.path().join("rules.md")).unwrap();
+        let config = Config::parse(
+            "rules_file = \"rules.md\"",
+            dir.path(),
+            &dir.path().join("moebius.toml"),
+        )
+        .unwrap();
+        let server = crate::server::Server::new(config, "127.0.0.1:1".parse().unwrap()).unwrap();
+        let repo = server
+            .app
+            .store
+            .add_repository("demo", "/srv/demo", "none", "main")
+            .unwrap();
+        let run = server
+            .app
+            .store
+            .add_run(None, "Coder", "pi-bolt", "code")
+            .unwrap();
+        let _ = repo;
+        let grant = Grant {
+            run_id: run.id,
+            card_id: None,
+            budget: None,
+        };
+        let request = CheckRequest {
+            tool: "read".into(),
+            input: json!({"path": "a"}),
+            tool_call_id: "c".into(),
+        };
+        let reply = tokio::task::spawn_blocking(move || {
+            ask(
+                &server.app,
+                server.config.rules_file.as_deref(),
+                &grant,
+                &request,
+            )
+        })
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(reply.decision, "refuse");
+        assert!(
+            reply.reason.contains("rules cannot be read"),
+            "{}",
+            reply.reason
+        );
+        assert!(reply.reason.contains("cannot read the rules file"));
     }
 }

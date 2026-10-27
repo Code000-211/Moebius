@@ -92,8 +92,10 @@ that wants the limit checks `moebius.runs_active()` first.
 of the six. Moving to the card's own column does nothing. The last call wins when a script calls it twice.
 
 `moebius.wait(reason)`
-: Leaves the card where it is and records `reason` as why. The engine returns the reason to its caller; the server does
-not show it anywhere yet. The last call wins.
+: Leaves the card where it is and records `reason` as why. The last call wins. The server keeps the card's current reason
+in memory (it is gone after a restart until the next tick), publishes `card_waiting` when it changes, and shows it in
+the snapshot's `waiting` (see the [desktop API](desktop-api.md)). A card that moves, or whose script does not wait, has
+no reason.
 
 `moebius.offer_change()` returns the change's id (a number).
 : Offers the branch of the card's latest run (`moebius/run-<id>`) as a change through the repository's forge. On a
@@ -101,7 +103,7 @@ repository without a forge the change is the branch itself. On GitHub the branch
 whose body says `Closes #<number>`. It adds an item `ready_to_merge` to the inbox with `{change, branch}` as its data,
 publishes `change_offered`, and moves the card to `Ready to merge` at once (not when the script returns). Raises an
 error `the card has no run to offer` when the card has had no run, and an error with the forge's message when the push
-or pull request fails. Call it last in a script. Its time counts against the time limit.
+or pull request fails. Call it last in a script. The time this call takes does not count against the time limit.
 
 `moebius.ask(kind, reason)`
 : Puts the card in the inbox for a person, with `kind` as the item's kind, the card's title as its title and

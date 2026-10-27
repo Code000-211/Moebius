@@ -60,7 +60,7 @@ Status codes:
 |---|---|
 | `200` | An answer, `allow` or `refuse`. |
 | `401` | Not a run's token. |
-| `400`, `415`, `422` | The request is not JSON, has the wrong content type, or lacks a field (plain text body). |
+| `400`, `422` | With a valid token: the body is not JSON (`400`), or lacks a field or has the wrong type (`422`). The token is checked first, so without one the answer is always `401`. |
 | `500` | `{"error": "cannot decide"}`: the server could not even record the decision. The client must treat it as a refusal. |
 
 ### `POST /moebius/result`
@@ -87,7 +87,7 @@ replaced by `[redacted:<kind>]`; other blocks are unchanged. The kinds are `priv
 {"content": [{"type": "text", "text": "token [redacted:github-token]"}]}
 ```
 
-Status codes: `200`, `401` and the `400`, `415` and `422` of the check endpoint. Nothing is recorded.
+Status codes: `200`, `401` and the `400` and `422` of the check endpoint. Nothing is recorded.
 
 ## Rules for a client
 
