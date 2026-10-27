@@ -98,8 +98,18 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
     calls `App::offer_change`: it publishes the change if need be, adds a `ready_to_merge` inbox item, publishes
     `change_offered` and moves the card to `Ready to merge`. While the card waits there, `merge.luau` sends it back to
     `In progress` with the conflict if the default branch moved and the change no longer merges; leaving `Ready to
-    merge` resolves the inbox item. A `code` or `review` run that failed or was stopped gets another run until
-    `board.round_limit`, then the card is stuck in the inbox.
+    merge` resolves the inbox item. A `code` or `review` run that failed gets another run until `board.round_limit`; the
+    card is put in the inbox as stuck (`moebius.stuck`) at that limit, when it has used the agent's `token_budget` (the
+    scripts compare `card.tokens` with `moebius.agent_budget`) and when a person stopped its run. While the daily
+    `budgets.day_tokens` is spent `ready.luau`, `code.luau` and `review.luau` wait, and the router refuses requests.
+12a. **A person decides what is stuck or offered.** Each is a route of the desktop API and a judgement by `person`:
+    `POST /v1/cards/{id}/retry` (`App::retry_card`) resolves the stuck item and sets `cards.retried_after` to the latest
+    run, so `card.rounds`, `card.reviews` and `card.tokens` (and the router's budget) count only later runs;
+    `POST /v1/changes/{id}/reject` (`App::reject_change`) resolves the `ready_to_merge` item and moves the card back to
+    `In progress` with the reason as its note, the change staying open; `POST /v1/runs/{id}/steer` and
+    `POST /v1/runs/{id}/stop` (`App::steer_run`, `App::stop_run`) go through the harness (`Runs::steer`, `Runs::stop`,
+    which `ApiState` holds), a steer also leaving a `steered` run event. A stopped run ends `stopped` and
+    `card.stopped` makes the scripts mark the card stuck instead of starting another run.
 13. **GitHub reports.** `poll::poll_pull_requests` reads each open change's pull request: checks and review are recorded
     (`change_updated`), a merged pull request calls `App::change_merged`, a closed one calls `App::change_closed`.
 14. **A person merges.** `POST /v1/changes/{id}/merge` calls `App::merge_change`: it records a judgement by `person`,
@@ -142,7 +152,7 @@ The server runs on a multi-threaded tokio runtime.
 - Every plugin call runs on a thread of its own, started by the `Host` for that call, with a time limit. The teacher uses a
   blocking HTTP client there.
 - A repository's own checks run on a thread of their own per change (`App::run_checks`), so the board is not blocked.
-- Each Pi run has one reader thread (`pibolt.rs`), and `PiBolt::stop` starts a short thread that kills Pi when it does not
+- Each Pi run has one reader thread (`pibolt.rs`), and `Runs::stop` (`PiBolt`) starts a short thread that kills Pi when it does not
   settle in time.
 - The store is one SQLite connection behind a mutex. Calls are short and take it one at a time.
 - The event bus is a tokio broadcast channel of 1024 events; a slow listener loses the oldest and is told with `lagged`.

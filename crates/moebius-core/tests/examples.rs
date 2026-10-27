@@ -38,6 +38,14 @@ impl Runs for IdleRuns {
     fn has_agent(&self, _: &str) -> bool {
         false
     }
+
+    fn steer(&self, _: i64, _: &str) -> bool {
+        false
+    }
+
+    fn stop(&self, _: i64) -> bool {
+        false
+    }
 }
 
 /// A repository whose default branch carries `script` as `.moebius/ready.luau`, and an engine over it.

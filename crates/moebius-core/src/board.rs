@@ -18,7 +18,11 @@
 //! - `card.review`: the verdict and findings of the review since the card's latest `code` run, if there is one.
 //! - `card.note`: why the card went back to coding, if it did and no `code` run has succeeded since.
 //! - `card.change`: the card's open change: its checks, the failing ones and whether it still merges cleanly.
+//! - `card.stopped`: whether a person stopped the card's latest run and has not retried the card since.
+//! - `card.rounds`, `card.reviews`, `card.tokens`: the `code` runs, `review` runs and tokens of the card since it was
+//!   last retried.
 //! - `moebius.runs_active()`, `moebius.run_limit`, `moebius.round_limit`: the limits.
+//! - `moebius.agent_budget(name)`, `moebius.tokens_today()`, `moebius.day_budget`: the token budgets (nil when none).
 //!
 //! Scripts have no file system, network, processes or `require`; each call has a memory limit and a time limit. The
 //! time limit counts only the time spent in the script, not the time Moebius spends on its behalf (starting a run, a
@@ -52,6 +56,13 @@ pub trait Runs: Send + Sync {
 
     /// Whether an agent of this name is configured.
     fn has_agent(&self, name: &str) -> bool;
+
+    /// Sends a message to a running run's agent, which takes it into account as it works. False when the run is not
+    /// running.
+    fn steer(&self, run_id: i64, message: &str) -> bool;
+
+    /// Asks a running run to stop; it ends as `stopped`. False when the run is not running.
+    fn stop(&self, run_id: i64) -> bool;
 }
 
 /// What a review run concluded: `verdict` is `approve` or `changes`, and `findings` is what it found.
@@ -136,6 +147,10 @@ impl Default for Workflow {
 pub struct Limits {
     pub run_limit: u32,
     pub round_limit: u32,
+    /// The agents' token budgets for a card, by agent name.
+    pub agent_budgets: BTreeMap<String, i64>,
+    /// The most tokens all runs may use in a day, if limited.
+    pub day_budget: Option<i64>,
     /// How long one script call may run, not counting the calls it makes into Moebius.
     pub script_time: Duration,
     /// How much memory one script call may use.
@@ -147,6 +162,8 @@ impl Default for Limits {
         Self {
             run_limit: 3,
             round_limit: 5,
+            agent_budgets: BTreeMap::new(),
+            day_budget: None,
             script_time: Duration::from_secs(2),
             script_memory: 16 << 20,
         }
@@ -351,9 +368,23 @@ impl Engine {
             }
         }
         t.set("blocked_by", blocked_by)?;
-        let count = |purpose: &str| runs.iter().filter(|r| r.purpose == purpose).count();
+        // A retry gives the card a fresh start: what ran before it no longer counts.
+        let since_retry = || runs.iter().filter(|r| Some(r.id) > card.retried_after);
+        let count = |purpose: &str| since_retry().filter(|r| r.purpose == purpose).count();
         t.set("rounds", count("code"))?;
         t.set("reviews", count("review"))?;
+        t.set(
+            "tokens",
+            self.app
+                .store
+                .tokens_for_card(card.id)
+                .map_err(mlua::Error::external)?,
+        )?;
+        t.set(
+            "stopped",
+            runs.last()
+                .is_some_and(|r| r.status == "stopped" && Some(r.id) > card.retried_after),
+        )?;
         if let Some(run) = runs.last() {
             let r = lua.create_table()?;
             r.set("id", run.id)?;
@@ -385,6 +416,7 @@ impl Engine {
         let m = lua.create_table()?;
         m.set("run_limit", self.limits.run_limit)?;
         m.set("round_limit", self.limits.round_limit)?;
+        m.set("day_budget", self.limits.day_budget)?;
         let card_id = card.id;
 
         let (app, clock) = (self.app.clone(), deadline.clone());
@@ -533,6 +565,20 @@ impl Engine {
                 app.store
                     .set_missing_outcomes(card_id, &outcome)
                     .map_err(mlua::Error::external)
+            })?,
+        )?;
+
+        let budgets = self.limits.agent_budgets.clone();
+        m.set(
+            "agent_budget",
+            lua.create_function(move |_, name: String| Ok(budgets.get(&name).copied()))?,
+        )?;
+
+        let app = self.app.clone();
+        m.set(
+            "tokens_today",
+            lua.create_function(move |_, ()| {
+                app.store.tokens_today().map_err(mlua::Error::external)
             })?,
         )?;
 
@@ -701,6 +747,14 @@ mod tests {
 
         fn has_agent(&self, name: &str) -> bool {
             name == "Coder" || (self.reviewer && name == "Reviewer")
+        }
+
+        fn steer(&self, _: i64, _: &str) -> bool {
+            false
+        }
+
+        fn stop(&self, _: i64) -> bool {
+            false
         }
     }
 
@@ -910,6 +964,262 @@ mod tests {
         assert_eq!(verdict(None).verdict, "changes");
     }
 
+    /// The engine of `setup`, with other limits.
+    fn engine_with(app: &Arc<App>, limits: Limits) -> Engine {
+        Engine::new(
+            app.clone(),
+            Arc::new(FakeHarness::default()),
+            Workflow::default(),
+            Limits {
+                script_time: Duration::from_millis(300),
+                ..limits
+            },
+        )
+    }
+
+    /// Records `tokens` used by a run of the card.
+    fn use_tokens(app: &App, run: i64, tokens: i64) {
+        app.store
+            .add_usage(&crate::store::Usage {
+                run_id: Some(run),
+                model: "local".into(),
+                input_tokens: tokens,
+                output_tokens: 0,
+                cached_tokens: 0,
+            })
+            .unwrap();
+    }
+
+    /// A card in progress whose latest `code` run ended as `status`.
+    fn card_after_a_run(app: &App, repo: i64, status: &str) -> (Card, Run) {
+        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        app.move_card(card.id, "In progress").unwrap();
+        let run = app
+            .store
+            .add_run(Some(card.id), "Coder", "fake", "code")
+            .unwrap();
+        app.store.set_run_status(run.id, status).unwrap();
+        (card, run)
+    }
+
+    fn runs_of(app: &App, card: &Card) -> usize {
+        app.store.runs_for_card(card.id).unwrap().len()
+    }
+
+    fn stuck_items(app: &App) -> Vec<String> {
+        let inbox = app.store.inbox().unwrap();
+        assert!(inbox.iter().all(|item| item.kind == "stuck"), "{inbox:?}");
+        inbox
+            .iter()
+            .map(|item| item.data["reason"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn a_card_at_the_round_limit_is_stuck_in_the_inbox() {
+        let (_dir, app, engine, repo) = setup();
+        let (card, _) = card_after_a_run(&app, repo, "failed");
+        for _ in 1..Limits::default().round_limit {
+            let run = app
+                .store
+                .add_run(Some(card.id), "Coder", "fake", "code")
+                .unwrap();
+            app.store.set_run_status(run.id, "failed").unwrap();
+        }
+        let step = engine.settle(card.id).unwrap();
+        assert_eq!(step.waiting.as_deref(), Some("the round limit is reached"));
+        assert_eq!(step.started_run, None);
+        assert_eq!(stuck_items(&app), ["the round limit is reached"]);
+        assert_eq!(runs_of(&app, &card), 5);
+    }
+
+    #[test]
+    fn a_card_that_spent_the_agents_token_budget_is_stuck_without_starting_a_run() {
+        let (_dir, app, _, repo) = setup();
+        let engine = engine_with(
+            &app,
+            Limits {
+                agent_budgets: BTreeMap::from([("Coder".to_string(), 1000)]),
+                ..Limits::default()
+            },
+        );
+        let (card, run) = card_after_a_run(&app, repo, "failed");
+        use_tokens(&app, run.id, 600);
+        let step = engine.settle(card.id).unwrap();
+        assert_eq!(step.started_run, Some(2), "there is budget left");
+        let second = app.store.runs_for_card(card.id).unwrap().pop().unwrap();
+        app.store.set_run_status(second.id, "failed").unwrap();
+        use_tokens(&app, second.id, 400);
+
+        let step = engine.settle(card.id).unwrap();
+        assert_eq!(step.started_run, None);
+        assert_eq!(
+            step.waiting.as_deref(),
+            Some("the token budget of 1000 is spent")
+        );
+        assert_eq!(stuck_items(&app), ["the token budget of 1000 is spent"]);
+        assert_eq!(runs_of(&app, &card), 2);
+    }
+
+    #[test]
+    fn the_reviewers_token_budget_stops_the_review() {
+        let harness = Arc::new(FakeHarness::with_reviewer(&[]));
+        let (_dir, app, _, repo) = setup_with_harness(None, harness.clone());
+        let engine = Engine::new(
+            app.clone(),
+            harness,
+            Workflow::default(),
+            Limits {
+                agent_budgets: BTreeMap::from([("Reviewer".to_string(), 100)]),
+                ..Limits::default()
+            },
+        );
+        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        engine.settle(card.id).unwrap();
+        let code = app.store.runs_for_card(card.id).unwrap().pop().unwrap();
+        use_tokens(&app, code.id, 100);
+        let step = engine.settle(card.id).unwrap();
+        assert_eq!(column(&app, &card), "In review");
+        assert_eq!(
+            step.waiting.as_deref(),
+            Some("the token budget of 100 is spent")
+        );
+        assert_eq!(runs_of(&app, &card), 1);
+        assert_eq!(stuck_items(&app).len(), 1);
+    }
+
+    #[test]
+    fn a_spent_daily_budget_keeps_cards_from_starting_and_from_going_on() {
+        let (_dir, app, _, repo) = setup();
+        let engine = engine_with(
+            &app,
+            Limits {
+                day_budget: Some(500),
+                ..Limits::default()
+            },
+        );
+        let (busy, run) = card_after_a_run(&app, repo, "succeeded");
+        use_tokens(&app, run.id, 499);
+        let ready = app.create_issue(repo, "Waiting", "", PERSON).unwrap();
+        app.move_card(ready.id, "Ready").unwrap();
+        let (second_round, failed) = card_after_a_run(&app, repo, "failed");
+
+        // 499 of 500 tokens are used: cards go on.
+        engine.tick(ready.id).unwrap();
+        assert_eq!(column(&app, &ready), "In progress");
+        app.move_card(ready.id, "Ready").unwrap();
+
+        use_tokens(&app, failed.id, 1);
+        let step = engine.settle(ready.id).unwrap();
+        assert_eq!(column(&app, &ready), "Ready");
+        assert_eq!(
+            step.waiting.as_deref(),
+            Some("the daily token budget is spent")
+        );
+        // A card that needs another round waits, too, instead of starting a run the router would refuse.
+        let step = engine.settle(second_round.id).unwrap();
+        assert_eq!(step.started_run, None);
+        assert_eq!(
+            step.waiting.as_deref(),
+            Some("the daily token budget is spent")
+        );
+        assert!(app.store.inbox().unwrap().is_empty());
+        // A card that is done with coding goes on to review.
+        engine.tick(busy.id).unwrap();
+        assert_eq!(column(&app, &busy), "In review");
+    }
+
+    #[test]
+    fn a_stopped_run_puts_its_card_in_the_inbox_and_it_is_not_retried_by_itself() {
+        let (_dir, app, engine, repo) = setup();
+        let (card, _) = card_after_a_run(&app, repo, "stopped");
+        for _ in 0..3 {
+            let step = engine.settle(card.id).unwrap();
+            assert_eq!(step.waiting.as_deref(), Some("stopped by a person"));
+        }
+        assert_eq!(runs_of(&app, &card), 1);
+        assert_eq!(stuck_items(&app), ["stopped by a person"]);
+    }
+
+    #[test]
+    fn a_retry_gives_a_stuck_card_a_fresh_start() {
+        let (_dir, app, _, repo) = setup();
+        let engine = engine_with(
+            &app,
+            Limits {
+                agent_budgets: BTreeMap::from([("Coder".to_string(), 1000)]),
+                ..Limits::default()
+            },
+        );
+        let (card, run) = card_after_a_run(&app, repo, "failed");
+        for _ in 1..Limits::default().round_limit {
+            let run = app
+                .store
+                .add_run(Some(card.id), "Coder", "fake", "code")
+                .unwrap();
+            app.store.set_run_status(run.id, "failed").unwrap();
+        }
+        use_tokens(&app, run.id, 1000);
+        engine.settle(card.id).unwrap();
+        assert_eq!(stuck_items(&app).len(), 1);
+        assert!(
+            app.waiting(std::slice::from_ref(&card))
+                .contains_key(&card.id)
+        );
+
+        // Neither the round limit nor the budget stops it any more.
+        app.retry_card(card.id, "I raised the budget.").unwrap();
+        assert!(app.waiting(std::slice::from_ref(&card)).is_empty());
+        assert!(app.store.inbox().unwrap().is_empty());
+        let step = engine.settle(card.id).unwrap();
+        assert!(step.started_run.is_some(), "{step:?}");
+        let judgements = app.store.judgements("retry").unwrap();
+        assert_eq!(
+            (judgements.len(), judgements[0].decider.as_str()),
+            (1, "person")
+        );
+
+        // A stopped card, too, starts again instead of being stuck again.
+        let (stopped, _) = card_after_a_run(&app, repo, "stopped");
+        engine.settle(stopped.id).unwrap();
+        app.retry_card(stopped.id, "Go on.").unwrap();
+        let step = engine.settle(stopped.id).unwrap();
+        assert!(step.started_run.is_some(), "{step:?}");
+        assert_eq!(app.card(stopped.id).unwrap().column, "In progress");
+    }
+
+    #[test]
+    fn a_rejected_change_goes_back_to_coding_with_the_reason_and_stays_the_same_change() {
+        let harness = Arc::new(FakeHarness::default());
+        let (_dir, app, engine, repo) = setup_with_harness(None, harness.clone());
+        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        engine.settle(card.id).unwrap();
+        engine.settle(card.id).unwrap();
+        assert_eq!(column(&app, &card), "Ready to merge");
+        let change = app.store.changes(repo).unwrap().pop().unwrap();
+
+        app.reject_change(change.id, "Please add a test.").unwrap();
+        assert_eq!(column(&app, &card), "In progress");
+        assert!(app.store.inbox().unwrap().is_empty());
+        let step = engine.settle(card.id).unwrap();
+        assert_eq!(step.waiting.as_deref(), Some("coding, round 2"));
+        assert_eq!(
+            harness.notes.lock().unwrap()[1].as_deref(),
+            Some("Please add a test.")
+        );
+
+        // The next round updates the change, which is offered again.
+        engine.settle(card.id).unwrap();
+        assert_eq!(column(&app, &card), "Ready to merge");
+        let changes = app.store.changes(repo).unwrap();
+        assert_eq!(changes.len(), 1);
+        assert_eq!(
+            (changes[0].id, changes[0].state.as_str()),
+            (change.id, "open")
+        );
+        assert_ne!(changes[0].head, change.head);
+    }
+
     /// Commits `text` as `path` on the repository's default branch, as someone merging elsewhere would.
     fn commit_to_base(app: &App, repo: i64, path: &str, text: &str) {
         let clone = std::path::PathBuf::from(&app.store.repository(repo).unwrap().unwrap().path);
@@ -1097,6 +1407,14 @@ mod tests {
 
         fn has_agent(&self, name: &str) -> bool {
             FakeHarness::default().has_agent(name)
+        }
+
+        fn steer(&self, _: i64, _: &str) -> bool {
+            false
+        }
+
+        fn stop(&self, _: i64) -> bool {
+            false
         }
     }
 

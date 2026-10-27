@@ -130,6 +130,7 @@ ALTER TABLE changes ADD COLUMN checks_head TEXT;
 ALTER TABLE changes ADD COLUMN failed_checks TEXT;
 ALTER TABLE changes ADD COLUMN check_output TEXT;
 "#,
+    "ALTER TABLE cards ADD COLUMN retried_after INTEGER;",
 ];
 
 const CHANGE_COLUMNS: &str = "id, repository_id, card_id, branch, state, pull_request, checks, review, \
@@ -195,6 +196,9 @@ pub struct Card {
     pub created_at: i64,
     /// Why the card went back to coding, for the next `code` run; cleared when a `code` run succeeds.
     pub note: Option<String>,
+    /// The id of the card's latest run when a person last retried it; its rounds, reviews and tokens count only the
+    /// runs after it.
+    pub retried_after: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -507,13 +511,14 @@ impl Store {
             column: column.into(),
             created_at: at,
             note: None,
+            retried_after: None,
         })
     }
 
     fn cards_where(&self, clause: &str, params: impl rusqlite::Params) -> Result<Vec<Card>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(&format!(
-            "SELECT id, repository_id, number, title, body, author, column_name, created_at, note FROM cards WHERE {clause} ORDER BY id"
+            "SELECT id, repository_id, number, title, body, author, column_name, created_at, note, retried_after FROM cards WHERE {clause} ORDER BY id"
         ))?;
         let rows = stmt.query_map(params, |r| {
             Ok(Card {
@@ -526,6 +531,7 @@ impl Store {
                 column: r.get(6)?,
                 created_at: r.get(7)?,
                 note: r.get(8)?,
+                retried_after: r.get(9)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -585,6 +591,15 @@ impl Store {
         self.conn().execute(
             "UPDATE cards SET note = ?1 WHERE id = ?2",
             params![note, id],
+        )?;
+        Ok(())
+    }
+
+    /// Gives the card a fresh start: the runs it has now no longer count toward its limits.
+    pub fn set_card_retried(&self, id: i64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE cards SET retried_after = (SELECT MAX(id) FROM runs WHERE card_id = ?1) WHERE id = ?1",
+            [id],
         )?;
         Ok(())
     }
@@ -1110,12 +1125,23 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
-    /// Tokens used by all runs of a card.
+    /// Tokens used by the runs of a card since it was last retried.
     pub fn tokens_for_card(&self, card_id: i64) -> Result<i64> {
         Ok(self.conn().query_row(
             "SELECT COALESCE(SUM(u.input_tokens + u.output_tokens), 0) FROM usage u JOIN runs r ON r.id = u.run_id
-             WHERE r.card_id = ?1",
+             WHERE r.card_id = ?1
+               AND r.id > COALESCE((SELECT retried_after FROM cards WHERE id = ?1), 0)",
             [card_id],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// Tokens used by all runs since the start of the server's local day.
+    pub fn tokens_today(&self) -> Result<i64> {
+        Ok(self.conn().query_row(
+            "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) FROM usage
+             WHERE at >= CAST(strftime('%s', 'now', 'localtime', 'start of day', 'utc') AS INTEGER)",
+            [],
             |r| r.get(0),
         )?)
     }
@@ -1356,5 +1382,46 @@ mod tests {
         s.add_usage(&u).unwrap();
         assert_eq!(s.usage_for_run(run.id).unwrap(), vec![u.clone(), u]);
         assert_eq!(s.tokens_for_card(a.id).unwrap(), 240);
+    }
+
+    #[test]
+    fn a_retry_forgets_the_tokens_used_before_it_and_today_counts_only_today() {
+        let (_dir, s) = store();
+        let repo = s.add_repository("r", "/r", "none", "main").unwrap();
+        let card = s.add_card(repo.id, "A", "", "leon", "Backlog").unwrap();
+        let used = |run: &Run, tokens| {
+            s.add_usage(&Usage {
+                run_id: Some(run.id),
+                model: "local".into(),
+                input_tokens: tokens,
+                output_tokens: 1,
+                cached_tokens: 0,
+            })
+            .unwrap();
+        };
+        let first = s.add_run(Some(card.id), "Coder", "pi", "code").unwrap();
+        used(&first, 99);
+        assert_eq!(s.tokens_for_card(card.id).unwrap(), 100);
+        assert_eq!(s.card(card.id).unwrap().unwrap().retried_after, None);
+
+        s.set_card_retried(card.id).unwrap();
+        assert_eq!(
+            s.card(card.id).unwrap().unwrap().retried_after,
+            Some(first.id)
+        );
+        assert_eq!(s.tokens_for_card(card.id).unwrap(), 0);
+        let second = s.add_run(Some(card.id), "Coder", "pi", "code").unwrap();
+        used(&second, 9);
+        assert_eq!(s.tokens_for_card(card.id).unwrap(), 10);
+
+        // Usage from before the start of today is not today's.
+        assert_eq!(s.tokens_today().unwrap(), 110);
+        s.conn()
+            .execute(
+                "UPDATE usage SET at = at - 2 * 86400 WHERE run_id = ?1",
+                [first.id],
+            )
+            .unwrap();
+        assert_eq!(s.tokens_today().unwrap(), 10);
     }
 }

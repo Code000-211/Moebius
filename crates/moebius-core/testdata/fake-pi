@@ -2,7 +2,7 @@
 # A stand-in for `pi-bolt --mode rpc` in tests: it speaks Pi's RPC protocol (JSON Lines, split on LF only).
 # A prompt containing "[hang]" waits for `abort`, one containing "[nothing]" settles without changing anything, and
 # a prompt for the reviewer changes nothing and answers with a verdict; any other prompt writes a file and settles.
-# The prompt is kept in prompt.txt next to argv.json. The final answer is reported in agent_end, as Pi does.
+# A `steer` is answered with a response that echoes the message. The prompt is kept in prompt.txt next to argv.json. The final answer is reported in agent_end, as Pi does.
 import json
 import os
 import sys
@@ -52,6 +52,9 @@ for line in sys.stdin.buffer:
             {"role": "assistant", "content": [{"type": "thinking", "thinking": "hm"},
                                               {"type": "text", "text": answer}]}]})
         emit({"type": "agent_settled", "aborted": False})
+    elif kind == "steer":
+        emit({"id": command.get("id"), "type": "response", "command": "steer", "success": True,
+              "echo": command["message"]})
     elif kind == "abort":
         emit({"id": command.get("id"), "type": "response", "command": "abort", "success": True})
         if hanging:

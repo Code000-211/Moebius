@@ -1,7 +1,7 @@
 //! The router (ADR 0006): Moebius is every harness's only model provider. It offers OpenAI- and Anthropic-compatible
 //! endpoints on localhost, knows each request's run by its per-run token, forwards it to an upstream (a provider with an
 //! API key, or a local server such as Radiance), records the tokens used against the run, and refuses requests once the
-//! card's or run's token budget is spent. Provider keys stay in the router; harnesses only ever see their run's token.
+//! card's or run's token budget, or the day's, is spent. Provider keys stay in the router; harnesses only ever see their run's token.
 //!
 //! - `POST /v1/chat/completions`: OpenAI chat completions, streamed or not.
 //! - `POST /v1/messages`: Anthropic messages, streamed or not.
@@ -54,6 +54,8 @@ pub struct Grant {
 pub struct Router {
     store: Arc<Store>,
     upstreams: Vec<Upstream>,
+    /// The most tokens all runs may use in a day, if limited.
+    day_budget: Option<i64>,
     grants: RwLock<HashMap<String, Grant>>,
     client: reqwest::Client,
 }
@@ -63,9 +65,16 @@ impl Router {
         Self {
             store,
             upstreams,
+            day_budget: None,
             grants: RwLock::new(HashMap::new()),
             client: reqwest::Client::new(),
         }
+    }
+
+    /// Refuses model requests once `tokens` have been used today by all runs.
+    pub fn with_day_budget(mut self, tokens: Option<i64>) -> Self {
+        self.day_budget = tokens;
+        self
     }
 
     /// Issues a new token for a run; requests carrying it are counted against the run.
@@ -131,31 +140,46 @@ impl Router {
             .cloned()
     }
 
-    /// Tokens already used against the grant's budget.
-    fn spent(&self, grant: &Grant) -> crate::store::Result<i64> {
-        match grant.card_id {
-            Some(card) => self.store.tokens_for_card(card),
-            None => Ok(self
+    /// Why the grant's request must be refused: the day's budget or the grant's budget is spent.
+    fn overspent(&self, grant: &Grant) -> crate::store::Result<Option<String>> {
+        if let Some(day) = self.day_budget {
+            let today = self.store.tokens_today()?;
+            if today >= day {
+                return Ok(Some(format!(
+                    "the daily token budget of {day} is spent ({today} used today)"
+                )));
+            }
+        }
+        let Some(budget) = grant.budget else {
+            return Ok(None);
+        };
+        let spent = match grant.card_id {
+            Some(card) => self.store.tokens_for_card(card)?,
+            None => self
                 .store
                 .usage_for_run(grant.run_id)?
                 .iter()
                 .map(Usage::total)
-                .sum()),
-        }
+                .sum(),
+        };
+        Ok((spent >= budget)
+            .then(|| format!("the token budget of {budget} is spent ({spent} used)")))
     }
 
-    /// A refusal when the grant's budget is spent or its usage cannot be read.
+    /// A refusal when a budget is spent or the usage cannot be read.
     async fn check_budget(self: Arc<Self>, protocol: Protocol, grant: &Grant) -> Option<Response> {
-        let budget = grant.budget?;
+        if self.day_budget.is_none() && grant.budget.is_none() {
+            return None;
+        }
         let g = grant.clone();
-        match tokio::task::spawn_blocking(move || self.spent(&g)).await {
-            Ok(Ok(spent)) if spent >= budget => Some(error(
+        match tokio::task::spawn_blocking(move || self.overspent(&g)).await {
+            Ok(Ok(Some(message))) => Some(error(
                 protocol,
                 StatusCode::TOO_MANY_REQUESTS,
                 "budget_exceeded",
-                &format!("the token budget of {budget} is spent ({spent} used)"),
+                &message,
             )),
-            Ok(Ok(_)) => None,
+            Ok(Ok(None)) => None,
             _ => Some(error(
                 protocol,
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -527,6 +551,10 @@ data: [DONE]\n\n";
     }
 
     async fn setup() -> Setup {
+        setup_with_day_budget(None).await
+    }
+
+    async fn setup_with_day_budget(day_budget: Option<i64>) -> Setup {
         let dir = tempfile::tempdir().unwrap();
         let store = Arc::new(Store::in_memory(dir.path()).unwrap());
         let repo = store
@@ -540,21 +568,24 @@ data: [DONE]\n\n";
             .unwrap();
         let seen = Arc::new(Mutex::new(Seen::default()));
         let upstream = fake_upstream(seen.clone()).await;
-        let router = Arc::new(Router::new(
-            store.clone(),
-            vec![
-                Upstream {
-                    protocol: Protocol::OpenAi,
-                    base_url: upstream.clone(),
-                    api_key: None,
-                },
-                Upstream {
-                    protocol: Protocol::Anthropic,
-                    base_url: upstream,
-                    api_key: Some("sk-provider-key".into()),
-                },
-            ],
-        ));
+        let router = Arc::new(
+            Router::new(
+                store.clone(),
+                vec![
+                    Upstream {
+                        protocol: Protocol::OpenAi,
+                        base_url: upstream.clone(),
+                        api_key: None,
+                    },
+                    Upstream {
+                        protocol: Protocol::Anthropic,
+                        base_url: upstream,
+                        api_key: Some("sk-provider-key".into()),
+                    },
+                ],
+            )
+            .with_day_budget(day_budget),
+        );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         let routes = router.clone().routes();
@@ -697,5 +728,35 @@ data: [DONE]\n\n";
         assert_eq!(send("wrong".into()).await.unwrap().status(), 401);
         s.router.revoke_token(&token);
         assert_eq!(send(token).await.unwrap().status(), 401);
+    }
+
+    #[tokio::test]
+    async fn requests_are_refused_once_the_days_tokens_are_spent() {
+        let s = setup_with_day_budget(Some(20)).await;
+        // A run without a card or budget of its own is still stopped by the day's budget.
+        let token = s.router.issue_token(Grant {
+            run_id: s.run,
+            card_id: None,
+            budget: None,
+        });
+        let send = || {
+            reqwest::Client::new()
+                .post(format!("{}/v1/chat/completions", s.url))
+                .bearer_auth(&token)
+                .json(&json!({"model": "local", "messages": []}))
+                .send()
+        };
+        assert_eq!(send().await.unwrap().status(), 200);
+        // 15 of the 20 tokens are used.
+        assert_eq!(send().await.unwrap().status(), 200);
+        let refused = send().await.unwrap();
+        assert_eq!(refused.status(), 429);
+        let body: Value = refused.json().await.unwrap();
+        assert_eq!(body["error"]["type"], "budget_exceeded");
+        assert_eq!(
+            body["error"]["message"],
+            "the daily token budget of 20 is spent (30 used today)"
+        );
+        assert_eq!(s.seen.lock().unwrap().bodies.len(), 2);
     }
 }

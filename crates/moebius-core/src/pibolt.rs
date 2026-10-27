@@ -4,8 +4,8 @@
 //! `agent_settled`; what the agent changed is committed on the run's branch and the worktree is removed. A `code` run
 //! that changed nothing has failed; other runs, such as a review, are not committed. A run starts from the branch of the
 //! card's latest successful `code` run, so it sees the work so far. The text of the agent's final answer is kept as
-//! the run's summary. A run is stopped with `abort`. Pi runs offline and does not trust configuration found
-//! in the worktree. The Moebius bridge (`bridge/moebius-bridge.ts`) is loaded into every run before the agent's own
+//! the run's summary. A run is stopped with `abort` and steered with `steer`. Pi runs offline and does not trust
+//! configuration found in the worktree. The Moebius bridge (`bridge/moebius-bridge.ts`) is loaded into every run before the agent's own
 //! extensions; it asks the check for each tool call and result (see `check`).
 
 use std::collections::{BTreeMap, HashMap};
@@ -24,6 +24,9 @@ use crate::config::AgentConfig;
 use crate::repos::{Worktree, git};
 use crate::router::{Grant, Protocol, Router};
 use crate::store::{Card, Run};
+
+/// How long Pi may take to exit after it was asked to stop.
+const STOP_GRACE: Duration = Duration::from_secs(10);
 
 /// The bridge extension, written into each run's directory.
 const BRIDGE: &str = include_str!("../bridge/moebius-bridge.ts");
@@ -60,24 +63,6 @@ impl PiBolt {
             agents,
             live: Arc::new(Mutex::new(HashMap::new())),
         }
-    }
-
-    /// Asks a run to stop; it ends with status `stopped` once Pi has settled. A run that does not settle within
-    /// `grace` is killed. Returns false when the run is not going.
-    pub fn stop(&self, run_id: i64, grace: Duration) -> bool {
-        let Some(live) = lock(&self.live).get(&run_id).cloned() else {
-            return false;
-        };
-        send(
-            &live.stdin,
-            &json!({ "id": "moebius-abort", "type": "abort" }),
-        );
-        std::thread::spawn(move || {
-            if !wait_for_exit(&live.child, grace) {
-                let _ = lock(&live.child).kill();
-            }
-        });
-        true
     }
 
     /// The command that starts Pi for one run.
@@ -286,6 +271,34 @@ impl Runs for PiBolt {
 
     fn has_agent(&self, name: &str) -> bool {
         self.agents.contains_key(name)
+    }
+
+    fn steer(&self, run_id: i64, message: &str) -> bool {
+        let Some(live) = lock(&self.live).get(&run_id).cloned() else {
+            return false;
+        };
+        send(
+            &live.stdin,
+            &json!({ "id": "moebius-steer", "type": "steer", "message": message }),
+        )
+    }
+
+    /// Asks Pi to abort; the run ends with status `stopped` once Pi has settled. A Pi that does not exit within
+    /// `STOP_GRACE` is killed.
+    fn stop(&self, run_id: i64) -> bool {
+        let Some(live) = lock(&self.live).get(&run_id).cloned() else {
+            return false;
+        };
+        send(
+            &live.stdin,
+            &json!({ "id": "moebius-abort", "type": "abort" }),
+        );
+        std::thread::spawn(move || {
+            if !wait_for_exit(&live.child, STOP_GRACE) {
+                let _ = lock(&live.child).kill();
+            }
+        });
+        true
     }
 }
 
@@ -696,7 +709,7 @@ mod tests {
             assert!(Instant::now() < deadline);
             std::thread::sleep(Duration::from_millis(20));
         }
-        assert!(pi.stop(run.id, Duration::from_secs(10)));
+        assert!(pi.stop(run.id));
         let run = wait_until_ended(&app, run.id);
         assert_eq!(run.status, "stopped");
         let last = app.store.events(run.id).unwrap().pop().unwrap();

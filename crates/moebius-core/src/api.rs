@@ -8,6 +8,10 @@
 //! - `POST /v1/repositories/{id}/issues` `{title, body}`: creates an issue, which becomes a card in the backlog.
 //! - `POST /v1/cards/{id}/approve` `{reason}`: a person approves an outside issue; its card moves to ready.
 //! - `POST /v1/changes/{id}/merge` `{reason}`: a person merges a change; its card moves to done.
+//! - `POST /v1/changes/{id}/reject` `{reason}`: a person sends a change waiting to be merged back to coding.
+//! - `POST /v1/cards/{id}/retry` `{reason}`: a person retries a stuck card, which gets a fresh start.
+//! - `POST /v1/runs/{id}/steer` `{message}`: a person sends a message to a running run.
+//! - `POST /v1/runs/{id}/stop` `{reason}`: a person stops a running run.
 //!
 //! Every request carries `Authorization: Bearer <token>`; anything else is answered with 401.
 
@@ -26,15 +30,18 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::app::{App, AppError, PERSON};
+use crate::board::Runs;
 use crate::bus::AppEvent;
 use crate::forge::ForgeError;
 use crate::repos::GitError;
-use crate::store::{Card, Change, InboxItem, Repository};
+use crate::store::{Card, Change, InboxItem, Repository, Run};
 
 /// What the API needs from the core.
 #[derive(Clone)]
 pub struct ApiState {
     pub app: Arc<App>,
+    /// The harness, for steering and stopping runs.
+    pub runs: Arc<dyn Runs>,
     pub token: Arc<str>,
 }
 
@@ -85,6 +92,12 @@ pub struct NewIssue {
 pub struct Reason {
     #[serde(default)]
     pub reason: String,
+}
+
+/// The body of a person's message to a running run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Steer {
+    pub message: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -161,7 +174,11 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/repositories", post(add_repository))
         .route("/v1/repositories/{id}/issues", post(create_issue))
         .route("/v1/cards/{id}/approve", post(approve_issue))
+        .route("/v1/cards/{id}/retry", post(retry_card))
         .route("/v1/changes/{id}/merge", post(merge_change))
+        .route("/v1/changes/{id}/reject", post(reject_change))
+        .route("/v1/runs/{id}/steer", post(steer_run))
+        .route("/v1/runs/{id}/stop", post(stop_run))
         .layer(middleware::from_fn_with_state(state.clone(), authenticate))
         .with_state(state)
 }
@@ -269,6 +286,49 @@ async fn merge_change(
     .await
 }
 
+async fn retry_card(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+    axum::Json(retry): axum::Json<Reason>,
+) -> Result<axum::Json<Card>, ApiError> {
+    blocking(&state.app, move |app| app.retry_card(id, &retry.reason)).await
+}
+
+async fn reject_change(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+    axum::Json(rejection): axum::Json<Reason>,
+) -> Result<axum::Json<Card>, ApiError> {
+    blocking(&state.app, move |app| {
+        app.reject_change(id, &rejection.reason)
+    })
+    .await
+}
+
+async fn steer_run(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+    axum::Json(steer): axum::Json<Steer>,
+) -> Result<axum::Json<Run>, ApiError> {
+    let runs = state.runs.clone();
+    blocking(&state.app, move |app| {
+        app.steer_run(&*runs, id, &steer.message)
+    })
+    .await
+}
+
+async fn stop_run(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+    axum::Json(stop): axum::Json<Reason>,
+) -> Result<axum::Json<Run>, ApiError> {
+    let runs = state.runs.clone();
+    blocking(&state.app, move |app| {
+        app.stop_run(&*runs, id, &stop.reason)
+    })
+    .await
+}
+
 async fn events(State(state): State<ApiState>, upgrade: WebSocketUpgrade) -> Response {
     let rx = state.app.bus.subscribe();
     upgrade.on_upgrade(move |socket| stream(socket, rx))
@@ -299,6 +359,11 @@ async fn stream(mut socket: WebSocket, mut rx: tokio::sync::broadcast::Receiver<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::board::{Engine, Limits, Workflow};
+    use crate::config::AgentConfig;
+    use crate::pibolt::PiBolt;
+    use crate::repos::git;
+    use crate::router::{Protocol, Router};
     use crate::store::Store;
     use futures_util::StreamExt;
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
@@ -316,14 +381,87 @@ mod tests {
         let host = Arc::new(moebius_plugin_api::Host::new(
             std::time::Duration::from_secs(1),
         ));
+        let coder = AgentConfig {
+            model: "fake".into(),
+            thinking: None,
+            instructions: None,
+            skills: vec![],
+            extensions: vec![],
+            protocol: Protocol::OpenAi,
+            token_budget: None,
+        };
+        // The harness is the real one over a Pi that is a script.
+        let pi = PiBolt::new(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/fake-pi"),
+            "http://127.0.0.1:9".into(),
+            Arc::new(Router::new(store.clone(), vec![])),
+            BTreeMap::from([("Coder".to_string(), coder)]),
+        );
         let state = ApiState {
             app: Arc::new(App::new(store, host, &dir.path().join("data"))),
+            runs: Arc::new(pi),
             token: token.into(),
         };
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(serve(listener, state.clone()));
         (dir, state, format!("127.0.0.1:{}", addr.port()))
+    }
+
+    /// A git repository with one commit.
+    fn origin(dir: &std::path::Path) -> std::path::PathBuf {
+        let origin = dir.join("origin");
+        std::fs::create_dir_all(&origin).unwrap();
+        git(&origin, &["init", "--quiet", "-b", "main"]).unwrap();
+        std::fs::write(origin.join("README.md"), "hello\n").unwrap();
+        git(&origin, &["add", "."]).unwrap();
+        git(&origin, &["commit", "--quiet", "-m", "first"]).unwrap();
+        origin
+    }
+
+    /// What a Coder run does, by hand: a worktree, a commit, the change offered.
+    fn code_and_offer(app: &App, repo: &Repository, card: &Card) -> Change {
+        let clone = std::path::PathBuf::from(&repo.path);
+        let run = app
+            .store
+            .add_run(Some(card.id), "Coder", "test", "code")
+            .unwrap();
+        app.store.set_run_status(run.id, "succeeded").unwrap();
+        let wt = app
+            .repos
+            .add_worktree(&repo.name, &clone, run.id, "main")
+            .unwrap();
+        std::fs::write(wt.path.join("feature.txt"), "done\n").unwrap();
+        git(&wt.path, &["add", "."]).unwrap();
+        git(&wt.path, &["commit", "--quiet", "-m", "Add the feature"]).unwrap();
+        app.repos.remove_worktree(&clone, &wt.path).unwrap();
+        let change = app.offer_change(card.id).unwrap();
+        assert_eq!(app.card(card.id).unwrap().column, "Ready to merge");
+        change
+    }
+
+    async fn post(
+        state: &ApiState,
+        addr: &str,
+        path: String,
+        body: serde_json::Value,
+    ) -> reqwest::Response {
+        reqwest::Client::new()
+            .post(format!("http://{addr}{path}"))
+            .bearer_auth(&*state.token)
+            .json(&body)
+            .send()
+            .await
+            .unwrap()
+    }
+
+    /// Waits until `done` holds.
+    async fn until(what: &str, done: impl Fn() -> bool) {
+        let give_up = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while !done() {
+            assert!(std::time::Instant::now() < give_up, "never: {what}");
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
     }
 
     #[tokio::test]
@@ -396,14 +534,8 @@ mod tests {
 
     #[tokio::test]
     async fn an_issue_becomes_a_card_and_its_merged_change_moves_it_to_done() {
-        use crate::repos::git;
         let (dir, state, addr) = start().await;
-        let origin = dir.path().join("origin");
-        std::fs::create_dir_all(&origin).unwrap();
-        git(&origin, &["init", "--quiet", "-b", "main"]).unwrap();
-        std::fs::write(origin.join("README.md"), "hello\n").unwrap();
-        git(&origin, &["add", "."]).unwrap();
-        git(&origin, &["commit", "--quiet", "-m", "first"]).unwrap();
+        let origin = origin(dir.path());
 
         let client = reqwest::Client::new();
         let post = |path: String, body: serde_json::Value| {
@@ -437,24 +569,9 @@ mod tests {
         .unwrap();
         assert_eq!(card.column, "Backlog");
 
-        // What a Coder run does, by hand: a worktree, a commit, the change offered.
         let app = state.app.clone();
         let clone = std::path::PathBuf::from(&repo.path);
-        let run = app
-            .store
-            .add_run(Some(card.id), "Coder", "test", "code")
-            .unwrap();
-        app.store.set_run_status(run.id, "succeeded").unwrap();
-        let wt = app
-            .repos
-            .add_worktree("demo", &clone, run.id, "main")
-            .unwrap();
-        std::fs::write(wt.path.join("feature.txt"), "done\n").unwrap();
-        git(&wt.path, &["add", "."]).unwrap();
-        git(&wt.path, &["commit", "--quiet", "-m", "Add the feature"]).unwrap();
-        app.repos.remove_worktree(&clone, &wt.path).unwrap();
-        let change = app.offer_change(card.id).unwrap();
-        assert_eq!(app.card(card.id).unwrap().column, "Ready to merge");
+        let change = code_and_offer(&app, &repo, &card);
         assert_eq!(app.store.inbox().unwrap().len(), 1);
 
         let merged = post(
@@ -499,6 +616,202 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(again.status(), 422);
+    }
+
+    #[tokio::test]
+    async fn a_person_retries_a_stuck_card_once() {
+        let (_dir, state, addr) = start().await;
+        let store = &state.app.store;
+        let card = store.cards(1).unwrap().pop().unwrap();
+        let retry = |reason: &str| {
+            post(
+                &state,
+                &addr,
+                format!("/v1/cards/{}/retry", card.id),
+                serde_json::json!({ "reason": reason }),
+            )
+        };
+        // Nothing to retry before the card is stuck, and no such card.
+        assert_eq!(retry("again").await.status(), 422);
+        let missing = post(
+            &state,
+            &addr,
+            "/v1/cards/99/retry".into(),
+            serde_json::json!({}),
+        )
+        .await;
+        assert_eq!(missing.status(), 404);
+
+        let run = store
+            .add_run(Some(card.id), "Coder", "test", "code")
+            .unwrap();
+        store
+            .add_inbox_item("stuck", Some(card.id), "First", &serde_json::json!({}))
+            .unwrap();
+        state
+            .app
+            .set_waiting(card.id, Some("the round limit is reached".into()));
+        let retried: Card = retry("the flaky test is fixed").await.json().await.unwrap();
+        assert_eq!(retried.retried_after, Some(run.id));
+        assert!(store.inbox().unwrap().is_empty());
+        assert!(state.app.waiting(std::slice::from_ref(&card)).is_empty());
+        let judgements = store.judgements("retry").unwrap();
+        assert_eq!(
+            (
+                judgements.len(),
+                judgements[0].decider.as_str(),
+                judgements[0].choice.as_str(),
+                judgements[0].reason.as_str(),
+                judgements[0].card_id
+            ),
+            (
+                1,
+                "person",
+                "retry",
+                "the flaky test is fixed",
+                Some(card.id)
+            )
+        );
+        assert_eq!(retry("again").await.status(), 422);
+    }
+
+    #[tokio::test]
+    async fn a_person_rejects_a_change_waiting_to_be_merged() {
+        let (dir, state, addr) = start().await;
+        let app = &state.app;
+        let repo = app
+            .add_repository("demo", origin(dir.path()).to_str().unwrap())
+            .unwrap();
+        let card = app
+            .create_issue(repo.id, "Add a feature", "", PERSON)
+            .unwrap();
+        let reject = |id: i64, reason: &str| {
+            post(
+                &state,
+                &addr,
+                format!("/v1/changes/{id}/reject"),
+                serde_json::json!({ "reason": reason }),
+            )
+        };
+        assert_eq!(reject(99, "no").await.status(), 404);
+
+        let change = code_and_offer(app, &repo, &card);
+        let rejected: Card = reject(change.id, "Add a test.").await.json().await.unwrap();
+        assert_eq!(rejected.column, "In progress");
+        assert_eq!(rejected.note.as_deref(), Some("Add a test."));
+        assert!(app.store.inbox().unwrap().is_empty());
+        assert_eq!(app.store.change(change.id).unwrap().unwrap().state, "open");
+        let judgements = app.store.judgements("reject").unwrap();
+        assert_eq!(
+            (
+                judgements.len(),
+                judgements[0].decider.as_str(),
+                judgements[0].reason.as_str()
+            ),
+            (1, "person", "Add a test.")
+        );
+        // The card no longer waits to be merged.
+        assert_eq!(reject(change.id, "again").await.status(), 422);
+
+        // A change that was merged cannot be rejected either.
+        app.merge_change(change.id, "fine").unwrap();
+        assert_eq!(reject(change.id, "too late").await.status(), 422);
+    }
+
+    #[tokio::test]
+    async fn a_person_steers_and_stops_a_run_and_its_card_waits_in_the_inbox() {
+        let (dir, state, addr) = start().await;
+        let app = state.app.clone();
+        let repo = app
+            .add_repository("demo", origin(dir.path()).to_str().unwrap())
+            .unwrap();
+        let card = app
+            .create_issue(repo.id, "Please [hang]", "", PERSON)
+            .unwrap();
+        let engine = Arc::new(Engine::new(
+            app.clone(),
+            state.runs.clone(),
+            Workflow::default(),
+            Limits::default(),
+        ));
+        let settle = || {
+            let engine = engine.clone();
+            async move {
+                tokio::task::spawn_blocking(move || engine.settle(card.id).unwrap())
+                    .await
+                    .unwrap()
+            }
+        };
+        let events = |run: i64| app.store.events(run).unwrap();
+
+        // The board starts the Coder, which waits for a person.
+        settle().await;
+        let run = app.store.runs_for_card(card.id).unwrap().pop().unwrap();
+        until("Pi takes the prompt", || events(run.id).len() >= 2).await;
+        let steer = |message: &str| {
+            post(
+                &state,
+                &addr,
+                format!("/v1/runs/{}/steer", run.id),
+                serde_json::json!({ "message": message }),
+            )
+        };
+        assert_eq!(steer("  ").await.status(), 422);
+        let steered: Run = steer("Use tabs.").await.json().await.unwrap();
+        assert_eq!(steered.status, "running");
+        until("Pi answers the steer", || {
+            events(run.id)
+                .iter()
+                .any(|e| e.kind == "response" && e.data["echo"] == "Use tabs.")
+        })
+        .await;
+        let steered = events(run.id).into_iter().find(|e| e.kind == "steered");
+        assert_eq!(
+            steered.unwrap().data,
+            serde_json::json!({ "message": "Use tabs." })
+        );
+
+        let stop = |id: i64| {
+            post(
+                &state,
+                &addr,
+                format!("/v1/runs/{id}/stop"),
+                serde_json::json!({ "reason": "wrong direction" }),
+            )
+        };
+        assert_eq!(stop(run.id).await.status(), 200);
+        until("the run ends", || {
+            app.store.run(run.id).unwrap().unwrap().status == "stopped"
+        })
+        .await;
+
+        // The card is not retried by itself; it waits in the inbox for a person.
+        let step = settle().await;
+        assert_eq!(step.waiting.as_deref(), Some("stopped by a person"));
+        settle().await;
+        assert_eq!(app.store.runs_for_card(card.id).unwrap().len(), 1);
+        let inbox = app.store.inbox().unwrap();
+        assert_eq!((inbox.len(), inbox[0].kind.as_str()), (1, "stuck"));
+
+        // What a person did is recorded, and neither applies to a run that is over.
+        for kind in ["steer", "stop"] {
+            let judgements = app.store.judgements(kind).unwrap();
+            assert_eq!(
+                (
+                    judgements.len(),
+                    judgements[0].decider.as_str(),
+                    judgements[0].run_id
+                ),
+                (1, "person", Some(run.id))
+            );
+        }
+        assert_eq!(
+            app.store.judgements("stop").unwrap()[0].reason,
+            "wrong direction"
+        );
+        assert_eq!(steer("Too late.").await.status(), 422);
+        assert_eq!(stop(run.id).await.status(), 422);
+        assert_eq!(stop(99).await.status(), 404);
     }
 
     #[tokio::test]

@@ -42,6 +42,11 @@ end = "06:00"
 tick_ms = 2000
 round_limit = 5
 
+# The most tokens (input plus output) all runs together may use in a day of the server's local time. Once it is spent,
+# the router refuses model requests and no card starts or continues work until the next day. Without it there is no limit.
+# [budgets]
+# day_tokens = 20000000
+
 # A repository without a forge names its own checks in .moebius/checks on its default branch: a command run in a
 # worktree of the change before it is reviewed. They are stopped after timeout_seconds (at least 1) and then fail.
 [checks]
@@ -113,6 +118,8 @@ pub enum ConfigError {
     TeacherTimeout { value: u64, max: u64 },
     #[error("checks.timeout_seconds must be at least 1")]
     ChecksTimeout,
+    #[error("budgets.day_tokens must be at least 1")]
+    DayTokens,
     #[error("{name} is not a valid agent name")]
     AgentName { name: String },
 }
@@ -144,6 +151,12 @@ impl TimeOfDay {
 struct RawWindow {
     start: Option<String>,
     end: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawBudgets {
+    day_tokens: Option<i64>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -205,6 +218,8 @@ struct Raw {
     trial_window: Option<RawWindow>,
     #[serde(default)]
     board: RawBoard,
+    #[serde(default)]
+    budgets: RawBudgets,
     #[serde(default)]
     checks: RawChecks,
     #[serde(default)]
@@ -278,6 +293,8 @@ pub struct Config {
     pub trial_window: (TimeOfDay, TimeOfDay),
     pub board_tick: Duration,
     pub round_limit: u32,
+    /// The most tokens all runs may use in a day, if limited.
+    pub day_tokens: Option<i64>,
     /// How long a repository's own checks may run.
     pub checks_timeout: Duration,
     pub router_listen: SocketAddr,
@@ -345,6 +362,9 @@ impl Config {
             }
             None => None,
         };
+        if raw.budgets.day_tokens.is_some_and(|tokens| tokens < 1) {
+            return Err(ConfigError::DayTokens);
+        }
         let checks_timeout = raw.checks.timeout_seconds.unwrap_or(1800);
         if checks_timeout == 0 {
             return Err(ConfigError::ChecksTimeout);
@@ -369,6 +389,7 @@ impl Config {
             ),
             board_tick: Duration::from_millis(raw.board.tick_ms.unwrap_or(2000).max(50)),
             round_limit: raw.board.round_limit.unwrap_or(5),
+            day_tokens: raw.budgets.day_tokens,
             checks_timeout: Duration::from_secs(checks_timeout),
             router_listen,
             upstreams: raw.router.upstreams,
@@ -532,6 +553,17 @@ mod tests {
         assert!(matches!(
             parse("[github]\napp_id = 1"),
             Err(ConfigError::Parse { .. })
+        ));
+    }
+
+    #[test]
+    fn the_daily_token_budget_is_optional_and_positive() {
+        assert_eq!(parse("").unwrap().day_tokens, None);
+        let c = parse("[budgets]\nday_tokens = 5000").unwrap();
+        assert_eq!(c.day_tokens, Some(5000));
+        assert!(matches!(
+            parse("[budgets]\nday_tokens = 0"),
+            Err(ConfigError::DayTokens)
         ));
     }
 

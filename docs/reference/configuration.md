@@ -52,7 +52,15 @@ yet.
 | Key | Type | Default | Meaning and validation |
 |---|---|---|---|
 | `board.tick_ms` | integer | `2000` | Milliseconds between two runs of the column scripts over all cards. A value below 50 is raised to 50. |
-| `board.round_limit` | integer | `5` | How many `code` rounds a card gets before the default `code.luau` marks it stuck. Scripts read it as `moebius.round_limit`. |
+| `board.round_limit` | integer | `5` | How many `code` rounds a card gets (counted from its latest retry) before the default `code.luau` marks it stuck. Scripts read it as `moebius.round_limit`. |
+
+## `[budgets]`
+
+Token budgets that are not an agent's own (see `agents.<name>.token_budget`). The table is optional.
+
+| Key | Type | Default | Meaning and validation |
+|---|---|---|---|
+| `budgets.day_tokens` | integer | none | The most tokens (input plus output, all runs, teacher included) that may be used in a day of the server's local time. Once it is reached the router refuses model requests with HTTP 429 `budget_exceeded`, and the default scripts start no new run until the next day (a running run is not cut off). At least 1, else the file is refused. Without it there is no limit. Scripts read it as `moebius.day_budget`. |
 
 ## `[checks]`
 
@@ -125,7 +133,7 @@ A name is made of letters, digits, `-` and `_` and must not be empty, else the f
 | `agents.<name>.instructions` | string | none | Given to Pi-Bolt as `--append-system-prompt`. |
 | `agents.<name>.skills` | array of paths | `[]` | Each given to Pi-Bolt as `--skill`. |
 | `agents.<name>.extensions` | array of paths | `[]` | Each given to Pi-Bolt as `--extension`, after the bridge, which is always loaded first. |
-| `agents.<name>.token_budget` | integer | none | The most tokens (input plus output, summed over all runs of the card, teacher included) a card may use. A model request over it is answered with HTTP 429 `budget_exceeded`. Without it there is no limit. |
+| `agents.<name>.token_budget` | integer | none | The most tokens (input plus output, summed over all runs of the card, teacher included) a card may use. A model request over it is answered with HTTP 429 `budget_exceeded`, and the default scripts mark a card that reached it stuck instead of starting a run. Tokens used before the card's latest retry do not count. Without it there is no limit. Scripts read it as `moebius.agent_budget(name)`. |
 
 ## Environment variables
 

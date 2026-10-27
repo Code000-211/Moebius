@@ -14,12 +14,13 @@ use regex::Regex;
 use serde_json::json;
 
 use crate::blobs::redact;
+use crate::board::Runs;
 use crate::bus::{AppEvent, Bus};
 use crate::decide::{Decisions, Question};
 use crate::forge::{Forge, ForgeError, NoForge};
 use crate::github::Issue;
 use crate::repos::{GitError, Repos, git};
-use crate::store::{Card, Change, Repository, Store, StoreError, now};
+use crate::store::{Card, Change, Repository, Run, Store, StoreError, now};
 
 /// The columns of the default workflow (spec 6).
 pub mod columns {
@@ -150,6 +151,12 @@ impl App {
         self.store
             .card(id)?
             .ok_or_else(|| AppError::NotFound(format!("card {id}")))
+    }
+
+    fn run(&self, id: i64) -> Result<Run> {
+        self.store
+            .run(id)?
+            .ok_or_else(|| AppError::NotFound(format!("run {id}")))
     }
 
     fn change(&self, id: i64) -> Result<Change> {
@@ -325,6 +332,100 @@ impl App {
         )?;
         self.store.resolve_inbox_for_card(card_id)?;
         self.move_card(card_id, columns::READY)
+    }
+
+    /// Records what a person did: `kind` names both the decision and the option they took; the other was to leave
+    /// things as they were.
+    fn record_action(
+        &self,
+        kind: &str,
+        card_id: Option<i64>,
+        run_id: Option<i64>,
+        context: BTreeMap<String, String>,
+        reason: &str,
+    ) -> Result<()> {
+        self.decisions.record_person(
+            &Question {
+                kind: kind.into(),
+                context,
+                options: vec![kind.into(), "leave".into()],
+                fail_closed: "leave".into(),
+                run_id,
+                card_id,
+            },
+            kind,
+            reason,
+        )?;
+        Ok(())
+    }
+
+    /// A person retries a stuck card: the decision is recorded, the card's stuck item is resolved and its limits start
+    /// afresh, so the board starts work on it again.
+    pub fn retry_card(&self, card_id: i64, reason: &str) -> Result<Card> {
+        let card = self.card(card_id)?;
+        if !self.store.has_open_inbox_item(card_id, "stuck")? {
+            return Err(AppError::Invalid(format!("card {card_id} is not stuck")));
+        }
+        let context = BTreeMap::from([("title".into(), card.title.clone())]);
+        self.record_action("retry", Some(card_id), None, context, reason)?;
+        self.store.set_card_retried(card_id)?;
+        self.store.resolve_inbox_for_card(card_id)?;
+        self.set_waiting(card_id, None);
+        self.card(card_id)
+    }
+
+    /// A person rejects the change waiting to be merged: the decision is recorded and the card goes back to coding,
+    /// where the next round is told the reason. The change stays open and is updated by that round.
+    pub fn reject_change(&self, change_id: i64, reason: &str) -> Result<Card> {
+        let change = self.change(change_id)?;
+        let card = match change.card_id.map(|id| self.card(id)).transpose()? {
+            Some(card) if change.state == "open" && card.column == columns::READY_TO_MERGE => card,
+            _ => {
+                return Err(AppError::Invalid(format!(
+                    "change {change_id} is not waiting to be merged"
+                )));
+            }
+        };
+        let context = BTreeMap::from([
+            ("title".into(), card.title.clone()),
+            ("branch".into(), change.branch.clone()),
+        ]);
+        self.record_action("reject", Some(card.id), None, context, reason)?;
+        let note = match reason.trim() {
+            "" => "A person rejected the change.",
+            reason => reason,
+        };
+        self.store.set_card_note(card.id, note)?;
+        self.store.resolve_inbox_for_card(card.id)?;
+        self.move_card(card.id, columns::IN_PROGRESS)
+    }
+
+    /// A person sends a message to a running run: the agent gets it and the run keeps it as a `steered` event.
+    pub fn steer_run(&self, runs: &dyn Runs, run_id: i64, message: &str) -> Result<Run> {
+        let run = self.run(run_id)?;
+        if message.trim().is_empty() {
+            return Err(AppError::Invalid("a steer needs a message".into()));
+        }
+        if !runs.steer(run_id, message) {
+            return Err(AppError::Invalid(format!("run {run_id} is not running")));
+        }
+        let message = redact(message);
+        self.store
+            .append_event(run_id, "steered", &json!({ "message": message }))?;
+        let context = BTreeMap::from([("message".into(), message)]);
+        self.record_action("steer", run.card_id, Some(run_id), context, "")?;
+        Ok(run)
+    }
+
+    /// A person stops a running run. It ends as `stopped` once its agent has settled, and its card then waits in the
+    /// inbox as stuck.
+    pub fn stop_run(&self, runs: &dyn Runs, run_id: i64, reason: &str) -> Result<Run> {
+        let run = self.run(run_id)?;
+        if !runs.stop(run_id) {
+            return Err(AppError::Invalid(format!("run {run_id} is not running")));
+        }
+        self.record_action("stop", run.card_id, Some(run_id), BTreeMap::new(), reason)?;
+        Ok(run)
     }
 
     pub fn move_card(&self, card_id: i64, column: &str) -> Result<Card> {

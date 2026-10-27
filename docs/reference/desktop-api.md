@@ -25,7 +25,7 @@ A failed request has a status code and a plain-text message as its body.
 | Status | Meaning |
 |---|---|
 | `401` | No valid token. |
-| `404` | The repository, card or change in the path does not exist. |
+| `404` | The repository, card, change or run in the path does not exist. |
 | `409` | A merge conflicts: the default branch is left as it was. |
 | `422` | The request is understood but not allowed: invalid values, or a card or change in the wrong state. Also what axum answers for a JSON body with a missing or mistyped field. |
 | `400`, `415` | The body is not valid JSON, or the content type is not `application/json`. |
@@ -41,7 +41,9 @@ These objects appear in the responses. All ids are numbers; times are Unix secon
 (`owner/repo` or null), `trusted` (array of GitHub logins).
 
 `Card`: `id`, `repository_id`, `number`, `title`, `body`, `author`, `column`, `created_at`, `note` (why the card was sent
-back to coding, or null).
+back to coding, or null) and `retried_after` (the id of the card's latest run when a person last retried it, or null).
+`Run`: `id`, `card_id`, `agent`, `harness`, `purpose`, `status` (`starting`, `running`, `succeeded`, `failed` or `stopped`),
+`worktree`, `started_at`, `ended_at` and `summary`.
 
 `Change`: `id`, `repository_id`, `card_id` (or null), `branch`, `state` (`open`, `merged` or `closed`), `pull_request`
 (the number on GitHub, or null), `checks` (`pending`, `success`, `failure` or null), `review` (the latest review's state in
@@ -150,6 +152,50 @@ Request: `{"reason": "..."}`; `reason` is optional, but the body is not: send `{
 Response: `{"commit": "<sha of the merge commit>"}`. Errors: `404` no such change; `422` the change is not `open`; `409` the
 branch does not merge cleanly; `500` the forge failed.
 
+### `POST /v1/changes/{id}/reject`
+
+A person rejects an open change whose card waits in `Ready to merge`: the decision is recorded (kind `reject`, decider
+`person`), the card's `ready_to_merge` inbox item is resolved, and the card moves back to `In progress` with the reason as
+its `note`, so that the next Coder round is told (without a reason the note says a person rejected the change). The change
+stays open: the next round updates it, and on GitHub its pull request stays.
+
+Request: `{"reason": "..."}`; `reason` is optional, but send `{}` without one.
+
+Response: the `Card`. Errors: `404` no such change; `422` the change is not `open` or its card is not in `Ready to merge`.
+
+### `POST /v1/cards/{id}/retry`
+
+A person retries a card that waits in the inbox as stuck (it reached its round limit or its token budget, or a person
+stopped its run): the decision is recorded (kind `retry`, decider `person`), the card's inbox items are resolved, its
+waiting reason is cleared and its `retried_after` is set to its latest run, so that its `rounds`, `reviews` and `tokens`
+(see [column scripts](column-scripts.md)) count from the runs after it. The board then starts work on the card again.
+
+Request: `{"reason": "..."}`; `reason` is optional, but send `{}` without one.
+
+Response: the `Card`. Errors: `404` no such card; `422` the card has no open `stuck` inbox item.
+
+### `POST /v1/runs/{id}/steer`
+
+A person sends a message to a running run: the harness passes it to the agent (Pi-Bolt's `steer` command), the run
+stores a `steered` event with `{"message": ...}` (secrets removed), and the decision is recorded (kind `steer`, decider
+`person`, the message in its context).
+
+Request: `{"message": "..."}`; `message` is required and must not be blank.
+
+Response: the `Run`. Errors: `404` no such run; `422` the message is blank or the run is not running.
+
+### `POST /v1/runs/{id}/stop`
+
+A person stops a running run: the decision is recorded (kind `stop`, decider `person`) and the harness asks the agent to
+abort (Pi-Bolt's `abort` command; a Pi-Bolt that has not exited after 10 seconds is killed). The run ends as `stopped`,
+which publishes `run_ended`. The card is not retried by itself: its script puts it in the inbox as stuck ("stopped by a
+person"), and a person decides with retry.
+
+Request: `{"reason": "..."}`; `reason` is optional, but send `{}` without one.
+
+Response: the `Run`, as it was when the request was made (still `running`). Errors: `404` no such run; `422` the run is not
+running.
+
 ## Events
 
 `GET /v1/events` sends one JSON object per message: `{"kind": "<kind>", "data": ...}`. These are all the kinds.
@@ -181,4 +227,5 @@ A `run_event` has two sources, told apart by its inner `kind`:
   as kind `unparsed` with `{"type": "unparsed", "error", "text"}`.
 
 All of a run's events are also kept in the store, with a sequence number, together with `moebius_error` events
-(`{"message"}`) that explain why a run failed. Those are stored, not published.
+(`{"message"}`) that explain why a run failed and `steered` events (`{"message"}`) for a person's steers. Those are stored,
+not published.

@@ -47,7 +47,7 @@ The checks run in this order:
 | Status | `type` | When |
 |---|---|---|
 | `401` | `authentication_error` | The token is missing or unknown. |
-| `429` | `budget_exceeded` | The run's budget is spent (below). |
+| `429` | `budget_exceeded` | The run's budget or the day's budget is spent (below). |
 | `500` | `api_error` | The usage cannot be read from the store. |
 | `502` | `api_error` | There is no upstream for the protocol, or the upstream cannot be reached or its body cannot be read. |
 | `400` | `invalid_request_error` | The body is not JSON. |
@@ -60,8 +60,13 @@ An agent's `token_budget` (see [configuration](configuration.md)) is carried by 
 agent. Before a request is forwarded, the router adds up the input and output tokens recorded for all runs of the same
 card, the teacher's included. Cached tokens are not added. When the sum is at or above the budget, the request is
 refused with `429` and `budget_exceeded`, and the message says the budget and what was used. A run without a card is
-measured by its own usage. Without a `token_budget` there is no limit. A request already forwarded is never cut off, so a
-card can go over its budget by what its last request used.
+measured by its own usage. Without a `token_budget` there is no limit. Tokens of runs from before the card's latest retry (a person's
+`POST /v1/cards/{id}/retry`, see the [desktop API](desktop-api.md)) are not counted. A request already forwarded is never
+cut off, so a card can go over its budget by what its last request used.
+
+The daily budget, `budgets.day_tokens`, is checked first: when the input and output tokens of all runs since the start of
+the server's local day are at or above it, the request is refused with `429` and `budget_exceeded`, and the message says
+that the daily token budget is spent and how much was used today. It applies to every request, whatever the run.
 
 ## Usage
 

@@ -88,7 +88,8 @@ impl Server {
                 api_key,
             });
         }
-        let router = Arc::new(Router::new(store.clone(), upstreams));
+        let router =
+            Arc::new(Router::new(store.clone(), upstreams).with_day_budget(config.day_tokens));
 
         let teacher = config
             .teacher
@@ -130,6 +131,12 @@ impl Server {
             Limits {
                 run_limit: config.run_limit,
                 round_limit: config.round_limit,
+                agent_budgets: config
+                    .agents
+                    .iter()
+                    .filter_map(|(name, agent)| Some((name.clone(), agent.token_budget?)))
+                    .collect(),
+                day_budget: config.day_tokens,
                 ..Limits::default()
             },
         ));
@@ -188,6 +195,7 @@ impl Server {
     ) -> std::io::Result<()> {
         let state = ApiState {
             app: self.app.clone(),
+            runs: self.harness.clone(),
             token: self.token.clone(),
         };
         let board = {
@@ -466,6 +474,14 @@ mod tests {
         }
 
         fn has_agent(&self, _: &str) -> bool {
+            false
+        }
+
+        fn steer(&self, _: i64, _: &str) -> bool {
+            false
+        }
+
+        fn stop(&self, _: i64) -> bool {
             false
         }
     }

@@ -50,8 +50,10 @@ end
 | `card.column` | string | The column the card is in. |
 | `card.trusted` | boolean | True when the issue may move on without approval: it was made by a person in the desktop app on a repository without a forge, or its author is one of the repository's trusted GitHub logins (compared without regard to case). |
 | `card.blocked_by` | table (array of numbers) | The issue numbers the card is blocked by that are not done yet. A number counts as not done when it has no card or its card is not in `Done`. Empty (never nil) when nothing blocks the card. The numbers come from "blocked by #12" lines in the issue's body on GitHub. |
-| `card.rounds` | number | How many runs with purpose `code` the card has had, whatever their status (a running one counts). |
-| `card.reviews` | number | How many runs with purpose `review` the card has had, whatever their status. |
+| `card.rounds` | number | How many runs with purpose `code` the card has had since it was last retried, whatever their status (a running one counts). |
+| `card.reviews` | number | How many runs with purpose `review` the card has had since it was last retried, whatever their status. |
+| `card.tokens` | number | The input and output tokens the card's runs used since it was last retried (cached tokens are not added; the teacher's count too). |
+| `card.stopped` | boolean | True when the card's latest run was stopped by a person and the card has not been retried since. |
 | `card.review` | table or nil | The latest review of the card's work: the newest `review` run that `succeeded` after the card's latest `code` run. nil when there is none, so a new `code` run clears it. |
 | `card.review.verdict` | string | `approve` or `changes`. Read from the review run's summary (see below). |
 | `card.review.findings` | string | The summary without its verdict line; for a review with no verdict, the text `The review gave no verdict.` |
@@ -87,6 +89,7 @@ Arguments are positional. A wrong number or type of argument raises an error (se
 |---|---|---|
 | `moebius.run_limit` | number | How many runs may go at once across all boards (`run_limit`). |
 | `moebius.round_limit` | number | How many `code` rounds a card gets (`board.round_limit`). |
+| `moebius.day_budget` | number or nil | The most tokens all runs may use in a day (`budgets.day_tokens`); nil without one. |
 
 ### Functions
 
@@ -164,6 +167,14 @@ change is merged and when its change is closed.
 
 `moebius.runs_active()` returns a number.
 : How many runs have not ended, across all boards.
+
+`moebius.agent_budget(name)` returns a number or nil.
+: The token budget of the agent `name` for one card (`agents.<name>.token_budget`); nil when it has none or there is no such
+agent. A script compares it with `card.tokens`.
+
+`moebius.tokens_today()` returns a number.
+: The input and output tokens all runs have used since the start of the server's local day. A script compares it with
+`moebius.day_budget`.
 
 ## Errors
 
@@ -251,9 +262,9 @@ time opens the pull request; later it updates it with a push. Without a forge th
 | Script | What it does |
 |---|---|
 | `backlog.luau` | If `card.trusted`, moves the card to `Ready`. Otherwise asks a person (`moebius.ask("approve_issue", ...)`) and waits; approving the issue in the desktop API moves the card to `Ready`. |
-| `ready.luau` | Waits while `card.blocked_by` is not empty, naming the issues. Waits while `moebius.runs_active() >= moebius.run_limit`. Otherwise moves the card to `In progress`. |
-| `code.luau` | Waits while the latest run is `starting` or `running`. Moves the card to `In review` when the latest run is a `code` run that `succeeded` and the card has no `card.note`. Otherwise marks the card stuck with `the round limit is reached` when `card.rounds >= moebius.round_limit`, and else starts a `Coder` run with purpose `code` and `card.note` as its note: the first round, a retry after a `code` run that `failed` or was `stopped`, or the next round after the card was sent back. |
-| `review.luau` | Waits while the latest run is going, and moves the card back to `In progress` when its latest run is neither a succeeded `code` run nor a `review` run. Then, in this order: publishes the change (`moebius.publish_change`) and starts its own checks (`moebius.run_checks`); waits while `card.change.checks` is `pending`; sends the card back to `In progress` when they are `failure`, with the note `The checks failed:` and the failing checks or the output; sends it back when `card.change.conflict` is set, with the conflicting files and the instruction to merge `card.change.base` into its branch and resolve them; without an agent `Reviewer` (`moebius.has_agent`), or when `card.review.verdict` is `approve`, offers the change; sends the card back with `card.review.findings` as the note when the verdict is `changes`; starts a `Reviewer` run with purpose `review` otherwise. A `review` run that `failed` or was `stopped` is started again, until `card.reviews >= moebius.round_limit`, when the card is marked stuck with `the round limit is reached`. |
+| `ready.luau` | Waits while `card.blocked_by` is not empty, naming the issues. Waits with `the daily token budget is spent` when `moebius.day_budget` is set and `moebius.tokens_today()` has reached it. Waits while `moebius.runs_active() >= moebius.run_limit`. Otherwise moves the card to `In progress`. |
+| `code.luau` | Waits while the latest run is `starting` or `running`. Moves the card to `In review` when the latest run is a `code` run that `succeeded` and the card has no `card.note`. Otherwise marks the card stuck with `stopped by a person` when `card.stopped`, with `the round limit is reached` when `card.rounds >= moebius.round_limit`, and with `the token budget of N is spent` when `card.tokens` has reached `moebius.agent_budget("Coder")`; waits with `the daily token budget is spent` when the day's budget is spent; and else starts a `Coder` run with purpose `code` and `card.note` as its note: the first round, a retry after a `code` run that `failed` or was `stopped`, or the next round after the card was sent back. |
+| `review.luau` | Waits while the latest run is going, and moves the card back to `In progress` when its latest run is neither a succeeded `code` run nor a `review` run. Then, in this order: publishes the change (`moebius.publish_change`) and starts its own checks (`moebius.run_checks`); waits while `card.change.checks` is `pending`; sends the card back to `In progress` when they are `failure`, with the note `The checks failed:` and the failing checks or the output; sends it back when `card.change.conflict` is set, with the conflicting files and the instruction to merge `card.change.base` into its branch and resolve them; without an agent `Reviewer` (`moebius.has_agent`), or when `card.review.verdict` is `approve`, offers the change; sends the card back with `card.review.findings` as the note when the verdict is `changes`; starts a `Reviewer` run with purpose `review` otherwise. A `review` run that `failed` is started again, until `card.reviews >= moebius.round_limit`, when the card is marked stuck with `the round limit is reached`. The card is marked stuck with `stopped by a person` when `card.stopped`, before anything else, and with `the token budget of N is spent` when `card.tokens` has reached `moebius.agent_budget("Reviewer")`; it waits with `the daily token budget is spent` while the day's budget is spent, instead of starting a review. |
 | `merge.luau` | Waits for a person to merge the change. The merge happens through the desktop API or, on GitHub, on the pull request. When the change no longer merges cleanly (the default branch moved), sends the card back to `In progress` with the conflict as the note; that resolves the change's inbox item. |
 | `done.luau` | Calls `moebius.record_outcome("merged")`, so every judgement made for the card learns how it ended. |
 
