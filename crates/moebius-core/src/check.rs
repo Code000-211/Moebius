@@ -28,7 +28,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::app::App;
-use crate::bus::AppEvent;
 use crate::decide::Question;
 use crate::router::{Grant, Router};
 use crate::rules;
@@ -126,11 +125,7 @@ fn ask(
         "decision": decision.choice,
         "reason": decision.reason,
     });
-    let _ = app.store.append_event(grant.run_id, "tool_check", &event);
-    app.bus.publish(AppEvent::new(
-        "run_event",
-        json!({ "run": grant.run_id, "kind": "tool_check", "data": event }),
-    ));
+    let _ = app.record_run_event(grant.run_id, "tool_check", &event);
     Some(CheckReply {
         decision: decision.choice,
         reason: decision.reason,

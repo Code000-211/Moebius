@@ -131,6 +131,17 @@ ALTER TABLE changes ADD COLUMN failed_checks TEXT;
 ALTER TABLE changes ADD COLUMN check_output TEXT;
 "#,
     "ALTER TABLE cards ADD COLUMN retried_after INTEGER;",
+    r#"
+CREATE TABLE card_moves (
+    id INTEGER PRIMARY KEY,
+    card_id INTEGER NOT NULL REFERENCES cards(id),
+    from_column TEXT NOT NULL,
+    to_column TEXT NOT NULL,
+    note TEXT,
+    at INTEGER NOT NULL
+);
+CREATE INDEX card_moves_by_card ON card_moves (card_id, id);
+"#,
 ];
 
 const CHANGE_COLUMNS: &str = "id, repository_id, card_id, branch, state, pull_request, checks, review, \
@@ -246,6 +257,15 @@ impl Run {
     pub fn branch(&self) -> String {
         format!("moebius/run-{}", self.id)
     }
+}
+
+/// A move of a card from one column to another, with the card's note at the time.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CardMove {
+    pub from: String,
+    pub to: String,
+    pub note: Option<String>,
+    pub at: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -604,12 +624,36 @@ impl Store {
         Ok(())
     }
 
+    /// Moves a card and records the move, with the card's note as it is now.
     pub fn move_card(&self, id: i64, column: &str) -> Result<()> {
-        self.conn().execute(
+        let conn = self.conn();
+        conn.execute(
+            "INSERT INTO card_moves (card_id, from_column, to_column, note, at)
+             SELECT id, column_name, ?1, note, ?2 FROM cards WHERE id = ?3",
+            params![column, now(), id],
+        )?;
+        conn.execute(
             "UPDATE cards SET column_name = ?1 WHERE id = ?2",
             params![column, id],
         )?;
         Ok(())
+    }
+
+    /// The moves of a card since moves were recorded, oldest first.
+    pub fn moves_for_card(&self, card_id: i64) -> Result<Vec<CardMove>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT from_column, to_column, note, at FROM card_moves WHERE card_id = ?1 ORDER BY id",
+        )?;
+        let rows = stmt.query_map([card_id], |r| {
+            Ok(CardMove {
+                from: r.get(0)?,
+                to: r.get(1)?,
+                note: r.get(2)?,
+                at: r.get(3)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
     // Changes
@@ -881,11 +925,16 @@ impl Store {
     }
 
     pub fn events(&self, run_id: i64) -> Result<Vec<Event>> {
+        self.events_after(run_id, 0, i64::MAX)
+    }
+
+    /// At most `limit` events of a run with a sequence number above `after`, in order.
+    pub fn events_after(&self, run_id: i64, after: i64, limit: i64) -> Result<Vec<Event>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
-            "SELECT run_id, seq, kind, data, at FROM events WHERE run_id = ?1 ORDER BY seq",
+            "SELECT run_id, seq, kind, data, at FROM events WHERE run_id = ?1 AND seq > ?2 ORDER BY seq LIMIT ?3",
         )?;
-        let rows = stmt.query_map([run_id], |r| {
+        let rows = stmt.query_map(params![run_id, after, limit], |r| {
             Ok((
                 r.get::<_, i64>(0)?,
                 r.get::<_, i64>(1)?,
@@ -1042,11 +1091,20 @@ impl Store {
 
     /// The items not resolved yet, oldest first.
     pub fn inbox(&self) -> Result<Vec<InboxItem>> {
+        self.inbox_where("resolved_at IS NULL AND ?1", 1.into())
+    }
+
+    /// All the items about a card, resolved or not, oldest first.
+    pub fn inbox_for_card(&self, card_id: i64) -> Result<Vec<InboxItem>> {
+        self.inbox_where("card_id = ?1", card_id.into())
+    }
+
+    fn inbox_where(&self, clause: &str, param: rusqlite::types::Value) -> Result<Vec<InboxItem>> {
         let conn = self.conn();
-        let mut stmt = conn.prepare(
-            "SELECT id, kind, card_id, title, data, resolved_at, at FROM inbox_items WHERE resolved_at IS NULL ORDER BY id",
-        )?;
-        let rows = stmt.query_map([], |r| {
+        let mut stmt = conn.prepare(&format!(
+            "SELECT id, kind, card_id, title, data, resolved_at, at FROM inbox_items WHERE {clause} ORDER BY id"
+        ))?;
+        let rows = stmt.query_map([param], |r| {
             Ok((
                 r.get::<_, i64>(0)?,
                 r.get::<_, String>(1)?,
@@ -1270,6 +1328,15 @@ mod tests {
         assert_eq!((a.number, b.number), (1, 2));
         s.move_card(a.id, "Ready").unwrap();
         assert_eq!(s.card(a.id).unwrap().unwrap().column, "Ready");
+        let moves = s.moves_for_card(a.id).unwrap();
+        assert_eq!(
+            moves
+                .iter()
+                .map(|m| (m.from.as_str(), m.to.as_str()))
+                .collect::<Vec<_>>(),
+            [("Backlog", "Ready")]
+        );
+        assert!(s.moves_for_card(b.id).unwrap().is_empty());
         assert_eq!(s.cards(repo.id).unwrap().len(), 2);
 
         let change = s
@@ -1338,6 +1405,8 @@ mod tests {
             ["text", "tool_call"]
         );
         assert_eq!(events[0].data, json!({"delta": "hi"}));
+        assert_eq!(s.events_after(run.id, 1, 5).unwrap(), events[1..]);
+        assert_eq!(s.events_after(run.id, 0, 1).unwrap(), events[..1]);
 
         let blob = s.blobs().put("the context").unwrap();
         let j = s

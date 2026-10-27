@@ -10,6 +10,8 @@
 //! - `POST /v1/changes/{id}/merge` `{reason}`: a person merges a change; its card moves to done.
 //! - `POST /v1/changes/{id}/reject` `{reason}`: a person sends a change waiting to be merged back to coding.
 //! - `POST /v1/cards/{id}/retry` `{reason}`: a person retries a stuck card, which gets a fresh start.
+//! - `GET /v1/runs/{id}`: a run. `GET /v1/runs/{id}/events?after=&limit=`: its stored events, in pages.
+//! - `GET /v1/cards/{id}/runs`: the runs of a card. `GET /v1/cards/{id}/history`: its timeline.
 //! - `POST /v1/runs/{id}/steer` `{message}`: a person sends a message to a running run.
 //! - `POST /v1/runs/{id}/stop` `{reason}`: a person stops a running run.
 //!
@@ -21,7 +23,7 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Path as UrlPath, Request, State};
+use axum::extract::{Path as UrlPath, Query, Request, State};
 use axum::http::{StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -29,12 +31,12 @@ use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast::error::RecvError;
 
-use crate::app::{App, AppError, PERSON};
+use crate::app::{App, AppError, HistoryEntry, PERSON};
 use crate::board::Runs;
 use crate::bus::AppEvent;
 use crate::forge::ForgeError;
 use crate::repos::GitError;
-use crate::store::{Card, Change, InboxItem, Repository, Run};
+use crate::store::{Card, Change, Event, InboxItem, Repository, Run};
 
 /// What the API needs from the core.
 #[derive(Clone)]
@@ -103,6 +105,19 @@ pub struct Steer {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Merged {
     pub commit: String,
+}
+
+/// How many events of a run one request returns unless it asks for fewer or more.
+const DEFAULT_EVENTS: i64 = 500;
+/// The most events of a run one request returns.
+const MAX_EVENTS: i64 = 5000;
+
+/// Which of a run's events to return: those after `after`, at most `limit`.
+#[derive(Debug, Deserialize)]
+struct EventsQuery {
+    #[serde(default)]
+    after: i64,
+    limit: Option<i64>,
 }
 
 /// An operation's failure as the app sees it: a status and a message.
@@ -177,6 +192,10 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/cards/{id}/retry", post(retry_card))
         .route("/v1/changes/{id}/merge", post(merge_change))
         .route("/v1/changes/{id}/reject", post(reject_change))
+        .route("/v1/cards/{id}/runs", get(card_runs))
+        .route("/v1/cards/{id}/history", get(card_history))
+        .route("/v1/runs/{id}", get(get_run))
+        .route("/v1/runs/{id}/events", get(run_events))
         .route("/v1/runs/{id}/steer", post(steer_run))
         .route("/v1/runs/{id}/stop", post(stop_run))
         .layer(middleware::from_fn_with_state(state.clone(), authenticate))
@@ -327,6 +346,44 @@ async fn stop_run(
         app.stop_run(&*runs, id, &stop.reason)
     })
     .await
+}
+
+async fn get_run(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+) -> Result<axum::Json<Run>, ApiError> {
+    blocking(&state.app, move |app| app.run(id)).await
+}
+
+async fn run_events(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+    Query(query): Query<EventsQuery>,
+) -> Result<axum::Json<Vec<Event>>, ApiError> {
+    let limit = query.limit.unwrap_or(DEFAULT_EVENTS).clamp(1, MAX_EVENTS);
+    blocking(&state.app, move |app| {
+        app.run(id)?;
+        Ok(app.store.events_after(id, query.after, limit)?)
+    })
+    .await
+}
+
+async fn card_runs(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+) -> Result<axum::Json<Vec<Run>>, ApiError> {
+    blocking(&state.app, move |app| {
+        app.card(id)?;
+        Ok(app.store.runs_for_card(id)?)
+    })
+    .await
+}
+
+async fn card_history(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+) -> Result<axum::Json<Vec<HistoryEntry>>, ApiError> {
+    blocking(&state.app, move |app| app.card_history(id)).await
 }
 
 async fn events(State(state): State<ApiState>, upgrade: WebSocketUpgrade) -> Response {
@@ -812,6 +869,240 @@ mod tests {
         assert_eq!(steer("Too late.").await.status(), 422);
         assert_eq!(stop(run.id).await.status(), 422);
         assert_eq!(stop(99).await.status(), 404);
+    }
+
+    async fn get<T: serde::de::DeserializeOwned>(state: &ApiState, addr: &str, path: &str) -> T {
+        let response = reqwest::Client::new()
+            .get(format!("http://{addr}{path}"))
+            .bearer_auth(&*state.token)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200, "{path}");
+        response.json().await.unwrap()
+    }
+
+    async fn connect(state: &ApiState, addr: &str) -> impl StreamExt<Item = AppEvent> + Unpin {
+        let mut request = format!("ws://{addr}/v1/events")
+            .into_client_request()
+            .unwrap();
+        request.headers_mut().insert(
+            "authorization",
+            format!("Bearer {}", state.token).parse().unwrap(),
+        );
+        let (ws, _) = tokio_tungstenite::connect_async(request).await.unwrap();
+        ws.map(|message| serde_json::from_str(message.unwrap().to_text().unwrap()).unwrap())
+    }
+
+    #[tokio::test]
+    async fn a_finished_runs_events_are_read_in_pages() {
+        let (_dir, state, addr) = start().await;
+        let app = &state.app;
+        let run = app.store.add_run(Some(1), "Coder", "test", "code").unwrap();
+        for n in 1..=7 {
+            app.record_run_event(run.id, "step", &serde_json::json!({ "n": n }))
+                .unwrap();
+        }
+        app.store.set_run_status(run.id, "succeeded").unwrap();
+
+        let stored: Run = get(&state, &addr, &format!("/v1/runs/{}", run.id)).await;
+        assert_eq!(stored.status, "succeeded");
+        assert!(stored.ended_at.is_some());
+        let all: Vec<Event> = get(&state, &addr, &format!("/v1/runs/{}/events", run.id)).await;
+        assert_eq!(
+            all.iter().map(|e| e.seq).collect::<Vec<_>>(),
+            (1..=7).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            (all[2].kind.as_str(), &all[2].data),
+            ("step", &serde_json::json!({ "n": 3 }))
+        );
+
+        // Pages of three follow on from the last seq without gaps or repeats.
+        let mut paged = Vec::new();
+        loop {
+            let after = paged.last().map_or(0, |e: &Event| e.seq);
+            let page: Vec<Event> = get(
+                &state,
+                &addr,
+                &format!("/v1/runs/{}/events?after={after}&limit=3", run.id),
+            )
+            .await;
+            assert!(page.len() <= 3);
+            if page.is_empty() {
+                break;
+            }
+            paged.extend(page);
+        }
+        assert_eq!(paged, all);
+    }
+
+    #[tokio::test]
+    async fn the_events_of_a_running_run_arrive_on_the_stream_with_their_seq() {
+        let (dir, state, addr) = start().await;
+        let app = state.app.clone();
+        let repo = app
+            .add_repository("demo", origin(dir.path()).to_str().unwrap())
+            .unwrap();
+        let card = app
+            .create_issue(repo.id, "Please [hang]", "", PERSON)
+            .unwrap();
+        let engine = Arc::new(Engine::new(
+            app.clone(),
+            state.runs.clone(),
+            Workflow::default(),
+            Limits::default(),
+        ));
+        let id = card.id;
+        tokio::task::spawn_blocking(move || engine.settle(id).unwrap())
+            .await
+            .unwrap();
+        let run = app.store.runs_for_card(card.id).unwrap().pop().unwrap();
+        until("Pi takes the prompt", || {
+            app.store.events(run.id).unwrap().len() >= 2
+        })
+        .await;
+
+        // A client follows the stream, reads what is stored so far, and drops what it has already read.
+        let mut stream = connect(&state, &addr).await;
+        let path = format!("/v1/runs/{}/events", run.id);
+        let mut seen: Vec<Event> = get(&state, &addr, &path).await;
+        let read = seen.last().unwrap().seq;
+        let steered = post(
+            &state,
+            &addr,
+            format!("/v1/runs/{}/steer", run.id),
+            serde_json::json!({ "message": "Use tabs." }),
+        )
+        .await;
+        assert_eq!(steered.status(), 200);
+        // Pi's answer may be stored just before or just after the steer itself.
+        let steer_arrived = |seen: &[Event]| {
+            let after_read = || seen.iter().filter(|e| e.seq > read);
+            after_read().any(|e| e.kind == "steered")
+                && after_read().any(|e| e.data["echo"] == "Use tabs.")
+        };
+        while !steer_arrived(&seen) {
+            let event = tokio::time::timeout(std::time::Duration::from_secs(20), stream.next())
+                .await
+                .expect("a run event arrives")
+                .unwrap();
+            if event.kind == "run_event" && event.data["run"] == run.id {
+                let seq = event.data["seq"].as_i64().unwrap();
+                if seq > read {
+                    seen.push(Event {
+                        run_id: run.id,
+                        seq,
+                        kind: event.data["kind"].as_str().unwrap().into(),
+                        data: event.data["data"].clone(),
+                        at: 0,
+                    });
+                }
+            }
+        }
+
+        // Each event is there exactly once, and what was stored is what the client saw.
+        let stored: Vec<Event> = get(&state, &addr, &path).await;
+        assert_eq!(
+            stored
+                .iter()
+                .map(|e| (e.seq, &e.kind, &e.data))
+                .collect::<Vec<_>>(),
+            seen.iter()
+                .map(|e| (e.seq, &e.kind, &e.data))
+                .collect::<Vec<_>>()
+        );
+        assert!(stored.windows(2).all(|w| w[0].seq + 1 == w[1].seq));
+
+        let stopped = post(
+            &state,
+            &addr,
+            format!("/v1/runs/{}/stop", run.id),
+            serde_json::json!({}),
+        )
+        .await;
+        assert_eq!(stopped.status(), 200);
+        until("the run ends", || {
+            app.store.run(run.id).unwrap().unwrap().status == "stopped"
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn a_card_has_its_runs_and_its_history_in_time_order() {
+        let (_dir, state, addr) = start().await;
+        let app = &state.app;
+        // An inbox item, then a wait until the clock has moved on, so that time order differs from the order
+        // in which the history gathers its parts.
+        let item = app
+            .store
+            .add_inbox_item("stuck", Some(1), "Stuck", &serde_json::json!({}))
+            .unwrap();
+        let first = item.at;
+        until("the next second", || crate::store::now() > first).await;
+        app.store.set_card_note(1, "Add a test.").unwrap();
+        app.move_card(1, "Ready").unwrap();
+        app.move_card(1, "In progress").unwrap();
+        let run = app.store.add_run(Some(1), "Coder", "test", "code").unwrap();
+        app.store.set_run_status(run.id, "failed").unwrap();
+        app.store
+            .add_judgement(&crate::store::NewJudgement {
+                kind: "retry".into(),
+                choice: "retry".into(),
+                reason: "again".into(),
+                decider: "person".into(),
+                card_id: Some(1),
+                ..Default::default()
+            })
+            .unwrap();
+        app.store.resolve_inbox_item(item.id).unwrap();
+
+        let runs: Vec<Run> = get(&state, &addr, "/v1/cards/1/runs").await;
+        assert_eq!(runs.iter().map(|r| r.id).collect::<Vec<_>>(), [run.id]);
+        let history: Vec<HistoryEntry> = get(&state, &addr, "/v1/cards/1/history").await;
+        let kinds: Vec<_> = history.iter().map(|e| e.kind.as_str()).collect();
+        assert_eq!(
+            kinds,
+            [
+                "inbox_added",
+                "moved",
+                "moved",
+                "run_started",
+                "run_ended",
+                "decided",
+                "inbox_resolved"
+            ]
+        );
+        assert!(history.windows(2).all(|w| w[0].at <= w[1].at));
+        assert_eq!(
+            history[2].data,
+            serde_json::json!({ "from": "Ready", "to": "In progress", "note": "Add a test." })
+        );
+        assert_eq!(
+            history[4].data,
+            serde_json::json!({ "run": run.id, "status": "failed" })
+        );
+        assert_eq!(history[5].data["decider"], "person");
+        assert_eq!(history[6].data["item"], item.id);
+    }
+
+    #[tokio::test]
+    async fn an_unknown_run_or_card_is_not_found() {
+        let (_dir, state, addr) = start().await;
+        for path in [
+            "/v1/runs/99",
+            "/v1/runs/99/events",
+            "/v1/cards/99/runs",
+            "/v1/cards/99/history",
+        ] {
+            let response = reqwest::Client::new()
+                .get(format!("http://{addr}{path}"))
+                .bearer_auth(&*state.token)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), 404, "{path}");
+        }
     }
 
     #[tokio::test]

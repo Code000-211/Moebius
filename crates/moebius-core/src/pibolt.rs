@@ -429,11 +429,7 @@ impl Reader {
                 .and_then(Value::as_str)
                 .unwrap_or("unknown")
                 .to_string();
-            let _ = self.app.store.append_event(self.run.id, &kind, &value);
-            self.app.bus.publish(AppEvent::new(
-                "run_event",
-                json!({ "run": self.run.id, "kind": kind, "data": value }),
-            ));
+            let _ = self.app.record_run_event(self.run.id, &kind, &value);
             if kind == "response" && value["command"] == "prompt" && value["success"] == false {
                 ending = Err(format!("pi-bolt refused the prompt: {}", value["error"]));
                 break;
@@ -484,10 +480,9 @@ impl Reader {
     }
 
     fn failed(&self, why: &str) -> &'static str {
-        let _ =
-            self.app
-                .store
-                .append_event(self.run.id, "moebius_error", &json!({ "message": why }));
+        let _ = self
+            .app
+            .record_run_event(self.run.id, "moebius_error", &json!({ "message": why }));
         "failed"
     }
 }

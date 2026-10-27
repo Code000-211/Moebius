@@ -174,6 +174,42 @@ Request: `{"reason": "..."}`; `reason` is optional, but send `{}` without one.
 
 Response: the `Card`. Errors: `404` no such card; `422` the card has no open `stuck` inbox item.
 
+### `GET /v1/runs/{id}`
+
+One run, for the live view. Response: the `Run`. Errors: `404` no such run.
+
+### `GET /v1/runs/{id}/events`
+
+The stored events of a run, in order. A client loads a long run in pieces and then follows `GET /v1/events` from the last
+`seq` it has: every `run_event` on the stream carries the `seq` the event was stored under, so the client drops those
+it already has and sees every event exactly once.
+
+Query: `after` (default 0) returns only events with a `seq` above it; `limit` (default 500, at most 5000, at least 1)
+is the most it returns.
+
+Response: an array of `{"seq": number, "kind": string, "data": object, "at": number}`, oldest first, where `kind` and
+`data` are those of the `run_event` (below). Errors: `404` no such run.
+
+### `GET /v1/cards/{id}/runs`
+
+The card's runs, oldest first. Response: an array of `Run`. Errors: `404` no such card.
+
+### `GET /v1/cards/{id}/history`
+
+The card's timeline, oldest first (entries of the same second are in the order of the kinds below). Response: an array
+of `{"at": number, "kind": string, "data": object}` with these kinds:
+
+| Kind | When `at` is | `data` |
+|---|---|---|
+| `moved` | The card moved to another column. Moves from before moves were recorded are not in the history. | `{"from": column, "to": column, "note": string or null}`, the card's `note` when it moved |
+| `run_started` | The run was stored. | `{"run": id, "agent": string, "purpose": string}` |
+| `run_ended` | The run ended. | `{"run": id, "status": "succeeded" \| "failed" \| "stopped"}` |
+| `decided` | A decision was recorded for the card. | `{"judgement": id, "kind": string, "choice": string, "decider": string, "reason": string}` |
+| `inbox_added` | An inbox item about the card was added. | `{"item": id, "kind": string, "title": string}` |
+| `inbox_resolved` | That item was resolved. | `{"item": id, "kind": string, "title": string}` |
+
+Errors: `404` no such card.
+
 ### `POST /v1/runs/{id}/steer`
 
 A person sends a message to a running run: the harness passes it to the agent (Pi-Bolt's `steer` command), the run
@@ -212,7 +248,7 @@ running.
 | `change_merged` | A change was merged, here or on GitHub. | `{"change": id, "commit": sha or null}` |
 | `change_closed` | A change's pull request was closed on GitHub without a merge. | `{"change": id}` |
 | `run_started` | A harness process for a run started. | `{"run": id, "card": id}` |
-| `run_event` | Something happened in a run. | `{"run": id, "kind": string, "data": object}` (below) |
+| `run_event` | Something happened in a run. | `{"run": id, "seq": number, "kind": string, "data": object}` (below) |
 | `run_ended` | A run ended. | `{"run": id, "status": "succeeded" \| "failed" \| "stopped"}` |
 | `board_error` | A column script failed; the card stays where it is. | `{"card": id, "message": string}` |
 | `forge_error` | Polling a GitHub repository failed; it is tried again at the next poll. | `{"repository": "owner/repo", "message": string}` |
@@ -226,6 +262,8 @@ A `run_event` has two sources, told apart by its inner `kind`:
   `agent_settled`, `tool_execution_end`, `response`) and the whole record as `data`. A line that is not JSON is passed on
   as kind `unparsed` with `{"type": "unparsed", "error", "text"}`.
 
-All of a run's events are also kept in the store, with a sequence number, together with `moebius_error` events
-(`{"message"}`) that explain why a run failed and `steered` events (`{"message"}`) for a person's steers. Those are stored,
-not published.
+`seq` is the number the event is stored under, the same as in `GET /v1/runs/{id}/events`. Events of a run are published in
+the order of their `seq`. Every event of a run is published and stored: Pi's records, `tool_check` events, `steered` events
+(`{"message"}`, a person's steer, with secrets removed) and `moebius_error` events (`{"message"}`) that explain why a
+run failed. The one exception is a run that was still going when the server stopped: it is failed at the next start with
+a `moebius_error` that is stored but not published.

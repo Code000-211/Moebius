@@ -83,6 +83,24 @@ fn is_plain_name(name: &str) -> bool {
 
 pub type Result<T> = std::result::Result<T, AppError>;
 
+/// One thing in a card's history: `moved`, `run_started`, `run_ended`, `decided`, `inbox_added` or `inbox_resolved`.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct HistoryEntry {
+    pub at: i64,
+    pub kind: String,
+    pub data: serde_json::Value,
+}
+
+impl HistoryEntry {
+    fn new(at: i64, kind: &str, data: serde_json::Value) -> Self {
+        Self {
+            at,
+            kind: kind.into(),
+            data,
+        }
+    }
+}
+
 pub struct App {
     pub store: Arc<Store>,
     pub bus: Bus,
@@ -93,6 +111,8 @@ pub struct App {
     pub checks_timeout: Duration,
     /// The checks going now, as change and commit.
     checking: Mutex<BTreeSet<(i64, String)>>,
+    /// Held while a run event is stored and published, so that events are published in the order of their `seq`.
+    run_events: Mutex<()>,
     /// Why each waiting card waits, as its column script last said (`moebius.wait`, `ask`, `stuck`). Not stored: a
     /// reason is rebuilt by the next tick after a restart.
     waiting: Mutex<HashMap<i64, String>>,
@@ -114,6 +134,7 @@ impl App {
             data_dir: data_dir.to_path_buf(),
             checks_timeout: Duration::from_secs(1800),
             checking: Mutex::default(),
+            run_events: Mutex::default(),
             waiting: Mutex::default(),
             forges,
         }
@@ -153,7 +174,7 @@ impl App {
             .ok_or_else(|| AppError::NotFound(format!("card {id}")))
     }
 
-    fn run(&self, id: i64) -> Result<Run> {
+    pub fn run(&self, id: i64) -> Result<Run> {
         self.store
             .run(id)?
             .ok_or_else(|| AppError::NotFound(format!("run {id}")))
@@ -410,8 +431,7 @@ impl App {
             return Err(AppError::Invalid(format!("run {run_id} is not running")));
         }
         let message = redact(message);
-        self.store
-            .append_event(run_id, "steered", &json!({ "message": message }))?;
+        self.record_run_event(run_id, "steered", &json!({ "message": message }))?;
         let context = BTreeMap::from([("message".into(), message)]);
         self.record_action("steer", run.card_id, Some(run_id), context, "")?;
         Ok(run)
@@ -426,6 +446,57 @@ impl App {
         }
         self.record_action("stop", run.card_id, Some(run_id), BTreeMap::new(), reason)?;
         Ok(run)
+    }
+
+    /// Stores an event of a run and publishes it as `run_event` with the `seq` it was stored under.
+    pub fn record_run_event(
+        &self,
+        run_id: i64,
+        kind: &str,
+        data: &serde_json::Value,
+    ) -> Result<()> {
+        let _ordered = self.run_events.lock().unwrap_or_else(|e| e.into_inner());
+        let seq = self.store.append_event(run_id, kind, data)?;
+        self.bus.publish(AppEvent::new(
+            "run_event",
+            json!({ "run": run_id, "seq": seq, "kind": kind, "data": data }),
+        ));
+        Ok(())
+    }
+
+    /// What happened to a card, oldest first: its moves (since they were recorded), its runs starting and ending,
+    /// the decisions made for it and its inbox items.
+    pub fn card_history(&self, card_id: i64) -> Result<Vec<HistoryEntry>> {
+        self.card(card_id)?;
+        let mut history = Vec::new();
+        for m in self.store.moves_for_card(card_id)? {
+            let data = json!({ "from": m.from, "to": m.to, "note": m.note });
+            history.push(HistoryEntry::new(m.at, "moved", data));
+        }
+        for run in self.store.runs_for_card(card_id)? {
+            let data = json!({ "run": run.id, "agent": run.agent, "purpose": run.purpose });
+            history.push(HistoryEntry::new(run.started_at, "run_started", data));
+            if let Some(ended_at) = run.ended_at {
+                let data = json!({ "run": run.id, "status": run.status });
+                history.push(HistoryEntry::new(ended_at, "run_ended", data));
+            }
+        }
+        for j in self.store.judgements_for_card(card_id)? {
+            let data = json!({
+                "judgement": j.id, "kind": j.kind, "choice": j.choice, "decider": j.decider, "reason": j.reason,
+            });
+            history.push(HistoryEntry::new(j.at, "decided", data));
+        }
+        for item in self.store.inbox_for_card(card_id)? {
+            let data = json!({ "item": item.id, "kind": item.kind, "title": item.title });
+            history.push(HistoryEntry::new(item.at, "inbox_added", data.clone()));
+            if let Some(resolved_at) = item.resolved_at {
+                history.push(HistoryEntry::new(resolved_at, "inbox_resolved", data));
+            }
+        }
+        // Stable, so that what happened in the same second stays in the order of its kind above.
+        history.sort_by_key(|entry| entry.at);
+        Ok(history)
     }
 
     pub fn move_card(&self, card_id: i64, column: &str) -> Result<Card> {

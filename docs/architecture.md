@@ -55,8 +55,8 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
    agent directory and the bridge to `<data_dir>/runs/<id>/`, spawns Pi-Bolt (`PiBolt::launch`), sets the run `running`,
    publishes `run_started` and sends the prompt (`prompt_for`: the issue, the instructions for the run's purpose, and
    the note if there is one).
-6. **Pi works.** A thread per run (`Reader::read`) reads Pi's records: each is stored (`Store::append_event`) and
-   published as `run_event`. Pi asks the model through the router (`Router::forward`), which counts the tokens and may
+6. **Pi works.** A thread per run (`Reader::read`) reads Pi's records: each is stored and published as `run_event` with
+   its `seq` (`App::record_run_event`, which `check::ask` and `App::steer_run` use too). Pi asks the model through the router (`Router::forward`), which counts the tokens and may
    refuse with 429.
 7. **Every tool call is checked.** The bridge posts to `/moebius/check` (`check::check`). On a blocking thread,
    `check::ask` builds the `tool_call` question (`tool_call_question`, with the applicable rules from
@@ -129,6 +129,7 @@ start; its version is `PRAGMA user_version`.
 |---|---|
 | `repositories` | Name, clone path, forge (`none` or `github`), default branch, GitHub name and trusted logins. |
 | `cards` | One per issue: number (unique per repository), title, body, author, column, note (why it went back to coding). |
+| `card_moves` | Each move of a card (`Store::move_card`, called by `App::move_card`): from, to, the card's note then, time. Moves before this table existed are not recorded. |
 | `dependencies` | For a card, the issue numbers it is blocked by. |
 | `changes` | A card's branch `moebius/card-<number>`: card, state (`open`, `merged`, `closed`), pull request number, the published commit and time, checks with the commit they are for, failing checks, output of the repository's own checks, review. |
 | `runs` | One per harness run: card, agent, harness, purpose, status, worktree, start and end, summary (the agent's final answer). |
