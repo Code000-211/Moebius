@@ -396,17 +396,27 @@ impl App {
         Ok(())
     }
 
-    /// A person retries a stuck card: the decision is recorded, the card's stuck item is resolved and its limits start
-    /// afresh, so the board starts work on it again.
+    /// A person retries a card that is stuck or whose pull request was closed without a merge: the decision is
+    /// recorded, the card's item is resolved and its limits start afresh, so the board starts work on it again. A card
+    /// with a closed change goes back to In progress with a note saying so; its next publish opens a new change.
     pub fn retry_card(&self, card_id: i64, reason: &str) -> Result<Card> {
         let card = self.card(card_id)?;
-        if !self.store.has_open_inbox_item(card_id, "stuck")? {
-            return Err(AppError::Invalid(format!("card {card_id} is not stuck")));
+        let stuck = self.store.has_open_inbox_item(card_id, "stuck")?;
+        let closed = self.store.has_open_inbox_item(card_id, "change_closed")?;
+        if !stuck && !closed {
+            return Err(AppError::Invalid(format!(
+                "card {card_id} is neither stuck nor has a closed pull request"
+            )));
         }
         let context = BTreeMap::from([("title".into(), card.title.clone())]);
         self.record_action("retry", Some(card_id), None, context, reason)?;
         self.store.set_card_retried(card_id)?;
         self.store.resolve_inbox_for_card(card_id)?;
+        if closed {
+            self.store
+                .set_card_note(card_id, "The pull request was closed without a merge.")?;
+            return self.move_card(card_id, columns::IN_PROGRESS);
+        }
         self.set_waiting(card_id, None);
         self.card(card_id)
     }

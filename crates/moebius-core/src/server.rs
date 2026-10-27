@@ -1,5 +1,6 @@
 //! The server put together (spec 2): the store and the core, the desktop API, the router, the Pi-Bolt harness, the
-//! board engine, which runs every card's column script on a fixed tick, and the poll of GitHub. The `moebius` skill
+//! board engine, which runs every card's column script on a fixed tick, the poll of GitHub and, every 30 seconds,
+//! the refresh of the clones of repositories without a forge. The `moebius` skill
 //! is written to the data directory at start.
 
 use std::net::SocketAddr;
@@ -26,6 +27,9 @@ use crate::skill;
 use crate::store::Store;
 
 /// How long a call into a plugin may take before it counts as refused.
+/// How often the clones of repositories without a forge are brought up to date with where they were cloned from.
+const PLAIN_REFRESH: std::time::Duration = std::time::Duration::from_secs(30);
+
 const PLUGIN_TIME_LIMIT: std::time::Duration =
     std::time::Duration::from_secs(crate::config::PLUGIN_TIME_LIMIT_SECONDS);
 
@@ -184,6 +188,9 @@ impl Server {
                     continue;
                 }
                 if let Err(e) = self.engine.settle(card.id) {
+                    // Kept as the card's waiting reason until a script runs cleanly again.
+                    let reason = format!("script error: {e}");
+                    self.app.set_waiting(card.id, Some(reason));
                     self.app.bus.publish(AppEvent::new(
                         "board_error",
                         json!({ "card": card.id, "message": e.to_string() }),
@@ -197,6 +204,22 @@ impl Server {
     pub async fn poll_github(&self) {
         if let Some(github) = &self.github {
             poll::poll_github(&self.app, github).await;
+        }
+    }
+
+    /// Refreshes the clone of every repository without a forge from where it was cloned; a failure is reported on the
+    /// bus. The GitHub repositories are refreshed by their poll.
+    pub fn refresh_plain_repositories(&self) {
+        let Ok(repositories) = self.app.store.repositories() else {
+            return;
+        };
+        for repository in repositories.iter().filter(|r| r.forge == "none") {
+            if let Err(e) = self.app.refresh(repository) {
+                self.app.bus.publish(AppEvent::new(
+                    "forge_error",
+                    json!({ "repository": repository.name, "message": e.to_string() }),
+                ));
+            }
         }
     }
 
@@ -237,6 +260,19 @@ impl Server {
                 }
             }
         };
+        let refresh = {
+            let server = self.clone();
+            async move {
+                let mut interval = tokio::time::interval(PLAIN_REFRESH);
+                interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                loop {
+                    interval.tick().await;
+                    let s = server.clone();
+                    let _ =
+                        tokio::task::spawn_blocking(move || s.refresh_plain_repositories()).await;
+                }
+            }
+        };
         let router_routes = self.router.clone().routes().merge(check::routes(
             self.app.clone(),
             self.router.clone(),
@@ -247,6 +283,7 @@ impl Server {
             served = axum::serve(router_listener, router_routes) => served,
             () = board => Ok(()),
             () = poll => Ok(()),
+            () = refresh => Ok(()),
         }
     }
 }
@@ -901,6 +938,124 @@ mod tests {
             ["change_closed"]
         );
         assert_eq!(f.card(1).unwrap().column, "Ready to merge");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_repository_without_a_forge_gets_the_commits_of_where_it_was_cloned() {
+        let f = Fixture::new().await;
+        let origin = f._dir.path().join("origin");
+        let plain = f
+            .server
+            .app
+            .add_repository("plain", origin.to_str().unwrap())
+            .unwrap();
+        let clone = Path::new(&plain.path);
+        let mut events = f.server.app.bus.subscribe();
+
+        std::fs::write(origin.join("rules.md"), "new\n").unwrap();
+        git(&origin, &["add", "."]).unwrap();
+        git(&origin, &["commit", "--quiet", "-m", "rules"]).unwrap();
+        f.server.refresh_plain_repositories();
+        assert_eq!(
+            std::fs::read_to_string(clone.join("rules.md")).unwrap(),
+            "new\n"
+        );
+
+        // Moebius merged a change into the clone: the default branch is left, and nothing is wrong.
+        git(clone, &["checkout", "--quiet", "-b", "feature"]).unwrap();
+        git(
+            clone,
+            &["commit", "--quiet", "--allow-empty", "-m", "feature"],
+        )
+        .unwrap();
+        git(clone, &["checkout", "--quiet", "main"]).unwrap();
+        f.server.app.repos.merge(clone, "feature", "merge").unwrap();
+        git(
+            &origin,
+            &["commit", "--quiet", "--allow-empty", "-m", "more"],
+        )
+        .unwrap();
+        f.server.refresh_plain_repositories();
+        assert!(
+            git(clone, &["log", "--format=%s"])
+                .unwrap()
+                .contains("merge")
+        );
+        assert!(events.try_recv().is_err(), "no error was published");
+
+        // A clone whose origin is gone is reported.
+        std::fs::remove_dir_all(&origin).unwrap();
+        f.server.refresh_plain_repositories();
+        let event = events.try_recv().unwrap();
+        assert_eq!(
+            (event.kind.as_str(), event.data["repository"].as_str()),
+            ("forge_error", Some("plain"))
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_script_error_is_the_cards_waiting_reason_until_the_script_runs_cleanly() {
+        let f = Fixture::new().await;
+        let origin = f._dir.path().join("origin");
+        let plain = f
+            .server
+            .app
+            .add_repository("plain", origin.to_str().unwrap())
+            .unwrap();
+        let card = f
+            .server
+            .app
+            .create_issue(plain.id, "Anything", "", "person")
+            .unwrap();
+        let clone = Path::new(&plain.path);
+        let override_with = |script: &str| {
+            std::fs::create_dir_all(clone.join(".moebius")).unwrap();
+            std::fs::write(clone.join(".moebius/backlog.luau"), script).unwrap();
+            git(clone, &["add", "."]).unwrap();
+            git(clone, &["commit", "--quiet", "-m", "override"]).unwrap();
+        };
+        let waiting = || f.server.app.waiting(std::slice::from_ref(&card));
+
+        override_with("function on_card(card) error('boom') end");
+        f.server.tick();
+        let reason = waiting().remove(&card.id).unwrap();
+        assert!(reason.starts_with("script error: backlog.luau"), "{reason}");
+        assert!(reason.contains("boom"), "{reason}");
+
+        override_with("function on_card(card) end");
+        f.server.tick();
+        assert!(waiting().is_empty());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_retry_after_a_closed_pull_request_opens_a_new_one() {
+        let f = Fixture::new().await;
+        let closed = f.offered_change().await;
+        f.fake.set_pull("closed", false);
+        f.server.poll_github().await;
+
+        let card = f.card(1).unwrap();
+        let app = f.server.app.clone();
+        let retried = tokio::task::spawn_blocking(move || app.retry_card(card.id, "Try again."))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(retried.column, "In progress");
+        assert_eq!(
+            retried.note.as_deref(),
+            Some("The pull request was closed without a merge.")
+        );
+        assert!(f.server.app.store.inbox().unwrap().is_empty());
+
+        f.code(&card, "second.txt").await;
+        let app = f.server.app.clone();
+        let change = tokio::task::spawn_blocking(move || app.publish_change(card.id).unwrap())
+            .await
+            .unwrap();
+        assert_ne!(change.id, closed.id);
+        assert_eq!(change.state, "open");
+        assert_eq!(f.change(closed.id).state, "closed");
+        assert_eq!(f.fake.pulls.lock().unwrap().opened.len(), 2);
     }
 
     #[tokio::test(flavor = "multi_thread")]

@@ -132,7 +132,7 @@ A name is made of letters, digits, `-` and `_` and must not be empty, else the f
 | `agents.<name>.thinking` | string | none | Given to Pi-Bolt as `--thinking`, such as `low`, `medium` or `high`. Pi-Bolt checks the value. |
 | `agents.<name>.instructions` | string | none | Given to Pi-Bolt as `--append-system-prompt`. |
 | `agents.<name>.skills` | array of paths | `[]` | Each given to Pi-Bolt as `--skill`. |
-| `agents.<name>.extensions` | array of paths | `[]` | Each given to Pi-Bolt as `--extension`, after the bridge, which is always loaded first. |
+| `agents.<name>.extensions` | array of paths | `[]` | Each given to Pi-Bolt as `--extension`, before the bridge, which is always loaded last. Pi loads no extension or skill it discovers on its own. |
 | `agents.<name>.token_budget` | integer | none | The most tokens (input plus output, summed over all runs of the card, teacher included) a card may use. A model request over it is answered with HTTP 429 `budget_exceeded`, and the default scripts mark a card that reached it stuck instead of starting a run. Tokens used before the card's latest retry do not count. Without it there is no limit. A chat has no card, so its budget is the tokens of the chat's own run. Scripts read it as `moebius.agent_budget(name)`. |
 
 ### `[agents.Moebius]`

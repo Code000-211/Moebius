@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # A stand-in for `pi-bolt --mode rpc` in tests: it speaks Pi's RPC protocol (JSON Lines, split on LF only).
-# A prompt containing "[hang]" waits for `abort`, one containing "[nothing]" settles without changing anything, and
+# A prompt containing "[commit]" commits own.txt itself and leaves the worktree clean. A prompt containing "[hang]" waits for `abort`, one containing "[nothing]" settles without changing anything, and
 # a prompt for the reviewer changes nothing and answers with a verdict; any other prompt writes a file and settles.
 # A prompt that does not start with "Work on issue" is a chat message: it is answered with "You said: <message>" (and
 # writes the file NAME, with its directories, first if it contains "[write NAME]"), and Pi stays up for the next one.
@@ -63,12 +63,17 @@ for line in sys.stdin.buffer:
         reviewing = "You are the reviewer" in command["message"]
         emit({"type": "message_update",
               "assistantMessageEvent": {"type": "text_delta", "contentIndex": 0, "delta": "line one line two"}})
-        if "[nothing]" not in command["message"] and not reviewing:
+        if "[nothing]" not in command["message"] and "[commit]" not in command["message"] and not reviewing:
             emit({"type": "tool_execution_start", "toolCallId": "t1", "toolName": "write",
                   "args": {"path": "done.txt"}})
             with open("done.txt", "w") as f:
                 f.write("done\n")
             emit({"type": "tool_execution_end", "toolCallId": "t1", "toolName": "write", "isError": False})
+        if "[commit]" in command["message"]:
+            # Leaves the worktree clean, with its own commit.
+            with open("own.txt", "w") as f:
+                f.write("own\n")
+            os.system("git add own.txt && git -c user.name=pi -c user.email=pi@example.com commit -q -m own")
         answer = "Looks fine.\nVERDICT: approve" if reviewing else "line one line two"
         emit({"type": "agent_end", "willRetry": False, "messages": [
             {"role": "user", "content": command["message"]},

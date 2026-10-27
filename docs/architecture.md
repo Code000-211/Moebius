@@ -38,7 +38,10 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
    `App::create_issue`, which stores a card in `Backlog` (`Store::add_card`) and publishes `card_added`. On GitHub: the
    loop in `Server::serve` calls `poll::poll_github` every `github.poll_seconds`. That fetches the clone
    (`App::refresh`), lists issues with `GitHub::issues` (conditional on the ETag), and `App::sync_issues` adds or updates
-   the cards and their "blocked by #n" dependencies (`Store::set_dependencies`).
+   the cards and their "blocked by #n" dependencies (`Store::set_dependencies`). A repository without a forge has no
+   poll; the loop in `Server::serve` calls `Server::refresh_plain_repositories` every 30 seconds, which refreshes it
+   (`NoForge::refresh` fetches `origin` and fast-forwards the default branch when it can) and publishes a failure as
+   `forge_error`.
 2. **The board ticks.** The loop in `Server::serve` calls `Server::tick` on a blocking thread every `board.tick_ms`.
    For each card it calls `Engine::settle`, which calls `Engine::tick` until a script stops moving the card.
    `Engine::tick` finds the script for the card's column: the repository's `.moebius/<script>` read with
@@ -103,7 +106,7 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
     scripts compare `card.tokens` with `moebius.agent_budget`) and when a person stopped its run. While the daily
     `budgets.day_tokens` is spent `ready.luau`, `code.luau` and `review.luau` wait, and the router refuses requests.
 12a. **A person decides what is stuck or offered.** Each is a route of the desktop API and a judgement by `person`:
-    `POST /v1/cards/{id}/retry` (`App::retry_card`) resolves the stuck item and sets `cards.retried_after` to the latest
+    `POST /v1/cards/{id}/retry` (`App::retry_card`) resolves the stuck item (or a `change_closed` item, which also sends the card back to `In progress` with a note) and sets `cards.retried_after` to the latest
     run, so `card.rounds`, `card.reviews` and `card.tokens` (and the router's budget) count only later runs;
     `POST /v1/changes/{id}/reject` (`App::reject_change`) resolves the `ready_to_merge` item and moves the card back to
     `In progress` with the reason as its note, the change staying open; `POST /v1/runs/{id}/steer` and

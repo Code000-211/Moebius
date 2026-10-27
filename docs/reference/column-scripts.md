@@ -56,7 +56,7 @@ end
 | `card.stopped` | boolean | True when the card's latest run was stopped by a person and the card has not been retried since. |
 | `card.review` | table or nil | The latest review of the card's work: the newest `review` run that `succeeded` after the card's latest `code` run. nil when there is none, so a new `code` run clears it. |
 | `card.review.verdict` | string | `approve` or `changes`. Read from the review run's summary (see below). |
-| `card.review.findings` | string | The summary without its verdict line; for a review with no verdict, the text `The review gave no verdict.` |
+| `card.review.findings` | string | The summary without its verdict line; for a review with no verdict, the text `The review gave no verdict.`; for a `changes` verdict without findings, `The review asked for changes but gave no findings.` |
 | `card.note` | string or nil | Why the card was sent back to coding: the findings of a review, the failing checks or a conflict, as the script that moved the card wrote them (the second argument of `moebius.move`). A `code` run that succeeds clears it; one that fails keeps it, so the retry gets it too. |
 | `card.change` | table or nil | The card's open change. nil until it is published. |
 | `card.change.branch` | string | The branch the change lives on, `moebius/card-<number>`. |
@@ -75,7 +75,8 @@ end
 
 The verdict of a review is read from the end of the summary of a `review` run. A last line `VERDICT: approve` or
 `VERDICT: changes` (the word in any case) gives the verdict, and the lines before it are the findings. A summary
-without such a line, or with any other word, is `changes`: work that was not reviewed is not approved.
+without such a line, or with any other word, is `changes`: work that was not reviewed is not approved. A `changes` verdict
+with no findings before it has the findings `The review asked for changes but gave no findings.`
 
 Only `card.run`, `card.run.summary`, `card.review`, `card.note`, `card.change` and its `pull_request`, `failed_checks`, `check_output` and `conflict` can be nil. Check them before you read their fields.
 
@@ -271,7 +272,9 @@ A repository replaces the script of a column by committing a file `.moebius/<scr
 of the script:
 
 - `<ref>` is the default branch of the clone for a repository without a forge, and `origin/<default branch>` for a
-  repository on GitHub, which the poll keeps up to date.
+  repository on GitHub, which the poll keeps up to date. Moebius fetches the source repository of a clone without a
+  forge every 30 seconds and fast-forwards the clone's default branch when it can; it cannot once a change merged
+  here puts the branch ahead of the source.
 - Only committed content counts. A change in the working tree of the clone is not read, and neither is any other
   branch.
 - If the file does not exist, the built-in script runs.

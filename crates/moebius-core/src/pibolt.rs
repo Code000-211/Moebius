@@ -6,11 +6,12 @@
 //! the person ends or stops it (or Pi exits). A chat works in a worktree on `moebius/chat-<id>` or, without a
 //! repository, in an empty directory; what it left is committed on the branch when it ends, and when the branch
 //! then has commits beyond the default branch they are offered as a change without a card. A `code` run
-//! that changed nothing has failed; other runs, such as a review, are not committed. A run starts from the branch of the
+//! that changed nothing, that is, left no change and made no commit, has failed; other runs, such as a review, are not committed. A run starts from the branch of the
 //! card's latest successful `code` run, so it sees the work so far. The text of the agent's final answer is kept as
 //! the run's summary. A run is stopped with `abort` and steered with `steer`. Pi runs offline and does not trust
-//! configuration found in the worktree. The Moebius bridge (`bridge/moebius-bridge.ts`) is loaded into every run before the agent's own
-//! extensions; it asks the check for each tool call and result (see `check`). Every run is told the path of the
+//! configuration found in the worktree, and loads only the extensions and skills the agent is configured with. The
+//! Moebius bridge (`bridge/moebius-bridge.ts`) is loaded into every run after the agent's own extensions, so that it
+//! sees the final input and content of each tool call; it asks the check for each tool call and result (see `check`). Every run is told the path of the
 //! `moebius` executable as `$MOEBIUS`. The Moebius agent is always available: its instructions are built in, its skill
 //! is the guide (see `skill`), and its model comes from `[agents.Moebius]` or else from the Coder.
 
@@ -150,10 +151,9 @@ impl PiBolt {
             .env("MOEBIUS_RUN_TOKEN", token)
             .args(["--mode", "rpc", "--offline", "--no-approve"])
             .args(["--provider", "moebius", "--model", &agent.model])
+            .args(["--no-extensions", "--no-skills"])
             .arg("--session-dir")
-            .arg(run_dir.join("sessions"))
-            .arg("--extension")
-            .arg(bridge);
+            .arg(run_dir.join("sessions"));
         if let Some(thinking) = &agent.thinking {
             command.args(["--thinking", thinking]);
         }
@@ -166,6 +166,8 @@ impl PiBolt {
         for extension in &agent.extensions {
             command.arg("--extension").arg(extension);
         }
+        // Last, so that it checks the input and redacts the content the other extensions left.
+        command.arg("--extension").arg(bridge);
         command
     }
 
@@ -321,9 +323,12 @@ impl Runs for PiBolt {
             .repos
             .add_worktree(&repository.name, &clone, run.id, &base)
             .map_err(|e| fail(app, run.id, e.to_string()))?;
+        let start = git(&worktree.path, &["rev-parse", "HEAD"])
+            .map_err(|e| fail(app, run.id, e.to_string()))?;
         let running = RunningRun {
             id: run.id,
             clone: Some(clone),
+            start,
             worktree: worktree.path,
             token: self.router.issue_token(Grant {
                 run_id: run.id,
@@ -357,7 +362,7 @@ impl Runs for PiBolt {
             .store
             .add_run(None, agent, "pi-bolt", "chat")
             .map_err(|e| e.to_string())?;
-        let (clone, worktree) = match repository {
+        let (clone, worktree, start) = match repository {
             Some(repository) => {
                 let clone = PathBuf::from(&repository.path);
                 let made = app
@@ -371,17 +376,20 @@ impl Runs for PiBolt {
                         worktree.map_err(|e| e.to_string())
                     })
                     .map_err(|e| fail(app, run.id, e))?;
-                (Some(clone), made.path)
+                let start = git(&made.path, &["rev-parse", "HEAD"])
+                    .map_err(|e| fail(app, run.id, e.to_string()))?;
+                (Some(clone), made.path, start)
             }
             None => {
                 let empty = app.data_dir.join("chats").join(run.id.to_string());
                 std::fs::create_dir_all(&empty).map_err(|e| fail(app, run.id, e.to_string()))?;
-                (None, empty)
+                (None, empty, String::new())
             }
         };
         let running = RunningRun {
             id: run.id,
             clone,
+            start,
             worktree,
             token: self.router.issue_token(Grant {
                 run_id: run.id,
@@ -464,6 +472,8 @@ struct RunningRun {
     id: i64,
     /// The repository's clone; none for a chat in an empty directory.
     clone: Option<PathBuf>,
+    /// The commit the worktree was made at; what the run changed is everything after it.
+    start: String,
     worktree: PathBuf,
     token: String,
     purpose: String,
@@ -684,8 +694,8 @@ impl Reader {
         ));
     }
 
-    /// Commits what the agent left in the worktree of a repository; false when it left nothing. A chat without a
-    /// repository has nothing to commit.
+    /// Commits what the agent left in the worktree of a repository; false when it changed nothing, that is, left
+    /// the worktree clean and made no commit of its own. A chat without a repository has nothing to commit.
     fn commit(&self) -> crate::repos::Result<bool> {
         if self.run.clone.is_none() {
             return Ok(false);
@@ -693,7 +703,7 @@ impl Reader {
         let worktree = &self.run.worktree;
         git(worktree, &["add", "--all"])?;
         if git(worktree, &["status", "--porcelain"])?.is_empty() {
-            return Ok(false);
+            return Ok(git(worktree, &["rev-parse", "HEAD"])? != self.run.start);
         }
         git(
             worktree,
@@ -742,7 +752,7 @@ mod tests {
             thinking: Some("low".into()),
             instructions: Some("Be brief.".into()),
             skills: vec![],
-            extensions: vec![],
+            extensions: vec!["/agent/own.ts".into()],
             protocol: Protocol::OpenAi,
             token_budget: Some(1000),
         };
@@ -826,12 +836,14 @@ mod tests {
         assert!(argv.windows(2).any(|w| w == ["--model", "qwen-local"]));
         assert!(argv.iter().any(|a| a == "--no-approve") && argv.iter().any(|a| a == "--offline"));
         assert!(argv.windows(2).any(|w| w == ["--thinking", "low"]));
-        // The bridge is loaded before the agent's own extensions.
+        // Only the configured extensions and skills load, and the bridge is the last extension.
         let bridge = run_dir.join("moebius-bridge.ts");
         assert!(
-            argv.windows(2)
-                .any(|w| w == ["--extension", bridge.to_str().unwrap()])
+            argv.iter().any(|a| a == "--no-extensions") && argv.iter().any(|a| a == "--no-skills")
         );
+        let extensions: Vec<_> = argv.windows(2).filter(|w| w[0] == "--extension").collect();
+        assert_eq!(extensions[0][1], "/agent/own.ts");
+        assert_eq!(extensions.last().unwrap()[1], bridge.to_str().unwrap());
         assert_eq!(std::fs::read_to_string(&bridge).unwrap(), BRIDGE);
         let env: Value =
             serde_json::from_slice(&std::fs::read(run_dir.join("agent/env.json")).unwrap())
@@ -936,6 +948,18 @@ mod tests {
         assert_eq!(run.status, "failed");
         let last = app.store.events(run.id).unwrap().pop().unwrap();
         assert_eq!(last.data["message"], "the agent changed nothing");
+    }
+
+    #[test]
+    fn a_run_that_committed_its_own_work_has_succeeded() {
+        let (_dir, app, pi, repo) = setup();
+        let card = app.create_issue(repo, "Do [commit]", "", "person").unwrap();
+        let run = pi.start(&app, &card, "Coder", "code", None).unwrap();
+        let run = wait_until_ended(&app, run.id);
+        assert_eq!(run.status, "succeeded");
+        let clone = PathBuf::from(&app.store.repository(repo).unwrap().unwrap().path);
+        let shown = git(&clone, &["show", &format!("{}:own.txt", run.branch())]);
+        assert_eq!(shown.unwrap(), "own");
     }
 
     #[test]

@@ -112,7 +112,7 @@ to say. See the [desktop API](desktop-api.md) for a script that does all of this
 | Action | When it works | Call | What happens |
 |---|---|---|---|
 | Approve an issue | The card is in `Backlog`. | `POST /v1/cards/{id}/approve` `{"reason": "..."}` | The card's inbox items are resolved and the card moves to `Ready`. |
-| Retry a stuck card | The card has an open `stuck` item. | `POST /v1/cards/{id}/retry` `{"reason": "..."}` | The item is resolved and the card's rounds, reviews and tokens count from zero. The board starts work again. |
+| Retry a card | The card has an open `stuck` item, or a `change_closed` item because its pull request was closed without a merge. | `POST /v1/cards/{id}/retry` `{"reason": "..."}` | The item is resolved and the card's rounds, reviews and tokens count from zero. The board starts work again. A card with a closed pull request goes back to `In progress` with the note `The pull request was closed without a merge.`, and its next publish opens a new pull request. |
 | Reject a change | The change is open and its card is in `Ready to merge`. | `POST /v1/changes/{id}/reject` `{"reason": "..."}` | The card goes back to `In progress`, the reason is its note (`A person rejected the change.` without one), and the next Coder round is told. The change stays open. |
 | Merge a change | The change is `open`. | `POST /v1/changes/{id}/merge` `{"reason": "..."}` | The default branch of the clone gets a merge commit (without a forge) or the pull request is merged (GitHub). The answer is `{"commit": ...}`. The card moves to `Done`. |
 | Steer a run | The run is running. | `POST /v1/runs/{id}/steer` `{"message": "..."}` | The agent gets the message while it works. The run stores a `steered` event. |
@@ -137,7 +137,7 @@ On GitHub a person can also merge the pull request there; the poll notices and t
 | A run fails. | The run's status is `failed`, and its events include a `moebius_error` that says why (`GET /v1/runs/{id}/events`). The next tick starts another round until a limit is reached. |
 | A card is stuck. | An inbox item `stuck` with the reason. `POST /v1/cards/{id}/retry` gives it a fresh start. |
 | A tool call of the agent was refused. | A `tool_check` run event with `decision` `refuse` (see [Rules](rules.md)). The run goes on. |
-| A pull request was closed on GitHub without a merge. | The change is `closed`, an inbox item `change_closed` appears and the `change_closed` event is published. The card stays where it was, in `Ready to merge`: no script or route moves it on from there today. |
+| A pull request was closed on GitHub without a merge. | The change is `closed`, an inbox item `change_closed` appears and the `change_closed` event is published. The card stays in `Ready to merge` until a person retries it with `POST /v1/cards/{id}/retry`: it goes back to `In progress`, and its next publish opens a new pull request. |
 | The server stopped while a run was going. | At the next start the run is marked `failed` and the board starts the card's work again. |
 
 A script that fails does not move the card; see [Column scripts](column-scripts.md).

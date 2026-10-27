@@ -29,8 +29,11 @@ The exact contract is in [`docs/reference/column-scripts.md`](../reference/colum
 
 A repository on GitHub: push the file to the default branch. The poll fetches it within `github.poll_seconds`.
 
-A repository without a forge: Moebius never fetches it again and reads the scripts from its own clone, so commit in the
-clone. The snapshot says where it is (`repository.path`):
+A repository without a forge: Moebius reads the scripts from its own clone of it. Every 30 seconds it fetches the source
+repository, the one it was cloned from, and fast-forwards the clone's default branch, so commit to the source
+repository and the file arrives. Once Moebius has merged a change into the clone, the clone's default branch is
+ahead of the source and cannot fast-forward any more: from then on, commit in the clone. The snapshot says where it is
+(`repository.path`):
 
 ```sh
 CLONE=$(curl -s -H "Authorization: Bearer $TOKEN" $API/v1/snapshot | jq -r '.boards[0].repository.path')
@@ -41,7 +44,8 @@ git -C "$CLONE" commit -m "Start large cards alone"
 ```
 
 A file that is in the repository when you add it to Moebius is in the clone from the start. Changes that Moebius merges
-go into the same branch of the clone, so keep nothing else uncommitted there.
+go into the same branch of the clone, so keep nothing else uncommitted there. A fetch that fails is reported as a
+`forge_error` event.
 
 ## Examples
 
@@ -239,8 +243,8 @@ tick. Follow `GET /v1/events` (see the [desktop API](desktop-api.md)) to see `bo
 
 | What happens | How you see it |
 |---|---|
-| The script does not compile, has no `on_card`, raises an error or runs longer than 2 seconds. | The event `board_error` with `{card, message}` at every tick; the message starts with the script's file name. The card stays where it is. The server does not fall back to the default script. The event is not stored: you see it only on a connected `GET /v1/events`. |
-| The override has no effect. | It is not committed, not on the default branch, or in the wrong place (in a repository without a forge, in the source repository instead of the clone). The built-in script runs and nothing complains. Check with `git -C <clone> show <default branch>:.moebius/<script>`. |
+| The script does not compile, has no `on_card`, raises an error or runs longer than 2 seconds. | The event `board_error` with `{card, message}` at every tick; the message starts with the script's file name. The card stays where it is, and its `waiting` in the snapshot says `script error: <message>` until the script runs cleanly again. The server does not fall back to the default script. The event is not stored: you see it only on a connected `GET /v1/events`. |
+| The override has no effect. | It is not committed, not on the default branch, or in the wrong place (in a repository without a forge, it was committed to the source repository less than 30 seconds ago, or the clone has merged changes and no longer follows the source). The built-in script runs and nothing complains. Check with `git -C <clone> show <default branch>:.moebius/<script>`. |
 | `no column "<name>"` | `moebius.move` got a name that is not exactly one of the six columns, such as `In Progress`. |
 | `no agent named <name>` | `moebius.start_run` named an agent that is not in `moebius.toml`. Test with `moebius.has_agent(name)` first. |
 | Runs pile up. | `moebius.start_run` does not look at `run_limit` and starts a run every time it is called. A script that calls it on every tick must wait while the card's latest run is going, as `code.luau` does. |

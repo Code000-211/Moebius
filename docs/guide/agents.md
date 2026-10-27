@@ -53,7 +53,7 @@ every start, so a change to the guide arrives with the server.
 | `thinking` | Given to Pi-Bolt as `--thinking`, such as `low`, `medium` or `high`. Pi-Bolt checks the value. |
 | `instructions` | Text given to Pi-Bolt as `--append-system-prompt`. |
 | `skills` | Paths, each given to Pi-Bolt as `--skill`. |
-| `extensions` | Paths, each given to Pi-Bolt as `--extension` after the bridge. See [Extensions](extensions.md). |
+| `extensions` | Paths, each given to Pi-Bolt as `--extension` before the bridge. See [Extensions](extensions.md). |
 | `token_budget` | The most tokens (input plus output) the card's runs may use, the teacher's included. Over it the router answers HTTP 429 and the default scripts mark the card stuck. |
 
 A relative path in `skills` or `extensions` is relative to the directory that holds `moebius.toml`. Moebius does not

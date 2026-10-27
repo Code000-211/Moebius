@@ -117,7 +117,14 @@ The harness starts every Pi-Bolt run with these variables set:
 | `PI_CODING_AGENT_DIR` | The run's own agent directory, `<data_dir>/runs/<id>/agent`, which holds `models.json` that makes the router the `moebius` provider. |
 
 For each run the server writes the bridge to `<data_dir>/runs/<id>/moebius-bridge.ts` and starts Pi-Bolt with
-`--extension <that file>` before the agent's own `extensions`. The token is revoked when the run ends.
+`--extension <that file>` after the agent's own `extensions`, so that it is the last extension to run, and with `--no-extensions`
+and `--no-skills`, so that Pi loads no extension or skill it finds on its own, only those the agent is configured with and
+the bridge. The token is revoked when the run ends.
+
+The bridge being last is what lets it have the last word. Pi runs the handlers of an event in load order, a later
+`tool_call` handler sees and may change the `input` an earlier one left, and `tool_result` handlers chain. Last, the bridge
+checks the input the call will run with and redacts the content the result will carry. A harness that cannot guarantee
+this order must not be used.
 
 ## The bridge as the reference client
 

@@ -9,7 +9,7 @@ use base64::Engine;
 use tokio::runtime::Handle;
 
 use crate::github::{GitHub, GitHubError};
-use crate::repos::{GitError, Repos};
+use crate::repos::{GitError, Repos, git};
 use crate::store::{Change, Repository};
 
 /// Why a forge could not do what it was asked.
@@ -82,9 +82,17 @@ impl Forge for NoForge {
         Ok(None)
     }
 
-    /// The clone is where changes are merged; there is nothing to catch up with.
-    fn refresh(&self, _: &Repository) -> Result<(), ForgeError> {
-        Ok(())
+    /// Fetches `origin` and fast-forwards the clone's default branch to it, so that work committed in the repository
+    /// the clone came from arrives. A default branch that cannot fast-forward, because Moebius merged changes into it,
+    /// is left as it is.
+    fn refresh(&self, repository: &Repository) -> Result<(), ForgeError> {
+        let clone = Path::new(&repository.path);
+        self.repos.fetch(clone, None)?;
+        let upstream = format!("origin/{}", repository.default_branch);
+        match git(clone, &["merge", "--ff-only", "--quiet", &upstream]) {
+            Ok(_) | Err(GitError::Failed { .. }) => Ok(()),
+            Err(e) => Err(e.into()),
+        }
     }
 
     fn merge(

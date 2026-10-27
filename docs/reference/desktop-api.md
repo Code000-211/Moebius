@@ -171,14 +171,18 @@ Response: the `Card`. Errors: `404` no such change; `422` the change is not `ope
 
 ### `POST /v1/cards/{id}/retry`
 
-A person retries a card that waits in the inbox as stuck (it reached its round limit or its token budget, or a person
+A person retries a card that waits in the inbox as stuck or whose pull request was closed (it reached its round limit or its token budget, or a person
 stopped its run): the decision is recorded (kind `retry`, decider `person`), the card's inbox items are resolved, its
 waiting reason is cleared and its `retried_after` is set to its latest run, so that its `rounds`, `reviews` and `tokens`
 (see [column scripts](column-scripts.md)) count from the runs after it. The board then starts work on the card again.
 
+A card whose pull request was closed on the forge without a merge waits in `Ready to merge` with an open `change_closed`
+inbox item. Retrying it does the same, and moves the card to `In progress` with the note `The pull request was closed
+without a merge.`; the closed change stays closed and the next publish opens a new change and pull request.
+
 Request: `{"reason": "..."}`; `reason` is optional, but send `{}` without one.
 
-Response: the `Card`. Errors: `404` no such card; `422` the card has no open `stuck` inbox item.
+Response: the `Card`. Errors: `404` no such card; `422` the card has neither an open `stuck` nor an open `change_closed` inbox item.
 
 ### `GET /v1/runs/{id}`
 
@@ -215,6 +219,16 @@ of `{"at": number, "kind": string, "data": object}` with these kinds:
 | `inbox_resolved` | That item was resolved. | `{"item": id, "kind": string, "title": string}` |
 
 Errors: `404` no such card.
+
+### `GET /v1/judgements`
+
+The recorded decisions (what a person or a decider chose at a decision point), newest first. Query: `card` returns only
+those about that card, `kind` only those of that kind (such as `retry`, `merge` or `tool_call`); `limit` (default 100, at
+most 1000, at least 1) is the most it returns. A card that does not exist simply has none.
+
+Response: an array of `{"id": number, "kind": string, "choice": string, "reason": string, "decider": string,
+"outcome": string or null, "card": number or null, "run": number or null, "at": number}`. The blobs of the question's
+context are not included.
 
 ### `POST /v1/runs/{id}/steer`
 
@@ -320,7 +334,7 @@ ended.
 | `run_event` | Something happened in a run. | `{"run": id, "seq": number, "kind": string, "data": object}` (below) |
 | `run_ended` | A run ended. | `{"run": id, "status": "succeeded" \| "failed" \| "stopped"}` |
 | `board_error` | A column script failed; the card stays where it is. | `{"card": id, "message": string}` |
-| `forge_error` | Polling a GitHub repository failed; it is tried again at the next poll. | `{"repository": "owner/repo", "message": string}` |
+| `forge_error` | Polling a GitHub repository, or refreshing the clone of a repository without a forge, failed; it is tried again at the next poll or refresh (every 30 seconds without a forge). | `{"repository": "owner/repo" (GitHub) or the repository's name, "message": string}` |
 | `lagged` | This client fell too far behind (more than 1024 events) and lost the oldest. | `{"missed": number}` |
 
 A `run_event` has two sources, told apart by its inner `kind`:

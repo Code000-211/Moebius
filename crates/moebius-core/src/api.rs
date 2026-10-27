@@ -9,9 +9,10 @@
 //! - `POST /v1/cards/{id}/approve` `{reason}`: a person approves an outside issue; its card moves to ready.
 //! - `POST /v1/changes/{id}/merge` `{reason}`: a person merges a change; its card moves to done.
 //! - `POST /v1/changes/{id}/reject` `{reason}`: a person sends a change waiting to be merged back to coding.
-//! - `POST /v1/cards/{id}/retry` `{reason}`: a person retries a stuck card, which gets a fresh start.
+//! - `POST /v1/cards/{id}/retry` `{reason}`: a person retries a stuck card or one whose pull request was closed, which gets a fresh start.
 //! - `GET /v1/runs/{id}`: a run. `GET /v1/runs/{id}/events?after=&limit=`: its stored events, in pages.
 //! - `GET /v1/cards/{id}/runs`: the runs of a card. `GET /v1/cards/{id}/history`: its timeline.
+//! - `GET /v1/judgements?card=&kind=&limit=`: the recorded decisions, newest first.
 //! - `POST /v1/runs/{id}/steer` `{message}`: a person sends a message to a running run.
 //! - `POST /v1/runs/{id}/stop` `{reason}`: a person stops a running run; a chat ends as stopped.
 //! - `POST /v1/chats` `{agent?, message, repository?}`: starts a chat, with the Moebius agent unless `agent` names
@@ -135,6 +136,33 @@ struct EventsQuery {
     limit: Option<i64>,
 }
 
+/// How many judgements one request returns unless it asks for fewer or more.
+const DEFAULT_JUDGEMENTS: i64 = 100;
+/// The most judgements one request returns.
+const MAX_JUDGEMENTS: i64 = 1000;
+
+/// Which judgements to return: those of the card and of the kind, if given, at most `limit`.
+#[derive(Debug, Deserialize)]
+struct JudgementsQuery {
+    card: Option<i64>,
+    kind: Option<String>,
+    limit: Option<i64>,
+}
+
+/// A judgement as the API shows it: without the blobs of its context.
+#[derive(Debug, Serialize, Deserialize)]
+struct JudgementEntry {
+    id: i64,
+    kind: String,
+    choice: String,
+    reason: String,
+    decider: String,
+    outcome: Option<String>,
+    card: Option<i64>,
+    run: Option<i64>,
+    at: i64,
+}
+
 /// An operation's failure as the app sees it: a status and a message.
 pub struct ApiError(StatusCode, String);
 
@@ -209,6 +237,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/changes/{id}/reject", post(reject_change))
         .route("/v1/cards/{id}/runs", get(card_runs))
         .route("/v1/cards/{id}/history", get(card_history))
+        .route("/v1/judgements", get(judgements))
         .route("/v1/runs/{id}", get(get_run))
         .route("/v1/runs/{id}/events", get(run_events))
         .route("/v1/runs/{id}/steer", post(steer_run))
@@ -418,6 +447,36 @@ async fn run_events(
     blocking(&state.app, move |app| {
         app.run(id)?;
         Ok(app.store.events_after(id, query.after, limit)?)
+    })
+    .await
+}
+
+async fn judgements(
+    State(state): State<ApiState>,
+    Query(query): Query<JudgementsQuery>,
+) -> Result<axum::Json<Vec<JudgementEntry>>, ApiError> {
+    let limit = query
+        .limit
+        .unwrap_or(DEFAULT_JUDGEMENTS)
+        .clamp(1, MAX_JUDGEMENTS);
+    blocking(&state.app, move |app| {
+        let found = app
+            .store
+            .judgements_page(query.card, query.kind.as_deref(), limit)?;
+        Ok(found
+            .into_iter()
+            .map(|j| JudgementEntry {
+                id: j.id,
+                kind: j.kind,
+                choice: j.choice,
+                reason: j.reason,
+                decider: j.decider,
+                outcome: j.outcome,
+                card: j.card_id,
+                run: j.run_id,
+                at: j.at,
+            })
+            .collect())
     })
     .await
 }
@@ -1149,6 +1208,50 @@ mod tests {
         );
         assert_eq!(history[5].data["decider"], "person");
         assert_eq!(history[6].data["item"], item.id);
+    }
+
+    #[tokio::test]
+    async fn judgements_are_read_newest_first_by_card_and_kind() {
+        let (_dir, state, addr) = start().await;
+        let store = &state.app.store;
+        for (n, kind, card) in [
+            (1, "retry", Some(1)),
+            (2, "tool_call", None),
+            (3, "retry", None),
+        ] {
+            store
+                .add_judgement(&crate::store::NewJudgement {
+                    kind: kind.into(),
+                    choice: format!("choice {n}"),
+                    reason: format!("reason {n}"),
+                    decider: "person".into(),
+                    card_id: card,
+                    ..Default::default()
+                })
+                .unwrap();
+        }
+        let ids = |path: &str| {
+            let path = path.to_string();
+            let (state, addr) = (state.clone(), addr.clone());
+            async move {
+                let found: Vec<serde_json::Value> = get(&state, &addr, &path).await;
+                found
+                    .iter()
+                    .map(|j| j["id"].as_i64().unwrap())
+                    .collect::<Vec<_>>()
+            }
+        };
+        assert_eq!(ids("/v1/judgements").await, [3, 2, 1]);
+        assert_eq!(ids("/v1/judgements?kind=retry").await, [3, 1]);
+        assert_eq!(ids("/v1/judgements?card=1").await, [1]);
+        assert_eq!(ids("/v1/judgements?limit=2").await, [3, 2]);
+        assert_eq!(ids("/v1/judgements?limit=0").await, [3]);
+        let found: Vec<serde_json::Value> = get(&state, &addr, "/v1/judgements?card=1").await;
+        assert_eq!(
+            found[0],
+            serde_json::json!({ "id": 1, "kind": "retry", "choice": "choice 1", "reason": "reason 1",
+                "decider": "person", "outcome": null, "card": 1, "run": null, "at": found[0]["at"] })
+        );
     }
 
     #[tokio::test]

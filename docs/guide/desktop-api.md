@@ -61,6 +61,13 @@ items.
 curl -s -H "$AUTH" $API/v1/cards/$CARD/history | jq -c '.[] | {at, kind}'
 ```
 
+`GET /v1/judgements` lists the recorded decisions, newest first, with the reason each was made for; narrow it with
+`card`, `kind` and `limit`.
+
+```sh
+curl -s -H "$AUTH" "$API/v1/judgements?card=$CARD&limit=20" | jq -c '.[] | {kind, choice, decider, reason}'
+```
+
 To be told instead of asking, connect a WebSocket client to `GET /v1/events` with the same header. Every event arrives
 as one JSON message `{"kind": ..., "data": ...}`; the kinds are listed in the reference. Events are not replayed, so
 read the snapshot after you connect. For example, with `websocat`:

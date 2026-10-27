@@ -1023,12 +1023,33 @@ impl Store {
         clause: &str,
         param: rusqlite::types::Value,
     ) -> Result<Vec<Judgement>> {
+        self.judgements_query(&format!("WHERE {clause} ORDER BY id"), [param])
+    }
+
+    /// The judgements, newest first, of the card and of the kind if given; at most `limit`.
+    pub fn judgements_page(
+        &self,
+        card_id: Option<i64>,
+        kind: Option<&str>,
+        limit: i64,
+    ) -> Result<Vec<Judgement>> {
+        self.judgements_query(
+            "WHERE (?1 IS NULL OR card_id = ?1) AND (?2 IS NULL OR kind = ?2) ORDER BY id DESC LIMIT ?3",
+            params![card_id, kind, limit],
+        )
+    }
+
+    fn judgements_query(
+        &self,
+        tail: &str,
+        params: impl rusqlite::Params,
+    ) -> Result<Vec<Judgement>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(&format!(
             "SELECT id, kind, context, options, choice, reason, decider, run_id, card_id, outcome, at
-             FROM judgements WHERE {clause} ORDER BY id"
+             FROM judgements {tail}"
         ))?;
-        let rows = stmt.query_map([param], |r| {
+        let rows = stmt.query_map(params, |r| {
             Ok((
                 r.get::<_, i64>(0)?,
                 r.get::<_, String>(1)?,

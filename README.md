@@ -6,7 +6,7 @@ card, and checks every tool call an agent makes against rules.
 
 ## Status
 
-Milestones M0 to M3 are done (see [`docs/spec.md`](docs/spec.md) section 10). Today Moebius:
+Milestones M0 to M5 are done (see [`docs/spec.md`](docs/spec.md) section 10). Today Moebius:
 
 - starts a server with a SQLite store, a desktop API and a model router;
 - takes issues from a plain git repository (through the API) or from GitHub (by polling), and puts them on a board;
@@ -17,7 +17,7 @@ Milestones M0 to M3 are done (see [`docs/spec.md`](docs/spec.md) section 10). To
 - records every decision as a judgement and every model request's tokens as usage.
 
 Not built yet: the desktop app (`moebius-desktop` is a
-placeholder), self-improvement and the decision model.
+placeholder), the usage page and the editing of agents in the app, self-improvement and the decision model.
 
 ## Quick start
 
