@@ -179,7 +179,8 @@ agent. A script compares it with `card.tokens`.
 
 ## Errors
 
-A script fails when it does not compile, has no `on_card` function, raises an error, or runs out of time or memory.
+A script fails when it does not compile, has no `on_card` function (`the script does not define a function on_card(card)`),
+raises an error, or runs out of time or memory.
 The card stays where it is, and the server publishes the event `board_error` with `{card, message}`. The message
 starts with the script's file name. The next tick tries again. An override with an error does not fall back to the
 default script.
@@ -218,6 +219,50 @@ What is left is the base functions (`assert`, `error`, `pairs`, `ipairs`, `pcall
 - Memory: 16 MiB for one run of a script.
 
 Both limits are fixed; the configuration cannot change them.
+
+## Checking a script
+
+`moebius check-script <file> [--column <name>] [--title <text>] [--author <login>]` loads the file in the sandbox above
+and runs its `on_card` once against a made-up card, then prints what the script did. It needs no server, no
+configuration and no repository, and it stores and starts nothing.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `<file>` | required | The script, such as `.moebius/ready.luau`. |
+| `--column` | `Backlog` | The column the card is in: one of the six columns, spelled as in the table at the top. |
+| `--title` | `A card to check the script with` | The card's `title`. |
+| `--author` | `person` | The card's `author`. `card.trusted` is true only for `person`, as on a repository without a forge. |
+
+The made-up card has `id` and `number` 1, an empty `body`, `blocked_by` empty, `rounds`, `reviews` and `tokens` 0 and
+`stopped` false. It has no `note`, `change`, `run` or `review`. The `moebius` table has every constant and function of
+this page, but records its calls instead of acting:
+
+- `moebius.decide` takes the fail-closed option and says so; it raises an error when that is not one of the options.
+- `moebius.start_run` returns 1, then 2 and so on. `moebius.has_agent` says yes for every name.
+- `moebius.publish_change` and `moebius.run_checks` return a change on branch `moebius/card-1` whose `checks` is `none`.
+  `moebius.offer_change` returns 1. `moebius.record_outcome` returns 0.
+- `moebius.agent_budget` returns nil, `moebius.tokens_today` and `moebius.runs_active` return 0, and the limits are the
+  defaults.
+- `moebius.move` raises `no column "<name>"` for a column that does not exist.
+
+The output is one line for each call that does something, in the order of the calls, then the exit status 0:
+
+| Line | Call |
+|---|---|
+| `moved the card to <column>`, with ` (note: <note>)` when there is one | `moebius.move` |
+| `waited: <reason>` | `moebius.wait` |
+| `started a run of <agent> for <purpose>`, with the note as above | `moebius.start_run` |
+| `asked a person (<kind>) and waited: <reason>` | `moebius.ask` |
+| `put the card in the inbox as stuck: <reason>` | `moebius.stuck` |
+| `decided <kind>: ... the fail-closed option "<option>" was taken` | `moebius.decide` |
+| `published the change`, `started the checks of the change`, `offered the change to a person, and the card moved to Ready to merge` | `moebius.publish_change`, `moebius.run_checks`, `moebius.offer_change` |
+| `recorded the outcome "<outcome>"` | `moebius.record_outcome` |
+
+A script that calls none of them prints `The script did nothing: it did not move, wait, ask or start anything.` A script
+that fails (see Errors), a file that cannot be read and a column that does not exist print the message on standard
+error, starting with `moebius: `, and exit with status 1. The check shows one path through the script, the one the made-up
+card takes: change `--title`, `--author` and `--column` to try the others. What the real card holds (its runs, its change,
+its blockers, its tokens) is not made up, so a script that reads them must also be tried on a real card.
 
 ## Repository overrides
 

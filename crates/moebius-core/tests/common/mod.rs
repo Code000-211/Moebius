@@ -109,6 +109,16 @@ pub struct Started {
 }
 
 pub async fn start(dir: &Path, pi_bolt: &std::ffi::OsStr, upstream: &str) -> Started {
+    start_as(dir, pi_bolt, upstream, None).await
+}
+
+/// Like `start`, with runs told that `moebius` is the `moebius` executable (`$MOEBIUS`) instead of the running one.
+pub async fn start_as(
+    dir: &Path,
+    pi_bolt: &std::ffi::OsStr,
+    upstream: &str,
+    moebius: Option<&Path>,
+) -> Started {
     let config_text = format!(
         "[board]\ntick_ms = 100\n[router]\nlisten = \"127.0.0.1:0\"\n\
          [[router.upstreams]]\nprotocol = \"openai\"\nbase_url = \"{upstream}\"\n\
@@ -116,7 +126,10 @@ pub async fn start(dir: &Path, pi_bolt: &std::ffi::OsStr, upstream: &str) -> Sta
          [agents.Coder]\nmodel = \"fake-coder\"\ntoken_budget = 100000\n",
         pi_bolt = pi_bolt.to_string_lossy()
     );
-    let config = Config::parse(&config_text, dir, &dir.join("moebius.toml")).unwrap();
+    let mut config = Config::parse(&config_text, dir, &dir.join("moebius.toml")).unwrap();
+    if let Some(moebius) = moebius {
+        config.moebius = moebius.to_path_buf();
+    }
     let api_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let api = format!("http://{}", api_listener.local_addr().unwrap());
     let router_listener = tokio::net::TcpListener::bind(config.router_listen)

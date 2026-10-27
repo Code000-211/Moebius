@@ -300,6 +300,9 @@ pub struct Config {
     pub router_listen: SocketAddr,
     pub upstreams: Vec<UpstreamConfig>,
     pub pi_bolt: PathBuf,
+    /// The `moebius` executable that runs find as `$MOEBIUS`: the running one. It is no key of the file; a server that
+    /// is not the `moebius` binary, such as a test, sets it.
+    pub moebius: PathBuf,
     /// The server's rules (see `rules`), if it has any.
     pub rules_file: Option<PathBuf>,
     pub github: Option<GitHubConfig>,
@@ -393,6 +396,7 @@ impl Config {
             checks_timeout: Duration::from_secs(checks_timeout),
             router_listen,
             upstreams: raw.router.upstreams,
+            moebius: std::env::current_exe().unwrap_or_else(|_| PathBuf::from("moebius")),
             // A bare name is looked up on the PATH; anything with a directory in it is a path.
             pi_bolt: if pi_bolt.components().count() > 1 {
                 base.join(pi_bolt)

@@ -1,5 +1,6 @@
 //! The server put together (spec 2): the store and the core, the desktop API, the router, the Pi-Bolt harness, the
-//! board engine, which runs every card's column script on a fixed tick, and the poll of GitHub.
+//! board engine, which runs every card's column script on a fixed tick, and the poll of GitHub. The `moebius` skill
+//! is written to the data directory at start.
 
 use std::net::SocketAddr;
 use std::path::Path;
@@ -21,6 +22,7 @@ use crate::guard::{self, Guard, Teacher};
 use crate::pibolt::PiBolt;
 use crate::poll;
 use crate::router::{Router, Upstream};
+use crate::skill;
 use crate::store::Store;
 
 /// How long a call into a plugin may take before it counts as refused.
@@ -76,6 +78,8 @@ impl Server {
     pub fn new(config: Config, router_addr: SocketAddr) -> Result<Self, String> {
         std::fs::create_dir_all(&config.data_dir)
             .map_err(|e| format!("cannot create {}: {e}", config.data_dir.display()))?;
+        skill::write(&config.data_dir)
+            .map_err(|e| format!("cannot write the moebius skill: {e}"))?;
         let store = Arc::new(
             Store::open(&config.data_dir).map_err(|e| format!("cannot open the store: {e}"))?,
         );
@@ -128,6 +132,7 @@ impl Server {
 
         let harness = Arc::new(PiBolt::new(
             config.pi_bolt.clone(),
+            config.moebius.clone(),
             format!("http://{router_addr}"),
             router.clone(),
             config.agents.clone(),
@@ -326,6 +331,27 @@ mod tests {
             second.app.store.run(chat.id).unwrap().unwrap().status,
             "failed"
         );
+    }
+
+    #[test]
+    fn the_moebius_skill_is_written_at_start_from_the_guide_and_the_reference() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config::parse("", dir.path(), &dir.path().join("moebius.toml")).unwrap();
+        Server::new(config, "127.0.0.1:1".parse().unwrap()).unwrap();
+        let skill = dir.path().join(".moebius/skills/moebius");
+        let skill_md = std::fs::read_to_string(skill.join("SKILL.md")).unwrap();
+        assert!(skill_md.starts_with("---\nname: moebius\n"));
+        let docs = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs");
+        for directory in ["guide", "reference"] {
+            for page in std::fs::read_dir(docs.join(directory)).unwrap() {
+                let name = page.unwrap().file_name();
+                let written = std::fs::read(skill.join(directory).join(&name)).unwrap();
+                assert_eq!(
+                    written,
+                    std::fs::read(docs.join(directory).join(&name)).unwrap()
+                );
+            }
+        }
     }
 
     /// A GitHub with one repository, `acme/widgets`: its issues, the ETag they are served with and the

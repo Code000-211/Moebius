@@ -54,7 +54,7 @@ and `title` (the first line of the first message, at most 80 characters).
 (the number on GitHub, or null), `checks` (`pending`, `success`, `failure` or null), `review` (the latest review's state in
 lower case, such as `approved`, or null), `head` (the published commit), `published_at`, `checks_head` (the commit
 `checks` are for), `failed_checks` (the failing checks of a pull request, one per line, or null) and `check_output` (the
-end of the output of the repository's own checks, or null). A change's `branch` is `moebius/card-<number>`.
+end of the output of the repository's own checks, or null). A change's `branch` is `moebius/card-<number>`, or `moebius/chat-<run id>` for the work of a chat, which has no card.
 
 `InboxItem`: `id`, `kind`, `card_id` (or null), `title`, `data` (an object that depends on the kind), `resolved_at` (null
 in the snapshot, which holds only open items), `at`. Kinds the core adds: `approve_issue` (`data.reason`), `stuck`
@@ -150,7 +150,8 @@ Response: the `Card`. Errors: `404` no such card; `422` the card is not in `Back
 
 A person merges an open change: the decision is recorded (kind `merge`, decider `person`), the forge merges it (a
 no-fast-forward merge into the default branch of the clone for a repository without a forge; the GitHub API for a pull
-request), the change becomes `merged`, its inbox items are resolved and its card moves to `Done`.
+request), the change becomes `merged`, its inbox items are resolved and its card, if it has one, moves to `Done`. A
+change from a chat has no card: its `ready_to_merge` item is resolved and the commit message is `Merge <branch>`.
 
 Request: `{"reason": "..."}`; `reason` is optional, but the body is not: send `{}`.
 
@@ -245,7 +246,7 @@ on its branch first.
 Starts a chat: an interactive run without a card. The agent answers the first message as a stream of run events, and
 the chat then waits (status `waiting`) for the next message. It works in a new worktree on the branch `moebius/chat-<run id>`
 from the repository's default branch when `repository` is given, so that what the agent builds can be offered as a
-change later, or otherwise in an empty directory `chats/<run id>` under the data directory, which is removed when the
+change (see `POST /v1/chats/{id}/end`), or otherwise in an empty directory `chats/<run id>` under the data directory, which is removed when the
 chat ends. The chat's run uses the agent's configuration like any run; its `token_budget` counts the chat's own tokens, the
 daily budget applies, and a chat does not count against the board's run limit.
 
@@ -253,12 +254,13 @@ Request:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `agent` | string | Required. An agent of the configuration. |
+| `agent` | string | An agent of the configuration, or `Moebius`. Without it the chat is with the Moebius agent (see [configuration](configuration.md)). |
 | `message` | string | Required, not blank. Sent to the agent as it is, with no issue prompt around it. |
 | `repository` | number | The id of a repository to work in. |
 
-Response: the `Run` (`purpose` `chat`, `card_id` null). Errors: `404` no such repository; `422` the message is blank or
-the agent does not exist; `500` the worktree cannot be made.
+Response: the `Run` (`purpose` `chat`, `card_id` null). Errors: `404` no such repository; `422` the message is blank, the
+agent does not exist, or it is the Moebius agent and neither `[agents.Moebius]` nor `[agents.Coder]` is configured (the
+message says so); `500` the worktree cannot be made.
 
 ### `GET /v1/chats`
 
@@ -280,8 +282,19 @@ Response: the `Run`. Errors: `404` no such run; `422` the run is not a chat, the
 
 A person ends a chat that has not ended: Pi is asked to shut down (its standard input is closed; a Pi that has not exited
 after 10 seconds is killed). With a repository, what the agent left in the worktree is committed on the chat's branch
-(a chat that changed nothing has still succeeded), and then the worktree, or the empty directory, is removed. The chat ends
-as `succeeded`, which publishes `run_ended`.
+(a chat that changed nothing has still succeeded), and then the worktree, or the empty directory, is removed.
+
+If the chat's branch then has commits that the repository's default branch does not have, they are offered as a change
+that has no card: a `Change` with `card_id` null on the branch `moebius/chat-<run id>`, published through the
+repository's forge (on GitHub the branch is pushed and a pull request is opened whose title is the chat's title and
+whose body says it came from the chat; without a forge there is nothing to publish), an open `ready_to_merge` inbox item
+with the chat's title (`card_id` null, `data.change`, `data.branch`) and the event `change_offered`. A person merges it
+with `POST /v1/changes/{id}/merge`, which resolves the item; the merge commit's message is `Merge <branch>`. A chat that
+changed nothing, or has no repository, offers nothing, and a chat that ends as `failed` offers nothing. If the offer
+fails, the chat's run gets a `moebius_error` event saying why and the work stays on the branch. A chat that is stopped
+offers what it made in the same way.
+
+The chat ends as `succeeded`, which publishes `run_ended`; the change is offered before that.
 
 Request: `{}`.
 
@@ -299,7 +312,7 @@ ended.
 | `card_updated` | The title or body of a GitHub issue changed. | The `Card`. |
 | `card_moved` | A card moved to another column. | `{"card": id, "from": column, "to": column}` |
 | `card_waiting` | The reason a card waits changed: set, replaced, or cleared because the card moved or its script did not wait. Not sent when it stays the same. | `{"card": id, "reason": string or null}` |
-| `change_offered` | A card's change was offered to a person to merge. | The `Change`. |
+| `change_offered` | A card's change, or the work of a chat, was offered to a person to merge. | The `Change` (`card_id` is null for a chat's). |
 | `change_updated` | A change was published or published again, its checks started or ended, or the checks or review of its pull request changed. | The `Change`. |
 | `change_merged` | A change was merged, here or on GitHub. | `{"change": id, "commit": sha or null}` |
 | `change_closed` | A change's pull request was closed on GitHub without a merge. | `{"change": id}` |

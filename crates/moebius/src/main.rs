@@ -6,6 +6,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
+use moebius_core::board;
 use moebius_core::config::{self, Config};
 use moebius_core::server::Server;
 
@@ -26,6 +27,20 @@ enum Command {
     Init,
     /// Start the server.
     Serve,
+    /// Run a column script once against a made-up card and print what it did, or the error (exit status 1).
+    CheckScript {
+        /// The script, such as `.moebius/ready.luau`.
+        file: PathBuf,
+        /// The column the made-up card is in.
+        #[arg(long, default_value = "Backlog")]
+        column: String,
+        /// The card's title.
+        #[arg(long, default_value = "A card to check the script with")]
+        title: String,
+        /// The card's author; `person` is trusted, as on a repository without a forge.
+        #[arg(long, default_value = "person")]
+        author: String,
+    },
 }
 
 fn main() -> ExitCode {
@@ -55,6 +70,25 @@ fn run(cli: Cli) -> Result<(), String> {
             std::fs::write(&cli.config, config::EXAMPLE)
                 .map_err(|e| format!("cannot write {}: {e}", cli.config.display()))?;
             println!("wrote {}", cli.config.display());
+            Ok(())
+        }
+        Some(Command::CheckScript {
+            file,
+            column,
+            title,
+            author,
+        }) => {
+            let source = std::fs::read_to_string(&file)
+                .map_err(|e| format!("cannot read {}: {e}", file.display()))?;
+            let name = file.file_name().unwrap_or(file.as_os_str());
+            let did =
+                board::check_script(&name.to_string_lossy(), &source, &column, &title, &author)?;
+            if did.is_empty() {
+                println!("The script did nothing: it did not move, wait, ask or start anything.");
+            }
+            for line in did {
+                println!("{line}");
+            }
             Ok(())
         }
         Some(Command::Serve) => {

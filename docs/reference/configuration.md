@@ -30,7 +30,7 @@ An absolute path is used as it is.
 
 | Key | Type | Default | Meaning and validation |
 |---|---|---|---|
-| `data_dir` | path | `.moebius` | Where Moebius keeps its files: `moebius.sqlite` (the store), `blobs/`, `repos/<name>` (the clones), `worktrees/<name>/run-<id>` (`chat-<id>` for a chat), `chats/<id>` (the empty directory of a chat without a repository), `runs/<id>/` (a run's agent directory, bridge, sessions and `stderr.log`) and by default `token`. Created if missing. |
+| `data_dir` | path | `.moebius` | Where Moebius keeps its files: `moebius.sqlite` (the store), `blobs/`, `repos/<name>` (the clones), `worktrees/<name>/run-<id>` (`chat-<id>` for a chat), `chats/<id>` (the empty directory of a chat without a repository), `runs/<id>/` (a run's agent directory, bridge, sessions and `stderr.log`), `skills/moebius/` (the skill of the Moebius agent, written again at every start) and by default `token`. Created if missing. |
 | `listen` | string | `127.0.0.1:7171` | The address of the desktop API, as `ip:port` (a host name is not accepted). Keep it on a private network. |
 | `token_file` | path | `token` | The file with the token the desktop app sends. Created with a random token (64 hex digits, readable by the owner only) when missing or empty. |
 | `run_limit` | integer | `3` | How many runs may go at once across all boards. At least 1, else the file is refused. Scripts read it as `moebius.run_limit`. |
@@ -135,12 +135,30 @@ A name is made of letters, digits, `-` and `_` and must not be empty, else the f
 | `agents.<name>.extensions` | array of paths | `[]` | Each given to Pi-Bolt as `--extension`, after the bridge, which is always loaded first. |
 | `agents.<name>.token_budget` | integer | none | The most tokens (input plus output, summed over all runs of the card, teacher included) a card may use. A model request over it is answered with HTTP 429 `budget_exceeded`, and the default scripts mark a card that reached it stuck instead of starting a run. Tokens used before the card's latest retry do not count. Without it there is no limit. A chat has no card, so its budget is the tokens of the chat's own run. Scripts read it as `moebius.agent_budget(name)`. |
 
+### `[agents.Moebius]`
+
+The Moebius agent is always available: a chat without `agent` is with it, and a script can start it by name. It is
+bundled, so it needs no table, but it needs a model:
+
+- With `[agents.Moebius]`, its `model`, `protocol`, `thinking` and `token_budget` come from there.
+- Without it, its model and protocol are the Coder's (`[agents.Coder]`); it has no thinking level or budget of its own.
+- With neither, starting a chat with it fails with status 422 and a message that names both tables.
+
+Its instructions are built in (who it is, that it works for the person in the chat and builds what they ask for with the
+`moebius` skill); `agents.Moebius.instructions` is added after them. Its skills always begin with the `moebius` skill,
+which is the [guide](../guide/README.md) and this reference, written to `<data_dir>/skills/moebius/` when the server
+starts; `agents.Moebius.skills` adds more, and `agents.Moebius.extensions` adds extensions. The keys are the same as for
+any agent. What a chat with it leaves in its repository is offered as a change when the chat ends, see the
+[desktop API](desktop-api.md).
+
 ## Environment variables
 
 - The variables named by `router.upstreams.api_key_env`. Nothing else is read from the environment by the server.
 - `MOEBIUS_PI_BOLT` is read only by the end-to-end tests in `crates/moebius-core/tests`; the server ignores it.
 - The server sets `PI_CODING_AGENT_DIR`, `MOEBIUS_CHECK_URL` and `MOEBIUS_RUN_TOKEN` for each Pi-Bolt process, see the
-  [bridge protocol](bridge-protocol.md).
+  [bridge protocol](bridge-protocol.md). It also sets `MOEBIUS`, the path of the running `moebius` executable, so that
+  an agent can run `"$MOEBIUS" check-script <file>` (see [column scripts](column-scripts.md)). That path is not a key of
+  the file.
 
 ## A minimal file
 

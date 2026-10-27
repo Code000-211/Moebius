@@ -10,6 +10,31 @@ Today agents are tables in `moebius.toml`. The harness configuration repository,
 as commits, and MCP servers for agents, are planned for milestone M7 and do not exist yet (see the
 [README](README.md)). The keys are listed exactly in [`docs/reference/configuration.md`](../reference/configuration.md).
 
+## The Moebius agent
+
+The Moebius agent is bundled and always there. It knows Moebius from this guide and the references, which are its skill,
+and builds what a person asks for: a column script, a rule, an agent, an extension. It works in a chat, in the
+repository the chat is in (what belongs to one repository goes in its `.moebius/`), tries a column script with
+`moebius check-script` and leaves what it built on the chat's branch. When the chat ends, that work is offered as a
+change that a person merges (see [Chat with an agent](#chat-with-an-agent)). It never commits or pushes by itself and it
+does not merge.
+
+It is the default of a chat: `POST /v1/chats` without `agent` starts a chat with it. It needs a model. Without
+configuration it takes the Coder's model and protocol; with an `[agents.Moebius]` table it uses that table's:
+
+```toml
+[agents.Moebius]
+model = "my-hosted-model"
+protocol = "anthropic"
+thinking = "high"
+instructions = "Write scripts in the style of the repository's other scripts."
+```
+
+The keys are those of any agent below. Its `instructions` are added after the built-in ones, and its `skills` after the
+`moebius` skill, which it always has. With neither `[agents.Moebius]` nor `[agents.Coder]`, a chat with it is refused
+with status 422 and a message that says which to configure. The skill is written to `<data_dir>/skills/moebius/` at
+every start, so a change to the guide arrives with the server.
+
 ## The steps
 
 1. Add an `[agents.<name>]` table to `moebius.toml`. The name is made of letters, digits, `-` and `_`. Only `model` is
@@ -165,15 +190,20 @@ A column script starts it by name with `moebius.start_run(agent, purpose, note)`
 ## Chat with an agent
 
 A chat is a run without a card: you write, the agent answers, and you can go on, steer and stop. Any agent in
-`moebius.toml` can be chatted with. Today you name the agent; there is no default.
+`moebius.toml` can be chatted with, and the Moebius agent, which a chat without `agent` is with.
 
 ```sh
 curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
   -d '{"agent": "Coder", "message": "Explain how the router chooses an upstream.", "repository": 1}' $API/v1/chats
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"message": "Write a ready.luau that starts a card only when nothing blocks it.", "repository": 1}' $API/v1/chats
 ```
 
 With `repository` the agent works in a new worktree on the branch `moebius/chat-<run id>` and what it leaves is committed
-there when the chat ends. Without it, the agent works in an empty directory. The answer is the run; its `id` is the
+there when the chat ends. If the branch then has commits that the default branch does not, they are offered as a change
+without a card: an inbox item of kind `ready_to_merge`, the event `change_offered` and, on GitHub, a pull request titled
+as the chat is. A person merges it with `POST /v1/changes/{id}/merge`. A chat that changed nothing offers nothing.
+Without `repository`, the agent works in an empty directory and nothing is offered. The answer is the run; its `id` is the
 chat's id. Read what the agent says as run events and send the next message:
 
 ```sh

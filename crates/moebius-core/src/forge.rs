@@ -10,7 +10,7 @@ use tokio::runtime::Handle;
 
 use crate::github::{GitHub, GitHubError};
 use crate::repos::{GitError, Repos};
-use crate::store::{Card, Change, Repository};
+use crate::store::{Change, Repository};
 
 /// Why a forge could not do what it was asked.
 #[derive(Debug, thiserror::Error)]
@@ -27,13 +27,14 @@ pub enum ForgeError {
 pub trait Forge: Send + Sync {
     /// The name repositories refer to it by, such as `none` or `github`.
     fn name(&self) -> &'static str;
-    /// Makes the work of `card` on `branch` known to the forge, and returns the number of the pull request for it if
-    /// the forge has them. Called again when `branch` has moved on; `pull_request` is the number returned before, so
-    /// the forge updates the change it offered instead of offering another.
+    /// Makes the work on `branch` known to the forge, as a change with `title` and `body`, and returns the number of
+    /// the pull request for it if the forge has them. Called again when `branch` has moved on; `pull_request` is the
+    /// number returned before, so the forge updates the change it offered instead of offering another.
     fn publish(
         &self,
         repository: &Repository,
-        card: &Card,
+        title: &str,
+        body: &str,
         branch: &str,
         pull_request: Option<i64>,
     ) -> Result<Option<i64>, ForgeError>;
@@ -73,7 +74,8 @@ impl Forge for NoForge {
     fn publish(
         &self,
         _: &Repository,
-        _: &Card,
+        _: &str,
+        _: &str,
         _: &str,
         _: Option<i64>,
     ) -> Result<Option<i64>, ForgeError> {
@@ -137,7 +139,8 @@ impl Forge for GitHubForge {
     fn publish(
         &self,
         repository: &Repository,
-        card: &Card,
+        title: &str,
+        body: &str,
         branch: &str,
         pull_request: Option<i64>,
     ) -> Result<Option<i64>, ForgeError> {
@@ -148,13 +151,12 @@ impl Forge for GitHubForge {
         if pull_request.is_some() {
             return Ok(pull_request);
         }
-        let body = format!("Closes #{}\n\nMade by Moebius.", card.number);
         let number = self.runtime.block_on(self.github.open_pull_request(
             name,
-            &card.title,
+            title,
             branch,
             &repository.default_branch,
-            &body,
+            body,
         ))?;
         Ok(Some(number))
     }

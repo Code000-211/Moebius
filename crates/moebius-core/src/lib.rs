@@ -17,6 +17,7 @@ pub mod repos;
 pub mod router;
 pub mod rules;
 pub mod server;
+pub mod skill;
 pub mod store;
 
 /// The version of this build of Moebius.

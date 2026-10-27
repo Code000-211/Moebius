@@ -1,7 +1,7 @@
 # The Moebius guide
 
 This guide is for anyone who builds on Moebius: a person who wants a repository to behave differently, or an agent (the
-Moebius agent, once it exists) that is asked to build such a thing and has only this guide to go by. It says how to do
+Moebius agent, whose skill this guide is) that is asked to build such a thing and has only this guide to go by. It says how to do
 each task, step by step, with an example that works.
 
 ## How the guide relates to the reference
@@ -28,14 +28,14 @@ Built and described here:
 - Plugins compiled into the `moebius` binary, and the plugin API.
 - The bridge and Pi extensions.
 - The desktop API (HTTP and one WebSocket) and chats with any configured agent.
+- The Moebius agent, which builds scripts, rules, agents and extensions from this guide in a chat and offers them as a
+  change. It is the default agent of a chat. See [Agents](agents.md#the-moebius-agent).
 
 Planned, so that nothing here describes them beyond a line:
 
 - The harness configuration repository (agents, instructions, skills, rules and MCP servers kept in a git repository of
   their own, with edits as commits), the skills directory and MCP servers. They come with milestone M7 (issues 39 and 40
   in [`docs/issues-m2-m9.md`](../issues-m2-m9.md)). Today there is no way to give an agent an MCP server.
-- The Moebius agent, which builds scripts, rules, agents and extensions from this guide (issue 31). Today a chat can
-  start with any agent in `moebius.toml`.
 - The desktop app (`crates/moebius-desktop` is a placeholder). Everything it will do is the desktop API, which you can
   call yourself.
 - Plugins in their own process.
@@ -47,7 +47,7 @@ Planned, so that nothing here describes them beyond a line:
 | Change what a column does for one repository, and try the change | [Column scripts](column-scripts.md) |
 | Know how a card moves from Backlog to Done and what a person can do on the way | [Workflows](workflows.md) |
 | Forbid something to every run, or to the runs of one repository, and see a refusal | [Rules](rules.md) |
-| Set up the Coder, the Reviewer or another agent, and chat with one | [Agents](agents.md) |
+| Set up the Coder, the Reviewer or another agent, chat with one, or have the Moebius agent build something | [Agents](agents.md) |
 | Answer your own decision points with Rust code | [Plugins](plugins.md) |
 | Add behaviour inside the Pi process of a run | [Extensions](extensions.md) |
 | Drive Moebius from a script with `curl` | [Desktop API](desktop-api.md) |

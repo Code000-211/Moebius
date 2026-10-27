@@ -121,7 +121,12 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
     depending on whether the agent is working. Steer and stop are the run's own routes; a stop of a chat also closes Pi's
     standard input, since a waiting chat has no turn to abort. `POST /v1/chats/{id}/end` (`App::end_chat`,
     `Runs::end`) closes Pi's standard input. When Pi has exited the chat is committed on its branch (nothing changed is
-    no failure), the worktree or directory is removed, and the run is `succeeded` (`stopped` after a stop). Chats are not
+    no failure), the worktree or directory is removed, and the run is `succeeded` (`stopped` after a stop). Before the status
+    is set, a chat in a repository whose branch has commits beyond the default branch is offered as a change without a card
+    (`App::offer_chat_change`: the forge publishes the branch, a change with a null card and a `ready_to_merge` inbox
+    item are stored, `change_offered` is published); merging it is the same `App::merge_change`. `PiBolt::agent` makes
+    the agent of a run; for `Moebius`, the bundled agent, it adds the built-in instructions and the `moebius` skill to
+    the Moebius or Coder configuration. Every run has `$MOEBIUS`, the `moebius` executable, for `check-script`. Chats are not
     counted by `moebius.runs_active()`, so they do not use the board's run limit; the daily budget applies to them.
     `GET /v1/chats` (`App::chats`) lists them, newest first.
 13. **GitHub reports.** `poll::poll_pull_requests` reads each open change's pull request: checks and review are recorded
@@ -183,7 +188,7 @@ The server runs on a multi-threaded tokio runtime.
 
 | Module | What it is for |
 |---|---|
-| `crates/moebius/src/main.rs` | The `moebius` binary: `init` writes the example configuration, `serve` starts the server. |
+| `crates/moebius/src/main.rs` | The `moebius` binary: `init` writes the example configuration, `serve` starts the server, `check-script` runs a column script once against a made-up card (`board::check_script`). |
 | `crates/moebius-plugin-api/src/lib.rs` | The `Plugin` trait, the call and decision types, the `Host` that calls plugins with a time limit and fails closed. |
 | `crates/moebius-desktop/src/main.rs` | A placeholder for the desktop app. |
 | `api.rs` | The desktop API: routes, token check, the event WebSocket. |
@@ -203,6 +208,7 @@ The server runs on a multi-threaded tokio runtime.
 | `router.rs` | The router: model endpoints, run tokens, usage, budgets. |
 | `rules.rs` | The `rules.md` format and where rules come from. |
 | `server.rs` | Wires everything from the configuration and runs the loops. |
+| `skill.rs` | The `moebius` skill (the guide and the references, bundled with `include_str!`), written to `<data_dir>/skills/moebius/` at start. |
 | `store.rs` | The SQLite records and their migrations. |
 | `workflow/*.luau` | The six built-in column scripts. |
 | `bridge/moebius-bridge.ts` | The Pi extension loaded into every run. |

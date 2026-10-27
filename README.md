@@ -12,10 +12,11 @@ Milestones M0 to M3 are done (see [`docs/spec.md`](docs/spec.md) section 10). To
 - takes issues from a plain git repository (through the API) or from GitHub (by polling), and puts them on a board;
 - runs a Pi-Bolt agent per card in its own worktree, and offers the result as a change (a branch, or a GitHub pull request);
 - merges the change when a person asks through the API;
+- chats with agents, and with the bundled Moebius agent, which builds scripts, rules and agents from the guide and offers them as a change;
 - checks every tool call against built-in rules and rules written in prose, and refuses the ones that break a rule;
 - records every decision as a judgement and every model request's tokens as usage.
 
-Not built yet: the review and CI loop (M4), chat and the Moebius agent (M5), the desktop app (`moebius-desktop` is a
+Not built yet: the desktop app (`moebius-desktop` is a
 placeholder), self-improvement and the decision model.
 
 ## Quick start
@@ -78,7 +79,7 @@ The answer is the merge commit, and the card is in `Done`. For a repository on G
 |---|---|
 | `crates/moebius-core/` | Everything the server does. `src/` has one module per part; `workflow/` the built-in column scripts; `bridge/` the Pi extension that checks tool calls. |
 | `crates/moebius-plugin-api/` | The plugin trait and the host that calls plugins with a time limit, failing closed. |
-| `crates/moebius/` | The `moebius` binary (`init`, `serve`). |
+| `crates/moebius/` | The `moebius` binary (`init`, `serve`, `check-script`). |
 | `crates/moebius-desktop/` | The desktop app, not built yet. |
 | `examples/` | A column script, rules, a decider plugin and a Pi extension that run in CI. |
 | `docs/` | Documentation, below. |

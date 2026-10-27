@@ -19,9 +19,10 @@ The exact contract is in [`docs/reference/column-scripts.md`](../reference/colum
 3. Write the file and keep the function `on_card(card)`. A script reads the `card` and acts through the `moebius`
    table: `moebius.move`, `moebius.wait`, `moebius.ask`, `moebius.stuck`, `moebius.start_run` and the rest. Each run of
    a script starts from nothing, so keep no state in globals.
-4. Commit it as `.moebius/<script>` on the repository's default branch (see below). Only committed content on that
+4. Check it with `moebius check-script` (see [How to try a script](#how-to-try-a-script)) until it does what you want.
+5. Commit it as `.moebius/<script>` on the repository's default branch (see below). Only committed content on that
    branch counts.
-5. The script is read again on every run, so the next tick (`board.tick_ms`, two seconds by default) uses it. There is
+6. The script is read again on every run, so the next tick (`board.tick_ms`, two seconds by default) uses it. There is
    nothing to restart.
 
 ### Where the file goes
@@ -199,7 +200,23 @@ Try it on GitHub: open an issue whose body says `blocked by #12` while #12 is op
 
 ## How to try a script
 
-There is no dry-run command and no script checker. These are the ways that exist.
+**Check it with the command.** `moebius check-script` runs the script once against a made-up card and prints what it did,
+or the error. It needs no server, no configuration and no repository, and it stores and starts nothing, so it is the
+first thing to do after every change:
+
+```sh
+moebius check-script .moebius/ready.luau --column Ready
+moebius check-script .moebius/ready.luau --column Ready --title "[large] Rewrite the parser" --author leon
+```
+
+The first prints, for the default `ready.luau`, `moved the card to In progress`. Pass `--column` with the column the
+script belongs to, and `--title` and `--author` to take the other paths of the script: a title with `[large]`, an
+author the script does not trust. A script that does not compile, raises an error, calls `moebius.move` with a column
+that does not exist or runs too long prints the error and exits with status 1. The command makes up the card: it has
+no runs, no change, no blockers and no tokens, `moebius.has_agent` says yes to every name and `moebius.decide` takes the
+fail-closed option, so it cannot tell you what a decider would say or what a card with a history does; for that use
+one of the ways below. Every line it can print is listed in the
+[reference](../reference/column-scripts.md#checking-a-script).
 
 **Run it in a test.** `crates/moebius-core/tests/guide.rs` and `crates/moebius-core/tests/examples.rs` show the
 pattern, which needs no model and no Pi-Bolt:

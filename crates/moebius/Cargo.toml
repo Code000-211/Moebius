@@ -14,4 +14,8 @@ tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "signal"] }
 workspace = true
 
 [dev-dependencies]
+axum = "0.8.9"
+reqwest = { version = "0.13.5", default-features = false, features = ["json"] }
+serde_json = "1.0.154"
 tempfile = "3.27.0"
+tokio = { version = "1.54.1", features = ["macros", "time"] }

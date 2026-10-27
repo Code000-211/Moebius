@@ -111,7 +111,8 @@ default branch as it was.
 
 ## Chat
 
-A chat is an interactive run without a card, with any agent of `moebius.toml` (see [Agents](agents.md)).
+A chat is an interactive run without a card, with any agent of `moebius.toml` or with the Moebius agent, which a chat
+without `agent` is with (see [Agents](agents.md)).
 
 ```sh
 CHAT=$(curl -s -X POST -H "$AUTH" -H "$JSON" \
@@ -125,6 +126,10 @@ curl -s -X POST -H "$AUTH" -H "$JSON" -d '{}' $API/v1/chats/$CHAT/end
 The chat is `waiting` when the agent has answered and `running` while it works. A message sent while it works is
 delivered when it is done with the turn; to change what it is doing, steer the run. `steer` and `stop` work on a chat
 as on any run.
+
+When a chat in a repository ends and its branch has commits that the default branch does not, they are offered as a
+change without a card: the inbox gets a `ready_to_merge` item, an event `change_offered` is sent, and a person merges it
+like any change, with `POST /v1/changes/{id}/merge`. This is how what the Moebius agent builds reaches the repository.
 
 ## A whole flow in one script
 

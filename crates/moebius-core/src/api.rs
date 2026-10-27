@@ -14,7 +14,8 @@
 //! - `GET /v1/cards/{id}/runs`: the runs of a card. `GET /v1/cards/{id}/history`: its timeline.
 //! - `POST /v1/runs/{id}/steer` `{message}`: a person sends a message to a running run.
 //! - `POST /v1/runs/{id}/stop` `{reason}`: a person stops a running run; a chat ends as stopped.
-//! - `POST /v1/chats` `{agent, message, repository?}`: starts a chat. `GET /v1/chats`: the chats, newest first.
+//! - `POST /v1/chats` `{agent?, message, repository?}`: starts a chat, with the Moebius agent unless `agent` names
+//!   another. `GET /v1/chats`: the chats, newest first.
 //!   `POST /v1/chats/{id}/messages` `{message}`: writes to a chat. `POST /v1/chats/{id}/end`: ends a chat.
 //!
 //! Every request carries `Authorization: Bearer <token>`; anything else is answered with 401.
@@ -37,6 +38,7 @@ use crate::app::{App, AppError, Chat, HistoryEntry, PERSON};
 use crate::board::Runs;
 use crate::bus::AppEvent;
 use crate::forge::ForgeError;
+use crate::pibolt::MOEBIUS_AGENT;
 use crate::repos::GitError;
 use crate::store::{Card, Change, Event, InboxItem, Repository, Run};
 
@@ -104,10 +106,12 @@ pub struct Steer {
     pub message: String,
 }
 
-/// The body that starts a chat: the agent to talk to, the first message and optionally the repository to work in.
+/// The body that starts a chat: the agent to talk to (the Moebius agent without one), the first message and optionally
+/// the repository to work in.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NewChat {
-    pub agent: String,
+    #[serde(default)]
+    pub agent: Option<String>,
     pub message: String,
     #[serde(default)]
     pub repository: Option<i64>,
@@ -368,7 +372,8 @@ async fn start_chat(
 ) -> Result<axum::Json<Run>, ApiError> {
     let runs = state.runs.clone();
     blocking(&state.app, move |app| {
-        app.start_chat(&*runs, &chat.agent, chat.repository, &chat.message)
+        let agent = chat.agent.as_deref().unwrap_or(MOEBIUS_AGENT);
+        app.start_chat(&*runs, agent, chat.repository, &chat.message)
     })
     .await
 }
@@ -475,6 +480,25 @@ mod tests {
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
     async fn start() -> (tempfile::TempDir, ApiState, String) {
+        start_with(BTreeMap::from([("Coder".to_string(), agent("fake"))])).await
+    }
+
+    fn agent(model: &str) -> AgentConfig {
+        AgentConfig {
+            model: model.into(),
+            thinking: None,
+            instructions: None,
+            skills: vec![],
+            extensions: vec![],
+            protocol: Protocol::OpenAi,
+            token_budget: None,
+        }
+    }
+
+    /// A server whose harness has the agents `agents`.
+    async fn start_with(
+        agents: BTreeMap<String, AgentConfig>,
+    ) -> (tempfile::TempDir, ApiState, String) {
         let dir = tempfile::tempdir().unwrap();
         let store = Arc::new(Store::in_memory(&dir.path().join("blobs")).unwrap());
         let repo = store
@@ -487,21 +511,13 @@ mod tests {
         let host = Arc::new(moebius_plugin_api::Host::new(
             std::time::Duration::from_secs(1),
         ));
-        let coder = AgentConfig {
-            model: "fake".into(),
-            thinking: None,
-            instructions: None,
-            skills: vec![],
-            extensions: vec![],
-            protocol: Protocol::OpenAi,
-            token_budget: None,
-        };
         // The harness is the real one over a Pi that is a script.
         let pi = PiBolt::new(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/fake-pi"),
+            "/usr/local/bin/moebius".into(),
             "http://127.0.0.1:9".into(),
             Arc::new(Router::new(store.clone(), vec![])),
-            BTreeMap::from([("Coder".to_string(), coder)]),
+            agents,
         );
         let state = ApiState {
             app: Arc::new(App::new(store, host, &dir.path().join("data"))),
@@ -1500,6 +1516,189 @@ mod tests {
             .unwrap();
         assert_eq!(say(&state, &addr, run.id, "Hello").await.status(), 422);
         assert_eq!(end(&state, &addr, run.id).await.status(), 422);
+    }
+
+    /// The arguments Pi was started with for a run.
+    fn argv(app: &App, run_id: i64) -> Vec<String> {
+        let file = app.data_dir.join(format!("runs/{run_id}/agent/argv.json"));
+        serde_json::from_slice(&std::fs::read(file).unwrap()).unwrap()
+    }
+
+    /// Starts a chat without an agent and returns its run once the agent has answered.
+    async fn chat_without_agent(state: &ApiState, addr: &str, repository: Option<i64>) -> Run {
+        let body = serde_json::json!({ "message": "Hello", "repository": repository });
+        let started = post(state, addr, "/v1/chats".into(), body).await;
+        assert_eq!(started.status(), 200);
+        let run: Run = started.json().await.unwrap();
+        until("the agent has answered", || {
+            status(&state.app, run.id) == "waiting"
+        })
+        .await;
+        run
+    }
+
+    #[tokio::test]
+    async fn a_chat_without_an_agent_is_with_the_moebius_agent_on_the_coders_model() {
+        let (_dir, state, addr) = start().await;
+        let run = chat_without_agent(&state, &addr, None).await;
+        assert_eq!(run.agent, "Moebius");
+        let argv = argv(&state.app, run.id);
+        assert!(argv.windows(2).any(|w| w == ["--model", "fake"]));
+        // Only the Coder's model and protocol carry over.
+        assert!(!argv.iter().any(|a| a == "--thinking"));
+        let skill = crate::skill::dir(&state.app.data_dir);
+        let skills: Vec<_> = argv.windows(2).filter(|w| w[0] == "--skill").collect();
+        assert_eq!(skills, [["--skill", skill.to_str().unwrap()]]);
+        let instructions = argv.windows(2).find(|w| w[0] == "--append-system-prompt");
+        assert!(instructions.unwrap()[1].starts_with("You are the Moebius agent."));
+
+        // Asking for the agent by name is the same.
+        let named = serde_json::json!({ "agent": "Moebius", "message": "Hello" });
+        let named: Run = post(&state, &addr, "/v1/chats".into(), named)
+            .await
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(named.agent, "Moebius");
+    }
+
+    #[tokio::test]
+    async fn the_moebius_agent_configured_has_its_own_model_and_adds_to_what_it_is_told() {
+        let own = AgentConfig {
+            thinking: Some("high".into()),
+            instructions: Some("Prefer small scripts.".into()),
+            skills: vec!["/skills/house-style".into()],
+            ..agent("own-model")
+        };
+        // There is no Coder: the Moebius agent needs none.
+        let (_dir, state, addr) = start_with(BTreeMap::from([("Moebius".to_string(), own)])).await;
+        let run = chat_without_agent(&state, &addr, None).await;
+        let argv = argv(&state.app, run.id);
+        assert!(argv.windows(2).any(|w| w == ["--model", "own-model"]));
+        assert!(argv.windows(2).any(|w| w == ["--thinking", "high"]));
+        // The moebius skill always comes first.
+        let skill = crate::skill::dir(&state.app.data_dir);
+        let skills: Vec<_> = argv.windows(2).filter(|w| w[0] == "--skill").collect();
+        assert_eq!(
+            skills,
+            [
+                ["--skill", skill.to_str().unwrap()],
+                ["--skill", "/skills/house-style"]
+            ]
+        );
+        let instructions = argv.windows(2).find(|w| w[0] == "--append-system-prompt");
+        let instructions = &instructions.unwrap()[1];
+        assert!(instructions.starts_with("You are the Moebius agent."));
+        assert!(instructions.ends_with("\n\nPrefer small scripts."));
+    }
+
+    #[tokio::test]
+    async fn the_moebius_agent_without_a_model_to_use_cannot_start_a_chat() {
+        let (_dir, state, addr) = start_with(BTreeMap::new()).await;
+        let body = serde_json::json!({ "message": "Hello" });
+        let refused = post(&state, &addr, "/v1/chats".into(), body).await;
+        assert_eq!(refused.status(), 422);
+        let message = refused.text().await.unwrap();
+        assert!(message.contains("[agents.Moebius]"), "{message}");
+        assert!(state.app.store.chats().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_chat_in_a_repository_offers_what_it_made_as_a_change_the_person_merges() {
+        let (dir, state, addr) = start().await;
+        let app = &state.app;
+        let repo = app
+            .add_repository("demo", origin(dir.path()).to_str().unwrap())
+            .unwrap();
+        let clone = std::path::PathBuf::from(&repo.path);
+        let mut events = app.bus.subscribe();
+        let write = "Write a script [write .moebius/ready.luau]";
+        let started = serde_json::json!({ "message": write, "repository": repo.id });
+        let run: Run = post(&state, &addr, "/v1/chats".into(), started)
+            .await
+            .json()
+            .await
+            .unwrap();
+        until("the agent has answered", || {
+            status(app, run.id) == "waiting"
+        })
+        .await;
+        assert!(app.store.changes(repo.id).unwrap().is_empty());
+        assert_eq!(end(&state, &addr, run.id).await.status(), 200);
+        until("the chat ends", || status(app, run.id) == "succeeded").await;
+
+        // The change has no card, is on the chat's branch and waits in the inbox.
+        let changes = app.store.changes(repo.id).unwrap();
+        assert_eq!(changes.len(), 1);
+        let change = &changes[0];
+        assert_eq!(
+            (
+                change.card_id,
+                change.branch.as_str(),
+                change.state.as_str()
+            ),
+            (None, run.branch().as_str(), "open")
+        );
+        assert_eq!(change.pull_request, None);
+        let inbox = app.store.inbox().unwrap();
+        assert_eq!(inbox.len(), 1);
+        assert_eq!(
+            (inbox[0].kind.as_str(), inbox[0].card_id),
+            ("ready_to_merge", None)
+        );
+        assert_eq!(inbox[0].title, write);
+        assert_eq!(inbox[0].data["change"], change.id);
+        let mut offered = None;
+        while let Ok(event) = events.try_recv() {
+            if event.kind == "change_offered" {
+                offered = Some(event.data["id"].clone());
+            }
+        }
+        assert_eq!(offered, Some(serde_json::json!(change.id)));
+
+        // Merging it puts the script on the default branch and takes the item out of the inbox.
+        let merged = post(
+            &state,
+            &addr,
+            format!("/v1/changes/{}/merge", change.id),
+            serde_json::json!({}),
+        )
+        .await;
+        assert_eq!(merged.status(), 200);
+        assert_eq!(
+            git(&clone, &["show", "main:.moebius/ready.luau"]).unwrap(),
+            "written"
+        );
+        assert_eq!(
+            git(&clone, &["log", "-1", "--format=%s", "main"]).unwrap(),
+            format!("Merge {}", run.branch())
+        );
+        assert!(app.store.inbox().unwrap().is_empty());
+        assert_eq!(
+            app.store.change(change.id).unwrap().unwrap().state,
+            "merged"
+        );
+
+        // A chat that changed nothing offers nothing; a stopped chat offers what it made.
+        let quiet = chat(&state, &addr, "Hello", Some(repo.id)).await;
+        assert_eq!(end(&state, &addr, quiet.id).await.status(), 200);
+        until("the chat ends", || status(app, quiet.id) == "succeeded").await;
+        let writing = chat(&state, &addr, "Again [write notes.txt]", Some(repo.id)).await;
+        let stop = format!("/v1/runs/{}/stop", writing.id);
+        let stopped = post(&state, &addr, stop, serde_json::json!({})).await;
+        assert_eq!(stopped.status(), 200);
+        until("the chat is stopped", || {
+            status(app, writing.id) == "stopped"
+        })
+        .await;
+        let branches: Vec<_> = app
+            .store
+            .changes(repo.id)
+            .unwrap()
+            .into_iter()
+            .map(|c| c.branch)
+            .collect();
+        assert_eq!(branches, [run.branch(), writing.branch()]);
     }
 
     #[test]

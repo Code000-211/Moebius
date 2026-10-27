@@ -1148,8 +1148,11 @@ dependencies = [
 name = "moebius"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "clap",
  "moebius-core",
+ "reqwest",
+ "serde_json",
  "tempfile",
  "tokio",
 ]

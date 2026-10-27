@@ -4,12 +4,15 @@
 //! `agent_settled`; what the agent changed is committed on the run's branch and the worktree is removed. A chat is
 //! the exception: its Pi stays up at `agent_settled`, the run waits for the person's next message, and it ends when
 //! the person ends or stops it (or Pi exits). A chat works in a worktree on `moebius/chat-<id>` or, without a
-//! repository, in an empty directory; what it left is committed on the branch when it ends. A `code` run
+//! repository, in an empty directory; what it left is committed on the branch when it ends, and when the branch
+//! then has commits beyond the default branch they are offered as a change without a card. A `code` run
 //! that changed nothing has failed; other runs, such as a review, are not committed. A run starts from the branch of the
 //! card's latest successful `code` run, so it sees the work so far. The text of the agent's final answer is kept as
 //! the run's summary. A run is stopped with `abort` and steered with `steer`. Pi runs offline and does not trust
 //! configuration found in the worktree. The Moebius bridge (`bridge/moebius-bridge.ts`) is loaded into every run before the agent's own
-//! extensions; it asks the check for each tool call and result (see `check`).
+//! extensions; it asks the check for each tool call and result (see `check`). Every run is told the path of the
+//! `moebius` executable as `$MOEBIUS`. The Moebius agent is always available: its instructions are built in, its skill
+//! is the guide (see `skill`), and its model comes from `[agents.Moebius]` or else from the Coder.
 
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -27,6 +30,7 @@ use crate::bus::AppEvent;
 use crate::config::AgentConfig;
 use crate::repos::git;
 use crate::router::{Grant, Protocol, Router};
+use crate::skill;
 use crate::store::{Card, Repository, Run};
 
 /// How long Pi may take to exit after it was asked to stop.
@@ -35,10 +39,21 @@ const STOP_GRACE: Duration = Duration::from_secs(10);
 /// The bridge extension, written into each run's directory.
 const BRIDGE: &str = include_str!("../bridge/moebius-bridge.ts");
 
+/// The name of the bundled agent that builds on Moebius, which every chat without an agent starts.
+pub const MOEBIUS_AGENT: &str = "Moebius";
+
+/// What the Moebius agent is told; the `instructions` of `[agents.Moebius]` come after it.
+const MOEBIUS_INSTRUCTIONS: &str = "You are the Moebius agent. You work for the person in this chat and build what they \
+     ask for on Moebius: column scripts, rules, agents, plugins and Pi extensions. Use the moebius skill: it holds the \
+     guide and the exact references, and says how to try what you build. In a repository you work in a worktree on a \
+     branch of its own; when the chat ends, what you left there is offered to the person as a change to merge.";
+
 /// Starts and stops Pi-Bolt runs.
 pub struct PiBolt {
     /// The `pi-bolt` executable.
     pub program: PathBuf,
+    /// The `moebius` executable, which runs find as `$MOEBIUS`.
+    pub moebius: PathBuf,
     /// The router's base URL, such as `http://127.0.0.1:7172`.
     pub router_url: String,
     pub router: Arc<Router>,
@@ -65,17 +80,55 @@ enum Closing {
 impl PiBolt {
     pub fn new(
         program: PathBuf,
+        moebius: PathBuf,
         router_url: String,
         router: Arc<Router>,
         agents: BTreeMap<String, AgentConfig>,
     ) -> Self {
         Self {
             program,
+            moebius,
             router_url,
             router,
             agents,
             live: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    /// The agent `name` as a run uses it. The Moebius agent is made of its configuration, or else the Coder's model
+    /// and protocol, and always has the built-in instructions and the `moebius` skill.
+    fn agent(&self, app: &App, name: &str) -> Result<AgentConfig, String> {
+        let configured = self.agents.get(name);
+        if name != MOEBIUS_AGENT {
+            return configured
+                .cloned()
+                .ok_or_else(|| format!("no agent named {name}"));
+        }
+        let mut agent = match (configured, self.agents.get("Coder")) {
+            (Some(own), _) => own.clone(),
+            (None, Some(coder)) => AgentConfig {
+                model: coder.model.clone(),
+                protocol: coder.protocol,
+                thinking: None,
+                instructions: None,
+                skills: vec![],
+                extensions: vec![],
+                token_budget: None,
+            },
+            (None, None) => {
+                return Err(
+                    "the Moebius agent needs a model: configure [agents.Moebius] or \
+                     [agents.Coder]"
+                        .into(),
+                );
+            }
+        };
+        agent.instructions = Some(match agent.instructions {
+            Some(extra) => format!("{MOEBIUS_INSTRUCTIONS}\n\n{extra}"),
+            None => MOEBIUS_INSTRUCTIONS.into(),
+        });
+        agent.skills.insert(0, skill::dir(&app.data_dir));
+        Ok(agent)
     }
 
     /// The command that starts Pi for one run.
@@ -92,6 +145,7 @@ impl PiBolt {
         command
             .current_dir(worktree)
             .env("PI_CODING_AGENT_DIR", agent_dir)
+            .env("MOEBIUS", &self.moebius)
             .env("MOEBIUS_CHECK_URL", &self.router_url)
             .env("MOEBIUS_RUN_TOKEN", token)
             .args(["--mode", "rpc", "--offline", "--no-approve"])
@@ -246,10 +300,7 @@ impl Runs for PiBolt {
         purpose: &str,
         note: Option<&str>,
     ) -> Result<Run, String> {
-        let config = self
-            .agents
-            .get(agent)
-            .ok_or_else(|| format!("no agent named {agent}"))?;
+        let config = self.agent(app, agent)?;
         let repository = app
             .store
             .repository(card.repository_id)
@@ -288,7 +339,7 @@ impl Runs for PiBolt {
         self.launch_or_undo(
             app,
             Some(card),
-            config,
+            &config,
             running,
             &prompt_for(card, purpose, note),
         )
@@ -301,10 +352,7 @@ impl Runs for PiBolt {
         repository: Option<&Repository>,
         message: &str,
     ) -> Result<Run, String> {
-        let config = self
-            .agents
-            .get(agent)
-            .ok_or_else(|| format!("no agent named {agent}"))?;
+        let config = self.agent(app, agent)?;
         let run = app
             .store
             .add_run(None, agent, "pi-bolt", "chat")
@@ -348,7 +396,7 @@ impl Runs for PiBolt {
         };
         let said = json!({ "message": redact(message) });
         let _ = app.record_run_event(run.id, "said", &said);
-        self.launch_or_undo(app, None, config, running, message)
+        self.launch_or_undo(app, None, &config, running, message)
     }
 
     fn say(&self, run_id: i64, message: &str) -> bool {
@@ -373,7 +421,7 @@ impl Runs for PiBolt {
     }
 
     fn has_agent(&self, name: &str) -> bool {
-        self.agents.contains_key(name)
+        name == MOEBIUS_AGENT || self.agents.contains_key(name)
     }
 
     fn steer(&self, run_id: i64, message: &str) -> bool {
@@ -617,6 +665,17 @@ impl Reader {
             Err(why) => self.failed(&why),
         };
         self.run.remove_worktree(&self.app);
+        if self.run.purpose == "chat" && status != "failed" {
+            // Before the status is set, so that an ended chat has offered what it made.
+            if let Err(e) = self.app.offer_chat_change(self.run.id) {
+                let why = format!("cannot offer the chat's work as a change: {e}");
+                let _ = self.app.record_run_event(
+                    self.run.id,
+                    "moebius_error",
+                    &json!({ "message": why }),
+                );
+            }
+        }
         let _ = self.app.store.set_run_status(self.run.id, status);
         lock(&self.lives).remove(&self.run.id);
         self.app.bus.publish(AppEvent::new(
@@ -689,6 +748,7 @@ mod tests {
         };
         let pi = PiBolt::new(
             fake_pi(),
+            "/usr/local/bin/moebius".into(),
             "http://127.0.0.1:9".into(),
             Arc::new(Router::new(store, vec![])),
             BTreeMap::from([("Coder".to_string(), profile)]),
@@ -776,6 +836,7 @@ mod tests {
         let env: Value =
             serde_json::from_slice(&std::fs::read(run_dir.join("agent/env.json")).unwrap())
                 .unwrap();
+        assert_eq!(env["MOEBIUS"], "/usr/local/bin/moebius");
         assert_eq!(env["MOEBIUS_CHECK_URL"], "http://127.0.0.1:9");
         assert!(
             env["MOEBIUS_RUN_TOKEN"]

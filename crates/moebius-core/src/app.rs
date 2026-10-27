@@ -500,7 +500,7 @@ impl App {
     }
 
     /// A person ends a chat that has not ended. It ends as `succeeded` once its agent has shut down and its work is
-    /// committed.
+    /// committed and, if there is any, offered as a change (see `offer_chat_change`).
     pub fn end_chat(&self, runs: &dyn Runs, run_id: i64) -> Result<Run> {
         let run = self.running_chat(run_id)?;
         if !runs.end(run_id) {
@@ -527,17 +527,7 @@ impl App {
             .chats()?
             .into_iter()
             .map(|run| {
-                let first = self.store.events_after(run.id, 0, 1)?;
-                let title = first
-                    .first()
-                    .and_then(|event| event.data["message"].as_str())
-                    .unwrap_or_default()
-                    .lines()
-                    .next()
-                    .unwrap_or_default()
-                    .chars()
-                    .take(TITLE_LENGTH)
-                    .collect();
+                let title = self.chat_title(run.id)?;
                 Ok(Chat {
                     id: run.id,
                     agent: run.agent,
@@ -549,6 +539,21 @@ impl App {
                 })
             })
             .collect()
+    }
+
+    /// The title of a chat: the first line of its first message.
+    fn chat_title(&self, run_id: i64) -> Result<String> {
+        let first = self.store.events_after(run_id, 0, 1)?;
+        Ok(first
+            .first()
+            .and_then(|event| event.data["message"].as_str())
+            .unwrap_or_default()
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .chars()
+            .take(TITLE_LENGTH)
+            .collect())
     }
 
     /// Stores an event of a run and publishes it as `run_event` with the `seq` it was stored under.
@@ -659,7 +664,8 @@ impl App {
         let branch = format!("moebius/card-{}", card.number);
         self.repos.point_branch(clone, &branch, &head)?;
         let pull_request = existing.as_ref().and_then(|c| c.pull_request);
-        let pull_request = forge.publish(&repository, &card, &branch, pull_request)?;
+        let body = format!("Closes #{}\n\nMade by Moebius.", card.number);
+        let pull_request = forge.publish(&repository, &card.title, &body, &branch, pull_request)?;
         let change = match existing {
             Some(change) => {
                 self.store.set_change_head(change.id, &head, now())?;
@@ -692,6 +698,43 @@ impl App {
             .publish(AppEvent::new("change_offered", json!(change)));
         self.move_card(card_id, columns::READY_TO_MERGE)?;
         Ok(change)
+    }
+
+    /// Offers what a chat in a repository left on its branch as a change without a card: published through the
+    /// repository's forge and put in the inbox, ready to merge. A chat that left nothing beyond the repository's
+    /// default branch, or has no repository, offers nothing.
+    pub fn offer_chat_change(&self, run_id: i64) -> Result<Option<Change>> {
+        let run = self.run(run_id)?;
+        let Some(repository_id) = run.repository_id else {
+            return Ok(None);
+        };
+        let repository = self.repository(repository_id)?;
+        let clone = Path::new(&repository.path);
+        let branch = run.branch();
+        let beyond_base = format!("{}..{branch}", repository.base_ref());
+        if git(clone, &["rev-list", "--count", &beyond_base])? == "0" {
+            return Ok(None);
+        }
+        let head = git(clone, &["rev-parse", &branch])?;
+        let title = self.chat_title(run_id)?;
+        let body = format!(
+            "This change came from chat {run_id} with the agent {}.\n\nMade by Moebius.",
+            run.agent
+        );
+        let forge = self.forge(&repository)?;
+        let pull_request = forge.publish(&repository, &title, &body, &branch, None)?;
+        let change = self
+            .store
+            .add_change(repository.id, None, &branch, pull_request, &head)?;
+        self.store.add_inbox_item(
+            "ready_to_merge",
+            None,
+            &title,
+            &json!({ "change": change.id, "branch": change.branch }),
+        )?;
+        self.bus
+            .publish(AppEvent::new("change_offered", json!(change)));
+        Ok(Some(change))
     }
 
     /// How the checks of the change stand for its current commit: `pending`, `success`, `failure` or `none`. Checks
@@ -848,37 +891,43 @@ impl App {
         Ok(commit)
     }
 
-    /// A change is merged, here or on the forge: its inbox items are resolved and its card is done.
+    /// A change is merged, here or on the forge: its inbox items are resolved and its card, if it has one, is done.
     pub fn change_merged(&self, change: &Change, commit: Option<&str>) -> Result<()> {
         self.store.set_change_state(change.id, "merged")?;
         self.bus.publish(AppEvent::new(
             "change_merged",
             json!({ "change": change.id, "commit": commit }),
         ));
-        if let Some(card_id) = change.card_id {
-            self.store.resolve_inbox_for_card(card_id)?;
-            self.move_card(card_id, columns::DONE)?;
+        match change.card_id {
+            Some(card_id) => {
+                self.store.resolve_inbox_for_card(card_id)?;
+                self.move_card(card_id, columns::DONE)?;
+            }
+            None => self.store.resolve_inbox_for_change(change.id)?,
         }
         Ok(())
     }
 
-    /// A change's pull request was closed on the forge without being merged: the change is closed and the person is
-    /// told.
+    /// A change's pull request was closed on the forge without being merged: the change is closed and, when it has a
+    /// card, the person is told.
     pub fn change_closed(&self, change: &Change) -> Result<()> {
         self.store.set_change_state(change.id, "closed")?;
         self.bus.publish(AppEvent::new(
             "change_closed",
             json!({ "change": change.id }),
         ));
-        if let Some(card_id) = change.card_id {
-            let card = self.card(card_id)?;
-            self.store.resolve_inbox_for_card(card_id)?;
-            self.store.add_inbox_item(
-                "change_closed",
-                Some(card_id),
-                &card.title,
-                &json!({ "change": change.id, "pull_request": change.pull_request }),
-            )?;
+        match change.card_id {
+            Some(card_id) => {
+                let card = self.card(card_id)?;
+                self.store.resolve_inbox_for_card(card_id)?;
+                self.store.add_inbox_item(
+                    "change_closed",
+                    Some(card_id),
+                    &card.title,
+                    &json!({ "change": change.id, "pull_request": change.pull_request }),
+                )?;
+            }
+            None => self.store.resolve_inbox_for_change(change.id)?,
         }
         Ok(())
     }

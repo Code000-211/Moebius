@@ -11,7 +11,10 @@ changes ready to merge. Read `GLOSSARY.md` for the words, `docs/spec.md` for wha
   `forge`, `github` (the API client), `poll` (GitHub without webhooks), `decide`, `board`, `router`, `pibolt`, `api`,
   `config`). Column scripts are in `workflow/*.luau`.
 - `crates/moebius-plugin-api`: the plugin trait and the host that calls plugins with a time limit, failing closed.
-- `crates/moebius`: the `moebius` binary (`init`, `serve`).
+- `crates/moebius`: the `moebius` binary (`init`, `serve`, `check-script`).
+- `crates/moebius-core/skill/SKILL.md` and `src/skill.rs`: the `moebius` skill of the Moebius agent, which is `SKILL.md`
+  plus every page of `docs/guide/` and `docs/reference/`. Add a new page to the list in `skill.rs`; a test fails if you
+  forget.
 - `crates/moebius-desktop`: the iced desktop app (built to `docs/design.md`).
 - `docs/guide/`: how to build on Moebius, one how-to per page (column scripts, workflows, rules, agents, plugins,
   extensions, the desktop API). Every `luau` block in it is a complete column script that `tests/guide.rs` runs; read it
