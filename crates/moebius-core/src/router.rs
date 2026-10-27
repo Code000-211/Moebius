@@ -23,8 +23,9 @@ use crate::store::{Store, Usage};
 
 /// The protocol an endpoint or an upstream speaks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "lowercase")]
 pub enum Protocol {
+    #[serde(rename = "openai")]
     OpenAi,
     Anthropic,
 }

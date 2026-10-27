@@ -6,14 +6,8 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
-use moebius_core::api::{self, ApiState};
-use moebius_core::app::App;
 use moebius_core::config::{self, Config};
-use moebius_core::store::Store;
-use moebius_plugin_api::Host;
-
-/// How long a call into a plugin may take before it counts as refused.
-const PLUGIN_TIME_LIMIT: std::time::Duration = std::time::Duration::from_secs(30);
+use moebius_core::server::Server;
 
 /// Moebius runs coding-agent harnesses from a repository's issues to changes that are ready to merge.
 #[derive(Debug, Parser)]
@@ -65,21 +59,25 @@ fn run(cli: Cli) -> Result<(), String> {
         }
         Some(Command::Serve) => {
             let config = Config::load(&cli.config).map_err(|e| e.to_string())?;
-            let state = prepare(&config)?;
             let runtime = tokio::runtime::Runtime::new()
                 .map_err(|e| format!("cannot start the runtime: {e}"))?;
             runtime.block_on(async {
-                let listener = tokio::net::TcpListener::bind(config.listen)
+                let api = tokio::net::TcpListener::bind(config.listen)
                     .await
                     .map_err(|e| format!("cannot listen on {}: {e}", config.listen))?;
+                let router = tokio::net::TcpListener::bind(config.router_listen)
+                    .await
+                    .map_err(|e| format!("cannot listen on {}: {e}", config.router_listen))?;
+                let router_addr = router.local_addr().map_err(|e| e.to_string())?;
+                let server = Arc::new(Server::new(config, router_addr)?);
                 println!(
-                    "moebius {}: data in {}, app API on {}",
+                    "moebius {}: data in {}, app API on {}, router on {router_addr}",
                     moebius_core::VERSION,
-                    config.data_dir.display(),
-                    config.listen
+                    server.config.data_dir.display(),
+                    server.config.listen,
                 );
                 tokio::select! {
-                    served = api::serve(listener, state) => served.map_err(|e| e.to_string()),
+                    served = server.serve(api, router) => served.map_err(|e| e.to_string()),
                     _ = tokio::signal::ctrl_c() => Ok(()),
                 }
             })
@@ -87,23 +85,9 @@ fn run(cli: Cli) -> Result<(), String> {
     }
 }
 
-/// Creates the data directory, opens the store and reads (or creates) the app's token.
-fn prepare(config: &Config) -> Result<ApiState, String> {
-    std::fs::create_dir_all(&config.data_dir)
-        .map_err(|e| format!("cannot create {}: {e}", config.data_dir.display()))?;
-    let store = Store::open(&config.data_dir).map_err(|e| format!("cannot open the store: {e}"))?;
-    let token = api::load_or_create_token(&config.token_file)
-        .map_err(|e| format!("cannot read {}: {e}", config.token_file.display()))?;
-    let host = Arc::new(Host::new(PLUGIN_TIME_LIMIT));
-    Ok(ApiState {
-        app: Arc::new(App::new(Arc::new(store), host, &config.data_dir)),
-        token: token.into(),
-    })
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{Cli, Command, prepare, run};
+    use super::{Cli, Command, run};
     use clap::{CommandFactory, Parser};
 
     #[test]
@@ -135,7 +119,8 @@ mod tests {
             moebius_core::config::EXAMPLE
         );
         assert!(run(cli(Command::Init)).is_err());
-        prepare(&moebius_core::config::Config::load(&path).unwrap()).unwrap();
+        let config = moebius_core::config::Config::load(&path).unwrap();
+        moebius_core::server::Server::new(config, "127.0.0.1:7172".parse().unwrap()).unwrap();
         assert!(dir.path().join(".moebius/token").is_file());
         assert!(dir.path().join(".moebius/moebius.sqlite").is_file());
     }

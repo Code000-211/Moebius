@@ -5,6 +5,7 @@
 //! - `GET /v1/events`: a WebSocket on which every [`AppEvent`] arrives as one JSON text message.
 //! - `POST /v1/repositories` `{name, url}`: clones a repository without a forge.
 //! - `POST /v1/repositories/{id}/issues` `{title, body}`: creates an issue, which becomes a card in the backlog.
+//! - `POST /v1/cards/{id}/approve` `{reason}`: a person approves an outside issue; its card moves to ready.
 //! - `POST /v1/changes/{id}/merge` `{reason}`: a person merges a change; its card moves to done.
 //!
 //! Every request carries `Authorization: Bearer <token>`; anything else is answered with 401.
@@ -69,6 +70,9 @@ pub struct Merge {
     #[serde(default)]
     pub reason: String,
 }
+
+/// A person's approval carries the same body as a merge: a reason.
+pub type Approval = Merge;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Merged {
@@ -143,6 +147,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/events", get(events))
         .route("/v1/repositories", post(add_repository))
         .route("/v1/repositories/{id}/issues", post(create_issue))
+        .route("/v1/cards/{id}/approve", post(approve_issue))
         .route("/v1/changes/{id}/merge", post(merge_change))
         .layer(middleware::from_fn_with_state(state.clone(), authenticate))
         .with_state(state)
@@ -211,6 +216,17 @@ async fn create_issue(
 ) -> Result<axum::Json<Card>, ApiError> {
     blocking(&state.app, move |app| {
         app.create_issue(id, &issue.title, &issue.body, "person")
+    })
+    .await
+}
+
+async fn approve_issue(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+    axum::Json(approval): axum::Json<Approval>,
+) -> Result<axum::Json<Card>, ApiError> {
+    blocking(&state.app, move |app| {
+        app.approve_issue(id, &approval.reason)
     })
     .await
 }

@@ -1,9 +1,13 @@
 //! The server's configuration, read from `moebius.toml`. Every key has a default, so an empty file is a valid one.
 
+use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use serde::Deserialize;
+
+use crate::router::Protocol;
 
 /// The commented example `moebius init` writes. Every value in it is the default.
 pub const EXAMPLE: &str = r#"# Moebius server configuration. Every key is optional; the values below are the defaults.
@@ -27,6 +31,36 @@ retro_at = "23:30"
 [trial_window]
 start = "00:00"
 end = "06:00"
+
+# How often the board engine runs the column scripts, and how many coding rounds a card gets.
+[board]
+tick_ms = 2000
+round_limit = 5
+
+# The router: the only model provider the harnesses see (ADR 0006). It listens on localhost only.
+[router]
+listen = "127.0.0.1:7172"
+
+# Where the router sends requests, one upstream per protocol (openai or anthropic). Keys are read from the
+# environment variable named here, never from this file.
+# [[router.upstreams]]
+# protocol = "openai"
+# base_url = "http://127.0.0.1:8080"      # a local server such as Radiance
+# [[router.upstreams]]
+# protocol = "anthropic"
+# base_url = "https://api.anthropic.com"
+# api_key_env = "ANTHROPIC_API_KEY"
+
+[pi_bolt]
+program = "pi-bolt"
+
+# Agents run on Pi-Bolt. The default workflow starts the Coder.
+# [agents.Coder]
+# model = "qwen3.8-flash-next"
+# protocol = "openai"
+# thinking = "medium"
+# instructions = "Keep changes small and run the tests."
+# token_budget = 2000000
 "#;
 
 /// Why a configuration could not be read.
@@ -46,6 +80,10 @@ pub enum ConfigError {
     Time { key: &'static str, value: String },
     #[error("run_limit must be at least 1")]
     RunLimit,
+    #[error("router.listen must be a loopback address, not {0}")]
+    RouterNotLocal(SocketAddr),
+    #[error("{name} is not a valid agent name")]
+    AgentName { name: String },
 }
 
 /// A time of day as minutes after midnight.
@@ -77,6 +115,27 @@ struct RawWindow {
     end: Option<String>,
 }
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawBoard {
+    tick_ms: Option<u64>,
+    round_limit: Option<u32>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawRouter {
+    listen: Option<SocketAddr>,
+    #[serde(default)]
+    upstreams: Vec<UpstreamConfig>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawPiBolt {
+    program: Option<PathBuf>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Raw {
@@ -86,6 +145,44 @@ struct Raw {
     run_limit: Option<u32>,
     retro_at: Option<String>,
     trial_window: Option<RawWindow>,
+    #[serde(default)]
+    board: RawBoard,
+    #[serde(default)]
+    router: RawRouter,
+    #[serde(default)]
+    pi_bolt: RawPiBolt,
+    #[serde(default)]
+    agents: BTreeMap<String, AgentConfig>,
+}
+
+/// One upstream of the router.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UpstreamConfig {
+    pub protocol: Protocol,
+    pub base_url: String,
+    /// The environment variable holding the provider's key.
+    pub api_key_env: Option<String>,
+}
+
+/// An agent as configured; the harness configuration repository takes this over in M6.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgentConfig {
+    pub model: String,
+    #[serde(default = "default_protocol")]
+    pub protocol: Protocol,
+    pub thinking: Option<String>,
+    pub instructions: Option<String>,
+    #[serde(default)]
+    pub skills: Vec<PathBuf>,
+    #[serde(default)]
+    pub extensions: Vec<PathBuf>,
+    pub token_budget: Option<i64>,
+}
+
+fn default_protocol() -> Protocol {
+    Protocol::OpenAi
 }
 
 /// The server's configuration, with every default applied and every path made absolute against the file's directory.
@@ -97,6 +194,12 @@ pub struct Config {
     pub run_limit: u32,
     pub retro_at: TimeOfDay,
     pub trial_window: (TimeOfDay, TimeOfDay),
+    pub board_tick: Duration,
+    pub round_limit: u32,
+    pub router_listen: SocketAddr,
+    pub upstreams: Vec<UpstreamConfig>,
+    pub pi_bolt: PathBuf,
+    pub agents: BTreeMap<String, AgentConfig>,
 }
 
 impl Config {
@@ -111,6 +214,21 @@ impl Config {
         let run_limit = raw.run_limit.unwrap_or(3);
         if run_limit == 0 {
             return Err(ConfigError::RunLimit);
+        }
+        let router_listen = raw
+            .router
+            .listen
+            .unwrap_or_else(|| SocketAddr::from(([127, 0, 0, 1], 7172)));
+        if !router_listen.ip().is_loopback() {
+            return Err(ConfigError::RouterNotLocal(router_listen));
+        }
+        if let Some(name) = raw.agents.keys().find(|n| {
+            n.is_empty()
+                || !n
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        }) {
+            return Err(ConfigError::AgentName { name: name.clone() });
         }
         let window = raw.trial_window.unwrap_or(RawWindow {
             start: None,
@@ -130,6 +248,15 @@ impl Config {
                 )?,
                 TimeOfDay::parse("trial_window.end", window.end.as_deref().unwrap_or("06:00"))?,
             ),
+            board_tick: Duration::from_millis(raw.board.tick_ms.unwrap_or(2000).max(50)),
+            round_limit: raw.board.round_limit.unwrap_or(5),
+            router_listen,
+            upstreams: raw.router.upstreams,
+            pi_bolt: raw
+                .pi_bolt
+                .program
+                .unwrap_or_else(|| PathBuf::from("pi-bolt")),
+            agents: raw.agents,
             data_dir,
         })
     }
@@ -185,6 +312,25 @@ mod tests {
         assert_eq!(c.run_limit, 8);
         assert_eq!(c.retro_at, TimeOfDay(22 * 60 + 5));
         assert_eq!(c.trial_window, (TimeOfDay(60), TimeOfDay(5 * 60 + 30)));
+    }
+
+    #[test]
+    fn the_router_agents_and_upstreams_are_read() {
+        let c = parse(
+            "[router]\nlisten = \"127.0.0.1:9100\"\n[[router.upstreams]]\nprotocol = \"anthropic\"\n\
+             base_url = \"https://api.anthropic.com\"\napi_key_env = \"ANTHROPIC_API_KEY\"\n\
+             [pi_bolt]\nprogram = \"/opt/pi-bolt\"\n[agents.Coder]\nmodel = \"m\"\ntoken_budget = 100\n",
+        )
+        .unwrap();
+        assert_eq!(c.router_listen, "127.0.0.1:9100".parse().unwrap());
+        assert_eq!(c.upstreams[0].protocol, Protocol::Anthropic);
+        assert_eq!(c.pi_bolt, PathBuf::from("/opt/pi-bolt"));
+        assert_eq!(c.agents["Coder"].protocol, Protocol::OpenAi);
+        assert_eq!(c.agents["Coder"].token_budget, Some(100));
+        assert!(matches!(
+            parse("[router]\nlisten = \"0.0.0.0:7172\""),
+            Err(ConfigError::RouterNotLocal(_))
+        ));
     }
 
     #[test]

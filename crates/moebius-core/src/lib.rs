@@ -11,6 +11,7 @@ pub mod forge;
 pub mod pibolt;
 pub mod repos;
 pub mod router;
+pub mod server;
 pub mod store;
 
 /// The version of this build of Moebius.

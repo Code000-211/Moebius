@@ -130,6 +130,34 @@ impl App {
         Ok(card)
     }
 
+    /// A person approves an outside issue: the decision is recorded and the card moves to ready.
+    pub fn approve_issue(&self, card_id: i64, reason: &str) -> Result<Card> {
+        let card = self.card(card_id)?;
+        if card.column != columns::BACKLOG {
+            return Err(AppError::Invalid(format!(
+                "card {card_id} is not in the backlog"
+            )));
+        }
+        self.decisions.record_person(
+            &Question {
+                kind: "approve_issue".into(),
+                context: BTreeMap::from([
+                    ("title".into(), card.title.clone()),
+                    ("body".into(), card.body.clone()),
+                    ("author".into(), card.author.clone()),
+                ]),
+                options: vec!["approve".into(), "wait".into()],
+                fail_closed: "wait".into(),
+                run_id: None,
+                card_id: Some(card_id),
+            },
+            "approve",
+            reason,
+        )?;
+        self.store.resolve_inbox_for_card(card_id)?;
+        self.move_card(card_id, columns::READY)
+    }
+
     pub fn move_card(&self, card_id: i64, column: &str) -> Result<Card> {
         let from = self.card(card_id)?.column;
         self.store.move_card(card_id, column)?;

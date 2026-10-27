@@ -8,7 +8,6 @@ repository.workspace = true
 [dependencies]
 clap = { version = "4.6.7", features = ["derive"] }
 moebius-core = { version = "0.1.0", path = "../moebius-core" }
-moebius-plugin-api = { version = "0.1.0", path = "../moebius-plugin-api" }
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "signal"] }
 
 [lints]

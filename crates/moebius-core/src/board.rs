@@ -6,7 +6,8 @@
 //! - `moebius.move(column)`: moves the card when the script returns.
 //! - `moebius.wait(reason)`: leaves the card where it is.
 //! - `moebius.offer_change()`: offers the card's last run as a change; the card moves to "Ready to merge".
-//! - `moebius.stuck(reason)`: puts the card in the inbox as stuck.
+//! - `moebius.ask(kind, reason)`: puts the card in the inbox for a person (once) and leaves it where it is.
+//! - `moebius.stuck(reason)`: puts the card in the inbox as stuck (once).
 //! - `moebius.record_outcome(outcome) -> count`: sets the outcome of the card's judgements that have none.
 //! - `moebius.runs_active()`, `moebius.run_limit`, `moebius.round_limit`: the limits.
 //!
@@ -26,6 +27,20 @@ use crate::app::{App, AppError, columns};
 use crate::decide::Question;
 use crate::repos::git;
 use crate::store::{Card, Run};
+
+/// Reads a string argument a script passed.
+trait FromLuaArg: Sized {
+    fn from_lua_arg(value: Option<Value>) -> mlua::Result<Self>;
+}
+
+impl FromLuaArg for String {
+    fn from_lua_arg(value: Option<Value>) -> mlua::Result<Self> {
+        match value {
+            Some(Value::String(s)) => Ok(s.to_str()?.to_string()),
+            _ => Err(mlua::Error::runtime("expected a string")),
+        }
+    }
+}
 
 /// Starts runs for the engine. The real one drives a harness (Pi-Bolt); tests use a fake.
 pub trait Runs: Send + Sync {
@@ -372,22 +387,36 @@ impl Engine {
             })?,
         )?;
 
-        let (app, fx, title) = (self.app.clone(), effects.clone(), card.title.clone());
-        m.set(
-            "stuck",
-            lua.create_function(move |_, reason: String| {
-                app.store
-                    .add_inbox_item(
-                        "stuck",
-                        Some(card_id),
-                        &title,
-                        &serde_json::json!({ "reason": reason }),
-                    )
-                    .map_err(mlua::Error::external)?;
-                fx.borrow_mut().waiting = Some(reason);
-                Ok(())
-            })?,
-        )?;
+        for (name, fixed_kind) in [("ask", None), ("stuck", Some("stuck"))] {
+            let (app, fx, title) = (self.app.clone(), effects.clone(), card.title.clone());
+            m.set(
+                name,
+                lua.create_function(move |_, args: mlua::MultiValue| {
+                    let mut args = args.into_iter();
+                    let kind = match fixed_kind {
+                        Some(kind) => kind.to_string(),
+                        None => String::from_lua_arg(args.next())?,
+                    };
+                    let reason = String::from_lua_arg(args.next())?;
+                    let open = app
+                        .store
+                        .has_open_inbox_item(card_id, &kind)
+                        .map_err(mlua::Error::external)?;
+                    if !open {
+                        app.store
+                            .add_inbox_item(
+                                &kind,
+                                Some(card_id),
+                                &title,
+                                &serde_json::json!({ "reason": reason }),
+                            )
+                            .map_err(mlua::Error::external)?;
+                    }
+                    fx.borrow_mut().waiting = Some(reason);
+                    Ok(())
+                })?,
+            )?;
+        }
 
         let app = self.app.clone();
         m.set(
@@ -510,19 +539,29 @@ mod tests {
     }
 
     #[test]
-    fn an_outside_issue_waits_when_nobody_approves_it() {
+    fn an_outside_issue_waits_in_the_inbox_until_a_person_approves_it() {
         let (_dir, app, engine, repo) = setup();
         let card = app
             .create_issue(repo, "Please add", "", "stranger")
             .unwrap();
-        let step = engine.settle(card.id).unwrap();
+        for _ in 0..3 {
+            let step = engine.settle(card.id).unwrap();
+            assert_eq!(
+                step.waiting.as_deref(),
+                Some("waiting for a person to approve the issue")
+            );
+        }
         assert_eq!(app.card(card.id).unwrap().column, "Backlog");
+        let inbox = app.store.inbox().unwrap();
+        assert_eq!((inbox.len(), inbox[0].kind.as_str()), (1, "approve_issue"));
+
+        app.approve_issue(card.id, "fine by me").unwrap();
+        assert_eq!(app.card(card.id).unwrap().column, "Ready");
+        assert!(app.store.inbox().unwrap().is_empty());
         assert_eq!(
-            step.waiting.as_deref(),
-            Some("waiting for a person to approve the issue")
+            app.store.judgements("approve_issue").unwrap()[0].decider,
+            "person"
         );
-        let j = app.store.judgements("approve_issue").unwrap();
-        assert_eq!((j.len(), j[0].choice.as_str()), (1, "wait"));
     }
 
     #[test]

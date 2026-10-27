@@ -749,6 +749,15 @@ impl Store {
         Ok(())
     }
 
+    /// Whether the card has an unresolved item of `kind`.
+    pub fn has_open_inbox_item(&self, card_id: i64, kind: &str) -> Result<bool> {
+        Ok(self.conn().query_row(
+            "SELECT EXISTS (SELECT 1 FROM inbox_items WHERE card_id = ?1 AND kind = ?2 AND resolved_at IS NULL)",
+            params![card_id, kind],
+            |r| r.get(0),
+        )?)
+    }
+
     /// Resolves every open item about a card, such as its "ready to merge" once it is merged.
     pub fn resolve_inbox_for_card(&self, card_id: i64) -> Result<()> {
         self.conn().execute(

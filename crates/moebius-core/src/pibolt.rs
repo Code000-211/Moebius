@@ -2,7 +2,7 @@
 //! provider. The prompt goes in as one JSON line; every record Pi writes is stored as a run event and published on the
 //! bus. Records are split on LF only, never on U+2028 or U+2029, which are valid inside JSON strings. The run ends at
 //! `agent_settled`; what the agent changed is committed on the run's branch and the worktree is removed. A run is
-//! stopped with `abort`.
+//! stopped with `abort`. Pi runs offline and does not trust configuration found in the worktree.
 
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -209,6 +209,8 @@ impl Runs for PiBolt {
             .args([
                 "--mode",
                 "rpc",
+                "--offline",
+                "--no-approve",
                 "--provider",
                 "moebius",
                 "--model",
@@ -533,6 +535,7 @@ mod tests {
             serde_json::from_slice(&std::fs::read(run_dir.join("agent/argv.json")).unwrap())
                 .unwrap();
         assert!(argv.windows(2).any(|w| w == ["--model", "qwen-local"]));
+        assert!(argv.iter().any(|a| a == "--no-approve") && argv.iter().any(|a| a == "--offline"));
         assert!(argv.windows(2).any(|w| w == ["--thinking", "low"]));
         assert!(
             argv.windows(2)

@@ -1124,7 +1124,6 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "moebius-core",
- "moebius-plugin-api",
  "tempfile",
  "tokio",
 ]

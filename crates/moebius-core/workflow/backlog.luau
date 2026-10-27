@@ -2,17 +2,7 @@
 function on_card(card)
   if card.trusted then
     moebius.move("Ready")
-    return
-  end
-  local choice = moebius.decide(
-    "approve_issue",
-    { title = card.title, body = card.body, author = card.author },
-    { "approve", "wait" },
-    "wait"
-  )
-  if choice == "approve" then
-    moebius.move("Ready")
   else
-    moebius.wait("waiting for a person to approve the issue")
+    moebius.ask("approve_issue", "waiting for a person to approve the issue")
   end
 end
