@@ -1,5 +1,6 @@
 //! What the end-to-end tests against a real `pi-bolt` share: a recorded OpenAI-compatible upstream, a git repository
-//! to work on, and a running server with one Coder agent.
+//! to work on, and a running server with one Coder agent. Each test file uses some of it.
+#![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -139,6 +140,19 @@ impl Started {
             .bearer_auth(&*self.server.token)
             .json(&body)
             .send()
+            .await
+            .unwrap()
+    }
+
+    /// Reads `path` from the desktop API as the server's owner.
+    pub async fn get(&self, path: &str) -> Value {
+        self.client
+            .get(format!("{}{path}", self.api))
+            .bearer_auth(&*self.server.token)
+            .send()
+            .await
+            .unwrap()
+            .json()
             .await
             .unwrap()
     }

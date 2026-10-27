@@ -166,7 +166,8 @@ change is merged and when its change is closed.
 : Sets `outcome` (a string such as `merged`) on every judgement of the card that has none, and returns how many it set.
 
 `moebius.runs_active()` returns a number.
-: How many runs have not ended, across all boards.
+: How many runs of cards have not ended, across all boards. Chats (runs without a card) are not counted, so they do
+not use up `moebius.run_limit`.
 
 `moebius.agent_budget(name)` returns a number or nil.
 : The token budget of the agent `name` for one card (`agents.<name>.token_budget`); nil when it has none or there is no such

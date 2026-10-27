@@ -66,7 +66,7 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
    event, and returned. A refusal goes back to the model as the tool's result and the run goes on. The result of each
    tool is cleaned of secrets through `/moebius/result` (`check::result`).
 8. **The run ends.** At `agent_settled`, `Reader::end` closes Pi's standard input, revokes the token, commits what the
-   agent left (`commit`: `git add --all` and a commit by Moebius; only for `code` runs), sets the status (`succeeded`,
+   agent left (`Reader::commit`: `git add --all` and a commit by Moebius; for `code` runs, and for chats, see 12b), sets the status (`succeeded`,
    `failed` when a `code` run changed nothing or anything went wrong, `stopped` when aborted), removes the worktree
    (the branch stays) and publishes `run_ended`. The text of the agent's final answer, reported in Pi's `agent_end`
    event, was stored as the run's summary when that event came (`Store::set_run_summary`).
@@ -110,6 +110,20 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
     `POST /v1/runs/{id}/stop` (`App::steer_run`, `App::stop_run`) go through the harness (`Runs::steer`, `Runs::stop`,
     which `ApiState` holds), a steer also leaving a `steered` run event. A stopped run ends `stopped` and
     `card.stopped` makes the scripts mark the card stuck instead of starting another run.
+12b. **A person chats.** A chat is a run without a card and with purpose `chat`. `POST /v1/chats` (`App::start_chat`)
+    calls `PiBolt::start_chat`: the run (`Store::add_run` with no card, and `Store::set_run_repository` when it works
+    in a repository) gets a worktree on `moebius/chat-<id>` from the repository's base ref (`Repos::add_chat_worktree`),
+    or an empty directory `<data_dir>/chats/<id>`, and a token whose budget is the agent's `token_budget` for the run
+    alone. The first message is stored as a `said` run event and sent to Pi as the prompt, without an issue prompt around
+    it. The same `Reader` reads a chat, with one difference: at `agent_settled` the chat does not end but becomes
+    `waiting` (`running` again at the next `agent_start`). `POST /v1/chats/{id}/messages` (`App::say_in_chat`) stores a
+    `said` event and sends a `prompt` with `streamingBehavior: "followUp"` (`Runs::say`), which Pi starts or queues
+    depending on whether the agent is working. Steer and stop are the run's own routes; a stop of a chat also closes Pi's
+    standard input, since a waiting chat has no turn to abort. `POST /v1/chats/{id}/end` (`App::end_chat`,
+    `Runs::end`) closes Pi's standard input. When Pi has exited the chat is committed on its branch (nothing changed is
+    no failure), the worktree or directory is removed, and the run is `succeeded` (`stopped` after a stop). Chats are not
+    counted by `moebius.runs_active()`, so they do not use the board's run limit; the daily budget applies to them.
+    `GET /v1/chats` (`App::chats`) lists them, newest first.
 13. **GitHub reports.** `poll::poll_pull_requests` reads each open change's pull request: checks and review are recorded
     (`change_updated`), a merged pull request calls `App::change_merged`, a closed one calls `App::change_closed`.
 14. **A person merges.** `POST /v1/changes/{id}/merge` calls `App::merge_change`: it records a judgement by `person`,
@@ -118,7 +132,7 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
 15. **Done.** `done.luau` calls `moebius.record_outcome("merged")`, so every judgement made for the card gets an outcome.
 
 At start, `Server::new` ends the runs a previous server left going (`end_runs_of_a_previous_server`): they are marked
-`failed` and their worktrees removed, so the board starts them again.
+`failed` and their worktrees (a chat's empty directory too) removed, so the board starts them again.
 
 ## The store
 
@@ -132,7 +146,7 @@ start; its version is `PRAGMA user_version`.
 | `card_moves` | Each move of a card (`Store::move_card`, called by `App::move_card`): from, to, the card's note then, time. Moves before this table existed are not recorded. |
 | `dependencies` | For a card, the issue numbers it is blocked by. |
 | `changes` | A card's branch `moebius/card-<number>`: card, state (`open`, `merged`, `closed`), pull request number, the published commit and time, checks with the commit they are for, failing checks, output of the repository's own checks, review. |
-| `runs` | One per harness run: card, agent, harness, purpose, status, worktree, start and end, summary (the agent's final answer). |
+| `runs` | One per harness run: card (none for a chat), agent, harness, purpose, status, worktree, repository (a chat's), start and end, summary (the agent's final answer). |
 | `events` | Everything a run emitted, numbered per run, as JSON. |
 | `judgements` | One per decision: kind, context (blob ids), options, choice, reason, decider, run, card, outcome. |
 | `inbox_items` | What needs a person: kind, card, title, data, resolved or not. |

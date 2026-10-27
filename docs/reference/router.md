@@ -59,7 +59,7 @@ Any other status is the upstream's own, passed on.
 An agent's `token_budget` (see [configuration](configuration.md)) is carried by every token issued for a run of that
 agent. Before a request is forwarded, the router adds up the input and output tokens recorded for all runs of the same
 card, the teacher's included. Cached tokens are not added. When the sum is at or above the budget, the request is
-refused with `429` and `budget_exceeded`, and the message says the budget and what was used. A run without a card is
+refused with `429` and `budget_exceeded`, and the message says the budget and what was used. A run without a card, such as a chat, is
 measured by its own usage. Without a `token_budget` there is no limit. Tokens of runs from before the card's latest retry (a person's
 `POST /v1/cards/{id}/retry`, see the [desktop API](desktop-api.md)) are not counted. A request already forwarded is never
 cut off, so a card can go over its budget by what its last request used.

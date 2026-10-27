@@ -30,7 +30,7 @@ An absolute path is used as it is.
 
 | Key | Type | Default | Meaning and validation |
 |---|---|---|---|
-| `data_dir` | path | `.moebius` | Where Moebius keeps its files: `moebius.sqlite` (the store), `blobs/`, `repos/<name>` (the clones), `worktrees/<name>/run-<id>`, `runs/<id>/` (a run's agent directory, bridge, sessions and `stderr.log`) and by default `token`. Created if missing. |
+| `data_dir` | path | `.moebius` | Where Moebius keeps its files: `moebius.sqlite` (the store), `blobs/`, `repos/<name>` (the clones), `worktrees/<name>/run-<id>` (`chat-<id>` for a chat), `chats/<id>` (the empty directory of a chat without a repository), `runs/<id>/` (a run's agent directory, bridge, sessions and `stderr.log`) and by default `token`. Created if missing. |
 | `listen` | string | `127.0.0.1:7171` | The address of the desktop API, as `ip:port` (a host name is not accepted). Keep it on a private network. |
 | `token_file` | path | `token` | The file with the token the desktop app sends. Created with a random token (64 hex digits, readable by the owner only) when missing or empty. |
 | `run_limit` | integer | `3` | How many runs may go at once across all boards. At least 1, else the file is refused. Scripts read it as `moebius.run_limit`. |
@@ -133,7 +133,7 @@ A name is made of letters, digits, `-` and `_` and must not be empty, else the f
 | `agents.<name>.instructions` | string | none | Given to Pi-Bolt as `--append-system-prompt`. |
 | `agents.<name>.skills` | array of paths | `[]` | Each given to Pi-Bolt as `--skill`. |
 | `agents.<name>.extensions` | array of paths | `[]` | Each given to Pi-Bolt as `--extension`, after the bridge, which is always loaded first. |
-| `agents.<name>.token_budget` | integer | none | The most tokens (input plus output, summed over all runs of the card, teacher included) a card may use. A model request over it is answered with HTTP 429 `budget_exceeded`, and the default scripts mark a card that reached it stuck instead of starting a run. Tokens used before the card's latest retry do not count. Without it there is no limit. Scripts read it as `moebius.agent_budget(name)`. |
+| `agents.<name>.token_budget` | integer | none | The most tokens (input plus output, summed over all runs of the card, teacher included) a card may use. A model request over it is answered with HTTP 429 `budget_exceeded`, and the default scripts mark a card that reached it stuck instead of starting a run. Tokens used before the card's latest retry do not count. Without it there is no limit. A chat has no card, so its budget is the tokens of the chat's own run. Scripts read it as `moebius.agent_budget(name)`. |
 
 ## Environment variables
 

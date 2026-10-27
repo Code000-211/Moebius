@@ -2,9 +2,13 @@
 # A stand-in for `pi-bolt --mode rpc` in tests: it speaks Pi's RPC protocol (JSON Lines, split on LF only).
 # A prompt containing "[hang]" waits for `abort`, one containing "[nothing]" settles without changing anything, and
 # a prompt for the reviewer changes nothing and answers with a verdict; any other prompt writes a file and settles.
+# A prompt that does not start with "Work on issue" is a chat message: it is answered with "You said: <message>" (and
+# writes the file NAME first if it contains "[write NAME]"), and Pi stays up for the next one. While a "[hang]" prompt
+# waits, a prompt with streamingBehavior is queued (kept in queued.txt). Its pid is kept in pid.txt.
 # A `steer` is answered with a response that echoes the message. The prompt is kept in prompt.txt next to argv.json. The final answer is reported in agent_end, as Pi does.
 import json
 import os
+import re
 import sys
 
 out = sys.stdout.buffer
@@ -21,11 +25,19 @@ with open(os.path.join(os.environ["PI_CODING_AGENT_DIR"], "argv.json"), "w") as 
 with open(os.path.join(os.environ["PI_CODING_AGENT_DIR"], "env.json"), "w") as f:
     json.dump({k: os.environ.get(k) for k in ("MOEBIUS_CHECK_URL", "MOEBIUS_RUN_TOKEN")}, f)
 
+with open(os.path.join(os.environ["PI_CODING_AGENT_DIR"], "pid.txt"), "w") as f:
+    f.write(str(os.getpid()))
+
 hanging = False
 for line in sys.stdin.buffer:
     command = json.loads(line.split(b"\n")[0])
     kind = command.get("type")
-    if kind == "prompt":
+    if kind == "prompt" and hanging and command.get("streamingBehavior"):
+        with open(os.path.join(os.environ["PI_CODING_AGENT_DIR"], "queued.txt"), "w") as f:
+            f.write(command["message"])
+        emit({"id": command.get("id"), "type": "response", "command": "prompt", "success": True,
+              "data": {"disposition": "queued"}})
+    elif kind == "prompt":
         emit({"id": command.get("id"), "type": "response", "command": "prompt", "success": True,
               "data": {"disposition": "started"}})
         emit({"type": "agent_start"})
@@ -34,6 +46,19 @@ for line in sys.stdin.buffer:
             continue
         with open(os.path.join(os.environ["PI_CODING_AGENT_DIR"], "prompt.txt"), "w") as f:
             f.write(command["message"])
+        if not command["message"].startswith("Work on issue"):
+            answer = "You said: " + command["message"]
+            written = re.search(r"\[write ([^\]]+)\]", command["message"])
+            if written:
+                with open(written.group(1), "w") as f:
+                    f.write("written\n")
+            emit({"type": "message_update",
+                  "assistantMessageEvent": {"type": "text_delta", "contentIndex": 0, "delta": answer}})
+            emit({"type": "agent_end", "willRetry": False, "messages": [
+                {"role": "user", "content": command["message"]},
+                {"role": "assistant", "content": [{"type": "text", "text": answer}]}]})
+            emit({"type": "agent_settled", "aborted": False})
+            continue
         reviewing = "You are the reviewer" in command["message"]
         emit({"type": "message_update",
               "assistantMessageEvent": {"type": "text_delta", "contentIndex": 0, "delta": "line one line two"}})

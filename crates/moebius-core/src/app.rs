@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use moebius_plugin_api::Host;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::blobs::redact;
@@ -82,6 +83,21 @@ fn is_plain_name(name: &str) -> bool {
 }
 
 pub type Result<T> = std::result::Result<T, AppError>;
+
+/// How many characters of a chat's first message its title keeps.
+const TITLE_LENGTH: usize = 80;
+
+/// A chat as the list of chats shows it. Its title is the first line of its first message.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Chat {
+    pub id: i64,
+    pub agent: String,
+    pub status: String,
+    pub repository_id: Option<i64>,
+    pub started_at: i64,
+    pub ended_at: Option<i64>,
+    pub title: String,
+}
 
 /// One thing in a card's history: `moved`, `run_started`, `run_ended`, `decided`, `inbox_added` or `inbox_resolved`.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -446,6 +462,93 @@ impl App {
         }
         self.record_action("stop", run.card_id, Some(run_id), BTreeMap::new(), reason)?;
         Ok(run)
+    }
+
+    /// A person starts a chat with `agent`, in a branch of the repository `repository_id` or, without one, in an empty
+    /// directory. The agent answers `message`; the answer arrives as the run's events.
+    pub fn start_chat(
+        self: &Arc<Self>,
+        runs: &dyn Runs,
+        agent: &str,
+        repository_id: Option<i64>,
+        message: &str,
+    ) -> Result<Run> {
+        if message.trim().is_empty() {
+            return Err(AppError::Invalid("a chat needs a message".into()));
+        }
+        if !runs.has_agent(agent) {
+            return Err(AppError::Invalid(format!("no agent named {agent}")));
+        }
+        let repository = repository_id.map(|id| self.repository(id)).transpose()?;
+        runs.start_chat(self, agent, repository.as_ref(), message)
+            .map_err(AppError::Invalid)
+    }
+
+    /// A person writes to a chat that has not ended: the chat keeps the message as a `said` event, and the agent
+    /// answers it when it is done with what it is doing.
+    pub fn say_in_chat(&self, runs: &dyn Runs, run_id: i64, message: &str) -> Result<Run> {
+        let run = self.running_chat(run_id)?;
+        if message.trim().is_empty() {
+            return Err(AppError::Invalid("a message cannot be blank".into()));
+        }
+        // Stored first, so that it comes before the agent's records of its answer.
+        self.record_run_event(run_id, "said", &json!({ "message": redact(message) }))?;
+        if !runs.say(run_id, message) {
+            return Err(AppError::Invalid(format!("chat {run_id} has ended")));
+        }
+        Ok(run)
+    }
+
+    /// A person ends a chat that has not ended. It ends as `succeeded` once its agent has shut down and its work is
+    /// committed.
+    pub fn end_chat(&self, runs: &dyn Runs, run_id: i64) -> Result<Run> {
+        let run = self.running_chat(run_id)?;
+        if !runs.end(run_id) {
+            return Err(AppError::Invalid(format!("chat {run_id} has ended")));
+        }
+        Ok(run)
+    }
+
+    /// The chat `run_id`, if it exists and has not ended.
+    fn running_chat(&self, run_id: i64) -> Result<Run> {
+        let run = self.run(run_id)?;
+        if run.purpose != "chat" {
+            return Err(AppError::Invalid(format!("run {run_id} is not a chat")));
+        }
+        if run.ended_at.is_some() {
+            return Err(AppError::Invalid(format!("chat {run_id} has ended")));
+        }
+        Ok(run)
+    }
+
+    /// The chats, newest first.
+    pub fn chats(&self) -> Result<Vec<Chat>> {
+        self.store
+            .chats()?
+            .into_iter()
+            .map(|run| {
+                let first = self.store.events_after(run.id, 0, 1)?;
+                let title = first
+                    .first()
+                    .and_then(|event| event.data["message"].as_str())
+                    .unwrap_or_default()
+                    .lines()
+                    .next()
+                    .unwrap_or_default()
+                    .chars()
+                    .take(TITLE_LENGTH)
+                    .collect();
+                Ok(Chat {
+                    id: run.id,
+                    agent: run.agent,
+                    status: run.status,
+                    repository_id: run.repository_id,
+                    started_at: run.started_at,
+                    ended_at: run.ended_at,
+                    title,
+                })
+            })
+            .collect()
     }
 
     /// Stores an event of a run and publishes it as `run_event` with the `seq` it was stored under.

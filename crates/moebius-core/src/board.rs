@@ -40,7 +40,7 @@ use mlua::{Lua, Table, Value, VmState};
 use crate::app::{App, AppError, columns};
 use crate::decide::Question;
 use crate::repos::git;
-use crate::store::{Card, Run};
+use crate::store::{Card, Repository, Run};
 
 /// Starts runs for the engine. The real one drives a harness (Pi-Bolt); tests use a fake.
 pub trait Runs: Send + Sync {
@@ -63,6 +63,29 @@ pub trait Runs: Send + Sync {
 
     /// Asks a running run to stop; it ends as `stopped`. False when the run is not running.
     fn stop(&self, run_id: i64) -> bool;
+
+    /// Starts a chat with `agent`, which answers `message`, in a branch of `repository` or in an empty directory,
+    /// and returns it without waiting for the answer. A harness without chats refuses.
+    fn start_chat(
+        &self,
+        _app: &Arc<App>,
+        _agent: &str,
+        _repository: Option<&Repository>,
+        _message: &str,
+    ) -> Result<Run, String> {
+        Err("this harness has no chats".into())
+    }
+
+    /// Sends a person's message to a chat's agent; it answers when it is done with what it is doing. False when the
+    /// chat is not running.
+    fn say(&self, _run_id: i64, _message: &str) -> bool {
+        false
+    }
+
+    /// Ends a chat: its agent is shut down and its work kept. False when the chat is not running.
+    fn end(&self, _run_id: i64) -> bool {
+        false
+    }
 }
 
 /// What a review run concluded: `verdict` is `approve` or `changes`, and `findings` is what it found.
@@ -590,7 +613,9 @@ impl Engine {
                     .store
                     .active_runs()
                     .map_err(mlua::Error::external)?
-                    .len())
+                    .iter()
+                    .filter(|run| run.card_id.is_some())
+                    .count())
             })?,
         )?;
 
@@ -1077,6 +1102,34 @@ mod tests {
         );
         assert_eq!(runs_of(&app, &card), 1);
         assert_eq!(stuck_items(&app).len(), 1);
+    }
+
+    #[test]
+    fn a_chat_does_not_count_against_the_run_limit() {
+        let (_dir, app, _, repo) = setup();
+        let engine = engine_with(
+            &app,
+            Limits {
+                run_limit: 1,
+                ..Limits::default()
+            },
+        );
+        let chat = app.store.add_run(None, "Coder", "fake", "chat").unwrap();
+        app.store.set_run_status(chat.id, "waiting").unwrap();
+
+        let first = app.create_issue(repo, "First", "", PERSON).unwrap();
+        let second = app.create_issue(repo, "Second", "", PERSON).unwrap();
+        app.move_card(second.id, "Ready").unwrap();
+
+        // A card's run uses the one run the limit allows; the chat does not.
+        let coding = app
+            .store
+            .add_run(Some(first.id), "Coder", "fake", "code")
+            .unwrap();
+        let step = engine.settle(second.id).unwrap();
+        assert_eq!(step.waiting.as_deref(), Some("the run limit is reached"));
+        app.store.set_run_status(coding.id, "succeeded").unwrap();
+        assert!(engine.settle(second.id).unwrap().started_run.is_some());
     }
 
     #[test]

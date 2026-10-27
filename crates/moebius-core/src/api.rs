@@ -13,7 +13,9 @@
 //! - `GET /v1/runs/{id}`: a run. `GET /v1/runs/{id}/events?after=&limit=`: its stored events, in pages.
 //! - `GET /v1/cards/{id}/runs`: the runs of a card. `GET /v1/cards/{id}/history`: its timeline.
 //! - `POST /v1/runs/{id}/steer` `{message}`: a person sends a message to a running run.
-//! - `POST /v1/runs/{id}/stop` `{reason}`: a person stops a running run.
+//! - `POST /v1/runs/{id}/stop` `{reason}`: a person stops a running run; a chat ends as stopped.
+//! - `POST /v1/chats` `{agent, message, repository?}`: starts a chat. `GET /v1/chats`: the chats, newest first.
+//!   `POST /v1/chats/{id}/messages` `{message}`: writes to a chat. `POST /v1/chats/{id}/end`: ends a chat.
 //!
 //! Every request carries `Authorization: Bearer <token>`; anything else is answered with 401.
 
@@ -31,7 +33,7 @@ use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast::error::RecvError;
 
-use crate::app::{App, AppError, HistoryEntry, PERSON};
+use crate::app::{App, AppError, Chat, HistoryEntry, PERSON};
 use crate::board::Runs;
 use crate::bus::AppEvent;
 use crate::forge::ForgeError;
@@ -96,10 +98,19 @@ pub struct Reason {
     pub reason: String,
 }
 
-/// The body of a person's message to a running run.
+/// The body of a person's message to a running run or a chat.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Steer {
     pub message: String,
+}
+
+/// The body that starts a chat: the agent to talk to, the first message and optionally the repository to work in.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NewChat {
+    pub agent: String,
+    pub message: String,
+    #[serde(default)]
+    pub repository: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -144,7 +155,7 @@ impl From<AppError> for ApiError {
 /// Runs a blocking operation on the core off the async threads.
 async fn blocking<T: Send + 'static>(
     app: &Arc<App>,
-    f: impl FnOnce(&App) -> crate::app::Result<T> + Send + 'static,
+    f: impl FnOnce(&Arc<App>) -> crate::app::Result<T> + Send + 'static,
 ) -> Result<axum::Json<T>, ApiError> {
     let app = app.clone();
     tokio::task::spawn_blocking(move || f(&app))
@@ -198,6 +209,9 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/runs/{id}/events", get(run_events))
         .route("/v1/runs/{id}/steer", post(steer_run))
         .route("/v1/runs/{id}/stop", post(stop_run))
+        .route("/v1/chats", get(chats).post(start_chat))
+        .route("/v1/chats/{id}/messages", post(say_in_chat))
+        .route("/v1/chats/{id}/end", post(end_chat))
         .layer(middleware::from_fn_with_state(state.clone(), authenticate))
         .with_state(state)
 }
@@ -346,6 +360,41 @@ async fn stop_run(
         app.stop_run(&*runs, id, &stop.reason)
     })
     .await
+}
+
+async fn start_chat(
+    State(state): State<ApiState>,
+    axum::Json(chat): axum::Json<NewChat>,
+) -> Result<axum::Json<Run>, ApiError> {
+    let runs = state.runs.clone();
+    blocking(&state.app, move |app| {
+        app.start_chat(&*runs, &chat.agent, chat.repository, &chat.message)
+    })
+    .await
+}
+
+async fn chats(State(state): State<ApiState>) -> Result<axum::Json<Vec<Chat>>, ApiError> {
+    blocking(&state.app, |app| app.chats()).await
+}
+
+async fn say_in_chat(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+    axum::Json(said): axum::Json<Steer>,
+) -> Result<axum::Json<Run>, ApiError> {
+    let runs = state.runs.clone();
+    blocking(&state.app, move |app| {
+        app.say_in_chat(&*runs, id, &said.message)
+    })
+    .await
+}
+
+async fn end_chat(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+) -> Result<axum::Json<Run>, ApiError> {
+    let runs = state.runs.clone();
+    blocking(&state.app, move |app| app.end_chat(&*runs, id)).await
 }
 
 async fn get_run(
@@ -1170,6 +1219,287 @@ mod tests {
         ] {
             assert_eq!(post(body).await.unwrap().status(), 422);
         }
+    }
+
+    /// The kinds of the events of a run, in order.
+    fn kinds(app: &App, run_id: i64) -> Vec<String> {
+        let events = app.store.events(run_id).unwrap();
+        events.into_iter().map(|e| e.kind).collect()
+    }
+
+    fn status(app: &App, run_id: i64) -> String {
+        app.store.run(run_id).unwrap().unwrap().status
+    }
+
+    /// Starts a chat with the Coder; returns its run once the agent has answered the first message.
+    async fn chat(state: &ApiState, addr: &str, message: &str, repository: Option<i64>) -> Run {
+        let started = post(
+            state,
+            addr,
+            "/v1/chats".into(),
+            serde_json::json!({ "agent": "Coder", "message": message, "repository": repository }),
+        )
+        .await;
+        assert_eq!(started.status(), 200);
+        let run: Run = started.json().await.unwrap();
+        assert_eq!((run.purpose.as_str(), run.card_id), ("chat", None));
+        until("the agent has answered", || {
+            status(&state.app, run.id) == "waiting"
+        })
+        .await;
+        run
+    }
+
+    async fn say(state: &ApiState, addr: &str, run_id: i64, message: &str) -> reqwest::Response {
+        post(
+            state,
+            addr,
+            format!("/v1/chats/{run_id}/messages"),
+            serde_json::json!({ "message": message }),
+        )
+        .await
+    }
+
+    async fn end(state: &ApiState, addr: &str, run_id: i64) -> reqwest::Response {
+        post(
+            state,
+            addr,
+            format!("/v1/chats/{run_id}/end"),
+            serde_json::json!({}),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn a_chat_answers_two_messages_in_a_row_and_keeps_its_history() {
+        let (_dir, state, addr) = start().await;
+        let app = &state.app;
+        let run = chat(&state, &addr, "Hello", None).await;
+        assert_eq!(
+            kinds(app, run.id),
+            [
+                "said",
+                "response",
+                "agent_start",
+                "message_update",
+                "agent_end",
+                "agent_settled"
+            ]
+        );
+        // Without a repository the agent works in an empty directory of its own.
+        let empty = app.data_dir.join(format!("chats/{}", run.id));
+        assert!(empty.is_dir());
+
+        let said = say(&state, &addr, run.id, "Again").await;
+        assert_eq!(said.status(), 200);
+        let settled = |n: usize| {
+            kinds(app, run.id)
+                .iter()
+                .filter(|k| *k == "agent_settled")
+                .count()
+                == n
+                && status(app, run.id) == "waiting"
+        };
+        until("the second answer", || settled(2)).await;
+        let events: Vec<Event> = get(&state, &addr, &format!("/v1/runs/{}/events", run.id)).await;
+        let words: Vec<(&str, &str)> = events
+            .iter()
+            .filter_map(|e| match e.kind.as_str() {
+                "said" => Some(("said", e.data["message"].as_str()?)),
+                "message_update" => Some((
+                    "answered",
+                    e.data["assistantMessageEvent"]["delta"].as_str()?,
+                )),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            words,
+            [
+                ("said", "Hello"),
+                ("answered", "You said: Hello"),
+                ("said", "Again"),
+                ("answered", "You said: Again"),
+            ]
+        );
+
+        // What a person says is stored without secrets.
+        say(
+            &state,
+            &addr,
+            run.id,
+            "My key is sk-ant-abcdefghijklmnop1234",
+        )
+        .await;
+        until("the third answer", || settled(3)).await;
+        let third = app.store.events(run.id).unwrap();
+        let said = third.iter().rfind(|e| e.kind == "said").unwrap();
+        assert_eq!(said.data["message"], "My key is [redacted:anthropic-key]");
+
+        let other = chat(&state, &addr, "Another chat", None).await;
+        let listed: Vec<Chat> = get(&state, &addr, "/v1/chats").await;
+        assert_eq!(
+            listed.iter().map(|c| c.id).collect::<Vec<_>>(),
+            [other.id, run.id]
+        );
+        assert_eq!(
+            (
+                listed[1].agent.as_str(),
+                listed[1].status.as_str(),
+                listed[1].title.as_str()
+            ),
+            ("Coder", "waiting", "Hello")
+        );
+        assert_eq!(listed[1].repository_id, None);
+
+        // A person ends the chat; its empty directory goes with it.
+        assert_eq!(end(&state, &addr, run.id).await.status(), 200);
+        until("the chat ends", || status(app, run.id) == "succeeded").await;
+        assert!(!empty.exists());
+        assert_eq!(end(&state, &addr, other.id).await.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn a_chat_in_a_repository_commits_its_work_on_its_branch_when_it_ends() {
+        let (dir, state, addr) = start().await;
+        let app = &state.app;
+        let repo = app
+            .add_repository("demo", origin(dir.path()).to_str().unwrap())
+            .unwrap();
+        let clone = std::path::PathBuf::from(&repo.path);
+        let run = chat(&state, &addr, "Make notes [write notes.txt]", Some(repo.id)).await;
+        let worktree = app.store.run(run.id).unwrap().unwrap().worktree.unwrap();
+        let worktree = std::path::PathBuf::from(worktree);
+        assert!(worktree.join("notes.txt").is_file());
+        assert_eq!(run.branch(), format!("moebius/chat-{}", run.id));
+
+        assert_eq!(end(&state, &addr, run.id).await.status(), 200);
+        until("the chat ends", || status(app, run.id) == "succeeded").await;
+        assert!(!worktree.exists());
+        assert_eq!(
+            git(&clone, &["show", &format!("{}:notes.txt", run.branch())]).unwrap(),
+            "written"
+        );
+        let listed: Vec<Chat> = get(&state, &addr, "/v1/chats").await;
+        assert_eq!(listed[0].repository_id, Some(repo.id));
+
+        // A chat that changed nothing has still succeeded; its branch stays where it started.
+        let quiet = chat(&state, &addr, "Hello", Some(repo.id)).await;
+        assert_eq!(end(&state, &addr, quiet.id).await.status(), 200);
+        until("the chat ends", || status(app, quiet.id) == "succeeded").await;
+        assert_eq!(
+            git(&clone, &["rev-parse", &quiet.branch()]).unwrap(),
+            git(&clone, &["rev-parse", "main"]).unwrap()
+        );
+
+        // Nothing can be said to a chat that has ended, and it cannot be ended again.
+        for id in [run.id, quiet.id] {
+            assert_eq!(say(&state, &addr, id, "Hello?").await.status(), 422);
+            assert_eq!(end(&state, &addr, id).await.status(), 422);
+        }
+        assert_eq!(
+            kinds(app, run.id).iter().filter(|k| *k == "said").count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn a_chat_that_is_stopped_ends_and_its_agent_is_gone() {
+        let (_dir, state, addr) = start().await;
+        let app = &state.app;
+        let waiting = chat(&state, &addr, "Hello", None).await;
+        let pid = std::fs::read_to_string(
+            app.data_dir
+                .join(format!("runs/{}/agent/pid.txt", waiting.id)),
+        )
+        .unwrap();
+        let stop = |id: i64| {
+            post(
+                &state,
+                &addr,
+                format!("/v1/runs/{id}/stop"),
+                serde_json::json!({}),
+            )
+        };
+        assert_eq!(stop(waiting.id).await.status(), 200);
+        until("the chat is stopped", || {
+            status(app, waiting.id) == "stopped"
+        })
+        .await;
+        assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists());
+        assert!(!app.data_dir.join(format!("chats/{}", waiting.id)).exists());
+        assert_eq!(stop(waiting.id).await.status(), 422);
+        assert_eq!(say(&state, &addr, waiting.id, "Hello?").await.status(), 422);
+
+        // A chat whose agent is working takes a message as a follow-up, and a stop aborts the turn.
+        let started = post(
+            &state,
+            &addr,
+            "/v1/chats".into(),
+            serde_json::json!({ "agent": "Coder", "message": "Work for ever [hang]" }),
+        )
+        .await;
+        let working: Run = started.json().await.unwrap();
+        until("the agent works", || {
+            kinds(app, working.id).contains(&"agent_start".to_string())
+        })
+        .await;
+        assert_eq!(status(app, working.id), "running");
+        assert_eq!(
+            say(&state, &addr, working.id, "And then this.")
+                .await
+                .status(),
+            200
+        );
+        let queued = app
+            .data_dir
+            .join(format!("runs/{}/agent/queued.txt", working.id));
+        until("Pi queues the message", || {
+            app.store
+                .events(working.id)
+                .unwrap()
+                .iter()
+                .any(|e| e.data["data"]["disposition"] == "queued")
+        })
+        .await;
+        assert_eq!(std::fs::read_to_string(queued).unwrap(), "And then this.");
+        assert_eq!(stop(working.id).await.status(), 200);
+        until("the chat is stopped", || {
+            status(app, working.id) == "stopped"
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn a_chat_needs_a_known_agent_a_message_and_a_chat_to_write_to() {
+        let (_dir, state, addr) = start().await;
+        for body in [
+            serde_json::json!({ "agent": "Nobody", "message": "Hello" }),
+            serde_json::json!({ "agent": "Coder", "message": "  " }),
+        ] {
+            assert_eq!(
+                post(&state, &addr, "/v1/chats".into(), body).await.status(),
+                422
+            );
+        }
+        let unknown = serde_json::json!({ "agent": "Coder", "message": "Hello", "repository": 99 });
+        assert_eq!(
+            post(&state, &addr, "/v1/chats".into(), unknown)
+                .await
+                .status(),
+            404
+        );
+        assert_eq!(say(&state, &addr, 99, "Hello").await.status(), 404);
+        assert!(state.app.store.chats().unwrap().is_empty());
+
+        // A run of a card is no chat.
+        let run = state
+            .app
+            .store
+            .add_run(Some(1), "Coder", "test", "code")
+            .unwrap();
+        assert_eq!(say(&state, &addr, run.id, "Hello").await.status(), 422);
+        assert_eq!(end(&state, &addr, run.id).await.status(), 422);
     }
 
     #[test]

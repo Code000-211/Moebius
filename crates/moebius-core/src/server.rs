@@ -35,17 +35,25 @@ fn end_runs_of_a_previous_server(app: &App) -> Result<(), String> {
         .fail_unended_runs("the server stopped while the run was going")
         .map_err(|e| format!("cannot end the runs of the last start: {e}"))?;
     for run in runs {
-        let (Some(worktree), Some(card_id)) = (run.worktree, run.card_id) else {
+        let Some(worktree) = run.worktree else {
             continue;
         };
-        let repository = app
-            .card(card_id)
-            .ok()
-            .and_then(|card| app.store.repository(card.repository_id).ok().flatten());
-        if let Some(repository) = repository {
-            let _ = app
-                .repos
-                .remove_worktree(Path::new(&repository.path), Path::new(&worktree));
+        let repository_id = match run.card_id {
+            Some(card_id) => app.card(card_id).ok().map(|card| card.repository_id),
+            None => run.repository_id,
+        };
+        let repository = repository_id.and_then(|id| app.store.repository(id).ok().flatten());
+        match repository {
+            Some(repository) => {
+                let _ = app
+                    .repos
+                    .remove_worktree(Path::new(&repository.path), Path::new(&worktree));
+            }
+            // A chat without a repository worked in an empty directory.
+            None if run.purpose == "chat" => {
+                let _ = std::fs::remove_dir_all(&worktree);
+            }
+            None => {}
         }
     }
     Ok(())
@@ -293,6 +301,19 @@ mod tests {
             .set_run_worktree(run.id, &worktree.path.to_string_lossy())
             .unwrap();
         first.app.store.set_run_status(run.id, "running").unwrap();
+        let chat = first
+            .app
+            .store
+            .add_run(None, "Coder", "pi-bolt", "chat")
+            .unwrap();
+        let empty = first.app.data_dir.join(format!("chats/{}", chat.id));
+        std::fs::create_dir_all(&empty).unwrap();
+        first
+            .app
+            .store
+            .set_run_worktree(chat.id, &empty.to_string_lossy())
+            .unwrap();
+        first.app.store.set_run_status(chat.id, "waiting").unwrap();
         drop(first);
 
         let second = Server::new(config, "127.0.0.1:1".parse().unwrap()).unwrap();
@@ -300,6 +321,11 @@ mod tests {
         assert_eq!(run.status, "failed");
         assert!(second.app.store.active_runs().unwrap().is_empty());
         assert!(!worktree.path.exists());
+        assert!(!empty.exists());
+        assert_eq!(
+            second.app.store.run(chat.id).unwrap().unwrap().status,
+            "failed"
+        );
     }
 
     /// A GitHub with one repository, `acme/widgets`: its issues, the ETag they are served with and the

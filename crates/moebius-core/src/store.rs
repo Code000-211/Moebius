@@ -142,6 +142,7 @@ CREATE TABLE card_moves (
 );
 CREATE INDEX card_moves_by_card ON card_moves (card_id, id);
 "#,
+    "ALTER TABLE runs ADD COLUMN repository_id INTEGER REFERENCES repositories(id);",
 ];
 
 const CHANGE_COLUMNS: &str = "id, repository_id, card_id, branch, state, pull_request, checks, review, \
@@ -250,12 +251,19 @@ pub struct Run {
     pub ended_at: Option<i64>,
     /// What the agent answered last, once the harness has reported it.
     pub summary: Option<String>,
+    /// The repository a chat works in; none for a run of a card, and for a chat in an empty directory.
+    pub repository_id: Option<i64>,
 }
 
 impl Run {
     /// The branch the run's work is committed on.
     pub fn branch(&self) -> String {
-        format!("moebius/run-{}", self.id)
+        let kind = if self.purpose == "chat" {
+            "chat"
+        } else {
+            "run"
+        };
+        format!("moebius/{kind}-{}", self.id)
     }
 }
 
@@ -811,13 +819,14 @@ impl Store {
             started_at: at,
             ended_at: None,
             summary: None,
+            repository_id: None,
         })
     }
 
     fn runs_where(&self, clause: &str, param: rusqlite::types::Value) -> Result<Vec<Run>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(&format!(
-            "SELECT id, card_id, agent, harness, purpose, status, worktree, started_at, ended_at, summary
+            "SELECT id, card_id, agent, harness, purpose, status, worktree, started_at, ended_at, summary, repository_id
              FROM runs WHERE {clause} ORDER BY id"
         ))?;
         let rows = stmt.query_map([param], |r| {
@@ -832,6 +841,7 @@ impl Store {
                 started_at: r.get(7)?,
                 ended_at: r.get(8)?,
                 summary: r.get(9)?,
+                repository_id: r.get(10)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -844,6 +854,13 @@ impl Store {
     /// The runs of a card, oldest first.
     pub fn runs_for_card(&self, card_id: i64) -> Result<Vec<Run>> {
         self.runs_where("card_id = ?1", card_id.into())
+    }
+
+    /// The chats, newest first.
+    pub fn chats(&self) -> Result<Vec<Run>> {
+        let mut chats = self.runs_where("purpose = ?1", "chat".to_string().into())?;
+        chats.reverse();
+        Ok(chats)
     }
 
     /// The runs that have not ended.
@@ -880,6 +897,14 @@ impl Store {
                 [id],
             )?;
         }
+        Ok(())
+    }
+
+    pub fn set_run_repository(&self, id: i64, repository_id: i64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE runs SET repository_id = ?1 WHERE id = ?2",
+            params![repository_id, id],
+        )?;
         Ok(())
     }
 

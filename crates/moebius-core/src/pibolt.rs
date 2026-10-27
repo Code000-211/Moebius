@@ -1,7 +1,10 @@
 //! The Pi-Bolt harness (spec 4): each run is `pi-bolt --mode rpc` in the run's worktree, with the router as its only
 //! provider. The prompt goes in as one JSON line; every record Pi writes is stored as a run event and published on the
 //! bus. Records are split on LF only, never on U+2028 or U+2029, which are valid inside JSON strings. The run ends at
-//! `agent_settled`; what the agent changed is committed on the run's branch and the worktree is removed. A `code` run
+//! `agent_settled`; what the agent changed is committed on the run's branch and the worktree is removed. A chat is
+//! the exception: its Pi stays up at `agent_settled`, the run waits for the person's next message, and it ends when
+//! the person ends or stops it (or Pi exits). A chat works in a worktree on `moebius/chat-<id>` or, without a
+//! repository, in an empty directory; what it left is committed on the branch when it ends. A `code` run
 //! that changed nothing has failed; other runs, such as a review, are not committed. A run starts from the branch of the
 //! card's latest successful `code` run, so it sees the work so far. The text of the agent's final answer is kept as
 //! the run's summary. A run is stopped with `abort` and steered with `steer`. Pi runs offline and does not trust
@@ -18,12 +21,13 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 
 use crate::app::App;
+use crate::blobs::redact;
 use crate::board::Runs;
 use crate::bus::AppEvent;
 use crate::config::AgentConfig;
-use crate::repos::{Worktree, git};
+use crate::repos::git;
 use crate::router::{Grant, Protocol, Router};
-use crate::store::{Card, Run};
+use crate::store::{Card, Repository, Run};
 
 /// How long Pi may take to exit after it was asked to stop.
 const STOP_GRACE: Duration = Duration::from_secs(10);
@@ -47,6 +51,15 @@ pub struct PiBolt {
 struct Live {
     stdin: Arc<Mutex<Option<ChildStdin>>>,
     child: Arc<Mutex<Child>>,
+    chat: bool,
+    /// Why a chat's Pi was asked to exit, so that its exit is no failure.
+    closing: Arc<Mutex<Option<Closing>>>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Closing {
+    Stopped,
+    Ended,
 }
 
 impl PiBolt {
@@ -136,13 +149,13 @@ impl PiBolt {
     fn launch(
         &self,
         app: &Arc<App>,
-        card: &Card,
+        card: Option<&Card>,
         agent: &AgentConfig,
         run: RunningRun,
         prompt: &str,
     ) -> Result<(), String> {
         app.store
-            .set_run_worktree(run.id, &run.worktree.path.to_string_lossy())
+            .set_run_worktree(run.id, &run.worktree.to_string_lossy())
             .map_err(|e| e.to_string())?;
         let run_dir = app.data_dir.join("runs").join(run.id.to_string());
         let agent_dir = self
@@ -156,7 +169,7 @@ impl PiBolt {
         let mut child = self
             .command(
                 agent,
-                &run.worktree.path,
+                &run.worktree,
                 &run_dir,
                 &agent_dir,
                 &bridge,
@@ -171,6 +184,8 @@ impl PiBolt {
         let live = Live {
             stdin: Arc::new(Mutex::new(child.stdin.take())),
             child: Arc::new(Mutex::new(child)),
+            chat: run.purpose == "chat",
+            closing: Arc::new(Mutex::new(None)),
         };
         lock(&self.live).insert(run.id, live.clone());
         app.store
@@ -178,7 +193,7 @@ impl PiBolt {
             .map_err(|e| e.to_string())?;
         app.bus.publish(AppEvent::new(
             "run_started",
-            json!({ "run": run.id, "card": card.id }),
+            json!({ "run": run.id, "card": card.map(|card| card.id) }),
         ));
         send(
             &live.stdin,
@@ -186,7 +201,6 @@ impl PiBolt {
         );
         let reader = Reader {
             app: app.clone(),
-            card: card.clone(),
             run,
             live,
             router: self.router.clone(),
@@ -198,6 +212,28 @@ impl PiBolt {
             .spawn(move || reader.read(stdout))
             .map(drop)
             .map_err(|e| e.to_string())
+    }
+    /// Launches a run that has its worktree and token and returns it; when Pi cannot be started, what was set up for
+    /// the run is undone and the run has failed.
+    fn launch_or_undo(
+        &self,
+        app: &Arc<App>,
+        card: Option<&Card>,
+        config: &AgentConfig,
+        running: RunningRun,
+        prompt: &str,
+    ) -> Result<Run, String> {
+        if let Err(e) = self.launch(app, card, config, running.clone(), prompt) {
+            // Nothing reads this run: undo what was set up for it.
+            self.router.revoke_token(&running.token);
+            running.remove_worktree(app);
+            return Err(fail(app, running.id, e));
+        }
+        Ok(app
+            .store
+            .run(running.id)
+            .map_err(|e| e.to_string())?
+            .expect("the run exists"))
     }
 }
 
@@ -223,50 +259,117 @@ impl Runs for PiBolt {
             .store
             .add_run(Some(card.id), agent, "pi-bolt", purpose)
             .map_err(|e| e.to_string())?;
-        let fail = |message: String| {
-            let _ = app
-                .store
-                .append_event(run.id, "moebius_error", &json!({ "message": message }));
-            let _ = app.store.set_run_status(run.id, "failed");
-            message
-        };
 
         let clone = PathBuf::from(&repository.path);
         let base = match app.store.code_branch(card.id) {
             Ok(Some(branch)) => branch,
             Ok(None) => repository.base_ref(),
-            Err(e) => return Err(fail(e.to_string())),
+            Err(e) => return Err(fail(app, run.id, e.to_string())),
         };
         let worktree = app
             .repos
             .add_worktree(&repository.name, &clone, run.id, &base)
-            .map_err(|e| fail(e.to_string()))?;
-        let token = self.router.issue_token(Grant {
-            run_id: run.id,
-            card_id: Some(card.id),
-            budget: config.token_budget,
-        });
+            .map_err(|e| fail(app, run.id, e.to_string()))?;
+        let running = RunningRun {
+            id: run.id,
+            clone: Some(clone),
+            worktree: worktree.path,
+            token: self.router.issue_token(Grant {
+                run_id: run.id,
+                card_id: Some(card.id),
+                budget: config.token_budget,
+            }),
+            purpose: purpose.to_string(),
+            commit_message: format!(
+                "#{}: {}\n\nCommitted by Moebius for its run.",
+                card.number, card.title
+            ),
+        };
+        self.launch_or_undo(
+            app,
+            Some(card),
+            config,
+            running,
+            &prompt_for(card, purpose, note),
+        )
+    }
+
+    fn start_chat(
+        &self,
+        app: &Arc<App>,
+        agent: &str,
+        repository: Option<&Repository>,
+        message: &str,
+    ) -> Result<Run, String> {
+        let config = self
+            .agents
+            .get(agent)
+            .ok_or_else(|| format!("no agent named {agent}"))?;
+        let run = app
+            .store
+            .add_run(None, agent, "pi-bolt", "chat")
+            .map_err(|e| e.to_string())?;
+        let (clone, worktree) = match repository {
+            Some(repository) => {
+                let clone = PathBuf::from(&repository.path);
+                let made = app
+                    .store
+                    .set_run_repository(run.id, repository.id)
+                    .map_err(|e| e.to_string())
+                    .and_then(|()| {
+                        let base = repository.base_ref();
+                        let name = &repository.name;
+                        let worktree = app.repos.add_chat_worktree(name, &clone, run.id, &base);
+                        worktree.map_err(|e| e.to_string())
+                    })
+                    .map_err(|e| fail(app, run.id, e))?;
+                (Some(clone), made.path)
+            }
+            None => {
+                let empty = app.data_dir.join("chats").join(run.id.to_string());
+                std::fs::create_dir_all(&empty).map_err(|e| fail(app, run.id, e.to_string()))?;
+                (None, empty)
+            }
+        };
         let running = RunningRun {
             id: run.id,
             clone,
             worktree,
-            token,
-            purpose: purpose.to_string(),
+            token: self.router.issue_token(Grant {
+                run_id: run.id,
+                card_id: None,
+                budget: config.token_budget,
+            }),
+            purpose: "chat".into(),
+            commit_message: format!(
+                "Chat {}\n\nCommitted by Moebius when the chat ended.",
+                run.id
+            ),
         };
-        let prompt = prompt_for(card, purpose, note);
-        if let Err(e) = self.launch(app, card, config, running.clone(), &prompt) {
-            // Nothing reads this run: undo what was set up for it.
-            self.router.revoke_token(&running.token);
-            let _ = app
-                .repos
-                .remove_worktree(&running.clone, &running.worktree.path);
-            return Err(fail(e));
-        }
-        Ok(app
-            .store
-            .run(run.id)
-            .map_err(|e| e.to_string())?
-            .expect("the run exists"))
+        let said = json!({ "message": redact(message) });
+        let _ = app.record_run_event(run.id, "said", &said);
+        self.launch_or_undo(app, None, config, running, message)
+    }
+
+    fn say(&self, run_id: i64, message: &str) -> bool {
+        let Some(live) = lock(&self.live).get(&run_id).cloned().filter(|l| l.chat) else {
+            return false;
+        };
+        // Pi starts a run for the prompt, or queues it when the agent is working, so the answer does not depend on
+        // whether the agent has just settled.
+        send(
+            &live.stdin,
+            &json!({ "type": "prompt", "message": message, "streamingBehavior": "followUp" }),
+        )
+    }
+
+    fn end(&self, run_id: i64) -> bool {
+        let Some(live) = lock(&self.live).get(&run_id).cloned().filter(|l| l.chat) else {
+            return false;
+        };
+        *lock(&live.closing) = Some(Closing::Ended);
+        // Closing stdin asks Pi to shut down.
+        lock(&live.stdin).take().is_some()
     }
 
     fn has_agent(&self, name: &str) -> bool {
@@ -293,6 +396,11 @@ impl Runs for PiBolt {
             &live.stdin,
             &json!({ "id": "moebius-abort", "type": "abort" }),
         );
+        if live.chat {
+            // A waiting chat has no turn to abort, so Pi is also asked to exit.
+            *lock(&live.closing) = Some(Closing::Stopped);
+            lock(&live.stdin).take();
+        }
         std::thread::spawn(move || {
             if !wait_for_exit(&live.child, STOP_GRACE) {
                 let _ = lock(&live.child).kill();
@@ -306,10 +414,32 @@ impl Runs for PiBolt {
 #[derive(Clone)]
 struct RunningRun {
     id: i64,
-    clone: PathBuf,
-    worktree: Worktree,
+    /// The repository's clone; none for a chat in an empty directory.
+    clone: Option<PathBuf>,
+    worktree: PathBuf,
     token: String,
     purpose: String,
+    /// The message of the commit of what the agent leaves in the worktree.
+    commit_message: String,
+}
+
+impl RunningRun {
+    /// Removes the worktree, or the chat's empty directory.
+    fn remove_worktree(&self, app: &App) {
+        match &self.clone {
+            Some(clone) => drop(app.repos.remove_worktree(clone, &self.worktree)),
+            None => drop(std::fs::remove_dir_all(&self.worktree)),
+        }
+    }
+}
+
+/// Fails a run that could not be started, with an event saying why; returns the message.
+fn fail(app: &App, run_id: i64, message: String) -> String {
+    let _ = app
+        .store
+        .append_event(run_id, "moebius_error", &json!({ "message": message }));
+    let _ = app.store.set_run_status(run_id, "failed");
+    message
 }
 
 /// What a `code` run is told after the issue.
@@ -393,7 +523,6 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 /// Reads one run's records and ends the run.
 struct Reader {
     app: Arc<App>,
-    card: Card,
     run: RunningRun,
     live: Live,
     router: Arc<Router>,
@@ -408,7 +537,12 @@ impl Reader {
         loop {
             record.clear();
             match lines.read_until(b'\n', &mut record) {
-                Ok(0) => break,
+                Ok(0) => {
+                    if let Some(closing) = *lock(&self.live.closing) {
+                        ending = Ok(closing == Closing::Stopped);
+                    }
+                    break;
+                }
                 Ok(_) => {}
                 Err(e) => {
                     ending = Err(format!("cannot read from pi-bolt: {e}"));
@@ -439,8 +573,17 @@ impl Reader {
             {
                 let _ = self.app.store.set_run_summary(self.run.id, &answer);
             }
+            if self.run.purpose == "chat" && kind == "agent_start" {
+                let _ = self.app.store.set_run_status(self.run.id, "running");
+            }
             if kind == "agent_settled" {
-                ending = Ok(value["aborted"] == true);
+                let aborted = value["aborted"] == true;
+                // A chat waits for the person's next message; only an abort ends it.
+                if self.run.purpose == "chat" && !aborted {
+                    let _ = self.app.store.set_run_status(self.run.id, "waiting");
+                    continue;
+                }
+                ending = Ok(aborted);
                 break;
             }
         }
@@ -458,19 +601,22 @@ impl Reader {
         }
         self.router.revoke_token(&self.run.token);
         let status = match ending {
+            Ok(aborted) if self.run.purpose == "chat" => match self.commit() {
+                // A chat that changed nothing has still succeeded.
+                Ok(_) if aborted => "stopped",
+                Ok(_) => "succeeded",
+                Err(e) => self.failed(&e.to_string()),
+            },
             Ok(true) => "stopped",
             Ok(false) if self.run.purpose != "code" => "succeeded",
-            Ok(false) => match commit(&self.run.worktree.path, &self.card) {
+            Ok(false) => match self.commit() {
                 Ok(true) => "succeeded",
                 Ok(false) => self.failed("the agent changed nothing"),
                 Err(e) => self.failed(&e.to_string()),
             },
             Err(why) => self.failed(&why),
         };
-        let _ = self
-            .app
-            .repos
-            .remove_worktree(&self.run.clone, &self.run.worktree.path);
+        self.run.remove_worktree(&self.app);
         let _ = self.app.store.set_run_status(self.run.id, status);
         lock(&self.lives).remove(&self.run.id);
         self.app.bus.publish(AppEvent::new(
@@ -479,26 +625,30 @@ impl Reader {
         ));
     }
 
+    /// Commits what the agent left in the worktree of a repository; false when it left nothing. A chat without a
+    /// repository has nothing to commit.
+    fn commit(&self) -> crate::repos::Result<bool> {
+        if self.run.clone.is_none() {
+            return Ok(false);
+        }
+        let worktree = &self.run.worktree;
+        git(worktree, &["add", "--all"])?;
+        if git(worktree, &["status", "--porcelain"])?.is_empty() {
+            return Ok(false);
+        }
+        git(
+            worktree,
+            &["commit", "--quiet", "-m", &self.run.commit_message],
+        )?;
+        Ok(true)
+    }
+
     fn failed(&self, why: &str) -> &'static str {
         let _ = self
             .app
             .record_run_event(self.run.id, "moebius_error", &json!({ "message": why }));
         "failed"
     }
-}
-
-/// Commits what the agent left in the worktree; false when it left nothing.
-fn commit(worktree: &Path, card: &Card) -> crate::repos::Result<bool> {
-    git(worktree, &["add", "--all"])?;
-    if git(worktree, &["status", "--porcelain"])?.is_empty() {
-        return Ok(false);
-    }
-    let message = format!(
-        "#{}: {}\n\nCommitted by Moebius for its run.",
-        card.number, card.title
-    );
-    git(worktree, &["commit", "--quiet", "-m", &message])?;
-    Ok(true)
 }
 
 #[cfg(test)]

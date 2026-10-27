@@ -42,8 +42,13 @@ These objects appear in the responses. All ids are numbers; times are Unix secon
 
 `Card`: `id`, `repository_id`, `number`, `title`, `body`, `author`, `column`, `created_at`, `note` (why the card was sent
 back to coding, or null) and `retried_after` (the id of the card's latest run when a person last retried it, or null).
-`Run`: `id`, `card_id`, `agent`, `harness`, `purpose`, `status` (`starting`, `running`, `succeeded`, `failed` or `stopped`),
-`worktree`, `started_at`, `ended_at` and `summary`.
+`Run`: `id`, `card_id` (null for a chat), `agent`, `harness`, `purpose` (`code`, `review`, other purposes of column scripts,
+or `chat`), `status` (`starting`, `running`, `waiting`, `succeeded`, `failed` or `stopped`; `waiting` is a chat waiting for
+the person's next message), `worktree`, `started_at`, `ended_at`, `summary` and `repository_id` (the repository a chat
+works in, or null).
+
+`Chat`: `id` (the id of its run), `agent`, `status` (that of the run), `repository_id` (or null), `started_at`, `ended_at`
+and `title` (the first line of the first message, at most 80 characters).
 
 `Change`: `id`, `repository_id`, `card_id` (or null), `branch`, `state` (`open`, `merged` or `closed`), `pull_request`
 (the number on GitHub, or null), `checks` (`pending`, `success`, `failure` or null), `review` (the latest review's state in
@@ -232,6 +237,57 @@ Request: `{"reason": "..."}`; `reason` is optional, but send `{}` without one.
 Response: the `Run`, as it was when the request was made (still `running`). Errors: `404` no such run; `422` the run is not
 running.
 
+A chat that is stopped, also while it waits, ends as `stopped`; what it left in its repository's worktree is committed
+on its branch first.
+
+### `POST /v1/chats`
+
+Starts a chat: an interactive run without a card. The agent answers the first message as a stream of run events, and
+the chat then waits (status `waiting`) for the next message. It works in a new worktree on the branch `moebius/chat-<run id>`
+from the repository's default branch when `repository` is given, so that what the agent builds can be offered as a
+change later, or otherwise in an empty directory `chats/<run id>` under the data directory, which is removed when the
+chat ends. The chat's run uses the agent's configuration like any run; its `token_budget` counts the chat's own tokens, the
+daily budget applies, and a chat does not count against the board's run limit.
+
+Request:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `agent` | string | Required. An agent of the configuration. |
+| `message` | string | Required, not blank. Sent to the agent as it is, with no issue prompt around it. |
+| `repository` | number | The id of a repository to work in. |
+
+Response: the `Run` (`purpose` `chat`, `card_id` null). Errors: `404` no such repository; `422` the message is blank or
+the agent does not exist; `500` the worktree cannot be made.
+
+### `GET /v1/chats`
+
+The chats, newest first. Response: an array of `Chat`. A chat's history is its run's events, read with
+`GET /v1/runs/{id}/events` and followed on `GET /v1/events`.
+
+### `POST /v1/chats/{id}/messages`
+
+A person writes to a chat that has not ended. The message is stored as a `said` run event (secrets removed) and sent to
+the agent as a prompt: when the agent is waiting it answers at once; when it is working the message is delivered when it
+is done with the current turn (a follow-up). To change what a working agent is doing, steer it with
+`POST /v1/runs/{id}/steer`.
+
+Request: `{"message": "..."}`; `message` is required and must not be blank.
+
+Response: the `Run`. Errors: `404` no such run; `422` the run is not a chat, the chat has ended, or the message is blank.
+
+### `POST /v1/chats/{id}/end`
+
+A person ends a chat that has not ended: Pi is asked to shut down (its standard input is closed; a Pi that has not exited
+after 10 seconds is killed). With a repository, what the agent left in the worktree is committed on the chat's branch
+(a chat that changed nothing has still succeeded), and then the worktree, or the empty directory, is removed. The chat ends
+as `succeeded`, which publishes `run_ended`.
+
+Request: `{}`.
+
+Response: the `Run`, as it was when the request was made. Errors: `404` no such run; `422` the run is not a chat or has
+ended.
+
 ## Events
 
 `GET /v1/events` sends one JSON object per message: `{"kind": "<kind>", "data": ...}`. These are all the kinds.
@@ -247,7 +303,7 @@ running.
 | `change_updated` | A change was published or published again, its checks started or ended, or the checks or review of its pull request changed. | The `Change`. |
 | `change_merged` | A change was merged, here or on GitHub. | `{"change": id, "commit": sha or null}` |
 | `change_closed` | A change's pull request was closed on GitHub without a merge. | `{"change": id}` |
-| `run_started` | A harness process for a run started. | `{"run": id, "card": id}` |
+| `run_started` | A harness process for a run started. | `{"run": id, "card": id or null}` (null for a chat) |
 | `run_event` | Something happened in a run. | `{"run": id, "seq": number, "kind": string, "data": object}` (below) |
 | `run_ended` | A run ended. | `{"run": id, "status": "succeeded" \| "failed" \| "stopped"}` |
 | `board_error` | A column script failed; the card stays where it is. | `{"card": id, "message": string}` |
@@ -264,6 +320,7 @@ A `run_event` has two sources, told apart by its inner `kind`:
 
 `seq` is the number the event is stored under, the same as in `GET /v1/runs/{id}/events`. Events of a run are published in
 the order of their `seq`. Every event of a run is published and stored: Pi's records, `tool_check` events, `steered` events
-(`{"message"}`, a person's steer, with secrets removed) and `moebius_error` events (`{"message"}`) that explain why a
+(`{"message"}`, a person's steer, with secrets removed), `said` events (`{"message"}`, a person's message to a chat, the first
+one included, with secrets removed; stored before the agent's records of its answer) and `moebius_error` events (`{"message"}`) that explain why a
 run failed. The one exception is a run that was still going when the server stopped: it is failed at the next start with
 a `moebius_error` that is stored but not published.

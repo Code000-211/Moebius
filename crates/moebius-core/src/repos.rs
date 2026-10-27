@@ -143,8 +143,29 @@ impl Repos {
         run_id: i64,
         base: &str,
     ) -> Result<Worktree> {
-        let branch = format!("moebius/run-{run_id}");
-        let path = self.worktrees.join(name).join(format!("run-{run_id}"));
+        self.add_named_worktree(name, clone, &format!("run-{run_id}"), base)
+    }
+
+    /// Creates a worktree for chat `run_id` on a new branch `moebius/chat-<id>` starting at `base`.
+    pub fn add_chat_worktree(
+        &self,
+        name: &str,
+        clone: &Path,
+        run_id: i64,
+        base: &str,
+    ) -> Result<Worktree> {
+        self.add_named_worktree(name, clone, &format!("chat-{run_id}"), base)
+    }
+
+    fn add_named_worktree(
+        &self,
+        repository: &str,
+        clone: &Path,
+        name: &str,
+        base: &str,
+    ) -> Result<Worktree> {
+        let branch = format!("moebius/{name}");
+        let path = self.worktrees.join(repository).join(name);
         std::fs::create_dir_all(path.parent().expect("worktrees have a parent"))?;
         let target = path.to_string_lossy().into_owned();
         git(
