@@ -59,6 +59,16 @@ program = "pi-bolt"
 # the built-in rules apply. The harness configuration repository takes this over in M7.
 # rules_file = "rules.md"
 
+# The teacher model checks the rules written in prose (a rule the built-in patterns cannot see) on every tool call.
+# It is asked through the router, so its tokens are counted against the run being checked, and it needs an upstream for
+# its protocol. Without a teacher, a call is refused whenever any prose rule applies (fail closed); without prose
+# rules the teacher is never asked. The answer must come within timeout_seconds (1 to 29: the plugin host cuts a
+# decider off after 30 seconds); a teacher that fails, is too slow or answers nonsense refuses the call.
+# [teacher]
+# model = "qwen3.8-flash-next"
+# protocol = "openai"                     # or anthropic
+# timeout_seconds = 20
+
 # Moebius acts as its own GitHub App. The key file is read at start; relative paths are inside this file's directory.
 # [github]
 # app_id = 123456
@@ -94,6 +104,8 @@ pub enum ConfigError {
     RunLimit,
     #[error("router.listen must be a loopback address, not {0}")]
     RouterNotLocal(SocketAddr),
+    #[error("teacher.timeout_seconds must be between 1 and {max}, not {value}")]
+    TeacherTimeout { value: u64, max: u64 },
     #[error("{name} is not a valid agent name")]
     AgentName { name: String },
 }
@@ -157,6 +169,18 @@ struct RawGitHub {
     poll_seconds: Option<u64>,
 }
 
+/// How long the plugin host lets a decider take (see `server`), in seconds. The teacher must answer sooner.
+pub const PLUGIN_TIME_LIMIT_SECONDS: u64 = 30;
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawTeacher {
+    model: String,
+    #[serde(default = "default_protocol")]
+    protocol: Protocol,
+    timeout_seconds: Option<u64>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Raw {
@@ -174,6 +198,7 @@ struct Raw {
     pi_bolt: RawPiBolt,
     rules_file: Option<PathBuf>,
     github: Option<RawGitHub>,
+    teacher: Option<RawTeacher>,
     #[serde(default)]
     agents: BTreeMap<String, AgentConfig>,
 }
@@ -196,6 +221,15 @@ pub struct GitHubConfig {
     pub api_url: String,
     /// How often the issues of each GitHub repository are polled.
     pub poll: Duration,
+}
+
+/// The teacher model, which judges the rules written in prose.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TeacherConfig {
+    pub model: String,
+    pub protocol: Protocol,
+    /// How long the teacher may take to answer.
+    pub timeout: Duration,
 }
 
 /// An agent as configured; the harness configuration repository takes this over in M6.
@@ -235,6 +269,8 @@ pub struct Config {
     /// The server's rules (see `rules`), if it has any.
     pub rules_file: Option<PathBuf>,
     pub github: Option<GitHubConfig>,
+    /// The teacher model; without one, calls are refused while prose rules apply.
+    pub teacher: Option<TeacherConfig>,
     pub agents: BTreeMap<String, AgentConfig>,
 }
 
@@ -266,6 +302,23 @@ impl Config {
         }) {
             return Err(ConfigError::AgentName { name: name.clone() });
         }
+        let teacher = match raw.teacher {
+            Some(t) => {
+                let seconds = t.timeout_seconds.unwrap_or(20);
+                if !(1..PLUGIN_TIME_LIMIT_SECONDS).contains(&seconds) {
+                    return Err(ConfigError::TeacherTimeout {
+                        value: seconds,
+                        max: PLUGIN_TIME_LIMIT_SECONDS - 1,
+                    });
+                }
+                Some(TeacherConfig {
+                    model: t.model,
+                    protocol: t.protocol,
+                    timeout: Duration::from_secs(seconds),
+                })
+            }
+            None => None,
+        };
         let window = raw.trial_window.unwrap_or(RawWindow {
             start: None,
             end: None,
@@ -301,6 +354,7 @@ impl Config {
                     .unwrap_or_else(|| "https://api.github.com".to_string()),
                 poll: Duration::from_secs(g.poll_seconds.unwrap_or(30).max(1)),
             }),
+            teacher,
             agents: raw.agents,
             data_dir,
         })
@@ -414,6 +468,37 @@ mod tests {
         assert_eq!(github.poll, Duration::from_secs(5));
         assert!(matches!(
             parse("[github]\napp_id = 1"),
+            Err(ConfigError::Parse { .. })
+        ));
+    }
+
+    #[test]
+    fn the_teacher_is_read_and_its_timeout_stays_below_the_plugin_limit() {
+        assert_eq!(parse("").unwrap().teacher, None);
+        let c = parse("[teacher]\nmodel = \"m\"\n").unwrap();
+        assert_eq!(
+            c.teacher,
+            Some(TeacherConfig {
+                model: "m".into(),
+                protocol: Protocol::OpenAi,
+                timeout: Duration::from_secs(20),
+            })
+        );
+        let c = parse("[teacher]\nmodel = \"m\"\nprotocol = \"anthropic\"\ntimeout_seconds = 29\n")
+            .unwrap();
+        let teacher = c.teacher.unwrap();
+        assert_eq!(teacher.protocol, Protocol::Anthropic);
+        assert_eq!(teacher.timeout, Duration::from_secs(29));
+        for seconds in [0, 30, 60] {
+            assert!(matches!(
+                parse(&format!(
+                    "[teacher]\nmodel = \"m\"\ntimeout_seconds = {seconds}"
+                )),
+                Err(ConfigError::TeacherTimeout { .. })
+            ));
+        }
+        assert!(matches!(
+            parse("[teacher]\ntimeout_seconds = 5"),
             Err(ConfigError::Parse { .. })
         ));
     }

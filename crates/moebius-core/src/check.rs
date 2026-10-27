@@ -133,6 +133,8 @@ fn ask(
 /// - `tool`: the tool's name, such as `bash`.
 /// - `input`: the call's arguments as JSON text.
 /// - `tool_call_id`: the harness's id of the call.
+/// - `run_id`, `card_id`: the run being checked and its card (when it has one), as numbers in text. The teacher model's
+///   tokens are counted against them.
 /// - `worktree`: the run's worktree path, when it has one.
 /// - `card_title`, `card_body`: the card the run works on, when it has one.
 /// - `rules`: the rules that apply, as Markdown (`## <name>` and the rule's text), the server's first (see `rules`).
@@ -146,7 +148,11 @@ fn tool_call_question(
         ("tool".to_string(), request.tool.clone()),
         ("input".to_string(), request.input.to_string()),
         ("tool_call_id".to_string(), request.tool_call_id.clone()),
+        ("run_id".to_string(), grant.run_id.to_string()),
     ]);
+    if let Some(card_id) = grant.card_id {
+        context.insert("card_id".into(), card_id.to_string());
+    }
     if let Some(worktree) = app.store.run(grant.run_id).ok()?.and_then(|r| r.worktree) {
         context.insert("worktree".into(), worktree);
     }
@@ -388,11 +394,14 @@ mod tests {
                 .unwrap()
                 .starts_with("no-destructive-commands: ")
         );
-        assert_eq!(check_call(&s, "ls").await["decision"], "allow");
+        // The rule in prose needs a teacher, and none is configured.
+        let unchecked = check_call(&s, "ls").await;
+        assert_eq!(unchecked["decision"], "refuse");
+        assert!(unchecked["reason"].as_str().unwrap().contains("no teacher"));
 
         let judgements = s.app.store.judgements("tool_call").unwrap();
         assert_eq!(judgements.len(), 2);
-        assert_eq!(judgements[0].decider, "guard");
+        assert_eq!(judgements[0].decider, "guard/patterns");
         let context: BTreeMap<String, String> =
             serde_json::from_str(&s.app.store.blobs().get(&judgements[0].context[0]).unwrap())
                 .unwrap();

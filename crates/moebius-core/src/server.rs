@@ -17,7 +17,7 @@ use crate::check;
 use crate::config::Config;
 use crate::forge::GitHubForge;
 use crate::github::GitHub;
-use crate::guard::{self, Guard};
+use crate::guard::{self, Guard, Teacher};
 use crate::pibolt::PiBolt;
 use crate::poll;
 use crate::repos::Worktree;
@@ -25,7 +25,8 @@ use crate::router::{Router, Upstream};
 use crate::store::Store;
 
 /// How long a call into a plugin may take before it counts as refused.
-const PLUGIN_TIME_LIMIT: std::time::Duration = std::time::Duration::from_secs(30);
+const PLUGIN_TIME_LIMIT: std::time::Duration =
+    std::time::Duration::from_secs(crate::config::PLUGIN_TIME_LIMIT_SECONDS);
 
 /// Runs the last server left unended died with it: they are failed, so the board starts them again, and their
 /// worktrees removed.
@@ -77,8 +78,29 @@ impl Server {
         );
         let token = api::load_or_create_token(&config.token_file)
             .map_err(|e| format!("cannot read {}: {e}", config.token_file.display()))?;
+        let mut upstreams = Vec::new();
+        for upstream in &config.upstreams {
+            let api_key = match &upstream.api_key_env {
+                Some(var) => Some(
+                    std::env::var(var)
+                        .map_err(|_| format!("the environment variable {var} is not set"))?,
+                ),
+                None => None,
+            };
+            upstreams.push(Upstream {
+                protocol: upstream.protocol,
+                base_url: upstream.base_url.clone(),
+                api_key,
+            });
+        }
+        let router = Arc::new(Router::new(store.clone(), upstreams));
+
+        let teacher = config
+            .teacher
+            .as_ref()
+            .map(|teacher| Teacher::new(teacher, router.clone(), format!("http://{router_addr}")));
         let mut host = Host::new(PLUGIN_TIME_LIMIT);
-        host.add(Guard);
+        host.add(Guard::new(teacher));
         let mut app = App::new(store.clone(), Arc::new(host), &config.data_dir);
         app.decisions.route("tool_call", guard::NAME);
         let github = match &config.github {
@@ -98,23 +120,6 @@ impl Server {
         };
         let app = Arc::new(app);
         end_runs_of_a_previous_server(&app)?;
-
-        let mut upstreams = Vec::new();
-        for upstream in &config.upstreams {
-            let api_key = match &upstream.api_key_env {
-                Some(var) => Some(
-                    std::env::var(var)
-                        .map_err(|_| format!("the environment variable {var} is not set"))?,
-                ),
-                None => None,
-            };
-            upstreams.push(Upstream {
-                protocol: upstream.protocol,
-                base_url: upstream.base_url.clone(),
-                api_key,
-            });
-        }
-        let router = Arc::new(Router::new(store, upstreams));
 
         let harness = Arc::new(PiBolt::new(
             config.pi_bolt.clone(),

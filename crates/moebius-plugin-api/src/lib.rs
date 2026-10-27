@@ -83,6 +83,10 @@ pub struct DecideRequest {
 pub struct Decision {
     pub choice: String,
     pub reason: String,
+    /// Which part of the plugin decided, when it has several (such as `patterns` or `teacher` in `guard`). The core
+    /// records the decider as `<plugin>/<by>`.
+    #[serde(default)]
+    pub by: Option<String>,
 }
 
 /// Why a plugin's own code refused or failed a call.
@@ -241,6 +245,7 @@ mod tests {
                     Ok(serde_json::to_value(Decision {
                         choice: request.options[0].clone(),
                         reason: "first".into(),
+                        by: None,
                     })
                     .unwrap())
                 }

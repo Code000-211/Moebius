@@ -88,6 +88,12 @@ impl Router {
             .remove(token);
     }
 
+    /// How many tokens are valid, for tests that check a token is withdrawn.
+    #[cfg(test)]
+    pub fn token_count(&self) -> usize {
+        self.grants.read().unwrap_or_else(|p| p.into_inner()).len()
+    }
+
     pub fn routes(self: Arc<Self>) -> Routes {
         Routes::new()
             .route(

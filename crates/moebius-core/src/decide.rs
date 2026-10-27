@@ -28,7 +28,7 @@ pub struct Question {
 pub struct Decision {
     pub choice: String,
     pub reason: String,
-    /// Who decided: a plugin's name, or `person`.
+    /// Who decided: a plugin's name (`<plugin>/<part>` when the plugin says which of its parts decided), or `person`.
     pub decider: String,
     /// True when the decider failed and the fail-closed option was taken.
     pub refused: bool,
@@ -76,9 +76,14 @@ impl Decisions {
                 )
                 .map_err(|refusal| refusal.to_string()),
         };
-        let decider = decider.unwrap_or_else(|| "none".to_string());
+        let mut decider = decider.unwrap_or_else(|| "none".to_string());
         let (choice, reason, refused) = match answer {
-            Ok(d) => (d.choice, d.reason, false),
+            Ok(d) => {
+                if let Some(by) = d.by {
+                    decider = format!("{decider}/{by}");
+                }
+                (d.choice, d.reason, false)
+            }
             Err(why) => (
                 question.fail_closed.clone(),
                 format!("refused: {why}"),
