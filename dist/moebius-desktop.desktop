@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Moebius
+Comment=The desktop app of the Moebius server
+Exec=moebius-desktop
+Icon=moebius-desktop
+Terminal=false
+Categories=Development;

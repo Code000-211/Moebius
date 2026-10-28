@@ -2725,6 +2725,7 @@ dependencies = [
  "iced_runtime",
  "iced_test",
  "moebius-core",
+ "png 0.18.1",
  "reqwest",
  "serde",
  "serde_json",

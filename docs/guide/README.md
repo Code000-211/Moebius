@@ -40,6 +40,7 @@ Not built: plugins in their own process.
 
 | You want to | Page |
 |---|---|
+| Install a release, run the server as a service, reach it from another machine, upgrade and back up | [Running Moebius](running-moebius.md) |
 | Change what a column does for one repository, and try the change | [Column scripts](column-scripts.md) |
 | Know how a card moves from Backlog to Done and what a person can do on the way | [Workflows](workflows.md) |
 | Forbid something to every run, or to the runs of one repository, and see a refusal | [Rules](rules.md) |

@@ -90,6 +90,10 @@ const FILES: &[(&str, &str)] = &[
         include_str!("../../../docs/guide/plugins.md"),
     ),
     (
+        "guide/running-moebius.md",
+        include_str!("../../../docs/guide/running-moebius.md"),
+    ),
+    (
         "guide/rules.md",
         include_str!("../../../docs/guide/rules.md"),
     ),

@@ -36,3 +36,35 @@ jobs:
           path: target/snapshot-diffs
           if-no-files-found: ignore
       - run: cargo run -p moebius-plugin-api --example allow_reads
+
+  # The server and the desktop app build on macOS, and the desktop app on Windows (the server is not built for Windows).
+  platforms:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, packages: -p moebius -p moebius-desktop }
+          - { os: windows-latest, packages: -p moebius-desktop }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build ${{ matrix.packages }}
+
+  # The code builds with the Rust version that `rust-version` in Cargo.toml names, and that is the version the README
+  # tells people to install.
+  msrv:
+    runs-on: ubuntu-latest
+    env:
+      # Older compilers do not warn about the same things as the current one.
+      RUSTFLAGS: ""
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read rust-version
+        run: echo "MSRV=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml)" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.MSRV }}
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace --all-targets

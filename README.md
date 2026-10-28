@@ -28,12 +28,34 @@ agents, usage, Retro, experiments, decision model, and the setup: models and set
 
 ## Quick start
 
-You need Rust 1.88 or newer, git, and [Pi-Bolt](https://github.com/opensec-git/Pi-Bolt) installed as `pi-bolt`. You also need
-an OpenAI-compatible model server, such as a local one on `http://127.0.0.1:8080`.
+You need git, [Pi-Bolt](https://github.com/opensec-git/Pi-Bolt) installed as `pi-bolt`, and an OpenAI-compatible model
+server, such as a local one on `http://127.0.0.1:8080`.
+
+Install the server from a [release](https://github.com/Code000-211/Moebius/releases): download the archive for your
+machine (Linux x86_64 or macOS arm64) and `SHA256SUMS`, check it and unpack it. The page
+[Running Moebius](docs/guide/running-moebius.md) has the commands, and how to run the server as a service.
+
+```sh
+VERSION=0.1.0
+TARGET=x86_64-unknown-linux-gnu   # or aarch64-apple-darwin
+ARCHIVE=moebius-$VERSION-$TARGET.tar.gz
+grep " $ARCHIVE\$" SHA256SUMS | shasum -a 256 -c -
+tar -xzf "$ARCHIVE"
+mkdir -p ~/.local/bin && cp "moebius-$VERSION-$TARGET/moebius" ~/.local/bin/
+```
+
+To build from source instead, you need Rust 1.90 or newer (the `rust-version` in `Cargo.toml`, which CI checks):
 
 ```sh
 cargo build --release
-./target/release/moebius init      # writes moebius.toml, a commented file with every default
+export PATH="$PWD/target/release:$PATH"
+```
+
+Write the configuration in a directory of its own:
+
+```sh
+mkdir -p ~/.config/moebius && cd ~/.config/moebius
+moebius init      # writes moebius.toml, a commented file with every default
 ```
 
 Add an upstream, the Pi-Bolt program and the Coder agent to `moebius.toml` (see
@@ -54,37 +76,29 @@ model = "my-local-model"
 Start the server. It creates `.moebius/` next to the file, with the token the API needs in `.moebius/token`:
 
 ```sh
-./target/release/moebius serve
+moebius serve
 ```
 
-In another shell, add a repository, create an issue and read the board:
+Connect the desktop app: a [release](https://github.com/Code000-211/Moebius/releases) has `Moebius.app` for macOS, an
+executable for Windows and one for Linux; from source, `cargo run -p moebius-desktop`. Give it the server's address
+(`http://127.0.0.1:7171`) and the content of `.moebius/token`.
+
+Add a repository, create an issue and read the board, in the app or with the `moebius` commands, which run in the
+directory of `moebius.toml` and find the address and token there:
 
 ```sh
-TOKEN=$(cat .moebius/token)
-API=http://127.0.0.1:7171
-curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
-  -d '{"name": "demo", "url": "/path/to/a/git/repository"}' $API/v1/repositories
-curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
-  -d '{"title": "Add a greeting", "body": "Add hello.txt that says hello."}' $API/v1/repositories/1/issues
-curl -s -H "Authorization: Bearer $TOKEN" $API/v1/snapshot
+moebius repo add demo /path/to/a/git/repository
+moebius issue create 1 "Add a greeting" --body "Add hello.txt that says hello."
+moebius board
 ```
 
-The card moves from Backlog through Ready and In progress. When the Coder run has succeeded, the snapshot shows a change in
-`changes` and the card in `Ready to merge`. Merge it with the change's `id`:
-
-```sh
-curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
-  -d '{"reason": "looks good"}' $API/v1/changes/1/merge
-```
-
-The answer is the merge commit, and the card is in `Done`. For a repository on GitHub, see the `[github]` table and the
-`forge` field of `POST /v1/repositories`.
+The card moves from Backlog through Ready and In progress. When the Coder run has succeeded, it is in `Ready to merge`
+with a change; merge it in the app (the inbox shows it) or with `moebius inbox` and `moebius inbox act <id> merge`. The
+card is then in `Done`. For a repository on GitHub, see the `[github]` table and `--github` of `repo add`; the
+[command line](docs/guide/command-line.md) lists every command, and `moebius api` reaches any route of the
+[desktop API](docs/reference/desktop-api.md).
 
 ## The desktop app
-
-```sh
-cargo run -p moebius-desktop
-```
 
 On the first start the app asks for the server's address (`http://127.0.0.1:7171` by default) and its token (the content
 of the server's `token` file) and saves them in `<config dir>/moebius/desktop.toml` (on Linux

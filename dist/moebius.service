@@ -1,0 +1,26 @@
+# A systemd user unit that runs the Moebius server. Install it with
+#
+#   mkdir -p ~/.config/systemd/user ~/.config/moebius
+#   cp moebius.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now moebius
+#
+# It expects `moebius` in ~/.local/bin and the configuration in ~/.config/moebius/moebius.toml. The data directory is
+# `.moebius` next to that file unless `data_dir` says otherwise. To keep the server running when you are logged out, run
+# `loginctl enable-linger "$USER"` once.
+[Unit]
+Description=Moebius server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/moebius serve --config %h/.config/moebius/moebius.toml
+# Relative paths in the file are resolved against its directory, so this is only where the agents' tools start from.
+WorkingDirectory=%h/.config/moebius
+# `pi-bolt` is looked up on PATH unless `pi_bolt.program` names it; a user service does not read your shell profile.
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

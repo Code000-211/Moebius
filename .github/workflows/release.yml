@@ -1,0 +1,77 @@
+name: Release
+
+# A tag `vX.Y.Z` builds the server and the desktop app, packages them with `dist/package.sh` and publishes a GitHub
+# release with the archives and `SHA256SUMS`. Started by hand, it builds and keeps the archives as workflow artifacts and
+# publishes nothing.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ matrix.package }} ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, package: moebius, binary: moebius }
+          - { os: macos-latest, target: aarch64-apple-darwin, package: moebius, binary: moebius }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, package: moebius-desktop, binary: moebius-desktop }
+          - { os: macos-latest, target: aarch64-apple-darwin, package: moebius-desktop, binary: moebius-desktop }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, package: moebius-desktop, binary: moebius-desktop.exe }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+      - name: Work out the version
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            version=${GITHUB_REF_NAME#v}
+          else
+            version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)-dev
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }} -p ${{ matrix.package }}
+      - name: Package
+        run: dist/package.sh "target/${{ matrix.target }}/release/${{ matrix.binary }}" ${{ matrix.target }} "$VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.package }}-${{ matrix.target }}
+          path: |
+            dist/out/*
+            !dist/out/SHA256SUMS
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Write SHA256SUMS
+        working-directory: release
+        run: sha256sum *.tar.gz *.zip > SHA256SUMS
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2.2.2
+        with:
+          files: release/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
