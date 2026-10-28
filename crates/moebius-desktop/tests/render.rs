@@ -3,6 +3,7 @@
 
 use iced::{Settings, Size};
 use iced_test::Simulator;
+use moebius_desktop::agents;
 use moebius_desktop::app::{App, Message, Page};
 use moebius_desktop::chat;
 use moebius_desktop::client::{ClientError, Snapshot, TerminalEvent};
@@ -1259,4 +1260,233 @@ fn opening_the_chat_from_the_inbox_goes_to_the_chat_screen() {
     let _ = app.update(Message::OpenChat(9));
     assert_eq!(app.page(), Page::Chat);
     assert!(shows(&app, "Reading the chat…"));
+}
+
+fn agent_listing() -> Vec<moebius_desktop::client::Agent> {
+    serde_json::from_value(json!([
+        {"name": "Moebius", "model": "claude-fake", "protocol": "anthropic", "built_in": true},
+        {"name": "Coder", "model": "qwen-fake", "protocol": "openai", "built_in": false},
+        {"name": "Typo", "model": "", "protocol": "openai", "built_in": false,
+         "error": "agents/Typo.toml: unknown field `modle`"}
+    ]))
+    .unwrap()
+}
+
+fn skill_listing() -> Vec<moebius_desktop::client::Skill> {
+    serde_json::from_value(json!([
+        {"name": "moebius", "description": "Build on Moebius.", "built_in": true},
+        {"name": "radiance-kernels", "description": "How the kernels are written.", "built_in": false},
+        {"name": "house-style", "description": "Write plainly.", "built_in": false}
+    ]))
+    .unwrap()
+}
+
+fn mcp_listing() -> Vec<moebius_desktop::client::McpServer> {
+    serde_json::from_value(json!([
+        {"name": "docs-search", "kind": "remote"},
+        {"name": "profiler", "kind": "stdio"},
+        {"name": "leaky", "kind": "unknown", "error": "${OPENAI_API_KEY} is not in mcp_env"}
+    ]))
+    .unwrap()
+}
+
+fn coder() -> moebius_desktop::client::AgentDetail {
+    serde_json::from_value(json!({
+        "name": "Coder",
+        "settings": {"model": "qwen-fake", "protocol": "openai", "thinking": "high",
+                     "token_budget": 1_500_000, "skills": ["radiance-kernels"],
+                     "extensions": ["extensions/log.ts"], "mcp": ["docs-search"]},
+        "instructions": "# Coder\nYou work on one card at a time, in its own worktree.\n\n- Run the tests before you say you are done.\n"
+    }))
+    .unwrap()
+}
+
+/// The Agents page of a server with a harness repository: three agents and the Coder open in the editor.
+fn agents_app() -> App {
+    let mut app = App::with_snapshot(overview());
+    let _ = app.update(Message::Select(Page::Agents));
+    let agents = |message| Message::Agents(message);
+    let _ = app.update(agents(agents::Message::Listed(Ok(agent_listing()))));
+    let _ = app.update(agents(agents::Message::SkillsListed(Ok(skill_listing()))));
+    let _ = app.update(agents(agents::Message::McpListed(Ok(mcp_listing()))));
+    let _ = app.update(agents(agents::Message::Select("Coder".into())));
+    let _ = app.update(agents(agents::Message::Opened("Coder".into(), Ok(coder()))));
+    app
+}
+
+/// The agents screen drawn: compare `tests/snapshots/agents-tiny-skia.png` with `docs/design/agents.png`.
+#[test]
+fn the_agents_screen_lists_the_agents_and_edits_one_like_the_mockup() {
+    draw_sized(
+        &agents_app(),
+        "agents",
+        &[
+            "Agents",
+            "New agent",
+            "Moebius",
+            "Built in",
+            "claude-fake · anthropic",
+            "Coder",
+            "qwen-fake · openai",
+            "Typo",
+            "Broken",
+            "agents/Typo.toml: unknown field `modle`",
+            "Save",
+            "Delete",
+            "Model",
+            "Protocol",
+            "Thinking",
+            "Token budget per card",
+            "Instructions",
+            "Skills",
+            "1 of 2",
+            "radiance-kernels",
+            "How the kernels are written.",
+            "house-style",
+            "MCP servers",
+            "docs-search",
+            "remote",
+            "leaky",
+            "${OPENAI_API_KEY} is not in mcp_env",
+            "Extensions",
+            "extensions/log.ts",
+            "Add extension",
+            "From the Retro",
+            "No proposals yet — the Retro proposes changes from M8 on.",
+        ],
+        Size::new(1440.0, 1300.0),
+    );
+}
+
+#[test]
+fn a_server_without_a_harness_repository_lists_its_agents_read_only() {
+    let mut app = App::with_snapshot(overview());
+    let _ = app.update(Message::Select(Page::Agents));
+    let _ = app.update(Message::Agents(agents::Message::Listed(
+        Ok(agent_listing()),
+    )));
+    let _ = app.update(Message::Agents(agents::Message::SkillsListed(Ok(vec![]))));
+    assert!(shows(&app, "Agents are set in moebius.toml"));
+    assert!(shows(
+        &app,
+        "To edit them in this app, move them into a harness configuration repository (the [harness] table). The guide page \"Set up agents\" (docs/guide/agents.md) says how."
+    ));
+    assert!(shows(&app, "Coder"));
+    assert!(clicked(&app, "Coder").is_empty());
+    assert!(clicked(&app, "New agent").is_empty());
+}
+
+#[test]
+fn skills_and_mcp_servers_have_pages_of_their_own() {
+    let mut app = agents_app();
+    let _ = app.update(Message::Select(Page::Skills));
+    assert!(shows(&app, "Write plainly."));
+    assert!(shows(&app, "Build on Moebius."));
+    let _ = app.update(Message::Select(Page::McpServers));
+    assert!(shows(&app, "profiler"));
+    assert!(shows(&app, "stdio"));
+}
+
+fn settings() -> moebius_desktop::settings::Settings {
+    moebius_desktop::settings::Settings {
+        address: "http://127.0.0.1:1".into(),
+        token: "not-a-real-token".into(),
+    }
+}
+
+#[test]
+fn saving_sends_the_edited_settings_and_a_wrong_field_is_said_instead() {
+    let settings = settings();
+    let mut agents = agents::Agents::default();
+    let mut update = |message| agents.update(message, Some(&settings)).units();
+    update(agents::Message::Opened("Coder".into(), Ok(coder())));
+    // Nothing is open before an agent is chosen.
+    assert_eq!(update(agents::Message::Select("Coder".into())), 1);
+    update(agents::Message::Opened("Coder".into(), Ok(coder())));
+    update(agents::Message::ModelEdited("better-model".into()));
+    update(agents::Message::ProtocolChosen("anthropic".into()));
+    update(agents::Message::ThinkingChosen("Not set".into()));
+    update(agents::Message::BudgetEdited("2000".into()));
+    update(agents::Message::ToggleSkill("house-style".into()));
+    update(agents::Message::ToggleSkill("radiance-kernels".into()));
+    update(agents::Message::ToggleMcp("docs-search".into()));
+    update(agents::Message::ToggleMcp("profiler".into()));
+    update(agents::Message::ExtensionEdited(
+        " extensions/two.ts ".into(),
+    ));
+    update(agents::Message::AddExtension);
+    update(agents::Message::RemoveExtension("extensions/log.ts".into()));
+    assert_eq!(update(agents::Message::Save), 1);
+    let (name, sent, instructions) = agents.save_request().unwrap();
+    assert_eq!(name, "Coder");
+    assert_eq!(
+        serde_json::to_value(&sent).unwrap(),
+        json!({"model": "better-model", "protocol": "anthropic", "token_budget": 2000,
+               "skills": ["house-style"], "extensions": ["extensions/two.ts"], "mcp": ["profiler"]})
+    );
+    assert_eq!(
+        instructions,
+        "# Coder\nYou work on one card at a time, in its own worktree.\n\n- Run the tests before you say you are done."
+    );
+
+    let mut update = |message| agents.update(message, Some(&settings)).units();
+    update(agents::Message::BudgetEdited("lots".into()));
+    assert_eq!(update(agents::Message::Save), 0);
+    assert!(agents.save_request().is_err());
+}
+
+#[test]
+fn the_save_button_sends_the_save_message_and_the_answer_is_shown() {
+    let mut app = agents_app();
+    assert!(matches!(
+        &clicked(&app, "Save")[..],
+        [Message::Agents(agents::Message::Save)]
+    ));
+    let mut saved = coder();
+    saved.commit = Some("a1b2c3d".into());
+    let _ = app.update(Message::Agents(agents::Message::Saved(Ok(saved))));
+    assert!(shows(&app, "Saved as a commit: a1b2c3d"));
+    let invalid = ClientError::Server {
+        status: 422,
+        message: "the skill \"nope\" is not in skills/".into(),
+    };
+    let _ = app.update(Message::Agents(agents::Message::Saved(Err(invalid))));
+    assert!(shows(&app, "the skill \"nope\" is not in skills/"));
+    assert!(!shows(&app, "Saved as a commit: a1b2c3d"));
+}
+
+#[test]
+fn a_new_agent_asks_for_a_name_and_deleting_asks_first() {
+    let mut app = agents_app();
+    for message in clicked(&app, "New agent") {
+        assert!(matches!(
+            message,
+            Message::Agents(agents::Message::NewAgent)
+        ));
+        let _ = app.update(message);
+    }
+    assert!(shows(&app, "Name of the new agent"));
+    assert!(!shows(&app, "Delete"));
+    let _ = app.update(Message::Agents(agents::Message::NameEdited(
+        "Strong".into(),
+    )));
+    let _ = app.update(Message::Agents(agents::Message::ModelEdited("big".into())));
+    assert!(matches!(
+        &clicked(&app, "Save")[..],
+        [Message::Agents(agents::Message::Save)]
+    ));
+
+    let mut app = agents_app();
+    assert!(matches!(
+        &clicked(&app, "Delete")[..],
+        [Message::Agents(agents::Message::AskDelete)]
+    ));
+    let _ = app.update(Message::Agents(agents::Message::AskDelete));
+    assert!(shows(&app, "Delete Coder?"));
+    assert!(matches!(
+        &clicked(&app, "Delete agent")[..],
+        [Message::Agents(agents::Message::Delete)]
+    ));
+    let _ = app.update(Message::Agents(agents::Message::KeepAgent));
+    assert!(!shows(&app, "Delete Coder?"));
 }

@@ -46,7 +46,11 @@ fn harness_origin(dir: &Path) -> PathBuf {
         "agents/NoSkill.toml",
         "model = \"x\"\nskills = [\"missing\"]\n",
     );
-    write(&work, "skills/house-style/SKILL.md", "Write plainly.\n");
+    write(
+        &work,
+        "skills/house-style/SKILL.md",
+        "---\nname: house-style\ndescription: \"Write plainly.\"\n---\nBody.\n",
+    );
     write(&work, "extensions/log.ts", "export default () => {};\n");
     write(
         &work,
@@ -257,6 +261,54 @@ fn head(dir: &Path) -> String {
 }
 
 #[tokio::test]
+async fn the_skills_and_mcp_servers_an_agent_can_name_are_listed_without_secrets() {
+    let dir = tempfile::tempdir().unwrap();
+    let server = server(dir.path(), &harness_origin(dir.path()));
+    let api = Api::start(&server).await;
+
+    let (status, skills) = api.call(reqwest::Method::GET, "/v1/skills", None).await;
+    assert_eq!(status, 200);
+    let skills: Value = serde_json::from_str(&skills).unwrap();
+    assert_eq!(skills[0]["name"], "moebius");
+    assert_eq!(skills[0]["built_in"], true);
+    assert!(
+        skills[0]["description"]
+            .as_str()
+            .unwrap()
+            .contains("Moebius")
+    );
+    assert_eq!(
+        skills[1],
+        json!({"name": "house-style", "description": "Write plainly.", "built_in": false})
+    );
+    assert_eq!(skills.as_array().unwrap().len(), 2);
+
+    let (status, servers) = api
+        .call(reqwest::Method::GET, "/v1/mcp-servers", None)
+        .await;
+    assert_eq!(status, 200);
+    assert!(!servers.contains("DOCS_TOKEN") && !servers.contains("docs-server"));
+    let servers: Value = serde_json::from_str(&servers).unwrap();
+    let by_name = |name: &str| {
+        servers
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|server| server["name"] == name)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(by_name("docs"), json!({"name": "docs", "kind": "stdio"}));
+    assert_eq!(by_name("token")["kind"], "stdio");
+    assert!(
+        by_name("leak")["error"]
+            .as_str()
+            .unwrap()
+            .contains("OPENAI_API_KEY")
+    );
+}
+
+#[tokio::test]
 async fn an_edit_through_the_api_is_a_commit_that_is_pushed_and_a_failed_push_undoes_it() {
     let dir = tempfile::tempdir().unwrap();
     let origin = harness_origin(dir.path());
@@ -297,6 +349,9 @@ async fn an_edit_through_the_api_is_a_commit_that_is_pushed_and_a_failed_push_un
         .call(reqwest::Method::PUT, "/v1/agents/Coder", Some(edit))
         .await;
     assert_eq!(status, 200, "{body}");
+    let saved: Value = serde_json::from_str(&body).unwrap();
+    let short = git(&clone, &["rev-parse", "--short", "HEAD"]).unwrap();
+    assert_eq!(saved["commit"], short.as_str());
     for repository in [&clone, &origin] {
         assert_eq!(
             git(repository, &["log", "-1", "--format=%s", "main"]).unwrap(),

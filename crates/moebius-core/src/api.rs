@@ -17,7 +17,8 @@
 //! - `POST /v1/runs/{id}/stop` `{reason}`: a person stops a running run; a chat ends as stopped.
 //! - `GET /v1/runs/{id}/terminal`: a WebSocket on a shell in the run's worktree (see [`crate::terminal`]).
 //! - `GET /v1/agents`: the agents the server can run. `GET`, `PUT` and `DELETE /v1/agents/{name}`: read, write and delete
-//!   an agent of the harness configuration repository (see [`crate::harness_repo`]).
+//!   an agent of the harness configuration repository (see [`crate::harness_repo`]). `GET /v1/skills` and
+//!   `GET /v1/mcp-servers`: the skills and MCP servers an agent can name.
 //! - `POST /v1/chats` `{agent?, message, repository?}`: starts a chat, with the Moebius agent unless `agent` names
 //!   another. `GET /v1/chats`: the chats, newest first.
 //!   `POST /v1/chats/{id}/messages` `{message}`: writes to a chat. `POST /v1/chats/{id}/end`: ends a chat.
@@ -42,7 +43,7 @@ use crate::app::{App, AppError, Chat, HistoryEntry, PERSON, columns, runs_since_
 use crate::board::{AgentInfo, Runs, latest_review};
 use crate::bus::AppEvent;
 use crate::forge::ForgeError;
-use crate::harness_repo::{AgentDefinition, AgentView, HarnessRepo};
+use crate::harness_repo::{AgentDefinition, AgentView, HarnessRepo, McpServerInfo, SkillInfo};
 use crate::pibolt::MOEBIUS_AGENT;
 use crate::repos::GitError;
 use crate::store::{Card, Change, Event, InboxItem, Repository, Run};
@@ -295,6 +296,8 @@ pub fn router(state: ApiState) -> Router {
             "/v1/agents/{name}",
             get(get_agent).put(put_agent).delete(delete_agent),
         )
+        .route("/v1/skills", get(skills))
+        .route("/v1/mcp-servers", get(mcp_servers))
         .route("/v1/chats", get(chats).post(start_chat))
         .route("/v1/chats/{id}/messages", post(say_in_chat))
         .route("/v1/chats/{id}/end", post(end_chat))
@@ -517,6 +520,22 @@ fn harness_repo(state: &ApiState) -> Result<Arc<HarnessRepo>, AppError> {
             "agents are configured in moebius.toml, not in a harness repository".into(),
         )
     })
+}
+
+async fn skills(State(state): State<ApiState>) -> Result<axum::Json<Vec<SkillInfo>>, ApiError> {
+    let Some(repo) = state.harness_repo.clone() else {
+        return Ok(axum::Json(vec![]));
+    };
+    blocking(&state.app, move |_| Ok(repo.skills())).await
+}
+
+async fn mcp_servers(
+    State(state): State<ApiState>,
+) -> Result<axum::Json<Vec<McpServerInfo>>, ApiError> {
+    let Some(repo) = state.harness_repo.clone() else {
+        return Ok(axum::Json(vec![]));
+    };
+    blocking(&state.app, move |_| Ok(repo.mcp_servers())).await
 }
 
 async fn get_agent(
@@ -1972,6 +1991,16 @@ mod tests {
             let response = request.bearer_auth(&*state.token).send().await.unwrap();
             assert_eq!(response.status(), 422);
             assert!(response.text().await.unwrap().contains("moebius.toml"));
+        }
+        for route in ["skills", "mcp-servers"] {
+            let response = client
+                .get(format!("http://{addr}/v1/{route}"))
+                .bearer_auth(&*state.token)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), 200);
+            assert_eq!(response.text().await.unwrap(), "[]");
         }
     }
 

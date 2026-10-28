@@ -26,8 +26,13 @@ use serde_json::json;
 
 /// A server with no agents on a free port; returns the settings that connect to it and the server.
 async fn start(dir: &Path) -> (Settings, Arc<Server>) {
+    start_with(dir, "").await
+}
+
+/// Like `start`, with `more` added to `moebius.toml`.
+async fn start_with(dir: &Path, more: &str) -> (Settings, Arc<Server>) {
     let config = Config::parse(
-        "[router]\nlisten = \"127.0.0.1:0\"\n",
+        &format!("[router]\nlisten = \"127.0.0.1:0\"\n{more}"),
         dir,
         &dir.join("moebius.toml"),
     )
@@ -552,4 +557,116 @@ async fn a_chat_is_started_written_to_and_followed_through_the_stream() {
         app.view(),
     );
     assert!(ui.find("second question").is_ok());
+}
+
+/// A bare harness configuration repository with the agent Coder, a skill and an MCP server.
+fn harness_origin(dir: &Path) -> std::path::PathBuf {
+    let work = dir.join("harness-work");
+    std::fs::create_dir_all(work.join("agents")).unwrap();
+    std::fs::create_dir_all(work.join("skills/house-style")).unwrap();
+    git(&work, &["init", "--quiet", "-b", "main"]).unwrap();
+    std::fs::write(
+        work.join("agents/Coder.toml"),
+        "model = \"coder-model\"\nskills = [\"house-style\"]\n",
+    )
+    .unwrap();
+    std::fs::write(work.join("agents/Coder.md"), "Keep changes small.\n").unwrap();
+    std::fs::write(
+        work.join("skills/house-style/SKILL.md"),
+        "---\nname: house-style\ndescription: Write plainly.\n---\n",
+    )
+    .unwrap();
+    std::fs::write(work.join("mcp.toml"), "[docs]\ncommand = \"docs-server\"\n").unwrap();
+    git(&work, &["add", "."]).unwrap();
+    git(&work, &["commit", "--quiet", "-m", "Start"]).unwrap();
+    let bare = dir.join("harness.git");
+    git(
+        dir,
+        &["init", "--quiet", "--bare", "-b", "main", "harness.git"],
+    )
+    .unwrap();
+    git(&work, &["push", "--quiet", bare.to_str().unwrap(), "main"]).unwrap();
+    bare
+}
+
+/// Editing an agent in the app is a commit in the harness configuration repository, and an invalid edit is refused with
+/// the server's message.
+#[tokio::test(flavor = "multi_thread")]
+async fn editing_an_agent_is_a_commit_on_the_harness_repository_and_a_bad_edit_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let origin = harness_origin(dir.path());
+    let more = format!("[harness]\nurl = {:?}\n", origin.display().to_string());
+    let (settings, _server) = start_with(dir.path(), &more).await;
+    let client = Client::new(settings);
+
+    let agents = client.agents().await.unwrap();
+    assert!(
+        agents
+            .iter()
+            .any(|agent| agent.name == "Coder" && agent.model == "coder-model")
+    );
+    let skills = client.skills().await.unwrap();
+    assert_eq!(skills[0].name, "moebius");
+    assert!(skills[0].built_in);
+    assert_eq!(skills[1].name, "house-style");
+    assert_eq!(skills[1].description, "Write plainly.");
+    let servers = client.mcp_servers().await.unwrap();
+    assert_eq!(
+        (servers[0].name.as_str(), servers[0].kind.as_str()),
+        ("docs", "stdio")
+    );
+
+    let mut coder = client.agent("Coder").await.unwrap();
+    assert_eq!(coder.instructions, "Keep changes small.\n");
+    coder.settings.model = "better-model".into();
+    coder.settings.thinking = Some("high".into());
+    coder.settings.mcp = vec!["docs".into()];
+    let saved = client
+        .save_agent("Coder", &coder.settings, "Be careful.")
+        .await
+        .unwrap();
+    let commit = saved.commit.expect("the edit is a commit");
+    assert_eq!(
+        git(&origin, &["log", "-1", "--format=%s", "main"]).unwrap(),
+        "Update the agent Coder"
+    );
+    assert!(
+        git(&origin, &["rev-parse", "main"])
+            .unwrap()
+            .starts_with(&commit)
+    );
+    let file = git(&origin, &["show", "main:agents/Coder.toml"]).unwrap();
+    assert!(file.contains("better-model") && file.contains("thinking = \"high\""));
+    assert_eq!(
+        client.agent("Coder").await.unwrap().instructions,
+        "Be careful."
+    );
+
+    // A new agent is a commit too, and an agent that names what is not there is refused with the reason.
+    let mut strong = coder.settings.clone();
+    strong.model = "big".into();
+    client.save_agent("Strong", &strong, "").await.unwrap();
+    assert_eq!(
+        git(&origin, &["log", "-1", "--format=%s", "main"]).unwrap(),
+        "Add the agent Strong"
+    );
+    let head = git(&origin, &["rev-parse", "main"]).unwrap();
+    strong.skills = vec!["missing".into()];
+    let Err(ClientError::Server { status, message }) =
+        client.save_agent("Strong", &strong, "").await
+    else {
+        panic!("the edit was accepted");
+    };
+    assert_eq!(status, 422);
+    assert!(
+        message.contains("\"missing\" is not in skills/"),
+        "{message}"
+    );
+    assert_eq!(git(&origin, &["rev-parse", "main"]).unwrap(), head);
+
+    client.delete_agent("Strong").await.unwrap();
+    assert_eq!(
+        git(&origin, &["log", "-1", "--format=%s", "main"]).unwrap(),
+        "Delete the agent Strong"
+    );
 }

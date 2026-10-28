@@ -4,10 +4,30 @@
 
 use std::path::{Path, PathBuf};
 
+/// The name of the skill.
+pub const NAME: &str = "moebius";
+
+/// The skill's own page, whose frontmatter describes it.
+pub const PAGE: &str = include_str!("../skill/SKILL.md");
+
+/// The `description` in the frontmatter of a `SKILL.md`, if it has one.
+pub fn description(page: &str) -> Option<String> {
+    let frontmatter = page.strip_prefix("---\n")?.split("\n---").next()?;
+    let value = frontmatter
+        .lines()
+        .find_map(|line| line.strip_prefix("description:"))?;
+    let value = value.trim();
+    let unquoted = [('"', '"'), ('\'', '\'')]
+        .iter()
+        .find_map(|(open, close)| value.strip_prefix(*open)?.strip_suffix(*close))
+        .unwrap_or(value);
+    Some(unquoted.to_string())
+}
+
 /// The files of the skill: where each is written under the skill's directory, and what it holds. A page added to
 /// `docs/guide/` or `docs/reference/` must be added here (a test checks it).
 const FILES: &[(&str, &str)] = &[
-    ("SKILL.md", include_str!("../skill/SKILL.md")),
+    ("SKILL.md", PAGE),
     (
         "guide/README.md",
         include_str!("../../../docs/guide/README.md"),
@@ -118,6 +138,21 @@ mod tests {
         let mut included: Vec<&str> = FILES.iter().map(|(path, _)| *path).collect();
         included.sort();
         assert_eq!(included, expected);
+    }
+
+    #[test]
+    fn the_description_is_read_from_the_frontmatter() {
+        assert_eq!(
+            description("---\nname: x\ndescription: Does it.\n---\nBody\n").as_deref(),
+            Some("Does it.")
+        );
+        assert_eq!(
+            description("---\ndescription: 'Quoted: yes'\n---\n").as_deref(),
+            Some("Quoted: yes")
+        );
+        assert_eq!(description("---\nname: x\n---\ndescription: no\n"), None);
+        assert_eq!(description("No frontmatter\n"), None);
+        assert!(description(PAGE).unwrap().starts_with("Build on Moebius"));
     }
 
     #[test]

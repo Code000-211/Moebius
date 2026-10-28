@@ -21,6 +21,7 @@ use crate::decide::Question;
 use crate::mcp::{McpServer, parse_file};
 use crate::repos::{Repos, git};
 use crate::router::Protocol;
+use crate::skill;
 
 /// The settings of an agent: the keys of `agents/<name>.toml`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,12 +54,36 @@ pub struct AgentDefinition {
     pub instructions: String,
 }
 
-/// What `GET /v1/agents/{name}` answers.
+/// What `GET /v1/agents/{name}` answers, and `PUT` after it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentView {
     pub name: String,
     #[serde(flatten)]
     pub definition: AgentDefinition,
+    /// The short id of the commit a `PUT` made; left out by `GET` and by a `PUT` that changed nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
+}
+
+/// A skill an agent can name, as `GET /v1/skills` lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillInfo {
+    pub name: String,
+    /// The `description` of the skill's frontmatter; empty when it has none.
+    pub description: String,
+    /// Whether Moebius brings the skill itself, as it does `moebius`.
+    pub built_in: bool,
+}
+
+/// An MCP server an agent can name, as `GET /v1/mcp-servers` lists it: never its environment or headers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpServerInfo {
+    pub name: String,
+    /// `stdio` or `remote`; `unknown` for a server too broken to say.
+    pub kind: String,
+    /// Why the server cannot be used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 /// What an agent's settings may name, as the repository has it.
@@ -311,7 +336,62 @@ impl HarnessRepo {
         Ok(AgentView {
             name: name.into(),
             definition,
+            commit: None,
         })
+    }
+
+    /// The skills of `skills/`, by name.
+    pub fn skills(&self) -> Vec<SkillInfo> {
+        let _read_at = self.lock();
+        let mut skills: Vec<SkillInfo> = self
+            .layout()
+            .skills
+            .into_iter()
+            .map(|name| {
+                let text =
+                    std::fs::read_to_string(self.path.join("skills").join(&name).join("SKILL.md"));
+                SkillInfo {
+                    name,
+                    description: text
+                        .ok()
+                        .and_then(|text| skill::description(&text))
+                        .unwrap_or_default(),
+                    built_in: false,
+                }
+            })
+            .collect();
+        skills.insert(
+            0,
+            SkillInfo {
+                name: skill::NAME.into(),
+                description: skill::description(skill::PAGE).unwrap_or_default(),
+                built_in: true,
+            },
+        );
+        skills
+    }
+
+    /// The servers of `mcp.toml`, by name. A file that cannot be read is no servers.
+    pub fn mcp_servers(&self) -> Vec<McpServerInfo> {
+        let _read_at = self.lock();
+        let Ok(servers) = self.layout().mcp else {
+            return vec![];
+        };
+        servers
+            .into_iter()
+            .map(|(name, server)| match server {
+                Ok(server) => McpServerInfo {
+                    name,
+                    kind: server.kind().into(),
+                    error: None,
+                },
+                Err(error) => McpServerInfo {
+                    name,
+                    kind: "unknown".into(),
+                    error: Some(error),
+                },
+            })
+            .collect()
     }
 
     /// A person adds or changes the agent `name`: the definition is validated as a file read is, committed on the
@@ -353,10 +433,11 @@ impl HarnessRepo {
             }
         };
         let message = format!("{verb} the agent {name}");
-        self.commit(app, &mut read_at, name, &message, context, write)?;
+        let commit = self.commit(app, &mut read_at, name, &message, context, write)?;
         Ok(AgentView {
             name: name.into(),
             definition: definition.clone(),
+            commit,
         })
     }
 
@@ -373,11 +454,12 @@ impl HarnessRepo {
         };
         let message = format!("Delete the agent {name}");
         self.commit(app, &mut read_at, name, &message, BTreeMap::new(), write)
+            .map(drop)
     }
 
     /// Makes the change `write` does to the agent's files a commit on the default branch, records the person's decision
     /// and pushes. Whatever fails, the working tree and the default branch are as they were. On success the agents are
-    /// read again.
+    /// read again, and the short id of the commit is given; a change that changed nothing makes no commit.
     fn commit(
         &self,
         app: &App,
@@ -386,7 +468,7 @@ impl HarnessRepo {
         message: &str,
         mut context: BTreeMap<String, String>,
         write: impl FnOnce() -> Result<()>,
-    ) -> Result<()> {
+    ) -> Result<Option<String>> {
         let before = git(&self.path, &["rev-parse", "HEAD"]).map_err(|_| {
             AppError::Invalid("the harness configuration repository has no commits".into())
         })?;
@@ -399,7 +481,7 @@ impl HarnessRepo {
         let files = format!("agents/{name}.*");
         git(&self.path, &["add", "-A", "--", &files]).map_err(|e| undo(e.into()))?;
         if git(&self.path, &["diff", "--cached", "--quiet"]).is_ok() {
-            return Ok(());
+            return Ok(None);
         }
         let branch = self
             .repos
@@ -427,8 +509,9 @@ impl HarnessRepo {
             .push(&self.path, &branch, header.as_deref())
             .map_err(|e| undo(e.into()))?;
         let head = git(&self.path, &["rev-parse", "HEAD"])?;
+        let short = git(&self.path, &["rev-parse", "--short", "HEAD"])?;
         self.read(app, read_at, head);
-        Ok(())
+        Ok(Some(short))
     }
 }
 

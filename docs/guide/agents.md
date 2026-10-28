@@ -139,12 +139,18 @@ curl -s -H "Authorization: Bearer $TOKEN" $API/v1/agents/Coder
 curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
   -d '{"settings": {"model": "my-local-model", "thinking": "high"}, "instructions": "Keep changes small."}' $API/v1/agents/Coder
 curl -s -X DELETE -H "Authorization: Bearer $TOKEN" $API/v1/agents/Strong
+curl -s -H "Authorization: Bearer $TOKEN" $API/v1/skills
+curl -s -H "Authorization: Bearer $TOKEN" $API/v1/mcp-servers
 ```
+
+The answer of `PUT` carries `commit`, the short id of the commit. `GET /v1/skills` and `GET /v1/mcp-servers` list what an
+agent can name, for an editor (the desktop app's Agents screen uses them); they show no secret and are empty without
+`[harness]`. The desktop app edits agents this way.
 
 The agent is used from the next run on. The exact files, keys and errors are in the
 [reference](../reference/harness-configuration.md).
 
-Without `[harness]` these three routes answer 422: the agents are in `moebius.toml`.
+Without `[harness]` the three routes of an agent answer 422: the agents are in `moebius.toml`.
 
 ## Examples
 

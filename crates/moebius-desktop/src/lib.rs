@@ -1,6 +1,7 @@
 //! The Moebius desktop app, built to `docs/design.md`. It talks to the server only through the desktop API
 //! (`docs/reference/desktop-api.md`) and does not depend on `moebius-core`.
 
+pub mod agents;
 pub mod app;
 pub mod board;
 pub mod chat;

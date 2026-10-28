@@ -9,8 +9,8 @@ use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use iced::futures::channel::mpsc;
-use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::{self, Message};
 
@@ -156,6 +156,63 @@ pub struct RunEvent {
 pub struct Agent {
     pub name: String,
     pub model: String,
+    #[serde(default)]
+    pub protocol: String,
+    /// Whether Moebius brings the agent itself.
+    #[serde(default)]
+    pub built_in: bool,
+    /// Why the agent's files cannot be used; such an agent cannot run.
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+/// The settings of an agent of the harness configuration repository, as `GET` and `PUT /v1/agents/{name}` have them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentSettings {
+    pub model: String,
+    pub protocol: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_budget: Option<i64>,
+    #[serde(default)]
+    pub skills: Vec<String>,
+    #[serde(default)]
+    pub extensions: Vec<String>,
+    #[serde(default)]
+    pub mcp: Vec<String>,
+}
+
+/// An agent of the harness configuration repository: what `GET /v1/agents/{name}` answers, and `PUT` after it.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct AgentDetail {
+    pub name: String,
+    pub settings: AgentSettings,
+    #[serde(default)]
+    pub instructions: String,
+    /// The short id of the commit a `PUT` made; none when the edit changed nothing.
+    #[serde(default)]
+    pub commit: Option<String>,
+}
+
+/// A skill an agent can name, as `GET /v1/skills` lists it.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Skill {
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub built_in: bool,
+}
+
+/// An MCP server an agent can name, as `GET /v1/mcp-servers` lists it.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct McpServer {
+    pub name: String,
+    /// `stdio` or `remote`.
+    pub kind: String,
+    #[serde(default)]
+    pub error: Option<String>,
 }
 
 /// A recorded decision, as far as the live view matches it to a tool call.
@@ -317,6 +374,18 @@ impl Client {
         self.send(request).await
     }
 
+    async fn put<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: serde_json::Value,
+    ) -> Result<T, ClientError> {
+        let request = self
+            .http
+            .put(format!("{}{path}", self.settings.address))
+            .json(&body);
+        self.send(request).await
+    }
+
     async fn send<T: DeserializeOwned>(
         &self,
         request: reqwest::RequestBuilder,
@@ -395,6 +464,40 @@ impl Client {
     /// The agents a chat can be with, the Moebius agent first.
     pub async fn agents(&self) -> Result<Vec<Agent>, ClientError> {
         self.get("/v1/agents").await
+    }
+
+    /// An agent of the harness configuration repository, with its instructions.
+    pub async fn agent(&self, name: &str) -> Result<AgentDetail, ClientError> {
+        self.get(&format!("/v1/agents/{name}")).await
+    }
+
+    /// Adds or changes an agent; the server commits it to the harness configuration repository.
+    pub async fn save_agent(
+        &self,
+        name: &str,
+        settings: &AgentSettings,
+        instructions: &str,
+    ) -> Result<AgentDetail, ClientError> {
+        let body = serde_json::json!({ "settings": settings, "instructions": instructions });
+        self.put(&format!("/v1/agents/{name}"), body).await
+    }
+
+    /// Deletes an agent of the harness configuration repository.
+    pub async fn delete_agent(&self, name: &str) -> Result<(), ClientError> {
+        let request = self
+            .http
+            .delete(format!("{}/v1/agents/{name}", self.settings.address));
+        self.send::<()>(request).await
+    }
+
+    /// The skills an agent can name; none without a harness configuration repository.
+    pub async fn skills(&self) -> Result<Vec<Skill>, ClientError> {
+        self.get("/v1/skills").await
+    }
+
+    /// The MCP servers an agent can name.
+    pub async fn mcp_servers(&self) -> Result<Vec<McpServer>, ClientError> {
+        self.get("/v1/mcp-servers").await
     }
 
     pub async fn history(&self, card: i64) -> Result<Vec<HistoryEntry>, ClientError> {

@@ -7,6 +7,7 @@ use std::time::Duration;
 use iced::widget::{container, row};
 use iced::{Element, Length, Subscription, Task};
 
+use crate::agents::{self, Agents};
 use crate::chat::Chats;
 use crate::client::{self, Client, ClientError, HistoryEntry, RunEvent, Snapshot, StreamEvent};
 use crate::inbox::{self, Inbox};
@@ -77,10 +78,16 @@ impl Page {
     pub fn milestone(self) -> Option<&'static str> {
         match self {
             Page::Inbox | Page::Chat | Page::Board(_) => Some("M6"),
-            Page::Agents | Page::Skills | Page::McpServers | Page::Usage => Some("M7"),
+            Page::Usage => Some("M7"),
             Page::Retro | Page::Experiments => Some("M8"),
             Page::DecisionModel => Some("M9"),
-            Page::Rules | Page::Models | Page::Plugins | Page::Settings => None,
+            Page::Agents
+            | Page::Skills
+            | Page::McpServers
+            | Page::Rules
+            | Page::Models
+            | Page::Plugins
+            | Page::Settings => None,
         }
     }
 }
@@ -118,6 +125,7 @@ pub enum Message {
     Live(live::Message),
     Inbox(inbox::Message),
     Chat(chat::Message),
+    Agents(agents::Message),
     /// A chat was asked for, as from the inbox: its screen opens on it.
     OpenChat(i64),
     /// The history of the card was read.
@@ -151,6 +159,7 @@ pub struct App {
     opened: Option<Opened>,
     inbox: Inbox,
     chats: Chats,
+    agents: Agents,
     collapsed: bool,
     /// Counts the reads of the snapshot, so that an older answer never replaces a newer one.
     requested: u64,
@@ -181,6 +190,7 @@ impl App {
             opened: None,
             inbox: Inbox::new(live::now()),
             chats: Chats::new(live::now()),
+            agents: Agents::default(),
             collapsed: false,
             requested: 0,
             shown: 0,
@@ -238,8 +248,12 @@ impl App {
             Message::Select(page) => {
                 self.page = Some(page);
                 self.opened = None;
-                if let (Page::Chat, Some(settings)) = (page, &self.settings) {
-                    return self.chats.reload(settings);
+                match (page, &self.settings) {
+                    (Page::Chat, Some(settings)) => return self.chats.reload(settings),
+                    (Page::Agents | Page::Skills | Page::McpServers, Some(settings)) => {
+                        return self.agents.reload(settings);
+                    }
+                    _ => {}
                 }
             }
             Message::OpenCard(id) => return self.open(id),
@@ -253,6 +267,10 @@ impl App {
             Message::Chat(chat::Message::Listed(Err(ClientError::Unauthorized))) => {
                 self.show_connect_error(&ClientError::Unauthorized);
             }
+            Message::Agents(message) if Agents::refused(&message) => {
+                self.show_connect_error(&ClientError::Unauthorized);
+            }
+            Message::Agents(message) => return self.agents.update(message, self.settings.as_ref()),
             Message::Chat(message) => return self.chats.update(message, self.settings.as_ref()),
             Message::OpenChat(id) => {
                 self.page = Some(Page::Chat);
@@ -577,6 +595,9 @@ impl App {
             }
             Page::Inbox => self.inbox.view(&self.snapshot),
             Page::Chat => self.chats.view(&self.snapshot, &self.inbox),
+            Page::Agents => self.agents.view(),
+            Page::Skills => self.agents.skills_page(),
+            Page::McpServers => self.agents.mcp_page(),
             Page::Settings => connect::settings_page(self.settings.as_ref()),
             page => soon::view(page),
         }

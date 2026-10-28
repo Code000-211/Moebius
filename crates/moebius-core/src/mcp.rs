@@ -76,6 +76,15 @@ fn parse(name: &str, value: toml::Value, allowed_env: &[String]) -> Result<McpSe
 }
 
 impl McpServer {
+    /// `stdio` for a server with a command, `remote` for one with a url.
+    pub fn kind(&self) -> &'static str {
+        if self.command.is_some() {
+            "stdio"
+        } else {
+            "remote"
+        }
+    }
+
     fn values(&self) -> impl Iterator<Item = &String> {
         self.command
             .iter()

@@ -311,7 +311,8 @@ A person adds or changes an agent of the harness configuration repository. Reque
 string}`, the shape `GET` answers without `name`; `settings.model` is required and unknown keys are refused;
 `instructions` may be left out. The edit is validated as a file read is and, when valid, written, committed on the
 default branch and pushed to `origin`; the decision is recorded (kind `edit_agent`, decider `person`), and the agent is
-used from then on. Response: the agent as `GET` answers it. Errors: `422` an invalid name or settings (the message says
+used from then on. Response: the agent as `GET` answers it, with `commit`, the short id of the commit the edit made (left
+out when the edit changed nothing and so made no commit). Errors: `422` an invalid name or settings (the message says
 what), or no `[harness]`; `500` git failed, such as a push that `origin` refused, and then nothing changed (see [harness
 configuration](harness-configuration.md)).
 
@@ -319,6 +320,20 @@ configuration](harness-configuration.md)).
 
 A person deletes an agent of the harness configuration repository, committed and pushed the same way (kind `edit_agent`).
 Response: `null`. Errors: `404` no such agent; `422` no `[harness]`; `500` as for `PUT`.
+
+### `GET /v1/skills`
+
+The skills an agent's `skills` can name, for an editor to offer: an array of `{"name": string, "description": string,
+"built_in": boolean}`, the built-in `moebius` skill first, then the directories of `skills/` in the harness configuration
+repository by name. `description` is the `description` of the frontmatter of the skill's `SKILL.md`, empty when there is
+none. Without `[harness]` the array is empty.
+
+### `GET /v1/mcp-servers`
+
+The servers of `mcp.toml` in the harness configuration repository, by name, for an editor to offer: an array of
+`{"name": string, "kind": "stdio" or "remote", "error": string}`. `error` is left out unless the server cannot be used
+(then `kind` is `unknown` when the table is too broken to tell). Commands, arguments, environments, URLs and headers are
+never included. The array is empty without `[harness]` or when `mcp.toml` cannot be read.
 
 ### `POST /v1/chats`
 
