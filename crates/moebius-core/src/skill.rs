@@ -37,6 +37,10 @@ const FILES: &[(&str, &str)] = &[
         include_str!("../../../docs/guide/agents.md"),
     ),
     (
+        "guide/autoresearch.md",
+        include_str!("../../../docs/guide/autoresearch.md"),
+    ),
+    (
         "guide/column-scripts.md",
         include_str!("../../../docs/guide/column-scripts.md"),
     ),

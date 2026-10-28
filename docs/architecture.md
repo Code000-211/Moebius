@@ -157,6 +157,19 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
     `replay::replay_judgement` in a copy of the worktree (or a `git archive`) under `<data_dir>/replays`, never while a proposal
     is `trying`. The result is stored in `replays`, becomes the judgement's outcome (`Store::set_outcome`) and is published
     (`replayed`). `POST /v1/judgements/{id}/replay` calls `replay::replay` at any hour.
+12f. **Autoresearch.** `POST /v1/research` stores a brief (`research`, `experiments` and `research_runs` tables); `confirm`
+    records a `confirm_brief` judgement by a person. The same minute, `server.rs` asks `research::on_schedule`, which inside
+    `[trial_window]` starts the oldest `confirmed` research when no proposal is `trying` and none is `running`;
+    `POST /v1/research/{id}/start` calls `research::start` at any hour. A thread measures the baseline (`research::measure`:
+    the research's command through `replay::run_apart` in a detached worktree, the last number on standard output), then
+    loops: if `research::spent` says the tokens of the research's runs have reached the budget it ends `spent`;
+    otherwise `Runs::start_research` (`PiBolt::start_research`) starts a `research` run of the built-in `Autoresearcher`
+    in a detached worktree of the repository, which leaves `research/<id>-<name>` branches. Each new branch with a commit is
+    measured, checked by `App::local_checks`, judged by `research::judge` (better than the baseline by more than 1 %, checks
+    passing or none), stored in `experiments` (`experiment_done`) and, when kept, offered by `App::offer_branch_change`, the
+    function that also offers a chat's work. A round without new branches ends the research `done`; a failing baseline ends
+    it `failed`; `research::stop` ends it `stopped` and stops its run. Every status change is `research_status`. A server
+    start sends `running` research back to `confirmed`. `trial::on_schedule` waits while a research runs.
 13. **GitHub reports.** `poll::poll_pull_requests` reads each open change's pull request: checks and review are recorded
     (`change_updated`), a merged pull request calls `App::change_merged`, a closed one calls `App::change_closed`.
 14. **A person merges.** `POST /v1/changes/{id}/merge` calls `App::merge_change`: it records a judgement by `person`,

@@ -17,6 +17,7 @@ pub mod pibolt;
 pub mod poll;
 pub mod replay;
 pub mod repos;
+pub mod research;
 pub mod retro;
 pub mod router;
 pub mod rules;

@@ -14,7 +14,8 @@
 //! sees the final input and content of each tool call; it asks the check for each tool call and result (see `check`). Every run is told the path of the
 //! `moebius` executable as `$MOEBIUS`. The Moebius agent is always available: its instructions are built in, its skill
 //! is the guide (see `skill`), and its model comes from `[agents.Moebius]` or else from the Coder. The Retro analyst
-//! (see `retro`) is built the same way; its run works in a worktree of the harness configuration repository.
+//! (see `retro`) is built the same way; its run works in a worktree of the harness configuration repository. So is the
+//! Autoresearcher (see `research`), whose run works in a worktree of the repository it researches.
 
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -48,6 +49,21 @@ pub const MOEBIUS_AGENT: &str = "Moebius";
 /// The name of the bundled agent that turns a Retro's report into proposals. Agent names allow no spaces.
 pub const RETRO_AGENT: &str = "Retro-analyst";
 
+/// The name of the bundled agent that proposes levers for a research.
+pub const AUTORESEARCHER_AGENT: &str = "Autoresearcher";
+
+/// What the Autoresearcher is told; `agents/Autoresearcher.md` comes after it.
+const AUTORESEARCHER_INSTRUCTIONS: &str = "You are the Autoresearcher. A person gave you a goal for a repository and a \
+     command that measures it, and Moebius has measured the repository as it is, the baseline. You work in a git \
+     worktree of the repository, at the commit the baseline was measured on. Propose levers: changes that you expect \
+     to move the measurement the way the goal wants. Make each lever its own branch named research/<id>-<short-name> \
+     (the prompt gives the id) from the current commit, with exactly one commit whose subject says what the lever is. \
+     Moebius measures every branch and keeps the levers that are better than the baseline. The prompt lists the \
+     experiments done so far with their results: do not propose a lever again, and learn from what did not work. \
+     Check your levers yourself as far as you can, but do not run the measuring command to choose between them; \
+     Moebius does that. Do not edit the files on the branch you start on, do not push, and do not ask anyone anything: \
+     nobody answers. If no lever is left that is worth trying, make no branch.";
+
 /// What the Retro analyst is told; `agents/Retro-analyst.md` comes after it.
 const RETRO_INSTRUCTIONS: &str = "You are the Retro analyst. Each day Moebius gives you a report of that day's errors: \
      failed and refused tool calls, failed and stopped runs, steering, failed checks, conflicts and the Reviewer's \
@@ -73,6 +89,7 @@ fn built_in_instructions(name: &str) -> Option<&'static str> {
     match name {
         MOEBIUS_AGENT => Some(MOEBIUS_INSTRUCTIONS),
         RETRO_AGENT => Some(RETRO_INSTRUCTIONS),
+        AUTORESEARCHER_AGENT => Some(AUTORESEARCHER_INSTRUCTIONS),
         _ => None,
     }
 }
@@ -512,6 +529,48 @@ impl Runs for PiBolt {
                 budget: config.token_budget,
             }),
             purpose: "retro".into(),
+            commit_message: String::new(),
+        };
+        self.launch_or_undo(app, None, &config, running, prompt)
+    }
+
+    fn start_research(
+        &self,
+        app: &Arc<App>,
+        repository: &Repository,
+        base: &str,
+        prompt: &str,
+    ) -> Result<Run, String> {
+        let config = self.agent(app, AUTORESEARCHER_AGENT)?;
+        let run = app
+            .store
+            .add_run(None, AUTORESEARCHER_AGENT, "pi-bolt", "research")
+            .map_err(|e| e.to_string())?;
+        let clone = PathBuf::from(&repository.path);
+        let made = app
+            .store
+            .set_run_repository(run.id, repository.id)
+            .map_err(|e| e.to_string())
+            .and_then(|()| {
+                let name = format!("research-{}", run.id);
+                app.repos
+                    .add_detached_worktree(&repository.name, &clone, &name, base)
+                    .map_err(|e| e.to_string())
+            })
+            .map_err(|e| fail(app, run.id, e))?;
+        let start =
+            git(&made, &["rev-parse", "HEAD"]).map_err(|e| fail(app, run.id, e.to_string()))?;
+        let running = RunningRun {
+            id: run.id,
+            clone: Some(clone),
+            start,
+            worktree: made,
+            token: self.router.issue_token(Grant {
+                run_id: run.id,
+                card_id: None,
+                budget: config.token_budget,
+            }),
+            purpose: "research".into(),
             commit_message: String::new(),
         };
         self.launch_or_undo(app, None, &config, running, prompt)

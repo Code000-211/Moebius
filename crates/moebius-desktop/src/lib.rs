@@ -8,6 +8,7 @@ pub mod chat;
 pub mod client;
 pub mod connect;
 pub mod conversation;
+pub mod experiments;
 pub mod history;
 pub mod icons;
 pub mod inbox;

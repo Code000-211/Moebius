@@ -21,6 +21,10 @@
 //! - `GET /v1/agents`: the agents the server can run. `GET`, `PUT` and `DELETE /v1/agents/{name}`: read, write and delete
 //!   an agent of the harness configuration repository (see [`crate::harness_repo`]). `GET /v1/skills` and
 //!   `GET /v1/mcp-servers`: the skills and MCP servers an agent can name.
+//! - `POST /v1/research` `{repository, goal, measure, better, token_budget}`: stores a brief as a draft. `GET
+//!   /v1/research` and `GET /v1/research/{id}`: research with its baseline and experiments.
+//!   `POST /v1/research/{id}/confirm`, `/start` and `/stop`: a person confirms the brief, starts a confirmed research
+//!   now, or stops it (see [`crate::research`]).
 //! - `GET /v1/usage?days=`: the tokens, calls, model time and tool waits of the last days, and the daily tokens by model.
 //! - `POST /v1/chats` `{agent?, message, repository?}`: starts a chat, with the Moebius agent unless `agent` names
 //!   another. `GET /v1/chats`: the chats, newest first.
@@ -50,6 +54,7 @@ use crate::harness_repo::{AgentDefinition, AgentView, HarnessRepo, McpServerInfo
 use crate::pibolt::MOEBIUS_AGENT;
 use crate::replay;
 use crate::repos::GitError;
+use crate::research::{self, NewResearch, ResearchView};
 use crate::retro::{self, RetroSummary, RetroView};
 use crate::store::{
     AgentUsage, Card, Change, Event, InboxItem, ModelUsage, Proposal, Replay, Repository, Run,
@@ -371,6 +376,11 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/proposals/{id}/trial", post(try_proposal))
         .route("/v1/proposals/{id}/merge", post(merge_proposal))
         .route("/v1/proposals/{id}/dismiss", post(dismiss_proposal))
+        .route("/v1/research", get(researches).post(create_research))
+        .route("/v1/research/{id}", get(get_research))
+        .route("/v1/research/{id}/confirm", post(confirm_research))
+        .route("/v1/research/{id}/start", post(start_research))
+        .route("/v1/research/{id}/stop", post(stop_research))
         .route("/v1/chats", get(chats).post(start_chat))
         .route("/v1/chats/{id}/messages", post(say_in_chat))
         .route("/v1/chats/{id}/end", post(end_chat))
@@ -703,6 +713,52 @@ async fn dismiss_proposal(
         trial::dismiss(app, &repo, id, &reason)
     })
     .await
+}
+
+async fn researches(
+    State(state): State<ApiState>,
+) -> Result<axum::Json<Vec<ResearchView>>, ApiError> {
+    blocking(&state.app, |app| research::views(app)).await
+}
+
+async fn create_research(
+    State(state): State<ApiState>,
+    axum::Json(new): axum::Json<NewResearch>,
+) -> Result<axum::Json<ResearchView>, ApiError> {
+    blocking(&state.app, move |app| research::create(app, new)).await
+}
+
+async fn get_research(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+) -> Result<axum::Json<ResearchView>, ApiError> {
+    blocking(&state.app, move |app| research::view(app, id)).await
+}
+
+async fn confirm_research(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+) -> Result<axum::Json<ResearchView>, ApiError> {
+    blocking(&state.app, move |app| research::confirm(app, id)).await
+}
+
+async fn start_research(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+) -> Result<axum::Json<ResearchView>, ApiError> {
+    let runs = state.runs.clone();
+    blocking(&state.app, move |app| {
+        research::start(app, &runs, id, research::MEASURE_LIMIT)
+    })
+    .await
+}
+
+async fn stop_research(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+) -> Result<axum::Json<ResearchView>, ApiError> {
+    let runs = state.runs.clone();
+    blocking(&state.app, move |app| research::stop(app, &*runs, id)).await
 }
 
 async fn start_chat(

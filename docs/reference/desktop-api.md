@@ -43,7 +43,7 @@ These objects appear in the responses. All ids are numbers; times are Unix secon
 `Card`: `id`, `repository_id`, `number`, `title`, `body`, `author`, `column`, `created_at`, `note` (why the card was sent
 back to coding, or null) and `retried_after` (the id of the card's latest run when a person last retried it, or null).
 `Run`: `id`, `card_id` (null for a chat), `agent`, `harness`, `purpose` (`code`, `review`, other purposes of column scripts,
-`chat`, `retro`, the Retro analyst's run, or `trial`, the trial of a proposal on a card), `status` (`starting`, `running`, `waiting`, `succeeded`, `failed` or `stopped`; `waiting` is a chat waiting for
+`chat`, `retro`, the Retro analyst's run, `trial`, the trial of a proposal on a card, or `research`, a round of the Autoresearcher), `status` (`starting`, `running`, `waiting`, `succeeded`, `failed` or `stopped`; `waiting` is a chat waiting for
 the person's next message), `worktree`, `started_at`, `ended_at`, `summary` and `repository_id` (the repository a chat
 works in, or null).
 
@@ -54,7 +54,7 @@ and `title` (the first line of the first message, at most 80 characters).
 (the number on GitHub, or null), `checks` (`pending`, `success`, `failure` or null), `review` (the latest review's state in
 lower case, such as `approved`, or null), `head` (the published commit), `published_at`, `checks_head` (the commit
 `checks` are for), `failed_checks` (the failing checks of a pull request, one per line, or null) and `check_output` (the
-end of the output of the repository's own checks, or null). A change's `branch` is `moebius/card-<number>`, or `moebius/chat-<run id>` for the work of a chat, which has no card.
+end of the output of the repository's own checks, or null). A change's `branch` is `moebius/card-<number>`, `moebius/chat-<run id>` for the work of a chat, which has no card, or `research/<research id>-<name>` for a lever of a research, which has none either.
 
 `InboxItem`: `id`, `kind`, `card_id` (or null), `title`, `data` (an object that depends on the kind), `resolved_at` (null
 in the snapshot, which holds only open items), `at`. Kinds the core adds: `approve_issue` (`data.reason`), `stuck`
@@ -534,6 +534,67 @@ A person dismisses a `positive` or `untried` proposal: the decision is recorded 
 decider `person`), the inbox item is resolved and the status becomes `dismissed`. The repository is not changed. Request
 and errors as for `merge`, without the conflict. Response: the `Proposal`.
 
+### `POST /v1/research`
+
+Stores a brief for a research as a draft (see [the Autoresearcher](harness-configuration.md#autoresearch)). Nothing runs
+until a person confirms it. Request: `{"repository": id, "goal": string, "measure": string, "better": "lower" | "higher",
+"token_budget": number}`. `measure` is a shell command; it runs in a worktree of the repository with the environment
+cleared (`PATH` and `HOME` only), and its result is the last number it prints on standard output; an exit status other
+than 0, running longer than 10 minutes, or printing no number means the measurement failed. `better` says which way the
+number should move. `token_budget` is the most tokens (input plus output) the research's runs may use, more than 0.
+Response: the `ResearchView`. Errors: `404` no such repository; `422` a blank `goal` or `measure`, another `better`, or a
+budget that is not more than 0.
+
+`ResearchView`: `id`, `repository_id`, `goal`, `measure`, `better`, `token_budget`, `status`, `baseline` (the measurement
+of the repository as it is, or null until it is measured), `reason` (why the research ended; empty before), `at`, `tokens`
+(used by its runs so far) and `experiments` (array of `Experiment`, the first first: one for each lever).
+
+`status` of a research: `draft` (stored, not confirmed), `confirmed` (waits for the trial window or for `start`),
+`running`, `done` (a round proposed no more levers), `spent` (its runs used the budget), `stopped` (a person stopped it) or
+`failed` (the baseline could not be measured, or the Autoresearcher's run failed; `reason` says which).
+
+`Experiment`: `id`, `research_id`, `branch` (`research/<research id>-<name>`, the lever), `title` (the subject of the
+lever's commit), `value` (what the measure printed on the branch; null when the measurement failed), `checks` (true or
+false: the repository's own checks on the branch, or null when it has none or the measurement failed), `kept`, `reason`
+(text), `change_id` (the change offered for a kept lever, or null) and `at`. A lever is kept when `value` is better than
+`baseline` in the direction of `better` by more than 1 % of the baseline, and `checks` is not false.
+
+### `GET /v1/research`
+
+All research, the newest first. Response: an array of `ResearchView`.
+
+### `GET /v1/research/{id}`
+
+One research as the `ResearchView`. Errors: `404` no such research.
+
+### `POST /v1/research/{id}/confirm`
+
+A person confirms the brief of a draft: the decision is recorded (kind `confirm_brief`, choice `confirm`, decider
+`person`) and the status becomes `confirmed`. The research then starts by itself inside `[trial_window]` (see
+[configuration](configuration.md)), when no proposal is being tried and no research is running; the oldest confirmed one
+goes first. Request: `{}`. Response: the `ResearchView`. Errors: `404` no such research; `409` it is not a draft.
+
+### `POST /v1/research/{id}/start`
+
+Starts a confirmed research now, at any hour. Its status becomes `running` and the research goes on after the response:
+the baseline is measured in a fresh worktree of the repository at its default branch, then rounds follow. In a round the
+Autoresearcher (a run with the purpose `research` and no card) proposes levers, each a branch
+`research/<research id>-<name>` with one commit; an experiment measures each new branch and runs the repository's own
+checks; each kept lever is offered as a change without a card, like the work of a chat: published through the
+repository's forge, with a `ready_to_merge` inbox item (`data.change`, `data.branch`) and the event `change_offered`. A
+person merges it with `POST /v1/changes/{id}/merge`. Before each round the tokens of the research's runs are compared with
+the budget; the research is `spent` when they have reached it (a round may run over). It is `done` when a round leaves no
+new lever branch. Every status change is the event `research_status` and every experiment the event `experiment_done`.
+When the server starts, research that was `running` goes back to `confirmed`; started again it goes on with the baseline
+and the experiments it has. Request: `{}`. Response: the `ResearchView`, `running`. Errors: `404` no such research; `409`
+the research is not `confirmed`, or another research is running (only one is at a time).
+
+### `POST /v1/research/{id}/stop`
+
+A person stops a research that has not ended: the status becomes `stopped` and a research run that is going is stopped
+like `POST /v1/runs/{id}/stop` does. Experiments done stay, and so do the lever branches in the repository's clone. Request:
+`{}`. Response: the `ResearchView`. Errors: `404` no such research; `409` it has ended already.
+
 ## Events
 
 `GET /v1/events` sends one JSON object per message: `{"kind": "<kind>", "data": ...}`. These are all the kinds.
@@ -545,7 +606,7 @@ and errors as for `merge`, without the conflict. Response: the `Proposal`.
 | `card_updated` | The title or body of a GitHub issue changed. | The `Card`. |
 | `card_moved` | A card moved to another column. | `{"card": id, "from": column, "to": column}` |
 | `card_waiting` | The reason a card waits changed: set, replaced, or cleared because the card moved or its script did not wait. Not sent when it stays the same. | `{"card": id, "reason": string or null}` |
-| `change_offered` | A card's change, or the work of a chat, was offered to a person to merge. | The `Change` (`card_id` is null for a chat's). |
+| `change_offered` | A card's change, the work of a chat or a kept lever of a research was offered to a person to merge. | The `Change` (`card_id` is null for a chat's or a lever's). |
 | `change_updated` | A change was published or published again, its checks started or ended, or the checks or review of its pull request changed. | The `Change`. |
 | `change_merged` | A change was merged, here or on GitHub. | `{"change": id, "commit": sha or null}` |
 | `change_closed` | A change's pull request was closed on GitHub without a merge. | `{"change": id}` |
@@ -556,10 +617,12 @@ and errors as for `merge`, without the conflict. Response: the `Proposal`.
 | `forge_error` | Polling a GitHub repository, or refreshing the clone of a repository without a forge, failed; it is tried again at the next poll or refresh (every 30 seconds without a forge). | `{"repository": "owner/repo" (GitHub) or the repository's name, "message": string}` |
 | `harness_error` | An agent's files in the harness configuration repository are broken (it is left out), or refreshing the repository failed (every 30 seconds). | `{"agent": name (left out when the refresh failed), "message": string}` |
 | `retro_done` | A Retro ended: it was `reported`, or the analyst's run ended and its proposals were stored (`proposed`), or it `failed`. | `{"date": "YYYY-MM-DD", "status": "reported" \| "proposed" \| "failed", "proposals": number}` |
-| `retro_error` | The schedule could not start the day's Retro, the trials of a proposal or the replays, or the trials of a proposal broke off; it is tried again a minute later. | `{"message": string}` |
+| `retro_error` | The schedule could not start the day's Retro, the trials of a proposal, a research or the replays, or the trials of a proposal broke off; it is tried again a minute later. | `{"message": string}` |
 | `replayed` | A refused tool call was replayed and its judgement has the outcome. | `{"judgement": id, "run": id, "outcome": string}` |
 | `trial_done` | One trial of a proposal ended and was stored. | `{"proposal": id, "card": id or null, "outcome": "positive" \| "negative" \| "skipped" \| "failed"}` |
 | `proposal_status` | A proposal's status changed: it is being tried, was tried, was merged or dismissed. | `{"proposal": id, "status": string}` (the statuses above) |
+| `research_status` | A research was stored, confirmed, started, stopped or ended. | `{"research": id, "status": string}` (the statuses above) |
+| `experiment_done` | An experiment of a research ended and was stored. | `{"research": id, "lever": the lever's branch, "value": number or null, "kept": boolean}` |
 | `lagged` | This client fell too far behind (more than 1024 events) and lost the oldest. | `{"missed": number}` |
 
 A `run_event` has two sources, told apart by its inner `kind`:

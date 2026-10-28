@@ -245,6 +245,17 @@ fn run_limited(
     limit: Duration,
 ) -> std::io::Result<(Option<i32>, bool)> {
     let file = std::fs::File::create(log)?;
+    run_apart(program, args, dir, (file.try_clone()?, file), limit)
+}
+
+/// Like `run_limited`, with what the program prints on its standard output and on its standard error in two files.
+pub(crate) fn run_apart(
+    program: &str,
+    args: &[&str],
+    dir: &Path,
+    (stdout, stderr): (std::fs::File, std::fs::File),
+    limit: Duration,
+) -> std::io::Result<(Option<i32>, bool)> {
     let path = std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin:/usr/bin:/bin".into());
     let mut child = Command::new(program)
         .args(args)
@@ -253,8 +264,8 @@ fn run_limited(
         .env("PATH", path)
         .env("HOME", dir)
         .stdin(Stdio::null())
-        .stdout(file.try_clone()?)
-        .stderr(file)
+        .stdout(stdout)
+        .stderr(stderr)
         .process_group(0)
         .spawn()?;
     let group = format!("-{}", child.id());

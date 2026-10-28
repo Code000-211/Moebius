@@ -291,6 +291,47 @@ pub struct RetroView {
     pub proposals: Vec<Proposal>,
 }
 
+/// One lever of a research, tried on a branch of its own.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Experiment {
+    pub id: i64,
+    pub branch: String,
+    pub title: String,
+    /// What the measure printed on the branch; none when the measurement failed.
+    #[serde(default)]
+    pub value: Option<f64>,
+    #[serde(default)]
+    pub checks: Option<bool>,
+    pub kept: bool,
+    #[serde(default)]
+    pub reason: String,
+    #[serde(default)]
+    pub change_id: Option<i64>,
+}
+
+/// A research as `GET /v1/research` lists it: the brief, how it stands and its experiments.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Research {
+    pub id: i64,
+    pub repository_id: i64,
+    pub goal: String,
+    pub measure: String,
+    /// `lower` or `higher`.
+    pub better: String,
+    pub token_budget: i64,
+    /// `draft`, `confirmed`, `running`, `done`, `spent`, `stopped` or `failed`.
+    pub status: String,
+    #[serde(default)]
+    pub baseline: Option<f64>,
+    #[serde(default)]
+    pub reason: String,
+    /// The tokens its runs have used.
+    #[serde(default)]
+    pub tokens: i64,
+    #[serde(default)]
+    pub experiments: Vec<Experiment>,
+}
+
 /// What the model calls used in a window of days, as `GET /v1/usage` answers.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct UsageReport {
@@ -665,6 +706,37 @@ impl Client {
     /// The proposals of all Retros, the newest first.
     pub async fn proposals(&self) -> Result<Vec<Proposal>, ClientError> {
         self.get("/v1/proposals").await
+    }
+
+    /// All research, the newest first.
+    pub async fn researches(&self) -> Result<Vec<Research>, ClientError> {
+        self.get("/v1/research").await
+    }
+
+    /// Stores a brief as a draft.
+    pub async fn create_research(
+        &self,
+        repository: i64,
+        goal: &str,
+        measure: &str,
+        better: &str,
+        token_budget: i64,
+    ) -> Result<Research, ClientError> {
+        let body = serde_json::json!({
+            "repository": repository, "goal": goal, "measure": measure,
+            "better": better, "token_budget": token_budget,
+        });
+        self.post("/v1/research", body).await
+    }
+
+    /// What a person does with a research: `confirm`, `start` or `stop`.
+    pub async fn act_on_research(
+        &self,
+        research: i64,
+        action: &str,
+    ) -> Result<Research, ClientError> {
+        let path = format!("/v1/research/{research}/{action}");
+        self.post(&path, serde_json::json!({})).await
     }
 
     pub async fn history(&self, card: i64) -> Result<Vec<HistoryEntry>, ClientError> {

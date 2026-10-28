@@ -260,3 +260,20 @@ copy of the worktree, so that a refusal can later be weighed by what the call wo
   not zero, in that order, joined by `, `; `1 file` for one) or `no file changed`. For example `replayed: exit 0;
   deleted 3 files, changed 1 file`. A replay that could not be made (the copy or the checkout failed) reads `replayed: not
   run; <why>` and is stored too, so it is not tried again. The event `replayed` carries the sentence.
+
+## Autoresearch
+
+A research (see `POST /v1/research` in the [desktop API](desktop-api.md)) is driven by the built-in agent
+`Autoresearcher`. Like `Retro-analyst` it is built in: its instructions are built in, it has the `moebius` skill, its model
+comes from `agents/Autoresearcher.toml` or else from the Coder, and `agents/Autoresearcher.md` is added after the built-in
+instructions. It works with or without a harness configuration repository (without one, from `[agents.Autoresearcher]`).
+
+- Each round is a run with the purpose `research` and no card, in a fresh detached worktree of the researched repository at
+  its default branch (`<data_dir>/worktrees/<repository>/research-<run id>`), which is removed when the run ends. It is
+  told the goal, the measure, the direction, the baseline and every experiment so far with its result. It never waits for
+  a person. The runs of a research are no part of the Retro's report.
+- Each lever is a branch `research/<research id>-<short-name>` made from the default branch, with one commit whose message
+  says what the lever is. A branch without a commit beyond the default branch is ignored. A branch the research has an
+  experiment for is not tried again, so a round that leaves no new branch ends the research.
+- Each experiment runs the measure and, if the measurement succeeded, the repository's own checks (see [the
+  trials](#the-trials)), each in a fresh worktree of the branch. The branches stay in the clone, kept or not.

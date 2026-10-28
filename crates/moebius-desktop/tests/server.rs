@@ -840,3 +840,55 @@ async fn the_client_lists_proposals_with_their_trials_and_merges_one() {
         "{again:?}"
     );
 }
+
+/// A brief becomes a research through the client: stored as a draft, confirmed, started and, as its measure fails,
+/// ended as failed, which the stream reports; the list shows it.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_client_stores_confirms_and_starts_a_research() {
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, _) = start_with(dir.path(), "[agents.Coder]\nmodel = \"m\"\n").await;
+    let origin = origin(dir.path());
+    let repository = post(
+        &settings,
+        "/v1/repositories",
+        json!({"name": "demo", "url": origin.to_str().unwrap()}),
+    )
+    .await;
+    let repository = repository["id"].as_i64().unwrap();
+    let client = Client::new(settings.clone());
+    assert!(client.researches().await.unwrap().is_empty());
+
+    let draft = client
+        .create_research(repository, "Be faster", "exit 1", "lower", 1000)
+        .await
+        .unwrap();
+    assert_eq!((draft.status.as_str(), draft.baseline), ("draft", None));
+    let refused = client
+        .create_research(repository, "Be faster", "exit 1", "smaller", 1000)
+        .await
+        .unwrap_err();
+    assert!(matches!(refused, ClientError::Server { status: 422, .. }));
+
+    let mut stream = Box::pin(events(settings.clone()));
+    assert_eq!(next(&mut stream).await, StreamEvent::Connected);
+    let confirmed = client.act_on_research(draft.id, "confirm").await.unwrap();
+    assert_eq!(confirmed.status, "confirmed");
+    client.act_on_research(draft.id, "start").await.unwrap();
+    loop {
+        if let StreamEvent::Event(event) = next(&mut stream).await
+            && event.kind == "research_status"
+            && event.data["status"] == "failed"
+        {
+            break;
+        }
+    }
+    let list = client.researches().await.unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].status, "failed");
+    assert!(
+        list[0].reason.contains("the baseline failed"),
+        "{}",
+        list[0].reason
+    );
+    assert_eq!(list[0].token_budget, 1000);
+}

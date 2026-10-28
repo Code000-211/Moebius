@@ -1,7 +1,7 @@
 //! The server put together (spec 2): the store and the core, the desktop API, the router, the Pi-Bolt harness, the
 //! board engine, which runs every card's column script on a fixed tick, the poll of GitHub and, every 30 seconds,
 //! the refresh of the clones of repositories without a forge and of the harness configuration repository, and, once
-//! a minute, the check whether the Retro is due or a proposal of the Retro is to be tried. The
+//! a minute, the check whether the Retro is due, a proposal of the Retro is to be tried or a research is to start. The
 //! `moebius` skill is written to the data directory at start.
 
 use std::net::SocketAddr;
@@ -26,6 +26,7 @@ use crate::pibolt::PiBolt;
 use crate::poll;
 use crate::replay;
 use crate::repos::git;
+use crate::research;
 use crate::retro;
 use crate::router::{Router, Upstream};
 use crate::skill;
@@ -52,6 +53,9 @@ fn end_runs_of_a_previous_server(app: &App) -> Result<(), String> {
     app.store
         .fail_analysing_retros("the server stopped while the analyst was going")
         .map_err(|e| format!("cannot end the Retros of the last start: {e}"))?;
+    app.store
+        .reconfirm_running_research()
+        .map_err(|e| format!("cannot confirm the research of the last start again: {e}"))?;
     app.store
         .reopen_trying_proposals()
         .map_err(|e| format!("cannot reopen the proposals of the last start: {e}"))?;
@@ -359,6 +363,12 @@ impl Server {
                         report(retro::on_schedule(&s.app, &runs, repo, s.config.retro_at));
                         let (window, limit) = (s.config.trial_window, s.config.run_limit);
                         report(trial::on_schedule(&s.app, &runs, repo, window, limit));
+                        report(research::on_schedule(
+                            &s.app,
+                            &runs,
+                            window,
+                            research::MEASURE_LIMIT,
+                        ));
                         report(replay::on_schedule(&s.app, window));
                     })
                     .await;

@@ -115,6 +115,18 @@ pub trait Runs: Send + Sync {
         Err("this harness has no retros".into())
     }
 
+    /// Starts the Autoresearcher (see `research`) with `prompt` in a fresh worktree of `repository` checked out at
+    /// `base`, and returns the run without waiting for it to end. A harness without research refuses.
+    fn start_research(
+        &self,
+        _app: &Arc<App>,
+        _repository: &Repository,
+        _base: &str,
+        _prompt: &str,
+    ) -> Result<Run, String> {
+        Err("this harness has no research".into())
+    }
+
     /// Starts a trial run (see `trial`) for `card`: the agent `agent`, as `definition` has it, is given the card's prompt
     /// in a fresh worktree of the card's repository on a branch of its own, checked out at `base`. The branch is named
     /// after `proposal` and the card. It returns the run without waiting for it to end. A harness without trials

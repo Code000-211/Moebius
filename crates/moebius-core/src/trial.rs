@@ -456,6 +456,14 @@ pub fn on_schedule(
     if active >= run_limit as usize {
         return Ok(());
     }
+    if app
+        .store
+        .researches()?
+        .iter()
+        .any(|r| r.status == "running")
+    {
+        return Ok(());
+    }
     let proposals = app.store.proposals(None)?;
     if proposals.iter().any(|p| p.status == "trying") {
         return Ok(());

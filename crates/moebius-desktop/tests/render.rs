@@ -7,6 +7,7 @@ use moebius_desktop::agents;
 use moebius_desktop::app::{App, Message, Page};
 use moebius_desktop::chat;
 use moebius_desktop::client::{self, ClientError, Snapshot, TerminalEvent};
+use moebius_desktop::experiments;
 use moebius_desktop::inbox::{self, Action};
 use moebius_desktop::live;
 use moebius_desktop::retro;
@@ -221,11 +222,11 @@ fn the_collapsed_sidebar_keeps_the_inbox_count() {
 #[test]
 fn a_screen_that_is_not_built_says_which_milestone_brings_it() {
     let mut app = App::with_snapshot(overview());
-    let _ = app.update(Message::Select(Page::Experiments));
+    let _ = app.update(Message::Select(Page::DecisionModel));
     draw(
         &app,
         "shell-soon",
-        &["Experiments", "This screen comes with M8."],
+        &["Decision model", "This screen comes with M9."],
     );
 }
 
@@ -1928,4 +1929,145 @@ fn the_agents_screen_offers_the_open_proposals_that_change_the_agent() {
     // The proposal that changes no agent is not offered here, nor one whose trials found it worse.
     assert!(!shows(&app, "Allow reading the docs directory"));
     assert!(!shows(&app, "Ask the Coder to write plainly"));
+}
+
+fn research_listing() -> Vec<client::Research> {
+    serde_json::from_value(json!([
+        {"id": 2, "repository_id": 1, "goal": "Make the host build faster", "measure": "cargo build --release 2>&1 | tail -1",
+         "better": "lower", "token_budget": 200000, "status": "draft", "baseline": null, "reason": "", "tokens": 0,
+         "experiments": []},
+        {"id": 1, "repository_id": 1, "goal": "Cut the clean build time of the host", "measure": "./bench/build.sh",
+         "better": "lower", "token_budget": 500000, "status": "done", "baseline": 372.0,
+         "reason": "a round proposed no more levers", "tokens": 211400, "experiments": [
+            {"id": 1, "research_id": 1, "branch": "research/1-split-crates", "title": "Split the host crate in two",
+             "value": 301.0, "checks": true, "kept": true, "reason": "372 to 301 (-19.1 %), better than the baseline",
+             "change_id": 4},
+            {"id": 2, "research_id": 1, "branch": "research/1-more-jobs", "title": "Build with more jobs",
+             "value": 375.0, "checks": null, "kept": false,
+             "reason": "375 against the baseline 372: not better by more than 1 %", "change_id": null},
+            {"id": 3, "research_id": 1, "branch": "research/1-lld", "title": "Link with lld",
+             "value": null, "checks": null, "kept": false,
+             "reason": "the measurement failed: the measure ended with exit status 127: lld: not found", "change_id": null}]},
+    ]))
+    .unwrap()
+}
+
+fn experiments_app() -> App {
+    let mut app = App::with_snapshot(overview());
+    let _ = app.update(Message::Select(Page::Experiments));
+    let _ = app.update(Message::Experiments(experiments::Message::Listed(Ok(
+        research_listing(),
+    ))));
+    let _ = app.update(Message::Experiments(experiments::Message::Select(1)));
+    app
+}
+
+#[test]
+fn the_experiments_screen_lists_the_research_and_shows_the_baseline_and_levers_of_one() {
+    draw_sized(
+        &experiments_app(),
+        "experiments",
+        &[
+            "Experiments",
+            "New brief",
+            "Draft",
+            "Done",
+            "3 experiments · 1 kept",
+            "Cut the clean build time of the host",
+            "./bench/build.sh",
+            "radiance · Lower is better · 211400 of 500000 tokens used",
+            "Baseline",
+            "372",
+            "Lever",
+            "Branch",
+            "Value",
+            "Change",
+            "Split the host crate in two",
+            "research/1-split-crates",
+            "301",
+            "-19.1 %",
+            "Kept",
+            "372 to 301 (-19.1 %), better than the baseline",
+            "Not kept",
+            "Failed",
+            "—",
+        ],
+        Size::new(1440.0, 1100.0),
+    );
+}
+
+/// What pressing the button `label` sends, or none when the screen has no such button.
+fn pressed(app: &App, label: &str) -> Option<String> {
+    let mut ui = simulator(app);
+    ui.click(label).ok()?;
+    let sent: Vec<Message> = ui.into_messages().collect();
+    Some(format!("{sent:?}"))
+}
+
+#[test]
+fn a_draft_is_confirmed_a_confirmed_one_started_and_a_running_one_stopped() {
+    let mut app = experiments_app();
+    let _ = app.update(Message::Experiments(experiments::Message::Select(2)));
+    assert_eq!(
+        pressed(&app, "Confirm").as_deref(),
+        Some("[Experiments(Act(2, \"confirm\"))]")
+    );
+    assert_eq!(
+        pressed(&app, "Stop").as_deref(),
+        Some("[Experiments(Act(2, \"stop\"))]")
+    );
+    assert_eq!(pressed(&app, "Start now"), None);
+    let mut listing = research_listing();
+    for (status, available, missing) in [
+        ("confirmed", "Start now", "Confirm"),
+        ("running", "Stop", "Start now"),
+    ] {
+        listing[0].status = status.to_string();
+        let _ = app.update(Message::Experiments(experiments::Message::Listed(Ok(
+            listing.clone(),
+        ))));
+        assert!(pressed(&app, available).is_some(), "{status}: {available}");
+        assert!(pressed(&app, "Stop").is_some(), "{status}: Stop");
+        assert_eq!(pressed(&app, missing), None, "{status} has no {missing}");
+    }
+    listing[0].status = "stopped".to_string();
+    let _ = app.update(Message::Experiments(experiments::Message::Listed(Ok(
+        listing,
+    ))));
+    for label in ["Confirm", "Start now", "Stop"] {
+        assert_eq!(pressed(&app, label), None, "a stopped research has {label}");
+    }
+    assert!(shows(&app, "No lever has been tried yet."));
+}
+
+#[test]
+fn a_brief_needs_a_repository_a_goal_a_measure_and_a_budget_before_it_is_stored() {
+    let mut app = App::with_snapshot(overview());
+    let _ = app.update(Message::Select(Page::Experiments));
+    assert!(shows(&app, "No research yet"));
+    let _ = app.update(Message::Experiments(experiments::Message::Compose));
+    for text in [
+        "radiance",
+        "Lower is better",
+        "Higher is better",
+        "Token budget",
+    ] {
+        assert!(shows(&app, text), "{text}");
+    }
+    let stored = |app: &App| pressed(app, "Store the brief") == Some("[Experiments(Store)]".into());
+    assert!(!stored(&app));
+    let edit = |app: &mut App, message| {
+        let _ = app.update(Message::Experiments(message));
+    };
+    edit(&mut app, experiments::Message::GoalEdited("Faster".into()));
+    assert!(!stored(&app));
+    edit(
+        &mut app,
+        experiments::Message::MeasureEdited("cat score".into()),
+    );
+    assert!(stored(&app));
+    edit(&mut app, experiments::Message::BudgetEdited("0".into()));
+    assert!(!stored(&app));
+    edit(&mut app, experiments::Message::BudgetEdited("1000".into()));
+    assert!(stored(&app));
 }

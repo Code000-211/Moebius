@@ -792,26 +792,39 @@ impl App {
         if git(clone, &["rev-list", "--count", &beyond_base])? == "0" {
             return Ok(None);
         }
-        let head = git(clone, &["rev-parse", &branch])?;
         let title = self.chat_title(run_id)?;
         let body = format!(
             "This change came from chat {run_id} with the agent {}.\n\nMade by Moebius.",
             run.agent
         );
-        let forge = self.forge(&repository)?;
-        let pull_request = forge.publish(&repository, &title, &body, &branch, None)?;
+        self.offer_branch_change(&repository, &branch, &title, &body)
+            .map(Some)
+    }
+
+    /// Offers `branch` of `repository`, which has commits beyond the default branch, as a change without a card:
+    /// published through the repository's forge and put in the inbox, ready to merge.
+    pub fn offer_branch_change(
+        &self,
+        repository: &Repository,
+        branch: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<Change> {
+        let head = git(Path::new(&repository.path), &["rev-parse", branch])?;
+        let forge = self.forge(repository)?;
+        let pull_request = forge.publish(repository, title, body, branch, None)?;
         let change = self
             .store
-            .add_change(repository.id, None, &branch, pull_request, &head)?;
+            .add_change(repository.id, None, branch, pull_request, &head)?;
         self.store.add_inbox_item(
             "ready_to_merge",
             None,
-            &title,
+            title,
             &json!({ "change": change.id, "branch": change.branch }),
         )?;
         self.bus
             .publish(AppEvent::new("change_offered", json!(change)));
-        Ok(Some(change))
+        Ok(change)
     }
 
     /// How the checks of the change stand for its current commit: `pending`, `success`, `failure` or `none`. Checks
