@@ -137,6 +137,8 @@ pub enum Said {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Entry {
     Text(String),
+    /// What the agent thought before it acted, as far as the harness reports it.
+    Thinking(String),
     Tool(ToolCall),
     Person(Said, String),
     Error(String),
@@ -152,11 +154,44 @@ pub struct Conversation {
     calls: HashMap<String, usize>,
     /// Whether the last entry is a text that further deltas continue.
     text_open: bool,
+    /// Whether the last entry is a thinking that further deltas continue.
+    thinking_open: bool,
+    /// When each entry began, Unix seconds, in the order of `entries`.
+    starts: Vec<i64>,
+    /// The time of the event being applied.
+    now: i64,
 }
 
 impl Conversation {
     pub fn entries(&self) -> &[Entry] {
         &self.entries
+    }
+
+    /// When the entry at `index` began, Unix seconds.
+    pub fn started(&self, index: usize) -> i64 {
+        self.starts.get(index).copied().unwrap_or_default()
+    }
+
+    /// The time of the newest event, Unix seconds; 0 when none.
+    pub fn last_at(&self) -> i64 {
+        self.events
+            .values()
+            .map(|event| event.at)
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Adds an entry that begins now, and returns its index.
+    fn add(&mut self, entry: Entry) -> usize {
+        self.entries.push(entry);
+        self.starts.push(self.now);
+        self.entries.len() - 1
+    }
+
+    /// Ends the text and the thinking that deltas continue.
+    fn close(&mut self) {
+        self.text_open = false;
+        self.thinking_open = false;
     }
 
     /// The highest `seq` seen; 0 when none.
@@ -217,7 +252,7 @@ impl Conversation {
             .then(|| self.calls.get(id).copied())
             .flatten();
         let index = known.unwrap_or_else(|| {
-            self.entries.push(Entry::Tool(ToolCall {
+            let index = self.add(Entry::Tool(ToolCall {
                 id: id.to_string(),
                 tool: tool.to_string(),
                 input: Input::Unknown,
@@ -225,10 +260,10 @@ impl Conversation {
                 execution: None,
                 output: String::new(),
             }));
-            self.calls.insert(id.to_string(), self.entries.len() - 1);
-            self.entries.len() - 1
+            self.calls.insert(id.to_string(), index);
+            index
         });
-        self.text_open = false;
+        self.close();
         match &mut self.entries[index] {
             Entry::Tool(call) => call,
             _ => unreachable!("`calls` points at tool calls"),
@@ -236,6 +271,7 @@ impl Conversation {
     }
 
     fn apply(&mut self, event: &RunEvent) {
+        self.now = event.at;
         let data = &event.data;
         let id = data["toolCallId"].as_str().unwrap_or_default();
         let tool = data["toolName"].as_str().unwrap_or_default();
@@ -247,12 +283,27 @@ impl Conversation {
                 {
                     match self.entries.last_mut() {
                         Some(Entry::Text(text)) if self.text_open => text.push_str(delta),
-                        _ => self.entries.push(Entry::Text(delta.to_string())),
+                        _ => {
+                            self.add(Entry::Text(delta.to_string()));
+                        }
                     }
+                    self.close();
                     self.text_open = true;
                 }
+                if update["type"] == "thinking_delta"
+                    && let Some(delta) = update["delta"].as_str()
+                {
+                    match self.entries.last_mut() {
+                        Some(Entry::Thinking(text)) if self.thinking_open => text.push_str(delta),
+                        _ => {
+                            self.add(Entry::Thinking(delta.to_string()));
+                        }
+                    }
+                    self.close();
+                    self.thinking_open = true;
+                }
             }
-            "message_start" | "message_end" | "agent_end" => self.text_open = false,
+            "message_start" | "message_end" | "agent_end" => self.close(),
             "tool_execution_start" => {
                 let call = self.call(id, tool);
                 call.tool = tool.to_string();
@@ -287,13 +338,13 @@ impl Conversation {
                     Said::Said
                 };
                 let message = data["message"].as_str().unwrap_or_default();
-                self.entries.push(Entry::Person(said, message.to_string()));
-                self.text_open = false;
+                self.add(Entry::Person(said, message.to_string()));
+                self.close();
             }
             "moebius_error" => {
                 let message = data["message"].as_str().unwrap_or_default();
-                self.entries.push(Entry::Error(message.to_string()));
-                self.text_open = false;
+                self.add(Entry::Error(message.to_string()));
+                self.close();
             }
             _ => {}
         }
@@ -555,6 +606,31 @@ mod tests {
             streamed.push(event);
         }
         assert_eq!(streamed.entries(), fold(run()).entries());
+    }
+
+    #[test]
+    fn thinking_deltas_are_joined_and_steps_know_when_they_began() {
+        let thought = |seq, text: &str| {
+            event(
+                seq,
+                "message_update",
+                json!({"assistantMessageEvent": {"type": "thinking_delta", "delta": text}}),
+            )
+        };
+        let conversation = fold(vec![
+            thought(1, "Look at "),
+            thought(2, "the tree."),
+            start(3, "c", "read", json!({"path": "a"})),
+            delta(4, "Done."),
+        ]);
+        assert_eq!(
+            conversation.entries()[0],
+            Entry::Thinking("Look at the tree.".into())
+        );
+        assert_eq!(conversation.entries().len(), 3);
+        assert_eq!(conversation.started(0), 1_790_000_001);
+        assert_eq!(conversation.started(1), 1_790_000_003);
+        assert_eq!(conversation.last_at(), 1_790_000_004);
     }
 
     #[test]

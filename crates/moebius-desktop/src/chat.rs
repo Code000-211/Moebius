@@ -3,7 +3,7 @@
 //! chat offered, to merge from there, and the field to write in. The state follows one chat: a load of its events, then
 //! the stream's `run_event`s. The list of chats is read from the server and kept current by the same stream.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use iced::font::Weight;
 use iced::widget::text::Wrapping;
@@ -19,7 +19,7 @@ use crate::inbox::{self, Action, Inbox};
 use crate::live::say;
 use crate::page::{self, Tone, tag};
 use crate::settings::Settings;
-use crate::{connect, theme, transcript};
+use crate::{connect, steps, theme, transcript};
 
 /// The agent a chat is with unless another is named.
 pub const DEFAULT_AGENT: &str = "Moebius";
@@ -65,6 +65,8 @@ pub enum Message {
     Tick(i64),
     /// A link of the agent's text was clicked.
     LinkClicked(String),
+    /// A step of the agent was clicked: it unfolds when folded and folds when unfolded. The number is its entry's.
+    Fold(usize),
     /// The server was told how far the open chat is read; nothing waits on the answer.
     MarkedRead,
 }
@@ -77,6 +79,8 @@ struct Open {
     judgements: Vec<Judgement>,
     /// The agent's texts parsed, by the index of the entry, with the text they were parsed from.
     markdown: HashMap<usize, (String, Vec<markdown::Item>)>,
+    /// The steps that are unfolded, by the index of their entry.
+    unfolded: HashSet<usize>,
     message: String,
     /// Whether "Stop" asks to be confirmed.
     confirming: bool,
@@ -91,6 +95,7 @@ impl Open {
             conversation: Conversation::default(),
             judgements: Vec::new(),
             markdown: HashMap::new(),
+            unfolded: HashSet::new(),
             message: String::new(),
             confirming: false,
             notice: None,
@@ -500,6 +505,13 @@ impl Chats {
             }
             Message::Tick(now) => self.now = now,
             Message::MarkedRead => {}
+            Message::Fold(step) => {
+                if let Some(open) = &mut self.open
+                    && !open.unfolded.remove(&step)
+                {
+                    open.unfolded.insert(step);
+                }
+            }
             Message::LinkClicked(uri) => {
                 if let Some(open) = &mut self.open {
                     open.notice = Some(format!("Links are not opened from here: {uri}"));
@@ -604,7 +616,7 @@ impl Chats {
         .spacing(10)
         .align_y(Alignment::Center);
         let conversation = scrollable(
-            container(self.conversation_view(open))
+            container(self.conversation_view(chat, open))
                 .padding(Padding::from([16, 16]))
                 .width(Length::Fill),
         )
@@ -633,25 +645,52 @@ impl Chats {
         .into()
     }
 
-    fn conversation_view<'a>(&'a self, open: &'a Open) -> Element<'a, AppMessage> {
-        if open.conversation.entries().is_empty() {
+    fn conversation_view<'a>(&'a self, chat: &Chat, open: &'a Open) -> Element<'a, AppMessage> {
+        let conversation = &open.conversation;
+        let entries = conversation.entries();
+        if entries.is_empty() {
             return page::body("Nothing has been said in this chat yet.");
         }
-        column(
-            open.conversation
-                .entries()
-                .iter()
-                .enumerate()
-                .map(|(index, entry)| match entry {
-                    Entry::Text(_) => agent_text(open.markdown.get(&index)),
-                    Entry::Tool(call) => transcript::tool_call(call),
-                    Entry::Person(said, message) => person_view(*said, message),
-                    Entry::Error(message) => transcript::error(message),
-                }),
-        )
-        .spacing(12)
-        .width(Length::Fill)
-        .into()
+        let working = matches!(chat.status.as_str(), "starting" | "running");
+        let mut views: Vec<Element<'a, AppMessage>> = Vec::new();
+        let mut index = 0;
+        while index < entries.len() {
+            match &entries[index] {
+                Entry::Text(_) => views.push(agent_text(open.markdown.get(&index))),
+                Entry::Person(said, message) => views.push(person_view(*said, message)),
+                Entry::Error(message) => views.push(transcript::error(message)),
+                Entry::Thinking(_) | Entry::Tool(_) => {
+                    // The steps that follow one another are one box.
+                    let end = entries[index..]
+                        .iter()
+                        .position(|entry| !matches!(entry, Entry::Thinking(_) | Entry::Tool(_)))
+                        .map_or(entries.len(), |len| index + len);
+                    let last = end == entries.len();
+                    let stops = if last {
+                        if working {
+                            self.now
+                        } else {
+                            conversation.last_at()
+                        }
+                    } else {
+                        conversation.started(end)
+                    };
+                    views.push(steps::steps_box(
+                        &entries[index..end],
+                        index,
+                        last && working,
+                        stops - conversation.started(index),
+                        &open.unfolded,
+                        |step| AppMessage::Chat(Message::Fold(step)),
+                        false,
+                    ));
+                    index = end;
+                    continue;
+                }
+            }
+            index += 1;
+        }
+        column(views).spacing(12).width(Length::Fill).into()
     }
 }
 

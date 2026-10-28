@@ -632,6 +632,10 @@ fn entry_view(entry: &Entry) -> Element<'_, AppMessage> {
         )
         .max_width(720)
         .into(),
+        Entry::Thinking(thought) => text(thought.as_str())
+            .size(theme::CONTEXT)
+            .color(theme::TEXT_MUTED)
+            .into(),
         Entry::Tool(call) => transcript::tool_call(call),
         Entry::Person(said, message) => transcript::note(
             match said {

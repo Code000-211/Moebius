@@ -27,6 +27,14 @@ pub enum Icon {
     Start,
     Search,
     Panel,
+    /// A step that is folded: it opens on a click.
+    ChevronRight,
+    /// A step that is open.
+    ChevronDown,
+    /// A thought: a spark.
+    Spark,
+    /// A quarter of a ring, for what is still working.
+    Spinner,
 }
 
 impl Icon {
@@ -67,6 +75,12 @@ impl Icon {
             }
             Icon::Start => r#"<path d="M3.5 14V2.5"/><path d="M3.5 3h8.5l-2 3 2 3H3.5"/>"#,
             Icon::Search => r#"<circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>"#,
+            Icon::ChevronRight => r#"<path d="M6 3.5L10.5 8 6 12.5"/>"#,
+            Icon::ChevronDown => r#"<path d="M3.5 6L8 10.5 12.5 6"/>"#,
+            Icon::Spark => {
+                r#"<path d="M8 2l1.4 4.1L13.5 8 9.4 9.9 8 14l-1.4-4.1L2.5 8l4.1-1.9z"/>"#
+            }
+            Icon::Spinner => r#"<path d="M8 2a6 6 0 1 0 6 6"/>"#,
             Icon::Panel => {
                 r#"<rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M6 2.5v11"/>"#
             }

@@ -193,6 +193,73 @@ fn tool_view(call: &ToolCall) -> Element<'_, AppMessage> {
         .into()
 }
 
+/// All of a tool call that its line does not say, for when its step is unfolded: why a refusal happened, the input
+/// (the command, the diff, the file written) and what the tool printed (a file read, shown as that file).
+pub(crate) fn details(call: &ToolCall) -> Element<'_, AppMessage> {
+    let mut content = column![].spacing(8);
+    if let Some(check) = call.check.as_ref().filter(|check| !check.allowed) {
+        let why = match check.rule() {
+            Some((rule, why)) => format!("Rule broken: {rule}. {why}"),
+            None => format!("Refused. {}", check.reason),
+        };
+        content = content.push(text(why).size(theme::CONTEXT).color(theme::RED_TEXT));
+        if let Some(replay) = &check.replay {
+            content = content.push(
+                text(format!("Replayed: {replay}"))
+                    .size(theme::LABEL)
+                    .color(theme::TEXT_MUTED),
+            );
+        }
+    }
+    let who = check_line(call);
+    if !who.is_empty() {
+        content = content.push(text(who).size(theme::LABEL).color(theme::TEXT_MUTED));
+    }
+    let printed = !call.output.is_empty();
+    match &call.input {
+        Input::Edit { path, changes } => content = content.push(diff_view(path, changes)),
+        Input::Write {
+            path,
+            content: file,
+        } => content = content.push(file_view(path, file)),
+        Input::Read(path) if printed => content = content.push(file_view(path, &call.output)),
+        Input::Command(command) => {
+            content = content.push(command_view(command));
+            if printed {
+                content = content.push(output_view(&call.output));
+            }
+        }
+        Input::Other(json) => {
+            content = content.push(code_block("json", json));
+            if printed {
+                content = content.push(output_view(&call.output));
+            }
+        }
+        _ if printed => content = content.push(output_view(&call.output)),
+        _ => {}
+    }
+    content.into()
+}
+
+/// Who checked a call and how long it ran, as the head of a tool call says it: `Pattern · ran 3 ms`.
+fn check_line(call: &ToolCall) -> String {
+    let mut notes = Vec::new();
+    if let Some(decider) = call.check.as_ref().and_then(|c| c.decider.as_deref()) {
+        notes.push(capitalized(decider));
+    }
+    if let Some(Execution::Finished {
+        millis: Some(ms),
+        failed,
+    }) = &call.execution
+    {
+        notes.push(match failed {
+            true => format!("failed after {}", duration(*ms)),
+            false => format!("ran {}", duration(*ms)),
+        });
+    }
+    notes.join(" · ")
+}
+
 /// A refused call: the red box with the rule broken and why. The call did not run.
 fn refused_view(call: &ToolCall) -> Element<'_, AppMessage> {
     let check = call.check.as_ref().expect("a refused call has its check");
@@ -267,7 +334,7 @@ fn tail<'a>(lines: &[&'a str]) -> (usize, Vec<&'a str>) {
 }
 
 /// What a tool printed, in the dark block: the last lines, scrollable.
-fn output_view(output: &str) -> Element<'_, AppMessage> {
+pub(crate) fn output_view(output: &str) -> Element<'_, AppMessage> {
     let (skipped, lines) = tail(&lines_of(output));
     let mut block = column![].spacing(0);
     if skipped > 0 {
@@ -310,12 +377,29 @@ fn highlighted<'a>(lines: &[&str], path: &str) -> Vec<Vec<iced::widget::text::Sp
     highlighted_as(lines, token)
 }
 
+/// The language the highlighter knows for the name or extension `token`. It ships the syntaxes of a text editor's
+/// defaults, which has neither Luau, TOML nor TypeScript; each is shown as the closest one it has.
+fn language(token: &str) -> &str {
+    match token.to_ascii_lowercase().as_str() {
+        "luau" => "lua",
+        "toml" | "cfg" | "conf" => "ini",
+        "ts" | "tsx" | "jsx" | "mjs" | "cjs" | "javascript" | "typescript" => "js",
+        "jsonc" | "json5" => "json",
+        "shell" | "zsh" | "console" => "sh",
+        "hpp" | "cc" | "cxx" | "cu" | "cuh" | "hip" => "cpp",
+        "yml" => "yaml",
+        "markdown" => "md",
+        "patch" => "diff",
+        _ => token,
+    }
+}
+
 /// The highlighted spans of each line of `lines`, for the language `token` names.
 fn highlighted_as<'a>(
     lines: &[&str],
     token: &str,
 ) -> Vec<Vec<iced::widget::text::Span<'a, (), Font>>> {
-    let token = token.to_string();
+    let token = language(token).to_string();
     let mut stream = Stream::new(&highlighter::Settings {
         theme: highlighter::Theme::InspiredGitHub,
         token,
@@ -444,13 +528,18 @@ fn code_frame<'a>(
 }
 
 /// A file's first lines, highlighted for its language.
-fn file_view<'a>(path: &'a str, file: &str) -> Element<'a, AppMessage> {
+pub(crate) fn file_view<'a>(path: &'a str, file: &str) -> Element<'a, AppMessage> {
     let lines = lines_of(file);
     let rows = highlighted(&lines[..lines.len().min(MAX_LINES)], path)
         .into_iter()
         .map(|spans| code_row(' ', spans, None))
         .collect();
     code_frame(path, None, rows, lines.len().saturating_sub(MAX_LINES))
+}
+
+/// A command in the frame of a file, highlighted as shell.
+pub(crate) fn command_view(command: &str) -> Element<'_, AppMessage> {
+    code_block("sh", command)
 }
 
 /// A code block of the agent's text: the first lines of `code`, highlighted for `language`, in the frame of a file.
@@ -464,7 +553,10 @@ pub fn code_block<'a>(language: &'a str, code: &str) -> Element<'a, AppMessage> 
 }
 
 /// An edit's changes as removed and added lines, each side highlighted for the file's language.
-fn diff_view<'a>(path: &'a str, changes: &[(String, String)]) -> Element<'a, AppMessage> {
+pub(crate) fn diff_view<'a>(
+    path: &'a str,
+    changes: &[(String, String)],
+) -> Element<'a, AppMessage> {
     let mut rows: Vec<Element<'a, AppMessage>> = Vec::new();
     let (mut removed, mut added) = (0, 0);
     for (old, new) in changes {

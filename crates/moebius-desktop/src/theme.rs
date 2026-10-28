@@ -76,6 +76,10 @@ pub const DIFF_REMOVED: Color = hex(0xFCEDEB);
 pub const DIFF_ADDED: Color = hex(0xE6F6EC);
 pub const DIFF_REMOVED_MARK: Color = hex(0xB42318);
 pub const DIFF_ADDED_MARK: Color = hex(0x15803D);
+/// The box of an agent's steps: fill, border and the ink of its header.
+pub const STEPS_FILL: Color = hex(0xEFF6FF);
+pub const STEPS_BORDER: Color = hex(0xBFDBFE);
+pub const STEPS_INK: Color = hex(0x1E40AF);
 /// The dark block that shows what a tool printed.
 pub const TERMINAL: Color = hex(0x1E293B);
 pub const TERMINAL_TEXT: Color = hex(0xE2E8F0);

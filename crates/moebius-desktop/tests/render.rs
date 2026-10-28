@@ -1381,6 +1381,10 @@ fn chat_events() -> Vec<moebius_desktop::client::RunEvent> {
         json!({"type": "message_update",
                "assistantMessageEvent": {"type": "text_delta", "contentIndex": 0, "delta": text}})
     };
+    let thinking = |text: &str| {
+        json!({"type": "message_update",
+               "assistantMessageEvent": {"type": "thinking_delta", "contentIndex": 0, "delta": text}})
+    };
     let script = "if card.blocked_by_count == 0 then\n  moebius.start_run(\"Coder\")\nend\n";
     let output = "ok: .moebius/ready.luau is a valid column script\n";
     let records = vec![
@@ -1389,12 +1393,20 @@ fn chat_events() -> Vec<moebius_desktop::client::RunEvent> {
         delta("This one starts the Coder only when no issue blocks the card:\n\n```lua\n"),
         delta("if card.blocked_by_count == 0 then\n  moebius.start_run(\"Coder\")\nend\n```\n\n"),
         delta("I will write it to the repository and check it.\n"),
+        json!({"type": "message_end"}),
+        thinking("Looking at how the other column scripts decide whether a card may start..."),
         json!({"type": "tool_check", "tool": "write", "tool_call_id": "w1", "decision": "allow",
                "reason": "no rule is broken"}),
         json!({"type": "tool_execution_start", "toolCallId": "w1", "toolName": "write",
                "args": {"path": ".moebius/ready.luau", "content": script}}),
         json!({"type": "tool_execution_end", "toolCallId": "w1", "toolName": "write", "isError": false,
                "durationMs": 3, "result": {"content": [{"type": "text", "text": "written"}]}}),
+        json!({"type": "tool_check", "tool": "edit", "tool_call_id": "e1", "decision": "refuse",
+               "reason": "no-vendor-edits: Never edit files under vendor/."}),
+        json!({"type": "tool_execution_start", "toolCallId": "e1", "toolName": "edit",
+               "args": {"path": "vendor/ready.luau", "edits": [{"oldText": "end", "newText": "end -- done"}]}}),
+        json!({"type": "tool_execution_end", "toolCallId": "e1", "toolName": "edit", "isError": true,
+               "durationMs": 1, "result": {"content": [{"type": "text", "text": "blocked"}]}}),
         json!({"type": "tool_check", "tool": "bash", "tool_call_id": "b1", "decision": "allow",
                "reason": "no rule is broken"}),
         json!({"type": "tool_execution_start", "toolCallId": "b1", "toolName": "bash",
@@ -1411,7 +1423,8 @@ fn chat_events() -> Vec<moebius_desktop::client::RunEvent> {
             seq: n as i64 + 1,
             kind: record["type"].as_str().unwrap().to_string(),
             data: record,
-            at: 1_790_000_000,
+            // The chat began ten minutes before the picture's time and took its steps a few seconds apart.
+            at: 1_790_000_000 - 600 + n as i64 * 20,
         })
         .collect()
 }
@@ -1431,6 +1444,15 @@ fn chat_listing(status: &str) -> Vec<moebius_desktop::client::Chat> {
 /// The app on the chat screen with chat 7 open, as if its list and events were read from a server. Chat 7 offered
 /// the branch `moebius/chat-7` when `offered`.
 fn chatting(status: &str, offered: bool) -> App {
+    chatting_with(status, offered, chat_events())
+}
+
+/// Like `chatting`, with the events of the chat given.
+fn chatting_with(
+    status: &str,
+    offered: bool,
+    events: Vec<moebius_desktop::client::RunEvent>,
+) -> App {
     let mut board = radiance("Ready");
     let mut inbox = vec![];
     if offered {
@@ -1447,7 +1469,7 @@ fn chatting(status: &str, offered: bool) -> App {
         status,
     )))));
     let _ = app.update(Message::Chat(chat::Message::Select(7)));
-    let _ = app.update(Message::Chat(chat::Message::Loaded(7, Ok(chat_events()))));
+    let _ = app.update(Message::Chat(chat::Message::Loaded(7, Ok(events))));
     app
 }
 
@@ -1469,11 +1491,13 @@ fn a_chat_is_drawn_with_its_markdown_tool_calls_and_offered_change() {
             "Add a rule against vendor edits",
             "New chat",
             "Write a ready.luau that starts a card only when nothing blocks it.",
-            ".moebius/ready.luau",
-            "Allowed",
+            "3 tool calls",
+            "Write",
+            "Edit",
+            "refused",
+            "Bash",
             "moebius check-script .moebius/ready.luau",
-            "ran 140 ms",
-            "ok: .moebius/ready.luau is a valid column script",
+            "result:  ok: .moebius/ready.luau is a valid column script",
             "Change offered",
             "moebius/chat-7",
             "Merge",
@@ -1482,6 +1506,86 @@ fn a_chat_is_drawn_with_its_markdown_tool_calls_and_offered_change() {
         ],
         Size::new(1440.0, 1100.0),
     );
+}
+
+/// A chat whose agent is still at work shows its steps under "Agent is working" with the time and the tool calls so
+/// far, one folded line each: compare `tests/snapshots/chat-working-tiny-skia.png`.
+#[test]
+fn a_working_chat_shows_its_steps_folded_under_the_working_header() {
+    // The chat's events up to the last tool call: the agent has not answered yet.
+    let mut events = chat_events();
+    events.truncate(events.len() - 2);
+    let app = chatting_with("running", false, events);
+    assert!(!shows(&app, "Worked for"));
+    draw_sized(
+        &app,
+        "chat-working",
+        &[
+            "Agent is working",
+            "3 tool calls",
+            "Looking at how the other column scripts decide whether a card may start...",
+            "Write",
+            "Edit",
+            "refused",
+            "Bash",
+            "result:  ok: .moebius/ready.luau is a valid column script",
+        ],
+        Size::new(1440.0, 1100.0),
+    );
+    // Folded, a step does not show what only its unfolding does.
+    assert!(!shows(&app, "moebius start_run"));
+}
+
+/// A click on a step unfolds it to the whole of it, highlighted, and another click folds it again; the other steps
+/// stay as they were. Compare `tests/snapshots/chat-unfolded-tiny-skia.png`.
+#[test]
+fn a_click_on_a_step_unfolds_it_and_another_folds_it_again() {
+    let mut app = chatting("succeeded", false);
+    let fold = clicked(&app, "Write");
+    let [Message::Chat(chat::Message::Fold(step))] = &fold[..] else {
+        panic!("clicking a step should fold or unfold it: {fold:?}");
+    };
+    let step = *step;
+    assert!(shows(&app, "result:  written"));
+    let _ = app.update(Message::Chat(chat::Message::Fold(step)));
+    // Unfolded, the step's result line gives way to the whole of it: the file, drawn in lines of highlighted spans.
+    assert!(!shows(&app, "result:  written"));
+    // The thought and the other tool calls stay folded: their lines are still there, and their contents are not.
+    assert!(!shows(
+        &app,
+        "ok: .moebius/ready.luau is a valid column script"
+    ));
+    draw_sized(
+        &app,
+        "chat-unfolded",
+        &[
+            ".moebius/ready.luau",
+            "result:  ok: .moebius/ready.luau is a valid column script",
+        ],
+        Size::new(1440.0, 1100.0),
+    );
+    let _ = app.update(Message::Chat(chat::Message::Fold(step)));
+    assert!(shows(&app, "result:  written"));
+}
+
+/// A refused call keeps its tag on the folded line, and its reason shows when it is unfolded.
+#[test]
+fn a_refused_step_says_so_folded_and_why_unfolded() {
+    let mut app = chatting("succeeded", false);
+    assert!(shows(&app, "refused"));
+    assert!(!shows(
+        &app,
+        "Rule broken: no-vendor-edits. Never edit files under vendor/."
+    ));
+    let fold = clicked(&app, "Edit");
+    let [Message::Chat(chat::Message::Fold(step))] = &fold[..] else {
+        panic!("clicking a step should fold or unfold it: {fold:?}");
+    };
+    let _ = app.update(Message::Chat(chat::Message::Fold(*step)));
+    assert!(shows(
+        &app,
+        "Rule broken: no-vendor-edits. Never edit files under vendor/."
+    ));
 }
 
 /// The Chat entry counts the chats with an answer the person has not read; a chat open on the Chat page is read.
@@ -1532,15 +1636,26 @@ fn an_ended_chat_is_written_to_and_its_failed_tag_keeps_its_place() {
 #[test]
 fn a_chat_names_who_decided_its_tool_calls() {
     let mut app = chatting("succeeded", false);
-    assert!(!shows(&app, "Pattern · ran 3 ms"));
-    let judged = |decider: &str| moebius_desktop::client::Judgement {
+    let judged = |choice: &str, reason: &str, decider: &str| moebius_desktop::client::Judgement {
         run: Some(7),
-        ..judgement("allow", "no rule is broken", decider)
+        ..judgement(choice, reason, decider)
     };
+    let refusal = "no-vendor-edits: Never edit files under vendor/.";
     let _ = app.update(Message::Chat(chat::Message::Judged(
         7,
-        Ok(vec![judged("patterns"), judged("teacher")]),
+        Ok(vec![
+            judged("allow", "no rule is broken", "patterns"),
+            judged("refuse", refusal, "teacher"),
+            judged("allow", "no rule is broken", "teacher"),
+        ]),
     )));
+    // Folded, a step says only that it was refused; unfolded it says who checked it and what the tool took.
+    assert!(!shows(&app, "Pattern · ran 3 ms"));
+    for name in ["Write", "Bash"] {
+        for message in clicked(&app, name) {
+            let _ = app.update(message);
+        }
+    }
     assert!(shows(&app, "Pattern · ran 3 ms"));
     assert!(shows(&app, "Teacher · ran 140 ms"));
 }
