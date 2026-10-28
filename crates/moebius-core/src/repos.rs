@@ -115,6 +115,23 @@ impl Repos {
         Ok(path)
     }
 
+    /// Makes `path` a new repository with one empty commit on `main`, creating the folder if it does not exist.
+    pub fn init(&self, path: &Path) -> Result<()> {
+        std::fs::create_dir_all(path)?;
+        git(path, &["init", "--quiet", "--initial-branch=main"])?;
+        git(
+            path,
+            &[
+                "commit",
+                "--quiet",
+                "--allow-empty",
+                "-m",
+                "Start the repository",
+            ],
+        )
+        .map(drop)
+    }
+
     /// Clones `url` to `path`, with `auth` as an extra HTTP header if the remote needs one.
     pub fn clone_into(&self, path: &Path, url: &str, auth: Option<&str>) -> Result<()> {
         let parent = path.parent().unwrap_or(Path::new("."));

@@ -150,14 +150,15 @@ Request:
 | Field | Type | Meaning |
 |---|---|---|
 | `name` | string | Required. Letters, digits, `-`, `_` and `.`, and not starting with a dot. Must be unique. |
-| `url` | string | Required. Anything `git clone` takes: a URL or a path on the server. |
+| `url` | string | Required. Anything `git clone` takes: a URL or a path on the server. Without a forge, an absolute path that does not exist, or an empty folder, is first made a new repository: branch `main` with one empty commit, "Start the repository". |
 | `forge` | string | `none` (the default) or `github`. |
 | `github` | string | `owner/repo` on GitHub. Required with the forge `github`, not allowed otherwise. Both parts are made of letters, digits, `-`, `_` and `.`. |
 | `trusted` | array of strings | GitHub logins whose issues need no approval. Only with the forge `github`. |
 
-Response: the `Repository`. Errors: `422` for an invalid name, a `github` that is not `owner/repo`, or a combination other
-than "no forge, no `github`, no `trusted`" and "forge `github` with `github`"; `422` also when the name is taken (nothing is
-cloned then); `500` when the clone fails.
+Response: the `Repository`. Errors: `422` for an invalid name, an absolute path to a folder with files that is not a git
+repository (nothing is created then), a `github` that is not `owner/repo`, or a combination other than "no forge, no
+`github`, no `trusted`" and "forge `github` with `github`"; `422` also when the name is taken (nothing is cloned or
+created then); `500` when the clone fails.
 
 ```sh
 curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \

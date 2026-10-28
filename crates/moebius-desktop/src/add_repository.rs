@@ -130,7 +130,10 @@ impl AddRepository {
                 &self.url,
                 Message::UrlEdited
             ),
-            page::body("Anything git clone takes: a URL, or a path on the server."),
+            page::body(
+                "Anything git clone takes: a URL, or a path on the server. A path that does not exist yet, \
+                 or an empty folder, becomes a new repository.",
+            ),
             label("Forge"),
             row![
                 page::chip(

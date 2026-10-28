@@ -467,7 +467,8 @@ pub enum RepoCommand {
     /// Clone a repository into the server.
     Add {
         name: String,
-        /// Anything `git clone` takes, as seen from the server.
+        /// Anything `git clone` takes, as seen from the server. An absolute path that does not exist, or an empty
+        /// folder, becomes a new repository.
         url: String,
         /// `owner/repo` on GitHub; the repository then uses the GitHub forge.
         #[arg(long)]

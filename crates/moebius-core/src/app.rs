@@ -96,6 +96,11 @@ fn is_plain_name(name: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
 }
 
+/// Whether `path` is a git repository itself: one with a working tree, or a bare one.
+fn is_repository(path: &Path) -> bool {
+    path.join(".git").exists() || (path.join("HEAD").is_file() && path.join("objects").is_dir())
+}
+
 pub type Result<T> = std::result::Result<T, AppError>;
 
 /// How many characters of a chat's first message its title keeps.
@@ -283,8 +288,21 @@ impl App {
             .ok_or_else(|| AppError::NotFound(format!("change {id}")))
     }
 
-    /// Clones `url` and adds it as a repository without a forge.
+    /// Clones `url` and adds it as a repository without a forge. An absolute path that does not exist, or an empty
+    /// folder, is first made a new repository; a folder with files that is not a repository is refused.
     pub fn add_repository(&self, name: &str, url: &str) -> Result<Repository> {
+        let local = Path::new(url);
+        if local.is_absolute() && !is_repository(local) {
+            let empty = std::fs::read_dir(local)
+                .map_or(!local.exists(), |mut entries| entries.next().is_none());
+            if !empty {
+                return Err(AppError::Invalid(format!(
+                    "{url} has files but is not a git repository; run git init there, or give an empty folder"
+                )));
+            }
+            self.check_new_name(name)?;
+            self.repos.init(local)?;
+        }
         let (path, branch) = self.clone_repository(name, url, None)?;
         let repository = self.store.add_repository(name, &path, "none", &branch)?;
         self.bus
@@ -330,6 +348,14 @@ impl App {
         url: &str,
         auth: Option<&str>,
     ) -> Result<(String, String)> {
+        self.check_new_name(name)?;
+        let clone = self.repos.clone_or_fetch(name, url, auth)?;
+        let branch = self.repos.default_branch(&clone)?;
+        Ok((clone.to_string_lossy().into_owned(), branch))
+    }
+
+    /// Refuses `name` for a new repository when it is not a plain name or is taken.
+    fn check_new_name(&self, name: &str) -> Result<()> {
         if !is_plain_name(name) || name.starts_with('.') {
             return Err(AppError::Invalid(format!(
                 "{name:?} is not a repository name"
@@ -340,9 +366,7 @@ impl App {
                 "the repository name {name:?} is taken"
             )));
         }
-        let clone = self.repos.clone_or_fetch(name, url, auth)?;
-        let branch = self.repos.default_branch(&clone)?;
-        Ok((clone.to_string_lossy().into_owned(), branch))
+        Ok(())
     }
 
     /// Whether the issue behind `card` may move on without a person's approval: a person created it in the desktop
@@ -1416,6 +1440,40 @@ mod tests {
 
         let (succeeded, output) = run("echo nope >&2; exit 3", 30);
         assert_eq!((succeeded, output.as_str()), (false, "nope"));
+    }
+
+    #[test]
+    fn a_path_that_is_not_a_repository_yet_becomes_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(Store::in_memory(&dir.path().join("blobs")).unwrap());
+        let app = App::new(
+            store,
+            Arc::new(Host::new(std::time::Duration::from_secs(1))),
+            &dir.path().join("data"),
+        );
+        let path = |name: &str| dir.path().join(name).to_string_lossy().into_owned();
+
+        // A path that does not exist, and an empty folder, are made repositories on `main` and cloned.
+        let fresh = app.add_repository("fresh", &path("new/fresh")).unwrap();
+        assert_eq!(fresh.default_branch, "main");
+        let log = git(Path::new(&fresh.path), &["log", "--format=%s"]).unwrap();
+        assert_eq!(log, "Start the repository");
+        std::fs::create_dir(dir.path().join("empty")).unwrap();
+        assert!(app.add_repository("empty", &path("empty")).is_ok());
+
+        // A folder with files is left alone.
+        std::fs::create_dir(dir.path().join("files")).unwrap();
+        std::fs::write(dir.path().join("files/notes.txt"), "mine").unwrap();
+        let refused = app.add_repository("files", &path("files")).unwrap_err();
+        assert!(
+            refused.to_string().contains("is not a git repository"),
+            "{refused}"
+        );
+        assert!(!dir.path().join("files/.git").exists());
+
+        // A taken name creates nothing.
+        assert!(app.add_repository("fresh", &path("other")).is_err());
+        assert!(!dir.path().join("other").exists());
     }
 
     #[test]
