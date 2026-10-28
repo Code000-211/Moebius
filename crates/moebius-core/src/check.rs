@@ -257,7 +257,7 @@ mod tests {
         store.set_run_worktree(run.id, "/srv/wt/1").unwrap();
         let mut host = Host::new(Duration::from_secs(30));
         host.add(Rules);
-        let mut app = App::new(store.clone(), Arc::new(host), dir.path());
+        let app = App::new(store.clone(), Arc::new(host), dir.path());
         if route {
             app.decisions.route("tool_call", "rules");
         }

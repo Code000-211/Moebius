@@ -6,7 +6,9 @@
 //!    is allowed and nobody is asked. With them and a teacher configured (`[teacher]` in the configuration) the
 //!    teacher is asked and the judgement's decider is `guard/teacher`; with them and no teacher the call is refused
 //!    (fail closed). The teacher also refuses when it fails, is too slow or answers anything but the JSON asked for.
-//!    A refusal's reason starts with the rule's name.
+//!    A refusal's reason starts with the rule's name. Once the decision model has taken `tool_call` over (see
+//!    `decision_model`), it is asked instead of the teacher, the judgement's decider is `guard/decision-model`, and it
+//!    too refuses when it fails. The built-in patterns of step 1 always apply first.
 //!
 //! A question whose context has a `rules_error` (the rules files could not be read) is refused outright, by
 //! `guard/patterns`.
@@ -27,6 +29,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::config::TeacherConfig;
+use crate::decision_model::{self, DecisionModel, Routed};
 use crate::router::{Grant, Protocol, Router};
 use crate::rules::{self, Rule};
 
@@ -711,11 +714,35 @@ fn decision(choice: &str, reason: String, by: &str) -> Decision {
 /// refused while any applies.
 pub struct Guard {
     teacher: Option<Teacher>,
+    /// The decision model, and the kinds it has taken over, which says whether it answers instead of the teacher.
+    model: Option<(DecisionModel, Arc<Routed>)>,
 }
 
 impl Guard {
     pub fn new(teacher: Option<Teacher>) -> Self {
-        Self { teacher }
+        Self {
+            teacher,
+            model: None,
+        }
+    }
+
+    /// Lets `model` judge the rules in prose instead of the teacher once `routed` has `tool_call`.
+    pub fn with_decision_model(mut self, model: DecisionModel, routed: Arc<Routed>) -> Self {
+        self.model = Some((model, routed));
+        self
+    }
+
+    /// The decision model's decision about the call, which refuses when the model cannot decide.
+    fn ask_model(model: &DecisionModel, context: &BTreeMap<String, String>) -> Decision {
+        let options = ["allow".to_string(), "refuse".to_string()];
+        match model.ask(decision_model::KEPT_BY_ITS_DECIDER, context, &options) {
+            Ok(answer) => decision(&answer.choice, answer.reason, decision_model::NAME),
+            Err(why) => decision(
+                "refuse",
+                format!("decision model: {why}"),
+                decision_model::NAME,
+            ),
+        }
     }
 }
 
@@ -756,10 +783,15 @@ impl Plugin for Guard {
             decision("refuse", reason, "patterns")
         } else {
             let prose = rules::parse(context.get("rules").map_or("", String::as_str));
-            match (&self.teacher, prose.is_empty()) {
-                (_, true) => decision("allow", "no rule is broken".into(), "patterns"),
-                (Some(teacher), false) => teacher.judge(context, &prose),
-                (None, false) => decision(
+            let model = self
+                .model
+                .as_ref()
+                .filter(|(_, routed)| routed.contains(decision_model::KEPT_BY_ITS_DECIDER));
+            match (&self.teacher, model, prose.is_empty()) {
+                (_, _, true) => decision("allow", "no rule is broken".into(), "patterns"),
+                (_, Some((model, _)), false) => Self::ask_model(model, context),
+                (Some(teacher), None, false) => teacher.judge(context, &prose),
+                (None, None, false) => decision(
                     "refuse",
                     "no teacher is configured to check the rules in prose".into(),
                     "teacher",
@@ -1399,7 +1431,7 @@ mod tests {
             });
             let mut host = Host::new(Duration::from_secs(30));
             host.add(Guard::new(teacher));
-            let mut decisions = Decisions::new(store.clone(), Arc::new(host));
+            let decisions = Decisions::new(store.clone(), Arc::new(host));
             decisions.route("tool_call", NAME);
             Teaching {
                 _dir: dir,

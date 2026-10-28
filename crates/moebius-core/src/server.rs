@@ -18,6 +18,7 @@ use crate::board::{Engine, Limits, Runs, Workflow};
 use crate::bus::AppEvent;
 use crate::check;
 use crate::config::Config;
+use crate::decision_model::{self, DecisionModel, Routed};
 use crate::forge::GitHubForge;
 use crate::github::GitHub;
 use crate::guard::{self, Guard, Teacher};
@@ -155,9 +156,29 @@ impl Server {
             .teacher
             .as_ref()
             .map(|teacher| Teacher::new(teacher, router.clone(), format!("http://{router_addr}")));
+        let model = match &config.decision_model {
+            Some(m) => {
+                let key = match &m.api_key_env {
+                    Some(var) => Some(
+                        std::env::var(var)
+                            .map_err(|_| format!("the environment variable {var} is not set"))?,
+                    ),
+                    None => None,
+                };
+                Some(DecisionModel::new(m, key))
+            }
+            None => None,
+        };
+        let routed = Arc::new(Routed::default());
+        let mut guard = Guard::new(teacher);
         let mut host = Host::new(PLUGIN_TIME_LIMIT);
-        host.add(Guard::new(teacher));
+        if let Some(model) = &model {
+            guard = guard.with_decision_model(model.clone(), routed.clone());
+            host.add(model.clone());
+        }
+        host.add(guard);
         let mut app = App::new(store.clone(), Arc::new(host), &config.data_dir);
+        app.decisions.share_routed(routed);
         app.checks_timeout = config.checks_timeout;
         app.decisions.route("tool_call", guard::NAME);
         let github = match &config.github {
@@ -177,6 +198,10 @@ impl Server {
         };
         let app = Arc::new(app);
         end_runs_of_a_previous_server(&app)?;
+        if let Some(model) = model {
+            decision_model::start(&app, model)
+                .map_err(|e| format!("cannot start the decision model: {e}"))?;
+        }
 
         let harness = Arc::new(PiBolt::new(
             config.pi_bolt.clone(),

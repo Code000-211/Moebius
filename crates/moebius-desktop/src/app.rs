@@ -465,6 +465,11 @@ impl App {
                     tasks.push(self.retros.reload(settings));
                     tasks.push(self.agents.reload(settings));
                 }
+                if matches!(event.kind.as_str(), "takeover_proposed" | "takeover_status")
+                    && let Some(settings) = &self.settings
+                {
+                    tasks.push(self.decision_model.reload(settings));
+                }
                 if matches!(event.kind.as_str(), "research_status" | "experiment_done")
                     && let Some(settings) = &self.settings
                 {

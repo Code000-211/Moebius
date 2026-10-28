@@ -45,7 +45,7 @@ is written, so a secret in an old blob does not leave the server; they appear as
 ## The split
 
 `split` is `held_out` for a tenth of the judgements, which training leaves out and shadowing measures a decision model
-on. The rule involves no randomness, so a judgement is on the same side in every export and on every server: take the
+on (see [the decision model](decision-model.md)). The rule involves no randomness, so a judgement is on the same side in every export and on every server: take the
 `id` as an unsigned 64-bit number, multiply it by `0x9E3779B97F4A7C15`, wrapping around at 2^64, shift the product right
 by 32 bits and divide by 10. The judgement is `held_out` when the remainder is 0, and `train` otherwise. In Rust,
 `export::held_out(id)`.

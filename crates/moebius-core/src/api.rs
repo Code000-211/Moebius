@@ -18,6 +18,9 @@
 //! - `GET /v1/judgements/kinds`: the counts of the stored judgements per kind. `POST /v1/exports` `{kinds?}` writes the
 //!   training-set export a person asks for and records the decision; `GET /v1/exports` lists the exports; `GET
 //!   /v1/exports/{id}/{file}` downloads a file (`<kind>.jsonl`) of one (see [`crate::export`]).
+//! - `GET /v1/decision-model`: whether a decision model is configured, how well it agrees per kind and its takeovers.
+//!   `GET /v1/takeovers`: the takeovers. `POST /v1/takeovers/{id}/merge`, `/dismiss` and `/release` `{reason}`: a person
+//!   lets the model take a kind over, refuses, or hands a kind back (see [`crate::decision_model`]).
 //! - `POST /v1/runs/{id}/steer` `{message}`: a person sends a message to a running run.
 //! - `POST /v1/runs/{id}/stop` `{reason}`: a person stops a running run; a chat ends as stopped.
 //! - `GET /v1/runs/{id}/terminal`: a WebSocket on a shell in the run's worktree (see [`crate::terminal`]).
@@ -55,6 +58,7 @@ use tokio::sync::broadcast::error::RecvError;
 use crate::app::{App, AppError, Chat, HistoryEntry, PERSON, columns, runs_since_retry};
 use crate::board::{AgentInfo, Runs, latest_review};
 use crate::bus::AppEvent;
+use crate::decision_model;
 use crate::export::{self, Export, ExportError, KindCounts};
 use crate::forge::ForgeError;
 use crate::grilling;
@@ -66,7 +70,7 @@ use crate::research::{self, NewResearch, ResearchView};
 use crate::retro::{self, RetroSummary, RetroView};
 use crate::store::{
     AgentUsage, Card, Change, Event, Grilling, GrillingIssue, InboxItem, ModelUsage, Proposal,
-    Replay, Repository, Run, ToolWait,
+    Replay, Repository, Run, Takeover, ToolWait,
 };
 use crate::trial;
 
@@ -393,6 +397,11 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/proposals/{id}/trial", post(try_proposal))
         .route("/v1/proposals/{id}/merge", post(merge_proposal))
         .route("/v1/proposals/{id}/dismiss", post(dismiss_proposal))
+        .route("/v1/decision-model", get(decision_model_view))
+        .route("/v1/takeovers", get(takeovers))
+        .route("/v1/takeovers/{id}/merge", post(merge_takeover))
+        .route("/v1/takeovers/{id}/dismiss", post(dismiss_takeover))
+        .route("/v1/takeovers/{id}/release", post(release_takeover))
         .route("/v1/research", get(researches).post(create_research))
         .route("/v1/research/{id}", get(get_research))
         .route("/v1/research/{id}/confirm", post(confirm_research))
@@ -732,6 +741,49 @@ async fn dismiss_proposal(
     let (repo, reason) = (harness_repo(&state)?, decision.reason);
     blocking(&state.app, move |app| {
         trial::dismiss(app, &repo, id, &reason)
+    })
+    .await
+}
+
+async fn decision_model_view(
+    State(state): State<ApiState>,
+) -> Result<axum::Json<decision_model::View>, ApiError> {
+    blocking(&state.app, |app| decision_model::view(app)).await
+}
+
+async fn takeovers(State(state): State<ApiState>) -> Result<axum::Json<Vec<Takeover>>, ApiError> {
+    blocking(&state.app, |app| Ok(app.store.takeovers()?)).await
+}
+
+async fn merge_takeover(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+    axum::Json(decision): axum::Json<Reason>,
+) -> Result<axum::Json<Takeover>, ApiError> {
+    blocking(&state.app, move |app| {
+        decision_model::merge(app, id, &decision.reason)
+    })
+    .await
+}
+
+async fn dismiss_takeover(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+    axum::Json(decision): axum::Json<Reason>,
+) -> Result<axum::Json<Takeover>, ApiError> {
+    blocking(&state.app, move |app| {
+        decision_model::dismiss(app, id, &decision.reason)
+    })
+    .await
+}
+
+async fn release_takeover(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+    axum::Json(decision): axum::Json<Reason>,
+) -> Result<axum::Json<Takeover>, ApiError> {
+    blocking(&state.app, move |app| {
+        decision_model::release(app, id, &decision.reason)
     })
     .await
 }

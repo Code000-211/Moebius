@@ -127,21 +127,21 @@ The server builds the host, adds the guard and routes `tool_call` to it in `Serv
 
 <!-- excerpt: crates/moebius-core/src/server.rs -->
 ```rust
-let mut host = Host::new(PLUGIN_TIME_LIMIT);
-host.add(Guard::new(teacher));
+host.add(guard);
 let mut app = App::new(store.clone(), Arc::new(host), &config.data_dir);
+app.decisions.share_routed(routed);
 app.checks_timeout = config.checks_timeout;
 app.decisions.route("tool_call", guard::NAME);
 ```
 
-Add your plugin to the host next to the guard, and route your kind after `App::new`, before `app` is wrapped in an `Arc`.
+Add your plugin to the host next to the guard, and route your kind after `App::new`.
 The guide's test does it like this:
 
 <!-- excerpt: crates/moebius-core/tests/guide.rs -->
 ```rust
 let mut host = Host::new(Duration::from_secs(5));
 host.add(StartGate);
-let mut app = App::new(store, Arc::new(host), &dir.path().join("data"));
+let app = App::new(store, Arc::new(host), &dir.path().join("data"));
 app.decisions.route("start_card", "start-gate");
 ```
 

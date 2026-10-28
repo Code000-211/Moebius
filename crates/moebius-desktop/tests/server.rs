@@ -1017,3 +1017,71 @@ async fn the_client_counts_judgements_and_starts_an_export() {
         ["export", "merge"]
     );
 }
+
+/// Without a `[decision_model]` the client reads that none is configured; with one it reads an empty shadowing, and a
+/// takeover is merged and released through the client.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_client_reads_the_shadowing_and_merges_and_releases_a_takeover() {
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, _server) = start(dir.path()).await;
+    let shadowing = Client::new(settings).shadowing().await.unwrap();
+    assert!(!shadowing.configured && shadowing.kinds.is_empty() && shadowing.model.is_none());
+
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, server) = start_with(
+        dir.path(),
+        "[decision_model]\nurl = \"http://127.0.0.1:1/v1\"\nmodel = \"decider\"\nmin_judgements = 7\n",
+    )
+    .await;
+    let client = Client::new(settings);
+    let shadowing = client.shadowing().await.unwrap();
+    assert!(shadowing.configured && shadowing.kinds.is_empty());
+    assert_eq!(
+        (
+            shadowing.model.as_deref(),
+            shadowing.agreement,
+            shadowing.min_judgements
+        ),
+        (Some("decider"), Some(0.95), Some(7))
+    );
+
+    let store = &server.app.store;
+    let proposed = store.add_takeover("tool_call", 0.97, 120).unwrap();
+    store
+        .add_inbox_item(
+            "takeover",
+            None,
+            "The decision model can take over tool_call",
+            &serde_json::json!({"takeover": proposed.id, "kind": "tool_call", "agreement": 0.97, "count": 120}),
+        )
+        .unwrap();
+    let snapshot = client.snapshot().await.unwrap();
+    assert_eq!(snapshot.inbox[0].takeover(), Some(proposed.id));
+
+    client.merge_takeover(proposed.id).await.unwrap();
+    assert!(server.app.decisions.routed().contains("tool_call"));
+    assert!(client.snapshot().await.unwrap().inbox.is_empty());
+    let shadowing = client.shadowing().await.unwrap();
+    assert_eq!(shadowing.takeovers[0].status, "merged");
+    assert_eq!(shadowing.kinds[0].kind, "tool_call");
+    assert!(shadowing.kinds[0].routed);
+
+    client.release_takeover(proposed.id).await.unwrap();
+    assert!(!server.app.decisions.routed().contains("tool_call"));
+    assert_eq!(
+        client.shadowing().await.unwrap().takeovers[0].status,
+        "released"
+    );
+    // A second release is refused with the server's message.
+    assert!(matches!(
+        client.release_takeover(proposed.id).await.unwrap_err(),
+        ClientError::Server { status: 409, .. }
+    ));
+
+    let second = store.add_takeover("merge", 0.99, 90).unwrap();
+    client.dismiss_takeover(second.id).await.unwrap();
+    assert_eq!(
+        client.shadowing().await.unwrap().takeovers[1].status,
+        "dismissed"
+    );
+}

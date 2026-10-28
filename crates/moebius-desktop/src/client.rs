@@ -327,6 +327,46 @@ pub struct Export {
     pub kinds: Vec<KindCounts>,
 }
 
+/// A proposal that the decision model take a kind of decision over.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Takeover {
+    pub id: i64,
+    pub kind: String,
+    /// The agreement when it was proposed, between 0 and 1.
+    pub agreement: f64,
+    pub count: i64,
+    /// `open`, `merged`, `dismissed` or `released`.
+    pub status: String,
+}
+
+/// How the decision model does on one kind, as `GET /v1/decision-model` says.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct ShadowedKind {
+    pub kind: String,
+    pub shadows: i64,
+    #[serde(default)]
+    pub agreement: Option<f64>,
+    pub failed: i64,
+    pub dropped: i64,
+    /// The model decides the kind now.
+    pub routed: bool,
+}
+
+/// The shadowing of the decision model, as `GET /v1/decision-model` says.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Shadowing {
+    pub configured: bool,
+    #[serde(default)]
+    pub model: Option<String>,
+    /// The agreement a takeover needs.
+    #[serde(default)]
+    pub agreement: Option<f64>,
+    #[serde(default)]
+    pub min_judgements: Option<i64>,
+    pub kinds: Vec<ShadowedKind>,
+    pub takeovers: Vec<Takeover>,
+}
+
 /// A research as `GET /v1/research` lists it: the brief, how it stands and its experiments.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Research {
@@ -526,6 +566,11 @@ impl InboxItem {
     /// The id of the proposal a `proposal` item is about.
     pub fn proposal(&self) -> Option<i64> {
         self.data["proposal"].as_i64()
+    }
+
+    /// The id of the takeover a `takeover` item is about.
+    pub fn takeover(&self) -> Option<i64> {
+        self.data["takeover"].as_i64()
     }
 
     /// The id of the chat whose work a `ready_to_merge` item offers: the number in its branch `moebius/chat-<id>`.
@@ -756,6 +801,11 @@ impl Client {
         self.get("/v1/proposals").await
     }
 
+    /// How well the decision model agrees with the recorded choices, and its takeovers.
+    pub async fn shadowing(&self) -> Result<Shadowing, ClientError> {
+        self.get("/v1/decision-model").await
+    }
+
     pub async fn judgement_kinds(&self) -> Result<Vec<KindCounts>, ClientError> {
         self.get("/v1/judgements/kinds").await
     }
@@ -852,6 +902,24 @@ impl Client {
     /// Dismisses a proposal of the Retro.
     pub async fn dismiss_proposal(&self, proposal: i64) -> Result<(), ClientError> {
         let path = format!("/v1/proposals/{proposal}/dismiss");
+        self.decide(path, serde_json::json!({})).await
+    }
+
+    /// Lets the decision model take a kind over.
+    pub async fn merge_takeover(&self, takeover: i64) -> Result<(), ClientError> {
+        let path = format!("/v1/takeovers/{takeover}/merge");
+        self.decide(path, serde_json::json!({})).await
+    }
+
+    /// Refuses a takeover proposal.
+    pub async fn dismiss_takeover(&self, takeover: i64) -> Result<(), ClientError> {
+        let path = format!("/v1/takeovers/{takeover}/dismiss");
+        self.decide(path, serde_json::json!({})).await
+    }
+
+    /// Hands a kind that the decision model took over back to its decider.
+    pub async fn release_takeover(&self, takeover: i64) -> Result<(), ClientError> {
+        let path = format!("/v1/takeovers/{takeover}/release");
         self.decide(path, serde_json::json!({})).await
     }
 

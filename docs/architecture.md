@@ -66,7 +66,7 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
    `check::ask` builds the `tool_call` question (`tool_call_question`, with the applicable rules from
    `rules::applicable`, or the `rules_error` when the server's rules file cannot be read), and `Decisions::decide` asks the `guard` plugin through the `Host` on a thread of its own with
    a time limit. `Guard::call` tests the built-in patterns, then the prose rules with the teacher model (`Teacher::judge`,
-   which calls the router with a token for this run). The answer is stored as one judgement, as a `tool_check` run
+   which calls the router with a token for this run; once a takeover of `tool_call` is merged, `DecisionModel::ask` answers the prose rules instead). The answer is stored as one judgement, as a `tool_check` run
    event, and returned. A refusal goes back to the model as the tool's result and the run goes on. The result of each
    tool is cleaned of secrets through `/moebius/result` (`check::result`).
 8. **The run ends.** At `agent_settled`, `Reader::end` closes Pi's standard input, revokes the token, commits what the
@@ -205,6 +205,8 @@ start; its version is `PRAGMA user_version`.
 | `runs` | One per harness run: card (none for a chat), agent, harness, purpose, status, worktree, repository (a chat's), start and end, summary (the agent's final answer). |
 | `events` | Everything a run emitted, numbered per run, as JSON. |
 | `judgements` | One per decision: kind, context (blob ids), options, choice, reason, decider, run, card, outcome. |
+| `shadows` | One per judgement the decision model was asked about: judgement, kind, the model's choice (null when it failed), reason, failed. |
+| `takeovers` | A proposal that the decision model take a kind over: kind, agreement, the number of shadows, status (`open`, `merged`, `dismissed`, `released`). |
 | `replays` | One per replayed refusal: judgement, run, exit code, timed out, output, files created, changed and deleted. |
 | `inbox_items` | What needs a person: kind, card, title, data, resolved or not. |
 | `usage` | Tokens per model request: run, model, input, output, cached, duration. |
@@ -260,6 +262,7 @@ The server runs on a multi-threaded tokio runtime.
 | `check.rs` | The tool-call check endpoints `/moebius/check` and `/moebius/result`. |
 | `config.rs` | `moebius.toml`: parsing, defaults, validation. |
 | `decide.rs` | Decision points: routing a question to a decider, failing closed, recording the judgement. |
+| `decision_model.rs` | The decision model: asking an OpenAI-compatible endpoint, shadowing held-out judgements in the background, takeover proposals and their merge, dismissal and release. |
 | `export.rs` | The training-set export: judgements with their contexts and outcomes as JSON Lines per kind, the held-out tenth, the exports a person started in the app. |
 | `forge.rs` | The `Forge` trait with the forges `none` and `github`. |
 | `github.rs` | The GitHub App client: JWT, installation tokens, issues with ETags, pull requests, checks, reviews, merge. |

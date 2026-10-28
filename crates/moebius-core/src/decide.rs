@@ -2,11 +2,12 @@
 //! [`Decisions::record_person`] and leaves exactly one judgement with its full context.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use moebius_plugin_api::{DecideRequest, Host};
 use serde::{Deserialize, Serialize};
 
+use crate::decision_model::{self, Routed, Shadowing};
 use crate::store::{NewJudgement, Result, Store};
 
 /// A decision to be made.
@@ -39,7 +40,11 @@ pub struct Decision {
 pub struct Decisions {
     store: Arc<Store>,
     host: Arc<Host>,
-    by_kind: BTreeMap<String, String>,
+    by_kind: Mutex<BTreeMap<String, String>>,
+    /// The kinds the decision model has taken over (see `decision_model`).
+    routed: Arc<Routed>,
+    /// Set once, when a decision model is configured.
+    shadowing: OnceLock<Shadowing>,
 }
 
 impl Decisions {
@@ -47,21 +52,65 @@ impl Decisions {
         Self {
             store,
             host,
-            by_kind: BTreeMap::new(),
+            by_kind: Mutex::default(),
+            routed: Arc::default(),
+            shadowing: OnceLock::new(),
         }
     }
 
     /// Lets the decider plugin `plugin` answer decisions of `kind`.
-    pub fn route(&mut self, kind: &str, plugin: &str) -> &mut Self {
-        self.by_kind.insert(kind.to_string(), plugin.to_string());
+    pub fn route(&self, kind: &str, plugin: &str) -> &Self {
+        self.by_kind
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(kind.to_string(), plugin.to_string());
         self
+    }
+
+    /// Whether a decider plugin answers decisions of `kind`, as opposed to a kind only a person decides.
+    pub fn decides(&self, kind: &str) -> bool {
+        self.by_kind
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .contains_key(kind)
+    }
+
+    /// Uses `routed`, which the guard shares, as the kinds the decision model has taken over.
+    pub fn share_routed(&mut self, routed: Arc<Routed>) {
+        self.routed = routed;
+    }
+
+    pub fn routed(&self) -> &Routed {
+        &self.routed
+    }
+
+    /// Starts shadowing; false when it was started already.
+    pub fn start_shadowing(&self, shadowing: Shadowing) -> bool {
+        self.shadowing.set(shadowing).is_ok()
+    }
+
+    pub fn shadowing(&self) -> Option<&Shadowing> {
+        self.shadowing.get()
+    }
+
+    /// The plugin that answers decisions of `kind`: the decision model once it has taken the kind over, except for
+    /// the kind whose built-in rules stay with their decider.
+    fn decider_for(&self, kind: &str) -> Option<String> {
+        if self.routed.contains(kind) && kind != decision_model::KEPT_BY_ITS_DECIDER {
+            return Some(decision_model::NAME.to_string());
+        }
+        self.by_kind
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(kind)
+            .cloned()
     }
 
     /// Asks the decider for the question's kind and records the judgement. A decider that is missing, times out,
     /// panics, fails or answers outside the options gives the fail-closed option, and the judgement says why.
     pub fn decide(&self, question: &Question) -> Result<Decision> {
         let context = self.keep_context(question)?;
-        let decider = self.by_kind.get(&question.kind).cloned();
+        let decider = self.decider_for(&question.kind);
         let answer = match &decider {
             None => Err(format!("no decider answers {:?}", question.kind)),
             Some(plugin) => self
@@ -70,7 +119,7 @@ impl Decisions {
                     plugin,
                     &DecideRequest {
                         kind: question.kind.clone(),
-                        context: context.text,
+                        context: context.text.clone(),
                         options: question.options.clone(),
                     },
                 )
@@ -90,7 +139,7 @@ impl Decisions {
                 true,
             ),
         };
-        self.record(question, context.blob, choice, reason, decider, refused)
+        self.record(question, context, choice, reason, decider, refused)
     }
 
     /// Records a decision a person made in the desktop app (merge, reject, approve, steer, stop).
@@ -103,7 +152,7 @@ impl Decisions {
         let context = self.keep_context(question)?;
         self.record(
             question,
-            context.blob,
+            context,
             choice.to_string(),
             reason.to_string(),
             crate::app::PERSON.to_string(),
@@ -124,7 +173,7 @@ impl Decisions {
     fn record(
         &self,
         question: &Question,
-        blob: crate::blobs::BlobId,
+        context: Kept,
         choice: String,
         reason: String,
         decider: String,
@@ -132,7 +181,7 @@ impl Decisions {
     ) -> Result<Decision> {
         let j = self.store.add_judgement(&NewJudgement {
             kind: question.kind.clone(),
-            context: vec![blob],
+            context: vec![context.blob],
             options: question.options.clone(),
             choice,
             reason,
@@ -140,6 +189,9 @@ impl Decisions {
             run_id: question.run_id,
             card_id: question.card_id,
         })?;
+        if let Some(shadowing) = self.shadowing.get() {
+            shadowing.offer(&j, &context.text);
+        }
         Ok(Decision {
             choice: j.choice,
             reason: j.reason,
@@ -200,9 +252,9 @@ mod tests {
         let store = Arc::new(Store::in_memory(dir.path()).unwrap());
         let mut host = Host::new(Duration::from_secs(30));
         host.add(Refuser).add(Broken);
-        let mut d = Decisions::new(store.clone(), Arc::new(host));
-        d.route("tool_call", "refuser")
-            .route("broken_kind", "broken");
+        let d = Decisions::new(store.clone(), Arc::new(host));
+        d.route("tool_call", "refuser");
+        d.route("broken_kind", "broken");
         (dir, store, d)
     }
 

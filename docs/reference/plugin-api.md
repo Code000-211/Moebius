@@ -7,8 +7,10 @@ working decider is in
 [`crates/moebius-plugin-api/examples/allow_reads.rs`](../../crates/moebius-plugin-api/examples/allow_reads.rs).
 
 Today every plugin is compiled into the `moebius` binary. Plugins in their own process are not supported yet: the
-messages below exist so that they can be, but nothing starts or talks to such a process. The only plugin that goes
-through this API today is the `guard` decider (`crates/moebius-core/src/guard.rs`).
+messages below exist so that they can be, but nothing starts or talks to such a process. The plugins that go
+through this API today are the `guard` decider (`crates/moebius-core/src/guard.rs`) and, when a `[decision_model]` is
+configured, the `decision-model` decider (`crates/moebius-core/src/decision_model.rs`, see
+[the decision model](decision-model.md)).
 
 ## The trait
 

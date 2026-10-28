@@ -85,6 +85,10 @@ const FILES: &[(&str, &str)] = &[
         include_str!("../../../docs/reference/desktop-api.md"),
     ),
     (
+        "reference/decision-model.md",
+        include_str!("../../../docs/reference/decision-model.md"),
+    ),
+    (
         "reference/harness-configuration.md",
         include_str!("../../../docs/reference/harness-configuration.md"),
     ),

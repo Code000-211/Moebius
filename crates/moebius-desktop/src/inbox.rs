@@ -23,16 +23,18 @@ const APPROVE_ISSUE: &str = "approve_issue";
 const STUCK: &str = "stuck";
 const CHANGE_CLOSED: &str = "change_closed";
 const PROPOSAL: &str = "proposal";
+const TAKEOVER: &str = "takeover";
 const GRILLING_ISSUES: &str = "grilling_issues";
 const GRILLING_REPORT: &str = "grilling_report";
 
 /// The kinds the core adds, in the order the filter lists them; kinds of column scripts follow.
-const KINDS: [&str; 7] = [
+const KINDS: [&str; 8] = [
     READY_TO_MERGE,
     APPROVE_ISSUE,
     STUCK,
     CHANGE_CLOSED,
     PROPOSAL,
+    TAKEOVER,
     GRILLING_ISSUES,
     GRILLING_REPORT,
 ];
@@ -58,6 +60,12 @@ pub enum Action {
     DismissProposal {
         proposal: i64,
     },
+    MergeTakeover {
+        takeover: i64,
+    },
+    DismissTakeover {
+        takeover: i64,
+    },
     /// Confirm the grilling with the issues as they are edited.
     ConfirmGrilling {
         grilling: i64,
@@ -77,6 +85,8 @@ impl Action {
             Action::Retry { .. } => "Retrying…",
             Action::MergeProposal { .. } => "Merging…",
             Action::DismissProposal { .. } => "Dismissing…",
+            Action::MergeTakeover { .. } => "Merging…",
+            Action::DismissTakeover { .. } => "Dismissing…",
             Action::ConfirmGrilling { .. } => "Making the cards…",
             Action::DismissGrilling { .. } => "Dismissing…",
         }
@@ -287,6 +297,8 @@ impl Inbox {
                     Action::Retry { card } => client.retry(card).await,
                     Action::MergeProposal { proposal } => client.merge_proposal(proposal).await,
                     Action::DismissProposal { proposal } => client.dismiss_proposal(proposal).await,
+                    Action::MergeTakeover { takeover } => client.merge_takeover(takeover).await,
+                    Action::DismissTakeover { takeover } => client.dismiss_takeover(takeover).await,
                     Action::ConfirmGrilling { grilling } => {
                         client.confirm_grilling(grilling, &issues).await
                     }
@@ -592,6 +604,18 @@ impl Inbox {
                     ));
                 }
             }
+            (TAKEOVER, _, _) => {
+                if let Some(takeover) = item.takeover() {
+                    buttons.push(page::primary_button(
+                        "Merge",
+                        act(Action::MergeTakeover { takeover }),
+                    ));
+                    buttons.push(page::white_button(
+                        "Dismiss",
+                        act(Action::DismissTakeover { takeover }),
+                    ));
+                }
+            }
             (GRILLING_ISSUES, _, _) => {
                 if let Some(grilling) = item.grilling() {
                     buttons.push(page::primary_button(
@@ -710,6 +734,7 @@ fn chip_name(kind: &str) -> String {
         STUCK => "Stuck".to_string(),
         CHANGE_CLOSED => "Closed".to_string(),
         PROPOSAL => "Proposals".to_string(),
+        TAKEOVER => "Takeovers".to_string(),
         GRILLING_ISSUES => "Grilled issues".to_string(),
         GRILLING_REPORT => "Reports".to_string(),
         other => sentence(other),
@@ -734,6 +759,7 @@ fn kind_tag(item: &InboxItem) -> (String, Tone) {
         APPROVE_ISSUE => ("Outside issue".into(), Tone::Amber),
         CHANGE_CLOSED => ("Closed without a merge".into(), Tone::Amber),
         PROPOSAL => ("Retro proposal".into(), Tone::Amber),
+        TAKEOVER => ("Decision model".into(), Tone::Amber),
         GRILLING_ISSUES => ("Issues from a grilling".into(), Tone::Amber),
         GRILLING_REPORT => ("Report from a grilling".into(), Tone::Amber),
         other => (sentence(other), Tone::Plain),
@@ -759,6 +785,11 @@ fn why(item: &InboxItem, found: &Found) -> Option<String> {
             })
         }
         READY_TO_MERGE => None,
+        TAKEOVER => Some(format!(
+            "It chose what was recorded on {:.0}% of {} judgements held back from training. Merging lets it decide this kind from now on.",
+            item.data["agreement"].as_f64().unwrap_or_default() * 100.0,
+            item.data["count"].as_i64().unwrap_or_default()
+        )),
         PROPOSAL => Some("The Retro proposes this change to the harness configuration.".into()),
         GRILLING_ISSUES => Some(
             "The Grilling partner ended in these issues. Edit them, remove what you do not want, and confirm to make a card of each."

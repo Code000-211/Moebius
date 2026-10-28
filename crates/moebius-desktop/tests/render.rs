@@ -7,7 +7,7 @@ use moebius_desktop::agents;
 use moebius_desktop::app::{App, Message, Page};
 use moebius_desktop::chat;
 use moebius_desktop::client::{self, ClientError, Snapshot, TerminalEvent};
-use moebius_desktop::client::{Export, KindCounts};
+use moebius_desktop::client::{Export, KindCounts, ShadowedKind, Shadowing, Takeover};
 use moebius_desktop::decision_model;
 use moebius_desktop::experiments;
 use moebius_desktop::inbox::{self, Action};
@@ -2356,4 +2356,115 @@ fn an_empty_decision_model_screen_and_a_refused_export_say_so() {
         }),
     )));
     assert!(shows(&app, "The export was refused"));
+}
+
+fn shadowed(kind: &str, shadows: i64, agreement: Option<f64>, routed: bool) -> ShadowedKind {
+    ShadowedKind {
+        kind: kind.to_string(),
+        shadows,
+        agreement,
+        failed: if kind == "merge" { 3 } else { 0 },
+        dropped: if kind == "merge" { 2 } else { 0 },
+        routed,
+    }
+}
+
+fn takeover(id: i64, kind: &str, agreement: f64, count: i64, status: &str) -> Takeover {
+    Takeover {
+        id,
+        kind: kind.to_string(),
+        agreement,
+        count,
+        status: status.to_string(),
+    }
+}
+
+/// The Decision model screen with a model that shadows three kinds and has taken one over.
+fn shadowing_app() -> App {
+    let mut app = decision_model_app();
+    let _ = app.update(Message::DecisionModel(decision_model::Message::Shadowing(
+        Ok(Shadowing {
+            configured: true,
+            model: Some("moebius-decider".into()),
+            agreement: Some(0.95),
+            min_judgements: Some(100),
+            kinds: vec![
+                shadowed("approve_issue", 0, None, false),
+                shadowed("merge", 40, Some(0.85), false),
+                shadowed("tool_call", 118, Some(0.975), true),
+            ],
+            takeovers: vec![
+                takeover(2, "merge", 0.9, 80, "dismissed"),
+                takeover(3, "tool_call", 0.97, 100, "merged"),
+            ],
+        }),
+    )));
+    app
+}
+
+#[test]
+fn the_decision_model_screen_shows_the_agreement_per_kind_and_releases_a_taken_over_kind() {
+    draw_sized(
+        &shadowing_app(),
+        "decision-model-shadowing",
+        &[
+            "Shadowing",
+            "moebius-decider decides alongside whoever decides now on the judgements held back from training. A kind is proposed in the inbox once it has 100 of them and agrees on at least 95%.",
+            "Shadows",
+            "Agreement",
+            "Decided by",
+            "No shadow yet",
+            "40, 3 failed, 2 dropped",
+            "85% (needs 95%)",
+            "97.5% (needs 95%)",
+            "The decision model",
+            "As before",
+            "The decision model decides tool_call: it agreed on 97% of 100 judgements.",
+            "Release",
+        ],
+        Size::new(1440.0, 1250.0),
+    );
+    assert_eq!(
+        pressed(&shadowing_app(), "Release").as_deref(),
+        Some("[DecisionModel(Release(3))]")
+    );
+}
+
+/// A takeover proposal waits in the inbox to be merged or dismissed.
+#[test]
+fn the_inbox_offers_a_takeover_of_the_decision_model_to_merge_or_dismiss() {
+    let items = vec![entry(
+        1,
+        "takeover",
+        None,
+        "The decision model can take over tool_call",
+        json!({"takeover": 4, "kind": "tool_call", "agreement": 0.972, "count": 140}),
+        600,
+    )];
+    let mut app = App::with_snapshot(snapshot(vec![], items));
+    let _ = app.update(Message::Select(Page::Inbox));
+    let _ = app.update(Message::Inbox(inbox::Message::Tick(NOW)));
+    for text in [
+        "Takeovers 1",
+        "Decision model",
+        "The decision model can take over tool_call",
+        "It chose what was recorded on 97% of 140 judgements held back from training. Merging lets it decide this kind from now on.",
+        "Dismiss",
+    ] {
+        assert!(shows(&app, text), "{text}");
+    }
+    assert_eq!(
+        tall_click(&app, "Merge")
+            .iter()
+            .map(|m| format!("{m:?}"))
+            .collect::<Vec<_>>(),
+        ["Inbox(Act(1, MergeTakeover { takeover: 4 }))"]
+    );
+    assert_eq!(
+        tall_click(&app, "Dismiss")
+            .iter()
+            .map(|m| format!("{m:?}"))
+            .collect::<Vec<_>>(),
+        ["Inbox(Act(1, DismissTakeover { takeover: 4 }))"]
+    );
 }

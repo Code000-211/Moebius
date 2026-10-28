@@ -80,6 +80,21 @@ program = "pi-bolt"
 # protocol = "openai"                     # or anthropic
 # timeout_seconds = 20
 
+# The decision model decides alongside the teacher for the kinds of decision it is trained on (ADR 0010). It is asked
+# about every judgement held back from training (see docs/reference/decision-model.md) in the background, and how
+# often it chooses what was recorded is measured. Once it has been asked about min_judgements judgements of a kind and
+# agrees on at least the share `agreement`, a proposal in the inbox offers it that kind; merging the proposal makes the
+# model decide it. `url` is an OpenAI-compatible base URL, called at <url>/chat/completions. The key is read from the
+# environment variable named by api_key_env, never from this file. Without this section nothing of this happens.
+# [decision_model]
+# url = "http://127.0.0.1:8081/v1"
+# model = "moebius-decider"
+# api_key_env = "DECISION_MODEL_KEY"      # optional
+# timeout_seconds = 20                    # 1 to 29, like the teacher's
+# shadow = ["tool_call", "merge"]         # the kinds to shadow; all of them when not given
+# agreement = 0.95                        # the share of equal choices needed, above 0 and at most 1
+# min_judgements = 100                    # how many held-out judgements of a kind must have been asked about
+
 # Moebius acts as its own GitHub App. The key file is read at start; relative paths are inside this file's directory.
 # [github]
 # app_id = 123456
@@ -124,6 +139,16 @@ pub enum ConfigError {
     RouterNotLocal(SocketAddr),
     #[error("teacher.timeout_seconds must be between 1 and {max}, not {value}")]
     TeacherTimeout { value: u64, max: u64 },
+    #[error("decision_model.timeout_seconds must be between 1 and {max}, not {value}")]
+    DecisionModelTimeout { value: u64, max: u64 },
+    #[error("decision_model.agreement must be above 0 and at most 1, not {0}")]
+    DecisionModelAgreement(f64),
+    #[error("decision_model.min_judgements must be at least 1")]
+    DecisionModelMinJudgements,
+    #[error("decision_model.url and decision_model.model must not be empty")]
+    DecisionModelEmpty,
+    #[error("decision_model.api_key_env: {name:?} is not the name of an environment variable")]
+    DecisionModelKeyEnv { name: String },
     #[error("checks.timeout_seconds must be at least 1")]
     ChecksTimeout,
     #[error("budgets.day_tokens must be at least 1")]
@@ -244,6 +269,18 @@ struct RawTeacher {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+struct RawDecisionModel {
+    url: String,
+    model: String,
+    api_key_env: Option<String>,
+    timeout_seconds: Option<u64>,
+    shadow: Option<Vec<String>>,
+    agreement: Option<f64>,
+    min_judgements: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Raw {
     data_dir: Option<PathBuf>,
     listen: Option<SocketAddr>,
@@ -265,6 +302,7 @@ struct Raw {
     harness: Option<RawHarness>,
     github: Option<RawGitHub>,
     teacher: Option<RawTeacher>,
+    decision_model: Option<RawDecisionModel>,
     #[serde(default)]
     agents: BTreeMap<String, AgentConfig>,
 }
@@ -296,6 +334,24 @@ pub struct TeacherConfig {
     pub protocol: Protocol,
     /// How long the teacher may take to answer.
     pub timeout: Duration,
+}
+
+/// The decision model, which shadows the teacher and may take kinds over (see `decision_model`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct DecisionModelConfig {
+    /// The OpenAI-compatible base URL, without a trailing slash.
+    pub url: String,
+    pub model: String,
+    /// The environment variable holding the key, if the endpoint needs one.
+    pub api_key_env: Option<String>,
+    /// How long the model may take to answer.
+    pub timeout: Duration,
+    /// The kinds to shadow; all of them when none are named.
+    pub shadow: Option<Vec<String>>,
+    /// The share of equal choices a takeover needs, above 0 and at most 1.
+    pub agreement: f64,
+    /// How many shadowed judgements of a kind a takeover needs.
+    pub min_judgements: i64,
 }
 
 /// An agent as a run uses it: from `[agents.<name>]` or from the harness configuration repository.
@@ -331,7 +387,7 @@ pub struct AgentSet {
 }
 
 /// The server's configuration, with every default applied and every path made absolute against the file's directory.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     pub data_dir: PathBuf,
     pub listen: SocketAddr,
@@ -360,6 +416,8 @@ pub struct Config {
     pub github: Option<GitHubConfig>,
     /// The teacher model; without one, calls are refused while prose rules apply.
     pub teacher: Option<TeacherConfig>,
+    /// The decision model; without one nothing is shadowed and nothing can be taken over.
+    pub decision_model: Option<DecisionModelConfig>,
     pub agents: BTreeMap<String, AgentConfig>,
 }
 
@@ -446,6 +504,41 @@ impl Config {
             }
             None => None,
         };
+        let decision_model = match raw.decision_model {
+            Some(m) => {
+                let seconds = m.timeout_seconds.unwrap_or(20);
+                if !(1..PLUGIN_TIME_LIMIT_SECONDS).contains(&seconds) {
+                    return Err(ConfigError::DecisionModelTimeout {
+                        value: seconds,
+                        max: PLUGIN_TIME_LIMIT_SECONDS - 1,
+                    });
+                }
+                let agreement = m.agreement.unwrap_or(0.95);
+                if !(agreement > 0.0 && agreement <= 1.0) {
+                    return Err(ConfigError::DecisionModelAgreement(agreement));
+                }
+                let min_judgements = m.min_judgements.unwrap_or(100);
+                if min_judgements < 1 {
+                    return Err(ConfigError::DecisionModelMinJudgements);
+                }
+                if m.url.trim().is_empty() || m.model.trim().is_empty() {
+                    return Err(ConfigError::DecisionModelEmpty);
+                }
+                if let Some(name) = m.api_key_env.as_ref().filter(|n| !valid_variable(n)) {
+                    return Err(ConfigError::DecisionModelKeyEnv { name: name.clone() });
+                }
+                Some(DecisionModelConfig {
+                    url: m.url.trim_end_matches('/').to_string(),
+                    model: m.model,
+                    api_key_env: m.api_key_env,
+                    timeout: Duration::from_secs(seconds),
+                    shadow: m.shadow,
+                    agreement,
+                    min_judgements,
+                })
+            }
+            None => None,
+        };
         if raw.budgets.day_tokens.is_some_and(|tokens| tokens < 1) {
             return Err(ConfigError::DayTokens);
         }
@@ -499,6 +592,7 @@ impl Config {
                 poll: Duration::from_secs(g.poll_seconds.unwrap_or(30).max(1)),
             }),
             teacher,
+            decision_model,
             agents: raw.agents,
             data_dir,
         })
@@ -696,6 +790,67 @@ mod tests {
         assert_eq!(parse("").unwrap().checks_timeout, Duration::from_secs(1800));
         let c = parse("[checks]\ntimeout_seconds = 5").unwrap();
         assert_eq!(c.checks_timeout, Duration::from_secs(5));
+    }
+
+    #[test]
+    fn the_decision_model_is_read_with_its_defaults_and_checked() {
+        assert_eq!(parse("").unwrap().decision_model, None);
+        let c = parse("[decision_model]\nurl = \"http://m:1/v1/\"\nmodel = \"m\"\n").unwrap();
+        assert_eq!(
+            c.decision_model,
+            Some(DecisionModelConfig {
+                url: "http://m:1/v1".into(),
+                model: "m".into(),
+                api_key_env: None,
+                timeout: Duration::from_secs(20),
+                shadow: None,
+                agreement: 0.95,
+                min_judgements: 100,
+            })
+        );
+        let c = parse(
+            "[decision_model]\nurl = \"u\"\nmodel = \"m\"\napi_key_env = \"KEY\"\ntimeout_seconds = 29\n\
+             shadow = [\"tool_call\"]\nagreement = 1\nmin_judgements = 5",
+        )
+        .unwrap()
+        .decision_model
+        .unwrap();
+        assert_eq!(c.api_key_env.as_deref(), Some("KEY"));
+        assert_eq!(c.shadow, Some(vec!["tool_call".to_string()]));
+        assert_eq!((c.agreement, c.min_judgements), (1.0, 5));
+        let with = |extra: &str| {
+            parse(&format!(
+                "[decision_model]\nurl = \"u\"\nmodel = \"m\"\n{extra}"
+            ))
+        };
+        assert!(matches!(
+            with("timeout_seconds = 30"),
+            Err(ConfigError::DecisionModelTimeout { .. })
+        ));
+        assert!(matches!(
+            with("agreement = 0"),
+            Err(ConfigError::DecisionModelAgreement(_))
+        ));
+        assert!(matches!(
+            with("agreement = 1.5"),
+            Err(ConfigError::DecisionModelAgreement(_))
+        ));
+        assert!(matches!(
+            with("min_judgements = 0"),
+            Err(ConfigError::DecisionModelMinJudgements)
+        ));
+        assert!(matches!(
+            with("api_key_env = \"a b\""),
+            Err(ConfigError::DecisionModelKeyEnv { .. })
+        ));
+        assert!(matches!(
+            parse("[decision_model]\nurl = \"\"\nmodel = \"m\""),
+            Err(ConfigError::DecisionModelEmpty)
+        ));
+        assert!(matches!(
+            parse("[decision_model]\nurl = \"u\""),
+            Err(ConfigError::Parse { .. })
+        ));
     }
 
     #[test]

@@ -136,6 +136,23 @@ is refused whenever any prose rule applies.
 | `teacher.protocol` | string | `openai` | `openai` or `anthropic`: which router endpoint the teacher is asked through. The router needs an upstream for it. |
 | `teacher.timeout_seconds` | integer | `20` | How long the teacher may take. From 1 to 29, else the file is refused: the plugin host cuts a decider off after 30 seconds. |
 
+## `[decision_model]`
+
+The decision model decides alongside the teacher and can take kinds of decision over, see
+[the decision model](decision-model.md). The table is optional. Without it nothing is shadowed and nothing can be taken
+over. An empty `url` or `model`, an unset variable named by `api_key_env`, or a key of the table that is not here refuses
+the file or the start.
+
+| Key | Type | Default | Meaning and validation |
+|---|---|---|---|
+| `decision_model.url` | string | required | The OpenAI-compatible base URL, such as `http://127.0.0.1:8081/v1`. The model is asked at `<url>/chat/completions`. |
+| `decision_model.model` | string | required | The model's name, sent in the request. |
+| `decision_model.api_key_env` | string | none | The name of the environment variable that holds the key, sent as a bearer token. The key is never read from the file, stored or logged. The server does not start when the variable is not set. |
+| `decision_model.timeout_seconds` | integer | `20` | How long the model may take. From 1 to 29, else the file is refused: the plugin host cuts a decider off after 30 seconds. |
+| `decision_model.shadow` | array of strings | all kinds | The kinds to shadow. |
+| `decision_model.agreement` | number | `0.95` | The share of shadows that must agree with the recorded choice for a takeover to be proposed. Above 0 and at most 1, else the file is refused. |
+| `decision_model.min_judgements` | integer | `100` | How many shadows of a held-out judgement a kind needs before a takeover is proposed. At least 1, else the file is refused. |
+
 ## `[github]`
 
 Moebius acts as its own GitHub App, with webhooks off; it polls. The table is optional. Without it, repositories on

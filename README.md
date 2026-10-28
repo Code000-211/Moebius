@@ -105,7 +105,8 @@ network. The window needs a GPU or a software Vulkan/OpenGL driver; the app find
   [column scripts](docs/reference/column-scripts.md), [rules](docs/reference/rules.md),
   [configuration](docs/reference/configuration.md), [plugin API](docs/reference/plugin-api.md),
   [bridge protocol](docs/reference/bridge-protocol.md), [router](docs/reference/router.md),
-  [desktop API](docs/reference/desktop-api.md), [training export](docs/reference/training-export.md).
+  [desktop API](docs/reference/desktop-api.md), [training export](docs/reference/training-export.md),
+  [decision model](docs/reference/decision-model.md).
 - [`docs/guide/`](docs/guide/README.md): the guide, how to build on Moebius step by step (column scripts, workflows,
   rules, agents, plugins, extensions, the desktop API), with examples that tests run.
 - [`examples/README.md`](examples/README.md): the examples.

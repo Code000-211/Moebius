@@ -68,7 +68,8 @@ in the snapshot, which holds only open items), `at`. Kinds the core adds: `appro
 `proposal` (`data.proposal`, `data.branch`, `data.trials`: an array of `{"card", "outcome", "reason"}`; its `title` is the
 proposal's and it has no card), `grilling_issues` (`data.grilling`, `data.repository`, `data.issues`: an array of `{"title",
 "body", "blocked_by"}`; its `title` is "N issues from a grilling" and it has no card) and `grilling_report` (`data.grilling`,
-`data.repository`, `data.report`: the text; no card).
+`data.repository`, `data.report`: the text; no card) and `takeover` (`data.takeover`, `data.kind`, `data.agreement`,
+`data.count`; its `title` is "The decision model can take over <kind>" and it has no card).
 A column script can add other kinds with `moebius.ask`.
 
 ## Endpoints
@@ -577,6 +578,48 @@ A person dismisses a `positive` or `untried` proposal: the decision is recorded 
 decider `person`), the inbox item is resolved and the status becomes `dismissed`. The repository is not changed. Request
 and errors as for `merge`, without the conflict. Response: the `Proposal`.
 
+### `GET /v1/decision-model`
+
+What the decision model has measured (see [the decision model](decision-model.md)). Response, a `DecisionModelView`:
+
+```json
+{"configured": true, "model": "moebius-decider", "agreement": 0.95, "min_judgements": 100,
+ "kinds": [{"kind": "tool_call", "shadows": 120, "agreement": 0.97, "failed": 2, "dropped": 0, "routed": false}],
+ "takeovers": [{"id": 1, "kind": "tool_call", "agreement": 0.97, "count": 120, "status": "open", "at": 1790000000}]}
+```
+
+`configured` is false without a `[decision_model]` table, and then `model`, `agreement` and `min_judgements` are null and
+`kinds` is empty. Otherwise `model`, `agreement` (the share a takeover needs) and `min_judgements` are the configuration's.
+`kinds` has an entry, kinds in alphabetical order, for each kind with a shadow, a dropped request or a merged takeover:
+`shadows` (held-out judgements the model was asked about), `agreement` (the share of them where it chose the recorded
+choice, null before there is a shadow), `failed` (the shadows where it failed, counted as disagreement), `dropped`
+(requests dropped because the queue was full, since the server started) and `routed` (the model decides the kind now).
+`takeovers` are all of them, oldest first.
+
+### `GET /v1/takeovers`
+
+All takeovers, oldest first. Response: an array of `Takeover`: `id`, `kind`, `agreement` (between 0 and 1, when it was
+proposed), `count` (the shadows it was measured on), `status` (`open`, `merged`, `dismissed` or `released`) and `at`.
+An `open` takeover has an open inbox item of the kind `takeover`.
+
+### `POST /v1/takeovers/{id}/merge`
+
+A person lets the decision model take the kind over. The decision is recorded (kind `takeover`, choice `merge`, decider
+`person`), the inbox item is resolved, the status becomes `merged` and the kind is routed to the model from now on and
+after a restart. Request: `{"reason": string}` (optional). Response: the `Takeover`. Errors: `404` no such takeover; `409`
+the takeover is not `open`.
+
+### `POST /v1/takeovers/{id}/dismiss`
+
+A person refuses an `open` takeover: recorded as choice `dismiss`, the inbox item is resolved and the status becomes
+`dismissed`. The kind is proposed again only after `min_judgements` more shadows. Request, response and errors as for
+`merge`.
+
+### `POST /v1/takeovers/{id}/release`
+
+A person hands a `merged` kind back to the decider it had: recorded as choice `release`, the status becomes `released`.
+Request and response as for `merge`. Errors: `404` no such takeover; `409` the takeover is not `merged`.
+
 ### `GET /v1/grillings`
 
 All grillings, the newest first. Response: an array of `Grilling`.
@@ -712,6 +755,8 @@ like `POST /v1/runs/{id}/stop` does. Experiments done stay, and so do the lever 
 | `replayed` | A refused tool call was replayed and its judgement has the outcome. | `{"judgement": id, "run": id, "outcome": string}` |
 | `trial_done` | One trial of a proposal ended and was stored. | `{"proposal": id, "card": id or null, "outcome": "positive" \| "negative" \| "skipped" \| "failed"}` |
 | `proposal_status` | A proposal's status changed: it is being tried, was tried, was merged or dismissed. | `{"proposal": id, "status": string}` (the statuses above) |
+| `takeover_proposed` | The decision model earned a takeover proposal for a kind, which is in the inbox. | `{"takeover": id, "kind": string, "agreement": number}` |
+| `takeover_status` | A takeover was merged, dismissed or released. | `{"takeover": id, "status": string}` (the statuses above) |
 | `research_status` | A research was stored, confirmed, started, stopped or ended. | `{"research": id, "status": string}` (the statuses above) |
 | `experiment_done` | An experiment of a research ended and was stored. | `{"research": id, "lever": the lever's branch, "value": number or null, "kept": boolean}` |
 | `grilling_ended` | A grilling chat ended and its result was stored. | `{"grilling": id, "status": "proposed" \| "reported" \| "empty"}` |

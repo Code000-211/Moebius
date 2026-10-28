@@ -449,7 +449,7 @@ impl Fixture {
         let store = Arc::new(Store::in_memory(&dir.path().join("blobs")).unwrap());
         let mut host = Host::new(Duration::from_secs(5));
         host.add(StartGate);
-        let mut app = App::new(store, Arc::new(host), &dir.path().join("data"));
+        let app = App::new(store, Arc::new(host), &dir.path().join("data"));
         app.decisions.route("start_card", "start-gate");
         let app = Arc::new(app);
         let repository = app
