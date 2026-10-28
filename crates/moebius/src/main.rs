@@ -440,7 +440,7 @@ mod tests {
             "PUT",
             "/v1/repositories/1/scripts/Ready"
         ));
-        assert!(!documented(&reference, "PUT", "/v1/cards/1"));
+        assert!(!documented(&reference, "PUT", "/v1/runs/1"));
         assert!(documented(
             &reference,
             "PUT",

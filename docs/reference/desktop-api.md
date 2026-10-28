@@ -175,6 +175,17 @@ For GitHub, with the App set up, the clone authenticates as the App's installati
 {"name": "widgets", "url": "https://github.com/acme/widgets.git", "forge": "github", "github": "acme/widgets", "trusted": ["leon"]}
 ```
 
+### `PUT /v1/repositories/{id}`
+
+A person, or the Moebius agent, replaces the GitHub logins whose issues on a GitHub repository need no approval.
+Request: `{"trusted": [string], "reason": string}`; `reason` is optional and is kept with the decision. Each login is
+trimmed and kept once (in any case); a login must be made of letters, digits and `-_.[]`. The decision is recorded
+(kind `edit_repository`, decider `person` or `agent:Moebius`; its context has `repository`, `trusted` and
+`previous_trusted`, the logins joined with `, `) and the event `repository_updated` is sent. A list that changes nothing
+records nothing. The new list counts for cards checked from then on; a card already approved or waiting stays as it is.
+Response: the `Repository`. Errors: `404` no such repository; `422` the repository is not on GitHub, or a login is blank
+or has other characters.
+
 ### `POST /v1/repositories/{id}/issues`
 
 Creates an issue from a person in the app. Its card starts in `Backlog`, with the author `person`.
@@ -249,6 +260,23 @@ Response: the file as `GET` answers it. Errors: `404` no such repository; `409` 
 brought up to date or the push is refused, the commit is undone and the message is git's, with keys redacted; `422` the
 path is empty, absolute, climbs out with `..`, names `.git`, is a directory, or goes through a symbolic link in the
 clone.
+
+The repository's own rules, `.moebius/rules.md`, are checked first as `PUT /v1/rules` checks the server's: a `## `
+line needs a name and no name may be given twice. Text that fails is refused with `422` and a message that starts with
+`.moebius/rules.md: ` and says which line; nothing is committed. Saved, the decision has the kind
+`edit_repository_rules` instead of `edit_file`, with the text in its context.
+
+### `PUT /v1/cards/{id}`
+
+A person, or the Moebius agent, changes a card's title and body, in any column. Request: `{"title": string, "body":
+string, "reason": string}`; `body` and `reason` are optional (`body` left out is empty), and `reason` is kept with the
+decision. The title is trimmed and must not be blank. On a repository with a forge the issue is changed there first
+(for GitHub, `PATCH /repos/{owner}/{repo}/issues/{number}` with the installation's token), and "blocked by #n" in the
+new body becomes the card's blockers, as the poll reads them; without a forge the blockers stay as they are. Then the
+card is stored, the decision is recorded (kind `edit_card`, choice `edit_card`, decider `person` or `agent:Moebius`,
+the card's id; its context has `title`, `body`, `previous_title` and `previous_body`) and the event `card_updated` is
+sent. A title and body that change nothing record nothing. Response: the `Card`. Errors: `404` no such card; `422` the
+title is blank; `500` the forge refused the change, and then the card is as it was and nothing is recorded.
 
 ### `POST /v1/cards/{id}/approve`
 
@@ -602,7 +630,7 @@ The rules page: what the guard refuses and why. Response:
     "rules": [{"name": "no-vendoring", "text": "Do not vendor."}],
     "error": null
   },
-  "repositories": [{"repository": "demo", "text": "...", "rules": [{"name": "...", "text": "..."}], "error": null}],
+  "repositories": [{"repository": "demo", "repository_id": 1, "text": "...", "rules": [{"name": "...", "text": "..."}], "error": null}],
   "refusals": {"no-force-push": 2}
 }
 ```
@@ -614,9 +642,10 @@ The rules page: what the guard refuses and why. Response:
   empty and there are no rules). `editable` is true exactly when `source` is `harness`. `text` is the file's text (empty
   when it does not exist), `rules` the rules as the parser reads them. `error` is `null` unless the file cannot be used:
   it cannot be read, a `## ` line has no name, or a name is repeated (the repeat is dropped by the parser).
-- `repositories`: the repositories that have a `.moebius/rules.md` on their default branch, in the order of their ids,
-  with its text (without the final new line), its rules and `error` as for `prose`. A repository without the file is
-  left out.
+- `repositories`: every repository, in the order of their ids, with the `.moebius/rules.md` on its default branch,
+  each with `repository` (its name), `repository_id` (to save the file with `PUT
+  /v1/repositories/{id}/files/.moebius/rules.md`), its text (without the final new line), its rules and `error` as for `prose`. A repository without the file has
+  an empty `text` and no rules, so that a client can add its first rule.
 - `refusals`: for each rule name, the number of `tool_call` judgements in the last 7 days that refused a call because of
   it, from the reason `<rule>: <why>` of a built-in pattern or of a rule in prose. A refusal that names no rule (the
   teacher failing, no teacher, a rules file that cannot be read) is not counted. A rule with no refusals is left out.
@@ -1188,6 +1217,16 @@ All research, the newest first. Response: an array of `ResearchView`.
 
 One research as the `ResearchView`. Errors: `404` no such research.
 
+### `PUT /v1/research/{id}`
+
+A person, or the Moebius agent, writes the brief of a draft anew before it is confirmed. Request: `{"goal": string,
+"measure": string, "better": "lower" | "higher", "token_budget": number, "reason": string}`; `reason` is optional and is
+kept with the decision; the brief is checked as for `POST /v1/research`. The decision is recorded (kind
+`edit_research`, decider `person` or `agent:Moebius`; its context has `repository`, `goal`, `measure`, `better`,
+`token_budget` and each of the four as before, `previous_goal` and so on) and the event `research_status` is sent with
+the status `draft`. A brief that changes nothing records nothing. Response: the `ResearchView`. Errors: `404` no such
+research; `409` it is not a draft; `422` as for `POST /v1/research`.
+
 ### `POST /v1/research/{id}/confirm`
 
 A person confirms the brief of a draft: the decision is recorded (kind `confirm_brief`, choice `confirm`, decider
@@ -1223,10 +1262,11 @@ like `POST /v1/runs/{id}/stop` does. Experiments done stay, and so do the lever 
 | Kind | When | `data` |
 |---|---|---|
 | `repository_added` | A repository was added. | The `Repository`. |
+| `repository_updated` | The GitHub logins a repository trusts were changed through the API. | The `Repository`. |
 | `file_changed` | A file of a repository was saved through the API. | `{"repository": id, "path": string}` |
 | `script_changed` | A column's script was saved or removed for a repository, through the API. | `{"repository": id, "column": string, "path": string}` |
 | `card_added` | An issue became a card: created through the API or found on GitHub. | The `Card`. |
-| `card_updated` | The title or body of a GitHub issue changed. | The `Card`. |
+| `card_updated` | The title or body of a card changed: edited through the API, or changed on GitHub. | The `Card`. |
 | `card_moved` | A card moved to another column. | `{"card": id, "from": column, "to": column}` |
 | `card_waiting` | The reason a card waits changed: set, replaced, or cleared because the card moved or its script did not wait. Not sent when it stays the same. | `{"card": id, "reason": string or null}` |
 | `change_offered` | A card's change, the work of a chat or a kept lever of a research was offered to a person to merge. | The `Change` (`card_id` is null for a chat's or a lever's). |
@@ -1246,7 +1286,7 @@ like `POST /v1/runs/{id}/stop` does. Experiments done stay, and so do the lever 
 | `proposal_status` | A proposal's status changed: it is being tried, was tried, was merged or dismissed. | `{"proposal": id, "status": string}` (the statuses above) |
 | `takeover_proposed` | The decision model earned a takeover proposal for a kind, which is in the inbox. | `{"takeover": id, "kind": string, "agreement": number}` |
 | `takeover_status` | A takeover was merged, dismissed or released. | `{"takeover": id, "status": string}` (the statuses above) |
-| `research_status` | A research was stored, confirmed, started, stopped or ended. | `{"research": id, "status": string}` (the statuses above) |
+| `research_status` | A research was stored, its brief was edited, or it was confirmed, started, stopped or ended. | `{"research": id, "status": string}` (the statuses above) |
 | `experiment_done` | An experiment of a research ended and was stored. | `{"research": id, "lever": the lever's branch, "value": number or null, "kept": boolean}` |
 | `grilling_ended` | A grilling chat ended and its result was stored. | `{"grilling": id, "status": "proposed" \| "reported" \| "empty"}` |
 | `lagged` | This client fell too far behind (more than 1024 events) and lost the oldest. | `{"missed": number}` |

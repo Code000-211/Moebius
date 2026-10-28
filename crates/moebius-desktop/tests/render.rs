@@ -12,6 +12,7 @@ use moebius_desktop::chat_terminal;
 use moebius_desktop::client::{self, ClientError, Snapshot, TerminalEvent};
 use moebius_desktop::client::{Export, KindCounts, ShadowedKind, Shadowing, Takeover};
 use moebius_desktop::decision_model;
+use moebius_desktop::edits;
 use moebius_desktop::experiments;
 use moebius_desktop::fleet;
 use moebius_desktop::float_chat;
@@ -4016,6 +4017,7 @@ fn rules_view(editable: bool) -> moebius_desktop::client::RulesView {
         },
         "repositories": [{
             "repository": "radiance",
+            "repository_id": 1,
             "text": "## keep-migrations\nDo not edit a migration that exists.",
             "rules": [{"name": "keep-migrations", "text": "Do not edit a migration that exists."}],
             "error": null
@@ -4042,7 +4044,8 @@ fn the_rules_page_lists_the_patterns_the_rules_and_what_they_refused() {
         "rules",
         &[
             "Rules",
-            "Save",
+            "Let the Moebius agent write them",
+            "Add a rule",
             "Built-in patterns",
             "no-force-push",
             "git push --force rewrites history on the remote",
@@ -4054,7 +4057,7 @@ fn the_rules_page_lists_the_patterns_the_rules_and_what_they_refused() {
             "no-vendoring",
             "radiance",
             "keep-migrations",
-            "Read only: these rules change through a change to the repository (.moebius/rules.md on its default branch).",
+            "Saved as a commit on the default branch (.moebius/rules.md), checked first.",
         ],
         Size::new(1440.0, 1300.0),
     );
@@ -4076,88 +4079,280 @@ fn a_server_without_a_rules_file_shows_its_rules_read_only() {
     ));
 }
 
-#[test]
-fn editing_the_rules_and_saving_sends_the_text_and_the_answer_is_shown() {
-    let settings = settings();
-    let mut rules = rules::Rules::default();
-    let mut update = |message| rules.update(message, Some(&settings)).units();
-    update(rules::Message::Loaded(Ok(rules_view(true))));
-    update(rules::Message::Edited(text_editor::Action::Move(
-        text_editor::Motion::DocumentEnd,
-    )));
-    update(rules::Message::Edited(text_editor::Action::Edit(
-        text_editor::Edit::Paste(std::sync::Arc::new(
-            "\n## ask-first\nAsk before deleting.".into(),
-        )),
-    )));
-    assert_eq!(update(rules::Message::Save), 1);
-    assert_eq!(
-        rules.save_text(),
-        "Rules for every run.\n\n## leave-ci-alone\nDo not edit files under .github/ or any other CI configuration.\n\n## no-vendoring\nDo not copy dependencies into the tree.\n\n## ask-first\nAsk before deleting."
-    );
-
-    let mut app = rules_app(true);
-    assert!(
-        clicked(&app, "Save").is_empty(),
-        "nothing changed, so Save does nothing"
-    );
-    let _ = app.update(Message::Rules(rules_paste("\n## ask-first\nAsk first.")));
-    assert!(matches!(
-        &clicked(&app, "Save")[..],
-        [Message::Rules(rules::Message::Save)]
-    ));
-    let mut saved = rules_view(true);
-    saved.commit = Some("a1b2c3d".into());
-    let _ = app.update(Message::Rules(rules::Message::Saved(Ok(saved))));
-    assert!(shows(&app, "Saved as a commit: a1b2c3d"));
-    let invalid = ClientError::Server {
-        status: 422,
-        message: "line 4: the rule \"a\" is named twice".into(),
-    };
-    let _ = app.update(Message::Rules(rules::Message::Saved(Err(invalid))));
-    assert!(shows(&app, "line 4: the rule \"a\" is named twice"));
-    assert!(!shows(&app, "Saved as a commit: a1b2c3d"));
-}
-
-fn rules_paste(text: &str) -> rules::Message {
-    rules::Message::Edited(text_editor::Action::Edit(text_editor::Edit::Paste(
+fn rules_typed(text: &str) -> rules::Message {
+    rules::Message::TextEdited(text_editor::Action::Edit(text_editor::Edit::Paste(
         std::sync::Arc::new(text.to_string()),
     )))
 }
 
-/// The editor of the rules: `tests/snapshots/rules-editor-tiny-skia.png`.
+fn rules_click(app: &App, id: &str) -> Vec<Message> {
+    ids_sized(app, id, Size::new(1440.0, 1300.0))
+}
+
+fn rules_clicked(app: &App, label: &str) -> Vec<Message> {
+    let mut ui = simulator_sized(app, Size::new(1440.0, 1300.0));
+    ui.click(label)
+        .unwrap_or_else(|_| panic!("{label:?} is not on the screen"));
+    ui.into_messages().collect()
+}
+
+fn update_all(app: &mut App, messages: Vec<Message>) {
+    for message in messages {
+        let _ = app.update(message);
+    }
+}
+
+/// A rule of the server edited in its card: `tests/snapshots/rules-rule-edit-tiny-skia.png`.
 #[test]
-fn the_rules_in_prose_are_edited_in_a_monospace_editor_with_the_writers_to_choose_from() {
+fn the_pencil_of_a_rule_grows_its_card_into_an_editor_of_its_name_and_text() {
     let mut app = rules_app(true);
-    let _ = app.update(Message::Rules(rules::Message::Edited(
+    let messages = rules_click(&app, "edit-rule-no-vendoring");
+    assert!(
+        matches!(
+            &messages[..],
+            [Message::Rules(rules::Message::EditRule(rules::Place::Server, Some(name)))]
+                if name == "no-vendoring"
+        ),
+        "{messages:?}"
+    );
+    update_all(&mut app, messages);
+    let _ = app.update(Message::Rules(rules::Message::TextEdited(
         text_editor::Action::Move(text_editor::Motion::DocumentEnd),
     )));
-    let _ = app.update(Message::Rules(rules_paste("\n## ask-first\nAsk first.")));
+    let _ = app.update(Message::Rules(rules_typed(" Use the package manager.")));
+    draw_sized(
+        &app,
+        "rules-rule-edit",
+        &[
+            "leave-ci-alone",
+            "Save",
+            "Cancel",
+            "Delete rule",
+            "Add a rule",
+        ],
+        Size::new(1440.0, 1300.0),
+    );
+    assert!(matches!(
+        &rules_clicked(&app, "Save")[..],
+        [Message::Rules(rules::Message::SaveRule)]
+    ));
+    assert!(matches!(
+        &rules_clicked(&app, "Cancel")[..],
+        [Message::Rules(rules::Message::CancelRule)]
+    ));
+    let _ = app.update(Message::Rules(rules::Message::CancelRule));
+    assert!(!shows(&app, "Delete rule"));
+}
+
+#[test]
+fn a_rule_saved_in_its_card_rewrites_only_its_section_of_the_whole_file() {
+    let settings = settings();
+    let mut page = rules::Rules::default();
+    let update = |page: &mut rules::Rules, message| page.update(message, Some(&settings)).units();
+    update(&mut page, rules::Message::Loaded(Ok(rules_view(true))));
+    update(
+        &mut page,
+        rules::Message::EditRule(rules::Place::Server, Some("leave-ci-alone".into())),
+    );
+    update(
+        &mut page,
+        rules::Message::TextEdited(text_editor::Action::Move(text_editor::Motion::DocumentEnd)),
+    );
+    update(&mut page, rules_typed(" Ask first."));
+    assert_eq!(
+        page.file_to_save(false).unwrap(),
+        "Rules for every run.\n\n## leave-ci-alone\nDo not edit files under .github/ or any other CI configuration. Ask first.\n\n## no-vendoring\nDo not copy dependencies into the tree.\n"
+    );
+    assert_eq!(
+        page.file_to_save(true).unwrap(),
+        "Rules for every run.\n\n## no-vendoring\nDo not copy dependencies into the tree.\n",
+        "Delete drops the section"
+    );
+    assert_eq!(update(&mut page, rules::Message::SaveRule), 1);
+    let refused = ClientError::Server {
+        status: 422,
+        message: "line 3: the rule \"no-vendoring\" is named twice".into(),
+    };
+    update(&mut page, rules::Message::RuleSaved(Err(refused)));
+    assert!(
+        page.file_to_save(false).is_some(),
+        "a refusal keeps the card open"
+    );
+    assert_eq!(
+        update(
+            &mut page,
+            rules::Message::RuleSaved(Ok(Some("a1b2c3d".into())))
+        ),
+        1,
+        "the rules are read again"
+    );
+    assert!(page.file_to_save(false).is_none());
+
+    // A name with a space cannot be saved.
+    update(
+        &mut page,
+        rules::Message::EditRule(rules::Place::Server, None),
+    );
+    update(&mut page, rules::Message::NameEdited("two words".into()));
+    assert_eq!(update(&mut page, rules::Message::SaveRule), 0);
+}
+
+#[test]
+fn a_refused_save_stays_red_in_the_card_and_a_saved_one_shows_its_commit() {
+    let mut app = rules_app(true);
+    let _ = app.update(Message::Rules(rules::Message::EditRule(
+        rules::Place::Server,
+        Some("no-vendoring".into()),
+    )));
+    let refused = ClientError::Server {
+        status: 422,
+        message: "line 4: the rule \"a\" is named twice".into(),
+    };
+    let _ = app.update(Message::Rules(rules::Message::RuleSaved(Err(refused))));
+    assert!(shows(&app, "line 4: the rule \"a\" is named twice"));
+    let _ = app.update(Message::Rules(rules::Message::RuleSaved(Ok(Some(
+        "a1b2c3d".into(),
+    )))));
+    assert!(shows(&app, "Saved as a commit: a1b2c3d"));
+    assert!(!shows(&app, "Delete rule"));
+}
+
+/// A new rule in the "New rule" card: `tests/snapshots/rules-editor-tiny-skia.png`.
+#[test]
+fn the_new_rule_card_adds_a_rule_at_the_end_of_the_file() {
+    let mut app = rules_app(true);
+    let messages = rules_click(&app, "new-rule");
+    assert!(
+        matches!(
+            &messages[..],
+            [Message::Rules(rules::Message::EditRule(
+                rules::Place::Server,
+                None
+            ))]
+        ),
+        "{messages:?}"
+    );
+    update_all(&mut app, messages);
+    let _ = app.update(Message::Rules(rules::Message::NameEdited(
+        "ask-first".into(),
+    )));
+    let _ = app.update(Message::Rules(rules_typed("Ask before deleting a branch.")));
     draw_sized(
         &app,
         "rules-editor",
-        &["Write them", "Let the Moebius agent write them", "Save"],
+        &["ask-first", "Save", "Cancel"],
         Size::new(1440.0, 1300.0),
+    );
+    assert!(
+        !shows(&app, "Delete rule"),
+        "a new rule has nothing to delete"
+    );
+
+    let settings = settings();
+    let mut page = rules::Rules::default();
+    let _ = page.update(
+        rules::Message::Loaded(Ok(rules_view(true))),
+        Some(&settings),
+    );
+    let _ = page.update(
+        rules::Message::EditRule(rules::Place::Server, None),
+        Some(&settings),
+    );
+    let _ = page.update(
+        rules::Message::NameEdited("ask-first".into()),
+        Some(&settings),
+    );
+    let _ = page.update(rules_typed("Ask first."), Some(&settings));
+    assert!(
+        page.file_to_save(false)
+            .unwrap()
+            .ends_with("into the tree.\n\n## ask-first\nAsk first.\n")
     );
 }
 
 #[test]
-fn a_refused_save_is_shown_and_the_editor_stays_read_only_without_a_harness_repository() {
+fn deleting_a_rule_asks_first() {
     let mut app = rules_app(true);
-    let _ = app.update(Message::Rules(rules_paste("x")));
-    let refused = ClientError::Server {
-        status: 409,
-        message: "the rules are a file of the server, not of a harness repository, and are read only here"
-            .into(),
-    };
-    let _ = app.update(Message::Rules(rules::Message::Saved(Err(refused))));
-    assert!(shows(
-        &app,
-        "the rules are a file of the server, not of a harness repository, and are read only here"
+    let _ = app.update(Message::Rules(rules::Message::EditRule(
+        rules::Place::Server,
+        Some("no-vendoring".into()),
+    )));
+    assert!(matches!(
+        &rules_clicked(&app, "Delete rule")[..],
+        [Message::Rules(rules::Message::AskDelete)]
     ));
+    let _ = app.update(Message::Rules(rules::Message::AskDelete));
+    assert!(shows(&app, "Delete this rule?"));
+    assert!(matches!(
+        &rules_clicked(&app, "Keep it")[..],
+        [Message::Rules(rules::Message::KeepRule)]
+    ));
+    assert!(matches!(
+        &rules_clicked(&app, "Delete")[..],
+        [Message::Rules(rules::Message::DeleteRule)]
+    ));
+    assert_eq!(
+        app.update(Message::Rules(rules::Message::DeleteRule))
+            .units(),
+        1
+    );
+}
+
+/// A repository's rule edited in its card: `tests/snapshots/rules-repository-edit-tiny-skia.png`.
+#[test]
+fn a_repositorys_rules_are_cards_with_pencils_and_a_new_rule_card() {
+    let mut app = rules_app(true);
+    assert!(shows(&app, "Add a rule"));
+    let messages = rules_click(&app, "edit-rule-1-keep-migrations");
+    assert!(
+        matches!(
+            &messages[..],
+            [Message::Rules(rules::Message::EditRule(rules::Place::Repository(1), Some(name)))]
+                if name == "keep-migrations"
+        ),
+        "{messages:?}"
+    );
+    update_all(&mut app, messages);
+    let refused = ClientError::Server {
+        status: 422,
+        message: ".moebius/rules.md: line 3: the rule \"keep-migrations\" is named twice".into(),
+    };
+    let _ = app.update(Message::Rules(rules::Message::RuleSaved(Err(refused))));
+    draw_sized(
+        &app,
+        "rules-repository-edit",
+        &[
+            "radiance",
+            ".moebius/rules.md: line 3: the rule \"keep-migrations\" is named twice",
+            "Cancel",
+        ],
+        Size::new(1440.0, 1300.0),
+    );
+    assert!(
+        matches!(
+            &rules_click(&app, "new-rule-1")[..],
+            [Message::Rules(rules::Message::EditRule(
+                rules::Place::Repository(1),
+                None
+            ))]
+        ),
+        "the repository has its own New rule card"
+    );
+}
+
+#[test]
+fn a_server_without_a_rules_file_has_no_pencils_and_no_new_rule_card() {
     let app = rules_app(false);
     assert!(!shows(&app, "Let the Moebius agent write them"));
-    assert!(!shows(&app, "Save"));
+    let mut ui = simulator_sized(&app, Size::new(1440.0, 1300.0));
+    assert!(
+        ui.click(iced::widget::Id::from("edit-rule-no-vendoring".to_string()))
+            .is_err()
+    );
+    assert!(
+        ui.click(iced::widget::Id::from("new-rule".to_string()))
+            .is_err()
+    );
 }
 
 #[test]
@@ -4181,16 +4376,7 @@ fn the_moebius_agent_can_change_the_rules_in_a_chat() {
         ))),
     )));
     assert_eq!(clicked_on(&app, "Ask the agent"), "[Rules(AskAgent)]");
-    draw_sized(
-        &app,
-        "rules-by-agent",
-        &[
-            "Write them",
-            "Let the Moebius agent write them",
-            "Ask the agent",
-        ],
-        size,
-    );
+    draw_sized(&app, "rules-by-agent", &["Ask the agent", "Cancel"], size);
     // The chat the server started opens in the floating window, over the rules: not on the Chat page.
     let _ = app.update(Message::Rules(rules::Message::Asked(Ok(moebius_chat(9)))));
     assert_eq!(app.page(), Page::Rules);
@@ -5766,5 +5952,168 @@ fn the_page_context_names_the_file_the_cursor_and_the_selection() {
         context.chars().count() < 3_600,
         "{}",
         context.chars().count()
+    );
+}
+
+/// The messages a click on the widget named `id` sends, on a screen of `size`.
+fn ids_sized(app: &App, id: &str, size: Size) -> Vec<Message> {
+    let mut ui = simulator_sized(app, size);
+    ui.click(iced::widget::Id::from(id.to_string()))
+        .unwrap_or_else(|_| panic!("no {id} on the screen"));
+    ui.into_messages().collect()
+}
+
+/// A card without a run, its history read.
+fn card_page() -> App {
+    let mut app = App::with_snapshot(snapshot(vec![radiance("Ready")], vec![]));
+    let _ = app.update(Message::OpenCard(50));
+    let _ = app.update(Message::History(50, Ok(vec![])));
+    app
+}
+
+/// A card's title edited in place: `tests/snapshots/card-edit-tiny-skia.png`.
+#[test]
+fn the_pencil_of_a_card_edits_its_title_and_body_in_place() {
+    let mut app = card_page();
+    assert!(shows(&app, "No description."));
+    let messages = clicked_id(&app, "edit-card");
+    assert!(
+        matches!(
+            &messages[..],
+            [Message::Edit(edits::Message::EditCard(50, title, body))]
+                if title == "Retry model downloads on HTTP 5xx" && body.is_empty()
+        ),
+        "{messages:?}"
+    );
+    for message in messages {
+        let _ = app.update(message);
+    }
+    let _ = app.update(Message::Edit(edits::Message::Title(
+        "Retry model downloads on HTTP 5xx and 429".into(),
+    )));
+    draw(
+        &app,
+        "card-edit",
+        &[
+            "Edit the issue",
+            "Retry model downloads on HTTP 5xx and 429",
+            "Save",
+            "Cancel",
+        ],
+    );
+    assert!(matches!(
+        &clicked(&app, "Save")[..],
+        [Message::Edit(edits::Message::Save)]
+    ));
+    assert_eq!(app.update(Message::Edit(edits::Message::Save)).units(), 1);
+    let refused = ClientError::Server {
+        status: 500,
+        message: "GitHub answered 403".into(),
+    };
+    let _ = app.update(Message::Edit(edits::Message::CardSaved(Err(refused))));
+    assert!(
+        shows(&app, "GitHub answered 403"),
+        "the refusal stays in the editor"
+    );
+
+    // Cancel closes the editor and the card is shown as it was.
+    assert!(matches!(
+        &clicked(&app, "Cancel")[..],
+        [Message::Edit(edits::Message::Cancel)]
+    ));
+    let _ = app.update(Message::Edit(edits::Message::Cancel));
+    assert!(!shows(&app, "Edit the issue"));
+    assert!(shows(&app, "No description."));
+}
+
+#[test]
+fn a_card_saved_in_place_closes_its_editor_and_the_board_is_read_again() {
+    let mut app = card_page();
+    let _ = app.update(Message::Edit(edits::Message::EditCard(
+        50,
+        "Retry".into(),
+        "".into(),
+    )));
+    let _ = app.update(Message::Edit(edits::Message::Title("  ".into())));
+    assert!(
+        clicked(&app, "Save").is_empty(),
+        "a blank title cannot be saved"
+    );
+    let card: client::Card = serde_json::from_value(card(50, 1, "Ready", "Retry")).unwrap();
+    let task = app.update(Message::Edit(edits::Message::CardSaved(Ok(Box::new(card)))));
+    assert_eq!(task.units(), 1, "the snapshot is read again");
+    assert!(!shows(&app, "Edit the issue"));
+}
+
+#[test]
+fn the_pencil_in_a_github_boards_header_edits_the_trusted_authors() {
+    let mut app = App::with_snapshot(snapshot(vec![radiance("Ready")], vec![]));
+    assert!(shows(&app, " · no trusted authors"));
+    let messages = clicked_id(&app, "edit-trusted");
+    assert!(
+        matches!(&messages[..], [Message::Edit(edits::Message::EditTrusted(1, trusted))] if trusted.is_empty()),
+        "{messages:?}"
+    );
+    for message in messages {
+        let _ = app.update(message);
+    }
+    assert!(shows(&app, "Trusted authors"));
+    let _ = app.update(Message::Edit(edits::Message::Trusted("leon, mona".into())));
+    assert_eq!(app.update(Message::Edit(edits::Message::Save)).units(), 1);
+    let _ = app.update(Message::Edit(edits::Message::Cancel));
+    assert!(!shows(&app, "Trusted authors"));
+
+    // A repository without a forge trusts nobody on GitHub and has no pencil.
+    let app = App::with_snapshot(snapshot(
+        vec![board(repository(2, "plain", None), vec![])],
+        vec![],
+    ));
+    assert!(!shows(&app, " · no trusted authors"));
+}
+
+#[test]
+fn the_pencil_of_a_drafts_brief_edits_it_in_place() {
+    let mut app = App::with_snapshot(overview());
+    let _ = app.update(Message::Select(Page::Experiments));
+    let draft: client::Research = serde_json::from_value(json!({
+        "id": 4, "repository_id": 1, "goal": "Faster builds", "measure": "make bench",
+        "better": "lower", "token_budget": 1000, "status": "draft"
+    }))
+    .unwrap();
+    let _ = app.update(Message::Experiments(experiments::Message::Listed(Ok(
+        vec![draft.clone()],
+    ))));
+    let messages = clicked_id(&app, "edit-brief");
+    assert!(
+        matches!(
+            &messages[..],
+            [Message::Experiments(experiments::Message::EditBrief(4))]
+        ),
+        "{messages:?}"
+    );
+    for message in messages {
+        let _ = app.update(message);
+    }
+    let _ = app.update(Message::Experiments(experiments::Message::BriefGoal(
+        "Faster release builds".into(),
+    )));
+    assert!(shows(&app, "Faster release builds"));
+    assert!(matches!(
+        &clicked(&app, "Save")[..],
+        [Message::Experiments(experiments::Message::SaveBrief)]
+    ));
+    let _ = app.update(Message::Experiments(experiments::Message::CancelBrief));
+    assert!(!shows(&app, "Faster release builds"));
+
+    // A confirmed brief has no pencil.
+    let mut confirmed = draft;
+    confirmed.status = "confirmed".into();
+    let _ = app.update(Message::Experiments(experiments::Message::Listed(Ok(
+        vec![confirmed],
+    ))));
+    let mut ui = simulator(&app);
+    assert!(
+        ui.click(iced::widget::Id::from("edit-brief".to_string()))
+            .is_err()
     );
 }

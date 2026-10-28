@@ -21,6 +21,12 @@ use crate::store::Repository;
 /// The kind of the decision recorded for a change to a file.
 const KIND: &str = "edit_file";
 
+/// A repository's own rules, which are checked as the server's are before they are saved.
+const RULES: &str = ".moebius/rules.md";
+
+/// The kind of the decision recorded for a change to a repository's own rules.
+const RULES_KIND: &str = "edit_repository_rules";
+
 /// The largest file, in bytes, that is read as text; a larger one is answered with its size only.
 pub const TEXT_LIMIT: u64 = 1024 * 1024;
 
@@ -169,7 +175,9 @@ fn read(repository: &Repository, path: &str) -> Result<FileView> {
 }
 
 /// Replaces the file at `path` of repository `id` with `new.text`, as a commit on the default branch, pushed on a
-/// forge. Text that changes nothing makes no commit.
+/// forge. Text that changes nothing makes no commit. The repository's own rules (`.moebius/rules.md`) are refused with
+/// `Invalid` when they are not fit to be saved, as `PUT /v1/rules` refuses the server's, and recorded as
+/// `edit_repository_rules` with their text.
 pub fn save_file(app: &App, by: &Actor, id: i64, path: &str, new: &NewFile) -> Result<FileView> {
     let repository = app.repository(id)?;
     let path = inside(path)?;
@@ -193,6 +201,16 @@ pub fn save_file(app: &App, by: &Actor, id: i64, path: &str, new: &NewFile) -> R
     if walked.is_dir() {
         return Err(AppError::Invalid(format!("{path} is a directory")));
     }
+    let (kind, context) = if path == RULES {
+        crate::rules::check(&new.text)
+            .map_err(|why| AppError::Invalid(format!("{RULES}: {why}")))?;
+        (
+            RULES_KIND,
+            BTreeMap::from([("text".to_string(), new.text.clone())]),
+        )
+    } else {
+        (KIND, BTreeMap::new())
+    };
     let message = match new.message.as_deref().map(str::trim) {
         Some(message) if !message.is_empty() => message.to_string(),
         _ => format!("Update {path}"),
@@ -208,11 +226,11 @@ pub fn save_file(app: &App, by: &Actor, id: i64, path: &str, new: &NewFile) -> R
         by,
         &repository,
         &Change {
-            kind: KIND,
+            kind,
             path: &path,
             message: &message,
             reason: &new.reason,
-            context: BTreeMap::new(),
+            context,
             event: AppEvent::new(
                 "file_changed",
                 json!({ "repository": repository.id, "path": path }),

@@ -76,4 +76,16 @@ chart.
   The "Ask the agent" actions (a new issue, an agent's instructions, the rules) open their chat in this window, and the
   speech bubble of the script editor opens it with the start of a message about the script. The Chat page keeps every
   chat and the terminal mode.
+- Editing in place: whatever a person or the Moebius agent wrote and the app shows can be changed where it is shown. A
+  muted 13 px pencil stands next to it (a card's title, a column's script, a rule, a repository's trusted authors, a
+  draft's brief); a click puts the editor in its place: the fields (a text input for a line, a text editor on the lane's
+  grey for more), then Save, the primary button, and Cancel, and under them the server's refusal in red, which stays
+  until the next save. A save that went through closes the editor and the page shows the text as the server has it.
+  Every editor in place is drawn with `inline_edit.rs`.
+- Rules are cards: each `## name` section of a rules file is a white card with its name in the code font, its text and
+  its refusals this week, and a pencil next to the name. The pencil grows that card in place, its line turning teal and
+  2 px wide, into the editor of the name and the text with Save, Cancel and, at the right, "Delete rule", which asks
+  "Delete this rule?" first. Under the last rule an "Add a rule" card on the lane's grey grows into the same editor. The
+  server's rules and each repository's have their cards; "Let the Moebius agent write them" is a white button next to
+  the heading of the server's rules.
 - Budgets and usage are counted in tokens, never in money.

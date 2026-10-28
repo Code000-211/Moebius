@@ -153,21 +153,40 @@ fn publish_status(app: &App, research: i64, status: &str) {
     ));
 }
 
-/// Stores a brief as a draft.
-pub fn create(app: &App, new: NewResearch) -> Result<ResearchView> {
+/// The body of `PUT /v1/research/{id}`: the brief of a draft, written anew.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Brief {
+    pub goal: String,
+    pub measure: String,
+    pub better: String,
+    pub token_budget: i64,
+    /// Why the brief changes, kept with the decision.
+    #[serde(default)]
+    pub reason: String,
+}
+
+/// Refuses a brief without a goal or a measure, with a direction other than `lower` or `higher`, or with a budget
+/// that is not more than 0.
+fn check_brief(goal: &str, measure: &str, better: &str, token_budget: i64) -> Result<()> {
     let invalid = |why: &str| Err(AppError::Invalid(why.into()));
-    if new.goal.trim().is_empty() {
+    if goal.trim().is_empty() {
         return invalid("a research needs a goal");
     }
-    if new.measure.trim().is_empty() {
+    if measure.trim().is_empty() {
         return invalid("a research needs a measure command");
     }
-    if !matches!(new.better.as_str(), "lower" | "higher") {
+    if !matches!(better, "lower" | "higher") {
         return invalid("better is lower or higher");
     }
-    if new.token_budget <= 0 {
+    if token_budget <= 0 {
         return invalid("the token budget must be more than 0");
     }
+    Ok(())
+}
+
+/// Stores a brief as a draft.
+pub fn create(app: &App, new: NewResearch) -> Result<ResearchView> {
+    check_brief(&new.goal, &new.measure, &new.better, new.token_budget)?;
     app.store
         .repository(new.repository)?
         .ok_or_else(|| AppError::NotFound(format!("repository {}", new.repository)))?;
@@ -180,6 +199,73 @@ pub fn create(app: &App, new: NewResearch) -> Result<ResearchView> {
     )?;
     publish_status(app, research.id, &research.status);
     view(app, research.id)
+}
+
+/// A person, or the Moebius agent, writes the brief of a draft anew: checked as a new brief is, recorded as an
+/// `edit_research` decision and announced as `research_status`. A brief that changes nothing does neither.
+pub fn edit(app: &App, by: &Actor, id: i64, brief: &Brief) -> Result<ResearchView> {
+    let research = app
+        .store
+        .research(id)?
+        .ok_or_else(|| AppError::NotFound(format!("research {id}")))?;
+    if research.status != "draft" {
+        return Err(AppError::Conflict(format!(
+            "research {id} is {}, not a draft",
+            research.status
+        )));
+    }
+    let (goal, measure) = (brief.goal.trim(), brief.measure.trim());
+    check_brief(goal, measure, &brief.better, brief.token_budget)?;
+    let unchanged = (goal, measure, brief.better.as_str(), brief.token_budget)
+        == (
+            research.goal.as_str(),
+            research.measure.as_str(),
+            research.better.as_str(),
+            research.token_budget,
+        );
+    if unchanged {
+        return view(app, id);
+    }
+    if !app
+        .store
+        .set_research_brief(id, goal, measure, &brief.better, brief.token_budget)?
+    {
+        return Err(AppError::Conflict(format!(
+            "research {id} is not a draft any more"
+        )));
+    }
+    let repository = app
+        .store
+        .repository(research.repository_id)?
+        .map(|r| r.name)
+        .unwrap_or_default();
+    app.decisions.record_by(
+        by,
+        &Question {
+            kind: "edit_research".into(),
+            context: [
+                ("repository", repository),
+                ("goal", goal.to_string()),
+                ("measure", measure.to_string()),
+                ("better", brief.better.clone()),
+                ("token_budget", brief.token_budget.to_string()),
+                ("previous_goal", research.goal),
+                ("previous_measure", research.measure),
+                ("previous_better", research.better),
+                ("previous_token_budget", research.token_budget.to_string()),
+            ]
+            .map(|(key, value)| (key.to_string(), value))
+            .into(),
+            options: vec!["edit_research".into(), "leave".into()],
+            fail_closed: "leave".into(),
+            run_id: None,
+            card_id: None,
+        },
+        "edit_research",
+        &brief.reason,
+    )?;
+    publish_status(app, id, "draft");
+    view(app, id)
 }
 
 /// A person confirms the brief of a draft: the decision is recorded and the research waits for its time.

@@ -527,6 +527,99 @@ impl App {
         Ok(card)
     }
 
+    /// A person, or the Moebius agent, changes the title and body of a card. On a forge the issue is changed there
+    /// first, and "blocked by #n" in the new body becomes the card's dependencies, as the poll would read it. The edit
+    /// is recorded as an `edit_card` decision and announced as `card_updated`; text that changes nothing does neither.
+    pub fn edit_card(
+        &self,
+        by: &Actor,
+        card_id: i64,
+        title: &str,
+        body: &str,
+        reason: &str,
+    ) -> Result<Card> {
+        let card = self.card(card_id)?;
+        let title = title.trim();
+        if title.is_empty() {
+            return Err(AppError::Invalid("an issue needs a title".into()));
+        }
+        if card.title == title && card.body == body {
+            return Ok(card);
+        }
+        let repository = self.repository(card.repository_id)?;
+        if repository.forge != "none" {
+            self.forge(&repository)?
+                .update_issue(&repository, card.number, title, body)?;
+        }
+        self.store.set_card_text(card_id, title, body)?;
+        if repository.forge != "none" {
+            let mut blockers = blocked_by(body);
+            blockers.remove(&card.number);
+            self.store.set_dependencies(card_id, &blockers)?;
+        }
+        let context = BTreeMap::from([
+            ("title".into(), title.to_string()),
+            ("body".into(), body.to_string()),
+            ("previous_title".into(), card.title.clone()),
+            ("previous_body".into(), card.body.clone()),
+        ]);
+        self.record_action(by, "edit_card", Some(card_id), None, context, reason)?;
+        let card = self.card(card_id)?;
+        self.bus
+            .publish(AppEvent::new("card_updated", json!(card.clone())));
+        Ok(card)
+    }
+
+    /// A person, or the Moebius agent, replaces the GitHub logins whose issues on a GitHub repository need no
+    /// approval. Each login is trimmed and kept once; the edit is recorded as an `edit_repository` decision and
+    /// announced as `repository_updated`. A list that changes nothing does neither.
+    pub fn edit_repository(
+        &self,
+        by: &Actor,
+        id: i64,
+        trusted: &[String],
+        reason: &str,
+    ) -> Result<Repository> {
+        let repository = self.repository(id)?;
+        if repository.forge != "github" {
+            return Err(AppError::Invalid(format!(
+                "{} is not on GitHub, so it trusts no GitHub logins",
+                repository.name
+            )));
+        }
+        let mut logins: Vec<String> = Vec::new();
+        for login in trusted.iter().map(|login| login.trim()) {
+            if !login
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "-_.[]".contains(c))
+                || login.is_empty()
+            {
+                return Err(AppError::Invalid(format!(
+                    "{login:?} is not a GitHub login"
+                )));
+            }
+            if !logins.iter().any(|known| known.eq_ignore_ascii_case(login)) {
+                logins.push(login.to_string());
+            }
+        }
+        if logins == repository.trusted {
+            return Ok(repository);
+        }
+        let context = BTreeMap::from([
+            ("repository".into(), repository.name.clone()),
+            ("trusted".into(), logins.join(", ")),
+            ("previous_trusted".into(), repository.trusted.join(", ")),
+        ]);
+        self.record_action(by, "edit_repository", None, None, context, reason)?;
+        self.store.set_repository_trusted(id, &logins)?;
+        let repository = self.repository(id)?;
+        self.bus.publish(AppEvent::new(
+            "repository_updated",
+            json!(repository.clone()),
+        ));
+        Ok(repository)
+    }
+
     /// A person approves an outside issue: the decision is recorded and the card moves to ready.
     pub fn approve_issue(&self, by: &Actor, card_id: i64, reason: &str) -> Result<Card> {
         let card = self.card(card_id)?;

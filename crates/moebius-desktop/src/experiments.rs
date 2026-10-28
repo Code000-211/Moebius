@@ -1,7 +1,7 @@
 //! The Experiments screen: the research the server has, a form for a new brief, and for the one chosen its baseline and
 //! the experiments, one for each lever the Autoresearcher proposed. A brief is stored as a draft (`POST /v1/research`),
 //! then a person confirms it, which lets it run in the trial window, or starts it now; a running research can be
-//! stopped. The server says when something changed with `research_status` and `experiment_done`, which the app
+//! stopped. The brief of a draft has a pencil that edits it in place (`PUT /v1/research/{id}`). The server says when something changed with `research_status` and `experiment_done`, which the app
 //! answers by reading the screen again.
 
 use iced::font::Weight;
@@ -12,6 +12,8 @@ use iced::{Alignment, Border, Element, Length, Task};
 use crate::app::Message as AppMessage;
 use crate::client::{Client, ClientError, Experiment, Research, Snapshot};
 use crate::connect;
+use crate::inline_edit;
+use crate::live::say;
 use crate::page::{self, Tone};
 use crate::settings::Settings;
 use crate::theme;
@@ -37,6 +39,24 @@ pub enum Message {
     Act(i64, &'static str),
     /// The server answered the brief, or one of the actions.
     Answered(Result<Research, ClientError>),
+    /// The pencil of a draft's brief: it is edited in place.
+    EditBrief(i64),
+    BriefGoal(String),
+    BriefMeasure(String),
+    BriefBetter(&'static str),
+    BriefBudget(String),
+    SaveBrief,
+    CancelBrief,
+    /// The server answered the brief edited in place.
+    BriefSaved(Result<Research, ClientError>),
+}
+
+/// The brief of a draft as it is being edited in place.
+struct BriefEdit {
+    research: i64,
+    form: Form,
+    saving: bool,
+    error: Option<String>,
 }
 
 /// The brief being written.
@@ -84,6 +104,7 @@ pub struct Experiments {
     form: Form,
     /// Why the last request of the page was refused.
     failed: Option<String>,
+    brief: Option<BriefEdit>,
 }
 
 impl Experiments {
@@ -101,6 +122,7 @@ impl Experiments {
             message,
             Message::Listed(Err(ClientError::Unauthorized))
                 | Message::Answered(Err(ClientError::Unauthorized))
+                | Message::BriefSaved(Err(ClientError::Unauthorized))
         )
     }
 
@@ -125,6 +147,7 @@ impl Experiments {
                 self.chosen = Some(id);
                 self.composing = false;
                 self.failed = None;
+                self.brief = None;
             }
             Message::Compose => {
                 self.composing = true;
@@ -185,8 +208,132 @@ impl Experiments {
                 return self.reload(settings);
             }
             Message::Answered(Err(e)) => self.failed = Some(e.to_string()),
+            Message::EditBrief(id) => {
+                if let Some(research) = self.list.iter().find(|r| r.id == id) {
+                    self.brief = Some(BriefEdit {
+                        research: id,
+                        form: Form {
+                            repository: Some(research.repository_id),
+                            goal: research.goal.clone(),
+                            measure: research.measure.clone(),
+                            better: if research.better == "higher" {
+                                "higher"
+                            } else {
+                                "lower"
+                            },
+                            budget: research.token_budget.to_string(),
+                        },
+                        saving: false,
+                        error: None,
+                    });
+                }
+            }
+            Message::BriefGoal(goal) => self.edit_form(|form| form.goal = goal),
+            Message::BriefMeasure(measure) => self.edit_form(|form| form.measure = measure),
+            Message::BriefBetter(better) => self.edit_form(|form| form.better = better),
+            Message::BriefBudget(budget) => self.edit_form(|form| form.budget = budget),
+            Message::SaveBrief => {
+                let Some(edit) = self.brief.as_mut().filter(|e| !e.saving && e.form.ready()) else {
+                    return Task::none();
+                };
+                let Some(budget) = edit.form.budget() else {
+                    return Task::none();
+                };
+                edit.saving = true;
+                edit.error = None;
+                let (client, id, form) = (
+                    Client::new(settings.clone()),
+                    edit.research,
+                    edit.form.clone(),
+                );
+                return Task::perform(
+                    async move {
+                        client
+                            .edit_research(
+                                id,
+                                form.goal.trim(),
+                                form.measure.trim(),
+                                form.better,
+                                budget,
+                            )
+                            .await
+                    },
+                    |result| AppMessage::Experiments(Message::BriefSaved(result)),
+                );
+            }
+            Message::CancelBrief => self.brief = None,
+            Message::BriefSaved(Ok(_)) => {
+                self.brief = None;
+                return self.reload(settings);
+            }
+            Message::BriefSaved(Err(e)) => {
+                if let Some(edit) = &mut self.brief {
+                    edit.saving = false;
+                    edit.error = Some(say(&e));
+                }
+            }
         }
         Task::none()
+    }
+
+    /// Changes the brief being edited in place.
+    fn edit_form(&mut self, change: impl FnOnce(&mut Form)) {
+        if let Some(edit) = &mut self.brief {
+            change(&mut edit.form);
+        }
+    }
+
+    /// The editor in place of the brief of `research`, if it is the one being edited.
+    fn brief_editor(&self, research: &Research) -> Option<Element<'_, AppMessage>> {
+        let edit = self.brief.as_ref().filter(|e| e.research == research.id)?;
+        let message = AppMessage::Experiments;
+        let form = &edit.form;
+        let better = row![
+            page::chip(
+                "Lower is better".to_string(),
+                form.better == "lower",
+                false,
+                message(Message::BriefBetter("lower")),
+            ),
+            page::chip(
+                "Higher is better".to_string(),
+                form.better == "higher",
+                false,
+                message(Message::BriefBetter("higher")),
+            ),
+        ]
+        .spacing(8);
+        let fields = column![
+            text_input("What should get better?", &form.goal)
+                .on_input(move |goal| message(Message::BriefGoal(goal)))
+                .size(theme::BODY)
+                .padding([9, 12])
+                .style(connect::input_style),
+            text_input("cargo bench | tail -1", &form.measure)
+                .on_input(move |measure| message(Message::BriefMeasure(measure)))
+                .size(theme::CODE)
+                .font(theme::MONO)
+                .padding([9, 12])
+                .style(connect::input_style),
+            better,
+            text_input(DEFAULT_BUDGET, &form.budget)
+                .on_input(move |budget| message(Message::BriefBudget(budget)))
+                .size(theme::BODY)
+                .padding([9, 12])
+                .width(220)
+                .style(connect::input_style),
+        ]
+        .spacing(10);
+        let save = (!edit.saving && form.ready()).then_some(message(Message::SaveBrief));
+        Some(page::boxed(
+            "Brief",
+            inline_edit::editor(
+                fields.into(),
+                save,
+                message(Message::CancelBrief),
+                edit.error.as_deref(),
+            ),
+        ))
     }
 
     pub fn view<'a>(&'a self, snapshot: &'a Snapshot) -> Element<'a, AppMessage> {
@@ -212,17 +359,20 @@ impl Experiments {
             ));
         }
         let chosen = self.list.iter().find(|r| Some(r.id) == self.chosen);
-        detail = match (self.composing, chosen) {
-            (true, _) => detail.push(self.form_box(snapshot)),
-            (false, Some(research)) => detail
-                .push(brief_box(research, repository_name(snapshot, research)))
-                .push(baseline_box(research))
-                .push(experiments_box(research)),
-            (false, None) => detail.push(page::boxed(
-                "No research yet",
-                page::body("Press \"New brief\" to say what to improve and how to measure it."),
-            )),
-        };
+        detail =
+            match (self.composing, chosen) {
+                (true, _) => detail.push(self.form_box(snapshot)),
+                (false, Some(research)) => detail
+                    .push(self.brief_editor(research).unwrap_or_else(|| {
+                        brief_box(research, repository_name(snapshot, research))
+                    }))
+                    .push(baseline_box(research))
+                    .push(experiments_box(research)),
+                (false, None) => detail.push(page::boxed(
+                    "No research yet",
+                    page::body("Press \"New brief\" to say what to improve and how to measure it."),
+                )),
+            };
         column![
             header,
             row![
@@ -457,16 +607,24 @@ fn brief_box<'a>(research: &'a Research, repository: &'a str) -> Element<'a, App
         research.tokens, research.token_budget
     );
     let mut content = column![
-        row![
-            text(research.goal.as_str())
-                .size(theme::CARD_TITLE)
-                .font(theme::manrope(Weight::Semibold))
-                .width(Length::Fill)
-                .wrapping(Wrapping::WordOrGlyph),
-            status_tag(&research.status),
-        ]
-        .spacing(8)
-        .align_y(Alignment::Center),
+        {
+            let mut title = row![
+                text(research.goal.as_str())
+                    .size(theme::CARD_TITLE)
+                    .font(theme::manrope(Weight::Semibold))
+                    .width(Length::Fill)
+                    .wrapping(Wrapping::WordOrGlyph),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center);
+            if research.status == "draft" {
+                title = title.push(inline_edit::pencil(
+                    "edit-brief".to_string(),
+                    AppMessage::Experiments(Message::EditBrief(research.id)),
+                ));
+            }
+            title.push(status_tag(&research.status))
+        },
         text(research.measure.as_str())
             .size(theme::CODE)
             .font(theme::MONO)

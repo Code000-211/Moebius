@@ -60,6 +60,19 @@ pub trait Forge: Send + Sync {
             repository.name
         )))
     }
+    /// Replaces the title and body of the issue `number` on the forge. Only forges that keep issues have it.
+    fn update_issue(
+        &self,
+        repository: &Repository,
+        _number: i64,
+        _title: &str,
+        _body: &str,
+    ) -> Result<(), ForgeError> {
+        Err(ForgeError::Invalid(format!(
+            "the issues of {} are not kept on a forge",
+            repository.name
+        )))
+    }
     /// The HTTP header git needs to reach `url`, where the forge knows the repository as `name`; none if it needs
     /// none.
     fn auth(&self, _url: &str, _name: &str) -> Result<Option<String>, ForgeError> {
@@ -207,6 +220,19 @@ impl Forge for GitHubForge {
         Ok(self
             .runtime
             .block_on(self.github.create_issue(name, title, body))?)
+    }
+
+    fn update_issue(
+        &self,
+        repository: &Repository,
+        number: i64,
+        title: &str,
+        body: &str,
+    ) -> Result<(), ForgeError> {
+        let name = Self::github_name(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.github.update_issue(name, number, title, body))?)
     }
 
     fn refresh(&self, repository: &Repository) -> Result<(), ForgeError> {

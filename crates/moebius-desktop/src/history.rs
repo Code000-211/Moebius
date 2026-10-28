@@ -1,4 +1,5 @@
-//! The page of a card that has no run to watch: its timeline from `GET /v1/cards/{id}/history`, oldest first.
+//! The page of a card that has no run to watch: the issue it is, with the pencil that edits it in place (`edits.rs`),
+//! and its timeline from `GET /v1/cards/{id}/history`, oldest first.
 
 use iced::Element;
 use iced::widget::{column, row, scrollable, space, text};
@@ -6,7 +7,7 @@ use iced::{Length, Padding};
 
 use crate::app::Message;
 use crate::client::{Board, Card, HistoryEntry};
-use crate::{page, theme};
+use crate::{edits, inline_edit, page, theme};
 
 /// What a person reads of one entry.
 fn describe(entry: &HistoryEntry) -> String {
@@ -36,12 +37,26 @@ fn describe(entry: &HistoryEntry) -> String {
     }
 }
 
-/// The page: the card's header and its timeline, or a line saying it is being read (`None`).
+/// The pencil next to a card's title, which opens the editor of its title and body.
+pub fn card_pencil<'a>(card: &Card) -> Element<'a, Message> {
+    inline_edit::pencil(
+        "edit-card".to_string(),
+        Message::Edit(edits::Message::EditCard(
+            card.id,
+            card.title.clone(),
+            card.body.clone(),
+        )),
+    )
+}
+
+/// The page: the card's header, the issue (or its editor, `edit`, while it is open) and its timeline, or a line
+/// saying it is being read (`None`).
 pub fn view<'a>(
     board: &'a Board,
     card: &'a Card,
     entries: Option<&'a [HistoryEntry]>,
     now: i64,
+    edit: Option<Element<'a, Message>>,
 ) -> Element<'a, Message> {
     let rows: Element<'a, Message> = match entries {
         None => page::body("Reading the history."),
@@ -74,10 +89,20 @@ pub fn view<'a>(
                 Message::CloseCard
             )),
             &card.title,
-            None,
+            Some(card_pencil(card)),
             page::context(format!("{} · no run yet", card.column)),
             space().into(),
         ),
+        edit.unwrap_or_else(|| {
+            let body = match card.body.trim() {
+                "" => "No description.",
+                body => body,
+            };
+            page::boxed(
+                "Issue",
+                text(body).size(theme::BODY).color(theme::TEXT_SECONDARY),
+            )
+        }),
         page::boxed("History", rows),
     ]
     .spacing(theme::PAGE_GAP)

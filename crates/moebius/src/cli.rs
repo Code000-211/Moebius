@@ -1420,7 +1420,9 @@ fn rules(view: &Value) -> String {
             .lines()
             .map(|l| format!("  {l}")),
     );
-    for repository in view["repositories"].as_array().into_iter().flatten() {
+    // A repository without rules of its own is left out.
+    let repositories = view["repositories"].as_array().into_iter().flatten();
+    for repository in repositories.filter(|r| r["text"].as_str().is_some_and(|t| !t.is_empty())) {
         out.push(format!("in {}:", cell(&repository["repository"])));
         out.extend(
             repository["text"]

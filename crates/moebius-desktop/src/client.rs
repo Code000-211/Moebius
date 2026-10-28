@@ -436,6 +436,9 @@ pub struct ProseRules {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct RepositoryRules {
     pub repository: String,
+    /// The repository's id, to save its `.moebius/rules.md` with.
+    #[serde(default)]
+    pub repository_id: i64,
     #[serde(default)]
     pub text: String,
     #[serde(default)]
@@ -1419,6 +1422,21 @@ impl Client {
         self.get("/v1/research").await
     }
 
+    /// Writes the brief of a draft anew.
+    pub async fn edit_research(
+        &self,
+        research: i64,
+        goal: &str,
+        measure: &str,
+        better: &str,
+        token_budget: i64,
+    ) -> Result<Research, ClientError> {
+        let body = serde_json::json!({
+            "goal": goal, "measure": measure, "better": better, "token_budget": token_budget,
+        });
+        self.put(&format!("/v1/research/{research}"), body).await
+    }
+
     /// Stores a brief as a draft.
     pub async fn create_research(
         &self,
@@ -1453,6 +1471,24 @@ impl Client {
         let body =
             serde_json::to_value(repository).map_err(|e| ClientError::Decode(e.to_string()))?;
         self.post("/v1/repositories", body).await
+    }
+
+    /// Changes a card's title and body; on a forge the server changes the issue there too.
+    pub async fn edit_card(&self, card: i64, title: &str, body: &str) -> Result<Card, ClientError> {
+        let path = format!("/v1/cards/{card}");
+        self.put(&path, serde_json::json!({ "title": title, "body": body }))
+            .await
+    }
+
+    /// Replaces the GitHub logins whose issues on a repository need no approval.
+    pub async fn edit_repository(
+        &self,
+        repository: i64,
+        trusted: &[String],
+    ) -> Result<Repository, ClientError> {
+        let path = format!("/v1/repositories/{repository}");
+        self.put(&path, serde_json::json!({ "trusted": trusted }))
+            .await
     }
 
     /// Creates an issue in a repository.

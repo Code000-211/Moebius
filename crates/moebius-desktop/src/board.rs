@@ -10,7 +10,8 @@ use iced::{Alignment, Border, Element, Length, Padding};
 
 use crate::app::Message;
 use crate::client::{Board, Card, InboxItem};
-use crate::icons::Icon;
+use crate::edits::{self, Edits};
+use crate::inline_edit;
 use crate::new_issue::{self, NewIssue};
 use crate::page::{self, Tone, tag};
 use crate::theme;
@@ -62,11 +63,13 @@ fn cards_of<'a>(board: &'a Board, column: &str) -> Vec<&'a Card> {
     cards
 }
 
-/// The page of a board: its header, the project's tabs and the columns.
+/// The page of a board: its header, the project's tabs and the columns. A GitHub repository's header names the logins
+/// it trusts, with the pencil that edits them in place.
 pub fn view<'a>(
     board: &'a Board,
     inbox: &'a [InboxItem],
     new_issue: &'a NewIssue,
+    edits: &'a Edits,
     tabs: Element<'a, Message>,
 ) -> Element<'a, Message> {
     let repository = &board.repository;
@@ -79,7 +82,7 @@ pub fn view<'a>(
         .filter(|item| item.kind == "ready_to_merge")
         .filter(|item| board.cards.iter().any(|c| item.card_id == Some(c.id)))
         .count();
-    let line = text(format!(
+    let line = format!(
         "{} working · {} · default workflow",
         count(board.live_runs(), "run", "runs"),
         count(
@@ -87,9 +90,28 @@ pub fn view<'a>(
             "change waits for you",
             "changes wait for you"
         ),
-    ))
-    .size(theme::CONTEXT)
-    .color(theme::TEXT_SECONDARY);
+    );
+    let mut line = row![text(line).size(theme::CONTEXT).color(theme::TEXT_SECONDARY)]
+        .align_y(Alignment::Center);
+    if repository.github.is_some() {
+        let trusted = match repository.trusted.as_slice() {
+            [] => " · no trusted authors".to_string(),
+            trusted => format!(" · trusts {}", trusted.join(", ")),
+        };
+        line = line.push(
+            text(trusted)
+                .size(theme::CONTEXT)
+                .color(theme::TEXT_SECONDARY),
+        );
+        line = line.push(space().width(6));
+        line = line.push(inline_edit::pencil(
+            "edit-trusted".to_string(),
+            Message::Edit(edits::Message::EditTrusted(
+                repository.id,
+                repository.trusted.clone(),
+            )),
+        ));
+    }
     let columns = COLUMNS
         .iter()
         .filter(|(name, _)| *name != "Backlog" || board.cards.iter().any(|c| c.column == *name))
@@ -108,6 +130,9 @@ pub fn view<'a>(
     .spacing(theme::PAGE_GAP)
     .width(Length::Fill)
     .push(tabs);
+    if let Some(editor) = edits.trusted_view(repository.id) {
+        page = page.push(editor);
+    }
     if new_issue.is_open_on(repository.id) {
         page = page.push(new_issue.view());
     }
@@ -151,22 +176,10 @@ fn column_view<'a>(
         row![
             text(script).size(theme::SMALL).color(theme::TEXT_MUTED),
             space::horizontal(),
-            // The container names the button, so that a test can find it.
-            container(
-                button(Icon::Pencil.view(theme::TEXT_MUTED, 13.0))
-                    .padding(2)
-                    .on_press(Message::EditScript(board.repository.id, name.to_string()))
-                    .style(|_, status| button::Style {
-                        background: (status == button::Status::Hovered)
-                            .then(|| theme::SURFACE.into()),
-                        border: Border {
-                            radius: theme::RADIUS_SMALL.into(),
-                            ..Border::default()
-                        },
-                        ..button::Style::default()
-                    })
-            )
-            .id(format!("edit-script-{name}")),
+            inline_edit::pencil(
+                format!("edit-script-{name}"),
+                Message::EditScript(board.repository.id, name.to_string()),
+            ),
         ]
         .align_y(Alignment::Center),
     ]

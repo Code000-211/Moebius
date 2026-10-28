@@ -139,10 +139,12 @@ pub struct Prose {
     pub error: Option<String>,
 }
 
-/// A repository's own `.moebius/rules.md` on its default branch.
+/// A repository's own `.moebius/rules.md` on its default branch; empty when it has none.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepositoryRules {
     pub repository: String,
+    /// The repository's id, for `PUT /v1/repositories/{id}/files/.moebius/rules.md`.
+    pub repository_id: i64,
     pub text: String,
     pub rules: Vec<Rule>,
     pub error: Option<String>,
@@ -153,7 +155,7 @@ pub struct RepositoryRules {
 pub struct View {
     pub patterns: Vec<Pattern>,
     pub prose: Prose,
-    /// The repositories that have a `.moebius/rules.md`.
+    /// Every repository, with its `.moebius/rules.md` if it has one.
     pub repositories: Vec<RepositoryRules>,
     /// The tool calls refused in the last 7 days, by the name of the rule that refused them.
     pub refusals: BTreeMap<String, i64>,
@@ -225,15 +227,16 @@ pub fn view(app: &App, file: Option<&Path>, harness: bool) -> crate::app::Result
         .store
         .repositories()?
         .iter()
-        .filter_map(|repository| {
+        .map(|repository| {
             let spec = format!("{}:.moebius/rules.md", repository.base_ref());
-            let text = git(Path::new(&repository.path), &["show", &spec]).ok()?;
-            Some(RepositoryRules {
+            let text = git(Path::new(&repository.path), &["show", &spec]).unwrap_or_default();
+            RepositoryRules {
                 repository: repository.name.clone(),
+                repository_id: repository.id,
                 rules: parse(&text),
                 error: check(&text).err(),
                 text,
-            })
+            }
         })
         .collect();
     Ok(View {

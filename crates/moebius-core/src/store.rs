@@ -899,6 +899,15 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
+    /// Replaces the GitHub logins whose issues on the repository need no approval.
+    pub fn set_repository_trusted(&self, id: i64, trusted: &[String]) -> Result<()> {
+        self.conn().execute(
+            "UPDATE repositories SET trusted = ?1 WHERE id = ?2",
+            params![serde_json::to_string(trusted)?, id],
+        )?;
+        Ok(())
+    }
+
     pub fn repository(&self, id: i64) -> Result<Option<Repository>> {
         Ok(self.repositories()?.into_iter().find(|r| r.id == id))
     }
@@ -2820,6 +2829,22 @@ impl Store {
             .conn()
             .execute(&sql, rusqlite::params_from_iter(values))?
             == 1)
+    }
+
+    /// Replaces the brief of a draft research; false, and nothing changed, when it is not a draft.
+    pub fn set_research_brief(
+        &self,
+        id: i64,
+        goal: &str,
+        measure: &str,
+        better: &str,
+        token_budget: i64,
+    ) -> Result<bool> {
+        Ok(self.conn().execute(
+            "UPDATE research SET goal = ?1, measure = ?2, better = ?3, token_budget = ?4
+             WHERE id = ?5 AND status = 'draft'",
+            params![goal, measure, better, token_budget, id],
+        )? == 1)
     }
 
     /// Starts a confirmed research; false, and nothing changed, when it is not confirmed or another one is running,

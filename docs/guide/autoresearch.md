@@ -41,7 +41,8 @@ minutes.
    curl -s -X POST -H "$AUTH" -H "$JSON" -d '{"repository": 1, "goal": "Make the program smaller without losing features.", "measure": "cat src/*.rs | wc -l", "better": "lower", "token_budget": 500000}' $API/v1/research
    ```
 
-3. Read the brief back (`GET /v1/research/{id}`) and confirm it. Confirming is a decision of a person; nothing runs
+3. Read the brief back (`GET /v1/research/{id}`), change it while it is a draft (`PUT /v1/research/{id}` with the same
+   fields, or the pencil of the brief on the Experiments page), and confirm it. Confirming is a decision of a person; nothing runs
    before it:
 
    ```sh

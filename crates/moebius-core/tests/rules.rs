@@ -250,6 +250,7 @@ async fn the_page_shows_the_patterns_the_rules_and_a_repositorys_own_rules_and_c
         view["repositories"],
         json!([{
             "repository": "demo",
+            "repository_id": 1,
             "text": "## small-diffs\nKeep changes small.",
             "rules": [{"name": "small-diffs", "text": "Keep changes small."}],
             "error": null,

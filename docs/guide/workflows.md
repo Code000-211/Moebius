@@ -27,7 +27,9 @@ Backlog -> Ready -> In progress -> In review -> Ready to merge -> Done
 
 A card is trusted when its issue was made through the desktop API on a repository without a forge (its author is
 `person`), or when its author is one of the repository's `trusted` GitHub logins. On GitHub the poll creates the
-cards, and an issue that is closed there moves its card to `Done`.
+cards, and an issue that is closed there moves its card to `Done`. The board's header names the trusted logins, and its
+pencil edits them (`PUT /v1/repositories/{id}`); a card's page has a pencil next to its title that edits the title and
+body in place (`PUT /v1/cards/{id}`), on GitHub the issue too, where "blocked by #n" in the body sets its blockers.
 
 The board engine runs the script of every card's column on every tick (`board.tick_ms`, two seconds by default). When a
 script moves the card, the script of the next column runs at once. [Column scripts](column-scripts.md) says how to

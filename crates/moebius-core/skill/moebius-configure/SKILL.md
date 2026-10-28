@@ -34,7 +34,12 @@ repository; without one the agents are the `agents` tables of `moebius.toml` (se
 
 Start from the text `"$MOEBIUS" rules --json` gives (`prose.text`), add or sharpen rules, and save the whole file. Never
 remove or loosen a rule to make something pass; if a rule is in the way, tell the person. One `## name` heading per
-rule, a name without spaces, never twice. One repository's rules are `.moebius/rules.md` in its worktree.
+rule, a name without spaces, never twice. One repository's rules are `.moebius/rules.md` on its default branch; save
+the whole file as a commit there (the server checks it first and answers 422 with the wrong line):
+
+```sh
+"$MOEBIUS" api PUT /v1/repositories/1/files/.moebius/rules.md --body '{"text": "## small-diffs\nKeep changes small.\n", "reason": "..."}'
+```
 
 ## A column's script in one repository
 

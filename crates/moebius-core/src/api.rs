@@ -5,7 +5,9 @@
 //! - `GET /v1/events`: a WebSocket on which every [`AppEvent`] arrives as one JSON text message.
 //! - `POST /v1/repositories` `{name, url}`: clones a repository without a forge. With `forge: "github"`, `github:
 //!   "owner/repo"` and optionally `trusted: [logins]` it is a repository whose issues are polled from GitHub.
+//! - `PUT /v1/repositories/{id}` `{trusted}`: replaces the GitHub logins a GitHub repository trusts.
 //! - `POST /v1/repositories/{id}/issues` `{title, body}`: creates an issue, which becomes a card in the backlog.
+//! - `PUT /v1/cards/{id}` `{title, body}`: changes a card's title and body, and its issue on a forge.
 //! - `POST /v1/cards/{id}/approve` `{reason}`: a person approves an outside issue; its card moves to ready.
 //! - `POST /v1/changes/{id}/merge` `{reason}`: a person merges a change; its card moves to done.
 //! - `POST /v1/changes/{id}/reject` `{reason}`: a person sends a change waiting to be merged back to coding.
@@ -44,7 +46,8 @@
 //!   `rules_file` without one (see
 //!   [`crate::rules`]).
 //! - `POST /v1/research` `{repository, goal, measure, better, token_budget}`: stores a brief as a draft. `GET
-//!   /v1/research` and `GET /v1/research/{id}`: research with its baseline and experiments.
+//!   /v1/research` and `GET /v1/research/{id}`: research with its baseline and experiments. `PUT /v1/research/{id}`
+//!   writes the brief of a draft anew.
 //!   `POST /v1/research/{id}/confirm`, `/start` and `/stop`: a person confirms the brief, starts a confirmed research
 //!   now, or stops it (see [`crate::research`]).
 //! - `GET /v1/grillings` and `GET /v1/grillings/{id}`: what grilling chats ended in. `POST /v1/grillings/{id}/confirm`
@@ -202,6 +205,24 @@ pub struct NewIssue {
     pub title: String,
     #[serde(default)]
     pub body: String,
+}
+
+/// The body of `PUT /v1/cards/{id}`: the card's title and body, written anew.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EditedCard {
+    pub title: String,
+    #[serde(default)]
+    pub body: String,
+    #[serde(default)]
+    pub reason: String,
+}
+
+/// The body of `PUT /v1/repositories/{id}`: the GitHub logins the repository trusts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EditedRepository {
+    pub trusted: Vec<String>,
+    #[serde(default)]
+    pub reason: String,
 }
 
 /// The body of a person's decision: why they made it.
@@ -420,6 +441,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/snapshot", get(snapshot))
         .route("/v1/events", get(events))
         .route("/v1/repositories", post(add_repository))
+        .route("/v1/repositories/{id}", put(edit_repository))
         .route("/v1/repositories/{id}/issues", post(create_issue))
         .route(
             "/v1/repositories/{id}/scripts/{column}",
@@ -430,6 +452,7 @@ pub fn router(state: ApiState) -> Router {
             "/v1/repositories/{id}/files/{*path}",
             get(get_file).put(put_file),
         )
+        .route("/v1/cards/{id}", put(edit_card))
         .route("/v1/cards/{id}/approve", post(approve_issue))
         .route("/v1/cards/{id}/retry", post(retry_card))
         .route("/v1/changes/{id}/merge", post(merge_change))
@@ -491,7 +514,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/takeovers/{id}/dismiss", post(dismiss_takeover))
         .route("/v1/takeovers/{id}/release", post(release_takeover))
         .route("/v1/research", get(researches).post(create_research))
-        .route("/v1/research/{id}", get(get_research))
+        .route("/v1/research/{id}", get(get_research).put(edit_research))
         .route("/v1/research/{id}/confirm", post(confirm_research))
         .route("/v1/research/{id}/start", post(start_research))
         .route("/v1/research/{id}/stop", post(stop_research))
@@ -663,6 +686,30 @@ async fn create_issue(
 ) -> Result<axum::Json<Card>, ApiError> {
     blocking(&state.app, move |app| {
         app.create_issue(id, &issue.title, &issue.body, PERSON)
+    })
+    .await
+}
+
+async fn edit_card(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    axum::Json(edited): axum::Json<EditedCard>,
+) -> Result<axum::Json<Card>, ApiError> {
+    blocking(&state.app, move |app| {
+        app.edit_card(&by, id, &edited.title, &edited.body, &edited.reason)
+    })
+    .await
+}
+
+async fn edit_repository(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    axum::Json(edited): axum::Json<EditedRepository>,
+) -> Result<axum::Json<Repository>, ApiError> {
+    blocking(&state.app, move |app| {
+        app.edit_repository(&by, id, &edited.trusted, &edited.reason)
     })
     .await
 }
@@ -1390,6 +1437,15 @@ async fn get_research(
     UrlPath(id): UrlPath<i64>,
 ) -> Result<axum::Json<ResearchView>, ApiError> {
     blocking(&state.app, move |app| research::view(app, id)).await
+}
+
+async fn edit_research(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    axum::Json(brief): axum::Json<research::Brief>,
+) -> Result<axum::Json<ResearchView>, ApiError> {
+    blocking(&state.app, move |app| research::edit(app, &by, id, &brief)).await
 }
 
 async fn confirm_research(

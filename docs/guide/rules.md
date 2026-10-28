@@ -44,13 +44,19 @@ dropped, and the server's text stands. When a name is repeated within one file, 
 ### Change the server's rules in the desktop app
 
 The Rules page of the desktop app shows the built-in patterns, the rules in
-prose and the rules of each repository, with how many calls each rule refused in the last week. The text of the server's
-rules is an editor there: with a harness configuration repository, Save commits it to the repository as `Update the
-rules` and pushes it; without one, Save replaces the `rules_file` (creating `rules.md` next to `moebius.toml` the first
-time). The next tool call is checked against it.
-Save is disabled until the text changes, and a refusal of the server is shown in red. "Let the Moebius agent write them"
-asks for what should be allowed or forbidden and starts a chat in which the Moebius agent reads the rules, changes them
-in prose without weakening any and saves them with `"$MOEBIUS" rules save <file>`.
+prose and the rules of each repository, with how many calls each rule refused in the last week. Every rule in prose is
+a card with its name and text and a pencil: the pencil grows the card into an editor of the name and the text, with
+Save, Cancel and Delete rule (which asks first). Under the last rule an empty "Add a rule" card adds one at the end of
+the file. A save rewrites only that rule's `## name` section and saves the whole file: with a harness configuration
+repository it is committed to the repository as `Update the rules` and pushed; without one it replaces the
+`rules_file` (creating `rules.md` next to `moebius.toml` the first time). The next tool call is checked against it. A
+refusal of the server (a name given twice, say) stays in red in the card. "Let the Moebius agent write them", next to
+the heading, asks for what should be allowed or forbidden and starts a chat in which the Moebius agent reads the rules,
+changes them in prose without weakening any and saves them with `"$MOEBIUS" rules save <file>`.
+Every repository has a box with its own rules as the same cards and its own "Add a rule" card. Saving commits
+`.moebius/rules.md` on the repository's default branch (pushed for a repository on GitHub) with `PUT
+/v1/repositories/{id}/files/.moebius/rules.md`; the server checks the file first as it checks its own rules (every
+`## ` line has a name, no name twice) and refuses it with the line that is wrong.
 The same is `GET` and `PUT /v1/rules`, see the [desktop API](../reference/desktop-api.md).
 
 ## An example

@@ -13,6 +13,7 @@ use crate::agents::{self, Agents};
 use crate::chat::Chats;
 use crate::client::{self, Client, ClientError, HistoryEntry, RunEvent, Snapshot, StreamEvent};
 use crate::decision_model::{self, DecisionModel};
+use crate::edits::{self, Edits};
 use crate::experiments::{self, Experiments};
 use crate::fleet::{self, Fleet};
 use crate::float_chat::{self, FloatChat};
@@ -160,6 +161,8 @@ pub enum Message {
     Start(start::Message),
     AddRepository(add_repository::Message),
     NewIssue(new_issue::Message),
+    /// Something on an editor in place of a card or a repository.
+    Edit(edits::Message),
     /// Something on the floating chat.
     Float(float_chat::Message),
     /// A chat was asked for, as from the inbox: its screen opens on it.
@@ -215,6 +218,8 @@ pub struct App {
     open_on_start: bool,
     add_repository: AddRepository,
     new_issue: NewIssue,
+    /// The editor in place of a card's title and body, or of a repository's trusted logins.
+    edits: Edits,
     /// The tabs of each project that has been opened past its board, by repository id.
     projects: BTreeMap<i64, Project>,
     /// The chat with the Moebius agent over every page.
@@ -278,6 +283,7 @@ impl App {
             open_on_start: false,
             add_repository: AddRepository::default(),
             new_issue: NewIssue::default(),
+            edits: Edits::default(),
             projects: BTreeMap::new(),
             float: FloatChat::new(live::now()),
             collapsed: false,
@@ -370,6 +376,7 @@ impl App {
             Message::Select(page) => {
                 self.page = Some(page);
                 self.opened = None;
+                self.edits.close();
                 self.chats.leave();
                 if page == Page::Terminal {
                     self.terminal.open();
@@ -398,8 +405,25 @@ impl App {
                     _ => {}
                 }
             }
-            Message::OpenCard(id) => return self.open(id),
-            Message::CloseCard => self.opened = None,
+            Message::OpenCard(id) => {
+                self.edits.close();
+                return self.open(id);
+            }
+            Message::CloseCard => {
+                self.edits.close();
+                self.opened = None;
+            }
+            Message::Edit(message) if Edits::refused(&message) => {
+                self.show_connect_error(&ClientError::Unauthorized);
+            }
+            Message::Edit(message) => {
+                let saved = Edits::saved(&message);
+                let task = self.edits.update(message, self.settings.as_ref());
+                if saved {
+                    return Task::batch([task, self.reload()]);
+                }
+                return task;
+            }
             Message::EditScript(repository, column) => {
                 let (Some(settings), Some(board)) = (
                     &self.settings,
@@ -874,10 +898,7 @@ impl App {
                 )),
                 None => lines.push("No chat is open.".to_string()),
             },
-            Page::Rules => lines.push(excerpt(
-                "The rules as written in the editor",
-                &self.rules.save_text(),
-            )),
+            Page::Rules => lines.push(excerpt("The rules", &self.rules.context_text())),
             Page::Agents => match self.agents.editing() {
                 Some(name) => lines.push(format!("Editing the agent {name}")),
                 None => lines.push("No agent is open.".to_string()),
@@ -1355,11 +1376,17 @@ impl App {
                 };
                 let card_of = |id| board.cards.iter().find(|card| card.id == id);
                 match &self.opened {
-                    Some(Opened::Run(live)) => {
-                        card_of(live.card).map(|card| live.view(board, card))
-                    }
-                    Some(Opened::History { card, entries, now }) => card_of(*card)
-                        .map(|card| history::view(board, card, entries.as_deref(), *now)),
+                    Some(Opened::Run(live)) => card_of(live.card)
+                        .map(|card| live.view(board, card, self.edits.card_view(card.id))),
+                    Some(Opened::History { card, entries, now }) => card_of(*card).map(|card| {
+                        history::view(
+                            board,
+                            card,
+                            entries.as_deref(),
+                            *now,
+                            self.edits.card_view(card.id),
+                        )
+                    }),
                     Some(Opened::Script(editor)) => Some(editor.view()),
                     None => None,
                 }
@@ -1370,7 +1397,13 @@ impl App {
                         Some(project) if project.tab() != Tab::Board => {
                             project.view(&board.repository, tabs)
                         }
-                        _ => board::view(board, &self.snapshot.inbox, &self.new_issue, tabs),
+                        _ => board::view(
+                            board,
+                            &self.snapshot.inbox,
+                            &self.new_issue,
+                            &self.edits,
+                            tabs,
+                        ),
                     }
                 })
             }

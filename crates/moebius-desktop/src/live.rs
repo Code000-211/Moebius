@@ -282,7 +282,13 @@ impl Live {
     }
 
     /// The page: header, conversation with the steer field, and the panel of the run.
-    pub fn view<'a>(&'a self, board: &'a Board, card: &'a Card) -> Element<'a, AppMessage> {
+    /// `edit` is the editor of the card's title and body, under the header while it is open.
+    pub fn view<'a>(
+        &'a self,
+        board: &'a Board,
+        card: &'a Card,
+        edit: Option<Element<'a, AppMessage>>,
+    ) -> Element<'a, AppMessage> {
         let refused = self.conversation.refusals();
         let live = self.live();
         let round = match (card.rounds, board.round_limit) {
@@ -334,7 +340,12 @@ impl Live {
                 AppMessage::CloseCard,
             )),
             &card.title,
-            Some(chip),
+            Some(
+                row![chip, crate::history::card_pencil(card)]
+                    .spacing(8)
+                    .align_y(Alignment::Center)
+                    .into(),
+            ),
             context.into(),
             self.actions(),
         );
@@ -359,14 +370,15 @@ impl Live {
             .width(Length::Fill)
             .height(Length::Fill)
             .style(|_| page::box_style());
-        column![
-            header,
+        let mut page = column![header].spacing(theme::PAGE_GAP).width(Length::Fill);
+        if let Some(edit) = edit {
+            page = page.push(edit);
+        }
+        page.push(
             row![stream, self.panel(board, card, refused)]
                 .spacing(14)
                 .height(Length::Fill),
-        ]
-        .spacing(theme::PAGE_GAP)
-        .width(Length::Fill)
+        )
         .into()
     }
 
