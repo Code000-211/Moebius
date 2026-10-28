@@ -8,6 +8,7 @@ pub mod connect;
 pub mod conversation;
 pub mod history;
 pub mod icons;
+pub mod inbox;
 pub mod live;
 pub mod page;
 pub mod settings;

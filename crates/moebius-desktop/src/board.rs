@@ -216,7 +216,7 @@ fn card_line(card: &Card, round_limit: i64) -> String {
 }
 
 /// A number of tokens as the board writes it: `96k tok`, `1.2M tok`.
-fn tokens(n: i64) -> String {
+pub fn tokens(n: i64) -> String {
     match n {
         n if n >= 1_000_000 => format!("{:.1}M tok", n as f64 / 1_000_000.0),
         n if n >= 1_000 => format!("{}k tok", n / 1_000),

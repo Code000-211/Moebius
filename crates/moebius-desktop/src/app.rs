@@ -8,6 +8,7 @@ use iced::widget::{container, row};
 use iced::{Element, Length, Subscription, Task};
 
 use crate::client::{self, Client, ClientError, HistoryEntry, RunEvent, Snapshot, StreamEvent};
+use crate::inbox::{self, Inbox};
 use crate::live::{self, Live};
 use crate::settings::{self, Settings};
 use crate::{board, connect, history, sidebar, soon, theme};
@@ -112,6 +113,7 @@ pub enum Message {
     /// Back from a card's page to the board.
     CloseCard,
     Live(live::Message),
+    Inbox(inbox::Message),
     /// The history of the card was read.
     History(i64, Result<Vec<HistoryEntry>, ClientError>),
     ToggleSidebar,
@@ -141,6 +143,7 @@ pub struct App {
     page: Option<Page>,
     /// The card's page shown instead of the board.
     opened: Option<Opened>,
+    inbox: Inbox,
     collapsed: bool,
     /// Counts the reads of the snapshot, so that an older answer never replaces a newer one.
     requested: u64,
@@ -169,6 +172,7 @@ impl App {
             snapshot: Snapshot::default(),
             page: None,
             opened: None,
+            inbox: Inbox::new(live::now()),
             collapsed: false,
             requested: 0,
             shown: 0,
@@ -234,6 +238,7 @@ impl App {
                     return live.update(message, self.settings.as_ref());
                 }
             }
+            Message::Inbox(message) => return self.on_inbox(message),
             Message::History(id, Ok(entries)) => {
                 if let Some(Opened::History {
                     card,
@@ -254,6 +259,22 @@ impl App {
             }
         }
         Task::none()
+    }
+
+    /// Something on the inbox page. The snapshot is read again when a request succeeded, without waiting for the event.
+    fn on_inbox(&mut self, message: inbox::Message) -> Task<Message> {
+        match &message {
+            inbox::Message::Done(_, Err(ClientError::Unauthorized)) => {
+                self.show_connect_error(&ClientError::Unauthorized);
+                return Task::none();
+            }
+            inbox::Message::Done(_, Ok(())) => {
+                let task = self.inbox.update(message, self.settings.as_ref());
+                return Task::batch([task, self.reload()]);
+            }
+            _ => {}
+        }
+        self.inbox.update(message, self.settings.as_ref())
     }
 
     /// Tries what was typed; an empty token keeps the saved one.
@@ -377,6 +398,8 @@ impl App {
         else {
             return Task::none();
         };
+        // A card is opened on the page of its board, also when the click was in the inbox.
+        self.page = Some(Page::Board(card.repository_id));
         match card.run.clone() {
             Some(run) => {
                 let task = live::load(settings, id, run.id, 0);
@@ -423,11 +446,16 @@ impl App {
                         .map(|_| Message::Live(live::Message::Tick(live::now()))),
                     _ => Subscription::none(),
                 };
+                let inbox = match self.page() {
+                    Page::Inbox => iced::time::every(Duration::from_secs(30))
+                        .map(|_| Message::Inbox(inbox::Message::Tick(live::now()))),
+                    _ => Subscription::none(),
+                };
                 let shell = match &self.opened {
                     Some(Opened::Run(live)) => live.subscription(settings),
                     _ => Subscription::none(),
                 };
-                Subscription::batch([stream, clock, shell])
+                Subscription::batch([stream, clock, inbox, shell])
             }
             _ => Subscription::none(),
         }
@@ -486,6 +514,7 @@ impl App {
                 }
                 .unwrap_or_else(|| board::view(board, &self.snapshot.inbox))
             }
+            Page::Inbox => self.inbox.view(&self.snapshot),
             Page::Settings => connect::settings_page(self.settings.as_ref()),
             page => soon::view(page),
         }

@@ -195,6 +195,13 @@ pub struct InboxItem {
     pub at: i64,
 }
 
+impl InboxItem {
+    /// The id of the change a `ready_to_merge` or `change_closed` item is about.
+    pub fn change(&self) -> Option<i64> {
+        self.data["change"].as_i64()
+    }
+}
+
 impl Board {
     /// How many runs are working on the board's cards.
     pub fn live_runs(&self) -> usize {
@@ -338,6 +345,36 @@ impl Client {
             serde_json::json!({ "message": message }),
         )
         .await
+    }
+
+    /// What a person does with an inbox item. The answers are not read: the snapshot shows what changed.
+    async fn decide(&self, path: String, body: serde_json::Value) -> Result<(), ClientError> {
+        self.post::<serde_json::Value>(&path, body).await.map(drop)
+    }
+
+    /// Merges an open change.
+    pub async fn merge(&self, change: i64) -> Result<(), ClientError> {
+        self.decide(format!("/v1/changes/{change}/merge"), serde_json::json!({}))
+            .await
+    }
+
+    /// Sends a change back to coding with the reason as the card's note.
+    pub async fn reject(&self, change: i64, reason: &str) -> Result<(), ClientError> {
+        let body = serde_json::json!({ "reason": reason });
+        self.decide(format!("/v1/changes/{change}/reject"), body)
+            .await
+    }
+
+    /// Approves an outside issue that waits in the backlog.
+    pub async fn approve(&self, card: i64) -> Result<(), ClientError> {
+        self.decide(format!("/v1/cards/{card}/approve"), serde_json::json!({}))
+            .await
+    }
+
+    /// Gives a stuck card, or one whose pull request was closed, a fresh start.
+    pub async fn retry(&self, card: i64) -> Result<(), ClientError> {
+        self.decide(format!("/v1/cards/{card}/retry"), serde_json::json!({}))
+            .await
     }
 
     pub async fn stop(&self, run: i64) -> Result<Run, ClientError> {

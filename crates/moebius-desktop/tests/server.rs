@@ -382,3 +382,91 @@ async fn the_apps_shell_echoes_a_command_run_in_a_real_servers_worktree() {
         other => panic!("{other:?}"),
     }
 }
+
+/// Reads the snapshot until `ready` holds for it; the limit only stops a test that would otherwise hang.
+async fn snapshot_where(
+    client: &Client,
+    ready: impl Fn(&moebius_desktop::client::Snapshot) -> bool,
+) -> moebius_desktop::client::Snapshot {
+    tokio::time::timeout(Duration::from_secs(60), async {
+        loop {
+            let snapshot = client.snapshot().await.unwrap();
+            if ready(&snapshot) {
+                return snapshot;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("the snapshot did not change in a minute")
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_inbox_merges_a_change_and_approves_an_outside_issue() {
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, server) = start_with_fake_pi(dir.path()).await;
+    let origin = origin(dir.path());
+    let repository = post(
+        &settings,
+        "/v1/repositories",
+        json!({"name": "demo", "url": origin.to_str().unwrap()}),
+    )
+    .await;
+    let repository = repository["id"].as_i64().unwrap();
+    post(
+        &settings,
+        &format!("/v1/repositories/{repository}/issues"),
+        json!({"title": "Add a feature"}),
+    )
+    .await;
+    let outside = server
+        .app
+        .store
+        .add_card(repository, "An outside issue", "", "stranger", "Backlog")
+        .unwrap();
+
+    // The first card is coded by the fake Pi and waits to be merged; the outside issue waits to be approved.
+    let client = Client::new(settings);
+    let snapshot = snapshot_where(&client, |snapshot| {
+        ["ready_to_merge", "approve_issue"]
+            .iter()
+            .all(|kind| snapshot.inbox.iter().any(|item| item.kind == *kind))
+    })
+    .await;
+    let item = |kind: &str| {
+        snapshot
+            .inbox
+            .iter()
+            .find(|item| item.kind == kind)
+            .unwrap()
+            .clone()
+    };
+
+    let to_merge = item("ready_to_merge");
+    let card = to_merge.card_id.unwrap();
+    client.merge(to_merge.change().unwrap()).await.unwrap();
+    let column_of = |snapshot: &moebius_desktop::client::Snapshot, id: i64| {
+        snapshot.boards[0]
+            .cards
+            .iter()
+            .find(|card| card.id == id)
+            .map(|card| card.column.clone())
+    };
+    let merged = snapshot_where(&client, |s| column_of(s, card).as_deref() == Some("Done")).await;
+    assert!(merged.inbox.iter().all(|item| item.id != to_merge.id));
+
+    let to_approve = item("approve_issue");
+    assert_eq!(to_approve.card_id, Some(outside.id));
+    client.approve(outside.id).await.unwrap();
+    let approved = snapshot_where(&client, |s| {
+        column_of(s, outside.id).as_deref() != Some("Backlog")
+    })
+    .await;
+    assert!(approved.inbox.iter().all(|item| item.id != to_approve.id));
+
+    // A request the server refuses comes back with its message: the change is merged already.
+    match client.merge(to_merge.change().unwrap()).await.unwrap_err() {
+        ClientError::Server { status, .. } => assert_eq!(status, 422),
+        other => panic!("{other:?}"),
+    }
+}

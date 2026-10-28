@@ -89,7 +89,8 @@ pub fn now() -> i64 {
         .map_or(0, |since| since.as_secs() as i64)
 }
 
-fn say(error: &ClientError) -> String {
+/// A failure as one short line: the server's own message when it sent one.
+pub fn say(error: &ClientError) -> String {
     match error {
         ClientError::Server { message, .. } => message.clone(),
         other => other.to_string(),
@@ -375,7 +376,10 @@ impl Live {
                 Some(_) => "Close shell",
                 None => "Open shell in worktree",
             };
-            actions = actions.push(white_button(label, AppMessage::Live(Message::ToggleShell)));
+            actions = actions.push(page::white_button(
+                label,
+                Some(AppMessage::Live(Message::ToggleShell)),
+            ));
         }
         if self.running() && self.confirming {
             actions = actions
@@ -384,13 +388,19 @@ impl Live {
                         .size(theme::CONTEXT)
                         .color(theme::TEXT_SECONDARY),
                 )
-                .push(white_button(
+                .push(page::white_button(
                     "Keep going",
-                    AppMessage::Live(Message::KeepGoing),
+                    Some(AppMessage::Live(Message::KeepGoing)),
                 ))
-                .push(white_button("Stop run", AppMessage::Live(Message::Stop)));
+                .push(page::white_button(
+                    "Stop run",
+                    Some(AppMessage::Live(Message::Stop)),
+                ));
         } else if self.running() {
-            actions = actions.push(white_button("Stop run", AppMessage::Live(Message::AskStop)));
+            actions = actions.push(page::white_button(
+                "Stop run",
+                Some(AppMessage::Live(Message::AskStop)),
+            ));
         }
         actions.into()
     }
@@ -637,28 +647,6 @@ fn round_bar<'a>(rounds: i64, limit: i64) -> Element<'a, AppMessage> {
     }))
     .spacing(3)
     .width(Length::Fill)
-    .into()
-}
-
-/// A white button with a line, for everything that is not the page's one primary button.
-fn white_button<'a>(label: &'a str, message: AppMessage) -> Element<'a, AppMessage> {
-    button(
-        text(label)
-            .size(theme::CONTEXT)
-            .font(theme::manrope(Weight::Semibold)),
-    )
-    .padding([8, 14])
-    .on_press(message)
-    .style(|_, _| button::Style {
-        background: Some(theme::SURFACE.into()),
-        text_color: theme::TEXT,
-        border: Border {
-            color: theme::LINE,
-            width: 1.0,
-            radius: theme::RADIUS_CONTROL.into(),
-        },
-        ..button::Style::default()
-    })
     .into()
 }
 

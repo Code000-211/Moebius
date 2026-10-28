@@ -5,6 +5,7 @@ use iced::{Settings, Size};
 use iced_test::Simulator;
 use moebius_desktop::app::{App, Message, Page};
 use moebius_desktop::client::{ClientError, Snapshot, TerminalEvent};
+use moebius_desktop::inbox::{self, Action};
 use moebius_desktop::live;
 use moebius_desktop::theme;
 use serde_json::json;
@@ -129,18 +130,27 @@ fn overview() -> Snapshot {
 }
 
 fn simulator(app: &App) -> Simulator<'_, Message> {
+    simulator_sized(app, Size::new(1440.0, 900.0))
+}
+
+fn simulator_sized(app: &App, size: Size) -> Simulator<'_, Message> {
     let settings = Settings {
         fonts: theme::fonts(),
         default_font: theme::MANROPE,
         ..Settings::default()
     };
-    Simulator::with_size(settings, Size::new(1440.0, 900.0), app.view())
+    Simulator::with_size(settings, size, app.view())
 }
 
 /// Draws the app at the size of the mockups, asserts that each of `texts` is on the screen, and compares the picture
 /// with the stored one (the first run stores it).
 fn draw(app: &App, name: &str, texts: &[&str]) {
-    let mut ui = simulator(app);
+    draw_sized(app, name, texts, Size::new(1440.0, 900.0));
+}
+
+/// Like `draw`, on a screen of another size, for pages longer than the mockups' 900 px.
+fn draw_sized(app: &App, name: &str, texts: &[&str], size: Size) {
+    let mut ui = simulator_sized(app, size);
     for text in texts {
         assert!(
             ui.find(*text).is_ok(),
@@ -641,4 +651,307 @@ fn a_card_without_a_run_shows_its_history() {
     ] {
         assert!(ui.find(text).is_ok(), "{text:?} is not on the screen");
     }
+}
+
+/// The time the inbox tests stand at, Unix seconds.
+const NOW: i64 = 1_790_100_000;
+
+fn change(
+    id: i64,
+    card: Option<i64>,
+    branch: &str,
+    state: &str,
+    checks: &str,
+) -> serde_json::Value {
+    json!({"id": id, "repository_id": 1, "card_id": card, "branch": branch, "state": state,
+           "pull_request": 18, "checks": checks, "review": "approved"})
+}
+
+fn entry(
+    id: i64,
+    kind: &str,
+    card: Option<i64>,
+    title: &str,
+    data: serde_json::Value,
+    ago: i64,
+) -> serde_json::Value {
+    json!({"id": id, "kind": kind, "card_id": card, "title": title, "data": data, "at": NOW - ago})
+}
+
+/// One item of each kind: a stuck card, a change to merge, a change from a chat, an outside issue and a pull request
+/// that was closed.
+fn inbox_snapshot() -> Snapshot {
+    let mut radiance = board(
+        repository(1, "radiance", Some("Code000-211/Radiance")),
+        vec![
+            working(
+                45,
+                1,
+                "Ready to merge",
+                "place: release staged units on teardown",
+                json!({"rounds": 2, "tokens": 590_000, "change": {"id": 2, "checks": "success"}}),
+            ),
+            working(
+                46,
+                1,
+                "Ready to merge",
+                "Retry model downloads on HTTP 5xx",
+                json!({"change": {"id": 3, "checks": "success"}}),
+            ),
+            working(
+                55,
+                1,
+                "Backlog",
+                "Support gfx1100 (RDNA3) kernels",
+                json!({"author": "lowfreq"}),
+            ),
+        ],
+    );
+    radiance["changes"] = json!([
+        change(2, Some(45), "moebius/card-45", "open", "success"),
+        change(3, Some(46), "moebius/card-46", "closed", "success"),
+        change(5, None, "moebius/chat-9", "open", "pending"),
+    ]);
+    snapshot(
+        vec![
+            radiance,
+            board(
+                repository(2, "moebius", None),
+                vec![card(
+                    12,
+                    2,
+                    "In progress",
+                    "Board: drag cards between columns",
+                )],
+            ),
+        ],
+        vec![
+            entry(
+                1,
+                "stuck",
+                Some(12),
+                "Board: drag cards between columns",
+                json!({"reason": "the round limit is reached"}),
+                1200,
+            ),
+            entry(
+                2,
+                "ready_to_merge",
+                Some(45),
+                "place: release staged units on teardown",
+                json!({"change": 2, "branch": "moebius/card-45"}),
+                3600,
+            ),
+            entry(
+                3,
+                "ready_to_merge",
+                None,
+                "Add a retry helper to the downloader",
+                json!({"change": 5, "branch": "moebius/chat-9"}),
+                7200,
+            ),
+            entry(
+                4,
+                "approve_issue",
+                Some(55),
+                "Support gfx1100 (RDNA3) kernels",
+                json!({"reason": "lowfreq is not a trusted author"}),
+                10_800,
+            ),
+            entry(
+                5,
+                "change_closed",
+                Some(46),
+                "Retry model downloads on HTTP 5xx",
+                json!({"change": 3, "pull_request": 18}),
+                172_800,
+            ),
+        ],
+    )
+}
+
+fn inbox_app() -> App {
+    let mut app = App::with_snapshot(inbox_snapshot());
+    let _ = app.update(Message::Select(Page::Inbox));
+    let _ = app.update(Message::Inbox(inbox::Message::Tick(NOW)));
+    app
+}
+
+fn clicked(app: &App, label: &str) -> Vec<Message> {
+    let mut ui = simulator(app);
+    ui.click(label)
+        .unwrap_or_else(|_| panic!("{label:?} is not on the screen"));
+    ui.into_messages().collect()
+}
+
+fn shows(app: &App, text: &str) -> bool {
+    simulator(app).find(text).is_ok()
+}
+
+#[test]
+fn the_inbox_shows_every_kind_of_item_like_the_mockup() {
+    draw_sized(
+        &inbox_app(),
+        "inbox",
+        &[
+            "Inbox",
+            "5 things need you.",
+            "All 5",
+            "To merge 2",
+            "Approvals 1",
+            "Stuck 1",
+            "Closed 1",
+            "Every repository",
+            "radiance 4",
+            "moebius 1",
+            "Stuck",
+            "moebius · #12",
+            "Board: drag cards between columns",
+            "Stopped: the round limit is reached.",
+            "20 min ago",
+            "Ready to merge",
+            "radiance · #45",
+            "Rounds",
+            "590k tok",
+            "CI green · review approved",
+            "moebius/card-45",
+            "Merge",
+            "Open live view",
+            "Reject with a reason",
+            "Change from a chat",
+            "radiance · chat",
+            "Open chat",
+            "Outside issue",
+            "radiance · #55 · by lowfreq",
+            "Approve",
+            "Closed without a merge",
+            "Pull request #18 was closed without a merge.",
+            "Retry",
+            "2 d ago",
+        ],
+        Size::new(1440.0, 1500.0),
+    );
+}
+
+#[test]
+fn merging_sends_the_message_and_the_item_shows_the_request_until_it_is_answered() {
+    let mut app = inbox_app();
+    let messages = clicked(&app, "Merge");
+    assert!(matches!(
+        &messages[..],
+        [Message::Inbox(inbox::Message::Act(
+            2,
+            Action::Merge { change: 2 }
+        ))]
+    ));
+    for message in messages {
+        let _ = app.update(message);
+    }
+    assert!(shows(&app, "Merging…"));
+
+    let refused = inbox::Message::Done(
+        2,
+        Err(ClientError::Server {
+            status: 409,
+            message: "the branch does not merge cleanly".into(),
+        }),
+    );
+    let _ = app.update(Message::Inbox(refused));
+    assert!(shows(&app, "the branch does not merge cleanly"));
+    assert!(!shows(&app, "Merging…"));
+}
+
+#[test]
+fn approving_and_retrying_name_the_card() {
+    let app = inbox_app();
+    assert!(matches!(
+        &clicked(&app, "Approve")[..],
+        [Message::Inbox(inbox::Message::Act(
+            4,
+            Action::Approve { card: 55 }
+        ))]
+    ));
+    let mut stuck = inbox_app();
+    let _ = stuck.update(Message::Inbox(inbox::Message::Kind(Some("stuck".into()))));
+    assert!(matches!(
+        &clicked(&stuck, "Retry")[..],
+        [Message::Inbox(inbox::Message::Act(
+            1,
+            Action::Retry { card: 12 }
+        ))]
+    ));
+}
+
+#[test]
+fn rejecting_asks_for_a_reason_first() {
+    let mut app = inbox_app();
+    for message in clicked(&app, "Reject with a reason") {
+        let _ = app.update(message);
+    }
+    assert!(!shows(&app, "Reject with a reason"));
+    assert!(shows(&app, "Send back"));
+    // Without a reason the button does nothing.
+    let mut ui = simulator(&app);
+    let _ = ui.click("Send back");
+    assert_eq!(ui.into_messages().count(), 0);
+
+    let _ = app.update(Message::Inbox(inbox::Message::Reason(
+        2,
+        "Handle the empty list".into(),
+    )));
+    assert!(matches!(
+        &clicked(&app, "Send back")[..],
+        [Message::Inbox(inbox::Message::Act(
+            2,
+            Action::Reject { change: 2 }
+        ))]
+    ));
+    for message in clicked(&app, "Cancel") {
+        let _ = app.update(message);
+    }
+    assert!(shows(&app, "Reject with a reason"));
+}
+
+#[test]
+fn opening_the_live_view_from_the_inbox_goes_to_the_card() {
+    let mut app = inbox_app();
+    assert!(matches!(
+        &clicked(&app, "Open live view")[..],
+        [Message::OpenCard(45)]
+    ));
+    let _ = app.update(Message::OpenCard(45));
+    assert_eq!(app.page(), Page::Board(1));
+}
+
+#[test]
+fn filtering_by_kind_or_repository_hides_the_other_items() {
+    let mut app = inbox_app();
+    for message in clicked(&app, "To merge 2") {
+        let _ = app.update(message);
+    }
+    assert!(shows(&app, "Merge"));
+    assert!(!shows(&app, "Retry"));
+    assert!(!shows(&app, "Approve"));
+    assert!(shows(&app, "5 things need you; 2 shown."));
+    // The sidebar keeps the total.
+    assert!(shows(&app, "5"));
+
+    let _ = app.update(Message::Inbox(inbox::Message::Kind(None)));
+    for message in clicked(&app, "moebius 1") {
+        let _ = app.update(message);
+    }
+    assert!(shows(&app, "Board: drag cards between columns"));
+    assert!(!shows(&app, "Merge"));
+
+    let _ = app.update(Message::Inbox(inbox::Message::Kind(Some(
+        "approve_issue".into(),
+    ))));
+    assert!(shows(&app, "No item matches the filter."));
+}
+
+#[test]
+fn an_empty_inbox_says_so() {
+    let mut app = App::with_snapshot(Snapshot::default());
+    let _ = app.update(Message::Select(Page::Inbox));
+    assert!(shows(&app, "Nothing needs you."));
 }

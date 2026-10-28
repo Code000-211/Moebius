@@ -2,7 +2,7 @@
 //! the connection.
 
 use iced::font::Weight;
-use iced::widget::{button, column, container, row, text, text_input};
+use iced::widget::{column, container, row, text, text_input};
 use iced::{Border, Center, Element, Length};
 
 use crate::app::{Form, Message};
@@ -10,7 +10,7 @@ use crate::settings::{self, Settings};
 use crate::theme;
 use crate::{icons, page};
 
-fn input_style(_: &iced::Theme, status: text_input::Status) -> text_input::Style {
+pub fn input_style(_: &iced::Theme, status: text_input::Status) -> text_input::Style {
     let border = match status {
         text_input::Status::Focused { .. } => theme::TEAL,
         _ => theme::LINE,
@@ -27,34 +27,6 @@ fn input_style(_: &iced::Theme, status: text_input::Status) -> text_input::Style
         value: theme::TEXT,
         selection: theme::TEAL_FILL,
     }
-}
-
-/// The primary button: the one in the "needs you" colour.
-fn primary_button<'a>(label: &'a str, message: Option<Message>) -> Element<'a, Message> {
-    button(
-        text(label)
-            .size(theme::CONTEXT)
-            .font(theme::manrope(Weight::Semibold)),
-    )
-    .padding([8, 14])
-    .on_press_maybe(message)
-    .style(|_, status| button::Style {
-        background: Some(
-            if status == button::Status::Disabled {
-                theme::TEXT_MUTED
-            } else {
-                theme::AMBER
-            }
-            .into(),
-        ),
-        text_color: theme::ON_FILL,
-        border: Border {
-            radius: theme::RADIUS_CONTROL.into(),
-            ..Border::default()
-        },
-        ..button::Style::default()
-    })
-    .into()
 }
 
 fn label(name: &str) -> Element<'_, Message> {
@@ -122,7 +94,7 @@ pub fn view<'a>(form: &'a Form, saved: Option<&Settings>) -> Element<'a, Message
                 .font(theme::manrope(Weight::Bold)),
             page::context("The address of the Moebius server and its token."),
             fields,
-            primary_button(button_label, ready.then_some(Message::Submit)),
+            page::primary_button(button_label, ready.then_some(Message::Submit)),
         ]
         .spacing(14),
     )
@@ -159,7 +131,7 @@ pub fn settings_page<'a>(saved: Option<&Settings>) -> Element<'a, Message> {
             column![
                 page::body(format!("Address {address}")),
                 page::body(format!("Token {token}")),
-                primary_button("Change connection", Some(Message::ChangeConnection)),
+                page::primary_button("Change connection", Some(Message::ChangeConnection)),
             ]
             .spacing(10),
         ),

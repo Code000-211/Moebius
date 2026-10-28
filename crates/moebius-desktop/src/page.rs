@@ -205,3 +205,64 @@ pub fn ago(now: i64, at: i64) -> String {
         seconds => format!("{} d ago", seconds / 86400),
     }
 }
+
+/// The primary button: the one in the "needs you" colour. Without a message it is drawn grey and does nothing.
+pub fn primary_button<'a, Message: Clone + 'a>(
+    label: &'a str,
+    message: Option<Message>,
+) -> Element<'a, Message> {
+    button(
+        text(label)
+            .size(theme::CONTEXT)
+            .font(theme::manrope(Weight::Semibold)),
+    )
+    .padding([8, 14])
+    .on_press_maybe(message)
+    .style(|_, status| button::Style {
+        background: Some(
+            if status == button::Status::Disabled {
+                theme::TEXT_MUTED
+            } else {
+                theme::AMBER
+            }
+            .into(),
+        ),
+        text_color: theme::ON_FILL,
+        border: Border {
+            radius: theme::RADIUS_CONTROL.into(),
+            ..Border::default()
+        },
+        ..button::Style::default()
+    })
+    .into()
+}
+
+/// A white button with a line, for everything that is not the one primary button. Without a message it is drawn
+/// muted and does nothing.
+pub fn white_button<'a, Message: Clone + 'a>(
+    label: &'a str,
+    message: Option<Message>,
+) -> Element<'a, Message> {
+    button(
+        text(label)
+            .size(theme::CONTEXT)
+            .font(theme::manrope(Weight::Semibold)),
+    )
+    .padding([8, 14])
+    .on_press_maybe(message)
+    .style(|_, status| button::Style {
+        background: Some(theme::SURFACE.into()),
+        text_color: if status == button::Status::Disabled {
+            theme::TEXT_MUTED
+        } else {
+            theme::TEXT
+        },
+        border: Border {
+            color: theme::LINE,
+            width: 1.0,
+            radius: theme::RADIUS_CONTROL.into(),
+        },
+        ..button::Style::default()
+    })
+    .into()
+}
