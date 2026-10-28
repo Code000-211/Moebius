@@ -167,10 +167,14 @@ fn draw_sized(app: &App, name: &str, texts: &[&str], size: Size) {
     }
     let snapshot = ui.snapshot(&app.theme()).unwrap();
     let path = format!("{}/tests/snapshots/{name}.png", env!("CARGO_MANIFEST_DIR"));
-    assert!(
-        snapshot.matches_image(&path).unwrap(),
-        "{name} differs from {path}; delete the file to store the new picture"
-    );
+    if !snapshot.matches_image(&path).unwrap() {
+        // What was drawn is kept in target/snapshot-diffs (CI keeps the directory of a failed run), so that a
+        // difference on another machine can be seen.
+        let drawn = format!("{}/../../target/snapshot-diffs", env!("CARGO_MANIFEST_DIR"));
+        let _ = std::fs::remove_file(format!("{drawn}/{name}-tiny-skia.png"));
+        let _ = snapshot.matches_image(format!("{drawn}/{name}.png"));
+        panic!("{name} differs from {path}; delete the file to store the new picture");
+    }
 }
 
 #[test]

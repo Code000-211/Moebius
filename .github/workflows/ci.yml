@@ -28,4 +28,11 @@ jobs:
             | PIBOLT_YES=1 PIBOLT_EXTENSIONS=no sh
           echo "MOEBIUS_PI_BOLT=$HOME/.local/bin/pi-bolt" >> "$GITHUB_ENV"
       - run: cargo test --workspace
+      # A render test that fails keeps what it drew; keep it with the run.
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshot-diffs
+          path: target/snapshot-diffs
+          if-no-files-found: ignore
       - run: cargo run -p moebius-plugin-api --example allow_reads
