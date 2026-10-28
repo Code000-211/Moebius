@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use iced::font::Weight;
 use iced::widget::text::Wrapping;
-use iced::widget::{button, column, container, row, scrollable, space, text, text_input};
+use iced::widget::{column, container, row, scrollable, space, text, text_input};
 use iced::{Alignment, Border, Color, Element, Length, Task};
 
 use crate::app::Message as AppMessage;
@@ -117,6 +117,14 @@ impl Inbox {
             Message::Tick(now) => self.now = now,
         }
         Task::none()
+    }
+
+    /// What the request made for the item says: while it is on its way, or why it failed.
+    pub fn status(&self, item: i64) -> Option<&str> {
+        self.working
+            .get(&item)
+            .map(Action::working)
+            .or_else(|| self.notices.get(&item).map(String::as_str))
     }
 
     fn act(&mut self, item: i64, action: Action, settings: Option<&Settings>) -> Task<AppMessage> {
@@ -403,8 +411,10 @@ impl Inbox {
                             Some(AppMessage::Inbox(Message::AskReject(id))),
                         ));
                     }
-                    // The chat's own screen is a later issue.
-                    None => buttons.push(page::white_button("Open chat", None)),
+                    None => buttons.push(page::white_button(
+                        "Open chat",
+                        item.chat().map(AppMessage::OpenChat),
+                    )),
                 }
             }
             (APPROVE_ISSUE, _, Some(card)) => {
@@ -566,31 +576,7 @@ fn fact<'a>(
     .into()
 }
 
-/// A filter chip: dark when chosen; the blocked kind has a red line.
+/// A filter chip of the inbox.
 fn chip<'a>(label: String, selected: bool, red: bool, message: Message) -> Element<'a, AppMessage> {
-    button(
-        text(label)
-            .size(theme::CONTEXT)
-            .font(theme::manrope(Weight::Semibold)),
-    )
-    .padding([5, 12])
-    .on_press(AppMessage::Inbox(message))
-    .style(move |_, _| {
-        let (fill, ink, line) = match (selected, red) {
-            (true, _) => (theme::TEXT, theme::ON_FILL, theme::TEXT),
-            (false, true) => (theme::SURFACE, theme::RED_TEXT, theme::RED_BORDER),
-            (false, false) => (theme::SURFACE, theme::TEXT_SECONDARY, theme::LINE),
-        };
-        button::Style {
-            background: Some(fill.into()),
-            text_color: ink,
-            border: Border {
-                color: line,
-                width: 1.0,
-                radius: theme::RADIUS_ROUND.into(),
-            },
-            ..button::Style::default()
-        }
-    })
-    .into()
+    page::chip(label, selected, red, AppMessage::Inbox(message))
 }

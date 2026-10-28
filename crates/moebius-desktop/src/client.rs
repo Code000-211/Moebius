@@ -109,6 +109,37 @@ pub struct Run {
     pub started_at: i64,
 }
 
+/// A chat with an agent, as `GET /v1/chats` lists it: a run without a card.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Chat {
+    /// The id of the chat's run.
+    pub id: i64,
+    pub agent: String,
+    /// The status of the run: `starting`, `running`, `waiting`, or how it ended.
+    pub status: String,
+    #[serde(default)]
+    pub repository_id: Option<i64>,
+    #[serde(default)]
+    pub started_at: i64,
+    /// The first line of the first message.
+    #[serde(default)]
+    pub title: String,
+}
+
+impl Chat {
+    /// Whether the chat can still be written to.
+    pub fn is_open(&self) -> bool {
+        matches!(self.status.as_str(), "starting" | "running" | "waiting")
+    }
+
+    /// The branch that holds the chat's work in its repository.
+    pub fn branch(&self) -> String {
+        format!("{CHAT_BRANCH}{}", self.id)
+    }
+}
+
+const CHAT_BRANCH: &str = "moebius/chat-";
+
 /// One stored event of a run, as `GET /v1/runs/{id}/events` lists it and the stream's `run_event` carries it.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct RunEvent {
@@ -199,6 +230,15 @@ impl InboxItem {
     /// The id of the change a `ready_to_merge` or `change_closed` item is about.
     pub fn change(&self) -> Option<i64> {
         self.data["change"].as_i64()
+    }
+
+    /// The id of the chat whose work a `ready_to_merge` item offers: the number in its branch `moebius/chat-<id>`.
+    pub fn chat(&self) -> Option<i64> {
+        self.data["branch"]
+            .as_str()?
+            .strip_prefix(CHAT_BRANCH)?
+            .parse()
+            .ok()
     }
 }
 
@@ -374,6 +414,40 @@ impl Client {
     /// Gives a stuck card, or one whose pull request was closed, a fresh start.
     pub async fn retry(&self, card: i64) -> Result<(), ClientError> {
         self.decide(format!("/v1/cards/{card}/retry"), serde_json::json!({}))
+            .await
+    }
+
+    /// The chats, newest first.
+    pub async fn chats(&self) -> Result<Vec<Chat>, ClientError> {
+        self.get("/v1/chats").await
+    }
+
+    /// Starts a chat with `agent` (the Moebius agent when blank), in `repository` if given.
+    pub async fn start_chat(
+        &self,
+        agent: &str,
+        message: &str,
+        repository: Option<i64>,
+    ) -> Result<Run, ClientError> {
+        let mut body = serde_json::json!({ "message": message, "repository": repository });
+        if !agent.trim().is_empty() {
+            body["agent"] = agent.trim().into();
+        }
+        self.post("/v1/chats", body).await
+    }
+
+    /// Writes to a chat; a working agent gets the message as a follow-up.
+    pub async fn say(&self, chat: i64, message: &str) -> Result<Run, ClientError> {
+        self.post(
+            &format!("/v1/chats/{chat}/messages"),
+            serde_json::json!({ "message": message }),
+        )
+        .await
+    }
+
+    /// Ends a chat: its work is committed and offered as a change.
+    pub async fn end_chat(&self, chat: i64) -> Result<Run, ClientError> {
+        self.post(&format!("/v1/chats/{chat}/end"), serde_json::json!({}))
             .await
     }
 

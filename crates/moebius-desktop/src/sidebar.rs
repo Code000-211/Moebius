@@ -1,4 +1,4 @@
-//! The sidebar on every screen: the app name with the connection, the search field, the Inbox, and the groups Boards,
+//! The sidebar on every screen: the app name with the connection, the search field, the Inbox and Chat, and the groups Boards,
 //! Build, Improve and Setup. It collapses to a rail of icons. Every number in it comes from the server.
 
 use iced::font::Weight;
@@ -46,6 +46,7 @@ pub fn view<'a>(
     snapshot: &'a Snapshot,
     connection: Connection,
     page: &Page,
+    chats_waiting: usize,
     collapsed: bool,
 ) -> Element<'a, Message> {
     let inbox = item(
@@ -53,6 +54,18 @@ pub fn view<'a>(
         "Inbox",
         Trailing::Badge(snapshot.inbox.len()),
         Page::Inbox,
+        page,
+        collapsed,
+    );
+    let chat = item(
+        Lead::Icon(Icon::Chat),
+        Page::Chat.title(),
+        if chats_waiting > 0 {
+            Trailing::Badge(chats_waiting)
+        } else {
+            Trailing::Nothing
+        },
+        Page::Chat,
         page,
         collapsed,
     );
@@ -93,7 +106,7 @@ pub fn view<'a>(
         )
     };
     let groups = column![
-        group(None, vec![inbox], collapsed),
+        group(None, vec![inbox, chat], collapsed),
         divider(),
         group(Some("Boards"), boards.collect(), collapsed),
         divider(),

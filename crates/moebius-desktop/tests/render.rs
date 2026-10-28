@@ -4,6 +4,7 @@
 use iced::{Settings, Size};
 use iced_test::Simulator;
 use moebius_desktop::app::{App, Message, Page};
+use moebius_desktop::chat;
 use moebius_desktop::client::{ClientError, Snapshot, TerminalEvent};
 use moebius_desktop::inbox::{self, Action};
 use moebius_desktop::live;
@@ -954,4 +955,194 @@ fn an_empty_inbox_says_so() {
     let mut app = App::with_snapshot(Snapshot::default());
     let _ = app.update(Message::Select(Page::Inbox));
     assert!(shows(&app, "Nothing needs you."));
+}
+
+/// The chat of the chat screen's picture: a person asks for a script, the agent answers with Markdown and a code block,
+/// writes `.moebius/ready.luau`, checks it, and closes; the chat ended and offered its branch as a change.
+fn chat_events() -> Vec<moebius_desktop::client::RunEvent> {
+    let delta = |text: &str| {
+        json!({"type": "message_update",
+               "assistantMessageEvent": {"type": "text_delta", "contentIndex": 0, "delta": text}})
+    };
+    let script = "if card.blocked_by_count == 0 then\n  moebius.start_run(\"Coder\")\nend\n";
+    let output = "ok: .moebius/ready.luau is a valid column script\n";
+    let records = vec![
+        json!({"type": "said", "message": "Write a ready.luau that starts a card only when nothing blocks it."}),
+        delta("A **ready script** runs when a card enters `Ready`. "),
+        delta("This one starts the Coder only when no issue blocks the card:\n\n```lua\n"),
+        delta("if card.blocked_by_count == 0 then\n  moebius.start_run(\"Coder\")\nend\n```\n\n"),
+        delta("I will write it to the repository and check it.\n"),
+        json!({"type": "tool_check", "tool": "write", "tool_call_id": "w1", "decision": "allow",
+               "reason": "no rule is broken"}),
+        json!({"type": "tool_execution_start", "toolCallId": "w1", "toolName": "write",
+               "args": {"path": ".moebius/ready.luau", "content": script}}),
+        json!({"type": "tool_execution_end", "toolCallId": "w1", "toolName": "write", "isError": false,
+               "durationMs": 3, "result": {"content": [{"type": "text", "text": "written"}]}}),
+        json!({"type": "tool_check", "tool": "bash", "tool_call_id": "b1", "decision": "allow",
+               "reason": "no rule is broken"}),
+        json!({"type": "tool_execution_start", "toolCallId": "b1", "toolName": "bash",
+               "args": {"command": "moebius check-script .moebius/ready.luau"}}),
+        json!({"type": "tool_execution_end", "toolCallId": "b1", "toolName": "bash", "isError": false,
+               "durationMs": 140, "result": {"content": [{"type": "text", "text": output}]}}),
+        json!({"type": "message_end"}),
+        delta("The script passes. End the chat to offer it as a change."),
+    ];
+    records
+        .into_iter()
+        .enumerate()
+        .map(|(n, record)| moebius_desktop::client::RunEvent {
+            seq: n as i64 + 1,
+            kind: record["type"].as_str().unwrap().to_string(),
+            data: record,
+            at: 1_790_000_000,
+        })
+        .collect()
+}
+
+fn chat_listing(status: &str) -> Vec<moebius_desktop::client::Chat> {
+    serde_json::from_value(json!([
+        {"id": 7, "agent": "Moebius", "status": status, "repository_id": 1, "started_at": 1_790_000_000 - 600,
+         "ended_at": null, "title": "Write a ready.luau that starts a card only when nothing blocks it."},
+        {"id": 6, "agent": "Coder", "status": "waiting", "repository_id": null, "started_at": 1_790_000_000 - 7200,
+         "ended_at": null, "title": "Explain how the router chooses an upstream."},
+        {"id": 5, "agent": "Moebius", "status": "succeeded", "repository_id": 1, "started_at": 1_790_000_000 - 90_000,
+         "ended_at": 1_790_000_000 - 86_000, "title": "Add a rule against vendor edits"}
+    ]))
+    .unwrap()
+}
+
+/// The app on the chat screen with chat 7 open, as if its list and events were read from a server. Chat 7 offered
+/// the branch `moebius/chat-7` when `offered`.
+fn chatting(status: &str, offered: bool) -> App {
+    let mut board = radiance("Ready");
+    let mut inbox = vec![];
+    if offered {
+        board["changes"] = json!([{"id": 3, "repository_id": 1, "card_id": null,
+                                   "branch": "moebius/chat-7", "state": "open"}]);
+        inbox.push(json!({"id": 9, "kind": "ready_to_merge", "card_id": null,
+                          "title": "Write a ready.luau that starts a card only when nothing blocks it.",
+                          "data": {"change": 3, "branch": "moebius/chat-7"}, "at": 1_790_000_000}));
+    }
+    let mut app = App::with_snapshot(snapshot(vec![board], inbox));
+    let _ = app.update(Message::Select(Page::Chat));
+    let _ = app.update(Message::Chat(chat::Message::Tick(1_790_000_000)));
+    let _ = app.update(Message::Chat(chat::Message::Listed(Ok(chat_listing(
+        status,
+    )))));
+    let _ = app.update(Message::Chat(chat::Message::Select(7)));
+    let _ = app.update(Message::Chat(chat::Message::Loaded(7, Ok(chat_events()))));
+    app
+}
+
+/// A chat drawn: compare `tests/snapshots/chat-tiny-skia.png` with `docs/design/live-view.png`, whose conversation it
+/// follows.
+#[test]
+fn a_chat_is_drawn_with_its_markdown_tool_calls_and_offered_change() {
+    draw_sized(
+        &chatting("succeeded", true),
+        "chat",
+        &[
+            "Chat",
+            "1 chat waits for your next message.",
+            "Write a ready.luau that starts a card only when nothing blocks it.",
+            "Moebius in radiance",
+            "Ended",
+            "Explain how the router chooses an upstream.",
+            "Coder",
+            "Add a rule against vendor edits",
+            "New chat",
+            "Write a ready.luau that starts a card only when nothing blocks it.",
+            ".moebius/ready.luau",
+            "Allowed",
+            "moebius check-script .moebius/ready.luau",
+            "ran 140 ms",
+            "ok: .moebius/ready.luau is a valid column script",
+            "Change offered",
+            "moebius/chat-7",
+            "Merge",
+            "This chat has ended.",
+            "Send",
+        ],
+        Size::new(1440.0, 1100.0),
+    );
+}
+
+#[test]
+fn sending_needs_a_message_and_goes_to_the_open_chat() {
+    let mut app = chatting("waiting", false);
+    assert_eq!(app.update(Message::Chat(chat::Message::Send)).units(), 0);
+    let mut ui = simulator(&app);
+    let _ = ui.click("Send");
+    assert_eq!(ui.into_messages().count(), 0);
+    assert!(shows(&app, "The agent answers at once."));
+
+    let mut ui = simulator(&app);
+    ui.click("Write to the agent").unwrap();
+    ui.typewrite("Now the budgets.");
+    for message in ui.into_messages().collect::<Vec<_>>() {
+        let _ = app.update(message);
+    }
+    assert!(matches!(
+        &clicked(&app, "Send")[..],
+        [Message::Chat(chat::Message::Send)]
+    ));
+    assert_eq!(app.update(Message::Chat(chat::Message::Send)).units(), 1);
+
+    // While the agent works the message is queued, and the chat can be stopped after a question.
+    let working = chatting("running", false);
+    assert!(shows(
+        &working,
+        "The agent is working. Your message is queued and sent when it is done with this turn."
+    ));
+    let mut app = working;
+    assert!(matches!(
+        &clicked(&app, "End chat")[..],
+        [Message::Chat(chat::Message::End)]
+    ));
+    for message in clicked(&app, "Stop") {
+        let _ = app.update(message);
+    }
+    assert!(shows(&app, "Stop this chat?"));
+    assert!(matches!(
+        &clicked(&app, "Stop chat")[..],
+        [Message::Chat(chat::Message::Stop)]
+    ));
+}
+
+#[test]
+fn a_new_chat_needs_a_first_message() {
+    let mut app = chatting("waiting", false);
+    for message in clicked(&app, "New chat") {
+        let _ = app.update(message);
+    }
+    assert!(shows(&app, "First message"));
+    assert!(shows(&app, "No repository"));
+    assert!(shows(&app, "radiance"));
+    assert_eq!(app.update(Message::Chat(chat::Message::Start)).units(), 0);
+
+    let _ = app.update(Message::Chat(chat::Message::RepositoryChosen(Some(1))));
+    let _ = app.update(Message::Chat(chat::Message::FirstEdited(
+        "Explain the board".into(),
+    )));
+    assert_eq!(app.update(Message::Chat(chat::Message::Start)).units(), 1);
+    assert!(matches!(
+        &clicked(&app, "Start chat")[..],
+        [Message::Chat(chat::Message::Start)]
+    ));
+    for message in clicked(&app, "Cancel") {
+        let _ = app.update(message);
+    }
+    assert!(!shows(&app, "First message"));
+}
+
+#[test]
+fn opening_the_chat_from_the_inbox_goes_to_the_chat_screen() {
+    let mut app = inbox_app();
+    assert!(matches!(
+        &clicked(&app, "Open chat")[..],
+        [Message::OpenChat(9)]
+    ));
+    let _ = app.update(Message::OpenChat(9));
+    assert_eq!(app.page(), Page::Chat);
+    assert!(shows(&app, "Reading the chat…"));
 }

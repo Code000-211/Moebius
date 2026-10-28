@@ -6,7 +6,7 @@ rust-version.workspace = true
 repository.workspace = true
 
 [dependencies]
-iced = { version = "0.14", features = ["tokio", "svg", "highlighter", "advanced"] }
+iced = { version = "0.14", features = ["tokio", "svg", "highlighter", "advanced", "markdown"] }
 alacritty_terminal = { version = "0.26.0", default-features = false }
 dirs = "6"
 futures-util = "0.3.34"

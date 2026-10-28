@@ -3,6 +3,7 @@
 
 pub mod app;
 pub mod board;
+pub mod chat;
 pub mod client;
 pub mod connect;
 pub mod conversation;
@@ -16,3 +17,4 @@ pub mod sidebar;
 pub mod soon;
 pub mod terminal;
 pub mod theme;
+pub mod transcript;

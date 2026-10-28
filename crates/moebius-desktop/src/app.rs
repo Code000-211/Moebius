@@ -7,11 +7,12 @@ use std::time::Duration;
 use iced::widget::{container, row};
 use iced::{Element, Length, Subscription, Task};
 
+use crate::chat::Chats;
 use crate::client::{self, Client, ClientError, HistoryEntry, RunEvent, Snapshot, StreamEvent};
 use crate::inbox::{self, Inbox};
 use crate::live::{self, Live};
 use crate::settings::{self, Settings};
-use crate::{board, connect, history, sidebar, soon, theme};
+use crate::{board, chat, connect, history, sidebar, soon, theme};
 
 /// What the sidebar says about the connection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,6 +26,7 @@ pub enum Connection {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
     Inbox,
+    Chat,
     /// The board of the repository with this id.
     Board(i64),
     Agents,
@@ -44,6 +46,7 @@ impl Page {
     pub fn title(self) -> &'static str {
         match self {
             Page::Inbox => "Inbox",
+            Page::Chat => "Chat",
             Page::Board(_) => "Board",
             Page::Agents => "Agents",
             Page::Skills => "Skills",
@@ -62,7 +65,7 @@ impl Page {
     /// The sidebar group of the page, shown as the breadcrumb of its header.
     pub fn group(self) -> &'static str {
         match self {
-            Page::Inbox => "",
+            Page::Inbox | Page::Chat => "",
             Page::Board(_) => "Boards",
             Page::Agents | Page::Skills | Page::McpServers | Page::Rules => "Build",
             Page::Retro | Page::Experiments | Page::DecisionModel | Page::Usage => "Improve",
@@ -73,7 +76,7 @@ impl Page {
     /// The milestone that builds the page's screen, from `docs/issues-m2-m9.md`; none when no issue names one.
     pub fn milestone(self) -> Option<&'static str> {
         match self {
-            Page::Inbox | Page::Board(_) => Some("M6"),
+            Page::Inbox | Page::Chat | Page::Board(_) => Some("M6"),
             Page::Agents | Page::Skills | Page::McpServers | Page::Usage => Some("M7"),
             Page::Retro | Page::Experiments => Some("M8"),
             Page::DecisionModel => Some("M9"),
@@ -114,6 +117,9 @@ pub enum Message {
     CloseCard,
     Live(live::Message),
     Inbox(inbox::Message),
+    Chat(chat::Message),
+    /// A chat was asked for, as from the inbox: its screen opens on it.
+    OpenChat(i64),
     /// The history of the card was read.
     History(i64, Result<Vec<HistoryEntry>, ClientError>),
     ToggleSidebar,
@@ -144,6 +150,7 @@ pub struct App {
     /// The card's page shown instead of the board.
     opened: Option<Opened>,
     inbox: Inbox,
+    chats: Chats,
     collapsed: bool,
     /// Counts the reads of the snapshot, so that an older answer never replaces a newer one.
     requested: u64,
@@ -173,6 +180,7 @@ impl App {
             page: None,
             opened: None,
             inbox: Inbox::new(live::now()),
+            chats: Chats::new(live::now()),
             collapsed: false,
             requested: 0,
             shown: 0,
@@ -230,6 +238,9 @@ impl App {
             Message::Select(page) => {
                 self.page = Some(page);
                 self.opened = None;
+                if let (Page::Chat, Some(settings)) = (page, &self.settings) {
+                    return self.chats.reload(settings);
+                }
             }
             Message::OpenCard(id) => return self.open(id),
             Message::CloseCard => self.opened = None,
@@ -239,6 +250,17 @@ impl App {
                 }
             }
             Message::Inbox(message) => return self.on_inbox(message),
+            Message::Chat(chat::Message::Listed(Err(ClientError::Unauthorized))) => {
+                self.show_connect_error(&ClientError::Unauthorized);
+            }
+            Message::Chat(message) => return self.chats.update(message, self.settings.as_ref()),
+            Message::OpenChat(id) => {
+                self.page = Some(Page::Chat);
+                self.opened = None;
+                if let Some(settings) = &self.settings {
+                    return self.chats.open(id, settings);
+                }
+            }
             Message::History(id, Ok(entries)) => {
                 if let Some(Opened::History {
                     card,
@@ -334,13 +356,15 @@ impl App {
             StreamEvent::Connected => {
                 self.connection = Connection::Online;
                 // Events are not replayed: the run shown reads what it missed.
-                let missed = match (&self.opened, &self.settings) {
-                    (Some(Opened::Run(live)), Some(settings)) => {
-                        live::load(settings.clone(), live.card, live.run_id(), live.last_seq())
-                    }
-                    _ => Task::none(),
+                let (missed, chats) = match (&self.opened, &self.settings) {
+                    (Some(Opened::Run(live)), Some(settings)) => (
+                        live::load(settings.clone(), live.card, live.run_id(), live.last_seq()),
+                        self.chats.reload(settings),
+                    ),
+                    (_, Some(settings)) => (Task::none(), self.chats.reload(settings)),
+                    _ => (Task::none(), Task::none()),
                 };
-                Task::batch([self.reload(), missed])
+                Task::batch([self.reload(), missed, chats])
             }
             StreamEvent::Disconnected(_) => {
                 self.connection = Connection::Offline;
@@ -354,24 +378,38 @@ impl App {
                 self.on_run_event(&event.data)
             }
             StreamEvent::Event(event) => {
-                if event.kind == "run_ended"
-                    && let Some(Opened::Run(live)) = &mut self.opened
-                    && event.data["run"] == live.run_id()
+                let mut tasks = vec![self.reload()];
+                if matches!(event.kind.as_str(), "run_started" | "run_ended")
+                    && let Some(settings) = &self.settings
                 {
-                    live.on_ended(event.data["status"].as_str().unwrap_or_default());
+                    tasks.push(self.chats.reload(settings));
                 }
-                self.reload()
+                if event.kind == "run_ended" {
+                    let status = event.data["status"].as_str().unwrap_or_default();
+                    if let Some(run) = event.data["run"].as_i64() {
+                        self.chats.on_ended(run, status);
+                    }
+                    if let Some(Opened::Run(live)) = &mut self.opened
+                        && event.data["run"] == live.run_id()
+                    {
+                        live.on_ended(status);
+                    }
+                }
+                Task::batch(tasks)
             }
         }
     }
 
     /// A step of a run. The steps of a run come in great numbers and change nothing the shell shows, except in the
-    /// live view of that run.
+    /// live view of that run and in the chat screen.
     fn on_run_event(&mut self, data: &serde_json::Value) -> Task<Message> {
-        let (Some(Opened::Run(live)), Some(settings)) = (&mut self.opened, &self.settings) else {
+        let Ok(event) = serde_json::from_value::<RunEvent>(data.clone()) else {
             return Task::none();
         };
-        let Ok(event) = serde_json::from_value::<RunEvent>(data.clone()) else {
+        if let Some(run) = data["run"].as_i64() {
+            self.chats.on_event(run, &event);
+        }
+        let (Some(Opened::Run(live)), Some(settings)) = (&mut self.opened, &self.settings) else {
             return Task::none();
         };
         if data["run"] != live.run_id() {
@@ -451,11 +489,16 @@ impl App {
                         .map(|_| Message::Inbox(inbox::Message::Tick(live::now()))),
                     _ => Subscription::none(),
                 };
+                let chats = match self.page() {
+                    Page::Chat => iced::time::every(Duration::from_secs(30))
+                        .map(|_| Message::Chat(chat::Message::Tick(live::now()))),
+                    _ => Subscription::none(),
+                };
                 let shell = match &self.opened {
                     Some(Opened::Run(live)) => live.subscription(settings),
                     _ => Subscription::none(),
                 };
-                Subscription::batch([stream, clock, inbox, shell])
+                Subscription::batch([stream, clock, inbox, chats, shell])
             }
             _ => Subscription::none(),
         }
@@ -485,7 +528,13 @@ impl App {
             Screen::Main => {
                 let page = self.page();
                 row![
-                    sidebar::view(&self.snapshot, self.connection, &page, self.collapsed),
+                    sidebar::view(
+                        &self.snapshot,
+                        self.connection,
+                        &page,
+                        self.chats.waiting(),
+                        self.collapsed
+                    ),
                     container(self.page_view(page))
                         .padding(theme::PAGE_PADDING)
                         .width(Length::Fill)
@@ -515,6 +564,7 @@ impl App {
                 .unwrap_or_else(|| board::view(board, &self.snapshot.inbox))
             }
             Page::Inbox => self.inbox.view(&self.snapshot),
+            Page::Chat => self.chats.view(&self.snapshot, &self.inbox),
             Page::Settings => connect::settings_page(self.settings.as_ref()),
             page => soon::view(page),
         }

@@ -10,6 +10,7 @@ use crate::theme;
 #[derive(Debug, Clone, Copy)]
 pub enum Icon {
     Inbox,
+    Chat,
     Agents,
     Skills,
     McpServers,
@@ -29,6 +30,7 @@ impl Icon {
     fn paths(self) -> &'static str {
         match self {
             Icon::Inbox => r#"<path d="M2 9h3l1 2h4l1-2h3"/><path d="M2 9l2-5h8l2 5v4H2z"/>"#,
+            Icon::Chat => r#"<path d="M2.5 3.5h11v7h-6l-3 3v-3h-2z"/>"#,
             Icon::Agents => {
                 r#"<rect x="3" y="5" width="10" height="8" rx="2"/><path d="M8 2v3M6 9h.01M10 9h.01"/>"#
             }

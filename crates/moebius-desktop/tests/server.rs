@@ -9,12 +9,15 @@ use std::time::Duration;
 use futures_util::{Stream, StreamExt};
 use iced::keyboard::key::Named;
 use iced::keyboard::{Key, Modifiers};
+use iced_test::Simulator;
 use moebius_core::config::Config;
 use moebius_core::repos::git;
 use moebius_core::server::Server;
 use moebius_core::store::Usage;
+use moebius_desktop::app::{App, Message};
+use moebius_desktop::chat;
 use moebius_desktop::client::{
-    Client, ClientError, RunEvent, StreamEvent, TerminalEvent, events, terminal,
+    Client, ClientError, RunEvent, Snapshot, StreamEvent, TerminalEvent, events, terminal,
 };
 use moebius_desktop::conversation::{Conversation, Entry, Said};
 use moebius_desktop::settings::Settings;
@@ -469,4 +472,78 @@ async fn the_inbox_merges_a_change_and_approves_an_outside_issue() {
         ClientError::Server { status, .. } => assert_eq!(status, 422),
         other => panic!("{other:?}"),
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_chat_is_started_written_to_and_followed_through_the_stream() {
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, _) = start_with_fake_pi(dir.path()).await;
+    let client = Client::new(settings.clone());
+    let mut app = App::with_snapshot(Snapshot::default());
+    let mut stream = Box::pin(events(settings.clone()));
+    assert_eq!(next(&mut stream).await, StreamEvent::Connected);
+
+    // The first message starts a chat with the Moebius agent, which the fake Pi answers.
+    let run = client.start_chat("", "first question", None).await.unwrap();
+    assert_eq!(
+        (run.purpose.as_str(), run.agent.as_str()),
+        ("chat", "Moebius")
+    );
+    let chats = client.chats().await.unwrap();
+    assert_eq!(chats[0].id, run.id);
+    let _ = app.update(Message::Chat(chat::Message::Listed(Ok(chats))));
+    let _ = app.update(Message::OpenChat(run.id));
+
+    // Both answers arrive through the stream into the chat's conversation: the app is fed what the stream says.
+    let mut conversation = Conversation::default();
+    for message in ["", "second question"] {
+        if !message.is_empty() {
+            client.say(run.id, message).await.unwrap();
+        }
+        let mut settled = false;
+        while !settled {
+            match next(&mut stream).await {
+                StreamEvent::Event(event) if event.kind == "run_event" => {
+                    let _ = app.update(Message::Stream(StreamEvent::Event(event.clone())));
+                    if event.data["run"] == run.id {
+                        let event: RunEvent = serde_json::from_value(event.data).unwrap();
+                        settled |= event.kind == "agent_settled";
+                        conversation.push(event);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    let texts: Vec<_> = conversation
+        .entries()
+        .iter()
+        .filter_map(|entry| match entry {
+            Entry::Text(text) => Some(text.as_str()),
+            Entry::Person(Said::Said, message) => Some(message.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        texts,
+        [
+            "first question",
+            "You said: first question",
+            "second question",
+            "You said: second question"
+        ]
+    );
+
+    // The chat waits for the next message, and the app draws what was said.
+    let waiting = client.chats().await.unwrap();
+    assert_eq!(waiting[0].status, "waiting");
+    let mut ui = Simulator::with_size(
+        iced::Settings {
+            fonts: moebius_desktop::theme::fonts(),
+            ..iced::Settings::default()
+        },
+        iced::Size::new(1440.0, 900.0),
+        app.view(),
+    );
+    assert!(ui.find("second question").is_ok());
 }

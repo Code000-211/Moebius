@@ -266,3 +266,62 @@ pub fn white_button<'a, Message: Clone + 'a>(
     })
     .into()
 }
+
+/// The style of a box: white, with a line and round corners.
+pub fn box_style() -> container::Style {
+    container::Style {
+        background: Some(theme::SURFACE.into()),
+        border: Border {
+            color: theme::LINE,
+            width: 1.0,
+            radius: theme::RADIUS_BOX.into(),
+        },
+        ..container::Style::default()
+    }
+}
+
+/// A line between the parts of a box.
+pub fn rule<'a, Message: 'a>() -> Element<'a, Message> {
+    container(space())
+        .width(Length::Fill)
+        .height(1)
+        .style(|_| container::Style {
+            background: Some(theme::TRACK.into()),
+            ..container::Style::default()
+        })
+        .into()
+}
+
+/// A filter chip: dark when chosen; the blocked kind has a red line.
+pub fn chip<'a, Message: Clone + 'a>(
+    label: String,
+    selected: bool,
+    red: bool,
+    message: Message,
+) -> Element<'a, Message> {
+    button(
+        text(label)
+            .size(theme::CONTEXT)
+            .font(theme::manrope(Weight::Semibold)),
+    )
+    .padding([5, 12])
+    .on_press(message)
+    .style(move |_, _| {
+        let (fill, ink, line) = match (selected, red) {
+            (true, _) => (theme::TEXT, theme::ON_FILL, theme::TEXT),
+            (false, true) => (theme::SURFACE, theme::RED_TEXT, theme::RED_BORDER),
+            (false, false) => (theme::SURFACE, theme::TEXT_SECONDARY, theme::LINE),
+        };
+        button::Style {
+            background: Some(fill.into()),
+            text_color: ink,
+            border: Border {
+                color: line,
+                width: 1.0,
+                radius: theme::RADIUS_ROUND.into(),
+            },
+            ..button::Style::default()
+        }
+    })
+    .into()
+}
