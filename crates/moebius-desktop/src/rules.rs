@@ -75,9 +75,6 @@ enum Notice {
     Failed(String),
 }
 
-/// The agent that changes the rules for the person.
-const AGENT: &str = "Moebius";
-
 /// What the Moebius agent is asked, with what the person said.
 fn request(wanted: &str) -> String {
     format!(
@@ -241,7 +238,7 @@ impl Rules {
                 self.asking = true;
                 let (client, message) = (Client::new(settings.clone()), request(&wanted));
                 return Task::perform(
-                    async move { client.start_chat(AGENT, &message, None, false).await },
+                    async move { client.ask(&message, None, "").await },
                     |result| AppMessage::Rules(Message::Asked(result)),
                 );
             }

@@ -60,7 +60,9 @@ back to coding, or null), `retried_after` (the id of the card's latest run when 
 `chat`, `retro`, the Retro analyst's run, `trial`, the trial of a proposal on a card, or `research`, a round of the Autoresearcher), `status` (`starting`, `running`, `waiting`, `succeeded`, `failed` or `stopped`; `waiting` is a chat waiting for
 the person's next message), `worktree`, `started_at`, `ended_at`, `summary`, `repository_id` (the repository a chat
 works in, or null) and `harness_repository` (true for a chat that works in the [harness configuration
-repository](harness-configuration.md#changing-it-in-a-chat); `harness` is the name of the harness that runs the agent).
+repository](harness-configuration.md#changing-it-in-a-chat); `harness` is the name of the harness that runs the agent)
+and `origin` (where a chat was started: `chat`, or `assistant` for the desktop app's floating window; `chat` for every
+other run).
 
 `Grilling`: `id`, `run_id` (the chat), `repository_id`, `issues` (array of `{"title", "body", "blocked_by"}`, where
 `blocked_by` is an array of indexes into `issues`; empty for a report and for an empty grilling), `report` (text or null),
@@ -72,8 +74,9 @@ repository](harness-configuration.md#changing-it-in-a-chat); `harness` is the na
 first message, at most 80 characters), `answered` (the `seq` of the chat's last `agent_settled` or `moebius_error`
 event, 0 without one), `seen` (how far a person has read it, see `POST /v1/chats/{id}/seen`) and `changed_files` (how
 many files the chat's worktree changes against the default branch of its repository, committed or not, new files
-included: what `POST /v1/chats/{id}/offer` would offer; 0 for an ended chat and one without a repository). A chat is
-unread while `answered` is greater than `seen`.
+included: what `POST /v1/chats/{id}/offer` would offer; 0 for an ended chat and one without a repository) and `origin`
+(`chat`, or `assistant` for a chat of the desktop app's floating window, see `POST /v1/chats`). A chat is unread while
+`answered` is greater than `seen`.
 
 `Change`: `id`, `repository_id` (null for a change of the harness configuration repository), `harness_repository` (true
 for such a change), `card_id` (or null), `branch`, `state` (`open`, `merged` or `closed`), `pull_request`
@@ -919,16 +922,19 @@ Request:
 | `harness` | boolean | Work in the harness configuration repository instead (default false): in a worktree on the branch `moebius/chat-<run id>` of its default branch, so that the agents, skills, extensions, MCP servers and rules can be built as files and merged (see [changing it in a chat](harness-configuration.md#changing-it-in-a-chat)). The run has `harness_repository` true. Not together with `repository`. |
 | `continues` | number | The id of an ended chat this one goes on from. Its agent and place (repository or harness configuration repository) are used unless `agent` or `repository` name others, and the agent is given what was said in it (the person's messages and the agent's answers, at most the last 20 000 characters) before `message`. The new chat's `said` event holds only `message`. |
 | `context` | string | Where the person is in the app (the page, the repository, the open card or chat, the text being edited), as the desktop app describes it. The agent is told it before `message`, under the line `[Where the person is in the Moebius app. Use it to understand what they mean; do not repeat it.]`, with secrets removed and cut to 4 000 characters; the `said` event holds only `message`. Optional; blank is the same as none. |
+| `origin` | string | Where the chat is started: `chat` (the default), on the Chat page or by any client, or `assistant`, a conversation in the desktop app's floating window, which the person reads there. `GET /v1/chats` leaves out the chats of origin `assistant` unless asked for them, so the Chat page and its unread count do not show them; the run, its events and every other chat route work as for any chat. |
 
 Response: the `Run` (`purpose` `chat`, `card_id` null). Errors: `404` no such repository or no run `continues`; `422`
 the message is blank, the agent does not exist, it is a built-in agent and neither its own `[agents.<name>]` nor
 `[agents.Coder]` is configured (the message says so), it is the Grilling partner and there is no `repository`, or
-`continues` is not a chat or has not ended (write to it with `POST /v1/chats/{id}/messages`), `harness` is set together
-with `repository`, or `harness` is set and the server has no `[harness]`; `500` the worktree cannot be made.
+`continues` is not a chat or has not ended (write to it with `POST /v1/chats/{id}/messages`), `origin` is neither `chat`
+nor `assistant`, `harness` is set together with `repository`, or `harness` is set and the server has no `[harness]`; `500` the worktree cannot be made.
 
 ### `GET /v1/chats`
 
-The chats, newest first. Response: an array of `Chat`. A chat's history is its run's events, read with
+The chats, newest first, without those of origin `assistant` (the desktop app's floating window). Query: `all=true`
+lists those too, each with its `origin`; the desktop app asks for them so that its Fleet page shows the agents they
+keep working and "Open in Chat" can show one. Response: an array of `Chat`. A chat's history is its run's events, read with
 `GET /v1/runs/{id}/events` and followed on `GET /v1/events`.
 
 ### `POST /v1/chats/{id}/messages`

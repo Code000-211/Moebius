@@ -126,6 +126,19 @@ pub struct Chat {
     /// `POST /v1/chats/{id}/offer` would offer. 0 for an ended chat or one without a repository.
     #[serde(default)]
     pub changed_files: usize,
+    /// Where the chat was started: `chat` or `assistant` (see `Run::origin`).
+    #[serde(default = "chat_origin")]
+    pub origin: String,
+}
+
+/// The origin of a chat started on the Chat page or by a client.
+pub const CHAT_ORIGIN: &str = "chat";
+
+/// The origin of a chat started in the desktop app's floating window, which the list of chats leaves out.
+pub const ASSISTANT_ORIGIN: &str = "assistant";
+
+fn chat_origin() -> String {
+    CHAT_ORIGIN.into()
 }
 
 /// What became of the last offer of a chat's branch (see `App::earlier_offer`).
@@ -842,7 +855,8 @@ impl App {
     /// A person starts a chat with `agent`, in a branch of the repository `repository_id`, of the harness configuration
     /// repository when `harness` is set, or, without either, in an empty directory. The agent answers `message`, told
     /// first where the person is in the app when `context` is given (see `with_context`); the chat shows only the
-    /// message. The answer arrives as the run's events.
+    /// message. The answer arrives as the run's events. The chat is stored with `origin`, `chat` when none is given
+    /// (see `Run::origin`).
     #[allow(clippy::too_many_arguments)]
     pub fn start_chat(
         self: &Arc<Self>,
@@ -853,7 +867,14 @@ impl App {
         message: &str,
         context: Option<&str>,
         continues: Option<i64>,
+        origin: Option<&str>,
     ) -> Result<Run> {
+        let origin = origin.unwrap_or(CHAT_ORIGIN);
+        if ![CHAT_ORIGIN, ASSISTANT_ORIGIN].contains(&origin) {
+            return Err(AppError::Invalid(format!(
+                "a chat's origin is {CHAT_ORIGIN} or {ASSISTANT_ORIGIN}, not {origin}"
+            )));
+        }
         if harness && repository_id.is_some() {
             return Err(AppError::Invalid(
                 "a chat works in a repository or in the harness configuration, not both".into(),
@@ -896,8 +917,16 @@ impl App {
             None => message.to_string(),
         };
         let prompt = with_context(context, &told);
-        runs.start_chat(self, agent, repository.as_ref(), harness, message, &prompt)
-            .map_err(AppError::Invalid)
+        runs.start_chat(
+            self,
+            agent,
+            repository.as_ref(),
+            harness,
+            message,
+            &prompt,
+            origin,
+        )
+        .map_err(AppError::Invalid)
     }
 
     /// The chat `run_id`, which must have ended to be continued.
@@ -992,11 +1021,12 @@ impl App {
         Ok(run)
     }
 
-    /// The chats, newest first.
-    pub fn chats(&self) -> Result<Vec<Chat>> {
+    /// The chats, newest first; those of the desktop app's floating window only when `all` is set.
+    pub fn chats(&self, all: bool) -> Result<Vec<Chat>> {
         self.store
             .chats()?
             .into_iter()
+            .filter(|run| all || run.origin != ASSISTANT_ORIGIN)
             .map(|run| {
                 let title = self.chat_title(run.id)?;
                 Ok(Chat {
@@ -1011,6 +1041,7 @@ impl App {
                     answered: self.store.answered_seq(run.id)?,
                     seen: self.store.seen_seq(run.id)?,
                     changed_files: self.changed_files(&run),
+                    origin: run.origin,
                 })
             })
             .collect()

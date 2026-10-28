@@ -144,7 +144,9 @@ pub trait Runs: Send + Sync {
     /// Starts a chat with `agent` in a branch of `repository`, of the harness configuration repository when `harness`
     /// is set, or in an empty directory, and returns it without waiting for the answer. The chat shows `message`, what
     /// the person wrote; the agent answers `prompt`, which is the message with what else the agent is told (the
-    /// conversation an ended chat had, where the person is in the app). A harness without chats refuses.
+    /// conversation an ended chat had, where the person is in the app). The chat is stored with `origin` (see
+    /// `Run::origin`). A harness without chats refuses.
+    #[allow(clippy::too_many_arguments)]
     fn start_chat(
         &self,
         _app: &Arc<App>,
@@ -153,6 +155,7 @@ pub trait Runs: Send + Sync {
         _harness: bool,
         _message: &str,
         _prompt: &str,
+        _origin: &str,
     ) -> Result<Run, String> {
         Err("this harness has no chats".into())
     }

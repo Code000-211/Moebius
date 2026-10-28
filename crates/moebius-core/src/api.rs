@@ -256,6 +256,10 @@ pub struct NewChat {
     /// Where the person is in the app, which the agent is told with the message and the chat does not show.
     #[serde(default)]
     pub context: Option<String>,
+    /// Where the chat is started: `chat` (the default) or `assistant`, the desktop app's floating window, whose chats
+    /// `GET /v1/chats` leaves out unless asked.
+    #[serde(default)]
+    pub origin: Option<String>,
 }
 
 /// The body of a message to a chat: what the person wrote, which the chat shows, and optionally where they are in the
@@ -276,6 +280,13 @@ pub struct Merged {
 const DEFAULT_EVENTS: i64 = 500;
 /// The most events of a run one request returns.
 const MAX_EVENTS: i64 = 5000;
+
+/// Which chats to list: with `all`, also those of the desktop app's floating window.
+#[derive(Debug, Deserialize)]
+struct ChatsQuery {
+    #[serde(default)]
+    all: bool,
+}
 
 /// Which of a run's events to return: those after `after`, at most `limit`.
 #[derive(Debug, Deserialize)]
@@ -1489,13 +1500,17 @@ async fn start_chat(
             &chat.message,
             chat.context.as_deref(),
             chat.continues,
+            chat.origin.as_deref(),
         )
     })
     .await
 }
 
-async fn chats(State(state): State<ApiState>) -> Result<axum::Json<Vec<Chat>>, ApiError> {
-    blocking(&state.app, |app| app.chats()).await
+async fn chats(
+    State(state): State<ApiState>,
+    Query(query): Query<ChatsQuery>,
+) -> Result<axum::Json<Vec<Chat>>, ApiError> {
+    blocking(&state.app, move |app| app.chats(query.all)).await
 }
 
 async fn say_in_chat(
@@ -3430,11 +3445,37 @@ mod tests {
         // The next answer is unread again.
         say(&state, &addr, run.id, "Again").await;
         until("the second answer", || {
-            state.app.chats().unwrap()[0].answered > answered
+            state.app.chats(false).unwrap()[0].answered > answered
         })
         .await;
-        let chat = &state.app.chats().unwrap()[0];
+        let chat = &state.app.chats(false).unwrap()[0];
         assert!(chat.answered > chat.seen);
+    }
+
+    #[tokio::test]
+    async fn the_chats_of_the_floating_window_are_listed_only_when_asked_for() {
+        let (_dir, state, addr) = start().await;
+        let listed = chat(&state, &addr, "On the Chat page", None).await;
+        let body = serde_json::json!({ "agent": "Coder", "message": "In the window", "origin": "assistant" });
+        let started = post(&state, &addr, "/v1/chats".into(), body).await;
+        assert_eq!(started.status(), 200);
+        let assistant: Run = started.json().await.unwrap();
+        assert_eq!(assistant.origin, "assistant");
+        assert_eq!(state.app.run(assistant.id).unwrap().origin, "assistant");
+        assert_eq!(state.app.run(listed.id).unwrap().origin, "chat");
+
+        let chats: Vec<Chat> = get(&state, &addr, "/v1/chats").await;
+        let ids: Vec<i64> = chats.iter().map(|chat| chat.id).collect();
+        assert_eq!(ids, [listed.id]);
+        assert_eq!(chats[0].origin, "chat");
+        let all: Vec<Chat> = get(&state, &addr, "/v1/chats?all=true").await;
+        let all: Vec<(i64, &str)> = all.iter().map(|c| (c.id, c.origin.as_str())).collect();
+        assert_eq!(all, [(assistant.id, "assistant"), (listed.id, "chat")]);
+
+        let unknown =
+            serde_json::json!({ "agent": "Coder", "message": "Hi", "origin": "elsewhere" });
+        let refused = post(&state, &addr, "/v1/chats".into(), unknown).await;
+        assert_eq!(refused.status(), 422);
     }
 
     #[tokio::test]

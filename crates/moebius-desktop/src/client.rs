@@ -160,9 +160,18 @@ pub struct Chat {
     /// How many files the chat's worktree changes, committed or not: what offering its changes would offer.
     #[serde(default)]
     pub changed_files: usize,
+    /// Where the chat was started: `chat`, or `assistant` for a conversation in the floating window.
+    #[serde(default)]
+    pub origin: String,
 }
 
 impl Chat {
+    /// Whether the chat was started in the floating window, where the person reads it: the Chat page leaves it out
+    /// unless it is opened there on purpose, and it is never counted unread.
+    pub fn is_assistant(&self) -> bool {
+        self.origin == ASSISTANT
+    }
+
     /// Whether the chat can still be written to.
     pub fn is_open(&self) -> bool {
         matches!(self.status.as_str(), "starting" | "running" | "waiting")
@@ -180,6 +189,9 @@ impl Chat {
 }
 
 const CHAT_BRANCH: &str = "moebius/chat-";
+
+/// The origin of the chats the floating window starts.
+const ASSISTANT: &str = "assistant";
 
 /// One stored event of a run, as `GET /v1/runs/{id}/events` lists it and the stream's `run_event` carries it.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -1592,9 +1604,9 @@ impl Client {
         self.decide(path, serde_json::json!({})).await
     }
 
-    /// The chats, newest first.
+    /// The chats, newest first, those of the floating window included.
     pub async fn chats(&self) -> Result<Vec<Chat>, ClientError> {
-        self.get("/v1/chats").await
+        self.get("/v1/chats?all=true").await
     }
 
     /// Starts a chat with `agent` (the Moebius agent when blank), in `repository` if given, or in the harness
@@ -1614,8 +1626,9 @@ impl Client {
         self.post("/v1/chats", body).await
     }
 
-    /// Starts a chat with the Moebius agent in `repository`, or in none, from the floating chat: the agent is also told
-    /// `context`, where the person is in the app, which the chat does not show.
+    /// Starts a chat with the Moebius agent in `repository`, or in none, that the floating chat shows: the agent is
+    /// also told `context` (blank for none), where the person is in the app, which the chat does not show. The chat's
+    /// origin is `assistant`, so the Chat page leaves it out.
     pub async fn ask(
         &self,
         message: &str,
@@ -1627,6 +1640,7 @@ impl Client {
             "message": message,
             "repository": repository,
             "context": context,
+            "origin": ASSISTANT,
         });
         self.post("/v1/chats", body).await
     }

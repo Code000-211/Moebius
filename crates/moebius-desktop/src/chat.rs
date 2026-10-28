@@ -346,24 +346,32 @@ impl Chats {
             .and_then(|open| self.chat(open.thread.id))
     }
 
-    /// The chats, newest first.
+    /// The chats, newest first, those of the floating window included.
     pub fn list(&self) -> &[Chat] {
         &self.list
     }
 
-    /// How many chats wait for the person's next message.
-    pub fn waiting(&self) -> usize {
+    /// The chats the page lists, newest first: all but those of the floating window, which the person reads there,
+    /// unless one is open here.
+    pub fn listed(&self) -> impl Iterator<Item = &Chat> {
+        let open = self.open.as_ref().map(|open| open.thread.id);
         self.list
             .iter()
+            .filter(move |chat| !chat.is_assistant() || Some(chat.id) == open)
+    }
+
+    /// How many chats of the list wait for the person's next message.
+    pub fn waiting(&self) -> usize {
+        self.listed()
             .filter(|chat| chat.status == "waiting")
             .count()
     }
 
-    /// How many chats have an answer the person has not read.
+    /// How many chats have an answer the person has not read; those of the floating window never count.
     pub fn unread(&self) -> usize {
         self.list
             .iter()
-            .filter(|chat| chat.answered > chat.seen)
+            .filter(|chat| !chat.is_assistant() && chat.answered > chat.seen)
             .count()
     }
 
@@ -789,10 +797,10 @@ impl Chats {
             .as_ref()
             .filter(|_| self.draft.is_none() && self.form.is_none())
             .map(|open| open.thread.id);
-        let list: Element<_> = if self.list.is_empty() {
+        let list: Element<_> = if self.listed().next().is_none() {
             page::body("No chat yet.")
         } else {
-            column(self.list.iter().map(|chat| {
+            column(self.listed().map(|chat| {
                 let repository = place_name(snapshot, chat);
                 chat_row(chat, repository, self.now, chosen == Some(chat.id))
             }))

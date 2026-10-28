@@ -171,7 +171,7 @@ impl Import {
                 self.error = None;
                 let client = Client::new(settings.clone());
                 return Task::perform(
-                    async move { client.start_chat(AGENT, &asked, None, false).await },
+                    async move { client.ask(&asked, None, "").await },
                     move |result| wrap(Message::Asked(result)),
                 );
             }
@@ -265,9 +265,6 @@ impl Import {
         boxed(content)
     }
 }
-
-/// The agent that imports.
-const AGENT: &str = "Moebius";
 
 /// Reads the file at `path` and sends it to the server; what is wrong is said in a line.
 async fn send(client: Client, path: PathBuf) -> Result<Upload, String> {

@@ -292,6 +292,7 @@ SELECT id, repository_id, card_id, branch, state, created_at, pull_request, chec
 DROP TABLE changes_old;
 ALTER TABLE runs ADD COLUMN harness_repository INTEGER NOT NULL DEFAULT 0;
 "#,
+    "ALTER TABLE runs ADD COLUMN origin TEXT NOT NULL DEFAULT 'chat';",
 ];
 
 const CHANGE_COLUMNS: &str = "id, repository_id, card_id, branch, state, pull_request, checks, review, \
@@ -417,6 +418,9 @@ pub struct Run {
     pub repository_id: Option<i64>,
     /// Whether a chat works in the harness configuration repository.
     pub harness_repository: bool,
+    /// Where a chat was started: `chat`, on the Chat page or by a client, or `assistant`, in the desktop app's floating
+    /// window. `chat` for every other run.
+    pub origin: String,
 }
 
 impl Run {
@@ -1343,6 +1347,7 @@ impl Store {
             summary: None,
             repository_id: None,
             harness_repository: false,
+            origin: "chat".into(),
         })
     }
 
@@ -1350,7 +1355,7 @@ impl Store {
         let conn = self.conn();
         let mut stmt = conn.prepare(&format!(
             "SELECT id, card_id, agent, harness, purpose, status, worktree, started_at, ended_at, summary, repository_id,
-                harness_repository
+                harness_repository, origin
              FROM runs WHERE {clause} ORDER BY id"
         ))?;
         let rows = stmt.query_map([param], |r| {
@@ -1367,6 +1372,7 @@ impl Store {
                 summary: r.get(9)?,
                 repository_id: r.get(10)?,
                 harness_repository: r.get(11)?,
+                origin: r.get(12)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -1467,6 +1473,15 @@ impl Store {
         self.conn().execute(
             "UPDATE runs SET repository_id = ?1 WHERE id = ?2",
             params![repository_id, id],
+        )?;
+        Ok(())
+    }
+
+    /// Records where the chat was started (see `Run::origin`).
+    pub fn set_run_origin(&self, id: i64, origin: &str) -> Result<()> {
+        self.conn().execute(
+            "UPDATE runs SET origin = ?1 WHERE id = ?2",
+            params![origin, id],
         )?;
         Ok(())
     }
@@ -3019,9 +3034,35 @@ mod tests {
     }
 
     #[test]
-    fn a_change_may_belong_to_no_repository_and_the_migration_keeps_the_changes_it_had() {
+    fn a_chat_keeps_where_it_was_started_and_one_from_before_was_started_on_the_chat_page() {
         let dir = tempfile::tempdir().unwrap();
         let before = MIGRATIONS.len() - 1;
+        {
+            let conn = Connection::open(dir.path().join("moebius.sqlite")).unwrap();
+            for sql in &MIGRATIONS[..before] {
+                conn.execute_batch(sql).unwrap();
+            }
+            conn.pragma_update(None, "user_version", before as i64)
+                .unwrap();
+            conn.execute(
+                "INSERT INTO runs (agent, harness, purpose, status, started_at) VALUES ('Moebius', 'pi-bolt', 'chat', 'waiting', 1)",
+                [],
+            )
+            .unwrap();
+        }
+        let s = Store::open(dir.path()).unwrap();
+        assert_eq!(s.run(1).unwrap().unwrap().origin, "chat");
+        let run = s.add_run(None, "Moebius", "pi-bolt", "chat").unwrap();
+        s.set_run_origin(run.id, "assistant").unwrap();
+        let origins: Vec<String> = s.chats().unwrap().into_iter().map(|r| r.origin).collect();
+        assert_eq!(origins, ["assistant", "chat"]);
+    }
+
+    #[test]
+    fn a_change_may_belong_to_no_repository_and_the_migration_keeps_the_changes_it_had() {
+        let dir = tempfile::tempdir().unwrap();
+        // Before the migration that lets a change belong to no repository, the one before the chats' origin.
+        let before = MIGRATIONS.len() - 2;
         {
             let conn = Connection::open(dir.path().join("moebius.sqlite")).unwrap();
             conn.pragma_update(None, "foreign_keys", true).unwrap();

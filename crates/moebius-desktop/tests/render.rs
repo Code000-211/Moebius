@@ -1768,6 +1768,28 @@ fn the_chat_badge_counts_unread_answers_and_reading_one_clears_it() {
     assert!(!shows(&app, "1"), "chat 6 was read");
 }
 
+/// A chat of the floating window is read there: the Chat page does not list it and the Chat entry does not count its
+/// answer, but "Open in Chat" shows it on the page.
+#[test]
+fn a_chat_of_the_floating_window_is_not_listed_nor_unread_until_opened_in_chat() {
+    let mut app = chatting("waiting", false);
+    let mut listing = chat_listing("waiting");
+    listing.insert(
+        0,
+        serde_json::from_value(json!({"id": 8, "agent": "Moebius", "status": "waiting", "repository_id": null,
+            "started_at": 1_790_000_000 - 60, "title": "Asked in the window", "answered": 4, "seen": 0,
+            "origin": "assistant"}))
+        .unwrap(),
+    );
+    let _ = app.update(Message::Chat(chat::Message::Listed(Ok(listing))));
+    assert!(!shows(&app, "Asked in the window"));
+    assert!(!shows(&app, "1"), "the window's chat counts unread");
+
+    let _ = app.update(Message::OpenChat(8));
+    assert!(shows(&app, "Asked in the window"));
+    assert!(!shows(&app, "1"), "the window's chat counts unread");
+}
+
 /// An ended chat is written to like any other, and Send goes on in a new chat; a failed chat's tag is red and keeps its
 /// size beside a long title.
 #[test]

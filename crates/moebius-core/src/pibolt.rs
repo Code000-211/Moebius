@@ -712,12 +712,16 @@ impl Runs for PiBolt {
         harness: bool,
         message: &str,
         prompt: &str,
+        origin: &str,
     ) -> Result<Run, String> {
         let config = self.agent(app, agent)?;
         let run = app
             .store
             .add_run(None, agent, "pi-bolt", "chat")
             .map_err(|e| e.to_string())?;
+        app.store
+            .set_run_origin(run.id, origin)
+            .map_err(|e| fail(app, run.id, e.to_string()))?;
         let (clone, worktree, start) = match repository {
             None if harness => {
                 let (made, clone) = app
@@ -1814,7 +1818,15 @@ mod tests {
         let (_dir, app, pi, repo) = setup();
         let repository = app.repository(repo).unwrap();
         let run = pi
-            .start_chat(&app, "Coder", Some(&repository), false, "Hello", "Hello")
+            .start_chat(
+                &app,
+                "Coder",
+                Some(&repository),
+                false,
+                "Hello",
+                "Hello",
+                "chat",
+            )
             .unwrap();
         let waiting = |run: &Run| run.status == "waiting";
         wait_for_run(&app, run.id, "the agent answers", waiting);

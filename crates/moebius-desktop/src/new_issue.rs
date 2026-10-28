@@ -31,9 +31,6 @@ pub enum Message {
     Asked(Result<Run, ClientError>),
 }
 
-/// The agent that writes an issue for the person.
-const AGENT: &str = "Moebius";
-
 /// What the Moebius agent is asked, with the repository's id and what the person said.
 fn request(repository: i64, wanted: &str) -> String {
     format!(
@@ -97,11 +94,7 @@ impl NewIssue {
                 let client = Client::new(settings.clone());
                 let message = request(repository, &wanted);
                 return Task::perform(
-                    async move {
-                        client
-                            .start_chat(AGENT, &message, Some(repository), false)
-                            .await
-                    },
+                    async move { client.ask(&message, Some(repository), "").await },
                     |result| AppMessage::NewIssue(Message::Asked(result)),
                 );
             }

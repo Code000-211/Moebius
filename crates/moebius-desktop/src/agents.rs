@@ -445,7 +445,7 @@ impl Agents {
                 let client = Client::new(settings.clone());
                 let message = instructions_request(&editor.name, &wanted);
                 return Task::perform(
-                    async move { client.start_chat("Moebius", &message, None, false).await },
+                    async move { client.ask(&message, None, "").await },
                     |result| AppMessage::Agents(Message::Asked(result)),
                 );
             }

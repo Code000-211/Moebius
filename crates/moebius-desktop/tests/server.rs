@@ -629,6 +629,51 @@ async fn a_chat_is_started_written_to_and_followed_through_the_stream() {
     );
 }
 
+/// A chat the floating window starts is stored as the window's: the server lists it only when asked for all, which
+/// the app does, and the Chat page leaves it out.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_chat_of_the_floating_window_is_kept_out_of_the_chat_list() {
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, _) = start_with_fake_pi(dir.path()).await;
+    let client = Client::new(settings.clone());
+    let page = client
+        .start_chat("", "on the page", None, false)
+        .await
+        .unwrap();
+    let window = client.ask("in the window", None, "").await.unwrap();
+
+    let listed: Vec<i64> = client.chats().await.unwrap().iter().map(|c| c.id).collect();
+    assert_eq!(listed, [window.id, page.id]);
+    let chats = client.chats().await.unwrap();
+    assert!(chats[0].is_assistant() && !chats[1].is_assistant());
+    let http = reqwest::Client::new();
+    let default: serde_json::Value = http
+        .get(format!("{}/v1/chats", settings.address))
+        .bearer_auth(&settings.token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(default.as_array().unwrap().len(), 1);
+    assert_eq!(default[0]["id"], page.id);
+
+    let mut app = App::with_snapshot(Snapshot::default());
+    let _ = app.update(Message::Chat(chat::Message::Listed(Ok(chats))));
+    let _ = app.update(Message::Select(Page::Chat));
+    let mut ui = Simulator::with_size(
+        iced::Settings {
+            fonts: moebius_desktop::theme::fonts(),
+            ..iced::Settings::default()
+        },
+        iced::Size::new(1440.0, 900.0),
+        app.view(),
+    );
+    assert!(ui.find("on the page").is_ok());
+    assert!(ui.find("in the window").is_err());
+}
+
 /// A chat in a repository offers what its worktree changes through the app's client: the change waits in the inbox and
 /// the chat goes on.
 #[tokio::test(flavor = "multi_thread")]
