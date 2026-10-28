@@ -40,6 +40,36 @@ pub const TRACK: Color = hex(0xE2E8F0);
 /// The validated categorical order of the charts.
 pub const CHART: [Color; 4] = [hex(0x2A78D6), hex(0xEB6834), hex(0x1BAF7A), hex(0xEDA100)];
 
+/// The colours of the models on the usage screen: the chart order, then two more. A model takes the colour at its
+/// place in the order of appearance, wrapping round after the sixth.
+const MODEL_COLOURS: [Color; 6] = [
+    hex(0x2A78D6),
+    hex(0xEB6834),
+    hex(0x1BAF7A),
+    hex(0xEDA100),
+    hex(0x8B5CF6),
+    hex(0xD6409F),
+];
+/// How far each of the four shades of a heatmap cell is mixed with white, from the fewest tokens to the most.
+const SHADE_WHITE: [f32; 4] = [0.65, 0.42, 0.2, 0.0];
+/// A heatmap cell without usage.
+pub const HEAT_EMPTY: Color = hex(0xEEF2F7);
+
+/// The colour of the model that came `index`-th in the order of appearance.
+pub fn model_colour(index: usize) -> Color {
+    MODEL_COLOURS[index % MODEL_COLOURS.len()]
+}
+
+/// A shade of `color` for a heatmap cell, `level` 1 (lightest) to 4 (the colour itself).
+pub fn shade(color: Color, level: usize) -> Color {
+    let white = SHADE_WHITE[level.clamp(1, 4) - 1];
+    Color::from_rgb(
+        color.r + (1.0 - color.r) * white,
+        color.g + (1.0 - color.g) * white,
+        color.b + (1.0 - color.b) * white,
+    )
+}
+
 /// The pill of a tool's name, and the fills of a diff, with the marks of its rows.
 pub const HEAD_PILL: Color = hex(0xF1F5F9);
 pub const DIFF_REMOVED: Color = hex(0xFCEDEB);
@@ -88,6 +118,8 @@ pub const BODY: f32 = 14.5;
 pub const CONTEXT: f32 = 14.0;
 pub const BREADCRUMB: f32 = 13.0;
 pub const LABEL: f32 = 12.0;
+/// The big number of a tile.
+pub const TILE_VALUE: f32 = 28.0;
 /// The number above a card, a column's script and its count.
 pub const SMALL: f32 = 11.5;
 pub const COLUMN_NAME: f32 = 14.5;

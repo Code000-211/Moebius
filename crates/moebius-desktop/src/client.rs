@@ -215,6 +215,65 @@ pub struct McpServer {
     pub error: Option<String>,
 }
 
+/// What the model calls used in a window of days, as `GET /v1/usage` answers.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct UsageReport {
+    /// The server's date, `YYYY-MM-DD`.
+    pub today: String,
+    pub days_in_window: i64,
+    pub totals: UsageTotals,
+    /// The days of the last year that had usage, oldest first.
+    pub days: Vec<UsageDay>,
+    pub models: Vec<ModelUsage>,
+    pub agents: Vec<AgentUsage>,
+    pub tool_waits: Vec<ToolWait>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct UsageTotals {
+    pub tokens: i64,
+    pub calls: i64,
+    /// The share of the input tokens served from the provider's cache, 0 to 1.
+    pub cached_share: f64,
+    pub model_ms: i64,
+    pub day_budget: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct UsageDay {
+    pub date: String,
+    pub tokens: i64,
+    /// The model that used most tokens on the day.
+    pub model: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct ModelUsage {
+    pub model: String,
+    pub tokens: i64,
+    pub calls: i64,
+    pub input_tokens: i64,
+    pub cached_tokens: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct AgentUsage {
+    pub agent: String,
+    pub calls: i64,
+    pub tokens: i64,
+    pub input_tokens: i64,
+    pub cached_tokens: i64,
+    pub model_ms: i64,
+}
+
+/// A tool whose calls made runs wait, with the seconds they waited in all.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct ToolWait {
+    pub tool: String,
+    pub calls: i64,
+    pub seconds: i64,
+}
+
 /// A recorded decision, as far as the live view matches it to a tool call.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Judgement {
@@ -498,6 +557,11 @@ impl Client {
     /// The MCP servers an agent can name.
     pub async fn mcp_servers(&self) -> Result<Vec<McpServer>, ClientError> {
         self.get("/v1/mcp-servers").await
+    }
+
+    /// What the model calls used in the last `days` days.
+    pub async fn usage(&self, days: i64) -> Result<UsageReport, ClientError> {
+        self.get(&format!("/v1/usage?days={days}")).await
     }
 
     pub async fn history(&self, card: i64) -> Result<Vec<HistoryEntry>, ClientError> {

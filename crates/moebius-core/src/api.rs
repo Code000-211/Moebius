@@ -19,6 +19,7 @@
 //! - `GET /v1/agents`: the agents the server can run. `GET`, `PUT` and `DELETE /v1/agents/{name}`: read, write and delete
 //!   an agent of the harness configuration repository (see [`crate::harness_repo`]). `GET /v1/skills` and
 //!   `GET /v1/mcp-servers`: the skills and MCP servers an agent can name.
+//! - `GET /v1/usage?days=`: the tokens, calls, model time and tool waits of the last days, and the daily tokens by model.
 //! - `POST /v1/chats` `{agent?, message, repository?}`: starts a chat, with the Moebius agent unless `agent` names
 //!   another. `GET /v1/chats`: the chats, newest first.
 //!   `POST /v1/chats/{id}/messages` `{message}`: writes to a chat. `POST /v1/chats/{id}/end`: ends a chat.
@@ -46,7 +47,9 @@ use crate::forge::ForgeError;
 use crate::harness_repo::{AgentDefinition, AgentView, HarnessRepo, McpServerInfo, SkillInfo};
 use crate::pibolt::MOEBIUS_AGENT;
 use crate::repos::GitError;
-use crate::store::{Card, Change, Event, InboxItem, Repository, Run};
+use crate::store::{
+    AgentUsage, Card, Change, Event, InboxItem, ModelUsage, Repository, Run, ToolWait,
+};
 
 /// What the API needs from the core.
 #[derive(Clone)]
@@ -59,6 +62,8 @@ pub struct ApiState {
     pub token: Arc<str>,
     /// The most `code` rounds a card gets, which boards show next to a card's rounds.
     pub round_limit: u32,
+    /// The most tokens all runs may use in a day, if limited, which the usage screen measures the day against.
+    pub day_budget: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -197,6 +202,50 @@ struct JudgementsQuery {
     limit: Option<i64>,
 }
 
+/// How many days the heatmap of the usage screen reaches back.
+const HEATMAP_DAYS: i64 = 365;
+/// The most tool names `tool_waits` lists.
+const TOOL_WAITS: i64 = 10;
+
+/// The window of `GET /v1/usage`: this many days, today included; one (today) when not given.
+#[derive(Debug, Deserialize)]
+struct UsageQuery {
+    days: Option<i64>,
+}
+
+/// The usage of a window of days (`docs/reference/desktop-api.md`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UsageAnswer {
+    /// Today's date on the server, `YYYY-MM-DD`.
+    pub today: String,
+    pub days_in_window: i64,
+    pub totals: UsageTotals,
+    /// Every day of the last 365 with usage, oldest first.
+    pub days: Vec<DayUsage>,
+    pub models: Vec<ModelUsage>,
+    pub agents: Vec<AgentUsage>,
+    pub tool_waits: Vec<ToolWait>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UsageTotals {
+    pub tokens: i64,
+    pub calls: i64,
+    /// The share of the input tokens that the provider served from its cache, 0 to 1; 0 without input.
+    pub cached_share: f64,
+    /// The time the model calls took, in milliseconds.
+    pub model_ms: i64,
+    pub day_budget: Option<i64>,
+}
+
+/// A day with usage and the model that used most tokens on it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DayUsage {
+    pub date: String,
+    pub tokens: i64,
+    pub model: String,
+}
+
 /// A judgement as the API shows it: without the blobs of its context.
 #[derive(Debug, Serialize, Deserialize)]
 struct JudgementEntry {
@@ -286,6 +335,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/cards/{id}/runs", get(card_runs))
         .route("/v1/cards/{id}/history", get(card_history))
         .route("/v1/judgements", get(judgements))
+        .route("/v1/usage", get(usage))
         .route("/v1/runs/{id}", get(get_run))
         .route("/v1/runs/{id}/events", get(run_events))
         .route("/v1/runs/{id}/steer", post(steer_run))
@@ -652,6 +702,62 @@ async fn judgements(
     .await
 }
 
+async fn usage(
+    State(state): State<ApiState>,
+    Query(query): Query<UsageQuery>,
+) -> Result<axum::Json<UsageAnswer>, ApiError> {
+    let days = query.days.unwrap_or(1);
+    if !(1..=HEATMAP_DAYS).contains(&days) {
+        return Err(AppError::Invalid(format!("days is from 1 to {HEATMAP_DAYS}")).into());
+    }
+    let day_budget = state.day_budget;
+    blocking(&state.app, move |app| {
+        let store = &app.store;
+        let totals = store.usage_totals(days)?;
+        let mut by_day: Vec<DayUsage> = vec![];
+        let mut leading_tokens = 0;
+        for (date, model, tokens) in store.usage_by_day(HEATMAP_DAYS)? {
+            match by_day.last_mut().filter(|day| day.date == date) {
+                Some(day) => {
+                    day.tokens += tokens;
+                    if tokens > leading_tokens {
+                        day.model = model;
+                        leading_tokens = tokens;
+                    }
+                }
+                None => {
+                    leading_tokens = tokens;
+                    by_day.push(DayUsage {
+                        date,
+                        tokens,
+                        model,
+                    });
+                }
+            }
+        }
+        Ok(UsageAnswer {
+            today: store.today()?,
+            days_in_window: days,
+            totals: UsageTotals {
+                tokens: totals.tokens,
+                calls: totals.calls,
+                cached_share: if totals.input_tokens > 0 {
+                    totals.cached_tokens as f64 / totals.input_tokens as f64
+                } else {
+                    0.0
+                },
+                model_ms: totals.model_ms,
+                day_budget,
+            },
+            days: by_day,
+            models: store.usage_by_model(days)?,
+            agents: store.usage_by_agent(days)?,
+            tool_waits: store.tool_waits(days, TOOL_WAITS)?,
+        })
+    })
+    .await
+}
+
 async fn card_runs(
     State(state): State<ApiState>,
     UrlPath(id): UrlPath<i64>,
@@ -756,6 +862,7 @@ mod tests {
             harness_repo: None,
             token: token.into(),
             round_limit: 5,
+            day_budget: Some(10_000),
         };
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -944,6 +1051,7 @@ mod tests {
                 input_tokens: input,
                 output_tokens: output,
                 cached_tokens: 0,
+                duration_ms: 0,
             };
             store.add_usage(&usage).unwrap();
         }
@@ -1510,6 +1618,97 @@ mod tests {
         );
         assert_eq!(history[5].data["decider"], "person");
         assert_eq!(history[6].data["item"], item.id);
+    }
+
+    #[tokio::test]
+    async fn usage_is_read_by_window_with_the_models_agents_and_tool_waits() {
+        let (_dir, state, addr) = start().await;
+        let store = &state.app.store;
+        let coder = store.add_run(None, "Coder", "test", "code").unwrap().id;
+        let reviewer = store
+            .add_run(None, "Reviewer", "test", "review")
+            .unwrap()
+            .id;
+        for (run, model, input, output, cached, duration_ms) in [
+            (Some(coder), "big", 1000, 100, 600, 4000),
+            (Some(coder), "big", 500, 50, 0, 2000),
+            (Some(reviewer), "small", 200, 20, 100, 1000),
+            (None, "small", 300, 0, 0, 500),
+        ] {
+            store
+                .add_usage(&crate::store::Usage {
+                    run_id: run,
+                    model: model.into(),
+                    input_tokens: input,
+                    output_tokens: output,
+                    cached_tokens: cached,
+                    duration_ms,
+                })
+                .unwrap();
+        }
+        let call = serde_json::json!({"toolCallId": "c1", "toolName": "bash"});
+        store
+            .append_event(coder, "tool_execution_start", &call)
+            .unwrap();
+        store
+            .append_event(coder, "tool_execution_end", &call)
+            .unwrap();
+
+        let answer: UsageAnswer = get(&state, &addr, "/v1/usage").await;
+        assert_eq!(answer.today, store.today().unwrap());
+        assert_eq!(answer.days_in_window, 1);
+        assert_eq!(
+            answer.totals,
+            UsageTotals {
+                tokens: 2170,
+                calls: 4,
+                cached_share: 700.0 / 2000.0,
+                model_ms: 7500,
+                day_budget: Some(10_000),
+            }
+        );
+        // Both models used tokens today; the leading one has 1650 against 520.
+        assert_eq!(
+            answer.days,
+            [DayUsage {
+                date: answer.today.clone(),
+                tokens: 2170,
+                model: "big".into()
+            }]
+        );
+        let models: Vec<_> = answer
+            .models
+            .iter()
+            .map(|m| (m.model.as_str(), m.tokens, m.calls, m.cached_tokens))
+            .collect();
+        assert_eq!(models, [("big", 1650, 2, 600), ("small", 520, 2, 100)]);
+        let agents: Vec<_> = answer
+            .agents
+            .iter()
+            .map(|a| (a.agent.as_str(), a.calls, a.tokens, a.model_ms))
+            .collect();
+        assert_eq!(
+            agents,
+            [
+                ("Coder", 2, 1650, 6000),
+                ("No run", 1, 300, 500),
+                ("Reviewer", 1, 220, 1000)
+            ]
+        );
+        assert_eq!(answer.tool_waits.len(), 1);
+        assert_eq!(answer.tool_waits[0].tool, "bash");
+
+        let week: UsageAnswer = get(&state, &addr, "/v1/usage?days=7").await;
+        assert_eq!((week.days_in_window, week.totals.tokens), (7, 2170));
+        for days in ["0", "366", "x"] {
+            let response = reqwest::Client::new()
+                .get(format!("http://{addr}/v1/usage?days={days}"))
+                .bearer_auth(&*state.token)
+                .send()
+                .await
+                .unwrap();
+            assert!(response.status().is_client_error(), "{days}");
+        }
     }
 
     #[tokio::test]

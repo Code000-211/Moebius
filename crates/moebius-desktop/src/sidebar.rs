@@ -9,6 +9,7 @@ use crate::app::{Connection, Message, Page};
 use crate::client::Snapshot;
 use crate::icons::{self, Icon};
 use crate::theme;
+use crate::usage::short;
 
 /// The groups below the Inbox and what each holds.
 const BUILD: [(Page, Icon); 4] = [
@@ -47,6 +48,7 @@ pub fn view<'a>(
     connection: Connection,
     page: &Page,
     chats_waiting: usize,
+    tokens_today: Option<(i64, Option<i64>)>,
     collapsed: bool,
 ) -> Element<'a, Message> {
     let inbox = item(
@@ -121,12 +123,11 @@ pub fn view<'a>(
     } else {
         theme::SIDEBAR_WIDTH
     };
-    // The tokens used today would stand at the foot; the desktop API has no usage yet, so there is no meter.
     let sidebar = container(
         column![
             top(connection, collapsed),
             scrollable(groups).height(Length::Fill),
-            space().height(8),
+            tokens_meter(tokens_today, collapsed),
         ]
         .height(Length::Fill),
     )
@@ -137,6 +138,69 @@ pub fn view<'a>(
         ..container::Style::default()
     });
     row![sidebar, rule_vertical()].into()
+}
+
+/// The tokens used today at the foot: with the day's budget a number of both and a thin bar, without one the tokens
+/// alone. Nothing stands there until the usage is read.
+fn tokens_meter<'a>(
+    tokens_today: Option<(i64, Option<i64>)>,
+    collapsed: bool,
+) -> Element<'a, Message> {
+    let Some((tokens, budget)) = tokens_today else {
+        return space().height(8).into();
+    };
+    let shown = match budget {
+        Some(budget) => format!("{} / {}", short(tokens), short(budget)),
+        None => short(tokens),
+    };
+    let mut meter = column![].spacing(6);
+    if !collapsed {
+        meter = meter.push(
+            row![
+                text("Tokens today").size(13).color(theme::SIDEBAR_TEXT),
+                space::horizontal(),
+                text(shown)
+                    .size(theme::GROUP_LABEL)
+                    .font(theme::manrope(Weight::Semibold))
+                    .color(theme::SIDEBAR_TEXT),
+            ]
+            .align_y(Center),
+        );
+    }
+    if let Some(budget) = budget.filter(|budget| *budget > 0) {
+        let used = (tokens.max(0) * 1000 / budget).clamp(0, 1000) as u16;
+        let part = |portion: u16, color: Color| {
+            container(space())
+                .width(Length::FillPortion(portion))
+                .height(5)
+                .style(move |_| container::Style {
+                    background: Some(color.into()),
+                    border: Border {
+                        radius: 2.5.into(),
+                        ..Border::default()
+                    },
+                    ..container::Style::default()
+                })
+        };
+        let mut bar = row![].width(Length::Fill);
+        if used > 0 {
+            bar = bar.push(part(used, theme::TEAL));
+        }
+        if used < 1000 {
+            bar = bar.push(part(1000 - used, theme::TRACK));
+        }
+        meter = meter.push(bar);
+    }
+    column![
+        divider(),
+        container(meter).width(Length::Fill).padding(Padding {
+            top: 14.0,
+            right: if collapsed { 12.0 } else { 20.0 },
+            bottom: 18.0,
+            left: if collapsed { 12.0 } else { 20.0 },
+        })
+    ]
+    .into()
 }
 
 fn rule_vertical<'a>() -> Element<'a, Message> {

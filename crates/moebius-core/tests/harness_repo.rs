@@ -229,6 +229,7 @@ impl Api {
             harness_repo: server.harness_repo.clone(),
             token: server.token.clone(),
             round_limit: 5,
+            day_budget: None,
         };
         tokio::spawn(api::serve(listener, state));
         Self {

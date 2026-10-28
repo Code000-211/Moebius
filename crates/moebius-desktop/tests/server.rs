@@ -145,6 +145,7 @@ async fn the_snapshot_of_a_real_server_has_what_the_board_shows_of_a_card_in_pro
         input_tokens: 1200,
         output_tokens: 300,
         cached_tokens: 0,
+        duration_ms: 0,
     };
     store.add_usage(&usage).unwrap();
 
@@ -669,4 +670,44 @@ async fn editing_an_agent_is_a_commit_on_the_harness_repository_and_a_bad_edit_i
         git(&origin, &["log", "-1", "--format=%s", "main"]).unwrap(),
         "Delete the agent Strong"
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_client_reads_the_usage_the_server_stored() {
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, server) = start_with(dir.path(), "[budgets]\nday_tokens = 10000\n").await;
+    let store = &server.app.store;
+    let run = store.add_run(None, "Coder", "test", "code").unwrap();
+    for (model, input, output, cached, duration_ms) in [
+        ("big", 1000, 100, 600, 4000),
+        ("big", 500, 50, 0, 2000),
+        ("small", 200, 20, 100, 1000),
+    ] {
+        store
+            .add_usage(&Usage {
+                run_id: Some(run.id),
+                model: model.into(),
+                input_tokens: input,
+                output_tokens: output,
+                cached_tokens: cached,
+                duration_ms,
+            })
+            .unwrap();
+    }
+    let report = Client::new(settings).usage(1).await.unwrap();
+    assert_eq!(report.days_in_window, 1);
+    assert_eq!(report.totals.tokens, 1870);
+    assert_eq!(report.totals.calls, 3);
+    assert_eq!(report.totals.model_ms, 7000);
+    assert_eq!(report.totals.day_budget, Some(10_000));
+    assert!((report.totals.cached_share - 700.0 / 1700.0).abs() < 1e-9);
+    assert_eq!(report.days.len(), 1);
+    assert_eq!(
+        (report.days[0].tokens, report.days[0].model.as_str()),
+        (1870, "big")
+    );
+    assert_eq!(report.models[0].model, "big");
+    assert_eq!((report.models[0].tokens, report.models[0].calls), (1650, 2));
+    assert_eq!(report.agents[0].agent, "Coder");
+    assert_eq!(report.agents[0].model_ms, 7000);
 }

@@ -71,7 +71,8 @@ that the daily token budget is spent and how much was used today. It applies to 
 ## Usage
 
 After an answer, the router records one usage row per request in the store: the run, the model, input tokens, output
-tokens and cached tokens. The numbers are read from the answer:
+tokens, cached tokens and how long the call took in milliseconds (from the request going upstream to the end of the
+answer or stream: the model time of the usage screen). The numbers are read from the answer:
 
 - OpenAI: `usage.prompt_tokens`, `usage.completion_tokens` and `usage.prompt_tokens_details.cached_tokens`. In a stream
   the last chunk that carries `usage` counts.

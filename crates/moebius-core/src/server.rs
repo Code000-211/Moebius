@@ -256,6 +256,7 @@ impl Server {
             harness_repo: self.harness_repo.clone(),
             token: self.token.clone(),
             round_limit: self.config.round_limit,
+            day_budget: self.config.day_tokens,
         };
         let board = {
             let server = self.clone();

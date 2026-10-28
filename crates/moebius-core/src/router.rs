@@ -10,6 +10,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+use std::time::Instant;
 
 use axum::Router as Routes;
 use axum::body::{Body, Bytes};
@@ -262,6 +263,7 @@ impl Router {
                 Protocol::Anthropic => outgoing.header("x-api-key", key),
             };
         }
+        let started = Instant::now();
         let upstream_response = match outgoing.send().await {
             Ok(r) => r,
             Err(e) => {
@@ -282,6 +284,7 @@ impl Router {
             store: self.store.clone(),
             run_id: grant.run_id,
             model,
+            started,
         };
 
         let mut response = if streaming && status.is_success() {
@@ -435,6 +438,8 @@ struct Meter {
     store: Arc<Store>,
     run_id: i64,
     model: String,
+    /// When the request went upstream, which is where the model's time is counted from.
+    started: Instant,
 }
 
 impl Meter {
@@ -448,6 +453,7 @@ impl Meter {
             input_tokens: counted.input,
             output_tokens: counted.output,
             cached_tokens: counted.cached,
+            duration_ms: i64::try_from(self.started.elapsed().as_millis()).unwrap_or(i64::MAX),
         });
     }
 }
@@ -484,6 +490,8 @@ data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usa
 event: message_stop\n\
 data: {\"type\":\"message_stop\"}\n\n";
 
+    /// How long the fake upstream takes to answer a request that is not streamed.
+    const UPSTREAM_DELAY: std::time::Duration = std::time::Duration::from_millis(30);
     const OPENAI_STREAM: &str = "data: {\"model\":\"qwen-local\",\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}\n\n\
 data: {\"model\":\"qwen-local\",\"choices\":[],\"usage\":{\"prompt_tokens\":30,\"completion_tokens\":3}}\n\n\
 data: [DONE]\n\n";
@@ -506,6 +514,7 @@ data: [DONE]\n\n";
                             ([(header::CONTENT_TYPE, "text/event-stream")], OPENAI_STREAM)
                                 .into_response()
                         } else {
+                            tokio::time::sleep(UPSTREAM_DELAY).await;
                             axum::Json(json!({
                                 "model": "qwen-local",
                                 "choices": [{"message": {"role": "assistant", "content": "Hi"}}],
@@ -634,6 +643,8 @@ data: [DONE]\n\n";
         );
         // The upstream never sees the run's token.
         assert_eq!(s.seen.lock().unwrap().auth, vec![String::new()]);
+        // The call took at least as long as the upstream took to answer.
+        assert!(usage[0].duration_ms >= UPSTREAM_DELAY.as_millis() as i64);
     }
 
     #[tokio::test]

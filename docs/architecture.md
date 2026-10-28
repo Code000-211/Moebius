@@ -159,7 +159,7 @@ start; its version is `PRAGMA user_version`.
 | `events` | Everything a run emitted, numbered per run, as JSON. |
 | `judgements` | One per decision: kind, context (blob ids), options, choice, reason, decider, run, card, outcome. |
 | `inbox_items` | What needs a person: kind, card, title, data, resolved or not. |
-| `usage` | Tokens per model request: run, model, input, output, cached. |
+| `usage` | Tokens per model request: run, model, input, output, cached, duration. |
 | blobs | Content-addressed by SHA-256, deduplicated, with secrets removed before writing (`blobs::redact`). |
 
 ## Threads and async boundaries

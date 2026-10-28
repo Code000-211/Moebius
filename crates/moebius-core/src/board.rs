@@ -1244,6 +1244,7 @@ mod tests {
                 input_tokens: tokens,
                 output_tokens: 0,
                 cached_tokens: 0,
+                duration_ms: 0,
             })
             .unwrap();
     }

@@ -19,3 +19,4 @@ pub mod soon;
 pub mod terminal;
 pub mod theme;
 pub mod transcript;
+pub mod usage;

@@ -245,6 +245,43 @@ Response: an array of `{"id": number, "kind": string, "choice": string, "reason"
 "outcome": string or null, "card": number or null, "run": number or null, "at": number}`. The blobs of the question's
 context are not included.
 
+### `GET /v1/usage`
+
+What the model calls used: tokens, calls, how long they took, and where they went. Query: `days` (a whole number from 1
+to 365, default 1) is the window, counted in local days of the server, today included: `1` is since local midnight (the
+same "today" the day budget counts), `7` the last seven days. Anything else is `422`. Tokens are input plus output tokens.
+
+Response:
+
+```json
+{
+  "today": "2026-10-28",
+  "days_in_window": 7,
+  "totals": {"tokens": 1840000, "calls": 1284, "cached_share": 0.61, "model_ms": 11520000, "day_budget": 8000000},
+  "days": [{"date": "2026-10-27", "tokens": 2520000, "model": "claude-sonnet-5-5"}],
+  "models": [{"model": "claude-sonnet-5-5", "tokens": 960000, "calls": 690, "input_tokens": 700000, "cached_tokens": 520000}],
+  "agents": [{"agent": "Coder", "calls": 702, "tokens": 1120000, "input_tokens": 1000000, "cached_tokens": 610000, "model_ms": 7080000}],
+  "tool_waits": [{"tool": "bash", "calls": 31, "seconds": 2460}]
+}
+```
+
+- `today`: the server's date, `YYYY-MM-DD`; the last day of the heatmap.
+- `totals` covers the window. `cached_share` is the cached input tokens divided by the input tokens (0 to 1, and 0
+  when there was no input). `model_ms` is the time the model calls took, in milliseconds, each measured from the request
+  to the end of the response or stream. `day_budget` is `day_tokens` of `moebius.toml`, or `null` without one.
+- `days` does not depend on `days_in_window`: it holds each of the last 365 local days that had usage, oldest first, with
+  the tokens of the day and its leading model (the one with the most tokens that day; the first by name on a tie).
+  Days without usage are not listed.
+- `models` holds each model used in the window, the one with the most tokens first: tokens, calls (one per model call),
+  input tokens (part of the tokens) and cached tokens (part of the input tokens).
+- `agents` holds each agent whose runs used tokens in the window, the one with the most tokens first: calls, tokens,
+  input tokens, cached tokens and model time. Usage that belongs to no run is counted under the agent `No run`.
+- `tool_waits` holds the tools whose calls waited longest in the window, at most 10: for each tool name, the number of
+  calls and the seconds between their `tool_execution_start` and `tool_execution_end` run events, summed. Events
+  are stamped in whole seconds. A call that has not ended is not counted.
+
+Errors: `422` `days` is not from 1 to 365.
+
 ### `POST /v1/runs/{id}/steer`
 
 A person sends a message to a running run: the harness passes it to the agent (Pi-Bolt's `steer` command), the run

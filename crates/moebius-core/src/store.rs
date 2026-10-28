@@ -143,6 +143,7 @@ CREATE TABLE card_moves (
 CREATE INDEX card_moves_by_card ON card_moves (card_id, id);
 "#,
     "ALTER TABLE runs ADD COLUMN repository_id INTEGER REFERENCES repositories(id);",
+    "ALTER TABLE usage ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0;",
 ];
 
 const CHANGE_COLUMNS: &str = "id, repository_id, card_id, branch, state, pull_request, checks, review, \
@@ -332,7 +333,55 @@ pub struct Usage {
     pub input_tokens: i64,
     pub output_tokens: i64,
     pub cached_tokens: i64,
+    /// How long the model call took, from the request to the end of the response or stream.
+    pub duration_ms: i64,
 }
+
+/// The name under which usage that belongs to no run is counted by agent.
+pub const NO_RUN: &str = "No run";
+
+/// What one model used in a window of days.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModelUsage {
+    pub model: String,
+    pub tokens: i64,
+    pub calls: i64,
+    /// The input tokens among `tokens`, which `cached_tokens` is a share of.
+    pub input_tokens: i64,
+    pub cached_tokens: i64,
+}
+
+/// What the runs of one agent used in a window of days.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentUsage {
+    pub agent: String,
+    pub calls: i64,
+    pub tokens: i64,
+    pub input_tokens: i64,
+    pub cached_tokens: i64,
+    pub model_ms: i64,
+}
+
+/// What a tool made runs wait for in a window of days.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolWait {
+    pub tool: String,
+    pub calls: i64,
+    pub seconds: i64,
+}
+
+/// All usage in a window of days: tokens, calls, input tokens, cached tokens and model time.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct UsageTotals {
+    pub tokens: i64,
+    pub calls: i64,
+    pub input_tokens: i64,
+    pub cached_tokens: i64,
+    pub model_ms: i64,
+}
+
+/// The start of the local day that is `?1 - 1` days ago, as Unix seconds: the first moment of a window of `?1` days.
+const WINDOW_START: &str = "CAST(strftime('%s', 'now', 'localtime', 'start of day', '-' || (?1 - 1) || ' days', 'utc') AS INTEGER)";
 
 impl Usage {
     pub fn total(&self) -> i64 {
@@ -1230,8 +1279,8 @@ impl Store {
 
     pub fn add_usage(&self, u: &Usage) -> Result<()> {
         self.conn().execute(
-            "INSERT INTO usage (run_id, model, input_tokens, output_tokens, cached_tokens, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![u.run_id, u.model, u.input_tokens, u.output_tokens, u.cached_tokens, now()],
+            "INSERT INTO usage (run_id, model, input_tokens, output_tokens, cached_tokens, duration_ms, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![u.run_id, u.model, u.input_tokens, u.output_tokens, u.cached_tokens, u.duration_ms, now()],
         )?;
         Ok(())
     }
@@ -1239,7 +1288,7 @@ impl Store {
     pub fn usage_for_run(&self, run_id: i64) -> Result<Vec<Usage>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
-            "SELECT run_id, model, input_tokens, output_tokens, cached_tokens FROM usage WHERE run_id = ?1 ORDER BY id",
+            "SELECT run_id, model, input_tokens, output_tokens, cached_tokens, duration_ms FROM usage WHERE run_id = ?1 ORDER BY id",
         )?;
         let rows = stmt.query_map([run_id], |r| {
             Ok(Usage {
@@ -1248,6 +1297,7 @@ impl Store {
                 input_tokens: r.get(2)?,
                 output_tokens: r.get(3)?,
                 cached_tokens: r.get(4)?,
+                duration_ms: r.get(5)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -1266,12 +1316,112 @@ impl Store {
 
     /// Tokens used by all runs since the start of the server's local day.
     pub fn tokens_today(&self) -> Result<i64> {
+        Ok(self.usage_totals(1)?.tokens)
+    }
+
+    /// The date of today on the server, as `YYYY-MM-DD`.
+    pub fn today(&self) -> Result<String> {
+        Ok(self
+            .conn()
+            .query_row("SELECT strftime('%Y-%m-%d', 'now', 'localtime')", [], |r| {
+                r.get(0)
+            })?)
+    }
+
+    /// Everything used in the last `days` local days, today included.
+    pub fn usage_totals(&self, days: i64) -> Result<UsageTotals> {
         Ok(self.conn().query_row(
-            "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) FROM usage
-             WHERE at >= CAST(strftime('%s', 'now', 'localtime', 'start of day', 'utc') AS INTEGER)",
-            [],
-            |r| r.get(0),
+            &format!(
+                "SELECT COALESCE(SUM(input_tokens + output_tokens), 0), COUNT(*), COALESCE(SUM(input_tokens), 0),
+                        COALESCE(SUM(cached_tokens), 0), COALESCE(SUM(duration_ms), 0)
+                 FROM usage WHERE at >= {WINDOW_START}"
+            ),
+            [days],
+            |r| {
+                Ok(UsageTotals {
+                    tokens: r.get(0)?,
+                    calls: r.get(1)?,
+                    input_tokens: r.get(2)?,
+                    cached_tokens: r.get(3)?,
+                    model_ms: r.get(4)?,
+                })
+            },
         )?)
+    }
+
+    /// The tokens of each model on each local day of the last `days` days, as `(YYYY-MM-DD, model, tokens)`,
+    /// oldest day first.
+    pub fn usage_by_day(&self, days: i64) -> Result<Vec<(String, String, i64)>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT strftime('%Y-%m-%d', at, 'unixepoch', 'localtime') AS day, model, SUM(input_tokens + output_tokens)
+             FROM usage WHERE at >= {WINDOW_START} GROUP BY day, model ORDER BY day, model"
+        ))?;
+        let rows = stmt.query_map([days], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// What each model used in the last `days` days, the one with the most tokens first.
+    pub fn usage_by_model(&self, days: i64) -> Result<Vec<ModelUsage>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT model, SUM(input_tokens + output_tokens) AS tokens, COUNT(*), SUM(input_tokens), SUM(cached_tokens)
+             FROM usage WHERE at >= {WINDOW_START} GROUP BY model ORDER BY tokens DESC, model"
+        ))?;
+        let rows = stmt.query_map([days], |r| {
+            Ok(ModelUsage {
+                model: r.get(0)?,
+                tokens: r.get(1)?,
+                calls: r.get(2)?,
+                input_tokens: r.get(3)?,
+                cached_tokens: r.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// What the runs of each agent used in the last `days` days, the agent with the most tokens first. Usage without
+    /// a run is counted under [`NO_RUN`].
+    pub fn usage_by_agent(&self, days: i64) -> Result<Vec<AgentUsage>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT COALESCE(r.agent, ?2) AS agent, COUNT(*), SUM(u.input_tokens + u.output_tokens) AS tokens,
+                    SUM(u.input_tokens), SUM(u.cached_tokens), SUM(u.duration_ms)
+             FROM usage u LEFT JOIN runs r ON r.id = u.run_id
+             WHERE u.at >= {WINDOW_START} GROUP BY agent ORDER BY tokens DESC, agent"
+        ))?;
+        let rows = stmt.query_map(params![days, NO_RUN], |r| {
+            Ok(AgentUsage {
+                agent: r.get(0)?,
+                calls: r.get(1)?,
+                tokens: r.get(2)?,
+                input_tokens: r.get(3)?,
+                cached_tokens: r.get(4)?,
+                model_ms: r.get(5)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// The tools whose calls took longest in the last `days` days, by the time between a call's
+    /// `tool_execution_start` and `tool_execution_end` events, at most `limit` of them.
+    pub fn tool_waits(&self, days: i64, limit: i64) -> Result<Vec<ToolWait>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT json_extract(s.data, '$.toolName') AS tool, COUNT(*), SUM(e.at - s.at) AS seconds
+             FROM events s JOIN events e ON e.run_id = s.run_id AND e.kind = 'tool_execution_end'
+              AND json_extract(e.data, '$.toolCallId') = json_extract(s.data, '$.toolCallId')
+             WHERE s.kind = 'tool_execution_start' AND s.at >= {WINDOW_START} AND tool IS NOT NULL
+             GROUP BY tool ORDER BY seconds DESC, tool LIMIT ?2"
+        ))?;
+        let rows = stmt.query_map(params![days, limit], |r| {
+            Ok(ToolWait {
+                tool: r.get(0)?,
+                calls: r.get(1)?,
+                seconds: r.get(2)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 }
 
@@ -1532,6 +1682,7 @@ mod tests {
             input_tokens: 100,
             output_tokens: 20,
             cached_tokens: 50,
+            duration_ms: 0,
         };
         s.add_usage(&u).unwrap();
         s.add_usage(&u).unwrap();
@@ -1551,6 +1702,7 @@ mod tests {
                 input_tokens: tokens,
                 output_tokens: 1,
                 cached_tokens: 0,
+                duration_ms: 0,
             })
             .unwrap();
         };
@@ -1578,5 +1730,148 @@ mod tests {
             )
             .unwrap();
         assert_eq!(s.tokens_today().unwrap(), 10);
+    }
+
+    #[test]
+    fn usage_is_counted_by_window_day_model_agent_and_tool() {
+        let (_dir, s) = store();
+        let coder = s.add_run(None, "Coder", "pi", "code").unwrap().id;
+        let reviewer = s.add_run(None, "Reviewer", "pi", "review").unwrap().id;
+        let add = |run: Option<i64>, model: &str, input, output, cached, duration_ms| {
+            s.add_usage(&Usage {
+                run_id: run,
+                model: model.into(),
+                input_tokens: input,
+                output_tokens: output,
+                cached_tokens: cached,
+                duration_ms,
+            })
+            .unwrap();
+        };
+        add(Some(coder), "big", 1000, 100, 600, 4000);
+        add(Some(coder), "big", 500, 50, 0, 2000);
+        add(Some(reviewer), "small", 200, 20, 100, 1000);
+        add(None, "big", 10, 0, 0, 500);
+        // Two days ago a smaller model led.
+        add(Some(reviewer), "small", 900, 0, 0, 3000);
+        add(Some(coder), "big", 100, 0, 0, 100);
+        s.conn()
+            .execute("UPDATE usage SET at = at - 2 * 86400 WHERE id > 4", [])
+            .unwrap();
+        let day = |ago: i64| -> String {
+            s.conn()
+                .query_row(
+                    "SELECT strftime('%Y-%m-%d', 'now', 'localtime', ?1)",
+                    [format!("-{ago} days")],
+                    |r| r.get(0),
+                )
+                .unwrap()
+        };
+
+        assert_eq!(s.today().unwrap(), day(0));
+        assert_eq!(
+            s.usage_totals(1).unwrap(),
+            UsageTotals {
+                tokens: 1880,
+                calls: 4,
+                input_tokens: 1710,
+                cached_tokens: 700,
+                model_ms: 7500
+            }
+        );
+        assert_eq!(s.tokens_today().unwrap(), 1880);
+        let three = s.usage_totals(3).unwrap();
+        assert_eq!(
+            (three.tokens, three.calls, three.model_ms),
+            (2880, 6, 10600)
+        );
+
+        let model = |model: &str, tokens, calls, input_tokens, cached_tokens| ModelUsage {
+            model: model.into(),
+            tokens,
+            calls,
+            input_tokens,
+            cached_tokens,
+        };
+        assert_eq!(
+            s.usage_by_model(1).unwrap(),
+            [
+                model("big", 1660, 3, 1510, 600),
+                model("small", 220, 1, 200, 100)
+            ]
+        );
+        assert_eq!(
+            s.usage_by_model(3).unwrap(),
+            [
+                model("big", 1760, 4, 1610, 600),
+                model("small", 1120, 2, 1100, 100)
+            ]
+        );
+
+        let agent =
+            |agent: &str, calls, tokens, input_tokens, cached_tokens, model_ms| AgentUsage {
+                agent: agent.into(),
+                calls,
+                tokens,
+                input_tokens,
+                cached_tokens,
+                model_ms,
+            };
+        assert_eq!(
+            s.usage_by_agent(1).unwrap(),
+            [
+                agent("Coder", 2, 1650, 1500, 600, 6000),
+                agent("Reviewer", 1, 220, 200, 100, 1000),
+                agent(NO_RUN, 1, 10, 10, 0, 500),
+            ]
+        );
+
+        let (old, today) = (day(2), day(0));
+        let by_day =
+            |date: &str, model: &str, tokens| (date.to_string(), model.to_string(), tokens);
+        assert_eq!(
+            s.usage_by_day(365).unwrap(),
+            [
+                by_day(&old, "big", 100),
+                by_day(&old, "small", 900),
+                by_day(&today, "big", 1660),
+                by_day(&today, "small", 220),
+            ]
+        );
+        assert_eq!(s.usage_by_day(1).unwrap().len(), 2);
+
+        // A call waits from its start event to its end event; a call that has not ended waits for nothing yet.
+        let call = |id: &str, tool: &str, seconds: i64| {
+            let start = json!({"toolCallId": id, "toolName": tool});
+            s.append_event(coder, "tool_execution_start", &start)
+                .unwrap();
+            let end = s.append_event(coder, "tool_execution_end", &start).unwrap();
+            s.conn()
+                .execute(
+                    "UPDATE events SET at = at + ?1 WHERE run_id = ?2 AND seq = ?3",
+                    params![seconds, coder, end],
+                )
+                .unwrap();
+        };
+        call("c1", "bash", 60);
+        call("c2", "bash", 30);
+        call("c3", "edit", 5);
+        call("c4", "read", 0);
+        s.append_event(
+            coder,
+            "tool_execution_start",
+            &json!({"toolCallId": "c5", "toolName": "grep"}),
+        )
+        .unwrap();
+        let wait = |tool: &str, calls, seconds| ToolWait {
+            tool: tool.into(),
+            calls,
+            seconds,
+        };
+        assert_eq!(
+            s.tool_waits(1, 10).unwrap(),
+            [wait("bash", 2, 90), wait("edit", 1, 5), wait("read", 1, 0)]
+        );
+        assert_eq!(s.tool_waits(1, 2).unwrap().len(), 2);
     }
 }
