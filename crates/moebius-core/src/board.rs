@@ -1315,6 +1315,7 @@ mod tests {
                 output_tokens: 0,
                 cached_tokens: 0,
                 duration_ms: 0,
+                tools: Vec::new(),
             })
             .unwrap();
     }

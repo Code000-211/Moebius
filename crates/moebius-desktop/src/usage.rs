@@ -1,5 +1,5 @@
 //! The Usage screen (`docs/design/usage.png`): what the model calls used, from `GET /v1/usage`. A window (today, 7 or 30
-//! days) sets the tiles, the models, the agents and the tool waits; the heatmap always shows the last year. The tokens
+//! days) sets the tiles, the models, what the model did with its time, the agents and the tool waits; the heatmap always shows the last year. The tokens
 //! used today and the day budget also feed the meter at the foot of the sidebar, so the app reads the usage when it
 //! connects and not only when this page opens.
 
@@ -626,13 +626,57 @@ fn models_box<'a>(
     )
 }
 
-/// The model time of each agent as a bar against the agent that waited longest on the models.
+/// The most activities the time box shows before it gathers the rest under "Other".
+const ACTIVITY_BARS: usize = 8;
+
+/// What the model did with some of its time, as the time box names it.
+#[derive(Debug, PartialEq, Eq)]
+struct Doing {
+    name: String,
+    /// Whether the name is a tool's, which is set in the code font.
+    tool: bool,
+    calls: i64,
+    model_ms: i64,
+}
+
+/// The activities of the report as the bars of the time box: the first eight by time, then the rest as "Other".
+fn doings(report: &UsageReport) -> Vec<Doing> {
+    let mut doings: Vec<_> = report
+        .activities
+        .iter()
+        .map(|a| {
+            let (name, tool) = match a.activity.as_str() {
+                "answering" => ("Answering", false),
+                "unknown" => ("Unknown", false),
+                tool => (tool, true),
+            };
+            Doing {
+                name: name.to_string(),
+                tool,
+                calls: a.calls,
+                model_ms: a.model_ms,
+            }
+        })
+        .collect();
+    if doings.len() > ACTIVITY_BARS {
+        let rest = doings.split_off(ACTIVITY_BARS);
+        doings.push(Doing {
+            name: "Other".into(),
+            tool: false,
+            calls: rest.iter().map(|d| d.calls).sum(),
+            model_ms: rest.iter().map(|d| d.model_ms).sum(),
+        });
+    }
+    doings
+}
+
+/// What the model did with its time, as a bar for each activity against the one that took longest: the tool it called
+/// or answering, with the calls in its label and the time at the right.
 fn time_box<'a>(report: &'a UsageReport, span: &str) -> Element<'a, AppMessage> {
-    let mut agents: Vec<_> = report.agents.iter().collect();
-    agents.sort_by_key(|agent| std::cmp::Reverse(agent.model_ms));
-    let longest = agents.first().map_or(1, |agent| agent.model_ms.max(1));
-    let bars = agents.into_iter().map(|agent| {
-        let portion = (agent.model_ms * 1000 / longest).clamp(0, 1000) as u16;
+    let doings = doings(report);
+    let longest = doings.iter().map(|d| d.model_ms).max().unwrap_or(1).max(1);
+    let bars = doings.into_iter().map(|doing| {
+        let portion = (doing.model_ms * 1000 / longest).clamp(0, 1000) as u16;
         let bar = container(space())
             .width(Length::FillPortion(portion.max(1)))
             .height(14)
@@ -644,8 +688,26 @@ fn time_box<'a>(report: &'a UsageReport, span: &str) -> Element<'a, AppMessage> 
                 },
                 ..container::Style::default()
             });
+        let name = text(doing.name).size(14).wrapping(Wrapping::None);
+        let name = if doing.tool {
+            name.font(theme::MONO).size(13)
+        } else {
+            name
+        };
+        let calls = format!(
+            " · {} {}",
+            grouped(doing.calls),
+            if doing.calls == 1 { "call" } else { "calls" }
+        );
         row![
-            container(text(agent.agent.as_str()).size(14).wrapping(Wrapping::None)).width(150),
+            container(row![
+                name,
+                text(calls)
+                    .size(12.5)
+                    .color(theme::TEXT_SECONDARY)
+                    .wrapping(Wrapping::None)
+            ])
+            .width(220),
             container(row![
                 bar,
                 space().width(Length::FillPortion(1001 - portion.max(1)))
@@ -660,7 +722,7 @@ fn time_box<'a>(report: &'a UsageReport, span: &str) -> Element<'a, AppMessage> 
                 ..container::Style::default()
             }),
             container(
-                text(duration(agent.model_ms / 1000))
+                text(duration(doing.model_ms / 1000))
                     .size(12.5)
                     .color(theme::TEXT_SECONDARY)
             )
@@ -671,7 +733,7 @@ fn time_box<'a>(report: &'a UsageReport, span: &str) -> Element<'a, AppMessage> 
         .align_y(Alignment::Center)
         .into()
     });
-    let content: Element<'a, AppMessage> = if report.agents.is_empty() {
+    let content: Element<'a, AppMessage> = if report.activities.is_empty() {
         page::body("No model call in this window.")
     } else {
         column(bars).spacing(12).into()
@@ -852,6 +914,54 @@ fn aligned<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_time_box_shows_eight_activities_and_gathers_the_rest_as_other() {
+        let activity = |name: &str, model_ms, calls| crate::client::ActivityUsage {
+            activity: name.into(),
+            model_ms,
+            calls,
+            output_tokens: 0,
+        };
+        let mut report: UsageReport = serde_json::from_value(serde_json::json!({
+            "today": "2026-10-28", "days_in_window": 1,
+            "totals": {"tokens": 0, "calls": 0, "cached_share": 0.0, "model_ms": 0, "day_budget": null},
+            "days": [], "models": [], "agents": [], "activities": [], "tool_waits": []
+        }))
+        .unwrap();
+        report.activities = vec![
+            activity("bash", 9000, 214),
+            activity("answering", 5000, 40),
+            activity("unknown", 1000, 3),
+        ];
+        assert_eq!(
+            doings(&report)
+                .iter()
+                .map(|d| (d.name.as_str(), d.tool, d.calls))
+                .collect::<Vec<_>>(),
+            [
+                ("bash", true, 214),
+                ("Answering", false, 40),
+                ("Unknown", false, 3)
+            ]
+        );
+
+        report.activities = (0..11)
+            .map(|i| activity(&format!("tool{i}"), 100 - i, 1))
+            .collect();
+        let shown = doings(&report);
+        assert_eq!(shown.len(), 9);
+        assert_eq!(shown[7].name, "tool7");
+        assert_eq!(
+            shown[8],
+            Doing {
+                name: "Other".into(),
+                tool: false,
+                calls: 3,
+                model_ms: 92 + 91 + 90
+            }
+        );
+    }
 
     #[test]
     fn numbers_are_told_in_three_figures_with_separators_and_hours() {

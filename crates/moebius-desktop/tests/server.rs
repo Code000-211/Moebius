@@ -147,6 +147,7 @@ async fn the_snapshot_of_a_real_server_has_what_the_board_shows_of_a_card_in_pro
         output_tokens: 300,
         cached_tokens: 0,
         duration_ms: 0,
+        tools: Vec::new(),
     };
     store.add_usage(&usage).unwrap();
 
@@ -696,10 +697,10 @@ async fn the_client_reads_the_usage_the_server_stored() {
     let (settings, server) = start_with(dir.path(), "[budgets]\nday_tokens = 10000\n").await;
     let store = &server.app.store;
     let run = store.add_run(None, "Coder", "test", "code").unwrap();
-    for (model, input, output, cached, duration_ms) in [
-        ("big", 1000, 100, 600, 4000),
-        ("big", 500, 50, 0, 2000),
-        ("small", 200, 20, 100, 1000),
+    for (model, input, output, cached, duration_ms, tools) in [
+        ("big", 1000, 100, 600, 4000, vec!["bash", "read"]),
+        ("big", 500, 50, 0, 2000, vec!["bash"]),
+        ("small", 200, 20, 100, 1000, vec![]),
     ] {
         store
             .add_usage(&Usage {
@@ -709,6 +710,7 @@ async fn the_client_reads_the_usage_the_server_stored() {
                 output_tokens: output,
                 cached_tokens: cached,
                 duration_ms,
+                tools: tools.into_iter().map(String::from).collect(),
             })
             .unwrap();
     }
@@ -728,6 +730,19 @@ async fn the_client_reads_the_usage_the_server_stored() {
     assert_eq!((report.models[0].tokens, report.models[0].calls), (1650, 2));
     assert_eq!(report.agents[0].agent, "Coder");
     assert_eq!(report.agents[0].model_ms, 7000);
+    let activities: Vec<_> = report
+        .activities
+        .iter()
+        .map(|a| (a.activity.as_str(), a.model_ms, a.calls, a.output_tokens))
+        .collect();
+    assert_eq!(
+        activities,
+        [
+            ("bash", 4000, 2, 100),
+            ("read", 2000, 1, 50),
+            ("answering", 1000, 1, 20)
+        ]
+    );
 }
 
 /// A day with a failed run becomes a Retro through the client, the fake Pi analyst proposes a branch for the Coder, and

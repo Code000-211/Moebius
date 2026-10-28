@@ -6,6 +6,9 @@
 //! - `POST /v1/chat/completions`: OpenAI chat completions, streamed or not.
 //! - `POST /v1/messages`: Anthropic messages, streamed or not.
 //!
+//! While it reads an answer to count its tokens, the router also notes the names of the tools the answer asks for, so
+//! that the Usage page can say what the model's time went on.
+//!
 //! The server serves these routes together with the tool-call check (`check`) on one listener.
 
 use std::collections::HashMap;
@@ -355,12 +358,47 @@ struct Counted {
     output: i64,
     cached: i64,
     model: Option<String>,
+    /// The tools the answer asks for, in order.
+    tools: Vec<String>,
     seen: bool,
+}
+
+/// The names of the tools a response body or a stream event asks for, in order:
+/// OpenAI's `tool_calls[].function.name` of a body's message or a stream's delta, and Anthropic's `tool_use` blocks of
+/// a body's content or the `content_block_start` event of a stream.
+fn tool_names(value: &Value, protocol: Protocol) -> Vec<String> {
+    let mut names = Vec::new();
+    match protocol {
+        Protocol::OpenAi => {
+            for choice in value["choices"].as_array().into_iter().flatten() {
+                for call in choice["message"]["tool_calls"]
+                    .as_array()
+                    .into_iter()
+                    .chain(choice["delta"]["tool_calls"].as_array())
+                    .flatten()
+                {
+                    names.extend(call["function"]["name"].as_str().map(str::to_string));
+                }
+            }
+        }
+        Protocol::Anthropic => {
+            let blocks = value["content"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .chain(value.get("content_block"));
+            for block in blocks.filter(|b| b["type"] == "tool_use") {
+                names.extend(block["name"].as_str().map(str::to_string));
+            }
+        }
+    }
+    names
 }
 
 impl Counted {
     /// Reads the usage of a response body or a stream event; later numbers replace earlier ones of the same kind.
     fn read(&mut self, value: &Value, protocol: Protocol) {
+        self.tools.extend(tool_names(value, protocol));
         let usage = match protocol {
             Protocol::OpenAi => value.get("usage"),
             // Streams carry usage in message_start (as message.usage) and in message_delta (as usage).
@@ -471,6 +509,7 @@ impl Meter {
             output_tokens: counted.output,
             cached_tokens: counted.cached,
             duration_ms: i64::try_from(self.started.elapsed().as_millis()).unwrap_or(i64::MAX),
+            tools: counted.tools,
         });
     }
 }
@@ -513,6 +552,9 @@ data: {\"type\":\"message_stop\"}\n\n";
 data: {\"model\":\"qwen-local\",\"choices\":[],\"usage\":{\"prompt_tokens\":30,\"completion_tokens\":3}}\n\n\
 data: [DONE]\n\n";
 
+    /// The model a request names to have the fake upstream answer it with a tool call (OpenAI, not streamed).
+    const TOOL_MODEL: &str = "tool-model";
+
     async fn fake_upstream(seen: Arc<Mutex<Seen>>) -> String {
         let app = Routes::new()
             .route(
@@ -525,6 +567,7 @@ data: [DONE]\n\n";
                             .map(|v| v.to_str().unwrap().to_string())
                             .unwrap_or_default();
                         let streaming = body["stream"] == json!(true);
+                        let asks_for_a_tool = body["model"] == TOOL_MODEL;
                         seen.lock().unwrap().auth.push(auth);
                         seen.lock().unwrap().bodies.push(body);
                         if streaming {
@@ -532,9 +575,16 @@ data: [DONE]\n\n";
                                 .into_response()
                         } else {
                             tokio::time::sleep(UPSTREAM_DELAY).await;
+                            let message = if asks_for_a_tool {
+                                json!({"role": "assistant", "content": null, "tool_calls": [
+                                    {"id": "c1", "type": "function",
+                                     "function": {"name": "bash", "arguments": "{}"}}]})
+                            } else {
+                                json!({"role": "assistant", "content": "Hi"})
+                            };
                             axum::Json(json!({
                                 "model": "qwen-local",
-                                "choices": [{"message": {"role": "assistant", "content": "Hi"}}],
+                                "choices": [{"message": message}],
                                 "usage": {"prompt_tokens": 10, "completion_tokens": 5,
                                           "prompt_tokens_details": {"cached_tokens": 2}}
                             }))
@@ -662,6 +712,80 @@ data: [DONE]\n\n";
         assert_eq!(s.seen.lock().unwrap().auth, vec![String::new()]);
         // The call took at least as long as the upstream took to answer.
         assert!(usage[0].duration_ms >= UPSTREAM_DELAY.as_millis() as i64);
+    }
+
+    #[test]
+    fn the_tools_an_answer_asks_for_are_read_for_both_protocols_streamed_and_not() {
+        let names = |value: Value, protocol| tool_names(&value, protocol);
+        let strings =
+            |names: &[&str]| -> Vec<String> { names.iter().map(|n| n.to_string()).collect() };
+
+        // OpenAI, not streamed: two tool calls in one message.
+        let body = json!({"choices": [{"message": {"content": null, "tool_calls": [
+            {"id": "a", "type": "function", "function": {"name": "read", "arguments": "{}"}},
+            {"id": "b", "type": "function", "function": {"name": "bash", "arguments": "{}"}}]}}]});
+        assert_eq!(names(body, Protocol::OpenAi), strings(&["read", "bash"]));
+        // OpenAI, streamed: the name comes with a call's first delta, its arguments after.
+        let first = json!({"choices": [{"delta": {"tool_calls": [
+            {"index": 0, "id": "a", "function": {"name": "edit", "arguments": ""}}]}}]});
+        let rest = json!({"choices": [{"delta": {"tool_calls": [
+            {"index": 0, "function": {"arguments": "{\"path\":"}}]}}]});
+        assert_eq!(names(first, Protocol::OpenAi), strings(&["edit"]));
+        assert!(names(rest, Protocol::OpenAi).is_empty());
+        // Anthropic, not streamed: text and a tool_use block.
+        let body = json!({"content": [{"type": "text", "text": "Looking."},
+            {"type": "tool_use", "id": "t", "name": "grep", "input": {}}]});
+        assert_eq!(names(body, Protocol::Anthropic), strings(&["grep"]));
+        // Anthropic, streamed: the block start carries the name; its deltas do not.
+        let start = json!({"type": "content_block_start", "index": 1,
+            "content_block": {"type": "tool_use", "id": "t", "name": "write", "input": {}}});
+        let text = json!({"type": "content_block_start", "index": 0,
+            "content_block": {"type": "text", "text": ""}});
+        let delta = json!({"type": "content_block_delta", "index": 1,
+            "delta": {"type": "input_json_delta", "partial_json": "{}"}});
+        assert_eq!(names(start, Protocol::Anthropic), strings(&["write"]));
+        assert!(names(text, Protocol::Anthropic).is_empty());
+        assert!(names(delta, Protocol::Anthropic).is_empty());
+        // An answer with no tool call names none.
+        let answer = json!({"choices": [{"message": {"content": "Hi"}}]});
+        assert!(names(answer, Protocol::OpenAi).is_empty());
+        let answer = json!({"content": [{"type": "text", "text": "Hi"}]});
+        assert!(names(answer, Protocol::Anthropic).is_empty());
+    }
+
+    #[test]
+    fn a_stream_collects_the_tools_of_all_its_events() {
+        let mut scanner = SseUsage::default();
+        let stream = "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"name\":\"read\"}}\n\n\
+data: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"name\":\"bash\"}}\n\n";
+        // Fed in pieces that split an event.
+        let (a, b) = stream.split_at(40);
+        scanner.feed(a.as_bytes(), Protocol::Anthropic);
+        scanner.feed(b.as_bytes(), Protocol::Anthropic);
+        assert_eq!(scanner.usage.tools, ["read", "bash"]);
+    }
+
+    #[tokio::test]
+    async fn a_call_answered_with_a_tool_call_stores_the_tools_name() {
+        let s = setup().await;
+        let token = s.router.issue_token(Grant {
+            run_id: s.run,
+            card_id: Some(s.card),
+            budget: None,
+        });
+        let client = reqwest::Client::new();
+        let send = |model: &str| {
+            client
+                .post(format!("{}/v1/chat/completions", s.url))
+                .bearer_auth(&token)
+                .json(&json!({"model": model, "messages": []}))
+                .send()
+        };
+        send(TOOL_MODEL).await.unwrap();
+        send("local").await.unwrap();
+        let usage = s.store.usage_for_run(s.run).unwrap();
+        let tools: Vec<_> = usage.iter().map(|u| u.tools.clone()).collect();
+        assert_eq!(tools, [vec!["bash".to_string()], Vec::<String>::new()]);
     }
 
     #[tokio::test]

@@ -79,8 +79,8 @@ use crate::rules;
 use crate::settings::{Changes, Live, Saved, SettingsView};
 use crate::setup;
 use crate::store::{
-    AgentUsage, Card, Change, Event, Grilling, GrillingIssue, InboxItem, ModelUsage, Proposal,
-    Replay, Repository, Run, Takeover, ToolWait,
+    ActivityUsage, AgentUsage, Card, Change, Event, Grilling, GrillingIssue, InboxItem, ModelUsage,
+    Proposal, Replay, Repository, Run, Takeover, ToolWait,
 };
 use crate::trial;
 
@@ -272,6 +272,8 @@ pub struct UsageAnswer {
     pub days: Vec<DayUsage>,
     pub models: Vec<ModelUsage>,
     pub agents: Vec<AgentUsage>,
+    /// What the model did with its time, the activity with most time first.
+    pub activities: Vec<ActivityUsage>,
     pub tool_waits: Vec<ToolWait>,
 }
 
@@ -1244,6 +1246,7 @@ async fn usage(
             days: by_day,
             models: store.usage_by_model(days)?,
             agents: store.usage_by_agent(days)?,
+            activities: store.usage_by_activity(days)?,
             tool_waits: store.tool_waits(days, TOOL_WAITS)?,
         })
     })
@@ -1550,6 +1553,7 @@ mod tests {
                 output_tokens: output,
                 cached_tokens: 0,
                 duration_ms: 0,
+                tools: Vec::new(),
             };
             store.add_usage(&usage).unwrap();
         }
@@ -2119,7 +2123,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn usage_is_read_by_window_with_the_models_agents_and_tool_waits() {
+    async fn usage_is_read_by_window_with_the_models_agents_activities_and_tool_waits() {
         let (_dir, state, addr) = start().await;
         let store = &state.app.store;
         let coder = store.add_run(None, "Coder", "test", "code").unwrap().id;
@@ -2127,11 +2131,11 @@ mod tests {
             .add_run(None, "Reviewer", "test", "review")
             .unwrap()
             .id;
-        for (run, model, input, output, cached, duration_ms) in [
-            (Some(coder), "big", 1000, 100, 600, 4000),
-            (Some(coder), "big", 500, 50, 0, 2000),
-            (Some(reviewer), "small", 200, 20, 100, 1000),
-            (None, "small", 300, 0, 0, 500),
+        for (run, model, input, output, cached, duration_ms, tools) in [
+            (Some(coder), "big", 1000, 100, 600, 4000, vec!["bash"]),
+            (Some(coder), "big", 500, 50, 0, 2000, vec!["bash", "read"]),
+            (Some(reviewer), "small", 200, 20, 100, 1000, vec![]),
+            (None, "small", 300, 0, 0, 500, vec!["read"]),
         ] {
             store
                 .add_usage(&crate::store::Usage {
@@ -2141,6 +2145,7 @@ mod tests {
                     output_tokens: output,
                     cached_tokens: cached,
                     duration_ms,
+                    tools: tools.into_iter().map(String::from).collect(),
                 })
                 .unwrap();
         }
@@ -2191,6 +2196,19 @@ mod tests {
                 ("Coder", 2, 1650, 6000),
                 ("No run", 1, 300, 500),
                 ("Reviewer", 1, 220, 1000)
+            ]
+        );
+        let activities: Vec<_> = answer
+            .activities
+            .iter()
+            .map(|a| (a.activity.as_str(), a.model_ms, a.calls, a.output_tokens))
+            .collect();
+        assert_eq!(
+            activities,
+            [
+                ("bash", 5000, 2, 125),
+                ("read", 1500, 2, 25),
+                ("answering", 1000, 1, 20)
             ]
         );
         assert_eq!(answer.tool_waits.len(), 1);

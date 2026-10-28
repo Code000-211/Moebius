@@ -578,6 +578,8 @@ pub struct UsageReport {
     pub days: Vec<UsageDay>,
     pub models: Vec<ModelUsage>,
     pub agents: Vec<AgentUsage>,
+    /// What the model did with its time, the activity with most time first.
+    pub activities: Vec<ActivityUsage>,
     pub tool_waits: Vec<ToolWait>,
 }
 
@@ -616,6 +618,15 @@ pub struct AgentUsage {
     pub input_tokens: i64,
     pub cached_tokens: i64,
     pub model_ms: i64,
+}
+
+/// What the model did with some of its time: a tool's name, `answering` or `unknown`.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct ActivityUsage {
+    pub activity: String,
+    pub model_ms: i64,
+    pub calls: i64,
+    pub output_tokens: i64,
 }
 
 /// A tool whose calls made runs wait, with the seconds they waited in all.

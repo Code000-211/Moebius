@@ -263,6 +263,7 @@ CREATE TABLE takeovers (
     r#"
 ALTER TABLE runs ADD COLUMN seen_seq INTEGER NOT NULL DEFAULT 0;
 "#,
+    "ALTER TABLE usage ADD COLUMN tools TEXT;",
 ];
 
 const CHANGE_COLUMNS: &str = "id, repository_id, card_id, branch, state, pull_request, checks, review, \
@@ -284,6 +285,13 @@ fn change_from_row(r: &rusqlite::Row) -> rusqlite::Result<Change> {
         failed_checks: r.get(11)?,
         check_output: r.get(12)?,
     })
+}
+
+/// The tool names of a `usage.tools` column; none for a row recorded before the column or one that does not read.
+fn tools_from_column(column: Option<String>) -> Vec<String> {
+    column
+        .and_then(|c| serde_json::from_str(&c).ok())
+        .unwrap_or_default()
 }
 
 pub fn now() -> i64 {
@@ -456,6 +464,8 @@ pub struct Usage {
     pub cached_tokens: i64,
     /// How long the model call took, from the request to the end of the response or stream.
     pub duration_ms: i64,
+    /// The names of the tools the answer asked for, in order; empty for an answer that asks for none.
+    pub tools: Vec<String>,
 }
 
 /// One thing that went wrong in a window of time, as the Retro collects it. `text` is whatever the source has to say, in
@@ -676,6 +686,21 @@ pub struct AgentUsage {
     pub cached_tokens: i64,
     pub model_ms: i64,
 }
+
+/// What the model did with its time in a window of days: one tool, answering, or something unknown.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActivityUsage {
+    /// A tool's name, [`ANSWERING`] or [`UNKNOWN`].
+    pub activity: String,
+    pub model_ms: i64,
+    pub calls: i64,
+    pub output_tokens: i64,
+}
+
+/// The activity of a model call that asked for no tool.
+pub const ANSWERING: &str = "answering";
+/// The activity of a model call recorded before the tools of calls were.
+pub const UNKNOWN: &str = "unknown";
 
 /// What a tool made runs wait for in a window of days.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2010,8 +2035,8 @@ impl Store {
 
     pub fn add_usage(&self, u: &Usage) -> Result<()> {
         self.conn().execute(
-            "INSERT INTO usage (run_id, model, input_tokens, output_tokens, cached_tokens, duration_ms, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![u.run_id, u.model, u.input_tokens, u.output_tokens, u.cached_tokens, u.duration_ms, now()],
+            "INSERT INTO usage (run_id, model, input_tokens, output_tokens, cached_tokens, duration_ms, tools, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![u.run_id, u.model, u.input_tokens, u.output_tokens, u.cached_tokens, u.duration_ms, serde_json::to_string(&u.tools)?, now()],
         )?;
         Ok(())
     }
@@ -2019,7 +2044,7 @@ impl Store {
     pub fn usage_for_run(&self, run_id: i64) -> Result<Vec<Usage>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
-            "SELECT run_id, model, input_tokens, output_tokens, cached_tokens, duration_ms FROM usage WHERE run_id = ?1 ORDER BY id",
+            "SELECT run_id, model, input_tokens, output_tokens, cached_tokens, duration_ms, tools FROM usage WHERE run_id = ?1 ORDER BY id",
         )?;
         let rows = stmt.query_map([run_id], |r| {
             Ok(Usage {
@@ -2029,6 +2054,7 @@ impl Store {
                 output_tokens: r.get(3)?,
                 cached_tokens: r.get(4)?,
                 duration_ms: r.get(5)?,
+                tools: tools_from_column(r.get(6)?),
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -2132,6 +2158,71 @@ impl Store {
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// What the model did in the last `days` days, the activity with the most model time first. A call that asked for
+    /// `n` tools gives each tool `1/n` of its duration and output tokens (what does not divide goes to the first
+    /// tools, so nothing is lost); a call that asked for none is `answering`. A call counts once for each distinct
+    /// tool it named. Calls recorded before their tools were are `unknown`, and are listed only when there are no other
+    /// calls in the window.
+    pub fn usage_by_activity(&self, days: i64) -> Result<Vec<ActivityUsage>> {
+        let calls: Vec<(Option<String>, i64, i64)> = {
+            let conn = self.conn();
+            let mut stmt = conn.prepare(&format!(
+                "SELECT tools, duration_ms, output_tokens FROM usage WHERE at >= {WINDOW_START}"
+            ))?;
+            let rows = stmt.query_map([days], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+            rows.collect::<rusqlite::Result<_>>()?
+        };
+        let mut sums: BTreeMap<String, ActivityUsage> = BTreeMap::new();
+        let mut unknown = ActivityUsage {
+            activity: UNKNOWN.into(),
+            model_ms: 0,
+            calls: 0,
+            output_tokens: 0,
+        };
+        for (tools, model_ms, output_tokens) in calls {
+            let Some(tools) = tools else {
+                unknown.model_ms += model_ms;
+                unknown.calls += 1;
+                unknown.output_tokens += output_tokens;
+                continue;
+            };
+            let tools = tools_from_column(Some(tools));
+            let names: Vec<&str> = if tools.is_empty() {
+                vec![ANSWERING]
+            } else {
+                tools.iter().map(String::as_str).collect()
+            };
+            let n = names.len() as i64;
+            let mut counted = BTreeSet::new();
+            for (i, name) in names.into_iter().enumerate() {
+                let i = i as i64;
+                let sum = sums
+                    .entry(name.to_string())
+                    .or_insert_with(|| ActivityUsage {
+                        activity: name.to_string(),
+                        model_ms: 0,
+                        calls: 0,
+                        output_tokens: 0,
+                    });
+                sum.model_ms += model_ms / n + i64::from(i < model_ms % n);
+                sum.output_tokens += output_tokens / n + i64::from(i < output_tokens % n);
+                if counted.insert(name) {
+                    sum.calls += 1;
+                }
+            }
+        }
+        let mut activities: Vec<ActivityUsage> = sums.into_values().collect();
+        if activities.is_empty() && unknown.calls > 0 {
+            activities.push(unknown);
+        }
+        activities.sort_by(|a, b| {
+            b.model_ms
+                .cmp(&a.model_ms)
+                .then_with(|| a.activity.cmp(&b.activity))
+        });
+        Ok(activities)
     }
 
     /// The tools whose calls took longest in the last `days` days, by the time between a call's
@@ -3001,6 +3092,7 @@ mod tests {
             output_tokens: 20,
             cached_tokens: 50,
             duration_ms: 0,
+            tools: Vec::new(),
         };
         s.add_usage(&u).unwrap();
         s.add_usage(&u).unwrap();
@@ -3021,6 +3113,7 @@ mod tests {
                 output_tokens: 1,
                 cached_tokens: 0,
                 duration_ms: 0,
+                tools: Vec::new(),
             })
             .unwrap();
         };
@@ -3051,6 +3144,72 @@ mod tests {
     }
 
     #[test]
+    fn model_time_is_split_over_what_each_call_did() {
+        let (_dir, s) = store();
+        let add = |tools: &[&str], output_tokens, duration_ms| {
+            s.add_usage(&Usage {
+                run_id: None,
+                model: "m".into(),
+                input_tokens: 1,
+                output_tokens,
+                cached_tokens: 0,
+                duration_ms,
+                tools: tools.iter().map(|t| t.to_string()).collect(),
+            })
+            .unwrap();
+        };
+        add(&["bash"], 10, 1000);
+        add(&["bash", "read"], 21, 3001);
+        add(&["read", "read"], 4, 400);
+        add(&[], 7, 500);
+        // Two days ago, and before the tools of calls were recorded.
+        add(&["edit"], 5, 9000);
+        s.conn()
+            .execute("UPDATE usage SET at = at - 2 * 86400 WHERE id = 5", [])
+            .unwrap();
+        let activity = |activity: &str, model_ms, calls, output_tokens| ActivityUsage {
+            activity: activity.into(),
+            model_ms,
+            calls,
+            output_tokens,
+        };
+
+        // The odd millisecond and token of the second call go to its first tool; a call that names a tool twice
+        // counts once for it but gives it both shares.
+        assert_eq!(
+            s.usage_by_activity(1).unwrap(),
+            [
+                activity("bash", 2501, 2, 21),
+                activity("read", 1900, 2, 14),
+                activity(ANSWERING, 500, 1, 7),
+            ]
+        );
+        assert_eq!(
+            s.usage_by_activity(3).unwrap()[0],
+            activity("edit", 9000, 1, 5)
+        );
+
+        // Calls from before the tools were recorded are left out while there are others, and listed alone otherwise.
+        s.conn()
+            .execute("UPDATE usage SET tools = NULL WHERE id = 1", [])
+            .unwrap();
+        assert_eq!(s.usage_by_activity(1).unwrap().len(), 3);
+        assert!(
+            !s.usage_by_activity(1)
+                .unwrap()
+                .iter()
+                .any(|a| a.activity == UNKNOWN)
+        );
+        s.conn()
+            .execute("UPDATE usage SET tools = NULL", [])
+            .unwrap();
+        assert_eq!(
+            s.usage_by_activity(1).unwrap(),
+            [activity(UNKNOWN, 4901, 4, 42)]
+        );
+    }
+
+    #[test]
     fn usage_is_counted_by_window_day_model_agent_and_tool() {
         let (_dir, s) = store();
         let coder = s.add_run(None, "Coder", "pi", "code").unwrap().id;
@@ -3063,6 +3222,7 @@ mod tests {
                 output_tokens: output,
                 cached_tokens: cached,
                 duration_ms,
+                tools: Vec::new(),
             })
             .unwrap();
         };
@@ -3460,6 +3620,7 @@ mod tests {
                 output_tokens: 5,
                 cached_tokens: 0,
                 duration_ms: 1,
+                tools: Vec::new(),
             })
             .unwrap();
         }

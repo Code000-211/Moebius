@@ -72,13 +72,23 @@ that the daily token budget is spent and how much was used today. It applies to 
 
 After an answer, the router records one usage row per request in the store: the run, the model, input tokens, output
 tokens, cached tokens and how long the call took in milliseconds (from the request going upstream to the end of the
-answer or stream: the model time of the usage screen). The numbers are read from the answer:
+answer or stream: the model time of the usage screen) and the names of the tools the answer asks for. The numbers are
+read from the answer:
 
 - OpenAI: `usage.prompt_tokens`, `usage.completion_tokens` and `usage.prompt_tokens_details.cached_tokens`. In a stream
   the last chunk that carries `usage` counts.
 - Anthropic: `usage.input_tokens`, `usage.output_tokens` and `usage.cache_read_input_tokens`. In a stream, `message_start`
   carries `message.usage` and `message_delta` carries `usage`; later numbers replace earlier ones of the same kind.
 
+The tools are read from the same answer, in the order they are asked for, and stored as a list of names (`tools`; empty
+for an answer that asks for none, which the usage screen calls answering):
+
+- OpenAI: `function.name` of each of `choices[].message.tool_calls[]`. In a stream, of each of
+  `choices[].delta.tool_calls[]` that has one (a call's name comes with its first chunk, its arguments after).
+- Anthropic: `name` of each `content[]` block of type `tool_use`. In a stream, of each `content_block_start` event whose
+  `content_block` is of type `tool_use`.
+
 The model is the one the upstream names in its answer, or else the one in the request. A streamed request is recorded
 when its stream ends, however it ends, including when the client drops it. Nothing is recorded for an answer that is
-not a success or that reports no usage.
+not a success or that reports no usage. Calls recorded before the router read tools have no tools, which the usage
+screen counts as unknown.

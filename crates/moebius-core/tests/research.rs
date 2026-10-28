@@ -443,6 +443,7 @@ async fn a_research_whose_runs_used_the_budget_is_spent_before_the_next_round() 
             output_tokens: 100,
             cached_tokens: 0,
             duration_ms: 1,
+            tools: Vec::new(),
         })
         .unwrap();
     let mut events = server.app.bus.subscribe();

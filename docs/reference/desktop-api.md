@@ -332,6 +332,7 @@ Response:
   "days": [{"date": "2026-10-27", "tokens": 2520000, "model": "claude-sonnet-5-5"}],
   "models": [{"model": "claude-sonnet-5-5", "tokens": 960000, "calls": 690, "input_tokens": 700000, "cached_tokens": 520000}],
   "agents": [{"agent": "Coder", "calls": 702, "tokens": 1120000, "input_tokens": 1000000, "cached_tokens": 610000, "model_ms": 7080000}],
+  "activities": [{"activity": "bash", "model_ms": 2140000, "calls": 214, "output_tokens": 61000}],
   "tool_waits": [{"tool": "bash", "calls": 31, "seconds": 2460}]
 }
 ```
@@ -347,6 +348,13 @@ Response:
   input tokens (part of the tokens) and cached tokens (part of the input tokens).
 - `agents` holds each agent whose runs used tokens in the window, the one with the most tokens first: calls, tokens,
   input tokens, cached tokens and model time. Usage that belongs to no run is counted under the agent `No run`.
+- `activities` holds what the model did with its time in the window, the activity with the most model time first: the
+  `activity` is a tool's name, `answering` or `unknown`. A model call that asked for `n` tools gives each of them `1/n`
+  of its duration and of its output tokens (the remainder of a division, whole milliseconds or tokens, goes to the first
+  tools; a tool named twice by one call gets both shares). A call that asked for no tool is `answering`. `model_ms` and
+  `output_tokens` are the sums of those shares; `calls` counts a call once for each distinct tool it named, so it can
+  add up to more than the calls of the window. A call recorded before the router read tools is `unknown`; `unknown` is
+  listed only when the window holds no other call. What the router reads from answers is in `router.md`.
 - `tool_waits` holds the tools whose calls waited longest in the window, at most 10: for each tool name, the number of
   calls and the seconds between their `tool_execution_start` and `tool_execution_end` run events, summed. Events
   are stamped in whole seconds. A call that has not ended is not counted.
