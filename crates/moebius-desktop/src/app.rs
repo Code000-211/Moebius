@@ -425,8 +425,10 @@ impl App {
                 {
                     tasks.push(self.chats.reload(settings));
                 }
-                if event.kind == "retro_done"
-                    && let Some(settings) = &self.settings
+                if matches!(
+                    event.kind.as_str(),
+                    "retro_done" | "trial_done" | "proposal_status"
+                ) && let Some(settings) = &self.settings
                 {
                     // The Retro on show, and the proposals the Agents screen offers, have changed.
                     tasks.push(self.retros.reload(settings));

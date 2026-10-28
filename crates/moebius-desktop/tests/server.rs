@@ -766,3 +766,77 @@ async fn the_client_runs_the_retro_and_reads_its_report_and_proposals() {
         "{again:?}"
     );
 }
+
+/// A proposal without cards is tried (and so offered as it is) by the server; the client lists it with its trial and
+/// merges it, and the inbox item goes.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_client_lists_proposals_with_their_trials_and_merges_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let origin = harness_origin(dir.path());
+    let fake_pi = Path::new(env!("CARGO_MANIFEST_DIR")).join("../moebius-core/testdata/fake-pi");
+    let more = format!(
+        "[pi_bolt]\nprogram = {:?}\n[harness]\nurl = {:?}\n",
+        fake_pi.display().to_string(),
+        origin.display().to_string()
+    );
+    let (settings, server) = start_with(dir.path(), &more).await;
+    let store = &server.app.store;
+    let day = store.today().unwrap();
+    store
+        .add_retro(&day, &json!({ "date": day, "errors": [] }), "proposed")
+        .unwrap();
+    let clone = dir.path().join(".moebius/harness");
+    let branch = format!("proposal/{day}-plain");
+    git(&clone, &["checkout", "--quiet", "-b", &branch]).unwrap();
+    std::fs::write(
+        clone.join("agents/Coder.md"),
+        "Keep changes small.\nWrite plainly.\n",
+    )
+    .unwrap();
+    git(&clone, &["commit", "--quiet", "-am", "Write plainly"]).unwrap();
+    git(&clone, &["push", "--quiet", "origin", &branch]).unwrap();
+    git(&clone, &["checkout", "--quiet", "main"]).unwrap();
+    store
+        .add_proposal(
+            &day,
+            &branch,
+            "Write plainly",
+            "",
+            &["Coder".to_string()],
+            &[],
+        )
+        .unwrap();
+
+    let runs: Arc<dyn moebius_core::board::Runs> = server.harness.clone();
+    let repo = server.harness_repo.clone().unwrap();
+    let app = server.app.clone();
+    tokio::task::spawn_blocking(move || moebius_core::trial::start(&app, &runs, &repo, 1))
+        .await
+        .unwrap()
+        .unwrap();
+    let client = Client::new(settings.clone());
+    let proposal = loop {
+        let proposals = client.proposals().await.unwrap();
+        if proposals[0].status != "trying" {
+            break proposals.into_iter().next().unwrap();
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    assert_eq!(proposal.status, "untried");
+    assert_eq!(proposal.trials.len(), 1);
+    assert_eq!(proposal.trials[0].outcome, "skipped");
+    let snapshot = client.snapshot().await.unwrap();
+    assert_eq!(snapshot.inbox[0].proposal(), Some(1));
+
+    client.merge_proposal(1).await.unwrap();
+    assert_eq!(client.proposals().await.unwrap()[0].status, "merged");
+    assert!(client.snapshot().await.unwrap().inbox.is_empty());
+    let text = git(&origin, &["show", "main:agents/Coder.md"]).unwrap();
+    assert!(text.contains("Write plainly."), "{text}");
+    // Merged is final.
+    let again = client.merge_proposal(1).await.unwrap_err();
+    assert!(
+        matches!(again, ClientError::Server { status: 409, .. }),
+        "{again:?}"
+    );
+}

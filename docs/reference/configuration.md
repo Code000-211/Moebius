@@ -49,8 +49,11 @@ Without it, agents and rules are configured here.
 
 ## `[trial_window]`
 
-The daily stretch in which trials, replays and autoresearch may run without asking. Read and checked, but nothing uses it
-yet.
+The daily stretch in which trials, replays and autoresearch may run without asking. Only the trials of the Retro's
+proposals use it so far (see [the trials](harness-configuration.md#the-trials)): once a minute, inside the window, the
+oldest open proposal is tried, if no other is being tried and the board has a run to spare (`run_limit`). A trial that
+is going on when the window ends finishes. The window may cross midnight (`22:00` to `04:30`); a window whose end is its
+start is empty, so nothing starts.
 
 | Key | Type | Default | Meaning and validation |
 |---|---|---|---|

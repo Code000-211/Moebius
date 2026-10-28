@@ -2,7 +2,7 @@
 
 The desktop API is how the desktop app, or any client such as `curl`, reads the boards and acts on them. This page is for
 anyone who writes a client or a script against a running server. The code is in `crates/moebius-core/src/api.rs`; the
-events are published from `app.rs`, `pibolt.rs`, `check.rs`, `poll.rs`, `retro.rs` and `server.rs`.
+events are published from `app.rs`, `pibolt.rs`, `check.rs`, `poll.rs`, `retro.rs`, `trial.rs` and `server.rs`.
 
 The API is HTTP with JSON bodies plus one WebSocket, served on `listen` (default `127.0.0.1:7171`). Keep it on a private
 network.
@@ -43,7 +43,7 @@ These objects appear in the responses. All ids are numbers; times are Unix secon
 `Card`: `id`, `repository_id`, `number`, `title`, `body`, `author`, `column`, `created_at`, `note` (why the card was sent
 back to coding, or null) and `retried_after` (the id of the card's latest run when a person last retried it, or null).
 `Run`: `id`, `card_id` (null for a chat), `agent`, `harness`, `purpose` (`code`, `review`, other purposes of column scripts,
-`chat`, or `retro`, the Retro analyst's run), `status` (`starting`, `running`, `waiting`, `succeeded`, `failed` or `stopped`; `waiting` is a chat waiting for
+`chat`, `retro`, the Retro analyst's run, or `trial`, the trial of a proposal on a card), `status` (`starting`, `running`, `waiting`, `succeeded`, `failed` or `stopped`; `waiting` is a chat waiting for
 the person's next message), `worktree`, `started_at`, `ended_at`, `summary` and `repository_id` (the repository a chat
 works in, or null).
 
@@ -58,7 +58,9 @@ end of the output of the repository's own checks, or null). A change's `branch` 
 
 `InboxItem`: `id`, `kind`, `card_id` (or null), `title`, `data` (an object that depends on the kind), `resolved_at` (null
 in the snapshot, which holds only open items), `at`. Kinds the core adds: `approve_issue` (`data.reason`), `stuck`
-(`data.reason`), `ready_to_merge` (`data.change`, `data.branch`) and `change_closed` (`data.change`, `data.pull_request`).
+(`data.reason`), `ready_to_merge` (`data.change`, `data.branch`), `change_closed` (`data.change`, `data.pull_request`) and
+`proposal` (`data.proposal`, `data.branch`, `data.trials`: an array of `{"card", "outcome", "reason"}`; its `title` is the
+proposal's and it has no card).
 A column script can add other kinds with `moebius.ask`.
 
 ## Endpoints
@@ -456,8 +458,22 @@ Moebius refused), `tool_refused` (the tool and the rule's reason), `run_failed` 
 (a card sent back from In review to In progress, with its note). The runs of the Retro analyst itself are left out.
 
 `Proposal`: `id`, `retro_date`, `branch` (`proposal/<date>-<name>`, also on the harness repository's `origin`), `title` (the
-subject of its commit), `body` (the rest of the message), `agents` (the names of the agents whose files it changes), `status`
-(`open`) and `at`.
+subject of its commit), `body` (the rest of the message, without its `Cards:` line), `agents` (the names of the agents
+whose files it changes), `cards` (the ids of the cards whose errors it addresses, from the `Cards: 48, 50` line that ends
+its commit message; empty without one), `status`, `trials` (array of `Trial`, oldest first) and `at`.
+
+`status` of a proposal: `open` (not tried yet), `trying` (its trials are going on), `positive` (every trial was positive),
+`negative` (some trial was), `untried` (no trial was negative, but some was skipped or failed, or it names no cards, so
+nobody knows), `merged` or `dismissed`. A `positive` or `untried` proposal has an open inbox item of the kind `proposal`.
+
+`Trial`: `id`, `proposal_id`, `card_id` (the card it was tried on; null for the one trial of a proposal that names no
+cards), `run_id` (the trial's run, or null when none was started), `outcome` (`positive`, `negative`, `skipped`: there was
+nothing to try it on, or `failed`: it could not be tried), `reason` (text), `measurements` (an object, `{}` when
+nothing was run) and `at`. `measurements` is `{"trial": {...}, "original": {...}}`: for the trial run `succeeded`,
+`errors` (the kinds of the addressed errors that happened in the run), `checks` (true, false, or null when the repository
+has no checks or the run made nothing to check), `tokens` and `rounds` (always 1); for the card's first code run `errors`
+(the kinds of the card's errors in the report), `checks_failed` (the card was once sent back because the repository's
+checks failed), `rounds` (the card's code runs) and `tokens`. See [the trials](harness-configuration.md#the-trials).
 
 ### `GET /v1/retros`
 
@@ -470,7 +486,30 @@ One Retro as the `RetroView`. Errors: `404` the day has none.
 
 ### `GET /v1/proposals`
 
-All proposals, the newest first. Response: an array of `Proposal`.
+All proposals, the newest first. Response: an array of `Proposal`, each with its trials.
+
+### `POST /v1/proposals/{id}/trial`
+
+Tries a proposal now, at any hour, as the schedule does inside `[trial_window]`: its status becomes `trying`, the trials
+go on after the response, and each trial ends with the event `trial_done` and the proposal with `proposal_status`.
+Request: no body. Response: the `Proposal`, with the status `trying`. Errors: `404` no such
+proposal; `409` the proposal is not `open`, or another proposal is being tried (only one is at a time); `422` there is no
+harness configuration repository.
+
+### `POST /v1/proposals/{id}/merge`
+
+A person merges a `positive` or `untried` proposal: its branch is merged into the default branch of the harness
+configuration repository's clone with a merge commit, pushed to `origin`, and the agents are read again. Then the decision
+is recorded (kind `merge_proposal`, choice `merge_proposal`, decider `person`), the proposal's inbox item is resolved and
+its status becomes `merged`. A merge that conflicts, and a push that fails, change nothing. Request: `{"reason": string}`
+(optional). Response: the `Proposal`. Errors: `404` no such proposal; `409` the proposal is neither `positive` nor `untried`,
+or its branch does not merge cleanly; `422` there is no harness configuration repository.
+
+### `POST /v1/proposals/{id}/dismiss`
+
+A person dismisses a `positive` or `untried` proposal: the decision is recorded (kind `merge_proposal`, choice `dismiss`,
+decider `person`), the inbox item is resolved and the status becomes `dismissed`. The repository is not changed. Request
+and errors as for `merge`, without the conflict. Response: the `Proposal`.
 
 ## Events
 
@@ -494,7 +533,9 @@ All proposals, the newest first. Response: an array of `Proposal`.
 | `forge_error` | Polling a GitHub repository, or refreshing the clone of a repository without a forge, failed; it is tried again at the next poll or refresh (every 30 seconds without a forge). | `{"repository": "owner/repo" (GitHub) or the repository's name, "message": string}` |
 | `harness_error` | An agent's files in the harness configuration repository are broken (it is left out), or refreshing the repository failed (every 30 seconds). | `{"agent": name (left out when the refresh failed), "message": string}` |
 | `retro_done` | A Retro ended: it was `reported`, or the analyst's run ended and its proposals were stored (`proposed`), or it `failed`. | `{"date": "YYYY-MM-DD", "status": "reported" \| "proposed" \| "failed", "proposals": number}` |
-| `retro_error` | The schedule could not start the day's Retro; it is tried again a minute later. | `{"message": string}` |
+| `retro_error` | The schedule could not start the day's Retro or the trials of a proposal, or the trials of a proposal broke off; it is tried again a minute later. | `{"message": string}` |
+| `trial_done` | One trial of a proposal ended and was stored. | `{"proposal": id, "card": id or null, "outcome": "positive" \| "negative" \| "skipped" \| "failed"}` |
+| `proposal_status` | A proposal's status changed: it is being tried, was tried, was merged or dismissed. | `{"proposal": id, "status": string}` (the statuses above) |
 | `lagged` | This client fell too far behind (more than 1024 events) and lost the oldest. | `{"missed": number}` |
 
 A `run_event` has two sources, told apart by its inner `kind`:

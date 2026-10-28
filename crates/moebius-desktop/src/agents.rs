@@ -178,7 +178,7 @@ pub struct Agents {
     /// empty list means agents are kept in `moebius.toml` and cannot be edited.
     skills: Option<Vec<Skill>>,
     mcp: Vec<McpServer>,
-    /// The proposals of the Retros, newest first; the open ones are offered under the agent they change.
+    /// The proposals of the Retros, newest first; those still to be decided are offered under the agent they change.
     proposals: Vec<Proposal>,
     editor: Option<Editor>,
 }
@@ -450,20 +450,24 @@ impl Agents {
         .into()
     }
 
-    /// The Retro's open proposals whose branch changes the files of the agent in the editor.
+    /// The Retro's proposals still to be decided (open, trying, positive or untried) whose branch changes the files of
+    /// the agent in the editor.
     fn proposals_box(&self) -> Element<'_, AppMessage> {
         let name = self.editor.as_ref().map(|editor| editor.name.as_str());
         let open: Vec<&Proposal> = self
             .proposals
             .iter()
             .filter(|p| {
-                p.status == "open" && name.is_some_and(|name| p.agents.iter().any(|a| a == name))
+                matches!(
+                    p.status.as_str(),
+                    "open" | "trying" | "positive" | "untried"
+                ) && name.is_some_and(|name| p.agents.iter().any(|a| a == name))
             })
             .collect();
         if open.is_empty() {
             return page::boxed(
                 "From the Retro",
-                page::body("No open proposal changes this agent."),
+                page::body("No proposal waiting for a decision changes this agent."),
             );
         }
         page::boxed(

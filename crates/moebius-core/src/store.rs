@@ -166,6 +166,20 @@ CREATE TABLE proposals (
 );
 CREATE INDEX proposals_by_retro ON proposals (retro_date);
 "#,
+    r#"
+ALTER TABLE proposals ADD COLUMN cards TEXT NOT NULL DEFAULT '[]';
+CREATE TABLE trials (
+    id INTEGER PRIMARY KEY,
+    proposal_id INTEGER NOT NULL REFERENCES proposals(id),
+    card_id INTEGER,
+    run_id INTEGER REFERENCES runs(id),
+    outcome TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    measurements TEXT NOT NULL DEFAULT '{}',
+    at INTEGER NOT NULL
+);
+CREATE INDEX trials_by_proposal ON trials (proposal_id);
+"#,
 ];
 
 const CHANGE_COLUMNS: &str = "id, repository_id, card_id, branch, state, pull_request, checks, review, \
@@ -397,8 +411,28 @@ pub struct Proposal {
     pub body: String,
     /// The agents whose files the commit changes.
     pub agents: Vec<String>,
-    /// `open`.
+    /// The cards whose errors the proposal addresses, as the `Cards:` line ending its commit message names them.
+    pub cards: Vec<i64>,
+    /// `open`, `trying`, `positive`, `negative`, `untried`, `merged` or `dismissed`.
     pub status: String,
+    /// The trials made of it, oldest first.
+    pub trials: Vec<Trial>,
+    pub at: i64,
+}
+
+/// A proposal tried on one card (see `trial`): how it went and what was measured.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Trial {
+    pub id: i64,
+    pub proposal_id: i64,
+    /// The card it was tried on; none for the one trial of a proposal that names no cards.
+    pub card_id: Option<i64>,
+    /// The trial's run, if one was started.
+    pub run_id: Option<i64>,
+    /// `positive`, `negative`, `skipped` or `failed`.
+    pub outcome: String,
+    pub reason: String,
+    pub measurements: serde_json::Value,
     pub at: i64,
 }
 
@@ -965,9 +999,9 @@ impl Store {
         Ok(self.runs_where("id = ?1", id.into())?.pop())
     }
 
-    /// The runs of a card, oldest first.
+    /// The runs of a card, oldest first. Its trials are not among them: they are no part of the card's work.
     pub fn runs_for_card(&self, card_id: i64) -> Result<Vec<Run>> {
-        self.runs_where("card_id = ?1", card_id.into())
+        self.runs_where("card_id = ?1 AND purpose <> 'trial'", card_id.into())
     }
 
     /// The chats, newest first.
@@ -1340,6 +1374,16 @@ impl Store {
         Ok(())
     }
 
+    /// Resolves the open inbox item of a proposal, which has no card to resolve it through.
+    pub fn resolve_inbox_for_proposal(&self, proposal_id: i64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE inbox_items SET resolved_at = ?1 \
+             WHERE kind = 'proposal' AND json_extract(data, '$.proposal') = ?2 AND resolved_at IS NULL",
+            params![now(), proposal_id],
+        )?;
+        Ok(())
+    }
+
     // Usage
 
     pub fn add_usage(&self, u: &Usage) -> Result<()> {
@@ -1372,7 +1416,7 @@ impl Store {
     pub fn tokens_for_card(&self, card_id: i64) -> Result<i64> {
         Ok(self.conn().query_row(
             "SELECT COALESCE(SUM(u.input_tokens + u.output_tokens), 0) FROM usage u JOIN runs r ON r.id = u.run_id
-             WHERE r.card_id = ?1
+             WHERE r.card_id = ?1 AND r.purpose <> 'trial'
                AND r.id > COALESCE((SELECT retried_after FROM cards WHERE id = ?1), 0)",
             [card_id],
             |r| r.get(0),
@@ -1516,10 +1560,18 @@ impl Store {
         )?)
     }
 
-    fn found(&self, kind: &'static str, sql: &str, from: i64, to: i64) -> Result<Vec<Found>> {
+    /// The `Found` rows of `sql`, which takes the window as `?1` and `?2` and the run as `?3`.
+    fn found(
+        &self,
+        kind: &'static str,
+        sql: &str,
+        from: i64,
+        to: i64,
+        run: Option<i64>,
+    ) -> Result<Vec<Found>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(sql)?;
-        let rows = stmt.query_map(params![from, to], |r| {
+        let rows = stmt.query_map(params![from, to, run], |r| {
             Ok(Found {
                 kind: "",
                 run_id: r.get(0)?,
@@ -1533,8 +1585,9 @@ impl Store {
     }
 
     /// The tool calls that failed in `[from, to)`: the tool and the start of what it said. A call Moebius refused is
-    /// not among them; it is a refusal.
-    pub fn failed_tool_calls(&self, from: i64, to: i64) -> Result<Vec<Found>> {
+    /// not among them; it is a refusal. With `run`, those of that run only, whatever its purpose; without, those of
+    /// every run but the Retro's and the trials'. The same goes for the other sources below.
+    pub fn failed_tool_calls(&self, from: i64, to: i64, run: Option<i64>) -> Result<Vec<Found>> {
         self.found(
             "tool_failed",
             "SELECT e.run_id, r.card_id, r.agent,
@@ -1544,15 +1597,21 @@ impl Store {
              FROM events e JOIN runs r ON r.id = e.run_id
              WHERE e.kind = 'tool_execution_end' AND json_extract(e.data, '$.isError') = 1
                AND COALESCE(json_extract(e.data, '$.result.content[0].text'), '') NOT LIKE 'Moebius refused this call:%'
-               AND r.purpose <> 'retro' AND e.at >= ?1 AND e.at < ?2
+               AND (r.purpose NOT IN ('retro', 'trial') AND ?3 IS NULL OR r.id = ?3) AND e.at >= ?1 AND e.at < ?2
              ORDER BY e.at, e.id",
             from,
             to,
+            run,
         )
     }
 
     /// The tool calls the rules refused in `[from, to)`: the tool and the reason.
-    pub fn refused_tool_calls_between(&self, from: i64, to: i64) -> Result<Vec<Found>> {
+    pub fn refused_tool_calls_between(
+        &self,
+        from: i64,
+        to: i64,
+        run: Option<i64>,
+    ) -> Result<Vec<Found>> {
         self.found(
             "tool_refused",
             "SELECT e.run_id, r.card_id, r.agent,
@@ -1560,21 +1619,22 @@ impl Store {
                     e.at
              FROM events e JOIN runs r ON r.id = e.run_id
              WHERE e.kind = 'tool_check' AND json_extract(e.data, '$.decision') = 'refuse'
-               AND r.purpose <> 'retro' AND e.at >= ?1 AND e.at < ?2
+               AND (r.purpose NOT IN ('retro', 'trial') AND ?3 IS NULL OR r.id = ?3) AND e.at >= ?1 AND e.at < ?2
              ORDER BY e.at, e.id",
             from,
             to,
+            run,
         )
     }
 
     /// The runs that failed in `[from, to)`, with the latest `moebius_error` of each.
-    pub fn failed_runs(&self, from: i64, to: i64) -> Result<Vec<Found>> {
-        self.ended_runs("run_failed", "failed", from, to)
+    pub fn failed_runs(&self, from: i64, to: i64, run: Option<i64>) -> Result<Vec<Found>> {
+        self.ended_runs("run_failed", "failed", from, to, run)
     }
 
     /// The runs that were stopped in `[from, to)`.
-    pub fn stopped_runs(&self, from: i64, to: i64) -> Result<Vec<Found>> {
-        self.ended_runs("run_stopped", "stopped", from, to)
+    pub fn stopped_runs(&self, from: i64, to: i64, run: Option<i64>) -> Result<Vec<Found>> {
+        self.ended_runs("run_stopped", "stopped", from, to, run)
     }
 
     fn ended_runs(
@@ -1583,6 +1643,7 @@ impl Store {
         status: &str,
         from: i64,
         to: i64,
+        run: Option<i64>,
     ) -> Result<Vec<Found>> {
         self.found(
             kind,
@@ -1592,24 +1653,28 @@ impl Store {
                          WHERE e.run_id = r.id AND e.kind = 'moebius_error' ORDER BY e.seq DESC LIMIT 1),
                         r.ended_at
                  FROM runs r
-                 WHERE r.status = '{status}' AND r.purpose <> 'retro' AND r.ended_at >= ?1 AND r.ended_at < ?2
+                 WHERE r.status = '{status}' AND (r.purpose NOT IN ('retro', 'trial') AND ?3 IS NULL OR r.id = ?3)
+                   AND r.ended_at >= ?1 AND r.ended_at < ?2
                  ORDER BY r.ended_at, r.id"
             ),
             from,
             to,
+            run,
         )
     }
 
     /// The messages people sent to running runs in `[from, to)`.
-    pub fn steering(&self, from: i64, to: i64) -> Result<Vec<Found>> {
+    pub fn steering(&self, from: i64, to: i64, run: Option<i64>) -> Result<Vec<Found>> {
         self.found(
             "steered",
             "SELECT e.run_id, r.card_id, r.agent, json_extract(e.data, '$.message'), e.at
              FROM events e JOIN runs r ON r.id = e.run_id
-             WHERE e.kind = 'steered' AND e.at >= ?1 AND e.at < ?2
+             WHERE e.kind = 'steered' AND (r.purpose <> 'trial' AND ?3 IS NULL OR r.id = ?3)
+               AND e.at >= ?1 AND e.at < ?2
              ORDER BY e.at, e.id",
             from,
             to,
+            run,
         )
     }
 
@@ -1725,22 +1790,34 @@ impl Store {
         title: &str,
         body: &str,
         agents: &[String],
+        cards: &[i64],
     ) -> Result<()> {
         self.conn().execute(
-            "INSERT INTO proposals (retro_date, branch, title, body, agents, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![retro_date, branch, title, body, serde_json::to_string(agents)?, now()],
+            "INSERT INTO proposals (retro_date, branch, title, body, agents, cards, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                retro_date,
+                branch,
+                title,
+                body,
+                serde_json::to_string(agents)?,
+                serde_json::to_string(cards)?,
+                now()
+            ],
         )?;
         Ok(())
     }
 
-    /// The proposals of one Retro (`Some(date)`) or of all, the newest first.
-    pub fn proposals(&self, retro_date: Option<&str>) -> Result<Vec<Proposal>> {
+    fn proposals_where(
+        &self,
+        clause: &str,
+        param: rusqlite::types::Value,
+    ) -> Result<Vec<Proposal>> {
         let conn = self.conn();
-        let mut stmt = conn.prepare(
-            "SELECT id, retro_date, branch, title, body, agents, status, at FROM proposals
-             WHERE ?1 IS NULL OR retro_date = ?1 ORDER BY id DESC",
-        )?;
-        let rows = stmt.query_map([retro_date], |r| {
+        let mut stmt = conn.prepare(&format!(
+            "SELECT id, retro_date, branch, title, body, agents, cards, status, at FROM proposals
+             WHERE {clause} ORDER BY id DESC"
+        ))?;
+        let rows = stmt.query_map([param], |r| {
             Ok((
                 Proposal {
                     id: r.get(0)?,
@@ -1749,20 +1826,123 @@ impl Store {
                     title: r.get(3)?,
                     body: r.get(4)?,
                     agents: vec![],
-                    status: r.get(6)?,
-                    at: r.get(7)?,
+                    cards: vec![],
+                    status: r.get(7)?,
+                    trials: vec![],
+                    at: r.get(8)?,
                 },
                 r.get::<_, String>(5)?,
+                r.get::<_, String>(6)?,
             ))
         })?;
+        let mut stmt = conn.prepare(
+            "SELECT id, proposal_id, card_id, run_id, outcome, reason, measurements, at FROM trials
+             WHERE proposal_id = ?1 ORDER BY id",
+        )?;
         rows.map(|row| {
-            let (proposal, agents) = row?;
+            let (proposal, agents, cards) = row?;
+            let trials = stmt.query_map([proposal.id], |r| {
+                Ok((
+                    Trial {
+                        id: r.get(0)?,
+                        proposal_id: r.get(1)?,
+                        card_id: r.get(2)?,
+                        run_id: r.get(3)?,
+                        outcome: r.get(4)?,
+                        reason: r.get(5)?,
+                        measurements: serde_json::Value::Null,
+                        at: r.get(7)?,
+                    },
+                    r.get::<_, String>(6)?,
+                ))
+            })?;
+            let trials = trials
+                .map(|row| {
+                    let (trial, measurements) = row?;
+                    Ok(Trial {
+                        measurements: serde_json::from_str(&measurements)?,
+                        ..trial
+                    })
+                })
+                .collect::<Result<_>>()?;
             Ok(Proposal {
                 agents: serde_json::from_str(&agents)?,
+                cards: serde_json::from_str(&cards)?,
+                trials,
                 ..proposal
             })
         })
         .collect()
+    }
+
+    /// The proposals of one Retro (`Some(date)`) or of all, the newest first, with their trials.
+    pub fn proposals(&self, retro_date: Option<&str>) -> Result<Vec<Proposal>> {
+        match retro_date {
+            Some(date) => self.proposals_where("retro_date = ?1", date.to_string().into()),
+            None => self.proposals_where("?1", 1.into()),
+        }
+    }
+
+    pub fn proposal(&self, id: i64) -> Result<Option<Proposal>> {
+        Ok(self.proposals_where("id = ?1", id.into())?.pop())
+    }
+
+    /// Sets the status of a proposal.
+    pub fn set_proposal_status(&self, id: i64, status: &str) -> Result<()> {
+        self.conn().execute(
+            "UPDATE proposals SET status = ?1 WHERE id = ?2",
+            params![status, id],
+        )?;
+        Ok(())
+    }
+
+    /// Starts the trying of an open proposal; false, and nothing changed, when it is not open or another proposal is
+    /// being tried, since only one is at a time.
+    pub fn start_trying(&self, id: i64) -> Result<bool> {
+        Ok(self.conn().execute(
+            "UPDATE proposals SET status = 'trying'
+             WHERE id = ?1 AND status = 'open' AND NOT EXISTS (SELECT 1 FROM proposals WHERE status = 'trying')",
+            [id],
+        )? == 1)
+    }
+
+    /// Opens the proposals the last server was trying, without the trials it had made of them.
+    pub fn reopen_trying_proposals(&self) -> Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "DELETE FROM trials WHERE proposal_id IN (SELECT id FROM proposals WHERE status = 'trying')",
+            [],
+        )?;
+        conn.execute(
+            "UPDATE proposals SET status = 'open' WHERE status = 'trying'",
+            [],
+        )?;
+        Ok(())
+    }
+
+    pub fn add_trial(
+        &self,
+        proposal_id: i64,
+        card_id: Option<i64>,
+        run_id: Option<i64>,
+        outcome: &str,
+        reason: &str,
+        measurements: &serde_json::Value,
+    ) -> Result<()> {
+        self.conn().execute(
+            "INSERT INTO trials (proposal_id, card_id, run_id, outcome, reason, measurements, at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                proposal_id,
+                card_id,
+                run_id,
+                outcome,
+                reason,
+                serde_json::to_string(measurements)?,
+                now()
+            ],
+        )?;
+        Ok(())
     }
 }
 
@@ -2410,6 +2590,7 @@ mod tests {
             "Title",
             "Body",
             &["Coder".to_string()],
+            &[48, 50],
         )
         .unwrap();
         let retro = s.retro("2026-03-10").unwrap().unwrap();
@@ -2426,10 +2607,84 @@ mod tests {
             (proposals[0].status.as_str(), &proposals[0].agents[..]),
             ("open", &["Coder".to_string()][..])
         );
+        assert_eq!(proposals[0].cards, [48, 50]);
+        assert!(proposals[0].trials.is_empty());
         assert!(s.proposals(Some("2026-03-11")).unwrap().is_empty());
         s.add_retro("2026-03-12", &report, "analysing").unwrap();
         s.fail_analysing_retros("stopped").unwrap();
         assert_eq!(s.retro("2026-03-12").unwrap().unwrap().status, "failed");
         assert_eq!(s.retro("2026-03-11").unwrap().unwrap().status, "reported");
+    }
+
+    #[test]
+    fn one_proposal_is_tried_at_a_time_and_a_trial_that_was_not_seen_through_is_forgotten() {
+        let (_dir, s) = store();
+        s.add_retro("2026-03-10", &json!({}), "proposed").unwrap();
+        for branch in ["a", "b"] {
+            s.add_proposal("2026-03-10", branch, branch, "", &[], &[])
+                .unwrap();
+        }
+        assert!(s.start_trying(1).unwrap());
+        // Another one is being tried, and this one is not open any more.
+        assert!(!s.start_trying(2).unwrap());
+        assert!(!s.start_trying(1).unwrap());
+        s.add_trial(1, None, None, "skipped", "no cards", &json!({ "a": 1 }))
+            .unwrap();
+        let trials = s.proposal(1).unwrap().unwrap().trials;
+        assert_eq!(
+            (trials[0].outcome.as_str(), &trials[0].measurements),
+            ("skipped", &json!({ "a": 1 }))
+        );
+        s.reopen_trying_proposals().unwrap();
+        let proposal = s.proposal(1).unwrap().unwrap();
+        assert_eq!(proposal.status, "open");
+        assert!(proposal.trials.is_empty());
+        assert!(s.start_trying(2).unwrap());
+        assert!(s.proposal(3).unwrap().is_none());
+    }
+
+    #[test]
+    fn a_trial_run_is_no_part_of_its_cards_work_nor_of_the_days_report() {
+        let (_dir, s) = store();
+        let repository = s.add_repository("demo", "/demo", "none", "main").unwrap();
+        let card = s
+            .add_card(repository.id, "Task", "", "person", "Ready")
+            .unwrap();
+        let code = s.add_run(Some(card.id), "Coder", "pi", "code").unwrap();
+        let trial = s.add_run(Some(card.id), "Coder", "pi", "trial").unwrap();
+        for run in [code.id, trial.id] {
+            s.set_run_status(run, "failed").unwrap();
+            s.append_event(run, "moebius_error", &json!({ "message": "boom" }))
+                .unwrap();
+            s.add_usage(&Usage {
+                run_id: Some(run),
+                model: "m".into(),
+                input_tokens: 10,
+                output_tokens: 5,
+                cached_tokens: 0,
+                duration_ms: 1,
+            })
+            .unwrap();
+        }
+        let runs: Vec<i64> = s
+            .runs_for_card(card.id)
+            .unwrap()
+            .iter()
+            .map(|r| r.id)
+            .collect();
+        assert_eq!(runs, [code.id]);
+        assert_eq!(s.tokens_for_card(card.id).unwrap(), 15);
+        // The day's report leaves the trial out; asked for the run, the same sources find it.
+        let day = s.today().unwrap();
+        let (from, to) = s.day_window(&day).unwrap().unwrap();
+        let day_runs: Vec<_> = s.failed_runs(from, to + 86400, None).unwrap();
+        assert_eq!(
+            day_runs.iter().map(|f| f.run_id).collect::<Vec<_>>(),
+            [Some(code.id)]
+        );
+        let of_trial = s.failed_runs(0, i64::MAX, Some(trial.id)).unwrap();
+        assert_eq!(of_trial.len(), 1);
+        assert_eq!(of_trial[0].run_id, Some(trial.id));
+        assert_eq!(of_trial[0].text, "boom");
     }
 }

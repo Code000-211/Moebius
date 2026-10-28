@@ -31,7 +31,7 @@ use crate::board::{AgentInfo, Runs};
 use crate::bus::AppEvent;
 use crate::config::{AgentConfig, AgentSet};
 use crate::mcp;
-use crate::repos::git;
+use crate::repos::{Worktree, git};
 use crate::router::{Grant, Protocol, Router};
 use crate::skill;
 use crate::store::{Card, Repository, Run};
@@ -57,9 +57,10 @@ const RETRO_INSTRUCTIONS: &str = "You are the Retro analyst. Each day Moebius gi
      propose changes to the configuration that would avoid them, such as a clearer instruction, a rule or a skill. \
      Make each proposal its own branch named proposal/<date>-<short-name> from the current commit, with exactly one \
      commit whose message is the proposal: the subject is its title, the body says what changes and which errors it \
-     addresses. Change only harness configuration files, and leave the files as the format requires, since a \
-     proposal that does not parse is dropped. Do not edit the files on the branch you start on, do not push, and do \
-     not ask anyone anything: nobody answers. If no change is called for, make no branch.";
+     addresses, and the last line is `Cards: 48, 50`, the `card` of each error in the report that it addresses. Moebius \
+     tries a proposal by running those cards' tasks again with it, so a proposal without that line is never tried. \
+     Change only harness configuration files, and leave the files as the format requires, since a proposal that does not parse is dropped. Do not edit the files on the branch you start on, do not push, \
+     and do not ask anyone anything: nobody answers. If no change is called for, make no branch.";
 
 /// What the Moebius agent is told; the `instructions` of `[agents.Moebius]` come after it.
 const MOEBIUS_INSTRUCTIONS: &str = "You are the Moebius agent. You work for the person in this chat and build what they \
@@ -340,16 +341,18 @@ impl PiBolt {
     }
 }
 
-impl Runs for PiBolt {
-    fn start(
+impl PiBolt {
+    /// Starts a run of `card` by `agent`, as `config` has it, in a worktree `worktree` makes for the run, and returns
+    /// it. The agent leaves its work in the worktree, which is committed when the run ends.
+    fn start_card_run(
         &self,
         app: &Arc<App>,
         card: &Card,
         agent: &str,
-        purpose: &str,
-        note: Option<&str>,
+        config: &AgentConfig,
+        (purpose, prompt): (&str, &str),
+        worktree: impl FnOnce(&Repository, &Path, i64) -> crate::repos::Result<Worktree>,
     ) -> Result<Run, String> {
-        let config = self.agent(app, agent)?;
         let repository = app
             .store
             .repository(card.repository_id)
@@ -359,17 +362,9 @@ impl Runs for PiBolt {
             .store
             .add_run(Some(card.id), agent, "pi-bolt", purpose)
             .map_err(|e| e.to_string())?;
-
         let clone = PathBuf::from(&repository.path);
-        let base = match app.store.code_branch(card.id) {
-            Ok(Some(branch)) => branch,
-            Ok(None) => repository.base_ref(),
-            Err(e) => return Err(fail(app, run.id, e.to_string())),
-        };
-        let worktree = app
-            .repos
-            .add_worktree(&repository.name, &clone, run.id, &base)
-            .map_err(|e| fail(app, run.id, e.to_string()))?;
+        let worktree =
+            worktree(&repository, &clone, run.id).map_err(|e| fail(app, run.id, e.to_string()))?;
         let start = git(&worktree.path, &["rev-parse", "HEAD"])
             .map_err(|e| fail(app, run.id, e.to_string()))?;
         let running = RunningRun {
@@ -388,13 +383,46 @@ impl Runs for PiBolt {
                 card.number, card.title
             ),
         };
-        self.launch_or_undo(
-            app,
-            Some(card),
-            &config,
-            running,
-            &prompt_for(card, purpose, note),
-        )
+        self.launch_or_undo(app, Some(card), config, running, prompt)
+    }
+}
+
+impl Runs for PiBolt {
+    fn start(
+        &self,
+        app: &Arc<App>,
+        card: &Card,
+        agent: &str,
+        purpose: &str,
+        note: Option<&str>,
+    ) -> Result<Run, String> {
+        let config = self.agent(app, agent)?;
+        let prompt = prompt_for(card, purpose, note);
+        let code_branch = app.store.code_branch(card.id).map_err(|e| e.to_string())?;
+        let worktree = |repository: &Repository, clone: &Path, run_id: i64| {
+            let base = code_branch.unwrap_or_else(|| repository.base_ref());
+            app.repos
+                .add_worktree(&repository.name, clone, run_id, &base)
+        };
+        self.start_card_run(app, card, agent, &config, (purpose, &prompt), worktree)
+    }
+
+    fn start_trial(
+        &self,
+        app: &Arc<App>,
+        card: &Card,
+        agent: &str,
+        definition: AgentConfig,
+        proposal: i64,
+        base: &str,
+    ) -> Result<Run, String> {
+        let prompt = prompt_for(card, "code", None);
+        let worktree = |repository: &Repository, clone: &Path, _run_id: i64| {
+            let name = &repository.name;
+            app.repos
+                .add_trial_worktree(name, clone, proposal, card.id, base)
+        };
+        self.start_card_run(app, card, agent, &definition, ("trial", &prompt), worktree)
     }
 
     fn start_chat(
@@ -811,7 +839,7 @@ impl Reader {
                 Err(e) => self.failed(&e.to_string()),
             },
             Ok(true) => "stopped",
-            Ok(false) if self.run.purpose != "code" => "succeeded",
+            Ok(false) if !matches!(self.run.purpose.as_str(), "code" | "trial") => "succeeded",
             Ok(false) => match self.commit() {
                 Ok(true) => "succeeded",
                 Ok(false) => self.failed("the agent changed nothing"),

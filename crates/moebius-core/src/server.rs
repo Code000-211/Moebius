@@ -1,7 +1,7 @@
 //! The server put together (spec 2): the store and the core, the desktop API, the router, the Pi-Bolt harness, the
 //! board engine, which runs every card's column script on a fixed tick, the poll of GitHub and, every 30 seconds,
 //! the refresh of the clones of repositories without a forge and of the harness configuration repository, and, once
-//! a minute, the check whether the Retro is due. The
+//! a minute, the check whether the Retro is due or a proposal of the Retro is to be tried. The
 //! `moebius` skill is written to the data directory at start.
 
 use std::net::SocketAddr;
@@ -24,16 +24,18 @@ use crate::guard::{self, Guard, Teacher};
 use crate::harness_repo::HarnessRepo;
 use crate::pibolt::PiBolt;
 use crate::poll;
+use crate::repos::git;
 use crate::retro;
 use crate::router::{Router, Upstream};
 use crate::skill;
 use crate::store::Store;
+use crate::trial;
 
 /// How long a call into a plugin may take before it counts as refused.
 /// How often the clones of repositories without a forge are brought up to date with where they were cloned from.
 const PLAIN_REFRESH: std::time::Duration = std::time::Duration::from_secs(30);
 
-/// How often the schedule looks at the clock to see whether the Retro is due.
+/// How often the schedule looks at the clock to see whether the Retro is due or trials may start.
 const RETRO_CHECK: std::time::Duration = std::time::Duration::from_secs(60);
 
 const PLUGIN_TIME_LIMIT: std::time::Duration =
@@ -49,6 +51,9 @@ fn end_runs_of_a_previous_server(app: &App) -> Result<(), String> {
     app.store
         .fail_analysing_retros("the server stopped while the analyst was going")
         .map_err(|e| format!("cannot end the Retros of the last start: {e}"))?;
+    app.store
+        .reopen_trying_proposals()
+        .map_err(|e| format!("cannot reopen the proposals of the last start: {e}"))?;
     for run in runs {
         let Some(worktree) = run.worktree else {
             continue;
@@ -63,6 +68,23 @@ fn end_runs_of_a_previous_server(app: &App) -> Result<(), String> {
                 let _ = app
                     .repos
                     .remove_worktree(Path::new(&repository.path), Path::new(&worktree));
+                if run.purpose == "trial" {
+                    // The trial also had its branch, and a worktree of the proposal's branch in the harness clone.
+                    let name = Path::new(&worktree).file_name().unwrap_or_default();
+                    let _ = git(
+                        Path::new(&repository.path),
+                        &[
+                            "branch",
+                            "-D",
+                            "--quiet",
+                            &format!("moebius/{}", name.to_string_lossy()),
+                        ],
+                    );
+                    let proposal = app.data_dir.join("worktrees").join("harness").join(name);
+                    let _ = app
+                        .repos
+                        .remove_worktree(&app.data_dir.join("harness"), &proposal);
+                }
             }
             // The Retro analyst worked in a worktree of the harness configuration clone.
             None if run.purpose == "retro" => {
@@ -324,15 +346,18 @@ impl Server {
                     let s = server.clone();
                     let _ = tokio::task::spawn_blocking(move || {
                         let runs: Arc<dyn Runs> = s.harness.clone();
-                        let retro_at = s.config.retro_at;
-                        if let Err(e) =
-                            retro::on_schedule(&s.app, &runs, s.harness_repo.as_ref(), retro_at)
-                        {
-                            s.app.bus.publish(AppEvent::new(
-                                "retro_error",
-                                json!({ "message": e.to_string() }),
-                            ));
-                        }
+                        let repo = s.harness_repo.as_ref();
+                        let report = |result: crate::app::Result<()>| {
+                            if let Err(e) = result {
+                                s.app.bus.publish(AppEvent::new(
+                                    "retro_error",
+                                    json!({ "message": e.to_string() }),
+                                ));
+                            }
+                        };
+                        report(retro::on_schedule(&s.app, &runs, repo, s.config.retro_at));
+                        let (window, limit) = (s.config.trial_window, s.config.run_limit);
+                        report(trial::on_schedule(&s.app, &runs, repo, window, limit));
                     })
                     .await;
                 }
@@ -367,7 +392,6 @@ mod tests {
     use super::*;
     use crate::board::{Runs, Step};
     use crate::forge::Forge;
-    use crate::repos::git;
     use crate::store::{Card, Change, Repository, Run};
 
     #[test]

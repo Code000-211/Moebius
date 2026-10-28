@@ -67,6 +67,8 @@ pub enum AppError {
     Invalid(String),
     #[error("{0} exists already")]
     Exists(String),
+    #[error("{0}")]
+    Conflict(String),
 }
 
 /// The issue numbers an issue's body says it is blocked by: "blocked by #12", "Blocked by: #3, #4".
@@ -857,11 +859,8 @@ impl App {
             .open_change(card_id)?
             .ok_or_else(|| AppError::Invalid("the card has no change to check".into()))?;
         let repository = self.repository(change.repository_id)?;
-        let Some(head) = change.head.clone().filter(|_| repository.forge == "none") else {
-            return Ok(change);
-        };
-        let spec = format!("{}:.moebius/checks", repository.base_ref());
-        let Ok(script) = git(Path::new(&repository.path), &["show", &spec]) else {
+        let (Some(head), Some(script)) = (change.head.clone(), self.checks_script(&repository))
+        else {
             return Ok(change);
         };
         let key = (change.id, head.clone());
@@ -899,25 +898,53 @@ impl App {
         Ok(change)
     }
 
+    /// The repository's own checks: the command in `.moebius/checks` on its default branch. None for a repository on a
+    /// forge, which has its own checks, and for one without that file.
+    fn checks_script(&self, repository: &Repository) -> Option<String> {
+        if repository.forge != "none" {
+            return None;
+        }
+        let spec = format!("{}:.moebius/checks", repository.base_ref());
+        git(Path::new(&repository.path), &["show", &spec]).ok()
+    }
+
+    /// Runs `script` on the commit `rev` in a throwaway worktree named `name` and returns whether it succeeded and the
+    /// end of its output.
+    fn run_script_on(
+        &self,
+        repository: &Repository,
+        name: &str,
+        rev: &str,
+        script: &str,
+    ) -> (bool, String) {
+        let clone = Path::new(&repository.path);
+        match self
+            .repos
+            .add_detached_worktree(&repository.name, clone, name, rev)
+        {
+            Ok(worktree) => {
+                let log = self.data_dir.join(format!("{name}.log"));
+                let result = execute(script, &worktree, &log, self.checks_timeout);
+                let _ = std::fs::remove_file(&log);
+                let _ = self.repos.remove_worktree(clone, &worktree);
+                result
+            }
+            Err(e) => (false, format!("cannot make a worktree for the checks: {e}")),
+        }
+    }
+
+    /// Runs the repository's own checks on the commit `rev` and waits for them: whether they succeeded, or none when the
+    /// repository has none (see `run_checks`). For a trial (see `trial`), which has no change to record them on.
+    pub fn local_checks(&self, repository: &Repository, name: &str, rev: &str) -> Option<bool> {
+        let script = self.checks_script(repository)?;
+        Some(self.run_script_on(repository, name, rev, &script).0)
+    }
+
     /// Runs `script` on `head` in a worktree of its own and records how it ended, unless the change has moved on.
     fn check_change(&self, repository: &Repository, change: &Change, head: &str, script: &str) {
-        let clone = Path::new(&repository.path);
         // Named by commit too, as checks of an older commit may still be going when a newer one is published.
         let name = format!("checks-{}-{}", change.id, &head[..12.min(head.len())]);
-        let (succeeded, output) =
-            match self
-                .repos
-                .add_detached_worktree(&repository.name, clone, &name, head)
-            {
-                Ok(worktree) => {
-                    let log = self.data_dir.join(format!("{name}.log"));
-                    let result = execute(script, &worktree, &log, self.checks_timeout);
-                    let _ = std::fs::remove_file(&log);
-                    let _ = self.repos.remove_worktree(clone, &worktree);
-                    result
-                }
-                Err(e) => (false, format!("cannot make a worktree for the checks: {e}")),
-            };
+        let (succeeded, output) = self.run_script_on(repository, &name, head, script);
         let current = self.change(change.id);
         if current.is_ok_and(|c| c.head.as_deref() == Some(head)) {
             let checks = if succeeded { "success" } else { "failure" };

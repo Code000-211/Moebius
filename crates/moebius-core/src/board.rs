@@ -39,6 +39,7 @@ use std::time::{Duration, Instant};
 use mlua::{Lua, Table, Value, VmState};
 
 use crate::app::{App, AppError, PERSON, columns, runs_since_retry};
+use crate::config::AgentConfig;
 use crate::decide::Question;
 use crate::repos::git;
 use crate::router::Protocol;
@@ -112,6 +113,22 @@ pub trait Runs: Send + Sync {
         _prompt: &str,
     ) -> Result<Run, String> {
         Err("this harness has no retros".into())
+    }
+
+    /// Starts a trial run (see `trial`) for `card`: the agent `agent`, as `definition` has it, is given the card's prompt
+    /// in a fresh worktree of the card's repository on a branch of its own, checked out at `base`. The branch is named
+    /// after `proposal` and the card. It returns the run without waiting for it to end. A harness without trials
+    /// refuses.
+    fn start_trial(
+        &self,
+        _app: &Arc<App>,
+        _card: &Card,
+        _agent: &str,
+        _definition: AgentConfig,
+        _proposal: i64,
+        _base: &str,
+    ) -> Result<Run, String> {
+        Err("this harness has no trials".into())
     }
 
     /// Sends a person's message to a chat's agent; it answers when it is done with what it is doing. False when the

@@ -251,6 +251,7 @@ pub struct Report {
 /// A change to the harness configuration that a Retro proposes, on a branch.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Proposal {
+    pub id: i64,
     pub branch: String,
     pub title: String,
     #[serde(default)]
@@ -258,8 +259,24 @@ pub struct Proposal {
     /// The agents whose files the branch changes.
     #[serde(default)]
     pub agents: Vec<String>,
-    /// `open`.
+    /// The cards whose errors the proposal addresses.
+    #[serde(default)]
+    pub cards: Vec<i64>,
+    /// `open`, `trying`, `positive`, `negative`, `untried`, `merged` or `dismissed`.
     pub status: String,
+    #[serde(default)]
+    pub trials: Vec<Trial>,
+}
+
+/// A proposal tried on one card.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Trial {
+    /// The card it was tried on; none when the proposal names no cards.
+    #[serde(default)]
+    pub card_id: Option<i64>,
+    /// `positive`, `negative`, `skipped` or `failed`.
+    pub outcome: String,
+    pub reason: String,
 }
 
 /// A Retro with its report and proposals, as `GET /v1/retros/{date}` answers.
@@ -412,6 +429,11 @@ impl InboxItem {
     /// The id of the change a `ready_to_merge` or `change_closed` item is about.
     pub fn change(&self) -> Option<i64> {
         self.data["change"].as_i64()
+    }
+
+    /// The id of the proposal a `proposal` item is about.
+    pub fn proposal(&self) -> Option<i64> {
+        self.data["proposal"].as_i64()
     }
 
     /// The id of the chat whose work a `ready_to_merge` item offers: the number in its branch `moebius/chat-<id>`.
@@ -682,6 +704,18 @@ impl Client {
     pub async fn retry(&self, card: i64) -> Result<(), ClientError> {
         self.decide(format!("/v1/cards/{card}/retry"), serde_json::json!({}))
             .await
+    }
+
+    /// Merges a proposal of the Retro into the harness configuration.
+    pub async fn merge_proposal(&self, proposal: i64) -> Result<(), ClientError> {
+        let path = format!("/v1/proposals/{proposal}/merge");
+        self.decide(path, serde_json::json!({})).await
+    }
+
+    /// Dismisses a proposal of the Retro.
+    pub async fn dismiss_proposal(&self, proposal: i64) -> Result<(), ClientError> {
+        let path = format!("/v1/proposals/{proposal}/dismiss");
+        self.decide(path, serde_json::json!({})).await
     }
 
     /// The chats, newest first.

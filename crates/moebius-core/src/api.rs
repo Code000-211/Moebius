@@ -51,6 +51,7 @@ use crate::retro::{self, RetroSummary, RetroView};
 use crate::store::{
     AgentUsage, Card, Change, Event, InboxItem, ModelUsage, Proposal, Repository, Run, ToolWait,
 };
+use crate::trial;
 
 /// What the API needs from the core.
 #[derive(Clone)]
@@ -275,7 +276,8 @@ impl From<AppError> for ApiError {
         let status = match e {
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::Invalid(_) => StatusCode::UNPROCESSABLE_ENTITY,
-            AppError::Exists(_) => StatusCode::CONFLICT,
+            AppError::Exists(_) | AppError::Conflict(_) => StatusCode::CONFLICT,
+            AppError::Git(GitError::Conflict { .. }) => StatusCode::CONFLICT,
             AppError::Forge(ForgeError::Git(GitError::Conflict { .. })) => StatusCode::CONFLICT,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
@@ -353,6 +355,9 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/retros", get(retros).post(start_retro))
         .route("/v1/retros/{date}", get(get_retro))
         .route("/v1/proposals", get(proposals))
+        .route("/v1/proposals/{id}/trial", post(try_proposal))
+        .route("/v1/proposals/{id}/merge", post(merge_proposal))
+        .route("/v1/proposals/{id}/dismiss", post(dismiss_proposal))
         .route("/v1/chats", get(chats).post(start_chat))
         .route("/v1/chats/{id}/messages", post(say_in_chat))
         .route("/v1/chats/{id}/end", post(end_chat))
@@ -656,6 +661,35 @@ async fn get_retro(
 
 async fn proposals(State(state): State<ApiState>) -> Result<axum::Json<Vec<Proposal>>, ApiError> {
     blocking(&state.app, |app| Ok(app.store.proposals(None)?)).await
+}
+
+async fn try_proposal(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+) -> Result<axum::Json<Proposal>, ApiError> {
+    let (runs, repo) = (state.runs.clone(), harness_repo(&state)?);
+    blocking(&state.app, move |app| trial::start(app, &runs, &repo, id)).await
+}
+
+async fn merge_proposal(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+    axum::Json(decision): axum::Json<Reason>,
+) -> Result<axum::Json<Proposal>, ApiError> {
+    let (repo, reason) = (harness_repo(&state)?, decision.reason);
+    blocking(&state.app, move |app| trial::merge(app, &repo, id, &reason)).await
+}
+
+async fn dismiss_proposal(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+    axum::Json(decision): axum::Json<Reason>,
+) -> Result<axum::Json<Proposal>, ApiError> {
+    let (repo, reason) = (harness_repo(&state)?, decision.reason);
+    blocking(&state.app, move |app| {
+        trial::dismiss(app, &repo, id, &reason)
+    })
+    .await
 }
 
 async fn start_chat(

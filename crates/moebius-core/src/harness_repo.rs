@@ -308,6 +308,7 @@ impl HarnessRepo {
             return Err(format!("the agent {name} cannot be used with it: {error}"));
         }
         let message = git(&["log", "-1", "--format=%B", branch])?;
+        let (message, cards) = split_cards(&message);
         let (title, body) = message.split_once('\n').unwrap_or((&message, ""));
         let mut agents: Vec<String> = files
             .iter()
@@ -324,7 +325,103 @@ impl HarnessRepo {
             title: title.trim().into(),
             body: body.trim().into(),
             agents,
+            cards,
         })
+    }
+
+    /// A throwaway worktree of the harness configuration clone with `branch` checked out, named `name`, and the agent
+    /// `agent` as the branch defines it, which is what a trial of the branch (see `trial`) runs. The agent's skills and
+    /// extensions are files of the worktree, so the caller removes it (`remove_worktree`) once the run has ended.
+    pub fn agent_on_branch(
+        &self,
+        app: &App,
+        branch: &str,
+        name: &str,
+        agent: &str,
+    ) -> Result<(AgentConfig, PathBuf)> {
+        let _read_at = self.lock();
+        let root = app
+            .repos
+            .add_detached_worktree("harness", &self.path, name, branch)?;
+        let layout = Layout::read(&root, &self.mcp_env);
+        match read_agent_at(&root, &layout, agent) {
+            Ok((definition, mcp)) => Ok((agent_config(&root, &definition, mcp), root)),
+            Err(why) => {
+                let _ = app.repos.remove_worktree(&self.path, &root);
+                Err(AppError::Invalid(why))
+            }
+        }
+    }
+
+    /// Removes a worktree made by `agent_on_branch`.
+    pub fn remove_worktree(&self, app: &App, root: &Path) {
+        let _ = app.repos.remove_worktree(&self.path, root);
+    }
+
+    /// A person merges the proposal `branch`: a merge commit on the default branch, pushed to `origin`. A merge that
+    /// conflicts, and a push that fails, leave the clone as it was. On success the agents are read again and the
+    /// person's decision is recorded; the merge commit's short id is given.
+    pub fn merge_proposal(
+        &self,
+        app: &App,
+        branch: &str,
+        title: &str,
+        reason: &str,
+    ) -> Result<String> {
+        let mut read_at = self.lock();
+        let before = git(&self.path, &["rev-parse", "HEAD"])?;
+        let default = self.repos.default_branch(&self.path)?;
+        let message = format!("Merge the proposal: {title}");
+        self.repos.merge(&self.path, branch, &message)?;
+        let pushed = app
+            .git_auth(&self.url)
+            .and_then(|header| Ok(self.repos.push(&self.path, &default, header.as_deref())?));
+        if let Err(e) = pushed {
+            let _ = git(&self.path, &["reset", "--hard", "--quiet", &before]);
+            return Err(e);
+        }
+        let head = git(&self.path, &["rev-parse", "HEAD"])?;
+        let short = git(&self.path, &["rev-parse", "--short", "HEAD"])?;
+        self.read(app, &mut read_at, head);
+        self.record_proposal(app, branch, title, "merge_proposal", reason)?;
+        Ok(short)
+    }
+
+    /// A person dismisses the proposal `branch`; nothing changes in the repository.
+    pub fn dismiss_proposal(
+        &self,
+        app: &App,
+        branch: &str,
+        title: &str,
+        reason: &str,
+    ) -> Result<()> {
+        self.record_proposal(app, branch, title, "dismiss", reason)
+    }
+
+    fn record_proposal(
+        &self,
+        app: &App,
+        branch: &str,
+        title: &str,
+        choice: &str,
+        reason: &str,
+    ) -> Result<()> {
+        app.decisions.record_person(
+            &Question {
+                kind: "merge_proposal".into(),
+                context: BTreeMap::from([
+                    ("branch".to_string(), branch.to_string()),
+                    ("proposal".to_string(), title.to_string()),
+                ]),
+                options: vec!["merge_proposal".into(), "dismiss".into()],
+                fail_closed: "dismiss".into(),
+                run_id: None,
+                card_id: None,
+            },
+            choice,
+            reason,
+        )?;
+        Ok(())
     }
 
     fn layout(&self) -> Layout {
@@ -628,6 +725,24 @@ pub struct Proposed {
     pub title: String,
     pub body: String,
     pub agents: Vec<String>,
+    /// The cards named by the `Cards:` line that ends the commit message.
+    pub cards: Vec<i64>,
+}
+
+/// The commit message without its last line when that is `Cards: 48, 50`, and the numbers it names. Anything in the
+/// list that is not a number is left out.
+fn split_cards(message: &str) -> (String, Vec<i64>) {
+    let message = message.trim_end();
+    match message.rsplit_once('\n') {
+        Some((rest, last)) if last.starts_with("Cards:") => {
+            let cards = last["Cards:".len()..]
+                .split([',', ' '])
+                .filter_map(|n| n.parse().ok())
+                .collect();
+            (rest.trim_end().to_string(), cards)
+        }
+        _ => (message.to_string(), vec![]),
+    }
 }
 
 /// Whether `file` is one of the files the harness configuration consists of.
@@ -642,5 +757,26 @@ fn remove_if_there(file: &Path) -> Result<()> {
     match std::fs::remove_file(file) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
         _ => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_cards_are_the_last_line_of_a_commit_message() {
+        let (message, cards) = split_cards("Title\n\nBody.\n\nCards: 48, 50\n");
+        assert_eq!((message.as_str(), cards), ("Title\n\nBody.", vec![48, 50]));
+        let (message, cards) = split_cards("Title\n\nCards: 7,x, 9 ,");
+        assert_eq!((message.as_str(), cards), ("Title", vec![7, 9]));
+        // Only the last line counts, and a message without the line has no cards.
+        let (message, cards) = split_cards("Title\n\nCards: 1\n\nMore.");
+        assert_eq!(
+            (message.as_str(), cards),
+            ("Title\n\nCards: 1\n\nMore.", vec![])
+        );
+        let (message, cards) = split_cards("Title");
+        assert_eq!((message.as_str(), cards), ("Title", vec![]));
     }
 }

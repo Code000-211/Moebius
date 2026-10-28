@@ -1,6 +1,7 @@
 //! The Retro screen: the Retros of the days, the errors of the one chosen grouped by kind, and the proposals the Retro
-//! analyst made. "Run the Retro now" is `POST /v1/retros`; the server says when a Retro ends with the event
-//! `retro_done`, which the app answers by reading the screen again.
+//! analyst made, each with its status and what its trials found. "Run the Retro now" is `POST /v1/retros`; the
+//! server says when a Retro ends with the event `retro_done`, and when a trial or a proposal's status changes with
+//! `trial_done` and `proposal_status`, which the app answers by reading the screen again.
 
 use iced::font::Weight;
 use iced::widget::text::Wrapping;
@@ -8,7 +9,7 @@ use iced::widget::{button, column, container, row, scrollable, space, text};
 use iced::{Alignment, Border, Element, Length, Task};
 
 use crate::app::Message as AppMessage;
-use crate::client::{Client, ClientError, Proposal, ReportError, RetroSummary, RetroView};
+use crate::client::{Client, ClientError, Proposal, ReportError, RetroSummary, RetroView, Trial};
 use crate::page::{self, Tone};
 use crate::settings::Settings;
 use crate::theme;
@@ -343,7 +344,54 @@ fn proposals_box(proposals: &[Proposal]) -> Element<'_, AppMessage> {
     )
 }
 
-/// A proposal: its title, the agents it changes, its branch and what it says it does.
+/// A proposal's status as a tag: how far its trials got, and what a person did with it.
+fn proposal_status<'a>(status: &str) -> Element<'a, AppMessage> {
+    let (label, tone) = match status {
+        "trying" => ("Trying", Tone::Amber),
+        "positive" => ("Positive", Tone::Teal),
+        "negative" => ("Negative", Tone::Red),
+        "untried" => ("Untried", Tone::Amber),
+        "merged" => ("Merged", Tone::Teal),
+        "dismissed" => ("Dismissed", Tone::Plain),
+        _ => ("Open", Tone::Plain),
+    };
+    page::tag(label.to_string(), tone)
+}
+
+/// The cards of a proposal as the page says them: `Cards 48, 50`.
+fn cards(cards: &[i64]) -> String {
+    let numbers: Vec<String> = cards.iter().map(i64::to_string).collect();
+    format!("Cards {}", numbers.join(", "))
+}
+
+/// One trial: its outcome, the card it was tried on and why it ended so.
+fn trial(trial: &Trial) -> Element<'_, AppMessage> {
+    let tone = match trial.outcome.as_str() {
+        "positive" => Tone::Teal,
+        "negative" => Tone::Red,
+        _ => Tone::Plain,
+    };
+    let outcome = trial.outcome[..1].to_uppercase() + &trial.outcome[1..];
+    let card = match trial.card_id {
+        Some(card) => format!("Card {card}"),
+        None => "No card".to_string(),
+    };
+    row![
+        page::tag(outcome, tone),
+        text(card).size(theme::LABEL).color(theme::TEXT_MUTED),
+        text(trial.reason.as_str())
+            .size(theme::BODY)
+            .color(theme::TEXT_SECONDARY)
+            .width(Length::Fill)
+            .wrapping(Wrapping::WordOrGlyph),
+    ]
+    .spacing(8)
+    .align_y(Alignment::Center)
+    .into()
+}
+
+/// A proposal: its title and status, the agents it changes, its branch, what it says it does, the cards it addresses
+/// and what the trials found.
 pub fn proposal(proposal: &Proposal) -> Element<'_, AppMessage> {
     let mut head = row![
         text(proposal.title.as_str())
@@ -357,6 +405,7 @@ pub fn proposal(proposal: &Proposal) -> Element<'_, AppMessage> {
     for agent in &proposal.agents {
         head = head.push(page::tag(agent.clone(), Tone::Plain));
     }
+    head = head.push(proposal_status(&proposal.status));
     let mut content = column![
         head,
         text(proposal.branch.as_str())
@@ -373,6 +422,16 @@ pub fn proposal(proposal: &Proposal) -> Element<'_, AppMessage> {
                 .color(theme::TEXT_SECONDARY)
                 .wrapping(Wrapping::WordOrGlyph),
         );
+    }
+    if !proposal.cards.is_empty() {
+        content = content.push(
+            text(cards(&proposal.cards))
+                .size(theme::LABEL)
+                .color(theme::TEXT_MUTED),
+        );
+    }
+    if !proposal.trials.is_empty() {
+        content = content.push(column(proposal.trials.iter().map(trial)).spacing(6));
     }
     container(content)
         .padding([12, 14])

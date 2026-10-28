@@ -139,7 +139,18 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
     runs, steering, cards sent back from review), into the stored report. With errors and a harness repository,
     `Runs::start_retro` (`PiBolt::start_retro`) starts a `retro` run of the built-in `Retro-analyst` in a detached worktree of
     the harness clone; a thread waits for the run, then `HarnessRepo::proposed` checks, pushes and returns the
-    `proposal/<date>-*` branches, which are stored in `proposals`, and `retro_done` is published.
+    `proposal/<date>-*` branches, which are stored in `proposals` with the cards of their `Cards:` line, and `retro_done`
+    is published.
+12d. **The trials.** The same minute, `server.rs` asks `trial::on_schedule`, which inside `[trial_window]` (`trial::in_window`)
+    starts the oldest `open` proposal when no other is `trying` and the board has a run to spare; `POST
+    /v1/proposals/{id}/trial` calls `trial::start` at any hour. A thread tries the proposal on each card: the agent is read
+    from the proposal's branch in a throwaway worktree (`HarnessRepo::agent_on_branch`), `Runs::start_trial`
+    (`PiBolt::start_trial`) starts a `trial` run of it on the card's task on a branch of its own, `App::local_checks` runs the
+    repository's checks on the result, and `trial::compare` sets the measurements against the card's first code run. The
+    trial is stored in `trials`, its branch and worktrees are removed (`trial_done`), and the proposal becomes `positive`,
+    `negative` or `untried` (`proposal_status`). A positive or untried one gets a `proposal` inbox item; `trial::merge`
+    (`HarnessRepo::merge_proposal`) or `trial::dismiss` ends it. `Store::runs_for_card` and the Retro's sources leave trial
+    runs out. A server start opens the `trying` proposals again.
 13. **GitHub reports.** `poll::poll_pull_requests` reads each open change's pull request: checks and review are recorded
     (`change_updated`), a merged pull request calls `App::change_merged`, a closed one calls `App::change_closed`.
 14. **A person merges.** `POST /v1/changes/{id}/merge` calls `App::merge_change`: it records a judgement by `person`,

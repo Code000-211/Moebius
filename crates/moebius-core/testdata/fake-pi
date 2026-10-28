@@ -2,9 +2,11 @@
 # A stand-in for `pi-bolt --mode rpc` in tests: it speaks Pi's RPC protocol (JSON Lines, split on LF only).
 # A prompt containing "[commit]" commits own.txt itself and leaves the worktree clean. A prompt containing "[hang]" waits for `abort`, one containing "[nothing]" settles without changing anything, and
 # a prompt for the reviewer changes nothing and answers with a verdict; any other prompt writes a file and settles.
+# The text of `--append-system-prompt` containing "[write anyway]" makes the run write a file whatever the prompt says.
 # A prompt that does not start with "Work on issue" is a chat message: it is answered with "You said: <message>" (and
-# writes the file NAME, with its directories, first if it contains "[write NAME]", and makes the branch BRANCH with a
-# commit that appends to the file FILE if it contains "[propose BRANCH FILE]"), and Pi stays up for the next one.
+# writes the file NAME, with its directories, first if it contains "[write NAME]", and makes the branch BRANCH from the
+# commit it starts at, with a commit that appends to the file FILE, for each "[propose BRANCH FILE]" in it; a
+# "[propose BRANCH FILE cards=1,2]" ends the commit message with the line "Cards: 1, 2"), and Pi stays up for the next one.
 # While a "[hang]" prompt waits, a prompt with streamingBehavior is queued (kept in queued.txt). Its pid is kept in pid.txt.
 # A `steer` is answered with a response that echoes the message. The prompt is kept in prompt.txt next to argv.json. The final answer is reported in agent_end, as Pi does.
 import json
@@ -29,6 +31,10 @@ with open(os.path.join(os.environ["PI_CODING_AGENT_DIR"], "env.json"), "w") as f
 
 with open(os.path.join(os.environ["PI_CODING_AGENT_DIR"], "pid.txt"), "w") as f:
     f.write(str(os.getpid()))
+
+instructions = ""
+if "--append-system-prompt" in sys.argv:
+    instructions = sys.argv[sys.argv.index("--append-system-prompt") + 1]
 
 hanging = False
 for line in sys.stdin.buffer:
@@ -55,16 +61,19 @@ for line in sys.stdin.buffer:
                 os.makedirs(os.path.dirname(written.group(1)) or ".", exist_ok=True)
                 with open(written.group(1), "w") as f:
                     f.write("written\n")
-            proposed = re.search(r"\[propose ([^\]\s]+) ([^\]\s]+)\]", command["message"])
-            if proposed:
-                branch, name = proposed.groups()
+            git = ["git", "-c", "user.name=pi", "-c", "user.email=pi@example.com"]
+            proposals = re.findall(r"\[propose ([^\]\s]+) ([^\]\s]+)(?: cards=([0-9,]+))?\]", command["message"])
+            start = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip() if proposals else ""
+            for branch, name, cards in proposals:
+                subprocess.run(git + ["checkout", "-q", "-b", branch, start], check=True)
                 os.makedirs(os.path.dirname(name) or ".", exist_ok=True)
                 with open(name, "a") as f:
                     f.write("Proposed.\n")
-                git = ["git", "-c", "user.name=pi", "-c", "user.email=pi@example.com"]
-                subprocess.run(git + ["checkout", "-q", "-b", branch], check=True)
                 subprocess.run(git + ["add", name], check=True)
-                subprocess.run(git + ["commit", "-q", "-m", "Change " + name, "-m", "It addresses the errors."], check=True)
+                message = ["-m", "Change " + name, "-m", "It addresses the errors."]
+                if cards:
+                    message += ["-m", "Cards: " + ", ".join(cards.split(","))]
+                subprocess.run(git + ["commit", "-q"] + message, check=True)
             emit({"type": "message_update",
                   "assistantMessageEvent": {"type": "text_delta", "contentIndex": 0, "delta": answer}})
             emit({"type": "agent_end", "willRetry": False, "messages": [
@@ -75,7 +84,8 @@ for line in sys.stdin.buffer:
         reviewing = "You are the reviewer" in command["message"]
         emit({"type": "message_update",
               "assistantMessageEvent": {"type": "text_delta", "contentIndex": 0, "delta": "line one line two"}})
-        if "[nothing]" not in command["message"] and "[commit]" not in command["message"] and not reviewing:
+        nothing = "[nothing]" in command["message"] and "[write anyway]" not in instructions
+        if not nothing and "[commit]" not in command["message"] and not reviewing:
             emit({"type": "tool_execution_start", "toolCallId": "t1", "toolName": "write",
                   "args": {"path": "done.txt"}})
             with open("done.txt", "w") as f:

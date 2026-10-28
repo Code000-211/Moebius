@@ -134,7 +134,7 @@ async fn a_day_with_errors_gets_a_report_and_the_analyst_proposes_a_branch_that_
     let branch = format!("proposal/{day}-kinder");
     a_bad_day(
         &server,
-        &format!("stalled [propose {branch} agents/Coder.md]"),
+        &format!("stalled [propose {branch} agents/Coder.md cards=7,9]"),
     );
     let api = Api::start(&server).await;
     let mut events = server.app.bus.subscribe();
@@ -178,6 +178,9 @@ async fn a_day_with_errors_gets_a_report_and_the_analyst_proposes_a_branch_that_
     assert_eq!(proposal["title"], "Change agents/Coder.md");
     assert_eq!(proposal["body"], "It addresses the errors.");
     assert_eq!(proposal["agents"], json!(["Coder"]));
+    // The `Cards:` line that ends the commit message is the cards, not part of the body.
+    assert_eq!(proposal["cards"], json!([7, 9]));
+    assert_eq!(proposal["trials"], json!([]));
     assert_eq!(proposal["status"], "open");
     assert_eq!(retro["proposals"], json!([proposal]));
 

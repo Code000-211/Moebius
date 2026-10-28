@@ -183,9 +183,47 @@ configured, the built-in agent `Retro-analyst` turns the report into proposals. 
   (`<data_dir>/worktrees/harness/retro-<run id>`), which is removed when the run ends. It is told the report as JSON. It
   never waits for a person.
 - Each proposal is a branch `proposal/<date>-<short-name>` made from the default branch, with one commit whose message is
-  the proposal: the subject is its title, the body says what changes and which errors it addresses. It changes only
-  harness configuration files (`agents/`, `skills/`, `extensions/`, `rules.md`, `mcp.toml`).
+  the proposal: the subject is its title, the body says what changes and which errors it addresses, and the last line is
+  `Cards: 48, 50`, the `card` of each error of the report that it addresses (numbers that are not ids are ignored). It
+  changes only harness configuration files (`agents/`, `skills/`, `extensions/`, `rules.md`, `mcp.toml`).
 - When the run has succeeded, Moebius lists the `proposal/<date>-*` branches of the clone. A branch that changes
   nothing, changes another file, or breaks an agent that could be used on the default branch is left out, with a warning
   in the Retro. The others are pushed to `origin` and stored as proposals (`GET /v1/proposals`), with the agents whose files
-  they change. Nothing is merged: adopting a proposal is a person's decision.
+  they change and the cards of the `Cards:` line. Nothing is merged without a person's decision, after the trials.
+
+### The trials
+
+A stored proposal is `open`. Inside `[trial_window]` (see [configuration](configuration.md)), or when a person asks
+(`POST /v1/proposals/{id}/trial`), it is tried, one proposal at a time, on each card of its `Cards:` line, one after the
+other. A proposal with no cards, a card that is gone, a card the report has no error of, and a card without a code run
+cannot be tried: that trial is `skipped`, with the reason. A trial that cannot be made (the agent cannot be used on the
+proposal's branch, the run cannot start) is `failed`.
+
+- **The run.** A run with the purpose `trial` and the card's id, by the agent that made the card's error in the report
+  (the first error of the card that names an agent; the Coder otherwise), given the prompt a `code` run of the card
+  gets. It works in a fresh worktree of the card's repository at the repository's default branch, on a branch of its own,
+  `moebius/trial-<proposal id>-card-<card id>`. The agent's definition (settings, instructions, skills, extensions and MCP
+  servers) is read from the proposal's branch, in a throwaway worktree of the harness clone, not from the default branch.
+  Like a `code` run it fails when it changes nothing. A trial run is no part of the card's own history: the card's runs,
+  rounds and tokens do not count it, and the next Retro's report leaves its errors out.
+- **The checks.** When the run succeeded and the repository has no forge, its own checks (`.moebius/checks` on the
+  default branch) run on what the run made.
+- **The comparison** is with the card's first code run, the one its errors happened in. A trial is **positive** when all of
+  these hold, else **negative**, with the reasons that do not:
+  - the run succeeded;
+  - none of the addressed errors happened in the run: the kinds of the card's errors in the report, looked for in the run
+    the way the report looks for them (failed and refused tool calls, a failed or stopped run, steering, and failed
+    checks);
+  - the checks passed, or failed before as well (the card was once sent back because they failed), or there are none;
+  - the run used no more than 1.5 times the tokens of the first code run.
+
+  A trial is one round, and the card needed at least one, so rounds never make a trial negative.
+- **Afterwards** the trial's branch and worktrees are removed; the trial is stored (`GET /v1/proposals`) with the
+  measurements and the reason. The proposal becomes `positive` when every trial was positive, `negative` when some was
+  negative, and else `untried`. A `positive` or `untried` proposal gets an inbox item of the kind `proposal`; a `negative`
+  one gets none, and stays on the Retro page.
+- **Deciding.** `POST /v1/proposals/{id}/merge` merges the branch into the default branch of the clone with a merge commit,
+  pushes it to `origin` and reads the agents again; `POST /v1/proposals/{id}/dismiss` leaves it. Both record the person's
+  decision (kind `merge_proposal`) and resolve the inbox item. A merge that conflicts changes nothing.
+- A server that starts finds the proposals the last server was trying and opens them again, without their trials, and ends
+  the trial runs it left going as it ends other runs.

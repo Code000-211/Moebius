@@ -23,6 +23,7 @@ pub mod server;
 pub mod skill;
 pub mod store;
 pub mod terminal;
+pub mod trial;
 
 /// The version of this build of Moebius.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

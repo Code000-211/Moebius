@@ -1,8 +1,9 @@
 //! The Retro (spec 4, ADR 0001): once a day the day's errors are collected, without a model, into a report, and the
 //! Retro analyst agent turns the report into proposals, which are changes to the harness configuration, each on a
 //! branch of its own. The report is stored with the day's `retros` row; the proposals are stored with the branches the
-//! analyst left in the harness configuration clone, after they were checked and pushed to `origin`. The schedule asks
-//! `due` once a minute; `POST /v1/retros` starts a Retro by hand. Nothing here waits for a person.
+//! analyst left in the harness configuration clone, after they were checked and pushed to `origin`; trying them is
+//! the work of `trial`. The schedule asks `due` once a
+//! minute; `POST /v1/retros` starts a Retro by hand. Nothing here waits for a person.
 
 use std::sync::Arc;
 
@@ -76,11 +77,11 @@ pub fn report(store: &Store, day: &str) -> Result<Report> {
         .day_window(day)?
         .ok_or_else(|| AppError::Invalid(format!("{day:?} is not a date (YYYY-MM-DD)")))?;
     let mut found: Vec<Found> = Vec::new();
-    found.extend(store.failed_tool_calls(from, to)?);
-    found.extend(store.refused_tool_calls_between(from, to)?);
-    found.extend(store.failed_runs(from, to)?);
-    found.extend(store.stopped_runs(from, to)?);
-    found.extend(store.steering(from, to)?);
+    found.extend(store.failed_tool_calls(from, to, None)?);
+    found.extend(store.refused_tool_calls_between(from, to, None)?);
+    found.extend(store.failed_runs(from, to, None)?);
+    found.extend(store.stopped_runs(from, to, None)?);
+    found.extend(store.steering(from, to, None)?);
     found.extend(store.sent_back_cards(from, to)?);
     found.sort_by_key(|f| f.at);
     Ok(Report {
@@ -151,7 +152,8 @@ fn prompt(report: &Report) -> String {
         "This is the Retro of {day}. Below are the errors of that day, collected by Moebius. Find what they have in \
          common and propose changes to the harness configuration (your worktree) that would avoid them. Make each \
          proposal its own branch named proposal/{day}-<short-name> from the current commit, with one commit whose \
-         message is the proposal, and change only harness configuration files. Commit with `git -c \
+         message is the proposal and ends with a line like `Cards: 48, 50` naming the `card` of each error of the \
+         report that it addresses, and change only harness configuration files. Commit with `git -c \
          user.name=Retro -c user.email=retro@localhost commit`. Propose nothing the errors do not call for.\n\n\
          The report:\n\n{json}\n",
         day = report.date
@@ -208,25 +210,34 @@ fn launch(
     std::thread::Builder::new()
         .name(format!("retro {day}"))
         .spawn(move || {
-            // The run has ended once it says so; the events only wake this up.
-            while app
-                .store
-                .run(run.id)
-                .ok()
-                .flatten()
-                .is_some_and(|r| r.ended_at.is_none())
-            {
-                match ended.blocking_recv() {
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-                    _ => continue,
-                }
-            }
+            wait_for_end(&app, &mut ended, run.id);
             let (status, warnings) = conclude(&app, &repo, &day, run.id);
             let _ = app.store.finish_retro(&day, status, &warnings);
             let _ = publish_done(&app, &day);
         })
         .map(drop)
         .map_err(|e| e.to_string())
+}
+
+/// Waits until the run has ended. `ended` is a subscription to the bus made before the run started: the run has ended
+/// once the store says so, and the events only wake this up.
+pub fn wait_for_end(
+    app: &App,
+    ended: &mut tokio::sync::broadcast::Receiver<AppEvent>,
+    run_id: i64,
+) {
+    while app
+        .store
+        .run(run_id)
+        .ok()
+        .flatten()
+        .is_some_and(|r| r.ended_at.is_none())
+    {
+        match ended.blocking_recv() {
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            _ => continue,
+        }
+    }
 }
 
 /// What became of the analyst's run: the status of the Retro and its warnings. The proposals are stored.
@@ -250,7 +261,7 @@ fn conclude(app: &App, repo: &HarnessRepo, day: &str, run_id: i64) -> (&'static 
             for p in &proposed {
                 if let Err(e) = app
                     .store
-                    .add_proposal(day, &p.branch, &p.title, &p.body, &p.agents)
+                    .add_proposal(day, &p.branch, &p.title, &p.body, &p.agents, &p.cards)
                 {
                     return ("failed", vec![format!("cannot store {}: {e}", p.branch)]);
                 }

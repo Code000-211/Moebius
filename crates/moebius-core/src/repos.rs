@@ -72,6 +72,11 @@ fn auth_config(auth: Option<&str>) -> Vec<(&str, &str)> {
         .collect()
 }
 
+/// The name of the worktrees and the branch of the trial of proposal `proposal` on card `card`.
+pub fn trial_name(proposal: i64, card: i64) -> String {
+    format!("trial-{proposal}-card-{card}")
+}
+
 /// A worktree made for one run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Worktree {
@@ -161,6 +166,25 @@ impl Repos {
         base: &str,
     ) -> Result<Worktree> {
         self.add_named_worktree(name, clone, &format!("chat-{run_id}"), base)
+    }
+
+    /// Creates a worktree for the trial of proposal `proposal` on card `card` on a new branch
+    /// `moebius/trial-<proposal>-card-<card>` starting at `base`.
+    pub fn add_trial_worktree(
+        &self,
+        repository: &str,
+        clone: &Path,
+        proposal: i64,
+        card: i64,
+        base: &str,
+    ) -> Result<Worktree> {
+        self.add_named_worktree(repository, clone, &trial_name(proposal, card), base)
+    }
+
+    /// Deletes the branch of a trial, once its worktree is gone.
+    pub fn remove_trial_branch(&self, clone: &Path, proposal: i64, card: i64) -> Result<()> {
+        let branch = format!("moebius/{}", trial_name(proposal, card));
+        git(clone, &["branch", "-D", "--quiet", &branch]).map(drop)
     }
 
     fn add_named_worktree(

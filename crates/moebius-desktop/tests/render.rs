@@ -914,6 +914,103 @@ fn the_inbox_shows_every_kind_of_item_like_the_mockup() {
     );
 }
 
+/// A positive and an untried proposal of the Retro, waiting for a person.
+fn proposals_app() -> App {
+    let proposals = vec![
+        entry(
+            1,
+            "proposal",
+            None,
+            "Tell the Coder to run the tests first",
+            json!({"proposal": 1, "branch": "proposal/2026-10-28-small-commits", "trials": [
+                {"card": 48, "outcome": "positive",
+                 "reason": "the run succeeded, checks_failed did not happen again, the checks pass, and it used 41200 tokens against 38900"},
+                {"card": 50, "outcome": "positive",
+                 "reason": "the run succeeded, run_failed did not happen again, there were no checks, and it used 12000 tokens against 15100"}]}),
+            3600,
+        ),
+        entry(
+            2,
+            "proposal",
+            None,
+            "Allow reading the docs directory",
+            json!({"proposal": 2, "branch": "proposal/2026-10-28-allow-docs", "trials": [
+                {"card": null, "outcome": "skipped",
+                 "reason": "the proposal names no cards, so there is no task to try it on"}]}),
+            7200,
+        ),
+    ];
+    let mut app = App::with_snapshot(snapshot(vec![], proposals));
+    let _ = app.update(Message::Select(Page::Inbox));
+    let _ = app.update(Message::Inbox(inbox::Message::Tick(NOW)));
+    app
+}
+
+/// The inbox with proposals drawn: compare `tests/snapshots/inbox-proposals-tiny-skia.png`.
+#[test]
+fn the_inbox_offers_a_proposal_of_the_retro_to_merge_or_dismiss() {
+    draw_sized(
+        &proposals_app(),
+        "inbox-proposals",
+        &[
+            "2 things need you.",
+            "Proposals 2",
+            "Retro proposal",
+            "Retro",
+            "Tell the Coder to run the tests first",
+            "The Retro proposes this change to the harness configuration.",
+            "Card 48",
+            "Positive",
+            "the run succeeded, checks_failed did not happen again, the checks pass, and it used 41200 tokens against 38900",
+            "Allow reading the docs directory",
+            "No card",
+            "Skipped",
+            "Merge",
+            "Dismiss",
+        ],
+        Size::new(1440.0, 900.0),
+    );
+}
+
+#[test]
+fn merging_or_dismissing_a_proposal_names_it_and_shows_the_request_until_it_is_answered() {
+    let mut app = proposals_app();
+    // Both items have the buttons; the first of each is the newest item's.
+    let mut ui = simulator(&app);
+    ui.click("Dismiss").unwrap();
+    let messages: Vec<Message> = ui.into_messages().collect();
+    assert!(matches!(
+        &messages[..],
+        [Message::Inbox(inbox::Message::Act(
+            1,
+            Action::DismissProposal { proposal: 1 }
+        ))]
+    ));
+    let mut ui = simulator(&app);
+    ui.click("Merge").unwrap();
+    let messages: Vec<Message> = ui.into_messages().collect();
+    assert!(matches!(
+        &messages[..],
+        [Message::Inbox(inbox::Message::Act(
+            1,
+            Action::MergeProposal { proposal: 1 }
+        ))]
+    ));
+    for message in messages {
+        let _ = app.update(message);
+    }
+    assert!(shows(&app, "Merging…"));
+    let refused = inbox::Message::Done(
+        1,
+        Err(ClientError::Server {
+            status: 409,
+            message: "the branch does not merge cleanly".into(),
+        }),
+    );
+    let _ = app.update(Message::Inbox(refused));
+    assert!(shows(&app, "the branch does not merge cleanly"));
+}
+
 #[test]
 fn merging_sends_the_message_and_the_item_shows_the_request_until_it_is_answered() {
     let mut app = inbox_app();
@@ -1358,7 +1455,7 @@ fn the_agents_screen_lists_the_agents_and_edits_one_like_the_mockup() {
             "extensions/log.ts",
             "Add extension",
             "From the Retro",
-            "No open proposal changes this agent.",
+            "No proposal waiting for a decision changes this agent.",
         ],
         Size::new(1440.0, 1300.0),
     );
@@ -1658,7 +1755,7 @@ fn choosing_a_window_asks_for_it_and_an_answer_for_another_window_is_ignored() {
 
 fn retro_listing() -> Vec<client::RetroSummary> {
     serde_json::from_value(json!([
-        {"date": "2026-10-28", "status": "proposed", "run_id": 31, "errors": 6, "proposals": 2, "at": 1790000000},
+        {"date": "2026-10-28", "status": "proposed", "run_id": 31, "errors": 6, "proposals": 3, "at": 1790000000},
         {"date": "2026-10-27", "status": "reported", "run_id": null, "errors": 0, "proposals": 0, "at": 1789900000},
         {"date": "2026-10-26", "status": "failed", "run_id": 20, "errors": 3, "proposals": 0, "at": 1789800000},
     ]))
@@ -1667,11 +1764,21 @@ fn retro_listing() -> Vec<client::RetroSummary> {
 
 fn proposal_json() -> serde_json::Value {
     json!([
-        {"branch": "proposal/2026-10-28-small-commits", "title": "Tell the Coder to run the tests first",
+        {"id": 1, "branch": "proposal/2026-10-28-small-commits", "title": "Tell the Coder to run the tests first",
          "body": "The Coder's changes failed the checks twice on 2026-10-28; its instructions now say to run the tests before it stops.",
-         "agents": ["Coder"], "status": "open"},
-        {"branch": "proposal/2026-10-28-allow-docs", "title": "Allow reading the docs directory",
-         "body": "The rule no-reads-outside refused three reads of docs/.", "agents": [], "status": "open"},
+         "agents": ["Coder"], "cards": [48, 50], "status": "positive", "trials": [
+            {"card_id": 48, "outcome": "positive",
+             "reason": "the run succeeded, checks_failed did not happen again, the checks pass, and it used 41200 tokens against 38900"},
+            {"card_id": 50, "outcome": "positive",
+             "reason": "the run succeeded, run_failed did not happen again, there were no checks, and it used 12000 tokens against 15100"}]},
+        {"id": 2, "branch": "proposal/2026-10-28-allow-docs", "title": "Allow reading the docs directory",
+         "body": "The rule no-reads-outside refused three reads of docs/.", "agents": [], "cards": [], "status": "untried",
+         "trials": [{"card_id": null, "outcome": "skipped",
+                     "reason": "the proposal names no cards, so there is no task to try it on"}]},
+        {"id": 3, "branch": "proposal/2026-10-28-write-plainly", "title": "Ask the Coder to write plainly",
+         "body": "The Reviewer found unclear names in card 48.", "agents": ["Coder"], "cards": [48], "status": "negative",
+         "trials": [{"card_id": 48, "outcome": "negative",
+                     "reason": "the run did not succeed; it still has run_failed"}]},
     ])
 }
 
@@ -1719,7 +1826,7 @@ fn the_retro_screen_lists_the_days_and_shows_the_errors_and_proposals_of_one() {
             "Run the Retro now",
             "2026-10-28",
             "Proposed",
-            "6 errors · 2 proposals",
+            "6 errors · 3 proposals",
             "2026-10-27",
             "Reported",
             "0 errors · 0 proposals",
@@ -1737,9 +1844,18 @@ fn the_retro_screen_lists_the_days_and_shows_the_errors_and_proposals_of_one() {
             "Proposals",
             "Tell the Coder to run the tests first",
             "proposal/2026-10-28-small-commits",
+            "Positive",
+            "Cards 48, 50",
+            "the run succeeded, run_failed did not happen again, there were no checks, and it used 12000 tokens against 15100",
             "Allow reading the docs directory",
+            "Untried",
+            "Skipped",
+            "the proposal names no cards, so there is no task to try it on",
+            "Ask the Coder to write plainly",
+            "Negative",
+            "the run did not succeed; it still has run_failed",
         ],
-        Size::new(1440.0, 1300.0),
+        Size::new(1440.0, 1500.0),
     );
 }
 
@@ -1774,6 +1890,8 @@ fn the_agents_screen_offers_the_open_proposals_that_change_the_agent() {
     ))));
     assert!(shows(&app, "Tell the Coder to run the tests first"));
     assert!(shows(&app, "proposal/2026-10-28-small-commits"));
-    // The proposal that changes no agent is not offered here.
+    assert!(shows(&app, "Positive"));
+    // The proposal that changes no agent is not offered here, nor one whose trials found it worse.
     assert!(!shows(&app, "Allow reading the docs directory"));
+    assert!(!shows(&app, "Ask the Coder to write plainly"));
 }

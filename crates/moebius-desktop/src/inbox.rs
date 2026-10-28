@@ -20,9 +20,16 @@ const READY_TO_MERGE: &str = "ready_to_merge";
 const APPROVE_ISSUE: &str = "approve_issue";
 const STUCK: &str = "stuck";
 const CHANGE_CLOSED: &str = "change_closed";
+const PROPOSAL: &str = "proposal";
 
 /// The kinds the core adds, in the order the filter lists them; kinds of column scripts follow.
-const KINDS: [&str; 4] = [READY_TO_MERGE, APPROVE_ISSUE, STUCK, CHANGE_CLOSED];
+const KINDS: [&str; 5] = [
+    READY_TO_MERGE,
+    APPROVE_ISSUE,
+    STUCK,
+    CHANGE_CLOSED,
+    PROPOSAL,
+];
 
 /// What a person can do with an item, with the id of what it is done to.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,6 +38,8 @@ pub enum Action {
     Reject { change: i64 },
     Approve { card: i64 },
     Retry { card: i64 },
+    MergeProposal { proposal: i64 },
+    DismissProposal { proposal: i64 },
 }
 
 impl Action {
@@ -41,6 +50,8 @@ impl Action {
             Action::Reject { .. } => "Sending back…",
             Action::Approve { .. } => "Approving…",
             Action::Retry { .. } => "Retrying…",
+            Action::MergeProposal { .. } => "Merging…",
+            Action::DismissProposal { .. } => "Dismissing…",
         }
     }
 }
@@ -150,6 +161,8 @@ impl Inbox {
                     }
                     Action::Approve { card } => client.approve(card).await,
                     Action::Retry { card } => client.retry(card).await,
+                    Action::MergeProposal { proposal } => client.merge_proposal(proposal).await,
+                    Action::DismissProposal { proposal } => client.dismiss_proposal(proposal).await,
                 }
             },
             move |result| AppMessage::Inbox(Message::Done(item, result)),
@@ -304,6 +317,8 @@ impl Inbox {
             if item.kind == APPROVE_ISSUE && !card.author.is_empty() {
                 meta.push(format!("by {}", card.author));
             }
+        } else if item.kind == PROPOSAL {
+            meta.push("Retro".to_string());
         } else if item.card_id.is_none() {
             meta.push("chat".to_string());
         }
@@ -334,6 +349,9 @@ impl Inbox {
         }
         if item.kind == READY_TO_MERGE {
             content = content.push(facts(item, &found));
+        }
+        if item.kind == PROPOSAL {
+            content = content.push(trials(item));
         }
         content = content.push(self.footer(item));
         if let Some(notice) = self.notices.get(&item.id) {
@@ -426,6 +444,18 @@ impl Inbox {
             (STUCK | CHANGE_CLOSED, _, Some(card)) => {
                 buttons.push(page::primary_button("Retry", act(Action::Retry { card })));
             }
+            (PROPOSAL, _, _) => {
+                if let Some(proposal) = item.proposal() {
+                    buttons.push(page::primary_button(
+                        "Merge",
+                        act(Action::MergeProposal { proposal }),
+                    ));
+                    buttons.push(page::white_button(
+                        "Dismiss",
+                        act(Action::DismissProposal { proposal }),
+                    ));
+                }
+            }
             _ => {}
         }
         row(buttons).spacing(8).wrap().vertical_spacing(8).into()
@@ -459,6 +489,7 @@ fn chip_name(kind: &str) -> String {
         APPROVE_ISSUE => "Approvals".to_string(),
         STUCK => "Stuck".to_string(),
         CHANGE_CLOSED => "Closed".to_string(),
+        PROPOSAL => "Proposals".to_string(),
         other => sentence(other),
     }
 }
@@ -480,6 +511,7 @@ fn kind_tag(item: &InboxItem) -> (String, Tone) {
         READY_TO_MERGE => ("Ready to merge".into(), Tone::Amber),
         APPROVE_ISSUE => ("Outside issue".into(), Tone::Amber),
         CHANGE_CLOSED => ("Closed without a merge".into(), Tone::Amber),
+        PROPOSAL => ("Retro proposal".into(), Tone::Amber),
         other => (sentence(other), Tone::Plain),
     }
 }
@@ -503,8 +535,44 @@ fn why(item: &InboxItem, found: &Found) -> Option<String> {
             })
         }
         READY_TO_MERGE => None,
+        PROPOSAL => Some("The Retro proposes this change to the harness configuration.".into()),
         _ => reason.map(str::to_string),
     }
+}
+
+/// What the trials of a proposal found, one line for each: the card, the outcome and why.
+fn trials(item: &InboxItem) -> Element<'_, AppMessage> {
+    let lines = item.data["trials"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|trial| {
+            let outcome = trial["outcome"].as_str().unwrap_or_default();
+            let card = match trial["card"].as_i64() {
+                Some(card) => format!("Card {card}"),
+                None => "No card".to_string(),
+            };
+            row![
+                tag(card, Tone::Plain),
+                tag(
+                    sentence(outcome),
+                    if outcome == "positive" {
+                        Tone::Teal
+                    } else {
+                        Tone::Plain
+                    }
+                ),
+                text(trial["reason"].as_str().unwrap_or_default())
+                    .size(theme::BODY)
+                    .color(theme::TEXT_SECONDARY)
+                    .width(Length::Fill)
+                    .wrapping(Wrapping::WordOrGlyph),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center)
+            .into()
+        });
+    column(lines).spacing(6).into()
 }
 
 /// The facts of a change that waits to be merged: what it took, how its checks stand and where it is.
