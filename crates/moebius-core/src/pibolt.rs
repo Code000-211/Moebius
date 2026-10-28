@@ -192,7 +192,8 @@ impl PiBolt {
     }
 
     /// Writes the per-run agent directory: `models.json` with the router as the `moebius` provider, and `mcp.json` with
-    /// the agent's MCP servers, if it has any (without it Pi connects to none).
+    /// the agent's MCP servers, if it has any (without it Pi connects to none). Both hold secrets (the run's token, the
+    /// servers' environment), so only the server's user can read them.
     fn write_agent_dir(
         &self,
         run_dir: &Path,
@@ -203,11 +204,7 @@ impl PiBolt {
         std::fs::create_dir_all(&agent_dir).map_err(|e| e.to_string())?;
         if !agent.mcp.is_empty() {
             let servers = mcp::pi_config(&agent.mcp, &|name| std::env::var(name).ok())?;
-            std::fs::write(
-                agent_dir.join("mcp.json"),
-                serde_json::to_vec_pretty(&servers).map_err(|e| e.to_string())?,
-            )
-            .map_err(|e| e.to_string())?;
+            write_private(&agent_dir.join("mcp.json"), &servers)?;
         }
         let (api, base_url) = match agent.protocol {
             Protocol::OpenAi => ("openai-completions", format!("{}/v1", self.router_url)),
@@ -223,11 +220,7 @@ impl PiBolt {
                 }
             }
         });
-        std::fs::write(
-            agent_dir.join("models.json"),
-            serde_json::to_vec_pretty(&models).map_err(|e| e.to_string())?,
-        )
-        .map_err(|e| e.to_string())?;
+        write_private(&agent_dir.join("models.json"), &models)?;
         Ok(agent_dir)
     }
 
@@ -569,6 +562,20 @@ impl RunningRun {
 }
 
 /// Fails a run that could not be started, with an event saying why; returns the message.
+/// Writes `value` as JSON to a new `file` that only the server's user can read.
+fn write_private(file: &Path, value: &Value) -> Result<(), String> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let text = serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(file)
+        .and_then(|mut file| file.write_all(&text))
+        .map_err(|e| e.to_string())
+}
+
 fn fail(app: &App, run_id: i64, message: String) -> String {
     let _ = app
         .store
@@ -944,6 +951,14 @@ mod tests {
         let models: Value =
             serde_json::from_slice(&std::fs::read(run_dir.join("agent/models.json")).unwrap())
                 .unwrap();
+        // The run's token is in the file, so only the server's user can read it.
+        let mode = std::fs::metadata(run_dir.join("agent/models.json"))
+            .unwrap()
+            .permissions();
+        assert_eq!(
+            std::os::unix::fs::PermissionsExt::mode(&mode) & 0o777,
+            0o600
+        );
         let provider = &models["providers"]["moebius"];
         assert_eq!(provider["baseUrl"], "http://127.0.0.1:9/v1");
         assert!(
@@ -1005,6 +1020,11 @@ mod tests {
 
         let (argv, mcp_json) = run_agent("A");
         assert_eq!(values(&argv, "--skill"), ["/skills/a"]);
+        let mode = std::fs::metadata(&mcp_json).unwrap().permissions();
+        assert_eq!(
+            std::os::unix::fs::PermissionsExt::mode(&mode) & 0o777,
+            0o600
+        );
         let config: Value = serde_json::from_slice(&std::fs::read(mcp_json).unwrap()).unwrap();
         assert_eq!(
             config,

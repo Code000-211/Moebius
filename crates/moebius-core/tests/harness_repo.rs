@@ -464,6 +464,8 @@ async fn an_edit_through_the_api_is_a_commit_that_is_pushed_and_a_failed_push_un
     assert_eq!(status, 500);
     assert_eq!(head(&clone), added);
     assert!(clone.join("agents/Fresh.toml").is_file());
+    // Neither edit happened, so neither is a judgement.
+    assert_eq!(server.app.store.judgements("edit_agent").unwrap().len(), 2);
     std::fs::remove_file(&hook).unwrap();
 
     // An agent is deleted the same way.

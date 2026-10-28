@@ -457,9 +457,10 @@ impl HarnessRepo {
             .map(drop)
     }
 
-    /// Makes the change `write` does to the agent's files a commit on the default branch, records the person's decision
-    /// and pushes. Whatever fails, the working tree and the default branch are as they were. On success the agents are
-    /// read again, and the short id of the commit is given; a change that changed nothing makes no commit.
+    /// Makes the change `write` does to the agent's files a commit on the default branch and pushes it. Whatever fails
+    /// before the push is through, the working tree and the default branch are as they were. On success the agents are
+    /// read again, the person's decision is recorded and the short id of the commit is given; a change that changed
+    /// nothing makes no commit.
     fn commit(
         &self,
         app: &App,
@@ -488,22 +489,6 @@ impl HarnessRepo {
             .default_branch(&self.path)
             .map_err(|e| undo(e.into()))?;
         git(&self.path, &["commit", "--quiet", "-m", message]).map_err(|e| undo(e.into()))?;
-        context.insert("agent".into(), name.into());
-        context.insert("change".into(), message.into());
-        app.decisions
-            .record_person(
-                &Question {
-                    kind: "edit_agent".into(),
-                    context,
-                    options: vec!["edit_agent".into(), "leave".into()],
-                    fail_closed: "leave".into(),
-                    run_id: None,
-                    card_id: None,
-                },
-                "edit_agent",
-                "",
-            )
-            .map_err(|e| undo(e.into()))?;
         let header = app.git_auth(&self.url).map_err(&undo)?;
         self.repos
             .push(&self.path, &branch, header.as_deref())
@@ -511,6 +496,20 @@ impl HarnessRepo {
         let head = git(&self.path, &["rev-parse", "HEAD"])?;
         let short = git(&self.path, &["rev-parse", "--short", "HEAD"])?;
         self.read(app, read_at, head);
+        context.insert("agent".into(), name.into());
+        context.insert("change".into(), message.into());
+        app.decisions.record_person(
+            &Question {
+                kind: "edit_agent".into(),
+                context,
+                options: vec!["edit_agent".into(), "leave".into()],
+                fail_closed: "leave".into(),
+                run_id: None,
+                card_id: None,
+            },
+            "edit_agent",
+            "",
+        )?;
         Ok(Some(short))
     }
 }

@@ -128,6 +128,7 @@ model as `mcp__<server>__<tool>` like Pi's own tools, and every call passes thro
 bridge's check, which decides it by the rules like any tool call. A run of an agent without servers has no `mcp.json`
 and no MCP support, and no agent is given a server of another agent.
 
+`mcp.json` and `models.json` (which holds the run's token) can be read only by the server's user (mode `0600`).
 What a server is given is visible to the run: the agent can read its own environment and files, `mcp.json` among them,
 and with a `bash` tool can read the headers and variables it was given. Give a server only what the agents that name it
 may see.
@@ -158,11 +159,12 @@ as they are.
 - `PUT /v1/agents/{name}` takes `{"settings": {...}, "instructions": "..."}` (`instructions` may be left out) and
   is checked as a file read is. It writes `agents/<name>.toml` (the file is written again from the settings, so comments
   in it are lost) and `agents/<name>.md` (removed when the instructions are blank), commits them on the default branch as
-  `Moebius <moebius@localhost>` with the message `Add the agent <name>` or `Update the agent <name>`, records the
-  decision (kind `edit_agent`, decider `person`, the settings and instructions in its context), and pushes the branch to
-  `origin`. An edit that changes nothing commits nothing and records nothing.
+  `Moebius <moebius@localhost>` with the message `Add the agent <name>` or `Update the agent <name>`, pushes the branch
+  to `origin`, and then records the decision (kind `edit_agent`, decider `person`, the settings and instructions in its
+  context). An edit that changes nothing commits nothing and records nothing.
 - `DELETE /v1/agents/{name}` removes both files the same way, with the message `Delete the agent <name>`.
 
 If anything fails after the commit was made, including the push, the commit is undone (`git reset --hard` to the head
-before it), so the clone never drifts from `origin`. The request then fails with the error. When someone else pushed to
+before it), so the clone never drifts from `origin`, and no decision is recorded. The request then fails with the
+error. When someone else pushed to
 `origin` meanwhile, the push is refused for that reason, and the next refresh brings their commits in.
