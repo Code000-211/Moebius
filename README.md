@@ -1,66 +1,101 @@
-# Moebius
+<div align="center">
 
-Moebius is an orchestration layer that drives coding-agent harnesses (Pi-Bolt first) from a repository's issues to changes
-that are ready to merge. It is one headless server: it holds a board per repository, runs a column script for every
-card, and checks every tool call an agent makes against rules.
+# ∞ Moebius
 
-## Status
+**Issues in, changes ready to merge out.**
 
-Every milestone of the first version, M0 to M9, is built (see [`docs/spec.md`](docs/spec.md) section 10). Moebius:
+Moebius drives coding agents from a repository's issues to reviewed, tested changes, checks every step they take
+against your rules, and learns from what went wrong.
 
-- starts a server with a SQLite store, a desktop API and a model router that counts tokens and keeps budgets;
-- takes issues from a plain git repository (through the API) or from GitHub (by polling), and puts them on a board;
-- runs a Pi-Bolt agent per card in its own worktree, reviews its work, waits for CI, and offers the result as a change
-  (a branch, or a GitHub pull request) to merge;
-- checks every tool call against built-in rules and rules written in prose, and refuses the ones that break a rule;
-- chats with agents: the bundled Moebius agent builds scripts, rules and agents from the guide, and the Grilling partner
-  turns an idea into issues a person confirms;
-- reads its agents, skills, MCP servers and rules from a harness configuration repository, where an edit in the app is
-  a commit;
-- improves itself at night: the Retro proposes changes to the harness configuration from the day's errors, trials try
-  them on the cards they came from, refused calls are replayed in a throwaway copy, and autoresearch measures levers
-  against a number a person wants to improve;
-- records every decision as a judgement, exports them as a training set, and lets a decision model shadow a kind of
-  decision and take it over once a person merges the proposal.
+[![CI](https://github.com/Code000-211/Moebius/actions/workflows/ci.yml/badge.svg)](https://github.com/Code000-211/Moebius/actions/workflows/ci.yml)
+![Rust 1.90+](https://img.shields.io/badge/rust-1.90%2B-orange)
+![Linux](https://img.shields.io/badge/platform-Linux-lightgrey)
+![Status: early prototype](https://img.shields.io/badge/status-early%20prototype-yellow)
 
-The desktop app has every screen of [`docs/design.md`](docs/design.md): projects (a repository's board, its files and an
-editor that commits a file on the default branch), live view with a shell, inbox, chat,
-fleet (every working run at a glance), agents, usage, Retro, experiments, decision model, and the setup: models and settings, which edit `moebius.toml`, and the read-only plugins.
+</div>
+
+> [!WARNING]
+> Moebius is an early prototype. It is not ready for real projects: try it on a throwaway repository and tell us what
+> you think. Things will change and break.
+
+![The board of a project, with the Moebius agent's floating chat](crates/moebius-desktop/tests/snapshots/floating-chat-open-tiny-skia.png)
+
+## What it does
+
+You put issues on a board. Moebius picks them up and runs the workflow on its own:
+
+1. **Code.** An agent works on the card in its own git worktree, through [Pi-Bolt](https://github.com/opensec-git/Pi-Bolt).
+2. **Check.** Every tool call the agent makes is checked against built-in patterns and the rules you write in plain
+   prose, before it runs. A call that breaks a rule is refused, with the rule's name.
+3. **Review.** The change is tested and reviewed by another agent, and goes back to coding while something is wrong.
+4. **Merge.** It waits in your inbox, as a branch or a GitHub pull request, until you merge it.
+5. **Improve.** Every night the Retro looks at what went wrong and tries out fixes. Those that worked wait in the inbox
+   for you.
+
+Every decision on the way is recorded in full. Export them as a training set, plug in a small model of your own, and
+Moebius lets it decide alongside the teacher model until it agrees often enough to take a kind of decision over.
+
+## Features
+
+| | |
+|---|---|
+| 🗂 **Projects** | A Kanban board per repository, plus a file browser and a code editor. A column's behaviour is a Luau script you can open and edit from the board. |
+| 💬 **The Moebius agent, everywhere** | A floating chat on every page that knows what you are looking at: the file and line in the editor, the script or rule you are editing. Ask it to write an issue, a rule, an agent's instructions or a whole workflow. |
+| 🛰 **Fleet** | Every working agent at a glance, live. |
+| ⌨️ **Chat or terminal** | Chat with any agent, or switch the same conversation into Pi-Bolt's own terminal interface. |
+| 🛡 **Rules** | Built-in patterns plus rules in prose, checked on every tool call by a teacher model; per repository too. |
+| ✏️ **Edit in place** | Agents, skills, MCP servers, rules, scripts, settings, cards: a pencil on everything, saved as a commit or in the store. |
+| 🔌 **Your models** | Local OpenAI- or Anthropic-compatible servers or provider API keys, behind one router that counts tokens and keeps budgets. |
+| 🧰 **A command line** | Everything the app does, as `moebius` commands, for scripts and for the agent itself. |
+
+<table>
+<tr>
+<td><img src="crates/moebius-desktop/tests/snapshots/fleet-tiny-skia.png" alt="Fleet"></td>
+<td><img src="crates/moebius-desktop/tests/snapshots/project-editor-tiny-skia.png" alt="The editor of a project"></td>
+</tr>
+<tr>
+<td><img src="crates/moebius-desktop/tests/snapshots/chat-working-tiny-skia.png" alt="A chat with an agent at work"></td>
+<td><img src="crates/moebius-desktop/tests/snapshots/rules-rule-edit-tiny-skia.png" alt="Rules, edited in place"></td>
+</tr>
+</table>
+
+## How it fits together
+
+```
+desktop app ──(private network, token)──▶ moebius server ──▶ GitHub or plain git (polled)
+                                              │
+                                              ├──▶ Pi-Bolt runs, one worktree each
+                                              │      └─ every tool call is checked before it runs
+                                              └──▶ model router ──▶ local models / provider APIs
+```
+
+One headless server holds the boards, runs the column scripts, starts the agents and keeps everything in SQLite. The
+desktop app (Rust, [iced](https://iced.rs)) talks to it over a documented API, and so does the `moebius` command line.
+[`docs/architecture.md`](docs/architecture.md) follows a card through the system.
 
 ## Quick start
 
-You need git, [Pi-Bolt](https://github.com/opensec-git/Pi-Bolt) installed as `pi-bolt`, and an OpenAI-compatible model
-server, such as a local one on `http://127.0.0.1:8080`.
+You need Linux, git, [Pi-Bolt](https://github.com/opensec-git/Pi-Bolt) installed as `pi-bolt`, and a model: a local
+OpenAI-compatible server (such as one on `http://127.0.0.1:8080`) or a provider API key.
 
-Install the server from a [release](https://github.com/Code000-211/Moebius/releases): download the archive for your
-machine (releases are for Linux x86_64; elsewhere, build from source) and `SHA256SUMS`, check it and unpack it. The page
-[Running Moebius](docs/guide/running-moebius.md) has the commands, and how to run the server as a service.
-
-```sh
-VERSION=0.1.0
-TARGET=x86_64-unknown-linux-gnu
-ARCHIVE=moebius-$VERSION-$TARGET.tar.gz
-grep " $ARCHIVE\$" SHA256SUMS | sha256sum -c -
-tar -xzf "$ARCHIVE"
-mkdir -p ~/.local/bin && cp "moebius-$VERSION-$TARGET/moebius" ~/.local/bin/
-```
-
-To build from source instead, you need Rust 1.90 or newer (the `rust-version` in `Cargo.toml`, which CI checks):
+**1. Install.** From a [release](https://github.com/Code000-211/Moebius/releases) (Linux x86_64; the page
+[Running Moebius](docs/guide/running-moebius.md) shows how to check the download), or from source with Rust 1.90 or
+newer:
 
 ```sh
 cargo build --release
 export PATH="$PWD/target/release:$PATH"
 ```
 
-Write the configuration in a directory of its own:
+**2. Configure.** In a directory of its own:
 
 ```sh
 mkdir -p ~/.config/moebius && cd ~/.config/moebius
 moebius init      # writes moebius.toml, a commented file with every default
 ```
 
-Add an upstream, the Pi-Bolt program and the Coder agent to `moebius.toml` (see
-[`docs/reference/configuration.md`](docs/reference/configuration.md)). The file can be this small:
+Add an upstream, the Pi-Bolt program and the Coder agent to `moebius.toml`. It can be this small
+([every key](docs/reference/configuration.md)):
 
 ```toml
 [[router.upstreams]]
@@ -74,75 +109,70 @@ program = "/usr/local/bin/pi-bolt"
 model = "my-local-model"
 ```
 
-Start the server. It creates `.moebius/` next to the file, with the token the API needs in `.moebius/token`:
+**3. Run.**
 
 ```sh
-moebius serve
+moebius serve     # creates .moebius/ next to the file, with the API token in .moebius/token
 ```
 
-Connect the desktop app: a [release](https://github.com/Code000-211/Moebius/releases) has it for Linux; from source,
-`cargo run -p moebius-desktop`. Give it the server's address (`http://127.0.0.1:7171`) and the content of
-`.moebius/token`.
+**4. Connect the app.** Start the desktop app (from a release, or `cargo run -p moebius-desktop`), and give it the
+address `http://127.0.0.1:7171` and the content of `.moebius/token`. The **Get started** page lists what is still
+missing.
 
-Add a repository, create an issue and read the board, in the app or with the `moebius` commands, which run in the
-directory of `moebius.toml` and find the address and token there:
+**5. Try it.** Add a project: a path that does not exist yet becomes a new, empty repository. Then create an issue, in
+the app or on the command line:
 
 ```sh
-moebius repo add demo /path/to/a/git/repository
+moebius repo add demo ~/moebius-demo
 moebius issue create 1 "Add a greeting" --body "Add hello.txt that says hello."
 moebius board
 ```
 
-The card moves from Backlog through Ready and In progress. When the Coder run has succeeded, it is in `Ready to merge`
-with a change; merge it in the app (the inbox shows it) or with `moebius inbox` and `moebius inbox act <id> merge`. The
-card is then in `Done`. For a repository on GitHub, see the `[github]` table and `--github` of `repo add`; the
-[command line](docs/guide/command-line.md) lists every command, and `moebius api` reaches any route of the
-[desktop API](docs/reference/desktop-api.md).
+The card moves from Backlog to Ready to In progress, and ends in Ready to merge with a change waiting in the inbox.
 
-## The desktop app
+> The server listens on plain HTTP and anyone with the token has full control. Keep it on `127.0.0.1` or a private
+> network, never on the internet.
 
-On the first start the app asks for the server's address (`http://127.0.0.1:7171` by default) and its token (the content
-of the server's `token` file) and saves them in `<config dir>/moebius/desktop.toml` (on Linux
-`~/.config/moebius/desktop.toml`), readable by you only. The token is not shown again in full. If the server cannot be
-reached or does not accept the token, the app asks again. The address is plain HTTP, so keep the server on a private
-network. The window needs a GPU or a software Vulkan/OpenGL driver; the app finds it when it starts.
+## Build on it
 
-**Search and run.** The field at the top of the sidebar (Ctrl+K, Cmd+K on macOS, focuses it from anywhere) lists, as you
-type, the cards of every board by title words or `#number`, the projects by name, the chats, the agents and the pages that contain every word
-you typed, at most eight entries. Up and Down choose, Enter or a click opens, Escape closes. The last entry, "Ask the
-Moebius agent", starts a chat with what you typed as its first message.
+Moebius is made to be extended by people and agents who have not read its code. Every contract is documented exactly
+in [`docs/reference/`](docs/reference/), and the [guide](docs/guide/README.md) shows each task step by step, with
+examples that the tests run.
 
-## Where everything is
+- **[Column scripts](docs/guide/column-scripts.md)** and **[workflows](docs/guide/workflows.md)**: change how cards move, in Luau, per repository.
+- **[Rules](docs/guide/rules.md)**: what agents must never do, in prose.
+- **[Agents](docs/guide/agents.md)**: models, instructions, skills, MCP servers and extensions.
+- **[Pi extensions](docs/guide/extensions.md)**: TypeScript inside the agent's process.
+- **[Plugins](docs/guide/plugins.md)**: deciders in Rust.
+- **[Command line](docs/guide/command-line.md)** and **[desktop API](docs/guide/desktop-api.md)**: script anything.
 
-| Path | What |
-|---|---|
-| `crates/moebius-core/` | Everything the server does. `src/` has one module per part; `workflow/` the built-in column scripts; `bridge/` the Pi extension that checks tool calls. |
-| `crates/moebius-plugin-api/` | The plugin trait and the host that calls plugins with a time limit, failing closed. |
-| `crates/moebius/` | The `moebius` binary (`init`, `serve`, `check-script`, `export`, and the commands that operate a running server). |
-| `crates/moebius-desktop/` | The desktop app (iced), built to `docs/design.md`; it uses only the desktop API. |
-| `examples/` | A column script, rules, a decider plugin and a Pi extension that run in CI. |
-| `docs/` | Documentation, below. |
+Or just ask the Moebius agent: it knows the guide and the reference, and builds these for you.
 
 ## Documentation
 
-- [`GLOSSARY.md`](GLOSSARY.md): the words Moebius uses.
-- [`docs/spec.md`](docs/spec.md): what the first version does. [`docs/adr/`](docs/adr/): why it is shaped this way.
-- [`docs/architecture.md`](docs/architecture.md): how a card moves through the system and which module does what.
-- Reference, exact enough to build on without reading the code:
-  [column scripts](docs/reference/column-scripts.md), [rules](docs/reference/rules.md),
-  [configuration](docs/reference/configuration.md), [plugin API](docs/reference/plugin-api.md),
-  [bridge protocol](docs/reference/bridge-protocol.md), [router](docs/reference/router.md),
-  [desktop API](docs/reference/desktop-api.md), [harness configuration](docs/reference/harness-configuration.md),
-  [command line](docs/reference/cli.md), [training export](docs/reference/training-export.md),
-  [decision model](docs/reference/decision-model.md).
-- [`docs/guide/`](docs/guide/README.md): the guide, how to build on Moebius step by step (column scripts, workflows,
-  rules, agents, plugins, extensions, the desktop API, grilling, autoresearch), with examples that tests run.
-- [`examples/README.md`](examples/README.md): the examples.
-- [`docs/issues-m0-m1.md`](docs/issues-m0-m1.md), [`docs/issues-m2-m9.md`](docs/issues-m2-m9.md): the work, issue by issue.
-- [`docs/design.md`](docs/design.md): the look of the desktop app.
-- [`CLAUDE.md`](CLAUDE.md) (mirrored in [`AGENTS.md`](AGENTS.md)): how to work in the repository, for people and agents.
+| | |
+|---|---|
+| [`GLOSSARY.md`](GLOSSARY.md) | The words Moebius uses. |
+| [`docs/spec.md`](docs/spec.md), [`docs/adr/`](docs/adr/) | What the first version does, and why it is shaped this way. |
+| [`docs/architecture.md`](docs/architecture.md) | How a card moves and which module does what. |
+| [`docs/reference/`](docs/reference/) | [Column scripts](docs/reference/column-scripts.md), [rules](docs/reference/rules.md), [configuration](docs/reference/configuration.md), [command line](docs/reference/cli.md), [desktop API](docs/reference/desktop-api.md), [router](docs/reference/router.md), [plugin API](docs/reference/plugin-api.md), [bridge protocol](docs/reference/bridge-protocol.md), [harness configuration](docs/reference/harness-configuration.md), [training export](docs/reference/training-export.md), [decision model](docs/reference/decision-model.md). |
+| [`docs/guide/`](docs/guide/README.md) | How to build on Moebius, one task per page. |
+| [`docs/design.md`](docs/design.md) | The look of the desktop app. |
+| [`examples/`](examples/README.md) | Examples that run in CI. |
 
-## Checks
+## Development
+
+```
+crates/
+  moebius-core/        the server: store, board, router, agents, rules, API
+  moebius-plugin-api/  the plugin trait and its host
+  moebius/             the moebius binary and command line
+  moebius-desktop/     the desktop app
+docs/                  spec, decisions, architecture, reference, guide
+examples/              examples that run in CI
+```
+
+Before every commit, run what CI runs:
 
 ```sh
 cargo fmt --all
@@ -151,4 +181,10 @@ cargo test --workspace
 cargo run -p moebius-plugin-api --example allow_reads
 ```
 
-The end-to-end tests run only when `MOEBIUS_PI_BOLT` names a `pi-bolt` executable.
+The end-to-end tests run only when `MOEBIUS_PI_BOLT` names a `pi-bolt` executable. The desktop app's render tests
+compare against the pictures in `crates/moebius-desktop/tests/snapshots/`. [`CLAUDE.md`](CLAUDE.md) (also
+[`AGENTS.md`](AGENTS.md)) says how to work in the repository, for people and coding agents alike.
+
+## Feedback
+
+Ideas, confusion, bugs: [open an issue](https://github.com/Code000-211/Moebius/issues). Everything helps at this stage.
