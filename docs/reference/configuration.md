@@ -15,6 +15,19 @@ every key with its type, default, meaning and validation. The code is in `crates
 Keys of a table are written with the table's name, such as `board.tick_ms`. A key of an array table is written
 `router.upstreams.protocol`. A key of an agent is written `agents.<name>.model`, where `<name>` is the agent's name.
 
+## The commands
+
+`moebius [--config <file>] <command>`; the file is read by every command that needs it.
+
+- `init` writes the commented example configuration.
+- `serve` starts the server.
+- `check-script <file> [--column <name>] [--title <text>] [--author <login>]` runs a column script once (see
+  [column scripts](column-scripts.md)).
+- `export --out <dir> [--kind <kind>]...` writes the training-set export of the store in `data_dir` to `<dir>`, all
+  kinds or only the kinds given, and prints one line per file with its counts. It writes only to `<dir>`; it changes
+  nothing in the store, and works while the server runs. It fails when `data_dir` has no store, or when a kind has no
+  judgements. See [the training export](training-export.md).
+
 ## Paths
 
 A relative path (including `agents.<name>.skills` and `extensions`) is resolved against the directory that holds the

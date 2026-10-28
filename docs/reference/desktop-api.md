@@ -278,6 +278,37 @@ with the reason.
 The stored replays, newest first, at most 1000. Query: `judgement` returns the replay of that judgement, `run` those of
 that run's calls. Response: an array of `Replay`.
 
+### `GET /v1/judgements/kinds`
+
+What the store holds now, per kind of judgement, kinds in alphabetical order. Response: an array of `KindCounts`:
+`{"kind": string, "count": number, "with_outcome": number, "by_person": number, "held_out": number}`. `count` is the
+judgements of the kind, `with_outcome` those with an outcome, `by_person` those whose decider is `person`, `held_out`
+those in the held-out tenth (see [the training export](training-export.md#the-split)).
+
+### `POST /v1/exports`
+
+Writes the training-set export now (see [the training export](training-export.md)) to `<data_dir>/exports/<id>/` and
+records the person's decision to do so as a judgement of kind `export` (decider `person`, context: `export` the id,
+`kinds` the kinds written, joined by commas, and `counts` the `KindCounts` as JSON text). Request: `{"kinds": [string]}`,
+the kinds to export; without `kinds`, or with `null`, every kind. The body is required, `{}` is the smallest. Response:
+the `Export`:
+
+```json
+{"id": 1, "at": 1790000000, "kinds": [{"kind": "merge", "count": 12, "with_outcome": 12, "by_person": 12, "held_out": 1}]}
+```
+
+`id` counts up from 1. The export holds the judgements there were when it read them, not the judgement of its own
+decision. Errors: `422` a kind has no judgements (no file is written for any kind).
+
+### `GET /v1/exports`
+
+The exports made through the API, newest first. Response: an array of `Export`.
+
+### `GET /v1/exports/{id}/{file}`
+
+Downloads a file of export `id`, `{file}` being `<kind>.jsonl` (such as `tool_call.jsonl`), streamed, as `application/x-ndjson`. The body is the file as the
+export wrote it. Errors: `404` no such export or no such file in it.
+
 ### `GET /v1/usage`
 
 What the model calls used: tokens, calls, how long they took, and where they went. Query: `days` (a whole number from 1

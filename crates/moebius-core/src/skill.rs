@@ -100,6 +100,10 @@ const FILES: &[(&str, &str)] = &[
         "reference/rules.md",
         include_str!("../../../docs/reference/rules.md"),
     ),
+    (
+        "reference/training-export.md",
+        include_str!("../../../docs/reference/training-export.md"),
+    ),
 ];
 
 /// Where the skill is kept under the data directory.

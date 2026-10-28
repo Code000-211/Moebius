@@ -1432,6 +1432,37 @@ impl Store {
         .collect()
     }
 
+    /// The judgements of `kind` with an id above `after`, oldest first; at most `limit`.
+    pub fn judgements_of_kind_after(
+        &self,
+        kind: &str,
+        after: i64,
+        limit: i64,
+    ) -> Result<Vec<Judgement>> {
+        self.judgements_query(
+            "WHERE kind = ?1 AND id > ?2 ORDER BY id LIMIT ?3",
+            params![kind, after, limit],
+        )
+    }
+
+    /// Calls `each` with the kind, the id, whether there is an outcome and the decider of every judgement, oldest
+    /// first, without reading them all into memory.
+    pub fn each_judgement(&self, mut each: impl FnMut(&str, i64, bool, &str)) -> Result<()> {
+        let conn = self.conn();
+        let mut stmt = conn
+            .prepare("SELECT kind, id, outcome IS NOT NULL, decider FROM judgements ORDER BY id")?;
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            each(
+                &row.get::<_, String>(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                &row.get::<_, String>(3)?,
+            );
+        }
+        Ok(())
+    }
+
     pub fn judgement(&self, id: i64) -> Result<Option<Judgement>> {
         Ok(self.judgements_where("id = ?1", id.into())?.pop())
     }

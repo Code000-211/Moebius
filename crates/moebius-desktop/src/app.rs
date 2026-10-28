@@ -10,6 +10,7 @@ use iced::{Element, Length, Subscription, Task};
 use crate::agents::{self, Agents};
 use crate::chat::Chats;
 use crate::client::{self, Client, ClientError, HistoryEntry, RunEvent, Snapshot, StreamEvent};
+use crate::decision_model::{self, DecisionModel};
 use crate::experiments::{self, Experiments};
 use crate::inbox::{self, Inbox};
 use crate::live::{self, Live};
@@ -81,7 +82,6 @@ impl Page {
     pub fn milestone(self) -> Option<&'static str> {
         match self {
             Page::Inbox | Page::Chat | Page::Board(_) => Some("M6"),
-            Page::DecisionModel => Some("M9"),
             Page::Agents
             | Page::Skills
             | Page::McpServers
@@ -89,6 +89,7 @@ impl Page {
             | Page::Usage
             | Page::Retro
             | Page::Experiments
+            | Page::DecisionModel
             | Page::Models
             | Page::Plugins
             | Page::Settings => None,
@@ -133,6 +134,7 @@ pub enum Message {
     Usage(usage::Message),
     Retro(retro::Message),
     Experiments(experiments::Message),
+    DecisionModel(decision_model::Message),
     /// A chat was asked for, as from the inbox: its screen opens on it.
     OpenChat(i64),
     /// The history of the card was read.
@@ -170,6 +172,7 @@ pub struct App {
     usage: Usage,
     retros: Retros,
     experiments: Experiments,
+    decision_model: DecisionModel,
     collapsed: bool,
     /// Counts the reads of the snapshot, so that an older answer never replaces a newer one.
     requested: u64,
@@ -204,6 +207,7 @@ impl App {
             usage: Usage::default(),
             retros: Retros::default(),
             experiments: Experiments::default(),
+            decision_model: DecisionModel::default(),
             collapsed: false,
             requested: 0,
             shown: 0,
@@ -273,6 +277,9 @@ impl App {
                     (Page::Experiments, Some(settings)) => {
                         return self.experiments.reload(settings);
                     }
+                    (Page::DecisionModel, Some(settings)) => {
+                        return self.decision_model.reload(settings);
+                    }
                     _ => {}
                 }
             }
@@ -306,6 +313,12 @@ impl App {
                 return self
                     .experiments
                     .update(message, self.settings.as_ref(), &self.snapshot);
+            }
+            Message::DecisionModel(message) if DecisionModel::refused(&message) => {
+                self.show_connect_error(&ClientError::Unauthorized);
+            }
+            Message::DecisionModel(message) => {
+                return self.decision_model.update(message, self.settings.as_ref());
             }
             Message::Chat(message) => return self.chats.update(message, self.settings.as_ref()),
             Message::OpenChat(id) => {
@@ -672,6 +685,7 @@ impl App {
             Page::Usage => self.usage.view(),
             Page::Retro => self.retros.view(),
             Page::Experiments => self.experiments.view(&self.snapshot),
+            Page::DecisionModel => self.decision_model.view(),
             Page::Settings => connect::settings_page(self.settings.as_ref()),
             page => soon::view(page),
         }

@@ -15,6 +15,9 @@
 //! - `GET /v1/judgements?card=&run=&kind=&limit=`: the recorded decisions, newest first.
 //! - `POST /v1/judgements/{id}/replay`: runs a refused tool call again in a throwaway copy of the worktree (see
 //!   [`crate::replay`]). `GET /v1/replays?judgement=&run=`: the stored replays, newest first.
+//! - `GET /v1/judgements/kinds`: the counts of the stored judgements per kind. `POST /v1/exports` `{kinds?}` writes the
+//!   training-set export a person asks for and records the decision; `GET /v1/exports` lists the exports; `GET
+//!   /v1/exports/{id}/{file}` downloads a file (`<kind>.jsonl`) of one (see [`crate::export`]).
 //! - `POST /v1/runs/{id}/steer` `{message}`: a person sends a message to a running run.
 //! - `POST /v1/runs/{id}/stop` `{reason}`: a person stops a running run; a chat ends as stopped.
 //! - `GET /v1/runs/{id}/terminal`: a WebSocket on a shell in the run's worktree (see [`crate::terminal`]).
@@ -52,6 +55,7 @@ use tokio::sync::broadcast::error::RecvError;
 use crate::app::{App, AppError, Chat, HistoryEntry, PERSON, columns, runs_since_retry};
 use crate::board::{AgentInfo, Runs, latest_review};
 use crate::bus::AppEvent;
+use crate::export::{self, Export, ExportError, KindCounts};
 use crate::forge::ForgeError;
 use crate::grilling;
 use crate::harness_repo::{AgentDefinition, AgentView, HarnessRepo, McpServerInfo, SkillInfo};
@@ -217,6 +221,12 @@ struct JudgementsQuery {
     limit: Option<i64>,
 }
 
+/// The kinds to export; all of them when not given.
+#[derive(Debug, Default, Deserialize)]
+struct NewExport {
+    kinds: Option<Vec<String>>,
+}
+
 /// Which replays to return: those of the judgement and of the run, if given.
 #[derive(Debug, Deserialize)]
 struct ReplaysQuery {
@@ -359,6 +369,9 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/cards/{id}/runs", get(card_runs))
         .route("/v1/cards/{id}/history", get(card_history))
         .route("/v1/judgements", get(judgements))
+        .route("/v1/judgements/kinds", get(judgement_kinds))
+        .route("/v1/exports", get(exports).post(start_export))
+        .route("/v1/exports/{id}/{file}", get(download_export))
         .route("/v1/judgements/{id}/replay", post(replay_judgement))
         .route("/v1/replays", get(replays))
         .route("/v1/usage", get(usage))
@@ -910,6 +923,64 @@ async fn judgements(
             .collect())
     })
     .await
+}
+
+fn export_failed(e: ExportError) -> AppError {
+    match e {
+        ExportError::UnknownKind(_) => AppError::Invalid(e.to_string()),
+        ExportError::Store(e) => AppError::Store(e),
+        ExportError::Io(e) => AppError::Io(e),
+        e @ ExportError::Context(..) => AppError::Io(std::io::Error::other(e.to_string())),
+    }
+}
+
+async fn judgement_kinds(
+    State(state): State<ApiState>,
+) -> Result<axum::Json<Vec<KindCounts>>, ApiError> {
+    blocking(&state.app, |app| {
+        export::counts(&app.store).map_err(export_failed)
+    })
+    .await
+}
+
+async fn exports(State(state): State<ApiState>) -> Result<axum::Json<Vec<Export>>, ApiError> {
+    blocking(&state.app, |app| Ok(export::list(&app.data_dir))).await
+}
+
+async fn start_export(
+    State(state): State<ApiState>,
+    axum::Json(request): axum::Json<NewExport>,
+) -> Result<axum::Json<Export>, ApiError> {
+    blocking(&state.app, move |app| {
+        export::create(app, request.kinds.as_deref()).map_err(export_failed)
+    })
+    .await
+}
+
+/// Streams one file of an export as JSON Lines.
+async fn download_export(
+    State(state): State<ApiState>,
+    UrlPath((id, file)): UrlPath<(i64, String)>,
+) -> Result<Response, ApiError> {
+    use tokio::io::AsyncReadExt;
+    let path = file
+        .strip_suffix(".jsonl")
+        .and_then(|kind| export::file(&state.app.data_dir, id, kind))
+        .ok_or_else(|| AppError::NotFound(format!("file {file} of export {id}")))?;
+    let file = tokio::fs::File::open(&path).await.map_err(AppError::from)?;
+    let body =
+        axum::body::Body::from_stream(futures_util::stream::unfold(file, |mut file| async move {
+            let mut chunk = vec![0; 64 * 1024];
+            match file.read(&mut chunk).await {
+                Ok(0) => None,
+                Ok(n) => {
+                    chunk.truncate(n);
+                    Some((Ok(chunk), file))
+                }
+                Err(e) => Some((Err(e), file)),
+            }
+        }));
+    Ok(([(header::CONTENT_TYPE, "application/x-ndjson")], body).into_response())
 }
 
 async fn usage(

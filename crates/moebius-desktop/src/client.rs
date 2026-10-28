@@ -309,6 +309,24 @@ pub struct Experiment {
     pub change_id: Option<i64>,
 }
 
+/// What the server holds of one kind of judgement, as `GET /v1/judgements/kinds` says.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct KindCounts {
+    pub kind: String,
+    pub count: i64,
+    pub with_outcome: i64,
+    pub by_person: i64,
+    pub held_out: i64,
+}
+
+/// A training-set export a person started: when, and what it holds of each kind.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Export {
+    pub id: i64,
+    pub at: i64,
+    pub kinds: Vec<KindCounts>,
+}
+
 /// A research as `GET /v1/research` lists it: the brief, how it stands and its experiments.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Research {
@@ -736,6 +754,20 @@ impl Client {
     /// The proposals of all Retros, the newest first.
     pub async fn proposals(&self) -> Result<Vec<Proposal>, ClientError> {
         self.get("/v1/proposals").await
+    }
+
+    pub async fn judgement_kinds(&self) -> Result<Vec<KindCounts>, ClientError> {
+        self.get("/v1/judgements/kinds").await
+    }
+
+    /// The training-set exports, the newest first.
+    pub async fn exports(&self) -> Result<Vec<Export>, ClientError> {
+        self.get("/v1/exports").await
+    }
+
+    /// Writes an export of every kind on the server.
+    pub async fn start_export(&self) -> Result<Export, ClientError> {
+        self.post("/v1/exports", serde_json::json!({})).await
     }
 
     /// All research, the newest first.

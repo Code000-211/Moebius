@@ -8,7 +8,9 @@ use std::sync::Arc;
 use clap::{Parser, Subcommand};
 use moebius_core::board;
 use moebius_core::config::{self, Config};
+use moebius_core::export;
 use moebius_core::server::Server;
+use moebius_core::store::Store;
 
 /// Moebius runs coding-agent harnesses from a repository's issues to changes that are ready to merge.
 #[derive(Debug, Parser)]
@@ -27,6 +29,15 @@ enum Command {
     Init,
     /// Start the server.
     Serve,
+    /// Write the judgements with their contexts and outcomes as JSON Lines, one file per kind, for training.
+    Export {
+        /// The directory to write `<kind>.jsonl` files to.
+        #[arg(long)]
+        out: PathBuf,
+        /// Only this kind of judgement; give the option again for more kinds.
+        #[arg(long = "kind")]
+        kinds: Vec<String>,
+    },
     /// Run a column script once against a made-up card and print what it did, or the error (exit status 1).
     CheckScript {
         /// The script, such as `.moebius/ready.luau`.
@@ -88,6 +99,28 @@ fn run(cli: Cli) -> Result<(), String> {
             }
             for line in did {
                 println!("{line}");
+            }
+            Ok(())
+        }
+        Some(Command::Export { out, kinds }) => {
+            let config = Config::load(&cli.config).map_err(|e| e.to_string())?;
+            if !config.data_dir.join("moebius.sqlite").is_file() {
+                return Err(format!("no store in {}", config.data_dir.display()));
+            }
+            let store = Store::open(&config.data_dir).map_err(|e| e.to_string())?;
+            let kinds = (!kinds.is_empty()).then_some(kinds);
+            let summary =
+                export::export(&store, &out, kinds.as_deref()).map_err(|e| e.to_string())?;
+            for written in summary.kinds {
+                let c = written.counts;
+                println!(
+                    "{}: {} judgements, {} with an outcome, {} by a person, {} held out",
+                    written.file.display(),
+                    c.count,
+                    c.with_outcome,
+                    c.by_person,
+                    c.held_out
+                );
             }
             Ok(())
         }

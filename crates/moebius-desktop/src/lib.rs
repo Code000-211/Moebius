@@ -8,6 +8,7 @@ pub mod chat;
 pub mod client;
 pub mod connect;
 pub mod conversation;
+pub mod decision_model;
 pub mod experiments;
 pub mod history;
 pub mod icons;

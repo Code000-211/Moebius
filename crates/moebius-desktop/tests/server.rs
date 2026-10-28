@@ -972,3 +972,48 @@ async fn a_grilling_ends_in_an_inbox_item_whose_issues_the_client_confirms_into_
         other => panic!("{other:?}"),
     }
 }
+
+/// The client counts the judgements the server stored, makes an export of them and lists it.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_client_counts_judgements_and_starts_an_export() {
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, server) = start(dir.path()).await;
+    let client = Client::new(settings);
+    assert!(client.judgement_kinds().await.unwrap().is_empty());
+    assert!(client.exports().await.unwrap().is_empty());
+
+    let question = moebius_core::decide::Question {
+        kind: "merge".into(),
+        context: std::collections::BTreeMap::from([("change".to_string(), "1".to_string())]),
+        options: vec!["merge".into()],
+        ..Default::default()
+    };
+    let id = server
+        .app
+        .decisions
+        .record_person(&question, "merge", "fine")
+        .unwrap()
+        .judgement_id;
+    server.app.store.set_outcome(id, "merged").unwrap();
+
+    let kinds = client.judgement_kinds().await.unwrap();
+    assert_eq!(kinds.len(), 1);
+    assert_eq!(
+        (
+            kinds[0].kind.as_str(),
+            kinds[0].count,
+            kinds[0].with_outcome,
+            kinds[0].by_person
+        ),
+        ("merge", 1, 1, 1)
+    );
+    let made = client.start_export().await.unwrap();
+    assert_eq!((made.id, made.kinds.clone()), (1, kinds));
+    assert_eq!(client.exports().await.unwrap(), vec![made]);
+    // The person's decision to export is now a kind of its own.
+    let kinds = client.judgement_kinds().await.unwrap();
+    assert_eq!(
+        kinds.iter().map(|k| k.kind.as_str()).collect::<Vec<_>>(),
+        ["export", "merge"]
+    );
+}

@@ -91,7 +91,7 @@ network. The window needs a GPU or a software Vulkan/OpenGL driver; the app find
 |---|---|
 | `crates/moebius-core/` | Everything the server does. `src/` has one module per part; `workflow/` the built-in column scripts; `bridge/` the Pi extension that checks tool calls. |
 | `crates/moebius-plugin-api/` | The plugin trait and the host that calls plugins with a time limit, failing closed. |
-| `crates/moebius/` | The `moebius` binary (`init`, `serve`, `check-script`). |
+| `crates/moebius/` | The `moebius` binary (`init`, `serve`, `check-script`, `export`). |
 | `crates/moebius-desktop/` | The desktop app (iced), built to `docs/design.md`; it uses only the desktop API. |
 | `examples/` | A column script, rules, a decider plugin and a Pi extension that run in CI. |
 | `docs/` | Documentation, below. |
@@ -105,7 +105,7 @@ network. The window needs a GPU or a software Vulkan/OpenGL driver; the app find
   [column scripts](docs/reference/column-scripts.md), [rules](docs/reference/rules.md),
   [configuration](docs/reference/configuration.md), [plugin API](docs/reference/plugin-api.md),
   [bridge protocol](docs/reference/bridge-protocol.md), [router](docs/reference/router.md),
-  [desktop API](docs/reference/desktop-api.md).
+  [desktop API](docs/reference/desktop-api.md), [training export](docs/reference/training-export.md).
 - [`docs/guide/`](docs/guide/README.md): the guide, how to build on Moebius step by step (column scripts, workflows,
   rules, agents, plugins, extensions, the desktop API), with examples that tests run.
 - [`examples/README.md`](examples/README.md): the examples.

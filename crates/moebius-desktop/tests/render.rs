@@ -7,6 +7,8 @@ use moebius_desktop::agents;
 use moebius_desktop::app::{App, Message, Page};
 use moebius_desktop::chat;
 use moebius_desktop::client::{self, ClientError, Snapshot, TerminalEvent};
+use moebius_desktop::client::{Export, KindCounts};
+use moebius_desktop::decision_model;
 use moebius_desktop::experiments;
 use moebius_desktop::inbox::{self, Action};
 use moebius_desktop::live;
@@ -222,11 +224,11 @@ fn the_collapsed_sidebar_keeps_the_inbox_count() {
 #[test]
 fn a_screen_that_is_not_built_says_which_milestone_brings_it() {
     let mut app = App::with_snapshot(overview());
-    let _ = app.update(Message::Select(Page::DecisionModel));
+    let _ = app.update(Message::Select(Page::Models));
     draw(
         &app,
         "shell-soon",
-        &["Decision model", "This screen comes with M9."],
+        &["Models", "This screen has no milestone yet."],
     );
 }
 
@@ -2261,4 +2263,97 @@ fn a_brief_needs_a_repository_a_goal_a_measure_and_a_budget_before_it_is_stored(
     assert!(!stored(&app));
     edit(&mut app, experiments::Message::BudgetEdited("1000".into()));
     assert!(stored(&app));
+}
+
+fn counts(kind: &str, count: i64, with_outcome: i64, by_person: i64, held_out: i64) -> KindCounts {
+    KindCounts {
+        kind: kind.to_string(),
+        count,
+        with_outcome,
+        by_person,
+        held_out,
+    }
+}
+
+fn decision_model_app() -> App {
+    let mut app = App::with_snapshot(overview());
+    let _ = app.update(Message::Select(Page::DecisionModel));
+    let _ = app.update(Message::DecisionModel(decision_model::Message::Kinds(Ok(
+        vec![
+            counts("approve_issue", 14, 12, 14, 1),
+            counts("merge", 9, 9, 9, 2),
+            counts("tool_call", 1204, 311, 0, 118),
+        ],
+    ))));
+    let _ = app.update(Message::DecisionModel(decision_model::Message::Exports(
+        Ok(vec![
+            Export {
+                id: 2,
+                at: 1_793_182_500,
+                kinds: vec![
+                    counts("merge", 9, 9, 9, 2),
+                    counts("tool_call", 1100, 300, 0, 104),
+                ],
+            },
+            Export {
+                id: 1,
+                at: 1_793_000_000,
+                kinds: vec![counts("merge", 4, 4, 4, 0)],
+            },
+        ]),
+    )));
+    app
+}
+
+#[test]
+fn the_decision_model_screen_counts_the_kinds_lists_the_exports_and_keeps_room_for_shadowing() {
+    draw_sized(
+        &decision_model_app(),
+        "decision-model",
+        &[
+            "Decision model",
+            "Export training set",
+            "1227 judgements recorded in 3 kinds; they leave the server only in an export you start.",
+            "Kinds of decision",
+            "With an outcome",
+            "By a person",
+            "Held out",
+            "approve_issue",
+            "1204",
+            "GET /v1/exports/2/tool_call.jsonl",
+            "GET /v1/exports/2/merge.jsonl",
+            "Not exported yet",
+            "moebius export --out <directory>",
+            "Exports",
+            "#2",
+            "2026-10-28 10:15 UTC",
+            "merge, tool_call",
+            "Shadowing",
+            "No decision model is configured.",
+        ],
+        Size::new(1440.0, 1100.0),
+    );
+    assert_eq!(
+        pressed(&decision_model_app(), "Export training set").as_deref(),
+        Some("[DecisionModel(Export)]")
+    );
+}
+
+#[test]
+fn an_empty_decision_model_screen_and_a_refused_export_say_so() {
+    let mut app = App::with_snapshot(overview());
+    let _ = app.update(Message::Select(Page::DecisionModel));
+    for text in [
+        "Nothing has been decided yet.",
+        "No export has been made yet.",
+    ] {
+        assert!(shows(&app, text), "{text}");
+    }
+    let _ = app.update(Message::DecisionModel(decision_model::Message::Exported(
+        Err(ClientError::Server {
+            status: 422,
+            message: "no judgements of kind \"x\"".into(),
+        }),
+    )));
+    assert!(shows(&app, "The export was refused"));
 }

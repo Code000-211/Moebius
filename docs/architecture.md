@@ -240,7 +240,7 @@ The server runs on a multi-threaded tokio runtime.
 
 | Module | What it is for |
 |---|---|
-| `crates/moebius/src/main.rs` | The `moebius` binary: `init` writes the example configuration, `serve` starts the server, `check-script` runs a column script once against a made-up card (`board::check_script`). |
+| `crates/moebius/src/main.rs` | The `moebius` binary: `init` writes the example configuration, `serve` starts the server, `check-script` runs a column script once against a made-up card (`board::check_script`), `export` writes the training set (`export`). |
 | `crates/moebius-plugin-api/src/lib.rs` | The `Plugin` trait, the call and decision types, the `Host` that calls plugins with a time limit and fails closed. |
 | `crates/moebius-desktop/src/main.rs` | The desktop app's start: fonts, theme, window. |
 | `crates/moebius-desktop/src/app.rs` | The app's state, `Message`, `update` and view: the connection, the page shown, reading the snapshot again on events. |
@@ -260,6 +260,7 @@ The server runs on a multi-threaded tokio runtime.
 | `check.rs` | The tool-call check endpoints `/moebius/check` and `/moebius/result`. |
 | `config.rs` | `moebius.toml`: parsing, defaults, validation. |
 | `decide.rs` | Decision points: routing a question to a decider, failing closed, recording the judgement. |
+| `export.rs` | The training-set export: judgements with their contexts and outcomes as JSON Lines per kind, the held-out tenth, the exports a person started in the app. |
 | `forge.rs` | The `Forge` trait with the forges `none` and `github`. |
 | `github.rs` | The GitHub App client: JWT, installation tokens, issues with ETags, pull requests, checks, reviews, merge. |
 | `guard.rs` | The `guard` decider: built-in pattern rules and the teacher model. |
