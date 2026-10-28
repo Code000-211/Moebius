@@ -168,3 +168,24 @@ If anything fails after the commit was made, including the push, the commit is u
 before it), so the clone never drifts from `origin`, and no decision is recorded. The request then fails with the
 error. When someone else pushed to
 `origin` meanwhile, the push is refused for that reason, and the next refresh brings their commits in.
+
+## The Retro
+
+Once a day (`retro_at`, see [configuration](configuration.md)) Moebius collects the day's errors without a model into a
+report (see `POST /v1/retros` in the [desktop API](desktop-api.md)). When the day had errors and `[harness]` is
+configured, the built-in agent `Retro-analyst` turns the report into proposals. Agent names allow no spaces, so it is
+`Retro-analyst`, not "Retro analyst".
+
+- The agent is built in like the Moebius agent: its instructions are built in, it has the `moebius` skill (which holds
+  these reference pages), and its model comes from `agents/Retro-analyst.toml` or else from the Coder. `agents/Retro-analyst.md`
+  is added after the built-in instructions; `agents/Retro-analyst.toml` may set its model, skills and the rest.
+- Its run has the purpose `retro` and no card. It works in a fresh detached worktree of the clone at the default branch
+  (`<data_dir>/worktrees/harness/retro-<run id>`), which is removed when the run ends. It is told the report as JSON. It
+  never waits for a person.
+- Each proposal is a branch `proposal/<date>-<short-name>` made from the default branch, with one commit whose message is
+  the proposal: the subject is its title, the body says what changes and which errors it addresses. It changes only
+  harness configuration files (`agents/`, `skills/`, `extensions/`, `rules.md`, `mcp.toml`).
+- When the run has succeeded, Moebius lists the `proposal/<date>-*` branches of the clone. A branch that changes
+  nothing, changes another file, or breaks an agent that could be used on the default branch is left out, with a warning
+  in the Retro. The others are pushed to `origin` and stored as proposals (`GET /v1/proposals`), with the agents whose files
+  they change. Nothing is merged: adopting a proposal is a person's decision.

@@ -13,7 +13,8 @@
 //! Moebius bridge (`bridge/moebius-bridge.ts`) is loaded into every run after the agent's own extensions, so that it
 //! sees the final input and content of each tool call; it asks the check for each tool call and result (see `check`). Every run is told the path of the
 //! `moebius` executable as `$MOEBIUS`. The Moebius agent is always available: its instructions are built in, its skill
-//! is the guide (see `skill`), and its model comes from `[agents.Moebius]` or else from the Coder.
+//! is the guide (see `skill`), and its model comes from `[agents.Moebius]` or else from the Coder. The Retro analyst
+//! (see `retro`) is built the same way; its run works in a worktree of the harness configuration repository.
 
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -44,11 +45,36 @@ const BRIDGE: &str = include_str!("../bridge/moebius-bridge.ts");
 /// The name of the bundled agent that builds on Moebius, which every chat without an agent starts.
 pub const MOEBIUS_AGENT: &str = "Moebius";
 
+/// The name of the bundled agent that turns a Retro's report into proposals. Agent names allow no spaces.
+pub const RETRO_AGENT: &str = "Retro-analyst";
+
+/// What the Retro analyst is told; `agents/Retro-analyst.md` comes after it.
+const RETRO_INSTRUCTIONS: &str = "You are the Retro analyst. Each day Moebius gives you a report of that day's errors: \
+     failed and refused tool calls, failed and stopped runs, steering, failed checks, conflicts and the Reviewer's \
+     findings. You work in a git worktree of the harness configuration repository, which holds agents/<name>.toml and \
+     agents/<name>.md, skills/, rules.md, mcp.toml and extensions/. Use the moebius skill: its reference pages \
+     harness-configuration and rules give the exact format of every file. Find the causes the errors share and \
+     propose changes to the configuration that would avoid them, such as a clearer instruction, a rule or a skill. \
+     Make each proposal its own branch named proposal/<date>-<short-name> from the current commit, with exactly one \
+     commit whose message is the proposal: the subject is its title, the body says what changes and which errors it \
+     addresses. Change only harness configuration files, and leave the files as the format requires, since a \
+     proposal that does not parse is dropped. Do not edit the files on the branch you start on, do not push, and do \
+     not ask anyone anything: nobody answers. If no change is called for, make no branch.";
+
 /// What the Moebius agent is told; the `instructions` of `[agents.Moebius]` come after it.
 const MOEBIUS_INSTRUCTIONS: &str = "You are the Moebius agent. You work for the person in this chat and build what they \
      ask for on Moebius: column scripts, rules, agents, plugins and Pi extensions. Use the moebius skill: it holds the \
      guide and the exact references, and says how to try what you build. In a repository you work in a worktree on a \
      branch of its own; when the chat ends, what you left there is offered to the person as a change to merge.";
+
+/// The instructions of a built-in agent, which exists without configuration.
+fn built_in_instructions(name: &str) -> Option<&'static str> {
+    match name {
+        MOEBIUS_AGENT => Some(MOEBIUS_INSTRUCTIONS),
+        RETRO_AGENT => Some(RETRO_INSTRUCTIONS),
+        _ => None,
+    }
+}
 
 /// Starts and stops Pi-Bolt runs.
 pub struct PiBolt {
@@ -101,19 +127,19 @@ impl PiBolt {
         }
     }
 
-    /// The agent `name` as a run uses it. The Moebius agent is made of its configuration, or else the Coder's model
-    /// and protocol, and always has the built-in instructions and the `moebius` skill.
+    /// The agent `name` as a run uses it. The Moebius agent and the Retro analyst are made of their configuration, or
+    /// else the Coder's model and protocol, and always have their built-in instructions and the `moebius` skill.
     fn agent(&self, app: &App, name: &str) -> Result<AgentConfig, String> {
         let set = self.agent_set();
         let configured = set.agents.get(name);
-        if name != MOEBIUS_AGENT {
+        let Some(built_in) = built_in_instructions(name) else {
             return configured
                 .cloned()
                 .ok_or_else(|| match set.errors.get(name) {
                     Some(error) => format!("the agent {name} cannot be used: {error}"),
                     None => format!("no agent named {name}"),
                 });
-        }
+        };
         let mut agent = match (configured, set.agents.get("Coder")) {
             (Some(own), _) => own.clone(),
             (None, Some(coder)) => AgentConfig {
@@ -127,16 +153,14 @@ impl PiBolt {
                 token_budget: None,
             },
             (None, None) => {
-                return Err(
-                    "the Moebius agent needs a model: configure [agents.Moebius] or \
-                     [agents.Coder]"
-                        .into(),
-                );
+                return Err(format!(
+                    "the {name} agent needs a model: configure [agents.{name}] or [agents.Coder]"
+                ));
             }
         };
         agent.instructions = Some(match agent.instructions {
-            Some(extra) => format!("{MOEBIUS_INSTRUCTIONS}\n\n{extra}"),
-            None => MOEBIUS_INSTRUCTIONS.into(),
+            Some(extra) => format!("{built_in}\n\n{extra}"),
+            None => built_in.into(),
         });
         agent.skills.insert(0, skill::dir(&app.data_dir));
         Ok(agent)
@@ -428,6 +452,41 @@ impl Runs for PiBolt {
         let said = json!({ "message": redact(message) });
         let _ = app.record_run_event(run.id, "said", &said);
         self.launch_or_undo(app, None, &config, running, message)
+    }
+
+    fn start_retro(
+        &self,
+        app: &Arc<App>,
+        clone: &Path,
+        base: &str,
+        prompt: &str,
+    ) -> Result<Run, String> {
+        let config = self.agent(app, RETRO_AGENT)?;
+        let run = app
+            .store
+            .add_run(None, RETRO_AGENT, "pi-bolt", "retro")
+            .map_err(|e| e.to_string())?;
+        let name = format!("retro-{}", run.id);
+        let worktree = app
+            .repos
+            .add_detached_worktree("harness", clone, &name, base)
+            .map_err(|e| fail(app, run.id, e.to_string()))?;
+        let start =
+            git(&worktree, &["rev-parse", "HEAD"]).map_err(|e| fail(app, run.id, e.to_string()))?;
+        let running = RunningRun {
+            id: run.id,
+            clone: Some(clone.to_path_buf()),
+            start,
+            worktree,
+            token: self.router.issue_token(Grant {
+                run_id: run.id,
+                card_id: None,
+                budget: config.token_budget,
+            }),
+            purpose: "retro".into(),
+            commit_message: String::new(),
+        };
+        self.launch_or_undo(app, None, &config, running, prompt)
     }
 
     fn say(&self, run_id: i64, message: &str) -> bool {

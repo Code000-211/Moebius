@@ -2,7 +2,7 @@
 
 The desktop API is how the desktop app, or any client such as `curl`, reads the boards and acts on them. This page is for
 anyone who writes a client or a script against a running server. The code is in `crates/moebius-core/src/api.rs`; the
-events are published from `app.rs`, `pibolt.rs`, `check.rs`, `poll.rs` and `server.rs`.
+events are published from `app.rs`, `pibolt.rs`, `check.rs`, `poll.rs`, `retro.rs` and `server.rs`.
 
 The API is HTTP with JSON bodies plus one WebSocket, served on `listen` (default `127.0.0.1:7171`). Keep it on a private
 network.
@@ -43,7 +43,7 @@ These objects appear in the responses. All ids are numbers; times are Unix secon
 `Card`: `id`, `repository_id`, `number`, `title`, `body`, `author`, `column`, `created_at`, `note` (why the card was sent
 back to coding, or null) and `retried_after` (the id of the card's latest run when a person last retried it, or null).
 `Run`: `id`, `card_id` (null for a chat), `agent`, `harness`, `purpose` (`code`, `review`, other purposes of column scripts,
-or `chat`), `status` (`starting`, `running`, `waiting`, `succeeded`, `failed` or `stopped`; `waiting` is a chat waiting for
+`chat`, or `retro`, the Retro analyst's run), `status` (`starting`, `running`, `waiting`, `succeeded`, `failed` or `stopped`; `waiting` is a chat waiting for
 the person's next message), `worktree`, `started_at`, `ended_at`, `summary` and `repository_id` (the repository a chat
 works in, or null).
 
@@ -432,6 +432,46 @@ Request: `{}`.
 Response: the `Run`, as it was when the request was made. Errors: `404` no such run; `422` the run is not a chat or has
 ended.
 
+### `POST /v1/retros`
+
+Runs the Retro of a day now: the day's errors are collected into a report and, when the day had errors and `[harness]`
+is configured, the Retro analyst starts (see [harness configuration](harness-configuration.md#the-retro)). The analysis
+goes on after the response, which has the status `analysing`; its end is the event `retro_done`. Without `[harness]`, or
+without errors, no run is made and the Retro is `reported` at once. The server does this by itself once a day, at
+`retro_at` (see [configuration](configuration.md)).
+
+Request: `{}` for today, or `{"date": "YYYY-MM-DD"}` for a local day. Response: the `RetroView`. Errors: `409` the day has
+a Retro already; `422` the date is not a date.
+
+`RetroView`: `date`, `status` (`reported`: the report is all there is; `analysing`: the analyst is running; `proposed`: it
+ran and its proposals are stored, there may be none; `failed`: its run failed or was stopped, or the server stopped
+meanwhile), `run_id` (the analyst's run, or null), `warnings` (array of strings: the branches left out and why, or why it
+failed), `at`, `report` and `proposals` (array of `Proposal`).
+
+`report`: `{"date", "errors": [...]}`, in the order in time. Each error is `{"kind", "run", "card", "agent", "text"}`;
+`run`, `card` and `agent` are null where the error has none, and `text` is at most 500 characters, with secrets removed as
+stored. The kinds are `tool_failed` (a tool call that ended in error: the tool and the start of what it said, not a call
+Moebius refused), `tool_refused` (the tool and the rule's reason), `run_failed` (the run's last `moebius_error`),
+`run_stopped`, `steered` (a person's message to a running run), and `checks_failed`, `conflict` and `review_findings`
+(a card sent back from In review to In progress, with its note). The runs of the Retro analyst itself are left out.
+
+`Proposal`: `id`, `retro_date`, `branch` (`proposal/<date>-<name>`, also on the harness repository's `origin`), `title` (the
+subject of its commit), `body` (the rest of the message), `agents` (the names of the agents whose files it changes), `status`
+(`open`) and `at`.
+
+### `GET /v1/retros`
+
+The Retros, the latest day first. Response: an array of `{"date", "status", "run_id", "errors" (how many the report
+holds), "proposals" (how many), "at"}`.
+
+### `GET /v1/retros/{date}`
+
+One Retro as the `RetroView`. Errors: `404` the day has none.
+
+### `GET /v1/proposals`
+
+All proposals, the newest first. Response: an array of `Proposal`.
+
 ## Events
 
 `GET /v1/events` sends one JSON object per message: `{"kind": "<kind>", "data": ...}`. These are all the kinds.
@@ -453,6 +493,8 @@ ended.
 | `board_error` | A column script failed; the card stays where it is. | `{"card": id, "message": string}` |
 | `forge_error` | Polling a GitHub repository, or refreshing the clone of a repository without a forge, failed; it is tried again at the next poll or refresh (every 30 seconds without a forge). | `{"repository": "owner/repo" (GitHub) or the repository's name, "message": string}` |
 | `harness_error` | An agent's files in the harness configuration repository are broken (it is left out), or refreshing the repository failed (every 30 seconds). | `{"agent": name (left out when the refresh failed), "message": string}` |
+| `retro_done` | A Retro ended: it was `reported`, or the analyst's run ended and its proposals were stored (`proposed`), or it `failed`. | `{"date": "YYYY-MM-DD", "status": "reported" \| "proposed" \| "failed", "proposals": number}` |
+| `retro_error` | The schedule could not start the day's Retro; it is tried again a minute later. | `{"message": string}` |
 | `lagged` | This client fell too far behind (more than 1024 events) and lost the oldest. | `{"missed": number}` |
 
 A `run_event` has two sources, told apart by its inner `kind`:

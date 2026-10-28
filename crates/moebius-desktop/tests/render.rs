@@ -9,6 +9,7 @@ use moebius_desktop::chat;
 use moebius_desktop::client::{self, ClientError, Snapshot, TerminalEvent};
 use moebius_desktop::inbox::{self, Action};
 use moebius_desktop::live;
+use moebius_desktop::retro;
 use moebius_desktop::terminal::PaneEvent;
 use moebius_desktop::theme;
 use moebius_desktop::usage;
@@ -220,8 +221,12 @@ fn the_collapsed_sidebar_keeps_the_inbox_count() {
 #[test]
 fn a_screen_that_is_not_built_says_which_milestone_brings_it() {
     let mut app = App::with_snapshot(overview());
-    let _ = app.update(Message::Select(Page::Retro));
-    draw(&app, "shell-soon", &["Retro", "This screen comes with M8."]);
+    let _ = app.update(Message::Select(Page::Experiments));
+    draw(
+        &app,
+        "shell-soon",
+        &["Experiments", "This screen comes with M8."],
+    );
 }
 
 #[test]
@@ -1353,7 +1358,7 @@ fn the_agents_screen_lists_the_agents_and_edits_one_like_the_mockup() {
             "extensions/log.ts",
             "Add extension",
             "From the Retro",
-            "No proposals yet — the Retro proposes changes from M8 on.",
+            "No open proposal changes this agent.",
         ],
         Size::new(1440.0, 1300.0),
     );
@@ -1649,4 +1654,126 @@ fn choosing_a_window_asks_for_it_and_an_answer_for_another_window_is_ignored() {
     assert!(shows(&app, "7M"));
     assert!(shows(&app, "1M tokens a day on average"));
     assert!(shows(&app, "1.84M in the last 7 days across 4 models"));
+}
+
+fn retro_listing() -> Vec<client::RetroSummary> {
+    serde_json::from_value(json!([
+        {"date": "2026-10-28", "status": "proposed", "run_id": 31, "errors": 6, "proposals": 2, "at": 1790000000},
+        {"date": "2026-10-27", "status": "reported", "run_id": null, "errors": 0, "proposals": 0, "at": 1789900000},
+        {"date": "2026-10-26", "status": "failed", "run_id": 20, "errors": 3, "proposals": 0, "at": 1789800000},
+    ]))
+    .unwrap()
+}
+
+fn proposal_json() -> serde_json::Value {
+    json!([
+        {"branch": "proposal/2026-10-28-small-commits", "title": "Tell the Coder to run the tests first",
+         "body": "The Coder's changes failed the checks twice on 2026-10-28; its instructions now say to run the tests before it stops.",
+         "agents": ["Coder"], "status": "open"},
+        {"branch": "proposal/2026-10-28-allow-docs", "title": "Allow reading the docs directory",
+         "body": "The rule no-reads-outside refused three reads of docs/.", "agents": [], "status": "open"},
+    ])
+}
+
+fn proposal_listing() -> Vec<client::Proposal> {
+    serde_json::from_value(proposal_json()).unwrap()
+}
+
+fn retro_view() -> client::RetroView {
+    serde_json::from_value(json!({
+        "date": "2026-10-28", "status": "proposed",
+        "warnings": ["proposal/2026-10-28-code is left out: it changes src/main.rs, which is not harness configuration"],
+        "report": {"date": "2026-10-28", "errors": [
+            {"kind": "tool_failed", "run": 12, "card": 48, "agent": "Coder", "text": "bash: cargo test exited with 101"},
+            {"kind": "tool_refused", "run": 12, "card": 48, "agent": "Coder", "text": "bash: no-destructive-commands: rm -rf target"},
+            {"kind": "run_failed", "run": 14, "card": 50, "agent": "Coder", "text": "the agent changed nothing"},
+            {"kind": "steered", "run": 12, "card": 48, "agent": "Coder", "text": "use the other file"},
+            {"kind": "checks_failed", "run": null, "card": 48, "agent": null, "text": "The checks failed:\ncargo test"},
+            {"kind": "review_findings", "run": null, "card": 50, "agent": null, "text": "The test for the empty case is missing."},
+        ]},
+        "proposals": proposal_json(),
+    }))
+    .unwrap()
+}
+
+fn retro_app() -> App {
+    let mut app = App::with_snapshot(overview());
+    let _ = app.update(Message::Select(Page::Retro));
+    let retro = |message| Message::Retro(message);
+    let _ = app.update(retro(retro::Message::Listed(Ok(retro_listing()))));
+    let _ = app.update(retro(retro::Message::Select("2026-10-28".into())));
+    let _ = app.update(retro(retro::Message::Opened(
+        "2026-10-28".into(),
+        Ok(retro_view()),
+    )));
+    app
+}
+
+#[test]
+fn the_retro_screen_lists_the_days_and_shows_the_errors_and_proposals_of_one() {
+    draw_sized(
+        &retro_app(),
+        "retro",
+        &[
+            "Retro",
+            "Run the Retro now",
+            "2026-10-28",
+            "Proposed",
+            "6 errors · 2 proposals",
+            "2026-10-27",
+            "Reported",
+            "0 errors · 0 proposals",
+            "Failed",
+            "Errors of 2026-10-28",
+            "Failed tool calls · 1",
+            "bash: cargo test exited with 101",
+            "Refused tool calls · 1",
+            "Failed runs · 1",
+            "Steering · 1",
+            "Failed checks · 1",
+            "Review findings · 1",
+            "card 48 · run 12 · Coder",
+            "Left out",
+            "Proposals",
+            "Tell the Coder to run the tests first",
+            "proposal/2026-10-28-small-commits",
+            "Allow reading the docs directory",
+        ],
+        Size::new(1440.0, 1300.0),
+    );
+}
+
+#[test]
+fn a_retro_that_could_not_be_started_says_why_and_a_day_without_errors_says_so() {
+    let mut app = retro_app();
+    let _ = app.update(Message::Retro(retro::Message::Started(Err(
+        ClientError::Server {
+            status: 409,
+            message: "the Retro of 2026-10-28 exists already".into(),
+        },
+    ))));
+    assert!(shows(&app, "The Retro did not start"));
+    let empty: client::RetroView = serde_json::from_value(json!({
+        "date": "2026-10-27", "status": "reported", "report": {"errors": []}, "proposals": []
+    }))
+    .unwrap();
+    let _ = app.update(Message::Retro(retro::Message::Select("2026-10-27".into())));
+    let _ = app.update(Message::Retro(retro::Message::Opened(
+        "2026-10-27".into(),
+        Ok(empty),
+    )));
+    assert!(shows(&app, "No errors that day."));
+    assert!(shows(&app, "The Retro proposed nothing."));
+}
+
+#[test]
+fn the_agents_screen_offers_the_open_proposals_that_change_the_agent() {
+    let mut app = agents_app();
+    let _ = app.update(Message::Agents(agents::Message::ProposalsListed(Ok(
+        proposal_listing(),
+    ))));
+    assert!(shows(&app, "Tell the Coder to run the tests first"));
+    assert!(shows(&app, "proposal/2026-10-28-small-commits"));
+    // The proposal that changes no agent is not offered here.
+    assert!(!shows(&app, "Allow reading the docs directory"));
 }

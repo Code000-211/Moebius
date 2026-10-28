@@ -1,0 +1,390 @@
+//! The Retro screen: the Retros of the days, the errors of the one chosen grouped by kind, and the proposals the Retro
+//! analyst made. "Run the Retro now" is `POST /v1/retros`; the server says when a Retro ends with the event
+//! `retro_done`, which the app answers by reading the screen again.
+
+use iced::font::Weight;
+use iced::widget::text::Wrapping;
+use iced::widget::{button, column, container, row, scrollable, space, text};
+use iced::{Alignment, Border, Element, Length, Task};
+
+use crate::app::Message as AppMessage;
+use crate::client::{Client, ClientError, Proposal, ReportError, RetroSummary, RetroView};
+use crate::page::{self, Tone};
+use crate::settings::Settings;
+use crate::theme;
+
+/// The kinds of error of a report, in the order the page lists them, with what the page calls them.
+const KINDS: [(&str, &str); 8] = [
+    ("tool_failed", "Failed tool calls"),
+    ("tool_refused", "Refused tool calls"),
+    ("run_failed", "Failed runs"),
+    ("run_stopped", "Stopped runs"),
+    ("steered", "Steering"),
+    ("checks_failed", "Failed checks"),
+    ("conflict", "Merge conflicts"),
+    ("review_findings", "Review findings"),
+];
+
+#[derive(Debug, Clone)]
+pub enum Message {
+    Listed(Result<Vec<RetroSummary>, ClientError>),
+    /// A day of the list was chosen.
+    Select(String),
+    /// The Retro of this day was read.
+    Opened(String, Result<RetroView, ClientError>),
+    /// "Run the Retro now" was pressed.
+    Run,
+    /// The server answered it.
+    Started(Result<RetroView, ClientError>),
+}
+
+#[derive(Default)]
+pub struct Retros {
+    list: Vec<RetroSummary>,
+    /// The day chosen and its Retro, once read.
+    chosen: Option<String>,
+    opened: Option<RetroView>,
+    /// Why the last "Run the Retro now" did not start one.
+    failed: Option<String>,
+}
+
+impl Retros {
+    /// Reads the list again, and the Retro on show.
+    pub fn reload(&self, settings: &Settings) -> Task<AppMessage> {
+        let client = Client::new(settings.clone());
+        let list = Task::perform(async move { client.retros().await }, |result| {
+            AppMessage::Retro(Message::Listed(result))
+        });
+        match &self.chosen {
+            Some(date) => Task::batch([list, open(settings, date)]),
+            None => list,
+        }
+    }
+
+    /// Whether the server refused the token in an answer, which the app answers with the connect screen.
+    pub fn refused(message: &Message) -> bool {
+        matches!(
+            message,
+            Message::Listed(Err(ClientError::Unauthorized))
+                | Message::Opened(_, Err(ClientError::Unauthorized))
+                | Message::Started(Err(ClientError::Unauthorized))
+        )
+    }
+
+    pub fn update(&mut self, message: Message, settings: Option<&Settings>) -> Task<AppMessage> {
+        let Some(settings) = settings else {
+            return Task::none();
+        };
+        match message {
+            Message::Listed(Ok(list)) => {
+                self.list = list;
+                if self.chosen.is_none()
+                    && let Some(latest) = self.list.first()
+                {
+                    return self.select(latest.date.clone(), settings);
+                }
+            }
+            Message::Listed(Err(_)) => {}
+            Message::Select(date) => return self.select(date, settings),
+            Message::Opened(date, Ok(view)) => {
+                if self.chosen.as_deref() == Some(date.as_str()) {
+                    self.opened = Some(view);
+                }
+            }
+            Message::Opened(_, Err(_)) => {}
+            Message::Run => {
+                self.failed = None;
+                let client = Client::new(settings.clone());
+                return Task::perform(async move { client.start_retro().await }, |result| {
+                    AppMessage::Retro(Message::Started(result))
+                });
+            }
+            Message::Started(Ok(view)) => {
+                self.failed = None;
+                self.chosen = Some(view.date.clone());
+                self.opened = Some(view);
+                return self.reload(settings);
+            }
+            Message::Started(Err(e)) => self.failed = Some(e.to_string()),
+        }
+        Task::none()
+    }
+
+    fn select(&mut self, date: String, settings: &Settings) -> Task<AppMessage> {
+        if self.chosen.as_ref() != Some(&date) {
+            self.opened = None;
+        }
+        self.chosen = Some(date.clone());
+        open(settings, &date)
+    }
+
+    pub fn view(&self) -> Element<'_, AppMessage> {
+        let header = page::header(
+            "Improve",
+            "Retro",
+            None,
+            page::context(
+                "Each day's errors, and the changes to the harness configuration the Retro proposes to avoid them.",
+            ),
+            page::primary_button("Run the Retro now", Some(AppMessage::Retro(Message::Run))),
+        );
+        let mut detail = column![].spacing(theme::PAGE_GAP).width(Length::Fill);
+        if let Some(failed) = &self.failed {
+            detail = detail.push(page::boxed(
+                "The Retro did not start",
+                text(failed.as_str())
+                    .size(theme::BODY)
+                    .color(theme::RED_TEXT),
+            ));
+        }
+        detail = match &self.opened {
+            Some(view) => detail
+                .push(warnings_box(view))
+                .push(errors_box(view))
+                .push(proposals_box(&view.proposals)),
+            None if self.list.is_empty() => detail.push(page::boxed(
+                "No Retro yet",
+                page::body("The first one runs at the time set by retro_at, or press \"Run the Retro now\"."),
+            )),
+            None => detail.push(page::boxed("Retro", page::body("Reading the Retro…"))),
+        };
+        column![
+            header,
+            row![
+                scrollable(self.list_view()).width(280),
+                scrollable(container(detail).padding(iced::Padding::default().right(12)))
+                    .width(Length::Fill)
+            ]
+            .spacing(14)
+            .height(Length::Fill),
+        ]
+        .spacing(theme::PAGE_GAP)
+        .width(Length::Fill)
+        .into()
+    }
+
+    fn list_view(&self) -> Element<'_, AppMessage> {
+        if self.list.is_empty() {
+            return page::boxed("Retros", page::body("None yet."));
+        }
+        column(
+            self.list.iter().map(|retro| {
+                retro_card(retro, self.chosen.as_deref() == Some(retro.date.as_str()))
+            }),
+        )
+        .spacing(8)
+        .padding(iced::Padding::default().right(12))
+        .into()
+    }
+}
+
+fn open(settings: &Settings, date: &str) -> Task<AppMessage> {
+    let (client, date) = (Client::new(settings.clone()), date.to_string());
+    Task::perform(
+        async move {
+            let result = client.retro(&date).await;
+            (date, result)
+        },
+        |(date, result)| AppMessage::Retro(Message::Opened(date, result)),
+    )
+}
+
+fn status_tag<'a>(status: &str) -> Element<'a, AppMessage> {
+    let (label, tone) = match status {
+        "analysing" => ("Analysing", Tone::Amber),
+        "proposed" => ("Proposed", Tone::Teal),
+        "failed" => ("Failed", Tone::Red),
+        _ => ("Reported", Tone::Plain),
+    };
+    page::tag(label.to_string(), tone)
+}
+
+fn plural(n: usize, one: &str, many: &str) -> String {
+    format!("{n} {}", if n == 1 { one } else { many })
+}
+
+fn retro_card(retro: &RetroSummary, chosen: bool) -> Element<'_, AppMessage> {
+    let head = row![
+        text(retro.date.as_str())
+            .size(theme::CARD_TITLE)
+            .font(theme::manrope(Weight::Semibold)),
+        space::horizontal(),
+        status_tag(&retro.status),
+    ]
+    .align_y(Alignment::Center);
+    let counts = format!(
+        "{} · {}",
+        plural(retro.errors, "error", "errors"),
+        plural(retro.proposals, "proposal", "proposals")
+    );
+    let content = column![
+        head,
+        text(counts).size(theme::LABEL).color(theme::TEXT_SECONDARY)
+    ]
+    .spacing(4);
+    button(content)
+        .width(Length::Fill)
+        .padding([12, 14])
+        .on_press(AppMessage::Retro(Message::Select(retro.date.clone())))
+        .style(move |_, status| {
+            let (fill, line) = match (chosen, status) {
+                (true, _) => (theme::SURFACE, theme::TEAL),
+                (false, button::Status::Hovered) => (theme::LANE, theme::LINE),
+                (false, _) => (theme::SURFACE, theme::LINE),
+            };
+            button::Style {
+                background: Some(fill.into()),
+                text_color: theme::TEXT,
+                border: Border {
+                    color: line,
+                    width: if chosen { 2.0 } else { 1.0 },
+                    radius: theme::RADIUS_CARD.into(),
+                },
+                ..button::Style::default()
+            }
+        })
+        .into()
+}
+
+fn warnings_box(view: &RetroView) -> Element<'_, AppMessage> {
+    if view.warnings.is_empty() {
+        return space().into();
+    }
+    let lines = view.warnings.iter().map(|warning| {
+        text(warning.as_str())
+            .size(theme::BODY)
+            .color(theme::AMBER_TEXT)
+            .wrapping(Wrapping::WordOrGlyph)
+            .into()
+    });
+    page::boxed("Left out", column(lines).spacing(6))
+}
+
+/// Where an error happened: its run, card and agent.
+fn origin(error: &ReportError) -> String {
+    let mut parts = vec![];
+    if let Some(card) = error.card {
+        parts.push(format!("card {card}"));
+    }
+    if let Some(run) = error.run {
+        parts.push(format!("run {run}"));
+    }
+    if let Some(agent) = &error.agent {
+        parts.push(agent.clone());
+    }
+    parts.join(" · ")
+}
+
+fn errors_box(view: &RetroView) -> Element<'_, AppMessage> {
+    let heading = format!("Errors of {}", view.date);
+    let mut groups = column![].spacing(14);
+    for (kind, label) in KINDS {
+        let errors: Vec<&ReportError> = view
+            .report
+            .errors
+            .iter()
+            .filter(|error| error.kind == kind)
+            .collect();
+        if errors.is_empty() {
+            continue;
+        }
+        let lines = errors.into_iter().map(|error| {
+            column![
+                text(origin(error))
+                    .size(theme::LABEL)
+                    .color(theme::TEXT_MUTED),
+                text(error.text.as_str())
+                    .size(theme::BODY)
+                    .color(theme::TEXT_SECONDARY)
+                    .wrapping(Wrapping::WordOrGlyph),
+            ]
+            .spacing(2)
+            .into()
+        });
+        let count = view.report.errors.iter().filter(|e| e.kind == kind).count();
+        groups = groups.push(
+            column![
+                text(format!("{label} · {count}"))
+                    .size(theme::CARD_TITLE)
+                    .font(theme::manrope(Weight::Semibold)),
+                column(lines).spacing(8),
+            ]
+            .spacing(6),
+        );
+    }
+    let content: Element<_> = if view.report.errors.is_empty() {
+        page::body("No errors that day.")
+    } else {
+        groups.into()
+    };
+    // `page::boxed` takes a heading that lives as long as the page, and this one is made here.
+    container(
+        column![
+            text(heading)
+                .size(theme::BOX_HEADING)
+                .font(theme::manrope(Weight::Bold)),
+            content
+        ]
+        .spacing(10),
+    )
+    .padding(20)
+    .width(Length::Fill)
+    .style(|_| page::box_style())
+    .into()
+}
+
+fn proposals_box(proposals: &[Proposal]) -> Element<'_, AppMessage> {
+    if proposals.is_empty() {
+        return page::boxed("Proposals", page::body("The Retro proposed nothing."));
+    }
+    page::boxed(
+        "Proposals",
+        column(proposals.iter().map(proposal)).spacing(12),
+    )
+}
+
+/// A proposal: its title, the agents it changes, its branch and what it says it does.
+pub fn proposal(proposal: &Proposal) -> Element<'_, AppMessage> {
+    let mut head = row![
+        text(proposal.title.as_str())
+            .size(theme::CARD_TITLE)
+            .font(theme::manrope(Weight::Semibold))
+            .wrapping(Wrapping::WordOrGlyph),
+        space::horizontal(),
+    ]
+    .spacing(6)
+    .align_y(Alignment::Center);
+    for agent in &proposal.agents {
+        head = head.push(page::tag(agent.clone(), Tone::Plain));
+    }
+    let mut content = column![
+        head,
+        text(proposal.branch.as_str())
+            .size(theme::CODE_SMALL)
+            .font(iced::Font::MONOSPACE)
+            .color(theme::TEXT_MUTED)
+            .wrapping(Wrapping::WordOrGlyph),
+    ]
+    .spacing(4);
+    if !proposal.body.is_empty() {
+        content = content.push(
+            text(proposal.body.as_str())
+                .size(theme::BODY)
+                .color(theme::TEXT_SECONDARY)
+                .wrapping(Wrapping::WordOrGlyph),
+        );
+    }
+    container(content)
+        .padding([12, 14])
+        .width(Length::Fill)
+        .style(|_| container::Style {
+            background: Some(theme::LANE.into()),
+            border: Border {
+                color: theme::LINE,
+                width: 1.0,
+                radius: theme::RADIUS_CARD.into(),
+            },
+            ..container::Style::default()
+        })
+        .into()
+}

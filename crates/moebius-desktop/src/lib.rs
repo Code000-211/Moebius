@@ -13,6 +13,7 @@ pub mod icons;
 pub mod inbox;
 pub mod live;
 pub mod page;
+pub mod retro;
 pub mod settings;
 pub mod sidebar;
 pub mod soon;

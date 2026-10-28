@@ -16,6 +16,7 @@ pub mod mcp;
 pub mod pibolt;
 pub mod poll;
 pub mod repos;
+pub mod retro;
 pub mod router;
 pub mod rules;
 pub mod server;

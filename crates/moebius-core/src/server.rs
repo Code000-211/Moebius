@@ -1,6 +1,7 @@
 //! The server put together (spec 2): the store and the core, the desktop API, the router, the Pi-Bolt harness, the
 //! board engine, which runs every card's column script on a fixed tick, the poll of GitHub and, every 30 seconds,
-//! the refresh of the clones of repositories without a forge and of the harness configuration repository. The
+//! the refresh of the clones of repositories without a forge and of the harness configuration repository, and, once
+//! a minute, the check whether the Retro is due. The
 //! `moebius` skill is written to the data directory at start.
 
 use std::net::SocketAddr;
@@ -13,7 +14,7 @@ use tokio::net::TcpListener;
 
 use crate::api::{self, ApiState};
 use crate::app::{App, columns};
-use crate::board::{Engine, Limits, Workflow};
+use crate::board::{Engine, Limits, Runs, Workflow};
 use crate::bus::AppEvent;
 use crate::check;
 use crate::config::Config;
@@ -23,6 +24,7 @@ use crate::guard::{self, Guard, Teacher};
 use crate::harness_repo::HarnessRepo;
 use crate::pibolt::PiBolt;
 use crate::poll;
+use crate::retro;
 use crate::router::{Router, Upstream};
 use crate::skill;
 use crate::store::Store;
@@ -30,6 +32,9 @@ use crate::store::Store;
 /// How long a call into a plugin may take before it counts as refused.
 /// How often the clones of repositories without a forge are brought up to date with where they were cloned from.
 const PLAIN_REFRESH: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// How often the schedule looks at the clock to see whether the Retro is due.
+const RETRO_CHECK: std::time::Duration = std::time::Duration::from_secs(60);
 
 const PLUGIN_TIME_LIMIT: std::time::Duration =
     std::time::Duration::from_secs(crate::config::PLUGIN_TIME_LIMIT_SECONDS);
@@ -41,6 +46,9 @@ fn end_runs_of_a_previous_server(app: &App) -> Result<(), String> {
         .store
         .fail_unended_runs("the server stopped while the run was going")
         .map_err(|e| format!("cannot end the runs of the last start: {e}"))?;
+    app.store
+        .fail_analysing_retros("the server stopped while the analyst was going")
+        .map_err(|e| format!("cannot end the Retros of the last start: {e}"))?;
     for run in runs {
         let Some(worktree) = run.worktree else {
             continue;
@@ -55,6 +63,12 @@ fn end_runs_of_a_previous_server(app: &App) -> Result<(), String> {
                 let _ = app
                     .repos
                     .remove_worktree(Path::new(&repository.path), Path::new(&worktree));
+            }
+            // The Retro analyst worked in a worktree of the harness configuration clone.
+            None if run.purpose == "retro" => {
+                let _ = app
+                    .repos
+                    .remove_worktree(&app.data_dir.join("harness"), Path::new(&worktree));
             }
             // A chat without a repository worked in an empty directory.
             None if run.purpose == "chat" => {
@@ -300,6 +314,30 @@ impl Server {
                 }
             }
         };
+        let retro = {
+            let server = self.clone();
+            async move {
+                let mut interval = tokio::time::interval(RETRO_CHECK);
+                interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                loop {
+                    interval.tick().await;
+                    let s = server.clone();
+                    let _ = tokio::task::spawn_blocking(move || {
+                        let runs: Arc<dyn Runs> = s.harness.clone();
+                        let retro_at = s.config.retro_at;
+                        if let Err(e) =
+                            retro::on_schedule(&s.app, &runs, s.harness_repo.as_ref(), retro_at)
+                        {
+                            s.app.bus.publish(AppEvent::new(
+                                "retro_error",
+                                json!({ "message": e.to_string() }),
+                            ));
+                        }
+                    })
+                    .await;
+                }
+            }
+        };
         let router_routes = self.router.clone().routes().merge(check::routes(
             self.app.clone(),
             self.router.clone(),
@@ -311,6 +349,7 @@ impl Server {
             () = board => Ok(()),
             () = poll => Ok(()),
             () = refresh => Ok(()),
+            () = retro => Ok(()),
         }
     }
 }

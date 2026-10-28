@@ -12,6 +12,7 @@ use crate::chat::Chats;
 use crate::client::{self, Client, ClientError, HistoryEntry, RunEvent, Snapshot, StreamEvent};
 use crate::inbox::{self, Inbox};
 use crate::live::{self, Live};
+use crate::retro::{self, Retros};
 use crate::settings::{self, Settings};
 use crate::usage::{self, Usage};
 use crate::{board, chat, connect, history, sidebar, soon, theme};
@@ -79,13 +80,14 @@ impl Page {
     pub fn milestone(self) -> Option<&'static str> {
         match self {
             Page::Inbox | Page::Chat | Page::Board(_) => Some("M6"),
-            Page::Retro | Page::Experiments => Some("M8"),
+            Page::Experiments => Some("M8"),
             Page::DecisionModel => Some("M9"),
             Page::Agents
             | Page::Skills
             | Page::McpServers
             | Page::Rules
             | Page::Usage
+            | Page::Retro
             | Page::Models
             | Page::Plugins
             | Page::Settings => None,
@@ -128,6 +130,7 @@ pub enum Message {
     Chat(chat::Message),
     Agents(agents::Message),
     Usage(usage::Message),
+    Retro(retro::Message),
     /// A chat was asked for, as from the inbox: its screen opens on it.
     OpenChat(i64),
     /// The history of the card was read.
@@ -163,6 +166,7 @@ pub struct App {
     chats: Chats,
     agents: Agents,
     usage: Usage,
+    retros: Retros,
     collapsed: bool,
     /// Counts the reads of the snapshot, so that an older answer never replaces a newer one.
     requested: u64,
@@ -195,6 +199,7 @@ impl App {
             chats: Chats::new(live::now()),
             agents: Agents::default(),
             usage: Usage::default(),
+            retros: Retros::default(),
             collapsed: false,
             requested: 0,
             shown: 0,
@@ -258,6 +263,7 @@ impl App {
                         return self.agents.reload(settings);
                     }
                     (Page::Usage, Some(settings)) => return self.usage.reload(settings),
+                    (Page::Retro, Some(settings)) => return self.retros.reload(settings),
                     _ => {}
                 }
             }
@@ -280,6 +286,10 @@ impl App {
                 self.show_connect_error(&ClientError::Unauthorized);
             }
             Message::Usage(message) => return self.usage.update(message, self.settings.as_ref()),
+            Message::Retro(message) if Retros::refused(&message) => {
+                self.show_connect_error(&ClientError::Unauthorized);
+            }
+            Message::Retro(message) => return self.retros.update(message, self.settings.as_ref()),
             Message::Chat(message) => return self.chats.update(message, self.settings.as_ref()),
             Message::OpenChat(id) => {
                 self.page = Some(Page::Chat);
@@ -414,6 +424,13 @@ impl App {
                     && let Some(settings) = &self.settings
                 {
                     tasks.push(self.chats.reload(settings));
+                }
+                if event.kind == "retro_done"
+                    && let Some(settings) = &self.settings
+                {
+                    // The Retro on show, and the proposals the Agents screen offers, have changed.
+                    tasks.push(self.retros.reload(settings));
+                    tasks.push(self.agents.reload(settings));
                 }
                 if event.kind == "run_ended" {
                     // A run that ended has used tokens, which the meter of the sidebar shows.
@@ -617,6 +634,7 @@ impl App {
             Page::Skills => self.agents.skills_page(),
             Page::McpServers => self.agents.mcp_page(),
             Page::Usage => self.usage.view(),
+            Page::Retro => self.retros.view(),
             Page::Settings => connect::settings_page(self.settings.as_ref()),
             page => soon::view(page),
         }

@@ -102,6 +102,18 @@ pub trait Runs: Send + Sync {
         Err("this harness has no chats".into())
     }
 
+    /// Starts the Retro analyst with `prompt` in a fresh worktree of the harness configuration clone at `clone`,
+    /// checked out at `base`, and returns the run without waiting for it to end. A harness without retros refuses.
+    fn start_retro(
+        &self,
+        _app: &Arc<App>,
+        _clone: &Path,
+        _base: &str,
+        _prompt: &str,
+    ) -> Result<Run, String> {
+        Err("this harness has no retros".into())
+    }
+
     /// Sends a person's message to a chat's agent; it answers when it is done with what it is doing. False when the
     /// chat is not running.
     fn say(&self, _run_id: i64, _message: &str) -> bool {

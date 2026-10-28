@@ -133,6 +133,13 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
     the Moebius or Coder configuration. Every run has `$MOEBIUS`, the `moebius` executable, for `check-script`. Chats are not
     counted by `moebius.runs_active()`, so they do not use the board's run limit; the daily budget applies to them.
     `GET /v1/chats` (`App::chats`) lists them, newest first.
+12c. **The Retro.** Once a minute `server.rs` asks `retro::on_schedule`, which starts today's Retro when `retro_at` has passed
+    and the `retros` table has no row for the day (`retro::due`); `POST /v1/retros` calls `retro::start` too. `retro::report`
+    reads the day's errors from the store, one `Store` function per source (failed and refused tool calls, failed and stopped
+    runs, steering, cards sent back from review), into the stored report. With errors and a harness repository,
+    `Runs::start_retro` (`PiBolt::start_retro`) starts a `retro` run of the built-in `Retro-analyst` in a detached worktree of
+    the harness clone; a thread waits for the run, then `HarnessRepo::proposed` checks, pushes and returns the
+    `proposal/<date>-*` branches, which are stored in `proposals`, and `retro_done` is published.
 13. **GitHub reports.** `poll::poll_pull_requests` reads each open change's pull request: checks and review are recorded
     (`change_updated`), a merged pull request calls `App::change_merged`, a closed one calls `App::change_closed`.
 14. **A person merges.** `POST /v1/changes/{id}/merge` calls `App::merge_change`: it records a judgement by `person`,

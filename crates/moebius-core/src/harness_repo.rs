@@ -243,6 +243,90 @@ impl HarnessRepo {
         Ok(())
     }
 
+    /// The clone's path.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// The clone's default branch.
+    pub fn default_branch(&self) -> Result<String> {
+        Ok(self.repos.default_branch(&self.path)?)
+    }
+
+    /// The branches of the clone whose names start with `prefix` that are proposals: each is checked, and pushed to
+    /// `origin` if it is fit. A branch that changes nothing, changes a file that is not harness configuration, breaks
+    /// an agent that worked on the default branch, or cannot be pushed is left out, with a warning saying why.
+    pub fn proposed(&self, app: &App, prefix: &str) -> Result<(Vec<Proposed>, Vec<String>)> {
+        let _read_at = self.lock();
+        let base = self.repos.default_branch(&self.path)?;
+        let pattern = format!("refs/heads/{prefix}*");
+        let branches = git(
+            &self.path,
+            &["for-each-ref", "--format=%(refname:short)", &pattern],
+        )?;
+        let broken_before = broken_agents(&self.path, &self.mcp_env);
+        let (mut proposed, mut warnings) = (vec![], vec![]);
+        for branch in branches.lines() {
+            match self.check_branch(app, &base, branch, &broken_before) {
+                Ok(p) => proposed.push(p),
+                Err(why) => warnings.push(format!("{branch} is left out: {why}")),
+            }
+        }
+        Ok((proposed, warnings))
+    }
+
+    fn check_branch(
+        &self,
+        app: &App,
+        base: &str,
+        branch: &str,
+        broken_before: &BTreeMap<String, String>,
+    ) -> std::result::Result<Proposed, String> {
+        let git = |args: &[&str]| git(&self.path, args).map_err(|e| e.to_string());
+        let range = format!("{base}...{branch}");
+        let files = git(&["diff", "--name-only", &range])?;
+        let files: Vec<&str> = files.lines().collect();
+        if files.is_empty() {
+            return Err("it changes nothing".into());
+        }
+        if let Some(file) = files.iter().find(|file| !is_configuration(file)) {
+            return Err(format!(
+                "it changes {file}, which is not harness configuration"
+            ));
+        }
+        let check = format!("check-{}", branch.replace('/', "-"));
+        let root = app
+            .repos
+            .add_detached_worktree("harness", &self.path, &check, branch)
+            .map_err(|e| e.to_string())?;
+        let broken = broken_agents(&root, &self.mcp_env);
+        let _ = app.repos.remove_worktree(&self.path, &root);
+        if let Some((name, error)) = broken
+            .iter()
+            .find(|(name, _)| !broken_before.contains_key(*name))
+        {
+            return Err(format!("the agent {name} cannot be used with it: {error}"));
+        }
+        let message = git(&["log", "-1", "--format=%B", branch])?;
+        let (title, body) = message.split_once('\n').unwrap_or((&message, ""));
+        let mut agents: Vec<String> = files
+            .iter()
+            .filter_map(|file| file.strip_prefix("agents/")?.rsplit_once('.'))
+            .map(|(name, _)| name.to_string())
+            .collect();
+        agents.dedup();
+        let header = app.git_auth(&self.url).map_err(|e| e.to_string())?;
+        self.repos
+            .push(&self.path, branch, header.as_deref())
+            .map_err(|e| format!("it cannot be pushed: {e}"))?;
+        Ok(Proposed {
+            branch: branch.into(),
+            title: title.trim().into(),
+            body: body.trim().into(),
+            agents,
+        })
+    }
+
     fn layout(&self) -> Layout {
         Layout::read(&self.path, &self.mcp_env)
     }
@@ -259,16 +343,7 @@ impl HarnessRepo {
     /// agent that is left out is published as `harness_error`.
     fn read(&self, app: &App, read_at: &mut String, head: String) {
         let layout = self.layout();
-        let names: BTreeSet<String> = std::fs::read_dir(self.path.join("agents"))
-            .into_iter()
-            .flatten()
-            .flatten()
-            .filter_map(|entry| {
-                let file = entry.file_name().to_string_lossy().into_owned();
-                let (stem, extension) = file.rsplit_once('.')?;
-                matches!(extension, "toml" | "md").then(|| stem.to_string())
-            })
-            .collect();
+        let names = agent_names(&self.path);
         let mut set = AgentSet::default();
         for name in names {
             match self.read_agent(&layout, &name) {
@@ -295,31 +370,7 @@ impl HarnessRepo {
         layout: &Layout,
         name: &str,
     ) -> std::result::Result<(AgentDefinition, BTreeMap<String, McpServer>), String> {
-        if !valid_agent_name(name) {
-            return Err(format!(
-                "{name:?} is not a valid agent name (letters, digits, - and _)"
-            ));
-        }
-        let file = self.agent_file(name, "toml");
-        let text = std::fs::read_to_string(&file).map_err(|e| match e.kind() {
-            std::io::ErrorKind::NotFound => format!("agents/{name}.md has no agents/{name}.toml"),
-            _ => format!("cannot read agents/{name}.toml: {e}"),
-        })?;
-        let settings: AgentSettings =
-            toml::from_str(&text).map_err(|e| format!("agents/{name}.toml: {e}"))?;
-        let mcp = layout
-            .check(&self.path, &settings)
-            .map_err(|e| format!("agents/{name}.toml: {e}"))?;
-        let instructions = match std::fs::read_to_string(self.agent_file(name, "md")) {
-            Ok(text) => text,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-            Err(e) => return Err(format!("cannot read agents/{name}.md: {e}")),
-        };
-        let definition = AgentDefinition {
-            settings,
-            instructions,
-        };
-        Ok((definition, mcp))
+        read_agent_at(&self.path, layout, name)
     }
 
     /// The agent `name` as its files in the repository say.
@@ -512,6 +563,79 @@ impl HarnessRepo {
         )?;
         Ok(Some(short))
     }
+}
+
+/// The agent `name` as its files in the repository at `root` say, or why they cannot be used.
+fn read_agent_at(
+    root: &Path,
+    layout: &Layout,
+    name: &str,
+) -> std::result::Result<(AgentDefinition, BTreeMap<String, McpServer>), String> {
+    let file = |extension: &str| root.join("agents").join(format!("{name}.{extension}"));
+    if !valid_agent_name(name) {
+        return Err(format!(
+            "{name:?} is not a valid agent name (letters, digits, - and _)"
+        ));
+    }
+    let text = std::fs::read_to_string(file("toml")).map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => format!("agents/{name}.md has no agents/{name}.toml"),
+        _ => format!("cannot read agents/{name}.toml: {e}"),
+    })?;
+    let settings: AgentSettings =
+        toml::from_str(&text).map_err(|e| format!("agents/{name}.toml: {e}"))?;
+    let mcp = layout
+        .check(root, &settings)
+        .map_err(|e| format!("agents/{name}.toml: {e}"))?;
+    let instructions = match std::fs::read_to_string(file("md")) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(format!("cannot read agents/{name}.md: {e}")),
+    };
+    let definition = AgentDefinition {
+        settings,
+        instructions,
+    };
+    Ok((definition, mcp))
+}
+
+/// The names of the agents that have a file in `root/agents`.
+fn agent_names(root: &Path) -> BTreeSet<String> {
+    std::fs::read_dir(root.join("agents"))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| {
+            let file = entry.file_name().to_string_lossy().into_owned();
+            let (stem, extension) = file.rsplit_once('.')?;
+            matches!(extension, "toml" | "md").then(|| stem.to_string())
+        })
+        .collect()
+}
+
+/// Why each agent of the repository at `root` cannot be used.
+fn broken_agents(root: &Path, mcp_env: &[String]) -> BTreeMap<String, String> {
+    let layout = Layout::read(root, mcp_env);
+    agent_names(root)
+        .into_iter()
+        .filter_map(|name| Some((name.clone(), read_agent_at(root, &layout, &name).err()?)))
+        .collect()
+}
+
+/// A branch of the harness configuration clone that is fit to be proposed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Proposed {
+    pub branch: String,
+    pub title: String,
+    pub body: String,
+    pub agents: Vec<String>,
+}
+
+/// Whether `file` is one of the files the harness configuration consists of.
+fn is_configuration(file: &str) -> bool {
+    ["agents/", "skills/", "extensions/"]
+        .iter()
+        .any(|dir| file.starts_with(dir))
+        || matches!(file, "rules.md" | "mcp.toml")
 }
 
 fn remove_if_there(file: &Path) -> Result<()> {

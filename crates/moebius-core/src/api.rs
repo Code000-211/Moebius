@@ -47,8 +47,9 @@ use crate::forge::ForgeError;
 use crate::harness_repo::{AgentDefinition, AgentView, HarnessRepo, McpServerInfo, SkillInfo};
 use crate::pibolt::MOEBIUS_AGENT;
 use crate::repos::GitError;
+use crate::retro::{self, RetroSummary, RetroView};
 use crate::store::{
-    AgentUsage, Card, Change, Event, InboxItem, ModelUsage, Repository, Run, ToolWait,
+    AgentUsage, Card, Change, Event, InboxItem, ModelUsage, Proposal, Repository, Run, ToolWait,
 };
 
 /// What the API needs from the core.
@@ -274,6 +275,7 @@ impl From<AppError> for ApiError {
         let status = match e {
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::Invalid(_) => StatusCode::UNPROCESSABLE_ENTITY,
+            AppError::Exists(_) => StatusCode::CONFLICT,
             AppError::Forge(ForgeError::Git(GitError::Conflict { .. })) => StatusCode::CONFLICT,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
@@ -348,6 +350,9 @@ pub fn router(state: ApiState) -> Router {
         )
         .route("/v1/skills", get(skills))
         .route("/v1/mcp-servers", get(mcp_servers))
+        .route("/v1/retros", get(retros).post(start_retro))
+        .route("/v1/retros/{date}", get(get_retro))
+        .route("/v1/proposals", get(proposals))
         .route("/v1/chats", get(chats).post(start_chat))
         .route("/v1/chats/{id}/messages", post(say_in_chat))
         .route("/v1/chats/{id}/end", post(end_chat))
@@ -614,6 +619,43 @@ async fn delete_agent(
 ) -> Result<axum::Json<()>, ApiError> {
     let repo = harness_repo(&state)?;
     blocking(&state.app, move |app| repo.delete_agent(app, &name)).await
+}
+
+/// The body of `POST /v1/retros`.
+#[derive(Debug, Default, Deserialize)]
+struct NewRetro {
+    /// The local day to run the Retro of, as `YYYY-MM-DD`; today when left out.
+    date: Option<String>,
+}
+
+async fn start_retro(
+    State(state): State<ApiState>,
+    axum::Json(new): axum::Json<NewRetro>,
+) -> Result<axum::Json<RetroView>, ApiError> {
+    let (runs, repo) = (state.runs.clone(), state.harness_repo.clone());
+    blocking(&state.app, move |app| {
+        let day = match new.date {
+            Some(day) => day,
+            None => app.store.today()?,
+        };
+        retro::start(app, &runs, repo.as_ref(), &day)
+    })
+    .await
+}
+
+async fn retros(State(state): State<ApiState>) -> Result<axum::Json<Vec<RetroSummary>>, ApiError> {
+    blocking(&state.app, |app| retro::summaries(&app.store)).await
+}
+
+async fn get_retro(
+    State(state): State<ApiState>,
+    UrlPath(date): UrlPath<String>,
+) -> Result<axum::Json<RetroView>, ApiError> {
+    blocking(&state.app, move |app| retro::view(&app.store, &date)).await
+}
+
+async fn proposals(State(state): State<ApiState>) -> Result<axum::Json<Vec<Proposal>>, ApiError> {
+    blocking(&state.app, |app| Ok(app.store.proposals(None)?)).await
 }
 
 async fn start_chat(

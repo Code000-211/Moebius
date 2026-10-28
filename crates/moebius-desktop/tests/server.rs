@@ -711,3 +711,58 @@ async fn the_client_reads_the_usage_the_server_stored() {
     assert_eq!(report.agents[0].agent, "Coder");
     assert_eq!(report.agents[0].model_ms, 7000);
 }
+
+/// A day with a failed run becomes a Retro through the client, the fake Pi analyst proposes a branch for the Coder, and
+/// the app's screens read the report and the proposal.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_client_runs_the_retro_and_reads_its_report_and_proposals() {
+    let dir = tempfile::tempdir().unwrap();
+    let origin = harness_origin(dir.path());
+    let fake_pi = Path::new(env!("CARGO_MANIFEST_DIR")).join("../moebius-core/testdata/fake-pi");
+    let more = format!(
+        "[pi_bolt]\nprogram = {:?}\n[harness]\nurl = {:?}\n",
+        fake_pi.display().to_string(),
+        origin.display().to_string()
+    );
+    let (settings, server) = start_with(dir.path(), &more).await;
+    let day = server.app.store.today().unwrap();
+    let branch = format!("proposal/{day}-careful");
+    let store = &server.app.store;
+    let failed = store.add_run(None, "Coder", "test", "code").unwrap();
+    let why = format!("stalled [propose {branch} agents/Coder.md]");
+    store
+        .append_event(failed.id, "moebius_error", &json!({ "message": why }))
+        .unwrap();
+    store.set_run_status(failed.id, "failed").unwrap();
+
+    let client = Client::new(settings.clone());
+    assert!(client.retros().await.unwrap().is_empty());
+    let mut stream = Box::pin(events(settings.clone()));
+    assert_eq!(next(&mut stream).await, StreamEvent::Connected);
+    let started = client.start_retro().await.unwrap();
+    assert_eq!(started.date, day);
+    assert_eq!(started.report.errors[0].kind, "run_failed");
+    assert_eq!(started.report.errors[0].agent.as_deref(), Some("Coder"));
+    loop {
+        if let StreamEvent::Event(event) = next(&mut stream).await
+            && event.kind == "retro_done"
+        {
+            assert_eq!(event.data["status"], "proposed");
+            break;
+        }
+    }
+    let retro = client.retro(&day).await.unwrap();
+    assert_eq!(retro.status, "proposed");
+    assert_eq!(retro.proposals.len(), 1);
+    assert_eq!(retro.proposals[0].branch, branch);
+    assert_eq!(retro.proposals[0].agents, ["Coder"]);
+    let list = client.retros().await.unwrap();
+    assert_eq!((list[0].errors, list[0].proposals), (1, 1));
+    assert_eq!(client.proposals().await.unwrap(), retro.proposals);
+    // A day has one Retro: the server says so, and the client passes the message on.
+    let again = client.start_retro().await.unwrap_err();
+    assert!(
+        matches!(again, ClientError::Server { status: 409, .. }),
+        "{again:?}"
+    );
+}

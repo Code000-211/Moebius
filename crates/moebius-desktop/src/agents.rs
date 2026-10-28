@@ -11,11 +11,13 @@ use iced::widget::{
 use iced::{Alignment, Border, Element, Length, Task};
 
 use crate::app::Message as AppMessage;
-use crate::client::{Agent, AgentDetail, AgentSettings, Client, ClientError, McpServer, Skill};
+use crate::client::{
+    Agent, AgentDetail, AgentSettings, Client, ClientError, McpServer, Proposal, Skill,
+};
 use crate::live::say;
 use crate::page::{self, Tone};
 use crate::settings::Settings;
-use crate::{connect, theme};
+use crate::{connect, retro, theme};
 
 /// Pi's thinking levels, as `--thinking` takes them.
 const LEVELS: [&str; 7] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -28,6 +30,7 @@ pub enum Message {
     Listed(Result<Vec<Agent>, ClientError>),
     SkillsListed(Result<Vec<Skill>, ClientError>),
     McpListed(Result<Vec<McpServer>, ClientError>),
+    ProposalsListed(Result<Vec<Proposal>, ClientError>),
     /// An agent of the list was chosen.
     Select(String),
     /// The files of the agent with this name were read.
@@ -175,6 +178,8 @@ pub struct Agents {
     /// empty list means agents are kept in `moebius.toml` and cannot be edited.
     skills: Option<Vec<Skill>>,
     mcp: Vec<McpServer>,
+    /// The proposals of the Retros, newest first; the open ones are offered under the agent they change.
+    proposals: Vec<Proposal>,
     editor: Option<Editor>,
 }
 
@@ -214,7 +219,11 @@ impl Agents {
     pub fn reload(&self, settings: &Settings) -> Task<AppMessage> {
         let client = |settings: &Settings| Client::new(settings.clone());
         let (agents, skills, mcp) = (client(settings), client(settings), client(settings));
+        let proposals = client(settings);
         Task::batch([
+            Task::perform(async move { proposals.proposals().await }, |result| {
+                AppMessage::Agents(Message::ProposalsListed(result))
+            }),
             Task::perform(async move { agents.agents().await }, |result| {
                 AppMessage::Agents(Message::Listed(result))
             }),
@@ -233,6 +242,7 @@ impl Agents {
             Message::Listed(result) => unauthorized(result),
             Message::SkillsListed(result) => unauthorized(result),
             Message::McpListed(result) => unauthorized(result),
+            Message::ProposalsListed(result) => unauthorized(result),
             _ => false,
         }
     }
@@ -253,9 +263,11 @@ impl Agents {
             Message::Listed(Ok(list)) => self.list = list,
             Message::SkillsListed(Ok(skills)) => self.skills = Some(skills),
             Message::McpListed(Ok(mcp)) => self.mcp = mcp,
+            Message::ProposalsListed(Ok(proposals)) => self.proposals = proposals,
             Message::Listed(Err(_))
             | Message::SkillsListed(Err(_))
-            | Message::McpListed(Err(_)) => {}
+            | Message::McpListed(Err(_))
+            | Message::ProposalsListed(Err(_)) => {}
             Message::Select(name) => return self.open(name, settings),
             Message::Opened(name, result) => self.opened(&name, result),
             Message::NewAgent => {
@@ -423,7 +435,7 @@ impl Agents {
         if let Some(editor) = &self.editor {
             detail = detail.push(self.editor_view(editor));
         }
-        detail = detail.push(proposals());
+        detail = detail.push(self.proposals_box());
         column![
             header,
             row![
@@ -436,6 +448,28 @@ impl Agents {
         .spacing(theme::PAGE_GAP)
         .width(Length::Fill)
         .into()
+    }
+
+    /// The Retro's open proposals whose branch changes the files of the agent in the editor.
+    fn proposals_box(&self) -> Element<'_, AppMessage> {
+        let name = self.editor.as_ref().map(|editor| editor.name.as_str());
+        let open: Vec<&Proposal> = self
+            .proposals
+            .iter()
+            .filter(|p| {
+                p.status == "open" && name.is_some_and(|name| p.agents.iter().any(|a| a == name))
+            })
+            .collect();
+        if open.is_empty() {
+            return page::boxed(
+                "From the Retro",
+                page::body("No open proposal changes this agent."),
+            );
+        }
+        page::boxed(
+            "From the Retro",
+            column(open.into_iter().map(retro::proposal)).spacing(12),
+        )
     }
 
     fn list_view(&self) -> Element<'_, AppMessage> {
@@ -736,14 +770,6 @@ fn section<'a>(
         .width(Length::Fill)
         .style(|_| page::box_style())
         .into()
-}
-
-/// The place for the Retro's open proposals for an agent, which come with M8.
-fn proposals<'a>() -> Element<'a, AppMessage> {
-    page::boxed(
-        "From the Retro",
-        page::body("No proposals yet — the Retro proposes changes from M8 on."),
-    )
 }
 
 /// One line about what happened to the edit, red when it failed.

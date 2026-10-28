@@ -144,6 +144,28 @@ CREATE INDEX card_moves_by_card ON card_moves (card_id, id);
 "#,
     "ALTER TABLE runs ADD COLUMN repository_id INTEGER REFERENCES repositories(id);",
     "ALTER TABLE usage ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0;",
+    r#"
+CREATE TABLE retros (
+    id INTEGER PRIMARY KEY,
+    date TEXT NOT NULL UNIQUE,
+    report TEXT NOT NULL,
+    status TEXT NOT NULL,
+    run_id INTEGER REFERENCES runs(id),
+    warnings TEXT NOT NULL DEFAULT '[]',
+    at INTEGER NOT NULL
+);
+CREATE TABLE proposals (
+    id INTEGER PRIMARY KEY,
+    retro_date TEXT NOT NULL REFERENCES retros(date),
+    branch TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    agents TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'open',
+    at INTEGER NOT NULL
+);
+CREATE INDEX proposals_by_retro ON proposals (retro_date);
+"#,
 ];
 
 const CHANGE_COLUMNS: &str = "id, repository_id, card_id, branch, state, pull_request, checks, review, \
@@ -335,6 +357,49 @@ pub struct Usage {
     pub cached_tokens: i64,
     /// How long the model call took, from the request to the end of the response or stream.
     pub duration_ms: i64,
+}
+
+/// One thing that went wrong in a window of time, as the Retro collects it. `text` is whatever the source has to say, in
+/// full; the report shortens it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Found {
+    pub kind: &'static str,
+    pub run_id: Option<i64>,
+    pub card_id: Option<i64>,
+    pub agent: Option<String>,
+    pub text: String,
+    pub at: i64,
+}
+
+/// A day's Retro: its report (see `retro`), how far it got and what the analyst left out.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Retro {
+    /// The local day it is about, as `YYYY-MM-DD`.
+    pub date: String,
+    pub report: serde_json::Value,
+    /// `reported`, `analysing`, `proposed` or `failed`.
+    pub status: String,
+    /// The analyst's run, if there was one.
+    pub run_id: Option<i64>,
+    pub warnings: Vec<String>,
+    pub at: i64,
+}
+
+/// A change to the harness configuration that a Retro proposes, on a branch of its own.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Proposal {
+    pub id: i64,
+    pub retro_date: String,
+    pub branch: String,
+    /// The subject of the proposal's commit.
+    pub title: String,
+    /// The rest of the commit's message: what changes and which errors it addresses.
+    pub body: String,
+    /// The agents whose files the commit changes.
+    pub agents: Vec<String>,
+    /// `open`.
+    pub status: String,
+    pub at: i64,
 }
 
 /// The name under which usage that belongs to no run is counted by agent.
@@ -1423,6 +1488,282 @@ impl Store {
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
+
+    // Retros and proposals
+
+    /// The first moment of the local day `date` (`YYYY-MM-DD`) and of the day after it, as Unix seconds; none when
+    /// `date` is no date.
+    pub fn day_window(&self, date: &str) -> Result<Option<(i64, i64)>> {
+        Ok(self
+            .conn()
+            .query_row(
+                "SELECT CAST(strftime('%s', date(?1) || ' 00:00:00', 'utc') AS INTEGER),
+                    CAST(strftime('%s', date(?1, '+1 day') || ' 00:00:00', 'utc') AS INTEGER)
+             WHERE date(?1) = ?1",
+                [date],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?)
+    }
+
+    /// The local time of day on the server, as minutes after midnight.
+    pub fn minutes_into_the_day(&self) -> Result<u16> {
+        Ok(self.conn().query_row(
+            "SELECT CAST(strftime('%H', 'now', 'localtime') AS INTEGER) * 60
+                  + CAST(strftime('%M', 'now', 'localtime') AS INTEGER)",
+            [],
+            |r| r.get(0),
+        )?)
+    }
+
+    fn found(&self, kind: &'static str, sql: &str, from: i64, to: i64) -> Result<Vec<Found>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(sql)?;
+        let rows = stmt.query_map(params![from, to], |r| {
+            Ok(Found {
+                kind: "",
+                run_id: r.get(0)?,
+                card_id: r.get(1)?,
+                agent: r.get(2)?,
+                text: r.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                at: r.get(4)?,
+            })
+        })?;
+        rows.map(|row| Ok(Found { kind, ..row? })).collect()
+    }
+
+    /// The tool calls that failed in `[from, to)`: the tool and the start of what it said. A call Moebius refused is
+    /// not among them; it is a refusal.
+    pub fn failed_tool_calls(&self, from: i64, to: i64) -> Result<Vec<Found>> {
+        self.found(
+            "tool_failed",
+            "SELECT e.run_id, r.card_id, r.agent,
+                    COALESCE(json_extract(e.data, '$.toolName'), 'tool') || ': ' || COALESCE(
+                        json_extract(e.data, '$.result.content[0].text'), json_extract(e.data, '$.result'), ''),
+                    e.at
+             FROM events e JOIN runs r ON r.id = e.run_id
+             WHERE e.kind = 'tool_execution_end' AND json_extract(e.data, '$.isError') = 1
+               AND COALESCE(json_extract(e.data, '$.result.content[0].text'), '') NOT LIKE 'Moebius refused this call:%'
+               AND r.purpose <> 'retro' AND e.at >= ?1 AND e.at < ?2
+             ORDER BY e.at, e.id",
+            from,
+            to,
+        )
+    }
+
+    /// The tool calls the rules refused in `[from, to)`: the tool and the reason.
+    pub fn refused_tool_calls_between(&self, from: i64, to: i64) -> Result<Vec<Found>> {
+        self.found(
+            "tool_refused",
+            "SELECT e.run_id, r.card_id, r.agent,
+                    COALESCE(json_extract(e.data, '$.tool'), 'tool') || ': ' || COALESCE(json_extract(e.data, '$.reason'), ''),
+                    e.at
+             FROM events e JOIN runs r ON r.id = e.run_id
+             WHERE e.kind = 'tool_check' AND json_extract(e.data, '$.decision') = 'refuse'
+               AND r.purpose <> 'retro' AND e.at >= ?1 AND e.at < ?2
+             ORDER BY e.at, e.id",
+            from,
+            to,
+        )
+    }
+
+    /// The runs that failed in `[from, to)`, with the latest `moebius_error` of each.
+    pub fn failed_runs(&self, from: i64, to: i64) -> Result<Vec<Found>> {
+        self.ended_runs("run_failed", "failed", from, to)
+    }
+
+    /// The runs that were stopped in `[from, to)`.
+    pub fn stopped_runs(&self, from: i64, to: i64) -> Result<Vec<Found>> {
+        self.ended_runs("run_stopped", "stopped", from, to)
+    }
+
+    fn ended_runs(
+        &self,
+        kind: &'static str,
+        status: &str,
+        from: i64,
+        to: i64,
+    ) -> Result<Vec<Found>> {
+        self.found(
+            kind,
+            &format!(
+                "SELECT r.id, r.card_id, r.agent,
+                        (SELECT json_extract(e.data, '$.message') FROM events e
+                         WHERE e.run_id = r.id AND e.kind = 'moebius_error' ORDER BY e.seq DESC LIMIT 1),
+                        r.ended_at
+                 FROM runs r
+                 WHERE r.status = '{status}' AND r.purpose <> 'retro' AND r.ended_at >= ?1 AND r.ended_at < ?2
+                 ORDER BY r.ended_at, r.id"
+            ),
+            from,
+            to,
+        )
+    }
+
+    /// The messages people sent to running runs in `[from, to)`.
+    pub fn steering(&self, from: i64, to: i64) -> Result<Vec<Found>> {
+        self.found(
+            "steered",
+            "SELECT e.run_id, r.card_id, r.agent, json_extract(e.data, '$.message'), e.at
+             FROM events e JOIN runs r ON r.id = e.run_id
+             WHERE e.kind = 'steered' AND e.at >= ?1 AND e.at < ?2
+             ORDER BY e.at, e.id",
+            from,
+            to,
+        )
+    }
+
+    /// The cards sent back from review to coding in `[from, to)`, with the note that said why. The note decides the
+    /// kind: failed checks, a merge conflict, or else the Reviewer's findings.
+    pub fn sent_back_cards(&self, from: i64, to: i64) -> Result<Vec<Found>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT m.card_id, COALESCE(m.note, ''), m.at FROM card_moves m
+             WHERE m.from_column = 'In review' AND m.to_column = 'In progress' AND m.at >= ?1 AND m.at < ?2
+             ORDER BY m.at, m.id",
+        )?;
+        let rows = stmt.query_map(params![from, to], |r| {
+            let note: String = r.get(1)?;
+            let kind = if note.starts_with("The checks failed") {
+                "checks_failed"
+            } else if note.starts_with("The change no longer merges") {
+                "conflict"
+            } else {
+                "review_findings"
+            };
+            Ok(Found {
+                kind,
+                run_id: None,
+                card_id: Some(r.get(0)?),
+                agent: None,
+                text: note,
+                at: r.get(2)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Stores the Retro of a day with `status`; false, and nothing stored, when the day has one already.
+    pub fn add_retro(&self, date: &str, report: &serde_json::Value, status: &str) -> Result<bool> {
+        let added = self.conn().execute(
+            "INSERT INTO retros (date, report, status, at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT (date) DO NOTHING",
+            params![date, serde_json::to_string(report)?, status, now()],
+        )?;
+        Ok(added == 1)
+    }
+
+    pub fn set_retro_run(&self, date: &str, run_id: i64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE retros SET run_id = ?1 WHERE date = ?2",
+            params![run_id, date],
+        )?;
+        Ok(())
+    }
+
+    /// Ends the analysis of a day's Retro: its status, and what was left out or went wrong.
+    pub fn finish_retro(&self, date: &str, status: &str, warnings: &[String]) -> Result<()> {
+        self.conn().execute(
+            "UPDATE retros SET status = ?1, warnings = ?2 WHERE date = ?3",
+            params![status, serde_json::to_string(warnings)?, date],
+        )?;
+        Ok(())
+    }
+
+    /// Fails the Retros whose analysis the last server did not see through.
+    pub fn fail_analysing_retros(&self, why: &str) -> Result<()> {
+        self.conn().execute(
+            "UPDATE retros SET status = 'failed', warnings = json_array(?1) WHERE status = 'analysing'",
+            [why],
+        )?;
+        Ok(())
+    }
+
+    fn retros_where(&self, clause: &str, param: &str) -> Result<Vec<Retro>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT date, report, status, run_id, warnings, at FROM retros WHERE {clause} ORDER BY date DESC"
+        ))?;
+        let rows = stmt.query_map([param], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get::<_, String>(4)?,
+                r.get(5)?,
+            ))
+        })?;
+        rows.map(|row| {
+            let (date, report, status, run_id, warnings, at) = row?;
+            Ok(Retro {
+                date,
+                report: serde_json::from_str(&report)?,
+                status,
+                run_id,
+                warnings: serde_json::from_str(&warnings)?,
+                at,
+            })
+        })
+        .collect()
+    }
+
+    /// The Retro of a day, if it has one.
+    pub fn retro(&self, date: &str) -> Result<Option<Retro>> {
+        Ok(self.retros_where("date = ?1", date)?.pop())
+    }
+
+    /// All Retros, the latest day first.
+    pub fn retros(&self) -> Result<Vec<Retro>> {
+        self.retros_where("?1 = ?1", "")
+    }
+
+    pub fn add_proposal(
+        &self,
+        retro_date: &str,
+        branch: &str,
+        title: &str,
+        body: &str,
+        agents: &[String],
+    ) -> Result<()> {
+        self.conn().execute(
+            "INSERT INTO proposals (retro_date, branch, title, body, agents, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![retro_date, branch, title, body, serde_json::to_string(agents)?, now()],
+        )?;
+        Ok(())
+    }
+
+    /// The proposals of one Retro (`Some(date)`) or of all, the newest first.
+    pub fn proposals(&self, retro_date: Option<&str>) -> Result<Vec<Proposal>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, retro_date, branch, title, body, agents, status, at FROM proposals
+             WHERE ?1 IS NULL OR retro_date = ?1 ORDER BY id DESC",
+        )?;
+        let rows = stmt.query_map([retro_date], |r| {
+            Ok((
+                Proposal {
+                    id: r.get(0)?,
+                    retro_date: r.get(1)?,
+                    branch: r.get(2)?,
+                    title: r.get(3)?,
+                    body: r.get(4)?,
+                    agents: vec![],
+                    status: r.get(6)?,
+                    at: r.get(7)?,
+                },
+                r.get::<_, String>(5)?,
+            ))
+        })?;
+        rows.map(|row| {
+            let (proposal, agents) = row?;
+            Ok(Proposal {
+                agents: serde_json::from_str(&agents)?,
+                ..proposal
+            })
+        })
+        .collect()
+    }
 }
 
 #[cfg(test)]
@@ -1873,5 +2214,222 @@ mod tests {
             [wait("bash", 2, 90), wait("edit", 1, 5), wait("read", 1, 0)]
         );
         assert_eq!(s.tool_waits(1, 2).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn a_retro_collects_the_errors_of_one_local_day_and_nothing_at_or_after_its_end() {
+        use crate::retro::report;
+        let (_dir, s) = store();
+        let repo = s.add_repository("r", "/r", "none", "main").unwrap();
+        let card = s.add_card(repo.id, "Card", "", "leon", "Backlog").unwrap();
+        let (from, to) = s.day_window("2026-03-10").unwrap().unwrap();
+        // A local day is 23 to 25 hours long where the clocks change.
+        assert!((23 * 3600..=25 * 3600).contains(&(to - from)));
+        assert_eq!(s.day_window("2026-02-30").unwrap(), None);
+        assert_eq!(s.day_window("today").unwrap(), None);
+
+        let run = s
+            .add_run(Some(card.id), "Coder", "pi-bolt", "code")
+            .unwrap();
+        let result = |text: &str| json!({ "toolName": "bash", "isError": true, "result": { "content": [{ "type": "text", "text": text }] } });
+        let at = |s: &Store, seq: i64, at: i64| {
+            s.conn()
+                .execute(
+                    "UPDATE events SET at = ?1 WHERE run_id = ?2 AND seq = ?3",
+                    params![at, run.id, seq],
+                )
+                .unwrap();
+        };
+        // seq 1..4: failed tool calls at the first moment, one second before, at the end, one second before it.
+        for (seq, when) in [(1, from), (2, from - 1), (3, to), (4, to - 1)] {
+            s.append_event(
+                run.id,
+                "tool_execution_end",
+                &result(&format!("failed {seq}")),
+            )
+            .unwrap();
+            at(&s, seq, when);
+        }
+        // A call that went well, and one that Moebius refused (which is a refusal, not a failure).
+        s.append_event(
+            run.id,
+            "tool_execution_end",
+            &json!({ "toolName": "bash", "isError": false }),
+        )
+        .unwrap();
+        s.append_event(
+            run.id,
+            "tool_execution_end",
+            &result("Moebius refused this call: no-rm"),
+        )
+        .unwrap();
+        let refusal = |decision: &str| json!({ "tool": "bash", "decision": decision, "reason": "no-rm: rm -rf" });
+        s.append_event(run.id, "tool_check", &refusal("refuse"))
+            .unwrap();
+        s.append_event(run.id, "tool_check", &refusal("allow"))
+            .unwrap();
+        s.append_event(
+            run.id,
+            "steered",
+            &json!({ "message": "use the other file" }),
+        )
+        .unwrap();
+        for seq in 5..=10 {
+            at(&s, seq, from + 100 + seq);
+        }
+
+        // A run that failed with a long message, a stopped one at the end of the day (the next day's), and a retro run.
+        let failed = s.add_run(None, "Reviewer", "pi-bolt", "review").unwrap();
+        s.append_event(
+            failed.id,
+            "moebius_error",
+            &json!({ "message": "x".repeat(600) }),
+        )
+        .unwrap();
+        s.set_run_status(failed.id, "failed").unwrap();
+        let stopped = s
+            .add_run(Some(card.id), "Coder", "pi-bolt", "code")
+            .unwrap();
+        s.set_run_status(stopped.id, "stopped").unwrap();
+        let analyst = s
+            .add_run(None, "Retro-analyst", "pi-bolt", "retro")
+            .unwrap();
+        s.set_run_status(analyst.id, "failed").unwrap();
+        for (id, ended) in [
+            (failed.id, from + 300),
+            (stopped.id, to),
+            (analyst.id, from + 301),
+        ] {
+            s.conn()
+                .execute(
+                    "UPDATE runs SET ended_at = ?1 WHERE id = ?2",
+                    params![ended, id],
+                )
+                .unwrap();
+        }
+
+        // Cards sent back from review, one for each note, and moves that are not.
+        for (note, when) in [
+            ("The checks failed:\ncargo test", from + 400),
+            ("The change no longer merges cleanly into main.", from + 401),
+            ("The test is missing.", from + 402),
+            ("Too late.", to),
+        ] {
+            s.set_card_note(card.id, note).unwrap();
+            s.move_card(card.id, "In review").unwrap();
+            s.move_card(card.id, "In progress").unwrap();
+            s.conn()
+                .execute(
+                    "UPDATE card_moves SET at = ?1 WHERE note = ?2 AND to_column = 'In progress'",
+                    params![when, note],
+                )
+                .unwrap();
+            s.conn()
+                .execute(
+                    "UPDATE card_moves SET at = ?1 WHERE to_column = 'In review'",
+                    params![from - 5],
+                )
+                .unwrap();
+        }
+
+        let first = report(&s, "2026-03-10").unwrap();
+        let seen: Vec<_> = first
+            .errors
+            .iter()
+            .map(|e| {
+                (
+                    e.kind.as_str(),
+                    e.run,
+                    e.card,
+                    e.agent.as_deref(),
+                    e.text.chars().take(20).collect(),
+                )
+            })
+            .collect();
+        let (r, c) = (Some(run.id), Some(card.id));
+        assert_eq!(
+            seen,
+            [
+                ("tool_failed", r, c, Some("Coder"), "bash: failed 1".into()),
+                (
+                    "tool_refused",
+                    r,
+                    c,
+                    Some("Coder"),
+                    "bash: no-rm: rm -rf".into()
+                ),
+                ("steered", r, c, Some("Coder"), "use the other file".into()),
+                (
+                    "run_failed",
+                    Some(failed.id),
+                    None,
+                    Some("Reviewer"),
+                    "x".repeat(20)
+                ),
+                (
+                    "checks_failed",
+                    None,
+                    c,
+                    None,
+                    "The checks failed:\nc".into()
+                ),
+                ("conflict", None, c, None, "The change no longer".into()),
+                (
+                    "review_findings",
+                    None,
+                    c,
+                    None,
+                    "The test is missing.".into()
+                ),
+                ("tool_failed", r, c, Some("Coder"), "bash: failed 4".into()),
+            ]
+        );
+        // The failed call at the first moment of the day is the first; the long text is shortened.
+        assert_eq!(first.errors[3].text.chars().count(), 501);
+        assert!(first.errors[3].text.ends_with('…'));
+        assert!(first.errors.iter().all(|e| e.run != Some(analyst.id)));
+        // The next day has a call that failed, the run stopped and the card sent back at its first moment.
+        let next = report(&s, "2026-03-11").unwrap();
+        let kinds: Vec<&str> = next.errors.iter().map(|e| e.kind.as_str()).collect();
+        assert_eq!(kinds, ["tool_failed", "run_stopped", "review_findings"]);
+        assert!(report(&s, "soon").is_err());
+    }
+
+    #[test]
+    fn retros_and_their_proposals_round_trip_and_a_day_has_one_retro() {
+        let (_dir, s) = store();
+        let report = json!({ "date": "2026-03-10", "errors": [] });
+        assert!(s.add_retro("2026-03-10", &report, "analysing").unwrap());
+        assert!(!s.add_retro("2026-03-10", &json!({}), "reported").unwrap());
+        assert!(s.add_retro("2026-03-11", &report, "reported").unwrap());
+        s.finish_retro("2026-03-10", "proposed", &["a warning".to_string()])
+            .unwrap();
+        s.add_proposal(
+            "2026-03-10",
+            "proposal/2026-03-10-x",
+            "Title",
+            "Body",
+            &["Coder".to_string()],
+        )
+        .unwrap();
+        let retro = s.retro("2026-03-10").unwrap().unwrap();
+        assert_eq!(
+            (retro.status.as_str(), retro.warnings),
+            ("proposed", vec!["a warning".to_string()])
+        );
+        assert_eq!(retro.report, report);
+        let dates: Vec<String> = s.retros().unwrap().into_iter().map(|r| r.date).collect();
+        assert_eq!(dates, ["2026-03-11", "2026-03-10"]);
+        let proposals = s.proposals(None).unwrap();
+        assert_eq!(proposals, s.proposals(Some("2026-03-10")).unwrap());
+        assert_eq!(
+            (proposals[0].status.as_str(), &proposals[0].agents[..]),
+            ("open", &["Coder".to_string()][..])
+        );
+        assert!(s.proposals(Some("2026-03-11")).unwrap().is_empty());
+        s.add_retro("2026-03-12", &report, "analysing").unwrap();
+        s.fail_analysing_retros("stopped").unwrap();
+        assert_eq!(s.retro("2026-03-12").unwrap().unwrap().status, "failed");
+        assert_eq!(s.retro("2026-03-11").unwrap().unwrap().status, "reported");
     }
 }

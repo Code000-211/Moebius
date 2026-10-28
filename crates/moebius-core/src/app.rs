@@ -65,6 +65,8 @@ pub enum AppError {
     NotFound(String),
     #[error("{0}")]
     Invalid(String),
+    #[error("{0} exists already")]
+    Exists(String),
 }
 
 /// The issue numbers an issue's body says it is blocked by: "blocked by #12", "Blocked by: #3, #4".

@@ -215,6 +215,65 @@ pub struct McpServer {
     pub error: Option<String>,
 }
 
+/// A Retro as `GET /v1/retros` lists it.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct RetroSummary {
+    /// The local day, `YYYY-MM-DD`.
+    pub date: String,
+    /// `reported`, `analysing`, `proposed` or `failed`.
+    pub status: String,
+    pub errors: usize,
+    pub proposals: usize,
+    #[serde(default)]
+    pub at: i64,
+}
+
+/// One error of a Retro's report.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct ReportError {
+    pub kind: String,
+    #[serde(default)]
+    pub run: Option<i64>,
+    #[serde(default)]
+    pub card: Option<i64>,
+    #[serde(default)]
+    pub agent: Option<String>,
+    #[serde(default)]
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Report {
+    #[serde(default)]
+    pub errors: Vec<ReportError>,
+}
+
+/// A change to the harness configuration that a Retro proposes, on a branch.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Proposal {
+    pub branch: String,
+    pub title: String,
+    #[serde(default)]
+    pub body: String,
+    /// The agents whose files the branch changes.
+    #[serde(default)]
+    pub agents: Vec<String>,
+    /// `open`.
+    pub status: String,
+}
+
+/// A Retro with its report and proposals, as `GET /v1/retros/{date}` answers.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct RetroView {
+    pub date: String,
+    pub status: String,
+    #[serde(default)]
+    pub warnings: Vec<String>,
+    pub report: Report,
+    #[serde(default)]
+    pub proposals: Vec<Proposal>,
+}
+
 /// What the model calls used in a window of days, as `GET /v1/usage` answers.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct UsageReport {
@@ -562,6 +621,25 @@ impl Client {
     /// What the model calls used in the last `days` days.
     pub async fn usage(&self, days: i64) -> Result<UsageReport, ClientError> {
         self.get(&format!("/v1/usage?days={days}")).await
+    }
+
+    /// The Retros, the latest day first.
+    pub async fn retros(&self) -> Result<Vec<RetroSummary>, ClientError> {
+        self.get("/v1/retros").await
+    }
+
+    pub async fn retro(&self, date: &str) -> Result<RetroView, ClientError> {
+        self.get(&format!("/v1/retros/{date}")).await
+    }
+
+    /// Runs today's Retro now.
+    pub async fn start_retro(&self) -> Result<RetroView, ClientError> {
+        self.post("/v1/retros", serde_json::json!({})).await
+    }
+
+    /// The proposals of all Retros, the newest first.
+    pub async fn proposals(&self) -> Result<Vec<Proposal>, ClientError> {
+        self.get("/v1/proposals").await
     }
 
     pub async fn history(&self, card: i64) -> Result<Vec<HistoryEntry>, ClientError> {

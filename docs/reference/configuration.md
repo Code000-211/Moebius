@@ -34,7 +34,7 @@ An absolute path is used as it is.
 | `listen` | string | `127.0.0.1:7171` | The address of the desktop API, as `ip:port` (a host name is not accepted). Keep it on a private network. |
 | `token_file` | path | `token` | The file with the token the desktop app sends. Created with a random token (64 hex digits, readable by the owner only) when missing or empty. |
 | `run_limit` | integer | `3` | How many runs may go at once across all boards. At least 1, else the file is refused. Scripts read it as `moebius.run_limit`. |
-| `retro_at` | string | `23:30` | When the daily Retro runs, as `HH:MM` with two digits each (hour 00 to 23, minute 00 to 59) in the server's local time. Read and checked, but nothing uses it yet. |
+| `retro_at` | string | `23:30` | When the daily Retro runs, as `HH:MM` with two digits each (hour 00 to 23, minute 00 to 59) in the server's local time. The Retro of a day starts when this time has passed and the day has none (the server looks once a minute, also when it starts), so a day whose time passed while the server was off is not caught up. See [harness configuration](harness-configuration.md#the-retro). |
 | `rules_file` | path | none | The server's rules, see [rules](rules.md). Without it only the built-in rules and the repositories' rules apply. A missing file at run time means no rules. An error together with `[harness]`: the repository's `rules.md` is the server's rules then. |
 
 ## `[harness]`
