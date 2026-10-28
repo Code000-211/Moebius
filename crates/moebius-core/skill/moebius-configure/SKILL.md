@@ -77,6 +77,29 @@ The description says when to use the skill, in one line. An MCP server takes sec
 `harness.mcp_env`. Then give it to an agent with `agent save ... --skill house-style --mcp docs`. Built-in skills
 (`moebius` and the `moebius-` task skills) are read only.
 
+### Importing
+
+When the person gives a zip file (uploaded with `POST /v1/uploads`; its `path` is on the server) or a link to a
+repository, fetch it into a new directory of your working directory and read it there; files are written only inside
+the worktree:
+
+```sh
+unzip -q /srv/moebius/uploads/3f2a.zip -d import    # an uploaded zip
+git clone --depth 1 https://github.com/acme/skills import
+"$MOEBIUS" api GET /v1/skills                       # what exists already
+"$MOEBIUS" api PUT /v1/skills/pdf-forms --body body.json
+"$MOEBIUS" api GET /v1/skills/pdf-forms
+```
+
+Build each body from the source: for a skill, `jq -n --arg d "<description>" --rawfile text body.md '{description: $d,
+text: $text}'` with the text after the `SKILL.md` frontmatter (the route writes only `SKILL.md`: name the other files,
+which are added in a chat in the harness configuration repository). For an MCP server, read its README, package.json
+or pyproject.toml and any `mcp.json` example for the command, arguments and environment, or the URL and headers, and
+put each key as `${NAME}` with `NAME` in `harness.mcp_env` (`"$MOEBIUS" settings set` it, keeping the names there).
+Never replace an existing skill or server without asking, never use a built-in skill name, never write a key. End with
+what was imported under which names, and what the person must do: keys to store (Settings page, or the server's
+environment for `${NAME}`), programs to install, agents to give it to.
+
 In a chat in the harness configuration repository, write the files instead (`agents/<name>.toml` and `.md`,
 `skills/<name>/SKILL.md`, `mcp.toml`, `rules.md`); the person merges them as a change.
 

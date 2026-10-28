@@ -15,6 +15,7 @@ use crate::decision_model::{self, DecisionModel};
 use crate::experiments::{self, Experiments};
 use crate::fleet::{self, Fleet};
 use crate::float_chat::{self, FloatChat};
+use crate::import;
 use crate::inbox::{self, Inbox};
 use crate::live::{self, Live};
 use crate::mcp_servers::{self, McpServers};
@@ -441,6 +442,27 @@ impl App {
                 self.show_connect_error(&ClientError::Unauthorized);
             }
             Message::Agents(message) => return self.agents.update(message, self.settings.as_ref()),
+            Message::Skills(skills::Message::Import(import::Message::Asked(Ok(run)))) => {
+                // The Moebius agent imports in a chat, which the floating chat shows.
+                let (asked, settings) = (
+                    import::Message::Asked(Ok(run.clone())),
+                    self.settings.clone(),
+                );
+                let task = self
+                    .skills
+                    .update(skills::Message::Import(asked), settings.as_ref());
+                return Task::batch([task, self.float_adopt(&run, None)]);
+            }
+            Message::Mcp(mcp_servers::Message::Import(import::Message::Asked(Ok(run)))) => {
+                let (asked, settings) = (
+                    import::Message::Asked(Ok(run.clone())),
+                    self.settings.clone(),
+                );
+                let task = self
+                    .mcp_servers
+                    .update(mcp_servers::Message::Import(asked), settings.as_ref());
+                return Task::batch([task, self.float_adopt(&run, None)]);
+            }
             Message::Skills(message) if Skills::refused(&message) => {
                 self.show_connect_error(&ClientError::Unauthorized);
             }

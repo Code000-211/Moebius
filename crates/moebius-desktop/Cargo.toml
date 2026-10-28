@@ -11,6 +11,7 @@ alacritty_terminal = { version = "0.26.0", default-features = false }
 dirs = "6"
 futures-util = "0.3.34"
 png = "0.18"
+rfd = { version = "0.17.2", default-features = false, features = ["xdg-portal"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["json"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"

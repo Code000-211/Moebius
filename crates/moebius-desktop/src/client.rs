@@ -28,6 +28,13 @@ pub enum ClientError {
     Decode(String),
 }
 
+/// A file the server stored: `path` is where it is on the server.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Upload {
+    pub id: String,
+    pub path: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Health {
     pub version: String,
@@ -1217,6 +1224,16 @@ impl Client {
             .http
             .delete(format!("{}/v1/skills/{name}", self.settings.address));
         self.send::<()>(request).await
+    }
+
+    /// Sends a zip file to the server, which keeps it where the Moebius agent can read it.
+    pub async fn upload(&self, zip: Vec<u8>) -> Result<Upload, ClientError> {
+        let request = self
+            .http
+            .post(format!("{}/v1/uploads", self.settings.address))
+            .header(reqwest::header::CONTENT_TYPE, "application/zip")
+            .body(zip);
+        self.send(request).await
     }
 
     /// The script a column runs for a repository.

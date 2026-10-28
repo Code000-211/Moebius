@@ -16,6 +16,7 @@ pub mod fleet;
 pub mod float_chat;
 pub mod history;
 pub mod icons;
+pub mod import;
 pub mod inbox;
 pub mod live;
 pub mod mcp_servers;

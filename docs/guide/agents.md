@@ -385,6 +385,25 @@ A chat does not count against `run_limit`; the daily budget applies to it and it
 tokens. Every tool call in a chat is checked by the built-in rules and the server's rules. See the
 [desktop API](desktop-api.md) for the rest.
 
+## Import skills and MCP servers
+
+Skills and MCP servers that someone else wrote can be imported instead of typed in. On the Skills page or the MCP
+servers page of the desktop app, press **Import**:
+
+1. Choose **From a zip** and pick the file (it is sent to the server with `POST /v1/uploads`, at most 20 MB), or **From
+   a link** and paste a git repository or a page that leads to one.
+2. Add a note if it helps: which of the skills or servers you want, which key it needs.
+3. Press **Ask the agent**. A chat with the Moebius agent opens in the floating window. The agent unzips or clones the
+   source in its working directory, writes each skill with `PUT /v1/skills/{name}` or each server with `PUT
+   /v1/mcp-servers/{name}` (every one a commit), and ends with what it imported and what is left to you.
+
+The agent never replaces an existing skill or server without asking, and never imports a skill under a built-in name.
+It writes only a skill's `SKILL.md`; other files of a skill are named in its answer, to be added in a chat in the
+repository (below). An MCP server takes keys as `${NAME}`: set `NAME` in the server's environment and keep it in
+`harness.mcp_env`. Import needs a harness configuration repository; without one the button is disabled. The same
+works without the app: upload the zip with `curl --data-binary @skills.zip -H 'content-type: application/zip'
+$API/v1/uploads` and start a chat that names the `path` it answers.
+
 ## Build an extension or skill in a chat
 
 When the server has a harness configuration repository (`[harness]`), a chat can work in it instead of in a repository.

@@ -39,10 +39,12 @@ A failed request has a status code and a plain-text message as its body.
 | `404` | The repository, card, change or run in the path does not exist. |
 | `409` | A merge conflicts: the default branch is left as it was. |
 | `422` | The request is understood but not allowed: invalid values, or a card or change in the wrong state. Also what axum answers for a JSON body with a missing or mistyped field. |
-| `400`, `415` | The body is not valid JSON, or the content type is not `application/json`. |
+| `400`, `415` | The body is not valid JSON, or the content type is not `application/json` (`application/zip` for `POST /v1/uploads`). |
+| `413` | The body of `POST /v1/uploads` is larger than 20 MiB. |
 | `500` | Anything else: git, the store or a forge failed. |
 
-A request with a body must have `Content-Type: application/json` and a JSON object, `{}` at least.
+A request with a body must have `Content-Type: application/json` and a JSON object, `{}` at least. The one exception is
+`POST /v1/uploads`, whose body is a zip file.
 
 ## Types
 
@@ -660,6 +662,20 @@ read, with the reason; `500` as for `PUT /v1/agents/{name}`.
 A person deletes a server from `mcp.toml`, committed and pushed the same way (`Delete the MCP server <name>`, kind
 `edit_mcp_server`). Response: `null`. Errors: `404` no such server; `409` no `[harness]`, or an agent names the server
 (the message names the agents); `500` as for `PUT`.
+
+### `POST /v1/uploads`
+
+Stores a zip file on the server, for the Moebius agent to import skills or MCP servers from (the desktop app's Import
+button). Request: the file itself as the body, with `Content-Type: application/zip`, at most 20 MiB (20,971,520
+bytes). The file is written to `<data_dir>/uploads/<id>.zip`, where `id` is 32 random hex digits, and kept until
+someone removes it. Response: `{"id": string, "path": string}`, `path` being where the file is on the server. Allowed to
+a person and to the Moebius agent's run token. Errors: `413` the body is larger than the limit; `415` another content
+type; `422` an empty body; `500` the file cannot be written.
+
+```sh
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/zip' --data-binary @skills.zip \
+  http://127.0.0.1:7171/v1/uploads
+```
 
 ### `GET /v1/models`
 

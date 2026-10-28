@@ -13,6 +13,7 @@ use iced::{Alignment, Border, Element, Length, Task};
 use crate::agents::{field, notice_line};
 use crate::app::Message as AppMessage;
 use crate::client::{Client, ClientError, Skill, SkillDetail};
+use crate::import::{self, Import};
 use crate::live::say;
 use crate::page::{self, Tone};
 use crate::settings::Settings;
@@ -36,6 +37,8 @@ pub enum Message {
     Keep,
     Delete,
     Deleted(Result<(), ClientError>),
+    /// A message of the import panel.
+    Import(import::Message),
 }
 
 enum Notice {
@@ -100,12 +103,22 @@ impl Editor {
     }
 }
 
-#[derive(Default)]
 pub struct Skills {
     /// The skills, once read. A server with a harness configuration repository always lists the built-in one, so an
     /// empty list means there is none and nothing can be edited.
     list: Option<Vec<Skill>>,
     editor: Option<Editor>,
+    import: Import,
+}
+
+impl Default for Skills {
+    fn default() -> Self {
+        Skills {
+            list: None,
+            editor: None,
+            import: Import::new(import::Kind::Skills),
+        }
+    }
 }
 
 impl Skills {
@@ -124,6 +137,11 @@ impl Skills {
     /// Whether the server refused the token in an answer, which the app answers with the connect screen.
     pub fn refused(message: &Message) -> bool {
         matches!(message, Message::Listed(Err(ClientError::Unauthorized)))
+    }
+
+    /// The import panel, which says what "Ask the agent" would send.
+    pub fn import(&self) -> &Import {
+        &self.import
     }
 
     /// What a save would send: the skill's name, description and text, or what is wrong with the editor.
@@ -209,6 +227,7 @@ impl Skills {
                     editor.notice = Some(Notice::Failed(say(&e)));
                 }
             }
+            Message::Import(message) => return self.import.update(message, settings),
             edit => self.edit(edit),
         }
         Task::none()
@@ -265,7 +284,17 @@ impl Skills {
             page::context(
                 "What an agent can be given: the skills in skills/ of the harness configuration repository, and the one Moebius brings. An edit is a commit.",
             ),
-            page::white_button("New skill", new_skill),
+            row![
+                page::white_button(
+                    "Import",
+                    new_skill.as_ref().map(|_| {
+                        AppMessage::Skills(Message::Import(import::Message::Show(true)))
+                    })
+                ),
+                page::white_button("New skill", new_skill),
+            ]
+            .spacing(10)
+            .into(),
         );
         if !self.editable() {
             return column![
@@ -300,6 +329,7 @@ impl Skills {
         }
         column![
             header,
+            self.import.is_open().then(|| self.import.view()),
             row![
                 scrollable(cards).width(280),
                 scrollable(detail).width(Length::Fill)

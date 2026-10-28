@@ -14,6 +14,7 @@ use iced::{Alignment, Border, Element, Length, Task};
 use crate::agents::{field, menu_style, notice_line, pick_style};
 use crate::app::Message as AppMessage;
 use crate::client::{Client, ClientError, McpDefinition, McpServer, McpServerDetail, Skill};
+use crate::import::{self, Import};
 use crate::live::say;
 use crate::page;
 use crate::settings::Settings;
@@ -49,6 +50,8 @@ pub enum Message {
     Keep,
     Delete,
     Deleted(Result<(), ClientError>),
+    /// A message of the import panel.
+    Import(import::Message),
 }
 
 enum Notice {
@@ -158,12 +161,23 @@ impl Editor {
     }
 }
 
-#[derive(Default)]
 pub struct McpServers {
     list: Vec<McpServer>,
     /// Whether the server has a harness configuration repository, so that servers can be edited.
     harness: bool,
     editor: Option<Editor>,
+    import: Import,
+}
+
+impl Default for McpServers {
+    fn default() -> Self {
+        McpServers {
+            list: vec![],
+            harness: false,
+            editor: None,
+            import: Import::new(import::Kind::McpServers),
+        }
+    }
 }
 
 fn args_action(action: text_editor::Action) -> AppMessage {
@@ -271,6 +285,7 @@ impl McpServers {
                     editor.notice = Some(Notice::Failed(say(&e)));
                 }
             }
+            Message::Import(message) => return self.import.update(message, settings),
             edit => self.edit(edit),
         }
         Task::none()
@@ -343,7 +358,17 @@ impl McpServers {
             page::context(
                 "The servers of mcp.toml in the harness configuration repository, which agents name to be given their tools. An edit is a commit.",
             ),
-            page::white_button("New server", new_server),
+            row![
+                page::white_button(
+                    "Import",
+                    new_server
+                        .as_ref()
+                        .map(|_| { AppMessage::Mcp(Message::Import(import::Message::Show(true))) })
+                ),
+                page::white_button("New server", new_server),
+            ]
+            .spacing(10)
+            .into(),
         );
         if !self.harness {
             return column![
@@ -387,6 +412,7 @@ impl McpServers {
         }
         column![
             header,
+            self.import.is_open().then(|| self.import.view()),
             row![
                 scrollable(cards).width(280),
                 scrollable(detail).width(Length::Fill)

@@ -15,6 +15,7 @@ use moebius_desktop::decision_model;
 use moebius_desktop::experiments;
 use moebius_desktop::fleet;
 use moebius_desktop::float_chat;
+use moebius_desktop::import;
 use moebius_desktop::inbox::{self, Action};
 use moebius_desktop::live;
 use moebius_desktop::mcp_servers;
@@ -2386,6 +2387,162 @@ fn a_server_without_a_harness_repository_lists_no_skills_and_servers_to_edit() {
     assert!(shows(
         &app,
         "No MCP servers: they are listed in mcp.toml of a harness configuration repository."
+    ));
+}
+
+fn import(message: import::Message) -> Message {
+    Message::Skills(skills::Message::Import(message))
+}
+
+#[test]
+fn the_import_panel_takes_a_zip_or_a_link_and_a_note() {
+    let mut app = skills_app();
+    assert!(matches!(
+        &clicked(&app, "Import")[..],
+        [Message::Skills(skills::Message::Import(
+            import::Message::Show(true)
+        ))]
+    ));
+    let _ = app.update(import(import::Message::Show(true)));
+    assert!(shows(&app, "No file chosen."));
+    assert!(matches!(
+        &clicked(&app, "Choose file…")[..],
+        [Message::Skills(skills::Message::Import(
+            import::Message::Choose
+        ))]
+    ));
+    assert!(clicked(&app, "Ask the agent").is_empty(), "no source yet");
+    let _ = app.update(import(import::Message::FromZip(false)));
+    let _ = app.update(import(import::Message::LinkEdited(
+        "https://github.com/acme/skills".into(),
+    )));
+    let _ = app.update(import(import::Message::NoteEdited(
+        "only the pdf skill; it needs PDF_KEY".into(),
+    )));
+    draw_sized(
+        &app,
+        "skills-import",
+        &[
+            "Import",
+            "From a zip",
+            "From a link",
+            "A git repository or a page",
+            "Note (optional)",
+            "Ask the agent",
+            "Cancel",
+        ],
+        Size::new(1440.0, 900.0),
+    );
+    assert!(matches!(
+        &clicked(&app, "Ask the agent")[..],
+        [Message::Skills(skills::Message::Import(
+            import::Message::Ask
+        ))]
+    ));
+    // The chat the server started opens in the floating window, over the page, and the panel closes.
+    let _ = app.update(import(import::Message::Asked(Ok(moebius_chat(9)))));
+    assert_eq!(app.page(), Page::Skills);
+    assert!(shows(&app, "Open in Chat"));
+    assert!(!shows(&app, "From a link"));
+}
+
+#[test]
+fn asking_to_import_from_a_link_starts_a_chat_that_names_the_link() {
+    let settings = settings();
+    let mut skills = skills::Skills::default();
+    let mut update = |message| {
+        skills
+            .update(skills::Message::Import(message), Some(&settings))
+            .units()
+    };
+    update(import::Message::Show(true));
+    update(import::Message::FromZip(false));
+    assert_eq!(update(import::Message::Ask), 0, "nothing to import yet");
+    update(import::Message::LinkEdited(
+        " https://github.com/acme/skills ".into(),
+    ));
+    assert_eq!(update(import::Message::Ask), 1);
+    let asked = skills.import().request().unwrap();
+    assert!(asked.contains("git clone --depth 1 https://github.com/acme/skills import"));
+    assert!(asked.contains("PUT /v1/skills/<name>"));
+}
+
+#[test]
+fn a_zip_is_sent_and_the_agent_is_given_its_path_on_the_server() {
+    let settings = settings();
+    let dir = tempfile::tempdir().unwrap();
+    let zip = dir.path().join("skills.zip");
+    std::fs::write(&zip, b"PK").unwrap();
+    let mut skills = skills::Skills::default();
+    let mut update = |message| {
+        skills
+            .update(skills::Message::Import(message), Some(&settings))
+            .units()
+    };
+    update(import::Message::Show(true));
+    assert_eq!(
+        update(import::Message::Chosen(None)),
+        0,
+        "the dialog was closed"
+    );
+    assert_eq!(
+        update(import::Message::Chosen(Some(zip))),
+        1,
+        "the file is sent"
+    );
+    assert!(skills.import().request().is_none(), "not on the server yet");
+    let mut update = |message| {
+        skills
+            .update(skills::Message::Import(message), Some(&settings))
+            .units()
+    };
+    update(import::Message::Uploaded(
+        "skills.zip".into(),
+        Ok(client::Upload {
+            id: "ab12".into(),
+            path: "/srv/moebius/uploads/ab12.zip".into(),
+        }),
+    ));
+    assert_eq!(update(import::Message::Ask), 1);
+    let asked = skills.import().request().unwrap();
+    assert!(asked.contains("unzip -q /srv/moebius/uploads/ab12.zip -d import"));
+}
+
+#[test]
+fn a_refused_upload_is_said_in_red_in_the_panel() {
+    let mut app = skills_app();
+    let _ = app.update(import(import::Message::Show(true)));
+    let _ = app.update(import(import::Message::Chosen(Some(
+        "/tmp/x/big.zip".into(),
+    ))));
+    assert!(shows(&app, "Sending big.zip…"));
+    let _ = app.update(import(import::Message::Uploaded(
+        "big.zip".into(),
+        Err("The file is larger than the server takes.".into()),
+    )));
+    assert!(shows(&app, "The file is larger than the server takes."));
+    assert!(shows(&app, "No file chosen."));
+}
+
+#[test]
+fn import_is_disabled_without_a_harness_repository() {
+    let mut app = App::with_snapshot(overview());
+    let _ = app.update(Message::Select(Page::Skills));
+    let _ = app.update(Message::Skills(skills::Message::Listed(Ok(vec![]))));
+    assert!(clicked(&app, "Import").is_empty());
+    assert!(shows(
+        &app,
+        "Skills come from a harness configuration repository, and this server has none."
+    ));
+    let _ = app.update(Message::Select(Page::McpServers));
+    let _ = app.update(Message::Mcp(mcp_servers::Message::Harness(Ok(vec![]))));
+    assert!(clicked(&app, "Import").is_empty());
+    let app = mcp_app();
+    assert!(matches!(
+        &clicked(&app, "Import")[..],
+        [Message::Mcp(mcp_servers::Message::Import(
+            import::Message::Show(true)
+        ))]
     ));
 }
 

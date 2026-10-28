@@ -186,6 +186,18 @@ async fn a_wrong_token_is_not_accepted() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_zip_sent_to_the_server_is_stored_where_the_answer_says() {
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, _server) = start(dir.path()).await;
+    let upload = Client::new(settings)
+        .upload(b"PK\x03\x04 skills".to_vec())
+        .await
+        .unwrap();
+    assert!(upload.path.ends_with(&format!("uploads/{}.zip", upload.id)));
+    assert_eq!(std::fs::read(&upload.path).unwrap(), b"PK\x03\x04 skills");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_server_that_is_not_there_cannot_be_reached() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = format!("http://{}", listener.local_addr().unwrap());
