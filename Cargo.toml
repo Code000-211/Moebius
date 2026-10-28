@@ -8,6 +8,9 @@ edition = "2024"
 rust-version = "1.88"
 repository = "https://github.com/Code000-211/Moebius"
 
+[workspace.dependencies]
+toml_edit = "0.25.17"
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
 

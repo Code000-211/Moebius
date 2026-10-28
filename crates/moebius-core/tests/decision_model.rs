@@ -516,16 +516,7 @@ impl Api {
             runs: server.harness.clone(),
             harness_repo: None,
             token: server.token.clone(),
-            round_limit: 5,
-            day_budget: None,
-            config: std::sync::Arc::new(
-                moebius_core::config::Config::parse(
-                    "",
-                    std::path::Path::new("."),
-                    std::path::Path::new("moebius.toml"),
-                )
-                .unwrap(),
-            ),
+            config: server.live.clone(),
         };
         fake.runtime.spawn(api::serve(listener, state));
         Self {

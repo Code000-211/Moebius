@@ -336,7 +336,7 @@ impl App {
             Message::Setup(message) if Setup::refused(&message) => {
                 self.show_connect_error(&ClientError::Unauthorized);
             }
-            Message::Setup(message) => self.setup.update(message),
+            Message::Setup(message) => return self.setup.update(message, self.settings.as_ref()),
             Message::AddRepository(message) if AddRepository::refused(&message) => {
                 self.show_connect_error(&ClientError::Unauthorized);
             }
@@ -562,7 +562,12 @@ impl App {
                     Some(settings) => self.usage.reload(settings),
                     None => Task::none(),
                 };
-                Task::batch([self.reload(), missed, chats, usage])
+                // A server that restarted tells what it runs with now.
+                let setup = match &self.settings {
+                    Some(settings) if self.setup.restarting() => self.setup.reload(settings),
+                    _ => Task::none(),
+                };
+                Task::batch([self.reload(), missed, chats, usage, setup])
             }
             StreamEvent::Disconnected(_) => {
                 self.connection = Connection::Offline;

@@ -29,7 +29,8 @@ use crate::replay;
 use crate::repos::git;
 use crate::research;
 use crate::retro;
-use crate::router::{Router, Upstream};
+use crate::router::Router;
+use crate::settings::{Live, Secrets};
 use crate::skill;
 use crate::store::Store;
 use crate::trial;
@@ -114,6 +115,8 @@ pub struct Server {
     pub router: Arc<Router>,
     pub harness: Arc<PiBolt>,
     pub engine: Arc<Engine>,
+    /// The configuration the server runs with, which edits of the settings change.
+    pub live: Arc<Live>,
     /// The harness configuration repository, if one is configured.
     pub harness_repo: Option<Arc<HarnessRepo>>,
     /// The client for the GitHub App, if one is configured.
@@ -134,21 +137,8 @@ impl Server {
         );
         let token = api::load_or_create_token(&config.token_file)
             .map_err(|e| format!("cannot read {}: {e}", config.token_file.display()))?;
-        let mut upstreams = Vec::new();
-        for upstream in &config.upstreams {
-            let api_key = match &upstream.api_key_env {
-                Some(var) => Some(
-                    std::env::var(var)
-                        .map_err(|_| format!("the environment variable {var} is not set"))?,
-                ),
-                None => None,
-            };
-            upstreams.push(Upstream {
-                protocol: upstream.protocol,
-                base_url: upstream.base_url.clone(),
-                api_key,
-            });
-        }
+        let secrets = Secrets::new(&config.data_dir);
+        let upstreams = secrets.upstreams(&config)?;
         let router =
             Arc::new(Router::new(store.clone(), upstreams).with_day_budget(config.day_tokens));
 
@@ -158,13 +148,7 @@ impl Server {
             .map(|teacher| Teacher::new(teacher, router.clone(), format!("http://{router_addr}")));
         let model = match &config.decision_model {
             Some(m) => {
-                let key = match &m.api_key_env {
-                    Some(var) => Some(
-                        std::env::var(var)
-                            .map_err(|_| format!("the environment variable {var} is not set"))?,
-                    ),
-                    None => None,
-                };
+                let key = secrets.resolve(m.api_key_env.as_deref(), m.api_key_secret.as_deref())?;
                 Some(DecisionModel::new(m, key))
             }
             None => None,
@@ -231,12 +215,18 @@ impl Server {
                 ..Limits::default()
             },
         ));
+        let live = Arc::new(Live::new(config.clone()).with_targets(
+            engine.clone(),
+            router.clone(),
+            harness.agents.clone(),
+        ));
         Ok(Self {
             config,
             app,
             router,
             harness,
             engine,
+            live,
             harness_repo,
             github,
             token: token.into(),
@@ -321,19 +311,18 @@ impl Server {
             runs: self.harness.clone(),
             harness_repo: self.harness_repo.clone(),
             token: self.token.clone(),
-            round_limit: self.config.round_limit,
-            day_budget: self.config.day_tokens,
-            config: Arc::new(self.config.clone()),
+            config: self.live.clone(),
         };
         let board = {
             let server = self.clone();
             async move {
-                let mut interval = tokio::time::interval(server.config.board_tick);
-                interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                // The tick is read each time, since the settings can change it.
                 loop {
-                    interval.tick().await;
+                    let started = std::time::Instant::now();
                     let s = server.clone();
                     let _ = tokio::task::spawn_blocking(move || s.tick()).await;
+                    let tick = server.live.get().board_tick;
+                    tokio::time::sleep(tick.saturating_sub(started.elapsed())).await;
                 }
             }
         };
@@ -386,8 +375,9 @@ impl Server {
                                 ));
                             }
                         };
-                        report(retro::on_schedule(&s.app, &runs, repo, s.config.retro_at));
-                        let (window, limit) = (s.config.trial_window, s.config.run_limit);
+                        let config = s.live.get();
+                        report(retro::on_schedule(&s.app, &runs, repo, config.retro_at));
+                        let (window, limit) = (config.trial_window, config.run_limit);
                         report(trial::on_schedule(&s.app, &runs, repo, window, limit));
                         report(research::on_schedule(
                             &s.app,
@@ -413,6 +403,7 @@ impl Server {
             () = poll => Ok(()),
             () = refresh => Ok(()),
             () = retro => Ok(()),
+            () = self.live.restart_asked() => Ok(()),
         }
     }
 }

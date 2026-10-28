@@ -184,7 +184,8 @@ token_budget = 500000
 ### An agent on a hosted model
 
 The key is read from an environment variable, never from the file. If the variable is not set when the server starts,
-the server does not start.
+the server does not start. A key typed into the desktop app is kept by name in `secrets.toml` of the data directory, and
+the file names it with `api_key_secret = "<name>"` instead of `api_key_env`.
 
 ```toml
 [[router.upstreams]]
@@ -328,7 +329,7 @@ of kind `agent_end`, which is Pi's own record.
 
 | What happens | How you see it |
 |---|---|
-| The server does not start. | The message names the key: an unknown key, a bad agent name, an upstream whose `api_key_env` variable is not set, `[agents.*]` together with `[harness]`, or a harness repository that cannot be cloned. |
+| The server does not start. | The message names the key: an unknown key, a bad agent name, an upstream whose `api_key_env` variable is not set or whose `api_key_secret` is not stored, `[agents.*]` together with `[harness]`, or a harness repository that cannot be cloned. |
 | An agent of the harness repository is missing from the chats. | It is listed by `GET /v1/agents` with an `error`, and the event `harness_error` carried it. |
 | `no agent named X` | In a column script, a `board_error` event; in `POST /v1/chats`, status 422. The name is case sensitive. |
 | Model requests fail. | The router answers 502 when it has no upstream for the agent's `protocol`, or cannot reach it. See the [router reference](../reference/router.md). |

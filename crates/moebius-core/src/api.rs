@@ -27,8 +27,10 @@
 //! - `GET /v1/agents`: the agents the server can run. `GET`, `PUT` and `DELETE /v1/agents/{name}`: read, write and delete
 //!   an agent of the harness configuration repository (see [`crate::harness_repo`]). `GET /v1/skills` and
 //!   `GET /v1/mcp-servers`: the skills and MCP servers an agent can name.
-//! - `GET /v1/models`, `GET /v1/plugins` and `GET /v1/settings`: how the server is set up, never with a secret in it (see
-//!   [`crate::setup`]).
+//! - `GET /v1/models` and `GET /v1/plugins`: how the server is set up, never with a secret in it (see [`crate::setup`]).
+//! - `GET /v1/settings`: every key of `moebius.toml` with its value or default. `PUT /v1/settings` `{set, remove}` changes
+//!   the file. `PUT` and `DELETE /v1/secrets/{name}` keep and remove an API key. `POST /v1/server/restart` restarts the
+//!   server (see [`crate::settings`]).
 //! - `GET /v1/rules`: the built-in patterns, the rules in prose, those of each repository and the refusals of the last
 //!   week. `PUT /v1/rules` `{text}` replaces the rules in prose of the harness configuration repository (see
 //!   [`crate::rules`]).
@@ -56,14 +58,13 @@ use axum::extract::{Path as UrlPath, Query, Request, State};
 use axum::http::{StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::app::{App, AppError, Chat, HistoryEntry, PERSON, columns, runs_since_retry};
 use crate::board::{AgentInfo, Runs, latest_review};
 use crate::bus::AppEvent;
-use crate::config::Config;
 use crate::decision_model;
 use crate::export::{self, Export, ExportError, KindCounts};
 use crate::forge::ForgeError;
@@ -74,6 +75,7 @@ use crate::repos::GitError;
 use crate::research::{self, NewResearch, ResearchView};
 use crate::retro::{self, RetroSummary, RetroView};
 use crate::rules;
+use crate::settings::{Changes, Live, Saved, SettingsView};
 use crate::setup;
 use crate::store::{
     AgentUsage, Card, Change, Event, Grilling, GrillingIssue, InboxItem, ModelUsage, Proposal,
@@ -90,12 +92,9 @@ pub struct ApiState {
     /// The harness configuration repository, if one is configured; without it agents are edited in `moebius.toml`.
     pub harness_repo: Option<Arc<HarnessRepo>>,
     pub token: Arc<str>,
-    /// The most `code` rounds a card gets, which boards show next to a card's rounds.
-    pub round_limit: u32,
-    /// The most tokens all runs may use in a day, if limited, which the usage screen measures the day against.
-    pub day_budget: Option<i64>,
-    /// What the server runs with, which the Models and Settings screens show.
-    pub config: Arc<Config>,
+    /// What the server runs with, which the Models and Settings screens show and edit. The rounds a card gets and the
+    /// day's token budget, which boards and the usage screen show, are read from it.
+    pub config: Arc<Live>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -403,7 +402,9 @@ pub fn router(state: ApiState) -> Router {
         )
         .route("/v1/models", get(models))
         .route("/v1/plugins", get(plugins))
-        .route("/v1/settings", get(settings))
+        .route("/v1/settings", get(settings).put(put_settings))
+        .route("/v1/secrets/{name}", put(put_secret).delete(delete_secret))
+        .route("/v1/server/restart", post(restart_server))
         .route("/v1/rules", get(get_rules).put(put_rules))
         .route("/v1/skills", get(skills))
         .route("/v1/mcp-servers", get(mcp_servers))
@@ -504,7 +505,7 @@ fn card_view(app: &App, card: Card) -> crate::app::Result<CardView> {
 }
 
 async fn snapshot(State(state): State<ApiState>) -> Result<axum::Json<Snapshot>, ApiError> {
-    let round_limit = state.round_limit;
+    let round_limit = state.config.get().round_limit;
     blocking(&state.app, move |app| {
         let mut boards = Vec::new();
         for repository in app.store.repositories()? {
@@ -643,15 +644,69 @@ async fn agents(State(state): State<ApiState>) -> axum::Json<Vec<AgentInfo>> {
 }
 
 async fn models(State(state): State<ApiState>) -> axum::Json<setup::Models> {
-    axum::Json(setup::models(&state.config, state.runs.agents()))
+    axum::Json(setup::models(&state.config.get(), state.runs.agents()))
 }
 
 async fn plugins(State(state): State<ApiState>) -> axum::Json<setup::Plugins> {
     axum::Json(setup::plugins(&state.app.decisions))
 }
 
-async fn settings(State(state): State<ApiState>) -> axum::Json<setup::Settings> {
-    axum::Json(setup::settings(&state.config))
+async fn settings(State(state): State<ApiState>) -> Result<axum::Json<SettingsView>, ApiError> {
+    let live = state.config.clone();
+    blocking(&state.app, move |_| live.view()).await
+}
+
+async fn put_settings(
+    State(state): State<ApiState>,
+    axum::Json(changes): axum::Json<Changes>,
+) -> Result<axum::Json<Saved>, ApiError> {
+    let live = state.config.clone();
+    blocking(&state.app, move |app| live.save(app, &changes)).await
+}
+
+/// What `PUT /v1/secrets/{name}` takes. Not `Debug`, so that the key cannot be printed by accident.
+#[derive(Deserialize)]
+struct NewSecret {
+    value: String,
+}
+
+async fn put_secret(
+    State(state): State<ApiState>,
+    UrlPath(name): UrlPath<String>,
+    axum::Json(secret): axum::Json<NewSecret>,
+) -> Result<axum::Json<Vec<String>>, ApiError> {
+    let live = state.config.clone();
+    blocking(&state.app, move |_| {
+        live.secrets().set(&name, &secret.value)?;
+        live.secrets().names()
+    })
+    .await
+}
+
+async fn delete_secret(
+    State(state): State<ApiState>,
+    UrlPath(name): UrlPath<String>,
+) -> Result<axum::Json<Vec<String>>, ApiError> {
+    let live = state.config.clone();
+    blocking(&state.app, move |_| {
+        if !live.secrets().remove(&name)? {
+            return Err(AppError::NotFound(format!("secret {name}")));
+        }
+        live.secrets().names()
+    })
+    .await
+}
+
+/// How long `POST /v1/server/restart` waits before it restarts the server, so that its answer is sent first.
+const RESTART_DELAY: std::time::Duration = std::time::Duration::from_millis(300);
+
+async fn restart_server(State(state): State<ApiState>) -> StatusCode {
+    let live = state.config.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(RESTART_DELAY).await;
+        live.request_restart();
+    });
+    StatusCode::ACCEPTED
 }
 
 /// The harness configuration repository, or the 422 that says agents are configured in `moebius.toml`.
@@ -727,7 +782,7 @@ struct SavedRules {
 fn rules_source(state: &ApiState) -> (Option<PathBuf>, bool) {
     match &state.harness_repo {
         Some(repo) => (Some(repo.path().join("rules.md")), true),
-        None => (state.config.rules_file.clone(), false),
+        None => (state.config.get().rules_file.clone(), false),
     }
 }
 
@@ -1127,7 +1182,7 @@ async fn usage(
     if !(1..=HEATMAP_DAYS).contains(&days) {
         return Err(AppError::Invalid(format!("days is from 1 to {HEATMAP_DAYS}")).into());
     }
-    let day_budget = state.day_budget;
+    let day_budget = state.config.get().day_tokens;
     blocking(&state.app, move |app| {
         let store = &app.store;
         let totals = store.usage_totals(days)?;
@@ -1224,7 +1279,7 @@ async fn stream(mut socket: WebSocket, mut rx: tokio::sync::broadcast::Receiver<
 mod tests {
     use super::*;
     use crate::board::{Engine, Limits, Workflow};
-    use crate::config::AgentConfig;
+    use crate::config::{AgentConfig, Config};
     use crate::pibolt::PiBolt;
     use crate::repos::git;
     use crate::router::{Protocol, Router};
@@ -1278,16 +1333,14 @@ mod tests {
             runs: Arc::new(pi),
             harness_repo: None,
             token: token.into(),
-            round_limit: 5,
-            day_budget: Some(10_000),
-            config: Arc::new(
+            config: Arc::new(Live::new(
                 Config::parse(
-                    "",
+                    "[budgets]\nday_tokens = 10000\n",
                     std::path::Path::new("."),
                     std::path::Path::new("moebius.toml"),
                 )
                 .unwrap(),
-            ),
+            )),
         };
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();

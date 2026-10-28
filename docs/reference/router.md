@@ -18,7 +18,7 @@ harness only ever holds its run's token. The same listener also serves the [brid
 The body is passed on to the upstream of the same protocol, unchanged except that for a streamed OpenAI request
 `stream_options.include_usage` is set to `true`, so that the upstream reports the tokens it used. The request is sent
 to `<base_url><route>`, with the headers `anthropic-version` and `anthropic-beta` copied from the client, and with the
-upstream's key added when `api_key_env` is set (`Authorization: Bearer` for OpenAI, `x-api-key` for Anthropic). The
+upstream's key added when `api_key_env` or `api_key_secret` is set (`Authorization: Bearer` for OpenAI, `x-api-key` for Anthropic). The
 upstream's status, content type and body (or stream) are passed back as they are.
 
 An upstream is chosen by protocol: the first `[[router.upstreams]]` table with that `protocol`.

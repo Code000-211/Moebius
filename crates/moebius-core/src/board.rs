@@ -33,7 +33,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use mlua::{Lua, Table, Value, VmState};
@@ -299,7 +299,8 @@ pub struct Engine {
     app: Arc<App>,
     runs: Arc<dyn Runs>,
     workflow: Workflow,
-    limits: Limits,
+    /// Replaced when the limits are edited while the server runs (see `set_limits`).
+    limits: RwLock<Limits>,
 }
 
 #[derive(Default)]
@@ -317,8 +318,25 @@ impl Engine {
             app,
             runs,
             workflow,
-            limits,
+            limits: RwLock::new(limits),
         }
+    }
+
+    /// The limits as they are now.
+    fn limits(&self) -> Limits {
+        self.limits
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    /// Changes the limits scripts see (`moebius.run_limit`, `moebius.round_limit`, `moebius.day_budget`); the next
+    /// script call reads them.
+    pub fn set_limits(&self, run_limit: u32, round_limit: u32, day_budget: Option<i64>) {
+        let mut limits = self.limits.write().unwrap_or_else(|e| e.into_inner());
+        limits.run_limit = run_limit;
+        limits.round_limit = round_limit;
+        limits.day_budget = day_budget;
     }
 
     /// The script for `column`: the repository's override on its default branch, or the built-in one.
@@ -411,7 +429,7 @@ impl Engine {
         run_sandboxed(
             name,
             source,
-            &self.limits,
+            &self.limits(),
             |lua, deadline| self.api(lua, card, effects, deadline.clone()),
             |lua| self.card_table(lua, card),
         )
@@ -478,9 +496,10 @@ impl Engine {
         deadline: Rc<Cell<Instant>>,
     ) -> mlua::Result<Table> {
         let m = lua.create_table()?;
-        m.set("run_limit", self.limits.run_limit)?;
-        m.set("round_limit", self.limits.round_limit)?;
-        m.set("day_budget", self.limits.day_budget)?;
+        let limits = self.limits();
+        m.set("run_limit", limits.run_limit)?;
+        m.set("round_limit", limits.round_limit)?;
+        m.set("day_budget", limits.day_budget)?;
         let card_id = card.id;
 
         let (app, clock) = (self.app.clone(), deadline.clone());
@@ -632,7 +651,7 @@ impl Engine {
             })?,
         )?;
 
-        let (budgets, runs) = (self.limits.agent_budgets.clone(), self.runs.clone());
+        let (budgets, runs) = (limits.agent_budgets, self.runs.clone());
         m.set(
             "agent_budget",
             lua.create_function(move |_, name: String| {
@@ -2106,7 +2125,7 @@ mod tests {
             .iter()
             .map(|c| c.name.clone())
             .collect();
-        let dry = recording_api(&lua, &engine.limits, &columns, Rc::default()).unwrap();
+        let dry = recording_api(&lua, &engine.limits(), &columns, Rc::default()).unwrap();
         assert_eq!(names(&dry), names(&real));
         let real = engine.card_table(&lua, &card).unwrap();
         let dry = made_up_card(&lua, "Backlog", "Fix the parser", PERSON).unwrap();

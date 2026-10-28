@@ -88,10 +88,8 @@ impl Setup {
             app: server.app.clone(),
             runs: server.harness.clone(),
             harness_repo: server.harness_repo.clone(),
-            config: std::sync::Arc::new(server.config.clone()),
+            config: server.live.clone(),
             token: server.token.clone(),
-            round_limit: 5,
-            day_budget: None,
         };
         tokio::spawn(api::serve(listener, state));
 

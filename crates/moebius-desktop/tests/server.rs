@@ -14,6 +14,7 @@ use moebius_core::config::Config;
 use moebius_core::repos::git;
 use moebius_core::server::Server;
 use moebius_core::store::Usage;
+use moebius_desktop::agents;
 use moebius_desktop::app::{App, Message, Page};
 use moebius_desktop::chat;
 use moebius_desktop::client::{
@@ -23,6 +24,7 @@ use moebius_desktop::client::{
 use moebius_desktop::conversation::{Conversation, Entry, Said};
 use moebius_desktop::search;
 use moebius_desktop::settings::Settings;
+use moebius_desktop::setup;
 use moebius_desktop::terminal::Shell;
 use serde_json::json;
 
@@ -33,12 +35,9 @@ async fn start(dir: &Path) -> (Settings, Arc<Server>) {
 
 /// Like `start`, with `more` added to `moebius.toml`.
 async fn start_with(dir: &Path, more: &str) -> (Settings, Arc<Server>) {
-    let config = Config::parse(
-        &format!("[router]\nlisten = \"127.0.0.1:0\"\n{more}"),
-        dir,
-        &dir.join("moebius.toml"),
-    )
-    .unwrap();
+    let text = format!("[router]\nlisten = \"127.0.0.1:0\"\n{more}");
+    std::fs::write(dir.join("moebius.toml"), &text).unwrap();
+    let config = Config::parse(&text, dir, &dir.join("moebius.toml")).unwrap();
     let api_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = format!("http://{}", api_listener.local_addr().unwrap());
     let router_listener = tokio::net::TcpListener::bind(config.router_listen)
@@ -1140,9 +1139,165 @@ async fn the_client_reads_the_models_plugins_and_settings_of_a_real_server() {
     assert_eq!(guard.decides, ["tool_call"]);
 
     let server = client.server_settings().await.unwrap();
-    assert_eq!(server.round_limit, 4);
-    assert_eq!(server.listen, "127.0.0.1:7171");
-    assert!(server.github.is_none() && server.harness_url.is_none());
+    assert_eq!(server.value("board.round_limit"), &json!(4));
+    assert!(server.is_set("board.round_limit"));
+    assert_eq!(server.value("listen"), &json!("127.0.0.1:7171"));
+    assert!(!server.is_set("listen"));
+    assert!(server.value("github.app_id").is_null());
+    assert!(server.value("harness.url").is_null());
+    assert!(!server.restart_needed);
+}
+
+/// Runs a task and every task its messages start, feeding the messages to the app.
+async fn settle(app: &mut App, task: iced::Task<Message>) {
+    let mut pending = vec![task];
+    while let Some(task) = pending.pop() {
+        let Some(mut stream) = iced_runtime::task::into_stream(task) else {
+            continue;
+        };
+        while let Some(action) = stream.next().await {
+            if let iced_runtime::Action::Output(message) = action {
+                pending.push(app.update(message));
+            }
+        }
+    }
+}
+
+fn shown(app: &App, text: &str) -> bool {
+    Simulator::with_size(
+        iced::Settings::default(),
+        iced::Size::new(1440.0, 1800.0),
+        app.view(),
+    )
+    .find(text)
+    .is_ok()
+}
+
+/// Saving in the Settings and Models pages writes `moebius.toml` of a real server and the pages read it back; a key
+/// that needs a restart shows the banner, and an agent of the file is edited in the Agents page.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_apps_settings_models_and_agents_are_saved_to_the_servers_file_and_read_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, server) = start_with(
+        dir.path(),
+        "# kept\n[board]\nround_limit = 4\n[agents.Coder]\nmodel = \"coder-model\"\n",
+    )
+    .await;
+    let client = Client::new(settings.clone());
+    let mut app = App::with_snapshot(Snapshot::default());
+    let _ = app.update(Message::Checked(Ok((
+        settings.clone(),
+        client.snapshot().await.unwrap(),
+    ))));
+    let file = dir.path().join("moebius.toml");
+
+    let task = app.update(Message::Select(Page::Settings));
+    settle(&mut app, task).await;
+    assert!(shown(&app, "Coding rounds a card"));
+    for (key, text) in [
+        ("board.round_limit", "9"),
+        ("budgets.day_tokens", "5000"),
+        ("listen", "127.0.0.1:9"),
+    ] {
+        let _ = app.update(Message::Setup(setup::Message::Edit(key, text.into())));
+    }
+    let task = app.update(Message::Setup(setup::Message::SaveSettings));
+    settle(&mut app, task).await;
+    let text = std::fs::read_to_string(&file).unwrap();
+    assert!(
+        text.starts_with("[router]") || text.contains("# kept"),
+        "{text}"
+    );
+    assert!(
+        text.contains("round_limit = 9") && text.contains("day_tokens = 5000"),
+        "{text}"
+    );
+    assert!(text.contains("listen = \"127.0.0.1:9\""), "{text}");
+    let read = client.server_settings().await.unwrap();
+    assert_eq!(read.value("board.round_limit"), &json!(9));
+    assert_eq!(read.value("budgets.day_tokens"), &json!(5000));
+    assert_eq!(read.restart_keys, ["listen"]);
+    assert!(shown(&app, "Saved"));
+    assert!(shown(&app, "Restart the server to use: listen"));
+    assert_eq!(server.live.get().round_limit, 9);
+
+    // A refused value is the server's message, and the file is as it was.
+    let _ = app.update(Message::Setup(setup::Message::Edit(
+        "run_limit",
+        "0".into(),
+    )));
+    let task = app.update(Message::Setup(setup::Message::SaveSettings));
+    settle(&mut app, task).await;
+    assert!(shown(&app, "run_limit must be at least 1"));
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), text);
+
+    // An upstream with a typed key: the key is stored by the server, the file names it.
+    let task = app.update(Message::Select(Page::Models));
+    settle(&mut app, task).await;
+    let _ = app.update(Message::Setup(setup::Message::AddUpstream));
+    let _ = app.update(Message::Setup(setup::Message::UpstreamUrl(
+        0,
+        "http://127.0.0.1:1".into(),
+    )));
+    let owner = setup::Owner::Upstream(0);
+    let _ = app.update(Message::Setup(setup::Message::KeyMode(
+        owner,
+        setup::KeyMode::Typed,
+    )));
+    let _ = app.update(Message::Setup(setup::Message::KeyTyped(
+        owner,
+        "sk-typed-by-hand-0123456789".into(),
+    )));
+    let task = app.update(Message::Setup(setup::Message::SaveModels));
+    settle(&mut app, task).await;
+    let text = std::fs::read_to_string(&file).unwrap();
+    assert!(text.contains("api_key_secret = \"upstream-1\""), "{text}");
+    assert!(!text.contains("sk-typed-by-hand"));
+    let read = client.server_settings().await.unwrap();
+    assert_eq!(read.secrets, ["upstream-1"]);
+    assert_eq!(
+        read.value("router.upstreams")[0]["base_url"],
+        "http://127.0.0.1:1"
+    );
+    let stored = std::fs::read_to_string(dir.path().join(".moebius/secrets.toml")).unwrap();
+    assert!(stored.contains("sk-typed-by-hand-0123456789"));
+
+    // The agent of the file is opened, changed and saved from the Agents page.
+    let task = app.update(Message::Select(Page::Agents));
+    settle(&mut app, task).await;
+    let task = app.update(Message::Agents(agents::Message::Select("Coder".into())));
+    settle(&mut app, task).await;
+    let _ = app.update(Message::Agents(agents::Message::ModelEdited(
+        "better-model".into(),
+    )));
+    let _ = app.update(Message::Agents(agents::Message::BudgetEdited("777".into())));
+    let task = app.update(Message::Agents(agents::Message::Save));
+    settle(&mut app, task).await;
+    let text = std::fs::read_to_string(&file).unwrap();
+    assert!(
+        text.contains("model = \"better-model\"") && text.contains("token_budget = 777"),
+        "{text}"
+    );
+    let agents = client.agents().await.unwrap();
+    let coder = agents.iter().find(|a| a.name == "Coder").unwrap();
+    assert_eq!(
+        (coder.model.as_str(), coder.token_budget),
+        ("better-model", Some(777))
+    );
+    assert!(shown(&app, "Saved in moebius.toml."));
+
+    // A restart is asked for with the button; the app then waits for the server (which this test does not start again).
+    let task = app.update(Message::Select(Page::Settings));
+    settle(&mut app, task).await;
+    let task = app.update(Message::Setup(setup::Message::Restart));
+    settle(&mut app, task).await;
+    tokio::time::timeout(Duration::from_secs(60), server.live.restart_asked())
+        .await
+        .expect("the server is asked to restart");
+    assert!(shown(
+        &app,
+        "Restarting the server. The app connects again by itself."
+    ));
 }
 
 /// Saving the rules in the app is a commit in the harness configuration repository, and text that does not parse is

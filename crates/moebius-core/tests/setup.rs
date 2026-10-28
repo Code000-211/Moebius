@@ -1,9 +1,7 @@
 //! The Models, Plugins and Settings answers of the desktop API tell how the server is set up and never show a secret:
-//! not the value of an environment variable a key is read from, not the GitHub App's key file, not the password in a
-//! URL.
+//! not the value of an environment variable a key is read from, not the GitHub App's key, not the password in a URL.
 
 use std::path::Path;
-use std::sync::Arc;
 
 use moebius_core::api::{self, ApiState};
 use moebius_core::config::Config;
@@ -86,22 +84,25 @@ protocol = "anthropic"
 "#,
         pem.display()
     );
-    let config = Config::parse(&text, dir.path(), Path::new("moebius.toml")).unwrap();
-    let server = Server::new(config.clone(), "127.0.0.1:1".parse().unwrap()).unwrap();
-    // The harness repository is only configured, since cloning one needs a server to clone from.
-    let mut shown = config;
-    shown.harness_url = Some(format!(
-        "https://puller:{HARNESS_PASSWORD}@example.com/acme/harness.git"
-    ));
-    shown.mcp_env = vec!["DOCS_TOKEN".into()];
+    let file = dir.path().join("moebius.toml");
+    std::fs::write(&file, &text).unwrap();
+    let config = Config::parse(&text, dir.path(), &file).unwrap();
+    let server = Server::new(config, "127.0.0.1:1".parse().unwrap()).unwrap();
+    // The harness repository is only added to the file afterwards, since cloning one needs a server to clone from: a
+    // restart would use it.
+    std::fs::write(
+        &file,
+        format!(
+            "{text}\n[harness]\nurl = \"https://puller:{HARNESS_PASSWORD}@example.com/acme/harness.git\"\nmcp_env = [\"DOCS_TOKEN\"]\n"
+        ),
+    )
+    .unwrap();
     let state = ApiState {
         app: server.app.clone(),
         runs: server.harness.clone(),
         harness_repo: None,
         token: server.token.clone(),
-        round_limit: 4,
-        day_budget: Some(5_000_000),
-        config: Arc::new(shown),
+        config: server.live.clone(),
     };
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
@@ -154,31 +155,66 @@ protocol = "anthropic"
     assert_eq!(plugin("decision-model")["decides"], json!([]));
 
     let (settings, settings_text) = get(&base, &token, "/v1/settings").await;
+    assert_eq!(settings["file"], file.display().to_string());
+    let value = |key: &str| settings["values"][key].clone();
     assert_eq!(
-        settings["data_dir"],
-        dir.path().join("data").display().to_string()
+        value("data_dir"),
+        json!({"value": "data", "default": false})
     );
-    assert_eq!(settings["listen"], "127.0.0.1:7999");
-    assert_eq!(settings["round_limit"], 4);
-    assert_eq!(settings["run_limit"], 2);
-    assert_eq!(settings["day_budget"], 5_000_000);
-    assert_eq!(settings["retro_at"], "21:05");
     assert_eq!(
-        settings["trial_window"],
-        json!({"start": "01:30", "end": "05:00"})
+        value("listen"),
+        json!({"value": "127.0.0.1:7999", "default": false})
     );
-    assert_eq!(settings["board_tick_ms"], 500);
+    assert_eq!(value("round_limit"), Value::Null);
     assert_eq!(
-        settings["harness_url"],
+        value("board.round_limit"),
+        json!({"value": 4, "default": false})
+    );
+    assert_eq!(value("run_limit"), json!({"value": 2, "default": false}));
+    assert_eq!(
+        value("budgets.day_tokens"),
+        json!({"value": 5_000_000, "default": false})
+    );
+    assert_eq!(
+        value("retro_at"),
+        json!({"value": "21:05", "default": false})
+    );
+    assert_eq!(value("trial_window.start")["value"], "01:30");
+    assert_eq!(value("trial_window.end")["value"], "05:00");
+    assert_eq!(value("board.tick_ms")["value"], 500);
+    assert_eq!(
+        value("checks.timeout_seconds"),
+        json!({"value": 1800, "default": true})
+    );
+    assert_eq!(
+        value("harness.url")["value"],
         "https://example.com/acme/harness.git"
     );
-    assert_eq!(settings["mcp_env"], json!(["DOCS_TOKEN"]));
-    assert_eq!(settings["github"], json!({"app_id": 424242}));
+    assert_eq!(value("harness.mcp_env")["value"], json!(["DOCS_TOKEN"]));
+    assert_eq!(value("github.app_id")["value"], 424242);
+    assert_eq!(
+        value("github.private_key_file")["value"],
+        pem.display().to_string()
+    );
+    assert_eq!(value("teacher.model")["value"], "teacher-model");
+    assert_eq!(value("decision_model.api_key_env")["value"], "PATH");
+    assert_eq!(
+        value("decision_model.url")["value"],
+        "http://127.0.0.1:8081/v1"
+    );
+    assert_eq!(value("router.upstreams")["value"][1]["api_key_env"], "PATH");
+    assert_eq!(value("agents")["value"]["Coder"]["model"], "coder-model");
+    // The harness repository is in the file only, so a restart is needed for it.
+    assert_eq!(settings["restart_needed"], true);
+    assert_eq!(
+        settings["restart_keys"],
+        json!(["harness.mcp_env", "harness.url"])
+    );
+    assert_eq!(settings["secrets"], json!([]));
 
     for answer in [&models_text, &plugins_text, &settings_text] {
         for secret in [
             key.as_str(),
-            "github-app-test-key",
             "BEGIN",
             HARNESS_PASSWORD,
             UPSTREAM_PASSWORD,
@@ -192,16 +228,14 @@ protocol = "anthropic"
 #[tokio::test]
 async fn a_server_without_a_teacher_a_decision_model_or_github_says_so() {
     let dir = tempfile::tempdir().unwrap();
-    let config = Config::parse("", dir.path(), Path::new("moebius.toml")).unwrap();
-    let server = Server::new(config.clone(), "127.0.0.1:1".parse().unwrap()).unwrap();
+    let config = Config::parse("", dir.path(), &dir.path().join("moebius.toml")).unwrap();
+    let server = Server::new(config, "127.0.0.1:1".parse().unwrap()).unwrap();
     let state = ApiState {
         app: server.app.clone(),
         runs: server.harness.clone(),
         harness_repo: None,
         token: server.token.clone(),
-        round_limit: 5,
-        day_budget: None,
-        config: Arc::new(config),
+        config: server.live.clone(),
     };
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
@@ -213,8 +247,21 @@ async fn a_server_without_a_teacher_a_decision_model_or_github_says_so() {
     assert_eq!(models["teacher"], Value::Null);
     assert_eq!(models["decision_model"], Value::Null);
     let (settings, _) = get(&base, &token, "/v1/settings").await;
-    assert_eq!(settings["github"], Value::Null);
-    assert_eq!(settings["harness_url"], Value::Null);
-    assert_eq!(settings["day_budget"], Value::Null);
-    assert_eq!(settings["mcp_env"], json!([]));
+    assert_eq!(
+        settings["values"]["github.app_id"],
+        json!({"value": null, "default": true})
+    );
+    assert_eq!(
+        settings["values"]["harness.url"],
+        json!({"value": null, "default": true})
+    );
+    assert_eq!(
+        settings["values"]["budgets.day_tokens"],
+        json!({"value": null, "default": true})
+    );
+    assert_eq!(
+        settings["values"]["harness.mcp_env"],
+        json!({"value": [], "default": true})
+    );
+    assert_eq!(settings["restart_needed"], false);
 }

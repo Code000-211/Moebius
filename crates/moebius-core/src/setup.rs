@@ -1,11 +1,11 @@
-//! What the Models, Plugins and Settings pages of the desktop app show: how the server is set up, read from its
-//! configuration, its plugin host and its harness. Nothing here is a secret: a key is told as set or not, a URL has no
-//! credentials in it, and the GitHub App is told by its id only.
+//! What the Models and Plugins pages of the desktop app show: how the server is set up, read from its configuration and
+//! its plugin host. Nothing here is a secret: a key is told as set or not, and a URL has no credentials in it. The
+//! Settings page reads and writes the configuration itself (see `settings`).
 
 use serde::Serialize;
 
 use crate::board::AgentInfo;
-use crate::config::{Config, TimeOfDay};
+use crate::config::Config;
 use crate::decide::Decisions;
 use crate::router::Protocol;
 
@@ -63,7 +63,7 @@ pub fn models(config: &Config, agents: Vec<AgentInfo>) -> Models {
             .map(|upstream| UpstreamView {
                 protocol: upstream.protocol,
                 base_url: without_credentials(&upstream.base_url),
-                api_key_set: upstream.api_key_env.is_some(),
+                api_key_set: upstream.api_key_env.is_some() || upstream.api_key_secret.is_some(),
             })
             .collect(),
         agents,
@@ -79,7 +79,7 @@ pub fn models(config: &Config, agents: Vec<AgentInfo>) -> Models {
                 url: without_credentials(&model.url),
                 model: model.model.clone(),
                 timeout_seconds: model.timeout.as_secs(),
-                api_key_set: model.api_key_env.is_some(),
+                api_key_set: model.api_key_env.is_some() || model.api_key_secret.is_some(),
             }),
     }
 }
@@ -121,60 +121,6 @@ pub fn plugins(decisions: &Decisions) -> Plugins {
                 kinds: manifest.kinds,
             })
             .collect(),
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct WindowView {
-    pub start: String,
-    pub end: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct GitHubView {
-    pub app_id: u64,
-}
-
-/// The answer of `GET /v1/settings`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct Settings {
-    pub data_dir: String,
-    pub listen: String,
-    pub round_limit: u32,
-    pub run_limit: u32,
-    pub day_budget: Option<i64>,
-    pub retro_at: String,
-    pub trial_window: WindowView,
-    pub board_tick_ms: u64,
-    pub harness_url: Option<String>,
-    /// The names of the environment variables `mcp.toml` may take values from, never their values.
-    pub mcp_env: Vec<String>,
-    /// The GitHub App, if one is configured.
-    pub github: Option<GitHubView>,
-}
-
-fn clock(time: TimeOfDay) -> String {
-    format!("{:02}:{:02}", time.0 / 60, time.0 % 60)
-}
-
-pub fn settings(config: &Config) -> Settings {
-    Settings {
-        data_dir: config.data_dir.display().to_string(),
-        listen: config.listen.to_string(),
-        round_limit: config.round_limit,
-        run_limit: config.run_limit,
-        day_budget: config.day_tokens,
-        retro_at: clock(config.retro_at),
-        trial_window: WindowView {
-            start: clock(config.trial_window.0),
-            end: clock(config.trial_window.1),
-        },
-        board_tick_ms: u64::try_from(config.board_tick.as_millis()).unwrap_or(u64::MAX),
-        harness_url: config.harness_url.as_deref().map(without_credentials),
-        mcp_env: config.mcp_env.clone(),
-        github: config.github.as_ref().map(|github| GitHubView {
-            app_id: github.app_id,
-        }),
     }
 }
 

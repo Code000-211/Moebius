@@ -234,33 +234,49 @@ pub struct Plugins {
     pub plugins: Vec<Plugin>,
 }
 
-/// The daily stretch in which trials may run.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-pub struct Window {
-    pub start: String,
-    pub end: String,
+/// One key of `moebius.toml` as `GET /v1/settings` tells it: what the file says, or the default.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Setting {
+    pub value: serde_json::Value,
+    /// True when the file does not set the key and `value` is the default.
+    pub default: bool,
 }
 
-/// The GitHub App of the server.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-pub struct GitHubApp {
-    pub app_id: u64,
-}
-
-/// What the server runs with, as `GET /v1/settings` says.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+/// What `GET /v1/settings` says: every key of the configuration, the stored keys' names and what needs a restart.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct ServerSettings {
-    pub data_dir: String,
-    pub listen: String,
-    pub round_limit: u32,
-    pub run_limit: u32,
-    pub day_budget: Option<i64>,
-    pub retro_at: String,
-    pub trial_window: Window,
-    pub board_tick_ms: u64,
-    pub harness_url: Option<String>,
-    pub mcp_env: Vec<String>,
-    pub github: Option<GitHubApp>,
+    /// The configuration file on the server.
+    pub file: String,
+    pub values: std::collections::BTreeMap<String, Setting>,
+    /// The names of the stored API keys, never the keys.
+    #[serde(default)]
+    pub secrets: Vec<String>,
+    #[serde(default)]
+    pub restart_needed: bool,
+    #[serde(default)]
+    pub restart_keys: Vec<String>,
+}
+
+impl ServerSettings {
+    /// The setting `key`, or null when the server did not tell it.
+    pub fn value(&self, key: &str) -> &serde_json::Value {
+        self.values
+            .get(key)
+            .map_or(&serde_json::Value::Null, |setting| &setting.value)
+    }
+
+    /// Whether the file sets `key`; the default is in use when it does not.
+    pub fn is_set(&self, key: &str) -> bool {
+        self.values.get(key).is_some_and(|setting| !setting.default)
+    }
+}
+
+/// What `PUT /v1/settings` answers: whether some changed key is used only after a restart.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct SavedSettings {
+    pub restart_needed: bool,
+    #[serde(default)]
+    pub restart_keys: Vec<String>,
 }
 
 /// The settings of an agent of the harness configuration repository, as `GET` and `PUT /v1/agents/{name}` have them.
@@ -911,6 +927,46 @@ impl Client {
     /// What the server runs with.
     pub async fn server_settings(&self) -> Result<ServerSettings, ClientError> {
         self.get("/v1/settings").await
+    }
+
+    /// Changes `moebius.toml`: the dotted keys to set to a value and those to remove.
+    pub async fn save_settings(
+        &self,
+        set: serde_json::Map<String, serde_json::Value>,
+        remove: Vec<String>,
+    ) -> Result<SavedSettings, ClientError> {
+        let body = serde_json::json!({ "set": set, "remove": remove });
+        self.put("/v1/settings", body).await
+    }
+
+    /// Stores an API key under `name`, on the server only.
+    pub async fn store_secret(&self, name: &str, key: &str) -> Result<Vec<String>, ClientError> {
+        self.put(
+            &format!("/v1/secrets/{name}"),
+            serde_json::json!({ "value": key }),
+        )
+        .await
+    }
+
+    /// Asks the server to restart, which it answers before it does.
+    pub async fn restart_server(&self) -> Result<(), ClientError> {
+        let request = self
+            .http
+            .post(format!("{}/v1/server/restart", self.settings.address))
+            .json(&serde_json::json!({}))
+            .bearer_auth(&self.settings.token);
+        let response = request
+            .send()
+            .await
+            .map_err(|_| ClientError::Unreachable(self.settings.address.clone()))?;
+        match response.status() {
+            reqwest::StatusCode::UNAUTHORIZED => Err(ClientError::Unauthorized),
+            status if status.is_success() => Ok(()),
+            status => Err(ClientError::Server {
+                status: status.as_u16(),
+                message: response.text().await.unwrap_or_default(),
+            }),
+        }
     }
 
     /// An agent of the harness configuration repository, with its instructions.

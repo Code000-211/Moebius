@@ -254,7 +254,7 @@ The server runs on a multi-threaded tokio runtime.
 | `crates/moebius-desktop/src/inbox.rs`, `chat.rs`, `transcript.rs` | The inbox and its actions, the chat screen, and how a conversation is drawn (Markdown, tool calls, highlighted code). |
 | `crates/moebius-desktop/src/agents.rs`, `rules.rs` | The Agents screen (with the Skills and MCP servers pages) and the Rules page; an edit is a commit in the harness configuration repository. |
 | `crates/moebius-desktop/src/usage.rs`, `retro.rs`, `experiments.rs`, `decision_model.rs` | The Improve pages: usage with its heatmap, the Retro's days and proposals, autoresearch, the training set and shadowing. |
-| `crates/moebius-desktop/src/setup.rs` | The Setup pages: models, plugins and settings. |
+| `crates/moebius-desktop/src/setup.rs` | The Setup pages: models and settings, which edit `moebius.toml` through the API, and the plugins. |
 | `crates/moebius-desktop/src/conversation.rs` | Folds a run's events into a conversation (text, tool calls with their checks, steers, errors); pure, takes events in any order and drops repeats. |
 | `crates/moebius-desktop/src/live.rs`, `history.rs` | What a click on a card opens: the live view of its latest run (conversation, steer, stop, the run's panel), or the card's history when it has no run. |
 | `crates/moebius-desktop/src/terminal.rs` | The shell pane of the live view: bytes from the server parsed by `alacritty_terminal` into a grid and drawn in JetBrains Mono, keys turned into bytes, the pane's size in cells sent as a resize. The connection is `client::terminal`, a subscription that lives while the pane is open. |
@@ -283,7 +283,8 @@ The server runs on a multi-threaded tokio runtime.
 | `router.rs` | The router: model endpoints, run tokens, usage, budgets. |
 | `rules.rs` | The `rules.md` format and where rules come from. |
 | `server.rs` | Wires everything from the configuration and runs the loops. |
-| `setup.rs` | What the Models, Plugins and Settings pages show: the router's upstreams, the agents, the teacher, the decision model, the plugins and the server's settings, without a secret. |
+| `settings.rs` | Editing `moebius.toml` while the server runs: changes applied to the file's text, the keys that take effect at once, the API keys kept in `secrets.toml`, and the restart. |
+| `setup.rs` | What the Models and Plugins pages show: the router's upstreams, the agents, the teacher, the decision model and the plugins, without a secret. |
 | `skill.rs` | The `moebius` skill (the guide and the references, bundled with `include_str!`), written to `<data_dir>/skills/moebius/` at start. |
 | `store.rs` | The SQLite records and their migrations. |
 | `terminal.rs` | A person's shell in a run's worktree on a pseudo-terminal (`portable-pty`), served over the WebSocket `GET /v1/runs/{id}/terminal`; at most 4 per run, not checked by the guard. |

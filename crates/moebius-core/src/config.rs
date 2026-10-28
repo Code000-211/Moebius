@@ -57,15 +57,16 @@ timeout_seconds = 1800
 [router]
 listen = "127.0.0.1:7172"
 
-# Where the router sends requests, one upstream per protocol (openai or anthropic). Keys are read from the
-# environment variable named here, never from this file.
+# Where the router sends requests, one upstream per protocol (openai or anthropic). A key is never in this file: it is
+# read from the environment variable named by api_key_env, or from the secret named by api_key_secret (a key typed in
+# the desktop app is stored under a name in <data_dir>/secrets.toml). Set one of them, or neither for a local server.
 # [[router.upstreams]]
 # protocol = "openai"
 # base_url = "http://127.0.0.1:8080"      # a local server such as Radiance
 # [[router.upstreams]]
 # protocol = "anthropic"
 # base_url = "https://api.anthropic.com"
-# api_key_env = "ANTHROPIC_API_KEY"
+# api_key_env = "ANTHROPIC_API_KEY"       # or: api_key_secret = "anthropic"
 
 [pi_bolt]
 program = "pi-bolt"
@@ -85,11 +86,12 @@ program = "pi-bolt"
 # often it chooses what was recorded is measured. Once it has been asked about min_judgements judgements of a kind and
 # agrees on at least the share `agreement`, a proposal in the inbox offers it that kind; merging the proposal makes the
 # model decide it. `url` is an OpenAI-compatible base URL, called at <url>/chat/completions. The key is read from the
-# environment variable named by api_key_env, never from this file. Without this section nothing of this happens.
+# environment variable named by api_key_env or the secret named by api_key_secret, never from this file. Without this
+# section nothing of this happens.
 # [decision_model]
 # url = "http://127.0.0.1:8081/v1"
 # model = "moebius-decider"
-# api_key_env = "DECISION_MODEL_KEY"      # optional
+# api_key_env = "DECISION_MODEL_KEY"      # optional; or: api_key_secret = "decision-model"
 # timeout_seconds = 20                    # 1 to 29, like the teacher's
 # shadow = ["tool_call", "merge"]         # the kinds to shadow; all of them when not given
 # agreement = 0.95                        # the share of equal choices needed, above 0 and at most 1
@@ -149,6 +151,10 @@ pub enum ConfigError {
     DecisionModelEmpty,
     #[error("decision_model.api_key_env: {name:?} is not the name of an environment variable")]
     DecisionModelKeyEnv { name: String },
+    #[error("{key}: api_key_env and api_key_secret cannot both be set")]
+    KeyTwice { key: &'static str },
+    #[error("{key}.api_key_secret: {name:?} is not a name (letters, digits, - and _)")]
+    KeySecret { key: &'static str, name: String },
     #[error("checks.timeout_seconds must be at least 1")]
     ChecksTimeout,
     #[error("budgets.day_tokens must be at least 1")]
@@ -174,6 +180,24 @@ pub fn valid_agent_name(name: &str) -> bool {
         && name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// Refuses a key that is given twice, or a secret whose name is not one.
+fn check_key(
+    key: &'static str,
+    env: Option<&str>,
+    secret: Option<&str>,
+) -> Result<(), ConfigError> {
+    if env.is_some() && secret.is_some() {
+        return Err(ConfigError::KeyTwice { key });
+    }
+    match secret.filter(|name| !valid_agent_name(name)) {
+        Some(name) => Err(ConfigError::KeySecret {
+            key,
+            name: name.to_string(),
+        }),
+        None => Ok(()),
+    }
 }
 
 /// A time of day as minutes after midnight.
@@ -273,6 +297,7 @@ struct RawDecisionModel {
     url: String,
     model: String,
     api_key_env: Option<String>,
+    api_key_secret: Option<String>,
     timeout_seconds: Option<u64>,
     shadow: Option<Vec<String>>,
     agreement: Option<f64>,
@@ -315,6 +340,8 @@ pub struct UpstreamConfig {
     pub base_url: String,
     /// The environment variable holding the provider's key.
     pub api_key_env: Option<String>,
+    /// The name of the secret holding the provider's key (see `settings`); not set together with `api_key_env`.
+    pub api_key_secret: Option<String>,
 }
 
 /// The GitHub App Moebius acts as.
@@ -344,6 +371,8 @@ pub struct DecisionModelConfig {
     pub model: String,
     /// The environment variable holding the key, if the endpoint needs one.
     pub api_key_env: Option<String>,
+    /// The name of the secret holding the key; not set together with `api_key_env`.
+    pub api_key_secret: Option<String>,
     /// How long the model may take to answer.
     pub timeout: Duration,
     /// The kinds to shadow; all of them when none are named.
@@ -389,6 +418,8 @@ pub struct AgentSet {
 /// The server's configuration, with every default applied and every path made absolute against the file's directory.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
+    /// The configuration file, made absolute: where settings edited through the API are written.
+    pub file: PathBuf,
     pub data_dir: PathBuf,
     pub listen: SocketAddr,
     pub token_file: PathBuf,
@@ -454,6 +485,13 @@ impl Config {
             .unwrap_or_else(|| SocketAddr::from(([127, 0, 0, 1], 7172)));
         if !router_listen.ip().is_loopback() {
             return Err(ConfigError::RouterNotLocal(router_listen));
+        }
+        for upstream in &raw.router.upstreams {
+            check_key(
+                "router.upstreams",
+                upstream.api_key_env.as_deref(),
+                upstream.api_key_secret.as_deref(),
+            )?;
         }
         if let Some(name) = raw.agents.keys().find(|n| !valid_agent_name(n)) {
             return Err(ConfigError::AgentName { name: name.clone() });
@@ -527,10 +565,16 @@ impl Config {
                 if let Some(name) = m.api_key_env.as_ref().filter(|n| !valid_variable(n)) {
                     return Err(ConfigError::DecisionModelKeyEnv { name: name.clone() });
                 }
+                check_key(
+                    "decision_model",
+                    m.api_key_env.as_deref(),
+                    m.api_key_secret.as_deref(),
+                )?;
                 Some(DecisionModelConfig {
                     url: m.url.trim_end_matches('/').to_string(),
                     model: m.model,
                     api_key_env: m.api_key_env,
+                    api_key_secret: m.api_key_secret,
                     timeout: Duration::from_secs(seconds),
                     shadow: m.shadow,
                     agreement,
@@ -551,6 +595,7 @@ impl Config {
             end: None,
         });
         Ok(Self {
+            file: base.join(origin.file_name().unwrap_or_default()),
             listen: raw
                 .listen
                 .unwrap_or_else(|| SocketAddr::from(([127, 0, 0, 1], 7171))),
@@ -802,6 +847,7 @@ mod tests {
                 url: "http://m:1/v1".into(),
                 model: "m".into(),
                 api_key_env: None,
+                api_key_secret: None,
                 timeout: Duration::from_secs(20),
                 shadow: None,
                 agreement: 0.95,

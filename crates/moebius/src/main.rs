@@ -143,13 +143,34 @@ fn run(cli: Cli) -> Result<(), String> {
                     server.config.data_dir.display(),
                     server.config.listen,
                 );
-                tokio::select! {
-                    served = server.serve(api, router) => served.map_err(|e| e.to_string()),
+                let served = tokio::select! {
+                    served = server.clone().serve(api, router) => served.map_err(|e| e.to_string()),
                     _ = tokio::signal::ctrl_c() => Ok(()),
+                };
+                if server.live.restart_requested() {
+                    // The board and the schedule have stopped with `serve`; the runs go back to the board at the next
+                    // start, which fails what was left unended.
+                    server.harness.kill_all();
+                    return Err(restart());
                 }
+                served
             })
         }
     }
+}
+
+/// Starts this program again, with the arguments it was started with, in place of the running one. It returns only to
+/// say why that failed.
+fn restart() -> String {
+    use std::os::unix::process::CommandExt;
+    let program = match std::env::current_exe() {
+        Ok(program) => program,
+        Err(e) => return format!("cannot find the program to restart: {e}"),
+    };
+    let error = std::process::Command::new(program)
+        .args(std::env::args_os().skip(1))
+        .exec();
+    format!("cannot restart: {error}")
 }
 
 #[cfg(test)]

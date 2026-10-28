@@ -25,6 +25,7 @@ pub mod retro;
 pub mod router;
 pub mod rules;
 pub mod server;
+pub mod settings;
 pub mod setup;
 pub mod skill;
 pub mod store;

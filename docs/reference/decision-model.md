@@ -8,8 +8,8 @@ The code is in `crates/moebius-core/src/decision_model.rs`.
 
 ## Asking the model
 
-One non-streaming request is sent to `<url>/chat/completions` with `Authorization: Bearer <key>` when `api_key_env` is
-set:
+One non-streaming request is sent to `<url>/chat/completions` with `Authorization: Bearer <key>` when `api_key_env` or
+`api_key_secret` is set:
 
 ```json
 {"model": "moebius-decider", "stream": false, "temperature": 0,

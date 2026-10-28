@@ -54,9 +54,10 @@ pub struct Grant {
 
 pub struct Router {
     store: Arc<Store>,
-    upstreams: Vec<Upstream>,
-    /// The most tokens all runs may use in a day, if limited.
-    day_budget: Option<i64>,
+    /// Replaced when the upstreams are edited while the server runs.
+    upstreams: RwLock<Vec<Upstream>>,
+    /// The most tokens all runs may use in a day, if limited; replaced when the budget is edited.
+    day_budget: RwLock<Option<i64>>,
     grants: RwLock<HashMap<String, Grant>>,
     client: reqwest::Client,
 }
@@ -65,17 +66,31 @@ impl Router {
     pub fn new(store: Arc<Store>, upstreams: Vec<Upstream>) -> Self {
         Self {
             store,
-            upstreams,
-            day_budget: None,
+            upstreams: RwLock::new(upstreams),
+            day_budget: RwLock::new(None),
             grants: RwLock::new(HashMap::new()),
             client: reqwest::Client::new(),
         }
     }
 
     /// Refuses model requests once `tokens` have been used today by all runs.
-    pub fn with_day_budget(mut self, tokens: Option<i64>) -> Self {
-        self.day_budget = tokens;
+    pub fn with_day_budget(self, tokens: Option<i64>) -> Self {
+        self.set_day_budget(tokens);
         self
+    }
+
+    /// Changes the day's budget; the next request is checked against it.
+    pub fn set_day_budget(&self, tokens: Option<i64>) {
+        *self.day_budget.write().unwrap_or_else(|p| p.into_inner()) = tokens;
+    }
+
+    fn day_budget(&self) -> Option<i64> {
+        *self.day_budget.read().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// Replaces the upstreams; the next request goes to the new ones.
+    pub fn set_upstreams(&self, upstreams: Vec<Upstream>) {
+        *self.upstreams.write().unwrap_or_else(|p| p.into_inner()) = upstreams;
     }
 
     /// Issues a new token for a run; requests carrying it are counted against the run.
@@ -143,7 +158,7 @@ impl Router {
 
     /// Why the grant's request must be refused: the day's budget or the grant's budget is spent.
     fn overspent(&self, grant: &Grant) -> crate::store::Result<Option<String>> {
-        if let Some(day) = self.day_budget {
+        if let Some(day) = self.day_budget() {
             let today = self.store.tokens_today()?;
             if today >= day {
                 return Ok(Some(format!(
@@ -169,7 +184,7 @@ impl Router {
 
     /// A refusal when a budget is spent or the usage cannot be read.
     async fn check_budget(self: Arc<Self>, protocol: Protocol, grant: &Grant) -> Option<Response> {
-        if self.day_budget.is_none() && grant.budget.is_none() {
+        if self.day_budget().is_none() && grant.budget.is_none() {
             return None;
         }
         let g = grant.clone();
@@ -208,12 +223,14 @@ impl Router {
         if let Some(refusal) = self.clone().check_budget(protocol, &grant).await {
             return refusal;
         }
-        let Some(upstream) = self
+        let upstream = self
             .upstreams
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
             .iter()
             .find(|u| u.protocol == protocol)
-            .cloned()
-        else {
+            .cloned();
+        let Some(upstream) = upstream else {
             return error(
                 protocol,
                 StatusCode::BAD_GATEWAY,

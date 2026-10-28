@@ -502,9 +502,9 @@ has one. Response:
 }
 ```
 
-- `upstreams` are the `[[router.upstreams]]` in the order of the configuration. `api_key_set` is true when the upstream
-  has an `api_key_env`; the server does not start when that variable is not set. Neither the key nor the name of the
-  variable is shown. The configuration names no models an upstream serves, so none are listed.
+- `upstreams` are the `[[router.upstreams]]` the server runs with, in the order of the configuration. `api_key_set` is
+  true when the upstream has an `api_key_env` or an `api_key_secret`; the server does not start when that variable is not
+  set or no key is stored under that name. Neither the key nor the name of the variable or the secret is shown. The configuration names no models an upstream serves, so none are listed.
 - `agents` are the agents of [`GET /v1/agents`](#get-v1agents), with the same fields.
 - `teacher` and `decision_model` are `null` without a `[teacher]` or `[decision_model]` table.
 - A user name and password in a URL are removed from `base_url` and `url`.
@@ -527,21 +527,78 @@ with a merged takeover.
 
 ### `GET /v1/settings`
 
-What the server runs with, from `moebius.toml` and its defaults. Response:
+Every key of [`moebius.toml`](configuration.md) with its value in the file, or its default, for the Settings and
+Models pages to build their forms from. The file is read afresh, so a change made by hand shows. Response:
 
 ```json
 {
-  "data_dir": "/srv/moebius/.moebius", "listen": "127.0.0.1:7171", "round_limit": 5, "run_limit": 3,
-  "day_budget": 20000000, "retro_at": "23:30", "trial_window": {"start": "00:00", "end": "06:00"},
-  "board_tick_ms": 2000, "harness_url": "https://github.com/acme/harness-configuration", "mcp_env": ["DOCS_TOKEN"],
-  "github": {"app_id": 123456}
+  "file": "/srv/moebius/moebius.toml",
+  "values": {
+    "listen": {"value": "127.0.0.1:7171", "default": true},
+    "board.round_limit": {"value": 7, "default": false},
+    "budgets.day_tokens": {"value": null, "default": true},
+    "router.upstreams": {"value": [{"protocol": "anthropic", "base_url": "https://api.anthropic.com", "api_key_secret": "anthropic"}], "default": false},
+    "agents": {"value": {"Coder": {"model": "qwen3.8-flash-next", "token_budget": 2000000}}, "default": false}
+  },
+  "secrets": ["anthropic"],
+  "restart_needed": false,
+  "restart_keys": []
 }
 ```
 
-`data_dir` is an absolute path and `listen` the address of the desktop API. `day_budget` is `null` without
-`[budgets] day_tokens`, `harness_url` and `github` are `null` without `[harness]` and `[github]`. `retro_at` and the
-trial window are times of day as `HH:MM`. `harness_url` has any user name and password removed. `mcp_env` holds the
-names of the environment variables, never their values. `github` has the app id only; the key file is not shown.
+- `file` is the absolute path of the configuration file.
+- `values` has an entry for every key of the reference, by its dotted name (`board.round_limit`; `harness.mcp_env`;
+  `decision_model.shadow`), with the whole `router.upstreams` (an array of objects) and the whole `agents` (an object of
+  agents by name). `value` is what the file says, as JSON, or the default when `default` is true; `null` when the key
+  has no default and the file does not set it. Paths are as written in the file.
+- `secrets` are the names of the stored API keys, never the keys. An upstream or the decision model names one with
+  `api_key_secret`, and an environment variable with `api_key_env`; neither the variable's value nor a key is ever
+  in an answer. A user name and password in `harness.url`, `decision_model.url` and the upstreams' `base_url` are
+  removed.
+- `restart_keys` are the keys whose value in the file is not the one the running server started with and that the
+  server uses only after it restarts (see [Editing the file from the app](configuration.md#editing-the-file-from-the-app));
+  `restart_needed` is true when there are any.
+
+### `PUT /v1/settings`
+
+A person changes `moebius.toml`. Request: `{"set": {...}, "remove": [...]}`, both optional.
+
+- `set` maps a dotted key to its new value: a JSON string, number, boolean or array of them for a key, an object for a
+  table (`"teacher": {"model": "m"}` replaces the table, `"agents.Coder": {...}` replaces that agent), an array of
+  objects for the router's upstreams (`"router.upstreams": [...]` replaces them all). One upstream is addressed by its
+  position: `router.upstreams.0` replaces the first, the position after the last adds one. A key or table that is not
+  in the file is added. A value is never `null`: remove the key instead.
+- `remove` lists dotted keys or tables to take out (`budgets.day_tokens`, `teacher`, `agents.Coder`,
+  `router.upstreams.1`); one that is not in the file is ignored. Removals are made before the sets.
+
+The change is made to the text of the file, so its comments and the order of its keys stay. The result is read as
+`moebius serve` would read it; if that fails (an unknown key, a value of the wrong type or out of range, an environment
+variable of an upstream that is not set, a secret that is not stored, `[agents.*]` together with `[harness]`) the
+answer is `422` with the message of the parse and nothing is written. Otherwise the file is written in one step (a
+temporary file in its directory that replaces it), the decision is recorded (kind `edit_settings`, decider `person`,
+the `set` and `remove` in its context; a URL has no user name and password there, and a key is never part of a
+change), and the keys that are live take effect at once. Response: `{"restart_needed": boolean, "restart_keys":
+[string]}`, as in `GET /v1/settings`: true with the keys that the running server uses only after it restarts. Errors:
+`422` as above or a key that is not a key of the configuration; `500` the file cannot be read or written.
+
+### `PUT /v1/secrets/{name}`
+
+Stores an API key under `name` (letters, digits, `-` and `_`) in `secrets.toml` of the data directory, which only its
+owner can read, replacing a key stored under the name before. Request: `{"value": string}`, not blank. The key is not
+returned, stored anywhere else or logged. Response: the names of the stored keys. Errors: `422` the name or the key is
+not allowed.
+
+### `DELETE /v1/secrets/{name}`
+
+Removes the key stored under `name`. Response: the names of the keys left. Errors: `404` there is none. A key that
+`api_key_secret` still names is not checked: the next start fails until the name is stored again.
+
+### `POST /v1/server/restart`
+
+Restarts the server. It answers `202` with an empty body, and a moment later stops the board, the schedule and the Pi
+processes of the runs going (the next start fails those runs, as it does after any stop, so the board starts them
+again) and starts the same program again with the same arguments, on the same configuration file. Clients lose their
+connection and make it again. A server that is not the `moebius` binary only stops serving.
 
 ### `POST /v1/chats`
 

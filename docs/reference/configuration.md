@@ -117,7 +117,8 @@ endpoint it came in on; without a match the router answers 502. Without any upst
 |---|---|---|---|
 | `router.upstreams.protocol` | string | required | `openai` or `anthropic`. |
 | `router.upstreams.base_url` | string | required | The URL the endpoint's path is appended to, such as `http://127.0.0.1:8080` or `https://api.anthropic.com`. A trailing slash is ignored. |
-| `router.upstreams.api_key_env` | string | none | The name of the environment variable that holds the provider's key. The key is never in the file. If the variable is not set when the server starts, the server does not start. Without this key, no key is sent (a local server). The key is sent as `Authorization: Bearer` (`openai`) or `x-api-key` (`anthropic`). |
+| `router.upstreams.api_key_env` | string | none | The name of the environment variable that holds the provider's key. The key is never in the file. If the variable is not set when the server starts, the server does not start. Without this key and without `api_key_secret`, no key is sent (a local server). The key is sent as `Authorization: Bearer` (`openai`) or `x-api-key` (`anthropic`). |
+| `router.upstreams.api_key_secret` | string | none | The name of a stored key (see [Secrets](#secrets)) that holds the provider's key, for a key typed into the desktop app. A name is made of letters, digits, `-` and `_`. If no key is stored under it when the server starts, the server does not start. Setting it together with `api_key_env` refuses the file. The key is sent as for `api_key_env`. |
 
 ## `[pi_bolt]`
 
@@ -148,6 +149,7 @@ the file or the start.
 | `decision_model.url` | string | required | The OpenAI-compatible base URL, such as `http://127.0.0.1:8081/v1`. The model is asked at `<url>/chat/completions`. |
 | `decision_model.model` | string | required | The model's name, sent in the request. |
 | `decision_model.api_key_env` | string | none | The name of the environment variable that holds the key, sent as a bearer token. The key is never read from the file, stored or logged. The server does not start when the variable is not set. |
+| `decision_model.api_key_secret` | string | none | The name of a stored key (see [Secrets](#secrets)) that holds the key, instead of an environment variable. The server does not start when no key is stored under the name. Setting it together with `api_key_env` refuses the file. |
 | `decision_model.timeout_seconds` | integer | `20` | How long the model may take. From 1 to 29, else the file is refused: the plugin host cuts a decider off after 30 seconds. |
 | `decision_model.shadow` | array of strings | all kinds | The kinds to shadow. |
 | `decision_model.agreement` | number | `0.95` | The share of shadows that must agree with the recorded choice for a takeover to be proposed. Above 0 and at most 1, else the file is refused. |
@@ -203,9 +205,39 @@ model, protocol, thinking level, token budget, instructions (added after the bui
 without the table it takes the Coder's model and protocol, and with neither a chat with it is refused with status 422. It
 is the agent of a grilling, see the [desktop API](desktop-api.md) and [Grilling](harness-configuration.md#grilling).
 
+## Editing the file from the app
+
+The desktop app edits every key of this page through `PUT /v1/settings` (see the [desktop API](desktop-api.md)). The
+server changes the text of the file in place, so comments and the order of the keys stay, refuses a result that
+`moebius serve` would refuse (status 422, nothing written), writes the file in one step, and records the decision
+(kind `edit_settings`). A key is addressed by the name this page gives it, `board.round_limit`, and a table by its
+name (`teacher`), a `[[router.upstreams]]` table by its position (`router.upstreams.0`) and an agent by its name
+(`agents.Coder`).
+
+A change applies to the running server at once for these keys:
+
+- `run_limit`, `board.round_limit` and `budgets.day_tokens`: the limits column scripts and the router read;
+- `board.tick_ms`, `retro_at`, `trial_window.start` and `trial_window.end`: read by the board's loop and the schedule;
+- `router.upstreams`, with their keys;
+- `agents.<name>`, on a server without `[harness]`.
+
+Every other key is written to the file and used after the server restarts: `data_dir`, `listen`, `token_file`,
+`rules_file`, `checks.timeout_seconds`, `router.listen`, `pi_bolt.program`, `harness.*`, `github.*`, `teacher.*` and
+`decision_model.*`. The answer of `PUT /v1/settings` and `GET /v1/settings` lists the ones that differ from what the
+running server started with, and `POST /v1/server/restart` restarts it.
+
+### Secrets
+
+A key typed into the app is stored under a name in `secrets.toml` in `data_dir`, a TOML table of names and keys that only
+its owner can read (mode 0600). `moebius.toml` names it with `api_key_secret`; the key itself is never in
+`moebius.toml`, in an answer of the API, in the store, in an event or in a log. A key is stored with `PUT
+/v1/secrets/{name}` and removed with `DELETE /v1/secrets/{name}`; removing one that `api_key_secret` still names makes
+the next start fail, as an unset `api_key_env` variable does.
+
 ## Environment variables
 
-- The variables named by `router.upstreams.api_key_env`. Nothing else is read from the environment by the server.
+- The variables named by `router.upstreams.api_key_env` and `decision_model.api_key_env`. Nothing else is read from the
+  environment by the server.
 - `MOEBIUS_PI_BOLT` is read only by the end-to-end tests in `crates/moebius-core/tests`; the server ignores it.
 - The server sets `PI_CODING_AGENT_DIR`, `MOEBIUS_CHECK_URL` and `MOEBIUS_RUN_TOKEN` for each Pi-Bolt process, see the
   [bridge protocol](bridge-protocol.md). It also sets `MOEBIUS`, the path of the running `moebius` executable, so that

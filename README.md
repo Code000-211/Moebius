@@ -24,7 +24,7 @@ Every milestone of the first version, M0 to M9, is built (see [`docs/spec.md`](d
   decision and take it over once a person merges the proposal.
 
 The desktop app has every screen of [`docs/design.md`](docs/design.md): board, live view with a shell, inbox, chat,
-agents, usage, Retro, experiments, decision model, and the read-only pages of the setup: models, plugins and settings.
+agents, usage, Retro, experiments, decision model, and the setup: models and settings, which edit `moebius.toml`, and the read-only plugins.
 
 ## Quick start
 

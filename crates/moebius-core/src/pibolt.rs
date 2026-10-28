@@ -201,6 +201,15 @@ impl PiBolt {
         Ok(agent)
     }
 
+    /// Kills every Pi that is going, for a server that is about to restart; the runs they leave are failed by the next
+    /// start, so that the board starts them again.
+    pub fn kill_all(&self) {
+        let all: Vec<Live> = lock(&self.live).values().cloned().collect();
+        for live in all {
+            let _ = lock(&live.child).kill();
+        }
+    }
+
     /// The agents as they are now.
     fn agent_set(&self) -> std::sync::RwLockReadGuard<'_, AgentSet> {
         self.agents.read().unwrap_or_else(|e| e.into_inner())

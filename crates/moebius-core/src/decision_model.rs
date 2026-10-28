@@ -546,6 +546,7 @@ mod tests {
             url: "http://model.test/v1".into(),
             model: "decider".into(),
             api_key_env: None,
+            api_key_secret: None,
             timeout: Duration::from_secs(5),
             shadow: None,
             agreement: 0.9,

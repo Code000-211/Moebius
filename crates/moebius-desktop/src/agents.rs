@@ -1,7 +1,9 @@
 //! The Agents screen: the agents the server can run and an editor for the one chosen. An edit is `PUT /v1/agents/{name}`,
-//! which the server makes a commit in the harness configuration repository; a server without one lists its agents read
-//! only. The skills and MCP servers an agent can name come from `GET /v1/skills` and `GET /v1/mcp-servers`, and the
-//! same lists are the pages of Skills and MCP servers.
+//! which the server makes a commit in the harness configuration repository. A server without one keeps its agents in
+//! `moebius.toml`: the same editor then reads the agent from `GET /v1/settings` and saves it with `PUT /v1/settings`
+//! (`agents.<name>`), and an agent has skill and extension paths instead of the repository's skills and MCP servers.
+//! The skills and MCP servers an agent can name come from `GET /v1/skills` and `GET /v1/mcp-servers`, and the same
+//! lists are the pages of Skills and MCP servers.
 
 use iced::font::Weight;
 use iced::widget::text::Wrapping;
@@ -12,7 +14,8 @@ use iced::{Alignment, Border, Element, Length, Task};
 
 use crate::app::Message as AppMessage;
 use crate::client::{
-    Agent, AgentDetail, AgentSettings, Client, ClientError, McpServer, Proposal, Skill,
+    Agent, AgentDetail, AgentSettings, Client, ClientError, McpServer, Proposal, ServerSettings,
+    Skill,
 };
 use crate::live::say;
 use crate::page::{self, Tone};
@@ -35,6 +38,8 @@ pub enum Message {
     Select(String),
     /// The files of the agent with this name were read.
     Opened(String, Result<AgentDetail, ClientError>),
+    /// The settings of a server that keeps its agents in `moebius.toml` were read to open the agent with this name.
+    OpenedFromFile(String, Result<ServerSettings, ClientError>),
     NewAgent,
     NameEdited(String),
     ModelEdited(String),
@@ -47,6 +52,9 @@ pub enum Message {
     ExtensionEdited(String),
     AddExtension,
     RemoveExtension(String),
+    SkillPathEdited(String),
+    AddSkillPath,
+    RemoveSkillPath(String),
     Save,
     /// The server answered the edit: the agent as committed, or why not.
     Saved(Result<AgentDetail, ClientError>),
@@ -67,6 +75,8 @@ enum Files {
 enum Notice {
     /// The edit is a commit with this short id; none when the edit changed nothing.
     Saved(Option<String>),
+    /// The edit was written to `moebius.toml`.
+    Written,
     Failed(String),
 }
 
@@ -86,6 +96,8 @@ struct Editor {
     mcp: Vec<String>,
     extensions: Vec<String>,
     extension: String,
+    /// The skill path being typed, for an agent of `moebius.toml`.
+    skill_path: String,
     notice: Option<Notice>,
     /// Whether "Delete" asks to be confirmed.
     confirming: bool,
@@ -107,6 +119,7 @@ impl Editor {
             mcp: vec![],
             extensions: vec![],
             extension: String::new(),
+            skill_path: String::new(),
             notice: None,
             confirming: false,
         }
@@ -202,17 +215,80 @@ fn add_chosen<'a>(names: &mut Vec<&'a str>, chosen: &'a [String]) {
     }
 }
 
+/// The agent `name` as the `[agents.<name>]` table of `moebius.toml` says, or a 404 when the file has none.
+fn from_file(name: &str, server: &ServerSettings) -> Result<AgentDetail, ClientError> {
+    let Some(table) = server.value("agents").get(name) else {
+        return Err(ClientError::Server {
+            status: 404,
+            message: format!("agent {name} not found"),
+        });
+    };
+    let text = |key: &str| table.get(key).and_then(|v| v.as_str()).map(str::to_string);
+    let paths = |key: &str| -> Vec<String> {
+        table
+            .get(key)
+            .and_then(|v| v.as_array())
+            .map(|list| {
+                list.iter()
+                    .filter_map(|v| v.as_str())
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    Ok(AgentDetail {
+        name: name.to_string(),
+        settings: AgentSettings {
+            model: text("model").unwrap_or_default(),
+            protocol: text("protocol").unwrap_or_else(|| PROTOCOLS[0].to_string()),
+            thinking: text("thinking"),
+            token_budget: table.get("token_budget").and_then(|v| v.as_i64()),
+            skills: paths("skills"),
+            extensions: paths("extensions"),
+            mcp: vec![],
+        },
+        instructions: text("instructions").unwrap_or_default(),
+        commit: None,
+    })
+}
+
+/// The `[agents.<name>]` table that `agent` and its `instructions` are saved as.
+fn file_table(agent: &AgentSettings, instructions: &str) -> serde_json::Value {
+    let mut table = serde_json::Map::new();
+    table.insert("model".into(), agent.model.clone().into());
+    table.insert("protocol".into(), agent.protocol.clone().into());
+    if let Some(thinking) = &agent.thinking {
+        table.insert("thinking".into(), thinking.clone().into());
+    }
+    if !instructions.trim().is_empty() {
+        table.insert("instructions".into(), instructions.into());
+    }
+    if let Some(budget) = agent.token_budget {
+        table.insert("token_budget".into(), budget.into());
+    }
+    for (key, paths) in [("skills", &agent.skills), ("extensions", &agent.extensions)] {
+        if !paths.is_empty() {
+            table.insert(key.into(), paths.clone().into());
+        }
+    }
+    table.into()
+}
+
 /// Whether an answer says the token is not accepted.
 fn unauthorized(result: &Result<impl Sized, ClientError>) -> bool {
     matches!(result, Err(ClientError::Unauthorized))
 }
 
 impl Agents {
-    /// Whether the server keeps its agents in a harness configuration repository, so that they can be edited.
+    /// Whether the agents can be edited: once the server has said where it keeps them.
     fn editable(&self) -> bool {
-        self.skills
-            .as_ref()
-            .is_some_and(|skills| !skills.is_empty())
+        self.skills.is_some()
+    }
+
+    /// Whether the server keeps its agents in the tables of `moebius.toml`. A server with a harness configuration
+    /// repository always lists the built-in skill, so an empty list means there is none.
+    fn in_file(&self) -> bool {
+        self.skills.as_ref().is_some_and(Vec::is_empty)
     }
 
     /// The agents, as the server last listed them.
@@ -264,6 +340,7 @@ impl Agents {
         let Some(settings) = settings else {
             return Task::none();
         };
+        let in_file = self.in_file();
         match message {
             Message::Listed(Ok(list)) => self.list = list,
             Message::SkillsListed(Ok(skills)) => self.skills = Some(skills),
@@ -275,6 +352,10 @@ impl Agents {
             | Message::ProposalsListed(Err(_)) => {}
             Message::Select(name) => return self.open(name, settings),
             Message::Opened(name, result) => self.opened(&name, result),
+            Message::OpenedFromFile(name, result) => {
+                let result = result.and_then(|server| from_file(&name, &server));
+                self.opened(&name, result);
+            }
             Message::NewAgent => {
                 self.editor = Some(Editor {
                     naming: true,
@@ -288,7 +369,11 @@ impl Agents {
                 {
                     editor.naming = false;
                     editor.exists = true;
-                    editor.notice = Some(Notice::Saved(detail.commit));
+                    editor.notice = Some(if in_file {
+                        Notice::Written
+                    } else {
+                        Notice::Saved(detail.commit)
+                    });
                 }
                 return self.reload(settings);
             }
@@ -296,7 +381,19 @@ impl Agents {
                 if let Some(editor) = &self.editor {
                     let (client, name) = (Client::new(settings.clone()), editor.name.clone());
                     return Task::perform(
-                        async move { client.delete_agent(&name).await },
+                        async move {
+                            if in_file {
+                                client
+                                    .save_settings(
+                                        Default::default(),
+                                        vec![format!("agents.{name}")],
+                                    )
+                                    .await
+                                    .map(drop)
+                            } else {
+                                client.delete_agent(&name).await
+                            }
+                        },
                         |result| AppMessage::Agents(Message::Deleted(result)),
                     );
                 }
@@ -333,6 +430,15 @@ impl Agents {
             Message::Instructions(action) => editor.instructions.perform(action),
             Message::ToggleSkill(name) => toggle(&mut editor.skills, name),
             Message::ToggleMcp(name) => toggle(&mut editor.mcp, name),
+            Message::SkillPathEdited(path) => editor.skill_path = path,
+            Message::AddSkillPath => {
+                let path = editor.skill_path.trim().to_string();
+                if !path.is_empty() && !editor.skills.contains(&path) {
+                    editor.skills.push(path);
+                }
+                editor.skill_path.clear();
+            }
+            Message::RemoveSkillPath(path) => editor.skills.retain(|held| *held != path),
             Message::ExtensionEdited(path) => editor.extension = path,
             Message::AddExtension => {
                 let path = editor.extension.trim().to_string();
@@ -353,6 +459,12 @@ impl Agents {
         editor.files = Files::Reading;
         self.editor = Some(editor);
         let client = Client::new(settings.clone());
+        if self.in_file() {
+            return Task::perform(
+                async move { client.server_settings().await },
+                move |result| AppMessage::Agents(Message::OpenedFromFile(name.clone(), result)),
+            );
+        }
         Task::perform(
             {
                 let name = name.clone();
@@ -387,7 +499,7 @@ impl Agents {
     }
 
     fn save(&mut self, settings: &Settings) -> Task<AppMessage> {
-        let request = self.save_request();
+        let (request, in_file) = (self.save_request(), self.in_file());
         let Some(editor) = &mut self.editor else {
             return Task::none();
         };
@@ -397,6 +509,26 @@ impl Agents {
                 editor.name.clone_from(&name);
                 editor.notice = None;
                 let client = Client::new(settings.clone());
+                if in_file {
+                    let set = serde_json::Map::from_iter([(
+                        format!("agents.{name}"),
+                        file_table(&agent, &instructions),
+                    )]);
+                    return Task::perform(
+                        async move {
+                            client
+                                .save_settings(set, vec![])
+                                .await
+                                .map(|_| AgentDetail {
+                                    name,
+                                    settings: agent,
+                                    instructions,
+                                    commit: None,
+                                })
+                        },
+                        |result| AppMessage::Agents(Message::Saved(result)),
+                    );
+                }
                 Task::perform(
                     async move { client.save_agent(&name, &agent, &instructions).await },
                     |result| AppMessage::Agents(Message::Saved(result)),
@@ -417,24 +549,20 @@ impl Agents {
             "",
             "Agents",
             None,
-            page::context(
-                "What each run works with: its model, instructions, skills, MCP servers and extensions. An edit is a commit.",
-            ),
+            page::context(if self.in_file() {
+                "What each run works with: its model, instructions, skills and extensions. An edit is saved in moebius.toml."
+            } else {
+                "What each run works with: its model, instructions, skills, MCP servers and extensions. An edit is a commit."
+            }),
             page::white_button("New agent", new_agent),
         );
         let mut detail = column![].spacing(theme::PAGE_GAP).width(Length::Fill);
-        if self.skills.is_some() && !editable {
+        if self.in_file() {
             detail = detail.push(page::boxed(
                 "Agents are set in moebius.toml",
-                column![
-                    page::body(
-                        "This server keeps its agents in the [agents.*] tables of moebius.toml, so they are listed here and cannot be edited.",
-                    ),
-                    page::body(
-                        "To edit them in this app, move them into a harness configuration repository (the [harness] table). The guide page \"Set up agents\" (docs/guide/agents.md) says how.",
-                    ),
-                ]
-                .spacing(6),
+                page::body(
+                    "This server keeps its agents in the [agents.*] tables of moebius.toml; an edit here is written to the file and used at once. To keep them in a harness configuration repository instead, see the guide page \"Set up agents\" (docs/guide/agents.md).",
+                ),
             ));
         }
         if let Some(editor) = &self.editor {
@@ -568,6 +696,7 @@ impl Agents {
                 Notice::Saved(None) => {
                     notice_line("Nothing changed, so nothing was committed.", false)
                 }
+                Notice::Written => notice_line("Saved in moebius.toml.", false),
                 Notice::Failed(error) => notice_line(error, true),
             });
         }
@@ -589,14 +718,17 @@ impl Agents {
         ]
         .spacing(theme::PAGE_GAP);
         if ready {
-            boxes = boxes.push(instructions_box(editor)).push(
+            let paths = if self.in_file() {
+                // The agents of `moebius.toml` name their skills by path, and have no MCP servers.
+                row![skill_paths_box(editor), extensions_box(editor)]
+            } else {
                 row![
                     self.skills_box(editor),
                     self.mcp_box(editor),
                     extensions_box(editor)
                 ]
-                .spacing(14),
-            );
+            };
+            boxes = boxes.push(instructions_box(editor)).push(paths.spacing(14));
         }
         boxes.into()
     }
@@ -862,7 +994,7 @@ fn field<'a>(label: &'a str, input: impl Into<Element<'a, AppMessage>>) -> Eleme
     .into()
 }
 
-fn pick_style(_: &iced::Theme, status: pick_list::Status) -> pick_list::Style {
+pub(crate) fn pick_style(_: &iced::Theme, status: pick_list::Status) -> pick_list::Style {
     let line = match status {
         pick_list::Status::Opened { .. } => theme::TEAL,
         _ => theme::LINE,
@@ -880,7 +1012,7 @@ fn pick_style(_: &iced::Theme, status: pick_list::Status) -> pick_list::Style {
     }
 }
 
-fn menu_style(_: &iced::Theme) -> iced::overlay::menu::Style {
+pub(crate) fn menu_style(_: &iced::Theme) -> iced::overlay::menu::Style {
     iced::overlay::menu::Style {
         background: theme::SURFACE.into(),
         border: Border {
@@ -996,8 +1128,57 @@ fn instructions_box(editor: &Editor) -> Element<'_, AppMessage> {
 }
 
 fn extensions_box(editor: &Editor) -> Element<'_, AppMessage> {
+    paths_box(
+        "Extensions",
+        "Files in the repository",
+        "No extension.",
+        "extensions/log.ts",
+        "Add extension",
+        &editor.extensions,
+        &editor.extension,
+        (
+            Message::ExtensionEdited,
+            Message::AddExtension,
+            Message::RemoveExtension,
+        ),
+    )
+}
+
+/// The skills of an agent of `moebius.toml`: paths to skill directories.
+fn skill_paths_box(editor: &Editor) -> Element<'_, AppMessage> {
+    paths_box(
+        "Skills",
+        "Directories, from moebius.toml",
+        "No skill.",
+        "skills/house-style",
+        "Add skill",
+        &editor.skills,
+        &editor.skill_path,
+        (
+            Message::SkillPathEdited,
+            Message::AddSkillPath,
+            Message::RemoveSkillPath,
+        ),
+    )
+}
+
+/// What a box of paths sends: the input edited, a path added, a path removed.
+type PathMessages = (fn(String) -> Message, Message, fn(String) -> Message);
+
+/// A box with a list of paths, each of which can be removed, and an input to add one.
+#[allow(clippy::too_many_arguments)]
+fn paths_box<'a>(
+    heading: &'a str,
+    aside: &'a str,
+    empty: &'a str,
+    placeholder: &'a str,
+    add_label: &'a str,
+    chosen: &'a [String],
+    input: &'a str,
+    (edited, add, remove): PathMessages,
+) -> Element<'a, AppMessage> {
     let message = |message| AppMessage::Agents(message);
-    let paths = editor.extensions.iter().map(|path| {
+    let paths = chosen.iter().map(|path| {
         row![
             text(path.as_str())
                 .size(theme::CODE_SMALL)
@@ -1006,7 +1187,7 @@ fn extensions_box(editor: &Editor) -> Element<'_, AppMessage> {
                 .wrapping(Wrapping::WordOrGlyph),
             button(text("Remove").size(theme::LABEL))
                 .padding([3, 8])
-                .on_press(message(Message::RemoveExtension(path.clone())))
+                .on_press(message(remove(path.clone())))
                 .style(|_, _| button::Style {
                     background: Some(theme::SURFACE.into()),
                     text_color: theme::TEXT_SECONDARY,
@@ -1022,23 +1203,17 @@ fn extensions_box(editor: &Editor) -> Element<'_, AppMessage> {
         .align_y(Alignment::Center)
         .into()
     });
-    let add = !editor.extension.trim().is_empty();
+    let can_add = !input.trim().is_empty();
     let adder = column![
-        text_input("extensions/log.ts", &editor.extension)
-            .on_input(move |path| message(Message::ExtensionEdited(path)))
-            .on_submit_maybe(add.then(|| message(Message::AddExtension)))
+        text_input(placeholder, input)
+            .on_input(move |path| message(edited(path)))
+            .on_submit_maybe(can_add.then(|| message(add.clone())))
             .font(theme::MONO)
             .size(theme::CODE)
             .padding([8, 10])
             .style(connect::input_style),
-        page::white_button("Add extension", add.then(|| message(Message::AddExtension))),
+        page::white_button(add_label, can_add.then(|| message(add))),
     ]
     .spacing(8);
-    section(
-        "Extensions",
-        "Files in the repository",
-        paths,
-        "No extension.",
-        Some(adder.into()),
-    )
+    section(heading, aside, paths, empty, Some(adder.into()))
 }
