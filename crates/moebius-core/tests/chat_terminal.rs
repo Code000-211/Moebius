@@ -105,9 +105,20 @@ async fn what_is_said_in_a_chats_terminal_is_the_chats_conversation_through_a_re
             }
         }
     };
-    tokio::time::timeout(Duration::from_secs(120), ready)
+    if tokio::time::timeout(Duration::from_secs(120), ready)
         .await
-        .expect("Pi-Bolt's interface never finished starting");
+        .is_err()
+    {
+        let tail: String = printed
+            .chars()
+            .rev()
+            .take(3000)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        panic!("Pi-Bolt's interface never finished starting; it printed: {tail:?}");
+    }
     for key in ["A", "g", "a", "i", "n", "\r"] {
         tui.send(Message::Binary(key.as_bytes().to_vec().into()))
             .await
