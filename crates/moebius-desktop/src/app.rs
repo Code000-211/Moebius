@@ -1,6 +1,7 @@
 //! The app's state, its messages, and how one becomes the other: the connection to the server, the page shown, and
 //! the views of the shell. The state is plain data; `update` is the only place it changes.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -20,6 +21,7 @@ use crate::inbox::{self, Inbox};
 use crate::live::{self, Live};
 use crate::mcp_servers::{self, McpServers};
 use crate::new_issue::{self, NewIssue};
+use crate::project::{self, Project, Tab};
 use crate::retro::{self, Retros};
 use crate::rules::{self, Rules};
 use crate::script_editor::{self, ScriptEditor};
@@ -47,7 +49,7 @@ pub enum Page {
     Chat,
     /// Every run that is working, one tile each.
     Fleet,
-    /// The board of the repository with this id.
+    /// The project of the repository with this id: its board, files and editor, in tabs.
     Board(i64),
     /// The form that adds a repository, opened by the "+" of the sidebar.
     AddRepository,
@@ -96,7 +98,7 @@ impl Page {
     pub fn group(self) -> &'static str {
         match self {
             Page::Inbox | Page::Chat | Page::Fleet => "",
-            Page::Board(_) | Page::AddRepository => "Boards",
+            Page::Board(_) | Page::AddRepository => "Projects",
             Page::Agents | Page::Skills | Page::McpServers | Page::Rules => "Build",
             Page::Retro | Page::Experiments | Page::DecisionModel | Page::Usage => "Improve",
             Page::Start | Page::Models | Page::Plugins | Page::Terminal | Page::Settings => "Setup",
@@ -137,6 +139,10 @@ pub enum Message {
     /// The pencil of a column of the board with this repository id: the editor of the column's script opens.
     EditScript(i64, String),
     Script(script_editor::Message),
+    /// Something on the Files or Editor tab of the project of the repository with this id.
+    Project(i64, project::Message),
+    /// Ctrl+S: the Editor saves the file it shows.
+    SaveFile,
     Live(live::Message),
     Inbox(inbox::Message),
     Chat(chat::Message),
@@ -209,6 +215,8 @@ pub struct App {
     open_on_start: bool,
     add_repository: AddRepository,
     new_issue: NewIssue,
+    /// The tabs of each project that has been opened past its board, by repository id.
+    projects: BTreeMap<i64, Project>,
     /// The chat with the Moebius agent over every page.
     float: FloatChat,
     collapsed: bool,
@@ -270,6 +278,7 @@ impl App {
             open_on_start: false,
             add_repository: AddRepository::default(),
             new_issue: NewIssue::default(),
+            projects: BTreeMap::new(),
             float: FloatChat::new(live::now()),
             collapsed: false,
             search: Search::default(),
@@ -404,7 +413,37 @@ impl App {
                 let (editor, task) =
                     ScriptEditor::open(repository, &board.repository.name, &column, settings);
                 self.opened = Some(Opened::Script(Box::new(editor)));
+                self.projects
+                    .entry(repository)
+                    .or_default()
+                    .show_tab(Tab::Board);
                 return task;
+            }
+            Message::Project(_, message) if Project::refused(&message) => {
+                self.show_connect_error(&ClientError::Unauthorized);
+            }
+            Message::Project(repository, message) => {
+                if matches!(message, project::Message::Tab(_)) {
+                    // A tab is chosen over a card's page, which belongs to the board.
+                    self.opened = None;
+                }
+                return self.projects.entry(repository).or_default().update(
+                    repository,
+                    message,
+                    self.settings.as_ref(),
+                );
+            }
+            Message::SaveFile => {
+                if let (Page::Board(repository), None) = (self.page(), &self.opened)
+                    && let Some(project) = self.projects.get_mut(&repository)
+                    && project.tab() == Tab::Editor
+                {
+                    return project.update(
+                        repository,
+                        project::Message::Save,
+                        self.settings.as_ref(),
+                    );
+                }
             }
             Message::Script(message) if ScriptEditor::refused(&message) => {
                 self.show_connect_error(&ClientError::Unauthorized);
@@ -751,9 +790,21 @@ impl App {
     /// it, and the text being edited, cut to a sensible size. The floating chat sends it with every message.
     pub fn page_context(&self) -> String {
         let page = self.page();
+        // A project's page is named by its tab; a card's page belongs to the board.
+        let project = match page {
+            Page::Board(id) if self.opened.is_none() => self
+                .projects
+                .get(&id)
+                .filter(|project| project.tab() != Tab::Board),
+            _ => None,
+        };
+        let title = match (page, project) {
+            (Page::Board(_), Some(project)) => project.tab().title(),
+            _ => page.title(),
+        };
         let mut lines = vec![match page.group() {
-            "" => format!("Page: {}", page.title()),
-            group => format!("Page: {group} > {}", page.title()),
+            "" => format!("Page: {title}"),
+            group => format!("Page: {group} > {title}"),
         }];
         match page {
             Page::Board(id) => {
@@ -766,6 +817,10 @@ impl App {
                     "Repository: {} (id {})",
                     repository.name, repository.id
                 ));
+                if let Some(project) = project {
+                    lines.extend(project.context());
+                    return lines.join("\n");
+                }
                 let card_of = |id| board.cards.iter().find(|card| card.id == id);
                 let describe = |card: &client::Card| {
                     format!(
@@ -999,6 +1054,18 @@ impl App {
                         tasks.push(live.reload_judgements(settings.clone()));
                     }
                 }
+                if event.kind == "file_changed"
+                    && let (Some(settings), Some(repository), Some(path)) = (
+                        &self.settings,
+                        event.data["repository"].as_i64(),
+                        event.data["path"].as_str(),
+                    )
+                    && let Some(project) = self.projects.get(&repository)
+                    && project.follows(path)
+                {
+                    // A file open without changes of its own shows what was saved elsewhere, by the agent say.
+                    tasks.push(Project::read(repository, path, settings));
+                }
                 if event.kind == "run_ended" {
                     // A run that ended has used tokens, which the meter of the sidebar shows.
                     if let Some(settings) = &self.settings {
@@ -1090,6 +1157,10 @@ impl App {
         };
         // A card is opened on the page of its board, also when the click was in the inbox.
         self.page = Some(Page::Board(card.repository_id));
+        self.projects
+            .entry(card.repository_id)
+            .or_default()
+            .show_tab(Tab::Board);
         match card.run.clone() {
             Some(run) => {
                 let task = live::load(settings, id, run.id, 0);
@@ -1170,6 +1241,7 @@ impl App {
                     Subscription::none()
                 };
                 let keys = iced::event::listen_with(search::key);
+                let save = iced::event::listen_with(project::key);
                 Subscription::batch([
                     stream,
                     clock,
@@ -1181,6 +1253,7 @@ impl App {
                     chat_terminal,
                     floating,
                     keys,
+                    save,
                 ])
             }
             _ => Subscription::none(),
@@ -1290,7 +1363,16 @@ impl App {
                     Some(Opened::Script(editor)) => Some(editor.view()),
                     None => None,
                 }
-                .unwrap_or_else(|| board::view(board, &self.snapshot.inbox, &self.new_issue))
+                .unwrap_or_else(|| {
+                    let project = self.projects.get(&id);
+                    let tabs = project::tabs(id, project);
+                    match project {
+                        Some(project) if project.tab() != Tab::Board => {
+                            project.view(&board.repository, tabs)
+                        }
+                        _ => board::view(board, &self.snapshot.inbox, &self.new_issue, tabs),
+                    }
+                })
             }
             Page::AddRepository => self.add_repository.view(),
             Page::Inbox => self.inbox.view(&self.snapshot),

@@ -48,6 +48,21 @@ rule, a name without spaces, never twice. One repository's rules are `.moebius/r
 Build the body with `jq -n --rawfile text ready.luau '{text: $text}' > body.json` and pass `--body body.json`. The server
 checks the script again and refuses it with the check's message. How to write the script: the `moebius-workflows` skill.
 
+## A file of a repository
+
+When the person asks you to change a file of a repository right on its default branch (often the file open in the
+Editor of the project page, which your context names with the cursor's line), read and write it through the server:
+
+```sh
+"$MOEBIUS" api GET "/v1/repositories/1/tree?path=src"             # a directory, directories first
+"$MOEBIUS" api GET /v1/repositories/1/files/src/main.rs           # its text, or binary / too_large
+"$MOEBIUS" api PUT /v1/repositories/1/files/src/main.rs --body body.json
+```
+
+Build the body with `jq -n --rawfile text main.rs '{text: $text, message: "Say why", reason: "..."}' > body.json`. Each
+save is a commit on the default branch (pushed for a repository on GitHub) and a decision `edit_file` by you. For a
+change that should be reviewed, create an issue instead.
+
 ## Settings
 
 ```sh

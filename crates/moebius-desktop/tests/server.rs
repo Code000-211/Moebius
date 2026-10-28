@@ -2009,3 +2009,86 @@ async fn opening_the_fleet_reads_the_events_of_the_working_runs_and_a_stopped_ru
     }
     assert!(shown(&app, "Nothing is working."));
 }
+
+/// The Files and Editor tabs against a real server: the tree of the default branch, a file read into the Editor, and
+/// a save that is a commit in the server's clone, after which the file is no longer marked unsaved.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_project_lists_reads_and_saves_a_file_as_a_commit() {
+    use iced::widget::text_editor::{Action, Edit};
+    use moebius_desktop::project;
+
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, _) = start(dir.path()).await;
+    let source = origin(dir.path());
+    std::fs::create_dir_all(source.join("src")).unwrap();
+    std::fs::write(source.join("src/main.rs"), "fn main() {}\n").unwrap();
+    git(&source, &["add", "."]).unwrap();
+    git(&source, &["commit", "--quiet", "-m", "code"]).unwrap();
+    let client = Client::new(settings.clone());
+    let repository = client
+        .add_repository(&NewRepository {
+            name: "demo".into(),
+            url: source.display().to_string(),
+            forge: "none",
+            github: None,
+            trusted: Vec::new(),
+        })
+        .await
+        .unwrap();
+    let id = repository.id;
+    let clone = std::path::PathBuf::from(&repository.path);
+
+    let root = client.tree(id, "").await.unwrap();
+    let names: Vec<(&str, &str)> = root
+        .entries
+        .iter()
+        .map(|e| (e.path.as_str(), e.kind.as_str()))
+        .collect();
+    assert_eq!(names, [("src", "dir"), ("README.md", "file")]);
+    let src = client.tree(id, "src").await.unwrap();
+    assert_eq!(src.entries[0].path, "src/main.rs");
+    assert_eq!(src.entries[0].size, 13);
+
+    let mut app = App::with_snapshot(Snapshot::default());
+    let _ = app.update(Message::Checked(Ok((
+        settings.clone(),
+        client.snapshot().await.unwrap(),
+    ))));
+    let task = app.update(Message::Project(
+        id,
+        project::Message::Tab(project::Tab::Files),
+    ));
+    settle(&mut app, task).await;
+    assert!(shown(&app, "README.md"));
+    let task = app.update(Message::Project(id, project::Message::Toggle("src".into())));
+    settle(&mut app, task).await;
+    assert!(shown(&app, "main.rs"));
+    let task = app.update(Message::Project(
+        id,
+        project::Message::Open("src/main.rs".into()),
+    ));
+    settle(&mut app, task).await;
+    assert!(app.page_context().contains("Open file: src/main.rs"));
+    assert!(app.page_context().contains("    1 | fn main() {}"));
+
+    let _ = app.update(Message::Project(
+        id,
+        project::Message::Edit(Action::Edit(Edit::Paste(Arc::new("// hi\n".into())))),
+    ));
+    assert!(shown(&app, "Unsaved changes."));
+    let task = app.update(Message::SaveFile);
+    settle(&mut app, task).await;
+    assert!(shown(&app, "Saved as a commit on the default branch."));
+    assert!(!shown(&app, "Unsaved changes."));
+    assert_eq!(
+        std::fs::read_to_string(clone.join("src/main.rs")).unwrap(),
+        "// hi\nfn main() {}\n"
+    );
+    assert_eq!(
+        git(&clone, &["log", "-1", "--format=%s"]).unwrap(),
+        "Update src/main.rs"
+    );
+    let read = client.file(id, "src/main.rs").await.unwrap();
+    assert_eq!(read.text.as_deref(), Some("// hi\nfn main() {}\n"));
+    assert!(client.file(id, "nowhere.rs").await.is_err());
+}

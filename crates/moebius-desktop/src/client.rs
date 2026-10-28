@@ -490,6 +490,41 @@ pub struct ScriptDetail {
     pub text: String,
 }
 
+/// A directory of a repository's default branch as `GET /v1/repositories/{id}/tree` answers it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Tree {
+    /// The directory, `""` for the root.
+    pub path: String,
+    /// Directories first, each group by name.
+    pub entries: Vec<TreeEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct TreeEntry {
+    pub name: String,
+    /// From the repository's root.
+    pub path: String,
+    /// `dir` or `file`.
+    pub kind: String,
+    #[serde(default)]
+    pub size: u64,
+}
+
+/// A file of a repository's default branch as `GET /v1/repositories/{id}/files/{path}` answers it: its text, or for a
+/// binary file or one too large to edit only its size.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct FileDetail {
+    pub path: String,
+    #[serde(default)]
+    pub size: u64,
+    #[serde(default)]
+    pub text: Option<String>,
+    #[serde(default)]
+    pub binary: bool,
+    #[serde(default)]
+    pub too_large: bool,
+}
+
 /// A skill as `GET /v1/skills/{name}` answers it: its description, the text of its `SKILL.md` and the other files.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct SkillDetail {
@@ -970,6 +1005,28 @@ fn script_path(repository: i64, column: &str) -> String {
     )
 }
 
+/// `text` with every byte but letters, digits and `-._~` percent-encoded, and `/` kept when `slashes` says so, for a
+/// path or a query value of a route.
+fn encoded(text: &str, slashes: bool) -> String {
+    text.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                (b as char).to_string()
+            }
+            b'/' if slashes => "/".to_string(),
+            b => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
+/// The route of a file of a repository.
+fn file_path(repository: i64, path: &str) -> String {
+    format!(
+        "/v1/repositories/{repository}/files/{}",
+        encoded(path, true)
+    )
+}
+
 impl Client {
     pub fn new(settings: Settings) -> Self {
         Client {
@@ -1234,6 +1291,31 @@ impl Client {
             .header(reqwest::header::CONTENT_TYPE, "application/zip")
             .body(zip);
         self.send(request).await
+    }
+
+    /// The directory `dir` of a repository's default branch; `""` is the root.
+    pub async fn tree(&self, repository: i64, dir: &str) -> Result<Tree, ClientError> {
+        self.get(&format!(
+            "/v1/repositories/{repository}/tree?path={}",
+            encoded(dir, false)
+        ))
+        .await
+    }
+
+    /// A file of a repository's default branch.
+    pub async fn file(&self, repository: i64, path: &str) -> Result<FileDetail, ClientError> {
+        self.get(&file_path(repository, path)).await
+    }
+
+    /// Writes a file of a repository; the server commits it on the default branch.
+    pub async fn save_file(
+        &self,
+        repository: i64,
+        path: &str,
+        text: &str,
+    ) -> Result<FileDetail, ClientError> {
+        let body = serde_json::json!({ "text": text });
+        self.put(&file_path(repository, path), body).await
     }
 
     /// The script a column runs for a repository.

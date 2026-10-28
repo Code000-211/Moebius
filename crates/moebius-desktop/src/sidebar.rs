@@ -1,4 +1,4 @@
-//! The sidebar on every screen: the app name with the connection, the search field, the Inbox, Chat and Fleet, and the groups Boards,
+//! The sidebar on every screen: the app name with the connection, the search field, the Inbox, Chat and Fleet, and the groups Projects,
 //! Build, Improve and Setup. It collapses to a rail of icons. Every number in it comes from the server.
 
 use iced::font::Weight;
@@ -148,7 +148,7 @@ pub fn view<'a>(
         group(None, vec![inbox, chat, fleet], collapsed),
         divider(),
         group_with(
-            Some("Boards"),
+            Some("Projects"),
             Some(add_board(page)),
             boards.collect(),
             collapsed
@@ -386,7 +386,7 @@ fn group<'a>(
     group_with(name, None, items, collapsed)
 }
 
-/// The "+" at the right of the name of Boards, which opens the page that adds a repository.
+/// The "+" at the right of the name of Projects, which opens the page that adds a repository.
 fn add_board<'a>(current: &Page) -> Element<'a, Message> {
     let selected = *current == Page::AddRepository;
     tooltip(

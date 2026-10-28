@@ -39,12 +39,22 @@ chart.
 
 ## Layout
 
-- A sidebar on every screen, in groups divided by lines: Inbox, Chat and Fleet; Boards; Build (agents, skills, MCP servers, rules);
+- A sidebar on every screen, in groups divided by lines: Inbox, Chat and Fleet; Projects (one per repository); Build (agents, skills, MCP servers, rules);
   Improve (Retro, experiments, decision model, usage); Setup (models, plugins, terminal, settings); tokens used today at the foot.
   It collapses to a 68 px rail of icons. Icons are 20 px; an entry with something new (the inbox, an unread chat) has
   its icon in amber and its count in amber text beside it, without a pill.
 - Every page opens with the same header: an optional breadcrumb, the title, one line of context, and its actions on the
   right.
+- A project's page has three tabs under its header, the chosen one bold with a 2 px teal line under it: Board (the
+  columns and cards; a card's page, a column's script and a new issue open from it), Files and Editor. Files is the
+  repository's default branch as a tree in a white box: directories first, each with a chevron that opens it (read the
+  first time it opens), files with their size; a click on a file opens it in the Editor. The Editor keeps the open
+  files as tabs, each with the file's name in the code font, an amber dot while it has unsaved changes and a cross that
+  closes it (an unsaved file asks first); under them the path, the language, the file in the code font highlighted by
+  its extension, and a status line with the cursor's line and column and what the last save did ("Unsaved changes.",
+  "Saved as a commit on the default branch." or the server's refusal in red). Save, the page's primary button, and
+  Ctrl+S (Cmd+S) commit the file on the default branch. A binary file or one larger than 1 MB is named with its size
+  and not edited.
 - Fleet shows every run that is working at a glance: a grid of two or three tiles by width, one for each card whose
   latest run is starting, running or waiting and each chat that is. A tile has the agent, a tag for what it does
   (`code`, `review`, `chat`), the card (`#number title`) or the chat title, the repository, how long the run has run,
@@ -59,8 +69,10 @@ chart.
   the button, and, once a chat is going, "New conversation" and "Open in Chat"; under it the conversation, drawn as on
   the Chat page with the steps box, and the field with Send. The chat stays across pages. Each message carries a few
   lines on where the person is (the page, the repository, the open card, run or chat, the script, rules or agent being
-  edited with its text cut to 2 500 characters), which only the agent is told; the chat shows what the person wrote.
-  The first message starts a chat with the Moebius agent, in the repository of a board's page and otherwise in none.
+  edited with its text cut to 2 500 characters; in a project's Files the open directories, in its Editor the file,
+  the cursor's line and column, the selected text and the 40 lines around the cursor, cut to about 3 000 characters),
+  which only the agent is told; the chat shows what the person wrote.
+  The first message starts a chat with the Moebius agent, in the repository of a project's page and otherwise in none.
   The "Ask the agent" actions (a new issue, an agent's instructions, the rules) open their chat in this window, and the
   speech bubble of the script editor opens it with the start of a message about the script. The Chat page keeps every
   chat and the terminal mode.

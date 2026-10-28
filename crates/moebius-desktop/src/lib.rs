@@ -23,6 +23,7 @@ pub mod mcp_servers;
 pub mod model_picker;
 pub mod new_issue;
 pub mod page;
+pub mod project;
 pub mod retro;
 pub mod rules;
 pub mod script_editor;

@@ -23,7 +23,8 @@ Every milestone of the first version, M0 to M9, is built (see [`docs/spec.md`](d
 - records every decision as a judgement, exports them as a training set, and lets a decision model shadow a kind of
   decision and take it over once a person merges the proposal.
 
-The desktop app has every screen of [`docs/design.md`](docs/design.md): board, live view with a shell, inbox, chat,
+The desktop app has every screen of [`docs/design.md`](docs/design.md): projects (a repository's board, its files and an
+editor that commits a file on the default branch), live view with a shell, inbox, chat,
 fleet (every working run at a glance), agents, usage, Retro, experiments, decision model, and the setup: models and settings, which edit `moebius.toml`, and the read-only plugins.
 
 ## Quick start
@@ -107,7 +108,7 @@ reached or does not accept the token, the app asks again. The address is plain H
 network. The window needs a GPU or a software Vulkan/OpenGL driver; the app finds it when it starts.
 
 **Search and run.** The field at the top of the sidebar (Ctrl+K, Cmd+K on macOS, focuses it from anywhere) lists, as you
-type, the cards of every board by title words or `#number`, the chats, the agents and the pages that contain every word
+type, the cards of every board by title words or `#number`, the projects by name, the chats, the agents and the pages that contain every word
 you typed, at most eight entries. Up and Down choose, Enter or a click opens, Escape closes. The last entry, "Ask the
 Moebius agent", starts a chat with what you typed as its first message.
 

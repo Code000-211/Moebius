@@ -379,7 +379,7 @@ fn highlighted<'a>(lines: &[&str], path: &str) -> Vec<Vec<iced::widget::text::Sp
 
 /// The language the highlighter knows for the name or extension `token`. It ships the syntaxes of a text editor's
 /// defaults, which has neither Luau, TOML nor TypeScript; each is shown as the closest one it has.
-fn language(token: &str) -> &str {
+pub fn language(token: &str) -> &str {
     match token.to_ascii_lowercase().as_str() {
         "luau" => "lua",
         "toml" | "cfg" | "conf" => "ini",

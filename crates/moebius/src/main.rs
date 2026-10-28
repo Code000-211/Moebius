@@ -366,21 +366,32 @@ mod tests {
     }
 
     /// Whether the desktop API reference has a route `method route`; `{x}` in the reference and `<x>` in the route
-    /// stand for any segment.
+    /// stand for any segment, and `{*x}` at the end of the reference for the rest of the route. Quotes around the route
+    /// are the shell's.
     fn documented(reference: &str, method: &str, route: &str) -> bool {
+        let route = route.trim_matches(['"', '\'']);
         let route = route.split('?').next().unwrap_or_default();
         let segments: Vec<&str> = route.split('/').collect();
         reference
             .lines()
             .filter_map(|line| line.strip_prefix(&format!("### `{method} ")))
             .any(|heading| {
-                let pattern: Vec<&str> = heading.trim_end_matches('`').split('/').collect();
-                pattern.len() == segments.len()
-                    && pattern.iter().zip(&segments).all(|(p, s)| {
-                        p == s
-                            || (p.starts_with('{') && !s.is_empty())
-                            || (s.starts_with('<') && p.starts_with('{'))
-                    })
+                let mut pattern: Vec<&str> = heading.trim_end_matches('`').split('/').collect();
+                let rest = pattern.last().is_some_and(|p| p.starts_with("{*"));
+                if rest {
+                    pattern.pop();
+                }
+                let fits = if rest {
+                    segments.len() > pattern.len()
+                        && segments[pattern.len()..].iter().all(|s| !s.is_empty())
+                } else {
+                    pattern.len() == segments.len()
+                };
+                fits && pattern.iter().zip(&segments).all(|(p, s)| {
+                    p == s
+                        || (p.starts_with('{') && !s.is_empty())
+                        || (s.starts_with('<') && p.starts_with('{'))
+                })
             })
     }
 
@@ -430,5 +441,11 @@ mod tests {
             "/v1/repositories/1/scripts/Ready"
         ));
         assert!(!documented(&reference, "PUT", "/v1/cards/1"));
+        assert!(documented(
+            &reference,
+            "PUT",
+            "/v1/repositories/1/files/src/main.rs"
+        ));
+        assert!(!documented(&reference, "PUT", "/v1/repositories/1/files/"));
     }
 }

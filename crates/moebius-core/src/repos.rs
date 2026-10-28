@@ -30,6 +30,18 @@ pub fn git(dir: &Path, args: &[&str]) -> Result<String> {
     git_with_config(dir, args, &[])
 }
 
+/// Runs git in `dir` and returns its standard output as it is, for what may not be text.
+pub fn git_bytes(dir: &Path, args: &[&str]) -> Result<Vec<u8>> {
+    let output = git_output(dir, args, &[])?;
+    if !output.status.success() {
+        return Err(GitError::Failed {
+            args: args.join(" "),
+            stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        });
+    }
+    Ok(output.stdout)
+}
+
 /// Commits everything in the worktree `worktree`, new files too, with `message`; false when there was nothing to commit.
 pub fn commit_all(worktree: &Path, message: &str) -> Result<bool> {
     git(worktree, &["add", "--all"])?;

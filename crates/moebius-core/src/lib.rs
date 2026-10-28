@@ -10,6 +10,7 @@ pub mod config;
 pub mod decide;
 pub mod decision_model;
 pub mod export;
+pub mod files;
 pub mod forge;
 pub mod github;
 pub mod grilling;

@@ -217,8 +217,8 @@ fn has_words(haystack: &str, words: &[String]) -> bool {
     words.iter().all(|word| haystack.contains(word))
 }
 
-/// The entries for `query`: cards of every board (by title words and `#number`), chats, agents and pages, in that
-/// order, then the ask entry last. At most eight in all; the ask entry is never cut. Nothing for a blank query.
+/// The entries for `query`: cards of every board (by title words and `#number`), projects by name, chats, agents and
+/// pages, in that order, then the ask entry last. At most eight in all; the ask entry is never cut. Nothing for a blank query.
 pub fn matches(query: &str, snapshot: &Snapshot, chats: &[Chat], agents: &[Agent]) -> Vec<Entry> {
     let words: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
     if words.is_empty() {
@@ -237,6 +237,16 @@ pub fn matches(query: &str, snapshot: &Snapshot, chats: &[Chat], agents: &[Agent
             })
             .collect::<Vec<_>>()
     });
+    let projects = snapshot
+        .boards
+        .iter()
+        .filter(|board| has_words(&board.repository.name, &words))
+        .map(|board| Entry {
+            group: "Projects",
+            label: board.repository.name.clone(),
+            detail: "Board, files and editor".to_string(),
+            target: Target::Page(Page::Board(board.repository.id)),
+        });
     let chats = chats
         .iter()
         .filter(|chat| has_words(&chat.title, &words))
@@ -266,6 +276,7 @@ pub fn matches(query: &str, snapshot: &Snapshot, chats: &[Chat], agents: &[Agent
         });
     let text = query.trim().to_string();
     let mut entries: Vec<Entry> = cards
+        .chain(projects)
         .chain(chats)
         .chain(agents)
         .chain(pages)
@@ -382,6 +393,14 @@ mod tests {
                 Target::Page(Page::Usage),
                 Target::Ask("usage".into())
             ]
+        );
+    }
+
+    #[test]
+    fn a_project_is_found_by_its_repositorys_name() {
+        assert_eq!(
+            targets("radiance"),
+            [Target::Page(Page::Board(1)), Target::Ask("radiance".into())]
         );
     }
 

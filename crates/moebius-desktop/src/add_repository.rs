@@ -172,7 +172,7 @@ impl AddRepository {
         }
         column![
             page::header(
-                "Boards",
+                "Projects",
                 "Add a repository",
                 None,
                 page::context("The server clones it and opens its board."),

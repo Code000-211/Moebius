@@ -83,6 +83,7 @@ use crate::bus::AppEvent;
 use crate::decide::Actor;
 use crate::decision_model;
 use crate::export::{self, Export, ExportError, KindCounts};
+use crate::files::{self, FileView, NewFile, Tree};
 use crate::forge::ForgeError;
 use crate::grilling;
 use crate::harness_repo::{
@@ -423,6 +424,11 @@ pub fn router(state: ApiState) -> Router {
         .route(
             "/v1/repositories/{id}/scripts/{column}",
             get(get_script).put(put_script).delete(delete_script),
+        )
+        .route("/v1/repositories/{id}/tree", get(get_tree))
+        .route(
+            "/v1/repositories/{id}/files/{*path}",
+            get(get_file).put(put_file),
         )
         .route("/v1/cards/{id}/approve", post(approve_issue))
         .route("/v1/cards/{id}/retry", post(retry_card))
@@ -994,6 +1000,40 @@ async fn delete_script(
 ) -> Result<axum::Json<ScriptView>, ApiError> {
     blocking(&state.app, move |app| {
         scripts::delete_script(app, &by, id, &column)
+    })
+    .await
+}
+
+/// Which directory `GET /v1/repositories/{id}/tree` lists; the root when it is left out.
+#[derive(Debug, Deserialize)]
+struct TreeQuery {
+    #[serde(default)]
+    path: String,
+}
+
+async fn get_tree(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+    Query(query): Query<TreeQuery>,
+) -> Result<axum::Json<Tree>, ApiError> {
+    blocking(&state.app, move |app| files::tree(app, id, &query.path)).await
+}
+
+async fn get_file(
+    State(state): State<ApiState>,
+    UrlPath((id, path)): UrlPath<(i64, String)>,
+) -> Result<axum::Json<FileView>, ApiError> {
+    blocking(&state.app, move |app| files::file(app, id, &path)).await
+}
+
+async fn put_file(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath((id, path)): UrlPath<(i64, String)>,
+    axum::Json(new): axum::Json<NewFile>,
+) -> Result<axum::Json<FileView>, ApiError> {
+    blocking(&state.app, move |app| {
+        files::save_file(app, &by, id, &path, &new)
     })
     .await
 }

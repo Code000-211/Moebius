@@ -218,6 +218,38 @@ Removes the repository's own script for the column, committed and pushed the sam
 answers it, now the built-in one. Errors: `404` no such repository or column, or the repository has no script of its own
 for the column; `409` as for `PUT`.
 
+### `GET /v1/repositories/{id}/tree`
+
+A directory of the repository as it is on its default branch (the same branch column scripts are read from: `origin`'s
+for a repository on GitHub, the clone's own otherwise). `path` is the directory from the repository's root, with `/`
+between directories, given as `?path=src/lib`; left out or empty, it is the root. Response: `{"path": string, "entries": [{"name": string, "path":
+string, "kind": "dir" or "file", "size": number}]}`: `path` is the directory without leading or trailing `/`, an
+entry's `path` is from the root, `size` is in bytes (0 for a directory); directories come first, each group sorted by
+name. Submodules are left out. Errors: `404` no such repository or directory (a file is not one); `422` the path is
+absolute, climbs out with `..`, or names `.git`.
+
+### `GET /v1/repositories/{id}/files/{*path}`
+
+A file of the repository as it is on its default branch; `{*path}` is the rest of the URL, from the repository's root
+(`/v1/repositories/1/files/src/main.rs`). Response, always one shape: `{"path": string, "size": number, "text": string}`
+for a UTF-8 file of at most 1 MiB (1048576 bytes); a larger file has `"too_large": true` and a file that is not UTF-8
+text, or holds a NUL byte, has `"binary": true`, both without `text`. `binary` and `too_large` are left out when they
+are false. Errors: `404` no such repository or file (a directory is not one); `422` as for the tree.
+
+### `PUT /v1/repositories/{id}/files/{*path}`
+
+A person, or the Moebius agent, writes the file, creating it and its directories when they are new. Request: `{"text":
+string, "message": string, "reason": string}`; `message` is the commit's message, `Update <path>` when it is left out or
+blank, and `reason`, optional, is kept with the decision. The file is committed on the default branch of Moebius's
+clone, the same way `PUT /v1/repositories/{id}/scripts/{column}` commits a script: for a repository on GitHub the clone
+is first brought up to date with `origin` and the branch is pushed with the installation's token. The decision is
+recorded (kind `edit_file`, decider `person` or `agent:Moebius`; its context has `repository`, `path` and `change`, the
+commit's message) and the event `file_changed` is sent. Text that changes nothing makes no commit and no decision.
+Response: the file as `GET` answers it. Errors: `404` no such repository; `409` as for a script: the clone cannot be
+brought up to date or the push is refused, the commit is undone and the message is git's, with keys redacted; `422` the
+path is empty, absolute, climbs out with `..`, names `.git`, is a directory, or goes through a symbolic link in the
+clone.
+
 ### `POST /v1/cards/{id}/approve`
 
 A person approves an issue that waits in the backlog: the decision is recorded (kind `approve_issue`, decider `person`),
@@ -1191,6 +1223,7 @@ like `POST /v1/runs/{id}/stop` does. Experiments done stay, and so do the lever 
 | Kind | When | `data` |
 |---|---|---|
 | `repository_added` | A repository was added. | The `Repository`. |
+| `file_changed` | A file of a repository was saved through the API. | `{"repository": id, "path": string}` |
 | `script_changed` | A column's script was saved or removed for a repository, through the API. | `{"repository": id, "column": string, "path": string}` |
 | `card_added` | An issue became a card: created through the API or found on GitHub. | The `Card`. |
 | `card_updated` | The title or body of a GitHub issue changed. | The `Card`. |

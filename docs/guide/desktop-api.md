@@ -42,6 +42,20 @@ CARD=$(curl -s -X POST -H "$AUTH" -H "$JSON" \
   -d '{"title": "Add a greeting", "body": "Add hello.txt that says hello."}' $API/v1/repositories/$REPO/issues | jq .id)
 ```
 
+## Read and change a repository's files
+
+`GET /v1/repositories/{id}/tree?path=<dir>` lists a directory of the default branch (directories first) and
+`GET /v1/repositories/{id}/files/<path>` reads a file: its `text`, or `binary` or `too_large` with its `size`.
+`PUT` on the same route writes the file as a commit on the default branch (pushed for a repository on GitHub), which is
+what the Editor of a project's page in the desktop app does. A refused push is undone and answered with `409`.
+
+```sh
+curl -s -H "$AUTH" "$API/v1/repositories/$REPO/tree?path=" | jq -r '.entries[] | "\(.kind) \(.path)"'
+curl -s -H "$AUTH" $API/v1/repositories/$REPO/files/hello.txt | jq -r .text
+curl -s -X PUT -H "$AUTH" -H "$JSON" -d '{"text": "hello, world\n", "message": "Greet the world"}' \
+  $API/v1/repositories/$REPO/files/hello.txt
+```
+
 ## Follow the board
 
 `GET /v1/snapshot` is everything: the boards with their cards and changes, the reasons waiting cards wait, and the open

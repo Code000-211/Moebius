@@ -1,4 +1,4 @@
-//! The board of a repository: its columns of the default workflow, in order, with their cards, and the page that a
+//! The board of a repository, the first tab of its project's page (`project.rs` has the others): its columns of the default workflow, in order, with their cards, and the page that a
 //! click on a card opens. Everything a card shows comes from the snapshot; `docs/design/board.png` is the picture.
 //!
 //! Cards are ordered by number. Done lists the ten highest numbers, highest first, because it keeps growing.
@@ -62,11 +62,12 @@ fn cards_of<'a>(board: &'a Board, column: &str) -> Vec<&'a Card> {
     cards
 }
 
-/// The page of a board: its header and the columns.
+/// The page of a board: its header, the project's tabs and the columns.
 pub fn view<'a>(
     board: &'a Board,
     inbox: &'a [InboxItem],
     new_issue: &'a NewIssue,
+    tabs: Element<'a, Message>,
 ) -> Element<'a, Message> {
     let repository = &board.repository;
     let tag = match &repository.github {
@@ -94,7 +95,7 @@ pub fn view<'a>(
         .filter(|(name, _)| *name != "Backlog" || board.cards.iter().any(|c| c.column == *name))
         .map(|(name, script)| column_view(board, inbox, name, script));
     let mut page = column![page::header(
-        "Boards",
+        "Projects",
         &repository.name,
         Some(tag),
         line.into(),
@@ -105,7 +106,8 @@ pub fn view<'a>(
         ),
     )]
     .spacing(theme::PAGE_GAP)
-    .width(Length::Fill);
+    .width(Length::Fill)
+    .push(tabs);
     if new_issue.is_open_on(repository.id) {
         page = page.push(new_issue.view());
     }

@@ -1,29 +1,24 @@
 //! Editing a column's script from the board. A repository overrides a column's built-in script with
 //! `.moebius/<file>.luau` on its default branch (see [`crate::board`]); this module reads that file, and changes it
-//! with a commit on the default branch of Moebius's clone, pushed to `origin` for a repository on a forge. A script is
-//! checked the way `moebius check-script` checks it before it is committed, and a push that fails undoes the commit,
-//! so the clone never drifts from `origin`. Every change is recorded as a decision of the person or agent who made it.
+//! the way [`crate::files`] changes any file: a commit on the default branch of Moebius's clone, pushed to `origin` for
+//! a repository on a forge, undone when the push fails. A script is checked the way `moebius check-script` checks it
+//! before it is committed. Every change is recorded as a decision of the person or agent who made it.
 
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::app::{App, AppError, PERSON, Result};
-use crate::blobs::redact;
 use crate::board::{self, Column};
 use crate::bus::AppEvent;
-use crate::decide::{Actor, Question};
-use crate::repos::{GitError, git};
+use crate::decide::Actor;
+use crate::files::{self, Change};
 use crate::store::Repository;
 
 /// The kind of the decision recorded for a change to a script.
 const KIND: &str = "edit_script";
-
-/// Edits take turns, so that two commits never meet in one clone.
-static EDITING: Mutex<()> = Mutex::new(());
 
 /// A column's script as `GET /v1/repositories/{id}/scripts/{column}` answers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -152,9 +147,8 @@ pub fn delete_script(app: &App, by: &Actor, id: i64, column: &str) -> Result<Scr
     view(&repository, &column)
 }
 
-/// Makes the change `write` does to the column's file a commit on the default branch of the clone, pushes it for a
-/// repository on a forge, and records the decision and publishes the event. Whatever fails before the push is
-/// through, the default branch is as it was. A change that changes nothing makes no commit and no decision.
+/// Commits the change `write` does to the column's file through [`files::commit`], recorded as an `edit_script`
+/// decision and announced as `script_changed`.
 #[allow(clippy::too_many_arguments)]
 fn edit(
     app: &App,
@@ -166,64 +160,18 @@ fn edit(
     mut context: BTreeMap<String, String>,
     write: impl FnOnce() -> Result<()>,
 ) -> Result<()> {
-    let _editing = EDITING.lock().unwrap_or_else(|e| e.into_inner());
-    let clone = Path::new(&repository.path);
     let path = path_of(column);
-    let on_forge = repository.forge != "none";
-    let header = if on_forge {
-        let url = app.repos.origin_url(clone).map_err(refused)?;
-        app.git_auth(&url)?
-    } else {
-        None
-    };
-    if on_forge {
-        // Start from the forge's default branch, so the push is a fast-forward.
-        app.repos.fetch(clone, header.as_deref()).map_err(refused)?;
-        let upstream = repository.base_ref();
-        git(clone, &["merge", "--ff-only", "--quiet", &upstream]).map_err(refused)?;
-    }
-    let before = git(clone, &["rev-parse", "HEAD"])?;
-    let undo = |error: AppError| {
-        let _ = git(clone, &["reset", "--hard", "--quiet", &before]);
-        let _ = git(clone, &["clean", "-fdq", "--", &path]);
-        error
-    };
-    write().map_err(undo)?;
-    git(clone, &["add", "-A", "--", &path]).map_err(|e| undo(e.into()))?;
-    if git(clone, &["diff", "--cached", "--quiet"]).is_ok() {
-        return Ok(());
-    }
-    git(clone, &["commit", "--quiet", "-m", message]).map_err(|e| undo(e.into()))?;
-    if on_forge {
-        app.repos
-            .push(clone, &repository.default_branch, header.as_deref())
-            .map_err(|e| undo(refused(e)))?;
-    }
-    context.insert("repository".into(), repository.name.clone());
     context.insert("column".into(), column.name.clone());
-    context.insert("path".into(), path.clone());
-    context.insert("change".into(), message.into());
-    app.decisions.record_by(
-        by,
-        &Question {
-            kind: KIND.into(),
-            context,
-            options: vec![KIND.into(), "leave".into()],
-            fail_closed: "leave".into(),
-            run_id: None,
-            card_id: None,
-        },
-        KIND,
+    let change = Change {
+        kind: KIND,
+        path: &path,
+        message,
         reason,
-    )?;
-    app.bus.publish(AppEvent::new(
-        "script_changed",
-        json!({ "repository": repository.id, "column": column.name, "path": path }),
-    ));
-    Ok(())
-}
-
-/// A git failure that the forge or the clone's state caused, as the 409 that says why, with keys redacted.
-fn refused(error: GitError) -> AppError {
-    AppError::Conflict(redact(&error.to_string()))
+        context,
+        event: AppEvent::new(
+            "script_changed",
+            json!({ "repository": repository.id, "column": column.name, "path": path }),
+        ),
+    };
+    files::commit(app, by, repository, &change, write)
 }

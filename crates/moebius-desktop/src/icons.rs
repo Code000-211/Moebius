@@ -39,6 +39,12 @@ pub enum Icon {
     Spinner,
     /// A line: a window becomes small again.
     Minimise,
+    /// A directory of a repository.
+    Folder,
+    /// A file of a repository.
+    File,
+    /// A cross: a tab closes.
+    Close,
 }
 
 impl Icon {
@@ -89,6 +95,11 @@ impl Icon {
             }
             Icon::Spinner => r#"<path d="M8 2a6 6 0 1 0 6 6"/>"#,
             Icon::Minimise => r#"<path d="M3.5 8h9"/>"#,
+            Icon::Folder => {
+                r#"<path d="M2 4.5a1 1 0 0 1 1-1h3.2l1.5 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>"#
+            }
+            Icon::File => r#"<path d="M4 2h5l3 3v9H4z"/><path d="M9 2v3h3"/>"#,
+            Icon::Close => r#"<path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/>"#,
             Icon::Panel => {
                 r#"<rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M6 2.5v11"/>"#
             }
