@@ -626,7 +626,7 @@ impl HarnessRepo {
             let _ = git(&self.path, &["clean", "-fdq", "--", "agents"]);
             error
         };
-        write().map_err(&undo)?;
+        write().map_err(undo)?;
         let files = format!("agents/{name}.*");
         git(&self.path, &["add", "-A", "--", &files]).map_err(|e| undo(e.into()))?;
         if git(&self.path, &["diff", "--cached", "--quiet"]).is_ok() {
@@ -637,7 +637,7 @@ impl HarnessRepo {
             .default_branch(&self.path)
             .map_err(|e| undo(e.into()))?;
         git(&self.path, &["commit", "--quiet", "-m", message]).map_err(|e| undo(e.into()))?;
-        let header = app.git_auth(&self.url).map_err(&undo)?;
+        let header = app.git_auth(&self.url).map_err(undo)?;
         self.repos
             .push(&self.path, &branch, header.as_deref())
             .map_err(|e| undo(e.into()))?;
