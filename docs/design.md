@@ -45,6 +45,16 @@ chart.
   its icon in amber and its count in amber text beside it, without a pill.
 - Every page opens with the same header: an optional breadcrumb, the title, one line of context, and its actions on the
   right.
+- Navigation keeps a way back. A click on a page that takes the person to another place (a card, a column's pencil,
+  "Open in Chat", a tile of the Fleet, an item of the inbox, a search result, a link to another page) keeps the place
+  left: its page, the tab of its project, and the card, script, chat or agent open on it. The place reached shows
+  "← Back to <the place left>" above its header, in teal semibold at the breadcrumb's size (the repository's name for
+  a board, "Files of radiance" for a tab, "#48" for a card, "the Ready script" for a column's script, otherwise the
+  page's title); a click restores the place left as it was. Alt+Left (where no text field takes it) and the mouse's back
+  button go back too, and so does Escape in an editor (a column's script, the project's Editor, the rules, an agent)
+  when nothing in it is unsaved; with unsaved text Escape does nothing, so nothing typed is lost. A click that leads to
+  the place kept last (the breadcrumb of a card back to its board) is a step back, not a new one. A pick of the sidebar
+  starts again: what was kept is forgotten, and the page it opens has no link back.
 - A project's page has three tabs under its header, the chosen one bold with a 2 px teal line under it: Board (the
   columns and cards; a card's page, a column's script and a new issue open from it), Files and Editor. Files is the
   repository's default branch as a tree in a white box: directories first, each with a chevron that opens it (read the

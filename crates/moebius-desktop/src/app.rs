@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use iced::widget::{container, opaque, row, stack};
+use iced::widget::{column, container, opaque, row, stack};
 use iced::{Element, Length, Padding, Subscription, Task};
 
 use crate::add_repository::{self, AddRepository};
@@ -33,7 +33,7 @@ use crate::setup::{self, Setup};
 use crate::skills::{self, Skills};
 use crate::start::{self, Start};
 use crate::usage::{self, Usage};
-use crate::{board, chat, connect, history, sidebar, theme};
+use crate::{board, chat, connect, history, page, sidebar, theme};
 
 /// What the sidebar says about the connection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -132,7 +132,12 @@ pub enum Message {
     /// The snapshot was read again, the `u64`-th time asked.
     Loaded(u64, Result<Snapshot, ClientError>),
     Stream(StreamEvent),
+    /// A page of the sidebar was picked: it opens, and the way back starts again from it.
     Select(Page),
+    /// A link on a page to another page: it opens, and "Back" returns to the page left.
+    Visit(Page),
+    /// "← Back to …", Alt+Left or the mouse's back button: the place left last opens again as it was.
+    Back,
     /// A card of the board was clicked: its latest run is shown, or its history when it has no run.
     OpenCard(i64),
     /// Back from a card's page to the board.
@@ -172,6 +177,30 @@ pub enum Message {
     Search(search::Message),
     ToggleSidebar,
     ChangeConnection,
+}
+
+/// Where the person is, enough to show it again as it was: the page and what is open on it.
+#[derive(Debug, Clone, PartialEq)]
+struct Location {
+    page: Page,
+    place: Place,
+}
+
+/// What is open on a page.
+#[derive(Debug, Clone, PartialEq)]
+enum Place {
+    /// The page as it opens.
+    Whole,
+    /// A tab of a project, with no card open.
+    Tab(Tab),
+    /// A card of a project's board, its run or its history.
+    Card(i64),
+    /// The editor of the script of the column with this name.
+    Script(String),
+    /// The chat with this id on the Chat page.
+    Chat(i64),
+    /// The editor of the agent with this name.
+    Agent(String),
 }
 
 /// What a click on a card opened instead of the board.
@@ -226,6 +255,8 @@ pub struct App {
     float: FloatChat,
     collapsed: bool,
     search: Search,
+    /// The places left by a click on a page, the last left last: "Back" returns to it. A pick of the sidebar empties it.
+    history: Vec<Location>,
     /// Counts the reads of the snapshot, so that an older answer never replaces a newer one.
     requested: u64,
     shown: u64,
@@ -242,6 +273,28 @@ fn excerpt(label: &str, text: &str) -> String {
     }
     let start: String = text.chars().take(EXCERPT).collect();
     format!("{label} (the first {EXCERPT} of {count} characters):\n{start}")
+}
+
+/// The other ways back: Alt+Left where nothing else takes it (a text field moves by words with it), and the mouse's back
+/// button.
+pub fn back_key(
+    event: iced::Event,
+    status: iced::event::Status,
+    _window: iced::window::Id,
+) -> Option<Message> {
+    match event {
+        iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. })
+            if modifiers.alt()
+                && key == iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowLeft)
+                && status == iced::event::Status::Ignored =>
+        {
+            Some(Message::Back)
+        }
+        iced::Event::Mouse(iced::mouse::Event::ButtonPressed(iced::mouse::Button::Back)) => {
+            Some(Message::Back)
+        }
+        _ => None,
+    }
 }
 
 async fn check(settings: Settings) -> Result<(Settings, Snapshot), ClientError> {
@@ -288,6 +341,7 @@ impl App {
             float: FloatChat::new(live::now()),
             collapsed: false,
             search: Search::default(),
+            history: Vec::new(),
             requested: 0,
             shown: 0,
         };
@@ -327,8 +381,12 @@ impl App {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         // The steps are read when their page opens, and when any page opens while one is missing, so that the
         // sidebar drops the entry soon after the last step is done.
-        let reads_start = matches!(&message, Message::Select(page) if *page == Page::Start || self.start.incomplete());
+        let reads_start = matches!(&message, Message::Select(page) | Message::Visit(page) if *page == Page::Start || self.start.incomplete());
+        let left = Self::navigates(&message).then(|| self.location());
         let task = self.handle(message);
+        if let Some(left) = left {
+            self.arrive(left);
+        }
         let task = match (&self.settings, reads_start) {
             (Some(settings), true) => Task::batch([task, self.start.reload(settings)]),
             _ => task,
@@ -374,36 +432,15 @@ impl App {
             Message::Loaded(_, Err(_)) => self.connection = Connection::Offline,
             Message::Stream(event) => return self.on_stream(event),
             Message::Select(page) => {
-                self.page = Some(page);
-                self.opened = None;
-                self.edits.close();
-                self.chats.leave();
-                if page == Page::Terminal {
-                    self.terminal.open();
-                }
-                match (page, &self.settings) {
-                    (Page::Chat | Page::Fleet, Some(settings)) => {
-                        return self.chats.reload(settings);
-                    }
-                    (Page::Agents, Some(settings)) => return self.agents.reload(settings),
-                    (Page::Skills, Some(settings)) => return self.skills.reload(settings),
-                    (Page::McpServers, Some(settings)) => {
-                        return self.mcp_servers.reload(settings);
-                    }
-                    (Page::Usage, Some(settings)) => return self.usage.reload(settings),
-                    (Page::Retro, Some(settings)) => return self.retros.reload(settings),
-                    (Page::Rules, Some(settings)) => return self.rules.reload(settings),
-                    (Page::Experiments, Some(settings)) => {
-                        return self.experiments.reload(settings);
-                    }
-                    (Page::DecisionModel, Some(settings)) => {
-                        return self.decision_model.reload(settings);
-                    }
-                    (Page::Models | Page::Plugins | Page::Settings, Some(settings)) => {
-                        return self.setup.reload(settings);
-                    }
-                    _ => {}
-                }
+                self.history.clear();
+                return self.show_page(page);
+            }
+            Message::Visit(page) => return self.show_page(page),
+            Message::Back => {
+                let Some(location) = self.history.pop() else {
+                    return Task::none();
+                };
+                return self.go_to(location);
             }
             Message::OpenCard(id) => {
                 self.edits.close();
@@ -684,7 +721,9 @@ impl App {
                 return self.open_entry(selected);
             }
             search::Message::Pick(index) => return self.open_entry(index),
-            search::Message::Close => self.search.clear(),
+            // Escape closes the list, and otherwise goes back from an editor.
+            search::Message::Close if self.search.is_open() => self.search.clear(),
+            search::Message::Close => return self.escape(),
             search::Message::Focus => {
                 self.collapsed = false;
                 return iced::widget::operation::focus(search::FIELD);
@@ -726,12 +765,12 @@ impl App {
         self.search.clear();
         match entry.target {
             Target::Card(id) => self.open(id),
-            Target::Chat(id) => self.update(Message::OpenChat(id)),
+            Target::Chat(id) => self.handle(Message::OpenChat(id)),
             Target::Agent(name) => Task::batch([
-                self.update(Message::Select(Page::Agents)),
-                self.update(Message::Agents(agents::Message::Select(name))),
+                self.handle(Message::Visit(Page::Agents)),
+                self.handle(Message::Agents(agents::Message::Select(name))),
             ]),
-            Target::Page(page) => self.update(Message::Select(page)),
+            Target::Page(page) => self.handle(Message::Visit(page)),
             Target::Ask(text) => match &self.settings {
                 Some(settings) => search::ask(settings, text),
                 None => Task::none(),
@@ -772,7 +811,7 @@ impl App {
                 };
                 // The window gives way to the Chat page, which shows the same chat.
                 let _ = self.float.update(float_chat::Message::Show(false), None);
-                self.update(Message::OpenChat(id))
+                self.handle(Message::OpenChat(id))
             }
             float_chat::Message::Started(Err(ClientError::Unauthorized))
             | float_chat::Message::Sent(Err(ClientError::Unauthorized)) => {
@@ -1202,6 +1241,153 @@ impl App {
         }
     }
 
+    /// Opens `page` as the sidebar does, with what was last open on it.
+    fn show_page(&mut self, page: Page) -> Task<Message> {
+        self.page = Some(page);
+        self.opened = None;
+        self.edits.close();
+        self.chats.leave();
+        if page == Page::Terminal {
+            self.terminal.open();
+        }
+        match (page, &self.settings) {
+            (Page::Chat | Page::Fleet, Some(settings)) => self.chats.reload(settings),
+            (Page::Agents, Some(settings)) => self.agents.reload(settings),
+            (Page::Skills, Some(settings)) => self.skills.reload(settings),
+            (Page::McpServers, Some(settings)) => self.mcp_servers.reload(settings),
+            (Page::Usage, Some(settings)) => self.usage.reload(settings),
+            (Page::Retro, Some(settings)) => self.retros.reload(settings),
+            (Page::Rules, Some(settings)) => self.rules.reload(settings),
+            (Page::Experiments, Some(settings)) => self.experiments.reload(settings),
+            (Page::DecisionModel, Some(settings)) => self.decision_model.reload(settings),
+            (Page::Models | Page::Plugins | Page::Settings, Some(settings)) => {
+                self.setup.reload(settings)
+            }
+            _ => Task::none(),
+        }
+    }
+
+    /// Whether `message` is a click on a page that may take the person to another place, which "Back" returns from.
+    fn navigates(message: &Message) -> bool {
+        matches!(
+            message,
+            Message::Visit(_)
+                | Message::OpenCard(_)
+                | Message::CloseCard
+                | Message::EditScript(..)
+                | Message::OpenChat(_)
+                | Message::Float(float_chat::Message::OpenInChat)
+                | Message::Search(
+                    search::Message::Submit
+                        | search::Message::Pick(_)
+                        | search::Message::Started(_, Ok(_))
+                )
+        )
+    }
+
+    /// Where the person is now.
+    fn location(&self) -> Location {
+        let page = self.page();
+        let place = match page {
+            Page::Board(id) => match &self.opened {
+                Some(Opened::Run(live)) => Place::Card(live.card),
+                Some(Opened::History { card, .. }) => Place::Card(*card),
+                Some(Opened::Script(editor)) => Place::Script(editor.column().to_string()),
+                None => Place::Tab(self.projects.get(&id).map_or(Tab::Board, Project::tab)),
+            },
+            Page::Chat => self.chats.opened().map_or(Place::Whole, Place::Chat),
+            Page::Agents => self
+                .agents
+                .editing()
+                .map_or(Place::Whole, |name| Place::Agent(name.to_string())),
+            _ => Place::Whole,
+        };
+        Location { page, place }
+    }
+
+    /// A click took the person from `left` to where they are now: `left` is kept to go back to, unless the click went
+    /// back to the place kept last, which is then dropped, as "Back" would have done.
+    fn arrive(&mut self, left: Location) {
+        let now = self.location();
+        if now == left {
+            return;
+        }
+        if self.history.last() == Some(&now) {
+            self.history.pop();
+        } else {
+            self.history.push(left);
+        }
+    }
+
+    /// Shows `location` again: its page, the tab of its project, and the card, script, chat or agent that was open.
+    fn go_to(&mut self, location: Location) -> Task<Message> {
+        let page = self.show_page(location.page);
+        let place = match (location.page, location.place) {
+            (Page::Board(id), Place::Tab(tab)) => self.projects.entry(id).or_default().update(
+                id,
+                project::Message::Tab(tab),
+                self.settings.as_ref(),
+            ),
+            (Page::Board(_), Place::Card(card)) => self.open(card),
+            (Page::Board(id), Place::Script(column)) => {
+                self.handle(Message::EditScript(id, column))
+            }
+            (Page::Chat, Place::Chat(chat)) => match &self.settings {
+                Some(settings) => self.chats.open(chat, settings),
+                None => Task::none(),
+            },
+            (Page::Agents, Place::Agent(name)) => self
+                .agents
+                .update(agents::Message::Select(name), self.settings.as_ref()),
+            _ => Task::none(),
+        };
+        Task::batch([page, place])
+    }
+
+    /// What the link back to `location` calls it.
+    fn location_title(&self, location: &Location) -> String {
+        let repository = |id| {
+            self.snapshot
+                .boards
+                .iter()
+                .find(|board| board.repository.id == id)
+                .map_or("the board", |board| board.repository.name.as_str())
+        };
+        match (&location.page, &location.place) {
+            (Page::Board(id), Place::Tab(Tab::Board)) => repository(*id).to_string(),
+            (Page::Board(id), Place::Tab(tab)) => format!("{} of {}", tab.title(), repository(*id)),
+            (Page::Board(_), Place::Card(card)) => self
+                .snapshot
+                .boards
+                .iter()
+                .flat_map(|board| &board.cards)
+                .find(|c| c.id == *card)
+                .map_or_else(|| "the card".to_string(), |c| format!("#{}", c.number)),
+            (Page::Board(_), Place::Script(column)) => format!("the {column} script"),
+            (Page::Agents, Place::Agent(name)) => name.clone(),
+            (page, _) => page.title().to_string(),
+        }
+    }
+
+    /// Escape in an editor goes back, when the editor came from another place and holds nothing unsaved.
+    fn escape(&mut self) -> Task<Message> {
+        let unsaved = match (self.page(), &self.opened) {
+            (Page::Board(_), Some(Opened::Script(editor))) => Some(editor.unsaved()),
+            (Page::Board(id), None) => self
+                .projects
+                .get(&id)
+                .filter(|project| project.tab() == Tab::Editor)
+                .map(Project::unsaved),
+            (Page::Rules, _) => Some(self.rules.unsaved()),
+            (Page::Agents, _) => self.agents.unsaved(),
+            _ => None,
+        };
+        match unsaved {
+            Some(false) => self.handle(Message::Back),
+            _ => Task::none(),
+        }
+    }
+
     /// Reads the snapshot again.
     fn reload(&mut self) -> Task<Message> {
         let Some(settings) = self.settings.clone() else {
@@ -1263,6 +1449,7 @@ impl App {
                 };
                 let keys = iced::event::listen_with(search::key);
                 let save = iced::event::listen_with(project::key);
+                let back = iced::event::listen_with(back_key);
                 Subscription::batch([
                     stream,
                     clock,
@@ -1275,6 +1462,7 @@ impl App {
                     floating,
                     keys,
                     save,
+                    back,
                 ])
             }
             _ => Subscription::none(),
@@ -1318,7 +1506,7 @@ impl App {
                         self.collapsed,
                         &self.search.text
                     ),
-                    container(self.page_view(page))
+                    container(self.page_with_back(page))
                         .padding(theme::PAGE_PADDING)
                         .width(Length::Fill)
                         .height(Length::Fill),
@@ -1363,6 +1551,19 @@ impl App {
         match name {
             Some(name) => format!("Works in {name}"),
             None => "No repository".to_string(),
+        }
+    }
+
+    /// The page, under the link back to the place left last when it was reached from there.
+    fn page_with_back(&self, page: Page) -> Element<'_, Message> {
+        match self.history.last() {
+            Some(left) => column![
+                page::back(self.location_title(left), Message::Back),
+                self.page_view(page)
+            ]
+            .spacing(10)
+            .into(),
+            None => self.page_view(page),
         }
     }
 

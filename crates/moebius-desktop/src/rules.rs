@@ -178,6 +178,11 @@ impl Rules {
         }
     }
 
+    /// Whether a rule is open in its editor or a request to the agent is typed, which Escape must not drop.
+    pub fn unsaved(&self) -> bool {
+        self.editing.is_some() || !self.wish.text().trim().is_empty()
+    }
+
     /// The text of the rules file of `place`, as the server has it.
     fn file_of(&self, place: Place) -> Option<&str> {
         let view = self.view.as_ref()?;

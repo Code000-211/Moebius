@@ -129,6 +129,8 @@ struct Editor {
     confirming: bool,
     /// What a built-in agent brings itself, shown read only.
     built_in: Option<BuiltInAgent>,
+    /// What a save would send for the agent as it was read or last saved; none for an agent that has no files.
+    kept: Option<(String, AgentSettings, String)>,
 }
 
 impl Editor {
@@ -155,6 +157,7 @@ impl Editor {
             notice: None,
             confirming: false,
             built_in: None,
+            kept: None,
         }
     }
 
@@ -185,6 +188,12 @@ impl Editor {
         self.skills = settings.skills;
         self.mcp = settings.mcp;
         self.extensions = settings.extensions;
+        self.kept = self.request().ok();
+    }
+
+    /// Whether the fields hold changes that are not saved.
+    fn unsaved(&self) -> bool {
+        self.request().ok() != self.kept
     }
 
     /// The agent's name and what a `PUT` sends for it, or what is wrong with the fields.
@@ -335,6 +344,11 @@ impl Agents {
         self.skills.as_ref().is_some_and(Vec::is_empty)
     }
 
+    /// Whether the agent being edited has changes that are not saved; none while no agent is open.
+    pub fn unsaved(&self) -> Option<bool> {
+        self.editor.as_ref().map(Editor::unsaved)
+    }
+
     /// The name of the agent being edited, if any.
     pub fn editing(&self) -> Option<&str> {
         self.editor.as_ref().map(|editor| editor.name.as_str())
@@ -467,6 +481,7 @@ impl Agents {
                 {
                     editor.naming = false;
                     editor.exists = true;
+                    editor.kept = editor.request().ok();
                     editor.notice = Some(if in_file {
                         Notice::Written
                     } else {

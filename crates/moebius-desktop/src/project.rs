@@ -170,6 +170,11 @@ impl Project {
         self.tab
     }
 
+    /// Whether a file open in the Editor has changes that are not saved.
+    pub fn unsaved(&self) -> bool {
+        self.files.iter().any(OpenFile::unsaved)
+    }
+
     /// Shows the tab without reading anything, as when a card of the board opens.
     pub fn show_tab(&mut self, tab: Tab) {
         self.tab = tab;

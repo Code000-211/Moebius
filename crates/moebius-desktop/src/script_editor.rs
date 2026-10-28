@@ -47,6 +47,8 @@ pub struct ScriptEditor {
     /// The refusal or failure of the last request.
     error: Option<String>,
     saved: bool,
+    /// Whether the text was edited since the script was read or saved.
+    edited: bool,
     /// Whether "Use the built-in script" asks to be confirmed.
     confirming: bool,
 }
@@ -68,6 +70,7 @@ impl ScriptEditor {
             text: text_editor::Content::new(),
             error: None,
             saved: false,
+            edited: false,
             confirming: false,
         };
         let (client, column) = (Client::new(settings.clone()), column.to_string());
@@ -113,7 +116,13 @@ impl ScriptEditor {
         &self.path
     }
 
+    /// Whether the text has changes that are not saved.
+    pub fn unsaved(&self) -> bool {
+        self.edited
+    }
+
     fn adopt(&mut self, detail: ScriptDetail) {
+        self.edited = false;
         self.own = Some(detail.source == "repository");
         self.path = detail.path;
         self.text = text_editor::Content::with_text(&detail.text);
@@ -151,6 +160,7 @@ impl ScriptEditor {
             }
             Message::Text(action) => {
                 self.saved = false;
+                self.edited |= action.is_edit();
                 self.error = None;
                 self.text.perform(action);
             }

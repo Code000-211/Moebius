@@ -92,6 +92,20 @@ pub fn card_breadcrumb<'a, Message: Clone + 'a>(
     .into()
 }
 
+/// The link at the top of a page reached from another place, which goes back there: "← Back to <previous>".
+pub fn back<'a, Message: Clone + 'a>(previous: String, on_press: Message) -> Element<'a, Message> {
+    button(
+        text(format!("\u{2190} Back to {previous}"))
+            .size(theme::BREADCRUMB)
+            .font(theme::manrope(Weight::Semibold))
+            .color(theme::TEAL),
+    )
+    .padding(0)
+    .on_press(on_press)
+    .style(|_, _| button::Style::default())
+    .into()
+}
+
 /// A line of context under a title.
 pub fn context<'a, Message: 'a>(line: impl text::IntoFragment<'a>) -> Element<'a, Message> {
     text(line)

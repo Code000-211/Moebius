@@ -135,7 +135,7 @@ fn step_row(step: &StartStep) -> Element<'_, AppMessage> {
         .spacing(14)
         .align_y(Alignment::Center);
     if let (false, Some((target, label))) = (step.done, fix(&step.key)) {
-        line = line.push(page::white_button(label, Some(AppMessage::Select(target))));
+        line = line.push(page::white_button(label, Some(AppMessage::Visit(target))));
     }
     line.into()
 }

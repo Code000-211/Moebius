@@ -112,7 +112,7 @@ fn each_missing_step_opens_the_page_that_fixes_it() {
     ] {
         let messages = clicked(&app, label);
         assert!(
-            matches!(messages.as_slice(), [Message::Select(p)] if *p == page),
+            matches!(messages.as_slice(), [Message::Visit(p)] if *p == page),
             "{label}: {messages:?}"
         );
     }

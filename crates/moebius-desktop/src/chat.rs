@@ -339,6 +339,11 @@ impl Chats {
         }
     }
 
+    /// The id of the chat open on the page.
+    pub fn opened(&self) -> Option<i64> {
+        self.open.as_ref().map(|open| open.thread.id)
+    }
+
     /// The chat open on the page, as the list has it.
     pub fn open_chat(&self) -> Option<&Chat> {
         self.open
