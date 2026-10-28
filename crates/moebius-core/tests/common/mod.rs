@@ -119,11 +119,33 @@ pub async fn start_as(
     upstream: &str,
     moebius: Option<&Path>,
 ) -> Started {
+    let agents = "[agents.Coder]\nmodel = \"fake-coder\"\ntoken_budget = 100000\n";
+    start_from(dir, pi_bolt, upstream, agents, moebius).await
+}
+
+/// Like `start`, with the agents from the harness configuration repository at `harness` instead of the Coder.
+pub async fn start_harness(
+    dir: &Path,
+    pi_bolt: &std::ffi::OsStr,
+    upstream: &str,
+    harness: &Path,
+) -> Started {
+    let harness = format!("[harness]\nurl = {:?}\n", harness.display().to_string());
+    start_from(dir, pi_bolt, upstream, &harness, None).await
+}
+
+/// Starts a server with the configuration `more` after the keys every test sets.
+async fn start_from(
+    dir: &Path,
+    pi_bolt: &std::ffi::OsStr,
+    upstream: &str,
+    more: &str,
+    moebius: Option<&Path>,
+) -> Started {
     let config_text = format!(
         "[board]\ntick_ms = 100\n[router]\nlisten = \"127.0.0.1:0\"\n\
          [[router.upstreams]]\nprotocol = \"openai\"\nbase_url = \"{upstream}\"\n\
-         [pi_bolt]\nprogram = {pi_bolt:?}\n\
-         [agents.Coder]\nmodel = \"fake-coder\"\ntoken_budget = 100000\n",
+         [pi_bolt]\nprogram = {pi_bolt:?}\n{more}",
         pi_bolt = pi_bolt.to_string_lossy()
     );
     let mut config = Config::parse(&config_text, dir, &dir.join("moebius.toml")).unwrap();

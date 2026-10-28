@@ -149,6 +149,7 @@ impl Server {
                 &app,
                 url,
                 &config.harness_dir(),
+                config.mcp_env.clone(),
                 harness.agents.clone(),
             )?)),
             None => None,

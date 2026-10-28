@@ -44,6 +44,7 @@ Without it, agents and rules are configured here.
 
 | Key | Type | Default | Meaning and validation |
 |---|---|---|---|
+| `harness.mcp_env` | array of strings | `[]` | The names of the environment variables of the server that `mcp.toml` of the repository may take values from, as `${NAME}`; any other name makes the server unusable. Each name is made of letters, digits and `_` and does not start with a digit, else the file is refused. What a server is given is visible to the runs of the agents that name it. |
 | `harness.url` | string | required | The git URL of the repository, cloned to `<data_dir>/harness`, fetched every 30 seconds and pushed to by edits through the API. Not blank. With `[github]`, an `https://github.com/...` URL uses the App's token. With `[harness]`, `[agents.*]` and `rules_file` are errors: the agents are `agents/<name>.toml` and `agents/<name>.md` in the repository, the rules `rules.md`. |
 
 ## `[trial_window]`

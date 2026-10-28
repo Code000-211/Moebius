@@ -8,8 +8,8 @@ named setup that a run uses: the model, how it thinks, its instructions, its ski
 
 Agents are kept in one of two places. In tables of `moebius.toml`, the simple way, which the steps below use. Or in a
 harness configuration repository, a git repository of their own, where an edit is a commit and agents can be changed
-through the API (see [In a harness configuration repository](#in-a-harness-configuration-repository)). MCP servers for
-agents are planned and cannot be given to an agent yet (see the [README](README.md)). The keys of `moebius.toml` are
+through the API (see [In a harness configuration repository](#in-a-harness-configuration-repository)). MCP servers
+are given to agents from the repository only. The keys of `moebius.toml` are
 listed exactly in [`docs/reference/configuration.md`](../reference/configuration.md), those of the repository in
 [`docs/reference/harness-configuration.md`](../reference/harness-configuration.md).
 
@@ -91,6 +91,22 @@ token_budget = 2000000
 skills = ["house-style"]
 extensions = ["extensions/log-tool-calls.ts"]
 ```
+
+An agent can be given MCP servers, which are described in `mcp.toml` of the repository and named in the agent's `mcp`
+key. A server is a command (`command`, `args`, `env`) or a remote `url` (`headers`), and takes secrets from the server's
+environment with `${NAME}` for the names listed in `mcp_env` of `[harness]`:
+
+<!-- skip -->
+```toml
+[docs]
+command = "docs-server"
+env = { API_KEY = "${DOCS_TOKEN}" }
+```
+
+With `mcp_env = ["DOCS_TOKEN"]` in `moebius.toml` and `mcp = ["docs"]` in the agent's file, its runs get the server's
+tools as `mcp__docs__<tool>`, checked by the rules like any tool call. A run is given exactly its agent's skills and
+servers. The agent can read what a server is given, so give it only what the agent may see; see the
+[reference](../reference/harness-configuration.md#mcptoml).
 
 `agents/Coder.md`:
 

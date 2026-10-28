@@ -11,11 +11,15 @@ Name the repository in `moebius.toml`:
 ```toml
 [harness]
 url = "https://github.com/acme/harness-configuration"
+mcp_env = ["DOCS_TOKEN"]
 ```
 
 - `url` is anything `git clone` takes. With `[github]` set, an `https://github.com/...` URL is cloned, fetched and pushed
   with the GitHub App's installation token, like the repositories Moebius works on; the App needs write access to the
   repository for edits. Any other URL, such as a local path, uses plain git.
+- `mcp_env` (array of names, default none) lists the environment variables of the server that `mcp.toml` may take values
+  from (see [`mcp.toml`](#mcptoml)). Each is a name of letters, digits and `_` that does not start with a digit, else
+  the file is refused.
 - The server clones it to `<data_dir>/harness` when it starts. A clone that cannot be made stops the server; a clone that is
   there already is used as it is, so the server starts without the network.
 - Every 30 seconds the server fetches `origin` and fast-forwards the clone's default branch (the branch that is checked
@@ -51,7 +55,7 @@ Nothing else is read. The Moebius agent stays built in: `agents/Moebius.toml` co
 | `token_budget` | integer | none | The most tokens a card may use with this agent, as `agents.<name>.token_budget` in [configuration](configuration.md). At least 1. |
 | `skills` | array of strings | `[]` | Names of directories under `skills/` that hold a `SKILL.md`. Each is given to Pi-Bolt as `--skill`. A name that is not there is an error. |
 | `extensions` | array of strings | `[]` | Paths of files in the repository, relative to its root and without `..`. Each is given to Pi-Bolt as `--extension`, before the bridge. A path that is not a file is an error. |
-| `mcp` | array of strings | `[]` | Names of servers in `mcp.toml`. A name that is not there, or any name while `mcp.toml` cannot be read, is an error. The servers are not given to the agent yet. |
+| `mcp` | array of strings | `[]` | Names of servers in `mcp.toml`. A run of the agent is given exactly these servers. A name that is not there, a server that cannot be used (see [`mcp.toml`](#mcptoml)), or any name while `mcp.toml` cannot be read, is an error. |
 
 The instructions are not a key: they are the text of `agents/<name>.md`, given to Pi-Bolt as `--append-system-prompt`.
 A file that is empty or only blank is no instructions.
@@ -69,7 +73,9 @@ mcp = ["docs"]
 ## `skills/<name>/SKILL.md`
 
 A skill as Pi-Bolt documents it: a directory with a `SKILL.md` and whatever else the skill uses. A directory without a
-`SKILL.md` is not a skill. An agent that names a skill that is missing is left out with an error.
+`SKILL.md` is not a skill. An agent that names a skill that is missing is left out with an error. A run is given exactly
+its agent's skills, in the order of the `skills` key, and no skill Pi-Bolt would find on its own. The Moebius agent has
+its built-in `moebius` skill first, then those of `agents/Moebius.toml`.
 
 ## `rules.md`
 
@@ -80,13 +86,51 @@ default branch. Without the file there are no server rules.
 
 ## `mcp.toml`
 
-The MCP servers agents can name. Each server is a top-level table named for it, such as `[docs]`. Moebius reads only the
-names, to check the `mcp` key of agents; what a server's table holds is not read yet.
+The MCP servers agents can name. Each server is a top-level table named for it, such as `[docs]`. A name is made of
+letters, digits, `-` and `_`. A server is one of two kinds, and a table that is neither or both is an error:
+
+| Key | Type | Meaning |
+|---|---|---|
+| `command` | string | A stdio server: the executable, not a shell command line. Not blank. |
+| `args` | array of strings | Its arguments. Only with `command`. Default none. |
+| `env` | table of strings | Its environment, added to Pi-Bolt's. Only with `command`. Default none. |
+| `url` | string | A remote server (streamable HTTP). |
+| `headers` | table of strings | Sent with every request, such as `Authorization`. Only with `url`. Default none. |
+
+Unknown keys are errors. Every string value may contain `${NAME}`, which is replaced by the value of the environment
+variable `NAME` of the Moebius server, when the run's files are written. Only the names in `mcp_env` of `[harness]` in
+`moebius.toml` may be used (see [configuration](configuration.md)); any other name is an error for the server, so that
+a repository cannot read secrets such as a provider's key. A name that is listed but not set in the server's
+environment fails a run of an agent that uses the server (`cannot write the agent directory: ...`). Never write a
+secret into the repository: keep it in the server's environment and take it with `${NAME}`.
 
 ```toml
 [docs]
 command = "docs-server"
+args = ["--root", "/srv/docs"]
+env = { API_KEY = "${DOCS_TOKEN}" }
+
+[search]
+url = "https://search.example.com/mcp"
+headers = { Authorization = "Bearer ${SEARCH_TOKEN}" }
 ```
+
+A server that cannot be used leaves out the agents that name it, with the error, like a missing skill. The other
+servers and agents are not affected.
+
+### What a run is given
+
+A run of an agent that names servers has the file `<run-dir>/agent/mcp.json` in Pi's format, with exactly those servers
+and the values of `${NAME}` filled in, so the run is given values, not names. Pi-Bolt is started with
+`--extension builtin:mcp` before the agent's own extensions (the bridge stays last), because Pi's MCP support is an
+extension that `--no-extensions` turns off. Every server has `"exposure": "direct"`, so its tools are declared to the
+model as `mcp__<server>__<tool>` like Pi's own tools, and every call passes through `tool_call` and so through the
+bridge's check, which decides it by the rules like any tool call. A run of an agent without servers has no `mcp.json`
+and no MCP support, and no agent is given a server of another agent.
+
+What a server is given is visible to the run: the agent can read its own environment and files, `mcp.json` among them,
+and with a `bash` tool can read the headers and variables it was given. Give a server only what the agents that name it
+may see.
 
 ## A broken agent
 
@@ -99,7 +143,7 @@ A file that cannot be used leaves only its agent out; the other agents are read 
 
 The errors: a name that is not valid; `agents/<name>.md` without `agents/<name>.toml`; a `.toml` file that is not valid
 TOML, has an unknown key or a value of the wrong type; a missing `model`; a skill, extension or MCP server that is not
-there. An error in `agents/Moebius.toml` is reported the same way, and the Moebius agent then runs as if the file were
+there or cannot be used (see [`mcp.toml`](#mcptoml)). An error in `agents/Moebius.toml` is reported the same way, and the Moebius agent then runs as if the file were
 not there. A fetch that fails is reported as a `harness_error` without an `agent`, and the agents stay as they were.
 
 ## Edits through the API

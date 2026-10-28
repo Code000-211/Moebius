@@ -9,7 +9,7 @@
 //! that changed nothing, that is, left no change and made no commit, has failed; other runs, such as a review, are not committed. A run starts from the branch of the
 //! card's latest successful `code` run, so it sees the work so far. The text of the agent's final answer is kept as
 //! the run's summary. A run is stopped with `abort` and steered with `steer`. Pi runs offline and does not trust
-//! configuration found in the worktree, and loads only the extensions and skills the agent is configured with. The
+//! configuration found in the worktree, and loads only the extensions, skills and MCP servers the agent is configured with (see `mcp`). The
 //! Moebius bridge (`bridge/moebius-bridge.ts`) is loaded into every run after the agent's own extensions, so that it
 //! sees the final input and content of each tool call; it asks the check for each tool call and result (see `check`). Every run is told the path of the
 //! `moebius` executable as `$MOEBIUS`. The Moebius agent is always available: its instructions are built in, its skill
@@ -29,6 +29,7 @@ use crate::blobs::redact;
 use crate::board::{AgentInfo, Runs};
 use crate::bus::AppEvent;
 use crate::config::{AgentConfig, AgentSet};
+use crate::mcp;
 use crate::repos::git;
 use crate::router::{Grant, Protocol, Router};
 use crate::skill;
@@ -122,6 +123,7 @@ impl PiBolt {
                 instructions: None,
                 skills: vec![],
                 extensions: vec![],
+                mcp: BTreeMap::new(),
                 token_budget: None,
             },
             (None, None) => {
@@ -176,6 +178,11 @@ impl PiBolt {
         for skill in &agent.skills {
             command.arg("--skill").arg(skill);
         }
+        // Pi's MCP support is an extension that `--no-extensions` turns off; it reads the `mcp.json` of the agent
+        // directory, which holds the agent's servers.
+        if !agent.mcp.is_empty() {
+            command.args(["--extension", "builtin:mcp"]);
+        }
         for extension in &agent.extensions {
             command.arg("--extension").arg(extension);
         }
@@ -184,15 +191,24 @@ impl PiBolt {
         command
     }
 
-    /// Writes the per-run agent directory: `models.json` with the router as the `moebius` provider.
+    /// Writes the per-run agent directory: `models.json` with the router as the `moebius` provider, and `mcp.json` with
+    /// the agent's MCP servers, if it has any (without it Pi connects to none).
     fn write_agent_dir(
         &self,
         run_dir: &Path,
         agent: &AgentConfig,
         token: &str,
-    ) -> std::io::Result<PathBuf> {
+    ) -> Result<PathBuf, String> {
         let agent_dir = run_dir.join("agent");
-        std::fs::create_dir_all(&agent_dir)?;
+        std::fs::create_dir_all(&agent_dir).map_err(|e| e.to_string())?;
+        if !agent.mcp.is_empty() {
+            let servers = mcp::pi_config(&agent.mcp, &|name| std::env::var(name).ok())?;
+            std::fs::write(
+                agent_dir.join("mcp.json"),
+                serde_json::to_vec_pretty(&servers).map_err(|e| e.to_string())?,
+            )
+            .map_err(|e| e.to_string())?;
+        }
         let (api, base_url) = match agent.protocol {
             Protocol::OpenAi => ("openai-completions", format!("{}/v1", self.router_url)),
             Protocol::Anthropic => ("anthropic-messages", self.router_url.clone()),
@@ -209,8 +225,9 @@ impl PiBolt {
         });
         std::fs::write(
             agent_dir.join("models.json"),
-            serde_json::to_vec_pretty(&models)?,
-        )?;
+            serde_json::to_vec_pretty(&models).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
         Ok(agent_dir)
     }
 
@@ -785,6 +802,7 @@ impl Reader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mcp::McpServer;
     use crate::store::Store;
     use moebius_plugin_api::Host;
 
@@ -815,6 +833,7 @@ mod tests {
             instructions: Some("Be brief.".into()),
             skills: vec![],
             extensions: vec!["/agent/own.ts".into()],
+            mcp: BTreeMap::new(),
             protocol: Protocol::OpenAi,
             token_budget: Some(1000),
         };
@@ -933,6 +952,86 @@ mod tests {
                 .unwrap()
                 .starts_with("moebius-run-")
         );
+    }
+
+    #[test]
+    fn a_run_gets_exactly_the_skills_and_mcp_servers_of_its_agent() {
+        let (_dir, app, pi, repo) = setup();
+        let server = |text: &str| {
+            let servers = mcp::parse_file(&format!("[s]\n{text}"), &["CARGO_PKG_NAME".to_string()]);
+            servers.unwrap().remove("s").unwrap().unwrap()
+        };
+        let agent = |skill: &str, mcp: &[(&str, McpServer)]| AgentConfig {
+            skills: vec![format!("/skills/{skill}").into()],
+            extensions: vec![],
+            mcp: mcp
+                .iter()
+                .map(|(name, server)| (name.to_string(), server.clone()))
+                .collect(),
+            ..pi.agent_set().agents["Coder"].clone()
+        };
+        let docs = server("command = \"docs\"\nargs = [\"--name\", \"${CARGO_PKG_NAME}\"]\n");
+        let search = server(
+            "url = \"https://search.test/mcp\"\nheaders = { Name = \"${CARGO_PKG_NAME}\" }\n",
+        );
+        let agents = [
+            ("A".to_string(), agent("a", &[("docs", docs)])),
+            ("B".to_string(), agent("b", &[("search", search)])),
+            ("C".to_string(), agent("c", &[])),
+        ];
+        pi.agents.write().unwrap().agents.extend(agents);
+        let run_agent = |name: &str| {
+            let card = app
+                .create_issue(repo, "Write done.txt", "", "person")
+                .unwrap();
+            let run = pi.start(&app, &card, name, "code", None).unwrap();
+            let run = wait_until_ended(&app, run.id);
+            let agent_dir = app
+                .data_dir
+                .join("runs")
+                .join(run.id.to_string())
+                .join("agent");
+            let argv: Vec<String> =
+                serde_json::from_slice(&std::fs::read(agent_dir.join("argv.json")).unwrap())
+                    .unwrap();
+            (argv, agent_dir.join("mcp.json"))
+        };
+        let values = |argv: &[String], flag: &str| -> Vec<String> {
+            argv.windows(2)
+                .filter(|w| w[0] == flag)
+                .map(|w| w[1].clone())
+                .collect()
+        };
+
+        let (argv, mcp_json) = run_agent("A");
+        assert_eq!(values(&argv, "--skill"), ["/skills/a"]);
+        let config: Value = serde_json::from_slice(&std::fs::read(mcp_json).unwrap()).unwrap();
+        assert_eq!(
+            config,
+            json!({ "mcpServers": { "docs": {
+                "command": "docs", "args": ["--name", "moebius-core"], "env": {}, "exposure": "direct"
+            } } })
+        );
+        // Pi's MCP support is switched on explicitly, before the bridge, which is still last.
+        let extensions = values(&argv, "--extension");
+        assert_eq!(extensions[0], "builtin:mcp");
+        assert!(extensions.last().unwrap().ends_with("moebius-bridge.ts"));
+
+        let (argv, mcp_json) = run_agent("B");
+        assert_eq!(values(&argv, "--skill"), ["/skills/b"]);
+        let config: Value = serde_json::from_slice(&std::fs::read(mcp_json).unwrap()).unwrap();
+        assert_eq!(
+            config,
+            json!({ "mcpServers": { "search": {
+                "url": "https://search.test/mcp", "headers": { "Name": "moebius-core" }, "exposure": "direct"
+            } } })
+        );
+
+        // An agent without servers gets no mcp.json and no MCP support.
+        let (argv, mcp_json) = run_agent("C");
+        assert_eq!(values(&argv, "--skill"), ["/skills/c"]);
+        assert!(!mcp_json.exists());
+        assert_eq!(values(&argv, "--extension").len(), 1);
     }
 
     #[test]

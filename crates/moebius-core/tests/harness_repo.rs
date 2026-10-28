@@ -48,7 +48,23 @@ fn harness_origin(dir: &Path) -> PathBuf {
     );
     write(&work, "skills/house-style/SKILL.md", "Write plainly.\n");
     write(&work, "extensions/log.ts", "export default () => {};\n");
-    write(&work, "mcp.toml", "[docs]\ncommand = \"docs-server\"\n");
+    write(
+        &work,
+        "agents/Token.toml",
+        "model = \"x\"\nmcp = [\"token\"]\n",
+    );
+    write(
+        &work,
+        "agents/Secret.toml",
+        "model = \"x\"\nmcp = [\"leak\"]\n",
+    );
+    write(
+        &work,
+        "mcp.toml",
+        "[docs]\ncommand = \"docs-server\"\n\
+         [token]\ncommand = \"x\"\nenv = { TOKEN = \"${DOCS_TOKEN}\" }\n\
+         [leak]\ncommand = \"x\"\nenv = { KEY = \"${OPENAI_API_KEY}\" }\n",
+    );
     write(&work, "rules.md", "## no-vendoring\nDo not vendor.\n");
     commit_all(&work, "Start");
     let bare = dir.join("harness.git");
@@ -74,7 +90,7 @@ fn source(dir: &Path) -> PathBuf {
 fn server(dir: &Path, harness: &Path) -> Server {
     let fake_pi = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/fake-pi");
     let text = format!(
-        "[pi_bolt]\nprogram = {:?}\n[harness]\nurl = {:?}\n",
+        "[pi_bolt]\nprogram = {:?}\n[harness]\nurl = {:?}\nmcp_env = [\"DOCS_TOKEN\"]\n",
         fake_pi.display().to_string(),
         harness.display().to_string()
     );
@@ -94,7 +110,10 @@ fn the_agents_and_rules_are_what_the_repository_says_and_a_broken_agent_is_left_
     let clone = dir.path().join(".moebius/harness");
 
     let set = server.harness.agents.read().unwrap().clone();
-    assert_eq!(set.agents.keys().collect::<Vec<_>>(), ["Coder", "Reviewer"]);
+    assert_eq!(
+        set.agents.keys().collect::<Vec<_>>(),
+        ["Coder", "Reviewer", "Token"]
+    );
     let coder = &set.agents["Coder"];
     assert_eq!(coder.model, "coder-model");
     assert_eq!(coder.protocol, Protocol::OpenAi);
@@ -109,7 +128,13 @@ fn the_agents_and_rules_are_what_the_repository_says_and_a_broken_agent_is_left_
     assert_eq!(server.harness.token_budget("Reviewer"), Some(500));
 
     // The agents that cannot be used are left out with what is wrong, and listed so.
-    assert_eq!(set.errors.keys().collect::<Vec<_>>(), ["NoSkill", "Typo"]);
+    assert_eq!(
+        set.errors.keys().collect::<Vec<_>>(),
+        ["NoSkill", "Secret", "Typo"]
+    );
+    // A server that takes a variable `mcp_env` does not list leaves out the agents that name it.
+    assert!(set.errors["Secret"].contains("${OPENAI_API_KEY} is not in mcp_env"));
+    assert_eq!(coder.mcp.keys().collect::<Vec<_>>(), ["docs"]);
     assert!(set.errors["NoSkill"].contains("\"missing\" is not in skills/"));
     assert!(set.errors["Typo"].contains("modle"));
     let listed = server.harness.agents();
@@ -118,7 +143,7 @@ fn the_agents_and_rules_are_what_the_repository_says_and_a_broken_agent_is_left_
         .filter(|agent| agent.error.is_some())
         .map(|agent| (agent.name.as_str(), agent.model.as_str()))
         .collect();
-    assert_eq!(broken, [("NoSkill", ""), ("Typo", "")]);
+    assert_eq!(broken, [("NoSkill", ""), ("Secret", ""), ("Typo", "")]);
     assert!(!server.harness.has_agent("Typo"));
 
     let rules = rules::applicable(server.config.rules_path().as_deref(), None).unwrap();
@@ -447,14 +472,17 @@ fn a_commit_someone_else_pushes_arrives_at_the_next_refresh() {
     );
     assert_eq!(agent_model(&server, "Typo").as_deref(), Some("fixed"));
     let set = server.harness.agents.read().unwrap().clone();
-    assert_eq!(set.errors.keys().collect::<Vec<_>>(), ["NoSkill", "Odd"]);
+    assert_eq!(
+        set.errors.keys().collect::<Vec<_>>(),
+        ["NoSkill", "Odd", "Secret"]
+    );
     let mut reported = Vec::new();
     while let Ok(event) = events.try_recv() {
         if event.kind == "harness_error" {
             reported.push(event.data["agent"].as_str().unwrap().to_string());
         }
     }
-    assert_eq!(reported, ["NoSkill", "Odd"]);
+    assert_eq!(reported, ["NoSkill", "Odd", "Secret"]);
 
     // Nothing new: nothing is read again.
     server.refresh_harness_repository();

@@ -701,6 +701,7 @@ mod tests {
             instructions: None,
             skills: vec![],
             extensions: vec![],
+            mcp: BTreeMap::new(),
             protocol: Protocol::OpenAi,
             token_budget: None,
         }

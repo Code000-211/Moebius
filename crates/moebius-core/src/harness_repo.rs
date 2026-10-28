@@ -18,6 +18,7 @@ use crate::app::{App, AppError, Result};
 use crate::bus::AppEvent;
 use crate::config::{AgentConfig, AgentSet, default_protocol, valid_agent_name};
 use crate::decide::Question;
+use crate::mcp::{McpServer, parse_file};
 use crate::repos::{Repos, git};
 use crate::router::Protocol;
 
@@ -64,11 +65,11 @@ pub struct AgentView {
 struct Layout {
     skills: BTreeSet<String>,
     /// The servers of `mcp.toml`, or why it cannot be read.
-    mcp: std::result::Result<BTreeSet<String>, String>,
+    mcp: std::result::Result<BTreeMap<String, std::result::Result<McpServer, String>>, String>,
 }
 
 impl Layout {
-    fn read(root: &Path) -> Self {
+    fn read(root: &Path, mcp_env: &[String]) -> Self {
         let skills = std::fs::read_dir(root.join("skills"))
             .into_iter()
             .flatten()
@@ -77,17 +78,19 @@ impl Layout {
             .map(|entry| entry.file_name().to_string_lossy().into_owned())
             .collect();
         let mcp = match std::fs::read_to_string(root.join("mcp.toml")) {
-            Ok(text) => toml::from_str::<toml::Table>(&text)
-                .map(|servers| servers.keys().cloned().collect())
-                .map_err(|e| format!("mcp.toml is not valid: {e}")),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(BTreeSet::new()),
+            Ok(text) => parse_file(&text, mcp_env),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(BTreeMap::new()),
             Err(e) => Err(format!("cannot read mcp.toml: {e}")),
         };
         Self { skills, mcp }
     }
 
-    /// Why `settings` cannot be used in the repository at `root`, if they cannot.
-    fn check(&self, root: &Path, settings: &AgentSettings) -> std::result::Result<(), String> {
+    /// Why `settings` cannot be used in the repository at `root`, if they cannot; else the MCP servers they name.
+    fn check(
+        &self,
+        root: &Path,
+        settings: &AgentSettings,
+    ) -> std::result::Result<BTreeMap<String, McpServer>, String> {
         if settings.model.trim().is_empty() {
             return Err("model must not be empty".into());
         }
@@ -109,18 +112,28 @@ impl Layout {
                 ));
             }
         }
-        if !settings.mcp.is_empty() {
-            let servers = self.mcp.as_ref().map_err(String::clone)?;
-            if let Some(server) = settings.mcp.iter().find(|name| !servers.contains(*name)) {
-                return Err(format!("the MCP server {server:?} is not in mcp.toml"));
-            }
+        if settings.mcp.is_empty() {
+            return Ok(BTreeMap::new());
         }
-        Ok(())
+        let servers = self.mcp.as_ref().map_err(String::clone)?;
+        settings
+            .mcp
+            .iter()
+            .map(|name| match servers.get(name) {
+                None => Err(format!("the MCP server {name:?} is not in mcp.toml")),
+                Some(Err(error)) => Err(format!("the MCP server {name:?} in mcp.toml: {error}")),
+                Some(Ok(server)) => Ok((name.clone(), server.clone())),
+            })
+            .collect()
     }
 }
 
 /// The agent as a run uses it, with paths inside the repository at `root`.
-fn agent_config(root: &Path, definition: &AgentDefinition) -> AgentConfig {
+fn agent_config(
+    root: &Path,
+    definition: &AgentDefinition,
+    mcp: BTreeMap<String, McpServer>,
+) -> AgentConfig {
     let settings = &definition.settings;
     AgentConfig {
         model: settings.model.clone(),
@@ -138,6 +151,7 @@ fn agent_config(root: &Path, definition: &AgentDefinition) -> AgentConfig {
             .iter()
             .map(|path| root.join(path))
             .collect(),
+        mcp,
         token_budget: settings.token_budget,
     }
 }
@@ -147,6 +161,8 @@ pub struct HarnessRepo {
     path: PathBuf,
     url: String,
     repos: Repos,
+    /// The environment variables `mcp.toml` may take values from.
+    mcp_env: Vec<String>,
     /// The agents the harness runs; replaced whenever the repository is read.
     agents: Arc<RwLock<AgentSet>>,
     /// The commit the agents were read at. Held while the repository is refreshed or edited.
@@ -160,12 +176,14 @@ impl HarnessRepo {
         app: &App,
         url: &str,
         path: &Path,
+        mcp_env: Vec<String>,
         agents: Arc<RwLock<AgentSet>>,
     ) -> std::result::Result<Self, String> {
         let repo = Self {
             path: path.to_path_buf(),
             url: url.to_string(),
             repos: app.repos.clone(),
+            mcp_env,
             agents,
             read_at: Mutex::default(),
         };
@@ -200,6 +218,10 @@ impl HarnessRepo {
         Ok(())
     }
 
+    fn layout(&self) -> Layout {
+        Layout::read(&self.path, &self.mcp_env)
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, String> {
         self.read_at.lock().unwrap_or_else(|e| e.into_inner())
     }
@@ -211,7 +233,7 @@ impl HarnessRepo {
     /// Reads every agent from the working tree, which is the default branch, into the shared set. The error of each
     /// agent that is left out is published as `harness_error`.
     fn read(&self, app: &App, read_at: &mut String, head: String) {
-        let layout = Layout::read(&self.path);
+        let layout = self.layout();
         let names: BTreeSet<String> = std::fs::read_dir(self.path.join("agents"))
             .into_iter()
             .flatten()
@@ -225,9 +247,9 @@ impl HarnessRepo {
         let mut set = AgentSet::default();
         for name in names {
             match self.read_agent(&layout, &name) {
-                Ok(definition) => {
+                Ok((definition, mcp)) => {
                     set.agents
-                        .insert(name, agent_config(&self.path, &definition));
+                        .insert(name, agent_config(&self.path, &definition, mcp));
                 }
                 Err(error) => {
                     app.bus.publish(AppEvent::new(
@@ -247,7 +269,7 @@ impl HarnessRepo {
         &self,
         layout: &Layout,
         name: &str,
-    ) -> std::result::Result<AgentDefinition, String> {
+    ) -> std::result::Result<(AgentDefinition, BTreeMap<String, McpServer>), String> {
         if !valid_agent_name(name) {
             return Err(format!(
                 "{name:?} is not a valid agent name (letters, digits, - and _)"
@@ -260,7 +282,7 @@ impl HarnessRepo {
         })?;
         let settings: AgentSettings =
             toml::from_str(&text).map_err(|e| format!("agents/{name}.toml: {e}"))?;
-        layout
+        let mcp = layout
             .check(&self.path, &settings)
             .map_err(|e| format!("agents/{name}.toml: {e}"))?;
         let instructions = match std::fs::read_to_string(self.agent_file(name, "md")) {
@@ -268,10 +290,11 @@ impl HarnessRepo {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
             Err(e) => return Err(format!("cannot read agents/{name}.md: {e}")),
         };
-        Ok(AgentDefinition {
+        let definition = AgentDefinition {
             settings,
             instructions,
-        })
+        };
+        Ok((definition, mcp))
     }
 
     /// The agent `name` as its files in the repository say.
@@ -282,8 +305,8 @@ impl HarnessRepo {
         {
             return Err(AppError::NotFound(format!("agent {name}")));
         }
-        let definition = self
-            .read_agent(&Layout::read(&self.path), name)
+        let (definition, _) = self
+            .read_agent(&self.layout(), name)
             .map_err(AppError::Invalid)?;
         Ok(AgentView {
             name: name.into(),
@@ -305,7 +328,7 @@ impl HarnessRepo {
                 "{name:?} is not a valid agent name (letters, digits, - and _)"
             )));
         }
-        Layout::read(&self.path)
+        self.layout()
             .check(&self.path, &definition.settings)
             .map_err(AppError::Invalid)?;
         let settings = toml::to_string(&definition.settings)

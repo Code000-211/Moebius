@@ -12,6 +12,7 @@ pub mod forge;
 pub mod github;
 pub mod guard;
 pub mod harness_repo;
+pub mod mcp;
 pub mod pibolt;
 pub mod poll;
 pub mod repos;

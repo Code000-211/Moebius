@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
+use crate::mcp::{McpServer, valid_variable};
 use crate::router::Protocol;
 
 /// The commented example `moebius init` writes. Every value in it is the default.
@@ -91,6 +92,7 @@ program = "pi-bolt"
 # and [agents.*] and rules_file are errors.
 # [harness]
 # url = "https://github.com/acme/harness-configuration"
+# mcp_env = ["DOCS_TOKEN"]               # the environment variables mcp.toml may take values from, as ${NAME}
 
 # Agents run on Pi-Bolt. The default workflow starts the Coder, and the Reviewer when there is one.
 # [agents.Coder]
@@ -128,6 +130,8 @@ pub enum ConfigError {
     DayTokens,
     #[error("{name} is not a valid agent name")]
     AgentName { name: String },
+    #[error("harness.mcp_env: {name:?} is not the name of an environment variable")]
+    McpEnv { name: String },
     #[error("harness.url must not be empty")]
     HarnessUrl,
     #[error(
@@ -213,6 +217,8 @@ struct RawPiBolt {
 #[serde(deny_unknown_fields)]
 struct RawHarness {
     url: String,
+    #[serde(default)]
+    mcp_env: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -305,6 +311,9 @@ pub struct AgentConfig {
     pub skills: Vec<PathBuf>,
     #[serde(default)]
     pub extensions: Vec<PathBuf>,
+    /// The MCP servers the agent is given, by name. Only the harness configuration repository sets them.
+    #[serde(skip)]
+    pub mcp: BTreeMap<String, McpServer>,
     pub token_budget: Option<i64>,
 }
 
@@ -346,6 +355,8 @@ pub struct Config {
     pub rules_file: Option<PathBuf>,
     /// The harness configuration repository to clone, if there is one.
     pub harness_url: Option<String>,
+    /// The environment variables `mcp.toml` may take values from.
+    pub mcp_env: Vec<String>,
     pub github: Option<GitHubConfig>,
     /// The teacher model; without one, calls are refused while prose rules apply.
     pub teacher: Option<TeacherConfig>,
@@ -392,6 +403,9 @@ impl Config {
         if let Some(harness) = &raw.harness {
             if harness.url.trim().is_empty() {
                 return Err(ConfigError::HarnessUrl);
+            }
+            if let Some(name) = harness.mcp_env.iter().find(|n| !valid_variable(n)) {
+                return Err(ConfigError::McpEnv { name: name.clone() });
             }
             if !raw.agents.is_empty() {
                 return Err(ConfigError::InHarness {
@@ -471,7 +485,11 @@ impl Config {
                 pi_bolt
             },
             rules_file: raw.rules_file.map(|file| base.join(file)),
-            harness_url: raw.harness.map(|harness| harness.url),
+            harness_url: raw.harness.as_ref().map(|harness| harness.url.clone()),
+            mcp_env: raw
+                .harness
+                .map(|harness| harness.mcp_env)
+                .unwrap_or_default(),
             github: raw.github.map(|g| GitHubConfig {
                 app_id: g.app_id,
                 private_key_file: base.join(g.private_key_file),
@@ -610,6 +628,11 @@ mod tests {
         assert_eq!(parse("").unwrap().harness_url, None);
         let c = parse("[harness]\nurl = \"/srv/harness.git\"\n").unwrap();
         assert_eq!(c.harness_url.as_deref(), Some("/srv/harness.git"));
+        assert!(c.mcp_env.is_empty());
+        let c = parse("[harness]\nurl = \"/h\"\nmcp_env = [\"DOCS_TOKEN\"]\n").unwrap();
+        assert_eq!(c.mcp_env, ["DOCS_TOKEN"]);
+        let error = parse("[harness]\nurl = \"/h\"\nmcp_env = [\"A-B\"]\n").unwrap_err();
+        assert!(matches!(error, ConfigError::McpEnv { .. }), "{error}");
         assert_eq!(c.harness_dir(), PathBuf::from("/srv/.moebius/harness"));
         assert_eq!(
             c.rules_path(),

@@ -10,7 +10,7 @@ changes ready to merge. Read `GLOSSARY.md` for the words, `docs/spec.md` for wha
 - `crates/moebius-core`: everything the server does. `app.rs` ties the store, bus, repositories, forges and decisions
   together; `server.rs` wires the API, router, harness and board engine; one module per part (`store`, `blobs`, `repos`,
   `forge`, `github` (the API client), `poll` (GitHub without webhooks), `harness_repo` (the harness configuration
-  repository), `decide`, `board`, `router`, `pibolt`, `api`, `config`). Column scripts are in `workflow/*.luau`.
+  repository), `mcp` (its MCP servers), `decide`, `board`, `router`, `pibolt`, `api`, `config`). Column scripts are in `workflow/*.luau`.
 - `crates/moebius-plugin-api`: the plugin trait and the host that calls plugins with a time limit, failing closed.
 - `crates/moebius`: the `moebius` binary (`init`, `serve`, `check-script`).
 - `crates/moebius-core/skill/SKILL.md` and `src/skill.rs`: the `moebius` skill of the Moebius agent, which is `SKILL.md`
