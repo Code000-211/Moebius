@@ -15,12 +15,14 @@ use crate::decision_model::{self, DecisionModel};
 use crate::experiments::{self, Experiments};
 use crate::inbox::{self, Inbox};
 use crate::live::{self, Live};
+use crate::mcp_servers::{self, McpServers};
 use crate::new_issue::{self, NewIssue};
 use crate::retro::{self, Retros};
 use crate::rules::{self, Rules};
 use crate::search::{self, Search, Target};
 use crate::settings::{self, Settings};
 use crate::setup::{self, Setup};
+use crate::skills::{self, Skills};
 use crate::usage::{self, Usage};
 use crate::{board, chat, connect, history, sidebar, theme};
 
@@ -121,6 +123,8 @@ pub enum Message {
     Inbox(inbox::Message),
     Chat(chat::Message),
     Agents(agents::Message),
+    Skills(skills::Message),
+    Mcp(mcp_servers::Message),
     Usage(usage::Message),
     Retro(retro::Message),
     Rules(rules::Message),
@@ -164,6 +168,8 @@ pub struct App {
     inbox: Inbox,
     chats: Chats,
     agents: Agents,
+    skills: Skills,
+    mcp_servers: McpServers,
     usage: Usage,
     retros: Retros,
     rules: Rules,
@@ -204,6 +210,8 @@ impl App {
             inbox: Inbox::new(live::now()),
             chats: Chats::new(live::now()),
             agents: Agents::default(),
+            skills: Skills::default(),
+            mcp_servers: McpServers::default(),
             usage: Usage::default(),
             retros: Retros::default(),
             rules: Rules::default(),
@@ -286,8 +294,10 @@ impl App {
                 self.opened = None;
                 match (page, &self.settings) {
                     (Page::Chat, Some(settings)) => return self.chats.reload(settings),
-                    (Page::Agents | Page::Skills | Page::McpServers, Some(settings)) => {
-                        return self.agents.reload(settings);
+                    (Page::Agents, Some(settings)) => return self.agents.reload(settings),
+                    (Page::Skills, Some(settings)) => return self.skills.reload(settings),
+                    (Page::McpServers, Some(settings)) => {
+                        return self.mcp_servers.reload(settings);
                     }
                     (Page::Usage, Some(settings)) => return self.usage.reload(settings),
                     (Page::Retro, Some(settings)) => return self.retros.reload(settings),
@@ -319,6 +329,16 @@ impl App {
                 self.show_connect_error(&ClientError::Unauthorized);
             }
             Message::Agents(message) => return self.agents.update(message, self.settings.as_ref()),
+            Message::Skills(message) if Skills::refused(&message) => {
+                self.show_connect_error(&ClientError::Unauthorized);
+            }
+            Message::Skills(message) => return self.skills.update(message, self.settings.as_ref()),
+            Message::Mcp(message) if McpServers::refused(&message) => {
+                self.show_connect_error(&ClientError::Unauthorized);
+            }
+            Message::Mcp(message) => {
+                return self.mcp_servers.update(message, self.settings.as_ref());
+            }
             Message::Usage(message) if Usage::refused(&message) => {
                 self.show_connect_error(&ClientError::Unauthorized);
             }
@@ -845,8 +865,8 @@ impl App {
             Page::Inbox => self.inbox.view(&self.snapshot),
             Page::Chat => self.chats.view(&self.snapshot, &self.inbox),
             Page::Agents => self.agents.view(),
-            Page::Skills => self.agents.skills_page(),
-            Page::McpServers => self.agents.mcp_page(),
+            Page::Skills => self.skills.view(),
+            Page::McpServers => self.mcp_servers.view(),
             Page::Usage => self.usage.view(),
             Page::Retro => self.retros.view(),
             Page::Rules => self.rules.view(),

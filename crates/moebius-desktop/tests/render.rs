@@ -14,11 +14,13 @@ use moebius_desktop::decision_model;
 use moebius_desktop::experiments;
 use moebius_desktop::inbox::{self, Action};
 use moebius_desktop::live;
+use moebius_desktop::mcp_servers;
 use moebius_desktop::new_issue;
 use moebius_desktop::retro;
 use moebius_desktop::rules;
 use moebius_desktop::search;
 use moebius_desktop::setup;
+use moebius_desktop::skills;
 use moebius_desktop::terminal::PaneEvent;
 use moebius_desktop::theme;
 use moebius_desktop::usage;
@@ -1856,15 +1858,284 @@ fn a_server_without_a_harness_repository_edits_its_agents_in_moebius_toml() {
     assert!(!shows(&app, "No server in mcp.toml of the repository."));
 }
 
-#[test]
-fn skills_and_mcp_servers_have_pages_of_their_own() {
-    let mut app = agents_app();
+fn house_style() -> client::SkillDetail {
+    serde_json::from_value(json!({
+        "name": "house-style", "description": "Write plainly.",
+        "text": "# House style\n\nShort sentences. No jargon.\n",
+        "files": ["examples/good.md", "examples/bad.md"]
+    }))
+    .unwrap()
+}
+
+/// The Skills page of a server with a harness repository, with the skill `house-style` open.
+fn skills_app() -> App {
+    let mut app = App::with_snapshot(overview());
     let _ = app.update(Message::Select(Page::Skills));
-    assert!(shows(&app, "Write plainly."));
-    assert!(shows(&app, "Build on Moebius."));
+    let skills = |message| Message::Skills(message);
+    let _ = app.update(skills(skills::Message::Listed(Ok(skill_listing()))));
+    let _ = app.update(skills(skills::Message::Select("house-style".into())));
+    let _ = app.update(skills(skills::Message::Opened(
+        "house-style".into(),
+        Ok(house_style()),
+    )));
+    app
+}
+
+#[test]
+fn the_skills_page_lists_the_skills_and_edits_one() {
+    draw_sized(
+        &skills_app(),
+        "skills",
+        &[
+            "Skills",
+            "New skill",
+            "moebius",
+            "Built in",
+            "Build on Moebius.",
+            "radiance-kernels",
+            "house-style",
+            "Write plainly.",
+            "Delete",
+            "Save",
+            "Description",
+            "SKILL.md",
+            "Other files",
+            "examples/good.md",
+            "examples/bad.md",
+        ],
+        Size::new(1440.0, 900.0),
+    );
+}
+
+#[test]
+fn the_built_in_skill_is_shown_and_cannot_be_changed() {
+    let mut app = skills_app();
+    let built_in = client::SkillDetail {
+        name: "moebius".into(),
+        description: "Build on Moebius.".into(),
+        text: "# Moebius\n".into(),
+        files: vec!["guide/agents.md".into()],
+        commit: None,
+    };
+    let _ = app.update(Message::Skills(skills::Message::Select("moebius".into())));
+    let _ = app.update(Message::Skills(skills::Message::Opened(
+        "moebius".into(),
+        Ok(built_in),
+    )));
+    assert!(shows(&app, "Built in · read only"));
+    assert!(shows(&app, "guide/agents.md"));
+    let mut ui = simulator(&app);
+    assert!(ui.find("Save").is_err() && ui.find("Delete").is_err());
+}
+
+#[test]
+fn a_server_without_a_harness_repository_lists_no_skills_and_servers_to_edit() {
+    let mut app = App::with_snapshot(overview());
+    let _ = app.update(Message::Select(Page::Skills));
+    let _ = app.update(Message::Skills(skills::Message::Listed(Ok(vec![]))));
+    assert!(shows(
+        &app,
+        "Skills come from a harness configuration repository, and this server has none."
+    ));
     let _ = app.update(Message::Select(Page::McpServers));
-    assert!(shows(&app, "profiler"));
-    assert!(shows(&app, "stdio"));
+    let _ = app.update(Message::Mcp(mcp_servers::Message::Harness(Ok(vec![]))));
+    assert!(shows(
+        &app,
+        "No MCP servers: they are listed in mcp.toml of a harness configuration repository."
+    ));
+}
+
+#[test]
+fn saving_a_skill_sends_the_edited_fields_and_a_wrong_field_is_said_instead() {
+    let settings = settings();
+    let mut skills = skills::Skills::default();
+    let mut update = |message| skills.update(message, Some(&settings)).units();
+    assert_eq!(update(skills::Message::Select("house-style".into())), 1);
+    update(skills::Message::Opened(
+        "house-style".into(),
+        Ok(house_style()),
+    ));
+    update(skills::Message::DescriptionEdited(" Write well. ".into()));
+    assert_eq!(update(skills::Message::Save), 1);
+    let (name, description, text) = skills.save_request().unwrap();
+    assert_eq!(
+        (name.as_str(), description.as_str(), text.as_str()),
+        (
+            "house-style",
+            "Write well.",
+            "# House style\n\nShort sentences. No jargon."
+        )
+    );
+    let mut update = |message| skills.update(message, Some(&settings)).units();
+    update(skills::Message::NewSkill);
+    update(skills::Message::NameEdited("bad name".into()));
+    assert_eq!(update(skills::Message::Save), 0);
+    assert!(skills.save_request().is_err());
+}
+
+#[test]
+fn a_saved_skill_says_its_commit_and_deleting_asks_first() {
+    let mut app = skills_app();
+    assert!(matches!(
+        &clicked(&app, "Save")[..],
+        [Message::Skills(skills::Message::Save)]
+    ));
+    let mut saved = house_style();
+    saved.commit = Some("a1b2c3d".into());
+    let _ = app.update(Message::Skills(skills::Message::Saved(Ok(saved))));
+    assert!(shows(&app, "Saved as a commit: a1b2c3d"));
+    let named = ClientError::Server {
+        status: 409,
+        message: "the skill house-style is named by the agents Coder".into(),
+    };
+    let _ = app.update(Message::Skills(skills::Message::Saved(Err(named))));
+    assert!(shows(
+        &app,
+        "the skill house-style is named by the agents Coder"
+    ));
+    assert!(!shows(&app, "Saved as a commit: a1b2c3d"));
+    for message in clicked(&app, "Delete") {
+        let _ = app.update(message);
+    }
+    assert!(shows(&app, "Delete house-style?"));
+    assert!(matches!(
+        &clicked(&app, "Delete skill")[..],
+        [Message::Skills(skills::Message::Delete)]
+    ));
+    assert!(matches!(
+        &clicked(&app, "Keep")[..],
+        [Message::Skills(skills::Message::Keep)]
+    ));
+}
+
+fn docs_search() -> client::McpServerDetail {
+    serde_json::from_value(json!({
+        "name": "profiler", "command": "profiler-mcp", "args": ["--root", "/srv/profiles"],
+        "env": {"API_KEY": "${PROFILER_KEY}", "REGION": "eu"}
+    }))
+    .unwrap()
+}
+
+/// The MCP servers page of a server with a harness repository, with the server `profiler` open.
+fn mcp_app() -> App {
+    let mut app = App::with_snapshot(overview());
+    let _ = app.update(Message::Select(Page::McpServers));
+    let mcp = |message| Message::Mcp(message);
+    let _ = app.update(mcp(mcp_servers::Message::Listed(Ok(mcp_listing()))));
+    let _ = app.update(mcp(mcp_servers::Message::Harness(Ok(skill_listing()))));
+    let _ = app.update(mcp(mcp_servers::Message::Select("profiler".into())));
+    let _ = app.update(mcp(mcp_servers::Message::Opened(
+        "profiler".into(),
+        Ok(docs_search()),
+    )));
+    app
+}
+
+#[test]
+fn the_mcp_servers_page_lists_the_servers_and_edits_one() {
+    draw_sized(
+        &mcp_app(),
+        "mcp-servers",
+        &[
+            "MCP servers",
+            "New server",
+            "docs-search",
+            "remote",
+            "profiler",
+            "stdio",
+            "leaky",
+            "${OPENAI_API_KEY} is not in mcp_env",
+            "Delete",
+            "Save",
+            "Kind",
+            "Command",
+            "profiler-mcp",
+            "Arguments, one per line",
+            "Environment",
+            "Values may be ${NAME}",
+            "API_KEY",
+            "${PROFILER_KEY}",
+            "Add variable",
+        ],
+        Size::new(1440.0, 900.0),
+    );
+}
+
+#[test]
+fn saving_an_mcp_server_sends_a_command_or_a_url_and_a_wrong_field_is_said_instead() {
+    let settings = settings();
+    let mut servers = mcp_servers::McpServers::default();
+    let mut update = |message| servers.update(message, Some(&settings)).units();
+    assert_eq!(update(mcp_servers::Message::Select("profiler".into())), 1);
+    update(mcp_servers::Message::Opened(
+        "profiler".into(),
+        Ok(docs_search()),
+    ));
+    let (name, sent) = servers.save_request().unwrap();
+    assert_eq!(name, "profiler");
+    assert_eq!(
+        serde_json::to_value(&sent).unwrap(),
+        json!({"command": "profiler-mcp", "args": ["--root", "/srv/profiles"], "url": null,
+               "env": {"API_KEY": "${PROFILER_KEY}", "REGION": "eu"}, "headers": {}})
+    );
+
+    // A URL server takes headers, and the environment of the command is left out.
+    let mut update = |message| servers.update(message, Some(&settings)).units();
+    update(mcp_servers::Message::KindChosen("URL".into()));
+    update(mcp_servers::Message::UrlEdited(
+        " https://x.test/mcp ".into(),
+    ));
+    update(mcp_servers::Message::RowNameEdited(
+        0,
+        "Authorization".into(),
+    ));
+    update(mcp_servers::Message::RowValueEdited(
+        0,
+        "Bearer ${T}".into(),
+    ));
+    update(mcp_servers::Message::RemoveRow(1));
+    update(mcp_servers::Message::AddRow);
+    assert_eq!(update(mcp_servers::Message::Save), 1);
+    let (_, sent) = servers.save_request().unwrap();
+    assert_eq!(
+        serde_json::to_value(&sent).unwrap(),
+        json!({"command": null, "args": [], "url": "https://x.test/mcp",
+               "env": {}, "headers": {"Authorization": "Bearer ${T}"}})
+    );
+
+    let mut update = |message| servers.update(message, Some(&settings)).units();
+    update(mcp_servers::Message::UrlEdited(" ".into()));
+    assert_eq!(update(mcp_servers::Message::Save), 0);
+    assert!(servers.save_request().is_err());
+}
+
+#[test]
+fn an_mcp_server_save_shows_its_commit_and_the_servers_refusal() {
+    let mut app = mcp_app();
+    assert!(matches!(
+        &clicked(&app, "Save")[..],
+        [Message::Mcp(mcp_servers::Message::Save)]
+    ));
+    let mut saved = docs_search();
+    saved.commit = Some("c0ffee1".into());
+    let _ = app.update(Message::Mcp(mcp_servers::Message::Saved(Ok(saved))));
+    assert!(shows(&app, "Saved as a commit: c0ffee1"));
+    let refused = ClientError::Server {
+        status: 422,
+        message: "${OPENAI_API_KEY} is not in mcp_env of [harness] in moebius.toml".into(),
+    };
+    let _ = app.update(Message::Mcp(mcp_servers::Message::Saved(Err(refused))));
+    assert!(shows(
+        &app,
+        "${OPENAI_API_KEY} is not in mcp_env of [harness] in moebius.toml"
+    ));
+    for message in clicked(&app, "Delete") {
+        let _ = app.update(message);
+    }
+    assert!(matches!(
+        &clicked(&app, "Delete server")[..],
+        [Message::Mcp(mcp_servers::Message::Delete)]
+    ));
 }
 
 fn settings() -> moebius_desktop::settings::Settings {

@@ -1519,3 +1519,80 @@ async fn a_harness_chat_offers_its_change_in_the_snapshot_and_the_client_merges_
     let skills = client.skills().await.unwrap();
     assert!(skills.iter().any(|skill| skill.name == "testing"));
 }
+
+/// Editing a skill and an MCP server in the app is a commit in the harness configuration repository; one an agent names
+/// is not deleted, and an invalid server is refused with the server's message.
+#[tokio::test(flavor = "multi_thread")]
+async fn editing_a_skill_and_an_mcp_server_is_a_commit_and_a_named_one_is_not_deleted() {
+    let dir = tempfile::tempdir().unwrap();
+    let origin = harness_origin(dir.path());
+    let more = format!(
+        "[harness]\nurl = {:?}\nmcp_env = [\"DOCS_TOKEN\"]\n",
+        origin.display().to_string()
+    );
+    let (settings, _server) = start_with(dir.path(), &more).await;
+    let client = Client::new(settings);
+    let subject = || git(&origin, &["log", "-1", "--format=%s", "main"]).unwrap();
+
+    let saved = client
+        .save_skill("greeting", "Say hello.", "# Greeting\n\nBe kind.")
+        .await
+        .unwrap();
+    assert!(saved.commit.is_some());
+    assert_eq!(subject(), "Add the skill greeting");
+    let read = client.skill("greeting").await.unwrap();
+    assert_eq!(
+        (read.description.as_str(), read.text.as_str()),
+        ("Say hello.", "# Greeting\n\nBe kind.\n")
+    );
+    let Err(ClientError::Server { status, .. }) = client.save_skill("moebius", "x", "").await
+    else {
+        panic!("the built-in skill was changed");
+    };
+    assert_eq!(status, 409);
+
+    let definition = moebius_desktop::client::McpDefinition {
+        command: Some("search".into()),
+        args: vec!["--fast".into()],
+        env: [("KEY".to_string(), "${DOCS_TOKEN}".to_string())].into(),
+        ..Default::default()
+    };
+    client.save_mcp_server("search", &definition).await.unwrap();
+    assert_eq!(subject(), "Add the MCP server search");
+    let read = client.mcp_server("search").await.unwrap();
+    assert_eq!(read.definition, definition);
+    let leaking = moebius_desktop::client::McpDefinition {
+        env: [("KEY".to_string(), "${OPENAI_API_KEY}".to_string())].into(),
+        ..definition
+    };
+    let Err(ClientError::Server { status, message }) =
+        client.save_mcp_server("search", &leaking).await
+    else {
+        panic!("the edit was accepted");
+    };
+    assert_eq!(status, 422);
+    assert!(message.contains("is not in mcp_env"), "{message}");
+    assert_eq!(subject(), "Add the MCP server search");
+
+    // house-style and docs are named by the Coder.
+    let mut coder = client.agent("Coder").await.unwrap();
+    coder.settings.mcp = vec!["docs".into()];
+    client
+        .save_agent("Coder", &coder.settings, "")
+        .await
+        .unwrap();
+    for result in [
+        client.delete_skill("house-style").await,
+        client.delete_mcp_server("docs").await,
+    ] {
+        let Err(ClientError::Server { status, message }) = result else {
+            panic!("a named one was deleted");
+        };
+        assert_eq!(status, 409);
+        assert!(message.contains("Coder"), "{message}");
+    }
+    client.delete_skill("greeting").await.unwrap();
+    assert_eq!(subject(), "Delete the skill greeting");
+    client.delete_mcp_server("search").await.unwrap();
+    assert_eq!(subject(), "Delete the MCP server search");
+}

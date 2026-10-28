@@ -2,8 +2,7 @@
 //! which the server makes a commit in the harness configuration repository. A server without one keeps its agents in
 //! `moebius.toml`: the same editor then reads the agent from `GET /v1/settings` and saves it with `PUT /v1/settings`
 //! (`agents.<name>`), and an agent has skill and extension paths instead of the repository's skills and MCP servers.
-//! The skills and MCP servers an agent can name come from `GET /v1/skills` and `GET /v1/mcp-servers`, and the same
-//! lists are the pages of Skills and MCP servers.
+//! The skills and MCP servers an agent can name come from `GET /v1/skills` and `GET /v1/mcp-servers`,.
 
 use iced::font::Weight;
 use iced::widget::text::Wrapping;
@@ -796,70 +795,6 @@ impl Agents {
             None,
         )
     }
-
-    /// The Skills page: every skill an agent can name.
-    pub fn skills_page(&self) -> Element<'_, AppMessage> {
-        let rows = self.skills.iter().flatten().map(|skill| {
-            let name = row![
-                text(skill.name.as_str())
-                    .size(theme::BODY)
-                    .font(theme::manrope(Weight::Semibold)),
-                skill
-                    .built_in
-                    .then(|| page::tag("Built in".to_string(), Tone::Plain)),
-            ]
-            .spacing(8)
-            .align_y(Alignment::Center);
-            item(name.into(), &skill.description, false)
-        });
-        list_page(
-            "Skills",
-            "What an agent can be given: the skills in skills/ of the harness configuration repository, and the one Moebius brings.",
-            rows,
-            "Skills come from a harness configuration repository, and this server has none.",
-        )
-    }
-
-    /// The MCP servers page: every server an agent can name.
-    pub fn mcp_page(&self) -> Element<'_, AppMessage> {
-        let rows = self.mcp.iter().map(|server| {
-            let name = text(server.name.as_str())
-                .size(theme::BODY)
-                .font(theme::manrope(Weight::Semibold));
-            match &server.error {
-                Some(error) => item(name.into(), error, true),
-                None => item(name.into(), &server.kind, false),
-            }
-        });
-        list_page(
-            "MCP servers",
-            "The servers of mcp.toml in the harness configuration repository, which agents name to be given their tools.",
-            rows,
-            "No MCP servers: they are listed in mcp.toml of a harness configuration repository.",
-        )
-    }
-}
-
-/// A page that is a header and one box of items.
-fn list_page<'a>(
-    title: &'a str,
-    context: &'a str,
-    items: impl Iterator<Item = Element<'a, AppMessage>>,
-    empty: &'a str,
-) -> Element<'a, AppMessage> {
-    let items: Vec<_> = items.collect();
-    let content: Element<_> = if items.is_empty() {
-        page::body(empty)
-    } else {
-        column(items).spacing(12).into()
-    };
-    column![
-        page::header("Build", title, None, page::context(context), space().into()),
-        page::boxed(title, content),
-    ]
-    .spacing(theme::PAGE_GAP)
-    .width(Length::Fill)
-    .into()
 }
 
 /// A row of a list: what names it, and a line under it that is red when something is wrong.
@@ -914,7 +849,7 @@ fn section<'a>(
 }
 
 /// One line about what happened to the edit, red when it failed.
-fn notice_line<'a>(line: &str, red: bool) -> Element<'a, AppMessage> {
+pub(crate) fn notice_line<'a>(line: &str, red: bool) -> Element<'a, AppMessage> {
     text(line.to_string())
         .size(theme::CONTEXT)
         .font(theme::manrope(Weight::Semibold))
@@ -981,7 +916,10 @@ fn agent_card(agent: &Agent, chosen: bool, editable: bool) -> Element<'_, AppMes
         .into()
 }
 
-fn field<'a>(label: &'a str, input: impl Into<Element<'a, AppMessage>>) -> Element<'a, AppMessage> {
+pub(crate) fn field<'a>(
+    label: &'a str,
+    input: impl Into<Element<'a, AppMessage>>,
+) -> Element<'a, AppMessage> {
     column![
         text(label)
             .size(13)

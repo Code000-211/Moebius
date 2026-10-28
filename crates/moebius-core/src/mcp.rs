@@ -8,21 +8,24 @@
 
 use std::collections::BTreeMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use toml_edit::{Array, DocumentMut, InlineTable, Item, Table, value};
 
 /// One server of `mcp.toml`: a stdio server (`command`) or a remote one (`url`). Built by `parse`, which checks it.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct McpServer {
-    command: Option<String>,
-    #[serde(default)]
-    args: Vec<String>,
-    #[serde(default)]
-    env: BTreeMap<String, String>,
-    url: Option<String>,
-    #[serde(default)]
-    headers: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub headers: BTreeMap<String, String>,
 }
 
 /// Reads `mcp.toml`: every server, or why it cannot be used. `Err` is why the file as a whole cannot be read.
@@ -42,14 +45,18 @@ pub fn parse_file(
 }
 
 fn parse(name: &str, value: toml::Value, allowed_env: &[String]) -> Result<McpServer, String> {
-    if name.is_empty()
-        || !name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-    {
+    if !valid_name(name) {
         return Err("a server name is made of letters, digits, - and _".into());
     }
     let server: McpServer = value.try_into().map_err(|e| e.to_string())?;
+    check(name, server, allowed_env)
+}
+
+/// `server` if it can be used under `name`, else why it cannot. Reading `mcp.toml` and editing it use this check.
+pub fn check(name: &str, server: McpServer, allowed_env: &[String]) -> Result<McpServer, String> {
+    if !valid_name(name) {
+        return Err("a server name is made of letters, digits, - and _".into());
+    }
     match (&server.command, &server.url) {
         (Some(command), None) if command.trim().is_empty() => {
             return Err("command must not be empty".into());
@@ -73,6 +80,69 @@ fn parse(name: &str, value: toml::Value, allowed_env: &[String]) -> Result<McpSe
         }
     }
     Ok(server)
+}
+
+/// Whether `name` can name a server.
+pub fn valid_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+/// `text`, the content of `mcp.toml`, with the table `name` set to `server`: an existing table is rewritten in
+/// place, a new one is added at the end. Other tables and comments are kept.
+pub fn set_server(text: &str, name: &str, server: &McpServer) -> Result<String, String> {
+    let mut doc: DocumentMut = text
+        .parse()
+        .map_err(|e| format!("mcp.toml is not valid: {e}"))?;
+    let strings = |values: &BTreeMap<String, String>| {
+        let mut table = InlineTable::new();
+        for (key, text) in values {
+            table.insert(key, text.as_str().into());
+        }
+        value(table)
+    };
+    let mut fresh = Table::new();
+    if let Some(command) = &server.command {
+        fresh["command"] = value(command.as_str());
+    }
+    if !server.args.is_empty() {
+        fresh["args"] = value(server.args.iter().map(String::as_str).collect::<Array>());
+    }
+    if !server.env.is_empty() {
+        fresh["env"] = strings(&server.env);
+    }
+    if let Some(url) = &server.url {
+        fresh["url"] = value(url.as_str());
+    }
+    if !server.headers.is_empty() {
+        fresh["headers"] = strings(&server.headers);
+    }
+    match doc.get_mut(name).and_then(Item::as_table_mut) {
+        Some(table) => {
+            table.clear();
+            for (key, item) in fresh {
+                table.insert(&key, item);
+            }
+        }
+        None => {
+            if !doc.as_table().is_empty() {
+                fresh.decor_mut().set_prefix("\n");
+            }
+            doc.insert(name, Item::Table(fresh));
+        }
+    }
+    Ok(doc.to_string())
+}
+
+/// `text`, the content of `mcp.toml`, without the table `name`.
+pub fn remove_server(text: &str, name: &str) -> Result<String, String> {
+    let mut doc: DocumentMut = text
+        .parse()
+        .map_err(|e| format!("mcp.toml is not valid: {e}"))?;
+    doc.remove(name);
+    Ok(doc.to_string())
 }
 
 impl McpServer {
@@ -236,6 +306,73 @@ mod tests {
                 .contains("${OPENAI_API_KEY} is not in mcp_env")
         );
         assert!(parse_file("[x", &[]).is_err());
+    }
+
+    #[test]
+    fn a_table_is_rewritten_in_place_and_the_rest_of_the_file_is_kept() {
+        let text = "# The servers.\n\n# Docs.\n[docs]\ncommand = \"old\"\n\n# Search.\n[search]\nurl = \"https://x.test\"\n";
+        let server = McpServer {
+            command: Some("new".into()),
+            args: vec!["--root".into(), "/srv".into()],
+            env: BTreeMap::from([("KEY".to_string(), "${DOCS_KEY}".to_string())]),
+            url: None,
+            headers: BTreeMap::new(),
+        };
+        let changed = set_server(text, "docs", &server).unwrap();
+        assert!(
+            changed.starts_with("# The servers.\n\n# Docs.\n[docs]\n"),
+            "{changed}"
+        );
+        assert!(
+            changed.contains("# Search.\n[search]\nurl = \"https://x.test\"\n"),
+            "{changed}"
+        );
+        let read = parse_file(&changed, &names(&["DOCS_KEY"])).unwrap();
+        assert_eq!(read["docs"].as_ref().unwrap(), &server);
+        assert!(read["search"].is_ok());
+
+        let added = set_server(&changed, "fresh", &server).unwrap();
+        assert!(
+            added.starts_with(&changed) && added.contains("\n[fresh]\ncommand = \"new\""),
+            "{added}"
+        );
+        assert_eq!(parse_file(&added, &names(&["DOCS_KEY"])).unwrap().len(), 3);
+        assert!(
+            set_server("", "first", &server)
+                .unwrap()
+                .starts_with("[first]")
+        );
+
+        let removed = remove_server(&added, "docs").unwrap();
+        assert!(
+            !removed.contains("[docs]")
+                && removed.contains("# Search.")
+                && removed.contains("[search]")
+        );
+        assert!(set_server("[x", "a", &server).is_err());
+    }
+
+    #[test]
+    fn a_server_is_checked_as_reading_checks_it() {
+        let both = McpServer {
+            command: Some("a".into()),
+            args: vec![],
+            env: BTreeMap::new(),
+            url: Some("u".into()),
+            headers: BTreeMap::new(),
+        };
+        assert!(check("s", both.clone(), &[]).is_err());
+        let secret = McpServer {
+            url: None,
+            env: BTreeMap::from([("K".to_string(), "${OPENAI_API_KEY}".to_string())]),
+            ..both
+        };
+        assert!(
+            check("s", secret.clone(), &[])
+                .unwrap_err()
+                .contains("is not in mcp_env")
+        );
+        assert!(check("bad name", secret, &names(&["OPENAI_API_KEY"])).is_err());
     }
 
     #[test]

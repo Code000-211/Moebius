@@ -164,6 +164,16 @@ as they are.
   to `origin`, and then records the decision (kind `edit_agent`, decider `person`, the settings and instructions in its
   context). An edit that changes nothing commits nothing and records nothing.
 - `DELETE /v1/agents/{name}` removes both files the same way, with the message `Delete the agent <name>`.
+- `PUT /v1/skills/{name}` takes `{"description": "...", "text": "..."}` and writes `skills/<name>/SKILL.md`: the
+  frontmatter `name` and `description` (a double-quoted line), then the text. The skill's other files are kept. The
+  message is `Add the skill <name>` or `Update the skill <name>`, the decision kind `edit_skill`. `DELETE` removes the
+  directory (`Delete the skill <name>`). The built-in `moebius` skill cannot be changed or deleted.
+- `PUT /v1/mcp-servers/{name}` takes the keys of a server of [`mcp.toml`](#mcptoml) and rewrites its table in the file,
+  checked as reading checks it (so a `${NAME}` outside `mcp_env` is refused). The table is rewritten in place, or added
+  at the end; the other tables and the comments of the file are kept, but comments inside the rewritten table are lost.
+  The message is `Add the MCP server <name>` or `Update the MCP server <name>`, the decision kind `edit_mcp_server`.
+  `DELETE` removes the table (`Delete the MCP server <name>`).
+- A skill or an MCP server that an agent names is not deleted (`409`, naming the agents).
 - `PUT /v1/rules` takes `{"text": "..."}`, writes it to `rules.md` and commits and pushes it the same way, with the
   message `Update the rules` and the decision kind `edit_rules`.
 

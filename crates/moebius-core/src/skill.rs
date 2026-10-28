@@ -10,18 +10,43 @@ pub const NAME: &str = "moebius";
 /// The skill's own page, whose frontmatter describes it.
 pub const PAGE: &str = include_str!("../skill/SKILL.md");
 
-/// The `description` in the frontmatter of a `SKILL.md`, if it has one.
+/// The `description` in the frontmatter of a `SKILL.md`, if it has one. A double-quoted value is read with `\"` and
+/// `\\`, a single-quoted one with `''`, as YAML has them.
 pub fn description(page: &str) -> Option<String> {
     let frontmatter = page.strip_prefix("---\n")?.split("\n---").next()?;
     let value = frontmatter
         .lines()
         .find_map(|line| line.strip_prefix("description:"))?;
     let value = value.trim();
-    let unquoted = [('"', '"'), ('\'', '\'')]
+    if let Some(quoted) = value.strip_prefix('"').and_then(|v| v.strip_suffix('"')) {
+        return Some(quoted.replace("\\\"", "\"").replace("\\\\", "\\"));
+    }
+    if let Some(quoted) = value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')) {
+        return Some(quoted.replace("''", "'"));
+    }
+    Some(value.to_string())
+}
+
+/// The text of a `SKILL.md` after its frontmatter; the whole page when it has none.
+pub fn body(page: &str) -> &str {
+    page.strip_prefix("---\n")
+        .and_then(|rest| rest.split_once("\n---\n"))
+        .map_or(page, |(_, body)| body)
+}
+
+/// The `SKILL.md` of the skill `name`: frontmatter with its `name` and `description`, then `text`.
+pub fn page(name: &str, description: &str, text: &str) -> String {
+    let description = description.replace('\\', "\\\\").replace('"', "\\\"");
+    format!("---\nname: {name}\ndescription: \"{description}\"\n---\n{text}")
+}
+
+/// The paths of the built-in skill's files besides `SKILL.md`.
+pub fn files() -> Vec<&'static str> {
+    FILES
         .iter()
-        .find_map(|(open, close)| value.strip_prefix(*open)?.strip_suffix(*close))
-        .unwrap_or(value);
-    Some(unquoted.to_string())
+        .map(|(path, _)| *path)
+        .filter(|path| *path != "SKILL.md")
+        .collect()
 }
 
 /// The files of the skill: where each is written under the skill's directory, and what it holds. A page added to
@@ -173,6 +198,29 @@ mod tests {
         assert_eq!(description("---\nname: x\n---\ndescription: no\n"), None);
         assert_eq!(description("No frontmatter\n"), None);
         assert!(description(PAGE).unwrap().starts_with("Build on Moebius"));
+    }
+
+    #[test]
+    fn a_page_is_written_and_read_back() {
+        let text = "# Title\n\n---\nMore.\n";
+        let description_text = "Say \"it\": a \\ b";
+        let written = page("house-style", description_text, text);
+        assert!(written.starts_with(
+            "---\nname: house-style\ndescription: \"Say \\\"it\\\": a \\\\ b\"\n---\n"
+        ));
+        assert_eq!(description(&written).as_deref(), Some(description_text));
+        assert_eq!(body(&written), text);
+        assert_eq!(body("No frontmatter\n"), "No frontmatter\n");
+        assert!(body(PAGE).contains("Moebius"));
+        assert!(files().contains(&"guide/agents.md") && !files().contains(&"SKILL.md"));
+    }
+
+    #[test]
+    fn single_quotes_double_when_read() {
+        assert_eq!(
+            description("---\ndescription: 'It''s'\n---\n").as_deref(),
+            Some("It's")
+        );
     }
 
     #[test]

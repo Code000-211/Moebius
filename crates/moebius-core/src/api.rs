@@ -26,7 +26,8 @@
 //! - `GET /v1/runs/{id}/terminal`: a WebSocket on a shell in the run's worktree (see [`crate::terminal`]).
 //! - `GET /v1/agents`: the agents the server can run. `GET`, `PUT` and `DELETE /v1/agents/{name}`: read, write and delete
 //!   an agent of the harness configuration repository (see [`crate::harness_repo`]). `GET /v1/skills` and
-//!   `GET /v1/mcp-servers`: the skills and MCP servers an agent can name.
+//!   `GET /v1/mcp-servers`: the skills and MCP servers an agent can name, and `GET`, `PUT` and `DELETE` of
+//!   `/v1/skills/{name}` and `/v1/mcp-servers/{name}` to read and edit them.
 //! - `GET /v1/models` and `GET /v1/plugins`: how the server is set up, never with a secret in it (see [`crate::setup`]).
 //! - `GET /v1/settings`: every key of `moebius.toml` with its value or default. `PUT /v1/settings` `{set, remove}` changes
 //!   the file. `PUT` and `DELETE /v1/secrets/{name}` keep and remove an API key. `POST /v1/server/restart` restarts the
@@ -74,7 +75,11 @@ use crate::decision_model;
 use crate::export::{self, Export, ExportError, KindCounts};
 use crate::forge::ForgeError;
 use crate::grilling;
-use crate::harness_repo::{AgentDefinition, AgentView, HarnessRepo, McpServerInfo, SkillInfo};
+use crate::harness_repo::{
+    AgentDefinition, AgentView, HarnessRepo, McpServerInfo, McpServerView, SkillInfo, SkillText,
+    SkillView,
+};
+use crate::mcp::McpServer;
 use crate::pibolt::MOEBIUS_AGENT;
 use crate::replay;
 use crate::repos::GitError;
@@ -422,7 +427,17 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/server/restart", post(restart_server))
         .route("/v1/rules", get(get_rules).put(put_rules))
         .route("/v1/skills", get(skills))
+        .route(
+            "/v1/skills/{name}",
+            get(get_skill).put(put_skill).delete(delete_skill),
+        )
         .route("/v1/mcp-servers", get(mcp_servers))
+        .route(
+            "/v1/mcp-servers/{name}",
+            get(get_mcp_server)
+                .put(put_mcp_server)
+                .delete(delete_mcp_server),
+        )
         .route("/v1/retros", get(retros).post(start_retro))
         .route("/v1/retros/{date}", get(get_retro))
         .route("/v1/proposals", get(proposals))
@@ -794,6 +809,78 @@ async fn mcp_servers(
         return Ok(axum::Json(vec![]));
     };
     blocking(&state.app, move |_| Ok(repo.mcp_servers())).await
+}
+
+/// The harness configuration repository, or the 409 that says skills and MCP servers need one.
+fn editable_harness_repo(state: &ApiState) -> Result<Arc<HarnessRepo>, AppError> {
+    state.harness_repo.clone().ok_or_else(|| {
+        AppError::Conflict(
+            "skills and MCP servers are edited in a harness configuration repository, and the server has none".into(),
+        )
+    })
+}
+
+async fn get_skill(
+    State(state): State<ApiState>,
+    UrlPath(name): UrlPath<String>,
+) -> Result<axum::Json<SkillView>, ApiError> {
+    let repo = editable_harness_repo(&state)?;
+    blocking(&state.app, move |_| repo.skill(&name)).await
+}
+
+async fn put_skill(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(name): UrlPath<String>,
+    axum::Json(new): axum::Json<SkillText>,
+) -> Result<axum::Json<SkillView>, ApiError> {
+    let repo = editable_harness_repo(&state)?;
+    blocking(&state.app, move |app| {
+        repo.save_skill(app, &by, &name, &new)
+    })
+    .await
+}
+
+async fn delete_skill(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(name): UrlPath<String>,
+) -> Result<axum::Json<()>, ApiError> {
+    let repo = editable_harness_repo(&state)?;
+    blocking(&state.app, move |app| repo.delete_skill(app, &by, &name)).await
+}
+
+async fn get_mcp_server(
+    State(state): State<ApiState>,
+    UrlPath(name): UrlPath<String>,
+) -> Result<axum::Json<McpServerView>, ApiError> {
+    let repo = editable_harness_repo(&state)?;
+    blocking(&state.app, move |_| repo.mcp_server(&name)).await
+}
+
+async fn put_mcp_server(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(name): UrlPath<String>,
+    axum::Json(server): axum::Json<McpServer>,
+) -> Result<axum::Json<McpServerView>, ApiError> {
+    let repo = editable_harness_repo(&state)?;
+    blocking(&state.app, move |app| {
+        repo.save_mcp_server(app, &by, &name, &server)
+    })
+    .await
+}
+
+async fn delete_mcp_server(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(name): UrlPath<String>,
+) -> Result<axum::Json<()>, ApiError> {
+    let repo = editable_harness_repo(&state)?;
+    blocking(&state.app, move |app| {
+        repo.delete_mcp_server(app, &by, &name)
+    })
+    .await
 }
 
 async fn get_agent(
@@ -2871,6 +2958,34 @@ mod tests {
                 .unwrap();
             assert_eq!(response.status(), 200);
             assert_eq!(response.text().await.unwrap(), "[]");
+        }
+    }
+
+    #[tokio::test]
+    async fn skills_and_mcp_servers_cannot_be_edited_without_a_harness_repository() {
+        let (_dir, state, addr) = start().await;
+        let client = reqwest::Client::new();
+        for (url, body) in [
+            ("skills/x", serde_json::json!({ "description": "d" })),
+            ("mcp-servers/x", serde_json::json!({ "command": "c" })),
+        ] {
+            let url = format!("http://{addr}/v1/{url}");
+            let requests = [
+                client.get(&url),
+                client.put(&url).json(&body),
+                client.delete(&url),
+            ];
+            for request in requests {
+                let response = request.bearer_auth(&*state.token).send().await.unwrap();
+                assert_eq!(response.status(), 409);
+                assert!(
+                    response
+                        .text()
+                        .await
+                        .unwrap()
+                        .contains("harness configuration repository")
+                );
+            }
         }
     }
 

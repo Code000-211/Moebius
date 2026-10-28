@@ -512,12 +512,59 @@ The skills an agent's `skills` can name, for an editor to offer: an array of `{"
 repository by name. `description` is the `description` of the frontmatter of the skill's `SKILL.md`, empty when there is
 none. Without `[harness]` the array is empty.
 
+### `GET /v1/skills/{name}`
+
+A skill of the harness configuration repository, or the built-in `moebius` skill: `{"name": string, "description":
+string, "text": string, "files": [string]}`. `text` is the `SKILL.md` after its frontmatter; `files` are the paths of the
+skill's other files, relative to its directory, sorted (they are listed, not returned). Errors: `404` no such skill;
+`409` the server has no `[harness]`: skills and MCP servers are edited in a harness configuration repository.
+
+### `PUT /v1/skills/{name}`
+
+A person adds or changes a skill. Request: `{"description": string, "text": string}` (`text` may be left out);
+unknown keys are refused. The name is made of letters, digits, `-` and `_`, and the description is one line and not
+blank. It writes `skills/<name>/SKILL.md` with the frontmatter `name` and `description`, then `text`; the skill's other
+files are left as they are. The edit is committed (`Add the skill <name>` or `Update the skill <name>`) on the default
+branch and pushed to `origin`, the decision is recorded (kind `edit_skill`, decider `person`), and the agents are read
+again. Response: the skill as `GET` answers it, with `commit`, the short id of the commit (left out when nothing
+changed). Errors: `409` no `[harness]`, or the skill is `moebius`, which is built in and read only; `422` an invalid
+name or description; `500` as for `PUT /v1/agents/{name}`.
+
+### `DELETE /v1/skills/{name}`
+
+A person deletes a skill and its directory, committed and pushed the same way (`Delete the skill <name>`, kind
+`edit_skill`). Response: `null`. Errors: `404` no such skill; `409` no `[harness]`, the skill is `moebius`, or an agent
+names it (the message names the agents); `500` as for `PUT`.
+
 ### `GET /v1/mcp-servers`
 
 The servers of `mcp.toml` in the harness configuration repository, by name, for an editor to offer: an array of
 `{"name": string, "kind": "stdio" or "remote", "error": string}`. `error` is left out unless the server cannot be used
 (then `kind` is `unknown` when the table is too broken to tell). Commands, arguments, environments, URLs and headers are
 never included. The array is empty without `[harness]` or when `mcp.toml` cannot be read.
+
+### `GET /v1/mcp-servers/{name}`
+
+A server of `mcp.toml` as its table says: `{"name": string, "command": string, "args": [string], "env": {name:
+string}}` for a stdio server, or `{"name": string, "url": string, "headers": {name: string}}` for a remote one; empty
+`args`, `env` and `headers` are left out. A value holds its `${NAME}` references as written, never what they stand for.
+Errors: `404` no such server; `409` no `[harness]`; `422` the server or `mcp.toml` cannot be used (the message says why).
+
+### `PUT /v1/mcp-servers/{name}`
+
+A person adds or changes a server. Request: the shape `GET` answers, without `name`. It is checked as reading `mcp.toml`
+checks it (see [harness configuration](harness-configuration.md#mcptoml)): one of `command` and `url`, only the keys
+that belong to it, and `${NAME}` only for a `NAME` in `mcp_env` of `[harness]`. The server's table in `mcp.toml` is
+rewritten, keeping the file's other tables and comments, committed (`Add the MCP server <name>` or `Update the MCP
+server <name>`) and pushed, the decision is recorded (kind `edit_mcp_server`, decider `person`), and the agents are read
+again. Response: the server as `GET` answers it, with `commit`. Errors: `409` no `[harness]`; `422` the server would not
+read, with the reason; `500` as for `PUT /v1/agents/{name}`.
+
+### `DELETE /v1/mcp-servers/{name}`
+
+A person deletes a server from `mcp.toml`, committed and pushed the same way (`Delete the MCP server <name>`, kind
+`edit_mcp_server`). Response: `null`. Errors: `404` no such server; `409` no `[harness]`, or an agent names the server
+(the message names the agents); `500` as for `PUT`.
 
 ### `GET /v1/models`
 

@@ -18,7 +18,7 @@ use crate::app::{App, AppError, Result};
 use crate::bus::AppEvent;
 use crate::config::{AgentConfig, AgentSet, default_protocol, valid_agent_name};
 use crate::decide::{Actor, Question};
-use crate::mcp::{McpServer, parse_file};
+use crate::mcp::{self, McpServer, parse_file};
 use crate::repos::{Repos, git};
 use crate::router::Protocol;
 use crate::rules;
@@ -85,6 +85,41 @@ pub struct McpServerInfo {
     /// Why the server cannot be used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+/// A skill as `GET /v1/skills/{name}` gives it, and `PUT` after it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillView {
+    pub name: String,
+    pub description: String,
+    /// The `SKILL.md` after its frontmatter.
+    pub text: String,
+    /// The paths of the skill's other files, relative to its directory.
+    pub files: Vec<String>,
+    /// The short id of the commit a `PUT` made; left out by `GET` and by a `PUT` that changed nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
+}
+
+/// What `PUT /v1/skills/{name}` takes.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SkillText {
+    pub description: String,
+    #[serde(default)]
+    pub text: String,
+}
+
+/// An MCP server as `GET /v1/mcp-servers/{name}` gives it: its table of `mcp.toml`, with the `${NAME}` references of
+/// its values and never what they stand for.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct McpServerView {
+    pub name: String,
+    #[serde(flatten)]
+    pub server: McpServer,
+    /// The short id of the commit a `PUT` made; left out by `GET` and by a `PUT` that changed nothing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
 }
 
 /// What an agent's settings may name, as the repository has it.
@@ -762,6 +797,261 @@ struct Edit<'a> {
     files: &'a str,
     /// The commit message.
     message: &'a str,
+}
+
+impl HarnessRepo {
+    /// The skill `name` as its `SKILL.md` says. The built-in skill is read from the binary.
+    pub fn skill(&self, name: &str) -> Result<SkillView> {
+        let _read_at = self.lock();
+        if name == skill::NAME {
+            return Ok(SkillView {
+                name: name.into(),
+                description: skill::description(skill::PAGE).unwrap_or_default(),
+                text: skill::body(skill::PAGE).into(),
+                files: skill::files().into_iter().map(String::from).collect(),
+                commit: None,
+            });
+        }
+        let page = std::fs::read_to_string(self.path.join("skills").join(name).join("SKILL.md"))
+            .ok()
+            .filter(|_| valid_agent_name(name))
+            .ok_or_else(|| AppError::NotFound(format!("skill {name}")))?;
+        Ok(self.skill_view(name, &page, None))
+    }
+
+    fn skill_view(&self, name: &str, page: &str, commit: Option<String>) -> SkillView {
+        let dir = self.path.join("skills").join(name);
+        let mut files = vec![];
+        files_below(&dir, &dir, &mut files);
+        files.retain(|file| file != "SKILL.md");
+        files.sort();
+        SkillView {
+            name: name.into(),
+            description: skill::description(page).unwrap_or_default(),
+            text: skill::body(page).into(),
+            files,
+            commit,
+        }
+    }
+
+    /// A person adds or changes the skill `name`: its `SKILL.md` is written with the description and text, committed
+    /// on the default branch and pushed to `origin`, the same way as an agent. The skill's other files are left alone.
+    pub fn save_skill(
+        &self,
+        app: &App,
+        by: &Actor,
+        name: &str,
+        new: &SkillText,
+    ) -> Result<SkillView> {
+        let mut read_at = self.lock();
+        if name == skill::NAME {
+            return Err(built_in());
+        }
+        if !valid_agent_name(name) {
+            return Err(AppError::Invalid(format!(
+                "{name:?} is not a valid skill name (letters, digits, - and _)"
+            )));
+        }
+        let description = new.description.trim();
+        if description.is_empty() || description.contains('\n') {
+            return Err(AppError::Invalid(
+                "a skill needs a description of one line".into(),
+            ));
+        }
+        let mut text = new.text.clone();
+        if !text.is_empty() && !text.ends_with('\n') {
+            text.push('\n');
+        }
+        let file = self.path.join("skills").join(name).join("SKILL.md");
+        let verb = if file.is_file() { "Update" } else { "Add" };
+        let page = skill::page(name, description, &text);
+        let context = BTreeMap::from([
+            ("skill".to_string(), name.to_string()),
+            ("description".to_string(), description.to_string()),
+            ("text".to_string(), text),
+        ]);
+        let write = || {
+            std::fs::create_dir_all(file.parent().expect("a skill file is in a directory"))?;
+            Ok(std::fs::write(&file, &page)?)
+        };
+        let message = format!("{verb} the skill {name}");
+        let files = format!("skills/{name}");
+        let commit = self.commit(
+            app,
+            by,
+            &mut read_at,
+            &Edit {
+                kind: "edit_skill",
+                files: &files,
+                message: &message,
+            },
+            context,
+            write,
+        )?;
+        Ok(self.skill_view(name, &page, commit))
+    }
+
+    /// A person deletes the skill `name` and its directory, the same way. A skill an agent names is not deleted.
+    pub fn delete_skill(&self, app: &App, by: &Actor, name: &str) -> Result<()> {
+        let mut read_at = self.lock();
+        if name == skill::NAME {
+            return Err(built_in());
+        }
+        let dir = self.path.join("skills").join(name);
+        if !valid_agent_name(name) || !dir.join("SKILL.md").is_file() {
+            return Err(AppError::NotFound(format!("skill {name}")));
+        }
+        self.refuse_if_named("skill", name, |settings| &settings.skills)?;
+        let message = format!("Delete the skill {name}");
+        let files = format!("skills/{name}");
+        let edit = Edit {
+            kind: "edit_skill",
+            files: &files,
+            message: &message,
+        };
+        let context = BTreeMap::from([("skill".to_string(), name.to_string())]);
+        let write = || Ok(std::fs::remove_dir_all(&dir)?);
+        self.commit(app, by, &mut read_at, &edit, context, write)
+            .map(drop)
+    }
+
+    /// The MCP server `name` as `mcp.toml` has it, or why it cannot be used.
+    pub fn mcp_server(&self, name: &str) -> Result<McpServerView> {
+        let _read_at = self.lock();
+        let servers = self.layout().mcp.map_err(AppError::Invalid)?;
+        match servers.get(name) {
+            None => Err(AppError::NotFound(format!("MCP server {name}"))),
+            Some(Err(error)) => Err(AppError::Invalid(format!(
+                "the MCP server {name:?} in mcp.toml: {error}"
+            ))),
+            Some(Ok(server)) => Ok(McpServerView {
+                name: name.into(),
+                server: server.clone(),
+                commit: None,
+            }),
+        }
+    }
+
+    /// A person adds or changes the MCP server `name`: its table in `mcp.toml` is rewritten, checked as reading checks
+    /// it, committed on the default branch and pushed to `origin`, the same way. The file's other tables and comments
+    /// are kept.
+    pub fn save_mcp_server(
+        &self,
+        app: &App,
+        by: &Actor,
+        name: &str,
+        server: &McpServer,
+    ) -> Result<McpServerView> {
+        let mut read_at = self.lock();
+        let server = mcp::check(name, server.clone(), &self.mcp_env).map_err(AppError::Invalid)?;
+        let file = self.path.join("mcp.toml");
+        let old = read_mcp_toml(&file)?;
+        let exists =
+            toml::from_str::<toml::Table>(&old).is_ok_and(|table| table.contains_key(name));
+        let new = mcp::set_server(&old, name, &server).map_err(AppError::Invalid)?;
+        let verb = if exists { "Update" } else { "Add" };
+        let message = format!("{verb} the MCP server {name}");
+        let definition = serde_json::to_string(&server)
+            .map_err(|e| AppError::Invalid(format!("cannot write the server: {e}")))?;
+        let context = BTreeMap::from([
+            ("server".to_string(), name.to_string()),
+            ("definition".to_string(), definition),
+        ]);
+        let commit = self.commit(
+            app,
+            by,
+            &mut read_at,
+            &Edit {
+                kind: "edit_mcp_server",
+                files: "mcp.toml",
+                message: &message,
+            },
+            context,
+            || Ok(std::fs::write(&file, new)?),
+        )?;
+        Ok(McpServerView {
+            name: name.into(),
+            server,
+            commit,
+        })
+    }
+
+    /// A person deletes the MCP server `name` from `mcp.toml`, the same way. A server an agent names is not deleted.
+    pub fn delete_mcp_server(&self, app: &App, by: &Actor, name: &str) -> Result<()> {
+        let mut read_at = self.lock();
+        let file = self.path.join("mcp.toml");
+        let old = read_mcp_toml(&file)?;
+        let table: toml::Table = toml::from_str(&old)
+            .map_err(|e| AppError::Invalid(format!("mcp.toml is not valid: {e}")))?;
+        if !table.contains_key(name) {
+            return Err(AppError::NotFound(format!("MCP server {name}")));
+        }
+        self.refuse_if_named("MCP server", name, |settings| &settings.mcp)?;
+        let new = mcp::remove_server(&old, name).map_err(AppError::Invalid)?;
+        let message = format!("Delete the MCP server {name}");
+        let edit = Edit {
+            kind: "edit_mcp_server",
+            files: "mcp.toml",
+            message: &message,
+        };
+        let context = BTreeMap::from([("server".to_string(), name.to_string())]);
+        self.commit(app, by, &mut read_at, &edit, context, || {
+            Ok(std::fs::write(&file, new)?)
+        })
+        .map(drop)
+    }
+
+    /// A conflict naming the agents whose settings list `name` in the list `pick` takes, if any do.
+    fn refuse_if_named(
+        &self,
+        what: &str,
+        name: &str,
+        pick: fn(&AgentSettings) -> &Vec<String>,
+    ) -> Result<()> {
+        let named: Vec<String> = agent_names(&self.path)
+            .into_iter()
+            .filter(|agent| {
+                std::fs::read_to_string(self.agent_file(agent, "toml"))
+                    .ok()
+                    .and_then(|text| toml::from_str::<AgentSettings>(&text).ok())
+                    .is_some_and(|settings| pick(&settings).iter().any(|n| n == name))
+            })
+            .collect();
+        if named.is_empty() {
+            return Ok(());
+        }
+        Err(AppError::Conflict(format!(
+            "the {what} {name} is named by the agents {}; remove it from them first",
+            named.join(", ")
+        )))
+    }
+}
+
+fn built_in() -> AppError {
+    AppError::Conflict(format!(
+        "the skill {} is built in and read only",
+        skill::NAME
+    ))
+}
+
+/// The text of `mcp.toml`, empty when there is none.
+fn read_mcp_toml(file: &Path) -> Result<String> {
+    match std::fs::read_to_string(file) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        other => Ok(other?),
+    }
+}
+
+/// Adds to `files` the paths, relative to `root`, of the files below `dir`.
+fn files_below(root: &Path, dir: &Path, files: &mut Vec<String>) {
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            files_below(root, &path, files);
+        } else if let Ok(relative) = path.strip_prefix(root) {
+            files.push(relative.to_string_lossy().into_owned());
+        }
+    }
 }
 
 /// The agent `name` as its files in the repository at `root` say, or why they cannot be used.

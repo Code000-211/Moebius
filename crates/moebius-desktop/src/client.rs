@@ -398,6 +398,48 @@ pub struct McpServer {
     pub error: Option<String>,
 }
 
+/// A skill as `GET /v1/skills/{name}` answers it: its description, the text of its `SKILL.md` and the other files.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct SkillDetail {
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub text: String,
+    /// The paths of the skill's other files, which the app shows and does not edit.
+    #[serde(default)]
+    pub files: Vec<String>,
+    /// The short id of the commit a `PUT` made; none when the edit changed nothing.
+    #[serde(default)]
+    pub commit: Option<String>,
+}
+
+/// What an MCP server is: a command with arguments and environment, or a URL with headers. Values may be `${NAME}`.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct McpDefinition {
+    #[serde(default)]
+    pub command: Option<String>,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub env: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub headers: std::collections::BTreeMap<String, String>,
+}
+
+/// An MCP server as `GET /v1/mcp-servers/{name}` answers it, and `PUT` after it.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct McpServerDetail {
+    pub name: String,
+    #[serde(flatten)]
+    pub definition: McpDefinition,
+    /// The short id of the commit a `PUT` made; none when the edit changed nothing.
+    #[serde(default)]
+    pub commit: Option<String>,
+}
+
 /// A Retro as `GET /v1/retros` lists it.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct RetroSummary {
@@ -1043,6 +1085,53 @@ impl Client {
     /// The MCP servers an agent can name.
     pub async fn mcp_servers(&self) -> Result<Vec<McpServer>, ClientError> {
         self.get("/v1/mcp-servers").await
+    }
+
+    /// A skill with its text.
+    pub async fn skill(&self, name: &str) -> Result<SkillDetail, ClientError> {
+        self.get(&format!("/v1/skills/{name}")).await
+    }
+
+    /// Adds or changes a skill; the server commits it to the harness configuration repository.
+    pub async fn save_skill(
+        &self,
+        name: &str,
+        description: &str,
+        text: &str,
+    ) -> Result<SkillDetail, ClientError> {
+        let body = serde_json::json!({ "description": description, "text": text });
+        self.put(&format!("/v1/skills/{name}"), body).await
+    }
+
+    /// Deletes a skill of the harness configuration repository.
+    pub async fn delete_skill(&self, name: &str) -> Result<(), ClientError> {
+        let request = self
+            .http
+            .delete(format!("{}/v1/skills/{name}", self.settings.address));
+        self.send::<()>(request).await
+    }
+
+    /// An MCP server as `mcp.toml` has it.
+    pub async fn mcp_server(&self, name: &str) -> Result<McpServerDetail, ClientError> {
+        self.get(&format!("/v1/mcp-servers/{name}")).await
+    }
+
+    /// Adds or changes an MCP server; the server commits it to the harness configuration repository.
+    pub async fn save_mcp_server(
+        &self,
+        name: &str,
+        definition: &McpDefinition,
+    ) -> Result<McpServerDetail, ClientError> {
+        let body = serde_json::to_value(definition).expect("a definition is JSON");
+        self.put(&format!("/v1/mcp-servers/{name}"), body).await
+    }
+
+    /// Deletes an MCP server of the harness configuration repository.
+    pub async fn delete_mcp_server(&self, name: &str) -> Result<(), ClientError> {
+        let request = self
+            .http
+            .delete(format!("{}/v1/mcp-servers/{name}", self.settings.address));
+        self.send::<()>(request).await
     }
 
     /// What the model calls used in the last `days` days.
