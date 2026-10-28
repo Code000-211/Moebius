@@ -245,7 +245,30 @@ least 1) is the most it returns. A card or run that does not exist simply has no
 
 Response: an array of `{"id": number, "kind": string, "choice": string, "reason": string, "decider": string,
 "outcome": string or null, "card": number or null, "run": number or null, "at": number}`. The blobs of the question's
-context are not included.
+context are not included. For a refused tool call that was replayed, `outcome` is the replay's sentence, `replayed: <how
+it ended>; <what happened to the files>` (see [the replays](harness-configuration.md#the-replays)).
+
+### `POST /v1/judgements/{id}/replay`
+
+Runs the call of a refused `tool_call` judgement again in a throwaway copy of its worktree, now, at any hour, as the
+schedule does inside `[trial_window]`. The call runs once; the copy is removed; the judgement's `outcome` becomes the
+replay's sentence; the event `replayed` is sent. Request: no body. Response: the `Replay`:
+
+```json
+{"id": 1, "judgement": 12, "run": 9, "exit": 0, "timed_out": false, "output": "", "created": [],
+ "changed": ["src/lib.rs"], "deleted": ["src/a.rs", "src/b.rs"], "at": 1790000000}
+```
+
+`exit` is the exit code, null when the call was killed (`timed_out` says whether for the time) or did not run (then
+`output` says why). `output` is what the call printed, secrets removed, the last 4 KB. `created`, `changed` and
+`deleted` are paths relative to the worktree. Errors: `404` no such judgement; `409` it was replayed already, or has an
+outcome already; `422` it is not a refused `tool_call`, or its call is not reversible, or its run or repository is gone,
+with the reason.
+
+### `GET /v1/replays`
+
+The stored replays, newest first, at most 1000. Query: `judgement` returns the replay of that judgement, `run` those of
+that run's calls. Response: an array of `Replay`.
 
 ### `GET /v1/usage`
 
@@ -533,7 +556,8 @@ and errors as for `merge`, without the conflict. Response: the `Proposal`.
 | `forge_error` | Polling a GitHub repository, or refreshing the clone of a repository without a forge, failed; it is tried again at the next poll or refresh (every 30 seconds without a forge). | `{"repository": "owner/repo" (GitHub) or the repository's name, "message": string}` |
 | `harness_error` | An agent's files in the harness configuration repository are broken (it is left out), or refreshing the repository failed (every 30 seconds). | `{"agent": name (left out when the refresh failed), "message": string}` |
 | `retro_done` | A Retro ended: it was `reported`, or the analyst's run ended and its proposals were stored (`proposed`), or it `failed`. | `{"date": "YYYY-MM-DD", "status": "reported" \| "proposed" \| "failed", "proposals": number}` |
-| `retro_error` | The schedule could not start the day's Retro or the trials of a proposal, or the trials of a proposal broke off; it is tried again a minute later. | `{"message": string}` |
+| `retro_error` | The schedule could not start the day's Retro, the trials of a proposal or the replays, or the trials of a proposal broke off; it is tried again a minute later. | `{"message": string}` |
+| `replayed` | A refused tool call was replayed and its judgement has the outcome. | `{"judgement": id, "run": id, "outcome": string}` |
 | `trial_done` | One trial of a proposal ended and was stored. | `{"proposal": id, "card": id or null, "outcome": "positive" \| "negative" \| "skipped" \| "failed"}` |
 | `proposal_status` | A proposal's status changed: it is being tried, was tried, was merged or dismissed. | `{"proposal": id, "status": string}` (the statuses above) |
 | `lagged` | This client fell too far behind (more than 1024 events) and lost the oldest. | `{"missed": number}` |

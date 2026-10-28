@@ -13,6 +13,8 @@
 //! - `GET /v1/runs/{id}`: a run. `GET /v1/runs/{id}/events?after=&limit=`: its stored events, in pages.
 //! - `GET /v1/cards/{id}/runs`: the runs of a card. `GET /v1/cards/{id}/history`: its timeline.
 //! - `GET /v1/judgements?card=&run=&kind=&limit=`: the recorded decisions, newest first.
+//! - `POST /v1/judgements/{id}/replay`: runs a refused tool call again in a throwaway copy of the worktree (see
+//!   [`crate::replay`]). `GET /v1/replays?judgement=&run=`: the stored replays, newest first.
 //! - `POST /v1/runs/{id}/steer` `{message}`: a person sends a message to a running run.
 //! - `POST /v1/runs/{id}/stop` `{reason}`: a person stops a running run; a chat ends as stopped.
 //! - `GET /v1/runs/{id}/terminal`: a WebSocket on a shell in the run's worktree (see [`crate::terminal`]).
@@ -46,10 +48,12 @@ use crate::bus::AppEvent;
 use crate::forge::ForgeError;
 use crate::harness_repo::{AgentDefinition, AgentView, HarnessRepo, McpServerInfo, SkillInfo};
 use crate::pibolt::MOEBIUS_AGENT;
+use crate::replay;
 use crate::repos::GitError;
 use crate::retro::{self, RetroSummary, RetroView};
 use crate::store::{
-    AgentUsage, Card, Change, Event, InboxItem, ModelUsage, Proposal, Repository, Run, ToolWait,
+    AgentUsage, Card, Change, Event, InboxItem, ModelUsage, Proposal, Replay, Repository, Run,
+    ToolWait,
 };
 use crate::trial;
 
@@ -204,6 +208,13 @@ struct JudgementsQuery {
     limit: Option<i64>,
 }
 
+/// Which replays to return: those of the judgement and of the run, if given.
+#[derive(Debug, Deserialize)]
+struct ReplaysQuery {
+    judgement: Option<i64>,
+    run: Option<i64>,
+}
+
 /// How many days the heatmap of the usage screen reaches back.
 const HEATMAP_DAYS: i64 = 365;
 /// The most tool names `tool_waits` lists.
@@ -339,6 +350,8 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/cards/{id}/runs", get(card_runs))
         .route("/v1/cards/{id}/history", get(card_history))
         .route("/v1/judgements", get(judgements))
+        .route("/v1/judgements/{id}/replay", post(replay_judgement))
+        .route("/v1/replays", get(replays))
         .route("/v1/usage", get(usage))
         .route("/v1/runs/{id}", get(get_run))
         .route("/v1/runs/{id}/events", get(run_events))
@@ -744,6 +757,28 @@ async fn run_events(
     blocking(&state.app, move |app| {
         app.run(id)?;
         Ok(app.store.events_after(id, query.after, limit)?)
+    })
+    .await
+}
+
+async fn replay_judgement(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+) -> Result<axum::Json<Replay>, ApiError> {
+    blocking(&state.app, move |app| {
+        replay::replay(app, id, replay::TIME_LIMIT)
+    })
+    .await
+}
+
+async fn replays(
+    State(state): State<ApiState>,
+    Query(query): Query<ReplaysQuery>,
+) -> Result<axum::Json<Vec<Replay>>, ApiError> {
+    blocking(&state.app, move |app| {
+        Ok(app
+            .store
+            .replays(query.judgement, query.run, replay::MAX_LISTED)?)
     })
     .await
 }

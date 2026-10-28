@@ -434,6 +434,17 @@ impl App {
                     tasks.push(self.retros.reload(settings));
                     tasks.push(self.agents.reload(settings));
                 }
+                if event.kind == "replayed"
+                    && let Some(settings) = &self.settings
+                {
+                    // The refusal on show has an outcome now.
+                    tasks.push(self.chats.reload_judgements(settings));
+                    if let Some(Opened::Run(live)) = &self.opened
+                        && event.data["run"] == live.run_id()
+                    {
+                        tasks.push(live.reload_judgements(settings.clone()));
+                    }
+                }
                 if event.kind == "run_ended" {
                     // A run that ended has used tokens, which the meter of the sidebar shows.
                     if let Some(settings) = &self.settings {

@@ -15,6 +15,7 @@ pub mod harness_repo;
 pub mod mcp;
 pub mod pibolt;
 pub mod poll;
+pub mod replay;
 pub mod repos;
 pub mod retro;
 pub mod router;

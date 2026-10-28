@@ -84,6 +84,9 @@ pub struct Check {
     pub reason: String,
     /// Who decided (`patterns`, `teacher`, ...), when the judgements say.
     pub decider: Option<String>,
+    /// What happened when the refused call was run again in a copy (`exit 0; deleted 3 files`), when the judgements
+    /// say.
+    pub replay: Option<Box<str>>,
 }
 
 impl Check {
@@ -191,6 +194,11 @@ impl Conversation {
         for (check, judgement) in checked.zip(judgements) {
             if check.allowed == (judgement.choice == "allow") && check.reason == judgement.reason {
                 check.decider = Some(judgement.decider.clone());
+                check.replay = judgement
+                    .outcome
+                    .as_deref()
+                    .and_then(|outcome| outcome.strip_prefix("replayed: "))
+                    .map(Box::from);
             }
         }
     }
@@ -269,6 +277,7 @@ impl Conversation {
                     allowed: data["decision"] == "allow",
                     reason: data["reason"].as_str().unwrap_or_default().to_string(),
                     decider: None,
+                    replay: None,
                 });
             }
             "steered" | "said" => {
@@ -448,7 +457,8 @@ mod tests {
             Some(Check {
                 allowed: true,
                 reason: "no rule is broken".into(),
-                decider: None
+                decider: None,
+                replay: None,
             })
         );
         assert_eq!(
@@ -485,6 +495,7 @@ mod tests {
             allowed: false,
             reason: "the rules cannot be read, so no call is allowed: x".into(),
             decider: None,
+            replay: None,
         };
         assert_eq!(check.rule(), None);
     }
@@ -554,6 +565,7 @@ mod tests {
             choice: choice.into(),
             reason: reason.into(),
             decider: decider.into(),
+            outcome: None,
             run: Some(1),
         };
         conversation.name_deciders(&[
@@ -572,5 +584,38 @@ mod tests {
         assert_eq!(decider(1), Some("patterns".to_string()));
         assert_eq!(decider(2), None);
         assert_eq!(decider(4), Some("teacher".to_string()));
+    }
+
+    #[test]
+    fn a_refusal_that_was_replayed_carries_what_came_of_it() {
+        let mut conversation = fold(run());
+        let judgement = |choice: &str, reason: &str, outcome: Option<&str>| Judgement {
+            kind: "tool_call".into(),
+            choice: choice.into(),
+            reason: reason.into(),
+            decider: "teacher".into(),
+            outcome: outcome.map(str::to_string),
+            run: Some(1),
+        };
+        let reason = call(&conversation, 2)
+            .check
+            .as_ref()
+            .unwrap()
+            .reason
+            .clone();
+        conversation.name_deciders(&[
+            judgement("allow", "no rule is broken", Some("merged")),
+            judgement("refuse", &reason, Some("replayed: exit 0; deleted 3 files")),
+        ]);
+        let replay = |index| {
+            call(&conversation, index)
+                .check
+                .as_ref()
+                .unwrap()
+                .replay
+                .clone()
+        };
+        assert_eq!(replay(1), None, "only a replay is shown");
+        assert_eq!(replay(2).as_deref(), Some("exit 0; deleted 3 files"));
     }
 }

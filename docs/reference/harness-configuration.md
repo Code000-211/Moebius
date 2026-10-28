@@ -227,3 +227,36 @@ proposal's branch, the run cannot start) is `failed`.
   decision (kind `merge_proposal`) and resolve the inbox item. A merge that conflicts changes nothing.
 - A server that starts finds the proposals the last server was trying and opens them again, without their trials, and ends
   the trial runs it left going as it ends other runs.
+
+### The replays
+
+Inside `[trial_window]`, when no proposal is being tried, a sample of refused tool calls is run again in a throwaway
+copy of the worktree, so that a refusal can later be weighed by what the call would have done. `POST
+/v1/judgements/{id}/replay` replays one at any hour.
+
+- **Which calls.** `tool_call` judgements that refused the call, have no outcome and no replay yet, are at most a week
+  old, belong to a run whose repository still exists, and are **reversible**. At most 20 are replayed per night, the
+  oldest first, one after the other; none runs beside a trial (the schedule asks the trials first, and stops when a
+  proposal is `trying`). Calls that cannot be replayed are never picked and get no outcome. A refusal on a card that is
+  done already has the card's outcome (such as `merged`) and is not picked.
+- **Reversible** means everything the call does stays inside the run's worktree: `read`, `write`, `edit`, `ls`, `grep`
+  and `find` on paths inside it; and `bash` whose commands, read as the guard's patterns read them (nested shells, `cd`,
+  redirects, `tee`), name only paths inside it. Not reversible: another tool; a path outside the worktree or `~`
+  (`/dev/null` and the standard streams excepted); `git push`, `fetch`, `pull`, `clone`, `remote`, `ls-remote`,
+  `submodule`; a URL; `curl`, `wget`, `ssh`, `scp`, `rsync`, `sftp`, `ftp`, `nc` and the like; `sudo`, `su`, `kill`,
+  `pkill`; package managers and `cargo`; `env`, `printenv`, `export` and any `$` (variable or substitution);
+  interpreters such as `python` and `node`; a shell nested too deeply to follow. This reads the command line, it is not a
+  sandbox, so it errs on the side of not reversible.
+- **The copy** is a directory `<data_dir>/replays/<judgement id>` holding the files of the run's worktree if it still
+  exists (not `.git`, and no symbolic links), else a `git archive` of the card's change branch, else of the repository's
+  default branch. `read`, `write` and `edit` are applied by Moebius (an edit's text must occur exactly once); `ls` is
+  listed; `grep`, `find` and `bash -c` run in the copy with an empty environment (`PATH` only, `HOME` the copy), no input
+  and 60 seconds, after which the process group is killed. The copy is removed afterwards; the worktree is never touched.
+- **What is stored** (`GET /v1/replays`): the exit code (or that it timed out), the output (secrets removed, last 4 KB)
+  and the files created, changed and deleted, found by comparing a listing of the copy with sizes and SHA-256 hashes
+  before and after. Directories are not listed, so an empty one is not noticed.
+- **The outcome** of the judgement is one sentence: `replayed: <ended>; <files>`. `<ended>` is `exit <code>`, `timed
+  out` or `ended by a signal`. `<files>` is `created N files`, `changed N files` and `deleted N files` (those that are
+  not zero, in that order, joined by `, `; `1 file` for one) or `no file changed`. For example `replayed: exit 0;
+  deleted 3 files, changed 1 file`. A replay that could not be made (the copy or the checkout failed) reads `replayed: not
+  run; <why>` and is stored too, so it is not tried again. The event `replayed` carries the sentence.

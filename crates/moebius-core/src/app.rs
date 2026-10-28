@@ -1104,7 +1104,7 @@ fn execute(script: &str, dir: &Path, log: &Path, timeout: Duration) -> (bool, St
 }
 
 /// The end of the file `log`, without secrets, as much as is kept of the output of checks.
-fn tail(log: &Path) -> String {
+pub(crate) fn tail(log: &Path) -> String {
     let Ok(mut file) = std::fs::File::open(log) else {
         return String::new();
     };

@@ -228,26 +228,32 @@ fn refused_view(call: &ToolCall) -> Element<'_, AppMessage> {
         },
         ..container::Style::default()
     });
-    container(
-        column![
-            row![dot, title].spacing(8).align_y(Alignment::Center),
-            head(call, true),
-            text(why).size(theme::CONTEXT).color(theme::TEXT),
-        ]
-        .spacing(8),
-    )
-    .padding([10, 12])
-    .width(Length::Fill)
-    .style(|_| container::Style {
-        background: Some(theme::RED_FILL.into()),
-        border: Border {
-            color: theme::RED_BORDER,
-            width: 1.5,
-            radius: theme::RADIUS_CARD.into(),
-        },
-        ..container::Style::default()
-    })
-    .into()
+    let mut content = column![
+        row![dot, title].spacing(8).align_y(Alignment::Center),
+        head(call, true),
+        text(why).size(theme::CONTEXT).color(theme::TEXT),
+    ]
+    .spacing(8);
+    if let Some(replay) = &check.replay {
+        content = content.push(
+            text(format!("Replayed: {replay}"))
+                .size(theme::LABEL)
+                .color(theme::TEXT_MUTED),
+        );
+    }
+    container(content)
+        .padding([10, 12])
+        .width(Length::Fill)
+        .style(|_| container::Style {
+            background: Some(theme::RED_FILL.into()),
+            border: Border {
+                color: theme::RED_BORDER,
+                width: 1.5,
+                radius: theme::RADIUS_CARD.into(),
+            },
+            ..container::Style::default()
+        })
+        .into()
 }
 
 fn lines_of(text: &str) -> Vec<&str> {

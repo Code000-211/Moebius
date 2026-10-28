@@ -24,6 +24,7 @@ use crate::guard::{self, Guard, Teacher};
 use crate::harness_repo::HarnessRepo;
 use crate::pibolt::PiBolt;
 use crate::poll;
+use crate::replay;
 use crate::repos::git;
 use crate::retro;
 use crate::router::{Router, Upstream};
@@ -358,6 +359,7 @@ impl Server {
                         report(retro::on_schedule(&s.app, &runs, repo, s.config.retro_at));
                         let (window, limit) = (s.config.trial_window, s.config.run_limit);
                         report(trial::on_schedule(&s.app, &runs, repo, window, limit));
+                        report(replay::on_schedule(&s.app, window));
                     })
                     .await;
                 }

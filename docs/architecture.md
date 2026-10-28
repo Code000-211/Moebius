@@ -151,6 +151,12 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
     `negative` or `untried` (`proposal_status`). A positive or untried one gets a `proposal` inbox item; `trial::merge`
     (`HarnessRepo::merge_proposal`) or `trial::dismiss` ends it. `Store::runs_for_card` and the Retro's sources leave trial
     runs out. A server start opens the `trying` proposals again.
+12e. **The replays.** After the trials, `server.rs` asks `replay::on_schedule`, which inside `[trial_window]` calls
+    `replay::run_due` while the night's 20 are not used up: `replay::due` takes the oldest refused `tool_call` judgements without
+    an outcome or replay (`Store::replay_candidates`) whose call `guard::reversible` accepts, and each is run by
+    `replay::replay_judgement` in a copy of the worktree (or a `git archive`) under `<data_dir>/replays`, never while a proposal
+    is `trying`. The result is stored in `replays`, becomes the judgement's outcome (`Store::set_outcome`) and is published
+    (`replayed`). `POST /v1/judgements/{id}/replay` calls `replay::replay` at any hour.
 13. **GitHub reports.** `poll::poll_pull_requests` reads each open change's pull request: checks and review are recorded
     (`change_updated`), a merged pull request calls `App::change_merged`, a closed one calls `App::change_closed`.
 14. **A person merges.** `POST /v1/changes/{id}/merge` calls `App::merge_change`: it records a judgement by `person`,
@@ -176,6 +182,7 @@ start; its version is `PRAGMA user_version`.
 | `runs` | One per harness run: card (none for a chat), agent, harness, purpose, status, worktree, repository (a chat's), start and end, summary (the agent's final answer). |
 | `events` | Everything a run emitted, numbered per run, as JSON. |
 | `judgements` | One per decision: kind, context (blob ids), options, choice, reason, decider, run, card, outcome. |
+| `replays` | One per replayed refusal: judgement, run, exit code, timed out, output, files created, changed and deleted. |
 | `inbox_items` | What needs a person: kind, card, title, data, resolved or not. |
 | `usage` | Tokens per model request: run, model, input, output, cached, duration. |
 | blobs | Content-addressed by SHA-256, deduplicated, with secrets removed before writing (`blobs::redact`). |

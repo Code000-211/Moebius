@@ -466,6 +466,7 @@ fn judgement(choice: &str, reason: &str, decider: &str) -> moebius_desktop::clie
         choice: choice.into(),
         reason: reason.into(),
         decider: decider.into(),
+        outcome: None,
         run: Some(9),
     }
 }
@@ -548,6 +549,39 @@ fn a_running_run_is_drawn_like_the_live_view_of_the_mockup() {
             "412k tokens",
             "moebius/card-48",
             "Right, vendor code is off limits. The cap belongs in our own tree builder.",
+        ],
+    );
+}
+
+/// A refusal whose call was replayed in a copy of the worktree says what came of it, small and muted under the rule:
+/// compare `tests/snapshots/live-view-replayed-tiny-skia.png`.
+#[test]
+fn a_replayed_refusal_shows_what_came_of_it() {
+    let mut app = watching("running");
+    assert!(!shows(&app, "Replayed: exit 0; deleted 3 files"));
+    let replayed = moebius_desktop::client::Judgement {
+        outcome: Some("replayed: exit 0; deleted 3 files".into()),
+        ..judgement(
+            "refuse",
+            "no-vendor-edits: Never edit files under vendor/; change upstream code through patches/.",
+            "teacher",
+        )
+    };
+    let judgements = vec![
+        judgement("allow", "no rule is broken", "patterns"),
+        replayed,
+        judgement("allow", "no rule is broken", "teacher"),
+        judgement("allow", "no rule is broken", "patterns"),
+    ];
+    let _ = app.update(Message::Live(live::Message::Judgements(Ok(judgements))));
+    draw(
+        &app,
+        "live-view-replayed",
+        &[
+            "Rule broken: ",
+            "no-vendor-edits",
+            "Replayed: exit 0; deleted 3 files",
+            "Blocked",
         ],
     );
 }

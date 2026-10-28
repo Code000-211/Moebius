@@ -358,6 +358,9 @@ pub struct Judgement {
     #[serde(default)]
     pub reason: String,
     pub decider: String,
+    /// What came of the decision, once known; for a refused call that was replayed, `replayed: ...`.
+    #[serde(default)]
+    pub outcome: Option<String>,
     #[serde(default)]
     pub run: Option<i64>,
 }
