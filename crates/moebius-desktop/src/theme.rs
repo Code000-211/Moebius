@@ -171,6 +171,11 @@ pub fn fonts() -> Vec<Cow<'static, [u8]>> {
         &include_bytes!("../fonts/manrope/Manrope-700.ttf")[..],
         &include_bytes!("../fonts/jetbrains-mono/JetBrainsMono-Regular.ttf")[..],
         &include_bytes!("../fonts/jetbrains-mono/JetBrainsMono-Medium.ttf")[..],
+        // Highlighted code sets keywords bold and comments italic; without these faces the machine's own fonts would
+        // stand in, and the app would look different on every machine.
+        &include_bytes!("../fonts/jetbrains-mono/JetBrainsMono-Italic.ttf")[..],
+        &include_bytes!("../fonts/jetbrains-mono/JetBrainsMono-Bold.ttf")[..],
+        &include_bytes!("../fonts/jetbrains-mono/JetBrainsMono-BoldItalic.ttf")[..],
     ]
     .into_iter()
     .map(Cow::Borrowed)

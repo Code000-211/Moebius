@@ -169,13 +169,15 @@ async fn a_day_with_errors_gets_a_report_and_the_analyst_proposes_a_branch_that_
         .await;
     assert_eq!(status, 200, "{started}");
     assert_eq!(started["date"], day);
-    let kinds: Vec<&str> = started["report"]["errors"]
+    // The errors are in the order they happened, which within a second is not told; so the kinds are compared sorted.
+    let mut kinds: Vec<&str> = started["report"]["errors"]
         .as_array()
         .unwrap()
         .iter()
         .map(|e| e["kind"].as_str().unwrap())
         .collect();
-    assert_eq!(kinds, ["tool_refused", "run_failed"]);
+    kinds.sort();
+    assert_eq!(kinds, ["run_failed", "tool_refused"]);
     let ended = done(&mut events).await;
     assert_eq!(
         ended,

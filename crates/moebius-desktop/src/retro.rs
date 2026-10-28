@@ -410,7 +410,7 @@ pub fn proposal(proposal: &Proposal) -> Element<'_, AppMessage> {
         head,
         text(proposal.branch.as_str())
             .size(theme::CODE_SMALL)
-            .font(iced::Font::MONOSPACE)
+            .font(theme::MONO)
             .color(theme::TEXT_MUTED)
             .wrapping(Wrapping::WordOrGlyph),
     ]

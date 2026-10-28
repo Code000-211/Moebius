@@ -249,11 +249,15 @@ The server runs on a multi-threaded tokio runtime.
 | `crates/moebius-desktop/src/client.rs` | The desktop API client: typed health, snapshot, runs, run events, judgements and history, steer and stop, and the event stream as an iced subscription that reconnects with a backoff. |
 | `crates/moebius-desktop/src/settings.rs` | The address and token, saved in the config directory with mode 0600. |
 | `crates/moebius-desktop/src/theme.rs` | Every colour, size, radius and spacing of `docs/design.md`, and the bundled fonts (Manrope, JetBrains Mono). |
-| `crates/moebius-desktop/src/sidebar.rs`, `connect.rs`, `board.rs`, `page.rs`, `icons.rs` | The sidebar, the connect screen, the board page (its columns and cards), the page header and box, the icons. |
+| `crates/moebius-desktop/src/sidebar.rs`, `search.rs`, `connect.rs`, `board.rs`, `page.rs`, `icons.rs` | The sidebar and its search and run field, the connect screen, the board page (its columns and cards), the page header and box, the icons. |
+| `crates/moebius-desktop/src/add_repository.rs`, `new_issue.rs` | Adding a repository, and the new-issue form of a board. |
+| `crates/moebius-desktop/src/inbox.rs`, `chat.rs`, `transcript.rs` | The inbox and its actions, the chat screen, and how a conversation is drawn (Markdown, tool calls, highlighted code). |
+| `crates/moebius-desktop/src/agents.rs`, `rules.rs` | The Agents screen (with the Skills and MCP servers pages) and the Rules page; an edit is a commit in the harness configuration repository. |
+| `crates/moebius-desktop/src/usage.rs`, `retro.rs`, `experiments.rs`, `decision_model.rs` | The Improve pages: usage with its heatmap, the Retro's days and proposals, autoresearch, the training set and shadowing. |
+| `crates/moebius-desktop/src/setup.rs` | The Setup pages: models, plugins and settings. |
 | `crates/moebius-desktop/src/conversation.rs` | Folds a run's events into a conversation (text, tool calls with their checks, steers, errors); pure, takes events in any order and drops repeats. |
 | `crates/moebius-desktop/src/live.rs`, `history.rs` | What a click on a card opens: the live view of its latest run (conversation, steer, stop, the run's panel), or the card's history when it has no run. |
 | `crates/moebius-desktop/src/terminal.rs` | The shell pane of the live view: bytes from the server parsed by `alacritty_terminal` into a grid and drawn in JetBrains Mono, keys turned into bytes, the pane's size in cells sent as a resize. The connection is `client::terminal`, a subscription that lives while the pane is open. |
-| `terminal.rs` | A person's shell in a run's worktree on a pseudo-terminal (`portable-pty`), served over the WebSocket `GET /v1/runs/{id}/terminal`; at most 4 per run, not checked by the guard. |
 | `api.rs` | The desktop API: routes, token check, the event WebSocket. |
 | `app.rs` | The core put together; the operations on cards, changes and issues, each published on the bus, including publishing a change and running its checks. |
 | `blobs.rs` | The content-addressed blob store and secret redaction. |
@@ -266,14 +270,23 @@ The server runs on a multi-threaded tokio runtime.
 | `export.rs` | The training-set export: judgements with their contexts and outcomes as JSON Lines per kind, the held-out tenth, the exports a person started in the app. |
 | `forge.rs` | The `Forge` trait with the forges `none` and `github`. |
 | `github.rs` | The GitHub App client: JWT, installation tokens, issues with ETags, pull requests, checks, reviews, merge. |
+| `grilling.rs` | The Grilling partner's end: the issues or report it left in its worktree, confirming the issues as cards (on GitHub opened there first) and dismissing. |
 | `guard.rs` | The `guard` decider: built-in pattern rules and the teacher model. |
+| `harness_repo.rs` | The harness configuration repository: its clone, reading agents, skills, rules and MCP servers from it, and edits as commits pushed to its origin. |
+| `mcp.rs` | The MCP servers of `mcp.toml`, checked when read, and the `mcp.json` a run of an agent that names them is given. |
 | `pibolt.rs` | The Pi-Bolt harness: starting, reading and stopping runs. |
 | `poll.rs` | The poll of GitHub: issues, pull requests, checks, reviews. |
+| `replay.rs` | Replays: refused, reversible tool calls run again in a throwaway copy of the worktree, and the judgement's outcome from what happened. |
 | `repos.rs` | Clones, worktrees, branches, pushes, merges and conflict checks through the `git` command line. |
+| `research.rs` | Autoresearch: a confirmed brief, its baseline, the Autoresearcher's levers as branches, an experiment for each, and the kept ones offered as changes. |
+| `retro.rs` | The Retro: the day's errors collected into a report without a model, the Retro analyst's run, and its proposal branches. |
 | `router.rs` | The router: model endpoints, run tokens, usage, budgets. |
 | `rules.rs` | The `rules.md` format and where rules come from. |
 | `server.rs` | Wires everything from the configuration and runs the loops. |
+| `setup.rs` | What the Models, Plugins and Settings pages show: the router's upstreams, the agents, the teacher, the decision model, the plugins and the server's settings, without a secret. |
 | `skill.rs` | The `moebius` skill (the guide and the references, bundled with `include_str!`), written to `<data_dir>/skills/moebius/` at start. |
 | `store.rs` | The SQLite records and their migrations. |
+| `terminal.rs` | A person's shell in a run's worktree on a pseudo-terminal (`portable-pty`), served over the WebSocket `GET /v1/runs/{id}/terminal`; at most 4 per run, not checked by the guard. |
+| `trial.rs` | Trials: each proposal tried on the cards of the errors it addresses, measured against the cards' first runs, and offered when positive. |
 | `workflow/*.luau` | The six built-in column scripts. |
 | `bridge/moebius-bridge.ts` | The Pi extension loaded into every run. |
