@@ -3883,3 +3883,96 @@ fn the_collapsed_sidebars_search_opens_the_sidebar() {
     let _ = app.update(Message::Search(search::Message::Focus));
     assert!(shows(&app, "Search or run…"));
 }
+
+fn available_models() -> client::Available {
+    serde_json::from_value(json!({
+        "models": [
+            {"id": "claude-opus-fake", "protocol": "anthropic", "upstream": "https://api.anthropic.com"},
+            {"id": "qwen3.8-flash-next", "protocol": "openai", "upstream": "http://127.0.0.1:8080"},
+        ],
+        "errors": [{"upstream": "https://api.example.com/v1", "message": "401"}],
+    }))
+    .unwrap()
+}
+
+fn claude_opus() -> client::AvailableModel {
+    available_models().models.remove(0)
+}
+
+#[test]
+fn a_model_picked_from_the_list_fills_the_models_page_and_the_errors_show_once() {
+    let mut app = setup_app(Page::Models);
+    let _ = app.update(Message::Setup(setup::Message::Available(Ok(
+        available_models(),
+    ))));
+    let _ = app.update(Message::Setup(setup::Message::PickModel(
+        "teacher.model",
+        claude_opus(),
+    )));
+    draw_sized(
+        &app,
+        "models-picked",
+        &["Refresh", "Could not ask https://api.example.com/v1: 401"],
+        Size::new(1440.0, 1500.0),
+    );
+}
+
+#[test]
+fn picking_a_model_sets_the_field_and_the_protocol_and_a_typed_model_is_kept() {
+    let mut state = setup_state(configured());
+    let _ = state.update(setup::Message::Available(Ok(available_models())), None);
+    let _ = state.update(
+        setup::Message::PickModel("teacher.model", claude_opus()),
+        None,
+    );
+    let plan = state.save_request(true).unwrap();
+    assert_eq!(
+        serde_json::Value::Object(plan.set),
+        json!({"teacher.model": "claude-opus-fake", "teacher.protocol": "anthropic"})
+    );
+
+    // The decision model has no protocol to follow.
+    let _ = state.update(
+        setup::Message::PickModel("decision_model.model", claude_opus()),
+        None,
+    );
+    let plan = state.save_request(true).unwrap();
+    assert_eq!(plan.set["decision_model.model"], "claude-opus-fake");
+    assert!(!plan.set.contains_key("decision_model.protocol"));
+
+    // A model no upstream lists can be typed.
+    edit(&mut state, "teacher.model", "my-own-model");
+    let plan = state.save_request(true).unwrap();
+    assert_eq!(plan.set["teacher.model"], "my-own-model");
+}
+
+#[test]
+fn the_agent_editor_picks_a_model_from_the_list_and_still_takes_a_typed_one() {
+    let settings = settings();
+    let mut agents = agents::Agents::default();
+    let mut update = |message| agents.update(message, Some(&settings)).units();
+    update(agents::Message::Available(Ok(available_models())));
+    update(agents::Message::Select("Coder".into()));
+    update(agents::Message::Opened("Coder".into(), Ok(coder())));
+    update(agents::Message::ModelPicked(claude_opus()));
+    let (_, sent, _) = agents.save_request().unwrap();
+    assert_eq!(sent.model, "claude-opus-fake");
+    assert_eq!(sent.protocol, "anthropic");
+
+    let mut update = |message| agents.update(message, Some(&settings)).units();
+    update(agents::Message::ModelEdited("my-own-model".into()));
+    let (_, sent, _) = agents.save_request().unwrap();
+    assert_eq!(sent.model, "my-own-model");
+    assert_eq!(sent.protocol, "anthropic");
+}
+
+#[test]
+fn the_agents_page_offers_a_refresh_and_says_which_upstream_could_not_be_asked() {
+    let mut app = agents_app();
+    assert!(!shows(&app, "Refresh"));
+    let _ = app.update(Message::Agents(agents::Message::Available(Ok(
+        available_models(),
+    ))));
+    assert!(shows(&app, "Refresh"));
+    assert!(shows(&app, "Could not ask https://api.example.com/v1: 401"));
+}

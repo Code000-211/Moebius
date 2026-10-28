@@ -230,6 +230,34 @@ pub struct Models {
     pub decision_model: Option<DecisionModelEndpoint>,
 }
 
+/// A model an upstream serves, as `GET /v1/models/available` lists it. It reads as its id.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct AvailableModel {
+    pub id: String,
+    pub protocol: String,
+    pub upstream: String,
+}
+
+impl std::fmt::Display for AvailableModel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.id)
+    }
+}
+
+/// An upstream that could not say which models it serves.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct UpstreamError {
+    pub upstream: String,
+    pub message: String,
+}
+
+/// What `GET /v1/models/available` says: the models of all upstreams and the upstreams that could not be asked.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+pub struct Available {
+    pub models: Vec<AvailableModel>,
+    pub errors: Vec<UpstreamError>,
+}
+
 /// A plugin the server has loaded, as `GET /v1/plugins` lists it.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Plugin {
@@ -990,6 +1018,16 @@ impl Client {
     /// The upstreams, agents, teacher and decision model of the server.
     pub async fn models(&self) -> Result<Models, ClientError> {
         self.get("/v1/models").await
+    }
+
+    /// The models the upstreams serve; `refresh` asks them again instead of using what the server kept.
+    pub async fn available_models(&self, refresh: bool) -> Result<Available, ClientError> {
+        let path = if refresh {
+            "/v1/models/available?refresh=true"
+        } else {
+            "/v1/models/available"
+        };
+        self.get(path).await
     }
 
     /// The plugins the server has loaded.

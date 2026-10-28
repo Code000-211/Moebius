@@ -9,16 +9,21 @@ use std::collections::BTreeSet;
 
 use iced::font::Weight;
 use iced::widget::text::Wrapping;
-use iced::widget::{column, container, pick_list, row, scrollable, space, text, text_input};
+use iced::widget::{
+    column, combo_box, container, pick_list, row, scrollable, space, text, text_input,
+};
 use iced::{Alignment, Element, Length, Padding, Task};
 use serde_json::{Map, Value, json};
 
 use crate::agents::{menu_style, pick_style};
 use crate::app::Message as AppMessage;
 use crate::board::tokens;
-use crate::client::{Client, ClientError, Models, Plugins, SavedSettings, ServerSettings};
+use crate::client::{
+    Available, AvailableModel, Client, ClientError, Models, Plugins, SavedSettings, ServerSettings,
+};
 use crate::connect;
 use crate::live::say;
+use crate::model_picker;
 use crate::page;
 use crate::settings::{self, Settings};
 use crate::theme;
@@ -29,6 +34,8 @@ const PROTOCOLS: [&str; 2] = ["openai", "anthropic"];
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Kind {
     Text,
+    /// A model's name: a list of the models the upstreams serve, which can be typed into.
+    Model,
     /// A path, a URL or an address, set in the code font.
     Code,
     Whole,
@@ -109,14 +116,14 @@ const TABLES: &[(&str, &[&str])] = &[
 ];
 
 const TEACHER: &[Spec] = &[
-    ("teacher.model", "Model", Kind::Text),
+    ("teacher.model", "Model", Kind::Model),
     ("teacher.protocol", "Protocol", Kind::Pick(&PROTOCOLS)),
     ("teacher.timeout_seconds", "Time limit (s)", Kind::Whole),
 ];
 
 const DECISION_MODEL: &[Spec] = &[
     ("decision_model.url", "URL", Kind::Code),
-    ("decision_model.model", "Model", Kind::Text),
+    ("decision_model.model", "Model", Kind::Model),
     (
         "decision_model.timeout_seconds",
         "Time limit (s)",
@@ -139,6 +146,12 @@ const DECISION_MODEL: &[Spec] = &[
 pub enum Message {
     Models(Result<Models, ClientError>),
     Plugins(Result<Plugins, ClientError>),
+    /// The models the upstreams serve.
+    Available(Result<Available, ClientError>),
+    /// The link under a Model field was pressed: ask the upstreams again.
+    RefreshAvailable,
+    /// A model was picked from the list of the field with this key.
+    PickModel(&'static str, AvailableModel),
     Server(Result<ServerSettings, ClientError>),
     /// The input of a key of the configuration was edited.
     Edit(&'static str, String),
@@ -199,6 +212,8 @@ struct Field {
     original: String,
     /// What the server uses when the file does not set the key.
     default: Option<String>,
+    /// The list of a Model field.
+    combo: combo_box::State<AvailableModel>,
 }
 
 /// A value as the text of an input.
@@ -229,6 +244,7 @@ impl Field {
             original: text.clone(),
             text,
             default: (!set && !shown.is_empty()).then_some(shown),
+            combo: model_picker::state(None),
         }
     }
 
@@ -240,7 +256,7 @@ impl Field {
         }
         let wrong = |what: &str| format!("{} is {what}.", self.label);
         Ok(Some(match self.kind {
-            Kind::Text | Kind::Code | Kind::Pick(_) => json!(text),
+            Kind::Text | Kind::Code | Kind::Model | Kind::Pick(_) => json!(text),
             Kind::Whole => json!(text.parse::<i64>().map_err(|_| wrong("a whole number"))?),
             Kind::Decimal => json!(text.parse::<f64>().map_err(|_| wrong("a number"))?),
             Kind::List => json!(
@@ -660,6 +676,8 @@ enum Notice {
 pub struct Setup {
     models: Option<Models>,
     plugins: Option<Plugins>,
+    /// What the upstreams serve, once they have been asked.
+    available: Option<Available>,
     server: Option<ServerSettings>,
     forms: Option<Forms>,
     /// Set after a save, so that the next answer of the server replaces the forms.
@@ -683,6 +701,7 @@ impl Setup {
             Client::new(settings.clone()),
         );
         Task::batch([
+            self.ask_available(settings, false),
             Task::perform(async move { models.models().await }, |result| {
                 AppMessage::Setup(Message::Models(result))
             }),
@@ -693,6 +712,15 @@ impl Setup {
                 AppMessage::Setup(Message::Server(result))
             }),
         ])
+    }
+
+    /// Asks the upstreams which models they serve; `refresh` makes the server ask them again.
+    fn ask_available(&self, settings: &Settings, refresh: bool) -> Task<AppMessage> {
+        let client = Client::new(settings.clone());
+        Task::perform(
+            async move { client.available_models(refresh).await },
+            |result| AppMessage::Setup(Message::Available(result)),
+        )
     }
 
     /// What a save of the Models page (`models`) or of the Settings page would send, or what is wrong with the inputs.
@@ -721,6 +749,7 @@ impl Setup {
         match message {
             Message::Models(result) => unauthorized(result),
             Message::Plugins(result) => unauthorized(result),
+            Message::Available(result) => unauthorized(result),
             Message::Server(result) => unauthorized(result),
             Message::Saved(result) => unauthorized(result),
             Message::Restarting(result) => unauthorized(result),
@@ -732,6 +761,17 @@ impl Setup {
         match message {
             Message::Models(Ok(models)) => self.models = Some(models),
             Message::Plugins(Ok(plugins)) => self.plugins = Some(plugins),
+            Message::Available(Ok(available)) => {
+                self.available = Some(available);
+                self.offer_models();
+            }
+            // Without the list the fields can still be typed into.
+            Message::Available(Err(_)) => {}
+            Message::RefreshAvailable => {
+                if let Some(settings) = settings {
+                    return self.ask_available(settings, true);
+                }
+            }
             Message::Server(Ok(server)) => {
                 // What is being edited is kept when the server tells the same again.
                 let editing = self
@@ -741,6 +781,7 @@ impl Setup {
                 if self.forms.is_none() || self.reset || !editing {
                     self.forms = Some(Forms::read(&server));
                     self.reset = false;
+                    self.offer_models();
                 }
                 self.restarting = false;
                 self.server = Some(server);
@@ -773,6 +814,23 @@ impl Setup {
         Task::none()
     }
 
+    /// Gives the Model fields the models that were listed.
+    fn offer_models(&mut self) {
+        if let Some(forms) = &mut self.forms {
+            for optional in forms
+                .teacher
+                .iter_mut()
+                .chain(forms.decision_model.iter_mut())
+            {
+                for field in &mut optional.form.fields {
+                    if field.kind == Kind::Model {
+                        field.combo = model_picker::state(self.available.as_ref());
+                    }
+                }
+            }
+        }
+    }
+
     /// The change of an input of one of the forms.
     fn edit(&mut self, message: Message) {
         let Some(forms) = &mut self.forms else {
@@ -783,6 +841,18 @@ impl Setup {
             Message::Edit(key, text) => {
                 if let Some(field) = forms.field_mut(key) {
                     field.text = text;
+                }
+            }
+            Message::PickModel(key, model) => {
+                if let Some(field) = forms.field_mut(key) {
+                    field.text = model.id;
+                }
+                // The teacher's protocol follows its model; the decision model speaks the protocol of its URL.
+                if key == "teacher.model"
+                    && let Some(field) = forms.field_mut("teacher.protocol")
+                    && PROTOCOLS.contains(&model.protocol.as_str())
+                {
+                    field.text = model.protocol;
                 }
             }
             Message::AddUpstream => forms.upstreams.push(Upstream {
@@ -941,6 +1011,15 @@ impl Setup {
             "Agents",
             column![agents, page::body("Agents are edited on the Agents page.")].spacing(10),
         );
+        // What the upstreams said is shown once, under the first Model field on the page.
+        let note = |first: bool| {
+            let available = self.available.as_ref().filter(|_| first)?;
+            Some(model_picker::note(
+                available,
+                AppMessage::Setup(Message::RefreshAvailable),
+            ))
+        };
+        let teacher_on = forms.teacher.as_ref().is_some_and(|t| t.on);
         let teacher = forms.teacher.as_ref().map(|teacher| {
             optional_box(
                 "Teacher",
@@ -949,6 +1028,7 @@ impl Setup {
                 teacher,
                 Message::ToggleTeacher,
                 None,
+                note(true),
             )
         });
         let decision_model = forms.decision_model.as_ref().map(|model| {
@@ -959,6 +1039,7 @@ impl Setup {
                 model,
                 Message::ToggleDecisionModel,
                 Some((Owner::DecisionModel, secrets)),
+                note(!teacher_on),
             )
         });
         let mut content = column![self.status(), upstreams, agents].spacing(theme::PAGE_GAP);
@@ -1063,7 +1144,7 @@ impl Setup {
         let mut boxes = forms.settings.iter().map(|(title, form)| {
             page::boxed(
                 title,
-                column(form.fields.iter().map(field_view)).spacing(12),
+                column(form.fields.iter().map(|field| field_view(field, None))).spacing(12),
             )
         });
         let mut content = column![self.status()].spacing(theme::PAGE_GAP);
@@ -1138,6 +1219,7 @@ fn optional_box<'a>(
     optional: &'a Optional,
     toggle: Message,
     key: Option<(Owner, &'a [String])>,
+    models_note: Option<Element<'a, AppMessage>>,
 ) -> Element<'a, AppMessage> {
     let toggle = AppMessage::Setup(toggle);
     if !optional.on {
@@ -1155,7 +1237,16 @@ fn optional_box<'a>(
             .spacing(12),
         );
     }
-    let mut fields = column(optional.form.fields.iter().map(field_view)).spacing(12);
+    let mut models_note = models_note;
+    let mut fields = column(optional.form.fields.iter().map(|field| {
+        let note = if field.kind == Kind::Model {
+            models_note.take()
+        } else {
+            None
+        };
+        field_view(field, note)
+    }))
+    .spacing(12);
     if let (Some((owner, secrets)), Some((now, _))) = (key, &optional.key) {
         fields = fields.push(key_view(owner, now, secrets));
     }
@@ -1171,7 +1262,10 @@ fn optional_box<'a>(
 }
 
 /// An input with its label and, when the file does not set the key, its default.
-fn field_view(field: &Field) -> Element<'_, AppMessage> {
+fn field_view<'a>(
+    field: &'a Field,
+    note: Option<Element<'a, AppMessage>>,
+) -> Element<'a, AppMessage> {
     let key = field.key;
     let on_input = move |text| AppMessage::Setup(Message::Edit(key, text));
     let input: Element<AppMessage> = match field.kind {
@@ -1185,6 +1279,13 @@ fn field_view(field: &Field) -> Element<'_, AppMessage> {
                 .menu_style(menu_style)
                 .into()
         }
+        Kind::Model => model_picker::combo(
+            &field.combo,
+            field.default.as_deref().unwrap_or(""),
+            &field.text,
+            on_input,
+            move |model| AppMessage::Setup(Message::PickModel(key, model)),
+        ),
         kind => text_input(field.default.as_deref().unwrap_or(""), &field.text)
             .on_input(on_input)
             .font(if kind == Kind::Code {
@@ -1218,7 +1319,11 @@ fn field_view(field: &Field) -> Element<'_, AppMessage> {
                 .color(theme::TEXT_MUTED),
         );
     }
-    column![head, input].spacing(5).into()
+    let mut shown = column![head, input].spacing(5);
+    if let Some(note) = note {
+        shown = shown.push(note);
+    }
+    shown.into()
 }
 
 /// One upstream as a row of inputs.

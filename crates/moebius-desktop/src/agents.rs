@@ -7,16 +7,18 @@
 use iced::font::Weight;
 use iced::widget::text::Wrapping;
 use iced::widget::{
-    button, column, container, pick_list, row, scrollable, space, text, text_editor, text_input,
+    button, column, combo_box, container, pick_list, row, scrollable, space, text, text_editor,
+    text_input,
 };
 use iced::{Alignment, Border, Element, Length, Task};
 
 use crate::app::Message as AppMessage;
 use crate::client::{
-    Agent, AgentDetail, AgentSettings, Client, ClientError, McpServer, Proposal, ServerSettings,
-    Skill,
+    Agent, AgentDetail, AgentSettings, Available, AvailableModel, Client, ClientError, McpServer,
+    Proposal, ServerSettings, Skill,
 };
 use crate::live::say;
+use crate::model_picker;
 use crate::page::{self, Tone};
 use crate::settings::Settings;
 use crate::{connect, retro, theme};
@@ -33,6 +35,12 @@ pub enum Message {
     SkillsListed(Result<Vec<Skill>, ClientError>),
     McpListed(Result<Vec<McpServer>, ClientError>),
     ProposalsListed(Result<Vec<Proposal>, ClientError>),
+    /// The models the upstreams serve.
+    Available(Result<Available, ClientError>),
+    /// The link under the Model field was pressed: ask the upstreams again.
+    RefreshAvailable,
+    /// A model was picked from the list.
+    ModelPicked(AvailableModel),
     /// An agent of the list was chosen.
     Select(String),
     /// The files of the agent with this name were read.
@@ -192,6 +200,10 @@ pub struct Agents {
     mcp: Vec<McpServer>,
     /// The proposals of the Retros, newest first; those still to be decided are offered under the agent they change.
     proposals: Vec<Proposal>,
+    /// What the upstreams serve, once they have been asked.
+    available: Option<Available>,
+    /// The list of the Model field.
+    model_list: combo_box::State<AvailableModel>,
     editor: Option<Editor>,
 }
 
@@ -301,6 +313,7 @@ impl Agents {
         let (agents, skills, mcp) = (client(settings), client(settings), client(settings));
         let proposals = client(settings);
         Task::batch([
+            self.ask_available(settings, false),
             Task::perform(async move { proposals.proposals().await }, |result| {
                 AppMessage::Agents(Message::ProposalsListed(result))
             }),
@@ -316,6 +329,15 @@ impl Agents {
         ])
     }
 
+    /// Asks the upstreams which models they serve; `refresh` makes the server ask them again.
+    fn ask_available(&self, settings: &Settings, refresh: bool) -> Task<AppMessage> {
+        let client = Client::new(settings.clone());
+        Task::perform(
+            async move { client.available_models(refresh).await },
+            |result| AppMessage::Agents(Message::Available(result)),
+        )
+    }
+
     /// Whether the server refused the token in an answer, which the app answers with the connect screen.
     pub fn refused(message: &Message) -> bool {
         match message {
@@ -323,6 +345,7 @@ impl Agents {
             Message::SkillsListed(result) => unauthorized(result),
             Message::McpListed(result) => unauthorized(result),
             Message::ProposalsListed(result) => unauthorized(result),
+            Message::Available(result) => unauthorized(result),
             _ => false,
         }
     }
@@ -336,6 +359,16 @@ impl Agents {
     }
 
     pub fn update(&mut self, message: Message, settings: Option<&Settings>) -> Task<AppMessage> {
+        // The list keeps what is typed into it, which the next agent opened must not find.
+        let typing = matches!(message, Message::ModelEdited(_) | Message::ModelPicked(_));
+        let task = self.handle(message, settings);
+        if !typing {
+            self.model_list = model_picker::state(self.available.as_ref());
+        }
+        task
+    }
+
+    fn handle(&mut self, message: Message, settings: Option<&Settings>) -> Task<AppMessage> {
         let Some(settings) = settings else {
             return Task::none();
         };
@@ -345,6 +378,9 @@ impl Agents {
             Message::SkillsListed(Ok(skills)) => self.skills = Some(skills),
             Message::McpListed(Ok(mcp)) => self.mcp = mcp,
             Message::ProposalsListed(Ok(proposals)) => self.proposals = proposals,
+            Message::Available(Ok(available)) => self.available = Some(available),
+            Message::Available(Err(_)) => {}
+            Message::RefreshAvailable => return self.ask_available(settings, true),
             Message::Listed(Err(_))
             | Message::SkillsListed(Err(_))
             | Message::McpListed(Err(_))
@@ -421,6 +457,12 @@ impl Agents {
         match message {
             Message::NameEdited(name) => editor.name = name,
             Message::ModelEdited(model) => editor.model = model,
+            Message::ModelPicked(model) => {
+                editor.model = model.id;
+                if PROTOCOLS.contains(&model.protocol.as_str()) {
+                    editor.protocol = model.protocol;
+                }
+            }
             Message::ProtocolChosen(protocol) => editor.protocol = protocol,
             Message::ThinkingChosen(level) => {
                 editor.thinking = (level != NOT_SET).then_some(level);
@@ -685,7 +727,13 @@ impl Agents {
             Files::Ready => {}
         }
         if ready {
-            content = content.push(settings_row(editor));
+            content = content.push(self.settings_row(editor));
+            if let Some(available) = &self.available {
+                content = content.push(model_picker::note(
+                    available,
+                    AppMessage::Agents(Message::RefreshAvailable),
+                ));
+            }
         }
         if let Some(notice) = &editor.notice {
             content = content.push(match notice {
@@ -965,14 +1013,25 @@ pub(crate) fn menu_style(_: &iced::Theme) -> iced::overlay::menu::Style {
     }
 }
 
-/// Model, protocol, thinking level and token budget.
-fn settings_row(editor: &Editor) -> Element<'_, AppMessage> {
+impl Agents {
+    /// Model, protocol, thinking level and token budget.
+    fn settings_row<'a>(&'a self, editor: &'a Editor) -> Element<'a, AppMessage> {
+        settings_row(editor, &self.model_list)
+    }
+}
+
+fn settings_row<'a>(
+    editor: &'a Editor,
+    models: &'a combo_box::State<AvailableModel>,
+) -> Element<'a, AppMessage> {
     let message = |message| AppMessage::Agents(message);
-    let model = text_input("The model's name", &editor.model)
-        .on_input(move |model| message(Message::ModelEdited(model)))
-        .size(theme::BODY)
-        .padding([9, 12])
-        .style(connect::input_style);
+    let model = model_picker::combo(
+        models,
+        "The model's name",
+        &editor.model,
+        move |model| message(Message::ModelEdited(model)),
+        move |model| message(Message::ModelPicked(model)),
+    );
     let protocols: Vec<String> = PROTOCOLS.iter().map(|p| p.to_string()).collect();
     let protocol = pick_list(protocols, Some(editor.protocol.clone()), move |p| {
         message(Message::ProtocolChosen(p))

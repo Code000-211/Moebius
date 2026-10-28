@@ -587,6 +587,25 @@ has one. Response:
 - `teacher` and `decision_model` are `null` without a `[teacher]` or `[decision_model]` table.
 - A user name and password in a URL are removed from `base_url` and `url`.
 
+### `GET /v1/models/available`
+
+The models the router's upstreams serve, for the pickers of the Models and Agents screens. The server asks every
+upstream at the same time, each with a limit of 10 seconds, with the key it sends in the router (see
+[the router](router.md#listing-models)). Query: `refresh=true` asks the upstreams again; without it the last answer is
+returned if it is less than 5 minutes old. Response:
+
+```json
+{
+  "models": [{"id": "claude-sonnet-4-5", "protocol": "anthropic", "upstream": "https://api.anthropic.com"}],
+  "errors": [{"upstream": "https://api.example.com", "message": "401"}]
+}
+```
+
+- `models` are sorted by `protocol`, then `id`; the same model of the same upstream is listed once.
+- An upstream that cannot be asked is in `errors` with a short `message`: an HTTP status such as `401`, `timed out`,
+  `could not connect`, `the answer is not JSON` or `the answer has no model list`. It does not fail the request.
+- No key is in the answer. A user name and password in an upstream's URL are removed.
+
 ### `GET /v1/plugins`
 
 The plugins the plugin host has loaded, which answer the decisions (see [the plugin API](plugin-api.md)). Response:

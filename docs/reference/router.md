@@ -23,6 +23,14 @@ upstream's status, content type and body (or stream) are passed back as they are
 
 An upstream is chosen by protocol: the first `[[router.upstreams]]` table with that `protocol`.
 
+## Listing models
+
+The desktop API's `GET /v1/models/available` (see the [desktop API](desktop-api.md#get-v1modelsavailable)) is answered by
+the router. It asks each upstream, once even if it is configured twice, which models it serves: for `openai`,
+`GET <base_url>/models`; for `anthropic`, `GET <base_url>/v1/models?limit=1000` with `anthropic-version: 2023-06-01`. Both
+read `data[].id`, and send the upstream's key as for a request (`Authorization: Bearer` or `x-api-key`). An upstream has
+10 seconds to answer. The answer is kept for 5 minutes, and is dropped when the upstreams are edited.
+
 ## Run tokens
 
 Every run gets a token of the form `moebius-run-<48 hex digits>` when it starts, and the token is revoked when the run

@@ -1596,3 +1596,46 @@ async fn editing_a_skill_and_an_mcp_server_is_a_commit_and_a_named_one_is_not_de
     client.delete_mcp_server("search").await.unwrap();
     assert_eq!(subject(), "Delete the MCP server search");
 }
+
+/// An upstream that answers every request with a model list, as plain HTTP.
+async fn fake_upstream() -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move {
+        loop {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            tokio::spawn(async move {
+                let mut buffer = [0u8; 4096];
+                let _ = stream.read(&mut buffer).await;
+                let body = r#"{"data": [{"id": "fake-small"}, {"id": "fake-large"}]}"#;
+                let answer = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(answer.as_bytes()).await;
+            });
+        }
+    });
+    url
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_client_reads_the_models_the_upstreams_serve_from_a_real_server() {
+    let dir = tempfile::tempdir().unwrap();
+    let upstream = fake_upstream().await;
+    let (settings, _server) = start_with(
+        dir.path(),
+        &format!("[[router.upstreams]]\nprotocol = \"openai\"\nbase_url = \"{upstream}\"\n"),
+    )
+    .await;
+    let client = Client::new(settings);
+    for refresh in [false, true] {
+        let available = client.available_models(refresh).await.unwrap();
+        let ids: Vec<&str> = available.models.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids, ["fake-large", "fake-small"]);
+        assert_eq!(available.models[0].protocol, "openai");
+        assert_eq!(available.models[0].upstream, upstream);
+        assert!(available.errors.is_empty());
+    }
+}

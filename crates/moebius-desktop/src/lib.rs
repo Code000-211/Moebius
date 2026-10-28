@@ -16,6 +16,7 @@ pub mod icons;
 pub mod inbox;
 pub mod live;
 pub mod mcp_servers;
+pub mod model_picker;
 pub mod new_issue;
 pub mod page;
 pub mod retro;
