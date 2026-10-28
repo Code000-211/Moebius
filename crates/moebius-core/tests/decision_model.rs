@@ -569,9 +569,15 @@ fn for_tool_calls_the_model_answers_the_rules_in_prose_and_the_patterns_stay() {
     let server = Server::new(config, "127.0.0.1:1".parse().unwrap()).unwrap();
     let api = Api::start(&fake, &server);
 
+    // The patterns' own refusals are not what a takeover replaces, so they are not shadowed: had they been, the model
+    // (which would allow them) would disagree on them and the agreement below would not be whole.
+    let mut n = 0;
+    while !held_out(tool_call(&server, "rm -rf /", "allow", n).judgement_id) {
+        n += 1;
+        assert!(n < 5000, "no call was held out");
+    }
     // Without the model, the rule in prose cannot be judged, so the guard refuses; the model agrees.
     assert_eq!(api.get("/v1/decision-model").1["configured"], true);
-    let mut n = 0;
     while server.app.store.inbox().unwrap().is_empty() {
         n += 1;
         assert!(n < 5000, "no takeover was proposed");

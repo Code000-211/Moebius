@@ -34,6 +34,9 @@ pub const NAME: &str = "decision-model";
 /// The kind whose decider stays when the model takes it over: the guard keeps its built-in patterns.
 pub const KEPT_BY_ITS_DECIDER: &str = "tool_call";
 
+/// The decider of a tool call the guard's teacher judged: the part of the guard a takeover replaces.
+const TEACHER: &str = "guard/teacher";
+
 /// The most characters of one field of a context the model is shown. What the model sees is cut from the full
 /// context, so that the cut can change without touching the judgements.
 const FIELD_LIMIT: usize = 4000;
@@ -239,15 +242,18 @@ pub struct Shadowing {
 }
 
 impl Shadowing {
-    /// Queues the judgement if it is held out from training, of a shadowed kind and not made by the model itself. It
-    /// never waits: with the queue full the request is dropped and counted.
+    /// Queues the judgement if it is held out from training, of a shadowed kind and not made by the model itself. Of
+    /// the kind whose decider keeps it ([`KEPT_BY_ITS_DECIDER`]), only the judgements of the part a takeover replaces,
+    /// the teacher, are shadowed: those its patterns decide would make the agreement look better than it is. It never
+    /// waits: with the queue full the request is dropped and counted.
     pub fn offer(&self, judgement: &Judgement, context: &BTreeMap<String, String>) {
         let by_model = judgement.decider == NAME || judgement.decider.ends_with("/decision-model");
         let shadowed = self
             .config
             .shadow
             .as_ref()
-            .is_none_or(|kinds| kinds.contains(&judgement.kind));
+            .is_none_or(|kinds| kinds.contains(&judgement.kind))
+            && (judgement.kind != KEPT_BY_ITS_DECIDER || judgement.decider == TEACHER);
         if by_model || !shadowed || !held_out(judgement.id) {
             return;
         }

@@ -38,7 +38,9 @@ is not among the options are all failures.
 Whenever a judgement is recorded, by `Decisions::decide` or for a person's decision, and its kind is shadowed
 (`decision_model.shadow`, all kinds when not given), and it is held out from training (`split` is `held_out`, see
 [the split](training-export.md#the-split)), the model is asked the same question in the background. Judgements the model
-itself made (`decider` is `decision-model` or `<plugin>/decision-model`) are not asked about.
+itself made (`decider` is `decision-model` or `<plugin>/decision-model`) are not asked about. Of `tool_call`, only the
+judgements the guard's teacher made (`decider` is `guard/teacher`) are asked about, because a takeover replaces only the
+teacher: the calls its built-in patterns decide would make the agreement look better than it is.
 
 - It never delays a decision or a run: the request goes to a queue of 64 that one worker thread empties, and a request
   that finds the queue full is dropped and counted (per kind, since the server started; it is not stored).

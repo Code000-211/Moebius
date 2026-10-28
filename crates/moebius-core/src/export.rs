@@ -38,8 +38,8 @@ pub enum ExportError {
 
 /// Whether the judgement belongs to the tenth that is kept back from training. Shadowing measures a decision model on
 /// these. The rule: the id as an unsigned 64-bit number is multiplied, wrapping around, by `0x9E3779B97F4A7C15`, and
-/// the judgement is held out when the upper 32 bits of the product leave remainder 0 when divided by 10. It involves no randomness, so the
-/// same judgement is held out in every export, on every server.
+/// the judgement is held out when the upper 32 bits of the product leave remainder 0 when divided by 10. It involves no
+/// randomness, so the same judgement is held out in every export, on every server.
 pub fn held_out(id: i64) -> bool {
     ((id as u64).wrapping_mul(SPREAD) >> 32).is_multiple_of(10)
 }

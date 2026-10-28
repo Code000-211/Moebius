@@ -6,18 +6,25 @@ card, and checks every tool call an agent makes against rules.
 
 ## Status
 
-Milestones M0 to M5 are done (see [`docs/spec.md`](docs/spec.md) section 10). Today Moebius:
+Every milestone of the first version, M0 to M9, is built (see [`docs/spec.md`](docs/spec.md) section 10). Moebius:
 
-- starts a server with a SQLite store, a desktop API and a model router;
+- starts a server with a SQLite store, a desktop API and a model router that counts tokens and keeps budgets;
 - takes issues from a plain git repository (through the API) or from GitHub (by polling), and puts them on a board;
-- runs a Pi-Bolt agent per card in its own worktree, and offers the result as a change (a branch, or a GitHub pull request);
-- merges the change when a person asks through the API;
-- chats with agents, and with the bundled Moebius agent, which builds scripts, rules and agents from the guide and offers them as a change;
+- runs a Pi-Bolt agent per card in its own worktree, reviews its work, waits for CI, and offers the result as a change
+  (a branch, or a GitHub pull request) to merge;
 - checks every tool call against built-in rules and rules written in prose, and refuses the ones that break a rule;
-- records every decision as a judgement and every model request's tokens as usage.
+- chats with agents: the bundled Moebius agent builds scripts, rules and agents from the guide, and the Grilling partner
+  turns an idea into issues a person confirms;
+- reads its agents, skills, MCP servers and rules from a harness configuration repository, where an edit in the app is
+  a commit;
+- improves itself at night: the Retro proposes changes to the harness configuration from the day's errors, trials try
+  them on the cards they came from, refused calls are replayed in a throwaway copy, and autoresearch measures levers
+  against a number a person wants to improve;
+- records every decision as a judgement, exports them as a training set, and lets a decision model shadow a kind of
+  decision and take it over once a person merges the proposal.
 
-The desktop app has its shell so far (connection, sidebar, fonts and colours); the screens come with M6 and M7.
-Not built yet: the usage page and the editing of agents in the app, self-improvement and the decision model.
+The desktop app has every screen of [`docs/design.md`](docs/design.md): board, live view with a shell, inbox, chat,
+agents, usage, Retro, experiments and decision model. The Models, Plugins and Settings pages are not built yet.
 
 ## Quick start
 
@@ -105,10 +112,11 @@ network. The window needs a GPU or a software Vulkan/OpenGL driver; the app find
   [column scripts](docs/reference/column-scripts.md), [rules](docs/reference/rules.md),
   [configuration](docs/reference/configuration.md), [plugin API](docs/reference/plugin-api.md),
   [bridge protocol](docs/reference/bridge-protocol.md), [router](docs/reference/router.md),
-  [desktop API](docs/reference/desktop-api.md), [training export](docs/reference/training-export.md),
+  [desktop API](docs/reference/desktop-api.md), [harness configuration](docs/reference/harness-configuration.md),
+  [training export](docs/reference/training-export.md),
   [decision model](docs/reference/decision-model.md).
 - [`docs/guide/`](docs/guide/README.md): the guide, how to build on Moebius step by step (column scripts, workflows,
-  rules, agents, plugins, extensions, the desktop API), with examples that tests run.
+  rules, agents, plugins, extensions, the desktop API, grilling, autoresearch), with examples that tests run.
 - [`examples/README.md`](examples/README.md): the examples.
 - [`docs/issues-m0-m1.md`](docs/issues-m0-m1.md), [`docs/issues-m2-m9.md`](docs/issues-m2-m9.md): the work, issue by issue.
 - [`docs/design.md`](docs/design.md): the look of the desktop app.
