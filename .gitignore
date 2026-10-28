@@ -1,2 +1,4 @@
 /target
 /dist/out
+# What a server started in this directory keeps: its store, keys and token.
+/.moebius
