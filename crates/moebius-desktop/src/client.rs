@@ -304,7 +304,7 @@ pub struct Plugins {
 /// One thing to set up before the first card, as `GET /v1/start` lists it.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct StartStep {
-    /// `upstream`, `pi_bolt`, `coder` or `repository`.
+    /// `upstream`, `pi_bolt`, `harness`, `coder` or `repository`.
     pub key: String,
     pub title: String,
     pub done: bool,
@@ -355,7 +355,7 @@ impl ServerSettings {
     }
 }
 
-/// What `PUT /v1/settings` answers: whether some changed key is used only after a restart.
+/// What `PUT /v1/settings` and `POST /v1/harness/setup` answer: whether some changed key is used only after a restart.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct SavedSettings {
     pub restart_needed: bool,
@@ -1206,6 +1206,12 @@ impl Client {
             serde_json::json!({ "value": key }),
         )
         .await
+    }
+
+    /// Moves the agents and rules of `moebius.toml` into a new harness configuration repository, which the server uses
+    /// once it restarts.
+    pub async fn set_up_harness(&self) -> Result<SavedSettings, ClientError> {
+        self.post("/v1/harness/setup", serde_json::json!({})).await
     }
 
     /// Asks the server to restart, which it answers before it does.

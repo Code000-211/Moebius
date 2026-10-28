@@ -6,10 +6,12 @@ You want the default workflow to have a Coder, and perhaps a Reviewer, or you wa
 own: a stronger model for hard cards, a reviewer that is stricter than the coder, an agent to chat with. An agent is a
 named setup that a run uses: the model, how it thinks, its instructions, its skills and extensions, and a token budget.
 
-Agents are kept in one of two places. In tables of `moebius.toml`, the simple way, which the steps below use. Or in a
-harness configuration repository, a git repository of their own, where an edit is a commit and agents can be changed
-through the API (see [In a harness configuration repository](#in-a-harness-configuration-repository)). MCP servers
-are given to agents from the repository only. The keys of `moebius.toml` are
+Agents are kept in one of two places. In tables of `moebius.toml`, which the steps below use. Or in a harness
+configuration repository, a git repository of their own, where an edit is a commit and agents can be changed through the
+API (see [In a harness configuration repository](#in-a-harness-configuration-repository)). `moebius init` makes one
+next to `moebius.toml` and names it in `[harness]`, and a server that keeps its agents in `moebius.toml` can move them
+into one from the app (see [Setting it up from the app](#setting-it-up-from-the-app)). Skills and MCP servers are
+edited, and MCP servers given to agents, in the repository only. The keys of `moebius.toml` are
 listed exactly in [`docs/reference/configuration.md`](../reference/configuration.md), those of the repository in
 [`docs/reference/harness-configuration.md`](../reference/harness-configuration.md).
 
@@ -197,6 +199,29 @@ The agent is used from the next run on. The exact files, keys and errors are in 
 [reference](../reference/harness-configuration.md).
 
 Without `[harness]` the three routes of an agent answer 422: the agents are in `moebius.toml`.
+
+### Setting it up from the app
+
+On a server without `[harness]`, the Skills, MCP servers and Agents pages of the desktop app, and the step "Keep agents,
+skills and MCP servers in a repository" of Get started, have a "Set up" button. Only a person can press it (the
+Moebius agent is refused). It sends `POST /v1/harness/setup`, and the server:
+
+1. makes `harness/` next to `moebius.toml` a git repository on `main`, refused when that directory has files;
+2. writes each `[agents.<name>]` as `agents/<name>.toml` and `agents/<name>.md`, copies each skill directory an agent
+   names to `skills/<directory name>/` and each extension to `extensions/<file name>`, copies the rules file to
+   `rules.md`, adds an empty `mcp.toml` and a `README.md`, checks that every agent reads back, and commits;
+3. replaces `[agents.*]` and `rules_file` in `moebius.toml` with `[harness] url` naming the repository, keeping the rest
+   of the file and its comments.
+
+The app then restarts the server, which clones the repository and reads the agents from it. A skill whose directory has
+the name of a built-in skill, two skills or extensions with the same name, or a path that is not there stops the setup
+with a message, and nothing is changed. The files the old paths named stay where they were; the agents use the copies
+from now on. The same setup with curl:
+
+```sh
+curl -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:7171/v1/harness/setup
+curl -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:7171/v1/server/restart
+```
 
 ## Examples
 

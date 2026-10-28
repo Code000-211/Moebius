@@ -15,6 +15,7 @@ pub mod edits;
 pub mod experiments;
 pub mod fleet;
 pub mod float_chat;
+pub mod harness_setup;
 pub mod history;
 pub mod icons;
 pub mod import;

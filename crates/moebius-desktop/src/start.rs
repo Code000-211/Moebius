@@ -1,5 +1,6 @@
 //! The Get started page: what a server still needs before the first card can run (an upstream with models, Pi-Bolt,
-//! the Coder's model, a repository), read from `GET /v1/start`, with a button to the page that fixes each step. It is
+//! a harness configuration repository, the Coder's model, a repository), read from `GET /v1/start`, with a button to
+//! the page that fixes each step, or for the repository the "Set up" that makes it (see `harness_setup`). It is
 //! read again each time the page is opened, when any page is opened while a step is missing, and by its Refresh
 //! button; the sidebar shows its entry only while a step is missing.
 
@@ -9,6 +10,7 @@ use iced::{Alignment, Element, Length, Padding, Task};
 
 use crate::app::{Message as AppMessage, Page};
 use crate::client::{Client, ClientError, Start as Answer, StartStep};
+use crate::harness_setup::HarnessSetup;
 use crate::page::{self, Tone};
 use crate::settings::Settings;
 use crate::theme;
@@ -61,7 +63,7 @@ impl Start {
         matches!(message, Message::Loaded(Err(ClientError::Unauthorized)))
     }
 
-    pub fn view(&self) -> Element<'_, AppMessage> {
+    pub fn view<'a>(&'a self, harness: &'a HarnessSetup) -> Element<'a, AppMessage> {
         let context = match &self.answer {
             None => "Reading what the server still needs.",
             Some(answer) if answer.done => "Everything is set up. Cards can run.",
@@ -82,7 +84,7 @@ impl Start {
                 if index > 0 {
                     steps = steps.push(page::rule());
                 }
-                steps = steps.push(step_row(step));
+                steps = steps.push(step_row(step, harness));
             }
             content = content.push(page::boxed("Before the first card", steps));
         }
@@ -114,13 +116,13 @@ fn fix(key: &str) -> Option<(Page, &'static str)> {
     }
 }
 
-fn step_row(step: &StartStep) -> Element<'_, AppMessage> {
+fn step_row<'a>(step: &'a StartStep, harness: &'a HarnessSetup) -> Element<'a, AppMessage> {
     let mark = if step.done {
         page::tag("Done".to_string(), Tone::Teal)
     } else {
         page::tag("To do".to_string(), Tone::Amber)
     };
-    let words = column![
+    let mut words = column![
         text(step.title.as_str())
             .size(theme::BODY)
             .font(theme::manrope(Weight::Semibold)),
@@ -131,10 +133,17 @@ fn step_row(step: &StartStep) -> Element<'_, AppMessage> {
     ]
     .spacing(3)
     .width(Length::Fill);
+    let set_up = step.key == "harness" && !step.done;
+    if let Some(error) = harness.error().filter(|_| set_up) {
+        words = words.push(text(error).size(theme::CONTEXT).color(theme::RED_TEXT));
+    }
     let mut line = row![container(mark).width(64), words]
         .spacing(14)
         .align_y(Alignment::Center);
-    if let (false, Some((target, label))) = (step.done, fix(&step.key)) {
+    if set_up {
+        // The step is fixed here: the repository is made and the server restarts.
+        line = line.push(harness.button());
+    } else if let (false, Some((target, label))) = (step.done, fix(&step.key)) {
         line = line.push(page::white_button(label, Some(AppMessage::Visit(target))));
     }
     line.into()

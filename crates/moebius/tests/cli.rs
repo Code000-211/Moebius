@@ -25,11 +25,15 @@ async fn start() -> Running {
 
 /// Starts a server; `more` is added to its configuration.
 async fn start_with(more: &str) -> Running {
-    let dir = tempfile::tempdir().unwrap();
-    let file = dir.path().join("moebius.toml");
     let text = format!(
         "[board]\ntick_ms = 100\n[router]\nlisten = \"127.0.0.1:0\"\n[agents.Coder]\nmodel = \"m\"\n{more}"
     );
+    start_in(tempfile::tempdir().unwrap(), &text).await
+}
+
+/// Starts a server whose configuration in `dir` is `text`.
+async fn start_in(dir: tempfile::TempDir, text: &str) -> Running {
+    let file = dir.path().join("moebius.toml");
     std::fs::write(&file, text).unwrap();
     let mut config = Config::load(&file).unwrap();
     config.moebius = env!("CARGO_BIN_EXE_moebius").into();
@@ -336,14 +340,15 @@ async fn doctor_lists_the_steps_and_fails_while_one_is_missing() {
     assert_eq!(output.status.code(), Some(1));
     let text = String::from_utf8(output.stdout.clone()).unwrap();
     let lines: Vec<&str> = text.lines().collect();
-    assert_eq!(lines.len(), 4, "{text}");
+    assert_eq!(lines.len(), 5, "{text}");
     assert_eq!(
         lines[0],
         "missing  upstream: Add an upstream on the Models page."
     );
     assert!(lines[1].starts_with("missing  pi_bolt: Could not run /no/such/pi-bolt"));
-    assert!(lines[2].starts_with("ok       coder: "), "{text}");
-    assert_eq!(lines[3], "missing  repository: No repository is added yet.");
+    assert!(lines[2].starts_with("missing  harness: "), "{text}");
+    assert!(lines[3].starts_with("ok       coder: "), "{text}");
+    assert_eq!(lines[4], "missing  repository: No repository is added yet.");
     assert!(String::from_utf8_lossy(&output.stderr).contains("not ready"));
 
     let json = s.run(&["--json", "doctor"]).await;
@@ -355,10 +360,26 @@ async fn doctor_lists_the_steps_and_fails_while_one_is_missing() {
 #[tokio::test(flavor = "multi_thread")]
 async fn doctor_succeeds_when_everything_is_in_place() {
     let upstream = fake_upstream().await;
-    let s = start_with(&format!(
-        "[pi_bolt]\nprogram = \"/bin/true\"\n[[router.upstreams]]\nprotocol = \"openai\"\nbase_url = \"{upstream}\"\n"
-    ))
-    .await;
+    let dir = tempfile::tempdir().unwrap();
+    let harness = dir.path().join("harness");
+    let coder = moebius_core::config::AgentConfig {
+        model: "m".into(),
+        protocol: moebius_core::router::Protocol::OpenAi,
+        thinking: None,
+        instructions: None,
+        skills: vec![],
+        extensions: vec![],
+        mcp: Default::default(),
+        token_budget: None,
+    };
+    moebius_core::harness_repo::create(&harness, &[("Coder".to_string(), coder)].into(), None)
+        .unwrap();
+    let text = format!(
+        "[router]\nlisten = \"127.0.0.1:0\"\n[pi_bolt]\nprogram = \"/bin/true\"\n[[router.upstreams]]\nprotocol = \"openai\"\n\
+         base_url = \"{upstream}\"\n[harness]\nurl = {:?}\n",
+        harness.display().to_string()
+    );
+    let s = start_in(dir, &text).await;
     s.server
         .app
         .store
@@ -366,7 +387,7 @@ async fn doctor_succeeds_when_everything_is_in_place() {
         .unwrap();
     let output = s.run(&["doctor"]).await;
     let text = out(&output);
-    assert_eq!(text.lines().count(), 4, "{text}");
+    assert_eq!(text.lines().count(), 5, "{text}");
     assert!(text.lines().all(|line| line.starts_with("ok ")), "{text}");
 }
 
@@ -379,15 +400,23 @@ fn init_points_the_configuration_at_the_pi_bolt_on_the_path() {
     let program = bin.join("pi-bolt");
     std::fs::write(&program, "#!/bin/sh\n").unwrap();
     std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+    // `init` makes the harness configuration repository with git, which is the only other program on the path.
+    let tools = dir.path().join("tools");
+    std::fs::create_dir(&tools).unwrap();
+    let git = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+        .map(|dir| dir.join("git"))
+        .find(|git| git.is_file())
+        .expect("git is on the path");
+    std::os::unix::fs::symlink(git, tools.join("git")).unwrap();
     let init = |path: &Path| {
         let work = tempfile::tempdir().unwrap();
         let output = std::process::Command::new(env!("CARGO_BIN_EXE_moebius"))
             .current_dir(work.path())
             .arg("init")
-            .env("PATH", path)
+            .env("PATH", std::env::join_paths([path, &tools]).unwrap())
             .output()
             .unwrap();
-        assert!(output.status.success());
+        assert!(output.status.success(), "{output:?}");
         std::fs::read_to_string(work.path().join("moebius.toml")).unwrap()
     };
     let with = init(&bin);

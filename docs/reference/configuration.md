@@ -7,6 +7,8 @@ every key with its type, default, meaning and validation. The code is in `crates
 
 - `moebius --config <file> serve` reads the file; the default is `moebius.toml` in the current directory.
   `moebius init` writes a commented example with every default to that path and refuses to overwrite an existing file.
+  The example's one key that is not a default is `[harness] url`, which names the harness configuration repository
+  `init` makes next to the file (see below).
 - A file that does not exist means every default. An empty file is valid.
 - Every key is optional unless it says required. Unknown keys and unknown tables are errors, so a typo is found at start.
 - In TOML, keys outside any table must come before the first `[table]` header. `rules_file` is such a key.
@@ -20,7 +22,12 @@ Keys of a table are written with the table's name, such as `board.tick_ms`. A ke
 `moebius [--config <file>] <command>`; the file is read by every command that needs it.
 
 - `init` writes the commented example configuration. When a `pi-bolt` executable is on `PATH`, the file sets
-  `[pi_bolt] program` to its absolute path, and `init` says so.
+  `[pi_bolt] program` to its absolute path, and `init` says so. It first makes `harness/` next to the file a new
+  harness configuration repository (see [harness configuration](harness-configuration.md#a-repository-on-the-server)):
+  a git repository on `main` with one commit holding an empty `rules.md`, an `mcp.toml` without servers and a
+  `README.md`, and no agents. The file sets `[harness] url` to its absolute path, and the example's commented
+  `[agents.*]` say that the agents are files there. `init` fails, and writes nothing, when `harness/` exists and is not
+  empty.
 - `serve` starts the server.
 - `check-script <file> [--column <name>] [--title <text>] [--author <login>]` runs a column script once (see
   [column scripts](column-scripts.md)).
@@ -56,12 +63,23 @@ An absolute path is used as it is.
 ## `[harness]`
 
 The harness configuration repository, see [harness configuration](harness-configuration.md). The table is optional.
-Without it, agents and rules are configured here.
+Without it, agents and rules are configured here, and skills and MCP servers cannot be edited.
 
 | Key | Type | Default | Meaning and validation |
 |---|---|---|---|
 | `harness.mcp_env` | array of strings | `[]` | The names of the environment variables of the server that `mcp.toml` of the repository may take values from, as `${NAME}`; any other name makes the server unusable. Each name is made of letters, digits and `_` and does not start with a digit, else the file is refused. What a server is given is visible to the runs of the agents that name it. |
 | `harness.url` | string | required | The git URL of the repository, cloned to `<data_dir>/harness`, fetched every 30 seconds and pushed to by edits through the API. Not blank. With `[github]`, an `https://github.com/...` URL uses the App's token. With `[harness]`, `[agents.*]` and `rules_file` are errors: the agents are `agents/<name>.toml` and `agents/<name>.md` in the repository, the rules `rules.md`. |
+
+### Setting it up from the app
+
+A server without `[harness]` can make one: `POST /v1/harness/setup` (see the [desktop API](desktop-api.md)), the "Set
+up" of the desktop app's Get started, Skills, MCP servers and Agents pages, which only a person can ask for. It makes
+`harness/` next to `moebius.toml` a new repository, as `moebius init` does, with every `[agents.<name>]` as
+`agents/<name>.toml` and `agents/<name>.md` and the file of `rules_file` (by default `rules.md` next to this file) as
+`rules.md`. A skill an agent names by path is copied to `skills/<directory name>/`, and an extension to
+`extensions/<file name>`. The file then gets `[harness] url` with the repository's absolute path, and loses
+`[agents.*]` and `rules_file`; its other keys and comments stay. The server uses the repository after it restarts. The
+old skill and extension files and the rules file are left where they were.
 
 ## `[trial_window]`
 

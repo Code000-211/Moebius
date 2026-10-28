@@ -16,6 +16,7 @@ use crate::client::{
     Agent, AgentDetail, AgentSettings, Available, AvailableModel, BuiltInAgent, Client,
     ClientError, McpServer, Proposal, Run, ServerSettings, Skill,
 };
+use crate::harness_setup::HarnessSetup;
 use crate::live::say;
 use crate::model_picker;
 use crate::page::{self, Tone};
@@ -684,8 +685,9 @@ impl Agents {
         }
     }
 
-    /// The Agents page: the list, and the editor of the agent chosen.
-    pub fn view(&self) -> Element<'_, AppMessage> {
+    /// The Agents page: the list, and the editor of the agent chosen. A server that keeps its agents in `moebius.toml`
+    /// has the box that sets up a harness configuration repository at the top.
+    pub fn view<'a>(&'a self, harness: &'a HarnessSetup) -> Element<'a, AppMessage> {
         let editable = self.editable();
         let new_agent = editable.then_some(AppMessage::Agents(Message::NewAgent));
         let header = page::header(
@@ -706,6 +708,7 @@ impl Agents {
         detail = detail.push(self.proposals_box());
         column![
             header,
+            self.in_file().then(|| harness.view()),
             row![
                 scrollable(self.list_view()).width(280),
                 scrollable(detail).width(Length::Fill)

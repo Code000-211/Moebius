@@ -123,7 +123,7 @@ async fn other_agents_and_revoked_tokens_are_refused() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn keys_and_shells_stay_with_a_person() {
+async fn keys_shells_and_the_harness_setup_stay_with_a_person() {
     let f = Fixture::start().await;
     let (run, token) = f.run("Moebius");
     let secret = json!({ "value": "sk-test" });
@@ -142,6 +142,12 @@ async fn keys_and_shells_stay_with_a_person() {
         f.send(Method::PUT, "/v1/secrets/anthropic", &person, Some(secret))
             .await,
         200
+    );
+    // Moving the agents into a harness configuration repository is the person's choice.
+    assert_eq!(
+        f.send(Method::POST, "/v1/harness/setup", &token, None)
+            .await,
+        403
     );
     // A shell is asked for with a WebSocket upgrade.
     let response = f

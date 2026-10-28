@@ -256,7 +256,7 @@ The server runs on a multi-threaded tokio runtime.
 
 | Module | What it is for |
 |---|---|
-| `crates/moebius/src/main.rs` | The `moebius` binary: `init` writes the example configuration (with the `pi-bolt` found on `PATH`), `doctor` (in `cli.rs`) tells what is missing before a first card, `serve` starts the server, `check-script` runs a column script once against a made-up card (`board::check_script`), `export` writes the training set (`export`). |
+| `crates/moebius/src/main.rs` | The `moebius` binary: `init` writes the example configuration (with the `pi-bolt` found on `PATH`) and the harness configuration repository next to it (`harness_repo::create`), `doctor` (in `cli.rs`) tells what is missing before a first card, `serve` starts the server, `check-script` runs a column script once against a made-up card (`board::check_script`), `export` writes the training set (`export`). |
 | `crates/moebius-plugin-api/src/lib.rs` | The `Plugin` trait, the call and decision types, the `Host` that calls plugins with a time limit and fails closed. |
 | `crates/moebius-desktop/src/main.rs` | The desktop app's start: fonts, theme, window. |
 | `crates/moebius-desktop/src/app.rs` | The app's state, `Message`, `update` and view: the connection, the page shown, reading the snapshot again on events. |
@@ -289,7 +289,7 @@ The server runs on a multi-threaded tokio runtime.
 | `github.rs` | The GitHub App client: JWT, installation tokens, issues with ETags, pull requests, checks, reviews, merge. |
 | `grilling.rs` | The Grilling partner's end: the issues or report it left in its worktree, confirming the issues as cards (on GitHub opened there first) and dismissing. |
 | `guard.rs` | The `guard` decider: built-in pattern rules and the teacher model. |
-| `harness_repo.rs` | The harness configuration repository: its clone, reading agents, skills, rules and MCP servers from it, and edits as commits pushed to its origin. |
+| `harness_repo.rs` | The harness configuration repository: its clone, reading agents, skills, rules and MCP servers from it, and edits as commits pushed to its origin; `create` makes a new one from the agents and rules of `moebius.toml` (`POST /v1/harness/setup`, `moebius init`). |
 | `mcp.rs` | The MCP servers of `mcp.toml`, checked when read, and the `mcp.json` a run of an agent that names them is given. |
 | `pibolt.rs` | The Pi-Bolt harness: starting, reading and stopping runs. |
 | `poll.rs` | The poll of GitHub: issues, pull requests, checks, reviews. |

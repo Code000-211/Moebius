@@ -11,6 +11,7 @@ use clap::{Parser, Subcommand};
 use moebius_core::board;
 use moebius_core::config::{self, Config};
 use moebius_core::export;
+use moebius_core::harness_repo;
 use moebius_core::server::Server;
 use moebius_core::store::Store;
 
@@ -96,8 +97,21 @@ fn run(cli: Cli) -> Result<(), String> {
             if let Some(program) = &found {
                 println!("found Pi-Bolt at {}", program.display());
             }
-            std::fs::write(&cli.config, example(found.as_deref()))
-                .map_err(|e| format!("cannot write {}: {e}", cli.config.display()))?;
+            // The harness configuration repository is made first, so that a configuration is never written that
+            // names one that is not there.
+            let config = std::path::absolute(&cli.config)
+                .map_err(|e| format!("cannot find {}: {e}", cli.config.display()))?;
+            let harness = config.with_file_name("harness");
+            harness_repo::create(&harness, &Default::default(), None)
+                .map_err(|e| format!("cannot set up {}: {e}", harness.display()))?;
+            println!(
+                "set up the harness configuration repository {}",
+                harness.display()
+            );
+            if let Err(e) = std::fs::write(&cli.config, example(found.as_deref(), &harness)) {
+                let _ = std::fs::remove_dir_all(&harness);
+                return Err(format!("cannot write {}: {e}", cli.config.display()));
+            }
             println!("wrote {}", cli.config.display());
             Ok(())
         }
@@ -206,21 +220,35 @@ fn find_in_path(name: &str, path: &std::ffi::OsStr) -> Option<PathBuf> {
         .map(|found| std::path::absolute(&found).unwrap_or(found))
 }
 
-/// The example configuration, with `[pi_bolt] program` set to `pi_bolt` if it is known.
-fn example(pi_bolt: Option<&std::path::Path>) -> String {
-    let default = "program = \"pi-bolt\"";
+/// The example configuration as `init` writes it: with `[pi_bolt] program` set to `pi_bolt` if it is known, and
+/// `[harness] url` naming the repository `harness`, which holds the agents in place of `[agents.*]`.
+fn example(pi_bolt: Option<&std::path::Path>, harness: &std::path::Path) -> String {
+    let quoted = |path: &std::path::Path| toml::Value::String(path.to_string_lossy().into_owned());
+    let mut text = config::EXAMPLE.replacen(
+        "# [harness]\n# url = \"https://github.com/acme/harness-configuration\"\n",
+        &format!("[harness]\nurl = {}\n", quoted(harness)),
+        1,
+    );
+    if let Some((before, _)) = text.split_once(AGENTS) {
+        text = format!("{before}{INIT_AGENTS}");
+    }
     match pi_bolt {
-        Some(program) => config::EXAMPLE.replacen(
-            default,
-            &format!(
-                "program = {}",
-                toml::Value::String(program.to_string_lossy().into_owned())
-            ),
+        Some(program) => text.replacen(
+            "program = \"pi-bolt\"",
+            &format!("program = {}", quoted(program)),
             1,
         ),
-        None => config::EXAMPLE.to_string(),
+        None => text,
     }
 }
+
+/// Where the example's commented `[agents.*]` start; they are last.
+const AGENTS: &str = "# Agents run on Pi-Bolt.";
+
+/// What `init` writes in place of the commented `[agents.*]`, which cannot be set together with `[harness]`.
+const INIT_AGENTS: &str = "# Agents run on Pi-Bolt. The default workflow starts the Coder, and the Reviewer when there is one. They are \
+files of the\n# harness configuration repository (agents/Coder.toml and agents/Coder.md), added in the app or with \
+`moebius agent save`.\n";
 
 /// Starts this program again, with the arguments it was started with, in place of the running one. It returns only to
 /// say why that failed.
@@ -257,7 +285,7 @@ mod tests {
     }
 
     #[test]
-    fn init_writes_the_example_and_the_server_prepares_its_data() {
+    fn init_writes_the_example_with_a_harness_repository_and_the_server_starts_on_it() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("moebius.toml");
         let cli = |c| Cli {
@@ -268,16 +296,57 @@ mod tests {
             command: Some(c),
         };
         run(cli(Command::Init)).unwrap();
+        let harness = dir.path().join("harness");
         let on_path = std::env::var_os("PATH").and_then(|p| super::find_in_path("pi-bolt", &p));
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
-            super::example(on_path.as_deref())
+            super::example(on_path.as_deref(), &harness)
         );
         assert!(run(cli(Command::Init)).is_err());
+        // The repository has its files, committed on main, and no agents yet.
+        let git = |args: &[&str]| moebius_core::repos::git(&harness, args).unwrap();
+        assert_eq!(git(&["branch", "--show-current"]), "main");
+        assert_eq!(
+            git(&["ls-files"]).lines().collect::<Vec<_>>(),
+            ["README.md", "mcp.toml", "rules.md"]
+        );
+        assert_eq!(
+            std::fs::read_to_string(harness.join("rules.md")).unwrap(),
+            ""
+        );
+        assert_eq!(git(&["status", "--porcelain"]), "");
+
         let config = moebius_core::config::Config::load(&path).unwrap();
-        moebius_core::server::Server::new(config, "127.0.0.1:7172".parse().unwrap()).unwrap();
+        assert_eq!(config.harness_url, Some(harness.display().to_string()));
+        assert!(config.agents.is_empty());
+        let server =
+            moebius_core::server::Server::new(config, "127.0.0.1:7172".parse().unwrap()).unwrap();
+        assert!(server.harness_repo.is_some());
+        assert!(dir.path().join(".moebius/harness/mcp.toml").is_file());
         assert!(dir.path().join(".moebius/token").is_file());
         assert!(dir.path().join(".moebius/moebius.sqlite").is_file());
+    }
+
+    #[test]
+    fn init_does_not_write_a_configuration_when_the_harness_directory_is_taken() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("moebius.toml");
+        std::fs::create_dir(dir.path().join("harness")).unwrap();
+        std::fs::write(dir.path().join("harness/notes.txt"), "mine\n").unwrap();
+        let error = run(Cli {
+            config: path.clone(),
+            server: None,
+            token: None,
+            json: false,
+            command: Some(Command::Init),
+        })
+        .unwrap_err();
+        assert!(error.contains("not empty"), "{error}");
+        assert!(!path.exists());
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("harness/notes.txt")).unwrap(),
+            "mine\n"
+        );
     }
 
     #[test]
@@ -294,7 +363,8 @@ mod tests {
         let path = std::env::join_paths([empty.path(), dir.path()]).unwrap();
         let found = super::find_in_path("pi-bolt", &path).unwrap();
         assert_eq!(found, program);
-        let text = super::example(Some(&found));
+        let harness = dir.path().join("harness");
+        let text = super::example(Some(&found), &harness);
         assert!(text.contains(&format!("\nprogram = \"{}\"\n", program.display())));
         let config =
             moebius_core::config::Config::parse(&text, dir.path(), &dir.path().join("m.toml"))
@@ -304,7 +374,17 @@ mod tests {
             super::find_in_path("pi-bolt", empty.path().as_os_str()),
             None
         );
-        assert_eq!(super::example(None), moebius_core::config::EXAMPLE);
+        // Without Pi-Bolt on the path the program is the default; [harness] replaces the commented agents.
+        let text = super::example(None, &harness);
+        assert!(text.contains("\nprogram = \"pi-bolt\"\n"));
+        assert!(text.contains(&format!("\n[harness]\nurl = \"{}\"\n", harness.display())));
+        assert!(!text.contains("# [agents.Coder]"));
+        assert!(text.ends_with(super::INIT_AGENTS));
+        let config =
+            moebius_core::config::Config::parse(&text, dir.path(), &dir.path().join("m.toml"))
+                .unwrap();
+        assert_eq!(config.harness_url, Some(harness.display().to_string()));
+        assert_eq!(config.rules_file, None);
         assert!(moebius_core::config::EXAMPLE.contains("\nprogram = \"pi-bolt\"\n"));
     }
 

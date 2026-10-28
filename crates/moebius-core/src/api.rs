@@ -496,6 +496,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/settings", get(settings).put(put_settings))
         .route("/v1/secrets/{name}", put(put_secret).delete(delete_secret))
         .route("/v1/server/restart", post(restart_server))
+        .route("/v1/harness/setup", post(setup_harness))
         .route("/v1/rules", get(get_rules).put(put_rules))
         .route("/v1/skills", get(skills))
         .route(
@@ -934,6 +935,17 @@ async fn delete_secret(
         live.secrets().names()
     })
     .await
+}
+
+/// A person moves the agents and rules of `moebius.toml` into a new harness configuration repository (see
+/// `Live::set_up_harness`); the server uses it once it restarts.
+async fn setup_harness(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+) -> Result<axum::Json<Saved>, ApiError> {
+    person_only(&by)?;
+    let live = state.config.clone();
+    blocking(&state.app, move |app| live.set_up_harness(app, &by)).await
 }
 
 /// How long `POST /v1/server/restart` waits before it restarts the server, so that its answer is sent first.

@@ -1,7 +1,7 @@
 //! The Skills page: the skills an agent can name, and an editor for the one chosen. An edit is `PUT /v1/skills/{name}`,
 //! which the server makes a commit in the harness configuration repository. The skill Moebius brings is shown and
-//! cannot be changed. A server without a harness configuration repository lists no skills, and the page then only says
-//! where skills come from.
+//! cannot be changed. A server without a harness configuration repository lists no skills, and the page then offers to
+//! set one up (see `harness_setup`).
 
 use iced::font::Weight;
 use iced::widget::text::Wrapping;
@@ -13,6 +13,7 @@ use iced::{Alignment, Border, Element, Length, Task};
 use crate::agents::{field, notice_line};
 use crate::app::Message as AppMessage;
 use crate::client::{Client, ClientError, Skill, SkillDetail};
+use crate::harness_setup::{self, HarnessSetup};
 use crate::import::{self, Import};
 use crate::live::say;
 use crate::page::{self, Tone};
@@ -272,11 +273,28 @@ impl Skills {
         }
     }
 
-    /// The Skills page: the list, and the editor of the skill chosen.
-    pub fn view(&self) -> Element<'_, AppMessage> {
+    /// The Skills page: the list, and the editor of the skill chosen. Without a harness configuration repository, the
+    /// box that sets one up, and the buttons muted.
+    pub fn view<'a>(&'a self, harness: &'a HarnessSetup) -> Element<'a, AppMessage> {
         let new_skill = self
             .editable()
             .then_some(AppMessage::Skills(Message::NewSkill));
+        let buttons = [
+            page::white_button(
+                "Import",
+                new_skill
+                    .as_ref()
+                    .map(|_| AppMessage::Skills(Message::Import(import::Message::Show(true)))),
+            ),
+            page::white_button("New skill", new_skill.clone()),
+        ]
+        .map(|button| {
+            if self.editable() {
+                button
+            } else {
+                harness_setup::muted(button)
+            }
+        });
         let header = page::header(
             "Build",
             "Skills",
@@ -284,31 +302,18 @@ impl Skills {
             page::context(
                 "What an agent can be given: the skills in skills/ of the harness configuration repository, and the one Moebius brings. An edit is a commit.",
             ),
-            row![
-                page::white_button(
-                    "Import",
-                    new_skill.as_ref().map(|_| {
-                        AppMessage::Skills(Message::Import(import::Message::Show(true)))
-                    })
-                ),
-                page::white_button("New skill", new_skill),
-            ]
-            .spacing(10)
-            .into(),
+            row(buttons).spacing(10).into(),
         );
         if !self.editable() {
-            return column![
-                header,
-                page::boxed(
-                    "Skills",
-                    page::body(
-                        "Skills come from a harness configuration repository, and this server has none."
-                    ),
-                ),
-            ]
-            .spacing(theme::PAGE_GAP)
-            .width(Length::Fill)
-            .into();
+            // Until the server has said, nothing is offered.
+            let content = match self.list {
+                Some(_) => harness.view(),
+                None => page::body("Reading the skills…"),
+            };
+            return column![header, content]
+                .spacing(theme::PAGE_GAP)
+                .width(Length::Fill)
+                .into();
         }
         let chosen = self.editor.as_ref().map(|editor| editor.name.as_str());
         let cards = column(self.list.iter().flatten().map(|skill| {

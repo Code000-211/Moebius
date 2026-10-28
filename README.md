@@ -92,11 +92,13 @@ export PATH="$PWD/target/release:$PATH"
 
 ```sh
 mkdir -p ~/.config/moebius && cd ~/.config/moebius
-moebius init      # writes moebius.toml, a commented file with every default
+moebius init      # writes moebius.toml, a commented file with every default, and harness/
 ```
 
-Add an upstream, the Pi-Bolt program and the Coder agent to `moebius.toml`. It can be this small
-([every key](docs/reference/configuration.md)):
+`moebius init` also makes `harness/`, the [harness configuration repository](docs/reference/harness-configuration.md):
+a git repository for your agents, skills, MCP servers and rules, where every edit in the app is a commit. Set an
+upstream and the Pi-Bolt program in `moebius.toml` ([every key](docs/reference/configuration.md)); `init` already set
+the program if it found `pi-bolt` on the `PATH`:
 
 ```toml
 [[router.upstreams]]
@@ -105,9 +107,6 @@ base_url = "http://127.0.0.1:8080"
 
 [pi_bolt]
 program = "/usr/local/bin/pi-bolt"
-
-[agents.Coder]
-model = "my-local-model"
 ```
 
 **3. Run.**
@@ -120,10 +119,11 @@ moebius serve     # creates .moebius/ next to the file, with the API token in .m
 address `http://127.0.0.1:7171` and the content of `.moebius/token`. The **Get started** page lists what is still
 missing.
 
-**5. Try it.** Add a project: a path that does not exist yet becomes a new, empty repository. Then create an issue, in
-the app or on the command line:
+**5. Try it.** Give the Coder agent a model (on the Agents page, or below), add a project (a path that does not
+exist yet becomes a new, empty repository) and create an issue:
 
 ```sh
+moebius agent save Coder --model my-local-model
 moebius repo add demo ~/moebius-demo
 moebius issue create 1 "Add a greeting" --body "Add hello.txt that says hello."
 moebius board

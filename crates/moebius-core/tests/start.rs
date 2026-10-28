@@ -93,13 +93,21 @@ async fn a_server_with_nothing_set_up_says_what_is_missing() {
     assert_eq!(answer["done"], false);
     let steps = steps(&answer);
     let keys: Vec<_> = steps.iter().map(|s| s.0).collect();
-    assert_eq!(keys, ["upstream", "pi_bolt", "coder", "repository"]);
+    assert_eq!(
+        keys,
+        ["upstream", "pi_bolt", "harness", "coder", "repository"]
+    );
     assert!(steps.iter().all(|s| !s.1));
     assert_eq!(steps[0].2, "Add an upstream on the Models page.");
     assert!(steps[1].2.contains("not found"), "{}", steps[1].2);
     assert!(steps[1].2.contains("no-such-pi-bolt"));
-    assert!(steps[2].2.contains("Agents page"));
-    assert_eq!(steps[3].2, "No repository is added yet.");
+    assert!(
+        steps[2].2.contains("moves the agents and rules"),
+        "{}",
+        steps[2].2
+    );
+    assert!(steps[3].2.contains("Agents page"));
+    assert_eq!(steps[4].2, "No repository is added yet.");
 }
 
 #[tokio::test]
@@ -126,8 +134,15 @@ async fn a_server_with_everything_in_place_is_done() {
     let dir = tempfile::tempdir().unwrap();
     let pi_bolt = program(dir.path(), "pi-bolt", "#!/bin/sh\necho 1.0\n");
     let listing = upstream(true).await;
+    // The Coder is in a harness configuration repository, which the step names.
+    let harness = dir.path().join("harness");
+    let coder = Config::parse("[agents.Coder]\nmodel = \"qwen\"\n", dir.path(), dir.path())
+        .unwrap()
+        .agents;
+    moebius_core::harness_repo::create(&harness, &coder, None).unwrap();
     let toml = format!(
-        "[pi_bolt]\nprogram = \"{pi_bolt}\"\n[[router.upstreams]]\nprotocol = \"openai\"\nbase_url = \"{listing}\"\n[agents.Coder]\nmodel = \"qwen\"\n"
+        "[pi_bolt]\nprogram = \"{pi_bolt}\"\n[[router.upstreams]]\nprotocol = \"openai\"\nbase_url = \"{listing}\"\n[harness]\nurl = {:?}\n",
+        harness.display().to_string()
     );
     let (server, base, token) = serve(dir.path(), &toml).await;
     let (answer, _) = start(&base, &token).await;
@@ -135,9 +150,16 @@ async fn a_server_with_everything_in_place_is_done() {
     let before = steps(&answer);
     assert_eq!(
         before.iter().map(|s| s.1).collect::<Vec<_>>(),
-        [true, true, true, false]
+        [true, true, true, true, false]
     );
     assert_eq!(before[0].2, "1 model is available.");
+    assert_eq!(
+        before[2].2,
+        format!(
+            "Agents, skills, MCP servers and rules come from {}.",
+            harness.display()
+        )
+    );
 
     server
         .app

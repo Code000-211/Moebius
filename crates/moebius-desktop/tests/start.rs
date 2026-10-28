@@ -6,7 +6,7 @@ use iced_test::Simulator;
 use moebius_desktop::app::{App, Message, Page};
 use moebius_desktop::client::{ClientError, Snapshot};
 use moebius_desktop::settings::Settings as Connection;
-use moebius_desktop::{start, theme};
+use moebius_desktop::{harness_setup, start, theme};
 use serde_json::json;
 
 fn answer(missing: &[&str]) -> moebius_desktop::client::Start {
@@ -21,6 +21,9 @@ fn answer(missing: &[&str]) -> moebius_desktop::client::Start {
                  "Could not ask https://api.example.com/v1: 401."),
             step("pi_bolt", "Install Pi-Bolt", "/usr/local/bin/pi-bolt runs.",
                  "Could not run pi-bolt: it was not found. Set the program on the Settings page."),
+            step("harness", "Keep agents, skills and MCP servers in a repository",
+                 "Agents, skills, MCP servers and rules come from /srv/moebius/harness.",
+                 "Agents and rules are in moebius.toml, and skills and MCP servers need a repository."),
             step("coder", "Choose the Coder's model", "The Coder uses qwen3.8-flash-next.",
                  "Give the Coder a model on the Agents page."),
             step("repository", "Add a repository", "1 repository is added.", "No repository is added yet."),
@@ -74,6 +77,8 @@ fn the_page_lists_the_steps_with_a_button_for_each_that_is_missing() {
         "3 models are available.",
         "Install Pi-Bolt",
         "Could not run pi-bolt: it was not found. Set the program on the Settings page.",
+        "Keep agents, skills and MCP servers in a repository",
+        "Agents, skills, MCP servers and rules come from /srv/moebius/harness.",
         "Choose the Coder's model",
         "Add a repository",
         "Done",
@@ -84,7 +89,7 @@ fn the_page_lists_the_steps_with_a_button_for_each_that_is_missing() {
         assert!(ui.find(text).is_ok(), "{text:?} is not on the screen");
     }
     // Only a missing step has a button.
-    for text in ["Open Models", "Open Agents"] {
+    for text in ["Open Models", "Open Agents", "Set up"] {
         assert!(ui.find(text).is_err(), "{text:?} is on the screen");
     }
     let snapshot = ui.snapshot(&app.theme()).unwrap();
@@ -102,7 +107,7 @@ fn the_page_lists_the_steps_with_a_button_for_each_that_is_missing() {
 
 #[test]
 fn each_missing_step_opens_the_page_that_fixes_it() {
-    let mut app = app(&["upstream", "pi_bolt", "coder", "repository"]);
+    let mut app = app(&["upstream", "pi_bolt", "harness", "coder", "repository"]);
     let _ = app.update(Message::Select(Page::Start));
     for (label, page) in [
         ("Open Models", Page::Models),
@@ -116,6 +121,15 @@ fn each_missing_step_opens_the_page_that_fixes_it() {
             "{label}: {messages:?}"
         );
     }
+    // The repository is set up from the page itself.
+    let messages = clicked(&app, "Set up");
+    assert!(
+        matches!(
+            messages.as_slice(),
+            [Message::Harness(harness_setup::Message::SetUp)]
+        ),
+        "{messages:?}"
+    );
 }
 
 #[test]

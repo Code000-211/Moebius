@@ -5,6 +5,8 @@
 //! same `Config::parse` the server uses at start, else nothing is written. [`Live`] is the configuration the running
 //! server reads: the keys marked live in [`KEYS`] take effect at once (the board engine, the router, the schedule
 //! and the agents read them from it), every other key is written and used after a restart, which the answer says.
+//! `POST /v1/harness/setup` edits the file the same way when it moves the agents and rules into a new harness
+//! configuration repository.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -21,6 +23,7 @@ use crate::blobs::redact;
 use crate::board::Engine;
 use crate::config::{AgentSet, Config, valid_agent_name};
 use crate::decide::{Actor, Question};
+use crate::harness_repo;
 use crate::router::{Router, Upstream};
 use crate::setup::without_credentials;
 
@@ -675,6 +678,74 @@ impl Live {
         Ok(Saved {
             restart_needed: !restart_keys.is_empty(),
             restart_keys,
+        })
+    }
+
+    /// A person moves the agents and rules of `moebius.toml` into a new harness configuration repository: `harness/`
+    /// next to the file (see `harness_repo::create`). The file then gets `[harness] url` naming it and loses
+    /// `[agents.*]` and `rules_file`, with its other keys and comments kept; the result must parse. Refused with a
+    /// conflict when the file has `[harness]` already, or the directory is there and not empty. Whatever fails before
+    /// the file is written leaves the file and the directory as they were. The running server is not changed: it uses
+    /// the repository after it restarts.
+    pub fn set_up_harness(&self, app: &App, by: &Actor) -> Result<Saved> {
+        let _writing = self.writing.lock().unwrap_or_else(|e| e.into_inner());
+        let file = &self.started.file;
+        let (text, raw) = read_raw(file)?;
+        if raw.contains_key("harness") || self.started.harness_url.is_some() {
+            return Err(AppError::Conflict(
+                "the server has a harness configuration repository already".into(),
+            ));
+        }
+        let base = file.parent().unwrap_or(Path::new("."));
+        let config =
+            Config::parse(&text, base, file).map_err(|e| invalid(redact(&e.to_string())))?;
+        let dir = base.join("harness");
+        let url = dir.display().to_string();
+        let changes = Changes {
+            set: BTreeMap::from([("harness.url".to_string(), Value::String(url.clone()))]),
+            remove: vec!["agents".into(), "rules_file".into()],
+        };
+        let edited = edit(&text, &changes)?;
+        Config::parse(&edited, base, file).map_err(|e| invalid(redact(&e.to_string())))?;
+        let existed = dir.exists();
+        let moved = harness_repo::create(&dir, &config.agents, config.rules_file.as_deref())?;
+        if let Err(e) = write_atomically(file, edited.as_bytes(), false) {
+            let _ = std::fs::remove_dir_all(&dir);
+            if existed {
+                let _ = std::fs::create_dir(&dir);
+            }
+            return Err(e.into());
+        }
+        let moved = moved
+            .iter()
+            .map(|(from, to)| format!("{} -> {to}", from.display()))
+            .collect::<Vec<_>>();
+        let context = BTreeMap::from([
+            ("file".to_string(), file.display().to_string()),
+            ("repository".to_string(), url),
+            (
+                "agents".to_string(),
+                config.agents.keys().cloned().collect::<Vec<_>>().join(", "),
+            ),
+            ("copied".to_string(), moved.join("\n")),
+        ]);
+        app.decisions.record_by(
+            by,
+            &Question {
+                kind: "setup_harness".into(),
+                context,
+                options: vec!["setup_harness".into(), "leave".into()],
+                fail_closed: "leave".into(),
+                run_id: None,
+                card_id: None,
+            },
+            "setup_harness",
+            "",
+        )?;
+        let raw = toml::from_str(&edited).unwrap_or_default();
+        Ok(Saved {
+            restart_needed: true,
+            restart_keys: restart_keys(&self.started_raw, &raw),
         })
     }
 

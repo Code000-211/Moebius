@@ -131,7 +131,8 @@ pub fn plugins(decisions: &Decisions) -> Plugins {
 /// One thing that has to be in place before the first card can run.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
 pub struct StartStep {
-    /// What the step is, for a client to tell which page fixes it: `upstream`, `pi_bolt`, `coder` or `repository`.
+    /// What the step is, for a client to tell which page fixes it: `upstream`, `pi_bolt`, `harness`, `coder` or
+    /// `repository`.
     pub key: String,
     pub title: String,
     pub done: bool,
@@ -244,6 +245,16 @@ pub async fn start(
         )),
         _ => Err(format!("Give the {CODER} a model on the Agents page.")),
     };
+    let harness = match &config.harness_url {
+        Some(url) => Ok(format!(
+            "Agents, skills, MCP servers and rules come from {}.",
+            without_credentials(url)
+        )),
+        None => Err("Agents and rules are in moebius.toml, and skills and MCP servers need a repository. Set up \
+                     makes a git repository next to moebius.toml, moves the agents and rules into it and restarts \
+                     the server."
+            .into()),
+    };
     let repository = match repositories {
         0 => Err("No repository is added yet.".to_string()),
         1 => Ok("1 repository is added.".to_string()),
@@ -256,6 +267,11 @@ pub async fn start(
             upstream_step(&available),
         ),
         step("pi_bolt", "Install Pi-Bolt", pi_bolt),
+        step(
+            "harness",
+            "Keep agents, skills and MCP servers in a repository",
+            harness,
+        ),
         step("coder", "Choose the Coder's model", coder),
         step("repository", "Add a repository", repository),
     ];

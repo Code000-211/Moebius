@@ -19,8 +19,8 @@ agent operates Moebius with the [command line](cli.md). A request made with it a
 records has the decider `agent:Moebius` instead of `person`, and the run is the judgement's `run` (for a decision about
 another run, such as a steer, the judgement keeps that run, and the agent's run is in the context as `acting_run`).
 The run token of any other agent, and a revoked one, is answered with `401`. Two routes stay with a person and answer
-`403` with `only a person can do this` to a run token: `PUT /v1/secrets/{name}` (an agent must not set keys) and
-`GET /v1/runs/{id}/terminal`, `GET /v1/chats/{id}/tui` and `GET /v1/terminal` (the shells). Where a route below says "a person" and "decider
+`403` with `only a person can do this` to a run token: `PUT /v1/secrets/{name}` (an agent must not set keys),
+`POST /v1/harness/setup` (moving the agents is a person's choice) and `GET /v1/runs/{id}/terminal`, `GET /v1/chats/{id}/tui` and `GET /v1/terminal` (the shells). Where a route below says "a person" and "decider
 `person`", an agent that uses its token is the decider instead.
 
 ```sh
@@ -784,7 +784,7 @@ returned if it is less than 5 minutes old. Response:
 ### `GET /v1/start`
 
 Whether the server is ready for a first card, for the Get started screen and `moebius doctor`. The steps are always the
-same four, in the order a person takes them. Response:
+same five, in the order a person takes them. Response:
 
 ```json
 {
@@ -792,6 +792,7 @@ same four, in the order a person takes them. Response:
   "steps": [
     {"key": "upstream", "title": "Connect a model provider", "done": true, "detail": "3 models are available."},
     {"key": "pi_bolt", "title": "Install Pi-Bolt", "done": false, "detail": "Could not run pi-bolt: it was not found. Set the program on the Settings page."},
+    {"key": "harness", "title": "Keep agents, skills and MCP servers in a repository", "done": true, "detail": "Agents, skills, MCP servers and rules come from /srv/moebius/harness."},
     {"key": "coder", "title": "Choose the Coder's model", "done": true, "detail": "The Coder uses qwen."},
     {"key": "repository", "title": "Add a repository", "done": false, "detail": "No repository is added yet."}
   ]
@@ -803,6 +804,9 @@ same four, in the order a person takes them. Response:
   without asking again if it is less than 5 minutes old). Without an upstream the detail is `Add an upstream on the
   Models page.`; when every upstream fails, it names each one as `Could not ask <url>: <message>.`
 - `pi_bolt` is done when `pi_bolt.program` exists and `<program> --version` exits with status 0 within 10 seconds.
+- `harness` is done when the server runs with `[harness]` (see [harness configuration](harness-configuration.md)), and
+  the detail names its URL. Without it the detail says what `POST /v1/harness/setup` does, which the desktop app's
+  "Set up" button sends.
 - `coder` is done when the agent the default workflow starts in the code column, `Coder`, has a model.
 - `repository` is done when at least one repository is added.
 - `detail` is a sentence in plain words. It holds no key and no URL credentials.
@@ -897,6 +901,26 @@ Restarts the server. It answers `202` with an empty body, and a moment later sto
 processes of the runs going (the next start fails those runs, as it does after any stop, so the board starts them
 again) and starts the same program again with the same arguments, on the same configuration file. Clients lose their
 connection and make it again. A server that is not the `moebius` binary only stops serving.
+
+### `POST /v1/harness/setup`
+
+A person moves the agents and rules of `moebius.toml` into a new harness configuration repository. No request body.
+The server makes `harness/` next to `moebius.toml` a git repository on `main` and commits in it "Set up the harness
+configuration repository": every `[agents.<name>]` as `agents/<name>.toml` and `agents/<name>.md`, each skill directory
+an agent names copied to `skills/<directory name>/` and each extension file to `extensions/<file name>` (the agents'
+`skills` and `extensions` name the copies), the rules file as `rules.md` (empty without one), an `mcp.toml` without
+servers and a `README.md`; the agents are read back as the server reads them first (see [a repository on the
+server](harness-configuration.md#a-repository-on-the-server)). It then writes `moebius.toml` in one step with `[harness]
+url` set to the repository's absolute path and without `[agents.*]` and `rules_file`, its other keys and comments kept,
+and records the decision (kind `setup_harness`, decider `person`, the file, the repository, the agents and where each
+skill and extension was copied in its context). The running server is not changed: it uses the repository once it
+restarts (`POST /v1/server/restart`, which the desktop app sends next).
+
+Response: `{"restart_needed": true, "restart_keys": ["harness.url"]}`, as `PUT /v1/settings` answers. Errors: `403` a
+run token; `409` the file has `[harness]` already, or `harness/` exists and is not empty; `422` an agent cannot be moved
+(a skill or extension path that is not there, a skill named like a built-in one, two skills or extensions with the same
+name), or the file does not parse; `500` a file cannot be read or written. Whatever fails, `moebius.toml` and `harness/`
+are as they were.
 
 ### `POST /v1/chats`
 

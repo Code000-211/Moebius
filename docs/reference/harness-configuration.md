@@ -29,6 +29,30 @@ mcp_env = ["DOCS_TOKEN"]
   `GET`, `PUT` and `DELETE /v1/agents/{name}` answer `422`.
 - Everything is read from the default branch. Other branches of the repository are not read.
 
+## A repository on the server
+
+`moebius init` and the desktop app's "Set up" (`POST /v1/harness/setup`, see the [desktop API](desktop-api.md) and
+[configuration](configuration.md#setting-it-up-from-the-app)) make the repository `harness/` next to `moebius.toml` and
+set `[harness] url` to its absolute path. It is a git repository on `main` with one commit, "Set up the harness
+configuration repository", holding:
+
+- `agents/<name>.toml` and `agents/<name>.md` for each `[agents.<name>]` the file had (none after `init`): the model,
+  protocol, thinking level and token budget as they were, the instructions as the `.md`, and no MCP servers;
+- `skills/<name>/`: a copy of each skill directory an agent named by path (a path to its `SKILL.md` names the directory),
+  without a `.git` in it, named by the directory and listed by that name in the agent's `skills`. The name must be a valid
+  skill name and not that of a built-in skill, and two different directories with the same name are refused: rename one
+  first;
+- `extensions/<file name>`: a copy of each extension file an agent named, listed by that path in its `extensions`; two
+  different files with the same name are refused;
+- `rules.md`: a copy of the file of `rules_file` (by default `rules.md` next to `moebius.toml`), empty when there was none;
+- `mcp.toml` with no servers, and a `README.md` that says what the repository is.
+
+The agents are read back as the server reads them before the commit; one that would not work stops the setup. A setup
+that fails leaves the directory as it was. The repository is set with `receive.denyCurrentBranch=updateInstead`, so that
+the server's clone can push the app's edits to the branch that is checked out and its files follow; a push is refused
+while the working tree has changes that are not committed. Edit it by hand like any repository: commit on `main`, and
+the server fetches the commit within 30 seconds.
+
 ## Layout
 
 ```

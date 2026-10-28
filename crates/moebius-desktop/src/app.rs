@@ -17,6 +17,7 @@ use crate::edits::{self, Edits};
 use crate::experiments::{self, Experiments};
 use crate::fleet::{self, Fleet};
 use crate::float_chat::{self, FloatChat};
+use crate::harness_setup::{self, HarnessSetup};
 use crate::import;
 use crate::inbox::{self, Inbox};
 use crate::live::{self, Live};
@@ -162,6 +163,8 @@ pub enum Message {
     Experiments(experiments::Message),
     DecisionModel(decision_model::Message),
     Setup(setup::Message),
+    /// Something on the box that sets up a harness configuration repository.
+    Harness(harness_setup::Message),
     Terminal(server_terminal::Message),
     Start(start::Message),
     AddRepository(add_repository::Message),
@@ -240,6 +243,7 @@ pub struct App {
     experiments: Experiments,
     decision_model: DecisionModel,
     setup: Setup,
+    harness: HarnessSetup,
     terminal: ServerTerminal,
     start: Start,
     /// Set when the connection was made, until the server has said whether the first start is done: the app then
@@ -331,6 +335,7 @@ impl App {
             experiments: Experiments::default(),
             decision_model: DecisionModel::default(),
             setup: Setup::default(),
+            harness: HarnessSetup::default(),
             terminal: ServerTerminal::default(),
             start: Start::default(),
             open_on_start: false,
@@ -611,6 +616,21 @@ impl App {
                 self.show_connect_error(&ClientError::Unauthorized);
             }
             Message::Setup(message) => return self.setup.update(message, self.settings.as_ref()),
+            Message::Harness(message) if HarnessSetup::refused(&message) => {
+                self.show_connect_error(&ClientError::Unauthorized);
+            }
+            Message::Harness(message) => {
+                // Once the repository is made, the server restarts to use it, as after a change of the settings.
+                let succeeded = HarnessSetup::succeeded(&message);
+                let task = self.harness.update(message, self.settings.as_ref());
+                if succeeded {
+                    let restart = self
+                        .setup
+                        .update(setup::Message::Restart, self.settings.as_ref());
+                    return Task::batch([task, restart]);
+                }
+                return task;
+            }
             Message::Terminal(message) => self.terminal.update(message),
             Message::Start(message) if Start::refused(&message) => {
                 self.show_connect_error(&ClientError::Unauthorized);
@@ -1051,6 +1071,19 @@ impl App {
                     Some(settings) if self.start.incomplete() => self.start.reload(settings),
                     _ => Task::none(),
                 };
+                // A server that restarted on a new harness configuration repository has skills, MCP servers and its
+                // agents there now.
+                let harness = match &self.settings {
+                    Some(settings) if self.harness.restarting() => {
+                        self.harness.restarted();
+                        Task::batch([
+                            self.skills.reload(settings),
+                            self.mcp_servers.reload(settings),
+                            self.agents.reload(settings),
+                        ])
+                    }
+                    _ => Task::none(),
+                };
                 let floating = match &self.settings {
                     Some(settings) => self.float.reload(settings),
                     None => Task::none(),
@@ -1063,6 +1096,7 @@ impl App {
                     usage,
                     setup,
                     start,
+                    harness,
                     floating,
                 ])
             }
@@ -1612,15 +1646,15 @@ impl App {
             Page::Inbox => self.inbox.view(&self.snapshot),
             Page::Chat => self.chats.view(&self.snapshot, &self.inbox),
             Page::Fleet => self.fleet.view(&self.snapshot, self.chats.list()),
-            Page::Agents => self.agents.view(),
-            Page::Skills => self.skills.view(),
-            Page::McpServers => self.mcp_servers.view(),
+            Page::Agents => self.agents.view(&self.harness),
+            Page::Skills => self.skills.view(&self.harness),
+            Page::McpServers => self.mcp_servers.view(&self.harness),
             Page::Usage => self.usage.view(),
             Page::Retro => self.retros.view(),
             Page::Rules => self.rules.view(),
             Page::Experiments => self.experiments.view(&self.snapshot),
             Page::DecisionModel => self.decision_model.view(),
-            Page::Start => self.start.view(),
+            Page::Start => self.start.view(&self.harness),
             Page::Models => self.setup.models_page(),
             Page::Plugins => self.setup.plugins_page(),
             Page::Terminal => self.terminal.view(),

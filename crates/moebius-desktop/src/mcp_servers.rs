@@ -1,8 +1,8 @@
 //! The MCP servers page: the servers of `mcp.toml` that agents can name, and an editor for the one chosen. An edit is
 //! `PUT /v1/mcp-servers/{name}`, which the server makes a commit in the harness configuration repository. A value may
 //! be `${NAME}`, which the server takes from its environment when a run starts; the page never shows what it stands
-//! for. A server without a harness configuration repository lists no servers, and the page then only says where they
-//! come from.
+//! for. A server without a harness configuration repository lists no servers, and the page then offers to set one up
+//! (see `harness_setup`).
 
 use iced::font::Weight;
 use iced::widget::text::Wrapping;
@@ -14,6 +14,7 @@ use iced::{Alignment, Border, Element, Length, Task};
 use crate::agents::{field, menu_style, notice_line, pick_style};
 use crate::app::Message as AppMessage;
 use crate::client::{Client, ClientError, McpDefinition, McpServer, McpServerDetail, Skill};
+use crate::harness_setup::{self, HarnessSetup};
 use crate::import::{self, Import};
 use crate::live::say;
 use crate::page;
@@ -163,8 +164,8 @@ impl Editor {
 
 pub struct McpServers {
     list: Vec<McpServer>,
-    /// Whether the server has a harness configuration repository, so that servers can be edited.
-    harness: bool,
+    /// Whether the server has a harness configuration repository, so that servers can be edited; none until it said.
+    harness: Option<bool>,
     editor: Option<Editor>,
     import: Import,
 }
@@ -173,7 +174,7 @@ impl Default for McpServers {
     fn default() -> Self {
         McpServers {
             list: vec![],
-            harness: false,
+            harness: None,
             editor: None,
             import: Import::new(import::Kind::McpServers),
         }
@@ -221,7 +222,7 @@ impl McpServers {
         };
         match message {
             Message::Listed(Ok(list)) => self.list = list,
-            Message::Harness(Ok(skills)) => self.harness = !skills.is_empty(),
+            Message::Harness(Ok(skills)) => self.harness = Some(!skills.is_empty()),
             Message::Listed(Err(_)) | Message::Harness(Err(_)) => {}
             Message::Select(name) => {
                 let mut editor = Editor::blank(&name);
@@ -349,8 +350,25 @@ impl McpServers {
     }
 
     /// The MCP servers page: the list, and the editor of the server chosen.
-    pub fn view(&self) -> Element<'_, AppMessage> {
-        let new_server = self.harness.then_some(AppMessage::Mcp(Message::NewServer));
+    pub fn view<'a>(&'a self, harness: &'a HarnessSetup) -> Element<'a, AppMessage> {
+        let editable = self.harness == Some(true);
+        let new_server = editable.then_some(AppMessage::Mcp(Message::NewServer));
+        let buttons = [
+            page::white_button(
+                "Import",
+                new_server
+                    .as_ref()
+                    .map(|_| AppMessage::Mcp(Message::Import(import::Message::Show(true)))),
+            ),
+            page::white_button("New server", new_server.clone()),
+        ]
+        .map(|button| {
+            if editable {
+                button
+            } else {
+                harness_setup::muted(button)
+            }
+        });
         let header = page::header(
             "Build",
             "MCP servers",
@@ -358,31 +376,18 @@ impl McpServers {
             page::context(
                 "The servers of mcp.toml in the harness configuration repository, which agents name to be given their tools. An edit is a commit.",
             ),
-            row![
-                page::white_button(
-                    "Import",
-                    new_server
-                        .as_ref()
-                        .map(|_| { AppMessage::Mcp(Message::Import(import::Message::Show(true))) })
-                ),
-                page::white_button("New server", new_server),
-            ]
-            .spacing(10)
-            .into(),
+            row(buttons).spacing(10).into(),
         );
-        if !self.harness {
-            return column![
-                header,
-                page::boxed(
-                    "MCP servers",
-                    page::body(
-                        "No MCP servers: they are listed in mcp.toml of a harness configuration repository.",
-                    ),
-                ),
-            ]
-            .spacing(theme::PAGE_GAP)
-            .width(Length::Fill)
-            .into();
+        if !editable {
+            // Until the server has said, nothing is offered.
+            let content = match self.harness {
+                Some(_) => harness.view(),
+                None => page::body("Reading the MCP servers…"),
+            };
+            return column![header, content]
+                .spacing(theme::PAGE_GAP)
+                .width(Length::Fill)
+                .into();
         }
         let chosen = self.editor.as_ref().map(|editor| editor.name.as_str());
         let cards: Element<_> = if self.list.is_empty() {

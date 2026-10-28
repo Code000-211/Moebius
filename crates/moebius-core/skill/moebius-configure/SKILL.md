@@ -84,7 +84,10 @@ the stored key (`api_key_secret`) and leave storing it to the person.
 
 ## Skills and MCP servers
 
-Both live in the harness configuration repository and are named in an agent's `skills` and `mcp`.
+Both live in the harness configuration repository and are named in an agent's `skills` and `mcp`. A server without
+one cannot have them. Only the person can set one up: the "Set up" button of the Skills, MCP servers or Agents page of
+the app (`POST /v1/harness/setup`, which refuses you with `403`) moves the agents and rules of `moebius.toml` into a new
+repository and restarts the server. Tell the person that, and do not try to make one yourself.
 
 ```sh
 "$MOEBIUS" api GET /v1/skills
@@ -131,7 +134,7 @@ skill or server is used from the next run: start a short chat with the agent to 
 ## What can go wrong
 
 - `422` names the field or line that is wrong; `409` for a skill or server says the server has no harness configuration
-  repository, or that an agent still names what you delete.
+  repository (the person sets one up, see above), or that an agent still names what you delete.
 - `agent save` without the settings the agent had removes them: always start from `agent show`.
 - A setting in `restart_keys` does nothing until the server restarts.
 

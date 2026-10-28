@@ -16,6 +16,7 @@ use moebius_desktop::edits;
 use moebius_desktop::experiments;
 use moebius_desktop::fleet;
 use moebius_desktop::float_chat;
+use moebius_desktop::harness_setup;
 use moebius_desktop::import;
 use moebius_desktop::inbox::{self, Action};
 use moebius_desktop::live;
@@ -2297,6 +2298,11 @@ fn a_server_without_a_harness_repository_edits_its_agents_in_moebius_toml() {
         &app,
         "What each run works with: its model, instructions, skills and extensions. An edit is saved in moebius.toml."
     ));
+    assert!(shows(&app, harness_setup::NEEDED));
+    assert!(matches!(
+        &clicked(&app, "Set up")[..],
+        [Message::Harness(harness_setup::Message::SetUp)]
+    ));
     assert_eq!(
         format!("{:?}", clicked(&app, "Coder")),
         "[Agents(Select(\"Coder\"))]"
@@ -2398,20 +2404,57 @@ fn the_built_in_skill_is_shown_and_cannot_be_changed() {
 }
 
 #[test]
-fn a_server_without_a_harness_repository_lists_no_skills_and_servers_to_edit() {
+fn a_server_without_a_harness_repository_offers_to_set_one_up_at_the_top() {
     let mut app = App::with_snapshot(overview());
     let _ = app.update(Message::Select(Page::Skills));
     let _ = app.update(Message::Skills(skills::Message::Listed(Ok(vec![]))));
-    assert!(shows(
+    draw_sized(
         &app,
-        "Skills come from a harness configuration repository, and this server has none."
+        "skills-no-harness",
+        &[
+            "Skills",
+            harness_setup::NEEDED,
+            "Set up",
+            "Import",
+            "New skill",
+        ],
+        Size::new(1440.0, 900.0),
+    );
+    // The buttons that need a repository do nothing, and "Set up" sets it up.
+    assert!(clicked(&app, "New skill").is_empty());
+    assert!(clicked(&app, "Import").is_empty());
+    assert!(matches!(
+        &clicked(&app, "Set up")[..],
+        [Message::Harness(harness_setup::Message::SetUp)]
     ));
+
     let _ = app.update(Message::Select(Page::McpServers));
+    // Before the server has said whether it has a repository, nothing is offered.
+    assert!(!shows(&app, "Set up"));
     let _ = app.update(Message::Mcp(mcp_servers::Message::Harness(Ok(vec![]))));
-    assert!(shows(
-        &app,
-        "No MCP servers: they are listed in mcp.toml of a harness configuration repository."
+    assert!(shows(&app, harness_setup::NEEDED));
+    assert!(clicked(&app, "New server").is_empty());
+    assert!(matches!(
+        &clicked(&app, "Set up")[..],
+        [Message::Harness(harness_setup::Message::SetUp)]
     ));
+
+    // While the server sets up, and then restarts, the button says so and does nothing; a failure is told.
+    let _ = app.update(Message::Harness(harness_setup::Message::Answered(Err(
+        ClientError::Server {
+            status: 409,
+            message: "harness exists and is not empty".into(),
+        },
+    ))));
+    assert!(shows(&app, "harness exists and is not empty"));
+    let _ = app.update(Message::Harness(harness_setup::Message::Answered(Ok(
+        client::SavedSettings {
+            restart_needed: true,
+            restart_keys: vec!["harness.url".into()],
+        },
+    ))));
+    assert!(shows(&app, "Restarting…"));
+    assert!(clicked(&app, "Restarting…").is_empty());
 }
 
 fn import(message: import::Message) -> Message {
@@ -2554,10 +2597,7 @@ fn import_is_disabled_without_a_harness_repository() {
     let _ = app.update(Message::Select(Page::Skills));
     let _ = app.update(Message::Skills(skills::Message::Listed(Ok(vec![]))));
     assert!(clicked(&app, "Import").is_empty());
-    assert!(shows(
-        &app,
-        "Skills come from a harness configuration repository, and this server has none."
-    ));
+    assert!(shows(&app, harness_setup::NEEDED));
     let _ = app.update(Message::Select(Page::McpServers));
     let _ = app.update(Message::Mcp(mcp_servers::Message::Harness(Ok(vec![]))));
     assert!(clicked(&app, "Import").is_empty());
