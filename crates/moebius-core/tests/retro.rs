@@ -66,6 +66,24 @@ fn a_bad_day(server: &Server, error: &str) {
     store.set_run_status(refused.id, "succeeded").unwrap();
 }
 
+/// A server with a harness configuration repository and a bad day today, whose error says `error(day)`, with the
+/// directory, the origin and the day. Should midnight pass while the errors are made, they are not all of one day, so
+/// they are made again on a new server.
+fn bad_day_server(
+    error: impl Fn(&str) -> String,
+) -> (tempfile::TempDir, PathBuf, Arc<Server>, String) {
+    loop {
+        let dir = tempfile::tempdir().unwrap();
+        let origin = harness_origin(dir.path());
+        let server = server(dir.path(), Some(&origin));
+        let day = server.app.store.today().unwrap();
+        a_bad_day(&server, &error(&day));
+        if server.app.store.today().unwrap() == day {
+            return (dir, origin, server, day);
+        }
+    }
+}
+
 struct Api {
     base: String,
     token: String,
@@ -127,20 +145,19 @@ async fn done(events: &mut tokio::sync::broadcast::Receiver<AppEvent>) -> Value 
 
 #[tokio::test]
 async fn a_day_with_errors_gets_a_report_and_the_analyst_proposes_a_branch_that_is_pushed() {
-    let dir = tempfile::tempdir().unwrap();
-    let origin = harness_origin(dir.path());
-    let server = server(dir.path(), Some(&origin));
-    let day = server.app.store.today().unwrap();
+    let (_dir, origin, server, day) = bad_day_server(|day| {
+        format!("stalled [propose proposal/{day}-kinder agents/Coder.md cards=7,9]")
+    });
     let branch = format!("proposal/{day}-kinder");
-    a_bad_day(
-        &server,
-        &format!("stalled [propose {branch} agents/Coder.md cards=7,9]"),
-    );
     let api = Api::start(&server).await;
     let mut events = server.app.bus.subscribe();
 
     let (status, started) = api
-        .call(reqwest::Method::POST, "/v1/retros", Some(json!({})))
+        .call(
+            reqwest::Method::POST,
+            "/v1/retros",
+            Some(json!({ "date": day })),
+        )
         .await;
     assert_eq!(status, 200, "{started}");
     assert_eq!(started["date"], day);
@@ -225,16 +242,17 @@ async fn a_day_with_errors_gets_a_report_and_the_analyst_proposes_a_branch_that_
 
 #[tokio::test]
 async fn a_branch_that_does_not_change_harness_configuration_is_left_out_with_a_warning() {
-    let dir = tempfile::tempdir().unwrap();
-    let origin = harness_origin(dir.path());
-    let server = server(dir.path(), Some(&origin));
-    let day = server.app.store.today().unwrap();
+    let (_dir, origin, server, day) =
+        bad_day_server(|day| format!("[propose proposal/{day}-code src/main.rs]"));
     let branch = format!("proposal/{day}-code");
-    a_bad_day(&server, &format!("[propose {branch} src/main.rs]"));
     let mut events = server.app.bus.subscribe();
     let started = Api::start(&server).await;
     started
-        .call(reqwest::Method::POST, "/v1/retros", Some(json!({})))
+        .call(
+            reqwest::Method::POST,
+            "/v1/retros",
+            Some(json!({ "date": day })),
+        )
         .await;
     done(&mut events).await;
 

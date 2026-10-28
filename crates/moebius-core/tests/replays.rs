@@ -378,6 +378,8 @@ async fn a_call_that_is_not_reversible_is_refused_by_the_api_and_never_picked() 
         "write",
         json!({ "path": "docs/x.md", "content": "text" }),
     );
+    // A card that is done gives its judgements its outcome; the replay replaces it.
+    store.set_outcome(write, "merged").unwrap();
     let picked: Vec<i64> = replay::due(&server.app, 10)
         .unwrap()
         .iter()

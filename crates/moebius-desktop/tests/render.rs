@@ -2193,7 +2193,7 @@ fn pressed(app: &App, label: &str) -> Option<String> {
 }
 
 #[test]
-fn a_draft_is_confirmed_a_confirmed_one_started_and_a_running_one_stopped() {
+fn a_draft_is_confirmed_or_dropped_a_confirmed_one_started_and_a_running_one_stopped() {
     let mut app = experiments_app();
     let _ = app.update(Message::Experiments(experiments::Message::Select(2)));
     assert_eq!(
@@ -2201,28 +2201,31 @@ fn a_draft_is_confirmed_a_confirmed_one_started_and_a_running_one_stopped() {
         Some("[Experiments(Act(2, \"confirm\"))]")
     );
     assert_eq!(
-        pressed(&app, "Stop").as_deref(),
+        pressed(&app, "Drop").as_deref(),
         Some("[Experiments(Act(2, \"stop\"))]")
     );
     assert_eq!(pressed(&app, "Start now"), None);
+    assert_eq!(pressed(&app, "Stop"), None);
     let mut listing = research_listing();
+    // A confirmed one is started or dropped, a running one stopped.
     for (status, available, missing) in [
-        ("confirmed", "Start now", "Confirm"),
-        ("running", "Stop", "Start now"),
+        ("confirmed", ["Start now", "Drop"], "Confirm"),
+        ("running", ["Stop", "Stop"], "Start now"),
     ] {
         listing[0].status = status.to_string();
         let _ = app.update(Message::Experiments(experiments::Message::Listed(Ok(
             listing.clone(),
         ))));
-        assert!(pressed(&app, available).is_some(), "{status}: {available}");
-        assert!(pressed(&app, "Stop").is_some(), "{status}: Stop");
+        for label in available {
+            assert!(pressed(&app, label).is_some(), "{status}: {label}");
+        }
         assert_eq!(pressed(&app, missing), None, "{status} has no {missing}");
     }
     listing[0].status = "stopped".to_string();
     let _ = app.update(Message::Experiments(experiments::Message::Listed(Ok(
         listing,
     ))));
-    for label in ["Confirm", "Start now", "Stop"] {
+    for label in ["Confirm", "Start now", "Stop", "Drop"] {
         assert_eq!(pressed(&app, label), None, "a stopped research has {label}");
     }
     assert!(shows(&app, "No lever has been tried yet."));

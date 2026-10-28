@@ -67,6 +67,11 @@ fn server(dir: &Path, harness: &Path) -> Arc<Server> {
     Arc::new(Server::new(config, "127.0.0.1:1".parse().unwrap()).unwrap())
 }
 
+/// The day of the latest Retro, which the proposals belong to.
+fn the_retro_day(server: &Server) -> String {
+    server.app.store.retros().unwrap()[0].date.clone()
+}
+
 /// The clone of the harness configuration repository, where the analyst leaves its branches.
 fn clone_of(dir: &Path) -> PathBuf {
     dir.join(".moebius/harness")
@@ -81,7 +86,7 @@ fn propose(
     (file, text): (&str, &str),
     cards: &[i64],
 ) -> i64 {
-    let day = server.app.store.today().unwrap();
+    let day = the_retro_day(server);
     let branch = format!("proposal/{day}-{name}");
     let clone = clone_of(dir);
     git(&clone, &["checkout", "--quiet", "-b", &branch, "main"]).unwrap();
@@ -146,6 +151,7 @@ fn a_card_that_failed(server: &Server, dir: &Path) -> i64 {
         .app
         .create_issue(repo.id, "Fix it [nothing]", "", PERSON)
         .unwrap();
+    let before = server.app.store.today().unwrap();
     let run = server
         .harness
         .start(&server.app, &card, "Coder", "code", None)
@@ -155,8 +161,16 @@ fn a_card_that_failed(server: &Server, dir: &Path) -> i64 {
         server.app.store.run(run.id).unwrap().unwrap().status,
         "failed"
     );
-    let day = server.app.store.today().unwrap();
-    let report = retro::report(&server.app.store, &day).unwrap();
+    // The run failed on the day it started or, had midnight passed meanwhile, on the next.
+    let after = server.app.store.today().unwrap();
+    let (day, report) = [before, after]
+        .into_iter()
+        .map(|day| {
+            let report = retro::report(&server.app.store, &day).unwrap();
+            (day, report)
+        })
+        .find(|(_, report)| !report.errors.is_empty())
+        .unwrap();
     assert_eq!(report.errors[0].kind, "run_failed");
     assert_eq!(report.errors[0].card, Some(card.id));
     let value = serde_json::to_value(&report).unwrap();
@@ -548,7 +562,7 @@ async fn a_proposal_without_cards_is_skipped_and_offered_as_it_is_and_a_conflict
     assert_eq!(git(&origin, &["rev-parse", "main"]).unwrap(), before);
 
     // The Retro of the day shows its proposals with their trials.
-    let day = store.today().unwrap();
+    let day = the_retro_day(&server);
     let (_, retro) = api
         .call(reqwest::Method::GET, &format!("/v1/retros/{day}"), None)
         .await;

@@ -1,7 +1,7 @@
 //! Replays (spec 7, ADR 0010): a tool call that a decider refused is run once in a throwaway copy of the worktree, and
 //! what happened becomes the judgement's outcome, so that the decision can later be weighed by what it would have done.
 //!
-//! Only refused `tool_call` judgements are replayed, and only those that have no outcome and no replay yet, whose run's
+//! Only refused `tool_call` judgements are replayed, and only those that have no replay yet, whose run's
 //! repository still exists and whose call is reversible (see [`crate::guard::reversible`]): everything it does stays in
 //! the worktree. Nothing else is ever run. The copy is a directory of its own under `<data_dir>/replays`, filled with
 //! the files of the run's worktree if that still exists (never its `.git`, and symbolic links are left out), or else
@@ -17,8 +17,9 @@
 //! - the files: `created N files`, `changed N files` and `deleted N files`, in that order, those that are not zero,
 //!   joined by `, ` (`1 file` for one), or `no file changed`.
 //!
-//! A replay that could not be made reads `replayed: not run; <why>` and is stored all the same, so that it is not tried
-//! again. The schedule asks [`on_schedule`] once a minute; inside the trial window, when no proposal is being tried, it
+//! The sentence replaces an outcome the judgement had (a card that is done gives each of its judgements the card's outcome,
+//! which the card still tells): for a refusal, what the call would have done says more. A replay that could not be made
+//! reads `replayed: not run; <why>` and is stored all the same, so that it is not tried again. The schedule asks [`on_schedule`] once a minute; inside the trial window, when no proposal is being tried, it
 //! replays the oldest calls, at most [`PER_NIGHT`] per night. `POST /v1/judgements/{id}/replay` replays one at any hour.
 
 use std::collections::BTreeMap;
@@ -514,7 +515,7 @@ fn replay_judgement(app: &App, judgement: &Judgement, limit: Duration) -> Result
 }
 
 /// Replays the call of the judgement `id` now, whatever the hour. It fails with `Invalid` when the judgement is not a
-/// refused tool call or its call is not reversible, and with `Conflict` when it was replayed already or has an outcome.
+/// refused tool call or its call is not reversible, and with `Conflict` when it was replayed already.
 pub fn replay(app: &App, id: i64, limit: Duration) -> Result<Replay> {
     let judgement = app
         .store
@@ -526,16 +527,11 @@ pub fn replay(app: &App, id: i64, limit: Duration) -> Result<Replay> {
             "judgement {id} was replayed already"
         )));
     }
-    if let Some(outcome) = &judgement.outcome {
-        return Err(AppError::Conflict(format!(
-            "judgement {id} has the outcome {outcome:?} already"
-        )));
-    }
     replay_judgement(app, &judgement, limit)
 }
 
-/// The refused calls the schedule would replay, at most `count`: the oldest of the last week that have no outcome and no
-/// replay and can be replayed.
+/// The refused calls the schedule would replay, at most `count`: the oldest of the last week that have no replay and can
+/// be replayed.
 pub fn due(app: &App, count: usize) -> Result<Vec<Judgement>> {
     let mut due = Vec::new();
     for judgement in app.store.replay_candidates(now() - MAX_AGE)? {

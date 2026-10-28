@@ -235,11 +235,12 @@ Inside `[trial_window]`, when no proposal is being tried, a sample of refused to
 copy of the worktree, so that a refusal can later be weighed by what the call would have done. `POST
 /v1/judgements/{id}/replay` replays one at any hour.
 
-- **Which calls.** `tool_call` judgements that refused the call, have no outcome and no replay yet, are at most a week
+- **Which calls.** `tool_call` judgements that refused the call, have no replay yet, are at most a week
   old, belong to a run whose repository still exists, and are **reversible**. At most 20 are replayed per night, the
   oldest first, one after the other; none runs beside a trial (the schedule asks the trials first, and stops when a
-  proposal is `trying`). Calls that cannot be replayed are never picked and get no outcome. A refusal on a card that is
-  done already has the card's outcome (such as `merged`) and is not picked.
+  proposal is `trying`). Calls that cannot be replayed are never picked and keep their outcome. A refusal on a card that is
+  done already has the card's outcome (such as `merged`); its replay replaces it, since for a refusal what the call would
+  have done says more, and the card still tells how it ended.
 - **Reversible** means everything the call does stays inside the run's worktree: `read`, `write`, `edit`, `ls`, `grep`
   and `find` on paths inside it; and `bash` whose commands, read as the guard's patterns read them (nested shells, `cd`,
   redirects, `tee`), name only paths inside it. Not reversible: another tool; a path outside the worktree or `~`

@@ -1463,7 +1463,7 @@ impl Store {
     /// The refused tool calls no outcome and no replay is known for, made since `since`, oldest first.
     pub fn replay_candidates(&self, since: i64) -> Result<Vec<Judgement>> {
         self.judgements_query(
-            "WHERE kind = 'tool_call' AND choice = 'refuse' AND outcome IS NULL AND run_id IS NOT NULL
+            "WHERE kind = 'tool_call' AND choice = 'refuse' AND run_id IS NOT NULL
                AND at >= ?1 AND NOT EXISTS (SELECT 1 FROM replays WHERE judgement_id = judgements.id)
              ORDER BY id",
             [since],

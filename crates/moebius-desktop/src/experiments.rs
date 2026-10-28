@@ -438,12 +438,12 @@ fn brief_box<'a>(research: &'a Research, repository: &'a str) -> Element<'a, App
         "draft" => {
             buttons = buttons
                 .push(act("Confirm", "confirm", true))
-                .push(act("Stop", "stop", false));
+                .push(act("Drop", "stop", false));
         }
         "confirmed" => {
             buttons = buttons
                 .push(act("Start now", "start", true))
-                .push(act("Stop", "stop", false));
+                .push(act("Drop", "stop", false));
         }
         "running" => buttons = buttons.push(act("Stop", "stop", false)),
         _ => {}

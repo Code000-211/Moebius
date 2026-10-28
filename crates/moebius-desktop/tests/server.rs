@@ -781,9 +781,9 @@ async fn the_client_lists_proposals_with_their_trials_and_merges_one() {
     );
     let (settings, server) = start_with(dir.path(), &more).await;
     let store = &server.app.store;
-    let day = store.today().unwrap();
+    let day = "2026-10-01";
     store
-        .add_retro(&day, &json!({ "date": day, "errors": [] }), "proposed")
+        .add_retro(day, &json!({ "date": day, "errors": [] }), "proposed")
         .unwrap();
     let clone = dir.path().join(".moebius/harness");
     let branch = format!("proposal/{day}-plain");
@@ -798,7 +798,7 @@ async fn the_client_lists_proposals_with_their_trials_and_merges_one() {
     git(&clone, &["checkout", "--quiet", "main"]).unwrap();
     store
         .add_proposal(
-            &day,
+            day,
             &branch,
             "Write plainly",
             "",

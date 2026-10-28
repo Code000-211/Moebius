@@ -283,6 +283,49 @@ impl PiBolt {
         Ok(agent_dir)
     }
 
+    /// Starts `agent` for `purpose`, with no card, on `prompt` in a fresh detached worktree of the clone `place` names
+    /// (the name its worktrees go under, its path, and the repository the run records, if any), checked out at `base`.
+    fn start_detached(
+        &self,
+        app: &Arc<App>,
+        (agent, purpose): (&str, &str),
+        (name, clone, repository): (&str, &Path, Option<i64>),
+        base: &str,
+        prompt: &str,
+    ) -> Result<Run, String> {
+        let config = self.agent(app, agent)?;
+        let run = app
+            .store
+            .add_run(None, agent, "pi-bolt", purpose)
+            .map_err(|e| e.to_string())?;
+        let worktree = repository
+            .map_or(Ok(()), |id| app.store.set_run_repository(run.id, id))
+            .map_err(|e| e.to_string())
+            .and_then(|()| {
+                let worktree = format!("{purpose}-{}", run.id);
+                app.repos
+                    .add_detached_worktree(name, clone, &worktree, base)
+                    .map_err(|e| e.to_string())
+            })
+            .map_err(|e| fail(app, run.id, e))?;
+        let start =
+            git(&worktree, &["rev-parse", "HEAD"]).map_err(|e| fail(app, run.id, e.to_string()))?;
+        let running = RunningRun {
+            id: run.id,
+            clone: Some(clone.to_path_buf()),
+            start,
+            worktree,
+            token: self.router.issue_token(Grant {
+                run_id: run.id,
+                card_id: None,
+                budget: config.token_budget,
+            }),
+            purpose: purpose.into(),
+            commit_message: String::new(),
+        };
+        self.launch_or_undo(app, None, &config, running, prompt)
+    }
+
     /// Starts Pi for a run whose worktree and token exist, and the thread that reads it.
     fn launch(
         &self,
@@ -523,32 +566,8 @@ impl Runs for PiBolt {
         base: &str,
         prompt: &str,
     ) -> Result<Run, String> {
-        let config = self.agent(app, RETRO_AGENT)?;
-        let run = app
-            .store
-            .add_run(None, RETRO_AGENT, "pi-bolt", "retro")
-            .map_err(|e| e.to_string())?;
-        let name = format!("retro-{}", run.id);
-        let worktree = app
-            .repos
-            .add_detached_worktree("harness", clone, &name, base)
-            .map_err(|e| fail(app, run.id, e.to_string()))?;
-        let start =
-            git(&worktree, &["rev-parse", "HEAD"]).map_err(|e| fail(app, run.id, e.to_string()))?;
-        let running = RunningRun {
-            id: run.id,
-            clone: Some(clone.to_path_buf()),
-            start,
-            worktree,
-            token: self.router.issue_token(Grant {
-                run_id: run.id,
-                card_id: None,
-                budget: config.token_budget,
-            }),
-            purpose: "retro".into(),
-            commit_message: String::new(),
-        };
-        self.launch_or_undo(app, None, &config, running, prompt)
+        let place = ("harness", clone, None);
+        self.start_detached(app, (RETRO_AGENT, "retro"), place, base, prompt)
     }
 
     fn start_research(
@@ -558,39 +577,13 @@ impl Runs for PiBolt {
         base: &str,
         prompt: &str,
     ) -> Result<Run, String> {
-        let config = self.agent(app, AUTORESEARCHER_AGENT)?;
-        let run = app
-            .store
-            .add_run(None, AUTORESEARCHER_AGENT, "pi-bolt", "research")
-            .map_err(|e| e.to_string())?;
         let clone = PathBuf::from(&repository.path);
-        let made = app
-            .store
-            .set_run_repository(run.id, repository.id)
-            .map_err(|e| e.to_string())
-            .and_then(|()| {
-                let name = format!("research-{}", run.id);
-                app.repos
-                    .add_detached_worktree(&repository.name, &clone, &name, base)
-                    .map_err(|e| e.to_string())
-            })
-            .map_err(|e| fail(app, run.id, e))?;
-        let start =
-            git(&made, &["rev-parse", "HEAD"]).map_err(|e| fail(app, run.id, e.to_string()))?;
-        let running = RunningRun {
-            id: run.id,
-            clone: Some(clone),
-            start,
-            worktree: made,
-            token: self.router.issue_token(Grant {
-                run_id: run.id,
-                card_id: None,
-                budget: config.token_budget,
-            }),
-            purpose: "research".into(),
-            commit_message: String::new(),
-        };
-        self.launch_or_undo(app, None, &config, running, prompt)
+        let place = (
+            repository.name.as_str(),
+            clone.as_path(),
+            Some(repository.id),
+        );
+        self.start_detached(app, (AUTORESEARCHER_AGENT, "research"), place, base, prompt)
     }
 
     fn say(&self, run_id: i64, message: &str) -> bool {
