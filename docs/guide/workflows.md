@@ -18,7 +18,7 @@ Backlog -> Ready -> In progress -> In review -> Ready to merge -> Done
 
 | Column | Script | What it does |
 |---|---|---|
-| `Backlog` | `backlog.luau` | Moves a trusted card to `Ready`. Any other card waits in the inbox as `approve_issue` until a person approves it. |
+| `Backlog` | `backlog.luau` | Moves a trusted card, or one made from a confirmed grilling, to `Ready`. Any other card waits in the inbox as `approve_issue` until a person approves it. |
 | `Ready` | `ready.luau` | Waits while issues block the card, while the daily token budget is spent and while the run limit is reached. Then moves the card to `In progress`. |
 | `In progress` | `code.luau` | Starts a run of the agent `Coder` for each round, waits while it goes, and moves the card to `In review` when a round has succeeded. |
 | `In review` | `review.luau` | Publishes the change, waits for its checks, sends the card back when they fail or the change conflicts, has the agent `Reviewer` read it (when there is one) and offers the change to a person. |

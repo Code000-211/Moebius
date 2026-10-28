@@ -38,6 +38,13 @@ The keys are those of any agent below. Its `instructions` are added after the bu
 with status 422 and a message that says which to configure. The skill is written to `<data_dir>/skills/moebius/` at
 every start, so a change to the guide arrives with the server.
 
+## The Grilling partner
+
+The Grilling partner is bundled too: a chat with `agent` set to `Grilling-partner` in a repository questions an idea until the
+work is clear and ends in issues you confirm, or in a research report (see [Grilling](grilling.md)). Like the Moebius
+agent it takes the Coder's model unless `[agents.Grilling-partner]` gives it one, and its `instructions` are added after the
+built-in ones.
+
 ## The steps
 
 1. Add an `[agents.<name>]` table to `moebius.toml`. The name is made of letters, digits, `-` and `_`. Only `model` is

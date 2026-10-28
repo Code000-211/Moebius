@@ -237,6 +237,7 @@ impl App {
         app.screen = Screen::Main;
         app.connection = Connection::Online;
         app.snapshot = snapshot;
+        app.inbox.follow(&app.snapshot);
         app
     }
 
@@ -251,6 +252,7 @@ impl App {
                 if count > self.shown {
                     self.shown = count;
                     self.snapshot = snapshot;
+                    self.inbox.follow(&self.snapshot);
                 }
             }
             Message::Loaded(_, Err(ClientError::Unauthorized)) => {
@@ -388,6 +390,7 @@ impl App {
         };
         self.settings = Some(settings);
         self.snapshot = snapshot;
+        self.inbox.follow(&self.snapshot);
         self.screen = Screen::Main;
         self.connection = Connection::Connecting;
         Task::none()

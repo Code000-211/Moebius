@@ -24,6 +24,9 @@ use crate::{connect, theme, transcript};
 /// The agent a chat is with unless another is named.
 const DEFAULT_AGENT: &str = "Moebius";
 
+/// The agent of a grilling, which needs a repository to end in issues of.
+const GRILLING_AGENT: &str = "Grilling-partner";
+
 #[derive(Debug, Clone)]
 pub enum Message {
     /// The chats were read.
@@ -109,6 +112,14 @@ struct Form {
     repository: Option<i64>,
     message: String,
     notice: Option<String>,
+}
+
+impl Form {
+    /// Whether the chat can start: it has a first message, and a grilling a repository.
+    fn ready(&self) -> bool {
+        !self.message.trim().is_empty()
+            && (self.agent != GRILLING_AGENT || self.repository.is_some())
+    }
 }
 
 pub struct Chats {
@@ -367,7 +378,7 @@ impl Chats {
             }
             Message::Start => {
                 if let Some(form) = &self.form
-                    && !form.message.trim().is_empty()
+                    && form.ready()
                 {
                     let (agent, message, repository) =
                         (form.agent.clone(), form.message.clone(), form.repository);
@@ -690,8 +701,12 @@ fn new_chat_view<'a>(
             AppMessage::Chat(Message::RepositoryChosen(Some(id))),
         ));
     }
-    let ready = !form.message.trim().is_empty();
-    let start = ready.then_some(AppMessage::Chat(Message::Start));
+    let start = form.ready().then_some(AppMessage::Chat(Message::Start));
+    let hint = if form.agent == GRILLING_AGENT {
+        "The Grilling partner questions your idea in a repository. Ending the chat puts the issues it proposes in the Inbox, to confirm."
+    } else {
+        "With a repository the agent works on its own branch. Ending the chat offers what it built as a change."
+    };
     let mut content = column![
         text("New chat")
             .size(theme::BOX_HEADING)
@@ -700,9 +715,7 @@ fn new_chat_view<'a>(
         agents.wrap().vertical_spacing(8),
         label("Repository"),
         repositories.wrap().vertical_spacing(8),
-        page::body(
-            "With a repository the agent works on its own branch. Ending the chat offers what it built as a change.",
-        ),
+        page::body(hint),
         label("First message"),
         text_input("What should the agent do?", &form.message)
             .on_input(|message| AppMessage::Chat(Message::FirstEdited(message)))

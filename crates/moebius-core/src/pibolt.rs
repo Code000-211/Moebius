@@ -46,6 +46,9 @@ const BRIDGE: &str = include_str!("../bridge/moebius-bridge.ts");
 /// The name of the bundled agent that builds on Moebius, which every chat without an agent starts.
 pub const MOEBIUS_AGENT: &str = "Moebius";
 
+/// The name of the bundled agent that grills a person's idea until the work is clear.
+pub const GRILLING_AGENT: &str = "Grilling-partner";
+
 /// The name of the bundled agent that turns a Retro's report into proposals. Agent names allow no spaces.
 pub const RETRO_AGENT: &str = "Retro-analyst";
 
@@ -63,6 +66,19 @@ const AUTORESEARCHER_INSTRUCTIONS: &str = "You are the Autoresearcher. A person 
      Check your levers yourself as far as you can, but do not run the measuring command to choose between them; \
      Moebius does that. Do not edit the files on the branch you start on, do not push, and do not ask anyone anything: \
      nobody answers. If no lever is left that is worth trying, make no branch.";
+
+/// What the Grilling partner is told; the `instructions` of `[agents.Grilling-partner]` and
+/// `agents/Grilling-partner.md` come after it.
+const GRILLING_INSTRUCTIONS: &str = "You are the Grilling partner. A person comes to you with an idea, and you grill it: \
+     ask one question at a time, wait for the answer, and challenge assumptions, gaps and wishes that hide a harder \
+     problem, until you both know exactly what the work is. You work in a git worktree of the repository the idea is \
+     for, so look at the code when the answers depend on it. When the work is clear, write your result into the \
+     worktree as exactly one of two files. If the idea can be built, write `.moebius/grilling/issues.json`: a JSON list \
+     of small issues, each doable in one card, as objects `{\"title\": \"...\", \"body\": \"...\", \"blocked_by\": [0]}` where \
+     `blocked_by` lists the indexes in the list of the issues that must be done first (an empty list when none). If the \
+     idea needs research before it can be built, write `.moebius/grilling/report.md`: a research report in Markdown. \
+     Write one file only. Never commit these files and never push: Moebius reads them when the person ends the chat, \
+     and the person confirms the issues before any card is made.";
 
 /// What the Retro analyst is told; `agents/Retro-analyst.md` comes after it.
 const RETRO_INSTRUCTIONS: &str = "You are the Retro analyst. Each day Moebius gives you a report of that day's errors: \
@@ -88,6 +104,7 @@ const MOEBIUS_INSTRUCTIONS: &str = "You are the Moebius agent. You work for the 
 fn built_in_instructions(name: &str) -> Option<&'static str> {
     match name {
         MOEBIUS_AGENT => Some(MOEBIUS_INSTRUCTIONS),
+        GRILLING_AGENT => Some(GRILLING_INSTRUCTIONS),
         RETRO_AGENT => Some(RETRO_INSTRUCTIONS),
         AUTORESEARCHER_AGENT => Some(AUTORESEARCHER_INSTRUCTIONS),
         _ => None,
@@ -598,28 +615,35 @@ impl Runs for PiBolt {
     }
 
     fn has_agent(&self, name: &str) -> bool {
-        name == MOEBIUS_AGENT || self.agent_set().agents.contains_key(name)
+        name == MOEBIUS_AGENT
+            || name == GRILLING_AGENT
+            || self.agent_set().agents.contains_key(name)
     }
 
-    /// The Moebius agent first, if it has a model, then the agents by name, those whose files are broken among them
-    /// with their error. The Moebius agent with a broken file still runs, on the Coder's model.
+    /// The built-in chat agents first, the Moebius agent and the Grilling partner, if they have a model, then the
+    /// agents by name, those whose files are broken among them with their error. A built-in agent with a broken file
+    /// still runs, on the Coder's model.
     fn agents(&self) -> Vec<AgentInfo> {
         let set = self.agent_set();
-        let moebius = set
-            .agents
-            .get(MOEBIUS_AGENT)
-            .or_else(|| set.agents.get("Coder"))
-            .map(|agent| AgentInfo {
-                name: MOEBIUS_AGENT.into(),
-                model: agent.model.clone(),
-                protocol: agent.protocol,
-                built_in: true,
-                error: set.errors.get(MOEBIUS_AGENT).cloned(),
+        let built_in = [MOEBIUS_AGENT, GRILLING_AGENT]
+            .into_iter()
+            .filter_map(|name| {
+                set.agents
+                    .get(name)
+                    .or_else(|| set.agents.get("Coder"))
+                    .map(|agent| AgentInfo {
+                        name: name.into(),
+                        model: agent.model.clone(),
+                        protocol: agent.protocol,
+                        built_in: true,
+                        error: set.errors.get(name).cloned(),
+                    })
             });
+        let own = |name: &String| name != MOEBIUS_AGENT && name != GRILLING_AGENT;
         let configured = set
             .agents
             .iter()
-            .filter(|(name, _)| *name != MOEBIUS_AGENT)
+            .filter(|(name, _)| own(name))
             .map(|(name, agent)| AgentInfo {
                 name: name.clone(),
                 model: agent.model.clone(),
@@ -630,7 +654,7 @@ impl Runs for PiBolt {
         let broken = set
             .errors
             .iter()
-            .filter(|(name, _)| *name != MOEBIUS_AGENT)
+            .filter(|(name, _)| own(name))
             .map(|(name, error)| AgentInfo {
                 name: name.clone(),
                 model: String::new(),
@@ -640,7 +664,7 @@ impl Runs for PiBolt {
             });
         let mut agents: Vec<AgentInfo> = configured.chain(broken).collect();
         agents.sort_by(|a, b| a.name.cmp(&b.name));
-        moebius.into_iter().chain(agents).collect()
+        built_in.chain(agents).collect()
     }
 
     fn token_budget(&self, agent: &str) -> Option<i64> {
@@ -890,7 +914,20 @@ impl Reader {
             let _ = child.wait();
         }
         self.router.revoke_token(&self.run.token);
+        // A grilling leaves its result for Moebius to read, not a change to offer.
+        let grilling = self.run.purpose == "chat"
+            && self
+                .app
+                .run(self.run.id)
+                .is_ok_and(|run| run.agent == GRILLING_AGENT);
         let status = match ending {
+            Ok(aborted) if grilling => {
+                if aborted {
+                    "stopped"
+                } else {
+                    "succeeded"
+                }
+            }
             Ok(aborted) if self.run.purpose == "chat" => match self.commit() {
                 // A chat that changed nothing has still succeeded.
                 Ok(_) if aborted => "stopped",
@@ -906,8 +943,19 @@ impl Reader {
             },
             Err(why) => self.failed(&why),
         };
+        if grilling && status != "failed" {
+            // Before the worktree is removed, with the result in it.
+            if let Err(e) = crate::grilling::conclude(&self.app, self.run.id, &self.run.worktree) {
+                let why = format!("cannot read the result of the grilling: {e}");
+                let _ = self.app.record_run_event(
+                    self.run.id,
+                    "moebius_error",
+                    &json!({ "message": why }),
+                );
+            }
+        }
         self.run.remove_worktree(&self.app);
-        if self.run.purpose == "chat" && status != "failed" {
+        if self.run.purpose == "chat" && !grilling && status != "failed" {
             // Before the status is set, so that an ended chat has offered what it made.
             if let Err(e) = self.app.offer_chat_change(self.run.id) {
                 let why = format!("cannot offer the chat's work as a change: {e}");

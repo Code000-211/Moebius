@@ -47,6 +47,19 @@ pub trait Forge: Send + Sync {
     ) -> Result<String, ForgeError>;
     /// Brings the clone up to date with the forge, so that new work starts from the latest default branch.
     fn refresh(&self, repository: &Repository) -> Result<(), ForgeError>;
+    /// Opens an issue on the forge and returns its number. Only forges that keep issues have it; the issues of a
+    /// repository without a forge are cards of Moebius.
+    fn create_issue(
+        &self,
+        repository: &Repository,
+        _title: &str,
+        _body: &str,
+    ) -> Result<i64, ForgeError> {
+        Err(ForgeError::Invalid(format!(
+            "the issues of {} are not kept on a forge",
+            repository.name
+        )))
+    }
     /// The HTTP header git needs to reach `url`, where the forge knows the repository as `name`; none if it needs
     /// none.
     fn auth(&self, _url: &str, _name: &str) -> Result<Option<String>, ForgeError> {
@@ -182,6 +195,18 @@ impl Forge for GitHubForge {
         Ok(self
             .runtime
             .block_on(self.github.merge_pull_request(name, number, message))?)
+    }
+
+    fn create_issue(
+        &self,
+        repository: &Repository,
+        title: &str,
+        body: &str,
+    ) -> Result<i64, ForgeError> {
+        let name = Self::github_name(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.github.create_issue(name, title, body))?)
     }
 
     fn refresh(&self, repository: &Repository) -> Result<(), ForgeError> {

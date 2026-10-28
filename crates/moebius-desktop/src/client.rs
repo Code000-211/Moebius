@@ -469,7 +469,37 @@ pub struct InboxItem {
     pub at: i64,
 }
 
+/// One issue a grilling proposes, or the person made of it: `blocked_by` are indexes into the list it is in.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GrillingIssue {
+    pub title: String,
+    #[serde(default)]
+    pub body: String,
+    #[serde(default)]
+    pub blocked_by: Vec<usize>,
+}
+
 impl InboxItem {
+    /// The id of the grilling a `grilling_issues` or `grilling_report` item is about.
+    pub fn grilling(&self) -> Option<i64> {
+        self.data["grilling"].as_i64()
+    }
+
+    /// The id of the repository a grilling's item is about.
+    pub fn repository(&self) -> Option<i64> {
+        self.data["repository"].as_i64()
+    }
+
+    /// The issues a `grilling_issues` item proposes.
+    pub fn issues(&self) -> Vec<GrillingIssue> {
+        serde_json::from_value(self.data["issues"].clone()).unwrap_or_default()
+    }
+
+    /// The report of a `grilling_report` item.
+    pub fn report(&self) -> &str {
+        self.data["report"].as_str().unwrap_or_default()
+    }
+
     /// The id of the change a `ready_to_merge` or `change_closed` item is about.
     pub fn change(&self) -> Option<i64> {
         self.data["change"].as_i64()
@@ -790,6 +820,23 @@ impl Client {
     /// Dismisses a proposal of the Retro.
     pub async fn dismiss_proposal(&self, proposal: i64) -> Result<(), ClientError> {
         let path = format!("/v1/proposals/{proposal}/dismiss");
+        self.decide(path, serde_json::json!({})).await
+    }
+
+    /// Confirms a grilling with the issues as the person left them: a card is made of each.
+    pub async fn confirm_grilling(
+        &self,
+        grilling: i64,
+        issues: &[GrillingIssue],
+    ) -> Result<(), ClientError> {
+        let path = format!("/v1/grillings/{grilling}/confirm");
+        self.decide(path, serde_json::json!({ "issues": issues }))
+            .await
+    }
+
+    /// Dismisses the issues or the report of a grilling.
+    pub async fn dismiss_grilling(&self, grilling: i64) -> Result<(), ClientError> {
+        let path = format!("/v1/grillings/{grilling}/dismiss");
         self.decide(path, serde_json::json!({})).await
     }
 

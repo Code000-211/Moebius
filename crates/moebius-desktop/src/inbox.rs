@@ -1,16 +1,18 @@
 //! The inbox (`docs/design/inbox.png`): everything that needs the person in one column, newest first, filtered by kind
 //! and repository, each item with the buttons that act on it. An action is a request to the server; the item leaves
-//! when the snapshot is read again, which the server's event (or the answer) causes.
+//! when the snapshot is read again, which the server's event (or the answer) causes. The issues a grilling proposes
+//! are drawn as a list the person edits (a title field and a body editor for each, and a button to remove it) before
+//! confirming it; what the person edited is kept here, by item, and is what Confirm sends.
 
 use std::collections::HashMap;
 
 use iced::font::Weight;
 use iced::widget::text::Wrapping;
-use iced::widget::{column, container, row, scrollable, space, text, text_input};
+use iced::widget::{column, container, row, scrollable, space, text, text_editor, text_input};
 use iced::{Alignment, Border, Color, Element, Length, Task};
 
 use crate::app::Message as AppMessage;
-use crate::client::{Board, Card, Change, Client, ClientError, InboxItem, Snapshot};
+use crate::client::{Board, Card, Change, Client, ClientError, GrillingIssue, InboxItem, Snapshot};
 use crate::live::say;
 use crate::page::{self, Tone, tag};
 use crate::settings::Settings;
@@ -21,25 +23,48 @@ const APPROVE_ISSUE: &str = "approve_issue";
 const STUCK: &str = "stuck";
 const CHANGE_CLOSED: &str = "change_closed";
 const PROPOSAL: &str = "proposal";
+const GRILLING_ISSUES: &str = "grilling_issues";
+const GRILLING_REPORT: &str = "grilling_report";
 
 /// The kinds the core adds, in the order the filter lists them; kinds of column scripts follow.
-const KINDS: [&str; 5] = [
+const KINDS: [&str; 7] = [
     READY_TO_MERGE,
     APPROVE_ISSUE,
     STUCK,
     CHANGE_CLOSED,
     PROPOSAL,
+    GRILLING_ISSUES,
+    GRILLING_REPORT,
 ];
 
 /// What a person can do with an item, with the id of what it is done to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
-    Merge { change: i64 },
-    Reject { change: i64 },
-    Approve { card: i64 },
-    Retry { card: i64 },
-    MergeProposal { proposal: i64 },
-    DismissProposal { proposal: i64 },
+    Merge {
+        change: i64,
+    },
+    Reject {
+        change: i64,
+    },
+    Approve {
+        card: i64,
+    },
+    Retry {
+        card: i64,
+    },
+    MergeProposal {
+        proposal: i64,
+    },
+    DismissProposal {
+        proposal: i64,
+    },
+    /// Confirm the grilling with the issues as they are edited.
+    ConfirmGrilling {
+        grilling: i64,
+    },
+    DismissGrilling {
+        grilling: i64,
+    },
 }
 
 impl Action {
@@ -52,6 +77,8 @@ impl Action {
             Action::Retry { .. } => "Retrying…",
             Action::MergeProposal { .. } => "Merging…",
             Action::DismissProposal { .. } => "Dismissing…",
+            Action::ConfirmGrilling { .. } => "Making the cards…",
+            Action::DismissGrilling { .. } => "Dismissing…",
         }
     }
 }
@@ -71,8 +98,31 @@ pub enum Message {
     Act(i64, Action),
     /// The server answered the request made for the item.
     Done(i64, Result<(), ClientError>),
+    /// The title typed for an issue (by its index) of a grilling's item.
+    Title(i64, usize, String),
+    /// An edit of the body of an issue of a grilling's item.
+    Body(i64, usize, text_editor::Action),
+    /// Drop an issue of a grilling's item from the list.
+    Remove(i64, usize),
     /// The clock, for how long ago an item was added.
     Tick(i64),
+}
+
+/// One issue of a grilling, as the person is editing it.
+struct Draft {
+    title: String,
+    body: text_editor::Content,
+    blocked_by: Vec<usize>,
+}
+
+impl Draft {
+    fn issue(&self) -> GrillingIssue {
+        GrillingIssue {
+            title: self.title.trim().to_string(),
+            body: self.body.text().trim().to_string(),
+            blocked_by: self.blocked_by.clone(),
+        }
+    }
 }
 
 /// The inbox page's state: the filters, and what the items are going through.
@@ -85,6 +135,8 @@ pub struct Inbox {
     notices: HashMap<i64, String>,
     /// The items whose change is being rejected, with the reason typed so far.
     rejecting: HashMap<i64, String>,
+    /// The issues of the items that propose some, as the person has edited them.
+    drafts: HashMap<i64, Vec<Draft>>,
     now: i64,
 }
 
@@ -96,8 +148,48 @@ impl Inbox {
             working: HashMap::new(),
             notices: HashMap::new(),
             rejecting: HashMap::new(),
+            drafts: HashMap::new(),
             now,
         }
+    }
+
+    /// Follows the snapshot: an item that proposes issues gets its list to edit, and a list whose item is gone is
+    /// dropped. A list already there keeps the person's edits.
+    pub fn follow(&mut self, snapshot: &Snapshot) {
+        let proposing = |item: &&InboxItem| item.kind == GRILLING_ISSUES;
+        self.drafts.retain(|id, _| {
+            snapshot
+                .inbox
+                .iter()
+                .filter(proposing)
+                .any(|item| item.id == *id)
+        });
+        for item in snapshot.inbox.iter().filter(proposing) {
+            self.drafts.entry(item.id).or_insert_with(|| {
+                item.issues()
+                    .into_iter()
+                    .map(|issue| Draft {
+                        title: issue.title,
+                        body: text_editor::Content::with_text(&issue.body),
+                        blocked_by: issue.blocked_by,
+                    })
+                    .collect()
+            });
+        }
+    }
+
+    /// The issues of an item as they are now, none when the item proposes none.
+    fn edited(&self, item: i64) -> Vec<GrillingIssue> {
+        self.drafts
+            .get(&item)
+            .map(|drafts| drafts.iter().map(Draft::issue).collect())
+            .unwrap_or_default()
+    }
+
+    /// Whether the list of the item can be confirmed: it has an issue, and each has a title.
+    fn confirmable(&self, item: i64) -> bool {
+        let issues = self.edited(item);
+        !issues.is_empty() && issues.iter().all(|issue| !issue.title.is_empty())
     }
 
     pub fn update(&mut self, message: Message, settings: Option<&Settings>) -> Task<AppMessage> {
@@ -125,9 +217,39 @@ impl Inbox {
                     }
                 }
             }
+            Message::Title(item, index, title) => {
+                if let Some(draft) = self.draft(item, index) {
+                    draft.title = title;
+                }
+            }
+            Message::Body(item, index, action) => {
+                if let Some(draft) = self.draft(item, index) {
+                    draft.body.perform(action);
+                }
+            }
+            Message::Remove(item, index) => {
+                if let Some(drafts) = self.drafts.get_mut(&item)
+                    && index < drafts.len()
+                {
+                    drafts.remove(index);
+                    // The issues after it move up, and nothing waits for it any more.
+                    for draft in drafts {
+                        draft.blocked_by.retain(|blocker| *blocker != index);
+                        for blocker in &mut draft.blocked_by {
+                            if *blocker > index {
+                                *blocker -= 1;
+                            }
+                        }
+                    }
+                }
+            }
             Message::Tick(now) => self.now = now,
         }
         Task::none()
+    }
+
+    fn draft(&mut self, item: i64, index: usize) -> Option<&mut Draft> {
+        self.drafts.get_mut(&item)?.get_mut(index)
     }
 
     /// What the request made for the item says: while it is on its way, or why it failed.
@@ -143,9 +265,11 @@ impl Inbox {
             return Task::none();
         };
         let reason = self.rejecting.get(&item).map(|r| r.trim().to_string());
+        let issues = self.edited(item);
         if self.working.contains_key(&item)
             || (matches!(action, Action::Reject { .. })
                 && reason.as_deref().is_none_or(str::is_empty))
+            || (matches!(action, Action::ConfirmGrilling { .. }) && !self.confirmable(item))
         {
             return Task::none();
         }
@@ -163,6 +287,10 @@ impl Inbox {
                     Action::Retry { card } => client.retry(card).await,
                     Action::MergeProposal { proposal } => client.merge_proposal(proposal).await,
                     Action::DismissProposal { proposal } => client.dismiss_proposal(proposal).await,
+                    Action::ConfirmGrilling { grilling } => {
+                        client.confirm_grilling(grilling, &issues).await
+                    }
+                    Action::DismissGrilling { grilling } => client.dismiss_grilling(grilling).await,
                 }
             },
             move |result| AppMessage::Inbox(Message::Done(item, result)),
@@ -319,6 +447,8 @@ impl Inbox {
             }
         } else if item.kind == PROPOSAL {
             meta.push("Retro".to_string());
+        } else if item.grilling().is_some() {
+            meta.push("Grilling".to_string());
         } else if item.card_id.is_none() {
             meta.push("chat".to_string());
         }
@@ -352,6 +482,12 @@ impl Inbox {
         }
         if item.kind == PROPOSAL {
             content = content.push(trials(item));
+        }
+        if item.kind == GRILLING_ISSUES {
+            content = content.push(self.issues_view(item.id));
+        }
+        if item.kind == GRILLING_REPORT {
+            content = content.push(report(item.report()));
         }
         content = content.push(self.footer(item));
         if let Some(notice) = self.notices.get(&item.id) {
@@ -456,9 +592,92 @@ impl Inbox {
                     ));
                 }
             }
+            (GRILLING_ISSUES, _, _) => {
+                if let Some(grilling) = item.grilling() {
+                    buttons.push(page::primary_button(
+                        "Confirm",
+                        self.confirmable(id)
+                            .then(|| act(Action::ConfirmGrilling { grilling }))
+                            .flatten(),
+                    ));
+                    buttons.push(page::white_button(
+                        "Dismiss",
+                        act(Action::DismissGrilling { grilling }),
+                    ));
+                }
+            }
+            (GRILLING_REPORT, _, _) => {
+                if let Some(grilling) = item.grilling() {
+                    buttons.push(page::primary_button(
+                        "Dismiss",
+                        act(Action::DismissGrilling { grilling }),
+                    ));
+                }
+            }
             _ => {}
         }
         row(buttons).spacing(8).wrap().vertical_spacing(8).into()
+    }
+
+    /// The issues a grilling proposes as a list to edit: a title field and a body editor for each, with what blocks
+    /// it, and a button to remove it.
+    fn issues_view(&self, item: i64) -> Element<'_, AppMessage> {
+        let Some(drafts) = self.drafts.get(&item).filter(|drafts| !drafts.is_empty()) else {
+            return page::body("No issue is left. Dismiss the item, or ask the agent again.");
+        };
+        column(drafts.iter().enumerate().map(|(index, draft)| {
+            let mut head = row![tag(format!("Issue {}", index + 1), Tone::Plain)]
+                .spacing(8)
+                .align_y(Alignment::Center);
+            if !draft.blocked_by.is_empty() {
+                let blockers: Vec<String> = draft
+                    .blocked_by
+                    .iter()
+                    .map(|blocker| (blocker + 1).to_string())
+                    .collect();
+                head = head.push(
+                    text(format!("Blocked by issue {}", blockers.join(", ")))
+                        .size(theme::LABEL)
+                        .color(theme::TEXT_MUTED),
+                );
+            }
+            head = head.push(space::horizontal()).push(page::white_button(
+                "Remove",
+                Some(AppMessage::Inbox(Message::Remove(item, index))),
+            ));
+            let title = text_input("Title", &draft.title)
+                .on_input(move |typed| AppMessage::Inbox(Message::Title(item, index, typed)))
+                .size(theme::BODY)
+                .padding([9, 12])
+                .style(connect::input_style);
+            let body = text_editor(&draft.body)
+                .placeholder("What the issue asks for.")
+                .on_action(move |action| AppMessage::Inbox(Message::Body(item, index, action)))
+                .size(theme::BODY)
+                .padding(12)
+                .height(96)
+                .style(|_, status| text_editor::Style {
+                    background: theme::LANE.into(),
+                    border: Border {
+                        color: match status {
+                            text_editor::Status::Focused { .. } => theme::TEAL,
+                            _ => theme::LINE,
+                        },
+                        width: 1.0,
+                        radius: theme::RADIUS_CONTROL.into(),
+                    },
+                    placeholder: theme::TEXT_MUTED,
+                    value: theme::TEXT,
+                    selection: theme::TEAL_FILL,
+                });
+            container(column![head, title, body].spacing(8))
+                .padding(12)
+                .width(Length::Fill)
+                .style(|_| page::box_style())
+                .into()
+        }))
+        .spacing(10)
+        .into()
     }
 }
 
@@ -474,6 +693,7 @@ fn found<'a>(snapshot: &'a Snapshot, item: &InboxItem) -> Found<'a> {
     let board = snapshot.boards.iter().find(|board| {
         board.cards.iter().any(|card| Some(card.id) == item.card_id)
             || board.changes.iter().any(|c| Some(c.id) == change)
+            || (item.grilling().is_some() && item.repository() == Some(board.repository.id))
     });
     Found {
         board,
@@ -490,6 +710,8 @@ fn chip_name(kind: &str) -> String {
         STUCK => "Stuck".to_string(),
         CHANGE_CLOSED => "Closed".to_string(),
         PROPOSAL => "Proposals".to_string(),
+        GRILLING_ISSUES => "Grilled issues".to_string(),
+        GRILLING_REPORT => "Reports".to_string(),
         other => sentence(other),
     }
 }
@@ -512,6 +734,8 @@ fn kind_tag(item: &InboxItem) -> (String, Tone) {
         APPROVE_ISSUE => ("Outside issue".into(), Tone::Amber),
         CHANGE_CLOSED => ("Closed without a merge".into(), Tone::Amber),
         PROPOSAL => ("Retro proposal".into(), Tone::Amber),
+        GRILLING_ISSUES => ("Issues from a grilling".into(), Tone::Amber),
+        GRILLING_REPORT => ("Report from a grilling".into(), Tone::Amber),
         other => (sentence(other), Tone::Plain),
     }
 }
@@ -536,8 +760,38 @@ fn why(item: &InboxItem, found: &Found) -> Option<String> {
         }
         READY_TO_MERGE => None,
         PROPOSAL => Some("The Retro proposes this change to the harness configuration.".into()),
+        GRILLING_ISSUES => Some(
+            "The Grilling partner ended in these issues. Edit them, remove what you do not want, and confirm to make a card of each."
+                .into(),
+        ),
+        GRILLING_REPORT => {
+            Some("The Grilling partner ended in a research report. Read it, then dismiss it.".into())
+        }
         _ => reason.map(str::to_string),
     }
+}
+
+/// The report of a grilling, as text on a field of its own.
+fn report(report: &str) -> Element<'_, AppMessage> {
+    container(
+        text(report)
+            .size(theme::BODY)
+            .color(theme::TEXT)
+            .width(Length::Fill)
+            .wrapping(Wrapping::WordOrGlyph),
+    )
+    .padding(14)
+    .width(Length::Fill)
+    .style(|_| container::Style {
+        background: Some(theme::LANE.into()),
+        border: Border {
+            color: theme::TRACK,
+            width: 1.0,
+            radius: theme::RADIUS_CONTROL.into(),
+        },
+        ..container::Style::default()
+    })
+    .into()
 }
 
 /// What the trials of a proposal found, one line for each: the card, the outcome and why.
@@ -647,4 +901,63 @@ fn fact<'a>(
 /// A filter chip of the inbox.
 fn chip<'a>(label: String, selected: bool, red: bool, message: Message) -> Element<'a, AppMessage> {
     page::chip(label, selected, red, AppMessage::Inbox(message))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn grilling_snapshot() -> Snapshot {
+        serde_json::from_value(serde_json::json!({"inbox": [{
+            "id": 3, "kind": "grilling_issues", "title": "3 issues from a grilling", "at": 1,
+            "data": {"grilling": 7, "repository": 1, "issues": [
+                {"title": "A", "body": "First.", "blocked_by": []},
+                {"title": "B", "body": "Second.", "blocked_by": [0]},
+                {"title": "C", "body": "Third.", "blocked_by": [0, 1]}]}
+        }]}))
+        .unwrap()
+    }
+
+    fn titles_and_blockers(inbox: &Inbox) -> Vec<(String, Vec<usize>)> {
+        inbox
+            .edited(3)
+            .into_iter()
+            .map(|issue| (issue.title, issue.blocked_by))
+            .collect()
+    }
+
+    #[test]
+    fn the_issues_of_a_grilling_are_edited_and_removed_with_their_blockers_following() {
+        let mut inbox = Inbox::new(0);
+        inbox.follow(&grilling_snapshot());
+        assert_eq!(inbox.edited(3).len(), 3);
+        assert_eq!(inbox.edited(3)[1].body, "Second.");
+
+        let _ = inbox.update(Message::Title(3, 2, "C, renamed".into()), None);
+        // Removing the first issue drops it from the blockers, and the indexes after it move up.
+        let _ = inbox.update(Message::Remove(3, 0), None);
+        assert_eq!(
+            titles_and_blockers(&inbox),
+            [("B".into(), vec![]), ("C, renamed".into(), vec![0])]
+        );
+
+        // The edits stay when the snapshot is read again, and go with the item.
+        inbox.follow(&grilling_snapshot());
+        assert_eq!(inbox.edited(3).len(), 2);
+        inbox.follow(&Snapshot::default());
+        assert!(inbox.edited(3).is_empty());
+    }
+
+    #[test]
+    fn a_list_without_an_issue_or_with_a_blank_title_cannot_be_confirmed() {
+        let mut inbox = Inbox::new(0);
+        inbox.follow(&grilling_snapshot());
+        assert!(inbox.confirmable(3));
+        let _ = inbox.update(Message::Title(3, 1, "  ".into()), None);
+        assert!(!inbox.confirmable(3));
+        for _ in 0..3 {
+            let _ = inbox.update(Message::Remove(3, 0), None);
+        }
+        assert!(!inbox.confirmable(3));
+    }
 }

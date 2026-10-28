@@ -1007,6 +1007,194 @@ fn the_inbox_offers_a_proposal_of_the_retro_to_merge_or_dismiss() {
     );
 }
 
+/// Like `clicked`, on a screen tall enough for a long list.
+fn tall_click(app: &App, label: &str) -> Vec<Message> {
+    let mut ui = simulator_sized(app, Size::new(1440.0, 1400.0));
+    ui.click(label)
+        .unwrap_or_else(|_| panic!("{label:?} is not on the screen"));
+    ui.into_messages().collect()
+}
+
+/// The report of the grilling in `grilling_app`.
+const REPORT: &str = "# Is a local cache worth it?\n\nThe downloads are rare and large, so a cache would save\nlittle. Measure the repeat rate before building one.";
+
+/// The issues a grilling proposes, and a research report, waiting for a person.
+fn grilling_app() -> App {
+    let items = vec![
+        entry(
+            1,
+            "grilling_issues",
+            None,
+            "3 issues from a grilling",
+            json!({"grilling": 7, "repository": 1, "issues": [
+                {"title": "Add the export button", "body": "A button on the report page that downloads the CSV.",
+                 "blocked_by": []},
+                {"title": "Write the CSV", "body": "The columns are the report's.", "blocked_by": [0]},
+                {"title": "Document the export", "body": "A section in the user guide.", "blocked_by": [0, 1]}]}),
+            1800,
+        ),
+        entry(
+            2,
+            "grilling_report",
+            None,
+            "A research report from a grilling",
+            json!({"grilling": 8, "repository": 1,
+                   "report": REPORT}),
+            5400,
+        ),
+    ];
+    let boards = vec![board(repository(1, "radiance", None), vec![])];
+    let mut app = App::with_snapshot(snapshot(boards, items));
+    let _ = app.update(Message::Select(Page::Inbox));
+    let _ = app.update(Message::Inbox(inbox::Message::Tick(NOW)));
+    app
+}
+
+/// The inbox with the issues of a grilling: compare `tests/snapshots/inbox-grilling-issues-tiny-skia.png`.
+#[test]
+fn the_inbox_offers_the_issues_of_a_grilling_as_a_list_to_edit() {
+    let mut app = grilling_app();
+    let _ = app.update(Message::Inbox(inbox::Message::Kind(Some(
+        "grilling_issues".into(),
+    ))));
+    draw_sized(
+        &app,
+        "inbox-grilling-issues",
+        &[
+            "2 things need you; 1 shown.",
+            "Grilled issues 1",
+            "Issues from a grilling",
+            "radiance · Grilling",
+            "3 issues from a grilling",
+            "Issue 1",
+            "Issue 3",
+            "Blocked by issue 1",
+            "Blocked by issue 1, 2",
+            "Add the export button",
+            "Document the export",
+            "Remove",
+            "Confirm",
+            "Dismiss",
+        ],
+        Size::new(1440.0, 1100.0),
+    );
+}
+
+/// The inbox with a report of a grilling: compare `tests/snapshots/inbox-grilling-report-tiny-skia.png`.
+#[test]
+fn the_inbox_shows_the_report_of_a_grilling_to_read_and_dismiss() {
+    let mut app = grilling_app();
+    let _ = app.update(Message::Inbox(inbox::Message::Kind(Some(
+        "grilling_report".into(),
+    ))));
+    draw_sized(
+        &app,
+        "inbox-grilling-report",
+        &[
+            "Reports 1",
+            "Report from a grilling",
+            "radiance · Grilling",
+            "A research report from a grilling",
+            REPORT,
+            "Dismiss",
+        ],
+        Size::new(1440.0, 600.0),
+    );
+    assert!(!shows(&app, "Confirm"));
+    assert!(matches!(
+        &clicked(&app, "Dismiss")[..],
+        [Message::Inbox(inbox::Message::Act(
+            2,
+            Action::DismissGrilling { grilling: 8 }
+        ))]
+    ));
+}
+
+#[test]
+fn confirming_or_dismissing_a_grilling_names_it_and_removing_an_issue_takes_it_off_the_list() {
+    let mut app = grilling_app();
+    let _ = app.update(Message::Inbox(inbox::Message::Kind(Some(
+        "grilling_issues".into(),
+    ))));
+    assert!(matches!(
+        &tall_click(&app, "Dismiss")[..],
+        [Message::Inbox(inbox::Message::Act(
+            1,
+            Action::DismissGrilling { grilling: 7 }
+        ))]
+    ));
+    // The first Remove is that of the first issue.
+    for message in tall_click(&app, "Remove") {
+        let _ = app.update(message);
+    }
+    assert!(!shows(&app, "Add the export button"));
+    assert!(shows(&app, "Write the CSV"));
+    assert!(shows(&app, "Issue 2"));
+    assert!(!shows(&app, "Issue 3"));
+    assert!(matches!(
+        &tall_click(&app, "Confirm")[..],
+        [Message::Inbox(inbox::Message::Act(
+            1,
+            Action::ConfirmGrilling { grilling: 7 }
+        ))]
+    ));
+    for message in tall_click(&app, "Confirm") {
+        let _ = app.update(message);
+    }
+    assert!(shows(&app, "Making the cards…"));
+
+    // With every issue removed there is nothing to confirm.
+    let mut empty = grilling_app();
+    let _ = empty.update(Message::Inbox(inbox::Message::Kind(Some(
+        "grilling_issues".into(),
+    ))));
+    for _ in 0..3 {
+        let _ = empty.update(Message::Inbox(inbox::Message::Remove(1, 0)));
+    }
+    assert!(shows(
+        &empty,
+        "No issue is left. Dismiss the item, or ask the agent again."
+    ));
+    let mut ui = simulator(&empty);
+    let _ = ui.click("Confirm");
+    assert_eq!(ui.into_messages().count(), 0);
+}
+
+#[test]
+fn a_grilling_chat_needs_a_repository_before_it_starts() {
+    let mut app = chatting("waiting", false);
+    for message in clicked(&app, "New chat") {
+        let _ = app.update(message);
+    }
+    let agents = serde_json::from_value(json!([
+        {"name": "Moebius", "model": "claude-fake", "protocol": "anthropic", "built_in": true},
+        {"name": "Grilling-partner", "model": "claude-fake", "protocol": "anthropic", "built_in": true}
+    ]))
+    .unwrap();
+    let _ = app.update(Message::Chat(chat::Message::Agents(Ok(agents))));
+    let _ = app.update(Message::Chat(chat::Message::AgentChosen(
+        "Grilling-partner".into(),
+    )));
+    let _ = app.update(Message::Chat(chat::Message::FirstEdited(
+        "Reports should be exportable.".into(),
+    )));
+    assert!(shows(
+        &app,
+        "The Grilling partner questions your idea in a repository. Ending the chat puts the issues it proposes in the Inbox, to confirm."
+    ));
+    // Without a repository the chat does not start, with one it does.
+    assert_eq!(app.update(Message::Chat(chat::Message::Start)).units(), 0);
+    let mut ui = simulator(&app);
+    let _ = ui.click("Start chat");
+    assert_eq!(ui.into_messages().count(), 0);
+    let _ = app.update(Message::Chat(chat::Message::RepositoryChosen(Some(1))));
+    assert!(matches!(
+        &clicked(&app, "Start chat")[..],
+        [Message::Chat(chat::Message::Start)]
+    ));
+    assert_eq!(app.update(Message::Chat(chat::Message::Start)).units(), 1);
+}
+
 #[test]
 fn merging_or_dismissing_a_proposal_names_it_and_shows_the_request_until_it_is_answered() {
     let mut app = proposals_app();

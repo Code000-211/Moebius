@@ -41,7 +41,8 @@ extensions/...         any files an agent's extensions name
 ```
 
 Nothing else is read. The Moebius agent stays built in: `agents/Moebius.toml` configures it as `[agents.Moebius]` does, and
-`agents/Moebius.md` is added after its built-in instructions (see [configuration](configuration.md)).
+`agents/Moebius.md` is added after its built-in instructions (see [configuration](configuration.md)). So does the
+`Grilling-partner` (see [Grilling](#grilling)).
 
 ## `agents/<name>.toml`
 
@@ -277,3 +278,33 @@ instructions. It works with or without a harness configuration repository (witho
   experiment for is not tried again, so a round that leaves no new branch ends the research.
 - Each experiment runs the measure and, if the measurement succeeded, the repository's own checks (see [the
   trials](#the-trials)), each in a fresh worktree of the branch. The branches stay in the clone, kept or not.
+
+## Grilling
+
+A grilling (see `POST /v1/grillings/{id}/confirm` in the [desktop API](desktop-api.md)) is a chat with the built-in agent
+`Grilling-partner`, which grills a person's idea until the work is clear. Like the Moebius agent it is built in: its
+instructions are built in, it has the `moebius` skill, and its model comes from `agents/Grilling-partner.toml` (or
+`[agents.Grilling-partner]`) or else from the Coder. `agents/Grilling-partner.md` is added after the built-in instructions;
+`agents/Grilling-partner.toml` may set its model, skills and the rest. It is listed by `GET /v1/agents` after the Moebius
+agent, and a chat with it needs a repository.
+
+- The agent asks one question at a time and challenges assumptions. It works in the chat's worktree, a worktree of the
+  repository, so it can read the code. It never waits for the person in any other way than by asking in the chat.
+- It ends by writing exactly one of two files in the worktree. It never commits them and never pushes:
+  - `.moebius/grilling/issues.json`, when the idea can be built: a JSON array of small issues, each doable in one card.
+
+    ```json
+    [
+      {"title": "Add the export button", "body": "A button on the report page that downloads a CSV.", "blocked_by": []},
+      {"title": "Write the CSV", "body": "The columns are the report's.", "blocked_by": [0]}
+    ]
+    ```
+
+    `title` is a non-blank string, `body` a string (may be left out) and `blocked_by` an array of indexes of issues of the
+    same array that must be done first (may be left out). An index out of range, the issue's own index or a circle makes the
+    file unusable.
+  - `.moebius/grilling/report.md`, when the idea needs research rather than issues: a research report in Markdown.
+- A grilling does not offer its worktree as a change: nothing is committed on its branch and no `ready_to_merge` item is
+  made, whatever the agent left outside `.moebius/grilling/`.
+- If both files exist, `issues.json` decides. A grilling that leaves nothing usable is stored as `empty`, with the reason,
+  and makes no inbox item.

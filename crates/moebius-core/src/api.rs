@@ -25,6 +25,9 @@
 //!   /v1/research` and `GET /v1/research/{id}`: research with its baseline and experiments.
 //!   `POST /v1/research/{id}/confirm`, `/start` and `/stop`: a person confirms the brief, starts a confirmed research
 //!   now, or stops it (see [`crate::research`]).
+//! - `GET /v1/grillings` and `GET /v1/grillings/{id}`: what grilling chats ended in. `POST /v1/grillings/{id}/confirm`
+//!   `{issues: [{title, body, blocked_by}]}` makes a card of each issue the person kept; `POST
+//!   /v1/grillings/{id}/dismiss` drops the proposal or the report (see [`crate::grilling`]).
 //! - `GET /v1/usage?days=`: the tokens, calls, model time and tool waits of the last days, and the daily tokens by model.
 //! - `POST /v1/chats` `{agent?, message, repository?}`: starts a chat, with the Moebius agent unless `agent` names
 //!   another. `GET /v1/chats`: the chats, newest first.
@@ -50,6 +53,7 @@ use crate::app::{App, AppError, Chat, HistoryEntry, PERSON, columns, runs_since_
 use crate::board::{AgentInfo, Runs, latest_review};
 use crate::bus::AppEvent;
 use crate::forge::ForgeError;
+use crate::grilling;
 use crate::harness_repo::{AgentDefinition, AgentView, HarnessRepo, McpServerInfo, SkillInfo};
 use crate::pibolt::MOEBIUS_AGENT;
 use crate::replay;
@@ -57,8 +61,8 @@ use crate::repos::GitError;
 use crate::research::{self, NewResearch, ResearchView};
 use crate::retro::{self, RetroSummary, RetroView};
 use crate::store::{
-    AgentUsage, Card, Change, Event, InboxItem, ModelUsage, Proposal, Replay, Repository, Run,
-    ToolWait,
+    AgentUsage, Card, Change, Event, Grilling, GrillingIssue, InboxItem, ModelUsage, Proposal,
+    Replay, Repository, Run, ToolWait,
 };
 use crate::trial;
 
@@ -381,6 +385,10 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/research/{id}/confirm", post(confirm_research))
         .route("/v1/research/{id}/start", post(start_research))
         .route("/v1/research/{id}/stop", post(stop_research))
+        .route("/v1/grillings", get(grillings))
+        .route("/v1/grillings/{id}", get(get_grilling))
+        .route("/v1/grillings/{id}/confirm", post(confirm_grilling))
+        .route("/v1/grillings/{id}/dismiss", post(dismiss_grilling))
         .route("/v1/chats", get(chats).post(start_chat))
         .route("/v1/chats/{id}/messages", post(say_in_chat))
         .route("/v1/chats/{id}/end", post(end_chat))
@@ -713,6 +721,41 @@ async fn dismiss_proposal(
         trial::dismiss(app, &repo, id, &reason)
     })
     .await
+}
+
+async fn grillings(State(state): State<ApiState>) -> Result<axum::Json<Vec<Grilling>>, ApiError> {
+    blocking(&state.app, |app| Ok(app.store.grillings()?)).await
+}
+
+async fn get_grilling(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+) -> Result<axum::Json<Grilling>, ApiError> {
+    blocking(&state.app, move |app| grilling::view(app, id)).await
+}
+
+/// The body of `POST /v1/grillings/{id}/confirm`: the issues as the person left them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConfirmedIssues {
+    pub issues: Vec<GrillingIssue>,
+}
+
+async fn confirm_grilling(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+    axum::Json(confirmed): axum::Json<ConfirmedIssues>,
+) -> Result<axum::Json<Grilling>, ApiError> {
+    blocking(&state.app, move |app| {
+        grilling::confirm(app, id, confirmed.issues)
+    })
+    .await
+}
+
+async fn dismiss_grilling(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+) -> Result<axum::Json<Grilling>, ApiError> {
+    blocking(&state.app, move |app| grilling::dismiss(app, id)).await
 }
 
 async fn researches(
@@ -2401,7 +2444,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_agents_are_listed_with_the_moebius_agent_first_and_nothing_secret() {
+    async fn the_agents_are_listed_with_the_built_in_agents_first_and_nothing_secret() {
         let mut reviewer = agent("fast");
         reviewer.protocol = Protocol::Anthropic;
         reviewer.instructions = Some("secret sauce".into());
@@ -2415,6 +2458,7 @@ mod tests {
             listed,
             serde_json::json!([
                 { "name": "Moebius", "model": "big", "protocol": "openai", "built_in": true },
+                { "name": "Grilling-partner", "model": "big", "protocol": "openai", "built_in": true },
                 { "name": "Coder", "model": "big", "protocol": "openai", "built_in": false },
                 { "name": "Reviewer", "model": "fast", "protocol": "anthropic", "built_in": false },
             ])

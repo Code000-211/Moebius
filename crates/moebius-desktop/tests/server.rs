@@ -14,7 +14,7 @@ use moebius_core::config::Config;
 use moebius_core::repos::git;
 use moebius_core::server::Server;
 use moebius_core::store::Usage;
-use moebius_desktop::app::{App, Message};
+use moebius_desktop::app::{App, Message, Page};
 use moebius_desktop::chat;
 use moebius_desktop::client::{
     Client, ClientError, RunEvent, Snapshot, StreamEvent, TerminalEvent, events, terminal,
@@ -498,7 +498,7 @@ async fn a_chat_is_started_written_to_and_followed_through_the_stream() {
     // The form offers the agents the server can run, the Moebius agent first; a chat has no judgements yet.
     let agents = client.agents().await.unwrap();
     let names: Vec<_> = agents.iter().map(|agent| agent.name.as_str()).collect();
-    assert_eq!(names, ["Moebius", "Coder"]);
+    assert_eq!(names, ["Moebius", "Grilling-partner", "Coder"]);
     assert_eq!(agents[0].model, "fake-coder");
     assert!(client.tool_judgements(run.id).await.unwrap().is_empty());
     let chats = client.chats().await.unwrap();
@@ -891,4 +891,84 @@ async fn the_client_stores_confirms_and_starts_a_research() {
         list[0].reason
     );
     assert_eq!(list[0].token_budget, 1000);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_grilling_ends_in_an_inbox_item_whose_issues_the_client_confirms_into_cards() {
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, _) = start_with_fake_pi(dir.path()).await;
+    let origin = origin(dir.path());
+    let repository = post(
+        &settings,
+        "/v1/repositories",
+        json!({"name": "demo", "url": origin.to_str().unwrap()}),
+    )
+    .await;
+    let client = Client::new(settings.clone());
+
+    // The chat is started in the repository, answered by the fake Pi, which leaves the issues, and ended.
+    let message = "Export the reports.\n[put .moebius/grilling/issues.json]\n\
+        [{\"title\": \"Add the button\", \"body\": \"On the report page.\", \"blocked_by\": []}, \
+         {\"title\": \"Write the CSV\", \"body\": \"Its columns.\", \"blocked_by\": [0]}]\n[/put]";
+    let run = client
+        .start_chat("Grilling-partner", message, repository["id"].as_i64())
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(60), async {
+        while client.chats().await.unwrap()[0].status != "waiting" {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("the agent did not answer");
+    client.end_chat(run.id).await.unwrap();
+
+    let snapshot = snapshot_where(&client, |s| {
+        s.inbox.iter().any(|item| item.kind == "grilling_issues")
+    })
+    .await;
+    let item = snapshot
+        .inbox
+        .iter()
+        .find(|i| i.kind == "grilling_issues")
+        .unwrap();
+    assert_eq!(item.title, "2 issues from a grilling");
+    assert_eq!(item.repository(), repository["id"].as_i64());
+    let issues = item.issues();
+    assert_eq!(issues[1].blocked_by, [0]);
+
+    // The inbox page draws the list to edit, with the buttons that act on it.
+    let mut app = App::with_snapshot(snapshot.clone());
+    let _ = app.update(Message::Select(Page::Inbox));
+    let mut ui = Simulator::with_size(
+        iced::Settings {
+            fonts: moebius_desktop::theme::fonts(),
+            ..iced::Settings::default()
+        },
+        iced::Size::new(1440.0, 900.0),
+        app.view(),
+    );
+    assert!(ui.find("Add the button").is_ok());
+
+    // Confirming the list the person left makes the cards, and the item leaves the inbox.
+    client
+        .confirm_grilling(item.grilling().unwrap(), &issues)
+        .await
+        .unwrap();
+    let confirmed = snapshot_where(&client, |s| {
+        s.inbox.iter().all(|item| item.kind != "grilling_issues") && s.boards[0].cards.len() == 2
+    })
+    .await;
+    let cards = &confirmed.boards[0].cards;
+    assert_eq!(cards[0].title, "Add the button");
+    assert_eq!(cards[1].blocked_by, [cards[0].number]);
+    // Confirming again is refused with the server's message.
+    match client
+        .confirm_grilling(item.grilling().unwrap(), &issues)
+        .await
+        .unwrap_err()
+    {
+        ClientError::Server { status, .. } => assert_eq!(status, 422),
+        other => panic!("{other:?}"),
+    }
 }

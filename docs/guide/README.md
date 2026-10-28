@@ -50,6 +50,7 @@ Planned, so that nothing here describes them beyond a line:
 | Forbid something to every run, or to the runs of one repository, and see a refusal | [Rules](rules.md) |
 | Set up the Coder, the Reviewer or another agent, chat with one, or have the Moebius agent build something | [Agents](agents.md) |
 | Have an agent look for ways to improve a number you can measure, and keep what helps | [Autoresearch](autoresearch.md) |
+| Turn an idea into issues by being questioned about it | [Grilling](grilling.md) |
 | Answer your own decision points with Rust code | [Plugins](plugins.md) |
 | Add behaviour inside the Pi process of a run | [Extensions](extensions.md) |
 | Drive Moebius from a script with `curl` | [Desktop API](desktop-api.md) |

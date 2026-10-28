@@ -227,6 +227,19 @@ CREATE TABLE experiments (
 );
 CREATE INDEX experiments_by_research ON experiments (research_id, id);
 "#,
+    r#"
+ALTER TABLE cards ADD COLUMN confirmed INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE grillings (
+    id INTEGER PRIMARY KEY,
+    run_id INTEGER NOT NULL REFERENCES runs(id),
+    repository_id INTEGER NOT NULL REFERENCES repositories(id),
+    issues TEXT NOT NULL,
+    report TEXT,
+    status TEXT NOT NULL,
+    reason TEXT NOT NULL DEFAULT '',
+    at INTEGER NOT NULL
+);
+"#,
 ];
 
 const CHANGE_COLUMNS: &str = "id, repository_id, card_id, branch, state, pull_request, checks, review, \
@@ -295,6 +308,8 @@ pub struct Card {
     /// The id of the card's latest run when a person last retried it; its rounds, reviews and tokens count only the
     /// runs after it.
     pub retried_after: Option<i64>,
+    /// Whether the card was made from a grilling a person confirmed, which needs no approval.
+    pub confirmed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -500,6 +515,33 @@ pub struct Research {
     /// The measurement of the repository as it is; none until it was measured.
     pub baseline: Option<f64>,
     /// Why it ended, once it did.
+    pub reason: String,
+    pub at: i64,
+}
+
+/// One issue a grilling proposes: `blocked_by` are indexes into the list the issue is in.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GrillingIssue {
+    pub title: String,
+    #[serde(default)]
+    pub body: String,
+    #[serde(default)]
+    pub blocked_by: Vec<usize>,
+}
+
+/// What a grilling chat ended in (see `grilling`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Grilling {
+    pub id: i64,
+    pub run_id: i64,
+    pub repository_id: i64,
+    /// The issues proposed; none for a report and for an empty grilling.
+    pub issues: Vec<GrillingIssue>,
+    /// The research report, for a grilling that ended in one.
+    pub report: Option<String>,
+    /// `proposed`, `reported`, `empty`, `confirmed` or `dismissed`.
+    pub status: String,
+    /// Why a grilling is `empty`.
     pub reason: String,
     pub at: i64,
 }
@@ -795,13 +837,14 @@ impl Store {
             created_at: at,
             note: None,
             retried_after: None,
+            confirmed: false,
         })
     }
 
     fn cards_where(&self, clause: &str, params: impl rusqlite::Params) -> Result<Vec<Card>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(&format!(
-            "SELECT id, repository_id, number, title, body, author, column_name, created_at, note, retried_after FROM cards WHERE {clause} ORDER BY id"
+            "SELECT id, repository_id, number, title, body, author, column_name, created_at, note, retried_after, confirmed FROM cards WHERE {clause} ORDER BY id"
         ))?;
         let rows = stmt.query_map(params, |r| {
             Ok(Card {
@@ -815,6 +858,7 @@ impl Store {
                 created_at: r.get(7)?,
                 note: r.get(8)?,
                 retried_after: r.get(9)?,
+                confirmed: r.get(10)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -844,6 +888,54 @@ impl Store {
             params![title, body, id],
         )?;
         Ok(())
+    }
+
+    /// Adds a card made from a confirmed grilling, which needs no approval, with the numbers of the issues that block
+    /// it, in one step so that no script sees it without them. `number` is the number of its issue on the forge; none
+    /// takes the next number. A card the poll made for that issue already is confirmed instead.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_confirmed_card(
+        &self,
+        repository_id: i64,
+        number: Option<i64>,
+        title: &str,
+        body: &str,
+        author: &str,
+        column: &str,
+        blocked_by: &BTreeSet<i64>,
+    ) -> Result<Card> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let number = match number {
+            Some(number) => number,
+            None => tx.query_row(
+                "SELECT COALESCE(MAX(number), 0) + 1 FROM cards WHERE repository_id = ?1",
+                [repository_id],
+                |r| r.get(0),
+            )?,
+        };
+        let id = match tx
+            .query_row(
+                "SELECT id FROM cards WHERE repository_id = ?1 AND number = ?2",
+                [repository_id, number],
+                |r| r.get(0),
+            )
+            .optional()?
+        {
+            Some(id) => id,
+            None => Self::insert_card(&tx, repository_id, number, title, body, author, column)?.id,
+        };
+        tx.execute("UPDATE cards SET confirmed = 1 WHERE id = ?1", [id])?;
+        tx.execute("DELETE FROM dependencies WHERE card_id = ?1", [id])?;
+        for blocker in blocked_by {
+            tx.execute(
+                "INSERT INTO dependencies (card_id, blocked_by) VALUES (?1, ?2)",
+                [id, *blocker],
+            )?;
+        }
+        tx.commit()?;
+        drop(conn);
+        Ok(self.card(id)?.expect("the card was just stored"))
     }
 
     /// Replaces the numbers of the issues that block a card.
@@ -1570,6 +1662,17 @@ impl Store {
         Ok(())
     }
 
+    /// Resolves the open inbox item of a grilling, which has no card to resolve it through.
+    pub fn resolve_inbox_for_grilling(&self, grilling_id: i64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE inbox_items SET resolved_at = ?1 \
+             WHERE kind IN ('grilling_issues', 'grilling_report') \
+             AND json_extract(data, '$.grilling') = ?2 AND resolved_at IS NULL",
+            params![now(), grilling_id],
+        )?;
+        Ok(())
+    }
+
     /// Resolves the open inbox item of a proposal, which has no card to resolve it through.
     pub fn resolve_inbox_for_proposal(&self, proposal_id: i64) -> Result<()> {
         self.conn().execute(
@@ -1578,6 +1681,93 @@ impl Store {
             params![now(), proposal_id],
         )?;
         Ok(())
+    }
+
+    // Grillings
+
+    pub fn add_grilling(
+        &self,
+        run_id: i64,
+        repository_id: i64,
+        issues: &[GrillingIssue],
+        report: Option<&str>,
+        status: &str,
+        reason: &str,
+    ) -> Result<Grilling> {
+        let conn = self.conn();
+        conn.execute(
+            "INSERT INTO grillings (run_id, repository_id, issues, report, status, reason, at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                run_id,
+                repository_id,
+                serde_json::to_string(issues)?,
+                report,
+                status,
+                reason,
+                now()
+            ],
+        )?;
+        let id = conn.last_insert_rowid();
+        drop(conn);
+        Ok(self.grilling(id)?.expect("the grilling was just stored"))
+    }
+
+    fn grillings_where(
+        &self,
+        clause: &str,
+        param: rusqlite::types::Value,
+    ) -> Result<Vec<Grilling>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT id, run_id, repository_id, issues, report, status, reason, at
+             FROM grillings WHERE {clause} ORDER BY id DESC"
+        ))?;
+        let rows = stmt.query_map([param], |r| {
+            Ok((
+                Grilling {
+                    id: r.get(0)?,
+                    run_id: r.get(1)?,
+                    repository_id: r.get(2)?,
+                    issues: Vec::new(),
+                    report: r.get(4)?,
+                    status: r.get(5)?,
+                    reason: r.get(6)?,
+                    at: r.get(7)?,
+                },
+                r.get::<_, String>(3)?,
+            ))
+        })?;
+        rows.map(|row| {
+            let (mut grilling, issues) = row?;
+            grilling.issues = serde_json::from_str(&issues)?;
+            Ok(grilling)
+        })
+        .collect()
+    }
+
+    pub fn grilling(&self, id: i64) -> Result<Option<Grilling>> {
+        Ok(self.grillings_where("id = ?1", id.into())?.pop())
+    }
+
+    /// All grillings, the newest first.
+    pub fn grillings(&self) -> Result<Vec<Grilling>> {
+        self.grillings_where("?1", 1.into())
+    }
+
+    /// Gives a grilling that has the status `from` the status `to`; false, and nothing changed, when it has another.
+    pub fn move_grilling(&self, id: i64, from: &[&str], to: &str) -> Result<bool> {
+        let marks = vec!["?"; from.len()].join(", ");
+        let sql = format!("UPDATE grillings SET status = ? WHERE id = ? AND status IN ({marks})");
+        let mut values: Vec<rusqlite::types::Value> = vec![to.to_string().into(), id.into()];
+        values.extend(
+            from.iter()
+                .map(|s| rusqlite::types::Value::from(s.to_string())),
+        );
+        Ok(self
+            .conn()
+            .execute(&sql, rusqlite::params_from_iter(values))?
+            == 1)
     }
 
     // Usage
@@ -3091,5 +3281,85 @@ mod tests {
         s.reconfirm_running_research().unwrap();
         assert_eq!(s.research(b).unwrap().unwrap().status, "confirmed");
         assert_eq!(s.research(a).unwrap().unwrap().status, "spent");
+    }
+
+    #[test]
+    fn a_confirmed_card_has_its_dependencies_from_the_start_and_adopts_a_card_of_the_poll() {
+        let (_dir, s) = store();
+        let repo = s
+            .add_repository("demo", "/tmp/demo", "none", "main")
+            .unwrap();
+        let blockers = BTreeSet::from([4]);
+        let first = s
+            .add_confirmed_card(
+                repo.id,
+                None,
+                "First",
+                "",
+                "person",
+                "Backlog",
+                &BTreeSet::new(),
+            )
+            .unwrap();
+        let second = s
+            .add_confirmed_card(repo.id, None, "Second", "", "person", "Backlog", &blockers)
+            .unwrap();
+        assert_eq!((first.number, second.number), (1, 2));
+        assert!(first.confirmed && second.confirmed);
+        assert_eq!(s.dependencies(second.id).unwrap(), [4]);
+        assert!(
+            !s.add_card(repo.id, "Other", "", "leon", "Backlog")
+                .unwrap()
+                .confirmed
+        );
+
+        // The poll made a card for the issue just opened: it is confirmed instead of added again.
+        let polled = s
+            .add_numbered_card(repo.id, 40, "Polled", "", "bot", "Backlog")
+            .unwrap();
+        assert!(!polled.confirmed);
+        let adopted = s
+            .add_confirmed_card(
+                repo.id,
+                Some(40),
+                "Polled",
+                "",
+                "person",
+                "Backlog",
+                &blockers,
+            )
+            .unwrap();
+        assert_eq!(adopted.id, polled.id);
+        assert!(adopted.confirmed);
+        assert_eq!(s.dependencies(polled.id).unwrap(), [4]);
+    }
+
+    #[test]
+    fn a_grilling_is_stored_with_its_issues_and_changes_status_once() {
+        let (_dir, s) = store();
+        let repo = s
+            .add_repository("demo", "/tmp/demo", "none", "main")
+            .unwrap();
+        let run = s
+            .add_run(None, "Grilling-partner", "pi-bolt", "chat")
+            .unwrap();
+        let issues = [GrillingIssue {
+            title: "One".into(),
+            body: "Body".into(),
+            blocked_by: vec![],
+        }];
+        let grilling = s
+            .add_grilling(run.id, repo.id, &issues, None, "proposed", "")
+            .unwrap();
+        assert_eq!(s.grilling(grilling.id).unwrap().unwrap().issues, issues);
+        assert!(
+            s.move_grilling(grilling.id, &["proposed"], "confirmed")
+                .unwrap()
+        );
+        assert!(
+            !s.move_grilling(grilling.id, &["proposed"], "dismissed")
+                .unwrap()
+        );
+        assert_eq!(s.grillings().unwrap()[0].status, "confirmed");
     }
 }

@@ -425,6 +425,7 @@ impl Engine {
         t.set("note", card.note.as_deref())?;
         t.set("change", change_table(&self.app, lua, card.id)?)?;
         t.set("trusted", self.app.is_trusted(card))?;
+        t.set("confirmed", card.confirmed)?;
         let blocked_by = self.app.blocked_by(card).map_err(mlua::Error::external)?;
         t.set("blocked_by", blocked_by)?;
         let since_retry = || runs_since_retry(&runs, card);
@@ -750,6 +751,7 @@ fn made_up_card(lua: &Lua, column: &str, title: &str, author: &str) -> mlua::Res
     t.set("author", author)?;
     t.set("column", column)?;
     t.set("trusted", author == PERSON)?;
+    t.set("confirmed", false)?;
     t.set("blocked_by", lua.create_table()?)?;
     t.set("rounds", 0)?;
     t.set("reviews", 0)?;

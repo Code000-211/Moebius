@@ -41,11 +41,17 @@ These objects appear in the responses. All ids are numbers; times are Unix secon
 (`owner/repo` or null), `trusted` (array of GitHub logins).
 
 `Card`: `id`, `repository_id`, `number`, `title`, `body`, `author`, `column`, `created_at`, `note` (why the card was sent
-back to coding, or null) and `retried_after` (the id of the card's latest run when a person last retried it, or null).
+back to coding, or null), `retried_after` (the id of the card's latest run when a person last retried it, or null) and
+`confirmed` (true for a card made from a confirmed grilling, which needs no approval).
 `Run`: `id`, `card_id` (null for a chat), `agent`, `harness`, `purpose` (`code`, `review`, other purposes of column scripts,
 `chat`, `retro`, the Retro analyst's run, `trial`, the trial of a proposal on a card, or `research`, a round of the Autoresearcher), `status` (`starting`, `running`, `waiting`, `succeeded`, `failed` or `stopped`; `waiting` is a chat waiting for
 the person's next message), `worktree`, `started_at`, `ended_at`, `summary` and `repository_id` (the repository a chat
 works in, or null).
+
+`Grilling`: `id`, `run_id` (the chat), `repository_id`, `issues` (array of `{"title", "body", "blocked_by"}`, where
+`blocked_by` is an array of indexes into `issues`; empty for a report and for an empty grilling), `report` (text or null),
+`status` (`proposed`, `reported`, `empty`, `confirmed` or `dismissed`), `reason` (why a grilling is `empty`; else empty) and
+`at`.
 
 `Chat`: `id` (the id of its run), `agent`, `status` (that of the run), `repository_id` (or null), `started_at`, `ended_at`
 and `title` (the first line of the first message, at most 80 characters).
@@ -60,7 +66,9 @@ end of the output of the repository's own checks, or null). A change's `branch` 
 in the snapshot, which holds only open items), `at`. Kinds the core adds: `approve_issue` (`data.reason`), `stuck`
 (`data.reason`), `ready_to_merge` (`data.change`, `data.branch`), `change_closed` (`data.change`, `data.pull_request`) and
 `proposal` (`data.proposal`, `data.branch`, `data.trials`: an array of `{"card", "outcome", "reason"}`; its `title` is the
-proposal's and it has no card).
+proposal's and it has no card), `grilling_issues` (`data.grilling`, `data.repository`, `data.issues`: an array of `{"title",
+"body", "blocked_by"}`; its `title` is "N issues from a grilling" and it has no card) and `grilling_report` (`data.grilling`,
+`data.repository`, `data.report`: the text; no card).
 A column script can add other kinds with `moebius.ask`.
 
 ## Endpoints
@@ -352,12 +360,12 @@ The worktree exists while the run or chat is `starting`, `running` or `waiting`.
 
 ### `GET /v1/agents`
 
-The agents the server can run, for choosing one to chat with: the Moebius agent first (when `[agents.Moebius]` or
-`[agents.Coder]` gives it a model), then the others by name. Response: an array of `{"name": string, "model":
+The agents the server can run, for choosing one to chat with: the Moebius agent first and the Grilling partner second (each
+when its own `[agents.<name>]` or `[agents.Coder]` gives it a model), then the others by name. Response: an array of `{"name": string, "model":
 string, "protocol": "openai" or "anthropic", "built_in": boolean, "error": string}`; `built_in` is true for the Moebius
-agent, which Moebius brings itself. `error` is left out unless the agent's files in the [harness
+agent and the `Grilling-partner`, which Moebius brings itself. `error` is left out unless the agent's files in the [harness
 configuration](harness-configuration.md) are broken: such an agent has an empty `model`, cannot be run, and `error` says
-why (the Moebius agent still runs, on the Coder's model). Instructions, skills, extensions and anything secret are not
+why (the built-in agents still run, on the Coder's model). Instructions, skills, extensions and anything secret are not
 included.
 
 ### `GET /v1/agents/{name}`
@@ -410,13 +418,13 @@ Request:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `agent` | string | An agent of the configuration, or `Moebius`. Without it the chat is with the Moebius agent (see [configuration](configuration.md)). |
+| `agent` | string | An agent of the configuration, `Moebius` or `Grilling-partner`. Without it the chat is with the Moebius agent (see [configuration](configuration.md)). With `Grilling-partner` the chat is a grilling (see `POST /v1/grillings/{id}/confirm`) and `repository` is required. |
 | `message` | string | Required, not blank. Sent to the agent as it is, with no issue prompt around it. |
 | `repository` | number | The id of a repository to work in. |
 
 Response: the `Run` (`purpose` `chat`, `card_id` null). Errors: `404` no such repository; `422` the message is blank, the
-agent does not exist, or it is the Moebius agent and neither `[agents.Moebius]` nor `[agents.Coder]` is configured (the
-message says so); `500` the worktree cannot be made.
+agent does not exist, it is a built-in agent and neither its own `[agents.<name>]` nor `[agents.Coder]` is configured (the
+message says so), or it is the Grilling partner and there is no `repository`; `500` the worktree cannot be made.
 
 ### `GET /v1/chats`
 
@@ -449,6 +457,10 @@ with `POST /v1/changes/{id}/merge`, which resolves the item; the merge commit's 
 changed nothing, or has no repository, offers nothing, and a chat that ends as `failed` offers nothing. If the offer
 fails, the chat's run gets a `moebius_error` event saying why and the work stays on the branch. A chat that is stopped
 offers what it made in the same way.
+
+A grilling (a chat with `Grilling-partner`) commits nothing and offers no change: before the worktree is removed Moebius
+reads what the agent left in it (see `POST /v1/grillings/{id}/confirm`) and stores a `Grilling`, whose status and id are
+the event `grilling_ended`.
 
 The chat ends as `succeeded`, which publishes `run_ended`; the change is offered before that.
 
@@ -533,6 +545,54 @@ or its branch does not merge cleanly; `422` there is no harness configuration re
 A person dismisses a `positive` or `untried` proposal: the decision is recorded (kind `merge_proposal`, choice `dismiss`,
 decider `person`), the inbox item is resolved and the status becomes `dismissed`. The repository is not changed. Request
 and errors as for `merge`, without the conflict. Response: the `Proposal`.
+
+### `GET /v1/grillings`
+
+All grillings, the newest first. Response: an array of `Grilling`.
+
+### `GET /v1/grillings/{id}`
+
+One `Grilling`. Errors: `404` no such grilling.
+
+### `POST /v1/grillings/{id}/confirm`
+
+A grilling is a chat with the built-in agent `Grilling-partner` in a repository (`POST /v1/chats`). The agent works in the
+chat's worktree and ends by writing exactly one of `.moebius/grilling/issues.json` (a JSON array of `{"title": string,
+"body": string, "blocked_by": [number]}`, where `blocked_by` are indexes into the array) or `.moebius/grilling/report.md`
+(a research report). It never commits or pushes them. When the chat ends or is stopped, Moebius reads the files before
+the worktree is removed and stores a `Grilling`:
+
+| Result | `status` | Inbox item |
+|---|---|---|
+| `issues.json` is a list of issues, each with a title, whose `blocked_by` are in range, not the issue itself and not in a circle | `proposed` | `grilling_issues`, titled "N issues from a grilling" |
+| no `issues.json`, and a `report.md` that is not blank | `reported`, with `report` | `grilling_report` |
+| `issues.json` exists but is broken or does not hold together (it decides even when a report is there), or neither file exists | `empty`, with `reason` | none |
+
+The person reads the proposal, may edit, drop and reorder the issues, and confirms with the final list. Request:
+`{"issues": [{"title": string, "body": string, "blocked_by": [number]}]}`; `body` and `blocked_by` may be left out, and
+`blocked_by` indexes this list, not the proposed one. The server
+
+1. checks the list as it checked the agent's (at least one issue, every title not blank, no `blocked_by` out of range, the
+   issue itself or in a circle) and that the status is `proposed`, and sets the status to `confirmed`;
+2. makes one card per issue in the repository's `Backlog`, each blocked by the cards of its `blocked_by` (their numbers
+   are the card's dependencies, as `card.blocked_by` reads them), blockers first. The cards are `confirmed`
+   (`card.confirmed`), so `backlog.luau` moves them on to `Ready` without approval, where `ready.luau` holds each until
+   its blockers are done. Without a forge the cards are Moebius cards, authored by `person`. On a GitHub repository each
+   issue is opened first through the GitHub API, its body ending in a line `Blocked by #3, #4` for the numbers of the
+   issues that block it (the line the poll reads), and its card gets the issue's number, so that the poll finds the card
+   existing; its `author` is `person`;
+3. records the decision (kind `confirm_grilling`, choice `confirm_grilling`, decider `person`, the context holding the
+   grilling's id and the final list as JSON) and resolves the inbox item.
+
+If opening an issue fails the request fails with the error of the forge, the status is `proposed` again and the issues
+already opened stay on GitHub; the cards made so far stay. Response: the `Grilling`, `confirmed`. Errors: `404` no such
+grilling; `422` the grilling is not `proposed`, or the list is not valid (the message says why).
+
+### `POST /v1/grillings/{id}/dismiss`
+
+A person dismisses the proposal of a `proposed` grilling, or reads the report of a `reported` one and dismisses it: the
+inbox item is resolved and the status becomes `dismissed`. Nothing is made. Request: `{}`. Response: the `Grilling`. Errors:
+`404` no such grilling; `422` it is not `proposed` or `reported`.
 
 ### `POST /v1/research`
 
@@ -623,6 +683,7 @@ like `POST /v1/runs/{id}/stop` does. Experiments done stay, and so do the lever 
 | `proposal_status` | A proposal's status changed: it is being tried, was tried, was merged or dismissed. | `{"proposal": id, "status": string}` (the statuses above) |
 | `research_status` | A research was stored, confirmed, started, stopped or ended. | `{"research": id, "status": string}` (the statuses above) |
 | `experiment_done` | An experiment of a research ended and was stored. | `{"research": id, "lever": the lever's branch, "value": number or null, "kept": boolean}` |
+| `grilling_ended` | A grilling chat ended and its result was stored. | `{"grilling": id, "status": "proposed" \| "reported" \| "empty"}` |
 | `lagged` | This client fell too far behind (more than 1024 events) and lost the oldest. | `{"missed": number}` |
 
 A `run_event` has two sources, told apart by its inner `kind`:

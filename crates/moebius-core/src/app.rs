@@ -195,7 +195,7 @@ impl App {
         Ok(self.forge(repository)?.refresh(repository)?)
     }
 
-    fn forge(&self, repository: &Repository) -> Result<&dyn Forge> {
+    pub(crate) fn forge(&self, repository: &Repository) -> Result<&dyn Forge> {
         self.forges
             .get(repository.forge.as_str())
             .map(|forge| &**forge)
@@ -207,7 +207,7 @@ impl App {
             })
     }
 
-    fn repository(&self, id: i64) -> Result<Repository> {
+    pub(crate) fn repository(&self, id: i64) -> Result<Repository> {
         self.store
             .repository(id)?
             .ok_or_else(|| AppError::NotFound(format!("repository {id}")))
@@ -368,6 +368,52 @@ impl App {
         let card = self
             .store
             .add_card(repository_id, title, body, author, columns::BACKLOG)?;
+        self.bus.publish(AppEvent::new("card_added", json!(card)));
+        Ok(card)
+    }
+
+    /// Creates an issue from a confirmed grilling: a card in the backlog that needs no approval, blocked by the issues
+    /// with the numbers `blocked_by`. On a forge the issue is opened there first, with a "Blocked by" line for the
+    /// poll to read, and the card gets its number, so that the poll finds it existing.
+    pub(crate) fn create_confirmed_issue(
+        &self,
+        repository: &Repository,
+        title: &str,
+        body: &str,
+        blocked_by: &BTreeSet<i64>,
+    ) -> Result<Card> {
+        let card = if repository.forge == "none" {
+            self.store.add_confirmed_card(
+                repository.id,
+                None,
+                title,
+                body,
+                PERSON,
+                columns::BACKLOG,
+                blocked_by,
+            )?
+        } else {
+            let numbers: Vec<String> = blocked_by.iter().map(|n| format!("#{n}")).collect();
+            let body = if numbers.is_empty() {
+                body.to_string()
+            } else {
+                format!("{}\n\nBlocked by {}", body.trim(), numbers.join(", "))
+                    .trim()
+                    .to_string()
+            };
+            let number = self
+                .forge(repository)?
+                .create_issue(repository, title, &body)?;
+            self.store.add_confirmed_card(
+                repository.id,
+                Some(number),
+                title,
+                &body,
+                PERSON,
+                columns::BACKLOG,
+                blocked_by,
+            )?
+        };
         self.bus.publish(AppEvent::new("card_added", json!(card)));
         Ok(card)
     }
@@ -543,6 +589,11 @@ impl App {
         }
         if !runs.has_agent(agent) {
             return Err(AppError::Invalid(format!("no agent named {agent}")));
+        }
+        if agent == crate::pibolt::GRILLING_AGENT && repository_id.is_none() {
+            return Err(AppError::Invalid(
+                "a grilling needs a repository, whose issues it ends in".into(),
+            ));
         }
         let repository = repository_id.map(|id| self.repository(id)).transpose()?;
         runs.start_chat(self, agent, repository.as_ref(), message)

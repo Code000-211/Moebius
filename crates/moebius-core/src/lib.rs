@@ -10,6 +10,7 @@ pub mod config;
 pub mod decide;
 pub mod forge;
 pub mod github;
+pub mod grilling;
 pub mod guard;
 pub mod harness_repo;
 pub mod mcp;

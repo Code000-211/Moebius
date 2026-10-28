@@ -1,6 +1,6 @@
 //! The GitHub App Moebius acts as: it signs a JWT with the app's private key and exchanges it for an installation
 //! token per repository owner, which it keeps until shortly before it expires. It also lists a repository's issues,
-//! asking GitHub only for what changed since the last time, and opens, reads and merges pull requests.
+//! asking GitHub only for what changed since the last time, and opens issues and opens, reads and merges pull requests.
 
 use std::collections::HashMap;
 use std::sync::Mutex as StdMutex;
@@ -272,6 +272,20 @@ impl GitHub {
         let request = json!({ "title": title, "head": head, "base": base, "body": body });
         let created: Created = self
             .repository_call(github, Method::POST, "/pulls", Some(&request))
+            .await?;
+        Ok(created.number)
+    }
+
+    /// Opens an issue in `github` and returns its number.
+    pub async fn create_issue(
+        &self,
+        github: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<i64, GitHubError> {
+        let request = json!({ "title": title, "body": body });
+        let created: Created = self
+            .repository_call(github, Method::POST, "/issues", Some(&request))
             .await?;
         Ok(created.number)
     }

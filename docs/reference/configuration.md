@@ -166,6 +166,13 @@ starts; `agents.Moebius.skills` adds more, and `agents.Moebius.extensions` adds 
 any agent. What a chat with it leaves in its repository is offered as a change when the chat ends, see the
 [desktop API](desktop-api.md).
 
+### `[agents.Grilling-partner]`
+
+The Grilling partner is bundled like the Moebius agent and configured the same way: `[agents.Grilling-partner]` gives it a
+model, protocol, thinking level, token budget, instructions (added after the built-in ones), skills and extensions;
+without the table it takes the Coder's model and protocol, and with neither a chat with it is refused with status 422. It
+is the agent of a grilling, see the [desktop API](desktop-api.md) and [Grilling](harness-configuration.md#grilling).
+
 ## Environment variables
 
 - The variables named by `router.upstreams.api_key_env`. Nothing else is read from the environment by the server.

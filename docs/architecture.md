@@ -48,7 +48,7 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
    `Engine::tick` finds the script for the card's column: the repository's `.moebius/<script>` read with
    `git show` on its default branch, else the built-in one from `workflow/` (`Engine::script`). `Engine::run_script`
    runs it in a fresh sandboxed Luau state with `card_table` and the `moebius` table, and applies the effects.
-3. **Backlog to Ready.** `backlog.luau` moves a trusted card on (`App::is_trusted`). Others get an `approve_issue` inbox
+3. **Backlog to Ready.** `backlog.luau` moves a trusted card on (`App::is_trusted`), and one made from a confirmed grilling (`card.confirmed`). Others get an `approve_issue` inbox
    item (`moebius.ask`) until a person calls `POST /v1/cards/{id}/approve` (`App::approve_issue`), which records a
    judgement by `person` and moves the card to `Ready`.
 4. **Ready to In progress.** `ready.luau` waits for blockers and for a free run slot, then moves the card.
@@ -170,6 +170,16 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
     function that also offers a chat's work. A round without new branches ends the research `done`; a failing baseline ends
     it `failed`; `research::stop` ends it `stopped` and stops its run. Every status change is `research_status`. A server
     start sends `running` research back to `confirmed`. `trial::on_schedule` waits while a research runs.
+12g. **Grilling.** A grilling is a chat (12b) with the built-in agent `Grilling-partner` (`pibolt::GRILLING_AGENT`);
+    `App::start_chat` refuses it without a repository. `Reader::end` treats it differently from other chats: nothing is
+    committed, and before the worktree is removed `grilling::conclude` reads `.moebius/grilling/issues.json` or `report.md`
+    (`grilling::read_result`), stores a row of `grillings` (`proposed`, `reported` or `empty`), adds the inbox item
+    `grilling_issues` or `grilling_report` and publishes `grilling_ended`; `offer_chat_change` is not called.
+    `POST /v1/grillings/{id}/confirm` calls `grilling::confirm`: `grilling::creation_order` puts blockers first, and
+    `App::create_confirmed_issue` makes each card (on GitHub after `Forge::create_issue`, which opens the issue with a
+    `Blocked by` line, through `GitHub::create_issue`) with `Store::add_confirmed_card`, which stores the card as
+    `confirmed` together with its dependencies. `backlog.luau` moves such a card to Ready (`card.confirmed`); a
+    `confirm_grilling` judgement by `person` is recorded and the inbox item resolved.
 13. **GitHub reports.** `poll::poll_pull_requests` reads each open change's pull request: checks and review are recorded
     (`change_updated`), a merged pull request calls `App::change_merged`, a closed one calls `App::change_closed`.
 14. **A person merges.** `POST /v1/changes/{id}/merge` calls `App::merge_change`: it records a judgement by `person`,
