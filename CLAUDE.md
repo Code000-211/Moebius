@@ -9,11 +9,11 @@ changes ready to merge. Read `GLOSSARY.md` for the words, `docs/spec.md` for wha
 - `crates/moebius-core`: everything the server does. `app.rs` ties the store, bus, repositories, forges and decisions
   together; `server.rs` wires the API, router, harness, board engine and the nightly schedule; one module per part:
   `store`, `blobs`, `bus`, `repos`, `forge`, `github` (the API client), `poll` (GitHub without webhooks), `check` (local
-  checks), `decide`, `guard` (the guard deciders), `rules`, `board`, `router`, `pibolt`, `terminal` (shells in a
-  worktree), `harness_repo` (the harness configuration repository), `mcp` (its MCP servers), `skill`, `retro`, `trial`,
-  `replay`, `research` (autoresearch), `grilling` (chats that end in issues), `export` (the training set),
-  `decision_model` (shadowing and takeovers), `setup` (what the Models and Plugins pages show), `settings` (editing
-  `moebius.toml` and the API keys while the server runs), `api`, `config`.
+  checks), `decide`, `guard` (the guard deciders), `rules`, `scripts` (editing a column's script), `board`, `router`,
+  `pibolt`, `terminal` (shells in a worktree and on the server), `harness_repo` (the harness configuration repository),
+  `mcp` (its MCP servers), `skill`, `retro`, `trial`, `replay`, `research` (autoresearch), `grilling` (chats that end in
+  issues), `export` (the training set), `decision_model` (shadowing and takeovers), `setup` (what the Models and Plugins
+  pages show), `settings` (editing `moebius.toml` and the API keys while the server runs), `api`, `config`.
   Column scripts are in `workflow/*.luau`.
 - `crates/moebius-plugin-api`: the plugin trait and the host that calls plugins with a time limit, failing closed.
 - `crates/moebius`: the `moebius` binary (`init`, `serve`, `check-script`, `export`, and in `cli.rs` the commands that

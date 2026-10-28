@@ -24,6 +24,7 @@ pub mod research;
 pub mod retro;
 pub mod router;
 pub mod rules;
+pub mod scripts;
 pub mod server;
 pub mod settings;
 pub mod setup;

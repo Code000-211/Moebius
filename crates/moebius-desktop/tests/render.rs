@@ -18,6 +18,7 @@ use moebius_desktop::mcp_servers;
 use moebius_desktop::new_issue;
 use moebius_desktop::retro;
 use moebius_desktop::rules;
+use moebius_desktop::script_editor;
 use moebius_desktop::search;
 use moebius_desktop::server_terminal;
 use moebius_desktop::setup;
@@ -4191,4 +4192,113 @@ fn the_terminal_page_connects_when_opened_and_types_into_the_shell() {
     )));
     let mut ui = simulator(&app);
     assert!(ui.find("the shell ended").is_ok());
+}
+
+/// The detail of a column's script as the server answers it.
+fn script(source: &str, text: &str) -> client::ScriptDetail {
+    serde_json::from_value(json!({
+        "column": "Ready", "path": ".moebius/ready.luau", "source": source, "text": text
+    }))
+    .unwrap()
+}
+
+const HOLD: &str = "-- Hold large cards until nothing else runs.\nfunction on_card(card)\n  if moebius.runs_active() > 0 then\n    moebius.wait(\"another run is going\")\n    return\n  end\n  moebius.move(\"In progress\", \"ready to code\")\nend\n";
+
+/// The board of the mockup with the editor of the Ready column's script open.
+fn script_app(source: &str) -> App {
+    let mut app = App::with_snapshot(snapshot(vec![radiance("Ready")], vec![]));
+    let _ = app.update(Message::EditScript(1, "Ready".into()));
+    let _ = app.update(Message::Script(script_editor::Message::Opened(Ok(script(
+        source, HOLD,
+    )))));
+    app
+}
+
+#[test]
+fn the_pencil_of_a_column_opens_the_editor_of_its_script() {
+    let app = App::with_snapshot(snapshot(vec![radiance("Ready")], vec![]));
+    for (column, _) in [("Ready", 0), ("In progress", 0), ("Done", 0)] {
+        let mut ui = simulator(&app);
+        ui.click(iced::widget::Id::from(format!("edit-script-{column}")))
+            .unwrap_or_else(|_| panic!("no pencil in the {column} column"));
+        let messages: Vec<_> = ui.into_messages().collect();
+        assert!(
+            matches!(&messages[..], [Message::EditScript(1, name)] if name == column),
+            "{column}: {messages:?}"
+        );
+    }
+}
+
+#[test]
+fn the_editor_shows_the_script_of_the_repository_and_can_save_or_give_it_back() {
+    let app = script_app("repository");
+    draw(
+        &app,
+        "script-editor",
+        &[
+            "Ready",
+            "Repository",
+            ".moebius/ready.luau",
+            "Use the built-in script",
+            "Save",
+        ],
+    );
+    assert!(matches!(
+        &clicked(&app, "Save")[..],
+        [Message::Script(script_editor::Message::Save)]
+    ));
+    assert!(matches!(
+        &clicked(&app, "Use the built-in script")[..],
+        [Message::Script(script_editor::Message::AskBuiltIn)]
+    ));
+    // Giving the script back asks first.
+    let mut asking = script_app("repository");
+    let _ = asking.update(Message::Script(script_editor::Message::AskBuiltIn));
+    assert!(shows(&asking, "Remove the repository's script?"));
+    assert!(matches!(
+        &clicked(&asking, "Keep")[..],
+        [Message::Script(script_editor::Message::Keep)]
+    ));
+    let _ = asking.update(Message::Script(script_editor::Message::Keep));
+    assert!(!shows(&asking, "Remove the repository's script?"));
+}
+
+#[test]
+fn the_built_in_script_has_no_button_to_go_back_to_it_and_a_refusal_is_shown() {
+    let mut app = script_app("built-in");
+    assert!(shows(&app, "Built in"));
+    assert!(!shows(&app, "Use the built-in script"));
+    let refusal = ClientError::Server {
+        status: 422,
+        message: "ready.luau: the script does not define a function on_card(card)".into(),
+    };
+    let _ = app.update(Message::Script(script_editor::Message::Saved(Err(refusal))));
+    draw(
+        &app,
+        "script-editor-refused",
+        &["ready.luau: the script does not define a function on_card(card)"],
+    );
+}
+
+#[test]
+fn the_speech_bubble_opens_a_chat_draft_with_the_moebius_agent_in_this_repository() {
+    let mut app = script_app("repository");
+    let mut ui = simulator(&app);
+    ui.click(iced::widget::Id::from(script_editor::ASK_AGENT))
+        .unwrap();
+    let messages: Vec<_> = ui.into_messages().collect();
+    assert!(
+        matches!(
+            &messages[..],
+            [Message::Script(script_editor::Message::AskAgent)]
+        ),
+        "{messages:?}"
+    );
+    let _ = app.update(messages.into_iter().next().unwrap());
+    assert_eq!(app.page(), Page::Chat);
+    assert!(shows(&app, "Start chat"));
+    assert!(shows(
+        &app,
+        "About the Ready column's script (.moebius/ready.luau): "
+    ));
 }

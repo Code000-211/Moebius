@@ -10,6 +10,7 @@ use iced::{Alignment, Border, Element, Length, Padding};
 
 use crate::app::Message;
 use crate::client::{Board, Card, InboxItem};
+use crate::icons::Icon;
 use crate::new_issue::{self, NewIssue};
 use crate::page::{self, Tone, tag};
 use crate::theme;
@@ -145,7 +146,27 @@ fn column_view<'a>(
                 .color(theme::TEXT_MUTED),
         ]
         .align_y(Alignment::Center),
-        text(script).size(theme::SMALL).color(theme::TEXT_MUTED),
+        row![
+            text(script).size(theme::SMALL).color(theme::TEXT_MUTED),
+            space::horizontal(),
+            // The container names the button, so that a test can find it.
+            container(
+                button(Icon::Pencil.view(theme::TEXT_MUTED, 13.0))
+                    .padding(2)
+                    .on_press(Message::EditScript(board.repository.id, name.to_string()))
+                    .style(|_, status| button::Style {
+                        background: (status == button::Status::Hovered)
+                            .then(|| theme::SURFACE.into()),
+                        border: Border {
+                            radius: theme::RADIUS_SMALL.into(),
+                            ..Border::default()
+                        },
+                        ..button::Style::default()
+                    })
+            )
+            .id(format!("edit-script-{name}")),
+        ]
+        .align_y(Alignment::Center),
     ]
     .spacing(2)
     .width(Length::Fill);

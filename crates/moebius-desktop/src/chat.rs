@@ -245,6 +245,22 @@ impl Chats {
         }
     }
 
+    /// Opens the form of a new chat with the default agent in `repository`, with `message` typed in as the first
+    /// message. Nothing is sent: the person finishes the message and starts the chat.
+    pub fn draft(
+        &mut self,
+        repository: i64,
+        message: String,
+        settings: &Settings,
+    ) -> Task<AppMessage> {
+        let task = self.update(Message::NewChat(true), Some(settings));
+        if let Some(form) = &mut self.form {
+            form.repository = Some(repository);
+            form.message = message;
+        }
+        task
+    }
+
     /// Shows the chat with this id.
     pub fn open(&mut self, id: i64, settings: &Settings) -> Task<AppMessage> {
         self.open = Some(Open::new(id));

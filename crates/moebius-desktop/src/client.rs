@@ -443,6 +443,17 @@ pub struct McpServer {
     pub error: Option<String>,
 }
 
+/// A column's script as `GET /v1/repositories/{id}/scripts/{column}` answers it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ScriptDetail {
+    pub column: String,
+    /// Where the repository keeps its own script for the column.
+    pub path: String,
+    /// `repository` or `built-in`.
+    pub source: String,
+    pub text: String,
+}
+
 /// A skill as `GET /v1/skills/{name}` answers it: its description, the text of its `SKILL.md` and the other files.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct SkillDetail {
@@ -915,6 +926,14 @@ pub struct Client {
     settings: Settings,
 }
 
+/// The route of a column's script; a column's name may have spaces.
+fn script_path(repository: i64, column: &str) -> String {
+    format!(
+        "/v1/repositories/{repository}/scripts/{}",
+        column.replace(' ', "%20")
+    )
+}
+
 impl Client {
     pub fn new(settings: Settings) -> Self {
         Client {
@@ -1169,6 +1188,36 @@ impl Client {
             .http
             .delete(format!("{}/v1/skills/{name}", self.settings.address));
         self.send::<()>(request).await
+    }
+
+    /// The script a column runs for a repository.
+    pub async fn script(&self, repository: i64, column: &str) -> Result<ScriptDetail, ClientError> {
+        self.get(&script_path(repository, column)).await
+    }
+
+    /// Saves the repository's own script for a column; the server commits it.
+    pub async fn save_script(
+        &self,
+        repository: i64,
+        column: &str,
+        text: &str,
+    ) -> Result<ScriptDetail, ClientError> {
+        let body = serde_json::json!({ "text": text });
+        self.put(&script_path(repository, column), body).await
+    }
+
+    /// Removes the repository's own script for a column, so that the built-in one runs.
+    pub async fn delete_script(
+        &self,
+        repository: i64,
+        column: &str,
+    ) -> Result<ScriptDetail, ClientError> {
+        let request = self.http.delete(format!(
+            "{}{}",
+            self.settings.address,
+            script_path(repository, column)
+        ));
+        self.send(request).await
     }
 
     /// An MCP server as `mcp.toml` has it.

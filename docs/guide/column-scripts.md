@@ -47,6 +47,15 @@ A file that is in the repository when you add it to Moebius is in the clone from
 go into the same branch of the clone, so keep nothing else uncommitted there. A fetch that fails is reported as a
 `forge_error` event.
 
+### From the board
+
+In the desktop app each column header has a pencil that opens the column's script in an editor. Save checks the script
+the way `moebius check-script` does and refuses it with the check's message when it fails; otherwise it commits
+`.moebius/<script>` to the default branch (for a repository on GitHub it also pushes, and a refused push is shown and
+undone). "Use the built-in script" removes the file again. The speech bubble opens a chat with the Moebius agent about
+the script. The same is `PUT /v1/repositories/{id}/scripts/{column}` in the [desktop API](desktop-api.md),
+which the Moebius agent may call too (`"$MOEBIUS" api PUT ...`).
+
 ## Examples
 
 Each example is a whole script. The test in `crates/moebius-core/tests/guide.rs` runs each against a card in its column

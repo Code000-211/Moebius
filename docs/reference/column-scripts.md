@@ -283,6 +283,10 @@ of the script:
 
 A script from a repository runs with the same sandbox and limits as a built-in one.
 
+The desktop API reads, saves and removes an override: `GET`, `PUT` and `DELETE` of
+[`/v1/repositories/{id}/scripts/{column}`](desktop-api.md#get-v1repositoriesidscriptscolumn). A save checks the script
+like `moebius check-script`, commits it to the default branch of the clone and, on GitHub, pushes it.
+
 ## Checks and conflicts
 
 A change is **published** on a branch of its own, `moebius/card-<number>`, which the card keeps for all its rounds: each

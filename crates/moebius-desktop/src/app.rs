@@ -19,6 +19,7 @@ use crate::mcp_servers::{self, McpServers};
 use crate::new_issue::{self, NewIssue};
 use crate::retro::{self, Retros};
 use crate::rules::{self, Rules};
+use crate::script_editor::{self, ScriptEditor};
 use crate::search::{self, Search, Target};
 use crate::server_terminal::{self, ServerTerminal};
 use crate::settings::{self, Settings};
@@ -127,6 +128,9 @@ pub enum Message {
     OpenCard(i64),
     /// Back from a card's page to the board.
     CloseCard,
+    /// The pencil of a column of the board with this repository id: the editor of the column's script opens.
+    EditScript(i64, String),
+    Script(script_editor::Message),
     Live(live::Message),
     Inbox(inbox::Message),
     Chat(chat::Message),
@@ -161,6 +165,8 @@ enum Opened {
         entries: Option<Vec<HistoryEntry>>,
         now: i64,
     },
+    /// The editor of a column's script.
+    Script(Box<ScriptEditor>),
 }
 
 pub struct App {
@@ -344,6 +350,40 @@ impl App {
             }
             Message::OpenCard(id) => return self.open(id),
             Message::CloseCard => self.opened = None,
+            Message::EditScript(repository, column) => {
+                let (Some(settings), Some(board)) = (
+                    &self.settings,
+                    self.snapshot
+                        .boards
+                        .iter()
+                        .find(|board| board.repository.id == repository),
+                ) else {
+                    return Task::none();
+                };
+                let (editor, task) =
+                    ScriptEditor::open(repository, &board.repository.name, &column, settings);
+                self.opened = Some(Opened::Script(Box::new(editor)));
+                return task;
+            }
+            Message::Script(message) if ScriptEditor::refused(&message) => {
+                self.show_connect_error(&ClientError::Unauthorized);
+            }
+            Message::Script(script_editor::Message::AskAgent) => {
+                // The chat page opens on a draft for the Moebius agent; nothing is sent.
+                let (Some(Opened::Script(editor)), Some(settings)) = (&self.opened, &self.settings)
+                else {
+                    return Task::none();
+                };
+                let (repository, about) = (editor.repository(), editor.about());
+                self.page = Some(Page::Chat);
+                self.opened = None;
+                return self.chats.draft(repository, about, settings);
+            }
+            Message::Script(message) => {
+                if let Some(Opened::Script(editor)) = &mut self.opened {
+                    return editor.update(message, self.settings.as_ref());
+                }
+            }
             Message::Live(message) => {
                 if let Some(Opened::Run(live)) = &mut self.opened {
                     return live.update(message, self.settings.as_ref());
@@ -944,6 +984,7 @@ impl App {
                     }
                     Some(Opened::History { card, entries, now }) => card_of(*card)
                         .map(|card| history::view(board, card, entries.as_deref(), *now)),
+                    Some(Opened::Script(editor)) => Some(editor.view()),
                     None => None,
                 }
                 .unwrap_or_else(|| board::view(board, &self.snapshot.inbox, &self.new_issue))

@@ -185,6 +185,35 @@ Request: `{"title": "...", "body": "..."}`. `title` is required and must not be 
 Response: the `Card`. Errors: `404` no such repository; `422` the title is empty; `500` the forge refuses to open the
 issue (no card is made).
 
+### `GET /v1/repositories/{id}/scripts/{column}`
+
+The script a column runs for a repository: the repository's own `.moebius/<file>.luau` on its default branch (see
+[column scripts](column-scripts.md#repository-overrides)), or the built-in one. `{column}` is the column's name as the
+board shows it, in any case and URL-encoded (`In%20progress`). Response: `{"column": string, "path": string, "source":
+"repository" or "built-in", "text": string}`. `path` is where the repository keeps its own script for the column
+(`.moebius/ready.luau` for `Ready`; the files are `backlog`, `ready`, `code` for `In progress`, `review`, `merge` and
+`done`), whichever `source` is. Errors: `404` no such repository or column.
+
+### `PUT /v1/repositories/{id}/scripts/{column}`
+
+A person, or the Moebius agent, replaces the column's script for the repository. Request: `{"text": string, "reason":
+string}`; `reason` is optional and is kept with the decision. The script is checked as `moebius check-script` checks it,
+in the column, against a made-up card, and refused when the check fails. Then `.moebius/<file>.luau` is committed
+(`Change the <Column> column's script`) on the default branch of Moebius's clone; for a repository on GitHub the clone
+is first brought up to date with `origin` and the branch is pushed with the installation's token. The decision is
+recorded (kind `edit_script`, decider `person` or `agent:Moebius`; its context has `repository`, `column`, `path`, `text`
+and `change`) and the event `script_changed` is sent. Text that changes nothing makes no commit and no decision. Response:
+the script as `GET` answers it, now with `source` `repository`. Errors: `404` no such repository or column; `409` the
+clone cannot be brought up to date or the push is refused: the commit is undone and the message is git's, with keys
+redacted; `422` the check failed, and the message is the check's (it starts with the script's file name).
+
+### `DELETE /v1/repositories/{id}/scripts/{column}`
+
+Removes the repository's own script for the column, committed and pushed the same way (`Use the built-in script for the
+<Column> column`, kind `edit_script`), so the column runs the built-in script again. Response: the script as `GET`
+answers it, now the built-in one. Errors: `404` no such repository or column, or the repository has no script of its own
+for the column; `409` as for `PUT`.
+
 ### `POST /v1/cards/{id}/approve`
 
 A person approves an issue that waits in the backlog: the decision is recorded (kind `approve_issue`, decider `person`),
@@ -1055,6 +1084,7 @@ like `POST /v1/runs/{id}/stop` does. Experiments done stay, and so do the lever 
 | Kind | When | `data` |
 |---|---|---|
 | `repository_added` | A repository was added. | The `Repository`. |
+| `script_changed` | A column's script was saved or removed for a repository, through the API. | `{"repository": id, "column": string, "path": string}` |
 | `card_added` | An issue became a card: created through the API or found on GitHub. | The `Card`. |
 | `card_updated` | The title or body of a GitHub issue changed. | The `Card`. |
 | `card_moved` | A card moved to another column. | `{"card": id, "from": column, "to": column}` |

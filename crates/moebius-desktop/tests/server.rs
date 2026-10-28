@@ -1698,3 +1698,123 @@ async fn the_client_reads_the_steps_to_a_first_card_of_a_real_server() {
     );
     assert_eq!(start.steps[0].detail, "Add an upstream on the Models page.");
 }
+
+/// The pencil's editor against a real server: it reads the built-in script, saves a script as a commit, shows the
+/// server's refusal of a bad one, and gives the script back. The speech bubble starts a draft that is not sent until
+/// "Start chat" is pressed, and the chat then works in the repository.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_drafts_a_chat() {
+    use iced::widget::text_editor::{Action, Edit};
+    use moebius_desktop::script_editor;
+
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, _) = start_with_fake_pi(dir.path()).await;
+    let client = Client::new(settings.clone());
+    let repository = client
+        .add_repository(&NewRepository {
+            name: "demo".into(),
+            url: origin(dir.path()).display().to_string(),
+            forge: "none",
+            github: None,
+            trusted: Vec::new(),
+        })
+        .await
+        .unwrap();
+    let mut app = App::with_snapshot(Snapshot::default());
+    let _ = app.update(Message::Checked(Ok((
+        settings.clone(),
+        client.snapshot().await.unwrap(),
+    ))));
+    let clone = std::path::PathBuf::from(&repository.path);
+    let edit = |app: &mut App, text: &str| {
+        let _ = app.update(Message::Script(script_editor::Message::Text(
+            Action::SelectAll,
+        )));
+        let paste = Edit::Paste(Arc::new(text.to_string()));
+        let _ = app.update(Message::Script(script_editor::Message::Text(Action::Edit(
+            paste,
+        ))));
+    };
+
+    // The pencil of the Ready column reads the built-in script.
+    let mut ui = Simulator::with_size(
+        iced::Settings::default(),
+        iced::Size::new(1440.0, 900.0),
+        app.view(),
+    );
+    ui.click(iced::widget::Id::from("edit-script-Ready"))
+        .unwrap();
+    let messages: Vec<_> = ui.into_messages().collect();
+    let task = app.update(messages.into_iter().next().unwrap());
+    settle(&mut app, task).await;
+    assert!(shown(&app, ".moebius/ready.luau"));
+    assert!(shown(&app, "Built in"));
+
+    // A script that fails the check is refused with the server's message and nothing is committed.
+    edit(&mut app, "this is not luau");
+    let task = app.update(Message::Script(script_editor::Message::Save));
+    settle(&mut app, task).await;
+    let refusal = client
+        .save_script(repository.id, "Ready", "this is not luau")
+        .await
+        .unwrap_err();
+    let ClientError::Server {
+        status: 422,
+        message,
+    } = refusal
+    else {
+        panic!("{refusal:?}")
+    };
+    assert!(shown(&app, &message), "{message}");
+    assert!(!clone.join(".moebius").exists());
+
+    // A good one is committed and the editor says the script is the repository's.
+    edit(&mut app, "function on_card(card) moebius.wait('held') end");
+    let task = app.update(Message::Script(script_editor::Message::Save));
+    settle(&mut app, task).await;
+    assert!(shown(&app, "Repository"));
+    assert!(shown(&app, "Saved as a commit on the default branch."));
+    assert_eq!(
+        std::fs::read_to_string(clone.join(".moebius/ready.luau")).unwrap(),
+        "function on_card(card) moebius.wait('held') end\n"
+    );
+    assert_eq!(
+        client.script(repository.id, "Ready").await.unwrap().source,
+        "repository"
+    );
+
+    // The bubble opens a draft in this repository; nothing is sent until the person starts the chat.
+    let _ = app.update(Message::Script(script_editor::Message::AskAgent));
+    assert_eq!(app.page(), Page::Chat);
+    assert!(client.chats().await.unwrap().is_empty());
+    let mut ui = Simulator::with_size(
+        iced::Settings::default(),
+        iced::Size::new(1440.0, 900.0),
+        app.view(),
+    );
+    ui.click("Start chat").unwrap();
+    let messages: Vec<_> = ui.into_messages().collect();
+    let task = app.update(messages.into_iter().next().unwrap());
+    settle(&mut app, task).await;
+    let chats = client.chats().await.unwrap();
+    assert_eq!(chats.len(), 1);
+    assert_eq!(
+        (chats[0].agent.as_str(), chats[0].repository_id),
+        ("Moebius", Some(repository.id))
+    );
+    assert_eq!(
+        chats[0].title,
+        "About the Ready column's script (.moebius/ready.luau): "
+    );
+
+    // Back in the editor, the built-in script is used again.
+    let task = app.update(Message::EditScript(repository.id, "Ready".into()));
+    settle(&mut app, task).await;
+    let task = app.update(Message::Script(script_editor::Message::UseBuiltIn));
+    settle(&mut app, task).await;
+    assert!(!clone.join(".moebius/ready.luau").exists());
+    assert_eq!(
+        client.script(repository.id, "Ready").await.unwrap().source,
+        "built-in"
+    );
+}

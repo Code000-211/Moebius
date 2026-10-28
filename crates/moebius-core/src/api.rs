@@ -89,6 +89,7 @@ use crate::repos::GitError;
 use crate::research::{self, NewResearch, ResearchView};
 use crate::retro::{self, RetroSummary, RetroView};
 use crate::rules;
+use crate::scripts::{self, NewScript, ScriptView};
 use crate::settings::{Changes, Live, Saved, SettingsView};
 use crate::setup;
 use crate::store::{
@@ -400,6 +401,10 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/events", get(events))
         .route("/v1/repositories", post(add_repository))
         .route("/v1/repositories/{id}/issues", post(create_issue))
+        .route(
+            "/v1/repositories/{id}/scripts/{column}",
+            get(get_script).put(put_script).delete(delete_script),
+        )
         .route("/v1/cards/{id}/approve", post(approve_issue))
         .route("/v1/cards/{id}/retry", post(retry_card))
         .route("/v1/changes/{id}/merge", post(merge_change))
@@ -867,6 +872,36 @@ fn editable_harness_repo(state: &ApiState) -> Result<Arc<HarnessRepo>, AppError>
             "skills and MCP servers are edited in a harness configuration repository, and the server has none".into(),
         )
     })
+}
+
+async fn get_script(
+    State(state): State<ApiState>,
+    UrlPath((id, column)): UrlPath<(i64, String)>,
+) -> Result<axum::Json<ScriptView>, ApiError> {
+    blocking(&state.app, move |app| scripts::script(app, id, &column)).await
+}
+
+async fn put_script(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath((id, column)): UrlPath<(i64, String)>,
+    axum::Json(new): axum::Json<NewScript>,
+) -> Result<axum::Json<ScriptView>, ApiError> {
+    blocking(&state.app, move |app| {
+        scripts::save_script(app, &by, id, &column, &new)
+    })
+    .await
+}
+
+async fn delete_script(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath((id, column)): UrlPath<(i64, String)>,
+) -> Result<axum::Json<ScriptView>, ApiError> {
+    blocking(&state.app, move |app| {
+        scripts::delete_script(app, &by, id, &column)
+    })
+    .await
 }
 
 async fn get_skill(

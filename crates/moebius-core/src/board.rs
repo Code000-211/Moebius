@@ -226,6 +226,28 @@ const DEFAULT_SCRIPTS: &[(&str, &str)] = &[
     ("done.luau", include_str!("../workflow/done.luau")),
 ];
 
+/// The column of the default workflow called `name`, in any case.
+pub fn column_named(name: &str) -> Option<Column> {
+    Workflow::default()
+        .columns
+        .into_iter()
+        .find(|column| column.name.eq_ignore_ascii_case(name))
+}
+
+/// The built-in script file `file`, such as `ready.luau`.
+pub fn built_in_script(file: &str) -> Option<&'static str> {
+    DEFAULT_SCRIPTS
+        .iter()
+        .find(|(name, _)| *name == file)
+        .map(|(_, source)| *source)
+}
+
+/// The script file a repository has for `file` on its default branch, if it overrides the built-in one.
+pub fn repository_script(repository: &Repository, file: &str) -> Option<String> {
+    let spec = format!("{}:.moebius/{file}", repository.base_ref());
+    git(Path::new(&repository.path), &["show", &spec]).ok()
+}
+
 impl Default for Workflow {
     fn default() -> Self {
         let columns = [
@@ -348,14 +370,11 @@ impl Engine {
             .repository(card.repository_id)
             .map_err(AppError::from)?
             .ok_or_else(|| AppError::NotFound(format!("repository {}", card.repository_id)))?;
-        let spec = format!("{}:.moebius/{}", repository.base_ref(), column.script);
-        if let Ok(source) = git(Path::new(&repository.path), &["show", &spec]) {
+        if let Some(source) = repository_script(&repository, &column.script) {
             return Ok(source);
         }
-        DEFAULT_SCRIPTS
-            .iter()
-            .find(|(name, _)| *name == column.script)
-            .map(|(_, source)| source.to_string())
+        built_in_script(&column.script)
+            .map(String::from)
             .ok_or_else(|| BoardError::Script {
                 script: column.script.clone(),
                 message: "no such script".into(),

@@ -21,6 +21,7 @@ pub mod new_issue;
 pub mod page;
 pub mod retro;
 pub mod rules;
+pub mod script_editor;
 pub mod search;
 pub mod server_terminal;
 pub mod settings;
