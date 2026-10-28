@@ -37,14 +37,14 @@ jobs:
           if-no-files-found: ignore
       - run: cargo run -p moebius-plugin-api --example allow_reads
 
-  # The server and the desktop app build on macOS, and the desktop app on Windows (the server is not built for Windows).
+  # The desktop app builds on Windows (the server is not built for Windows). macOS is not checked here: this
+  # repository gets no macOS runner on a push, so only the release workflow builds for it.
   platforms:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-latest, packages: -p moebius -p moebius-desktop }
           - { os: windows-latest, packages: -p moebius-desktop }
     steps:
       - uses: actions/checkout@v4
