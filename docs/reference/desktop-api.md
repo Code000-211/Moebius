@@ -606,6 +606,32 @@ returned if it is less than 5 minutes old. Response:
   `could not connect`, `the answer is not JSON` or `the answer has no model list`. It does not fail the request.
 - No key is in the answer. A user name and password in an upstream's URL are removed.
 
+### `GET /v1/start`
+
+Whether the server is ready for a first card, for the Get started screen and `moebius doctor`. The steps are always the
+same four, in the order a person takes them. Response:
+
+```json
+{
+  "done": false,
+  "steps": [
+    {"key": "upstream", "title": "Connect a model provider", "done": true, "detail": "3 models are available."},
+    {"key": "pi_bolt", "title": "Install Pi-Bolt", "done": false, "detail": "Could not run pi-bolt: it was not found. Set the program on the Settings page."},
+    {"key": "coder", "title": "Choose the Coder's model", "done": true, "detail": "The Coder uses qwen."},
+    {"key": "repository", "title": "Add a repository", "done": false, "detail": "No repository is added yet."}
+  ]
+}
+```
+
+- `done` is true when every step is.
+- `upstream` is done when the router's upstreams list at least one model (the list `GET /v1/models/available` answers,
+  without asking again if it is less than 5 minutes old). Without an upstream the detail is `Add an upstream on the
+  Models page.`; when every upstream fails, it names each one as `Could not ask <url>: <message>.`
+- `pi_bolt` is done when `pi_bolt.program` exists and `<program> --version` exits with status 0 within 10 seconds.
+- `coder` is done when the agent the default workflow starts in the code column, `Coder`, has a model.
+- `repository` is done when at least one repository is added.
+- `detail` is a sentence in plain words. It holds no key and no URL credentials.
+
 ### `GET /v1/plugins`
 
 The plugins the plugin host has loaded, which answer the decisions (see [the plugin API](plugin-api.md)). Response:

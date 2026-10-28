@@ -274,6 +274,23 @@ pub struct Plugins {
     pub plugins: Vec<Plugin>,
 }
 
+/// One thing to set up before the first card, as `GET /v1/start` lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct StartStep {
+    /// `upstream`, `pi_bolt`, `coder` or `repository`.
+    pub key: String,
+    pub title: String,
+    pub done: bool,
+    pub detail: String,
+}
+
+/// What `GET /v1/start` says.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Start {
+    pub done: bool,
+    pub steps: Vec<StartStep>,
+}
+
 /// One key of `moebius.toml` as `GET /v1/settings` tells it: what the file says, or the default.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Setting {
@@ -1033,6 +1050,11 @@ impl Client {
     /// The plugins the server has loaded.
     pub async fn plugins(&self) -> Result<Plugins, ClientError> {
         self.get("/v1/plugins").await
+    }
+
+    /// Whether the server is ready for a first card, step by step.
+    pub async fn start(&self) -> Result<Start, ClientError> {
+        self.get("/v1/start").await
     }
 
     /// What the server runs with.

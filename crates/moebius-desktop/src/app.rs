@@ -23,6 +23,7 @@ use crate::search::{self, Search, Target};
 use crate::settings::{self, Settings};
 use crate::setup::{self, Setup};
 use crate::skills::{self, Skills};
+use crate::start::{self, Start};
 use crate::usage::{self, Usage};
 use crate::{board, chat, connect, history, sidebar, theme};
 
@@ -51,6 +52,8 @@ pub enum Page {
     Experiments,
     DecisionModel,
     Usage,
+    /// What the server still needs before the first card runs; the sidebar lists it only while something is missing.
+    Start,
     Models,
     Plugins,
     Settings,
@@ -71,6 +74,7 @@ impl Page {
             Page::Experiments => "Experiments",
             Page::DecisionModel => "Decision model",
             Page::Usage => "Usage",
+            Page::Start => "Get started",
             Page::Models => "Models",
             Page::Plugins => "Plugins",
             Page::Settings => "Settings",
@@ -84,7 +88,7 @@ impl Page {
             Page::Board(_) | Page::AddRepository => "Boards",
             Page::Agents | Page::Skills | Page::McpServers | Page::Rules => "Build",
             Page::Retro | Page::Experiments | Page::DecisionModel | Page::Usage => "Improve",
-            Page::Models | Page::Plugins | Page::Settings => "Setup",
+            Page::Start | Page::Models | Page::Plugins | Page::Settings => "Setup",
         }
     }
 }
@@ -131,6 +135,7 @@ pub enum Message {
     Experiments(experiments::Message),
     DecisionModel(decision_model::Message),
     Setup(setup::Message),
+    Start(start::Message),
     AddRepository(add_repository::Message),
     NewIssue(new_issue::Message),
     /// A chat was asked for, as from the inbox: its screen opens on it.
@@ -176,6 +181,10 @@ pub struct App {
     experiments: Experiments,
     decision_model: DecisionModel,
     setup: Setup,
+    start: Start,
+    /// Set when the connection was made, until the server has said whether the first start is done: the app then
+    /// opens on Get started if the person has not chosen a page by then.
+    open_on_start: bool,
     add_repository: AddRepository,
     new_issue: NewIssue,
     collapsed: bool,
@@ -218,6 +227,8 @@ impl App {
             experiments: Experiments::default(),
             decision_model: DecisionModel::default(),
             setup: Setup::default(),
+            start: Start::default(),
+            open_on_start: false,
             add_repository: AddRepository::default(),
             new_issue: NewIssue::default(),
             collapsed: false,
@@ -259,7 +270,14 @@ impl App {
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
+        // The steps are read when their page opens, and when any page opens while one is missing, so that the
+        // sidebar drops the entry soon after the last step is done.
+        let reads_start = matches!(&message, Message::Select(page) if *page == Page::Start || self.start.incomplete());
         let task = self.handle(message);
+        let task = match (&self.settings, reads_start) {
+            (Some(settings), true) => Task::batch([task, self.start.reload(settings)]),
+            _ => task,
+        };
         // What the chat on the screen holds is read, however it got there.
         match (&self.screen, self.page(), &self.settings) {
             (Screen::Main, Page::Chat, Some(settings)) => {
@@ -369,6 +387,18 @@ impl App {
                 self.show_connect_error(&ClientError::Unauthorized);
             }
             Message::Setup(message) => return self.setup.update(message, self.settings.as_ref()),
+            Message::Start(message) if Start::refused(&message) => {
+                self.show_connect_error(&ClientError::Unauthorized);
+            }
+            Message::Start(message) => {
+                let first = matches!(message, start::Message::Loaded(_));
+                let task = self.start.update(message, self.settings.as_ref());
+                let opening = first && std::mem::take(&mut self.open_on_start);
+                if opening && self.start.incomplete() && self.page.is_none() {
+                    self.page = Some(Page::Start);
+                }
+                return task;
+            }
             Message::AddRepository(message) if AddRepository::refused(&message) => {
                 self.show_connect_error(&ClientError::Unauthorized);
             }
@@ -382,7 +412,11 @@ impl App {
                 if let Some(id) = added {
                     self.page = Some(Page::Board(id));
                     self.opened = None;
-                    return Task::batch([task, self.reload()]);
+                    let start = match &self.settings {
+                        Some(settings) => self.start.reload(settings),
+                        None => Task::none(),
+                    };
+                    return Task::batch([task, self.reload(), start]);
                 }
                 return task;
             }
@@ -564,7 +598,11 @@ impl App {
         self.inbox.follow(&self.snapshot);
         self.screen = Screen::Main;
         self.connection = Connection::Connecting;
-        Task::none()
+        self.open_on_start = true;
+        match &self.settings {
+            Some(settings) => self.start.reload(settings),
+            None => Task::none(),
+        }
     }
 
     fn show_connect_error(&mut self, error: &ClientError) {
@@ -599,7 +637,11 @@ impl App {
                     Some(settings) if self.setup.restarting() => self.setup.reload(settings),
                     _ => Task::none(),
                 };
-                Task::batch([self.reload(), missed, chats, usage, setup])
+                let start = match &self.settings {
+                    Some(settings) if self.start.incomplete() => self.start.reload(settings),
+                    _ => Task::none(),
+                };
+                Task::batch([self.reload(), missed, chats, usage, setup, start])
             }
             StreamEvent::Disconnected(_) => {
                 self.connection = Connection::Offline;
@@ -814,8 +856,11 @@ impl App {
                         &self.snapshot,
                         self.connection,
                         &page,
-                        self.chats.unread(),
-                        self.usage.today(),
+                        sidebar::Counts {
+                            chats_unread: self.chats.unread(),
+                            tokens_today: self.usage.today(),
+                            setup_incomplete: self.start.incomplete(),
+                        },
                         self.collapsed,
                         &self.search.text
                     ),
@@ -872,6 +917,7 @@ impl App {
             Page::Rules => self.rules.view(),
             Page::Experiments => self.experiments.view(&self.snapshot),
             Page::DecisionModel => self.decision_model.view(),
+            Page::Start => self.start.view(),
             Page::Models => self.setup.models_page(),
             Page::Plugins => self.setup.plugins_page(),
             Page::Settings => self.setup.settings_page(self.settings.as_ref()),

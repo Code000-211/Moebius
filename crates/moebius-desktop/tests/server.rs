@@ -1639,3 +1639,27 @@ async fn the_client_reads_the_models_the_upstreams_serve_from_a_real_server() {
         assert!(available.errors.is_empty());
     }
 }
+
+#[tokio::test]
+async fn the_client_reads_the_steps_to_a_first_card_of_a_real_server() {
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, _server) = start_with(
+        dir.path(),
+        "[pi_bolt]\nprogram = \"/no/such/pi-bolt\"\n[agents.Coder]\nmodel = \"coder-model\"\n",
+    )
+    .await;
+    let client = Client::new(settings);
+    let start = client.start().await.unwrap();
+    assert!(!start.done);
+    let keys: Vec<(&str, bool)> = start.steps.iter().map(|s| (&*s.key, s.done)).collect();
+    assert_eq!(
+        keys,
+        [
+            ("upstream", false),
+            ("pi_bolt", false),
+            ("coder", true),
+            ("repository", false)
+        ]
+    );
+    assert_eq!(start.steps[0].detail, "Add an upstream on the Models page.");
+}

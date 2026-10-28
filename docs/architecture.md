@@ -248,7 +248,7 @@ The server runs on a multi-threaded tokio runtime.
 
 | Module | What it is for |
 |---|---|
-| `crates/moebius/src/main.rs` | The `moebius` binary: `init` writes the example configuration, `serve` starts the server, `check-script` runs a column script once against a made-up card (`board::check_script`), `export` writes the training set (`export`). |
+| `crates/moebius/src/main.rs` | The `moebius` binary: `init` writes the example configuration (with the `pi-bolt` found on `PATH`), `doctor` (in `cli.rs`) tells what is missing before a first card, `serve` starts the server, `check-script` runs a column script once against a made-up card (`board::check_script`), `export` writes the training set (`export`). |
 | `crates/moebius-plugin-api/src/lib.rs` | The `Plugin` trait, the call and decision types, the `Host` that calls plugins with a time limit and fails closed. |
 | `crates/moebius-desktop/src/main.rs` | The desktop app's start: fonts, theme, window. |
 | `crates/moebius-desktop/src/app.rs` | The app's state, `Message`, `update` and view: the connection, the page shown, reading the snapshot again on events. |
@@ -257,6 +257,7 @@ The server runs on a multi-threaded tokio runtime.
 | `crates/moebius-desktop/src/theme.rs` | Every colour, size, radius and spacing of `docs/design.md`, and the bundled fonts (Manrope, JetBrains Mono). |
 | `crates/moebius-desktop/src/sidebar.rs`, `search.rs`, `connect.rs`, `board.rs`, `page.rs`, `icons.rs` | The sidebar and its search and run field, the connect screen, the board page (its columns and cards), the page header and box, the icons. |
 | `crates/moebius-desktop/src/add_repository.rs`, `new_issue.rs` | Adding a repository, and the new-issue form of a board. |
+| `crates/moebius-desktop/src/start.rs` | The Get started page: the steps of `GET /v1/start` with a button to the page that fixes each; the app opens on it after connecting while a step is missing, and the sidebar lists it only then. |
 | `crates/moebius-desktop/src/inbox.rs`, `chat.rs`, `transcript.rs` | The inbox and its actions, the chat screen, and how a conversation is drawn (Markdown, tool calls, highlighted code). |
 | `crates/moebius-desktop/src/agents.rs`, `rules.rs` | The Agents screen (with the Skills and MCP servers pages) and the Rules page; an edit is a commit in the harness configuration repository. |
 | `crates/moebius-desktop/src/usage.rs`, `retro.rs`, `experiments.rs`, `decision_model.rs` | The Improve pages: usage with its heatmap, the Retro's days and proposals, autoresearch, the training set and shadowing. |
@@ -290,7 +291,7 @@ The server runs on a multi-threaded tokio runtime.
 | `rules.rs` | The `rules.md` format and where rules come from. |
 | `server.rs` | Wires everything from the configuration and runs the loops. |
 | `settings.rs` | Editing `moebius.toml` while the server runs: changes applied to the file's text, the keys that take effect at once, the API keys kept in `secrets.toml`, and the restart. |
-| `setup.rs` | What the Models and Plugins pages show: the router's upstreams, the agents, the teacher, the decision model and the plugins, without a secret. |
+| `setup.rs` | What the Models, Plugins and Get started pages show: the router's upstreams, the agents, the teacher, the decision model and the plugins, without a secret, and the steps to a first card (`GET /v1/start`). |
 | `skill.rs` | The `moebius` skill (the guide and the references, bundled with `include_str!`), written to `<data_dir>/skills/moebius/` at start. |
 | `store.rs` | The SQLite records and their migrations. |
 | `terminal.rs` | A person's shell in a run's worktree on a pseudo-terminal (`portable-pty`), served over the WebSocket `GET /v1/runs/{id}/terminal`; at most 4 per run, not checked by the guard. |

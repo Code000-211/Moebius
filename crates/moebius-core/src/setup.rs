@@ -2,12 +2,16 @@
 //! its plugin host. Nothing here is a secret: a key is told as set or not, and a URL has no credentials in it. The
 //! Settings page reads and writes the configuration itself (see `settings`).
 
+use std::path::Path;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
+
 use serde::Serialize;
 
 use crate::board::AgentInfo;
 use crate::config::Config;
 use crate::decide::Decisions;
-use crate::router::Protocol;
+use crate::router::{AvailableModels, Protocol};
 
 /// `url` without the user name and password in front of its host, if it has any.
 pub fn without_credentials(url: &str) -> String {
@@ -121,6 +125,143 @@ pub fn plugins(decisions: &Decisions) -> Plugins {
                 kinds: manifest.kinds,
             })
             .collect(),
+    }
+}
+
+/// One thing that has to be in place before the first card can run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
+pub struct StartStep {
+    /// What the step is, for a client to tell which page fixes it: `upstream`, `pi_bolt`, `coder` or `repository`.
+    pub key: String,
+    pub title: String,
+    pub done: bool,
+    /// In plain words, what is in place or what is missing. Never a secret.
+    pub detail: String,
+}
+
+/// The answer of `GET /v1/start`: whether the server is ready for a first card, and the steps that get it there.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
+pub struct Start {
+    pub done: bool,
+    pub steps: Vec<StartStep>,
+}
+
+/// How long `pi-bolt --version` may take.
+const PI_BOLT_TIME: Duration = Duration::from_secs(10);
+
+/// The agent the default workflow's code column starts.
+const CODER: &str = "Coder";
+
+fn step(key: &str, title: &str, result: Result<String, String>) -> StartStep {
+    let done = result.is_ok();
+    StartStep {
+        key: key.into(),
+        title: title.into(),
+        done,
+        detail: result.unwrap_or_else(|detail| detail),
+    }
+}
+
+/// Whether the upstreams are there and name models, from what they answered.
+fn upstream_step(available: &AvailableModels) -> Result<String, String> {
+    if !available.models.is_empty() {
+        let count = available.models.len();
+        return Ok(format!(
+            "{count} {} available.",
+            if count == 1 { "model is" } else { "models are" }
+        ));
+    }
+    if available.errors.is_empty() {
+        return Err("Add an upstream on the Models page.".into());
+    }
+    Err(available
+        .errors
+        .iter()
+        .map(|e| format!("Could not ask {}: {}.", e.upstream, e.message))
+        .collect::<Vec<_>>()
+        .join(" "))
+}
+
+/// Whether `program --version` runs and succeeds in [`PI_BOLT_TIME`].
+fn pi_bolt_runs(program: &Path) -> Result<String, String> {
+    let shown = program.display();
+    let mut child = Command::new(program)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| {
+            let why = match e.kind() {
+                std::io::ErrorKind::NotFound => "it was not found".to_string(),
+                std::io::ErrorKind::PermissionDenied => "it is not allowed to run".to_string(),
+                _ => e.to_string(),
+            };
+            format!("Could not run {shown}: {why}. Set the program on the Settings page.")
+        })?;
+    let started = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => return Ok(format!("{shown} runs.")),
+            Ok(Some(status)) => {
+                return Err(format!(
+                    "{shown} --version failed ({status}). Set the program on the Settings page."
+                ));
+            }
+            Ok(None) if started.elapsed() < PI_BOLT_TIME => {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "{shown} --version did not answer in {} seconds.",
+                    PI_BOLT_TIME.as_secs()
+                ));
+            }
+            Err(e) => return Err(format!("Could not wait for {shown}: {e}.")),
+        }
+    }
+}
+
+/// The steps to a first card, in the order a person takes them. `available` is what the upstreams answered.
+pub async fn start(
+    config: &Config,
+    available: AvailableModels,
+    agents: &[AgentInfo],
+    repositories: usize,
+) -> Start {
+    let program = config.pi_bolt.clone();
+    let pi_bolt = tokio::task::spawn_blocking(move || pi_bolt_runs(&program))
+        .await
+        .unwrap_or_else(|_| Err("Could not check the program.".into()));
+    let coder = match agents.iter().find(|agent| agent.name == CODER) {
+        Some(agent) if agent.error.is_none() && !agent.model.is_empty() => {
+            Ok(format!("The {CODER} uses {}.", agent.model))
+        }
+        Some(agent) if agent.error.is_some() => Err(format!(
+            "The {CODER}'s files cannot be used. Fix them on the Agents page."
+        )),
+        _ => Err(format!("Give the {CODER} a model on the Agents page.")),
+    };
+    let repository = match repositories {
+        0 => Err("No repository is added yet.".to_string()),
+        1 => Ok("1 repository is added.".to_string()),
+        n => Ok(format!("{n} repositories are added.")),
+    };
+    let steps = vec![
+        step(
+            "upstream",
+            "Connect a model provider",
+            upstream_step(&available),
+        ),
+        step("pi_bolt", "Install Pi-Bolt", pi_bolt),
+        step("coder", "Choose the Coder's model", coder),
+        step("repository", "Add a repository", repository),
+    ];
+    Start {
+        done: steps.iter().all(|s| s.done),
+        steps,
     }
 }
 

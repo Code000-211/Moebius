@@ -63,6 +63,9 @@ pub fn view<'a>(form: &'a Form, saved: Option<&Settings>) -> Element<'a, Message
             .padding([8, 10])
             .size(theme::BODY)
             .style(input_style),
+        text("The token is in .moebius/token next to the server's moebius.toml.")
+            .size(theme::LABEL)
+            .color(theme::TEXT_MUTED),
     ]
     .spacing(6);
     if let Some(error) = &form.error {

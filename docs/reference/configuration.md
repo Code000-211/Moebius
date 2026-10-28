@@ -19,7 +19,8 @@ Keys of a table are written with the table's name, such as `board.tick_ms`. A ke
 
 `moebius [--config <file>] <command>`; the file is read by every command that needs it.
 
-- `init` writes the commented example configuration.
+- `init` writes the commented example configuration. When a `pi-bolt` executable is on `PATH`, the file sets
+  `[pi_bolt] program` to its absolute path, and `init` says so.
 - `serve` starts the server.
 - `check-script <file> [--column <name>] [--title <text>] [--author <login>]` runs a column script once (see
   [column scripts](column-scripts.md)).

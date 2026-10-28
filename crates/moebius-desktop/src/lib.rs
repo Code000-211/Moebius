@@ -26,6 +26,7 @@ pub mod settings;
 pub mod setup;
 pub mod sidebar;
 pub mod skills;
+pub mod start;
 pub mod terminal;
 pub mod theme;
 pub mod transcript;

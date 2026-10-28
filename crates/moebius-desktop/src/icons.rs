@@ -22,6 +22,7 @@ pub enum Icon {
     Models,
     Plugins,
     Settings,
+    Start,
     Search,
     Panel,
 }
@@ -56,6 +57,7 @@ impl Icon {
             Icon::Settings => {
                 r#"<circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/>"#
             }
+            Icon::Start => r#"<path d="M3.5 14V2.5"/><path d="M3.5 3h8.5l-2 3 2 3H3.5"/>"#,
             Icon::Search => r#"<circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>"#,
             Icon::Panel => {
                 r#"<rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M6 2.5v11"/>"#

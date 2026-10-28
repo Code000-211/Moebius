@@ -325,6 +325,9 @@ pub enum Operate {
     },
     /// What the decision model has measured.
     DecisionModel,
+    /// Check that the server is ready for a first card: one line for each step, and exit status 1 while a step is
+    /// missing.
+    Doctor,
     /// The takeovers the decision model earned.
     Takeovers,
     /// Merge, dismiss or release a takeover.
@@ -595,6 +598,7 @@ pub enum Show {
     Retro,
     Usage,
     DecisionModel,
+    Doctor,
     /// A short sentence, for an answer with nothing in it to show.
     Done(String),
 }
@@ -961,6 +965,7 @@ impl Operate {
                 Show::Usage,
             ),
             DecisionModel => (Request::get("/v1/decision-model"), Show::DecisionModel),
+            Doctor => (Request::get("/v1/start"), Show::Doctor),
             Takeovers => (
                 Request::get("/v1/takeovers"),
                 Show::Table(&["id", "kind", "status", "agreement", "count"]),
@@ -1085,12 +1090,21 @@ fn text_argument(text: &str) -> Result<String, String> {
     }
 }
 
-/// Sends the plan's request and returns what to print.
-pub fn operate(client: &Client, command: &Operate, json: bool) -> Result<String, String> {
+/// Runs `command` and says what it printed and whether everything was in order: false only for `doctor` with a step
+/// missing.
+pub fn operate(client: &Client, command: &Operate, json: bool) -> Result<(String, bool), String> {
     let (request, show) = command.plan(&mut |path| client.get(path))?;
     let text = client.send(&request)?;
+    let ready = match show {
+        Show::Doctor => {
+            serde_json::from_str::<Value>(&text)
+                .map_err(|e| format!("the answer is not JSON: {e}"))?["done"]
+                == true
+        }
+        _ => true,
+    };
     if json {
-        return Ok(pretty(&text));
+        return Ok((pretty(&text), ready));
     }
     // `repos` and `api` show the answer as it came, except that the repositories are the boards'.
     if matches!(command, Operate::Repos) {
@@ -1101,12 +1115,15 @@ pub fn operate(client: &Client, command: &Operate, json: bool) -> Result<String,
             .flatten()
             .map(|board| board["repository"].clone())
             .collect();
-        return Ok(table(
-            &Value::Array(repositories),
-            &["id", "name", "forge", "default_branch", "github"],
+        return Ok((
+            table(
+                &Value::Array(repositories),
+                &["id", "name", "forge", "default_branch", "github"],
+            ),
+            ready,
         ));
     }
-    render(&show, &text)
+    Ok((render(&show, &text)?, ready))
 }
 
 /// JSON pretty printed; what is not JSON as it is.
@@ -1141,6 +1158,7 @@ pub fn render(show: &Show, text: &str) -> Result<String, String> {
         Show::Retro => retro(&value),
         Show::Usage => usage(&value),
         Show::DecisionModel => decision_model(&value),
+        Show::Doctor => doctor(&value),
     })
 }
 
@@ -1492,6 +1510,26 @@ fn usage(view: &Value) -> String {
     out.push("models:".into());
     out.push(table(&view["models"], &["model", "tokens", "calls"]));
     out.join("\n")
+}
+
+/// One line for each step of `GET /v1/start`.
+fn doctor(view: &Value) -> String {
+    let steps = view["steps"].as_array().into_iter().flatten();
+    steps
+        .map(|step| {
+            let state = if step["done"] == true {
+                "ok"
+            } else {
+                "missing"
+            };
+            format!(
+                "{state:<8} {}: {}",
+                cell(&step["key"]),
+                cell(&step["detail"])
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn decision_model(view: &Value) -> String {

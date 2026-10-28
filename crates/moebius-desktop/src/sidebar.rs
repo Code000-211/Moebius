@@ -44,15 +44,28 @@ enum Trailing {
     Badge(usize),
 }
 
+/// What the sidebar tells besides the boards.
+pub struct Counts {
+    pub chats_unread: usize,
+    /// The tokens used today and the day's budget, once the usage is read.
+    pub tokens_today: Option<(i64, Option<i64>)>,
+    /// Whether a step of Get started is missing, which makes the page listed.
+    pub setup_incomplete: bool,
+}
+
 pub fn view<'a>(
     snapshot: &'a Snapshot,
     connection: Connection,
     page: &Page,
-    chats_unread: usize,
-    tokens_today: Option<(i64, Option<i64>)>,
+    counts: Counts,
     collapsed: bool,
     search: &str,
 ) -> Element<'a, Message> {
+    let Counts {
+        chats_unread,
+        tokens_today,
+        setup_incomplete,
+    } = counts;
     let inbox = item(
         Lead::Icon(Icon::Inbox),
         "Inbox",
@@ -109,6 +122,12 @@ pub fn view<'a>(
             collapsed,
         )
     };
+    // Get started leads the Setup group while a step is missing.
+    let setup: Vec<(Page, Icon)> = setup_incomplete
+        .then_some((Page::Start, Icon::Start))
+        .into_iter()
+        .chain(SETUP)
+        .collect();
     let groups = column![
         group(None, vec![inbox, chat], collapsed),
         divider(),
@@ -123,7 +142,7 @@ pub fn view<'a>(
         divider(),
         listed("Improve", &IMPROVE),
         divider(),
-        listed("Setup", &SETUP),
+        listed("Setup", &setup),
     ];
     let width = if collapsed {
         theme::RAIL_WIDTH

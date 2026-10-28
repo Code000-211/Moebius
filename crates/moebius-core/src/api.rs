@@ -29,6 +29,7 @@
 //!   `GET /v1/mcp-servers`: the skills and MCP servers an agent can name, and `GET`, `PUT` and `DELETE` of
 //!   `/v1/skills/{name}` and `/v1/mcp-servers/{name}` to read and edit them.
 //! - `GET /v1/models` and `GET /v1/plugins`: how the server is set up, never with a secret in it (see [`crate::setup`]).
+//! - `GET /v1/start`: whether the upstreams, Pi-Bolt, the Coder's model and a repository are in place, step by step.
 //! - `GET /v1/settings`: every key of `moebius.toml` with its value or default. `PUT /v1/settings` `{set, remove}` changes
 //!   the file. `PUT` and `DELETE /v1/secrets/{name}` keep and remove an API key. `POST /v1/server/restart` restarts the
 //!   server (see [`crate::settings`]).
@@ -422,6 +423,7 @@ pub fn router(state: ApiState) -> Router {
         )
         .route("/v1/models", get(models))
         .route("/v1/models/available", get(available_models))
+        .route("/v1/start", get(start_steps))
         .route("/v1/plugins", get(plugins))
         .route("/v1/settings", get(settings).put(put_settings))
         .route("/v1/secrets/{name}", put(put_secret).delete(delete_secret))
@@ -734,6 +736,18 @@ async fn available_models(
     axum::extract::Query(query): axum::extract::Query<AvailableQuery>,
 ) -> axum::Json<crate::router::AvailableModels> {
     axum::Json(state.router.available_models(query.refresh).await)
+}
+
+async fn start_steps(State(state): State<ApiState>) -> Result<axum::Json<setup::Start>, ApiError> {
+    let available = state.router.available_models(false).await;
+    let agents = state.runs.agents();
+    let repositories = blocking(&state.app, |app| Ok(app.store.repositories()?.len()))
+        .await?
+        .0;
+    let config = state.config.get();
+    Ok(axum::Json(
+        setup::start(&config, available, &agents, repositories).await,
+    ))
 }
 
 async fn plugins(State(state): State<ApiState>) -> axum::Json<setup::Plugins> {

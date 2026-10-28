@@ -316,3 +316,83 @@ async fn the_moebius_agent_operates_moebius_from_its_chat() {
     assert_eq!(judgements[0]["run"], run);
     out(&s.run(&["chat", "end", &run.to_string()]).await);
 }
+
+/// An upstream that lists one model, and its address.
+async fn fake_upstream() -> String {
+    let app = axum::Router::new().route(
+        "/models",
+        axum::routing::get(|| async { axum::Json(json!({"data": [{"id": "qwen"}]})) }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await });
+    url
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn doctor_lists_the_steps_and_fails_while_one_is_missing() {
+    let s = start_with("[pi_bolt]\nprogram = \"/no/such/pi-bolt\"\n").await;
+    let output = s.run(&["doctor"]).await;
+    assert_eq!(output.status.code(), Some(1));
+    let text = String::from_utf8(output.stdout.clone()).unwrap();
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.len(), 4, "{text}");
+    assert_eq!(
+        lines[0],
+        "missing  upstream: Add an upstream on the Models page."
+    );
+    assert!(lines[1].starts_with("missing  pi_bolt: Could not run /no/such/pi-bolt"));
+    assert!(lines[2].starts_with("ok       coder: "), "{text}");
+    assert_eq!(lines[3], "missing  repository: No repository is added yet.");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("not ready"));
+
+    let json = s.run(&["--json", "doctor"]).await;
+    assert_eq!(json.status.code(), Some(1));
+    let answer: Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(answer["done"], false);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn doctor_succeeds_when_everything_is_in_place() {
+    let upstream = fake_upstream().await;
+    let s = start_with(&format!(
+        "[pi_bolt]\nprogram = \"/bin/true\"\n[[router.upstreams]]\nprotocol = \"openai\"\nbase_url = \"{upstream}\"\n"
+    ))
+    .await;
+    s.server
+        .app
+        .store
+        .add_repository("radiance", "/srv/radiance", "none", "main")
+        .unwrap();
+    let output = s.run(&["doctor"]).await;
+    let text = out(&output);
+    assert_eq!(text.lines().count(), 4, "{text}");
+    assert!(text.lines().all(|line| line.starts_with("ok ")), "{text}");
+}
+
+#[test]
+fn init_points_the_configuration_at_the_pi_bolt_on_the_path() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let bin = dir.path().join("bin");
+    std::fs::create_dir(&bin).unwrap();
+    let program = bin.join("pi-bolt");
+    std::fs::write(&program, "#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let init = |path: &Path| {
+        let work = tempfile::tempdir().unwrap();
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_moebius"))
+            .current_dir(work.path())
+            .arg("init")
+            .env("PATH", path)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        std::fs::read_to_string(work.path().join("moebius.toml")).unwrap()
+    };
+    let with = init(&bin);
+    assert!(with.contains(&format!("\nprogram = \"{}\"\n", program.display())));
+    assert_eq!(with.lines().filter(|l| l.starts_with("program")).count(), 1);
+    let without = init(&dir.path().join("empty"));
+    assert!(without.contains("\nprogram = \"pi-bolt\"\n"));
+}

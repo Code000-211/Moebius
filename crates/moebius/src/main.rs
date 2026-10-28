@@ -92,7 +92,11 @@ fn run(cli: Cli) -> Result<(), String> {
                     cli.config.display()
                 ));
             }
-            std::fs::write(&cli.config, config::EXAMPLE)
+            let found = std::env::var_os("PATH").and_then(|path| find_in_path("pi-bolt", &path));
+            if let Some(program) = &found {
+                println!("found Pi-Bolt at {}", program.display());
+            }
+            std::fs::write(&cli.config, example(found.as_deref()))
                 .map_err(|e| format!("cannot write {}: {e}", cli.config.display()))?;
             println!("wrote {}", cli.config.display());
             Ok(())
@@ -146,9 +150,13 @@ fn run(cli: Cli) -> Result<(), String> {
                 &cli.config,
             )?;
             let client = cli::Client::new(connection)?;
-            let text = cli::operate(&client, &command, cli.json)?;
+            let (text, ready) = cli::operate(&client, &command, cli.json)?;
             println!("{text}");
-            Ok(())
+            if ready {
+                Ok(())
+            } else {
+                Err("the server is not ready yet".into())
+            }
         }
         Some(Command::Serve) => {
             let config = Config::load(&cli.config).map_err(|e| e.to_string())?;
@@ -182,6 +190,35 @@ fn run(cli: Cli) -> Result<(), String> {
                 served
             })
         }
+    }
+}
+
+/// The executable file `name` in the first directory of `path` (a list in the format of `PATH`) that has one.
+fn find_in_path(name: &str, path: &std::ffi::OsStr) -> Option<PathBuf> {
+    use std::os::unix::fs::PermissionsExt;
+    std::env::split_paths(path)
+        .map(|dir| dir.join(name))
+        .find(|candidate| {
+            candidate
+                .metadata()
+                .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+        })
+        .map(|found| std::path::absolute(&found).unwrap_or(found))
+}
+
+/// The example configuration, with `[pi_bolt] program` set to `pi_bolt` if it is known.
+fn example(pi_bolt: Option<&std::path::Path>) -> String {
+    let default = "program = \"pi-bolt\"";
+    match pi_bolt {
+        Some(program) => config::EXAMPLE.replacen(
+            default,
+            &format!(
+                "program = {}",
+                toml::Value::String(program.to_string_lossy().into_owned())
+            ),
+            1,
+        ),
+        None => config::EXAMPLE.to_string(),
     }
 }
 
@@ -231,14 +268,43 @@ mod tests {
             command: Some(c),
         };
         run(cli(Command::Init)).unwrap();
+        let on_path = std::env::var_os("PATH").and_then(|p| super::find_in_path("pi-bolt", &p));
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
-            moebius_core::config::EXAMPLE
+            super::example(on_path.as_deref())
         );
         assert!(run(cli(Command::Init)).is_err());
         let config = moebius_core::config::Config::load(&path).unwrap();
         moebius_core::server::Server::new(config, "127.0.0.1:7172".parse().unwrap()).unwrap();
         assert!(dir.path().join(".moebius/token").is_file());
         assert!(dir.path().join(".moebius/moebius.sqlite").is_file());
+    }
+
+    #[test]
+    fn init_sets_the_pi_bolt_program_to_the_one_on_the_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let program = dir.path().join("pi-bolt");
+        std::fs::write(&program, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(
+            &program,
+            std::os::unix::fs::PermissionsExt::from_mode(0o755),
+        )
+        .unwrap();
+        let empty = tempfile::tempdir().unwrap();
+        let path = std::env::join_paths([empty.path(), dir.path()]).unwrap();
+        let found = super::find_in_path("pi-bolt", &path).unwrap();
+        assert_eq!(found, program);
+        let text = super::example(Some(&found));
+        assert!(text.contains(&format!("\nprogram = \"{}\"\n", program.display())));
+        let config =
+            moebius_core::config::Config::parse(&text, dir.path(), &dir.path().join("m.toml"))
+                .unwrap();
+        assert_eq!(config.pi_bolt, program);
+        assert_eq!(
+            super::find_in_path("pi-bolt", empty.path().as_os_str()),
+            None
+        );
+        assert_eq!(super::example(None), moebius_core::config::EXAMPLE);
+        assert!(moebius_core::config::EXAMPLE.contains("\nprogram = \"pi-bolt\"\n"));
     }
 }
