@@ -1,6 +1,6 @@
 name: Release
 
-# A tag `vX.Y.Z` builds the server and the desktop app, packages them with `dist/package.sh` and publishes a GitHub
+# A tag `vX.Y.Z` builds the server and the desktop app for Linux x86_64, packages them with `dist/package.sh` and publishes a GitHub
 # release with the archives and `SHA256SUMS`. Started by hand, it builds and keeps the archives as workflow artifacts and
 # publishes nothing.
 on:
@@ -20,10 +20,7 @@ jobs:
       matrix:
         include:
           - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, package: moebius, binary: moebius }
-          - { os: macos-latest, target: aarch64-apple-darwin, package: moebius, binary: moebius }
           - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, package: moebius-desktop, binary: moebius-desktop }
-          - { os: macos-latest, target: aarch64-apple-darwin, package: moebius-desktop, binary: moebius-desktop }
-          - { os: windows-latest, target: x86_64-pc-windows-msvc, package: moebius-desktop, binary: moebius-desktop.exe }
     defaults:
       run:
         shell: bash
@@ -68,7 +65,7 @@ jobs:
           merge-multiple: true
       - name: Write SHA256SUMS
         working-directory: release
-        run: sha256sum *.tar.gz *.zip > SHA256SUMS
+        run: sha256sum *.tar.gz > SHA256SUMS
       - name: Publish the release
         uses: softprops/action-gh-release@v2.2.2
         with:

@@ -32,14 +32,14 @@ You need git, [Pi-Bolt](https://github.com/opensec-git/Pi-Bolt) installed as `pi
 server, such as a local one on `http://127.0.0.1:8080`.
 
 Install the server from a [release](https://github.com/Code000-211/Moebius/releases): download the archive for your
-machine (Linux x86_64 or macOS arm64) and `SHA256SUMS`, check it and unpack it. The page
+machine (releases are for Linux x86_64; elsewhere, build from source) and `SHA256SUMS`, check it and unpack it. The page
 [Running Moebius](docs/guide/running-moebius.md) has the commands, and how to run the server as a service.
 
 ```sh
 VERSION=0.1.0
-TARGET=x86_64-unknown-linux-gnu   # or aarch64-apple-darwin
+TARGET=x86_64-unknown-linux-gnu
 ARCHIVE=moebius-$VERSION-$TARGET.tar.gz
-grep " $ARCHIVE\$" SHA256SUMS | shasum -a 256 -c -
+grep " $ARCHIVE\$" SHA256SUMS | sha256sum -c -
 tar -xzf "$ARCHIVE"
 mkdir -p ~/.local/bin && cp "moebius-$VERSION-$TARGET/moebius" ~/.local/bin/
 ```
@@ -79,9 +79,9 @@ Start the server. It creates `.moebius/` next to the file, with the token the AP
 moebius serve
 ```
 
-Connect the desktop app: a [release](https://github.com/Code000-211/Moebius/releases) has `Moebius.app` for macOS, an
-executable for Windows and one for Linux; from source, `cargo run -p moebius-desktop`. Give it the server's address
-(`http://127.0.0.1:7171`) and the content of `.moebius/token`.
+Connect the desktop app: a [release](https://github.com/Code000-211/Moebius/releases) has it for Linux; from source,
+`cargo run -p moebius-desktop`. Give it the server's address (`http://127.0.0.1:7171`) and the content of
+`.moebius/token`.
 
 Add a repository, create an issue and read the board, in the app or with the `moebius` commands, which run in the
 directory of `moebius.toml` and find the address and token there:

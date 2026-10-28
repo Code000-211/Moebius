@@ -37,21 +37,6 @@ jobs:
           if-no-files-found: ignore
       - run: cargo run -p moebius-plugin-api --example allow_reads
 
-  # The desktop app builds on Windows (the server is not built for Windows). macOS is not checked here: this
-  # repository gets no macOS runner on a push, so only the release workflow builds for it.
-  platforms:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { os: windows-latest, packages: -p moebius-desktop }
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo build ${{ matrix.packages }}
-
   # The code builds with the Rust version that `rust-version` in Cargo.toml names, and that is the version the README
   # tells people to install.
   msrv:
