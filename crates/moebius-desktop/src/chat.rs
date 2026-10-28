@@ -12,7 +12,7 @@ use iced::{Alignment, Border, Element, Length, Padding, Task, border};
 
 use crate::app::Message as AppMessage;
 use crate::client::{
-    Agent, Change, Chat, Client, ClientError, InboxItem, Judgement, Run, RunEvent, Snapshot,
+    Agent, Change, Chat, Client, ClientError, InboxItem, Judgement, Run, RunEvent, Skill, Snapshot,
 };
 use crate::conversation::{Conversation, Entry, Said};
 use crate::inbox::{self, Action, Inbox};
@@ -54,6 +54,10 @@ pub enum Message {
     Agents(Result<Vec<Agent>, ClientError>),
     AgentChosen(String),
     RepositoryChosen(Option<i64>),
+    /// The harness configuration repository was chosen as the place to work in.
+    HarnessChosen,
+    /// The skills were read: a server with a harness configuration repository always lists the built-in one.
+    Skills(Result<Vec<Skill>, ClientError>),
     FirstEdited(String),
     Start,
     Started(Result<Run, ClientError>),
@@ -114,6 +118,8 @@ impl Open {
 struct Form {
     agent: String,
     repository: Option<i64>,
+    /// Whether the chat works in the harness configuration repository.
+    harness: bool,
     message: String,
     notice: Option<String>,
 }
@@ -131,6 +137,8 @@ pub struct Chats {
     list: Vec<Chat>,
     /// The agents a new chat can be with, as the server last listed them.
     agents: Vec<Agent>,
+    /// Whether the server has a harness configuration repository, where a chat can work.
+    has_harness: bool,
     open: Option<Open>,
     form: Option<Form>,
     /// The time of the last tick, Unix seconds.
@@ -175,6 +183,7 @@ impl Chats {
         Chats {
             list: Vec::new(),
             agents: Vec::new(),
+            has_harness: false,
             open: None,
             form: None,
             now,
@@ -388,14 +397,21 @@ impl Chats {
                 self.form = shown.then(|| Form {
                     agent: DEFAULT_AGENT.to_string(),
                     repository: None,
+                    harness: false,
                     message: String::new(),
                     notice: None,
                 });
                 if shown {
-                    let client = Client::new(settings.clone());
-                    return Task::perform(async move { client.agents().await }, |agents| {
-                        AppMessage::Chat(Message::Agents(agents))
-                    });
+                    let (agents, skills) =
+                        (Client::new(settings.clone()), Client::new(settings.clone()));
+                    return Task::batch([
+                        Task::perform(async move { agents.agents().await }, |agents| {
+                            AppMessage::Chat(Message::Agents(agents))
+                        }),
+                        Task::perform(async move { skills.skills().await }, |skills| {
+                            AppMessage::Chat(Message::Skills(skills))
+                        }),
+                    ]);
                 }
             }
             Message::Agents(Ok(agents)) => {
@@ -421,9 +437,19 @@ impl Chats {
                     form.agent = agent;
                 }
             }
+            Message::Skills(skills) => {
+                self.has_harness = skills.is_ok_and(|skills| !skills.is_empty());
+            }
             Message::RepositoryChosen(repository) => {
                 if let Some(form) = &mut self.form {
                     form.repository = repository;
+                    form.harness = false;
+                }
+            }
+            Message::HarnessChosen => {
+                if let Some(form) = &mut self.form {
+                    form.repository = None;
+                    form.harness = true;
                 }
             }
             Message::FirstEdited(message) => {
@@ -435,10 +461,16 @@ impl Chats {
                 if let Some(form) = &self.form
                     && form.ready()
                 {
-                    let (agent, message, repository) =
-                        (form.agent.clone(), form.message.clone(), form.repository);
+                    let (agent, message, repository, harness) = (
+                        form.agent.clone(),
+                        form.message.clone(),
+                        form.repository,
+                        form.harness,
+                    );
                     return request(settings, Message::Started, move |client| async move {
-                        client.start_chat(&agent, &message, repository).await
+                        client
+                            .start_chat(&agent, &message, repository, harness)
+                            .await
                     });
                 }
             }
@@ -482,7 +514,7 @@ impl Chats {
             page::white_button("New chat", Some(AppMessage::Chat(Message::NewChat(true)))),
         );
         let detail: Element<_> = match (&self.form, &self.open) {
-            (Some(form), _) => new_chat_view(form, &self.agents, snapshot),
+            (Some(form), _) => new_chat_view(form, &self.agents, self.has_harness, snapshot),
             (None, Some(open)) => match self.chat(open.id) {
                 Some(chat) => self.chat_view(chat, open, snapshot, inbox),
                 None => empty_view("Reading the chat…"),
@@ -507,7 +539,7 @@ impl Chats {
             page::body("No chat yet.")
         } else {
             column(self.list.iter().map(|chat| {
-                let repository = repository_name(snapshot, chat.repository_id);
+                let repository = place_name(snapshot, chat);
                 chat_row(chat, repository, self.now, chosen == Some(chat.id))
             }))
             .spacing(8)
@@ -528,7 +560,7 @@ impl Chats {
         snapshot: &'a Snapshot,
         inbox: &'a Inbox,
     ) -> Element<'a, AppMessage> {
-        let repository = repository_name(snapshot, chat.repository_id);
+        let repository = place_name(snapshot, chat);
         // The title takes what the tag leaves, so a long one wraps instead of squeezing the tag.
         let title = row![
             text(chat.title.as_str())
@@ -541,6 +573,9 @@ impl Chats {
         .spacing(10)
         .align_y(Alignment::Center);
         let who = match repository {
+            Some(_) if chat.harness_repository => {
+                format!("{} in the harness configuration", chat.agent)
+            }
             Some(name) => format!("{} in {name}", chat.agent),
             None => format!("{}, no repository", chat.agent),
         };
@@ -604,14 +639,20 @@ impl Chats {
     }
 }
 
-/// The name of the repository with this id, when the snapshot has it.
-fn repository_name(snapshot: &Snapshot, id: Option<i64>) -> Option<&str> {
+/// Where the chat works: the name of its repository when the snapshot has it, or the harness configuration.
+fn place_name<'a>(snapshot: &'a Snapshot, chat: &Chat) -> Option<&'a str> {
+    if chat.harness_repository {
+        return Some(HARNESS_PLACE);
+    }
     snapshot
         .boards
         .iter()
-        .find(|board| Some(board.repository.id) == id)
+        .find(|board| Some(board.repository.id) == chat.repository_id)
         .map(|board| board.repository.name.as_str())
 }
+
+/// How the harness configuration repository is called where a chat's place is named.
+const HARNESS_PLACE: &str = "harness configuration";
 
 /// What the chat's status says on its tag: the colour tells whether the agent works or waits for the person.
 fn status_tag<'a>(status: &str) -> Element<'a, AppMessage> {
@@ -727,6 +768,7 @@ fn empty_view(line: &str) -> Element<'_, AppMessage> {
 fn new_chat_view<'a>(
     form: &'a Form,
     agents: &'a [Agent],
+    has_harness: bool,
     snapshot: &'a Snapshot,
 ) -> Element<'a, AppMessage> {
     let label = |label: &'static str| {
@@ -745,7 +787,7 @@ fn new_chat_view<'a>(
     });
     let mut repositories = row![page::chip(
         "No repository".to_string(),
-        form.repository.is_none(),
+        form.repository.is_none() && !form.harness,
         false,
         AppMessage::Chat(Message::RepositoryChosen(None)),
     )]
@@ -759,8 +801,18 @@ fn new_chat_view<'a>(
             AppMessage::Chat(Message::RepositoryChosen(Some(id))),
         ));
     }
+    if has_harness {
+        repositories = repositories.push(page::chip(
+            "Harness configuration".to_string(),
+            form.harness,
+            false,
+            AppMessage::Chat(Message::HarnessChosen),
+        ));
+    }
     let start = form.ready().then_some(AppMessage::Chat(Message::Start));
-    let hint = if form.agent == GRILLING_AGENT {
+    let hint = if form.harness {
+        "The agent works on a branch of the harness configuration repository: agents, skills, extensions, MCP servers and rules. Ending the chat offers what it built as a change, if every agent still works with it."
+    } else if form.agent == GRILLING_AGENT {
         "The Grilling partner questions your idea in a repository. Ending the chat puts the issues it proposes in the Inbox, to confirm."
     } else {
         "With a repository the agent works on its own branch. Ending the chat offers what it built as a change."
@@ -899,6 +951,7 @@ fn offered_change<'a>(
         .boards
         .iter()
         .flat_map(|board| &board.changes)
+        .chain(&snapshot.harness_changes)
         .find(|change| change.branch == branch)?;
     let item = snapshot
         .inbox

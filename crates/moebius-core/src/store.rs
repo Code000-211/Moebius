@@ -264,10 +264,38 @@ CREATE TABLE takeovers (
 ALTER TABLE runs ADD COLUMN seen_seq INTEGER NOT NULL DEFAULT 0;
 "#,
     "ALTER TABLE usage ADD COLUMN tools TEXT;",
+    r#"
+PRAGMA defer_foreign_keys = ON;
+CREATE TEMP TABLE changes_old AS SELECT * FROM changes;
+DROP TABLE changes;
+CREATE TABLE changes (
+    id INTEGER PRIMARY KEY,
+    repository_id INTEGER REFERENCES repositories(id),
+    card_id INTEGER REFERENCES cards(id),
+    branch TEXT NOT NULL,
+    state TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    pull_request INTEGER,
+    checks TEXT,
+    review TEXT,
+    head TEXT,
+    published_at INTEGER,
+    checks_head TEXT,
+    failed_checks TEXT,
+    check_output TEXT,
+    harness_repository INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO changes (id, repository_id, card_id, branch, state, created_at, pull_request, checks, review, head,
+    published_at, checks_head, failed_checks, check_output)
+SELECT id, repository_id, card_id, branch, state, created_at, pull_request, checks, review, head,
+    published_at, checks_head, failed_checks, check_output FROM changes_old;
+DROP TABLE changes_old;
+ALTER TABLE runs ADD COLUMN harness_repository INTEGER NOT NULL DEFAULT 0;
+"#,
 ];
 
 const CHANGE_COLUMNS: &str = "id, repository_id, card_id, branch, state, pull_request, checks, review, \
-     head, published_at, checks_head, failed_checks, check_output";
+     head, published_at, checks_head, failed_checks, check_output, harness_repository";
 
 fn change_from_row(r: &rusqlite::Row) -> rusqlite::Result<Change> {
     Ok(Change {
@@ -284,6 +312,7 @@ fn change_from_row(r: &rusqlite::Row) -> rusqlite::Result<Change> {
         checks_head: r.get(10)?,
         failed_checks: r.get(11)?,
         check_output: r.get(12)?,
+        harness_repository: r.get(13)?,
     })
 }
 
@@ -346,7 +375,8 @@ pub struct Card {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Change {
     pub id: i64,
-    pub repository_id: i64,
+    /// The repository the change belongs to; none for a change of the harness configuration repository.
+    pub repository_id: Option<i64>,
     pub card_id: Option<i64>,
     pub branch: String,
     pub state: String,
@@ -366,6 +396,8 @@ pub struct Change {
     pub failed_checks: Option<String>,
     /// The end of the output of the repository's own checks, secrets removed.
     pub check_output: Option<String>,
+    /// Whether the change belongs to the harness configuration repository, which is no repository of Moebius.
+    pub harness_repository: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -383,6 +415,8 @@ pub struct Run {
     pub summary: Option<String>,
     /// The repository a chat works in; none for a run of a card, and for a chat in an empty directory.
     pub repository_id: Option<i64>,
+    /// Whether a chat works in the harness configuration repository.
+    pub harness_repository: bool,
 }
 
 impl Run {
@@ -1113,12 +1147,29 @@ impl Store {
         pull_request: Option<i64>,
         head: &str,
     ) -> Result<Change> {
+        self.insert_change(Some(repository_id), card_id, branch, pull_request, head)
+    }
+
+    /// Adds a change of the harness configuration repository, which has no card and no pull request.
+    pub fn add_harness_change(&self, branch: &str, head: &str) -> Result<Change> {
+        self.insert_change(None, None, branch, None, head)
+    }
+
+    fn insert_change(
+        &self,
+        repository_id: Option<i64>,
+        card_id: Option<i64>,
+        branch: &str,
+        pull_request: Option<i64>,
+        head: &str,
+    ) -> Result<Change> {
         let conn = self.conn();
         let at = now();
+        let harness_repository = repository_id.is_none();
         conn.execute(
-            "INSERT INTO changes (repository_id, card_id, branch, state, pull_request, head, published_at, created_at) \
-             VALUES (?1, ?2, ?3, 'open', ?4, ?5, ?6, ?6)",
-            params![repository_id, card_id, branch, pull_request, head, at],
+            "INSERT INTO changes (repository_id, card_id, branch, state, pull_request, head, published_at, created_at, \
+             harness_repository) VALUES (?1, ?2, ?3, 'open', ?4, ?5, ?6, ?6, ?7)",
+            params![repository_id, card_id, branch, pull_request, head, at, harness_repository],
         )?;
         Ok(Change {
             id: conn.last_insert_rowid(),
@@ -1134,6 +1185,7 @@ impl Store {
             checks_head: None,
             failed_checks: None,
             check_output: None,
+            harness_repository,
         })
     }
 
@@ -1178,6 +1230,16 @@ impl Store {
             "SELECT {CHANGE_COLUMNS} FROM changes WHERE repository_id = ?1 ORDER BY id"
         ))?;
         let rows = stmt.query_map([repository_id], change_from_row)?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// The changes of the harness configuration repository, oldest first.
+    pub fn harness_changes(&self) -> Result<Vec<Change>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {CHANGE_COLUMNS} FROM changes WHERE harness_repository = 1 ORDER BY id"
+        ))?;
+        let rows = stmt.query_map([], change_from_row)?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
@@ -1259,13 +1321,15 @@ impl Store {
             ended_at: None,
             summary: None,
             repository_id: None,
+            harness_repository: false,
         })
     }
 
     fn runs_where(&self, clause: &str, param: rusqlite::types::Value) -> Result<Vec<Run>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(&format!(
-            "SELECT id, card_id, agent, harness, purpose, status, worktree, started_at, ended_at, summary, repository_id
+            "SELECT id, card_id, agent, harness, purpose, status, worktree, started_at, ended_at, summary, repository_id,
+                harness_repository
              FROM runs WHERE {clause} ORDER BY id"
         ))?;
         let rows = stmt.query_map([param], |r| {
@@ -1281,6 +1345,7 @@ impl Store {
                 ended_at: r.get(8)?,
                 summary: r.get(9)?,
                 repository_id: r.get(10)?,
+                harness_repository: r.get(11)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -1373,6 +1438,13 @@ impl Store {
             "UPDATE runs SET repository_id = ?1 WHERE id = ?2",
             params![repository_id, id],
         )?;
+        Ok(())
+    }
+
+    /// Records that the chat works in the harness configuration repository.
+    pub fn set_run_harness_repository(&self, id: i64) -> Result<()> {
+        self.conn()
+            .execute("UPDATE runs SET harness_repository = 1 WHERE id = ?1", [id])?;
         Ok(())
     }
 
@@ -2898,6 +2970,45 @@ mod tests {
         let old = &s.repositories().unwrap()[0];
         assert_eq!((old.name.as_str(), old.github.clone()), ("old", None));
         assert!(old.trusted.is_empty());
+    }
+
+    #[test]
+    fn a_change_may_belong_to_no_repository_and_the_migration_keeps_the_changes_it_had() {
+        let dir = tempfile::tempdir().unwrap();
+        let before = MIGRATIONS.len() - 1;
+        {
+            let conn = Connection::open(dir.path().join("moebius.sqlite")).unwrap();
+            conn.pragma_update(None, "foreign_keys", true).unwrap();
+            for sql in &MIGRATIONS[..before] {
+                conn.execute_batch(sql).unwrap();
+            }
+            conn.pragma_update(None, "user_version", before as i64)
+                .unwrap();
+            conn.execute_batch(
+                "INSERT INTO repositories (name, path, forge, default_branch) VALUES ('old', '/srv/old', 'none', 'main');
+                 INSERT INTO changes (repository_id, branch, state, created_at, head) VALUES (1, 'moebius/chat-1', 'open', 1, 'abc');
+                 INSERT INTO research (repository_id, goal, measure, better, token_budget, at) VALUES (1, 'g', 'm', 'lower', 1, 1);
+                 INSERT INTO experiments (research_id, branch, title, kept, reason, change_id, at) VALUES (1, 'b', 't', 1, 'r', 1, 1);",
+            )
+            .unwrap();
+        }
+        let s = Store::open(dir.path()).unwrap();
+        let old = s.change(1).unwrap().unwrap();
+        assert_eq!(
+            (
+                old.repository_id,
+                old.harness_repository,
+                old.head.as_deref()
+            ),
+            (Some(1), false, Some("abc"))
+        );
+        let harness = s.add_harness_change("moebius/chat-2", "def").unwrap();
+        assert_eq!(
+            (harness.repository_id, harness.harness_repository),
+            (None, true)
+        );
+        assert_eq!(s.harness_changes().unwrap(), vec![harness]);
+        assert_eq!(s.changes(1).unwrap().len(), 1);
     }
 
     #[test]

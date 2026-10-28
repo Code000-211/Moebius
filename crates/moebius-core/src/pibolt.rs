@@ -532,6 +532,7 @@ impl Runs for PiBolt {
         app: &Arc<App>,
         agent: &str,
         repository: Option<&Repository>,
+        harness: bool,
         message: &str,
         earlier: Option<&str>,
     ) -> Result<Run, String> {
@@ -541,6 +542,14 @@ impl Runs for PiBolt {
             .add_run(None, agent, "pi-bolt", "chat")
             .map_err(|e| e.to_string())?;
         let (clone, worktree, start) = match repository {
+            None if harness => {
+                let (made, clone) = app
+                    .start_harness_chat(run.id)
+                    .map_err(|e| fail(app, run.id, e.to_string()))?;
+                let start = git(&made.path, &["rev-parse", "HEAD"])
+                    .map_err(|e| fail(app, run.id, e.to_string()))?;
+                (Some(clone), made.path, start)
+            }
             Some(repository) => {
                 let clone = PathBuf::from(&repository.path);
                 let made = app

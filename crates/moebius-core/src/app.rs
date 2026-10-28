@@ -6,7 +6,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use moebius_plugin_api::Host;
@@ -20,6 +20,7 @@ use crate::bus::{AppEvent, Bus};
 use crate::decide::{Actor, Decisions, Question};
 use crate::forge::{Forge, ForgeError, NoForge};
 use crate::github::Issue;
+use crate::harness_repo::HarnessRepo;
 use crate::repos::{GitError, Repos, git};
 use crate::store::{Card, Change, Repository, Run, Store, StoreError, now};
 use crate::terminal::{MAX_PER_RUN, Slot, Slots};
@@ -107,6 +108,8 @@ pub struct Chat {
     pub agent: String,
     pub status: String,
     pub repository_id: Option<i64>,
+    /// Whether the chat works in the harness configuration repository.
+    pub harness_repository: bool,
     pub started_at: i64,
     pub ended_at: Option<i64>,
     pub title: String,
@@ -155,6 +158,8 @@ pub struct App {
     /// reason is rebuilt by the next tick after a restart.
     waiting: Mutex<HashMap<i64, String>>,
     forges: BTreeMap<&'static str, Box<dyn Forge>>,
+    /// The harness configuration repository's clone, once the server has opened it.
+    harness_repo: OnceLock<Arc<HarnessRepo>>,
 }
 
 impl App {
@@ -176,6 +181,46 @@ impl App {
             terminals: Arc::default(),
             waiting: Mutex::default(),
             forges,
+            harness_repo: OnceLock::new(),
+        }
+    }
+
+    /// Tells the core which clone is the harness configuration repository, where chats can work.
+    pub fn set_harness_repo(&self, repo: Arc<HarnessRepo>) {
+        let _ = self.harness_repo.set(repo);
+    }
+
+    /// The harness configuration repository; refused when the server has none.
+    fn harness_repo(&self) -> Result<&Arc<HarnessRepo>> {
+        self.harness_repo.get().ok_or_else(|| {
+            AppError::Invalid(
+                "the server has no harness configuration repository ([harness])".into(),
+            )
+        })
+    }
+
+    /// Makes the worktree of the chat `run_id` in the harness configuration repository, on a new branch of its default
+    /// branch, and records that the chat works there. Returns the worktree and the clone it belongs to.
+    pub(crate) fn start_harness_chat(
+        &self,
+        run_id: i64,
+    ) -> Result<(crate::repos::Worktree, PathBuf)> {
+        let repo = self.harness_repo()?;
+        self.store.set_run_harness_repository(run_id)?;
+        Ok((
+            repo.add_chat_worktree(self, run_id)?,
+            repo.path().to_path_buf(),
+        ))
+    }
+
+    /// The repository a change belongs to; refused for a change of the harness configuration repository.
+    fn repository_of(&self, change: &Change) -> Result<Repository> {
+        match change.repository_id {
+            Some(id) => self.repository(id),
+            None => Err(AppError::Invalid(format!(
+                "change {} belongs to the harness configuration repository",
+                change.id
+            ))),
         }
     }
 
@@ -597,27 +642,40 @@ impl App {
         Ok((worktree, slot))
     }
 
-    /// A person starts a chat with `agent`, in a branch of the repository `repository_id` or, without one, in an empty
-    /// directory. The agent answers `message`; the answer arrives as the run's events.
+    /// A person starts a chat with `agent`, in a branch of the repository `repository_id`, of the harness configuration
+    /// repository when `harness` is set, or, without either, in an empty directory. The agent answers `message`; the
+    /// answer arrives as the run's events.
     pub fn start_chat(
         self: &Arc<Self>,
         runs: &dyn Runs,
         agent: Option<&str>,
         repository_id: Option<i64>,
+        harness: bool,
         message: &str,
         continues: Option<i64>,
     ) -> Result<Run> {
-        // A chat that continues an ended one keeps its agent and repository unless others are named.
+        if harness && repository_id.is_some() {
+            return Err(AppError::Invalid(
+                "a chat works in a repository or in the harness configuration, not both".into(),
+            ));
+        }
+        // A chat that continues an ended one keeps its agent and place unless others are named.
         let earlier = continues.map(|id| self.ended_chat(id)).transpose()?;
         let agent = agent
             .or(earlier.as_ref().map(|run| run.agent.as_str()))
             .unwrap_or(crate::pibolt::MOEBIUS_AGENT);
+        let harness = harness
+            || (repository_id.is_none()
+                && earlier.as_ref().is_some_and(|run| run.harness_repository));
         let repository_id = repository_id.or(earlier.as_ref().and_then(|run| run.repository_id));
         if message.trim().is_empty() {
             return Err(AppError::Invalid("a chat needs a message".into()));
         }
         if !runs.has_agent(agent) {
             return Err(AppError::Invalid(format!("no agent named {agent}")));
+        }
+        if harness {
+            self.harness_repo()?;
         }
         if agent == crate::pibolt::GRILLING_AGENT && repository_id.is_none() {
             return Err(AppError::Invalid(
@@ -633,6 +691,7 @@ impl App {
             self,
             agent,
             repository.as_ref(),
+            harness,
             message,
             conversation.as_deref(),
         )
@@ -727,6 +786,7 @@ impl App {
                     agent: run.agent,
                     status: run.status,
                     repository_id: run.repository_id,
+                    harness_repository: run.harness_repository,
                     started_at: run.started_at,
                     ended_at: run.ended_at,
                     title,
@@ -919,9 +979,14 @@ impl App {
 
     /// Offers what a chat in a repository left on its branch as a change without a card: published through the
     /// repository's forge and put in the inbox, ready to merge. A chat that left nothing beyond the repository's
-    /// default branch, or has no repository, offers nothing.
+    /// default branch, or has no repository, offers nothing. What a chat in the harness configuration repository
+    /// left is offered the same way once it passes the check of a proposal (see `HarnessRepo::check_chat_branch`);
+    /// a branch that fails it is not offered, the chat says why, and the branch stays.
     pub fn offer_chat_change(&self, run_id: i64) -> Result<Option<Change>> {
         let run = self.run(run_id)?;
+        if run.harness_repository {
+            return self.offer_harness_chat_change(&run);
+        }
         let Some(repository_id) = run.repository_id else {
             return Ok(None);
         };
@@ -939,6 +1004,32 @@ impl App {
         );
         self.offer_branch_change(&repository, &branch, &title, &body)
             .map(Some)
+    }
+
+    fn offer_harness_chat_change(&self, run: &Run) -> Result<Option<Change>> {
+        let branch = run.branch();
+        match self.harness_repo()?.check_chat_branch(self, &branch) {
+            Ok(None) => Ok(None),
+            Err(why) => {
+                let message = format!("the work is not offered as a change: {why}");
+                self.record_run_event(run.id, "moebius_error", &json!({ "message": message }))?;
+                Ok(None)
+            }
+            Ok(Some(_)) => {
+                let head = git(self.harness_repo()?.path(), &["rev-parse", &branch])?;
+                let title = self.chat_title(run.id)?;
+                let change = self.store.add_harness_change(&branch, &head)?;
+                self.store.add_inbox_item(
+                    "ready_to_merge",
+                    None,
+                    &title,
+                    &json!({ "change": change.id, "branch": change.branch }),
+                )?;
+                self.bus
+                    .publish(AppEvent::new("change_offered", json!(change)));
+                Ok(Some(change))
+            }
+        }
     }
 
     /// Offers `branch` of `repository`, which has commits beyond the default branch, as a change without a card:
@@ -979,7 +1070,8 @@ impl App {
             Some("success") => "success",
             Some("failure") => "failure",
             Some(_) => "pending",
-            None if self.repository(change.repository_id)?.forge == "github"
+            None if change.repository_id.is_some()
+                && self.repository_of(change)?.forge == "github"
                 && now() - change.published_at.unwrap_or(0) < CHECKS_GRACE =>
             {
                 "pending"
@@ -991,7 +1083,7 @@ impl App {
     /// The files that keep the change from merging cleanly into the repository's default branch, one per line; none
     /// when it merges cleanly.
     pub fn conflict_of(&self, change: &Change) -> Result<Option<String>> {
-        let repository = self.repository(change.repository_id)?;
+        let repository = self.repository_of(change)?;
         Ok(self.repos.conflicts(
             Path::new(&repository.path),
             &repository.base_ref(),
@@ -1011,7 +1103,7 @@ impl App {
             .store
             .open_change(card_id)?
             .ok_or_else(|| AppError::Invalid("the card has no change to check".into()))?;
-        let repository = self.repository(change.repository_id)?;
+        let repository = self.repository_of(&change)?;
         let (Some(head), Some(script)) = (change.head.clone(), self.checks_script(&repository))
         else {
             return Ok(change);
@@ -1111,7 +1203,8 @@ impl App {
         }
     }
 
-    /// A person merges a change: the decision is recorded, the forge merges, and the card moves to done.
+    /// A person merges a change: the decision is recorded, the forge merges, and the card moves to done. A change of the
+    /// harness configuration repository is merged into its default branch and pushed (see `HarnessRepo::merge_branch`).
     pub fn merge_change(&self, by: &Actor, change_id: i64, reason: &str) -> Result<String> {
         let change = self.change(change_id)?;
         if change.state != "open" {
@@ -1120,14 +1213,17 @@ impl App {
                 change.state
             )));
         }
-        let repository = self.repository(change.repository_id)?;
-        let forge = self.forge(&repository)?;
+        let repository = change
+            .repository_id
+            .map(|id| self.repository(id))
+            .transpose()?;
+        let name = repository.as_ref().map_or("harness", |r| r.name.as_str());
         self.decisions.record_by(
             by,
             &Question {
                 kind: "merge".into(),
                 context: BTreeMap::from([
-                    ("repository".into(), repository.name.clone()),
+                    ("repository".into(), name.to_string()),
                     ("branch".into(), change.branch.clone()),
                 ]),
                 options: vec!["merge".into(), "reject".into()],
@@ -1142,7 +1238,14 @@ impl App {
             Some(card) => format!("Merge #{}: {}", card.number, card.title),
             None => format!("Merge {}", change.branch),
         };
-        let commit = forge.merge(&repository, &change, &message)?;
+        let commit = match &repository {
+            Some(repository) => self
+                .forge(repository)?
+                .merge(repository, &change, &message)?,
+            None => self
+                .harness_repo()?
+                .merge_branch(self, &change.branch, &message)?,
+        };
         self.change_merged(&change, Some(&commit))?;
         Ok(commit)
     }

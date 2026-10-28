@@ -215,6 +215,9 @@ impl Server {
             )?)),
             None => None,
         };
+        if let Some(harness_repo) = &harness_repo {
+            app.set_harness_repo(harness_repo.clone());
+        }
         let engine = Arc::new(Engine::new(
             app.clone(),
             harness.clone(),

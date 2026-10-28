@@ -315,9 +315,35 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/
   -d '{}' $API/v1/chats/$CHAT/end
 ```
 
+To build on the harness configuration (a skill, an extension, an MCP server, an agent, the server's rules) in a chat,
+see [Build an extension or skill in a chat](#build-an-extension-or-skill-in-a-chat).
+
 A chat does not count against `run_limit`; the daily budget applies to it and its `token_budget` counts the chat's own
 tokens. Every tool call in a chat is checked by the built-in rules and the server's rules. See the
 [desktop API](desktop-api.md) for the rest.
+
+## Build an extension or skill in a chat
+
+When the server has a harness configuration repository (`[harness]`), a chat can work in it instead of in a repository.
+The agent then writes the files of the configuration, and the person merges them like any change.
+
+1. Start the chat with `harness` instead of `repository`. The Moebius agent is the default; say what the agent should
+   build and which agent should have it:
+
+```sh
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"message": "Add a skill testing-habits to skills/testing-habits/SKILL.md and give it to the Coder in agents/Coder.toml.", "harness": true}' $API/v1/chats
+```
+
+2. The agent works in a worktree of the clone, on the branch `moebius/chat-<run id>`. A skill is
+   `skills/<name>/SKILL.md`; an extension is a TypeScript file, `extensions/<name>.ts`; an agent names them in
+   `skills` and `extensions` of `agents/<name>.toml` (see [harness configuration](../reference/harness-configuration.md)).
+3. End the chat (`POST /v1/chats/{id}/end`). Moebius checks that the branch changes only configuration files and that
+   every agent can still be read. If so, the work is offered as a change of the harness configuration repository, with a
+   `ready_to_merge` item in the inbox. If not, the run gets a `moebius_error` event saying why and the branch stays in the
+   clone.
+4. Merge it with `POST /v1/changes/{id}/merge`. The merge is pushed to `origin`, the agents are read again, and the next
+   run of the Coder has the skill. Try it by starting a chat with that agent.
 
 ## How to try an agent
 

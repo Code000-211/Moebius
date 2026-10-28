@@ -160,6 +160,8 @@ pub struct ChangeView {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Snapshot {
     pub boards: Vec<Board>,
+    /// The changes of the harness configuration repository, which belongs to no board.
+    pub harness_changes: Vec<Change>,
     pub inbox: Vec<InboxItem>,
 }
 
@@ -199,7 +201,7 @@ pub struct Steer {
 }
 
 /// The body that starts a chat: the agent to talk to (the Moebius agent without one), the first message and optionally
-/// the repository to work in.
+/// the repository, or the harness configuration repository, to work in.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NewChat {
     #[serde(default)]
@@ -207,7 +209,10 @@ pub struct NewChat {
     pub message: String,
     #[serde(default)]
     pub repository: Option<i64>,
-    /// An ended chat this one continues: its agent and repository unless others are named, and its conversation.
+    /// Whether the chat works in the harness configuration repository instead of a repository.
+    #[serde(default)]
+    pub harness: bool,
+    /// An ended chat this one continues: its agent and place unless others are named, and its conversation.
     #[serde(default)]
     pub continues: Option<i64>,
 }
@@ -566,6 +571,7 @@ async fn snapshot(State(state): State<ApiState>) -> Result<axum::Json<Snapshot>,
         }
         Ok(Snapshot {
             boards,
+            harness_changes: app.store.harness_changes()?,
             inbox: app.store.inbox()?,
         })
     })
@@ -1082,6 +1088,7 @@ async fn start_chat(
             &*runs,
             chat.agent.as_deref(),
             chat.repository,
+            chat.harness,
             &chat.message,
             chat.continues,
         )

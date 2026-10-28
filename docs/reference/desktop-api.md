@@ -56,20 +56,23 @@ back to coding, or null), `retried_after` (the id of the card's latest run when 
 `confirmed` (true for a card made from a confirmed grilling, which needs no approval).
 `Run`: `id`, `card_id` (null for a chat), `agent`, `harness`, `purpose` (`code`, `review`, other purposes of column scripts,
 `chat`, `retro`, the Retro analyst's run, `trial`, the trial of a proposal on a card, or `research`, a round of the Autoresearcher), `status` (`starting`, `running`, `waiting`, `succeeded`, `failed` or `stopped`; `waiting` is a chat waiting for
-the person's next message), `worktree`, `started_at`, `ended_at`, `summary` and `repository_id` (the repository a chat
-works in, or null).
+the person's next message), `worktree`, `started_at`, `ended_at`, `summary`, `repository_id` (the repository a chat
+works in, or null) and `harness_repository` (true for a chat that works in the [harness configuration
+repository](harness-configuration.md#changing-it-in-a-chat); `harness` is the name of the harness that runs the agent).
 
 `Grilling`: `id`, `run_id` (the chat), `repository_id`, `issues` (array of `{"title", "body", "blocked_by"}`, where
 `blocked_by` is an array of indexes into `issues`; empty for a report and for an empty grilling), `report` (text or null),
 `status` (`proposed`, `reported`, `empty`, `confirmed` or `dismissed`), `reason` (why a grilling is `empty`; else empty) and
 `at`.
 
-`Chat`: `id` (the id of its run), `agent`, `status` (that of the run), `repository_id` (or null), `started_at`, `ended_at`,
-`title` (the first line of the first message, at most 80 characters), `answered` (the `seq` of the chat's last
-`agent_settled` or `moebius_error` event, 0 without one) and `seen` (how far a person has read it, see
-`POST /v1/chats/{id}/seen`). A chat is unread while `answered` is greater than `seen`.
+`Chat`: `id` (the id of its run), `agent`, `status` (that of the run), `repository_id` (or null), `harness_repository`
+(true for a chat in the harness configuration repository), `started_at`, `ended_at`, `title` (the first line of the
+first message, at most 80 characters), `answered` (the `seq` of the chat's last `agent_settled` or `moebius_error`
+event, 0 without one) and `seen` (how far a person has read it, see `POST /v1/chats/{id}/seen`). A chat is unread while
+`answered` is greater than `seen`.
 
-`Change`: `id`, `repository_id`, `card_id` (or null), `branch`, `state` (`open`, `merged` or `closed`), `pull_request`
+`Change`: `id`, `repository_id` (null for a change of the harness configuration repository), `harness_repository` (true
+for such a change), `card_id` (or null), `branch`, `state` (`open`, `merged` or `closed`), `pull_request`
 (the number on GitHub, or null), `checks` (`pending`, `success`, `failure` or null), `review` (the latest review's state in
 lower case, such as `approved`, or null), `head` (the published commit), `published_at`, `checks_head` (the commit
 `checks` are for), `failed_checks` (the failing checks of a pull request, one per line, or null) and `check_output` (the
@@ -107,10 +110,12 @@ Everything the app shows. Response:
      "waiting": {},
      "changes": []}
   ],
+  "harness_changes": [],
   "inbox": []
 }
 ```
 
+`harness_changes` are the `Change`s of the harness configuration repository, which belongs to no board.
 `boards` has one entry per repository, with all its cards and changes. `round_limit` is the most `code` rounds a card
 gets. Each entry of `cards` is a `Card` with what a board shows of it, so that a client needs no other read:
 
@@ -194,6 +199,11 @@ A person merges an open change: the decision is recorded (kind `merge`, decider 
 no-fast-forward merge into the default branch of the clone for a repository without a forge; the GitHub API for a pull
 request), the change becomes `merged`, its inbox items are resolved and its card, if it has one, moves to `Done`. A
 change from a chat has no card: its `ready_to_merge` item is resolved and the commit message is `Merge <branch>`.
+
+A change of the harness configuration repository (`harness_repository` true) is merged into the default branch of its
+clone with a merge commit, which is pushed to `origin`; the agents are read again, so the next run uses what the change
+brought. A push that `origin` refuses undoes the merge and is a `500`. The decision is recorded as for any change, with
+the repository `harness`.
 
 Request: `{"reason": "..."}`; `reason` is optional, but the body is not: send `{}`.
 
@@ -637,13 +647,14 @@ Request:
 | `agent` | string | An agent of the configuration, `Moebius` or `Grilling-partner`. Without it the chat is with the Moebius agent (see [configuration](configuration.md)). With `Grilling-partner` the chat is a grilling (see `POST /v1/grillings/{id}/confirm`) and `repository` is required. |
 | `message` | string | Required, not blank. Sent to the agent as it is, with no issue prompt around it. |
 | `repository` | number | The id of a repository to work in. |
-| `continues` | number | The id of an ended chat this one goes on from. Its agent and repository are used unless `agent` or `repository` name others, and the agent is given what was said in it (the person's messages and the agent's answers, at most the last 20 000 characters) before `message`. The new chat's `said` event holds only `message`. |
+| `harness` | boolean | Work in the harness configuration repository instead (default false): in a worktree on the branch `moebius/chat-<run id>` of its default branch, so that the agents, skills, extensions, MCP servers and rules can be built as files and merged (see [changing it in a chat](harness-configuration.md#changing-it-in-a-chat)). The run has `harness_repository` true. Not together with `repository`. |
+| `continues` | number | The id of an ended chat this one goes on from. Its agent and place (repository or harness configuration repository) are used unless `agent` or `repository` name others, and the agent is given what was said in it (the person's messages and the agent's answers, at most the last 20 000 characters) before `message`. The new chat's `said` event holds only `message`. |
 
 Response: the `Run` (`purpose` `chat`, `card_id` null). Errors: `404` no such repository or no run `continues`; `422`
 the message is blank, the agent does not exist, it is a built-in agent and neither its own `[agents.<name>]` nor
 `[agents.Coder]` is configured (the message says so), it is the Grilling partner and there is no `repository`, or
-`continues` is not a chat or has not ended (write to it with `POST /v1/chats/{id}/messages`); `500` the worktree cannot
-be made.
+`continues` is not a chat or has not ended (write to it with `POST /v1/chats/{id}/messages`), `harness` is set together
+with `repository`, or `harness` is set and the server has no `[harness]`; `500` the worktree cannot be made.
 
 ### `GET /v1/chats`
 
@@ -683,6 +694,14 @@ with `POST /v1/changes/{id}/merge`, which resolves the item; the merge commit's 
 changed nothing, or has no repository, offers nothing, and a chat that ends as `failed` offers nothing. If the offer
 fails, the chat's run gets a `moebius_error` event saying why and the work stays on the branch. A chat that is stopped
 offers what it made in the same way.
+
+A chat in the harness configuration repository (`harness` true) is committed the same way and offered as a change of
+that repository: a `Change` with `repository_id` null and `harness_repository` true, no card and no pull request, on the
+branch `moebius/chat-<run id>`, with the same `ready_to_merge` inbox item and `change_offered` event. Before it is
+offered, the branch is checked as a branch of a Retro proposal is: it may change only harness configuration files
+(`agents/`, `skills/`, `extensions/`, `rules.md`, `mcp.toml`), and every agent that could be read on the default branch
+must still be readable with it. A branch that passes is pushed to `origin`. A branch that fails is not offered: the chat's
+run gets a `moebius_error` event saying why, and the branch stays in the clone.
 
 A grilling (a chat with `Grilling-partner`) commits nothing and offers no change: before the worktree is removed Moebius
 reads what the agent left in it (see `POST /v1/grillings/{id}/confirm`) and stores a `Grilling`, whose status and id are

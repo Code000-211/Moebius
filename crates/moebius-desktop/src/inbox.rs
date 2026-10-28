@@ -464,6 +464,9 @@ impl Inbox {
         } else if item.card_id.is_none() {
             meta.push("chat".to_string());
         }
+        if found.change.is_some_and(|c| c.harness_repository) {
+            meta.insert(0, "Harness configuration".to_string());
+        }
         let meta_color = if item.kind == STUCK {
             theme::RED_TEXT
         } else {
@@ -722,7 +725,14 @@ fn found<'a>(snapshot: &'a Snapshot, item: &InboxItem) -> Found<'a> {
     Found {
         board,
         card: board.and_then(|b| b.cards.iter().find(|c| Some(c.id) == item.card_id)),
-        change: board.and_then(|b| b.changes.iter().find(|c| Some(c.id) == change)),
+        change: board
+            .and_then(|b| b.changes.iter().find(|c| Some(c.id) == change))
+            .or_else(|| {
+                snapshot
+                    .harness_changes
+                    .iter()
+                    .find(|c| Some(c.id) == change)
+            }),
     }
 }
 

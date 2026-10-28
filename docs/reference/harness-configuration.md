@@ -172,6 +172,33 @@ before it), so the clone never drifts from `origin`, and no decision is recorded
 error. When someone else pushed to
 `origin` meanwhile, the push is refused for that reason, and the next refresh brings their commits in.
 
+## Changing it in a chat
+
+A chat can work in the harness configuration repository, so that an extension, a skill, an MCP server, an agent or the
+server's rules are built as files and merged like any change. `POST /v1/chats` with `harness: true` (refused with `422`
+without `[harness]`, and together with `repository`) starts the chat in a worktree on the new branch
+`moebius/chat-<run id>` of the clone's default branch, made as a chat's worktree in a repository is. The run has
+`harness_repository` true. A chat that continues an ended chat of this kind (`continues`) works there too, unless it names a
+`repository`.
+
+When the chat ends or is stopped, what it left is committed on that branch like any chat's work. If the branch has commits
+beyond the default branch, it is checked the way a branch of a Retro proposal is (see [The Retro](#the-retro)):
+
+- it changes only harness configuration files: `agents/`, `skills/`, `extensions/`, `rules.md` and `mcp.toml`;
+- every agent that can be read on the default branch can still be read with the branch's files (a skill an agent names
+  must exist in `skills/`, an extension in `extensions/` or wherever its path points, an MCP server in `mcp.toml`).
+
+A branch that passes is pushed to `origin` and offered as a change of the harness configuration repository: a `Change`
+with `repository_id` null, `harness_repository` true, no card and no pull request, in the snapshot's `harness_changes`,
+with a `ready_to_merge` inbox item and the event `change_offered`. A branch that fails is not offered: the chat's run gets
+a `moebius_error` event saying why, and the branch stays in the clone for the person.
+
+`POST /v1/changes/{id}/merge` merges the branch into the clone's default branch with a merge commit (`Merge
+moebius/chat-<run id>`), pushes it to `origin` and reads the agents again, so the next run of an agent has the skills and
+extensions that came with it; this is the merge of a trial's proposal. A branch that does not merge cleanly is a `409`
+and changes nothing, as does a push that `origin` refuses. The decision is recorded as the merge of any change is (kind
+`merge`, with the repository named `harness`).
+
 ## The Retro
 
 Once a day (`retro_at`, see [configuration](configuration.md)) Moebius collects the day's errors without a model into a

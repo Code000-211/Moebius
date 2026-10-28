@@ -276,6 +276,39 @@ impl HarnessRepo {
         Ok((proposed, warnings))
     }
 
+    /// Checks the branch of a chat that worked in the clone, the way a proposal is checked (see `proposed`): none when it
+    /// left nothing beyond the default branch, and why it is not fit when it is not. A branch that is fit is pushed to
+    /// `origin`.
+    pub fn check_chat_branch(
+        &self,
+        app: &App,
+        branch: &str,
+    ) -> std::result::Result<Option<Proposed>, String> {
+        let _read_at = self.lock();
+        let base = self
+            .repos
+            .default_branch(&self.path)
+            .map_err(|e| e.to_string())?;
+        let beyond = format!("{base}..{branch}");
+        let count =
+            git(&self.path, &["rev-list", "--count", &beyond]).map_err(|e| e.to_string())?;
+        if count == "0" {
+            return Ok(None);
+        }
+        let broken_before = broken_agents(&self.path, &self.mcp_env);
+        self.check_branch(app, &base, branch, &broken_before)
+            .map(Some)
+    }
+
+    /// Creates the worktree of the chat `run_id`, on a new branch `moebius/chat-<id>` of the default branch.
+    pub fn add_chat_worktree(&self, app: &App, run_id: i64) -> Result<crate::repos::Worktree> {
+        let _read_at = self.lock();
+        let base = self.repos.default_branch(&self.path)?;
+        Ok(app
+            .repos
+            .add_chat_worktree("harness", &self.path, run_id, &base)?)
+    }
+
     fn check_branch(
         &self,
         app: &App,
@@ -370,11 +403,20 @@ impl HarnessRepo {
         title: &str,
         reason: &str,
     ) -> Result<String> {
+        let message = format!("Merge the proposal: {title}");
+        let head = self.merge_branch(app, branch, &message)?;
+        self.record_proposal(app, by, branch, title, "merge_proposal", reason)?;
+        Ok(git(&self.path, &["rev-parse", "--short", &head])?)
+    }
+
+    /// Merges `branch` into the default branch with a merge commit and pushes it to `origin`; a merge that conflicts,
+    /// and a push that fails, leave the clone as it was. On success the agents are read again and the merge commit is
+    /// given.
+    pub fn merge_branch(&self, app: &App, branch: &str, message: &str) -> Result<String> {
         let mut read_at = self.lock();
         let before = git(&self.path, &["rev-parse", "HEAD"])?;
         let default = self.repos.default_branch(&self.path)?;
-        let message = format!("Merge the proposal: {title}");
-        self.repos.merge(&self.path, branch, &message)?;
+        self.repos.merge(&self.path, branch, message)?;
         let pushed = app
             .git_auth(&self.url)
             .and_then(|header| Ok(self.repos.push(&self.path, &default, header.as_deref())?));
@@ -383,10 +425,8 @@ impl HarnessRepo {
             return Err(e);
         }
         let head = git(&self.path, &["rev-parse", "HEAD"])?;
-        let short = git(&self.path, &["rev-parse", "--short", "HEAD"])?;
-        self.read(app, &mut read_at, head);
-        self.record_proposal(app, by, branch, title, "merge_proposal", reason)?;
-        Ok(short)
+        self.read(app, &mut read_at, head.clone());
+        Ok(head)
     }
 
     /// A person dismisses the proposal `branch`; nothing changes in the repository.

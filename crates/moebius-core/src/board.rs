@@ -97,14 +97,15 @@ pub trait Runs: Send + Sync {
     /// Asks a running run to stop; it ends as `stopped`. False when the run is not running.
     fn stop(&self, run_id: i64) -> bool;
 
-    /// Starts a chat with `agent`, which answers `message`, in a branch of `repository` or in an empty directory,
-    /// and returns it without waiting for the answer. A chat that continues an ended one gives the agent `earlier`,
+    /// Starts a chat with `agent`, which answers `message`, in a branch of `repository`, of the harness configuration
+    /// repository when `harness` is set, or in an empty directory, and returns it without waiting for the answer. A chat that continues an ended one gives the agent `earlier`,
     /// the conversation so far, before the message. A harness without chats refuses.
     fn start_chat(
         &self,
         _app: &Arc<App>,
         _agent: &str,
         _repository: Option<&Repository>,
+        _harness: bool,
         _message: &str,
         _earlier: Option<&str>,
     ) -> Result<Run, String> {
@@ -946,11 +947,11 @@ fn change_table(app: &App, lua: &Lua, card_id: i64) -> mlua::Result<Option<Table
     else {
         return Ok(None);
     };
-    let repository = app
-        .store
-        .repository(change.repository_id)
-        .map_err(mlua::Error::external)?
-        .ok_or_else(|| mlua::Error::runtime("the change's repository is gone"))?;
+    let repository = change
+        .repository_id
+        .and_then(|id| app.store.repository(id).transpose())
+        .ok_or_else(|| mlua::Error::runtime("the change has no repository"))?
+        .map_err(mlua::Error::external)?;
     let current = change.checks_head == change.head;
     let c = lua.create_table()?;
     c.set("branch", change.branch.as_str())?;

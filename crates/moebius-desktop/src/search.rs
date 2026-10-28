@@ -183,7 +183,7 @@ pub fn ask(settings: &Settings, text: String) -> Task<AppMessage> {
     Task::perform(
         async move {
             client
-                .start_chat(crate::chat::DEFAULT_AGENT, &message, None)
+                .start_chat(crate::chat::DEFAULT_AGENT, &message, None, false)
                 .await
         },
         move |run| AppMessage::Search(Message::Started(text.clone(), run)),

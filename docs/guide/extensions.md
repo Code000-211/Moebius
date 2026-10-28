@@ -31,6 +31,13 @@ What this guarantees, and what it asks of yours:
 - An extension runs inside the Pi process with the same permissions, and sees prompts, tool calls, files and
   credentials. Load only extensions you trust.
 
+## Build one in a chat
+
+With a harness configuration repository, an extension can be built by an agent instead of by hand: a chat with
+`harness: true` writes `extensions/<name>.ts` and names it in the `extensions` of `agents/<agent>.toml`, and what it
+leaves is offered as a change that a person merges (see [Build an extension or skill in a
+chat](agents.md#build-an-extension-or-skill-in-a-chat)). The steps below are for an agent in `moebius.toml`.
+
 ## The steps
 
 1. Write the extension as a TypeScript file. It exports a default function that takes the Pi API; `import type` brings

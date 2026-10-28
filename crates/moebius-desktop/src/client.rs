@@ -121,6 +121,9 @@ pub struct Run {
     pub harness: String,
     #[serde(default)]
     pub started_at: i64,
+    /// Whether a chat works in the harness configuration repository.
+    #[serde(default)]
+    pub harness_repository: bool,
 }
 
 /// A chat with an agent, as `GET /v1/chats` lists it: a run without a card.
@@ -133,6 +136,9 @@ pub struct Chat {
     pub status: String,
     #[serde(default)]
     pub repository_id: Option<i64>,
+    /// Whether the chat works in the harness configuration repository.
+    #[serde(default)]
+    pub harness_repository: bool,
     #[serde(default)]
     pub started_at: i64,
     /// The first line of the first message.
@@ -672,7 +678,12 @@ pub struct CardChange {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Change {
     pub id: i64,
-    pub repository_id: i64,
+    /// None for a change of the harness configuration repository.
+    #[serde(default)]
+    pub repository_id: Option<i64>,
+    /// Whether the change belongs to the harness configuration repository.
+    #[serde(default)]
+    pub harness_repository: bool,
     #[serde(default)]
     pub card_id: Option<i64>,
     pub branch: String,
@@ -783,6 +794,9 @@ impl Board {
 pub struct Snapshot {
     #[serde(default)]
     pub boards: Vec<Board>,
+    /// The changes of the harness configuration repository, which belongs to no board.
+    #[serde(default)]
+    pub harness_changes: Vec<Change>,
     #[serde(default)]
     pub inbox: Vec<InboxItem>,
 }
@@ -1221,14 +1235,17 @@ impl Client {
         self.get("/v1/chats").await
     }
 
-    /// Starts a chat with `agent` (the Moebius agent when blank), in `repository` if given.
+    /// Starts a chat with `agent` (the Moebius agent when blank), in `repository` if given, or in the harness
+    /// configuration repository when `harness` is set.
     pub async fn start_chat(
         &self,
         agent: &str,
         message: &str,
         repository: Option<i64>,
+        harness: bool,
     ) -> Result<Run, ClientError> {
-        let mut body = serde_json::json!({ "message": message, "repository": repository });
+        let mut body =
+            serde_json::json!({ "message": message, "repository": repository, "harness": harness });
         if !agent.trim().is_empty() {
             body["agent"] = agent.trim().into();
         }

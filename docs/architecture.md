@@ -133,6 +133,12 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
     the Moebius or Coder configuration. Every run has `$MOEBIUS`, the `moebius` executable, for `check-script`. Chats are not
     counted by `moebius.runs_active()`, so they do not use the board's run limit; the daily budget applies to them.
     `GET /v1/chats` (`App::chats`) lists them, newest first.
+    A chat can work in the harness configuration repository (`harness: true`; the run's `harness_repository`): its worktree
+    is a chat worktree of the harness clone (`HarnessRepo::add_chat_worktree`), and what it leaves is checked as a Retro
+    proposal is (`HarnessRepo::check_chat_branch`, which shares `check_branch` with `proposed`) before `App::offer_chat_change`
+    stores a change with a null repository (`Store::add_harness_change`; `harness_repository` set). A branch that fails the
+    check is not offered and the chat gets a `moebius_error`. `App::merge_change` merges such a change with
+    `HarnessRepo::merge_branch`, which `merge_proposal` uses too.
 12c. **The Retro.** Once a minute `server.rs` asks `retro::on_schedule`, which starts today's Retro when `retro_at` has passed
     and the `retros` table has no row for the day (`retro::due`); `POST /v1/retros` calls `retro::start` too. `retro::report`
     reads the day's errors from the store, one `Store` function per source (failed and refused tool calls, failed and stopped
@@ -201,8 +207,8 @@ start; its version is `PRAGMA user_version`.
 | `cards` | One per issue: number (unique per repository), title, body, author, column, note (why it went back to coding). |
 | `card_moves` | Each move of a card (`Store::move_card`, called by `App::move_card`): from, to, the card's note then, time. Moves before this table existed are not recorded. |
 | `dependencies` | For a card, the issue numbers it is blocked by. |
-| `changes` | A card's branch `moebius/card-<number>`: card, state (`open`, `merged`, `closed`), pull request number, the published commit and time, checks with the commit they are for, failing checks, output of the repository's own checks, review. |
-| `runs` | One per harness run: card (none for a chat), agent, harness, purpose, status, worktree, repository (a chat's), start and end, summary (the agent's final answer). |
+| `changes` | A card's or chat's branch `moebius/card-<number>`: repository (none, with `harness_repository` set, for the harness configuration repository), card, state (`open`, `merged`, `closed`), pull request number, the published commit and time, checks with the commit they are for, failing checks, output of the repository's own checks, review. |
+| `runs` | One per harness run: card (none for a chat), agent, harness, purpose, status, worktree, repository (a chat's) or whether it works in the harness configuration repository, start and end, summary (the agent's final answer). |
 | `events` | Everything a run emitted, numbered per run, as JSON. |
 | `judgements` | One per decision: kind, context (blob ids), options, choice, reason, decider, run, card, outcome. |
 | `shadows` | One per judgement the decision model was asked about: judgement, kind, the model's choice (null when it failed), reason, failed. |

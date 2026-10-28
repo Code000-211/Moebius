@@ -1553,6 +1553,90 @@ fn a_new_chat_offers_the_servers_agents_with_the_moebius_agent_chosen() {
     ));
 }
 
+/// The app on the chat screen with chat 7 open, a chat in the harness configuration repository that offered the branch
+/// `moebius/chat-7` as a change of that repository.
+fn harness_chatting() -> App {
+    let snapshot: Snapshot = serde_json::from_value(json!({
+        "boards": [radiance("Ready")],
+        "harness_changes": [{"id": 3, "repository_id": null, "harness_repository": true, "card_id": null,
+                             "branch": "moebius/chat-7", "state": "open"}],
+        "inbox": [{"id": 9, "kind": "ready_to_merge", "card_id": null,
+                   "title": "Add a skill for testing habits",
+                   "data": {"change": 3, "branch": "moebius/chat-7"}, "at": 1_790_000_000}]
+    }))
+    .unwrap();
+    let chats = serde_json::from_value(json!([
+        {"id": 7, "agent": "Moebius", "status": "succeeded", "repository_id": null, "harness_repository": true,
+         "started_at": 1_790_000_000 - 600, "ended_at": null, "title": "Add a skill for testing habits"}
+    ]))
+    .unwrap();
+    let mut app = App::with_snapshot(snapshot);
+    let _ = app.update(Message::Select(Page::Chat));
+    let _ = app.update(Message::Chat(chat::Message::Tick(1_790_000_000)));
+    let _ = app.update(Message::Chat(chat::Message::Listed(Ok(chats))));
+    let _ = app.update(Message::Chat(chat::Message::Select(7)));
+    let _ = app.update(Message::Chat(chat::Message::Loaded(7, Ok(chat_events()))));
+    app
+}
+
+/// A chat in the harness configuration is headed by its place, and its offered change shows and merges like a
+/// repository chat's.
+#[test]
+fn a_harness_chat_is_drawn_with_its_offered_change_and_merged_from_there() {
+    let app = harness_chatting();
+    draw_sized(
+        &app,
+        "chat-harness",
+        &[
+            "Moebius in the harness configuration",
+            "Add a skill for testing habits",
+            "Change offered",
+            "moebius/chat-7",
+            "Merge",
+        ],
+        Size::new(1440.0, 1100.0),
+    );
+    assert!(matches!(
+        &clicked(&app, "Merge")[..],
+        [Message::Inbox(inbox::Message::Act(
+            9,
+            inbox::Action::Merge { change: 3 }
+        ))]
+    ));
+}
+
+/// The new chat form offers the harness configuration as a place only when the server has one.
+#[test]
+fn a_new_chat_offers_the_harness_configuration_only_when_the_server_has_one() {
+    let mut app = chatting("waiting", false);
+    for message in clicked(&app, "New chat") {
+        let _ = app.update(message);
+    }
+    assert!(!shows(&app, "Harness configuration"));
+    let skills = serde_json::from_value(json!([
+        {"name": "moebius", "description": "Builds on Moebius.", "built_in": true}
+    ]))
+    .unwrap();
+    let _ = app.update(Message::Chat(chat::Message::Skills(Ok(skills))));
+    assert!(shows(&app, "Harness configuration"));
+    assert!(matches!(
+        &clicked(&app, "Harness configuration")[..],
+        [Message::Chat(chat::Message::HarnessChosen)]
+    ));
+    let _ = app.update(Message::Chat(chat::Message::HarnessChosen));
+    let _ = app.update(Message::Chat(chat::Message::FirstEdited(
+        "Add a skill".into(),
+    )));
+    assert!(shows(
+        &app,
+        "The agent works on a branch of the harness configuration repository: agents, skills, extensions, MCP servers and rules. Ending the chat offers what it built as a change, if every agent still works with it."
+    ));
+    assert_eq!(app.update(Message::Chat(chat::Message::Start)).units(), 1);
+    // A server without a harness configuration repository lists no skill.
+    let _ = app.update(Message::Chat(chat::Message::Skills(Ok(vec![]))));
+    assert!(!shows(&app, "Harness configuration"));
+}
+
 #[test]
 fn sending_needs_a_message_and_goes_to_the_open_chat() {
     let mut app = chatting("waiting", false);

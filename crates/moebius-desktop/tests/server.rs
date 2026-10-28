@@ -492,7 +492,10 @@ async fn a_chat_is_started_written_to_and_followed_through_the_stream() {
     assert_eq!(next(&mut stream).await, StreamEvent::Connected);
 
     // The first message starts a chat with the Moebius agent, which the fake Pi answers.
-    let run = client.start_chat("", "first question", None).await.unwrap();
+    let run = client
+        .start_chat("", "first question", None, false)
+        .await
+        .unwrap();
     assert_eq!(
         (run.purpose.as_str(), run.agent.as_str()),
         ("chat", "Moebius")
@@ -944,7 +947,12 @@ async fn a_grilling_ends_in_an_inbox_item_whose_issues_the_client_confirms_into_
         [{\"title\": \"Add the button\", \"body\": \"On the report page.\", \"blocked_by\": []}, \
          {\"title\": \"Write the CSV\", \"body\": \"Its columns.\", \"blocked_by\": [0]}]\n[/put]";
     let run = client
-        .start_chat("Grilling-partner", message, repository["id"].as_i64())
+        .start_chat(
+            "Grilling-partner",
+            message,
+            repository["id"].as_i64(),
+            false,
+        )
         .await
         .unwrap();
     tokio::time::timeout(Duration::from_secs(60), async {
@@ -1450,4 +1458,64 @@ async fn the_ask_entry_of_the_search_starts_a_chat_that_opens() {
     assert_eq!(chats.len(), 1);
     assert_eq!(chats[0].agent, "Moebius");
     assert_eq!(chats[0].title, "what is a column script");
+}
+
+/// A chat in the harness configuration repository, started from the client: its skill is offered as a change of that
+/// repository, which the snapshot lists and the client merges.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_harness_chat_offers_its_change_in_the_snapshot_and_the_client_merges_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let origin = harness_origin(dir.path());
+    let fake_pi = Path::new(env!("CARGO_MANIFEST_DIR")).join("../moebius-core/testdata/fake-pi");
+    let more = format!(
+        "[pi_bolt]\nprogram = {:?}\n[harness]\nurl = {:?}\n",
+        fake_pi.display().to_string(),
+        origin.display().to_string()
+    );
+    let (settings, _server) = start_with(dir.path(), &more).await;
+    let client = Client::new(settings.clone());
+    // The server has a harness configuration repository, which the skills say.
+    assert!(!client.skills().await.unwrap().is_empty());
+
+    let message = "Add a skill.\n[put skills/testing/SKILL.md]\n---\nname: testing\ndescription: Test first.\n---\n[/put]";
+    let run = client
+        .start_chat("Coder", message, None, true)
+        .await
+        .unwrap();
+    assert!(run.harness_repository);
+    let waiting = loop {
+        let chats = client.chats().await.unwrap();
+        if chats[0].status == "waiting" {
+            break chats;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    assert!(waiting[0].harness_repository);
+    client.end_chat(run.id).await.unwrap();
+
+    let snapshot = snapshot_where(&client, |s| !s.harness_changes.is_empty()).await;
+    let change = &snapshot.harness_changes[0];
+    assert_eq!(
+        (change.repository_id, change.harness_repository),
+        (None, true)
+    );
+    assert_eq!(change.branch, format!("moebius/chat-{}", run.id));
+    assert_eq!(snapshot.inbox[0].change(), Some(change.id));
+
+    // The app draws the chat as one in the harness configuration with its change.
+    let mut app = App::with_snapshot(snapshot.clone());
+    let _ = app.update(Message::Select(Page::Chat));
+    let _ = app.update(Message::Chat(chat::Message::Listed(client.chats().await)));
+    let _ = app.update(Message::OpenChat(run.id));
+    assert!(shown(&app, "Coder in the harness configuration"));
+    assert!(shown(&app, "Change offered"));
+
+    client.merge(change.id).await.unwrap();
+    let snapshot = snapshot_where(&client, |s| {
+        s.harness_changes.iter().all(|c| c.state == "merged") && s.inbox.is_empty()
+    })
+    .await;
+    assert_eq!(snapshot.harness_changes[0].state, "merged");
+    let skills = client.skills().await.unwrap();
+    assert!(skills.iter().any(|skill| skill.name == "testing"));
 }
