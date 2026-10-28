@@ -291,9 +291,34 @@ The worktree exists while the run or chat is `starting`, `running` or `waiting`.
 ### `GET /v1/agents`
 
 The agents the server can run, for choosing one to chat with: the Moebius agent first (when `[agents.Moebius]` or
-`[agents.Coder]` gives it a model), then the configured agents by name. Response: an array of `{"name": string, "model":
-string, "protocol": "openai" or "anthropic", "built_in": boolean}`; `built_in` is true for the Moebius agent, which
-Moebius brings itself. Instructions, skills, extensions and anything secret are not included.
+`[agents.Coder]` gives it a model), then the others by name. Response: an array of `{"name": string, "model":
+string, "protocol": "openai" or "anthropic", "built_in": boolean, "error": string}`; `built_in` is true for the Moebius
+agent, which Moebius brings itself. `error` is left out unless the agent's files in the [harness
+configuration](harness-configuration.md) are broken: such an agent has an empty `model`, cannot be run, and `error` says
+why (the Moebius agent still runs, on the Coder's model). Instructions, skills, extensions and anything secret are not
+included.
+
+### `GET /v1/agents/{name}`
+
+An agent of the harness configuration repository, as its files say: `{"name": string, "settings": {"model", "protocol",
+"thinking", "token_budget", "skills", "extensions", "mcp"}, "instructions": string}` (`thinking` and `token_budget` are
+left out when not set). The files hold no secrets and are returned in full. Errors: `404` no such agent; `422` its files
+are broken (the message says how), or the server has no `[harness]` and its agents are in `moebius.toml`.
+
+### `PUT /v1/agents/{name}`
+
+A person adds or changes an agent of the harness configuration repository. Request: `{"settings": {...}, "instructions":
+string}`, the shape `GET` answers without `name`; `settings.model` is required and unknown keys are refused;
+`instructions` may be left out. The edit is validated as a file read is and, when valid, written, committed on the
+default branch and pushed to `origin`; the decision is recorded (kind `edit_agent`, decider `person`), and the agent is
+used from then on. Response: the agent as `GET` answers it. Errors: `422` an invalid name or settings (the message says
+what), or no `[harness]`; `500` git failed, such as a push that `origin` refused, and then nothing changed (see [harness
+configuration](harness-configuration.md)).
+
+### `DELETE /v1/agents/{name}`
+
+A person deletes an agent of the harness configuration repository, committed and pushed the same way (kind `edit_agent`).
+Response: `null`. Errors: `404` no such agent; `422` no `[harness]`; `500` as for `PUT`.
 
 ### `POST /v1/chats`
 
@@ -375,6 +400,7 @@ ended.
 | `run_ended` | A run ended. | `{"run": id, "status": "succeeded" \| "failed" \| "stopped"}` |
 | `board_error` | A column script failed; the card stays where it is. | `{"card": id, "message": string}` |
 | `forge_error` | Polling a GitHub repository, or refreshing the clone of a repository without a forge, failed; it is tried again at the next poll or refresh (every 30 seconds without a forge). | `{"repository": "owner/repo" (GitHub) or the repository's name, "message": string}` |
+| `harness_error` | An agent's files in the harness configuration repository are broken (it is left out), or refreshing the repository failed (every 30 seconds). | `{"agent": name (left out when the refresh failed), "message": string}` |
 | `lagged` | This client fell too far behind (more than 1024 events) and lost the oldest. | `{"missed": number}` |
 
 A `run_event` has two sources, told apart by its inner `kind`:

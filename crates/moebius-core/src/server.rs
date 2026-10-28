@@ -1,7 +1,7 @@
 //! The server put together (spec 2): the store and the core, the desktop API, the router, the Pi-Bolt harness, the
 //! board engine, which runs every card's column script on a fixed tick, the poll of GitHub and, every 30 seconds,
-//! the refresh of the clones of repositories without a forge. The `moebius` skill
-//! is written to the data directory at start.
+//! the refresh of the clones of repositories without a forge and of the harness configuration repository. The
+//! `moebius` skill is written to the data directory at start.
 
 use std::net::SocketAddr;
 use std::path::Path;
@@ -20,6 +20,7 @@ use crate::config::Config;
 use crate::forge::GitHubForge;
 use crate::github::GitHub;
 use crate::guard::{self, Guard, Teacher};
+use crate::harness_repo::HarnessRepo;
 use crate::pibolt::PiBolt;
 use crate::poll;
 use crate::router::{Router, Upstream};
@@ -71,6 +72,8 @@ pub struct Server {
     pub router: Arc<Router>,
     pub harness: Arc<PiBolt>,
     pub engine: Arc<Engine>,
+    /// The harness configuration repository, if one is configured.
+    pub harness_repo: Option<Arc<HarnessRepo>>,
     /// The client for the GitHub App, if one is configured.
     pub github: Option<Arc<GitHub>>,
     pub token: Arc<str>,
@@ -141,6 +144,15 @@ impl Server {
             router.clone(),
             config.agents.clone(),
         ));
+        let harness_repo = match &config.harness_url {
+            Some(url) => Some(Arc::new(HarnessRepo::open(
+                &app,
+                url,
+                &config.harness_dir(),
+                harness.agents.clone(),
+            )?)),
+            None => None,
+        };
         let engine = Arc::new(Engine::new(
             app.clone(),
             harness.clone(),
@@ -148,11 +160,6 @@ impl Server {
             Limits {
                 run_limit: config.run_limit,
                 round_limit: config.round_limit,
-                agent_budgets: config
-                    .agents
-                    .iter()
-                    .filter_map(|(name, agent)| Some((name.clone(), agent.token_budget?)))
-                    .collect(),
                 day_budget: config.day_tokens,
                 ..Limits::default()
             },
@@ -163,6 +170,7 @@ impl Server {
             router,
             harness,
             engine,
+            harness_repo,
             github,
             token: token.into(),
         })
@@ -223,6 +231,18 @@ impl Server {
         }
     }
 
+    /// Refreshes the harness configuration repository, if there is one; a failure is reported on the bus.
+    pub fn refresh_harness_repository(&self) {
+        if let Some(harness_repo) = &self.harness_repo
+            && let Err(e) = harness_repo.refresh(&self.app)
+        {
+            self.app.bus.publish(AppEvent::new(
+                "harness_error",
+                json!({ "message": e.to_string() }),
+            ));
+        }
+    }
+
     /// Serves the desktop API and the router, ticks the board and polls GitHub, until the future is dropped.
     pub async fn serve(
         self: Arc<Self>,
@@ -232,6 +252,7 @@ impl Server {
         let state = ApiState {
             app: self.app.clone(),
             runs: self.harness.clone(),
+            harness_repo: self.harness_repo.clone(),
             token: self.token.clone(),
             round_limit: self.config.round_limit,
         };
@@ -269,15 +290,18 @@ impl Server {
                 loop {
                     interval.tick().await;
                     let s = server.clone();
-                    let _ =
-                        tokio::task::spawn_blocking(move || s.refresh_plain_repositories()).await;
+                    let _ = tokio::task::spawn_blocking(move || {
+                        s.refresh_plain_repositories();
+                        s.refresh_harness_repository();
+                    })
+                    .await;
                 }
             }
         };
         let router_routes = self.router.clone().routes().merge(check::routes(
             self.app.clone(),
             self.router.clone(),
-            self.config.rules_file.clone(),
+            self.config.rules_path(),
         ));
         tokio::select! {
             served = api::serve(api_listener, state) => served,

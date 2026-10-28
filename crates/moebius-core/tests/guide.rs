@@ -5,6 +5,8 @@
 //!   runs it against a card in that script's column; it must not fail. A marker `<!-- script: ready.luau; test: key -->`
 //!   also runs the scenario `key` below, which checks what the script does.
 //! - ```` ```toml ```` blocks are `moebius.toml` snippets and must pass `Config::parse`, unless marked `<!-- skip -->`.
+//!   Blocks marked `<!-- agent-file -->` are `agents/<name>.toml` files of the harness configuration repository and must
+//!   parse as the settings of an agent.
 //! - ```` ```rules ```` blocks, and ```` ```markdown ```` blocks marked `<!-- rules -->`, are `rules.md` files and must
 //!   give at least one rule.
 //! - Rust and TypeScript blocks marked `<!-- excerpt: path -->` must be lines of that file, in order, ignoring
@@ -20,6 +22,7 @@ use std::time::Duration;
 use moebius_core::app::{App, PERSON};
 use moebius_core::board::{Engine, Limits, Runs, Step, Workflow};
 use moebius_core::config::Config;
+use moebius_core::harness_repo::AgentSettings;
 use moebius_core::repos::git;
 use moebius_core::rules;
 use moebius_core::store::{Card, Run, Store};
@@ -167,9 +170,16 @@ fn links_to_files_point_at_files_that_exist() {
 #[test]
 fn every_toml_block_is_a_configuration_unless_it_says_skip() {
     let mut parsed = 0;
+    let mut agent_files = 0;
     for block in all_blocks("toml") {
         match block.marker.as_deref() {
             Some("skip") => continue,
+            Some("agent-file") => {
+                toml::from_str::<AgentSettings>(&block.text)
+                    .unwrap_or_else(|e| panic!("{}: {e}", block.name()));
+                agent_files += 1;
+                continue;
+            }
             None => {}
             Some(other) => panic!("{}: unknown marker {other:?}", block.name()),
         }
@@ -182,6 +192,7 @@ fn every_toml_block_is_a_configuration_unless_it_says_skip() {
         parsed += 1;
     }
     assert!(parsed >= 4, "only {parsed} configurations found");
+    assert!(agent_files >= 2, "only {agent_files} agent files found");
 }
 
 #[test]
@@ -275,6 +286,12 @@ fn routes() -> Vec<(String, BTreeSet<&'static str>)> {
             if handlers.contains("post(") {
                 methods.insert("POST");
             }
+            if handlers.contains("put(") {
+                methods.insert("PUT");
+            }
+            if handlers.contains("delete(") {
+                methods.insert("DELETE");
+            }
             Some((path, methods))
         })
         .collect()
@@ -296,28 +313,26 @@ fn curl_commands_name_routes_that_exist() {
                 .next()
                 .unwrap();
             let path = url.split('?').next().unwrap();
-            let generic: Vec<String> = path
-                .split('/')
-                .map(|segment| {
-                    let id = segment.chars().all(|c| c.is_ascii_digit())
-                        || segment.starts_with('$')
-                        || segment.starts_with('{');
-                    if id && !segment.is_empty() {
-                        "{id}".to_string()
-                    } else {
-                        segment.to_string()
-                    }
-                })
-                .collect();
-            let generic = generic.join("/");
-            let method = if command.contains("-X POST") || command.contains(" -d ") {
-                "POST"
-            } else {
-                "GET"
-            };
-            let route = routes.iter().find(|(route, _)| *route == generic);
+            let method = ["PUT", "DELETE"]
+                .into_iter()
+                .find(|method| command.contains(&format!("-X {method}")))
+                .unwrap_or(if command.contains("-X POST") || command.contains(" -d ") {
+                    "POST"
+                } else {
+                    "GET"
+                });
+            // A segment of the route in braces stands for anything.
+            let route = routes.iter().find(|(route, _)| {
+                let (route, given): (Vec<_>, Vec<_>) =
+                    (route.split('/').collect(), path.split('/').collect());
+                route.len() == given.len()
+                    && route
+                        .iter()
+                        .zip(&given)
+                        .all(|(r, g)| r == g || (r.starts_with('{') && !g.is_empty()))
+            });
             let Some((_, methods)) = route else {
-                panic!("{}: {path} is not a route ({generic})", block.name());
+                panic!("{}: {path} is not a route", block.name());
             };
             assert!(
                 methods.contains(method),

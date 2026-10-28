@@ -30,12 +30,21 @@ An absolute path is used as it is.
 
 | Key | Type | Default | Meaning and validation |
 |---|---|---|---|
-| `data_dir` | path | `.moebius` | Where Moebius keeps its files: `moebius.sqlite` (the store), `blobs/`, `repos/<name>` (the clones), `worktrees/<name>/run-<id>` (`chat-<id>` for a chat), `chats/<id>` (the empty directory of a chat without a repository), `runs/<id>/` (a run's agent directory, bridge, sessions and `stderr.log`), `skills/moebius/` (the skill of the Moebius agent, written again at every start) and by default `token`. Created if missing. |
+| `data_dir` | path | `.moebius` | Where Moebius keeps its files: `moebius.sqlite` (the store), `blobs/`, `repos/<name>` (the clones), `harness/` (the clone of the harness configuration repository), `worktrees/<name>/run-<id>` (`chat-<id>` for a chat), `chats/<id>` (the empty directory of a chat without a repository), `runs/<id>/` (a run's agent directory, bridge, sessions and `stderr.log`), `skills/moebius/` (the skill of the Moebius agent, written again at every start) and by default `token`. Created if missing. |
 | `listen` | string | `127.0.0.1:7171` | The address of the desktop API, as `ip:port` (a host name is not accepted). Keep it on a private network. |
 | `token_file` | path | `token` | The file with the token the desktop app sends. Created with a random token (64 hex digits, readable by the owner only) when missing or empty. |
 | `run_limit` | integer | `3` | How many runs may go at once across all boards. At least 1, else the file is refused. Scripts read it as `moebius.run_limit`. |
 | `retro_at` | string | `23:30` | When the daily Retro runs, as `HH:MM` with two digits each (hour 00 to 23, minute 00 to 59) in the server's local time. Read and checked, but nothing uses it yet. |
-| `rules_file` | path | none | The server's rules, see [rules](rules.md). Without it only the built-in rules and the repositories' rules apply. A missing file at run time means no rules. |
+| `rules_file` | path | none | The server's rules, see [rules](rules.md). Without it only the built-in rules and the repositories' rules apply. A missing file at run time means no rules. An error together with `[harness]`: the repository's `rules.md` is the server's rules then. |
+
+## `[harness]`
+
+The harness configuration repository, see [harness configuration](harness-configuration.md). The table is optional.
+Without it, agents and rules are configured here.
+
+| Key | Type | Default | Meaning and validation |
+|---|---|---|---|
+| `harness.url` | string | required | The git URL of the repository, cloned to `<data_dir>/harness`, fetched every 30 seconds and pushed to by edits through the API. Not blank. With `[github]`, an `https://github.com/...` URL uses the App's token. With `[harness]`, `[agents.*]` and `rules_file` are errors: the agents are `agents/<name>.toml` and `agents/<name>.md` in the repository, the rules `rules.md`. |
 
 ## `[trial_window]`
 
@@ -122,7 +131,7 @@ GitHub cannot be polled or merged.
 
 ## `[agents.<name>]`
 
-One table per agent. The default workflow starts an agent named `Coder`, so a server that runs it needs `[agents.Coder]`. It also starts an agent named `Reviewer` when there is one; without it changes are offered unreviewed.
+One table per agent; an error with `[harness]`, whose repository holds the agents (see [harness configuration](harness-configuration.md)). The default workflow starts an agent named `Coder`, so a server that runs it needs `[agents.Coder]`. It also starts an agent named `Reviewer` when there is one; without it changes are offered unreviewed.
 A name is made of letters, digits, `-` and `_` and must not be empty, else the file is refused.
 
 | Key | Type | Default | Meaning and validation |

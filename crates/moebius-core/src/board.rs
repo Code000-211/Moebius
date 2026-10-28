@@ -52,6 +52,10 @@ pub struct AgentInfo {
     pub protocol: Protocol,
     /// Whether Moebius brings the agent itself, as it does the Moebius agent.
     pub built_in: bool,
+    /// Why the agent's files in the harness configuration repository could not be used. Such an agent has no model
+    /// and cannot be run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 /// Starts runs for the engine. The real one drives a harness (Pi-Bolt); tests use a fake.
@@ -72,6 +76,11 @@ pub trait Runs: Send + Sync {
     /// The agents this harness can run.
     fn agents(&self) -> Vec<AgentInfo> {
         Vec::new()
+    }
+
+    /// The token budget of `agent` for a card, if it has one.
+    fn token_budget(&self, _agent: &str) -> Option<i64> {
+        None
     }
 
     /// Sends a message to a running run's agent, which takes it into account as it works. False when the run is not
@@ -194,7 +203,7 @@ impl Default for Workflow {
 pub struct Limits {
     pub run_limit: u32,
     pub round_limit: u32,
-    /// The agents' token budgets for a card, by agent name.
+    /// Token budgets for a card by agent name, besides those the harness knows (`Runs::token_budget`), which win.
     pub agent_budgets: BTreeMap<String, i64>,
     /// The most tokens all runs may use in a day, if limited.
     pub day_budget: Option<i64>,
@@ -573,10 +582,14 @@ impl Engine {
             })?,
         )?;
 
-        let budgets = self.limits.agent_budgets.clone();
+        let (budgets, runs) = (self.limits.agent_budgets.clone(), self.runs.clone());
         m.set(
             "agent_budget",
-            lua.create_function(move |_, name: String| Ok(budgets.get(&name).copied()))?,
+            lua.create_function(move |_, name: String| {
+                Ok(runs
+                    .token_budget(&name)
+                    .or_else(|| budgets.get(&name).copied()))
+            })?,
         )?;
 
         let app = self.app.clone();

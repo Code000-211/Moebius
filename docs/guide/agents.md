@@ -6,9 +6,12 @@ You want the default workflow to have a Coder, and perhaps a Reviewer, or you wa
 own: a stronger model for hard cards, a reviewer that is stricter than the coder, an agent to chat with. An agent is a
 named setup that a run uses: the model, how it thinks, its instructions, its skills and extensions, and a token budget.
 
-Today agents are tables in `moebius.toml`. The harness configuration repository, which will hold them in git with edits
-as commits, and MCP servers for agents, are planned for milestone M7 and do not exist yet (see the
-[README](README.md)). The keys are listed exactly in [`docs/reference/configuration.md`](../reference/configuration.md).
+Agents are kept in one of two places. In tables of `moebius.toml`, the simple way, which the steps below use. Or in a
+harness configuration repository, a git repository of their own, where an edit is a commit and agents can be changed
+through the API (see [In a harness configuration repository](#in-a-harness-configuration-repository)). MCP servers for
+agents are planned and cannot be given to an agent yet (see the [README](README.md)). The keys of `moebius.toml` are
+listed exactly in [`docs/reference/configuration.md`](../reference/configuration.md), those of the repository in
+[`docs/reference/harness-configuration.md`](../reference/harness-configuration.md).
 
 ## The Moebius agent
 
@@ -58,6 +61,74 @@ every start, so a change to the guide arrives with the server.
 
 A relative path in `skills` or `extensions` is relative to the directory that holds `moebius.toml`. Moebius does not
 check that the paths exist.
+
+## In a harness configuration repository
+
+The server can keep its agents and rules in a git repository instead of `moebius.toml`. That is one place for them with a
+history, and the desktop API can change them: every edit is a commit. With `[harness]` set, `[agents.*]` and `rules_file`
+in `moebius.toml` are errors, so the repository is the only source.
+
+1. Make a git repository with the layout below and push it somewhere the server can reach. A GitHub repository needs the
+   GitHub App to have write access to it, if edits through the API are wanted.
+2. Name it in `moebius.toml`, as shown below.
+3. Start the server. It clones the repository to `<data_dir>/harness` and reads the agents from its default branch. Every
+   30 seconds it fetches and reads them again when something changed, so a commit pushed by hand arrives without a
+   restart.
+
+```toml
+[harness]
+url = "https://github.com/acme/harness-configuration"
+```
+
+An agent is two files, `agents/<name>.toml` for the settings and `agents/<name>.md` for the instructions, which is
+optional. The name is made of letters, digits, `-` and `_`.
+
+<!-- agent-file -->
+```toml
+model = "my-local-model"
+thinking = "medium"
+token_budget = 2000000
+skills = ["house-style"]
+extensions = ["extensions/log-tool-calls.ts"]
+```
+
+`agents/Coder.md`:
+
+```markdown
+Keep changes small. Run the repository's tests before you stop.
+```
+
+A Reviewer on a hosted model needs only its settings, since the instructions are optional:
+
+<!-- agent-file -->
+```toml
+model = "my-hosted-model"
+protocol = "anthropic"
+thinking = "high"
+```
+
+`skills` names directories under `skills/` that hold a `SKILL.md` (here `skills/house-style/SKILL.md`), `extensions` names
+files in the repository, and `mcp` names servers in `mcp.toml`. Unknown keys, and names that are not in the repository, are
+errors. The repository's `rules.md` holds the server's rules, in the format of [Rules](rules.md).
+
+An agent whose files are broken is left out and the others go on: `GET /v1/agents` lists it with an `error` and an empty
+`model`, the event `harness_error` reports it, and a run that asks for it fails with the error. Fix the file and commit;
+the next refresh reads it again.
+
+Change an agent through the API instead of by hand: the edit is checked, committed as `Moebius` and pushed to the
+repository. If the push is refused, nothing changes and the request fails with git's message.
+
+```sh
+curl -s -H "Authorization: Bearer $TOKEN" $API/v1/agents/Coder
+curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"settings": {"model": "my-local-model", "thinking": "high"}, "instructions": "Keep changes small."}' $API/v1/agents/Coder
+curl -s -X DELETE -H "Authorization: Bearer $TOKEN" $API/v1/agents/Strong
+```
+
+The agent is used from the next run on. The exact files, keys and errors are in the
+[reference](../reference/harness-configuration.md).
+
+Without `[harness]` these three routes answer 422: the agents are in `moebius.toml`.
 
 ## Examples
 
@@ -228,7 +299,8 @@ of kind `agent_end`, which is Pi's own record.
 
 | What happens | How you see it |
 |---|---|
-| The server does not start. | The message names the key: an unknown key, a bad agent name, an upstream whose `api_key_env` variable is not set. |
+| The server does not start. | The message names the key: an unknown key, a bad agent name, an upstream whose `api_key_env` variable is not set, `[agents.*]` together with `[harness]`, or a harness repository that cannot be cloned. |
+| An agent of the harness repository is missing from the chats. | It is listed by `GET /v1/agents` with an `error`, and the event `harness_error` carried it. |
 | `no agent named X` | In a column script, a `board_error` event; in `POST /v1/chats`, status 422. The name is case sensitive. |
 | Model requests fail. | The router answers 502 when it has no upstream for the agent's `protocol`, or cannot reach it. See the [router reference](../reference/router.md). |
 | Model requests are refused with 429. | The card's `token_budget` or the day's budget is spent. The message says which. |

@@ -16,7 +16,8 @@
 //! - `POST /v1/runs/{id}/steer` `{message}`: a person sends a message to a running run.
 //! - `POST /v1/runs/{id}/stop` `{reason}`: a person stops a running run; a chat ends as stopped.
 //! - `GET /v1/runs/{id}/terminal`: a WebSocket on a shell in the run's worktree (see [`crate::terminal`]).
-//! - `GET /v1/agents`: the agents the server can run.
+//! - `GET /v1/agents`: the agents the server can run. `GET`, `PUT` and `DELETE /v1/agents/{name}`: read, write and delete
+//!   an agent of the harness configuration repository (see [`crate::harness_repo`]).
 //! - `POST /v1/chats` `{agent?, message, repository?}`: starts a chat, with the Moebius agent unless `agent` names
 //!   another. `GET /v1/chats`: the chats, newest first.
 //!   `POST /v1/chats/{id}/messages` `{message}`: writes to a chat. `POST /v1/chats/{id}/end`: ends a chat.
@@ -41,6 +42,7 @@ use crate::app::{App, AppError, Chat, HistoryEntry, PERSON, columns, runs_since_
 use crate::board::{AgentInfo, Runs, latest_review};
 use crate::bus::AppEvent;
 use crate::forge::ForgeError;
+use crate::harness_repo::{AgentDefinition, AgentView, HarnessRepo};
 use crate::pibolt::MOEBIUS_AGENT;
 use crate::repos::GitError;
 use crate::store::{Card, Change, Event, InboxItem, Repository, Run};
@@ -51,6 +53,8 @@ pub struct ApiState {
     pub app: Arc<App>,
     /// The harness, for steering and stopping runs.
     pub runs: Arc<dyn Runs>,
+    /// The harness configuration repository, if one is configured; without it agents are edited in `moebius.toml`.
+    pub harness_repo: Option<Arc<HarnessRepo>>,
     pub token: Arc<str>,
     /// The most `code` rounds a card gets, which boards show next to a card's rounds.
     pub round_limit: u32,
@@ -287,6 +291,10 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/runs/{id}/stop", post(stop_run))
         .route("/v1/runs/{id}/terminal", get(run_terminal))
         .route("/v1/agents", get(agents))
+        .route(
+            "/v1/agents/{name}",
+            get(get_agent).put(put_agent).delete(delete_agent),
+        )
         .route("/v1/chats", get(chats).post(start_chat))
         .route("/v1/chats/{id}/messages", post(say_in_chat))
         .route("/v1/chats/{id}/end", post(end_chat))
@@ -502,6 +510,43 @@ async fn agents(State(state): State<ApiState>) -> axum::Json<Vec<AgentInfo>> {
     axum::Json(state.runs.agents())
 }
 
+/// The harness configuration repository, or the 422 that says agents are configured in `moebius.toml`.
+fn harness_repo(state: &ApiState) -> Result<Arc<HarnessRepo>, AppError> {
+    state.harness_repo.clone().ok_or_else(|| {
+        AppError::Invalid(
+            "agents are configured in moebius.toml, not in a harness repository".into(),
+        )
+    })
+}
+
+async fn get_agent(
+    State(state): State<ApiState>,
+    UrlPath(name): UrlPath<String>,
+) -> Result<axum::Json<AgentView>, ApiError> {
+    let repo = harness_repo(&state)?;
+    blocking(&state.app, move |_| repo.agent(&name)).await
+}
+
+async fn put_agent(
+    State(state): State<ApiState>,
+    UrlPath(name): UrlPath<String>,
+    axum::Json(definition): axum::Json<AgentDefinition>,
+) -> Result<axum::Json<AgentView>, ApiError> {
+    let repo = harness_repo(&state)?;
+    blocking(&state.app, move |app| {
+        repo.save_agent(app, &name, &definition)
+    })
+    .await
+}
+
+async fn delete_agent(
+    State(state): State<ApiState>,
+    UrlPath(name): UrlPath<String>,
+) -> Result<axum::Json<()>, ApiError> {
+    let repo = harness_repo(&state)?;
+    blocking(&state.app, move |app| repo.delete_agent(app, &name)).await
+}
+
 async fn start_chat(
     State(state): State<ApiState>,
     axum::Json(chat): axum::Json<NewChat>,
@@ -688,6 +733,7 @@ mod tests {
         let state = ApiState {
             app: Arc::new(App::new(store, host, &dir.path().join("data"))),
             runs: Arc::new(pi),
+            harness_repo: None,
             token: token.into(),
             round_limit: 5,
         };
@@ -1908,6 +1954,24 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(named.agent, "Moebius");
+    }
+
+    #[tokio::test]
+    async fn agents_cannot_be_edited_without_a_harness_repository() {
+        let (_dir, state, addr) = start().await;
+        let client = reqwest::Client::new();
+        let url = format!("http://{addr}/v1/agents/Coder");
+        let body = serde_json::json!({ "settings": { "model": "m" } });
+        let responses = [
+            client.get(&url),
+            client.put(&url).json(&body),
+            client.delete(&url),
+        ];
+        for request in responses {
+            let response = request.bearer_auth(&*state.token).send().await.unwrap();
+            assert_eq!(response.status(), 422);
+            assert!(response.text().await.unwrap().contains("moebius.toml"));
+        }
     }
 
     #[tokio::test]

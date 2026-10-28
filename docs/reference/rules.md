@@ -32,7 +32,7 @@ allowed and, where it is not obvious, why. [`examples/rules.md`](../../examples/
 
 Two files, read afresh for every tool call:
 
-1. The server's file, named by `rules_file` in the configuration. Without that key there are no server rules.
+1. The server's file, named by `rules_file` in the configuration, or the `rules.md` of the [harness configuration](harness-configuration.md) when `[harness]` is set. Without either there are no server rules.
 2. The repository's `.moebius/rules.md` on its default branch, read with `git show <ref>:.moebius/rules.md`. `<ref>` is
    the default branch of the clone for a repository without a forge and `origin/<default branch>` for a GitHub
    repository. A file that is not committed to that branch is not read. A run whose card is gone has no repository

@@ -105,12 +105,18 @@ impl Repos {
         if path.join(".git").exists() {
             self.fetch(&path, auth)?;
         } else {
-            std::fs::create_dir_all(&self.clones)?;
-            let target = path.to_string_lossy().into_owned();
-            let args = ["clone", "--quiet", "--", url, &target];
-            git_with_config(&self.clones, &args, &auth_config(auth))?;
+            self.clone_into(&path, url, auth)?;
         }
         Ok(path)
+    }
+
+    /// Clones `url` to `path`, with `auth` as an extra HTTP header if the remote needs one.
+    pub fn clone_into(&self, path: &Path, url: &str, auth: Option<&str>) -> Result<()> {
+        let parent = path.parent().unwrap_or(Path::new("."));
+        std::fs::create_dir_all(parent)?;
+        let target = path.to_string_lossy().into_owned();
+        let args = ["clone", "--quiet", "--", url, &target];
+        git_with_config(parent, &args, &auth_config(auth)).map(drop)
     }
 
     /// Fetches `origin`, with `auth` as an extra HTTP header if the remote needs one.

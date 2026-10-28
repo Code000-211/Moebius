@@ -333,7 +333,11 @@ impl Chats {
                 }
             }
             Message::Agents(Ok(agents)) => {
-                self.agents = agents;
+                // An agent whose files are broken is listed without a model and cannot be chosen.
+                self.agents = agents
+                    .into_iter()
+                    .filter(|agent| !agent.model.is_empty())
+                    .collect();
                 // The Moebius agent is the first, if the server can run it.
                 if let (Some(form), Some(first)) = (&mut self.form, self.agents.first())
                     && !self.agents.iter().any(|agent| agent.name == form.agent)

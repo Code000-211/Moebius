@@ -19,7 +19,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
@@ -28,7 +28,7 @@ use crate::app::App;
 use crate::blobs::redact;
 use crate::board::{AgentInfo, Runs};
 use crate::bus::AppEvent;
-use crate::config::AgentConfig;
+use crate::config::{AgentConfig, AgentSet};
 use crate::repos::git;
 use crate::router::{Grant, Protocol, Router};
 use crate::skill;
@@ -58,7 +58,8 @@ pub struct PiBolt {
     /// The router's base URL, such as `http://127.0.0.1:7172`.
     pub router_url: String,
     pub router: Arc<Router>,
-    pub agents: BTreeMap<String, AgentConfig>,
+    /// The agents runs use. The harness configuration repository swaps them when it changes.
+    pub agents: Arc<RwLock<AgentSet>>,
     live: Arc<Mutex<HashMap<i64, Live>>>,
 }
 
@@ -91,7 +92,10 @@ impl PiBolt {
             moebius,
             router_url,
             router,
-            agents,
+            agents: Arc::new(RwLock::new(AgentSet {
+                agents,
+                errors: BTreeMap::new(),
+            })),
             live: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -99,13 +103,17 @@ impl PiBolt {
     /// The agent `name` as a run uses it. The Moebius agent is made of its configuration, or else the Coder's model
     /// and protocol, and always has the built-in instructions and the `moebius` skill.
     fn agent(&self, app: &App, name: &str) -> Result<AgentConfig, String> {
-        let configured = self.agents.get(name);
+        let set = self.agent_set();
+        let configured = set.agents.get(name);
         if name != MOEBIUS_AGENT {
             return configured
                 .cloned()
-                .ok_or_else(|| format!("no agent named {name}"));
+                .ok_or_else(|| match set.errors.get(name) {
+                    Some(error) => format!("the agent {name} cannot be used: {error}"),
+                    None => format!("no agent named {name}"),
+                });
         }
-        let mut agent = match (configured, self.agents.get("Coder")) {
+        let mut agent = match (configured, set.agents.get("Coder")) {
             (Some(own), _) => own.clone(),
             (None, Some(coder)) => AgentConfig {
                 model: coder.model.clone(),
@@ -130,6 +138,11 @@ impl PiBolt {
         });
         agent.skills.insert(0, skill::dir(&app.data_dir));
         Ok(agent)
+    }
+
+    /// The agents as they are now.
+    fn agent_set(&self) -> std::sync::RwLockReadGuard<'_, AgentSet> {
+        self.agents.read().unwrap_or_else(|e| e.into_inner())
     }
 
     /// The command that starts Pi for one run.
@@ -429,22 +442,25 @@ impl Runs for PiBolt {
     }
 
     fn has_agent(&self, name: &str) -> bool {
-        name == MOEBIUS_AGENT || self.agents.contains_key(name)
+        name == MOEBIUS_AGENT || self.agent_set().agents.contains_key(name)
     }
 
-    /// The Moebius agent first, if it has a model, then the configured agents by name.
+    /// The Moebius agent first, if it has a model, then the agents by name, those whose files are broken among them
+    /// with their error. The Moebius agent with a broken file still runs, on the Coder's model.
     fn agents(&self) -> Vec<AgentInfo> {
-        let moebius = self
+        let set = self.agent_set();
+        let moebius = set
             .agents
             .get(MOEBIUS_AGENT)
-            .or_else(|| self.agents.get("Coder"))
+            .or_else(|| set.agents.get("Coder"))
             .map(|agent| AgentInfo {
                 name: MOEBIUS_AGENT.into(),
                 model: agent.model.clone(),
                 protocol: agent.protocol,
                 built_in: true,
+                error: set.errors.get(MOEBIUS_AGENT).cloned(),
             });
-        let configured = self
+        let configured = set
             .agents
             .iter()
             .filter(|(name, _)| *name != MOEBIUS_AGENT)
@@ -453,8 +469,26 @@ impl Runs for PiBolt {
                 model: agent.model.clone(),
                 protocol: agent.protocol,
                 built_in: false,
+                error: None,
             });
-        moebius.into_iter().chain(configured).collect()
+        let broken = set
+            .errors
+            .iter()
+            .filter(|(name, _)| *name != MOEBIUS_AGENT)
+            .map(|(name, error)| AgentInfo {
+                name: name.clone(),
+                model: String::new(),
+                protocol: Protocol::OpenAi,
+                built_in: false,
+                error: Some(error.clone()),
+            });
+        let mut agents: Vec<AgentInfo> = configured.chain(broken).collect();
+        agents.sort_by(|a, b| a.name.cmp(&b.name));
+        moebius.into_iter().chain(agents).collect()
+    }
+
+    fn token_budget(&self, agent: &str) -> Option<i64> {
+        self.agent_set().agents.get(agent)?.token_budget
     }
 
     fn steer(&self, run_id: i64, message: &str) -> bool {
@@ -903,9 +937,12 @@ mod tests {
 
     #[test]
     fn a_review_run_starts_from_the_code_branch_and_commits_nothing() {
-        let (_dir, app, mut pi, repo) = setup();
-        pi.agents
-            .insert("Reviewer".into(), pi.agents["Coder"].clone());
+        let (_dir, app, pi, repo) = setup();
+        {
+            let mut set = pi.agents.write().unwrap();
+            let coder = set.agents["Coder"].clone();
+            set.agents.insert("Reviewer".into(), coder);
+        }
         let card = app
             .create_issue(repo, "Write done.txt", "", "person")
             .unwrap();

@@ -177,6 +177,7 @@ fn the_documentation_the_readme_and_claude_md_point_to_exists() {
         "docs/reference/column-scripts.md",
         "docs/reference/rules.md",
         "docs/reference/configuration.md",
+        "docs/reference/harness-configuration.md",
         "docs/reference/plugin-api.md",
         "docs/reference/bridge-protocol.md",
         "docs/reference/router.md",

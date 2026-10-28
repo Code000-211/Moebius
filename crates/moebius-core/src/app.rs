@@ -59,6 +59,8 @@ pub enum AppError {
     Git(#[from] GitError),
     #[error(transparent)]
     Forge(#[from] ForgeError),
+    #[error("cannot read or write files: {0}")]
+    Io(#[from] std::io::Error),
     #[error("{0} not found")]
     NotFound(String),
     #[error("{0}")]
@@ -169,6 +171,19 @@ impl App {
     /// Makes `forge` available to the repositories that name it.
     pub fn add_forge(&mut self, forge: Box<dyn Forge>) {
         self.forges.insert(forge.name(), forge);
+    }
+
+    /// The HTTP header git needs to reach `url` when it is a repository on github.com and the GitHub App is set up;
+    /// none otherwise, so a token never goes to another host.
+    pub fn git_auth(&self, url: &str) -> Result<Option<String>> {
+        let (Some(forge), Some(name)) = (
+            self.forges.get("github"),
+            url.strip_prefix("https://github.com/"),
+        ) else {
+            return Ok(None);
+        };
+        let name = name.trim_end_matches('/').trim_end_matches(".git");
+        Ok(forge.auth(url, name)?)
     }
 
     /// Brings the repository's clone up to date with its forge.

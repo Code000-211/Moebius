@@ -29,7 +29,7 @@ retro_at = "23:30"
 
 # Rules every run must follow, as Markdown with one section per rule (a heading `## name` and its text); relative paths are inside this
 # file's directory. A repository adds its own in .moebius/rules.md but cannot replace these. Without the file, only
-# the built-in rules apply. The harness configuration repository takes this over in M7.
+# the built-in rules apply. Not allowed together with [harness], whose repository holds rules.md.
 # rules_file = "rules.md"
 
 # The daily stretch in which trials, replays and autoresearch may run without asking.
@@ -86,6 +86,12 @@ program = "pi-bolt"
 # api_url = "https://api.github.com"
 # poll_seconds = 30                       # how often each GitHub repository's issues are polled
 
+# The harness configuration repository: a git repository with agents/<name>.toml, agents/<name>.md, skills/, rules.md
+# and mcp.toml, cloned to data_dir/harness. Agents and rules then come from it, edits through the API are commits to it,
+# and [agents.*] and rules_file are errors.
+# [harness]
+# url = "https://github.com/acme/harness-configuration"
+
 # Agents run on Pi-Bolt. The default workflow starts the Coder, and the Reviewer when there is one.
 # [agents.Coder]
 # model = "qwen3.8-flash-next"
@@ -122,6 +128,23 @@ pub enum ConfigError {
     DayTokens,
     #[error("{name} is not a valid agent name")]
     AgentName { name: String },
+    #[error("harness.url must not be empty")]
+    HarnessUrl,
+    #[error(
+        "{key} cannot be set together with [harness]: move it into the harness configuration repository ({place})"
+    )]
+    InHarness {
+        key: &'static str,
+        place: &'static str,
+    },
+}
+
+/// Whether `name` can name an agent: letters, digits, `-` and `_`, and not empty.
+pub fn valid_agent_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 /// A time of day as minutes after midnight.
@@ -188,6 +211,12 @@ struct RawPiBolt {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+struct RawHarness {
+    url: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RawGitHub {
     app_id: u64,
     private_key_file: PathBuf,
@@ -227,6 +256,7 @@ struct Raw {
     #[serde(default)]
     pi_bolt: RawPiBolt,
     rules_file: Option<PathBuf>,
+    harness: Option<RawHarness>,
     github: Option<RawGitHub>,
     teacher: Option<RawTeacher>,
     #[serde(default)]
@@ -262,7 +292,7 @@ pub struct TeacherConfig {
     pub timeout: Duration,
 }
 
-/// An agent as configured; the harness configuration repository takes this over in M7.
+/// An agent as a run uses it: from `[agents.<name>]` or from the harness configuration repository.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AgentConfig {
@@ -278,8 +308,17 @@ pub struct AgentConfig {
     pub token_budget: Option<i64>,
 }
 
-fn default_protocol() -> Protocol {
+pub(crate) fn default_protocol() -> Protocol {
     Protocol::OpenAi
+}
+
+/// The agents the harness can run, and why the others cannot be: an agent whose files in the harness configuration
+/// repository are broken is left out and has its error here. Shared, since a refresh of the repository swaps it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AgentSet {
+    pub agents: BTreeMap<String, AgentConfig>,
+    /// Why each agent that is left out is, by name.
+    pub errors: BTreeMap<String, String>,
 }
 
 /// The server's configuration, with every default applied and every path made absolute against the file's directory.
@@ -303,8 +342,10 @@ pub struct Config {
     /// The `moebius` executable that runs find as `$MOEBIUS`: the running one. It is no key of the file; a server that
     /// is not the `moebius` binary, such as a test, sets it.
     pub moebius: PathBuf,
-    /// The server's rules (see `rules`), if it has any.
+    /// The server's rules (see `rules`), if it has any. Not set together with `harness_url`.
     pub rules_file: Option<PathBuf>,
+    /// The harness configuration repository to clone, if there is one.
+    pub harness_url: Option<String>,
     pub github: Option<GitHubConfig>,
     /// The teacher model; without one, calls are refused while prose rules apply.
     pub teacher: Option<TeacherConfig>,
@@ -312,6 +353,20 @@ pub struct Config {
 }
 
 impl Config {
+    /// Where the harness configuration repository is cloned.
+    pub fn harness_dir(&self) -> PathBuf {
+        self.data_dir.join("harness")
+    }
+
+    /// The server's rules file: `rules_file`, or the harness configuration repository's `rules.md`.
+    pub fn rules_path(&self) -> Option<PathBuf> {
+        self.rules_file.clone().or_else(|| {
+            self.harness_url
+                .as_ref()
+                .map(|_| self.harness_dir().join("rules.md"))
+        })
+    }
+
     /// Parses a configuration whose relative paths are resolved against `base`.
     pub fn parse(text: &str, base: &Path, origin: &Path) -> Result<Self, ConfigError> {
         let mut raw: Raw = toml::from_str(text).map_err(|source| ConfigError::Parse {
@@ -331,13 +386,25 @@ impl Config {
         if !router_listen.ip().is_loopback() {
             return Err(ConfigError::RouterNotLocal(router_listen));
         }
-        if let Some(name) = raw.agents.keys().find(|n| {
-            n.is_empty()
-                || !n
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-        }) {
+        if let Some(name) = raw.agents.keys().find(|n| !valid_agent_name(n)) {
             return Err(ConfigError::AgentName { name: name.clone() });
+        }
+        if let Some(harness) = &raw.harness {
+            if harness.url.trim().is_empty() {
+                return Err(ConfigError::HarnessUrl);
+            }
+            if !raw.agents.is_empty() {
+                return Err(ConfigError::InHarness {
+                    key: "agents",
+                    place: "agents/<name>.toml",
+                });
+            }
+            if raw.rules_file.is_some() {
+                return Err(ConfigError::InHarness {
+                    key: "rules_file",
+                    place: "rules.md",
+                });
+            }
         }
         for agent in raw.agents.values_mut() {
             for path in agent.skills.iter_mut().chain(&mut agent.extensions) {
@@ -404,6 +471,7 @@ impl Config {
                 pi_bolt
             },
             rules_file: raw.rules_file.map(|file| base.join(file)),
+            harness_url: raw.harness.map(|harness| harness.url),
             github: raw.github.map(|g| GitHubConfig {
                 app_id: g.app_id,
                 private_key_file: base.join(g.private_key_file),
@@ -535,6 +603,35 @@ mod tests {
     fn the_rules_file_is_relative_to_the_configuration() {
         let c = parse("rules_file = \"rules.md\"").unwrap();
         assert_eq!(c.rules_file, Some(PathBuf::from("/srv/rules.md")));
+    }
+
+    #[test]
+    fn the_harness_configuration_repository_replaces_the_agents_and_the_rules_file() {
+        assert_eq!(parse("").unwrap().harness_url, None);
+        let c = parse("[harness]\nurl = \"/srv/harness.git\"\n").unwrap();
+        assert_eq!(c.harness_url.as_deref(), Some("/srv/harness.git"));
+        assert_eq!(c.harness_dir(), PathBuf::from("/srv/.moebius/harness"));
+        assert_eq!(
+            c.rules_path(),
+            Some(PathBuf::from("/srv/.moebius/harness/rules.md"))
+        );
+        assert_eq!(
+            parse("rules_file = \"r.md\"").unwrap().rules_path(),
+            Some(PathBuf::from("/srv/r.md"))
+        );
+        for text in [
+            "[harness]\nurl = \"/h\"\n[agents.Coder]\nmodel = \"m\"\n",
+            "rules_file = \"r.md\"\n[harness]\nurl = \"/h\"\n",
+        ] {
+            let error = parse(text).unwrap_err();
+            assert!(matches!(error, ConfigError::InHarness { .. }), "{error}");
+            assert!(error.to_string().contains("move it into"), "{error}");
+        }
+        assert!(matches!(
+            parse("[harness]\nurl = \" \""),
+            Err(ConfigError::HarnessUrl)
+        ));
+        assert!(matches!(parse("[harness]"), Err(ConfigError::Parse { .. })));
     }
 
     #[test]

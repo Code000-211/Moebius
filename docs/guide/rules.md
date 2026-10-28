@@ -29,7 +29,9 @@ variables. Rules in prose are for what the patterns cannot see.
 1. Write the rules as a `rules.md`: one `## name` heading per rule, then the text.
 2. Put the file where it applies:
    - Every run of the server: any path, named by the top-level key `rules_file` in `moebius.toml`. A relative path is
-     relative to the directory of `moebius.toml`. Without the key, there are no server rules.
+     relative to the directory of `moebius.toml`. Without the key, there are no server rules. With a harness
+     configuration repository (`[harness]`, see [Agents](agents.md#in-a-harness-configuration-repository)) the rules are
+     its `rules.md` instead, and `rules_file` is an error.
    - The runs of one repository: `.moebius/rules.md`, committed to its default branch. Where to commit is the same as for
      [column scripts](column-scripts.md): push to GitHub, or commit to the source repository (or, once Moebius has merged a change there, to the clone) for a repository without a forge.
 3. If any prose rule applies, configure a `[teacher]`. Without one, every tool call is refused (see below).

@@ -23,8 +23,9 @@ Built and described here:
 
 - Column scripts, the default workflow, and a repository's overrides in `.moebius/`.
 - Rules: the built-in rules, rules in prose in a server file and in a repository, and the teacher model.
-- Agents, set up in `moebius.toml`: model, protocol, thinking level, instructions, token budget, skills and extensions.
-  Skills and extensions are paths to files on the server.
+- Agents, set up in `moebius.toml` or in a harness configuration repository: model, protocol, thinking level,
+  instructions, token budget, skills and extensions. In the repository, edits through the API are commits, and it holds
+  the server's `rules.md` too.
 - Plugins compiled into the `moebius` binary, and the plugin API.
 - The bridge and Pi extensions.
 - The desktop API (HTTP and one WebSocket) and chats with any configured agent.
@@ -33,9 +34,9 @@ Built and described here:
 
 Planned, so that nothing here describes them beyond a line:
 
-- The harness configuration repository (agents, instructions, skills, rules and MCP servers kept in a git repository of
-  their own, with edits as commits), the skills directory and MCP servers. They come with milestone M7 (issues 39 and 40
-  in [`docs/issues-m2-m9.md`](../issues-m2-m9.md)). Today there is no way to give an agent an MCP server.
+- MCP servers for agents. They come with milestone M7 (issue 40 in [`docs/issues-m2-m9.md`](../issues-m2-m9.md)). Today
+  the harness configuration repository lists them in `mcp.toml` and agents can name them, but there is no way to give an
+  agent an MCP server yet.
 - The desktop app (`crates/moebius-desktop` is a placeholder). Everything it will do is the desktop API, which you can
   call yourself.
 - Plugins in their own process.
