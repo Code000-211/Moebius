@@ -3453,13 +3453,16 @@ mod tests {
         // A call waits from its start event to its end event; a call that has not ended waits for nothing yet.
         let call = |id: &str, tool: &str, seconds: i64| {
             let start = json!({"toolCallId": id, "toolName": tool});
-            s.append_event(coder, "tool_execution_start", &start)
+            let begun = s
+                .append_event(coder, "tool_execution_start", &start)
                 .unwrap();
             let end = s.append_event(coder, "tool_execution_end", &start).unwrap();
+            // The end is set from the start, so that a second passing between the two appends changes nothing.
             s.conn()
                 .execute(
-                    "UPDATE events SET at = at + ?1 WHERE run_id = ?2 AND seq = ?3",
-                    params![seconds, coder, end],
+                    "UPDATE events SET at = (SELECT at FROM events WHERE run_id = ?2 AND seq = ?4) + ?1 \
+                     WHERE run_id = ?2 AND seq = ?3",
+                    params![seconds, coder, end, begun],
                 )
                 .unwrap();
         };
