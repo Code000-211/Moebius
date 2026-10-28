@@ -38,7 +38,7 @@ use std::time::{Duration, Instant};
 
 use mlua::{Lua, Table, Value, VmState};
 
-use crate::app::{App, AppError, PERSON, columns, runs_since_retry};
+use crate::app::{App, AppError, ChatSettings, PERSON, columns, runs_since_retry};
 use crate::config::AgentConfig;
 use crate::decide::Question;
 use crate::repos::git;
@@ -144,19 +144,26 @@ pub trait Runs: Send + Sync {
     /// Starts a chat with `agent` in a branch of `repository`, of the harness configuration repository when `harness`
     /// is set, or in an empty directory, and returns it without waiting for the answer. The chat shows `message`, what
     /// the person wrote; the agent answers `prompt`, which is the message with what else the agent is told (the
-    /// conversation an ended chat had, where the person is in the app). The chat is stored with `origin` (see
-    /// `Run::origin`). A harness without chats refuses.
+    /// conversation an ended chat had, where the person is in the app). Without either the chat's agent starts and the
+    /// chat waits for the first message. The chat is stored with `origin` (see `Run::origin`) and runs with `settings`
+    /// in place of its agent's. A harness without chats refuses.
     #[allow(clippy::too_many_arguments)]
     fn start_chat(
         &self,
         _app: &Arc<App>,
         _agent: &str,
-        _repository: Option<&Repository>,
-        _harness: bool,
-        _message: &str,
-        _prompt: &str,
+        _place: (Option<&Repository>, bool),
+        _message: Option<&str>,
+        _prompt: Option<&str>,
         _origin: &str,
+        _settings: &ChatSettings,
     ) -> Result<Run, String> {
+        Err("this harness has no chats".into())
+    }
+
+    /// The waiting chat `run_id` was given other settings (see `ChatSettings`), which its latest `settings_changed`
+    /// event holds: its agent answers the next message with them. A harness without chats refuses.
+    fn change_chat(&self, _app: &Arc<App>, _run_id: i64) -> Result<(), String> {
         Err("this harness has no chats".into())
     }
 

@@ -1,20 +1,27 @@
 //! The chat screen: the chats with agents, newest first, and the chat chosen on the right. Its conversation is the
 //! live view's (`Conversation`, drawn by `transcript`) with the agent's text as Markdown; under it stand the change the
 //! chat offered, to merge from there, and the field to write in. The state follows one chat: a load of its events, then
-//! the stream's `run_event`s. The list of chats is read from the server and kept current by the same stream.
+//! the stream's `run_event`s. The list of chats is read from the server and kept current by the same stream. Under the
+//! field to write in stand small pickers: for a new chat its agent, place, model and reasoning level, for a started one
+//! its model and reasoning level, which change it while it waits.
 
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::marker::PhantomData;
 
 use iced::font::Weight;
 use iced::widget::text::Wrapping;
-use iced::widget::{button, column, container, markdown, row, scrollable, space, text, text_input};
+use iced::widget::{
+    button, column, container, markdown, pick_list, row, scrollable, space, text, text_input,
+};
 use iced::{Alignment, Border, Element, Length, Padding, Subscription, Task, border};
 
+use crate::agents::{menu_style, pick_style};
 use crate::app::Message as AppMessage;
 use crate::chat_terminal::{self, ChatTerminal};
 use crate::client::{
-    Agent, Change, Chat, Client, ClientError, InboxItem, Judgement, Run, RunEvent, Skill, Snapshot,
+    Agent, Available, Change, Chat, Client, ClientError, InboxItem, Judgement, NewChat, Run,
+    RunEvent, Skill, Snapshot,
 };
 use crate::conversation::{Conversation, Entry, Said};
 use crate::inbox::{self, Action, Inbox};
@@ -28,6 +35,9 @@ pub const DEFAULT_AGENT: &str = "Moebius";
 
 /// The agent of a grilling, which needs a repository to end in issues of.
 const GRILLING_AGENT: &str = "Grilling-partner";
+
+/// The reasoning levels a chat can be given, as Pi-Bolt takes them.
+const LEVELS: [&str; 7] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -55,19 +65,27 @@ pub enum Message {
     Offer,
     /// The server offered the change, or said why not.
     Offered(Result<Change, ClientError>),
-    /// Open the form of a new chat, or close it.
-    NewChat(bool),
-    /// The agents the form can offer were read.
+    /// Open an empty chat, a draft that is nothing on the server until its first message or its terminal starts it.
+    NewChat,
+    /// The agents a chat can be with were read.
     Agents(Result<Vec<Agent>, ClientError>),
+    /// The models the upstreams serve were read, for the model picker.
+    Models(Result<Available, ClientError>),
     AgentChosen(String),
     RepositoryChosen(Option<i64>),
     /// The harness configuration repository was chosen as the place to work in.
     HarnessChosen,
+    /// A model was chosen for the draft, or for the open chat while it waits.
+    ModelChosen(String),
+    /// A reasoning level was chosen for the draft, or for the open chat while it waits.
+    ThinkingChosen(String),
+    /// The server changed the open chat's model or reasoning level, or said why not.
+    SettingsChanged(Result<Run, ClientError>),
     /// The skills were read: a server with a harness configuration repository always lists the built-in one.
     Skills(Result<Vec<Skill>, ClientError>),
-    /// The form's agent and place were chosen: the empty chat opens, a draft that is nothing on the server yet.
-    Start,
-    /// The server started the chat from the draft's first message, or said why not.
+    /// Start the draft without a message and show its terminal once it waits.
+    StartInTerminal,
+    /// The server started the chat from the draft, or said why not.
     Started(Result<Run, ClientError>),
     /// The clock, for how long ago a chat started.
     Tick(i64),
@@ -243,33 +261,54 @@ impl Open {
     }
 }
 
-/// The form of a new chat: its agent and its place.
-struct Form {
-    agent: String,
-    repository: Option<i64>,
-    /// Whether the chat works in the harness configuration repository.
-    harness: bool,
-    notice: Option<String>,
-}
-
-impl Form {
-    /// Whether the chat can be opened: a grilling needs a repository.
-    fn ready(&self) -> bool {
-        self.agent != GRILLING_AGENT || self.repository.is_some()
-    }
-}
-
-/// A chat that is not started: the agent and place were chosen and the first message is being written. It is nothing on
-/// the server and not in the list; the first Send starts the chat, and leaving drops the draft.
+/// A chat that is not started: who it is with, where, on which model and reasoning level, and the first message being
+/// written. It is nothing on the server and not in the list; the first Send, or Terminal, starts the chat, and leaving
+/// drops the draft.
 struct Draft {
     agent: String,
     repository: Option<i64>,
     harness: bool,
+    /// The model chosen in place of the agent's; none keeps the agent's.
+    model: Option<String>,
+    /// The reasoning level chosen in place of the agent's; none keeps the agent's.
+    thinking: Option<String>,
     message: String,
     /// Whether the server is starting the chat, so a second Send waits.
     sending: bool,
     /// The last thing that went wrong, as a short line.
     notice: Option<String>,
+}
+
+impl Draft {
+    fn new() -> Self {
+        Draft {
+            agent: DEFAULT_AGENT.to_string(),
+            repository: None,
+            harness: false,
+            model: None,
+            thinking: None,
+            message: String::new(),
+            sending: false,
+            notice: None,
+        }
+    }
+
+    /// Whether the chat can start: a grilling needs a repository.
+    fn ready(&self) -> bool {
+        self.agent != GRILLING_AGENT || self.repository.is_some()
+    }
+
+    /// The chat to start, with `message` or without one.
+    fn new_chat(&self, message: Option<String>) -> NewChat {
+        NewChat {
+            agent: Some(self.agent.clone()),
+            message,
+            repository: self.repository,
+            harness: self.harness,
+            model: self.model.clone(),
+            thinking: self.thinking.clone(),
+        }
+    }
 }
 
 /// The id of the field to write in, which the chat's draft focuses.
@@ -280,13 +319,18 @@ pub struct Chats {
     list: Vec<Chat>,
     /// The agents a new chat can be with, as the server last listed them.
     agents: Vec<Agent>,
+    /// The ids of the models the upstreams serve, as the server last listed them.
+    models: Vec<String>,
     /// Whether the server has a harness configuration repository, where a chat can work.
     has_harness: bool,
     open: Option<Open>,
-    form: Option<Form>,
     draft: Option<Draft>,
     /// The terminal of the open chat, while it is shown.
     terminal: ChatTerminal,
+    /// The chat started from a draft's Terminal button, whose terminal is shown once it waits.
+    terminal_next: Option<i64>,
+    /// Whether the draft being started is to show its terminal once it waits.
+    starting_terminal: bool,
     /// The time of the last tick, Unix seconds.
     now: i64,
 }
@@ -330,11 +374,13 @@ impl Chats {
         Chats {
             list: Vec::new(),
             agents: Vec::new(),
+            models: Vec::new(),
             has_harness: false,
             open: None,
-            form: None,
             draft: None,
             terminal: ChatTerminal::default(),
+            terminal_next: None,
+            starting_terminal: false,
             now,
         }
     }
@@ -411,25 +457,20 @@ impl Chats {
         }
     }
 
-    fn open_draft(
-        &mut self,
-        agent: String,
-        repository: Option<i64>,
-        harness: bool,
-        message: String,
-    ) -> Task<AppMessage> {
+    /// Opens an empty chat and reads what its pickers offer.
+    fn open_draft(&mut self, settings: &Settings) -> Task<AppMessage> {
         self.terminal.close();
         self.open = None;
-        self.form = None;
-        self.draft = Some(Draft {
-            agent,
-            repository,
-            harness,
-            message,
-            sending: false,
-            notice: None,
-        });
-        iced::widget::operation::focus(MESSAGE_FIELD)
+        self.draft = Some(Draft::new());
+        self.starting_terminal = false;
+        let skills = Client::new(settings.clone());
+        Task::batch([
+            iced::widget::operation::focus(MESSAGE_FIELD),
+            load_choices(settings),
+            Task::perform(async move { skills.skills().await }, |skills| {
+                AppMessage::Chat(Message::Skills(skills))
+            }),
+        ])
     }
 
     /// The person leaves the chat page: the terminal closes its connection (the conversation is read again by
@@ -443,9 +484,13 @@ impl Chats {
     pub fn open(&mut self, id: i64, settings: &Settings) -> Task<AppMessage> {
         self.terminal.close();
         self.open = Some(Open::new(id));
-        self.form = None;
         self.draft = None;
-        load::<OnPage>(settings.clone(), id, 0)
+        let events = load::<OnPage>(settings.clone(), id, 0);
+        // The pickers under the field show the chat's model and reasoning, or its agent's.
+        if self.agents.is_empty() {
+            return Task::batch([events, load_choices(settings)]);
+        }
+        events
     }
 
     /// A `run_event` of the stream: the chat's status follows the agent, and the open chat takes the event. Whether
@@ -516,6 +561,19 @@ impl Chats {
         self.list.iter().find(|chat| chat.id == id)
     }
 
+    /// Shows the terminal of the chat started from a draft's Terminal button, once the chat waits and is open.
+    fn show_started_terminal(&mut self) {
+        let Some(id) = self.terminal_next else {
+            return;
+        };
+        if self.opened() != Some(id) {
+            self.terminal_next = None;
+        } else if self.chat(id).is_some_and(|chat| chat.status == "waiting") {
+            self.terminal_next = None;
+            self.terminal.open();
+        }
+    }
+
     pub fn update(&mut self, message: Message, settings: Option<&Settings>) -> Task<AppMessage> {
         let Some(settings) = settings else {
             return Task::none();
@@ -523,6 +581,7 @@ impl Chats {
         match message {
             Message::Listed(Ok(chats)) => {
                 self.list = chats;
+                self.show_started_terminal();
             }
             Message::Listed(Err(_)) => {}
             Message::Loaded(id, Ok(events)) => {
@@ -566,21 +625,15 @@ impl Chats {
             }
             Message::Send => {
                 if let Some(draft) = &mut self.draft {
-                    if draft.message.trim().is_empty() || draft.sending {
+                    if draft.message.trim().is_empty() || draft.sending || !draft.ready() {
                         return Task::none();
                     }
                     draft.sending = true;
                     draft.notice = None;
-                    let (agent, message, repository, harness) = (
-                        draft.agent.clone(),
-                        draft.message.clone(),
-                        draft.repository,
-                        draft.harness,
-                    );
+                    self.starting_terminal = false;
+                    let chat = draft.new_chat(Some(draft.message.clone()));
                     return request(settings, Message::Started, move |client| async move {
-                        client
-                            .start_chat(&agent, &message, repository, harness)
-                            .await
+                        client.start_chat(&chat).await
                     });
                 }
                 if let Some(open) = &self.open
@@ -662,27 +715,7 @@ impl Chats {
                 }
                 return self.reload(settings);
             }
-            Message::NewChat(shown) => {
-                self.draft = None;
-                self.form = shown.then(|| Form {
-                    agent: DEFAULT_AGENT.to_string(),
-                    repository: None,
-                    harness: false,
-                    notice: None,
-                });
-                if shown {
-                    let (agents, skills) =
-                        (Client::new(settings.clone()), Client::new(settings.clone()));
-                    return Task::batch([
-                        Task::perform(async move { agents.agents().await }, |agents| {
-                            AppMessage::Chat(Message::Agents(agents))
-                        }),
-                        Task::perform(async move { skills.skills().await }, |skills| {
-                            AppMessage::Chat(Message::Skills(skills))
-                        }),
-                    ]);
-                }
-            }
+            Message::NewChat => return self.open_draft(settings),
             Message::Agents(Ok(agents)) => {
                 // An agent whose files are broken is listed without a model and cannot be chosen.
                 self.agents = agents
@@ -690,50 +723,80 @@ impl Chats {
                     .filter(|agent| !agent.model.is_empty())
                     .collect();
                 // The Moebius agent is the first, if the server can run it.
-                if let (Some(form), Some(first)) = (&mut self.form, self.agents.first())
-                    && !self.agents.iter().any(|agent| agent.name == form.agent)
+                if let (Some(draft), Some(first)) = (&mut self.draft, self.agents.first())
+                    && !self.agents.iter().any(|agent| agent.name == draft.agent)
                 {
-                    form.agent = first.name.clone();
+                    draft.agent = first.name.clone();
                 }
             }
             Message::Agents(Err(e)) => {
-                if let Some(form) = &mut self.form {
-                    form.notice = Some(say(&e));
+                if let Some(draft) = &mut self.draft {
+                    draft.notice = Some(say(&e));
                 }
             }
+            Message::Models(Ok(available)) => {
+                let mut models: Vec<String> = available.models.into_iter().map(|m| m.id).collect();
+                models.sort();
+                models.dedup();
+                self.models = models;
+            }
+            Message::Models(Err(_)) => {}
             Message::AgentChosen(agent) => {
-                if let Some(form) = &mut self.form {
-                    form.agent = agent;
+                if let Some(draft) = &mut self.draft {
+                    // The model and reasoning follow the agent unless the person chose others.
+                    draft.agent = agent;
                 }
             }
             Message::Skills(skills) => {
                 self.has_harness = skills.is_ok_and(|skills| !skills.is_empty());
             }
             Message::RepositoryChosen(repository) => {
-                if let Some(form) = &mut self.form {
-                    form.repository = repository;
-                    form.harness = false;
+                if let Some(draft) = &mut self.draft {
+                    draft.repository = repository;
+                    draft.harness = false;
                 }
             }
             Message::HarnessChosen => {
-                if let Some(form) = &mut self.form {
-                    form.repository = None;
-                    form.harness = true;
+                if let Some(draft) = self.draft.as_mut().filter(|_| self.has_harness) {
+                    draft.repository = None;
+                    draft.harness = true;
                 }
             }
-            Message::Start => {
-                if let Some(form) = &self.form
-                    && form.ready()
+            Message::ModelChosen(model) => return self.choose(settings, Some(model), None),
+            Message::ThinkingChosen(level) => return self.choose(settings, None, Some(level)),
+            Message::SettingsChanged(result) => {
+                if let Some(open) = &mut self.open {
+                    open.notice = result.as_ref().err().map(say);
+                }
+                return self.reload_list(settings);
+            }
+            Message::StartInTerminal => {
+                if let Some(draft) = &mut self.draft
+                    && draft.ready()
+                    && !draft.sending
                 {
-                    let (agent, repository, harness) =
-                        (form.agent.clone(), form.repository, form.harness);
-                    return self.open_draft(agent, repository, harness, String::new());
+                    draft.sending = true;
+                    draft.notice = None;
+                    self.starting_terminal = true;
+                    let chat = draft.new_chat(None);
+                    return request(settings, Message::Started, move |client| async move {
+                        client.start_chat(&chat).await
+                    });
                 }
             }
             Message::Started(Ok(run)) => {
-                return Task::batch([self.open(run.id, settings), self.reload(settings)]);
+                let task = Task::batch([self.open(run.id, settings), self.reload(settings)]);
+                if std::mem::take(&mut self.starting_terminal) {
+                    self.terminal_next = Some(run.id);
+                    if run.status == "waiting" {
+                        self.terminal_next = None;
+                        self.terminal.open();
+                    }
+                }
+                return task;
             }
             Message::Started(Err(e)) => {
+                self.starting_terminal = false;
                 if let Some(draft) = &mut self.draft {
                     draft.sending = false;
                     draft.notice = Some(say(&e));
@@ -755,6 +818,47 @@ impl Chats {
         Task::none()
     }
 
+    /// A model or a reasoning level was chosen: the draft's, or, while the open chat waits, the chat's, which the
+    /// server is asked to change. Choosing what the agent has keeps the agent's.
+    fn choose(
+        &mut self,
+        settings: &Settings,
+        model: Option<String>,
+        thinking: Option<String>,
+    ) -> Task<AppMessage> {
+        if let Some(draft) = &mut self.draft {
+            let agent = self.agents.iter().find(|agent| agent.name == draft.agent);
+            if let Some(model) = model {
+                let agents = agent.is_some_and(|agent| agent.model == model);
+                draft.model = (!agents).then_some(model);
+            }
+            if let Some(level) = thinking {
+                let agents = agent.is_some_and(|agent| agent.thinking.as_ref() == Some(&level));
+                draft.thinking = (!agents).then_some(level);
+            }
+            return Task::none();
+        }
+        let Some(open) = &self.open else {
+            return Task::none();
+        };
+        if self
+            .chat(open.thread.id)
+            .is_none_or(|chat| chat.status != "waiting")
+        {
+            return Task::none();
+        }
+        let id = open.thread.id;
+        request(
+            settings,
+            Message::SettingsChanged,
+            move |client| async move {
+                client
+                    .change_chat_settings(id, model.as_deref(), thinking.as_deref())
+                    .await
+            },
+        )
+    }
+
     fn set_confirming(&mut self, confirming: bool) {
         if let Some(open) = &mut self.open {
             open.confirming = confirming;
@@ -773,16 +877,15 @@ impl Chats {
             "Chat",
             None,
             page::context(line),
-            page::white_button("New chat", Some(AppMessage::Chat(Message::NewChat(true)))),
+            page::white_button("New chat", Some(AppMessage::Chat(Message::NewChat))),
         );
-        let detail: Element<_> = match (&self.form, &self.draft, &self.open) {
-            (Some(form), _, _) => new_chat_view(form, &self.agents, self.has_harness, snapshot),
-            (None, Some(draft), _) => draft_view(draft, snapshot),
-            (None, None, Some(open)) => match self.chat(open.thread.id) {
+        let detail: Element<_> = match (&self.draft, &self.open) {
+            (Some(draft), _) => self.draft_view(draft, snapshot),
+            (None, Some(open)) => match self.chat(open.thread.id) {
                 Some(chat) => self.chat_view(chat, open, snapshot, inbox),
                 None => empty_view("Reading the chat…"),
             },
-            (None, None, None) => empty_view("Choose a chat, or start a new one."),
+            (None, None) => empty_view("Choose a chat, or start a new one."),
         };
         column![
             header,
@@ -800,7 +903,7 @@ impl Chats {
         let chosen = self
             .open
             .as_ref()
-            .filter(|_| self.draft.is_none() && self.form.is_none())
+            .filter(|_| self.draft.is_none())
             .map(|open| open.thread.id);
         let list: Element<_> = if self.listed().next().is_none() {
             page::body("No chat yet.")
@@ -887,7 +990,7 @@ impl Chats {
         container(
             content
                 .push(page::rule())
-                .push(compose_view(chat, open, !merge_is_primary)),
+                .push(self.compose_view(chat, open, !merge_is_primary)),
         )
         .width(Length::Fill)
         .height(Length::Fill)
@@ -1077,91 +1180,6 @@ fn empty_view(line: &str) -> Element<'_, AppMessage> {
         .into()
 }
 
-/// The form of a new chat: the agent and the place it works in.
-fn new_chat_view<'a>(
-    form: &'a Form,
-    agents: &'a [Agent],
-    has_harness: bool,
-    snapshot: &'a Snapshot,
-) -> Element<'a, AppMessage> {
-    let label = |label: &'static str| {
-        text(label)
-            .size(theme::LABEL)
-            .font(theme::manrope(Weight::Semibold))
-            .color(theme::SIDEBAR_GROUP)
-    };
-    let agents = agents.iter().fold(row![].spacing(8), |chips, agent| {
-        chips.push(page::chip(
-            format!("{} · {}", agent.name, agent.model),
-            form.agent == agent.name,
-            false,
-            AppMessage::Chat(Message::AgentChosen(agent.name.clone())),
-        ))
-    });
-    let mut repositories = row![page::chip(
-        "No repository".to_string(),
-        form.repository.is_none() && !form.harness,
-        false,
-        AppMessage::Chat(Message::RepositoryChosen(None)),
-    )]
-    .spacing(8);
-    for board in &snapshot.boards {
-        let id = board.repository.id;
-        repositories = repositories.push(page::chip(
-            board.repository.name.clone(),
-            form.repository == Some(id),
-            false,
-            AppMessage::Chat(Message::RepositoryChosen(Some(id))),
-        ));
-    }
-    if has_harness {
-        repositories = repositories.push(page::chip(
-            "Harness configuration".to_string(),
-            form.harness,
-            false,
-            AppMessage::Chat(Message::HarnessChosen),
-        ));
-    }
-    let start = form.ready().then_some(AppMessage::Chat(Message::Start));
-    let hint = if form.harness {
-        "The agent works on a branch of the harness configuration repository: agents, skills, extensions, MCP servers and rules. \"Offer changes\" offers what it built as a change, if every agent still works with it."
-    } else if form.agent == GRILLING_AGENT {
-        "The Grilling partner questions your idea in a repository. Ending the chat puts the issues it proposes in the Inbox, to confirm."
-    } else {
-        "With a repository the agent works on its own branch. \"Offer changes\" offers what it built as a change."
-    };
-    let mut content = column![
-        text("New chat")
-            .size(theme::BOX_HEADING)
-            .font(theme::manrope(Weight::Bold)),
-        label("Agent"),
-        agents.wrap().vertical_spacing(8),
-        label("Repository"),
-        repositories.wrap().vertical_spacing(8),
-        page::body(hint),
-        row![
-            page::primary_button("Start", start),
-            page::white_button("Cancel", Some(AppMessage::Chat(Message::NewChat(false)))),
-        ]
-        .spacing(8),
-    ]
-    .spacing(10);
-    if let Some(notice) = &form.notice {
-        content = content.push(
-            text(notice.as_str())
-                .size(theme::LABEL)
-                .font(theme::manrope(Weight::Semibold))
-                .color(theme::AMBER_TEXT),
-        );
-    }
-    container(content)
-        .padding(20)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .style(|_| page::box_style())
-        .into()
-}
-
 /// The viewer of the agent's Markdown: a link click is a message of the place it is shown at, and a code block is
 /// drawn as a file is.
 struct Markdown<P>(PhantomData<P>);
@@ -1336,92 +1354,296 @@ fn message_field(value: &str, send: Option<AppMessage>) -> Element<'_, AppMessag
         .into()
 }
 
-/// The empty chat of a draft: who it is with and where, nothing said yet, and the field for the first message.
-fn draft_view<'a>(draft: &'a Draft, snapshot: &'a Snapshot) -> Element<'a, AppMessage> {
-    let place = if draft.harness {
-        Some(HARNESS_PLACE)
-    } else {
-        snapshot
-            .boards
-            .iter()
-            .find(|board| Some(board.repository.id) == draft.repository)
-            .map(|board| board.repository.name.as_str())
-    };
-    let who = match place {
-        Some(name) if draft.harness => format!("{} in the {name}", draft.agent),
-        Some(name) => format!("{} in {name}", draft.agent),
-        None => format!("{}, no repository", draft.agent),
-    };
-    let head = column![
-        text("New chat")
-            .size(theme::BOX_HEADING)
-            .font(theme::manrope(Weight::Bold)),
-        page::context(who),
-    ]
-    .spacing(2);
-    let can_send = !draft.message.trim().is_empty() && !draft.sending;
-    let send = can_send.then_some(AppMessage::Chat(Message::Send));
-    let hint = match &draft.notice {
-        Some(notice) => notice.as_str(),
-        None => "Write the first message to start the chat.",
-    };
-    let compose = column![
-        row![
-            message_field(&draft.message, send.clone()),
-            page::primary_button("Send", send),
-        ]
-        .spacing(10)
-        .align_y(Alignment::Center),
-        text(hint).size(theme::LABEL).color(theme::TEXT_MUTED),
-    ]
-    .spacing(8)
-    .padding([12, 16]);
-    container(column![
-        container(head).padding([14, 18]),
-        page::rule(),
-        container(page::body("Nothing has been said in this chat yet."))
-            .padding(16)
-            .width(Length::Fill)
-            .height(Length::Fill),
-        page::rule(),
-        compose,
+/// Reads the agents and the models a chat's pickers offer.
+fn load_choices(settings: &Settings) -> Task<AppMessage> {
+    let (agents, models) = (Client::new(settings.clone()), Client::new(settings.clone()));
+    Task::batch([
+        Task::perform(async move { agents.agents().await }, |agents| {
+            AppMessage::Chat(Message::Agents(agents))
+        }),
+        Task::perform(
+            async move { models.available_models(false).await },
+            |models| AppMessage::Chat(Message::Models(models)),
+        ),
     ])
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .style(|_| page::box_style())
-    .into()
 }
 
-/// The field to write in and the Send button, the primary one unless `send_is_primary` is false; under them what the
-/// chat does with the message.
-fn compose_view<'a>(chat: &Chat, open: &'a Open, send_is_primary: bool) -> Element<'a, AppMessage> {
-    let can_send = !open.message.trim().is_empty();
-    let send = can_send.then_some(AppMessage::Chat(Message::Send));
-    let field = message_field(&open.message, send.clone());
-    let hint = match (&open.notice, chat.status.as_str()) {
-        (Some(notice), _) => notice.as_str(),
-        (None, "starting" | "running") => {
-            "The agent is working. Your message is queued and sent when it is done with this turn."
+/// Where a new chat works, as its picker offers it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PlaceChoice {
+    Nowhere,
+    Repository(i64, String),
+    Harness,
+}
+
+impl fmt::Display for PlaceChoice {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PlaceChoice::Nowhere => f.write_str("No repository"),
+            PlaceChoice::Repository(_, name) => f.write_str(name),
+            PlaceChoice::Harness => f.write_str("Harness configuration"),
         }
-        (None, "waiting") => "The agent answers at once.",
-        (None, _) => {
-            "This chat has ended. What you send starts a new chat with the same agent, which is told this one."
-        }
+    }
+}
+
+/// A small picker of the row under the field to write in, headed by `label`; without `on_pick` it only shows what is
+/// chosen, muted.
+fn picker<'a, T>(
+    label: &'static str,
+    choices: Vec<T>,
+    chosen: Option<T>,
+    placeholder: &'static str,
+    on_pick: Option<fn(T) -> Message>,
+) -> Element<'a, AppMessage>
+where
+    T: fmt::Display + Clone + PartialEq + 'a,
+{
+    let label = text(label)
+        .size(theme::LABEL)
+        .font(theme::manrope(Weight::Semibold))
+        .color(theme::TEXT_MUTED);
+    let field: Element<'a, AppMessage> = match on_pick {
+        Some(on_pick) => pick_list(choices, chosen, move |choice| {
+            AppMessage::Chat(on_pick(choice))
+        })
+        .placeholder(placeholder)
+        .text_size(theme::LABEL)
+        .padding([3, 8])
+        .style(pick_style)
+        .menu_style(menu_style)
+        .into(),
+        None => container(
+            text(chosen.map_or(placeholder.to_string(), |chosen| chosen.to_string()))
+                .size(theme::LABEL)
+                .color(theme::TEXT_MUTED),
+        )
+        .padding([3, 8])
+        .style(|_| container::Style {
+            border: Border {
+                color: theme::TRACK,
+                width: 1.0,
+                radius: theme::RADIUS_CONTROL.into(),
+            },
+            ..container::Style::default()
+        })
+        .into(),
     };
-    column![
-        row![
-            field,
-            if send_is_primary {
-                page::primary_button("Send", send)
-            } else {
-                page::white_button("Send", send)
-            }
+    row![label, field]
+        .spacing(6)
+        .align_y(Alignment::Center)
+        .into()
+}
+
+impl Chats {
+    /// The model picker: the models the upstreams serve, and `current` as it is when they do not list it.
+    fn model_picker<'a>(&self, current: Option<&str>, enabled: bool) -> Element<'a, AppMessage> {
+        let mut models = self.models.clone();
+        if let Some(current) = current
+            && !models.iter().any(|model| model == current)
+        {
+            models.push(current.to_string());
+        }
+        let on_pick = enabled.then_some(Message::ModelChosen as fn(String) -> Message);
+        picker("Model", models, current.map(String::from), "Model", on_pick)
+    }
+
+    /// The reasoning picker: the levels Pi-Bolt takes, `current` chosen.
+    fn reasoning_picker<'a>(
+        &self,
+        current: Option<&str>,
+        enabled: bool,
+    ) -> Element<'a, AppMessage> {
+        let levels: Vec<String> = LEVELS.iter().map(|level| level.to_string()).collect();
+        let on_pick = enabled.then_some(Message::ThinkingChosen as fn(String) -> Message);
+        picker(
+            "Reasoning",
+            levels,
+            current.map(String::from),
+            "Not set",
+            on_pick,
+        )
+    }
+
+    /// The agent `name` as the server lists it.
+    fn agent(&self, name: &str) -> Option<&Agent> {
+        self.agents.iter().find(|agent| agent.name == name)
+    }
+
+    /// The empty chat of a draft: a hint where the conversation will be, the field for the first message with Send
+    /// and Terminal, and under them the pickers of the chat's agent, place, model and reasoning.
+    fn draft_view<'a>(
+        &'a self,
+        draft: &'a Draft,
+        snapshot: &'a Snapshot,
+    ) -> Element<'a, AppMessage> {
+        let place = if draft.harness {
+            Some(HARNESS_PLACE)
+        } else {
+            snapshot
+                .boards
+                .iter()
+                .find(|board| Some(board.repository.id) == draft.repository)
+                .map(|board| board.repository.name.as_str())
+        };
+        let who = match place {
+            Some(name) if draft.harness => format!("{} in the {name}", draft.agent),
+            Some(name) => format!("{} in {name}", draft.agent),
+            None => format!("{}, no repository", draft.agent),
+        };
+        let head = column![
+            text("New chat")
+                .size(theme::BOX_HEADING)
+                .font(theme::manrope(Weight::Bold)),
+            page::context(who),
         ]
-        .spacing(10)
-        .align_y(Alignment::Center),
-        text(hint).size(theme::LABEL).color(theme::TEXT_MUTED),
-    ]
-    .spacing(8)
-    .padding([12, 16])
-    .into()
+        .spacing(2);
+        let ready = draft.ready() && !draft.sending;
+        let can_send = ready && !draft.message.trim().is_empty();
+        let send = can_send.then_some(AppMessage::Chat(Message::Send));
+        let terminal = ready.then_some(AppMessage::Chat(Message::StartInTerminal));
+        let hint = if draft.harness {
+            "The agent works on a branch of the harness configuration repository: agents, skills, extensions, MCP servers and rules. \"Offer changes\" offers what it built as a change, if every agent still works with it."
+        } else if draft.agent == GRILLING_AGENT {
+            "The Grilling partner questions your idea in a repository. Ending the chat puts the issues it proposes in the Inbox, to confirm."
+        } else {
+            "With a repository the agent works on its own branch. \"Offer changes\" offers what it built as a change."
+        };
+        let note = match &draft.notice {
+            Some(notice) => notice.as_str(),
+            None if !draft.ready() => "A grilling needs a repository: choose one below.",
+            None => "Write the first message to start the chat, or open it in the terminal.",
+        };
+        let agent = self.agent(&draft.agent);
+        let names: Vec<String> = self.agents.iter().map(|agent| agent.name.clone()).collect();
+        let mut places = vec![PlaceChoice::Nowhere];
+        places.extend(snapshot.boards.iter().map(|board| {
+            PlaceChoice::Repository(board.repository.id, board.repository.name.clone())
+        }));
+        if self.has_harness {
+            places.push(PlaceChoice::Harness);
+        }
+        let chosen_place = if draft.harness {
+            PlaceChoice::Harness
+        } else {
+            places
+                .iter()
+                .find(|place| matches!(place, PlaceChoice::Repository(id, _) if Some(*id) == draft.repository))
+                .cloned()
+                .unwrap_or(PlaceChoice::Nowhere)
+        };
+        let to_place: fn(PlaceChoice) -> Message = |place| match place {
+            PlaceChoice::Nowhere => Message::RepositoryChosen(None),
+            PlaceChoice::Repository(id, _) => Message::RepositoryChosen(Some(id)),
+            PlaceChoice::Harness => Message::HarnessChosen,
+        };
+        let model = draft
+            .model
+            .as_deref()
+            .or(agent.map(|agent| agent.model.as_str()));
+        let thinking = draft
+            .thinking
+            .as_deref()
+            .or(agent.and_then(|agent| agent.thinking.as_deref()));
+        let pickers = row![
+            picker(
+                "Agent",
+                names,
+                Some(draft.agent.clone()),
+                "Agent",
+                Some(Message::AgentChosen as fn(String) -> Message),
+            ),
+            picker("Place", places, Some(chosen_place), "Place", Some(to_place)),
+            self.model_picker(model, true),
+            self.reasoning_picker(thinking, true),
+        ]
+        .spacing(14)
+        .align_y(Alignment::Center);
+        let compose = column![
+            row![
+                message_field(&draft.message, send.clone()),
+                page::primary_button("Send", send),
+                page::white_button("Terminal", terminal),
+            ]
+            .spacing(10)
+            .align_y(Alignment::Center),
+            pickers.wrap().vertical_spacing(8),
+            text(note).size(theme::LABEL).color(theme::TEXT_MUTED),
+        ]
+        .spacing(8)
+        .padding([12, 16]);
+        container(column![
+            container(head).padding([14, 18]),
+            page::rule(),
+            container(page::body(hint))
+                .padding(16)
+                .width(Length::Fill)
+                .height(Length::Fill),
+            page::rule(),
+            compose,
+        ])
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(|_| page::box_style())
+        .into()
+    }
+
+    /// The field to write in and the Send button, the primary one unless `send_is_primary` is false; under them the
+    /// chat's model and reasoning, which change while it waits, and what the chat does with the message.
+    fn compose_view<'a>(
+        &'a self,
+        chat: &'a Chat,
+        open: &'a Open,
+        send_is_primary: bool,
+    ) -> Element<'a, AppMessage> {
+        let can_send = !open.message.trim().is_empty();
+        let send = can_send.then_some(AppMessage::Chat(Message::Send));
+        let field = message_field(&open.message, send.clone());
+        let hint = match (&open.notice, chat.status.as_str()) {
+            (Some(notice), _) => notice.as_str(),
+            (None, "starting" | "running") => {
+                "The agent is working. Your message is queued and sent when it is done with this turn."
+            }
+            (None, "waiting") => "The agent answers at once.",
+            (None, _) => {
+                "This chat has ended. What you send starts a new chat with the same agent, which is told this one."
+            }
+        };
+        let mut compose = column![
+            row![
+                field,
+                if send_is_primary {
+                    page::primary_button("Send", send)
+                } else {
+                    page::white_button("Send", send)
+                }
+            ]
+            .spacing(10)
+            .align_y(Alignment::Center),
+        ]
+        .spacing(8)
+        .padding([12, 16]);
+        if chat.is_open() {
+            let agent = self.agent(&chat.agent);
+            let model = chat
+                .model
+                .as_deref()
+                .or(agent.map(|agent| agent.model.as_str()));
+            let thinking = chat
+                .thinking
+                .as_deref()
+                .or(agent.and_then(|agent| agent.thinking.as_deref()));
+            let waiting = chat.status == "waiting";
+            compose = compose.push(
+                row![
+                    self.model_picker(model, waiting),
+                    self.reasoning_picker(thinking, waiting),
+                ]
+                .spacing(14)
+                .align_y(Alignment::Center),
+            );
+        }
+        compose
+            .push(text(hint).size(theme::LABEL).color(theme::TEXT_MUTED))
+            .into()
+    }
 }

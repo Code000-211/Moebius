@@ -16,6 +16,7 @@
 # with `--continue` it also appends what Pi's session file would hold for the line to the newest session file in
 # `--session-dir` (one it makes if there is none): the person's message, an answer that thinks, says "Reading." and
 # reads LINE.txt, the tool's result, and a final answer "You said: LINE".
+# Every command it is sent is appended to stdin.jsonl, and `set_thinking_level` and `set_model` are answered with success.
 # A `steer` is answered with a response that echoes the message. The prompt is kept in prompt.txt next to argv.json. The final answer is reported in agent_end, as Pi does.
 import json
 import os
@@ -75,6 +76,8 @@ hanging = False
 for line in sys.stdin.buffer:
     command = json.loads(line.split(b"\n")[0])
     kind = command.get("type")
+    with open(os.path.join(os.environ["PI_CODING_AGENT_DIR"], "stdin.jsonl"), "a") as f:
+        f.write(json.dumps(command) + "\n")
     if kind == "prompt" and hanging and command.get("streamingBehavior"):
         with open(os.path.join(os.environ["PI_CODING_AGENT_DIR"], "queued.txt"), "w") as f:
             f.write(command["message"])
@@ -156,6 +159,8 @@ for line in sys.stdin.buffer:
             {"role": "assistant", "content": [{"type": "thinking", "thinking": "hm"},
                                               {"type": "text", "text": answer}]}]})
         emit({"type": "agent_settled", "aborted": False})
+    elif kind in ("set_thinking_level", "set_model"):
+        emit({"id": command.get("id"), "type": "response", "command": kind, "success": True})
     elif kind == "steer":
         emit({"id": command.get("id"), "type": "response", "command": "steer", "success": True,
               "echo": command["message"]})

@@ -71,12 +71,13 @@ other run).
 
 `Chat`: `id` (the id of its run), `agent`, `status` (that of the run), `repository_id` (or null), `harness_repository`
 (true for a chat in the harness configuration repository), `started_at`, `ended_at`, `title` (the first line of the
-first message, at most 80 characters), `answered` (the `seq` of the chat's last `agent_settled` or `moebius_error`
+first message, at most 80 characters; empty while a chat started without a message has none), `answered` (the `seq` of the chat's last `agent_settled` or `moebius_error`
 event, 0 without one), `seen` (how far a person has read it, see `POST /v1/chats/{id}/seen`) and `changed_files` (how
 many files the chat's worktree changes against the default branch of its repository, committed or not, new files
 included: what `POST /v1/chats/{id}/offer` would offer; 0 for an ended chat and one without a repository) and `origin`
-(`chat`, or `assistant` for a chat of the desktop app's floating window, see `POST /v1/chats`). A chat is unread while
-`answered` is greater than `seen`.
+(`chat`, or `assistant` for a chat of the desktop app's floating window, see `POST /v1/chats`), `model` and `thinking`
+(the model and reasoning level the chat was given in place of its agent's, see `POST /v1/chats` and
+`POST /v1/chats/{id}/settings`; null while it uses its agent's). A chat is unread while `answered` is greater than `seen`.
 
 `Change`: `id`, `repository_id` (null for a change of the harness configuration repository), `harness_repository` (true
 for such a change), `card_id` (or null), `branch`, `state` (`open`, `merged` or `closed`), `pull_request`
@@ -936,20 +937,32 @@ has its Pi ended to free what it holds; the chat stays `waiting` with its worktr
 again with `--continue` on the chat's own session, so the agent answers it with the whole conversation. Ending, stopping
 or opening the terminal of such a chat works as for any waiting chat.
 
+Without `message` the chat's Pi starts with no prompt and the chat is `waiting` at once, so its terminal
+(`GET /v1/chats/{id}/tui`) can be opened straight away; its first message, written later, gives it its title.
+
+A chat runs on `model` and with the reasoning level `thinking` in place of its agent's when they are given: its Pi is
+started with `--model` and `--thinking` of them every time (the first time, after a terminal, after waiting long), and
+the router serves the model as for any run. The protocol to the model stays the agent's, unless the router's upstreams
+list the model (see `GET /v1/models/available`) only under the other protocol: then the chat speaks that one. The
+choice is stored as the chat's first `settings_changed` run event and listed with the chat. Pi's `models.json` marks
+the model as one that reasons when the level is not `off`, as Pi otherwise turns any level off.
+
 Request:
 
 | Field | Type | Meaning |
 |---|---|---|
 | `agent` | string | An agent of the configuration, `Moebius` or `Grilling-partner`. Without it the chat is with the Moebius agent (see [configuration](configuration.md)). With `Grilling-partner` the chat is a grilling (see `POST /v1/grillings/{id}/confirm`) and `repository` is required. |
-| `message` | string | Required, not blank. Sent to the agent as it is, with no issue prompt around it. |
+| `message` | string | The first message, not blank, sent to the agent as it is, with no issue prompt around it. Optional: without it the chat waits for its first message (required with `continues`). |
+| `model` | string | A model to run the chat on in place of the agent's, not blank. Optional. |
+| `thinking` | string | A reasoning level to run the chat with in place of the agent's: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max` (the levels Pi-Bolt takes). Optional. |
 | `repository` | number | The id of a repository to work in. |
 | `harness` | boolean | Work in the harness configuration repository instead (default false): in a worktree on the branch `moebius/chat-<run id>` of its default branch, so that the agents, skills, extensions, MCP servers and rules can be built as files and merged (see [changing it in a chat](harness-configuration.md#changing-it-in-a-chat)). The run has `harness_repository` true. Not together with `repository`. |
-| `continues` | number | The id of an ended chat this one goes on from. Its agent and place (repository or harness configuration repository) are used unless `agent` or `repository` name others, and the agent is given what was said in it (the person's messages and the agent's answers, at most the last 20 000 characters) before `message`. The new chat's `said` event holds only `message`. |
+| `continues` | number | The id of an ended chat this one goes on from. Its agent, place (repository or harness configuration repository), model and reasoning level are used unless `agent`, `repository`, `model` or `thinking` name others, and the agent is given what was said in it (the person's messages and the agent's answers, at most the last 20 000 characters) before `message`. The new chat's `said` event holds only `message`. |
 | `context` | string | Where the person is in the app (the page, the repository, the open card or chat, the text being edited), as the desktop app describes it. The agent is told it before `message`, under the line `[Where the person is in the Moebius app. Use it to understand what they mean; do not repeat it.]`, with secrets removed and cut to 4 000 characters; the `said` event holds only `message`. Optional; blank is the same as none. |
 | `origin` | string | Where the chat is started: `chat` (the default), on the Chat page or by any client, or `assistant`, a conversation in the desktop app's floating window, which the person reads there. `GET /v1/chats` leaves out the chats of origin `assistant` unless asked for them, so the Chat page and its unread count do not show them; the run, its events and every other chat route work as for any chat. |
 
 Response: the `Run` (`purpose` `chat`, `card_id` null). Errors: `404` no such repository or no run `continues`; `422`
-the message is blank, the agent does not exist, it is a built-in agent and neither its own `[agents.<name>]` nor
+the message is blank or missing with `continues`, `model` is blank, `thinking` is not one of the levels, the agent does not exist, it is a built-in agent and neither its own `[agents.<name>]` nor
 `[agents.Coder]` is configured (the message says so), it is the Grilling partner and there is no `repository`, or
 `continues` is not a chat or has not ended (write to it with `POST /v1/chats/{id}/messages`), `origin` is neither `chat`
 nor `assistant`, `harness` is set together with `repository`, or `harness` is set and the server has no `[harness]`; `500` the worktree cannot be made.
@@ -975,6 +988,28 @@ the `said` event holds only the message.
 Response: the `Run`. Errors: `404` no such run; `422` the run is not a chat, the chat has ended, or the message is blank.
 
 The chat is `running` from the request on, before the agent says it has started, until the agent has answered.
+
+### `POST /v1/chats/{id}/settings`
+
+Changes the model or the reasoning level a chat that has not ended runs with, in place of its agent's (see
+`POST /v1/chats`): `{"model": "...", "thinking": "..."}`, each optional and kept as it was when not given. The agent
+answers the next message with them. The chat must be `waiting`, between turns: while its agent works the answer is
+`409`.
+
+The change is stored as a `settings_changed` run event holding what the chat now runs with, `{"model", "protocol",
+"thinking"}` (each null while the agent's is used; `protocol` is `openai` or `anthropic`, chosen as in
+`POST /v1/chats`), and the latest such event counts. Then the chat's Pi is told:
+
+- When only the reasoning level changed and the Pi's model reasons (its level was not `off`, nor is the new one), Pi is
+  sent `{"type": "set_thinking_level", "level"}` on its RPC channel, and its answer is recorded as a `response` event.
+- When the model changed (Pi's `set_model` knows only the models of its `models.json`, which holds the one it was
+  started with), or the level turns reasoning on or off, the chat's Pi is ended and started again with `--continue`
+  on the same session and the new `--model` and `--thinking`; the chat stays `waiting` and keeps its conversation.
+- A chat whose Pi was ended after waiting long, or whose terminal is open, has no Pi to tell: its Pi is started with
+  the new settings when the next message comes or the terminal closes.
+
+Response: the `Run`. Errors: `404` no such run; `409` the chat's agent is working; `422` the run is not a chat, the chat
+has ended, `model` is blank or `thinking` is not one of `off`, `minimal`, `low`, `medium`, `high`, `xhigh` and `max`.
 
 ### `POST /v1/chats/{id}/offer`
 
@@ -1332,6 +1367,6 @@ A `run_event` has two sources, told apart by its inner `kind`:
 `seq` is the number the event is stored under, the same as in `GET /v1/runs/{id}/events`. Events of a run are published in
 the order of their `seq`. Every event of a run is published and stored: Pi's records, `tool_check` events, `steered` events
 (`{"message"}`, a person's steer, with secrets removed), `said` events (`{"message"}`, a person's message to a chat, the first
-one included, with secrets removed; stored before the agent's records of its answer) `shell_opened` events (`{"who"}`, a person opened a shell in the worktree; see `GET /v1/runs/{id}/terminal`), `tui_opened` events (`{"who"}`, a person opened Pi-Bolt's terminal interface in a chat; see `GET /v1/chats/{id}/tui`) and `moebius_error` events (`{"message"}`) that explain why a
+one included, with secrets removed; stored before the agent's records of its answer) `shell_opened` events (`{"who"}`, a person opened a shell in the worktree; see `GET /v1/runs/{id}/terminal`), `tui_opened` events (`{"who"}`, a person opened Pi-Bolt's terminal interface in a chat; see `GET /v1/chats/{id}/tui`), `settings_changed` events (`{"model", "protocol", "thinking"}`, what a chat runs with in place of its agent's; see `POST /v1/chats/{id}/settings`) and `moebius_error` events (`{"message"}`) that explain why a
 run failed. The one exception is a run that was still going when the server stopped: it is failed at the next start with
 a `moebius_error` that is stored but not published.

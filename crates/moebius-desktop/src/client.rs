@@ -163,6 +163,29 @@ pub struct Chat {
     /// Where the chat was started: `chat`, or `assistant` for a conversation in the floating window.
     #[serde(default)]
     pub origin: String,
+    /// The model the chat was given in place of its agent's; none while it runs on its agent's.
+    #[serde(default)]
+    pub model: Option<String>,
+    /// The reasoning level the chat was given in place of its agent's; none while it runs with its agent's.
+    #[serde(default)]
+    pub thinking: Option<String>,
+}
+
+/// A chat to start: with `agent` (the Moebius agent without one), on `message` (without one the chat waits for the
+/// first, so that its terminal can be opened), in `repository` or the harness configuration repository, and on `model`
+/// and with the reasoning level `thinking` in place of the agent's when they are given.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct NewChat {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    pub repository: Option<i64>,
+    pub harness: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<String>,
 }
 
 impl Chat {
@@ -1615,21 +1638,23 @@ impl Client {
         self.get("/v1/chats?all=true").await
     }
 
-    /// Starts a chat with `agent` (the Moebius agent when blank), in `repository` if given, or in the harness
-    /// configuration repository when `harness` is set.
-    pub async fn start_chat(
+    /// Starts a chat (see `NewChat`).
+    pub async fn start_chat(&self, chat: &NewChat) -> Result<Run, ClientError> {
+        self.post("/v1/chats", serde_json::json!(chat)).await
+    }
+
+    /// Changes the model or the reasoning level of a waiting chat; what is not given stays.
+    pub async fn change_chat_settings(
         &self,
-        agent: &str,
-        message: &str,
-        repository: Option<i64>,
-        harness: bool,
+        chat: i64,
+        model: Option<&str>,
+        thinking: Option<&str>,
     ) -> Result<Run, ClientError> {
-        let mut body =
-            serde_json::json!({ "message": message, "repository": repository, "harness": harness });
-        if !agent.trim().is_empty() {
-            body["agent"] = agent.trim().into();
-        }
-        self.post("/v1/chats", body).await
+        self.post(
+            &format!("/v1/chats/{chat}/settings"),
+            serde_json::json!({ "model": model, "thinking": thinking }),
+        )
+        .await
     }
 
     /// Starts a chat with the Moebius agent in `repository`, or in none, that the floating chat shows: the agent is

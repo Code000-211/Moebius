@@ -7,7 +7,7 @@ use iced::widget::{button, column, container, row, text};
 use iced::{Border, Element, Length, Padding, Task, keyboard};
 
 use crate::app::{Message as AppMessage, Page};
-use crate::client::{Agent, Chat, Client, ClientError, Run, Snapshot};
+use crate::client::{Agent, Chat, Client, ClientError, NewChat, Run, Snapshot};
 use crate::settings::Settings;
 use crate::theme;
 
@@ -183,9 +183,12 @@ pub fn ask(settings: &Settings, text: String) -> Task<AppMessage> {
     let message = text.clone();
     Task::perform(
         async move {
-            client
-                .start_chat(crate::chat::DEFAULT_AGENT, &message, None, false)
-                .await
+            let chat = NewChat {
+                agent: Some(crate::chat::DEFAULT_AGENT.into()),
+                message: Some(message),
+                ..NewChat::default()
+            };
+            client.start_chat(&chat).await
         },
         move |run| AppMessage::Search(Message::Started(text.clone(), run)),
     )

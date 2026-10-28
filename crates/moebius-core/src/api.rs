@@ -54,8 +54,10 @@
 //!   `{issues: [{title, body, blocked_by}]}` makes a card of each issue the person kept; `POST
 //!   /v1/grillings/{id}/dismiss` drops the proposal or the report (see [`crate::grilling`]).
 //! - `GET /v1/usage?days=`: the tokens, calls, model time and tool waits of the last days, and the daily tokens by model.
-//! - `POST /v1/chats` `{agent?, message, repository?, continues?}`: starts a chat, with the Moebius agent unless
-//!   `agent` names another, or goes on from the ended chat `continues`. `GET /v1/chats`: the chats, newest first.
+//! - `POST /v1/chats` `{agent?, message?, repository?, continues?, model?, thinking?}`: starts a chat, with the Moebius
+//!   agent unless `agent` names another, or goes on from the ended chat `continues`; without a message it waits for
+//!   the first. `GET /v1/chats`: the chats, newest first. `POST /v1/chats/{id}/settings` `{model?, thinking?}`:
+//!   changes the model or reasoning level of a waiting chat.
 //!   `POST /v1/chats/{id}/messages` `{message}`: writes to a chat. `POST /v1/chats/{id}/offer` `{reason?}`: offers
 //!   what a chat's worktree changes as a change without ending the chat. `POST /v1/chats/{id}/end`: ends a chat.
 //!   `POST /v1/chats/{id}/seen` `{seq}`: a person has read a chat that far.
@@ -238,13 +240,22 @@ pub struct Steer {
     pub message: String,
 }
 
-/// The body that starts a chat: the agent to talk to (the Moebius agent without one), the first message and optionally
-/// the repository, or the harness configuration repository, to work in.
+/// The body that starts a chat: the agent to talk to (the Moebius agent without one), the first message (without one
+/// the chat waits for it) and optionally the repository, or the harness configuration repository, to work in, and the
+/// model and reasoning level to use in place of the agent's.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NewChat {
     #[serde(default)]
     pub agent: Option<String>,
-    pub message: String,
+    #[serde(default)]
+    pub message: Option<String>,
+    /// The model the chat runs on in place of its agent's.
+    #[serde(default)]
+    pub model: Option<String>,
+    /// The reasoning level the chat runs with in place of its agent's: `off`, `minimal`, `low`, `medium`, `high`,
+    /// `xhigh` or `max`.
+    #[serde(default)]
+    pub thinking: Option<String>,
     #[serde(default)]
     pub repository: Option<i64>,
     /// Whether the chat works in the harness configuration repository instead of a repository.
@@ -260,6 +271,15 @@ pub struct NewChat {
     /// `GET /v1/chats` leaves out unless asked.
     #[serde(default)]
     pub origin: Option<String>,
+}
+
+/// The body that changes what a waiting chat runs with: a model or a reasoning level, each kept when not given.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NewChatSettings {
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub thinking: Option<String>,
 }
 
 /// The body of a message to a chat: what the person wrote, which the chat shows, and optionally where they are in the
@@ -539,6 +559,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/chats/{id}/offer", post(offer_chat_changes))
         .route("/v1/chats/{id}/end", post(end_chat))
         .route("/v1/chats/{id}/seen", post(chat_seen))
+        .route("/v1/chats/{id}/settings", post(change_chat_settings))
         .layer(middleware::from_fn_with_state(state.clone(), authenticate))
         .with_state(state)
 }
@@ -1498,22 +1519,56 @@ async fn stop_research(
     blocking(&state.app, move |app| research::stop(app, &*runs, id)).await
 }
 
+/// The protocols the router's upstreams list `model` under; none without a model.
+async fn served(state: &ApiState, model: Option<&str>) -> Vec<crate::router::Protocol> {
+    let Some(model) = model.map(str::trim) else {
+        return Vec::new();
+    };
+    let available = state.router.available_models(false).await;
+    available
+        .models
+        .iter()
+        .filter(|available| available.id == model)
+        .map(|available| available.protocol)
+        .collect()
+}
+
 async fn start_chat(
     State(state): State<ApiState>,
     axum::Json(chat): axum::Json<NewChat>,
 ) -> Result<axum::Json<Run>, ApiError> {
     let runs = state.runs.clone();
+    let served = served(&state, chat.model.as_deref()).await;
     blocking(&state.app, move |app| {
         app.start_chat(
             &*runs,
             chat.agent.as_deref(),
             chat.repository,
             chat.harness,
-            &chat.message,
+            chat.message.as_deref(),
             chat.context.as_deref(),
             chat.continues,
             chat.origin.as_deref(),
+            (chat.model.as_deref(), chat.thinking.as_deref(), &served),
         )
+    })
+    .await
+}
+
+async fn change_chat_settings(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+    axum::Json(settings): axum::Json<NewChatSettings>,
+) -> Result<axum::Json<Run>, ApiError> {
+    let runs = state.runs.clone();
+    let served = served(&state, settings.model.as_deref()).await;
+    blocking(&state.app, move |app| {
+        let chosen = (
+            settings.model.as_deref(),
+            settings.thinking.as_deref(),
+            served.as_slice(),
+        );
+        app.change_chat_settings(&*runs, id, chosen)
     })
     .await
 }
@@ -4418,6 +4473,88 @@ mod tests {
             "no Pi was started after the terminal's"
         );
         assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists());
+    }
+
+    #[tokio::test]
+    async fn a_chat_started_without_a_message_waits_and_opens_in_its_terminal_at_once() {
+        let (_dir, state, addr) = start().await;
+        let app = &state.app;
+        let body =
+            serde_json::json!({ "agent": "Coder", "model": "big-model", "thinking": "high" });
+        let started = post(&state, &addr, "/v1/chats".into(), body).await;
+        assert_eq!(started.status(), 200);
+        let run: Run = started.json().await.unwrap();
+        assert_eq!(run.status, "waiting");
+        let mut tui = open_at(&addr, &state.token, &format!("/v1/chats/{}/tui", run.id))
+            .await
+            .unwrap();
+        read_until(&mut tui, "(tui ready)").await;
+        let argv: Vec<String> = serde_json::from_slice(
+            &std::fs::read(
+                app.data_dir
+                    .join(format!("runs/{}/agent/argv.json", run.id)),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let value_of = |flag: &str| argv[argv.iter().position(|a| a == flag).unwrap() + 1].clone();
+        assert_eq!(
+            (value_of("--model"), value_of("--thinking")),
+            ("big-model".into(), "high".into())
+        );
+
+        // While the terminal is open the chat has no Pi of its own: a change is kept for when it starts again.
+        let change = serde_json::json!({ "thinking": "low" });
+        let changed = post(
+            &state,
+            &addr,
+            format!("/v1/chats/{}/settings", run.id),
+            change,
+        )
+        .await;
+        assert_eq!(changed.status(), 200);
+        let listed: Vec<Chat> = get(&state, &addr, "/v1/chats").await;
+        assert_eq!(listed[0].model.as_deref(), Some("big-model"));
+        assert_eq!(listed[0].thinking.as_deref(), Some("low"));
+        assert_eq!(listed[0].title, "");
+        let pid =
+            std::fs::read_to_string(app.data_dir.join(format!("runs/{}/agent/pid.txt", run.id)))
+                .unwrap();
+        tui.close(None).await.unwrap();
+        let argv = || -> Option<Vec<String>> {
+            let file = app
+                .data_dir
+                .join(format!("runs/{}/agent/argv.json", run.id));
+            serde_json::from_slice(&std::fs::read(file).ok()?).ok()
+        };
+        until("the chat's Pi starts with the new level", || {
+            std::fs::read_to_string(app.data_dir.join(format!("runs/{}/agent/pid.txt", run.id)))
+                .is_ok_and(|now| now != pid)
+                && argv().is_some_and(|argv| argv.windows(2).any(|w| w == ["--thinking", "low"]))
+        })
+        .await;
+
+        // A level Pi does not take is refused, and so is a change while the agent works.
+        let wrong = serde_json::json!({ "thinking": "huge" });
+        let refused = post(
+            &state,
+            &addr,
+            format!("/v1/chats/{}/settings", run.id),
+            wrong,
+        )
+        .await;
+        assert_eq!(refused.status(), 422);
+        assert_eq!(say(&state, &addr, run.id, "[hang]").await.status(), 200);
+        let change = serde_json::json!({ "model": "other" });
+        let refused = post(
+            &state,
+            &addr,
+            format!("/v1/chats/{}/settings", run.id),
+            change,
+        )
+        .await;
+        assert_eq!(refused.status(), 409);
+        assert_eq!(end(&state, &addr, run.id).await.status(), 200);
     }
 
     #[tokio::test]

@@ -383,6 +383,21 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/
   -d '{"reason": "the budgets are in"}' $API/v1/chats/$CHAT/offer
 ```
 
+A chat can run on another model and reasoning level than its agent's: `model` and `thinking` (`off`, `minimal`, `low`,
+`medium`, `high`, `xhigh` or `max`) in `POST /v1/chats`, and `POST /v1/chats/{id}/settings` to change them while the
+chat waits (`409` while the agent works). Pi is started with them every time, so they last after the terminal or a long
+wait; a new reasoning level is sent to the waiting Pi with `set_thinking_level`, and a new model starts the chat's Pi
+again on the same session, as Pi knows only the model it was started with. Without `message` a chat starts and waits,
+so its terminal can be opened at once. In the desktop app these are the pickers under the field to write in, and the
+"Terminal" button next to Send.
+
+```sh
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"agent": "Coder", "model": "qwen3-coder", "thinking": "high"}' $API/v1/chats
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"thinking": "low"}' $API/v1/chats/$CHAT/settings
+```
+
 A chat is not ended in the desktop app: it waits for the next message as long as you like. One that has waited 30
 minutes, with no terminal open, has its Pi ended to free it, and stays `waiting`; the next message starts Pi again on the
 chat's own session, so the agent knows the whole conversation. The command line and the API still end a chat

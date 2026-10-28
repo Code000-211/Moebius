@@ -18,8 +18,8 @@ use moebius_desktop::agents;
 use moebius_desktop::app::{App, Message, Page};
 use moebius_desktop::chat;
 use moebius_desktop::client::{
-    Client, ClientError, NewRepository, RunEvent, Snapshot, StreamEvent, TerminalEvent, events,
-    terminal,
+    Client, ClientError, NewChat, NewRepository, RunEvent, Snapshot, StreamEvent, TerminalEvent,
+    events, terminal,
 };
 use moebius_desktop::conversation::{Conversation, Entry, Said};
 use moebius_desktop::search;
@@ -542,7 +542,10 @@ async fn a_chat_is_started_written_to_and_followed_through_the_stream() {
 
     // The first message starts a chat with the Moebius agent, which the fake Pi answers.
     let run = client
-        .start_chat("", "first question", None, false)
+        .start_chat(&NewChat {
+            message: Some("first question".into()),
+            ..NewChat::default()
+        })
         .await
         .unwrap();
     assert_eq!(
@@ -639,7 +642,10 @@ async fn a_chat_of_the_floating_window_is_kept_out_of_the_chat_list() {
     let (settings, _) = start_with_fake_pi(dir.path()).await;
     let client = Client::new(settings.clone());
     let page = client
-        .start_chat("", "on the page", None, false)
+        .start_chat(&NewChat {
+            message: Some("on the page".into()),
+            ..NewChat::default()
+        })
         .await
         .unwrap();
     let window = client.ask("in the window", None, "").await.unwrap();
@@ -691,12 +697,12 @@ async fn a_chats_changes_are_offered_and_the_chat_goes_on() {
     .await;
     let client = Client::new(settings);
     let run = client
-        .start_chat(
-            "Coder",
-            "Make notes [write notes.txt]",
-            repository["id"].as_i64(),
-            false,
-        )
+        .start_chat(&NewChat {
+            agent: Some("Coder".into()),
+            message: Some("Make notes [write notes.txt]".into()),
+            repository: repository["id"].as_i64(),
+            ..NewChat::default()
+        })
         .await
         .unwrap();
     let chat = tokio::time::timeout(Duration::from_secs(60), async {
@@ -1108,12 +1114,12 @@ async fn a_grilling_ends_in_an_inbox_item_whose_issues_the_client_confirms_into_
         [{\"title\": \"Add the button\", \"body\": \"On the report page.\", \"blocked_by\": []}, \
          {\"title\": \"Write the CSV\", \"body\": \"Its columns.\", \"blocked_by\": [0]}]\n[/put]";
     let run = client
-        .start_chat(
-            "Grilling-partner",
-            message,
-            repository["id"].as_i64(),
-            false,
-        )
+        .start_chat(&NewChat {
+            agent: Some("Grilling-partner".into()),
+            message: Some(message.into()),
+            repository: repository["id"].as_i64(),
+            ..NewChat::default()
+        })
         .await
         .unwrap();
     tokio::time::timeout(Duration::from_secs(60), async {
@@ -1640,7 +1646,12 @@ async fn a_harness_chat_offers_its_change_in_the_snapshot_and_the_client_merges_
 
     let message = "Add a skill.\n[put skills/testing/SKILL.md]\n---\nname: testing\ndescription: Test first.\n---\n[/put]";
     let run = client
-        .start_chat("Coder", message, None, true)
+        .start_chat(&NewChat {
+            agent: Some("Coder".into()),
+            message: Some(message.into()),
+            harness: true,
+            ..NewChat::default()
+        })
         .await
         .unwrap();
     assert!(run.harness_repository);
@@ -2017,7 +2028,7 @@ async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_ask
     );
 }
 
-/// The New chat form opens an empty draft that makes no request; the first Send creates the chat, which is then the
+/// New chat opens an empty draft that starts nothing on the server; the first Send creates the chat, which is then the
 /// open one.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_first_send_of_a_draft_creates_the_chat() {
@@ -2031,11 +2042,12 @@ async fn the_first_send_of_a_draft_creates_the_chat() {
     ))));
     let task = app.update(Message::Select(Page::Chat));
     settle(&mut app, task).await;
-    let task = app.update(Message::Chat(chat::Message::NewChat(true)));
+    let task = app.update(Message::Chat(chat::Message::NewChat));
     settle(&mut app, task).await;
-    let task = app.update(Message::Chat(chat::Message::Start));
-    settle(&mut app, task).await;
-    assert!(shown(&app, "Write the first message to start the chat."));
+    assert!(shown(
+        &app,
+        "Write the first message to start the chat, or open it in the terminal."
+    ));
     assert!(client.chats().await.unwrap().is_empty());
 
     let task = app.update(Message::Chat(chat::Message::Edited("Hello there".into())));
@@ -2045,8 +2057,56 @@ async fn the_first_send_of_a_draft_creates_the_chat() {
     let chats = client.chats().await.unwrap();
     assert_eq!(chats.len(), 1);
     assert_eq!(chats[0].agent, "Moebius");
-    assert!(!shown(&app, "Write the first message to start the chat."));
+    assert!(!shown(
+        &app,
+        "Write the first message to start the chat, or open it in the terminal."
+    ));
     assert!(shown(&app, "Hello there"));
+}
+
+/// A chat started from the pickers under the field runs on the model and reasoning chosen, which the list says; its
+/// Terminal button starts it without a message and shows its terminal at once, and its reasoning changes while it waits.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_chat_started_with_a_model_and_reasoning_lists_them_and_changes_them_while_it_waits() {
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, _) = start_with_fake_pi(dir.path()).await;
+    let client = Client::new(settings.clone());
+    let mut app = App::with_snapshot(Snapshot::default());
+    let _ = app.update(Message::Checked(Ok((
+        settings.clone(),
+        client.snapshot().await.unwrap(),
+    ))));
+    let task = app.update(Message::Select(Page::Chat));
+    settle(&mut app, task).await;
+    let task = app.update(Message::Chat(chat::Message::NewChat));
+    settle(&mut app, task).await;
+    for message in [
+        chat::Message::ModelChosen("big-model".into()),
+        chat::Message::ThinkingChosen("high".into()),
+        chat::Message::StartInTerminal,
+    ] {
+        let task = app.update(Message::Chat(message));
+        settle(&mut app, task).await;
+    }
+    let chats = client.chats().await.unwrap();
+    assert_eq!(chats.len(), 1);
+    assert_eq!(chats[0].status, "waiting");
+    assert_eq!(chats[0].title, "");
+    assert_eq!(
+        (chats[0].model.as_deref(), chats[0].thinking.as_deref()),
+        (Some("big-model"), Some("high"))
+    );
+    // The terminal takes the conversation's place.
+    assert!(!shown(&app, "Write to the agent"));
+
+    let task = app.update(Message::Chat(chat::Message::ShowTerminal(false)));
+    settle(&mut app, task).await;
+    assert!(shown(&app, "Write to the agent"));
+    let task = app.update(Message::Chat(chat::Message::ThinkingChosen("low".into())));
+    settle(&mut app, task).await;
+    let chats = client.chats().await.unwrap();
+    assert_eq!(chats[0].thinking.as_deref(), Some("low"));
+    assert_eq!(chats[0].model.as_deref(), Some("big-model"));
 }
 
 /// Opening the Fleet reads the events of every working run, and a run that is stopped leaves it.

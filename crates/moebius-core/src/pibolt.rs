@@ -19,7 +19,10 @@
 //! open a waiting chat in Pi-Bolt's own interactive mode (`tui`), and it stays one conversation: the chat's idle Pi is
 //! ended, Pi's interactive mode continues the chat's session (`--continue`, the same agent directory, sessions and run
 //! token), and what it adds to the session file is recorded as the chat's events (see `session_events`). When the
-//! interface closes, the chat's Pi starts again with `--continue` and waits for the next message.
+//! interface closes, the chat's Pi starts again with `--continue` and waits for the next message. A chat can run on
+//! another model and reasoning level than its agent's (see `ChatSettings`), with which its Pi is started every time; a
+//! waiting chat given another reasoning level is told it with `set_thinking_level`, and one given another model gets a
+//! new Pi on the same session, since Pi knows only the models of its `models.json`.
 
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -30,7 +33,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
-use crate::app::App;
+use crate::app::{App, ChatSettings};
 use crate::blobs::redact;
 use crate::board::{AgentInfo, Runs};
 use crate::bus::AppEvent;
@@ -215,6 +218,8 @@ struct Live {
     closing: Arc<Mutex<Option<Closing>>>,
     /// Since when a chat has waited for the person's next message; none while its agent works.
     waiting_since: Arc<Mutex<Option<Instant>>>,
+    /// The agent as this Pi was started with it.
+    agent: AgentConfig,
     run: RunningRun,
 }
 
@@ -300,6 +305,13 @@ impl PiBolt {
         Ok(agent)
     }
 
+    /// The agent of the run `run_id`, a chat, as the chat runs it: with the model and reasoning level it was given in
+    /// place of the agent's (see `ChatSettings`).
+    fn chat_config(&self, app: &App, run_id: i64, agent: &str) -> Result<AgentConfig, String> {
+        let settings = app.chat_settings(run_id).map_err(|e| e.to_string())?;
+        Ok(settings.apply(&self.agent(app, agent)?))
+    }
+
     /// Kills every Pi that is going, for a server that is about to restart; the runs they leave are failed by the next
     /// start, so that the board starts them again.
     pub fn kill_all(&self) {
@@ -368,7 +380,8 @@ impl PiBolt {
 
     /// Writes the agent directory `agent_dir`: `models.json` with the router as the `moebius` provider, and `mcp.json` with
     /// the agent's MCP servers, if it has any (without it Pi connects to none). Both hold secrets (the run's token, the
-    /// servers' environment), so only the server's user can read them.
+    /// servers' environment), so only the server's user can read them. The model is marked as one that reasons when the
+    /// agent has a reasoning level other than `off`, without which Pi would turn the level off.
     fn write_agent_dir(
         &self,
         agent_dir: PathBuf,
@@ -390,7 +403,7 @@ impl PiBolt {
                     "baseUrl": base_url,
                     "api": api,
                     "apiKey": token,
-                    "models": [{ "id": agent.model }]
+                    "models": [{ "id": agent.model, "reasoning": reasons(agent) }]
                 }
             }
         });
@@ -438,7 +451,7 @@ impl PiBolt {
             purpose: purpose.into(),
             commit_message: String::new(),
         };
-        self.launch_or_undo(app, None, &config, running, prompt)
+        self.launch_or_undo(app, None, &config, running, Some(prompt))
     }
 
     /// Starts Pi for a run whose worktree and token exist, and the thread that reads it. Pi is given `prompt`; without
@@ -495,6 +508,7 @@ impl PiBolt {
             chat: run.purpose == "chat",
             closing: Arc::new(Mutex::new(None)),
             waiting_since: Arc::new(Mutex::new(prompt.is_none().then(Instant::now))),
+            agent: agent.clone(),
             run: run.clone(),
         };
         lock(&self.live).insert(run.id, live.clone());
@@ -539,9 +553,9 @@ impl PiBolt {
         card: Option<&Card>,
         config: &AgentConfig,
         running: RunningRun,
-        prompt: &str,
+        prompt: Option<&str>,
     ) -> Result<Run, String> {
-        if let Err(e) = self.launch(app, card, config, running.clone(), Some(prompt)) {
+        if let Err(e) = self.launch(app, card, config, running.clone(), prompt) {
             // Nothing reads this run: undo what was set up for it.
             self.router.revoke_token(&running.token);
             running.remove_worktree(app);
@@ -611,7 +625,7 @@ impl PiBolt {
     /// Starts the Pi of a chat that has none again, on the chat's session, waiting for the next message.
     fn relaunch(&self, app: &Arc<App>, run: &RunningRun) -> Result<(), String> {
         let agent = app.run(run.id).map_err(|e| e.to_string())?.agent;
-        let config = self.agent(app, &agent)?;
+        let config = self.chat_config(app, run.id, &agent)?;
         self.launch(app, None, &config, run.clone(), None)
     }
 
@@ -662,7 +676,7 @@ impl PiBolt {
                 card.number, card.title
             ),
         };
-        self.launch_or_undo(app, Some(card), config, running, prompt)
+        self.launch_or_undo(app, Some(card), config, running, Some(prompt))
     }
 }
 
@@ -708,13 +722,13 @@ impl Runs for PiBolt {
         &self,
         app: &Arc<App>,
         agent: &str,
-        repository: Option<&Repository>,
-        harness: bool,
-        message: &str,
-        prompt: &str,
+        (repository, harness): (Option<&Repository>, bool),
+        message: Option<&str>,
+        prompt: Option<&str>,
         origin: &str,
+        settings: &ChatSettings,
     ) -> Result<Run, String> {
-        let config = self.agent(app, agent)?;
+        let config = settings.apply(&self.agent(app, agent)?);
         let run = app
             .store
             .add_run(None, agent, "pi-bolt", "chat")
@@ -770,9 +784,53 @@ impl Runs for PiBolt {
                 run.id
             ),
         };
-        let said = json!({ "message": redact(message) });
-        let _ = app.record_run_event(run.id, "said", &said);
+        if let Some(message) = message {
+            let said = json!({ "message": redact(message) });
+            let _ = app.record_run_event(run.id, "said", &said);
+        }
+        if settings != &ChatSettings::default() {
+            let _ = app.record_run_event(run.id, "settings_changed", &json!(settings));
+        }
         self.launch_or_undo(app, None, &config, running, prompt)
+    }
+
+    /// Tells the chat's Pi the reasoning level it was given with `set_thinking_level`; a chat given another model, or a
+    /// level its Pi's `models.json` cannot reason with, gets a new Pi on the same session, waiting for the next
+    /// message. A chat without a Pi meanwhile (paused, or in its terminal) is started with them the next time.
+    fn change_chat(&self, app: &Arc<App>, run_id: i64) -> Result<(), String> {
+        // Held throughout, so that the chat does not move to or from its terminal interface or pause meanwhile.
+        let paused = lock(&self.paused);
+        if paused.contains_key(&run_id) {
+            return Ok(());
+        }
+        let Some(live) = lock(&self.live).get(&run_id).cloned().filter(|l| l.chat) else {
+            return Err(format!("chat {run_id} has ended"));
+        };
+        let stored = app.run(run_id).map_err(|e| e.to_string())?;
+        let config = self.chat_config(app, run_id, &stored.agent)?;
+        let (was, now) = (&live.agent, &config);
+        if was.model == now.model && was.protocol == now.protocol && reasons(was) == reasons(now) {
+            if reasons(now) && was.thinking != now.thinking {
+                let level = now.thinking.as_deref().unwrap_or("off");
+                let told = json!({ "id": "moebius-settings", "type": "set_thinking_level", "level": level });
+                if !send(&live.stdin, &told) {
+                    return Err(format!("chat {run_id} has ended"));
+                }
+                lock(&self.live)
+                    .entry(run_id)
+                    .and_modify(|live| live.agent = config);
+            }
+            return Ok(());
+        }
+        if !self.end_waiting_pi(&live) {
+            return Err(format!("chat {run_id} has ended"));
+        }
+        if let Err(e) = self.relaunch(app, &live.run) {
+            let why = format!("cannot start the chat's pi-bolt again with its new settings: {e}");
+            finish(app, live.run, &self.router, &self.live, Err(why.clone()));
+            return Err(why);
+        }
+        Ok(())
     }
 
     /// Ends the chat's idle Pi and returns Pi's interactive mode on the chat's own agent directory, run token and
@@ -780,7 +838,7 @@ impl Runs for PiBolt {
     /// until `close_tui`.
     fn tui(&self, app: &Arc<App>, run_id: i64) -> Result<Command, String> {
         let stored = app.run(run_id).map_err(|e| e.to_string())?;
-        let config = self.agent(app, &stored.agent)?;
+        let config = self.chat_config(app, run_id, &stored.agent)?;
         let mut paused = lock(&self.paused);
         let ended = || format!("chat {run_id} has ended");
         let run_dir = app.data_dir.join("runs").join(run_id.to_string());
@@ -1085,6 +1143,14 @@ impl RunningRun {
 
 /// Fails a run that could not be started, with an event saying why; returns the message.
 /// Writes `value` as JSON to a new `file` that only the server's user can read.
+/// Whether `agent` reasons: it has a reasoning level other than `off`.
+fn reasons(agent: &AgentConfig) -> bool {
+    agent
+        .thinking
+        .as_deref()
+        .is_some_and(|level| level != "off")
+}
+
 fn write_private(file: &Path, value: &Value) -> Result<(), String> {
     use std::os::unix::fs::OpenOptionsExt;
     let text = serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?;
@@ -1511,6 +1577,8 @@ fn session_events(entry: &Value) -> Vec<(&'static str, Value)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::AppError;
+    use crate::decide::Actor;
     use crate::mcp::McpServer;
     use crate::store::Store;
     use moebius_plugin_api::Host;
@@ -1821,11 +1889,11 @@ mod tests {
             .start_chat(
                 &app,
                 "Coder",
-                Some(&repository),
-                false,
-                "Hello",
-                "Hello",
+                (Some(&repository), false),
+                Some("Hello"),
+                Some("Hello"),
                 "chat",
+                &ChatSettings::default(),
             )
             .unwrap();
         let waiting = |run: &Run| run.status == "waiting";
@@ -1868,6 +1936,199 @@ mod tests {
         app.end_chat(&pi, run.id).unwrap();
         assert_eq!(wait_until_ended(&app, run.id).status, "succeeded");
         assert!(!pi.say(run.id, "Hello?"));
+    }
+
+    /// Waits until `holds` holds.
+    fn wait_for(what: &str, holds: impl Fn() -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while !holds() {
+            assert!(Instant::now() < deadline, "{what}");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    /// What the fake Pi of the run `run_id` was started with, and the commands it was sent.
+    /// Waits for the fake Pi to have written its arguments.
+    fn argv_and_stdin(app: &App, run_id: i64) -> (Vec<String>, Vec<Value>) {
+        let agent_dir = app.data_dir.join(format!("runs/{run_id}/agent"));
+        let argv = || {
+            let argv = std::fs::read(agent_dir.join("argv.json")).ok()?;
+            serde_json::from_slice::<Vec<String>>(&argv).ok()
+        };
+        wait_for("Pi writes its arguments", || argv().is_some());
+        let stdin = std::fs::read_to_string(agent_dir.join("stdin.jsonl")).unwrap_or_default();
+        let stdin = stdin.lines().filter_map(|l| serde_json::from_str(l).ok());
+        (argv().unwrap(), stdin.collect())
+    }
+
+    /// The value after `flag` in `argv`.
+    fn flag<'a>(argv: &'a [String], flag: &str) -> Option<&'a str> {
+        let at = argv.iter().position(|arg| arg == flag)?;
+        argv.get(at + 1).map(String::as_str)
+    }
+
+    #[test]
+    fn a_chat_runs_on_the_model_and_reasoning_it_was_given_and_keeps_them() {
+        let (_dir, app, pi, _repo) = setup();
+        let chosen = (Some("big-model"), Some("high"), &[][..]);
+        let run = app
+            .start_chat(
+                &pi,
+                Some("Coder"),
+                None,
+                false,
+                None,
+                None,
+                None,
+                None,
+                chosen,
+            )
+            .unwrap();
+        // Without a message the chat's Pi starts and the chat waits for the first one.
+        assert_eq!(run.status, "waiting");
+        let (argv, stdin) = argv_and_stdin(&app, run.id);
+        assert_eq!(flag(&argv, "--model"), Some("big-model"));
+        assert_eq!(flag(&argv, "--thinking"), Some("high"));
+        assert!(stdin.is_empty(), "{stdin:?}");
+        let models: Value = serde_json::from_slice(
+            &std::fs::read(
+                app.data_dir
+                    .join(format!("runs/{}/agent/models.json", run.id)),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            models["providers"]["moebius"]["models"],
+            json!([{ "id": "big-model", "reasoning": true }])
+        );
+        let listed = &app.chats(false).unwrap()[0];
+        assert_eq!(listed.model.as_deref(), Some("big-model"));
+        assert_eq!(listed.thinking.as_deref(), Some("high"));
+        assert_eq!(listed.title, "");
+
+        // Another reasoning level is told to the waiting Pi.
+        let pid =
+            std::fs::read_to_string(app.data_dir.join(format!("runs/{}/agent/pid.txt", run.id)))
+                .unwrap();
+        app.change_chat_settings(&pi, run.id, (None, Some("low"), &[]))
+            .unwrap();
+        wait_for("Pi is told the level", || {
+            !argv_and_stdin(&app, run.id).1.is_empty()
+        });
+        let (_, stdin) = argv_and_stdin(&app, run.id);
+        assert_eq!(
+            stdin,
+            [json!({ "id": "moebius-settings", "type": "set_thinking_level", "level": "low" })]
+        );
+        assert!(Path::new(&format!("/proc/{pid}")).exists());
+
+        // Another model needs a new Pi on the same session, started with it.
+        app.change_chat_settings(&pi, run.id, (Some("other-model"), None, &[]))
+            .unwrap();
+        assert_eq!(app.run(run.id).unwrap().status, "waiting");
+        assert!(!Path::new(&format!("/proc/{pid}")).exists());
+        wait_for("Pi starts again", || {
+            flag(&argv_and_stdin(&app, run.id).0, "--model") == Some("other-model")
+        });
+        let (argv, _) = argv_and_stdin(&app, run.id);
+        assert_eq!(flag(&argv, "--model"), Some("other-model"));
+        assert_eq!(flag(&argv, "--thinking"), Some("low"));
+        assert!(argv.contains(&"--continue".to_string()), "{argv:?}");
+        let kinds: Vec<String> = app
+            .store
+            .events(run.id)
+            .unwrap()
+            .into_iter()
+            .filter(|e| e.kind == "settings_changed")
+            .map(|e| e.data.to_string())
+            .collect();
+        assert_eq!(kinds.len(), 3, "{kinds:?}");
+
+        // A Pi started again after the chat waited long keeps them.
+        pi.pause_idle_chats(&app, Instant::now() + IDLE);
+        assert!(lock(&pi.paused).contains_key(&run.id));
+        app.change_chat_settings(&pi, run.id, (None, Some("medium"), &[]))
+            .unwrap();
+        app.say_in_chat(&pi, run.id, "Hello", None).unwrap();
+        wait_for_run(&app, run.id, "the agent answers", |run| {
+            run.status == "waiting" && app.store.answered_seq(run.id).unwrap() > 0
+        });
+        let (argv, _) = argv_and_stdin(&app, run.id);
+        assert_eq!(flag(&argv, "--model"), Some("other-model"));
+        assert_eq!(flag(&argv, "--thinking"), Some("medium"));
+        assert_eq!(app.chats(false).unwrap()[0].title, "Hello");
+        app.end_chat(&pi, run.id).unwrap();
+        wait_until_ended(&app, run.id);
+    }
+
+    #[test]
+    fn a_working_chat_keeps_its_settings_and_a_level_pi_does_not_take_is_refused() {
+        let (_dir, app, pi, _repo) = setup();
+        let run = app
+            .start_chat(
+                &pi,
+                Some("Coder"),
+                None,
+                false,
+                Some("[hang]"),
+                None,
+                None,
+                None,
+                (None, None, &[]),
+            )
+            .unwrap();
+        assert_eq!(run.status, "running");
+        let refused = app.change_chat_settings(&pi, run.id, (None, Some("high"), &[]));
+        assert!(matches!(refused, Err(AppError::Conflict(_))), "{refused:?}");
+        let refused = app.change_chat_settings(&pi, run.id, (None, Some("huge"), &[]));
+        assert!(matches!(refused, Err(AppError::Invalid(_))), "{refused:?}");
+        assert!(app.chat_settings(run.id).unwrap() == ChatSettings::default());
+        // A chat started without settings runs on its agent's.
+        let (argv, _) = argv_and_stdin(&app, run.id);
+        assert_eq!(flag(&argv, "--model"), Some("qwen-local"));
+        app.stop_run(&Actor::Person, &pi, run.id, "").unwrap();
+        wait_until_ended(&app, run.id);
+    }
+
+    #[test]
+    fn a_chats_model_takes_the_protocol_the_router_serves_it_in() {
+        let (_dir, app, pi, _repo) = setup();
+        // The Coder speaks OpenAI's protocol; a model served only in Anthropic's is spoken to in that.
+        let chosen = (Some("claude-like"), None, &[Protocol::Anthropic][..]);
+        let run = app
+            .start_chat(
+                &pi,
+                Some("Coder"),
+                None,
+                false,
+                None,
+                None,
+                None,
+                None,
+                chosen,
+            )
+            .unwrap();
+        assert_eq!(
+            app.chat_settings(run.id).unwrap().protocol,
+            Some(Protocol::Anthropic)
+        );
+        let models: Value = serde_json::from_slice(
+            &std::fs::read(
+                app.data_dir
+                    .join(format!("runs/{}/agent/models.json", run.id)),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(models["providers"]["moebius"]["api"], "anthropic-messages");
+        // One served in both keeps the agent's.
+        let both = &[Protocol::Anthropic, Protocol::OpenAi][..];
+        app.change_chat_settings(&pi, run.id, (Some("shared"), None, both))
+            .unwrap();
+        assert_eq!(app.chat_settings(run.id).unwrap().protocol, None);
+        app.end_chat(&pi, run.id).unwrap();
+        wait_until_ended(&app, run.id);
     }
 
     #[test]

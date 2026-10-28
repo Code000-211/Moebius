@@ -17,11 +17,13 @@ use serde_json::json;
 use crate::blobs::redact;
 use crate::board::{Runs, Tui};
 use crate::bus::{AppEvent, Bus};
+use crate::config::AgentConfig;
 use crate::decide::{Actor, Decisions, Question};
 use crate::forge::{Forge, ForgeError, NoForge};
 use crate::github::Issue;
 use crate::harness_repo::HarnessRepo;
 use crate::repos::{GitError, Repos, git};
+use crate::router::Protocol;
 use crate::store::{Card, Change, Repository, Run, Store, StoreError, now};
 use crate::terminal::{MAX_PER_RUN, SERVER, Slot, Slots, tui_key};
 
@@ -129,6 +131,74 @@ pub struct Chat {
     /// Where the chat was started: `chat` or `assistant` (see `Run::origin`).
     #[serde(default = "chat_origin")]
     pub origin: String,
+    /// The model the chat was given in place of its agent's; none while it runs on its agent's.
+    #[serde(default)]
+    pub model: Option<String>,
+    /// The reasoning level the chat was given in place of its agent's; none while it runs with its agent's.
+    #[serde(default)]
+    pub thinking: Option<String>,
+}
+
+/// The reasoning levels a chat can be given, as Pi-Bolt takes them (`--thinking`, `set_thinking_level`).
+pub const THINKING_LEVELS: [&str; 7] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+/// What a chat runs with in place of its agent's: a model, with the protocol the router serves it in, and a reasoning
+/// level; each is the agent's while none. A chat keeps them as `settings_changed` events, the latest of which counts,
+/// so that its Pi is started with them again after it was paused.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatSettings {
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub protocol: Option<Protocol>,
+    #[serde(default)]
+    pub thinking: Option<String>,
+}
+
+impl ChatSettings {
+    /// `agent` as a chat with these settings runs it.
+    pub fn apply(&self, agent: &AgentConfig) -> AgentConfig {
+        let mut agent = agent.clone();
+        if let Some(model) = &self.model {
+            agent.model = model.clone();
+            agent.protocol = self.protocol.unwrap_or(agent.protocol);
+        }
+        if let Some(thinking) = &self.thinking {
+            agent.thinking = Some(thinking.clone());
+        }
+        agent
+    }
+}
+
+/// The protocol a chat speaks to `model` when its agent speaks `agent`: the agent's, unless the router's upstreams serve
+/// the model (`served`, the protocols they list it under) only in others, then the first of those.
+fn chat_protocol(agent: Option<Protocol>, served: &[Protocol]) -> Option<Protocol> {
+    match agent {
+        Some(agent) if served.is_empty() || served.contains(&agent) => None,
+        _ => served.first().copied(),
+    }
+}
+
+/// The protocol the agent `name` speaks, if `runs` knows it.
+fn agent_protocol(runs: &dyn Runs, name: &str) -> Option<Protocol> {
+    runs.agents()
+        .into_iter()
+        .find(|agent| agent.name == name)
+        .map(|agent| agent.protocol)
+}
+
+/// Refuses a blank model and a reasoning level Pi-Bolt does not take.
+fn check_settings(model: Option<&str>, thinking: Option<&str>) -> Result<()> {
+    if model.is_some_and(|model| model.trim().is_empty()) {
+        return Err(AppError::Invalid("a chat's model cannot be blank".into()));
+    }
+    if let Some(level) = thinking.filter(|level| !THINKING_LEVELS.contains(level)) {
+        return Err(AppError::Invalid(format!(
+            "a chat's reasoning is one of {}, not {level}",
+            THINKING_LEVELS.join(", ")
+        )));
+    }
+    Ok(())
 }
 
 /// The origin of a chat started on the Chat page or by a client.
@@ -855,8 +925,11 @@ impl App {
     /// A person starts a chat with `agent`, in a branch of the repository `repository_id`, of the harness configuration
     /// repository when `harness` is set, or, without either, in an empty directory. The agent answers `message`, told
     /// first where the person is in the app when `context` is given (see `with_context`); the chat shows only the
-    /// message. The answer arrives as the run's events. The chat is stored with `origin`, `chat` when none is given
-    /// (see `Run::origin`).
+    /// message. The answer arrives as the run's events. Without a message the chat's agent starts and the chat waits
+    /// for the first one, so that its terminal can be opened at once. The chat is stored with `origin`, `chat` when
+    /// none is given (see `Run::origin`), and runs on `model` and with the reasoning level `thinking` in place of its
+    /// agent's when they are given (see `ChatSettings`); `served` are the protocols the router's upstreams list the
+    /// model under.
     #[allow(clippy::too_many_arguments)]
     pub fn start_chat(
         self: &Arc<Self>,
@@ -864,10 +937,11 @@ impl App {
         agent: Option<&str>,
         repository_id: Option<i64>,
         harness: bool,
-        message: &str,
+        message: Option<&str>,
         context: Option<&str>,
         continues: Option<i64>,
         origin: Option<&str>,
+        (model, thinking, served): (Option<&str>, Option<&str>, &[Protocol]),
     ) -> Result<Run> {
         let origin = origin.unwrap_or(CHAT_ORIGIN);
         if ![CHAT_ORIGIN, ASSISTANT_ORIGIN].contains(&origin) {
@@ -880,7 +954,7 @@ impl App {
                 "a chat works in a repository or in the harness configuration, not both".into(),
             ));
         }
-        // A chat that continues an ended one keeps its agent and place unless others are named.
+        // A chat that continues an ended one keeps its agent, place, model and reasoning unless others are named.
         let earlier = continues.map(|id| self.ended_chat(id)).transpose()?;
         let agent = agent
             .or(earlier.as_ref().map(|run| run.agent.as_str()))
@@ -889,9 +963,15 @@ impl App {
             || (repository_id.is_none()
                 && earlier.as_ref().is_some_and(|run| run.harness_repository));
         let repository_id = repository_id.or(earlier.as_ref().and_then(|run| run.repository_id));
-        if message.trim().is_empty() {
-            return Err(AppError::Invalid("a chat needs a message".into()));
+        if message.is_some_and(|message| message.trim().is_empty()) {
+            return Err(AppError::Invalid("a chat's message cannot be blank".into()));
         }
+        if message.is_none() && earlier.is_some() {
+            return Err(AppError::Invalid(
+                "a chat that continues an ended one needs a message".into(),
+            ));
+        }
+        check_settings(model, thinking)?;
         if !runs.has_agent(agent) {
             return Err(AppError::Invalid(format!("no agent named {agent}")));
         }
@@ -903,30 +983,86 @@ impl App {
                 "a grilling needs a repository, whose issues it ends in".into(),
             ));
         }
+        let mut settings = match &earlier {
+            Some(run) => self.chat_settings(run.id)?,
+            None => ChatSettings::default(),
+        };
+        if let Some(model) = model {
+            settings.model = Some(model.trim().to_string());
+            settings.protocol = chat_protocol(agent_protocol(runs, agent), served);
+        }
+        if let Some(thinking) = thinking {
+            settings.thinking = Some(thinking.to_string());
+        }
         let repository = repository_id.map(|id| self.repository(id)).transpose()?;
         let conversation = earlier
             .as_ref()
             .map(|run| self.conversation_of(run.id))
             .transpose()?;
         // The agent is also told what was said before, when the chat continues an ended one.
-        let told = match conversation {
-            Some(earlier) => format!(
-                "This chat continues an earlier one, which ended. What was said in it:\n\n{earlier}\n\n\
-                 The person now writes:\n\n{message}"
-            ),
-            None => message.to_string(),
-        };
-        let prompt = with_context(context, &told);
+        let prompt = message.map(|message| {
+            let told = match &conversation {
+                Some(earlier) => format!(
+                    "This chat continues an earlier one, which ended. What was said in it:\n\n{earlier}\n\n\
+                     The person now writes:\n\n{message}"
+                ),
+                None => message.to_string(),
+            };
+            with_context(context, &told)
+        });
+        let place = (repository.as_ref(), harness);
         runs.start_chat(
             self,
             agent,
-            repository.as_ref(),
-            harness,
+            place,
             message,
-            &prompt,
+            prompt.as_deref(),
             origin,
+            &settings,
         )
         .map_err(AppError::Invalid)
+    }
+
+    /// What the chat `run_id` runs with in place of its agent's: what its latest `settings_changed` event holds.
+    pub fn chat_settings(&self, run_id: i64) -> Result<ChatSettings> {
+        Ok(self
+            .store
+            .event_of_kind(run_id, "settings_changed", true)?
+            .and_then(|event| serde_json::from_value(event.data).ok())
+            .unwrap_or_default())
+    }
+
+    /// A person changes the model or the reasoning level of the chat `run_id` (see `ChatSettings`); what is not given
+    /// stays. The chat must be waiting: while its agent works the answer is a conflict. The change is kept as a
+    /// `settings_changed` event and told to the chat's Pi (see [`Runs::change_chat`]), so that the next message is
+    /// answered with it. `served` are the protocols the router's upstreams list `model` under.
+    pub fn change_chat_settings(
+        self: &Arc<Self>,
+        runs: &dyn Runs,
+        run_id: i64,
+        (model, thinking, served): (Option<&str>, Option<&str>, &[Protocol]),
+    ) -> Result<Run> {
+        let run = self.running_chat(run_id)?;
+        check_settings(model, thinking)?;
+        let _turn = self.chat_turns.lock().unwrap_or_else(|e| e.into_inner());
+        let run = self.run(run.id)?;
+        if run.status != "waiting" {
+            return Err(AppError::Conflict(format!(
+                "chat {run_id} is {}: its model and reasoning change once the agent has answered",
+                run.status
+            )));
+        }
+        let mut settings = self.chat_settings(run_id)?;
+        if let Some(model) = model {
+            settings.model = Some(model.trim().to_string());
+            settings.protocol = chat_protocol(agent_protocol(runs, &run.agent), served);
+        }
+        if let Some(thinking) = thinking {
+            settings.thinking = Some(thinking.to_string());
+        }
+        self.record_run_event(run_id, "settings_changed", &json!(settings))?;
+        runs.change_chat(self, run_id).map_err(AppError::Invalid)?;
+        self.run(run_id)
     }
 
     /// The chat `run_id`, which must have ended to be continued.
@@ -1029,6 +1165,7 @@ impl App {
             .filter(|run| all || run.origin != ASSISTANT_ORIGIN)
             .map(|run| {
                 let title = self.chat_title(run.id)?;
+                let settings = self.chat_settings(run.id)?;
                 Ok(Chat {
                     id: run.id,
                     agent: run.agent.clone(),
@@ -1042,6 +1179,8 @@ impl App {
                     seen: self.store.seen_seq(run.id)?,
                     changed_files: self.changed_files(&run),
                     origin: run.origin,
+                    model: settings.model,
+                    thinking: settings.thinking,
                 })
             })
             .collect()
@@ -1058,9 +1197,9 @@ impl App {
 
     /// The title of a chat: the first line of its first message.
     fn chat_title(&self, run_id: i64) -> Result<String> {
-        let first = self.store.events_after(run_id, 0, 1)?;
+        let first = self.store.event_of_kind(run_id, "said", false)?;
         Ok(first
-            .first()
+            .as_ref()
             .and_then(|event| event.data["message"].as_str())
             .unwrap_or_default()
             .lines()

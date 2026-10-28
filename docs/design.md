@@ -71,6 +71,15 @@ chart.
   the card's tokens when known, and the last four steps of the run in the compact steps box. A click opens the card's
   live view or the chat. Without a working run the page says "Nothing is working. Runs and chats appear here while
   they work." The sidebar entry says how many are working.
+- The Chat page's input row: under the field to write in, with Send (the primary button) beside it, stands a row of
+  small pickers in the app's dropdown style (12 px text, a muted label before each). "New chat" opens the empty chat at
+  once, with no form: the header "New chat" and who it is with and where, a hint where the conversation will be, and
+  under the field the pickers Agent, Place (No repository, each project, and the harness configuration when the server
+  has one), Model (the models the upstreams serve, a model they do not list shown as it is) and Reasoning (the levels
+  Pi-Bolt takes), the agent's model and reasoning until others are chosen. A white "Terminal" button next to Send
+  starts the chat without a message and shows it in its terminal as soon as it waits. In a started chat the Model and
+  Reasoning pickers stay under the field and change the chat while it waits; while its agent works they only show what
+  it runs with, muted, in a thin outline.
 - The floating chat: a round teal button (56 px, with the chat icon and a soft shadow) stands 20 px from the bottom
   right corner of every screen but the Chat page (whose Send stands there), over the page,
   like a website's support button. A click grows it into a window of

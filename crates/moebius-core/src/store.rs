@@ -1540,6 +1540,32 @@ impl Store {
         self.events_after(run_id, 0, i64::MAX)
     }
 
+    /// The first event of the run of kind `kind`, or with `last` the latest one; none without one.
+    pub fn event_of_kind(&self, run_id: i64, kind: &str, last: bool) -> Result<Option<Event>> {
+        let order = if last { "DESC" } else { "ASC" };
+        let conn = self.conn();
+        let found = conn
+            .query_row(
+                &format!(
+                    "SELECT seq, data, at FROM events WHERE run_id = ?1 AND kind = ?2 ORDER BY seq {order} LIMIT 1"
+                ),
+                params![run_id, kind],
+                |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get(2)?)),
+            )
+            .optional()?;
+        found
+            .map(|(seq, data, at)| {
+                Ok(Event {
+                    run_id,
+                    seq,
+                    kind: kind.into(),
+                    data: serde_json::from_str(&data)?,
+                    at,
+                })
+            })
+            .transpose()
+    }
+
     /// At most `limit` events of a run with a sequence number above `after`, in order.
     pub fn events_after(&self, run_id: i64, after: i64, limit: i64) -> Result<Vec<Event>> {
         let conn = self.conn();
