@@ -94,8 +94,9 @@ async fn what_is_said_in_a_chats_terminal_is_the_chats_conversation_through_a_re
     let (mut tui, _) = tokio_tungstenite::connect_async(request).await.unwrap();
     let mut printed = String::new();
     let ready = async {
-        // The footer names the provider once Pi has started; until then Enter does not send.
-        while !printed.contains("(moebius) fake-coder") {
+        // Pi has started once it shows the chat so far and the model in its footer; until then Enter does not send.
+        // The footer names the provider before the model only on some machines, so only the model is looked for.
+        while !(printed.contains("Done.") && printed.contains("fake-coder")) {
             match tui.next().await {
                 Some(Ok(Message::Binary(bytes))) => {
                     printed.push_str(&String::from_utf8_lossy(&bytes))
