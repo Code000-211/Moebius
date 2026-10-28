@@ -24,7 +24,7 @@ Every milestone of the first version, M0 to M9, is built (see [`docs/spec.md`](d
   decision and take it over once a person merges the proposal.
 
 The desktop app has every screen of [`docs/design.md`](docs/design.md): board, live view with a shell, inbox, chat,
-agents, usage, Retro, experiments and decision model. The Models, Plugins and Settings pages are not built yet.
+agents, usage, Retro, experiments, decision model, and the read-only pages of the setup: models, plugins and settings.
 
 ## Quick start
 

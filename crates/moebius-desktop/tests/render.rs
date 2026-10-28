@@ -13,6 +13,7 @@ use moebius_desktop::experiments;
 use moebius_desktop::inbox::{self, Action};
 use moebius_desktop::live;
 use moebius_desktop::retro;
+use moebius_desktop::setup;
 use moebius_desktop::terminal::PaneEvent;
 use moebius_desktop::theme;
 use moebius_desktop::usage;
@@ -228,11 +229,11 @@ fn the_collapsed_sidebar_keeps_the_inbox_count() {
 #[test]
 fn a_screen_that_is_not_built_says_which_milestone_brings_it() {
     let mut app = App::with_snapshot(overview());
-    let _ = app.update(Message::Select(Page::Models));
+    let _ = app.update(Message::Select(Page::Rules));
     draw(
         &app,
         "shell-soon",
-        &["Models", "This screen has no milestone yet."],
+        &["Rules", "This screen has no milestone yet."],
     );
 }
 
@@ -2470,5 +2471,145 @@ fn the_inbox_offers_a_takeover_of_the_decision_model_to_merge_or_dismiss() {
             .map(|m| format!("{m:?}"))
             .collect::<Vec<_>>(),
         ["Inbox(Act(1, DismissTakeover { takeover: 4 }))"]
+    );
+}
+
+fn setup_app(page: Page) -> App {
+    let mut app = App::with_snapshot(overview());
+    let _ = app.update(Message::Select(page));
+    let models = json!({
+        "upstreams": [
+            {"protocol": "openai", "base_url": "http://127.0.0.1:8080", "api_key_set": false},
+            {"protocol": "anthropic", "base_url": "https://api.anthropic.com", "api_key_set": true},
+        ],
+        "agents": [
+            {"name": "Moebius", "model": "claude-fake", "protocol": "anthropic", "built_in": true},
+            {"name": "Coder", "model": "qwen3.8-flash-next", "protocol": "openai", "thinking": "medium",
+             "token_budget": 2000000, "built_in": false},
+            {"name": "Reviewer", "model": "claude-fake", "protocol": "anthropic", "thinking": "high",
+             "built_in": false},
+        ],
+        "teacher": {"model": "qwen3.8-flash-next", "protocol": "openai", "timeout_seconds": 20},
+        "decision_model": {"url": "http://127.0.0.1:8081/v1", "model": "moebius-decider",
+                           "timeout_seconds": 20, "api_key_set": true},
+    });
+    let plugins = json!({
+        "time_limit_seconds": 30,
+        "plugins": [
+            {"name": "decision-model", "version": "0.1.0", "kinds": ["decider"], "decides": ["merge"]},
+            {"name": "guard", "version": "0.1.0", "kinds": ["decider"], "decides": ["tool_call"]},
+            {"name": "notes", "version": "0.2.1", "kinds": ["decider", "view"], "decides": []},
+        ],
+    });
+    let server = json!({
+        "data_dir": "/srv/moebius/.moebius", "listen": "127.0.0.1:7171", "round_limit": 5, "run_limit": 3,
+        "day_budget": 20000000, "retro_at": "23:30", "trial_window": {"start": "00:00", "end": "06:00"},
+        "board_tick_ms": 2000, "harness_url": "https://github.com/acme/harness-configuration",
+        "mcp_env": ["DOCS_TOKEN"], "github": {"app_id": 123456},
+    });
+    for message in [
+        setup::Message::Models(Ok(serde_json::from_value(models).unwrap())),
+        setup::Message::Plugins(Ok(serde_json::from_value(plugins).unwrap())),
+        setup::Message::Server(Ok(serde_json::from_value(server).unwrap())),
+    ] {
+        let _ = app.update(Message::Setup(message));
+    }
+    app
+}
+
+#[test]
+fn the_models_page_lists_upstreams_agents_the_teacher_and_the_decision_model() {
+    draw(
+        &setup_app(Page::Models),
+        "models",
+        &[
+            "Models",
+            "2 upstreams and 3 agents; keys are never shown.",
+            "Upstreams",
+            "http://127.0.0.1:8080",
+            "https://api.anthropic.com",
+            "key set",
+            "no key",
+            "Agents",
+            "Coder",
+            "qwen3.8-flash-next",
+            "medium",
+            "2.0M tok",
+            "Teacher",
+            "Decision model",
+            "moebius-decider",
+            "http://127.0.0.1:8081/v1",
+        ],
+    );
+}
+
+#[test]
+fn the_models_page_says_when_there_is_no_teacher_or_decision_model() {
+    let mut app = App::with_snapshot(overview());
+    let _ = app.update(Message::Select(Page::Models));
+    let models = json!({"upstreams": [], "agents": [], "teacher": null, "decision_model": null});
+    let _ = app.update(Message::Setup(setup::Message::Models(Ok(
+        serde_json::from_value(models).unwrap(),
+    ))));
+    let mut ui = simulator(&app);
+    for text in [
+        "No upstream is configured.",
+        "The server has no agent.",
+        "No teacher is configured; a call is refused while a rule in prose applies.",
+        "No decision model is configured.",
+    ] {
+        assert!(ui.find(text).is_ok(), "{text:?} is not on the screen");
+    }
+}
+
+#[test]
+fn the_plugins_page_lists_what_the_host_loaded() {
+    draw(
+        &setup_app(Page::Plugins),
+        "plugins",
+        &[
+            "Plugins",
+            "3 plugins loaded; a call into one is refused after 30 s.",
+            "Loaded plugins",
+            "decision-model",
+            "guard",
+            "tool_call",
+            "0.2.1",
+            "decider, view",
+            "No kind of decision",
+        ],
+    );
+}
+
+#[test]
+fn the_settings_page_shows_the_server_and_this_app_with_the_token_masked() {
+    let app = setup_app(Page::Settings);
+    draw(
+        &app,
+        "settings",
+        &[
+            "Settings",
+            "Server",
+            "/srv/moebius/.moebius",
+            "127.0.0.1:7171",
+            "3 at a time",
+            "5 coding rounds a card",
+            "20.0M tok",
+            "23:30, the server's time",
+            "00:00 to 06:00",
+            "2000 ms",
+            "https://github.com/acme/harness-configuration",
+            "DOCS_TOKEN",
+            "App 123456",
+            "This app",
+            "http://127.0.0.1:7171",
+            "••••oken",
+            "Connect to another server",
+        ],
+    );
+    assert!(simulator(&app).find("not-a-real-token").is_err());
+    assert_eq!(
+        pressed(&app, "Connect to another server").as_deref(),
+        Some("[ChangeConnection]")
     );
 }

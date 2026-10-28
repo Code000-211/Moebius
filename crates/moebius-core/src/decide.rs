@@ -75,6 +75,27 @@ impl Decisions {
             .contains_key(kind)
     }
 
+    /// The plugin that answers each kind that has one, the decision model's takeovers included.
+    pub fn routes(&self) -> BTreeMap<String, String> {
+        let mut kinds: Vec<String> = self
+            .by_kind
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .keys()
+            .cloned()
+            .collect();
+        kinds.extend(self.routed.list());
+        kinds
+            .into_iter()
+            .filter_map(|kind| self.decider_for(&kind).map(|plugin| (kind, plugin)))
+            .collect()
+    }
+
+    /// The plugins the decisions go through, and how long a call into one may take.
+    pub fn host(&self) -> &Host {
+        &self.host
+    }
+
     /// Uses `routed`, which the guard shares, as the kinds the decision model has taken over.
     pub fn share_routed(&mut self, routed: Arc<Routed>) {
         self.routed = routed;

@@ -628,6 +628,8 @@ impl Runs for PiBolt {
                         name: name.into(),
                         model: agent.model.clone(),
                         protocol: agent.protocol,
+                        thinking: agent.thinking.clone(),
+                        token_budget: agent.token_budget,
                         built_in: true,
                         error: set.errors.get(name).cloned(),
                     })
@@ -641,6 +643,8 @@ impl Runs for PiBolt {
                 name: name.clone(),
                 model: agent.model.clone(),
                 protocol: agent.protocol,
+                thinking: agent.thinking.clone(),
+                token_budget: agent.token_budget,
                 built_in: false,
                 error: None,
             });
@@ -652,6 +656,8 @@ impl Runs for PiBolt {
                 name: name.clone(),
                 model: String::new(),
                 protocol: Protocol::OpenAi,
+                thinking: None,
+                token_budget: None,
                 built_in: false,
                 error: Some(error.clone()),
             });

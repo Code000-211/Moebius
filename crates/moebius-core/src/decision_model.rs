@@ -65,6 +65,10 @@ impl Routed {
         self.kinds().contains(kind)
     }
 
+    pub fn list(&self) -> Vec<String> {
+        self.kinds().iter().cloned().collect()
+    }
+
     fn add(&self, kind: &str) {
         self.kinds().insert(kind.to_string());
     }

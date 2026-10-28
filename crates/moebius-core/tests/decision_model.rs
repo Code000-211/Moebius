@@ -366,6 +366,10 @@ fn a_takeover_is_proposed_in_the_inbox_and_merging_it_routes_the_kind() {
     // The person merges: the decision is recorded, the item is resolved, and the model decides from now on.
     let merged = decision_model::merge(&app, takeover.id, "it agrees often enough").unwrap();
     assert_eq!(merged.status, "merged");
+    assert_eq!(
+        app.decisions.routes().get("triage").map(String::as_str),
+        Some("decision-model")
+    );
     assert!(app.store.inbox().unwrap().is_empty());
     let recorded = app.store.judgements("takeover").unwrap();
     assert_eq!(
@@ -450,6 +454,10 @@ fn the_route_survives_a_restart_and_a_release_hands_the_kind_back() {
 
     let released = decision_model::release(&app, id, "back to the rule").unwrap();
     assert_eq!(released.status, "released");
+    assert_eq!(
+        app.decisions.routes().get("triage").map(String::as_str),
+        Some("fixed")
+    );
     let decision = app
         .decisions
         .decide(&question("triage", "refuse", 9))
@@ -510,6 +518,14 @@ impl Api {
             token: server.token.clone(),
             round_limit: 5,
             day_budget: None,
+            config: std::sync::Arc::new(
+                moebius_core::config::Config::parse(
+                    "",
+                    std::path::Path::new("."),
+                    std::path::Path::new("moebius.toml"),
+                )
+                .unwrap(),
+            ),
         };
         fake.runtime.spawn(api::serve(listener, state));
         Self {

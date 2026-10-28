@@ -323,6 +323,7 @@ impl Server {
             token: self.token.clone(),
             round_limit: self.config.round_limit,
             day_budget: self.config.day_tokens,
+            config: Arc::new(self.config.clone()),
         };
         let board = {
             let server = self.clone();

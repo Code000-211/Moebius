@@ -16,6 +16,7 @@ use crate::inbox::{self, Inbox};
 use crate::live::{self, Live};
 use crate::retro::{self, Retros};
 use crate::settings::{self, Settings};
+use crate::setup::{self, Setup};
 use crate::usage::{self, Usage};
 use crate::{board, chat, connect, history, sidebar, soon, theme};
 
@@ -135,6 +136,7 @@ pub enum Message {
     Retro(retro::Message),
     Experiments(experiments::Message),
     DecisionModel(decision_model::Message),
+    Setup(setup::Message),
     /// A chat was asked for, as from the inbox: its screen opens on it.
     OpenChat(i64),
     /// The history of the card was read.
@@ -173,6 +175,7 @@ pub struct App {
     retros: Retros,
     experiments: Experiments,
     decision_model: DecisionModel,
+    setup: Setup,
     collapsed: bool,
     /// Counts the reads of the snapshot, so that an older answer never replaces a newer one.
     requested: u64,
@@ -208,6 +211,7 @@ impl App {
             retros: Retros::default(),
             experiments: Experiments::default(),
             decision_model: DecisionModel::default(),
+            setup: Setup::default(),
             collapsed: false,
             requested: 0,
             shown: 0,
@@ -280,6 +284,9 @@ impl App {
                     (Page::DecisionModel, Some(settings)) => {
                         return self.decision_model.reload(settings);
                     }
+                    (Page::Models | Page::Plugins | Page::Settings, Some(settings)) => {
+                        return self.setup.reload(settings);
+                    }
                     _ => {}
                 }
             }
@@ -320,6 +327,10 @@ impl App {
             Message::DecisionModel(message) => {
                 return self.decision_model.update(message, self.settings.as_ref());
             }
+            Message::Setup(message) if Setup::refused(&message) => {
+                self.show_connect_error(&ClientError::Unauthorized);
+            }
+            Message::Setup(message) => self.setup.update(message),
             Message::Chat(message) => return self.chats.update(message, self.settings.as_ref()),
             Message::OpenChat(id) => {
                 self.page = Some(Page::Chat);
@@ -691,8 +702,10 @@ impl App {
             Page::Retro => self.retros.view(),
             Page::Experiments => self.experiments.view(&self.snapshot),
             Page::DecisionModel => self.decision_model.view(),
-            Page::Settings => connect::settings_page(self.settings.as_ref()),
-            page => soon::view(page),
+            Page::Models => self.setup.models_page(),
+            Page::Plugins => self.setup.plugins_page(),
+            Page::Settings => self.setup.settings_page(self.settings.as_ref()),
+            Page::Rules => soon::view(page),
         }
     }
 }

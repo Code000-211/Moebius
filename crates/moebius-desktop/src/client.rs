@@ -158,12 +158,95 @@ pub struct Agent {
     pub model: String,
     #[serde(default)]
     pub protocol: String,
+    #[serde(default)]
+    pub thinking: Option<String>,
+    #[serde(default)]
+    pub token_budget: Option<i64>,
     /// Whether Moebius brings the agent itself.
     #[serde(default)]
     pub built_in: bool,
     /// Why the agent's files cannot be used; such an agent cannot run.
     #[serde(default)]
     pub error: Option<String>,
+}
+
+/// An upstream of the router, as `GET /v1/models` lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Upstream {
+    pub protocol: String,
+    pub base_url: String,
+    pub api_key_set: bool,
+}
+
+/// The teacher model, as `GET /v1/models` tells it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Teacher {
+    pub model: String,
+    pub protocol: String,
+    pub timeout_seconds: u64,
+}
+
+/// The decision model's endpoint, as `GET /v1/models` tells it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct DecisionModelEndpoint {
+    pub url: String,
+    pub model: String,
+    pub timeout_seconds: u64,
+    pub api_key_set: bool,
+}
+
+/// What `GET /v1/models` says: the models the server uses and where it reaches them.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Models {
+    pub upstreams: Vec<Upstream>,
+    pub agents: Vec<Agent>,
+    pub teacher: Option<Teacher>,
+    pub decision_model: Option<DecisionModelEndpoint>,
+}
+
+/// A plugin the server has loaded, as `GET /v1/plugins` lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Plugin {
+    pub name: String,
+    pub version: String,
+    pub kinds: Vec<String>,
+    pub decides: Vec<String>,
+}
+
+/// What `GET /v1/plugins` says.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Plugins {
+    pub time_limit_seconds: u64,
+    pub plugins: Vec<Plugin>,
+}
+
+/// The daily stretch in which trials may run.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Window {
+    pub start: String,
+    pub end: String,
+}
+
+/// The GitHub App of the server.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct GitHubApp {
+    pub app_id: u64,
+}
+
+/// What the server runs with, as `GET /v1/settings` says.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ServerSettings {
+    pub data_dir: String,
+    pub listen: String,
+    pub round_limit: u32,
+    pub run_limit: u32,
+    pub day_budget: Option<i64>,
+    pub retro_at: String,
+    pub trial_window: Window,
+    pub board_tick_ms: u64,
+    pub harness_url: Option<String>,
+    pub mcp_env: Vec<String>,
+    pub github: Option<GitHubApp>,
 }
 
 /// The settings of an agent of the harness configuration repository, as `GET` and `PUT /v1/agents/{name}` have them.
@@ -741,6 +824,21 @@ impl Client {
     /// The agents a chat can be with, the Moebius agent first.
     pub async fn agents(&self) -> Result<Vec<Agent>, ClientError> {
         self.get("/v1/agents").await
+    }
+
+    /// The upstreams, agents, teacher and decision model of the server.
+    pub async fn models(&self) -> Result<Models, ClientError> {
+        self.get("/v1/models").await
+    }
+
+    /// The plugins the server has loaded.
+    pub async fn plugins(&self) -> Result<Plugins, ClientError> {
+        self.get("/v1/plugins").await
+    }
+
+    /// What the server runs with.
+    pub async fn server_settings(&self) -> Result<ServerSettings, ClientError> {
+        self.get("/v1/settings").await
     }
 
     /// An agent of the harness configuration repository, with its instructions.

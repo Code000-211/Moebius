@@ -27,6 +27,8 @@
 //! - `GET /v1/agents`: the agents the server can run. `GET`, `PUT` and `DELETE /v1/agents/{name}`: read, write and delete
 //!   an agent of the harness configuration repository (see [`crate::harness_repo`]). `GET /v1/skills` and
 //!   `GET /v1/mcp-servers`: the skills and MCP servers an agent can name.
+//! - `GET /v1/models`, `GET /v1/plugins` and `GET /v1/settings`: how the server is set up, never with a secret in it (see
+//!   [`crate::setup`]).
 //! - `POST /v1/research` `{repository, goal, measure, better, token_budget}`: stores a brief as a draft. `GET
 //!   /v1/research` and `GET /v1/research/{id}`: research with its baseline and experiments.
 //!   `POST /v1/research/{id}/confirm`, `/start` and `/stop`: a person confirms the brief, starts a confirmed research
@@ -58,6 +60,7 @@ use tokio::sync::broadcast::error::RecvError;
 use crate::app::{App, AppError, Chat, HistoryEntry, PERSON, columns, runs_since_retry};
 use crate::board::{AgentInfo, Runs, latest_review};
 use crate::bus::AppEvent;
+use crate::config::Config;
 use crate::decision_model;
 use crate::export::{self, Export, ExportError, KindCounts};
 use crate::forge::ForgeError;
@@ -68,6 +71,7 @@ use crate::replay;
 use crate::repos::GitError;
 use crate::research::{self, NewResearch, ResearchView};
 use crate::retro::{self, RetroSummary, RetroView};
+use crate::setup;
 use crate::store::{
     AgentUsage, Card, Change, Event, Grilling, GrillingIssue, InboxItem, ModelUsage, Proposal,
     Replay, Repository, Run, Takeover, ToolWait,
@@ -87,6 +91,8 @@ pub struct ApiState {
     pub round_limit: u32,
     /// The most tokens all runs may use in a day, if limited, which the usage screen measures the day against.
     pub day_budget: Option<i64>,
+    /// What the server runs with, which the Models and Settings screens show.
+    pub config: Arc<Config>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -389,6 +395,9 @@ pub fn router(state: ApiState) -> Router {
             "/v1/agents/{name}",
             get(get_agent).put(put_agent).delete(delete_agent),
         )
+        .route("/v1/models", get(models))
+        .route("/v1/plugins", get(plugins))
+        .route("/v1/settings", get(settings))
         .route("/v1/skills", get(skills))
         .route("/v1/mcp-servers", get(mcp_servers))
         .route("/v1/retros", get(retros).post(start_retro))
@@ -624,6 +633,18 @@ async fn run_terminal(
 
 async fn agents(State(state): State<ApiState>) -> axum::Json<Vec<AgentInfo>> {
     axum::Json(state.runs.agents())
+}
+
+async fn models(State(state): State<ApiState>) -> axum::Json<setup::Models> {
+    axum::Json(setup::models(&state.config, state.runs.agents()))
+}
+
+async fn plugins(State(state): State<ApiState>) -> axum::Json<setup::Plugins> {
+    axum::Json(setup::plugins(&state.app.decisions))
+}
+
+async fn settings(State(state): State<ApiState>) -> axum::Json<setup::Settings> {
+    axum::Json(setup::settings(&state.config))
 }
 
 /// The harness configuration repository, or the 422 that says agents are configured in `moebius.toml`.
@@ -1196,6 +1217,14 @@ mod tests {
             token: token.into(),
             round_limit: 5,
             day_budget: Some(10_000),
+            config: Arc::new(
+                Config::parse(
+                    "",
+                    std::path::Path::new("."),
+                    std::path::Path::new("moebius.toml"),
+                )
+                .unwrap(),
+            ),
         };
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();

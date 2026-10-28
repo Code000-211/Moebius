@@ -1,5 +1,4 @@
-//! The connect screen, for when there are no settings yet or the connection fails, and the Settings page, which shows
-//! the connection.
+//! The connect screen, for when there are no settings yet or the connection fails.
 
 use iced::font::Weight;
 use iced::widget::{column, container, row, text, text_input};
@@ -110,32 +109,4 @@ pub fn view<'a>(form: &'a Form, saved: Option<&Settings>) -> Element<'a, Message
         ..container::Style::default()
     });
     container(card).center(Length::Fill).into()
-}
-
-/// The Settings page: where the app is connected, with the token only in part.
-pub fn settings_page<'a>(saved: Option<&Settings>) -> Element<'a, Message> {
-    let (address, token) = match saved {
-        Some(saved) => (saved.address.clone(), settings::mask(&saved.token)),
-        None => ("none".to_string(), "none".to_string()),
-    };
-    column![
-        page::header(
-            "Setup",
-            "Settings",
-            None,
-            page::context("How this app reaches the server."),
-            iced::widget::text("").into(),
-        ),
-        page::boxed(
-            "Connection",
-            column![
-                page::body(format!("Address {address}")),
-                page::body(format!("Token {token}")),
-                page::primary_button("Change connection", Some(Message::ChangeConnection)),
-            ]
-            .spacing(10),
-        ),
-    ]
-    .spacing(theme::PAGE_GAP)
-    .into()
 }

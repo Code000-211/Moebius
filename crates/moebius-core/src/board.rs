@@ -51,6 +51,12 @@ pub struct AgentInfo {
     pub name: String,
     pub model: String,
     pub protocol: Protocol,
+    /// How hard the agent thinks, if its configuration says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<String>,
+    /// The most tokens a card of the agent may use, if its configuration says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_budget: Option<i64>,
     /// Whether Moebius brings the agent itself, as it does the Moebius agent.
     pub built_in: bool,
     /// Why the agent's files in the harness configuration repository could not be used. Such an agent has no model

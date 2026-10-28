@@ -13,7 +13,8 @@ changes ready to merge. Read `GLOSSARY.md` for the words, `docs/spec.md` for wha
   checks), `decide`, `guard` (the guard deciders), `rules`, `board`, `router`, `pibolt`, `terminal` (shells in a
   worktree), `harness_repo` (the harness configuration repository), `mcp` (its MCP servers), `skill`, `retro`, `trial`,
   `replay`, `research` (autoresearch), `grilling` (chats that end in issues), `export` (the training set),
-  `decision_model` (shadowing and takeovers), `api`, `config`. Column scripts are in `workflow/*.luau`.
+  `decision_model` (shadowing and takeovers), `setup` (what the Models, Plugins and Settings pages show), `api`,
+  `config`. Column scripts are in `workflow/*.luau`.
 - `crates/moebius-plugin-api`: the plugin trait and the host that calls plugins with a time limit, failing closed.
 - `crates/moebius`: the `moebius` binary (`init`, `serve`, `check-script`, `export`).
 - `crates/moebius-core/skill/SKILL.md` and `src/skill.rs`: the `moebius` skill of the Moebius agent, which is `SKILL.md`

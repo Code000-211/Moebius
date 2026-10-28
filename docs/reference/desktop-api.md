@@ -394,7 +394,8 @@ The worktree exists while the run or chat is `starting`, `running` or `waiting`.
 
 The agents the server can run, for choosing one to chat with: the Moebius agent first and the Grilling partner second (each
 when its own `[agents.<name>]` or `[agents.Coder]` gives it a model), then the others by name. Response: an array of `{"name": string, "model":
-string, "protocol": "openai" or "anthropic", "built_in": boolean, "error": string}`; `built_in` is true for the Moebius
+string, "protocol": "openai" or "anthropic", "thinking": string, "token_budget": integer, "built_in": boolean, "error": string}`;
+`thinking` and `token_budget` are the agent's, left out when its configuration does not set them; `built_in` is true for the Moebius
 agent and the `Grilling-partner`, which Moebius brings itself. `error` is left out unless the agent's files in the [harness
 configuration](harness-configuration.md) are broken: such an agent has an empty `model`, cannot be run, and `error` says
 why (the built-in agents still run, on the Coder's model). Instructions, skills, extensions and anything secret are not
@@ -436,6 +437,61 @@ The servers of `mcp.toml` in the harness configuration repository, by name, for 
 `{"name": string, "kind": "stdio" or "remote", "error": string}`. `error` is left out unless the server cannot be used
 (then `kind` is `unknown` when the table is too broken to tell). Commands, arguments, environments, URLs and headers are
 never included. The array is empty without `[harness]` or when `mcp.toml` cannot be read.
+
+### `GET /v1/models`
+
+The models the server uses and where it reaches them. Never a key: an upstream or the decision model says only whether it
+has one. Response:
+
+```json
+{
+  "upstreams": [{"protocol": "anthropic", "base_url": "https://api.anthropic.com", "api_key_set": true}],
+  "agents": [{"name": "Coder", "model": "qwen3.8-flash-next", "protocol": "openai", "thinking": "medium", "token_budget": 2000000, "built_in": false}],
+  "teacher": {"model": "qwen3.8-flash-next", "protocol": "openai", "timeout_seconds": 20},
+  "decision_model": {"url": "http://127.0.0.1:8081/v1", "model": "moebius-decider", "timeout_seconds": 20, "api_key_set": false}
+}
+```
+
+- `upstreams` are the `[[router.upstreams]]` in the order of the configuration. `api_key_set` is true when the upstream
+  has an `api_key_env`; the server does not start when that variable is not set. Neither the key nor the name of the
+  variable is shown. The configuration names no models an upstream serves, so none are listed.
+- `agents` are the agents of [`GET /v1/agents`](#get-v1agents), with the same fields.
+- `teacher` and `decision_model` are `null` without a `[teacher]` or `[decision_model]` table.
+- A user name and password in a URL are removed from `base_url` and `url`.
+
+### `GET /v1/plugins`
+
+The plugins the plugin host has loaded, which answer the decisions (see [the plugin API](plugin-api.md)). Response:
+
+```json
+{
+  "time_limit_seconds": 30,
+  "plugins": [{"name": "guard", "version": "0.1.0", "kinds": ["decider"], "decides": ["tool_call"]}]
+}
+```
+
+`time_limit_seconds` is how long the host lets a call into any plugin take before it counts as refused. For each plugin,
+by name, `kinds` are the kinds of its manifest (`forge`, `harness`, `runner`, `decider`, `router`, `view`) and `decides`
+the kinds of decision it answers now, in alphabetical order: those routed to it, and those the decision model took over
+with a merged takeover.
+
+### `GET /v1/settings`
+
+What the server runs with, from `moebius.toml` and its defaults. Response:
+
+```json
+{
+  "data_dir": "/srv/moebius/.moebius", "listen": "127.0.0.1:7171", "round_limit": 5, "run_limit": 3,
+  "day_budget": 20000000, "retro_at": "23:30", "trial_window": {"start": "00:00", "end": "06:00"},
+  "board_tick_ms": 2000, "harness_url": "https://github.com/acme/harness-configuration", "mcp_env": ["DOCS_TOKEN"],
+  "github": {"app_id": 123456}
+}
+```
+
+`data_dir` is an absolute path and `listen` the address of the desktop API. `day_budget` is `null` without
+`[budgets] day_tokens`, `harness_url` and `github` are `null` without `[harness]` and `[github]`. `retro_at` and the
+trial window are times of day as `HH:MM`. `harness_url` has any user name and password removed. `mcp_env` holds the
+names of the environment variables, never their values. `github` has the app id only; the key file is not shown.
 
 ### `POST /v1/chats`
 

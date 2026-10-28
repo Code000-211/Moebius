@@ -1085,3 +1085,43 @@ async fn the_client_reads_the_shadowing_and_merges_and_releases_a_takeover() {
         "dismissed"
     );
 }
+
+#[tokio::test]
+async fn the_client_reads_the_models_plugins_and_settings_of_a_real_server() {
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, _server) = start_with(
+        dir.path(),
+        "[board]\nround_limit = 4\n\
+         [[router.upstreams]]\nprotocol = \"openai\"\nbase_url = \"http://127.0.0.1:8080\"\n\
+         [teacher]\nmodel = \"teacher-model\"\n\
+         [agents.Coder]\nmodel = \"coder-model\"\nthinking = \"low\"\ntoken_budget = 1000\n",
+    )
+    .await;
+    let client = Client::new(settings);
+
+    let models = client.models().await.unwrap();
+    assert_eq!(models.upstreams.len(), 1);
+    assert_eq!(models.upstreams[0].base_url, "http://127.0.0.1:8080");
+    assert!(!models.upstreams[0].api_key_set);
+    let coder = models.agents.iter().find(|a| a.name == "Coder").unwrap();
+    assert_eq!(
+        (
+            coder.model.as_str(),
+            coder.thinking.as_deref(),
+            coder.token_budget
+        ),
+        ("coder-model", Some("low"), Some(1000))
+    );
+    assert_eq!(models.teacher.unwrap().model, "teacher-model");
+    assert!(models.decision_model.is_none());
+
+    let plugins = client.plugins().await.unwrap();
+    assert_eq!(plugins.time_limit_seconds, 30);
+    let guard = plugins.plugins.iter().find(|p| p.name == "guard").unwrap();
+    assert_eq!(guard.decides, ["tool_call"]);
+
+    let server = client.server_settings().await.unwrap();
+    assert_eq!(server.round_limit, 4);
+    assert_eq!(server.listen, "127.0.0.1:7171");
+    assert!(server.github.is_none() && server.harness_url.is_none());
+}

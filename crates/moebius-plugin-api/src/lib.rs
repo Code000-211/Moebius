@@ -147,6 +147,16 @@ impl Host {
         self
     }
 
+    /// The manifests of the plugins the host holds, by name.
+    pub fn manifests(&self) -> Vec<Manifest> {
+        self.plugins.values().map(|p| p.manifest()).collect()
+    }
+
+    /// How long a call into a plugin may take.
+    pub fn limit(&self) -> Duration {
+        self.limit
+    }
+
     /// Calls `plugin`, cutting it off after the host's time limit. A plugin that hangs keeps its thread, but its
     /// answer is never used.
     pub fn call(&self, plugin: &str, call: Call) -> Result<Value, Refusal> {
