@@ -47,7 +47,7 @@ case $name in
     moebius)
         cp "$binary" "$stage/moebius"
         chmod 755 "$stage/moebius"
-        cp "$dist/moebius.service" "$root/README.md" "$stage/"
+        cp "$dist/moebius.service" "$root/README.md" "$root/LICENSE" "$root/NOTICE" "$stage/"
         archive=$out/$name-$version-$target.tar.gz
         tar -C "$work" -czf "$archive" "$(basename "$stage")"
         ;;
@@ -55,7 +55,7 @@ case $name in
         cp "$binary" "$stage/moebius-desktop"
         chmod 755 "$stage/moebius-desktop"
         cp "$icon" "$stage/moebius-desktop.png"
-        cp "$dist/moebius-desktop.desktop" "$stage/"
+        cp "$dist/moebius-desktop.desktop" "$root/LICENSE" "$root/NOTICE" "$stage/"
         archive=$out/$name-$version-$target.tar.gz
         tar -C "$work" -czf "$archive" "$(basename "$stage")"
         ;;

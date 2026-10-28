@@ -10,6 +10,7 @@ against your rules, and learns from what went wrong.
 [![CI](https://github.com/Code000-211/Moebius/actions/workflows/ci.yml/badge.svg)](https://github.com/Code000-211/Moebius/actions/workflows/ci.yml)
 ![Rust 1.90+](https://img.shields.io/badge/rust-1.90%2B-orange)
 ![Linux](https://img.shields.io/badge/platform-Linux-lightgrey)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 ![Status: early prototype](https://img.shields.io/badge/status-early%20prototype-yellow)
 
 </div>
@@ -188,3 +189,8 @@ compare against the pictures in `crates/moebius-desktop/tests/snapshots/`. [`CLA
 ## Feedback
 
 Ideas, confusion, bugs: [open an issue](https://github.com/Code000-211/Moebius/issues). Everything helps at this stage.
+
+## License
+
+Moebius is licensed under the [Apache License, Version 2.0](LICENSE). Contributions are accepted under the same
+license, as section 5 of the license says.
