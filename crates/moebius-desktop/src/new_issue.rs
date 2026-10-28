@@ -1,12 +1,14 @@
 //! The form of a new issue, which opens above the columns of a board from its "New issue" button. Create sends
 //! `POST /v1/repositories/{id}/issues`; the card appears the way every card does, through the event stream and the
-//! snapshot. What the server refused is shown in the form.
+//! snapshot. What the server refused is shown in the form. Instead of writing it, the person can say in a few words
+//! what the issue is about and let the Moebius agent write and create it: that starts a chat with the agent in the
+//! repository, which the app then shows.
 
 use iced::widget::{column, container, row, text, text_editor, text_input};
 use iced::{Border, Element, Task};
 
 use crate::app::Message as AppMessage;
-use crate::client::{Client, ClientError};
+use crate::client::{Client, ClientError, Run};
 use crate::connect;
 use crate::page;
 use crate::settings::Settings;
@@ -18,11 +20,28 @@ pub enum Message {
     Open(i64),
     TitleEdited(String),
     BodyEdited(text_editor::Action),
-    /// "Create" was pressed.
+    /// "Write it" (false) or "Let the Moebius agent write it" (true) was chosen.
+    ByAgent(bool),
+    /// "Create" was pressed, or "Ask the agent" when the agent writes it.
     Create,
     Cancel,
     /// The server answered.
     Answered(Result<(), ClientError>),
+    /// The server started the Moebius agent's chat that writes the issue, or said why not.
+    Asked(Result<Run, ClientError>),
+}
+
+/// The agent that writes an issue for the person.
+const AGENT: &str = "Moebius";
+
+/// What the Moebius agent is asked, with the repository's id and what the person said.
+fn request(repository: i64, wanted: &str) -> String {
+    format!(
+        "Write an issue for this repository and create it with \
+         `\"$MOEBIUS\" issue create {repository} \"<title>\" --body \"<body>\"`. Read the code it is about first, so \
+         that the issue is concrete: a short title, what should be done and why, and how to tell that it is done. \
+         Then say which issue you created.\n\nWhat the person wants:\n\n{wanted}"
+    )
 }
 
 #[derive(Default)]
@@ -35,6 +54,8 @@ pub struct NewIssue {
     failed: Option<String>,
     /// Whether a request is on its way.
     creating: bool,
+    /// Whether the Moebius agent writes the issue from what is in `body`.
+    by_agent: bool,
 }
 
 impl NewIssue {
@@ -60,6 +81,30 @@ impl NewIssue {
             }
             Message::TitleEdited(title) => self.title = title,
             Message::BodyEdited(action) => self.body.perform(action),
+            Message::ByAgent(by_agent) => self.by_agent = by_agent,
+            Message::Create if self.by_agent => {
+                let (Some(settings), Some(repository), false) =
+                    (settings, self.open, self.creating)
+                else {
+                    return Task::none();
+                };
+                let wanted = self.body.text().trim().to_string();
+                if wanted.is_empty() {
+                    return Task::none();
+                }
+                self.failed = None;
+                self.creating = true;
+                let client = Client::new(settings.clone());
+                let message = request(repository, &wanted);
+                return Task::perform(
+                    async move {
+                        client
+                            .start_chat(AGENT, &message, Some(repository), false)
+                            .await
+                    },
+                    |result| AppMessage::NewIssue(Message::Asked(result)),
+                );
+            }
             Message::Create => {
                 let (Some(settings), Some(repository), false) =
                     (settings, self.open, self.creating)
@@ -82,8 +127,8 @@ impl NewIssue {
                 );
             }
             Message::Cancel => *self = NewIssue::default(),
-            Message::Answered(Ok(_)) => *self = NewIssue::default(),
-            Message::Answered(Err(e)) => {
+            Message::Answered(Ok(_)) | Message::Asked(Ok(_)) => *self = NewIssue::default(),
+            Message::Answered(Err(e)) | Message::Asked(Err(e)) => {
                 self.creating = false;
                 self.failed = Some(e.to_string());
             }
@@ -93,10 +138,33 @@ impl NewIssue {
 
     pub fn view(&self) -> Element<'_, AppMessage> {
         let message = AppMessage::NewIssue;
-        let create =
-            (!self.creating && !self.title.trim().is_empty()).then_some(message(Message::Create));
+        let ready = if self.by_agent {
+            !self.body.text().trim().is_empty()
+        } else {
+            !self.title.trim().is_empty()
+        };
+        let create = (!self.creating && ready).then_some(message(Message::Create));
+        let ways = row![
+            page::chip(
+                "Write it".to_string(),
+                !self.by_agent,
+                false,
+                message(Message::ByAgent(false))
+            ),
+            page::chip(
+                "Let the Moebius agent write it".to_string(),
+                self.by_agent,
+                false,
+                message(Message::ByAgent(true))
+            ),
+        ]
+        .spacing(8);
         let body = text_editor(&self.body)
-            .placeholder("What should be done, in Markdown.")
+            .placeholder(if self.by_agent {
+                "What the issue is about, in a few words. The agent reads the code and writes it."
+            } else {
+                "What should be done, in Markdown."
+            })
             .on_action(move |action| message(Message::BodyEdited(action)))
             .size(theme::BODY)
             .padding(12)
@@ -115,21 +183,31 @@ impl NewIssue {
                 value: theme::TEXT,
                 selection: theme::TEAL_FILL,
             });
-        let mut content = column![
-            text_input("Title", &self.title)
-                .on_input(move |title| message(Message::TitleEdited(title)))
-                .on_submit_maybe(create.clone())
-                .size(theme::BODY)
-                .padding([9, 12])
-                .style(connect::input_style),
-            body,
+        let mut content = column![ways].spacing(10);
+        if !self.by_agent {
+            content = content.push(
+                text_input("Title", &self.title)
+                    .on_input(move |title| message(Message::TitleEdited(title)))
+                    .on_submit_maybe(create.clone())
+                    .size(theme::BODY)
+                    .padding([9, 12])
+                    .style(connect::input_style),
+            );
+        }
+        content = content.push(body).push(
             row![
-                page::primary_button("Create", create),
+                page::primary_button(
+                    if self.by_agent {
+                        "Ask the agent"
+                    } else {
+                        "Create"
+                    },
+                    create
+                ),
                 page::white_button("Cancel", Some(message(Message::Cancel))),
             ]
             .spacing(8),
-        ]
-        .spacing(10);
+        );
         if let Some(failed) = &self.failed {
             content = content.push(
                 text(failed.as_str())
@@ -138,5 +216,17 @@ impl NewIssue {
             );
         }
         container(page::boxed("Describe the issue", content)).into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_agent_is_told_how_to_create_the_issue_in_the_repository() {
+        let asked = request(3, "cache the model downloads");
+        assert!(asked.contains(r#"`"$MOEBIUS" issue create 3 "<title>" --body "<body>"`"#));
+        assert!(asked.ends_with("What the person wants:\n\ncache the model downloads"));
     }
 }

@@ -343,6 +343,19 @@ impl App {
             Message::Chat(chat::Message::Listed(Err(ClientError::Unauthorized))) => {
                 self.show_connect_error(&ClientError::Unauthorized);
             }
+            Message::Agents(agents::Message::Asked(Ok(run))) => {
+                // The Moebius agent writes the instructions in a chat, which is shown.
+                let settings = self.settings.clone();
+                let task = self
+                    .agents
+                    .update(agents::Message::Asked(Ok(run.clone())), settings.as_ref());
+                self.page = Some(Page::Chat);
+                self.opened = None;
+                let chat = self
+                    .chats
+                    .update(chat::Message::Started(Ok(run)), settings.as_ref());
+                return Task::batch([task, chat]);
+            }
             Message::Agents(message) if Agents::refused(&message) => {
                 self.show_connect_error(&ClientError::Unauthorized);
             }
@@ -422,6 +435,19 @@ impl App {
             }
             Message::NewIssue(message) if NewIssue::refused(&message) => {
                 self.show_connect_error(&ClientError::Unauthorized);
+            }
+            Message::NewIssue(new_issue::Message::Asked(Ok(run))) => {
+                // The agent writes the issue in a chat, which is shown.
+                let task = self
+                    .new_issue
+                    .update(new_issue::Message::Asked(Ok(run.clone())), None);
+                self.page = Some(Page::Chat);
+                self.opened = None;
+                let settings = self.settings.clone();
+                let chat = self
+                    .chats
+                    .update(chat::Message::Started(Ok(run)), settings.as_ref());
+                return Task::batch([task, chat]);
             }
             Message::NewIssue(message) => {
                 let created = matches!(message, new_issue::Message::Answered(Ok(_)));

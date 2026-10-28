@@ -1835,7 +1835,7 @@ fn a_server_without_a_harness_repository_edits_its_agents_in_moebius_toml() {
         Ok(agent_listing()),
     )));
     let _ = app.update(Message::Agents(agents::Message::SkillsListed(Ok(vec![]))));
-    assert!(shows(&app, "Agents are set in moebius.toml"));
+    assert!(!shows(&app, "Agents are set in moebius.toml"));
     assert!(shows(
         &app,
         "What each run works with: its model, instructions, skills and extensions. An edit is saved in moebius.toml."
@@ -4007,4 +4007,80 @@ fn the_model_field_is_a_dropdown_whose_last_entry_turns_it_into_an_input() {
         ui.find("qwen-fake"),
         Ok(iced_test::selector::Text::Input { .. })
     ));
+}
+
+fn moebius_chat(id: i64) -> client::Run {
+    serde_json::from_value(run(id, "Moebius", "chat", "running")).unwrap()
+}
+
+#[test]
+fn the_moebius_agent_can_write_a_new_issue_from_a_few_words_in_a_chat() {
+    let mut app = App::with_snapshot(snapshot(vec![radiance("Ready")], vec![]));
+    let _ = app.update(Message::NewIssue(new_issue::Message::Open(1)));
+    assert_eq!(
+        pressed(&app, "Let the Moebius agent write it").as_deref(),
+        Some("[NewIssue(ByAgent(true))]")
+    );
+    let _ = app.update(Message::NewIssue(new_issue::Message::ByAgent(true)));
+    assert!(!shows(&app, "Title"), "the agent writes the title");
+    assert_eq!(
+        pressed(&app, "Ask the agent").as_deref(),
+        Some("[]"),
+        "nothing said"
+    );
+    let _ = app.update(Message::NewIssue(paste("cache the model downloads")));
+    assert_eq!(
+        pressed(&app, "Ask the agent").as_deref(),
+        Some("[NewIssue(Create)]")
+    );
+    draw(
+        &app,
+        "board-new-issue-by-agent",
+        &[
+            "Write it",
+            "Let the Moebius agent write it",
+            "Ask the agent",
+        ],
+    );
+    // The chat the server started is shown, and the form is gone.
+    let _ = app.update(Message::NewIssue(new_issue::Message::Asked(Ok(
+        moebius_chat(9),
+    ))));
+    assert_eq!(app.page(), Page::Chat);
+    let _ = app.update(Message::Select(Page::Board(1)));
+    assert!(!shows(&app, "Ask the agent"));
+}
+
+#[test]
+fn the_moebius_agent_can_write_an_agents_instructions_in_a_chat() {
+    let mut app = agents_app();
+    let size = Size::new(1440.0, 1300.0);
+    let clicked_on = |app: &App, label: &str| {
+        let mut ui = simulator_sized(app, size);
+        ui.click(label).unwrap();
+        format!("{:?}", ui.into_messages().collect::<Vec<_>>())
+    };
+    assert_eq!(
+        clicked_on(&app, "Let the Moebius agent write them"),
+        "[Agents(InstructionsByAgent(true))]"
+    );
+    let _ = app.update(Message::Agents(agents::Message::InstructionsByAgent(true)));
+    let _ = app.update(Message::Agents(agents::Message::WishEdited(
+        iced::widget::text_editor::Action::Edit(iced::widget::text_editor::Edit::Paste(
+            std::sync::Arc::new("review Rust changes for unsafe code".to_string()),
+        )),
+    )));
+    assert_eq!(clicked_on(&app, "Ask the agent"), "[Agents(AskAgent)]");
+    draw_sized(
+        &app,
+        "agents-instructions-by-agent",
+        &[
+            "Write them",
+            "Let the Moebius agent write them",
+            "Ask the agent",
+        ],
+        size,
+    );
+    let _ = app.update(Message::Agents(agents::Message::Asked(Ok(moebius_chat(9)))));
+    assert_eq!(app.page(), Page::Chat);
 }

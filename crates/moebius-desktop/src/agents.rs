@@ -14,7 +14,7 @@ use iced::{Alignment, Border, Element, Length, Task};
 use crate::app::Message as AppMessage;
 use crate::client::{
     Agent, AgentDetail, AgentSettings, Available, AvailableModel, Client, ClientError, McpServer,
-    Proposal, ServerSettings, Skill,
+    Proposal, Run, ServerSettings, Skill,
 };
 use crate::live::say;
 use crate::model_picker;
@@ -55,6 +55,14 @@ pub enum Message {
     ThinkingChosen(String),
     BudgetEdited(String),
     Instructions(text_editor::Action),
+    /// "Write them" (false) or "Let the Moebius agent write them" (true) was chosen for the instructions.
+    InstructionsByAgent(bool),
+    /// What the person wants the agent to do, for the Moebius agent to write the instructions from.
+    WishEdited(text_editor::Action),
+    /// "Ask the agent" was pressed.
+    AskAgent,
+    /// The server started the Moebius agent's chat that writes the instructions, or said why not.
+    Asked(Result<Run, ClientError>),
     ToggleSkill(String),
     ToggleMcp(String),
     ExtensionEdited(String),
@@ -102,6 +110,11 @@ struct Editor {
     thinking: Option<String>,
     budget: String,
     instructions: text_editor::Content,
+    /// Whether the Moebius agent writes the instructions from `wish`.
+    by_agent: bool,
+    wish: text_editor::Content,
+    /// Whether the Moebius agent's chat is being started.
+    asking: bool,
     skills: Vec<String>,
     mcp: Vec<String>,
     extensions: Vec<String>,
@@ -126,6 +139,9 @@ impl Editor {
             thinking: None,
             budget: String::new(),
             instructions: text_editor::Content::new(),
+            by_agent: false,
+            wish: text_editor::Content::new(),
+            asking: false,
             skills: vec![],
             mcp: vec![],
             extensions: vec![],
@@ -390,6 +406,35 @@ impl Agents {
                 });
             }
             Message::Save => return self.save(settings),
+            Message::AskAgent => {
+                let Some(editor) = &mut self.editor else {
+                    return Task::none();
+                };
+                let wanted = editor.wish.text().trim().to_string();
+                if wanted.is_empty() || editor.asking {
+                    return Task::none();
+                }
+                editor.asking = true;
+                editor.notice = None;
+                let client = Client::new(settings.clone());
+                let message = instructions_request(&editor.name, &wanted);
+                return Task::perform(
+                    async move { client.start_chat("Moebius", &message, None, false).await },
+                    |result| AppMessage::Agents(Message::Asked(result)),
+                );
+            }
+            Message::Asked(result) => {
+                if let Some(editor) = &mut self.editor {
+                    editor.asking = false;
+                    match result {
+                        Ok(_) => {
+                            editor.by_agent = false;
+                            editor.wish = text_editor::Content::new();
+                        }
+                        Err(e) => editor.notice = Some(Notice::Failed(say(&e))),
+                    }
+                }
+            }
             Message::Saved(Ok(detail)) => {
                 if let Some(editor) = &mut self.editor
                     && editor.name == detail.name
@@ -462,6 +507,8 @@ impl Agents {
             }
             Message::BudgetEdited(budget) => editor.budget = budget,
             Message::Instructions(action) => editor.instructions.perform(action),
+            Message::InstructionsByAgent(by_agent) => editor.by_agent = by_agent,
+            Message::WishEdited(action) => editor.wish.perform(action),
             Message::ToggleSkill(name) => toggle(&mut editor.skills, name),
             Message::ToggleMcp(name) => toggle(&mut editor.mcp, name),
             Message::SkillPathEdited(path) => editor.skill_path = path,
@@ -591,14 +638,6 @@ impl Agents {
             page::white_button("New agent", new_agent),
         );
         let mut detail = column![].spacing(theme::PAGE_GAP).width(Length::Fill);
-        if self.in_file() {
-            detail = detail.push(page::boxed(
-                "Agents are set in moebius.toml",
-                page::body(
-                    "This server keeps its agents in the [agents.*] tables of moebius.toml; an edit here is written to the file and used at once. To keep them in a harness configuration repository instead, see the guide page \"Set up agents\" (docs/guide/agents.md).",
-                ),
-            ));
-        }
         if let Some(editor) = &self.editor {
             detail = detail.push(self.editor_view(editor));
         }
@@ -1073,7 +1112,77 @@ fn settings_row<'a>(editor: &'a Editor, models: &[AvailableModel]) -> Element<'a
     .into()
 }
 
+/// What the Moebius agent is asked to write the instructions of the agent `name`, with what the person wants.
+fn instructions_request(name: &str, wanted: &str) -> String {
+    format!(
+        "Write the instructions of the agent {name} and save them. Read the agent first with \
+         `\"$MOEBIUS\" agent show {name}`, and the moebius skill's guide on agents. `\"$MOEBIUS\" agent save` \
+         replaces the whole agent, so keep its model, protocol, thinking, token budget, skills, MCP servers and \
+         extensions as they are, and pass the new instructions with `--instructions <file>`. Then say what you \
+         wrote.\n\nWhat the person wants {name} to do:\n\n{wanted}"
+    )
+}
+
 fn instructions_box(editor: &Editor) -> Element<'_, AppMessage> {
+    let message = AppMessage::Agents;
+    // A new agent is saved before the Moebius agent can change it.
+    let ways: Element<'_, AppMessage> = if editor.naming {
+        space().into()
+    } else {
+        row![
+            page::chip(
+                "Write them".to_string(),
+                !editor.by_agent,
+                false,
+                message(Message::InstructionsByAgent(false))
+            ),
+            page::chip(
+                "Let the Moebius agent write them".to_string(),
+                editor.by_agent,
+                false,
+                message(Message::InstructionsByAgent(true))
+            ),
+        ]
+        .spacing(8)
+        .into()
+    };
+    let heading = row![
+        text("Instructions")
+            .size(theme::BOX_HEADING)
+            .font(theme::manrope(Weight::Bold)),
+        space::horizontal(),
+        text("Markdown · added to the harness's system prompt")
+            .size(theme::LABEL)
+            .color(theme::TEXT_MUTED),
+    ]
+    .align_y(Alignment::Center);
+    if editor.by_agent && !editor.naming {
+        let ask = (!editor.asking && !editor.wish.text().trim().is_empty())
+            .then_some(message(Message::AskAgent));
+        let wish = text_editor(&editor.wish)
+            .placeholder(
+                "What this agent should do and how, in a few words. The Moebius agent writes the \
+                 instructions and saves them; the chat opens.",
+            )
+            .on_action(|action| AppMessage::Agents(Message::WishEdited(action)))
+            .size(theme::BODY)
+            .padding(14)
+            .height(120)
+            .style(editor_style);
+        return container(
+            column![
+                heading,
+                ways,
+                wish,
+                row![page::primary_button("Ask the agent", ask)]
+            ]
+            .spacing(12),
+        )
+        .padding(20)
+        .width(Length::Fill)
+        .style(|_| page::box_style())
+        .into();
+    }
     let input = text_editor(&editor.instructions)
         .placeholder("What the agent is told before it starts, in Markdown.")
         .on_action(|action| AppMessage::Agents(Message::Instructions(action)))
@@ -1081,40 +1190,29 @@ fn instructions_box(editor: &Editor) -> Element<'_, AppMessage> {
         .size(theme::CODE)
         .padding(14)
         .height(220)
-        .style(|_, status| text_editor::Style {
-            background: theme::LANE.into(),
-            border: Border {
-                color: match status {
-                    text_editor::Status::Focused { .. } => theme::TEAL,
-                    _ => theme::LINE,
-                },
-                width: 1.0,
-                radius: theme::RADIUS_CARD.into(),
+        .style(editor_style);
+    container(column![heading, ways, input].spacing(12))
+        .padding(20)
+        .width(Length::Fill)
+        .style(|_| page::box_style())
+        .into()
+}
+
+fn editor_style(_: &iced::Theme, status: text_editor::Status) -> text_editor::Style {
+    text_editor::Style {
+        background: theme::LANE.into(),
+        border: Border {
+            color: match status {
+                text_editor::Status::Focused { .. } => theme::TEAL,
+                _ => theme::LINE,
             },
-            placeholder: theme::TEXT_MUTED,
-            value: theme::TEXT,
-            selection: theme::TEAL_FILL,
-        });
-    container(
-        column![
-            row![
-                text("Instructions")
-                    .size(theme::BOX_HEADING)
-                    .font(theme::manrope(Weight::Bold)),
-                space::horizontal(),
-                text("Markdown · added to the harness's system prompt")
-                    .size(theme::LABEL)
-                    .color(theme::TEXT_MUTED),
-            ]
-            .align_y(Alignment::Center),
-            input,
-        ]
-        .spacing(12),
-    )
-    .padding(20)
-    .width(Length::Fill)
-    .style(|_| page::box_style())
-    .into()
+            width: 1.0,
+            radius: theme::RADIUS_CARD.into(),
+        },
+        placeholder: theme::TEXT_MUTED,
+        value: theme::TEXT,
+        selection: theme::TEAL_FILL,
+    }
 }
 
 fn extensions_box(editor: &Editor) -> Element<'_, AppMessage> {
