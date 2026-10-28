@@ -131,3 +131,87 @@ async fn a_chat_with_the_moebius_agent_writes_a_column_script_and_it_is_offered_
         SCRIPT.trim()
     );
 }
+
+/// The recorded answers of a chat that operates Moebius: read the board, create an issue on the repository it found,
+/// say "Done.".
+fn operating_answer(body: &Value) -> String {
+    let results = body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|m| m["role"] == "tool")
+        .count();
+    match results {
+        0 => {
+            let command = "\"$MOEBIUS\" board";
+            tool_call_answer("call_board", "bash", &json!({ "command": command }), 300)
+        }
+        1 => {
+            let command = "\"$MOEBIUS\" issue create 1 \"Cache the model downloads\"";
+            tool_call_answer("call_issue", "bash", &json!({ "command": command }), 350)
+        }
+        _ => text_answer("Done.", 400),
+    }
+}
+
+/// The Moebius agent operates Moebius through the command line: told by its instructions, it reads the board with
+/// `"$MOEBIUS" board` and creates an issue, and the card is there.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_moebius_agent_reads_the_board_and_creates_an_issue_through_the_command_line() {
+    let Some(pi_bolt) = std::env::var_os("MOEBIUS_PI_BOLT") else {
+        eprintln!("skipped: set MOEBIUS_PI_BOLT to the pi-bolt executable to run this test");
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let origin = origin(dir.path());
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let upstream = recorded_upstream(requests.clone(), operating_answer).await;
+    let moebius = Path::new(env!("CARGO_BIN_EXE_moebius"));
+    let started = start_as(dir.path(), &pi_bolt, &upstream, Some(moebius)).await;
+    let app = &started.server.app;
+    let repo: Value = started
+        .post(
+            "/v1/repositories",
+            json!({ "name": "demo", "url": origin.to_str().unwrap() }),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(repo["id"], 1);
+
+    let message = "What is on the board? Add an issue to cache the model downloads.";
+    let run: Value = started
+        .post("/v1/chats", json!({ "message": message }))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let run_id = run["id"].as_i64().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(120);
+    while app.run(run_id).unwrap().status != "waiting" {
+        let events = app.store.events(run_id).unwrap();
+        assert!(
+            Instant::now() < deadline && app.run(run_id).unwrap().status != "failed",
+            "the chat is not waiting: {events:#?}"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    let requests = requests.lock().unwrap().clone();
+    assert_eq!(requests.len(), 3);
+    // The instructions tell it to learn the state from the server.
+    let first = requests[0].to_string();
+    assert!(first.contains("Know before you act"), "{first}");
+    // The board it read named the repository.
+    let second = requests[1].to_string();
+    assert!(second.contains("demo (repository 1)"), "{second}");
+    // The issue it created is a card on that board.
+    let cards = app.store.cards(1).unwrap();
+    assert!(
+        cards
+            .iter()
+            .any(|card| card.title == "Cache the model downloads"),
+        "{cards:#?}"
+    );
+}

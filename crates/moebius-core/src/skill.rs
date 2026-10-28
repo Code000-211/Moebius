@@ -70,6 +70,10 @@ const FILES: &[(&str, &str)] = &[
         include_str!("../../../docs/guide/column-scripts.md"),
     ),
     (
+        "guide/command-line.md",
+        include_str!("../../../docs/guide/command-line.md"),
+    ),
+    (
         "guide/desktop-api.md",
         include_str!("../../../docs/guide/desktop-api.md"),
     ),
@@ -197,7 +201,11 @@ mod tests {
         );
         assert_eq!(description("---\nname: x\n---\ndescription: no\n"), None);
         assert_eq!(description("No frontmatter\n"), None);
-        assert!(description(PAGE).unwrap().starts_with("Build on Moebius"));
+        assert!(
+            description(PAGE)
+                .unwrap()
+                .starts_with("Operate and build on Moebius")
+        );
     }
 
     #[test]

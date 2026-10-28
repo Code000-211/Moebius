@@ -23,23 +23,18 @@ Built and described here:
 
 - Column scripts, the default workflow, and a repository's overrides in `.moebius/`.
 - Rules: the built-in rules, rules in prose in a server file and in a repository, and the teacher model.
-- Agents, set up in `moebius.toml` or in a harness configuration repository: model, protocol, thinking level,
-  instructions, token budget, skills and extensions. In the repository, edits through the API are commits, and it holds
-  the server's `rules.md` too.
+- Agents, skills and MCP servers, set up in `moebius.toml` or in a harness configuration repository. In the repository,
+  every edit through the API is a commit, and it holds the server's `rules.md` too.
 - Plugins compiled into the `moebius` binary, and the plugin API.
 - The bridge and Pi extensions.
-- The desktop API (HTTP and one WebSocket) and chats with any configured agent.
-- The Moebius agent, which builds scripts, rules, agents and extensions from this guide in a chat and offers them as a
-  change. It is the default agent of a chat. See [Agents](agents.md#the-moebius-agent).
+- The desktop API (HTTP and one WebSocket), the desktop app built on it, and the [command line](command-line.md),
+  which reaches every route of it.
+- Chats with any agent, in a repository, in the harness configuration repository or in an empty directory. The Moebius
+  agent, the default agent of a chat, operates Moebius through the command line and builds scripts, rules, agents,
+  skills and extensions from this guide; see [Agents](agents.md#the-moebius-agent).
+- The nightly Retro, trials and replays, autoresearch, grilling, the training-set export and the decision model.
 
-Planned, so that nothing here describes them beyond a line:
-
-- MCP servers for agents. They come with milestone M7 (issue 40 in [`docs/issues-m2-m9.md`](../issues-m2-m9.md)). Today
-  the harness configuration repository lists them in `mcp.toml` and agents can name them, but there is no way to give an
-  agent an MCP server yet.
-- The desktop app (`crates/moebius-desktop` is a placeholder). Everything it will do is the desktop API, which you can
-  call yourself.
-- Plugins in their own process.
+Not built: plugins in their own process.
 
 ## The how-tos
 
@@ -53,6 +48,7 @@ Planned, so that nothing here describes them beyond a line:
 | Turn an idea into issues by being questioned about it | [Grilling](grilling.md) |
 | Answer your own decision points with Rust code | [Plugins](plugins.md) |
 | Add behaviour inside the Pi process of a run | [Extensions](extensions.md) |
+| Operate Moebius from a terminal or a script, or let the Moebius agent do it | [Command line](command-line.md) |
 | Drive Moebius from a script with `curl` | [Desktop API](desktop-api.md) |
 
 ## Where to start

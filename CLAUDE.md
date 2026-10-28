@@ -66,11 +66,11 @@ CI also runs the plugin example: `cargo run -p moebius-plugin-api --example allo
 ## Documentation
 
 Moebius is built to be extended by people and agents who have not read its code, so every contract is documented
-exactly in `docs/reference/` (column scripts, `rules.md`, configuration, command line, plugin API, bridge protocol, router, desktop
-API, harness configuration, training export, decision model) and shown in `examples/`. A change to a contract updates
-its reference and examples in the same commit; tests (`crates/moebius-core/tests/reference.rs`) check that every route,
-script function, `card` field, configuration key and event kind is in the reference. Each module starts with a doc
-comment saying what it is for and how it fits in.
+exactly in `docs/reference/` (column scripts, `rules.md`, configuration, command line, plugin API, bridge protocol,
+router, desktop API, harness configuration, training export, decision model) and shown in `examples/`. A change to a
+contract updates its reference and examples in the same commit; tests (`crates/moebius-core/tests/reference.rs`) check
+that every route, script function, `card` field, configuration key and event kind is in the reference. Each module
+starts with a doc comment saying what it is for and how it fits in.
 
 ## Commits
 

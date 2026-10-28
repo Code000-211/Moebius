@@ -113,7 +113,7 @@ fn all_blocks(language: &str) -> Vec<Block> {
 
 // ---- The pages -----------------------------------------------------------------------------------------------
 
-const PAGES: [&str; 10] = [
+const PAGES: [&str; 11] = [
     "README.md",
     "column-scripts.md",
     "workflows.md",
@@ -122,6 +122,7 @@ const PAGES: [&str; 10] = [
     "plugins.md",
     "extensions.md",
     "desktop-api.md",
+    "command-line.md",
     "autoresearch.md",
     "grilling.md",
 ];

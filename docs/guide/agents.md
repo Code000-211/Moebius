@@ -15,12 +15,24 @@ listed exactly in [`docs/reference/configuration.md`](../reference/configuration
 
 ## The Moebius agent
 
-The Moebius agent is bundled and always there. It knows Moebius from this guide and the references, which are its skill,
-and builds what a person asks for: a column script, a rule, an agent, an extension. It works in a chat, in the
-repository the chat is in (what belongs to one repository goes in its `.moebius/`), tries a column script with
-`moebius check-script` and leaves what it built on the chat's branch. When the chat ends, that work is offered as a
-change that a person merges (see [Chat with an agent](#chat-with-an-agent)). It never commits or pushes by itself and it
-does not merge.
+The Moebius agent is bundled and always there. It does for the person in a chat what they could do in the desktop app,
+and builds what they ask for on Moebius. It knows Moebius from this guide and the references, which are its skill, and it
+learns the state of a server from the server itself:
+
+- It operates Moebius with the [command line](command-line.md): it reads the boards, the inbox, chats, usage, agents,
+  rules and settings, and it changes them (an agent, a rule, a skill, an MCP server, a setting, a repository, an issue, a
+  brief, an item of the inbox). Its runs get the server's address and their own run token, which the desktop API accepts
+  for the Moebius agent, so every decision it makes is recorded as `agent:Moebius` with the chat's run. It cannot store
+  an API key or open a shell in a worktree.
+- It builds files: in a repository, what belongs to that repository (its `.moebius/`); in the harness configuration
+  repository (see [Build an extension or skill in a chat](#build-an-extension-or-skill-in-a-chat)), agents, skills,
+  extensions, MCP servers and the server's rules. It tries a column script with `moebius check-script` and a plugin with
+  `cargo test`. When the chat ends, the files are offered as a change that a person merges (see
+  [Chat with an agent](#chat-with-an-agent)); it never commits, pushes or merges its own files.
+
+Its built-in instructions say this, and that it does only what the person asked for: it does something hard to undo
+(deleting, merging, restarting the server) only when asked for exactly that, never weakens a rule, never writes a secret
+anywhere, and ends each answer with what it did, how it tried it, and what the person has to do now.
 
 It is the default of a chat: `POST /v1/chats` without `agent` starts a chat with it. It needs a model. Without
 configuration it takes the Coder's model and protocol; with an `[agents.Moebius]` table it uses that table's:
