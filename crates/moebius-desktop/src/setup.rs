@@ -9,9 +9,7 @@ use std::collections::BTreeSet;
 
 use iced::font::Weight;
 use iced::widget::text::Wrapping;
-use iced::widget::{
-    column, combo_box, container, pick_list, row, scrollable, space, text, text_input,
-};
+use iced::widget::{column, container, pick_list, row, scrollable, space, text, text_input};
 use iced::{Alignment, Element, Length, Padding, Task};
 use serde_json::{Map, Value, json};
 
@@ -34,7 +32,7 @@ const PROTOCOLS: [&str; 2] = ["openai", "anthropic"];
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Kind {
     Text,
-    /// A model's name: a list of the models the upstreams serve, which can be typed into.
+    /// A model's name: a dropdown of the models the upstreams serve, or an input for another one.
     Model,
     /// A path, a URL or an address, set in the code font.
     Code,
@@ -152,6 +150,8 @@ pub enum Message {
     RefreshAvailable,
     /// A model was picked from the list of the field with this key.
     PickModel(&'static str, AvailableModel),
+    /// "Another model…" was chosen in the Model field with this key: it becomes an input.
+    TypeModel(&'static str),
     Server(Result<ServerSettings, ClientError>),
     /// The input of a key of the configuration was edited.
     Edit(&'static str, String),
@@ -212,8 +212,10 @@ struct Field {
     original: String,
     /// What the server uses when the file does not set the key.
     default: Option<String>,
-    /// The list of a Model field.
-    combo: combo_box::State<AvailableModel>,
+    /// What a Model field offers.
+    models: Vec<AvailableModel>,
+    /// Whether a Model field is an input rather than the list.
+    typing: bool,
 }
 
 /// A value as the text of an input.
@@ -244,7 +246,8 @@ impl Field {
             original: text.clone(),
             text,
             default: (!set && !shown.is_empty()).then_some(shown),
-            combo: model_picker::state(None),
+            models: vec![],
+            typing: false,
         }
     }
 
@@ -765,7 +768,7 @@ impl Setup {
                 self.available = Some(available);
                 self.offer_models();
             }
-            // Without the list the fields can still be typed into.
+            // Without the list the fields are inputs.
             Message::Available(Err(_)) => {}
             Message::RefreshAvailable => {
                 if let Some(settings) = settings {
@@ -824,7 +827,7 @@ impl Setup {
             {
                 for field in &mut optional.form.fields {
                     if field.kind == Kind::Model {
-                        field.combo = model_picker::state(self.available.as_ref());
+                        field.models = self.available.as_ref().map_or(vec![], |a| a.models.clone());
                     }
                 }
             }
@@ -841,6 +844,11 @@ impl Setup {
             Message::Edit(key, text) => {
                 if let Some(field) = forms.field_mut(key) {
                     field.text = text;
+                }
+            }
+            Message::TypeModel(key) => {
+                if let Some(field) = forms.field_mut(key) {
+                    field.typing = true;
                 }
             }
             Message::PickModel(key, model) => {
@@ -1279,12 +1287,14 @@ fn field_view<'a>(
                 .menu_style(menu_style)
                 .into()
         }
-        Kind::Model => model_picker::combo(
-            &field.combo,
+        Kind::Model => model_picker::field(
+            &field.models,
+            field.typing,
             field.default.as_deref().unwrap_or(""),
             &field.text,
             on_input,
             move |model| AppMessage::Setup(Message::PickModel(key, model)),
+            AppMessage::Setup(Message::TypeModel(key)),
         ),
         kind => text_input(field.default.as_deref().unwrap_or(""), &field.text)
             .on_input(on_input)

@@ -1,43 +1,85 @@
-//! The Model fields of the Models and Agents screens: a list of the models the upstreams serve (`GET
-//! /v1/models/available`) that can still be typed into, so that a model no upstream lists can be entered. The list
-//! shows each model's id.
+//! The Model fields of the Models and Agents screens: a dropdown of the models the upstreams serve (`GET
+//! /v1/models/available`), whose last entry, "Another model…", turns the field into an input, so that a model no
+//! upstream lists can be entered. Without a list the field is an input.
+
+use std::fmt;
 
 use iced::font::Weight;
-use iced::widget::{button, column, combo_box, row, space, text};
+use iced::widget::{button, column, pick_list, row, space, text, text_input};
 use iced::{Border, Element, Length};
 
-use crate::agents::menu_style;
+use crate::agents::{menu_style, pick_style};
 use crate::client::{Available, AvailableModel};
 use crate::connect;
 use crate::theme;
 
-/// The list to pick from, with nothing typed.
-pub fn state(available: Option<&Available>) -> combo_box::State<AvailableModel> {
-    combo_box::State::new(available.map(|a| a.models.clone()).unwrap_or_default())
+/// An entry of the dropdown.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Choice {
+    Model(AvailableModel),
+    /// Type a model the list does not have.
+    Other,
 }
 
-/// The field. `current` is what the model is now, listed or not.
-pub fn combo<'a, Message: Clone + 'a>(
-    state: &'a combo_box::State<AvailableModel>,
+impl fmt::Display for Choice {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Choice::Model(model) => f.write_str(&model.id),
+            Choice::Other => f.write_str("Another model…"),
+        }
+    }
+}
+
+/// The field. `current` is what the model is now, listed or not; `typing` is whether the person chose to type one.
+pub fn field<'a, Message: Clone + 'a>(
+    models: &[AvailableModel],
+    typing: bool,
     placeholder: &str,
     current: &str,
-    on_input: impl Fn(String) -> Message + 'static,
-    on_pick: impl Fn(AvailableModel) -> Message + 'static,
+    on_input: impl Fn(String) -> Message + 'a,
+    on_pick: impl Fn(AvailableModel) -> Message + 'a,
+    on_type: Message,
 ) -> Element<'a, Message> {
-    let selected = (!current.is_empty()).then(|| AvailableModel {
-        id: current.to_string(),
-        protocol: String::new(),
-        upstream: String::new(),
+    if typing || models.is_empty() {
+        return text_input(placeholder, current)
+            .on_input(on_input)
+            .font(theme::MANROPE)
+            .size(theme::BODY)
+            .padding([9, 12])
+            .width(Length::Fill)
+            .style(connect::input_style)
+            .into();
+    }
+    let selected = (!current.is_empty()).then(|| {
+        Choice::Model(
+            models
+                .iter()
+                .find(|model| model.id == current)
+                .cloned()
+                .unwrap_or_else(|| AvailableModel {
+                    id: current.to_string(),
+                    protocol: String::new(),
+                    upstream: String::new(),
+                }),
+        )
     });
-    combo_box(state, placeholder, selected.as_ref(), on_pick)
-        .on_input(on_input)
-        .font(theme::MANROPE)
-        .size(theme::BODY)
-        .padding([9, 12])
-        .width(Length::Fill)
-        .input_style(connect::input_style)
-        .menu_style(menu_style)
-        .into()
+    let choices: Vec<Choice> = models
+        .iter()
+        .cloned()
+        .map(Choice::Model)
+        .chain([Choice::Other])
+        .collect();
+    pick_list(choices, selected, move |choice| match choice {
+        Choice::Model(model) => on_pick(model),
+        Choice::Other => on_type.clone(),
+    })
+    .placeholder(placeholder.to_string())
+    .text_size(theme::BODY)
+    .padding([9, 12])
+    .width(Length::Fill)
+    .style(pick_style)
+    .menu_style(menu_style)
+    .into()
 }
 
 /// What goes under a Model field: the upstreams that could not be asked, once each, and the link that asks again.

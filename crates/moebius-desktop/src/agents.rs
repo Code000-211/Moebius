@@ -7,8 +7,7 @@
 use iced::font::Weight;
 use iced::widget::text::Wrapping;
 use iced::widget::{
-    button, column, combo_box, container, pick_list, row, scrollable, space, text, text_editor,
-    text_input,
+    button, column, container, pick_list, row, scrollable, space, text, text_editor, text_input,
 };
 use iced::{Alignment, Border, Element, Length, Task};
 
@@ -50,6 +49,8 @@ pub enum Message {
     NewAgent,
     NameEdited(String),
     ModelEdited(String),
+    /// "Another model…" was chosen: the Model field becomes an input.
+    TypeModel,
     ProtocolChosen(String),
     ThinkingChosen(String),
     BudgetEdited(String),
@@ -95,6 +96,8 @@ struct Editor {
     exists: bool,
     files: Files,
     model: String,
+    /// Whether the Model field is an input rather than the list.
+    typing_model: bool,
     protocol: String,
     thinking: Option<String>,
     budget: String,
@@ -118,6 +121,7 @@ impl Editor {
             exists: false,
             files: Files::Ready,
             model: String::new(),
+            typing_model: false,
             protocol: PROTOCOLS[0].to_string(),
             thinking: None,
             budget: String::new(),
@@ -202,8 +206,6 @@ pub struct Agents {
     proposals: Vec<Proposal>,
     /// What the upstreams serve, once they have been asked.
     available: Option<Available>,
-    /// The list of the Model field.
-    model_list: combo_box::State<AvailableModel>,
     editor: Option<Editor>,
 }
 
@@ -359,16 +361,6 @@ impl Agents {
     }
 
     pub fn update(&mut self, message: Message, settings: Option<&Settings>) -> Task<AppMessage> {
-        // The list keeps what is typed into it, which the next agent opened must not find.
-        let typing = matches!(message, Message::ModelEdited(_) | Message::ModelPicked(_));
-        let task = self.handle(message, settings);
-        if !typing {
-            self.model_list = model_picker::state(self.available.as_ref());
-        }
-        task
-    }
-
-    fn handle(&mut self, message: Message, settings: Option<&Settings>) -> Task<AppMessage> {
         let Some(settings) = settings else {
             return Task::none();
         };
@@ -457,6 +449,7 @@ impl Agents {
         match message {
             Message::NameEdited(name) => editor.name = name,
             Message::ModelEdited(model) => editor.model = model,
+            Message::TypeModel => editor.typing_model = true,
             Message::ModelPicked(model) => {
                 editor.model = model.id;
                 if PROTOCOLS.contains(&model.protocol.as_str()) {
@@ -1016,21 +1009,21 @@ pub(crate) fn menu_style(_: &iced::Theme) -> iced::overlay::menu::Style {
 impl Agents {
     /// Model, protocol, thinking level and token budget.
     fn settings_row<'a>(&'a self, editor: &'a Editor) -> Element<'a, AppMessage> {
-        settings_row(editor, &self.model_list)
+        let models = self.available.as_ref().map_or(&[][..], |a| &a.models[..]);
+        settings_row(editor, models)
     }
 }
 
-fn settings_row<'a>(
-    editor: &'a Editor,
-    models: &'a combo_box::State<AvailableModel>,
-) -> Element<'a, AppMessage> {
+fn settings_row<'a>(editor: &'a Editor, models: &[AvailableModel]) -> Element<'a, AppMessage> {
     let message = |message| AppMessage::Agents(message);
-    let model = model_picker::combo(
+    let model = model_picker::field(
         models,
+        editor.typing_model,
         "The model's name",
         &editor.model,
         move |model| message(Message::ModelEdited(model)),
         move |model| message(Message::ModelPicked(model)),
+        message(Message::TypeModel),
     );
     let protocols: Vec<String> = PROTOCOLS.iter().map(|p| p.to_string()).collect();
     let protocol = pick_list(protocols, Some(editor.protocol.clone()), move |p| {

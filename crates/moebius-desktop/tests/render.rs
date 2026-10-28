@@ -3940,7 +3940,8 @@ fn picking_a_model_sets_the_field_and_the_protocol_and_a_typed_model_is_kept() {
     assert_eq!(plan.set["decision_model.model"], "claude-opus-fake");
     assert!(!plan.set.contains_key("decision_model.protocol"));
 
-    // A model no upstream lists can be typed.
+    // A model no upstream lists can be typed, after "Another model…".
+    let _ = state.update(setup::Message::TypeModel("teacher.model"), None);
     edit(&mut state, "teacher.model", "my-own-model");
     let plan = state.save_request(true).unwrap();
     assert_eq!(plan.set["teacher.model"], "my-own-model");
@@ -3975,4 +3976,23 @@ fn the_agents_page_offers_a_refresh_and_says_which_upstream_could_not_be_asked()
     ))));
     assert!(shows(&app, "Refresh"));
     assert!(shows(&app, "Could not ask https://api.example.com/v1: 401"));
+}
+
+#[test]
+fn the_model_field_is_a_dropdown_whose_last_entry_turns_it_into_an_input() {
+    let mut app = agents_app();
+    let _ = app.update(Message::Agents(agents::Message::Available(Ok(
+        available_models(),
+    ))));
+    let size = Size::new(1440.0, 1400.0);
+    draw_sized(&app, "agents-model-list", &["Model", "Refresh"], size);
+    // A dropdown shows the model as its choice, not as the text of an input.
+    assert!(simulator_sized(&app, size).find("qwen-fake").is_err());
+
+    let _ = app.update(Message::Agents(agents::Message::TypeModel));
+    let mut ui = simulator_sized(&app, size);
+    assert!(matches!(
+        ui.find("qwen-fake"),
+        Ok(iced_test::selector::Text::Input { .. })
+    ));
 }
