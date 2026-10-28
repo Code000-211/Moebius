@@ -138,6 +138,12 @@ pub struct Chat {
     /// The first line of the first message.
     #[serde(default)]
     pub title: String,
+    /// The `seq` of the chat's last answer or error.
+    #[serde(default)]
+    pub answered: i64,
+    /// How far the person has read the chat; unread while below `answered`.
+    #[serde(default)]
+    pub seen: i64,
 }
 
 impl Chat {
@@ -1225,6 +1231,17 @@ impl Client {
             serde_json::json!({ "message": message, "continues": chat }),
         )
         .await
+    }
+
+    /// Says that the person has read the chat up to the event `seq`.
+    pub async fn mark_seen(&self, chat: i64, seq: i64) -> Result<(), ClientError> {
+        let _: serde_json::Value = self
+            .post(
+                &format!("/v1/chats/{chat}/seen"),
+                serde_json::json!({ "seq": seq }),
+            )
+            .await?;
+        Ok(())
     }
 
     /// Writes to a chat; a working agent gets the message as a follow-up.

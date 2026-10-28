@@ -61,6 +61,8 @@ pub enum Message {
     Tick(i64),
     /// A link of the agent's text was clicked.
     LinkClicked(String),
+    /// The server was told how far the open chat is read; nothing waits on the answer.
+    MarkedRead,
 }
 
 /// The chat being read.
@@ -192,6 +194,33 @@ impl Chats {
             .count()
     }
 
+    /// How many chats have an answer the person has not read.
+    pub fn unread(&self) -> usize {
+        self.list
+            .iter()
+            .filter(|chat| chat.answered > chat.seen)
+            .count()
+    }
+
+    /// The open chat is on the screen: what it holds is read. Tells the server when that moves on.
+    pub fn mark_read(&mut self, settings: &Settings) -> Task<AppMessage> {
+        let Some(open) = &self.open else {
+            return Task::none();
+        };
+        let (id, seq) = (open.id, open.conversation.last_seq());
+        let Some(chat) = self.list.iter_mut().find(|chat| chat.id == id) else {
+            return Task::none();
+        };
+        if seq <= chat.seen {
+            return Task::none();
+        }
+        chat.seen = seq;
+        let client = Client::new(settings.clone());
+        Task::perform(async move { client.mark_seen(id, seq).await }, |_| {
+            AppMessage::Chat(Message::MarkedRead)
+        })
+    }
+
     /// Reads the chats again, and what the open chat missed.
     pub fn reload(&self, settings: &Settings) -> Task<AppMessage> {
         let client = Client::new(settings.clone());
@@ -217,6 +246,11 @@ impl Chats {
     /// A `run_event` of the stream: the chat's status follows the agent, and the open chat takes the event. Whether
     /// the open chat's judgements are to be read again, as a check of it arrived.
     pub fn on_event(&mut self, run: i64, event: &RunEvent) -> bool {
+        if matches!(event.kind.as_str(), "agent_settled" | "moebius_error")
+            && let Some(chat) = self.list.iter_mut().find(|c| c.id == run)
+        {
+            chat.answered = chat.answered.max(event.seq);
+        }
         if let Some(chat) = self.list.iter_mut().find(|c| c.id == run && c.is_open()) {
             match event.kind.as_str() {
                 "agent_start" => chat.status = "running".to_string(),
@@ -417,6 +451,7 @@ impl Chats {
                 }
             }
             Message::Tick(now) => self.now = now,
+            Message::MarkedRead => {}
             Message::LinkClicked(uri) => {
                 if let Some(open) = &mut self.open {
                     open.notice = Some(format!("Links are not opened from here: {uri}"));

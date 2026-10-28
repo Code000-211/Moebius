@@ -251,6 +251,18 @@ impl App {
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
+        let task = self.handle(message);
+        // What the chat on the screen holds is read, however it got there.
+        match (&self.screen, self.page(), &self.settings) {
+            (Screen::Main, Page::Chat, Some(settings)) => {
+                let read = self.chats.mark_read(&settings.clone());
+                Task::batch([task, read])
+            }
+            _ => task,
+        }
+    }
+
+    fn handle(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::AddressChanged(address) => self.form.address = address,
             Message::TokenChanged(token) => self.form.token = token,
@@ -782,7 +794,7 @@ impl App {
                         &self.snapshot,
                         self.connection,
                         &page,
-                        self.chats.waiting(),
+                        self.chats.unread(),
                         self.usage.today(),
                         self.collapsed,
                         &self.search.text

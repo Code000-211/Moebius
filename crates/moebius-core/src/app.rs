@@ -110,6 +110,10 @@ pub struct Chat {
     pub started_at: i64,
     pub ended_at: Option<i64>,
     pub title: String,
+    /// The `seq` of the chat's last answer or error, which the person has to read.
+    pub answered: i64,
+    /// How far the person has read the chat (`POST /v1/chats/{id}/seen`); unread while below `answered`.
+    pub seen: i64,
 }
 
 /// One thing in a card's history: `moved`, `run_started`, `run_ended`, `decided`, `inbox_added` or `inbox_resolved`.
@@ -710,9 +714,20 @@ impl App {
                     started_at: run.started_at,
                     ended_at: run.ended_at,
                     title,
+                    answered: self.store.answered_seq(run.id)?,
+                    seen: self.store.seen_seq(run.id)?,
                 })
             })
             .collect()
+    }
+
+    /// A person has read the chat `run_id` up to the event `seq`.
+    pub fn mark_chat_seen(&self, run_id: i64, seq: i64) -> Result<()> {
+        let run = self.run(run_id)?;
+        if run.purpose != "chat" {
+            return Err(AppError::Invalid(format!("run {run_id} is not a chat")));
+        }
+        Ok(self.store.set_seen_seq(run_id, seq)?)
     }
 
     /// The title of a chat: the first line of its first message.

@@ -48,7 +48,7 @@ pub fn view<'a>(
     snapshot: &'a Snapshot,
     connection: Connection,
     page: &Page,
-    chats_waiting: usize,
+    chats_unread: usize,
     tokens_today: Option<(i64, Option<i64>)>,
     collapsed: bool,
     search: &str,
@@ -64,8 +64,8 @@ pub fn view<'a>(
     let chat = item(
         Lead::Icon(Icon::Chat),
         Page::Chat.title(),
-        if chats_waiting > 0 {
-            Trailing::Badge(chats_waiting)
+        if chats_unread > 0 {
+            Trailing::Badge(chats_unread)
         } else {
             Trailing::Nothing
         },

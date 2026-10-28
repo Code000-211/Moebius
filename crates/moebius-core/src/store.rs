@@ -260,6 +260,9 @@ CREATE TABLE takeovers (
     at INTEGER NOT NULL
 );
 "#,
+    r#"
+ALTER TABLE runs ADD COLUMN seen_seq INTEGER NOT NULL DEFAULT 0;
+"#,
 ];
 
 const CHANGE_COLUMNS: &str = "id, repository_id, card_id, branch, state, pull_request, checks, review, \
@@ -1272,6 +1275,35 @@ impl Store {
         let mut chats = self.runs_where("purpose = ?1", "chat".to_string().into())?;
         chats.reverse();
         Ok(chats)
+    }
+
+    /// How far a person has read the run: the `seq` of the last of its events they have seen.
+    pub fn seen_seq(&self, run_id: i64) -> Result<i64> {
+        Ok(self
+            .conn()
+            .query_row("SELECT seen_seq FROM runs WHERE id = ?1", [run_id], |r| {
+                r.get(0)
+            })?)
+    }
+
+    /// A person has read the run up to the event `seq`; reading never goes back.
+    pub fn set_seen_seq(&self, run_id: i64, seq: i64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE runs SET seen_seq = MAX(seen_seq, ?2) WHERE id = ?1",
+            params![run_id, seq],
+        )?;
+        Ok(())
+    }
+
+    /// The `seq` of the last event of the run that a person has to read: an answer that settled, or an error. Zero
+    /// without one.
+    pub fn answered_seq(&self, run_id: i64) -> Result<i64> {
+        Ok(self.conn().query_row(
+            "SELECT COALESCE(MAX(seq), 0) FROM events
+             WHERE run_id = ?1 AND kind IN ('agent_settled', 'moebius_error')",
+            [run_id],
+            |r| r.get(0),
+        )?)
     }
 
     /// The runs that have not ended.

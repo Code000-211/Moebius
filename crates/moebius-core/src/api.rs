@@ -45,6 +45,7 @@
 //! - `POST /v1/chats` `{agent?, message, repository?, continues?}`: starts a chat, with the Moebius agent unless
 //!   `agent` names another, or goes on from the ended chat `continues`. `GET /v1/chats`: the chats, newest first.
 //!   `POST /v1/chats/{id}/messages` `{message}`: writes to a chat. `POST /v1/chats/{id}/end`: ends a chat.
+//!   `POST /v1/chats/{id}/seen` `{seq}`: a person has read a chat that far.
 //!
 //! Every request carries `Authorization: Bearer <token>`; anything else is answered with 401.
 
@@ -431,6 +432,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/chats", get(chats).post(start_chat))
         .route("/v1/chats/{id}/messages", post(say_in_chat))
         .route("/v1/chats/{id}/end", post(end_chat))
+        .route("/v1/chats/{id}/seen", post(chat_seen))
         .layer(middleware::from_fn_with_state(state.clone(), authenticate))
         .with_state(state)
 }
@@ -1042,6 +1044,24 @@ async fn end_chat(
 ) -> Result<axum::Json<Run>, ApiError> {
     let runs = state.runs.clone();
     blocking(&state.app, move |app| app.end_chat(&*runs, id)).await
+}
+
+/// How far a person has read a chat.
+#[derive(Debug, Deserialize)]
+struct Seen {
+    seq: i64,
+}
+
+async fn chat_seen(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+    axum::Json(seen): axum::Json<Seen>,
+) -> Result<axum::Json<serde_json::Value>, ApiError> {
+    blocking(&state.app, move |app| {
+        app.mark_chat_seen(id, seen.seq)
+            .map(|()| serde_json::json!({}))
+    })
+    .await
 }
 
 async fn get_run(
@@ -2575,6 +2595,41 @@ mod tests {
             status(app, working.id) == "stopped"
         })
         .await;
+    }
+
+    #[tokio::test]
+    async fn a_chat_is_unread_until_the_person_has_seen_its_answer() {
+        let (_dir, state, addr) = start().await;
+        let run = chat(&state, &addr, "Hello", None).await;
+        let listed: Vec<Chat> = get(&state, &addr, "/v1/chats").await;
+        let answered = listed[0].answered;
+        assert!(answered > 0);
+        assert_eq!(listed[0].seen, 0);
+
+        let seen = |seq: i64| {
+            post(
+                &state,
+                &addr,
+                format!("/v1/chats/{}/seen", run.id),
+                serde_json::json!({ "seq": seq }),
+            )
+        };
+        assert_eq!(seen(answered).await.status(), 200);
+        let listed: Vec<Chat> = get(&state, &addr, "/v1/chats").await;
+        assert_eq!(listed[0].seen, answered);
+        // Reading never goes back.
+        assert_eq!(seen(1).await.status(), 200);
+        let listed: Vec<Chat> = get(&state, &addr, "/v1/chats").await;
+        assert_eq!(listed[0].seen, answered);
+
+        // The next answer is unread again.
+        say(&state, &addr, run.id, "Again").await;
+        until("the second answer", || {
+            state.app.chats().unwrap()[0].answered > answered
+        })
+        .await;
+        let chat = &state.app.chats().unwrap()[0];
+        assert!(chat.answered > chat.seen);
     }
 
     #[tokio::test]

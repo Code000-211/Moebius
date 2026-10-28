@@ -53,8 +53,10 @@ works in, or null).
 `status` (`proposed`, `reported`, `empty`, `confirmed` or `dismissed`), `reason` (why a grilling is `empty`; else empty) and
 `at`.
 
-`Chat`: `id` (the id of its run), `agent`, `status` (that of the run), `repository_id` (or null), `started_at`, `ended_at`
-and `title` (the first line of the first message, at most 80 characters).
+`Chat`: `id` (the id of its run), `agent`, `status` (that of the run), `repository_id` (or null), `started_at`, `ended_at`,
+`title` (the first line of the first message, at most 80 characters), `answered` (the `seq` of the chat's last
+`agent_settled` or `moebius_error` event, 0 without one) and `seen` (how far a person has read it, see
+`POST /v1/chats/{id}/seen`). A chat is unread while `answered` is greater than `seen`.
 
 `Change`: `id`, `repository_id`, `card_id` (or null), `branch`, `state` (`open`, `merged` or `closed`), `pull_request`
 (the number on GitHub, or null), `checks` (`pending`, `success`, `failure` or null), `review` (the latest review's state in
@@ -639,6 +641,13 @@ is done with the current turn (a follow-up). To change what a working agent is d
 Request: `{"message": "..."}`; `message` is required and must not be blank.
 
 Response: the `Run`. Errors: `404` no such run; `422` the run is not a chat, the chat has ended, or the message is blank.
+
+### `POST /v1/chats/{id}/seen`
+
+A person has read the chat up to the event `seq`: `{"seq": number}`. The chat's `seen` becomes that `seq`, unless it is
+already further, since reading never goes back. The desktop app sends it while the chat is open on its Chat page, and
+counts on the sidebar's Chat entry the chats that are unread. Response: `{}`. Errors: `404` no such run; `422` the run
+is not a chat.
 
 ### `POST /v1/chats/{id}/end`
 

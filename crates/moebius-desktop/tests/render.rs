@@ -1468,6 +1468,19 @@ fn a_chat_is_drawn_with_its_markdown_tool_calls_and_offered_change() {
     );
 }
 
+/// The Chat entry counts the chats with an answer the person has not read; a chat open on the Chat page is read.
+#[test]
+fn the_chat_badge_counts_unread_answers_and_reading_one_clears_it() {
+    let mut app = chatting("waiting", false);
+    let mut listing = chat_listing("waiting");
+    listing[1].answered = 4;
+    let _ = app.update(Message::Chat(chat::Message::Listed(Ok(listing))));
+    assert!(shows(&app, "1"), "chat 6 is unread");
+    let _ = app.update(Message::Chat(chat::Message::Select(6)));
+    let _ = app.update(Message::Chat(chat::Message::Loaded(6, Ok(chat_events()))));
+    assert!(!shows(&app, "1"), "chat 6 was read");
+}
+
 /// An ended chat is written to like any other, and Send goes on in a new chat; a failed chat's tag is red and keeps its
 /// size beside a long title.
 #[test]
