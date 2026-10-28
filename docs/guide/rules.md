@@ -29,7 +29,8 @@ variables. Rules in prose are for what the patterns cannot see.
 1. Write the rules as a `rules.md`: one `## name` heading per rule, then the text.
 2. Put the file where it applies:
    - Every run of the server: any path, named by the top-level key `rules_file` in `moebius.toml`. A relative path is
-     relative to the directory of `moebius.toml`. Without the key, there are no server rules. With a harness
+     relative to the directory of `moebius.toml`. Without the key it is `rules.md` next to `moebius.toml`; while that
+     file does not exist there are no server rules. With a harness
      configuration repository (`[harness]`, see [Agents](agents.md#in-a-harness-configuration-repository)) the rules are
      its `rules.md` instead, and `rules_file` is an error.
    - The runs of one repository: `.moebius/rules.md`, committed to its default branch. Where to commit is the same as for
@@ -42,10 +43,14 @@ dropped, and the server's text stands. When a name is repeated within one file, 
 
 ### Change the server's rules in the desktop app
 
-With a harness configuration repository, the Rules page of the desktop app shows the built-in patterns, the rules in
+The Rules page of the desktop app shows the built-in patterns, the rules in
 prose and the rules of each repository, with how many calls each rule refused in the last week. The text of the server's
-rules is an editor there: Save commits it to the repository as `Update the rules`, pushes it, and the next tool call is
-checked against it. Without `[harness]` the page is read only, because the rules are a file of the server (`rules_file`).
+rules is an editor there: with a harness configuration repository, Save commits it to the repository as `Update the
+rules` and pushes it; without one, Save replaces the `rules_file` (creating `rules.md` next to `moebius.toml` the first
+time). The next tool call is checked against it.
+Save is disabled until the text changes, and a refusal of the server is shown in red. "Let the Moebius agent write them"
+asks for what should be allowed or forbidden and starts a chat in which the Moebius agent reads the rules, changes them
+in prose without weakening any and saves them with `"$MOEBIUS" rules save <file>`.
 The same is `GET` and `PUT /v1/rules`, see the [desktop API](../reference/desktop-api.md).
 
 ## An example

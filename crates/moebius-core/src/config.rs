@@ -28,9 +28,10 @@ run_limit = 3
 # When the daily Retro runs, as HH:MM in the server's local time.
 retro_at = "23:30"
 
-# Rules every run must follow, as Markdown with one section per rule (a heading `## name` and its text); relative paths are inside this
-# file's directory. A repository adds its own in .moebius/rules.md but cannot replace these. Without the file, only
-# the built-in rules apply. Not allowed together with [harness], whose repository holds rules.md.
+# Rules every run must follow, as Markdown with one section per rule (a heading `## name` and its text); relative paths
+# are inside this file's directory, and the desktop app edits the file. A repository adds its own in .moebius/rules.md
+# but cannot replace these. While the file does not exist, only the built-in rules apply. Not allowed together with
+# [harness], whose repository holds rules.md.
 # rules_file = "rules.md"
 
 # The daily stretch in which trials, replays and autoresearch may run without asking.
@@ -622,7 +623,12 @@ impl Config {
             } else {
                 pi_bolt
             },
-            rules_file: raw.rules_file.map(|file| base.join(file)),
+            // Without a harness repository the server's rules are a file next to this one unless named; a missing
+            // file means no rules.
+            rules_file: match &raw.harness {
+                Some(_) => None,
+                None => Some(base.join(raw.rules_file.unwrap_or_else(|| "rules.md".into()))),
+            },
             harness_url: raw.harness.as_ref().map(|harness| harness.url.clone()),
             mcp_env: raw
                 .harness
@@ -717,7 +723,7 @@ mod tests {
         assert_eq!(c.router_listen, "127.0.0.1:9100".parse().unwrap());
         assert_eq!(c.upstreams[0].protocol, Protocol::Anthropic);
         assert_eq!(c.pi_bolt, PathBuf::from("/opt/pi-bolt"));
-        assert_eq!(c.rules_file, None);
+        assert_eq!(c.rules_file, Some(PathBuf::from("/srv/rules.md")));
         assert_eq!(c.agents["Coder"].protocol, Protocol::OpenAi);
         assert_eq!(c.agents["Coder"].token_budget, Some(100));
         assert!(matches!(

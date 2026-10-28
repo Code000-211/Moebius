@@ -36,7 +36,8 @@
 //!   the file. `PUT` and `DELETE /v1/secrets/{name}` keep and remove an API key. `POST /v1/server/restart` restarts the
 //!   server (see [`crate::settings`]).
 //! - `GET /v1/rules`: the built-in patterns, the rules in prose, those of each repository and the refusals of the last
-//!   week. `PUT /v1/rules` `{text}` replaces the rules in prose of the harness configuration repository (see
+//!   week. `PUT /v1/rules` `{text}` replaces the rules in prose of the harness configuration repository, or the server's
+//!   `rules_file` without one (see
 //!   [`crate::rules`]).
 //! - `POST /v1/research` `{repository, goal, measure, better, token_budget}`: stores a brief as a draft. `GET
 //!   /v1/research` and `GET /v1/research/{id}`: research with its baseline and experiments.
@@ -1013,7 +1014,7 @@ struct SavedRules {
     commit: Option<String>,
 }
 
-/// The rules file the server reads and whether a person can change it.
+/// The rules file the server reads, and whether it is the harness configuration repository's.
 fn rules_source(state: &ApiState) -> (Option<PathBuf>, bool) {
     match &state.harness_repo {
         Some(repo) => (Some(repo.path().join("rules.md")), true),
@@ -1022,9 +1023,9 @@ fn rules_source(state: &ApiState) -> (Option<PathBuf>, bool) {
 }
 
 async fn get_rules(State(state): State<ApiState>) -> Result<axum::Json<rules::View>, ApiError> {
-    let (file, editable) = rules_source(&state);
+    let (file, harness) = rules_source(&state);
     blocking(&state.app, move |app| {
-        rules::view(app, file.as_deref(), editable)
+        rules::view(app, file.as_deref(), harness)
     })
     .await
 }
@@ -1034,16 +1035,22 @@ async fn put_rules(
     Extension(by): Extension<Actor>,
     axum::Json(new): axum::Json<NewRules>,
 ) -> Result<axum::Json<SavedRules>, ApiError> {
+    let (file, harness) = rules_source(&state);
     let Some(repo) = state.harness_repo.clone() else {
-        return Err(AppError::Conflict(
-            "the rules are a file of the server, not of a harness repository, and are read only here".into(),
-        )
-        .into());
+        // Without a harness configuration repository the rules are the server's own file.
+        let Some(target) = file.clone() else {
+            return Err(AppError::Conflict("the server has no rules file".into()).into());
+        };
+        return blocking(&state.app, move |app| {
+            rules::save_file(app, &by, &target, &new.text)?;
+            let view = rules::view(app, file.as_deref(), harness)?;
+            Ok(SavedRules { view, commit: None })
+        })
+        .await;
     };
-    let (file, editable) = rules_source(&state);
     blocking(&state.app, move |app| {
         let commit = repo.save_rules(app, &by, &new.text)?;
-        let view = rules::view(app, file.as_deref(), editable)?;
+        let view = rules::view(app, file.as_deref(), harness)?;
         Ok(SavedRules { view, commit })
     })
     .await
@@ -1671,6 +1678,40 @@ mod tests {
             assert!(std::time::Instant::now() < give_up, "never: {what}");
             tokio::time::sleep(std::time::Duration::from_millis(20)).await;
         }
+    }
+
+    #[tokio::test]
+    async fn without_a_harness_repository_the_rules_are_a_file_next_to_the_configuration() {
+        let (dir, state, addr) = start().await;
+        let client = reqwest::Client::new();
+        let put = |text: &str| {
+            client
+                .put(format!("http://{addr}/v1/rules"))
+                .bearer_auth(&state.token)
+                .json(&serde_json::json!({ "text": text }))
+                .send()
+        };
+        let rules: serde_json::Value = client
+            .get(format!("http://{addr}/v1/rules"))
+            .bearer_auth(&state.token)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(rules["prose"]["editable"], true, "{rules}");
+
+        let text = "## no-migrations\n\nNever edit the migrations.";
+        assert_eq!(put(text).await.unwrap().status(), 200);
+        let file = dir.path().join("rules.md");
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), format!("{text}\n"));
+        let decided = state.app.store.judgements("edit_rules").unwrap();
+        assert_eq!(decided.len(), 1);
+
+        // Text the rules parser refuses leaves the file as it was.
+        assert_eq!(put("## a\n## a\n").await.unwrap().status(), 422);
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), format!("{text}\n"));
     }
 
     #[tokio::test]

@@ -428,6 +428,19 @@ impl App {
                 self.show_connect_error(&ClientError::Unauthorized);
             }
             Message::Retro(message) => return self.retros.update(message, self.settings.as_ref()),
+            Message::Rules(rules::Message::Asked(Ok(run))) => {
+                // The Moebius agent changes the rules in a chat, which is shown.
+                let settings = self.settings.clone();
+                let task = self
+                    .rules
+                    .update(rules::Message::Asked(Ok(run.clone())), settings.as_ref());
+                self.page = Some(Page::Chat);
+                self.opened = None;
+                let chat = self
+                    .chats
+                    .update(chat::Message::Started(Ok(run)), settings.as_ref());
+                return Task::batch([task, chat]);
+            }
             Message::Rules(message) if Rules::refused(&message) => {
                 self.show_connect_error(&ClientError::Unauthorized);
             }

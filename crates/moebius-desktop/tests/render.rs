@@ -3473,18 +3473,18 @@ fn the_rules_page_lists_the_patterns_the_rules_and_what_they_refused() {
 }
 
 #[test]
-fn without_a_harness_repository_the_rules_are_read_only_and_say_where_to_learn_more() {
+fn a_server_without_a_rules_file_shows_its_rules_read_only() {
     let app = rules_app(false);
     assert!(shows(&app, "leave-ci-alone"));
     assert!(shows(
         &app,
-        "These rules are read only here: this server keeps them outside a harness configuration repository. To edit them in this app, set up [harness]; docs/guide/rules.md says how."
+        "These rules are read only here: this server has no rules file."
     ));
     assert!(!shows(&app, "Save"));
     let app = rules_app(true);
     assert!(!shows(
         &app,
-        "These rules are read only here: this server keeps them outside a harness configuration repository. To edit them in this app, set up [harness]; docs/guide/rules.md says how."
+        "These rules are read only here: this server has no rules file."
     ));
 }
 
@@ -3509,6 +3509,11 @@ fn editing_the_rules_and_saving_sends_the_text_and_the_answer_is_shown() {
     );
 
     let mut app = rules_app(true);
+    assert!(
+        clicked(&app, "Save").is_empty(),
+        "nothing changed, so Save does nothing"
+    );
+    let _ = app.update(Message::Rules(rules_paste("\n## ask-first\nAsk first.")));
     assert!(matches!(
         &clicked(&app, "Save")[..],
         [Message::Rules(rules::Message::Save)]
@@ -3524,6 +3529,82 @@ fn editing_the_rules_and_saving_sends_the_text_and_the_answer_is_shown() {
     let _ = app.update(Message::Rules(rules::Message::Saved(Err(invalid))));
     assert!(shows(&app, "line 4: the rule \"a\" is named twice"));
     assert!(!shows(&app, "Saved as a commit: a1b2c3d"));
+}
+
+fn rules_paste(text: &str) -> rules::Message {
+    rules::Message::Edited(text_editor::Action::Edit(text_editor::Edit::Paste(
+        std::sync::Arc::new(text.to_string()),
+    )))
+}
+
+/// The editor of the rules: `tests/snapshots/rules-editor-tiny-skia.png`.
+#[test]
+fn the_rules_in_prose_are_edited_in_a_monospace_editor_with_the_writers_to_choose_from() {
+    let mut app = rules_app(true);
+    let _ = app.update(Message::Rules(rules::Message::Edited(
+        text_editor::Action::Move(text_editor::Motion::DocumentEnd),
+    )));
+    let _ = app.update(Message::Rules(rules_paste("\n## ask-first\nAsk first.")));
+    draw_sized(
+        &app,
+        "rules-editor",
+        &["Write them", "Let the Moebius agent write them", "Save"],
+        Size::new(1440.0, 1300.0),
+    );
+}
+
+#[test]
+fn a_refused_save_is_shown_and_the_editor_stays_read_only_without_a_harness_repository() {
+    let mut app = rules_app(true);
+    let _ = app.update(Message::Rules(rules_paste("x")));
+    let refused = ClientError::Server {
+        status: 409,
+        message: "the rules are a file of the server, not of a harness repository, and are read only here"
+            .into(),
+    };
+    let _ = app.update(Message::Rules(rules::Message::Saved(Err(refused))));
+    assert!(shows(
+        &app,
+        "the rules are a file of the server, not of a harness repository, and are read only here"
+    ));
+    let app = rules_app(false);
+    assert!(!shows(&app, "Let the Moebius agent write them"));
+    assert!(!shows(&app, "Save"));
+}
+
+#[test]
+fn the_moebius_agent_can_change_the_rules_in_a_chat() {
+    let mut app = rules_app(true);
+    let size = Size::new(1440.0, 1300.0);
+    let clicked_on = |app: &App, label: &str| {
+        let mut ui = simulator_sized(app, size);
+        ui.click(label).unwrap();
+        format!("{:?}", ui.into_messages().collect::<Vec<_>>())
+    };
+    assert_eq!(
+        clicked_on(&app, "Let the Moebius agent write them"),
+        "[Rules(ByAgent(true))]"
+    );
+    let _ = app.update(Message::Rules(rules::Message::ByAgent(true)));
+    assert_eq!(clicked_on(&app, "Ask the agent"), "[]", "nothing said");
+    let _ = app.update(Message::Rules(rules::Message::WishEdited(
+        text_editor::Action::Edit(text_editor::Edit::Paste(std::sync::Arc::new(
+            "never edit the lockfile".to_string(),
+        ))),
+    )));
+    assert_eq!(clicked_on(&app, "Ask the agent"), "[Rules(AskAgent)]");
+    draw_sized(
+        &app,
+        "rules-by-agent",
+        &[
+            "Write them",
+            "Let the Moebius agent write them",
+            "Ask the agent",
+        ],
+        size,
+    );
+    let _ = app.update(Message::Rules(rules::Message::Asked(Ok(moebius_chat(9)))));
+    assert_eq!(app.page(), Page::Chat);
 }
 
 fn add_repository_app() -> App {

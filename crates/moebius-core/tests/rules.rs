@@ -410,7 +410,7 @@ async fn a_failed_push_undoes_the_edit_and_records_no_decision() {
 }
 
 #[tokio::test]
-async fn without_a_harness_repository_the_rules_are_read_only() {
+async fn without_a_harness_repository_the_rules_are_the_servers_file() {
     let dir = tempfile::tempdir().unwrap();
     write(dir.path(), "rules.md", "## be-kind\nBe kind.\n");
     let server = server(dir.path(), "rules_file = \"rules.md\"\n");
@@ -418,24 +418,33 @@ async fn without_a_harness_repository_the_rules_are_read_only() {
 
     let view = setup.get().await;
     assert_eq!(view["prose"]["source"], "file");
-    assert_eq!(view["prose"]["editable"], false);
+    assert_eq!(view["prose"]["editable"], true);
     assert_eq!(view["prose"]["rules"][0]["name"], "be-kind");
     assert_eq!(view["patterns"].as_array().unwrap().len(), 4);
 
     let (status, body) = setup
-        .call(reqwest::Method::PUT, Some(json!({ "text": "## x\ny\n" })))
+        .call(reqwest::Method::PUT, Some(json!({ "text": "## x\ny" })))
         .await;
-    assert_eq!(status, 409, "{body}");
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["prose"]["rules"][0]["name"], "x");
     assert_eq!(
         std::fs::read_to_string(dir.path().join("rules.md")).unwrap(),
-        "## be-kind\nBe kind.\n"
+        "## x\ny\n"
     );
 
-    // With no rules file at all there is nothing to show.
+    // Without the key the file is rules.md next to moebius.toml, made by the first save.
     let dir = tempfile::tempdir().unwrap();
     let server = self::server(dir.path(), "");
-    let view = Setup::start(&server, None).await.get().await;
-    assert_eq!(view["prose"]["source"], Value::Null);
-    assert_eq!(view["prose"]["editable"], false);
+    let setup = Setup::start(&server, None).await;
+    let view = setup.get().await;
+    assert_eq!(view["prose"]["editable"], true);
     assert_eq!(view["prose"]["rules"], json!([]));
+    let (status, body) = setup
+        .call(
+            reqwest::Method::PUT,
+            Some(json!({ "text": "## be-kind\nBe kind.\n" })),
+        )
+        .await;
+    assert_eq!(status, 200, "{body}");
+    assert!(dir.path().join("rules.md").exists());
 }

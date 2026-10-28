@@ -537,14 +537,13 @@ The rules page: what the guard refuses and why. Response:
 
 ### `PUT /v1/rules`
 
-A person replaces the rules in prose of the harness configuration repository. Request: `{"text": string}`, the whole
-`rules.md`. The text must be fit to be saved: a `## ` line must have a name and a name must not be given twice (text
-before the first `## ` line is free). It is written to `rules.md` (a final new line is added if missing), committed on the
-default branch with the message `Update the rules` and pushed to `origin`; then the decision is recorded (kind
-`edit_rules`, decider `person`, the text in its context). Every tool call reads the file afresh, so the next one is
+A person replaces the server's rules in prose: the `rules.md` of the harness configuration repository, or without
+`[harness]` the server's `rules_file`. Request: `{"text": string}`, the whole `rules.md`. The text must be fit to be saved: a `## ` line must have a name and a name must not be given twice (text
+before the first `## ` line is free). It is written to the file (a final new line is added if missing); with `[harness]`
+it is committed on the default branch with the message `Update the rules` and pushed to `origin`. Then the decision is
+recorded (kind `edit_rules`, decider `person`, the text in its context, and `file` for a `rules_file`). Every tool call reads the file afresh, so the next one is
 checked against the new rules. Response: the same as `GET /v1/rules` after the change, with `commit`, the short id of the
-commit (left out when the text changed nothing and so made no commit). Errors: `409` the server has no `[harness]`, so the
-rules are a file of the server and read only here; `422` the text is not fit to be saved (the message says which line);
+commit (left out when the text changed nothing, and always for a `rules_file`). Errors: `422` the text is not fit to be saved (the message says which line);
 `500` git failed, such as a push that `origin` refused, and then nothing changed and no decision was recorded (see
 [harness configuration](harness-configuration.md)).
 

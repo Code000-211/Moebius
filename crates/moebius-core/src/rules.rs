@@ -130,7 +130,7 @@ pub struct Prose {
     /// Where the file is from: `harness` (the harness configuration repository's `rules.md`) or `file` (the
     /// configuration's `rules_file`); none when the server has no rules file.
     pub source: Option<String>,
-    /// Whether `PUT /v1/rules` can change the file, which it can when the source is `harness`.
+    /// Whether `PUT /v1/rules` can change the file: always, unless the server has no rules file.
     pub editable: bool,
     /// The file's text; empty when it is missing or cannot be read.
     pub text: String,
@@ -161,9 +161,49 @@ pub struct View {
 
 const WEEK: i64 = 7 * 24 * 60 * 60;
 
-/// The rules page: the built-in patterns, the rules in `file` (`editable` when it is the harness configuration
+/// Writes the server's rules file `file` (a server without a harness configuration repository) after checking `text`,
+/// and records the person's or agent's decision `edit_rules`. Text that changes nothing writes and records nothing.
+/// The file is replaced whole, so a run reading it sees the old rules or the new ones.
+pub fn save_file(
+    app: &App,
+    by: &crate::decide::Actor,
+    file: &Path,
+    text: &str,
+) -> crate::app::Result<bool> {
+    check(text).map_err(crate::app::AppError::Invalid)?;
+    let mut text = text.to_string();
+    if !text.is_empty() && !text.ends_with('\n') {
+        text.push('\n');
+    }
+    if std::fs::read_to_string(file).ok().as_deref() == Some(text.as_str()) {
+        return Ok(false);
+    }
+    let staged = file.with_extension("md.saving");
+    std::fs::write(&staged, &text)?;
+    std::fs::rename(&staged, file)?;
+    let context = BTreeMap::from([
+        ("text".to_string(), text),
+        ("file".to_string(), file.display().to_string()),
+    ]);
+    app.decisions.record_by(
+        by,
+        &crate::decide::Question {
+            kind: "edit_rules".into(),
+            context,
+            options: vec!["edit_rules".into(), "leave".into()],
+            fail_closed: "leave".into(),
+            run_id: None,
+            card_id: None,
+        },
+        "edit_rules",
+        "",
+    )?;
+    Ok(true)
+}
+
+/// The rules page: the built-in patterns, the rules in `file` (`harness` when it is the harness configuration
 /// repository's), those of each repository and the refusals of the last week.
-pub fn view(app: &App, file: Option<&Path>, editable: bool) -> crate::app::Result<View> {
+pub fn view(app: &App, file: Option<&Path>, harness: bool) -> crate::app::Result<View> {
     let (text, error) = match file.map(std::fs::read_to_string) {
         Some(Ok(text)) => (text, None),
         Some(Err(e)) if e.kind() == std::io::ErrorKind::NotFound => (String::new(), None),
@@ -173,10 +213,10 @@ pub fn view(app: &App, file: Option<&Path>, editable: bool) -> crate::app::Resul
         ),
         None => (String::new(), None),
     };
-    let source = file.map(|_| if editable { "harness" } else { "file" }.to_string());
+    let source = file.map(|_| if harness { "harness" } else { "file" }.to_string());
     let prose = Prose {
         source,
-        editable: editable && file.is_some(),
+        editable: file.is_some(),
         rules: parse(&text),
         error: error.or_else(|| check(&text).err()),
         text,

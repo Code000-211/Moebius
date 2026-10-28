@@ -32,7 +32,7 @@ allowed and, where it is not obvious, why. [`examples/rules.md`](../../examples/
 
 Two files, read afresh for every tool call:
 
-1. The server's file, named by `rules_file` in the configuration, or the `rules.md` of the [harness configuration](harness-configuration.md) when `[harness]` is set. Without either there are no server rules.
+1. The server's file, named by `rules_file` in the configuration (by default `rules.md` next to `moebius.toml`), or the `rules.md` of the [harness configuration](harness-configuration.md) when `[harness]` is set. A missing file means no server rules.
 2. The repository's `.moebius/rules.md` on its default branch, read with `git show <ref>:.moebius/rules.md`. `<ref>` is
    the default branch of the clone for a repository without a forge and `origin/<default branch>` for a GitHub
    repository. A file that is not committed to that branch is not read. A run whose card is gone has no repository
@@ -51,10 +51,11 @@ The built-in rules below are not in any `rules.md`; they always apply.
 ### Changing the rules
 
 A person changes the server's rules in the desktop app's Rules page, which uses `GET` and `PUT /v1/rules` (see the
-[desktop API](desktop-api.md)), only when the rules are the `rules.md` of the harness configuration repository: the edit
-is a commit `Update the rules`, pushed to `origin`, and the decision is recorded (kind `edit_rules`). A text is refused
+[desktop API](desktop-api.md)). With a harness configuration repository the edit is a commit `Update the rules` to its
+`rules.md`, pushed to `origin`; without one it replaces the `rules_file`. Either way the decision is recorded (kind
+`edit_rules`). A text is refused
 with `422` when a `## ` line has no name or a name is given twice; the parser would drop such a rule without a word. A
-`rules_file` is changed by editing the file, and a repository's `.moebius/rules.md` by a change to the repository. The
+repository's `.moebius/rules.md` is changed by a change to the repository. The
 page also counts, for each rule name, the calls refused in the last 7 days.
 
 ## How a call is checked
