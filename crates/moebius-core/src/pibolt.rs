@@ -26,7 +26,7 @@ use serde_json::{Value, json};
 
 use crate::app::App;
 use crate::blobs::redact;
-use crate::board::Runs;
+use crate::board::{AgentInfo, Runs};
 use crate::bus::AppEvent;
 use crate::config::AgentConfig;
 use crate::repos::git;
@@ -432,6 +432,31 @@ impl Runs for PiBolt {
         name == MOEBIUS_AGENT || self.agents.contains_key(name)
     }
 
+    /// The Moebius agent first, if it has a model, then the configured agents by name.
+    fn agents(&self) -> Vec<AgentInfo> {
+        let moebius = self
+            .agents
+            .get(MOEBIUS_AGENT)
+            .or_else(|| self.agents.get("Coder"))
+            .map(|agent| AgentInfo {
+                name: MOEBIUS_AGENT.into(),
+                model: agent.model.clone(),
+                protocol: agent.protocol,
+                built_in: true,
+            });
+        let configured = self
+            .agents
+            .iter()
+            .filter(|(name, _)| *name != MOEBIUS_AGENT)
+            .map(|(name, agent)| AgentInfo {
+                name: name.clone(),
+                model: agent.model.clone(),
+                protocol: agent.protocol,
+                built_in: false,
+            });
+        moebius.into_iter().chain(configured).collect()
+    }
+
     fn steer(&self, run_id: i64, message: &str) -> bool {
         let Some(live) = lock(&self.live).get(&run_id).cloned() else {
             return false;
@@ -482,8 +507,9 @@ struct RunningRun {
 }
 
 impl RunningRun {
-    /// Removes the worktree, or the chat's empty directory.
+    /// Closes the terminals open on the run, then removes the worktree, or the chat's empty directory.
     fn remove_worktree(&self, app: &App) {
+        app.terminals.close(self.id);
         match &self.clone {
             Some(clone) => drop(app.repos.remove_worktree(clone, &self.worktree)),
             None => drop(std::fs::remove_dir_all(&self.worktree)),
@@ -621,26 +647,28 @@ impl Reader {
                 .and_then(Value::as_str)
                 .unwrap_or("unknown")
                 .to_string();
-            let _ = self.app.record_run_event(self.run.id, &kind, &value);
-            if kind == "response" && value["command"] == "prompt" && value["success"] == false {
-                ending = Err(format!("pi-bolt refused the prompt: {}", value["error"]));
-                break;
-            }
+            // What an event says about the run is stored before the event is published, so that a client acting on
+            // the event reads the run as it is now.
+            let chat = self.run.purpose == "chat";
+            let aborted = value["aborted"] == true;
             if kind == "agent_end"
                 && let Some(answer) = final_answer(&value)
             {
                 let _ = self.app.store.set_run_summary(self.run.id, &answer);
             }
-            if self.run.purpose == "chat" && kind == "agent_start" {
+            if chat && kind == "agent_start" {
                 let _ = self.app.store.set_run_status(self.run.id, "running");
             }
-            if kind == "agent_settled" {
-                let aborted = value["aborted"] == true;
-                // A chat waits for the person's next message; only an abort ends it.
-                if self.run.purpose == "chat" && !aborted {
-                    let _ = self.app.store.set_run_status(self.run.id, "waiting");
-                    continue;
-                }
+            // A chat waits for the person's next message; only an abort ends it.
+            if chat && kind == "agent_settled" && !aborted {
+                let _ = self.app.store.set_run_status(self.run.id, "waiting");
+            }
+            let _ = self.app.record_run_event(self.run.id, &kind, &value);
+            if kind == "response" && value["command"] == "prompt" && value["success"] == false {
+                ending = Err(format!("pi-bolt refused the prompt: {}", value["error"]));
+                break;
+            }
+            if kind == "agent_settled" && !(chat && !aborted) {
                 ending = Ok(aborted);
                 break;
             }

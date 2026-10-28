@@ -8,6 +8,7 @@ use moebius_desktop::chat;
 use moebius_desktop::client::{ClientError, Snapshot, TerminalEvent};
 use moebius_desktop::inbox::{self, Action};
 use moebius_desktop::live;
+use moebius_desktop::terminal::PaneEvent;
 use moebius_desktop::theme;
 use serde_json::json;
 
@@ -558,7 +559,7 @@ fn a_shell_in_the_worktree_is_drawn_under_the_conversation() {
     for message in [
         live::Message::ToggleShell,
         live::Message::Shell(TerminalEvent::Connected(input)),
-        live::Message::ShellSize(Size::new(796.0, 250.0)),
+        live::Message::ShellPane(PaneEvent::Resized(Size::new(796.0, 250.0))),
         live::Message::Shell(TerminalEvent::Output(printed.as_bytes().to_vec())),
     ] {
         let _ = app.update(Message::Live(message));
@@ -573,6 +574,78 @@ fn a_shell_in_the_worktree_is_drawn_under_the_conversation() {
             "connected",
         ],
     );
+}
+
+/// Keys reach the shell only while its pane has focus, which a click on the pane gives and a click anywhere else takes
+/// away; the focused pane has a teal border.
+#[test]
+fn keys_go_to_the_shell_only_while_its_pane_has_focus() {
+    let mut app = watching("running");
+    let (input, mut sent) = iced::futures::channel::mpsc::channel(16);
+    for message in [
+        live::Message::ToggleShell,
+        live::Message::Shell(TerminalEvent::Connected(input)),
+        live::Message::ShellPane(PaneEvent::Resized(Size::new(796.0, 250.0))),
+    ] {
+        let _ = app.update(Message::Live(message));
+    }
+    let _ = sent.try_recv(); // the size the connection starts with
+    let _ = sent.try_recv();
+    let key = || {
+        let key = iced::keyboard::Key::Character("a".into());
+        live::Message::Key(iced::keyboard::Event::KeyPressed {
+            key: key.clone(),
+            modified_key: key,
+            physical_key: iced::keyboard::key::Physical::Unidentified(
+                iced::keyboard::key::NativeCode::Unidentified,
+            ),
+            location: iced::keyboard::Location::Standard,
+            modifiers: iced::keyboard::Modifiers::empty(),
+            text: Some("a".into()),
+            repeat: false,
+        })
+    };
+
+    // A shell is focused when it is opened.
+    let _ = app.update(Message::Live(key()));
+    assert!(sent.try_recv().is_ok(), "the opened shell takes keys");
+
+    // A click on the page, outside the pane, takes the focus away; the pane tells so.
+    let mut ui = simulator(&app);
+    let _ = ui.click("Stop run");
+    let told: Vec<_> = ui.into_messages().collect();
+    assert!(
+        told.iter().any(|m| matches!(
+            m,
+            Message::Live(live::Message::ShellPane(PaneEvent::Focus(false)))
+        )),
+        "{told:?}"
+    );
+    let _ = app.update(Message::Live(live::Message::ShellPane(PaneEvent::Focus(
+        false,
+    ))));
+    let _ = app.update(Message::Live(key()));
+    assert!(
+        sent.try_recv().is_err(),
+        "typing on the page is not typed into the shell"
+    );
+
+    // A click on the pane gives it back.
+    let mut ui = simulator(&app);
+    let _ = ui.click("Shell in the worktree");
+    let told: Vec<_> = ui.into_messages().collect();
+    assert!(
+        told.iter().any(|m| matches!(
+            m,
+            Message::Live(live::Message::ShellPane(PaneEvent::Focus(true)))
+        )),
+        "{told:?}"
+    );
+    let _ = app.update(Message::Live(live::Message::ShellPane(PaneEvent::Focus(
+        true,
+    ))));
+    let _ = app.update(Message::Live(key()));
+    assert!(sent.try_recv().is_ok());
 }
 
 /// A run that ended shows its status, and can no longer be steered or stopped.
@@ -1065,6 +1138,47 @@ fn a_chat_is_drawn_with_its_markdown_tool_calls_and_offered_change() {
         ],
         Size::new(1440.0, 1100.0),
     );
+}
+
+/// The judgements of a chat's tool calls name who decided each check, matched to the calls the way the live view does.
+#[test]
+fn a_chat_names_who_decided_its_tool_calls() {
+    let mut app = chatting("succeeded", false);
+    assert!(!shows(&app, "Pattern · ran 3 ms"));
+    let judged = |decider: &str| moebius_desktop::client::Judgement {
+        run: Some(7),
+        ..judgement("allow", "no rule is broken", decider)
+    };
+    let _ = app.update(Message::Chat(chat::Message::Judged(
+        7,
+        Ok(vec![judged("patterns"), judged("teacher")]),
+    )));
+    assert!(shows(&app, "Pattern · ran 3 ms"));
+    assert!(shows(&app, "Teacher · ran 140 ms"));
+}
+
+/// The new chat form offers the agents the server lists, the Moebius agent first and chosen.
+#[test]
+fn a_new_chat_offers_the_servers_agents_with_the_moebius_agent_chosen() {
+    let mut app = chatting("waiting", false);
+    for message in clicked(&app, "New chat") {
+        let _ = app.update(message);
+    }
+    let agents = serde_json::from_value(json!([
+        {"name": "Moebius", "model": "claude-fake", "protocol": "anthropic", "built_in": true},
+        {"name": "Coder", "model": "qwen-fake", "protocol": "openai", "built_in": false}
+    ]))
+    .unwrap();
+    let _ = app.update(Message::Chat(chat::Message::Agents(Ok(agents))));
+    draw(
+        &app,
+        "chat-new",
+        &["Moebius · claude-fake", "Coder · qwen-fake", "Start chat"],
+    );
+    assert!(matches!(
+        &clicked(&app, "Coder · qwen-fake")[..],
+        [Message::Chat(chat::Message::AgentChosen(agent))] if agent == "Coder"
+    ));
 }
 
 #[test]

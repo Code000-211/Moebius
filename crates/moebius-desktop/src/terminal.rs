@@ -258,6 +258,8 @@ pub struct Shell {
     ended: Option<String>,
     /// The size the pane was last laid out at.
     pane: Size,
+    /// Whether keys go to the shell: from when it is opened until a click lands outside the pane.
+    focused: bool,
 }
 
 impl Shell {
@@ -269,6 +271,7 @@ impl Shell {
             input: None,
             ended: None,
             pane: Size::ZERO,
+            focused: true,
         }
     }
 
@@ -297,8 +300,20 @@ impl Shell {
         }
     }
 
-    /// Sends a key press to the shell.
+    /// Whether keys go to the shell.
+    pub fn is_focused(&self) -> bool {
+        self.focused
+    }
+
+    pub fn set_focus(&mut self, focused: bool) {
+        self.focused = focused;
+    }
+
+    /// Sends a key press to the shell, if the pane has focus.
     pub fn key(&mut self, key: &Key, modifiers: Modifiers, text: Option<&str>) {
+        if !self.focused {
+            return;
+        }
         let app_cursor = self.terminal.term.mode().contains(TermMode::APP_CURSOR);
         if let Some(bytes) = key_bytes(key, modifiers, text, app_cursor) {
             self.send(TerminalInput::Bytes(bytes));
@@ -330,8 +345,9 @@ impl Shell {
         self.terminal.lines()
     }
 
-    /// The pane: a header line over the screen. `resized` is told the size the pane is laid out at, when it changes.
-    pub fn view<'a, M: 'a>(&'a self, resized: impl Fn(Size) -> M + 'a) -> Element<'a, M> {
+    /// The pane: a header line over the screen, with a teal border while it has focus. `on_event` is told what the pane
+    /// learns of its size and of clicks.
+    pub fn view<'a, M: 'a>(&'a self, on_event: impl Fn(PaneEvent) -> M + 'a) -> Element<'a, M> {
         let state = match (&self.ended, self.input.is_some()) {
             (Some(reason), _) => reason.as_str(),
             (None, true) => "connected",
@@ -354,45 +370,63 @@ impl Shell {
             .width(Length::Fill)
             .height(Length::Fill)
             .clip(true);
-        container(Measure::new(column![header, screen], self.pane, resized))
-            .height(HEIGHT)
-            .width(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(theme::TERMINAL.into()),
-                border: Border {
-                    radius: theme::RADIUS_CARD.into(),
-                    ..Border::default()
-                },
-                ..container::Style::default()
-            })
-            .padding(Padding::ZERO)
-            .into()
+        let focused = self.focused;
+        container(Pane::new(
+            column![header, screen],
+            self.pane,
+            self.focused,
+            on_event,
+        ))
+        .height(HEIGHT)
+        .width(Length::Fill)
+        .style(move |_| container::Style {
+            background: Some(theme::TERMINAL.into()),
+            border: Border {
+                radius: theme::RADIUS_CARD.into(),
+                color: theme::TEAL,
+                width: if focused { 2.0 } else { 0.0 },
+            },
+            ..container::Style::default()
+        })
+        .padding(Padding::ZERO)
+        .into()
     }
 }
 
-/// Tells what size its content is laid out at, whenever that differs from `known`: how the pane learns how many
-/// columns and rows fit, which a view cannot know.
-struct Measure<'a, M> {
-    content: Element<'a, M>,
-    known: Size,
-    on_resize: Box<dyn Fn(Size) -> M + 'a>,
+/// What the pane tells the page: its size when that changes, which is how it learns how many columns and rows fit
+/// (a view cannot know), and whether a click was on it or elsewhere, which is how it gains and loses focus.
+#[derive(Debug, Clone)]
+pub enum PaneEvent {
+    Resized(Size),
+    Focus(bool),
 }
 
-impl<'a, M> Measure<'a, M> {
+/// Reports a [`PaneEvent`] for its content whenever the size differs from `known` or a click lands on the other side
+/// of the pane's edge than `focused` says.
+struct Pane<'a, M> {
+    content: Element<'a, M>,
+    known: Size,
+    focused: bool,
+    on_event: Box<dyn Fn(PaneEvent) -> M + 'a>,
+}
+
+impl<'a, M> Pane<'a, M> {
     fn new(
         content: impl Into<Element<'a, M>>,
         known: Size,
-        on_resize: impl Fn(Size) -> M + 'a,
+        focused: bool,
+        on_event: impl Fn(PaneEvent) -> M + 'a,
     ) -> Self {
-        Measure {
+        Pane {
             content: content.into(),
             known,
-            on_resize: Box::new(on_resize),
+            focused,
+            on_event: Box::new(on_event),
         }
     }
 }
 
-impl<M> Widget<M, iced::Theme, iced::Renderer> for Measure<'_, M> {
+impl<M> Widget<M, iced::Theme, iced::Renderer> for Pane<'_, M> {
     fn tag(&self) -> tree::Tag {
         self.content.as_widget().tag()
     }
@@ -448,7 +482,13 @@ impl<M> Widget<M, iced::Theme, iced::Renderer> for Measure<'_, M> {
         if matches!(event, Event::Window(window::Event::RedrawRequested(_)))
             && layout.bounds().size() != self.known
         {
-            shell.publish((self.on_resize)(layout.bounds().size()));
+            shell.publish((self.on_event)(PaneEvent::Resized(layout.bounds().size())));
+        }
+        if let Event::Mouse(mouse::Event::ButtonPressed(_)) = event {
+            let on_pane = cursor.is_over(layout.bounds());
+            if on_pane != self.focused {
+                shell.publish((self.on_event)(PaneEvent::Focus(on_pane)));
+            }
         }
         self.content.as_widget_mut().update(
             tree, event, layout, cursor, renderer, clipboard, shell, viewport,
@@ -497,9 +537,9 @@ impl<M> Widget<M, iced::Theme, iced::Renderer> for Measure<'_, M> {
     }
 }
 
-impl<'a, M: 'a> From<Measure<'a, M>> for Element<'a, M> {
-    fn from(measure: Measure<'a, M>) -> Self {
-        Element::new(measure)
+impl<'a, M: 'a> From<Pane<'a, M>> for Element<'a, M> {
+    fn from(pane: Pane<'a, M>) -> Self {
+        Element::new(pane)
     }
 }
 

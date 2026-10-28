@@ -11,7 +11,9 @@ use iced::widget::{button, column, container, markdown, row, scrollable, space, 
 use iced::{Alignment, Border, Element, Length, Padding, Task, border};
 
 use crate::app::Message as AppMessage;
-use crate::client::{Change, Chat, Client, ClientError, InboxItem, Run, RunEvent, Snapshot};
+use crate::client::{
+    Agent, Change, Chat, Client, ClientError, InboxItem, Judgement, Run, RunEvent, Snapshot,
+};
 use crate::conversation::{Conversation, Entry, Said};
 use crate::inbox::{self, Action, Inbox};
 use crate::live::say;
@@ -28,6 +30,8 @@ pub enum Message {
     Listed(Result<Vec<Chat>, ClientError>),
     /// The events of the chat with this id were read, those after the ones already held.
     Loaded(i64, Result<Vec<RunEvent>, ClientError>),
+    /// The judgements of the tool calls of the chat with this id were read.
+    Judged(i64, Result<Vec<Judgement>, ClientError>),
     Select(i64),
     Edited(String),
     Send,
@@ -41,7 +45,9 @@ pub enum Message {
     Ended(Result<Run, ClientError>),
     /// Open the form of a new chat, or close it.
     NewChat(bool),
-    AgentEdited(String),
+    /// The agents the form can offer were read.
+    Agents(Result<Vec<Agent>, ClientError>),
+    AgentChosen(String),
     RepositoryChosen(Option<i64>),
     FirstEdited(String),
     Start,
@@ -56,6 +62,8 @@ pub enum Message {
 struct Open {
     id: i64,
     conversation: Conversation,
+    /// The judgements of the chat's tool calls, oldest first, which say who decided each check.
+    judgements: Vec<Judgement>,
     /// The agent's texts parsed, by the index of the entry, with the text they were parsed from.
     markdown: HashMap<usize, (String, Vec<markdown::Item>)>,
     message: String,
@@ -70,6 +78,7 @@ impl Open {
         Open {
             id,
             conversation: Conversation::default(),
+            judgements: Vec::new(),
             markdown: HashMap::new(),
             message: String::new(),
             confirming: false,
@@ -79,6 +88,7 @@ impl Open {
 
     fn push(&mut self, event: RunEvent) {
         self.conversation.push(event);
+        self.conversation.name_deciders(&self.judgements);
         for (index, entry) in self.conversation.entries().iter().enumerate() {
             if let Entry::Text(text) = entry
                 && self
@@ -104,17 +114,30 @@ struct Form {
 pub struct Chats {
     /// The chats, newest first.
     list: Vec<Chat>,
+    /// The agents a new chat can be with, as the server last listed them.
+    agents: Vec<Agent>,
     open: Option<Open>,
     form: Option<Form>,
     /// The time of the last tick, Unix seconds.
     now: i64,
 }
 
-/// Reads the events of the chat after `after`.
+/// Reads the events of the chat after `after`, and who decided its tool calls.
 fn load(settings: Settings, chat: i64, after: i64) -> Task<AppMessage> {
-    Task::perform(
-        async move { Client::new(settings).run_events(chat, after).await },
+    let events = Task::perform(
+        {
+            let settings = settings.clone();
+            async move { Client::new(settings).run_events(chat, after).await }
+        },
         move |events| AppMessage::Chat(Message::Loaded(chat, events)),
+    );
+    Task::batch([events, load_judgements(settings, chat)])
+}
+
+fn load_judgements(settings: Settings, chat: i64) -> Task<AppMessage> {
+    Task::perform(
+        async move { Client::new(settings).tool_judgements(chat).await },
+        move |judgements| AppMessage::Chat(Message::Judged(chat, judgements)),
     )
 }
 
@@ -136,6 +159,7 @@ impl Chats {
     pub fn new(now: i64) -> Self {
         Chats {
             list: Vec::new(),
+            agents: Vec::new(),
             open: None,
             form: None,
             now,
@@ -172,8 +196,9 @@ impl Chats {
         load(settings.clone(), id, 0)
     }
 
-    /// A `run_event` of the stream: the chat's status follows the agent, and the open chat takes the event.
-    pub fn on_event(&mut self, run: i64, event: &RunEvent) {
+    /// A `run_event` of the stream: the chat's status follows the agent, and the open chat takes the event. Whether
+    /// the open chat's judgements are to be read again, as a check of it arrived.
+    pub fn on_event(&mut self, run: i64, event: &RunEvent) -> bool {
         if let Some(chat) = self.list.iter_mut().find(|c| c.id == run && c.is_open()) {
             match event.kind.as_str() {
                 "agent_start" => chat.status = "running".to_string(),
@@ -183,8 +208,18 @@ impl Chats {
                 _ => {}
             }
         }
-        if let Some(open) = self.open.as_mut().filter(|open| open.id == run) {
-            open.push(event.clone());
+        let Some(open) = self.open.as_mut().filter(|open| open.id == run) else {
+            return false;
+        };
+        open.push(event.clone());
+        event.kind == "tool_check"
+    }
+
+    /// Reads the open chat's judgements again.
+    pub fn reload_judgements(&self, settings: &Settings) -> Task<AppMessage> {
+        match &self.open {
+            Some(open) => load_judgements(settings.clone(), open.id),
+            None => Task::none(),
         }
     }
 
@@ -224,6 +259,13 @@ impl Chats {
                     open.notice = Some(say(&e));
                 }
             }
+            Message::Judged(id, Ok(judgements)) => {
+                if let Some(open) = self.open.as_mut().filter(|open| open.id == id) {
+                    open.judgements = judgements;
+                    open.conversation.name_deciders(&open.judgements);
+                }
+            }
+            Message::Judged(_, Err(_)) => {}
             Message::Select(id) => return self.open(id, settings),
             Message::Edited(text) => {
                 if let Some(open) = &mut self.open {
@@ -283,8 +325,28 @@ impl Chats {
                     message: String::new(),
                     notice: None,
                 });
+                if shown {
+                    let client = Client::new(settings.clone());
+                    return Task::perform(async move { client.agents().await }, |agents| {
+                        AppMessage::Chat(Message::Agents(agents))
+                    });
+                }
             }
-            Message::AgentEdited(agent) => {
+            Message::Agents(Ok(agents)) => {
+                self.agents = agents;
+                // The Moebius agent is the first, if the server can run it.
+                if let (Some(form), Some(first)) = (&mut self.form, self.agents.first())
+                    && !self.agents.iter().any(|agent| agent.name == form.agent)
+                {
+                    form.agent = first.name.clone();
+                }
+            }
+            Message::Agents(Err(e)) => {
+                if let Some(form) = &mut self.form {
+                    form.notice = Some(say(&e));
+                }
+            }
+            Message::AgentChosen(agent) => {
                 if let Some(form) = &mut self.form {
                     form.agent = agent;
                 }
@@ -349,7 +411,7 @@ impl Chats {
             page::white_button("New chat", Some(AppMessage::Chat(Message::NewChat(true)))),
         );
         let detail: Element<_> = match (&self.form, &self.open) {
-            (Some(form), _) => new_chat_view(form, snapshot),
+            (Some(form), _) => new_chat_view(form, &self.agents, snapshot),
             (None, Some(open)) => match self.chat(open.id) {
                 Some(chat) => self.chat_view(chat, open, snapshot, inbox),
                 None => empty_view("Reading the chat…"),
@@ -429,14 +491,22 @@ impl Chats {
             page::rule(),
             conversation
         ];
-        if let Some(offer) = change_view(chat, snapshot, inbox) {
+        let offered = offered_change(chat, snapshot);
+        // Merge is what an ended chat with a change to merge is for, so it takes the primary place from Send.
+        let merge_is_primary = !chat.is_open() && offered.is_some_and(|(_, item)| item.is_some());
+        if let Some((change, item)) = offered {
+            let offer = change_view(change, item, inbox, merge_is_primary);
             content = content.push(container(offer).padding([8, 16]));
         }
-        container(content.push(page::rule()).push(compose_view(chat, open)))
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(|_| page::box_style())
-            .into()
+        container(
+            content
+                .push(page::rule())
+                .push(compose_view(chat, open, !merge_is_primary)),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(|_| page::box_style())
+        .into()
     }
 
     fn conversation_view<'a>(&'a self, open: &'a Open) -> Element<'a, AppMessage> {
@@ -581,13 +651,25 @@ fn empty_view(line: &str) -> Element<'_, AppMessage> {
 }
 
 /// The form of a new chat: the agent, the repository, and the first message.
-fn new_chat_view<'a>(form: &'a Form, snapshot: &'a Snapshot) -> Element<'a, AppMessage> {
+fn new_chat_view<'a>(
+    form: &'a Form,
+    agents: &'a [Agent],
+    snapshot: &'a Snapshot,
+) -> Element<'a, AppMessage> {
     let label = |label: &'static str| {
         text(label)
             .size(theme::LABEL)
             .font(theme::manrope(Weight::Semibold))
             .color(theme::SIDEBAR_GROUP)
     };
+    let agents = agents.iter().fold(row![].spacing(8), |chips, agent| {
+        chips.push(page::chip(
+            format!("{} · {}", agent.name, agent.model),
+            form.agent == agent.name,
+            false,
+            AppMessage::Chat(Message::AgentChosen(agent.name.clone())),
+        ))
+    });
     let mut repositories = row![page::chip(
         "No repository".to_string(),
         form.repository.is_none(),
@@ -611,11 +693,7 @@ fn new_chat_view<'a>(form: &'a Form, snapshot: &'a Snapshot) -> Element<'a, AppM
             .size(theme::BOX_HEADING)
             .font(theme::manrope(Weight::Bold)),
         label("Agent"),
-        text_input(DEFAULT_AGENT, &form.agent)
-            .on_input(|agent| AppMessage::Chat(Message::AgentEdited(agent)))
-            .size(theme::BODY)
-            .padding([9, 12])
-            .style(connect::input_style),
+        agents.wrap().vertical_spacing(8),
         label("Repository"),
         repositories.wrap().vertical_spacing(8),
         page::body(
@@ -735,23 +813,32 @@ fn person_view(said: Said, message: &str) -> Element<'_, AppMessage> {
     container(bubble).align_right(Length::Fill).into()
 }
 
-/// The change the chat offered, found by its branch among the board's changes and the inbox's items; none while the
-/// chat has offered nothing.
-fn change_view<'a>(
+/// The change the chat offered, found by its branch among the board's changes, and the inbox item that waits for it
+/// to be merged; none while the chat has offered nothing.
+fn offered_change<'a>(
     chat: &Chat,
     snapshot: &'a Snapshot,
-    inbox: &'a Inbox,
-) -> Option<Element<'a, AppMessage>> {
+) -> Option<(&'a Change, Option<&'a InboxItem>)> {
     let branch = chat.branch();
-    let change: &Change = snapshot
+    let change = snapshot
         .boards
         .iter()
         .flat_map(|board| &board.changes)
         .find(|change| change.branch == branch)?;
-    let item: Option<&InboxItem> = snapshot
+    let item = snapshot
         .inbox
         .iter()
         .find(|item| item.chat() == Some(chat.id));
+    Some((change, item))
+}
+
+/// The change a chat offered: its state, its branch and, while a person can merge it, the Merge button.
+fn change_view<'a>(
+    change: &'a Change,
+    item: Option<&InboxItem>,
+    inbox: &'a Inbox,
+    merge_is_primary: bool,
+) -> Element<'a, AppMessage> {
     let (label, tone) = match change.state.as_str() {
         "merged" => ("Merged", Tone::Teal),
         "closed" => ("Closed", Tone::Plain),
@@ -776,30 +863,31 @@ fn change_view<'a>(
             );
         }
         let merge = Action::Merge { change: change.id };
-        head = head.push(page::white_button(
-            "Merge",
-            Some(AppMessage::Inbox(inbox::Message::Act(item.id, merge))),
-        ));
+        let message = Some(AppMessage::Inbox(inbox::Message::Act(item.id, merge)));
+        head = head.push(if merge_is_primary {
+            page::primary_button("Merge", message)
+        } else {
+            page::white_button("Merge", message)
+        });
     }
-    Some(
-        container(head)
-            .padding([10, 12])
-            .width(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(theme::LANE.into()),
-                border: Border {
-                    color: theme::TRACK,
-                    width: 1.0,
-                    radius: theme::RADIUS_CARD.into(),
-                },
-                ..container::Style::default()
-            })
-            .into(),
-    )
+    container(head)
+        .padding([10, 12])
+        .width(Length::Fill)
+        .style(|_| container::Style {
+            background: Some(theme::LANE.into()),
+            border: Border {
+                color: theme::TRACK,
+                width: 1.0,
+                radius: theme::RADIUS_CARD.into(),
+            },
+            ..container::Style::default()
+        })
+        .into()
 }
 
-/// The field to write in and the one primary button; under them what the chat does with the message.
-fn compose_view<'a>(chat: &Chat, open: &'a Open) -> Element<'a, AppMessage> {
+/// The field to write in and the Send button, the primary one unless `send_is_primary` is false; under them what the
+/// chat does with the message.
+fn compose_view<'a>(chat: &Chat, open: &'a Open, send_is_primary: bool) -> Element<'a, AppMessage> {
     let writable = chat.is_open();
     let can_send = writable && !open.message.trim().is_empty();
     let send = can_send.then_some(AppMessage::Chat(Message::Send));
@@ -818,9 +906,16 @@ fn compose_view<'a>(chat: &Chat, open: &'a Open) -> Element<'a, AppMessage> {
         (None, _) => "This chat has ended.",
     };
     column![
-        row![field, page::primary_button("Send", send)]
-            .spacing(10)
-            .align_y(Alignment::Center),
+        row![
+            field,
+            if send_is_primary {
+                page::primary_button("Send", send)
+            } else {
+                page::white_button("Send", send)
+            }
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center),
         text(hint).size(theme::LABEL).color(theme::TEXT_MUTED),
     ]
     .spacing(8)

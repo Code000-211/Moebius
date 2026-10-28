@@ -151,6 +151,13 @@ pub struct RunEvent {
     pub at: i64,
 }
 
+/// An agent the server can run, as `GET /v1/agents` lists it.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Agent {
+    pub name: String,
+    pub model: String,
+}
+
 /// A recorded decision, as far as the live view matches it to a tool call.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Judgement {
@@ -368,11 +375,26 @@ impl Client {
 
     /// The decisions recorded for a card, oldest first.
     pub async fn judgements(&self, card: i64) -> Result<Vec<Judgement>, ClientError> {
+        self.oldest_first(&format!("card={card}")).await
+    }
+
+    /// The decisions recorded for the tool calls of a run, oldest first.
+    pub async fn tool_judgements(&self, run: i64) -> Result<Vec<Judgement>, ClientError> {
+        self.oldest_first(&format!("run={run}&kind=tool_call"))
+            .await
+    }
+
+    async fn oldest_first(&self, filter: &str) -> Result<Vec<Judgement>, ClientError> {
         let mut judgements: Vec<Judgement> = self
-            .get(&format!("/v1/judgements?card={card}&limit=1000"))
+            .get(&format!("/v1/judgements?{filter}&limit=1000"))
             .await?;
         judgements.reverse();
         Ok(judgements)
+    }
+
+    /// The agents a chat can be with, the Moebius agent first.
+    pub async fn agents(&self) -> Result<Vec<Agent>, ClientError> {
+        self.get("/v1/agents").await
     }
 
     pub async fn history(&self, card: i64) -> Result<Vec<HistoryEntry>, ClientError> {

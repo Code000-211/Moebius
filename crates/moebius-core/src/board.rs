@@ -41,7 +41,18 @@ use mlua::{Lua, Table, Value, VmState};
 use crate::app::{App, AppError, PERSON, columns, runs_since_retry};
 use crate::decide::Question;
 use crate::repos::git;
+use crate::router::Protocol;
 use crate::store::{Card, Repository, Run};
+
+/// An agent the harness can run, as the desktop API lists it: never its instructions or anything secret.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct AgentInfo {
+    pub name: String,
+    pub model: String,
+    pub protocol: Protocol,
+    /// Whether Moebius brings the agent itself, as it does the Moebius agent.
+    pub built_in: bool,
+}
 
 /// Starts runs for the engine. The real one drives a harness (Pi-Bolt); tests use a fake.
 pub trait Runs: Send + Sync {
@@ -57,6 +68,11 @@ pub trait Runs: Send + Sync {
 
     /// Whether an agent of this name is configured.
     fn has_agent(&self, name: &str) -> bool;
+
+    /// The agents this harness can run.
+    fn agents(&self) -> Vec<AgentInfo> {
+        Vec::new()
+    }
 
     /// Sends a message to a running run's agent, which takes it into account as it works. False when the run is not
     /// running.

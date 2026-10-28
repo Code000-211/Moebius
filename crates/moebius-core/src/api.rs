@@ -12,10 +12,11 @@
 //! - `POST /v1/cards/{id}/retry` `{reason}`: a person retries a stuck card or one whose pull request was closed, which gets a fresh start.
 //! - `GET /v1/runs/{id}`: a run. `GET /v1/runs/{id}/events?after=&limit=`: its stored events, in pages.
 //! - `GET /v1/cards/{id}/runs`: the runs of a card. `GET /v1/cards/{id}/history`: its timeline.
-//! - `GET /v1/judgements?card=&kind=&limit=`: the recorded decisions, newest first.
+//! - `GET /v1/judgements?card=&run=&kind=&limit=`: the recorded decisions, newest first.
 //! - `POST /v1/runs/{id}/steer` `{message}`: a person sends a message to a running run.
 //! - `POST /v1/runs/{id}/stop` `{reason}`: a person stops a running run; a chat ends as stopped.
 //! - `GET /v1/runs/{id}/terminal`: a WebSocket on a shell in the run's worktree (see [`crate::terminal`]).
+//! - `GET /v1/agents`: the agents the server can run.
 //! - `POST /v1/chats` `{agent?, message, repository?}`: starts a chat, with the Moebius agent unless `agent` names
 //!   another. `GET /v1/chats`: the chats, newest first.
 //!   `POST /v1/chats/{id}/messages` `{message}`: writes to a chat. `POST /v1/chats/{id}/end`: ends a chat.
@@ -37,7 +38,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::app::{App, AppError, Chat, HistoryEntry, PERSON, columns, runs_since_retry};
-use crate::board::{Runs, latest_review};
+use crate::board::{AgentInfo, Runs, latest_review};
 use crate::bus::AppEvent;
 use crate::forge::ForgeError;
 use crate::pibolt::MOEBIUS_AGENT;
@@ -182,10 +183,11 @@ const DEFAULT_JUDGEMENTS: i64 = 100;
 /// The most judgements one request returns.
 const MAX_JUDGEMENTS: i64 = 1000;
 
-/// Which judgements to return: those of the card and of the kind, if given, at most `limit`.
+/// Which judgements to return: those of the card, of the run and of the kind, if given, at most `limit`.
 #[derive(Debug, Deserialize)]
 struct JudgementsQuery {
     card: Option<i64>,
+    run: Option<i64>,
     kind: Option<String>,
     limit: Option<i64>,
 }
@@ -284,6 +286,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/runs/{id}/steer", post(steer_run))
         .route("/v1/runs/{id}/stop", post(stop_run))
         .route("/v1/runs/{id}/terminal", get(run_terminal))
+        .route("/v1/agents", get(agents))
         .route("/v1/chats", get(chats).post(start_chat))
         .route("/v1/chats/{id}/messages", post(say_in_chat))
         .route("/v1/chats/{id}/end", post(end_chat))
@@ -495,6 +498,10 @@ async fn run_terminal(
     }))
 }
 
+async fn agents(State(state): State<ApiState>) -> axum::Json<Vec<AgentInfo>> {
+    axum::Json(state.runs.agents())
+}
+
 async fn start_chat(
     State(state): State<ApiState>,
     axum::Json(chat): axum::Json<NewChat>,
@@ -560,9 +567,9 @@ async fn judgements(
         .unwrap_or(DEFAULT_JUDGEMENTS)
         .clamp(1, MAX_JUDGEMENTS);
     blocking(&state.app, move |app| {
-        let found = app
-            .store
-            .judgements_page(query.card, query.kind.as_deref(), limit)?;
+        let found =
+            app.store
+                .judgements_page(query.card, query.run, query.kind.as_deref(), limit)?;
         Ok(found
             .into_iter()
             .map(|j| JudgementEntry {
@@ -1440,13 +1447,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn judgements_are_read_newest_first_by_card_and_kind() {
+    async fn judgements_are_read_newest_first_by_card_run_and_kind() {
         let (_dir, state, addr) = start().await;
         let store = &state.app.store;
-        for (n, kind, card) in [
-            (1, "retry", Some(1)),
-            (2, "tool_call", None),
-            (3, "retry", None),
+        let run = store.add_run(None, "Coder", "test", "chat").unwrap().id;
+        for (n, kind, card, run) in [
+            (1, "retry", Some(1), None),
+            (2, "tool_call", None, Some(run)),
+            (3, "retry", None, None),
         ] {
             store
                 .add_judgement(&crate::store::NewJudgement {
@@ -1455,6 +1463,7 @@ mod tests {
                     reason: format!("reason {n}"),
                     decider: "person".into(),
                     card_id: card,
+                    run_id: run,
                     ..Default::default()
                 })
                 .unwrap();
@@ -1473,6 +1482,13 @@ mod tests {
         assert_eq!(ids("/v1/judgements").await, [3, 2, 1]);
         assert_eq!(ids("/v1/judgements?kind=retry").await, [3, 1]);
         assert_eq!(ids("/v1/judgements?card=1").await, [1]);
+        assert_eq!(ids(&format!("/v1/judgements?run={run}")).await, [2]);
+        let none = [] as [i64; 0];
+        assert_eq!(
+            ids(&format!("/v1/judgements?run={run}&kind=retry")).await,
+            none
+        );
+        assert_eq!(ids(&format!("/v1/judgements?run={}", run + 1)).await, none);
         assert_eq!(ids("/v1/judgements?limit=2").await, [3, 2]);
         assert_eq!(ids("/v1/judgements?limit=0").await, [3]);
         let found: Vec<serde_json::Value> = get(&state, &addr, "/v1/judgements?card=1").await;
@@ -1925,6 +1941,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_agents_are_listed_with_the_moebius_agent_first_and_nothing_secret() {
+        let mut reviewer = agent("fast");
+        reviewer.protocol = Protocol::Anthropic;
+        reviewer.instructions = Some("secret sauce".into());
+        let agents = BTreeMap::from([
+            ("Coder".to_string(), agent("big")),
+            ("Reviewer".to_string(), reviewer),
+        ]);
+        let (_dir, state, addr) = start_with(agents).await;
+        let listed: serde_json::Value = get(&state, &addr, "/v1/agents").await;
+        assert_eq!(
+            listed,
+            serde_json::json!([
+                { "name": "Moebius", "model": "big", "protocol": "openai", "built_in": true },
+                { "name": "Coder", "model": "big", "protocol": "openai", "built_in": false },
+                { "name": "Reviewer", "model": "fast", "protocol": "anthropic", "built_in": false },
+            ])
+        );
+
+        // Without a model to give it, the Moebius agent cannot run and is not offered.
+        let (_dir, state, addr) = start_with(BTreeMap::new()).await;
+        let listed: serde_json::Value = get(&state, &addr, "/v1/agents").await;
+        assert_eq!(listed, serde_json::json!([]));
+    }
+
+    #[tokio::test]
     async fn the_moebius_agent_without_a_model_to_use_cannot_start_a_chat() {
         let (_dir, state, addr) = start_with(BTreeMap::new()).await;
         let body = serde_json::json!({ "message": "Hello" });
@@ -2159,6 +2201,50 @@ mod tests {
         tokio::time::timeout(std::time::Duration::from_secs(60), closed)
             .await
             .expect("the socket stays open after the shell exits");
+    }
+
+    #[tokio::test]
+    async fn a_shell_is_closed_when_its_run_is_stopped() {
+        let (_dir, state, addr) = start().await;
+        let app = &state.app;
+        let started = post(
+            &state,
+            &addr,
+            "/v1/chats".into(),
+            serde_json::json!({ "agent": "Coder", "message": "Work for ever [hang]" }),
+        )
+        .await;
+        let chat: Run = started.json().await.unwrap();
+        until("the agent works", || {
+            app.store.run(chat.id).unwrap().unwrap().status == "running"
+        })
+        .await;
+        let mut terminal = open_terminal(&addr, &state.token, chat.id).await.unwrap();
+        type_in(&mut terminal, "echo pid-$$-end\n").await;
+        let pid = read_until(&mut terminal, "pid-(\\d+)-end").await;
+
+        let stopped = post(
+            &state,
+            &addr,
+            format!("/v1/runs/{}/stop", chat.id),
+            serde_json::json!({ "reason": "enough" }),
+        )
+        .await;
+        assert_eq!(stopped.status(), 200);
+        let closed = async {
+            while let Some(message) = terminal.next().await {
+                if message.is_err() || message.unwrap().is_close() {
+                    break;
+                }
+            }
+        };
+        tokio::time::timeout(std::time::Duration::from_secs(60), closed)
+            .await
+            .expect("the terminal stays open after its run ended");
+        until("the shell is gone", || {
+            !std::path::Path::new(&format!("/proc/{pid}")).exists()
+        })
+        .await;
     }
 
     #[tokio::test]

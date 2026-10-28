@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use axum::extract::ws::{CloseFrame, Message, WebSocket};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use serde::Deserialize;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 /// The most terminals open on one run at a time.
 pub const MAX_PER_RUN: usize = 4;
@@ -23,38 +23,64 @@ const SIZE: (u16, u16) = (80, 24);
 #[error("cannot start a shell: {0}")]
 struct StartError(String);
 
-/// How many terminals each run has open.
+/// The terminals open on one run: how many, and the signal that closes them all.
+struct Open {
+    count: usize,
+    closed: watch::Sender<bool>,
+}
+
+/// The terminals each run has open.
 #[derive(Default)]
-pub struct Slots(Mutex<HashMap<i64, usize>>);
+pub struct Slots(Mutex<HashMap<i64, Open>>);
 
 /// A terminal's place among the ones of its run, given back when dropped.
 pub struct Slot {
     slots: Arc<Slots>,
     run: i64,
+    closed: watch::Receiver<bool>,
 }
 
 impl Slots {
     /// A place for one more terminal of `run`, unless it has [`MAX_PER_RUN`] open.
     pub fn take(self: &Arc<Self>, run: i64) -> Option<Slot> {
         let mut open = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        let count = open.entry(run).or_default();
-        if *count >= MAX_PER_RUN {
+        let open = open.entry(run).or_insert_with(|| Open {
+            count: 0,
+            closed: watch::channel(false).0,
+        });
+        if open.count >= MAX_PER_RUN {
             return None;
         }
-        *count += 1;
+        open.count += 1;
         Some(Slot {
             slots: self.clone(),
             run,
+            closed: open.closed.subscribe(),
         })
+    }
+
+    /// Closes the terminals open on `run`, for when its worktree is gone: their shells are killed.
+    pub fn close(&self, run: i64) {
+        let open = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(open) = open.get(&run) {
+            open.closed.send_replace(true);
+        }
+    }
+}
+
+impl Slot {
+    /// Waits until the run's terminals are closed.
+    async fn closed(&mut self) {
+        let _ = self.closed.wait_for(|closed| *closed).await;
     }
 }
 
 impl Drop for Slot {
     fn drop(&mut self) {
         let mut open = self.slots.0.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(count) = open.get_mut(&self.run) {
-            *count -= 1;
-            if *count == 0 {
+        if let Some(entry) = open.get_mut(&self.run) {
+            entry.count -= 1;
+            if entry.count == 0 {
                 open.remove(&self.run);
             }
         }
@@ -78,8 +104,9 @@ fn size(cols: u16, rows: u16) -> PtySize {
 }
 
 /// Runs the person's shell (`$SHELL`, else `/bin/sh`) in `worktree` for as long as `socket` is open: until either the
-/// shell exits, which closes the socket, or the socket closes, which kills the shell and its process group.
-pub async fn serve(mut socket: WebSocket, worktree: &Path, _slot: Slot) {
+/// shell exits, which closes the socket, or the socket closes or the run ends, which kills the shell and its process
+/// group.
+pub async fn serve(mut socket: WebSocket, worktree: &Path, mut slot: Slot) {
     let (master, mut child, reader, writer) = match start(worktree) {
         Ok(started) => started,
         Err(e) => {
@@ -109,6 +136,10 @@ pub async fn serve(mut socket: WebSocket, worktree: &Path, _slot: Slot) {
                     break;
                 }
             },
+            () = slot.closed() => {
+                let _ = socket.send(Message::Close(None)).await;
+                break;
+            }
             incoming = socket.recv() => match incoming {
                 Some(Ok(Message::Binary(bytes))) => {
                     if input.send(bytes.to_vec()).is_err() {

@@ -489,6 +489,12 @@ async fn a_chat_is_started_written_to_and_followed_through_the_stream() {
         (run.purpose.as_str(), run.agent.as_str()),
         ("chat", "Moebius")
     );
+    // The form offers the agents the server can run, the Moebius agent first; a chat has no judgements yet.
+    let agents = client.agents().await.unwrap();
+    let names: Vec<_> = agents.iter().map(|agent| agent.name.as_str()).collect();
+    assert_eq!(names, ["Moebius", "Coder"]);
+    assert_eq!(agents[0].model, "fake-coder");
+    assert!(client.tool_judgements(run.id).await.unwrap().is_empty());
     let chats = client.chats().await.unwrap();
     assert_eq!(chats[0].id, run.id);
     let _ = app.update(Message::Chat(chat::Message::Listed(Ok(chats))));

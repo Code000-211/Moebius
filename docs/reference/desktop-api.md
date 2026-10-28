@@ -237,8 +237,9 @@ Errors: `404` no such card.
 ### `GET /v1/judgements`
 
 The recorded decisions (what a person or a decider chose at a decision point), newest first. Query: `card` returns only
-those about that card, `kind` only those of that kind (such as `retry`, `merge` or `tool_call`); `limit` (default 100, at
-most 1000, at least 1) is the most it returns. A card that does not exist simply has none.
+those about that card, `run` only those about that run (a chat has no card, so this is how its tool calls' deciders are
+found), `kind` only those of that kind (such as `retry`, `merge` or `tool_call`); `limit` (default 100, at most 1000, at
+least 1) is the most it returns. A card or run that does not exist simply has none.
 
 Response: an array of `{"id": number, "kind": string, "choice": string, "reason": string, "decider": string,
 "outcome": string or null, "card": number or null, "run": number or null, "at": number}`. The blobs of the question's
@@ -286,6 +287,13 @@ of the run or chat, with `TERM=xterm-256color`.
 
 The worktree exists while the run or chat is `starting`, `running` or `waiting`. Errors, answered before the upgrade:
 `404` no such run; `422` the run has no worktree (it is over) or already has 4 terminals open.
+
+### `GET /v1/agents`
+
+The agents the server can run, for choosing one to chat with: the Moebius agent first (when `[agents.Moebius]` or
+`[agents.Coder]` gives it a model), then the configured agents by name. Response: an array of `{"name": string, "model":
+string, "protocol": "openai" or "anthropic", "built_in": boolean}`; `built_in` is true for the Moebius agent, which
+Moebius brings itself. Instructions, skills, extensions and anything secret are not included.
 
 ### `POST /v1/chats`
 

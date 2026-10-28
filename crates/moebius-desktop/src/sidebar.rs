@@ -356,7 +356,7 @@ fn item<'a>(
         .spacing(10)
         .align_y(Center);
         match trailing {
-            Trailing::Nothing => {}
+            Trailing::Nothing | Trailing::Badge(0) => {}
             Trailing::Text(shown) => {
                 line = line.push(text(shown).size(theme::LABEL).color(theme::TEXT_MUTED));
             }

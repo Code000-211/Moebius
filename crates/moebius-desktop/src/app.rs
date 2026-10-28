@@ -406,9 +406,21 @@ impl App {
         let Ok(event) = serde_json::from_value::<RunEvent>(data.clone()) else {
             return Task::none();
         };
-        if let Some(run) = data["run"].as_i64() {
-            self.chats.on_event(run, &event);
+        let chat_checked = data["run"]
+            .as_i64()
+            .is_some_and(|run| self.chats.on_event(run, &event));
+        let live = self.on_live_event(data, event);
+        match &self.settings {
+            Some(settings) if chat_checked => {
+                Task::batch([self.chats.reload_judgements(settings), live])
+            }
+            _ => live,
         }
+    }
+
+    /// A `run_event` of the run on the live view, if that is the one on show. The task reads its judgements again
+    /// when a check arrived.
+    fn on_live_event(&mut self, data: &serde_json::Value, event: RunEvent) -> Task<Message> {
         let (Some(Opened::Run(live)), Some(settings)) = (&mut self.opened, &self.settings) else {
             return Task::none();
         };

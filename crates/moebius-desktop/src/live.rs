@@ -6,7 +6,7 @@
 use iced::font::Weight;
 use iced::widget::text::Wrapping;
 use iced::widget::{button, column, container, row, scrollable, space, text, text_input};
-use iced::{Alignment, Border, Element, Length, Padding, Size, Subscription, Task, keyboard};
+use iced::{Alignment, Border, Element, Length, Padding, Subscription, Task, keyboard};
 
 use crate::app::Message as AppMessage;
 use crate::client::{
@@ -15,7 +15,7 @@ use crate::client::{
 use crate::conversation::{Conversation, Entry, Said};
 use crate::page::{self, Tone, tag};
 use crate::settings::Settings;
-use crate::terminal::Shell;
+use crate::terminal::{PaneEvent, Shell};
 use crate::{theme, transcript};
 
 /// The status of a run that can be steered and stopped.
@@ -49,9 +49,9 @@ pub enum Message {
     ToggleShell,
     /// Something the shell's connection did.
     Shell(TerminalEvent),
-    /// The shell's pane was laid out at this size.
-    ShellSize(Size),
-    /// A key nothing else took, for the shell.
+    /// The shell's pane was laid out at a size, or a click gave it focus or took it away.
+    ShellPane(PaneEvent),
+    /// A key nothing else took, for the shell if it has focus.
     Key(keyboard::Event),
 }
 
@@ -236,9 +236,12 @@ impl Live {
                     shell.on_event(event);
                 }
             }
-            Message::ShellSize(size) => {
+            Message::ShellPane(event) => {
                 if let Some(shell) = &mut self.shell {
-                    shell.resized(size);
+                    match event {
+                        PaneEvent::Resized(size) => shell.resized(size),
+                        PaneEvent::Focus(focused) => shell.set_focus(focused),
+                    }
                 }
             }
             Message::Key(keyboard::Event::KeyPressed {
@@ -340,7 +343,7 @@ impl Live {
         .width(Length::Fill);
         if let Some(shell) = &self.shell {
             stream = stream.push(
-                container(shell.view(|size| AppMessage::Live(Message::ShellSize(size))))
+                container(shell.view(|event| AppMessage::Live(Message::ShellPane(event))))
                     .padding([0, 16])
                     .width(Length::Fill),
             );
