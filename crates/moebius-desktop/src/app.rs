@@ -597,7 +597,8 @@ impl App {
         self.snapshot = snapshot;
         self.inbox.follow(&self.snapshot);
         self.screen = Screen::Main;
-        self.connection = Connection::Connecting;
+        // The server just answered. The event stream may already be open, and it does not say so again.
+        self.connection = Connection::Online;
         self.open_on_start = true;
         match &self.settings {
             Some(settings) => self.start.reload(settings),

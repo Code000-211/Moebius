@@ -230,6 +230,22 @@ fn the_collapsed_sidebar_marks_the_inbox_in_the_alert_colour() {
 }
 
 #[test]
+fn the_sidebar_says_online_when_the_stream_opens_before_the_saved_server_answers() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("desktop.toml");
+    let saved = moebius_desktop::settings::Settings {
+        address: "http://127.0.0.1:1".into(),
+        token: "not-a-real-token".into(),
+    };
+    moebius_desktop::settings::save(&path, &saved).unwrap();
+    let (mut app, _) = App::start(Some(path));
+    let _ = app.update(Message::Stream(client::StreamEvent::Connected));
+    let _ = app.update(Message::Checked(Ok((saved, overview()))));
+    assert!(shows(&app, "Online"));
+    assert!(!shows(&app, "Connecting"));
+}
+
+#[test]
 fn an_app_without_repositories_opens_on_the_inbox() {
     let app = App::with_snapshot(Snapshot::default());
     assert_eq!(app.page(), Page::Inbox);
