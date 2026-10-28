@@ -265,6 +265,7 @@ The server runs on a multi-threaded tokio runtime.
 | `crates/moebius-desktop/src/conversation.rs` | Folds a run's events into a conversation (text, tool calls with their checks, steers, errors); pure, takes events in any order and drops repeats. |
 | `crates/moebius-desktop/src/live.rs`, `history.rs` | What a click on a card opens: the live view of its latest run (conversation, steer, stop, the run's panel), or the card's history when it has no run. |
 | `crates/moebius-desktop/src/terminal.rs` | The shell pane of the live view: bytes from the server parsed by `alacritty_terminal` into a grid and drawn in JetBrains Mono, keys turned into bytes, the pane's size in cells sent as a resize. The connection is `client::terminal`, a subscription that lives while the pane is open. |
+| `crates/moebius-desktop/src/chat_terminal.rs` | A chat's terminal: the same pane in place of the conversation, on `GET /v1/chats/{id}/tui`, opened by the chat's "Chat \| Terminal" switch. |
 | `crates/moebius-desktop/src/server_terminal.rs` | The Terminal page: the same pane as big as the page, on `GET /v1/terminal`; the shell is opened with the page and closed when it is left. |
 | `api.rs` | The desktop API: routes, token check, the event WebSocket. |
 | `app.rs` | The core put together; the operations on cards, changes and issues, each published on the bus, including publishing a change and running its checks. |
@@ -295,7 +296,7 @@ The server runs on a multi-threaded tokio runtime.
 | `setup.rs` | What the Models, Plugins and Get started pages show: the router's upstreams, the agents, the teacher, the decision model and the plugins, without a secret, and the steps to a first card (`GET /v1/start`). |
 | `skill.rs` | The `moebius` skill (the guide and the references, bundled with `include_str!`), written to `<data_dir>/skills/moebius/` at start. |
 | `store.rs` | The SQLite records and their migrations. |
-| `terminal.rs` | A person's shell in a run's worktree on a pseudo-terminal (`portable-pty`), served over the WebSocket `GET /v1/runs/{id}/terminal` (and `GET /v1/terminal`, in the directory of `moebius.toml`); at most 4 per run or on the server, not checked by the guard. |
+| `terminal.rs` | A person's shell in a run's worktree on a pseudo-terminal (`portable-pty`), served over the WebSocket `GET /v1/runs/{id}/terminal` (and `GET /v1/terminal`, in the directory of `moebius.toml`); at most 4 per run or on the server, not checked by the guard. The same serving carries Pi-Bolt's interactive mode for a waiting chat (`GET /v1/chats/{id}/tui`, one per chat), whose tool calls the bridge still checks. |
 | `trial.rs` | Trials: each proposal tried on the cards of the errors it addresses, measured against the cards' first runs, and offered when positive. |
 | `workflow/*.luau` | The six built-in column scripts. |
 | `bridge/moebius-bridge.ts` | The Pi extension loaded into every run. |

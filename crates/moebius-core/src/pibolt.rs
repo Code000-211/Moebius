@@ -15,7 +15,9 @@
 //! `moebius` executable as `$MOEBIUS`. The Moebius agent is always available: its instructions are built in, its skill
 //! is the guide (see `skill`), and its model comes from `[agents.Moebius]` or else from the Coder. The Retro analyst
 //! (see `retro`) is built the same way; its run works in a worktree of the harness configuration repository. So is the
-//! Autoresearcher (see `research`), whose run works in a worktree of the repository it researches.
+//! Autoresearcher (see `research`), whose run works in a worktree of the repository it researches. A person can also
+//! open a waiting chat in Pi-Bolt's own interactive mode (`tui`): the same command without `--mode rpc`, with sessions
+//! and a run token of its own.
 
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -28,7 +30,7 @@ use serde_json::{Value, json};
 
 use crate::app::App;
 use crate::blobs::redact;
-use crate::board::{AgentInfo, Runs};
+use crate::board::{AgentInfo, Runs, Tui};
 use crate::bus::AppEvent;
 use crate::config::{AgentConfig, AgentSet};
 use crate::mcp;
@@ -151,6 +153,29 @@ pub struct PiBolt {
     live: Arc<Mutex<HashMap<i64, Live>>>,
 }
 
+/// Where a Pi starts and what it is given: the worktree it works in, its agent directory and sessions, the bridge
+/// extension, the token of the router and whether it operates Moebius with the desktop API.
+struct Place<'a> {
+    worktree: &'a Path,
+    agent_dir: &'a Path,
+    sessions: &'a Path,
+    bridge: &'a Path,
+    token: &'a str,
+    operates: bool,
+}
+
+/// A token of the router that is revoked when dropped.
+struct Held {
+    router: Arc<Router>,
+    token: String,
+}
+
+impl Drop for Held {
+    fn drop(&mut self) {
+        self.router.revoke_token(&self.token);
+    }
+}
+
 /// A run whose Pi has not ended yet.
 #[derive(Clone)]
 struct Live {
@@ -242,28 +267,36 @@ impl PiBolt {
         self.agents.read().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// The command that starts Pi for one run.
-    fn command(
-        &self,
-        agent: &AgentConfig,
-        worktree: &Path,
-        run_dir: &Path,
-        agent_dir: &Path,
-        bridge: &Path,
-        token: &str,
-    ) -> Command {
+    /// The command that starts Pi for a run: `--mode rpc` for the run's own process, or, for the terminal interface of
+    /// a chat, Pi's interactive mode on the sessions of its own. Both get the same provider, model, instructions,
+    /// skills, MCP servers, extensions and bridge, so the checks see the same tool calls.
+    fn command(&self, agent: &AgentConfig, place: &Place, interactive: bool) -> Command {
         let mut command = Command::new(&self.program);
         command
-            .current_dir(worktree)
-            .env("PI_CODING_AGENT_DIR", agent_dir)
+            .current_dir(place.worktree)
+            .env("PI_CODING_AGENT_DIR", place.agent_dir)
             .env("MOEBIUS", &self.moebius)
             .env("MOEBIUS_CHECK_URL", &self.router_url)
-            .env("MOEBIUS_RUN_TOKEN", token)
-            .args(["--mode", "rpc", "--offline", "--no-approve"])
+            .env("MOEBIUS_RUN_TOKEN", place.token);
+        if let (true, Some(url)) = (place.operates, self.api_url.get()) {
+            // The Moebius agent operates Moebius with `$MOEBIUS`, as the run itself: its token is accepted by the
+            // desktop API.
+            command
+                .env("MOEBIUS_URL", url)
+                .env("MOEBIUS_TOKEN", place.token);
+        }
+        if !interactive {
+            command.args(["--mode", "rpc"]);
+        }
+        command
+            .args(["--offline", "--no-approve"])
             .args(["--provider", "moebius", "--model", &agent.model])
             .args(["--no-extensions", "--no-skills"])
             .arg("--session-dir")
-            .arg(run_dir.join("sessions"));
+            .arg(place.sessions);
+        if interactive {
+            command.arg("--continue");
+        }
         if let Some(thinking) = &agent.thinking {
             command.args(["--thinking", thinking]);
         }
@@ -282,20 +315,19 @@ impl PiBolt {
             command.arg("--extension").arg(extension);
         }
         // Last, so that it checks the input and redacts the content the other extensions left.
-        command.arg("--extension").arg(bridge);
+        command.arg("--extension").arg(place.bridge);
         command
     }
 
-    /// Writes the per-run agent directory: `models.json` with the router as the `moebius` provider, and `mcp.json` with
+    /// Writes the agent directory `agent_dir`: `models.json` with the router as the `moebius` provider, and `mcp.json` with
     /// the agent's MCP servers, if it has any (without it Pi connects to none). Both hold secrets (the run's token, the
     /// servers' environment), so only the server's user can read them.
     fn write_agent_dir(
         &self,
-        run_dir: &Path,
+        agent_dir: PathBuf,
         agent: &AgentConfig,
         token: &str,
     ) -> Result<PathBuf, String> {
-        let agent_dir = run_dir.join("agent");
         std::fs::create_dir_all(&agent_dir).map_err(|e| e.to_string())?;
         if !agent.mcp.is_empty() {
             let servers = mcp::pi_config(&agent.mcp, &|name| std::env::var(name).ok())?;
@@ -376,32 +408,28 @@ impl PiBolt {
             .map_err(|e| e.to_string())?;
         let run_dir = app.data_dir.join("runs").join(run.id.to_string());
         let agent_dir = self
-            .write_agent_dir(&run_dir, agent, &run.token)
+            .write_agent_dir(run_dir.join("agent"), agent, &run.token)
             .map_err(|e| format!("cannot write the agent directory: {e}"))?;
         let bridge = run_dir.join("moebius-bridge.ts");
         std::fs::write(&bridge, BRIDGE)
             .map_err(|e| format!("cannot write the bridge extension: {e}"))?;
         let stderr =
             std::fs::File::create(run_dir.join("stderr.log")).map_err(|e| e.to_string())?;
-        let mut command = self.command(
-            agent,
-            &run.worktree,
-            &run_dir,
-            &agent_dir,
-            &bridge,
-            &run.token,
-        );
-        // The Moebius agent operates Moebius with `$MOEBIUS`, as the run itself: its token is accepted by the desktop API.
         let operates = app
             .store
             .run(run.id)
             .map_err(|e| e.to_string())?
             .is_some_and(|stored| stored.agent == MOEBIUS_AGENT);
-        if let (true, Some(url)) = (operates, self.api_url.get()) {
-            command
-                .env("MOEBIUS_URL", url)
-                .env("MOEBIUS_TOKEN", &run.token);
-        }
+        let sessions = run_dir.join("sessions");
+        let place = Place {
+            worktree: &run.worktree,
+            agent_dir: &agent_dir,
+            sessions: &sessions,
+            bridge: &bridge,
+            token: &run.token,
+            operates,
+        };
+        let mut command = self.command(agent, &place, false);
         let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -622,6 +650,41 @@ impl Runs for PiBolt {
             None => message.to_string(),
         };
         self.launch_or_undo(app, None, &config, running, &prompt)
+    }
+
+    fn tui(&self, app: &Arc<App>, run_id: i64) -> Result<Tui, String> {
+        let run = app.run(run_id).map_err(|e| e.to_string())?;
+        let worktree = run
+            .worktree
+            .map(PathBuf::from)
+            .ok_or_else(|| format!("chat {run_id} has no worktree"))?;
+        let config = self.agent(app, &run.agent)?;
+        // The token of its own, so that the chat's process and the interface are told apart in the router and one
+        // ending does not revoke the other's.
+        let held = Held {
+            router: self.router.clone(),
+            token: self.router.issue_token(Grant {
+                run_id,
+                card_id: None,
+                budget: config.token_budget,
+            }),
+        };
+        let run_dir = app.data_dir.join("runs").join(run_id.to_string());
+        let agent_dir = self.write_agent_dir(run_dir.join("tui-agent"), &config, &held.token)?;
+        let sessions = run_dir.join("tui-sessions");
+        let place = Place {
+            worktree: &worktree,
+            agent_dir: &agent_dir,
+            sessions: &sessions,
+            bridge: &run_dir.join("moebius-bridge.ts"),
+            token: &held.token,
+            operates: run.agent == MOEBIUS_AGENT,
+        };
+        let command = self.command(&config, &place, true);
+        Ok(Tui {
+            command,
+            _held: Box::new(held),
+        })
     }
 
     fn start_retro(

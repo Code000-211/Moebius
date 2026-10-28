@@ -8,6 +8,7 @@ use moebius_desktop::add_repository;
 use moebius_desktop::agents;
 use moebius_desktop::app::{App, Message, Page};
 use moebius_desktop::chat;
+use moebius_desktop::chat_terminal;
 use moebius_desktop::client::{self, ClientError, Snapshot, TerminalEvent};
 use moebius_desktop::client::{Export, KindCounts, ShadowedKind, Shadowing, Takeover};
 use moebius_desktop::decision_model;
@@ -1586,6 +1587,114 @@ fn a_refused_step_says_so_folded_and_why_unfolded() {
         &app,
         "Rule broken: no-vendor-edits. Never edit files under vendor/."
     ));
+}
+
+/// A waiting chat in its terminal, connected and sized, with Pi-Bolt's screen printed in it.
+fn chat_in_terminal() -> App {
+    let mut app = chatting("waiting", false);
+    let (input, _sent) = iced::futures::channel::mpsc::channel(16);
+    let printed = "\x1b[1;36mPi-Bolt\x1b[0m v1.4.0  \x1b[2mescape interrupt · ctrl+c/ctrl+d clear/exit\x1b[0m\r\n\r\n\
+        \x1b[1mYou\x1b[0m  Write a ready.luau that starts a card only when nothing blocks it.\r\n\r\n\
+        \x1b[1;32mPi-Bolt\x1b[0m  I wrote .moebius/ready.luau and checked it with moebius check-script.\r\n\r\n\
+        \x1b[2m> \x1b[0m\x1b[7m \x1b[0m";
+    for message in [
+        chat::Message::ShowTerminal(true),
+        chat::Message::Terminal(chat_terminal::Message::Shell(TerminalEvent::Connected(
+            input,
+        ))),
+        chat::Message::Terminal(chat_terminal::Message::Pane(PaneEvent::Resized(Size::new(
+            1000.0, 700.0,
+        )))),
+        chat::Message::Terminal(chat_terminal::Message::Shell(TerminalEvent::Output(
+            printed.as_bytes().to_vec(),
+        ))),
+    ] {
+        let _ = app.update(Message::Chat(message));
+    }
+    app
+}
+
+/// A chat switched to its terminal shows Pi-Bolt's own screen instead of the conversation and the field to write in:
+/// compare `tests/snapshots/chat-terminal-tiny-skia.png`.
+#[test]
+fn a_chat_in_its_terminal_is_drawn_with_pi_bolts_screen() {
+    draw_sized(
+        &chat_in_terminal(),
+        "chat-terminal",
+        &[
+            "Chat",
+            "Terminal",
+            "End chat",
+            "Pi-Bolt in the chat's worktree",
+            "connected",
+        ],
+        Size::new(1440.0, 1100.0),
+    );
+    assert!(!shows(&chat_in_terminal(), "Send"));
+}
+
+/// The switch is offered while the chat can take it: the terminal opens once the agent has answered, and an ended chat
+/// has none. Switching back shows the conversation again.
+#[test]
+fn the_switch_between_chat_and_terminal_follows_the_chat() {
+    let mut app = chatting("waiting", false);
+    assert!(shows(&app, "Send"));
+
+    // While the agent works the switch offers no terminal yet (a muted "Terminal" says when it opens on hover).
+    let working = chatting("running", false);
+    assert!(!shows(&working, "Pi-Bolt in the chat's worktree"));
+
+    let _ = app.update(Message::Chat(chat::Message::ShowTerminal(true)));
+    assert!(shows(&app, "Pi-Bolt in the chat's worktree"));
+    assert!(!shows(&app, "Send"));
+    let _ = app.update(Message::Chat(chat::Message::ShowTerminal(false)));
+    assert!(shows(&app, "Send"));
+    assert!(!shows(&app, "Pi-Bolt in the chat's worktree"));
+
+    // Choosing another chat, leaving the page, or the chat ending leaves the terminal too.
+    for leave in [
+        Message::Chat(chat::Message::Select(6)),
+        Message::Select(Page::Inbox),
+    ] {
+        let _ = app.update(Message::Chat(chat::Message::ShowTerminal(true)));
+        let _ = app.update(leave);
+        let _ = app.update(Message::Select(Page::Chat));
+        assert!(!shows(&app, "Pi-Bolt in the chat's worktree"));
+    }
+}
+
+/// Keys typed while the terminal has focus reach Pi-Bolt as bytes.
+#[test]
+fn keys_typed_in_a_chats_terminal_go_to_pi_bolt() {
+    let mut app = chatting("waiting", false);
+    let (input, mut sent) = iced::futures::channel::mpsc::channel(16);
+    for message in [
+        chat::Message::ShowTerminal(true),
+        chat::Message::Terminal(chat_terminal::Message::Shell(TerminalEvent::Connected(
+            input,
+        ))),
+    ] {
+        let _ = app.update(Message::Chat(message));
+    }
+    let _ = sent.try_recv(); // the size the connection starts with
+    let key = iced::keyboard::Key::Character("a".into());
+    let _ = app.update(Message::Chat(chat::Message::Terminal(
+        chat_terminal::Message::Key(iced::keyboard::Event::KeyPressed {
+            key: key.clone(),
+            modified_key: key,
+            physical_key: iced::keyboard::key::Physical::Unidentified(
+                iced::keyboard::key::NativeCode::Unidentified,
+            ),
+            location: iced::keyboard::Location::Standard,
+            modifiers: iced::keyboard::Modifiers::empty(),
+            text: Some("a".into()),
+            repeat: false,
+        }),
+    )));
+    assert_eq!(
+        sent.try_recv().unwrap(),
+        client::TerminalInput::Bytes(b"a".to_vec())
+    );
 }
 
 /// The Chat entry counts the chats with an answer the person has not read; a chat open on the Chat page is read.

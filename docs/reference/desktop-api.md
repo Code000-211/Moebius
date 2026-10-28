@@ -20,7 +20,7 @@ records has the decider `agent:Moebius` instead of `person`, and the run is the 
 another run, such as a steer, the judgement keeps that run, and the agent's run is in the context as `acting_run`).
 The run token of any other agent, and a revoked one, is answered with `401`. Two routes stay with a person and answer
 `403` with `only a person can do this` to a run token: `PUT /v1/secrets/{name}` (an agent must not set keys) and
-`GET /v1/runs/{id}/terminal` and `GET /v1/terminal` (the shells). Where a route below says "a person" and "decider
+`GET /v1/runs/{id}/terminal`, `GET /v1/chats/{id}/tui` and `GET /v1/terminal` (the shells). Where a route below says "a person" and "decider
 `person`", an agent that uses its token is the decider instead.
 
 ```sh
@@ -454,6 +454,27 @@ of the run or chat, with `TERM=xterm-256color`.
 
 The worktree exists while the run or chat is `starting`, `running` or `waiting`. Errors, answered before the upgrade:
 `404` no such run; `422` the run has no worktree (it is over) or already has 4 terminals open.
+
+### `GET /v1/chats/{id}/tui`
+
+Pi-Bolt's own terminal interface for a chat, for the person who prefers it to the conversation view. It upgrades to a
+WebSocket and works like [the shell of a run](#get-v1runsidterminal), with the same binary and resize messages, but the
+program on the pseudo-terminal is `pi-bolt` in its interactive mode, in the chat's worktree, started as the chat's own
+process is: the same agent, model, provider (the router, with a run token of its own for the chat's run, revoked when
+the terminal closes), instructions, skills, MCP servers, extensions and the Moebius bridge, so every tool call is still
+checked and recorded as a decision of the chat's run. Only `--mode rpc` is left out. Its conversation is a Pi session
+of its own (kept under the run's `tui-sessions`, continued when the terminal is opened again), not the chat's: what is
+said in it is neither shown as the chat's events nor stored. What is recorded is the opening, as a `tui_opened` run
+event `{"who": "person"}`, and the tool calls the bridge checks.
+
+- A chat has one terminal open at a time. While it is open the chat's own process is idle and the chat takes no message
+  (`POST /v1/chats/{id}/messages` answers `409`), so the two never work in the worktree at the same time.
+- It opens only while the chat is `waiting`, that is, between turns; while the agent works it is `409`.
+- Closing the socket kills Pi-Bolt and its process group; ending or stopping the chat closes the terminal.
+
+Errors, answered before the upgrade: `401`; `403` for the run token of an agent (the terminal stays with a person);
+`404` no such run; `409` the chat is not waiting, or has its terminal open already; `422` the run is not a chat or it
+has ended.
 
 ### `GET /v1/terminal`
 
@@ -1121,6 +1142,6 @@ A `run_event` has two sources, told apart by its inner `kind`:
 `seq` is the number the event is stored under, the same as in `GET /v1/runs/{id}/events`. Events of a run are published in
 the order of their `seq`. Every event of a run is published and stored: Pi's records, `tool_check` events, `steered` events
 (`{"message"}`, a person's steer, with secrets removed), `said` events (`{"message"}`, a person's message to a chat, the first
-one included, with secrets removed; stored before the agent's records of its answer) `shell_opened` events (`{"who"}`, a person opened a shell in the worktree; see `GET /v1/runs/{id}/terminal`) and `moebius_error` events (`{"message"}`) that explain why a
+one included, with secrets removed; stored before the agent's records of its answer) `shell_opened` events (`{"who"}`, a person opened a shell in the worktree; see `GET /v1/runs/{id}/terminal`), `tui_opened` events (`{"who"}`, a person opened Pi-Bolt's terminal interface in a chat; see `GET /v1/chats/{id}/tui`) and `moebius_error` events (`{"message"}`) that explain why a
 run failed. The one exception is a run that was still going when the server stopped: it is failed at the next start with
 a `moebius_error` that is stored but not published.

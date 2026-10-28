@@ -6,6 +6,7 @@ pub mod agents;
 pub mod app;
 pub mod board;
 pub mod chat;
+pub mod chat_terminal;
 pub mod client;
 pub mod connect;
 pub mod conversation;

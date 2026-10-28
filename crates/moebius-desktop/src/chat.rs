@@ -8,9 +8,10 @@ use std::collections::{HashMap, HashSet};
 use iced::font::Weight;
 use iced::widget::text::Wrapping;
 use iced::widget::{button, column, container, markdown, row, scrollable, space, text, text_input};
-use iced::{Alignment, Border, Element, Length, Padding, Task, border};
+use iced::{Alignment, Border, Element, Length, Padding, Subscription, Task, border};
 
 use crate::app::Message as AppMessage;
+use crate::chat_terminal::{self, ChatTerminal};
 use crate::client::{
     Agent, Change, Chat, Client, ClientError, InboxItem, Judgement, Run, RunEvent, Skill, Snapshot,
 };
@@ -69,6 +70,10 @@ pub enum Message {
     Fold(usize),
     /// The server was told how far the open chat is read; nothing waits on the answer.
     MarkedRead,
+    /// Show the open chat's terminal (Pi-Bolt's own interface) instead of its conversation, or the conversation again.
+    ShowTerminal(bool),
+    /// Something the terminal did.
+    Terminal(chat_terminal::Message),
 }
 
 /// The chat being read.
@@ -146,6 +151,8 @@ pub struct Chats {
     has_harness: bool,
     open: Option<Open>,
     form: Option<Form>,
+    /// The terminal of the open chat, while it is shown.
+    terminal: ChatTerminal,
     /// The time of the last tick, Unix seconds.
     now: i64,
 }
@@ -191,6 +198,7 @@ impl Chats {
             has_harness: false,
             open: None,
             form: None,
+            terminal: ChatTerminal::default(),
             now,
         }
     }
@@ -268,6 +276,7 @@ impl Chats {
 
     /// Shows the chat with this id.
     pub fn open(&mut self, id: i64, settings: &Settings) -> Task<AppMessage> {
+        self.terminal.close();
         self.open = Some(Open::new(id));
         self.form = None;
         load(settings.clone(), id, 0)
@@ -312,6 +321,20 @@ impl Chats {
         }
         if let Some(open) = self.open.as_mut().filter(|open| open.id == run) {
             open.confirming = false;
+            self.terminal.close();
+        }
+    }
+
+    /// Leaves the terminal, which closes its connection. The conversation is read again by `reload`.
+    pub fn close_terminal(&mut self) {
+        self.terminal.close();
+    }
+
+    /// The terminal's connection and keys, while the open chat shows it.
+    pub fn terminal_subscription(&self, settings: &Settings) -> Subscription<AppMessage> {
+        match &self.open {
+            Some(open) => self.terminal.subscription(open.id, settings),
+            None => Subscription::none(),
         }
     }
 
@@ -349,6 +372,14 @@ impl Chats {
             }
             Message::Judged(_, Err(_)) => {}
             Message::Select(id) => return self.open(id, settings),
+            Message::ShowTerminal(true) => self.terminal.open(),
+            Message::ShowTerminal(false) => {
+                self.terminal.close();
+                if let Some(open) = &self.open {
+                    return load(settings.clone(), open.id, open.conversation.last_seq());
+                }
+            }
+            Message::Terminal(message) => self.terminal.update(message),
             Message::Edited(text) => {
                 if let Some(open) = &mut self.open {
                     open.message = text;
@@ -607,14 +638,25 @@ impl Chats {
             Some(name) => format!("{} in {name}", chat.agent),
             None => format!("{}, no repository", chat.agent),
         };
-        let head = row![
+        let mut head = row![
             column![title, page::context(who)]
                 .spacing(2)
                 .width(Length::Fill),
-            actions(chat, open),
         ]
         .spacing(10)
         .align_y(Alignment::Center);
+        if chat.is_open() {
+            head = head.push(switch(chat, self.terminal.is_shown()));
+        }
+        head = head.push(actions(chat, open));
+        if let Some(terminal) = self.terminal.view() {
+            let content = column![container(head).padding([14, 18]), page::rule(), terminal];
+            return container(content)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(|_| page::box_style())
+                .into();
+        }
         let conversation = scrollable(
             container(self.conversation_view(chat, open))
                 .padding(Padding::from([16, 16]))
@@ -772,6 +814,34 @@ fn chat_row<'a>(
             }
         })
         .into()
+}
+
+/// The switch between a chat's conversation and its terminal, for a chat that is not over (the caller leaves it out
+/// for one that is). The terminal opens once the agent has answered: while it works its process has the worktree.
+fn switch<'a>(chat: &Chat, terminal: bool) -> Element<'a, AppMessage> {
+    let chip = |label: &str, selected: bool, shown: bool| {
+        page::chip(
+            label.to_string(),
+            selected,
+            false,
+            AppMessage::Chat(Message::ShowTerminal(shown)),
+        )
+    };
+    let mut switch = row![chip("Chat", !terminal, false)]
+        .spacing(6)
+        .align_y(Alignment::Center);
+    if terminal || chat.status == "waiting" {
+        switch = switch.push(chip("Terminal", terminal, true));
+    } else {
+        switch = switch.push(iced::widget::tooltip(
+            container(text("Terminal").size(theme::BODY).color(theme::TEXT_MUTED)).padding([4, 12]),
+            container(text("Opens when the agent has answered").size(theme::LABEL))
+                .padding([4, 8])
+                .style(|_| page::box_style()),
+            iced::widget::tooltip::Position::Bottom,
+        ));
+    }
+    switch.into()
 }
 
 /// The right of the chat's head: ending it and stopping it (or the question that confirms stopping), while it lasts.

@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::blobs::redact;
-use crate::board::Runs;
+use crate::board::{Runs, Tui};
 use crate::bus::{AppEvent, Bus};
 use crate::decide::{Actor, Decisions, Question};
 use crate::forge::{Forge, ForgeError, NoForge};
@@ -23,7 +23,7 @@ use crate::github::Issue;
 use crate::harness_repo::HarnessRepo;
 use crate::repos::{GitError, Repos, git};
 use crate::store::{Card, Change, Repository, Run, Store, StoreError, now};
-use crate::terminal::{MAX_PER_RUN, SERVER, Slot, Slots};
+use crate::terminal::{MAX_PER_RUN, SERVER, Slot, Slots, tui_key};
 
 /// The columns of the default workflow (spec 6).
 pub mod columns {
@@ -666,6 +666,27 @@ impl App {
         Ok((worktree, slot))
     }
 
+    /// A person opens Pi-Bolt's own terminal interface in the chat `run_id`. The chat must be waiting: while its agent
+    /// works its process owns the worktree, so the answer is a conflict. Only one is open per chat, and while it is open
+    /// the chat takes no message (see `say_in_chat`), so the chat's own process never works at the same time. Returns
+    /// the program and the interface's place; only the opening is recorded, as a `tui_opened` event.
+    pub fn open_tui(self: &Arc<Self>, runs: &dyn Runs, run_id: i64) -> Result<(Tui, Slot)> {
+        let run = self.running_chat(run_id)?;
+        if run.status != "waiting" {
+            return Err(AppError::Conflict(format!(
+                "chat {run_id} is {}: its terminal opens once the agent has answered",
+                run.status
+            )));
+        }
+        let slot = self
+            .terminals
+            .take_up_to(tui_key(run_id), 1)
+            .ok_or_else(|| AppError::Conflict(format!("chat {run_id} has its terminal open")))?;
+        let tui = runs.tui(self, run_id).map_err(AppError::Invalid)?;
+        self.record_run_event(run_id, "tui_opened", &json!({ "who": PERSON }))?;
+        Ok((tui, slot))
+    }
+
     /// A person opens a shell on the server, in `dir` (the directory of `moebius.toml`), at most [`MAX_PER_RUN`] at a
     /// time. There is no run to hold an event, so the opening is recorded as a decision of kind `open_terminal`: never
     /// what is typed or printed.
@@ -787,6 +808,11 @@ impl App {
         let run = self.running_chat(run_id)?;
         if message.trim().is_empty() {
             return Err(AppError::Invalid("a message cannot be blank".into()));
+        }
+        if self.terminals.is_open(tui_key(run_id)) {
+            return Err(AppError::Conflict(format!(
+                "chat {run_id} is in its terminal: close it to write to the chat"
+            )));
         }
         // Stored first, so that it comes before the agent's records of its answer.
         self.record_run_event(run_id, "said", &json!({ "message": redact(message) }))?;

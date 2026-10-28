@@ -24,6 +24,8 @@
 //! - `POST /v1/runs/{id}/steer` `{message}`: a person sends a message to a running run.
 //! - `POST /v1/runs/{id}/stop` `{reason}`: a person stops a running run; a chat ends as stopped.
 //! - `GET /v1/runs/{id}/terminal`: a WebSocket on a shell in the run's worktree (see [`crate::terminal`]).
+//! - `GET /v1/chats/{id}/tui`: a WebSocket on Pi-Bolt's own terminal interface in a waiting chat's worktree (see
+//!   [`crate::terminal`]).
 //! - `GET /v1/terminal`: a WebSocket on a shell in the directory of `moebius.toml`, recorded as an `open_terminal`
 //!   decision (see [`crate::terminal`]).
 //! - `GET /v1/agents`: the agents the server can run. `GET`, `PUT` and `DELETE /v1/agents/{name}`: read, write and delete
@@ -424,6 +426,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/runs/{id}/steer", post(steer_run))
         .route("/v1/runs/{id}/stop", post(stop_run))
         .route("/v1/runs/{id}/terminal", get(run_terminal))
+        .route("/v1/chats/{id}/tui", get(chat_tui))
         .route("/v1/terminal", get(server_terminal))
         .route("/v1/agents", get(agents))
         .route(
@@ -722,6 +725,22 @@ async fn run_terminal(
     let axum::Json((worktree, slot)) = blocking(&state.app, move |app| app.open_shell(id)).await?;
     Ok(upgrade.on_upgrade(move |socket| async move {
         crate::terminal::serve(socket, &worktree, slot).await
+    }))
+}
+
+async fn chat_tui(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    upgrade: WebSocketUpgrade,
+) -> Result<Response, ApiError> {
+    person_only(&by)?;
+    let runs = state.runs.clone();
+    let axum::Json((tui, slot)) = blocking(&state.app, move |app| app.open_tui(&*runs, id)).await?;
+    Ok(upgrade.on_upgrade(move |socket| async move {
+        let command = crate::terminal::on_terminal(&tui.command);
+        crate::terminal::serve_command(socket, command, slot).await;
+        drop(tui);
     }))
 }
 
@@ -3673,6 +3692,171 @@ mod tests {
             !std::path::Path::new(&format!("/proc/{pid}")).exists()
         })
         .await;
+    }
+
+    fn status_of(e: tokio_tungstenite::tungstenite::Error) -> u16 {
+        match e {
+            tokio_tungstenite::tungstenite::Error::Http(response) => response.status().as_u16(),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_waiting_chat_opens_pi_in_its_terminal_as_the_chat_runs_it() {
+        let (_dir, state, addr) = start().await;
+        let app = &state.app;
+        let run = chat(&state, &addr, "Hello", None).await;
+        let run_dir = app.data_dir.join(format!("runs/{}", run.id));
+        let read = |file: &str| -> serde_json::Value {
+            serde_json::from_slice(&std::fs::read(run_dir.join(file)).unwrap()).unwrap()
+        };
+
+        let mut tui = open_at(&addr, &state.token, &format!("/v1/chats/{}/tui", run.id))
+            .await
+            .unwrap();
+        read_until(&mut tui, "(tui ready)").await;
+        type_in(&mut tui, "hi there\n").await;
+        assert_eq!(
+            read_until(&mut tui, "tui heard: (hi there)").await,
+            "hi there"
+        );
+
+        // It is the chat's Pi without `--mode rpc`: the same model, provider, bridge and router, with a token of its own.
+        let chat_argv = read("agent/argv.json");
+        let argv = read("tui-agent/argv.json");
+        let argv: Vec<&str> = argv
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a.as_str().unwrap())
+            .collect();
+        assert!(!argv.contains(&"--mode"), "{argv:?}");
+        let value_of = |flag: &str| argv[argv.iter().position(|a| *a == flag).unwrap() + 1];
+        assert_eq!(value_of("--model"), "fake");
+        assert_eq!(value_of("--provider"), "moebius");
+        assert_eq!(
+            argv.last().copied(),
+            chat_argv.as_array().unwrap().last().unwrap().as_str(),
+            "the bridge is loaded last, as in the chat"
+        );
+        assert!(argv.contains(&"--offline") && argv.contains(&"--no-approve"));
+        let env = read("tui-agent/env.json");
+        assert_eq!(env["MOEBIUS_CHECK_URL"], "http://127.0.0.1:9");
+        assert_eq!(env["MOEBIUS"], "/usr/local/bin/moebius");
+        let token = env["MOEBIUS_RUN_TOKEN"].as_str().unwrap();
+        assert_ne!(
+            token,
+            read("agent/env.json")["MOEBIUS_RUN_TOKEN"]
+                .as_str()
+                .unwrap()
+        );
+        let models: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(run_dir.join("tui-agent/models.json")).unwrap())
+                .unwrap();
+        assert_eq!(models["providers"]["moebius"]["apiKey"], token);
+        assert_eq!(
+            models["providers"]["moebius"]["baseUrl"],
+            "http://127.0.0.1:9/v1"
+        );
+
+        // Its opening is stored, what is typed is not; the chat takes no message meanwhile, nor a second terminal.
+        let events = app.store.events(run.id).unwrap();
+        let opened: Vec<_> = events.iter().filter(|e| e.kind == "tui_opened").collect();
+        assert_eq!(opened.len(), 1);
+        assert_eq!(opened[0].data, serde_json::json!({ "who": "person" }));
+        assert!(!format!("{events:?}").contains("hi there"));
+        assert_eq!(say(&state, &addr, run.id, "Again").await.status(), 409);
+        let second = open_at(&addr, &state.token, &format!("/v1/chats/{}/tui", run.id)).await;
+        assert_eq!(status_of(second.unwrap_err()), 409);
+
+        // Closing the socket ends the process, and the chat takes messages again.
+        let pid = std::fs::read_to_string(run_dir.join("tui-agent/pid.txt")).unwrap();
+        tui.close(None).await.unwrap();
+        until("pi is gone", || {
+            !std::path::Path::new(&format!("/proc/{pid}")).exists()
+        })
+        .await;
+        until("the chat takes a message", || {
+            !app.terminals.is_open(crate::terminal::tui_key(run.id))
+        })
+        .await;
+        assert_eq!(say(&state, &addr, run.id, "Again").await.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn a_chats_terminal_needs_a_person_and_a_chat_that_is_not_working() {
+        let (_dir, state, addr) = start().await;
+        let tui = |token: std::sync::Arc<str>, id: i64| {
+            let addr = addr.clone();
+            async move { open_at(&addr, &token, &format!("/v1/chats/{id}/tui")).await }
+        };
+        assert_eq!(status_of(tui("nope".into(), 1).await.unwrap_err()), 401);
+        assert_eq!(
+            status_of(tui(state.token.clone(), 99).await.unwrap_err()),
+            404
+        );
+
+        // A chat whose agent is working keeps its worktree: 409.
+        let started = post(
+            &state,
+            &addr,
+            "/v1/chats".into(),
+            serde_json::json!({ "agent": "Coder", "message": "Work for ever [hang]" }),
+        )
+        .await;
+        let working: Run = started.json().await.unwrap();
+        until("the agent works", || {
+            state.app.store.run(working.id).unwrap().unwrap().status == "running"
+        })
+        .await;
+        assert_eq!(
+            status_of(tui(state.token.clone(), working.id).await.unwrap_err()),
+            409
+        );
+        assert!(
+            !state
+                .app
+                .store
+                .events(working.id)
+                .unwrap()
+                .iter()
+                .any(|e| e.kind == "tui_opened")
+        );
+
+        // The run token of the Moebius agent is refused: the terminal stays with a person.
+        let waiting = chat(&state, &addr, "Hello", None).await;
+        let moebius = state
+            .app
+            .store
+            .add_run(Some(1), "Moebius", "test", "chat")
+            .unwrap();
+        let agent_token = state.router.issue_token(crate::router::Grant {
+            run_id: moebius.id,
+            card_id: None,
+            budget: None,
+        });
+        assert_eq!(
+            status_of(tui(agent_token.into(), waiting.id).await.unwrap_err()),
+            403
+        );
+
+        // An ended chat has none.
+        assert_eq!(end(&state, &addr, waiting.id).await.status(), 200);
+        until("the chat has ended", || {
+            state
+                .app
+                .store
+                .run(waiting.id)
+                .unwrap()
+                .unwrap()
+                .ended_at
+                .is_some()
+        })
+        .await;
+        assert_eq!(
+            status_of(tui(state.token.clone(), waiting.id).await.unwrap_err()),
+            422
+        );
     }
 
     #[tokio::test]

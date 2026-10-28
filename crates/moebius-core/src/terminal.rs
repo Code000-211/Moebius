@@ -1,7 +1,8 @@
 //! A person's shell in a run's worktree or in the server's configuration directory, served over a WebSocket
 //! (`GET /v1/runs/{id}/terminal` and `GET /v1/terminal`, see the desktop API reference). The shell runs on a pseudo-terminal; binary messages carry its bytes both ways and a text message
 //! `{"type":"resize","cols":N,"rows":M}` sets its size. The shell is the person's own, so no check looks at what is
-//! typed; Moebius records only that it was opened.
+//! typed; Moebius records only that it was opened. The same serving carries Pi-Bolt's own terminal interface for a chat
+//! (`GET /v1/chats/{id}/tui`), a program Moebius builds instead of the person's shell.
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -18,6 +19,11 @@ pub const MAX_PER_RUN: usize = 4;
 
 /// The key of the terminals opened on the server rather than on a run; run ids start at 1.
 pub const SERVER: i64 = 0;
+
+/// The key under which the terminal interface of a chat is kept, apart from the shells of its run: at most one is open.
+pub fn tui_key(run: i64) -> i64 {
+    -run
+}
 
 /// The size of a terminal until the client says its own.
 const SIZE: (u16, u16) = (80, 24);
@@ -46,28 +52,42 @@ pub struct Slot {
 impl Slots {
     /// A place for one more terminal of `run`, unless it has [`MAX_PER_RUN`] open.
     pub fn take(self: &Arc<Self>, run: i64) -> Option<Slot> {
+        self.take_up_to(run, MAX_PER_RUN)
+    }
+
+    /// A place for one more terminal under `key`, unless `most` are open.
+    pub fn take_up_to(self: &Arc<Self>, key: i64, most: usize) -> Option<Slot> {
         let mut open = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        let open = open.entry(run).or_insert_with(|| Open {
+        let open = open.entry(key).or_insert_with(|| Open {
             count: 0,
             closed: watch::channel(false).0,
         });
-        if open.count >= MAX_PER_RUN {
+        if open.count >= most {
             return None;
         }
         open.count += 1;
         Some(Slot {
             slots: self.clone(),
-            run,
+            run: key,
             closed: open.closed.subscribe(),
         })
     }
 
-    /// Closes the terminals open on `run`, for when its worktree is gone: their shells are killed.
+    /// Closes the terminals open on `run`, its chat's terminal interface included, for when its worktree is gone:
+    /// their programs are killed.
     pub fn close(&self, run: i64) {
         let open = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(open) = open.get(&run) {
-            open.closed.send_replace(true);
+        for key in [run, tui_key(run)] {
+            if let Some(open) = open.get(&key) {
+                open.closed.send_replace(true);
+            }
         }
+    }
+
+    /// Whether a terminal is open under `key`.
+    pub fn is_open(&self, key: i64) -> bool {
+        let open = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        open.contains_key(&key)
     }
 }
 
@@ -106,11 +126,16 @@ fn size(cols: u16, rows: u16) -> PtySize {
     }
 }
 
-/// Runs the person's shell (`$SHELL`, else `/bin/sh`) in `worktree` for as long as `socket` is open: until either the
+/// Runs the person's shell in `worktree` for as long as `socket` is open: until either the
 /// shell exits, which closes the socket, or the socket closes or the run ends, which kills the shell and its process
 /// group.
-pub async fn serve(mut socket: WebSocket, worktree: &Path, mut slot: Slot) {
-    let (master, mut child, reader, writer) = match start(worktree) {
+pub async fn serve(socket: WebSocket, worktree: &Path, slot: Slot) {
+    serve_command(socket, shell(worktree), slot).await;
+}
+
+/// Runs `command` on a pseudo-terminal for as long as `socket` is open, as [`serve`] does the shell.
+pub async fn serve_command(mut socket: WebSocket, command: CommandBuilder, mut slot: Slot) {
+    let (master, mut child, reader, writer) = match start(command) {
         Ok(started) => started,
         Err(e) => {
             let reason = e.to_string();
@@ -184,17 +209,38 @@ type Started = (
     Box<dyn Write + Send>,
 );
 
-/// The shell on a new pseudo-terminal, and the two ends of it.
-fn start(worktree: &Path) -> Result<Started, StartError> {
-    let pair = native_pty_system()
-        .openpty(size(SIZE.0, SIZE.1))
-        .map_err(fail)?;
+/// The person's shell (`$SHELL`, else `/bin/sh`) in `worktree`.
+fn shell(worktree: &Path) -> CommandBuilder {
     let shell = std::env::var("SHELL")
         .ok()
         .filter(|shell| !shell.is_empty())
         .unwrap_or_else(|| "/bin/sh".to_string());
     let mut command = CommandBuilder::new(shell);
     command.cwd(worktree);
+    command
+}
+
+/// `command` as a program on a terminal: its program, arguments, working directory and environment.
+pub fn on_terminal(command: &std::process::Command) -> CommandBuilder {
+    let mut builder = CommandBuilder::new(command.get_program());
+    builder.args(command.get_args());
+    if let Some(dir) = command.get_current_dir() {
+        builder.cwd(dir);
+    }
+    for (name, value) in command.get_envs() {
+        match value {
+            Some(value) => builder.env(name, value),
+            None => builder.env_remove(name),
+        }
+    }
+    builder
+}
+
+/// The program on a new pseudo-terminal, and the two ends of it.
+fn start(mut command: CommandBuilder) -> Result<Started, StartError> {
+    let pair = native_pty_system()
+        .openpty(size(SIZE.0, SIZE.1))
+        .map_err(fail)?;
     command.env("TERM", "xterm-256color");
     command.env("COLORTERM", "truecolor");
     let child = pair.slave.spawn_command(command).map_err(fail)?;
@@ -247,6 +293,20 @@ mod tests {
         assert!(slots.take(2).is_some(), "the limit is per run");
         drop(open);
         assert!(slots.take(1).is_some());
+    }
+
+    #[test]
+    fn a_chat_has_one_terminal_interface_that_closing_the_run_closes() {
+        let slots = Arc::new(Slots::default());
+        let key = tui_key(1);
+        let first = slots.take_up_to(key, 1).unwrap();
+        assert!(slots.take_up_to(key, 1).is_none());
+        assert!(slots.is_open(key));
+        assert!(slots.take(1).is_some(), "shells are counted apart");
+        slots.close(1);
+        assert!(*first.closed.borrow());
+        drop(first);
+        assert!(!slots.is_open(key));
     }
 
     #[test]

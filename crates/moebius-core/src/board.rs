@@ -66,6 +66,13 @@ pub struct AgentInfo {
 }
 
 /// Starts runs for the engine. The real one drives a harness (Pi-Bolt); tests use a fake.
+/// The terminal interface of a chat: the program to run on a terminal, and what is given back when it ends.
+pub struct Tui {
+    pub command: std::process::Command,
+    /// Dropped when the program has ended; it gives back what the program was given, such as its token.
+    pub _held: Box<dyn Send>,
+}
+
 pub trait Runs: Send + Sync {
     /// Starts a run for `card` and returns it without waiting for it to end.
     fn start(
@@ -96,6 +103,12 @@ pub trait Runs: Send + Sync {
 
     /// Asks a running run to stop; it ends as `stopped`. False when the run is not running.
     fn stop(&self, run_id: i64) -> bool;
+
+    /// The program of the terminal interface of the waiting chat `run_id`: the harness's interactive mode in the
+    /// chat's worktree, set up as the chat's own process is. A harness without one refuses.
+    fn tui(&self, _app: &Arc<App>, _run_id: i64) -> Result<Tui, String> {
+        Err("this harness has no terminal interface".into())
+    }
 
     /// Starts a chat with `agent`, which answers `message`, in a branch of `repository`, of the harness configuration
     /// repository when `harness` is set, or in an empty directory, and returns it without waiting for the answer. A chat that continues an ended one gives the agent `earlier`,

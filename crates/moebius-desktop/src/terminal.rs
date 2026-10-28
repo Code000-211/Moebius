@@ -277,6 +277,11 @@ impl Shell {
         Self::pane("Shell on the server", true, generation)
     }
 
+    /// Pi-Bolt in a chat's worktree, in a pane as big as the chat's detail.
+    pub fn in_chat(generation: u32) -> Self {
+        Self::pane("Pi-Bolt in the chat's worktree", true, generation)
+    }
+
     fn pane(title: &'static str, fills: bool, generation: u32) -> Self {
         let (cols, rows) = (80, 24);
         Shell {

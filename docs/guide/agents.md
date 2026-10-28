@@ -327,6 +327,17 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/
   -d '{}' $API/v1/chats/$CHAT/end
 ```
 
+### A chat in Pi-Bolt's own terminal interface
+
+A person can also work with a waiting chat in Pi-Bolt's own terminal interface: in the desktop app, the switch
+"Chat | Terminal" in the chat's header; over the API, the WebSocket `GET /v1/chats/{id}/tui`. It is Pi-Bolt's
+interactive mode in the chat's worktree with the chat's own model, provider, instructions, skills, MCP servers,
+extensions and bridge, so every tool call is still checked by the rules and recorded as a decision of the chat. What is
+typed and said in it is not stored as the chat's events (it is a Pi session of its own; only the opening, as a
+`tui_opened` event, and the checked tool calls are recorded), and the chat takes no message while the terminal is open.
+It opens only between turns: `409` while the agent works. The files the terminal changes are in the chat's worktree
+and are committed and offered when the chat ends, as the agent's are. See the [desktop API](desktop-api.md#get-v1chatsidtui).
+
 To build on the harness configuration (a skill, an extension, an MCP server, an agent, the server's rules) in a chat,
 see [Build an extension or skill in a chat](#build-an-extension-or-skill-in-a-chat).
 

@@ -12,6 +12,7 @@
 # A "[put NAME]" line, the text to write and a "[/put]" line make a chat write that text to the file NAME, with its directories, and commit nothing.
 # A "[run COMMAND]" in a chat message runs COMMAND in a shell in the worktree and appends what it printed to the answer.
 # While a "[hang]" prompt waits, a prompt with streamingBehavior is queued (kept in queued.txt). Its pid is kept in pid.txt.
+# Started without `--mode rpc` (the terminal interface of a chat) it prints "tui ready" and repeats each line typed as "tui heard: LINE".
 # A `steer` is answered with a response that echoes the message. The prompt is kept in prompt.txt next to argv.json. The final answer is reported in agent_end, as Pi does.
 import json
 import os
@@ -35,6 +36,13 @@ with open(os.path.join(os.environ["PI_CODING_AGENT_DIR"], "env.json"), "w") as f
 
 with open(os.path.join(os.environ["PI_CODING_AGENT_DIR"], "pid.txt"), "w") as f:
     f.write(str(os.getpid()))
+
+# Without `--mode rpc` it is Pi's interactive mode on a terminal: it says it is ready and repeats each line it is typed.
+if "--mode" not in sys.argv:
+    print("tui ready", flush=True)
+    for line in sys.stdin:
+        print("tui heard: " + line.strip(), flush=True)
+    sys.exit(0)
 
 instructions = ""
 if "--append-system-prompt" in sys.argv:

@@ -323,6 +323,7 @@ impl App {
             Message::Select(page) => {
                 self.page = Some(page);
                 self.opened = None;
+                self.chats.close_terminal();
                 if page == Page::Terminal {
                     self.terminal.open();
                 }
@@ -916,8 +917,21 @@ impl App {
                     Page::Terminal => self.terminal.subscription(settings),
                     _ => Subscription::none(),
                 };
+                let chat_terminal = match self.page() {
+                    Page::Chat => self.chats.terminal_subscription(settings),
+                    _ => Subscription::none(),
+                };
                 let keys = iced::event::listen_with(search::key);
-                Subscription::batch([stream, clock, inbox, chats, shell, terminal, keys])
+                Subscription::batch([
+                    stream,
+                    clock,
+                    inbox,
+                    chats,
+                    shell,
+                    terminal,
+                    chat_terminal,
+                    keys,
+                ])
             }
             _ => Subscription::none(),
         }
