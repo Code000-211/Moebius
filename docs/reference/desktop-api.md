@@ -154,13 +154,17 @@ For GitHub, with the App set up, the clone authenticates as the App's installati
 
 ### `POST /v1/repositories/{id}/issues`
 
-Creates an issue in a repository without a forge. Its card starts in `Backlog`, with the author `person`, which is
-trusted.
+Creates an issue from a person in the app. Its card starts in `Backlog`, with the author `person`.
+
+Without a forge the card is trusted and moves on. On a repository with a forge the issue is opened there first, the same
+way a confirmed grilling opens its issues, and the card gets the issue's number right away, so that the poll finds it
+existing. The card is `confirmed`, since a person wrote it, and so moves on from `Backlog` without approval, whatever the
+repository's `trusted` list says.
 
 Request: `{"title": "...", "body": "..."}`. `title` is required and must not be empty or blank; `body` is optional.
 
-Response: the `Card`. Errors: `404` no such repository; `422` the title is empty, or the repository has a forge (its
-issues are created there).
+Response: the `Card`. Errors: `404` no such repository; `422` the title is empty; `500` the forge refuses to open the
+issue (no card is made).
 
 ### `POST /v1/cards/{id}/approve`
 

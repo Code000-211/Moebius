@@ -7,6 +7,7 @@ use std::time::Duration;
 use iced::widget::{container, row};
 use iced::{Element, Length, Subscription, Task};
 
+use crate::add_repository::{self, AddRepository};
 use crate::agents::{self, Agents};
 use crate::chat::Chats;
 use crate::client::{self, Client, ClientError, HistoryEntry, RunEvent, Snapshot, StreamEvent};
@@ -14,6 +15,7 @@ use crate::decision_model::{self, DecisionModel};
 use crate::experiments::{self, Experiments};
 use crate::inbox::{self, Inbox};
 use crate::live::{self, Live};
+use crate::new_issue::{self, NewIssue};
 use crate::retro::{self, Retros};
 use crate::rules::{self, Rules};
 use crate::settings::{self, Settings};
@@ -36,6 +38,8 @@ pub enum Page {
     Chat,
     /// The board of the repository with this id.
     Board(i64),
+    /// The form that adds a repository, opened by the "+" of the sidebar.
+    AddRepository,
     Agents,
     Skills,
     McpServers,
@@ -55,6 +59,7 @@ impl Page {
             Page::Inbox => "Inbox",
             Page::Chat => "Chat",
             Page::Board(_) => "Board",
+            Page::AddRepository => "Add a repository",
             Page::Agents => "Agents",
             Page::Skills => "Skills",
             Page::McpServers => "MCP servers",
@@ -73,7 +78,7 @@ impl Page {
     pub fn group(self) -> &'static str {
         match self {
             Page::Inbox | Page::Chat => "",
-            Page::Board(_) => "Boards",
+            Page::Board(_) | Page::AddRepository => "Boards",
             Page::Agents | Page::Skills | Page::McpServers | Page::Rules => "Build",
             Page::Retro | Page::Experiments | Page::DecisionModel | Page::Usage => "Improve",
             Page::Models | Page::Plugins | Page::Settings => "Setup",
@@ -121,6 +126,8 @@ pub enum Message {
     Experiments(experiments::Message),
     DecisionModel(decision_model::Message),
     Setup(setup::Message),
+    AddRepository(add_repository::Message),
+    NewIssue(new_issue::Message),
     /// A chat was asked for, as from the inbox: its screen opens on it.
     OpenChat(i64),
     /// The history of the card was read.
@@ -161,6 +168,8 @@ pub struct App {
     experiments: Experiments,
     decision_model: DecisionModel,
     setup: Setup,
+    add_repository: AddRepository,
+    new_issue: NewIssue,
     collapsed: bool,
     /// Counts the reads of the snapshot, so that an older answer never replaces a newer one.
     requested: u64,
@@ -198,6 +207,8 @@ impl App {
             experiments: Experiments::default(),
             decision_model: DecisionModel::default(),
             setup: Setup::default(),
+            add_repository: AddRepository::default(),
+            new_issue: NewIssue::default(),
             collapsed: false,
             requested: 0,
             shown: 0,
@@ -322,6 +333,34 @@ impl App {
                 self.show_connect_error(&ClientError::Unauthorized);
             }
             Message::Setup(message) => self.setup.update(message),
+            Message::AddRepository(message) if AddRepository::refused(&message) => {
+                self.show_connect_error(&ClientError::Unauthorized);
+            }
+            Message::AddRepository(message) => {
+                // The new board opens, and the snapshot is read again without waiting for the event.
+                let added = match &message {
+                    add_repository::Message::Answered(Ok(repository)) => Some(repository.id),
+                    _ => None,
+                };
+                let task = self.add_repository.update(message, self.settings.as_ref());
+                if let Some(id) = added {
+                    self.page = Some(Page::Board(id));
+                    self.opened = None;
+                    return Task::batch([task, self.reload()]);
+                }
+                return task;
+            }
+            Message::NewIssue(message) if NewIssue::refused(&message) => {
+                self.show_connect_error(&ClientError::Unauthorized);
+            }
+            Message::NewIssue(message) => {
+                let created = matches!(message, new_issue::Message::Answered(Ok(_)));
+                let task = self.new_issue.update(message, self.settings.as_ref());
+                if created {
+                    return Task::batch([task, self.reload()]);
+                }
+                return task;
+            }
             Message::Chat(message) => return self.chats.update(message, self.settings.as_ref()),
             Message::OpenChat(id) => {
                 self.page = Some(Page::Chat);
@@ -683,8 +722,9 @@ impl App {
                         .map(|card| history::view(board, card, entries.as_deref(), *now)),
                     None => None,
                 }
-                .unwrap_or_else(|| board::view(board, &self.snapshot.inbox))
+                .unwrap_or_else(|| board::view(board, &self.snapshot.inbox, &self.new_issue))
             }
+            Page::AddRepository => self.add_repository.view(),
             Page::Inbox => self.inbox.view(&self.snapshot),
             Page::Chat => self.chats.view(&self.snapshot, &self.inbox),
             Page::Agents => self.agents.view(),

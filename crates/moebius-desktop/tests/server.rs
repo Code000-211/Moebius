@@ -17,7 +17,8 @@ use moebius_core::store::Usage;
 use moebius_desktop::app::{App, Message, Page};
 use moebius_desktop::chat;
 use moebius_desktop::client::{
-    Client, ClientError, RunEvent, Snapshot, StreamEvent, TerminalEvent, events, terminal,
+    Client, ClientError, NewRepository, RunEvent, Snapshot, StreamEvent, TerminalEvent, events,
+    terminal,
 };
 use moebius_desktop::conversation::{Conversation, Entry, Said};
 use moebius_desktop::settings::Settings;
@@ -1164,4 +1165,60 @@ async fn saving_the_rules_is_a_commit_on_the_harness_repository_and_bad_text_is_
     assert_eq!(status, 422);
     assert!(message.contains("named twice"), "{message}");
     assert_eq!(git(&origin, &["rev-parse", "main"]).unwrap(), head);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_client_adds_a_repository_from_a_bare_clone_and_creates_an_issue_on_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, _) = start(dir.path()).await;
+    let bare = dir.path().join("bare.git");
+    git(
+        dir.path(),
+        &[
+            "clone",
+            "--quiet",
+            "--bare",
+            origin(dir.path()).to_str().unwrap(),
+            "bare.git",
+        ],
+    )
+    .unwrap();
+    let client = Client::new(settings);
+    let request = NewRepository {
+        name: "demo".into(),
+        url: bare.display().to_string(),
+        forge: "none",
+        github: None,
+        trusted: Vec::new(),
+    };
+    let repository = client.add_repository(&request).await.unwrap();
+    assert_eq!(
+        (repository.name.as_str(), repository.forge.as_str()),
+        ("demo", "none")
+    );
+    let again = client.add_repository(&request).await.unwrap_err();
+    assert!(matches!(again, ClientError::Server { status: 422, .. }));
+
+    let card = client
+        .create_issue(repository.id, "Add a cache", "Keep the files.")
+        .await
+        .unwrap();
+    assert_eq!((card.number, card.column.as_str()), (1, "Backlog"));
+    let snapshot = client.snapshot().await.unwrap();
+    let board = snapshot
+        .boards
+        .iter()
+        .find(|board| board.repository.id == repository.id)
+        .unwrap();
+    assert!(
+        board
+            .cards
+            .iter()
+            .any(|c| c.title == "Add a cache" && c.body == "Keep the files.")
+    );
+    let blank = client
+        .create_issue(repository.id, " ", "")
+        .await
+        .unwrap_err();
+    assert!(matches!(blank, ClientError::Server { status: 422, .. }));
 }

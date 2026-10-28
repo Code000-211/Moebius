@@ -347,7 +347,9 @@ impl App {
         Ok(())
     }
 
-    /// Creates an issue in a repository without a forge: a new card in the backlog.
+    /// Creates an issue a person wrote in the app: a new card in the backlog. On a forge the issue is opened there
+    /// first, the same way a confirmed grilling opens its issues, and the card is confirmed, since the person
+    /// wrote it, so that it moves on without approval.
     pub fn create_issue(
         &self,
         repository_id: i64,
@@ -356,14 +358,11 @@ impl App {
         author: &str,
     ) -> Result<Card> {
         let repository = self.repository(repository_id)?;
-        if repository.forge != "none" {
-            return Err(AppError::Invalid(format!(
-                "issues of {} are created on its forge, {}",
-                repository.name, repository.forge
-            )));
-        }
         if title.trim().is_empty() {
             return Err(AppError::Invalid("an issue needs a title".into()));
+        }
+        if repository.forge != "none" {
+            return self.create_confirmed_issue(&repository, title, body, &BTreeSet::new());
         }
         let card = self
             .store

@@ -520,3 +520,82 @@ async fn confirming_on_a_github_repository_opens_the_issues_and_the_cards_carry_
     }
     assert!(item_kinds(&server).is_empty());
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn creating_an_issue_on_a_github_repository_opens_it_and_the_card_moves_on() {
+    let dir = tempfile::tempdir().unwrap();
+    let (url, fake) = fake_github().await;
+    let key = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/github-app-test-key.pem");
+    let text = format!(
+        "[github]\napp_id = 4242\nprivate_key_file = {:?}\napi_url = {url:?}\n",
+        key.display().to_string()
+    );
+    let config = Config::parse(&text, dir.path(), &dir.path().join("moebius.toml")).unwrap();
+    let server = Arc::new(Server::new(config, "127.0.0.1:1".parse().unwrap()).unwrap());
+    let remote = dir.path().join("remote.git");
+    git(
+        dir.path(),
+        &[
+            "clone",
+            "--quiet",
+            "--bare",
+            source(dir.path()).to_str().unwrap(),
+            "remote.git",
+        ],
+    )
+    .unwrap();
+    let repo = server
+        .app
+        .add_github_repository("widgets", remote.to_str().unwrap(), "acme/widgets", &[])
+        .unwrap();
+    let other = dir.path().join("other");
+    std::fs::create_dir_all(&other).unwrap();
+    let plain = server
+        .app
+        .add_repository("plain", source(&other).to_str().unwrap())
+        .unwrap();
+    let api = Api::start(&server).await;
+
+    let (status, card) = api
+        .post(
+            &format!("/v1/repositories/{}/issues", repo.id),
+            json!({ "title": "Add a button", "body": "Somewhere." }),
+        )
+        .await;
+    assert_eq!(status, 200, "{card}");
+    assert_eq!(card["number"], FIRST_NUMBER);
+    assert_eq!(card["column"], "Backlog");
+    assert_eq!(card["author"], "person");
+    assert_eq!(card["confirmed"], true);
+    let opened = fake.opened.lock().unwrap().clone();
+    assert_eq!(opened.len(), 1);
+    assert_eq!(opened[0]["title"], "Add a button");
+    assert_eq!(opened[0]["body"], "Somewhere.");
+
+    let (status, why) = api
+        .post(
+            &format!("/v1/repositories/{}/issues", repo.id),
+            json!({ "title": "  " }),
+        )
+        .await;
+    assert_eq!(status, 422, "{why}");
+    assert_eq!(fake.opened.lock().unwrap().len(), 1);
+
+    // The poll finds the card existing, and it moves on without a person's approval.
+    server.poll_github().await;
+    let cards = server.app.store.cards(repo.id).unwrap();
+    assert_eq!(cards.len(), 1);
+    let step = server.engine.tick(cards[0].id).unwrap();
+    assert_eq!(step.moved.as_deref(), Some("Ready"));
+
+    // Without a forge the issue stays local.
+    let (status, local) = api
+        .post(
+            &format!("/v1/repositories/{}/issues", plain.id),
+            json!({ "title": "Local" }),
+        )
+        .await;
+    assert_eq!(status, 200, "{local}");
+    assert_eq!(local["number"], 1);
+    assert_eq!(fake.opened.lock().unwrap().len(), 1);
+}

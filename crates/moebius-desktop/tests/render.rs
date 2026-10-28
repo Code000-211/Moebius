@@ -4,6 +4,7 @@
 use iced::widget::text_editor;
 use iced::{Settings, Size};
 use iced_test::Simulator;
+use moebius_desktop::add_repository;
 use moebius_desktop::agents;
 use moebius_desktop::app::{App, Message, Page};
 use moebius_desktop::chat;
@@ -13,6 +14,7 @@ use moebius_desktop::decision_model;
 use moebius_desktop::experiments;
 use moebius_desktop::inbox::{self, Action};
 use moebius_desktop::live;
+use moebius_desktop::new_issue;
 use moebius_desktop::retro;
 use moebius_desktop::rules;
 use moebius_desktop::setup;
@@ -2722,4 +2724,168 @@ fn editing_the_rules_and_saving_sends_the_text_and_the_answer_is_shown() {
     let _ = app.update(Message::Rules(rules::Message::Saved(Err(invalid))));
     assert!(shows(&app, "line 4: the rule \"a\" is named twice"));
     assert!(!shows(&app, "Saved as a commit: a1b2c3d"));
+}
+
+fn add_repository_app() -> App {
+    let mut app = App::with_snapshot(overview());
+    let _ = app.update(Message::Select(Page::AddRepository));
+    app
+}
+
+fn typed(app: &mut App, messages: Vec<add_repository::Message>) {
+    for message in messages {
+        let _ = app.update(Message::AddRepository(message));
+    }
+}
+
+#[test]
+fn the_plus_of_the_sidebar_opens_the_page_that_adds_a_repository() {
+    let app = App::with_snapshot(overview());
+    assert_eq!(
+        pressed(&app, "+").as_deref(),
+        Some("[Select(AddRepository)]")
+    );
+    let app = add_repository_app();
+    for text in ["Add a repository", "Name", "URL or path", "Forge", "None"] {
+        assert!(shows(&app, text), "{text}");
+    }
+    assert!(!shows(&app, "Trusted authors"));
+}
+
+/// The page with the forge GitHub and a refusal: compare `tests/snapshots/add-repository-tiny-skia.png`.
+#[test]
+fn the_add_page_asks_for_the_github_repository_and_the_trusted_authors_and_shows_the_refusal() {
+    let mut app = add_repository_app();
+    typed(
+        &mut app,
+        vec![
+            add_repository::Message::NameEdited("widgets".into()),
+            add_repository::Message::UrlEdited("https://github.com/acme/widgets.git".into()),
+            add_repository::Message::ForgeChosen(true),
+            add_repository::Message::GithubEdited("acme/widgets".into()),
+            add_repository::Message::TrustedEdited("leon, mona".into()),
+            add_repository::Message::Answered(Err(ClientError::Server {
+                status: 422,
+                message: "the repository name \"widgets\" is taken".into(),
+            })),
+        ],
+    );
+    draw(
+        &app,
+        "add-repository",
+        &[
+            "Add a repository",
+            "GitHub repository",
+            "Trusted authors",
+            "GitHub logins, separated by commas. Their issues need no approval.",
+            "Add",
+            "the server answered 422: the repository name \"widgets\" is taken",
+        ],
+    );
+}
+
+#[test]
+fn adding_needs_a_name_and_a_url_and_with_github_the_repository_and_sends_what_the_api_takes() {
+    let mut app = add_repository_app();
+    let add = |app: &App| pressed(app, "Add") == Some("[AddRepository(Add)]".into());
+    assert!(!add(&app));
+    typed(
+        &mut app,
+        vec![
+            add_repository::Message::NameEdited("demo".into()),
+            add_repository::Message::UrlEdited("/srv/git/demo".into()),
+        ],
+    );
+    assert!(add(&app));
+    typed(&mut app, vec![add_repository::Message::ForgeChosen(true)]);
+    assert!(!add(&app), "GitHub needs owner/name");
+    typed(
+        &mut app,
+        vec![
+            add_repository::Message::GithubEdited("acme/demo".into()),
+            add_repository::Message::TrustedEdited(" leon, ,mona ".into()),
+        ],
+    );
+    assert!(add(&app));
+
+    let mut form = add_repository::AddRepository::default();
+    for message in [
+        add_repository::Message::NameEdited("demo".into()),
+        add_repository::Message::UrlEdited("/srv/git/demo".into()),
+    ] {
+        let _ = form.update(message, None);
+    }
+    assert_eq!(
+        serde_json::to_value(form.request().unwrap()).unwrap(),
+        json!({"name": "demo", "url": "/srv/git/demo", "forge": "none"})
+    );
+    for message in [
+        add_repository::Message::ForgeChosen(true),
+        add_repository::Message::GithubEdited("acme/demo".into()),
+        add_repository::Message::TrustedEdited(" leon, ,mona ".into()),
+    ] {
+        let _ = form.update(message, None);
+    }
+    assert_eq!(
+        serde_json::to_value(form.request().unwrap()).unwrap(),
+        json!({"name": "demo", "url": "/srv/git/demo", "forge": "github", "github": "acme/demo",
+               "trusted": ["leon", "mona"]})
+    );
+}
+
+fn paste(text: &str) -> new_issue::Message {
+    new_issue::Message::BodyEdited(iced::widget::text_editor::Action::Edit(
+        iced::widget::text_editor::Edit::Paste(std::sync::Arc::new(text.to_string())),
+    ))
+}
+
+/// The board with the form open: compare `tests/snapshots/board-new-issue-tiny-skia.png`.
+#[test]
+fn a_boards_new_issue_button_opens_a_form_above_the_columns_that_creates_or_is_cancelled() {
+    let mut app = App::with_snapshot(snapshot(vec![radiance("Ready")], vec![]));
+    assert_eq!(
+        pressed(&app, "New issue").as_deref(),
+        Some("[NewIssue(Open(1))]")
+    );
+    let _ = app.update(Message::NewIssue(new_issue::Message::Open(1)));
+    assert!(shows(&app, "Title"));
+    assert_eq!(pressed(&app, "New issue").as_deref(), Some("[]"), "spent");
+    assert_eq!(pressed(&app, "Create").as_deref(), Some("[]"), "no title");
+    let _ = app.update(Message::NewIssue(new_issue::Message::TitleEdited(
+        "  ".into(),
+    )));
+    assert_eq!(pressed(&app, "Create").as_deref(), Some("[]"), "blank");
+    let _ = app.update(Message::NewIssue(new_issue::Message::TitleEdited(
+        "Add a cache".into(),
+    )));
+    let _ = app.update(Message::NewIssue(paste(
+        "Downloads are slow.\n\nKeep the files for a day.",
+    )));
+    assert_eq!(
+        pressed(&app, "Create").as_deref(),
+        Some("[NewIssue(Create)]")
+    );
+    draw(
+        &app,
+        "board-new-issue",
+        &["New issue", "Describe the issue", "Create", "Cancel"],
+    );
+    // The server's refusal stays in the form, and the form is gone after Cancel.
+    let _ = app.update(Message::NewIssue(new_issue::Message::Answered(Err(
+        ClientError::Server {
+            status: 422,
+            message: "an issue needs a title".into(),
+        },
+    ))));
+    assert!(shows(
+        &app,
+        "the server answered 422: an issue needs a title"
+    ));
+    assert_eq!(
+        pressed(&app, "Cancel").as_deref(),
+        Some("[NewIssue(Cancel)]")
+    );
+    let _ = app.update(Message::NewIssue(new_issue::Message::Cancel));
+    assert!(!shows(&app, "Cancel"));
+    assert!(shows(&app, "New issue"));
 }

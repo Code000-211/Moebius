@@ -10,6 +10,7 @@ use iced::{Alignment, Border, Element, Length, Padding};
 
 use crate::app::Message;
 use crate::client::{Board, Card, InboxItem};
+use crate::new_issue::{self, NewIssue};
 use crate::page::{self, Tone, tag};
 use crate::theme;
 
@@ -61,7 +62,11 @@ fn cards_of<'a>(board: &'a Board, column: &str) -> Vec<&'a Card> {
 }
 
 /// The page of a board: its header and the columns.
-pub fn view<'a>(board: &'a Board, inbox: &'a [InboxItem]) -> Element<'a, Message> {
+pub fn view<'a>(
+    board: &'a Board,
+    inbox: &'a [InboxItem],
+    new_issue: &'a NewIssue,
+) -> Element<'a, Message> {
     let repository = &board.repository;
     let tag = match &repository.github {
         Some(github) => format!("GitHub · {github}"),
@@ -87,24 +92,31 @@ pub fn view<'a>(board: &'a Board, inbox: &'a [InboxItem]) -> Element<'a, Message
         .iter()
         .filter(|(name, _)| *name != "Backlog" || board.cards.iter().any(|c| c.column == *name))
         .map(|(name, script)| column_view(board, inbox, name, script));
-    column![
-        page::header(
-            "Boards",
-            &repository.name,
-            Some(tag),
-            line.into(),
-            space().into()
+    let mut page = column![page::header(
+        "Boards",
+        &repository.name,
+        Some(tag),
+        line.into(),
+        page::white_button(
+            "New issue",
+            (!new_issue.is_open_on(repository.id))
+                .then_some(Message::NewIssue(new_issue::Message::Open(repository.id))),
         ),
+    )]
+    .spacing(theme::PAGE_GAP)
+    .width(Length::Fill);
+    if new_issue.is_open_on(repository.id) {
+        page = page.push(new_issue.view());
+    }
+    page.push(
         scrollable(
             row(columns)
                 .spacing(10)
                 .align_y(Alignment::Start)
-                .width(Length::Fill)
+                .width(Length::Fill),
         )
         .height(Length::Fill),
-    ]
-    .spacing(theme::PAGE_GAP)
-    .width(Length::Fill)
+    )
     .into()
 }
 

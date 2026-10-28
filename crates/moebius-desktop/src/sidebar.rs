@@ -110,7 +110,12 @@ pub fn view<'a>(
     let groups = column![
         group(None, vec![inbox, chat], collapsed),
         divider(),
-        group(Some("Boards"), boards.collect(), collapsed),
+        group_with(
+            Some("Boards"),
+            Some(add_board(page)),
+            boards.collect(),
+            collapsed
+        ),
         divider(),
         listed("Build", &BUILD),
         divider(),
@@ -331,22 +336,62 @@ fn group<'a>(
     items: Vec<Element<'a, Message>>,
     collapsed: bool,
 ) -> Element<'a, Message> {
+    group_with(name, None, items, collapsed)
+}
+
+/// The "+" at the right of the name of Boards, which opens the page that adds a repository.
+fn add_board<'a>(current: &Page) -> Element<'a, Message> {
+    let selected = *current == Page::AddRepository;
+    tooltip(
+        button(
+            text("+")
+                .size(theme::BODY)
+                .font(theme::manrope(Weight::Bold)),
+        )
+        .padding([0, 7])
+        .on_press(Message::Select(Page::AddRepository))
+        .style(move |_, status| button::Style {
+            background: (selected || status == button::Status::Hovered)
+                .then(|| theme::SIDEBAR_HOVER.into()),
+            text_color: theme::SIDEBAR_GROUP,
+            border: Border {
+                radius: theme::RADIUS_SMALL.into(),
+                ..Border::default()
+            },
+            ..button::Style::default()
+        }),
+        text("Add a repository").size(theme::LABEL),
+        tooltip::Position::Right,
+    )
+    .into()
+}
+
+/// A group with something at the right of its name.
+fn group_with<'a>(
+    name: impl Into<Option<&'a str>>,
+    action: Option<Element<'a, Message>>,
+    items: Vec<Element<'a, Message>>,
+    collapsed: bool,
+) -> Element<'a, Message> {
     let mut content = column![].spacing(1);
     if let (Some(name), false) = (name.into(), collapsed) {
-        content = content.push(
-            container(
-                text(name)
-                    .size(theme::GROUP_LABEL)
-                    .font(theme::manrope(Weight::Bold))
-                    .color(theme::SIDEBAR_GROUP),
-            )
-            .padding(Padding {
-                top: 2.0,
-                right: 10.0,
-                bottom: 6.0,
-                left: 10.0,
-            }),
-        );
+        let mut heading = row![
+            text(name)
+                .size(theme::GROUP_LABEL)
+                .font(theme::manrope(Weight::Bold))
+                .color(theme::SIDEBAR_GROUP),
+            space::horizontal(),
+        ]
+        .align_y(Center);
+        if let Some(action) = action {
+            heading = heading.push(action);
+        }
+        content = content.push(container(heading).padding(Padding {
+            top: 2.0,
+            right: 4.0,
+            bottom: 6.0,
+            left: 10.0,
+        }));
     }
     container(content.extend(items)).padding(10).into()
 }

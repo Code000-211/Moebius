@@ -50,6 +50,20 @@ pub struct Repository {
     pub trusted: Vec<String>,
 }
 
+/// What `POST /v1/repositories` takes.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct NewRepository {
+    pub name: String,
+    pub url: String,
+    /// `none` or `github`.
+    pub forge: &'static str,
+    /// `owner/name`, with the forge `github`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub github: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub trusted: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Card {
     pub id: i64,
@@ -1016,6 +1030,28 @@ impl Client {
     ) -> Result<Research, ClientError> {
         let path = format!("/v1/research/{research}/{action}");
         self.post(&path, serde_json::json!({})).await
+    }
+
+    /// Adds a repository; the server clones it.
+    pub async fn add_repository(
+        &self,
+        repository: &NewRepository,
+    ) -> Result<Repository, ClientError> {
+        let body =
+            serde_json::to_value(repository).map_err(|e| ClientError::Decode(e.to_string()))?;
+        self.post("/v1/repositories", body).await
+    }
+
+    /// Creates an issue in a repository.
+    pub async fn create_issue(
+        &self,
+        repository: i64,
+        title: &str,
+        body: &str,
+    ) -> Result<Card, ClientError> {
+        let path = format!("/v1/repositories/{repository}/issues");
+        self.post(&path, serde_json::json!({ "title": title, "body": body }))
+            .await
     }
 
     pub async fn history(&self, card: i64) -> Result<Vec<HistoryEntry>, ClientError> {
