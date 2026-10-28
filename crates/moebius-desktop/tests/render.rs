@@ -1461,11 +1461,42 @@ fn a_chat_is_drawn_with_its_markdown_tool_calls_and_offered_change() {
             "Change offered",
             "moebius/chat-7",
             "Merge",
-            "This chat has ended.",
+            "This chat has ended. What you send starts a new chat with the same agent, which is told this one.",
             "Send",
         ],
         Size::new(1440.0, 1100.0),
     );
+}
+
+/// An ended chat is written to like any other, and Send goes on in a new chat; a failed chat's tag is red and keeps its
+/// size beside a long title.
+#[test]
+fn an_ended_chat_is_written_to_and_its_failed_tag_keeps_its_place() {
+    let mut app = chatting("failed", false);
+    let mut ui = simulator(&app);
+    ui.click("Write to the agent").unwrap();
+    ui.typewrite("Go on");
+    let typed: Vec<Message> = ui.into_messages().collect();
+    assert!(
+        typed
+            .iter()
+            .any(|m| matches!(m, Message::Chat(chat::Message::Edited(_)))),
+        "the field takes no text: {typed:?}"
+    );
+    let _ = app.update(Message::Chat(chat::Message::Edited("Go on".into())));
+    draw(
+        &app,
+        "chat-failed",
+        &[
+            "Write a ready.luau that starts a card only when nothing blocks it.",
+            "Failed",
+            "Go on",
+        ],
+    );
+    assert!(matches!(
+        &clicked(&app, "Send")[..],
+        [Message::Chat(chat::Message::Send)]
+    ));
 }
 
 /// The judgements of a chat's tool calls name who decided each check, matched to the calls the way the live view does.

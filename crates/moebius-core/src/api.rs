@@ -40,8 +40,8 @@
 //!   `{issues: [{title, body, blocked_by}]}` makes a card of each issue the person kept; `POST
 //!   /v1/grillings/{id}/dismiss` drops the proposal or the report (see [`crate::grilling`]).
 //! - `GET /v1/usage?days=`: the tokens, calls, model time and tool waits of the last days, and the daily tokens by model.
-//! - `POST /v1/chats` `{agent?, message, repository?}`: starts a chat, with the Moebius agent unless `agent` names
-//!   another. `GET /v1/chats`: the chats, newest first.
+//! - `POST /v1/chats` `{agent?, message, repository?, continues?}`: starts a chat, with the Moebius agent unless
+//!   `agent` names another, or goes on from the ended chat `continues`. `GET /v1/chats`: the chats, newest first.
 //!   `POST /v1/chats/{id}/messages` `{message}`: writes to a chat. `POST /v1/chats/{id}/end`: ends a chat.
 //!
 //! Every request carries `Authorization: Bearer <token>`; anything else is answered with 401.
@@ -69,7 +69,6 @@ use crate::export::{self, Export, ExportError, KindCounts};
 use crate::forge::ForgeError;
 use crate::grilling;
 use crate::harness_repo::{AgentDefinition, AgentView, HarnessRepo, McpServerInfo, SkillInfo};
-use crate::pibolt::MOEBIUS_AGENT;
 use crate::replay;
 use crate::repos::GitError;
 use crate::research::{self, NewResearch, ResearchView};
@@ -201,6 +200,9 @@ pub struct NewChat {
     pub message: String,
     #[serde(default)]
     pub repository: Option<i64>,
+    /// An ended chat this one continues: its agent and repository unless others are named, and its conversation.
+    #[serde(default)]
+    pub continues: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -952,8 +954,13 @@ async fn start_chat(
 ) -> Result<axum::Json<Run>, ApiError> {
     let runs = state.runs.clone();
     blocking(&state.app, move |app| {
-        let agent = chat.agent.as_deref().unwrap_or(MOEBIUS_AGENT);
-        app.start_chat(&*runs, agent, chat.repository, &chat.message)
+        app.start_chat(
+            &*runs,
+            chat.agent.as_deref(),
+            chat.repository,
+            &chat.message,
+            chat.continues,
+        )
     })
     .await
 }
@@ -2515,6 +2522,50 @@ mod tests {
             status(app, working.id) == "stopped"
         })
         .await;
+    }
+
+    #[tokio::test]
+    async fn an_ended_chat_goes_on_in_a_new_chat_that_is_told_what_was_said() {
+        let (_dir, state, addr) = start().await;
+        let app = &state.app;
+        let first = chat(&state, &addr, "Hello", None).await;
+        let go_on = serde_json::json!({ "message": "Go on", "continues": first.id });
+        // A chat that has not ended is written to, not continued.
+        let refused = post(&state, &addr, "/v1/chats".into(), go_on.clone()).await;
+        assert_eq!(refused.status(), 422);
+        assert_eq!(end(&state, &addr, first.id).await.status(), 200);
+        until("the chat has ended", || {
+            app.store.run(first.id).unwrap().unwrap().ended_at.is_some()
+        })
+        .await;
+
+        let started = post(&state, &addr, "/v1/chats".into(), go_on).await;
+        assert_eq!(started.status(), 200);
+        let run: Run = started.json().await.unwrap();
+        assert_eq!(run.agent, "Coder");
+        until("the agent has answered", || {
+            status(app, run.id) == "waiting"
+        })
+        .await;
+        let events = app.store.events(run.id).unwrap();
+        // The chat shows what the person wrote; the agent (the fake Pi answers with its prompt) was told the rest.
+        let said: Vec<&str> = events
+            .iter()
+            .filter(|e| e.kind == "said")
+            .filter_map(|e| e.data["message"].as_str())
+            .collect();
+        assert_eq!(said, ["Go on"]);
+        let answer = events
+            .iter()
+            .filter(|e| e.kind == "agent_end")
+            .find_map(|e| crate::pibolt::final_answer(&e.data))
+            .unwrap();
+        assert!(
+            answer.contains("Person: Hello")
+                && answer.contains("Agent: You said: Hello")
+                && answer.ends_with("Go on"),
+            "{answer}"
+        );
     }
 
     #[tokio::test]

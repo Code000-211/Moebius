@@ -130,6 +130,9 @@ impl HistoryEntry {
     }
 }
 
+/// The most characters of an ended chat's conversation that the chat continuing it is given.
+const CONVERSATION_LIMIT: usize = 20_000;
+
 pub struct App {
     pub store: Arc<Store>,
     pub bus: Bus,
@@ -579,10 +582,17 @@ impl App {
     pub fn start_chat(
         self: &Arc<Self>,
         runs: &dyn Runs,
-        agent: &str,
+        agent: Option<&str>,
         repository_id: Option<i64>,
         message: &str,
+        continues: Option<i64>,
     ) -> Result<Run> {
+        // A chat that continues an ended one keeps its agent and repository unless others are named.
+        let earlier = continues.map(|id| self.ended_chat(id)).transpose()?;
+        let agent = agent
+            .or(earlier.as_ref().map(|run| run.agent.as_str()))
+            .unwrap_or(crate::pibolt::MOEBIUS_AGENT);
+        let repository_id = repository_id.or(earlier.as_ref().and_then(|run| run.repository_id));
         if message.trim().is_empty() {
             return Err(AppError::Invalid("a chat needs a message".into()));
         }
@@ -595,8 +605,57 @@ impl App {
             ));
         }
         let repository = repository_id.map(|id| self.repository(id)).transpose()?;
-        runs.start_chat(self, agent, repository.as_ref(), message)
-            .map_err(AppError::Invalid)
+        let conversation = earlier
+            .as_ref()
+            .map(|run| self.conversation_of(run.id))
+            .transpose()?;
+        runs.start_chat(
+            self,
+            agent,
+            repository.as_ref(),
+            message,
+            conversation.as_deref(),
+        )
+        .map_err(AppError::Invalid)
+    }
+
+    /// The chat `run_id`, which must have ended to be continued.
+    fn ended_chat(&self, run_id: i64) -> Result<Run> {
+        let run = self.run(run_id)?;
+        if run.purpose != "chat" {
+            return Err(AppError::Invalid(format!("run {run_id} is not a chat")));
+        }
+        if run.ended_at.is_none() {
+            return Err(AppError::Invalid(format!(
+                "chat {run_id} has not ended; write to it instead"
+            )));
+        }
+        Ok(run)
+    }
+
+    /// What was said in a chat, oldest first: the person's messages and the agent's answers, at most the last
+    /// [`CONVERSATION_LIMIT`] characters of it.
+    fn conversation_of(&self, run_id: i64) -> Result<String> {
+        let lines: Vec<String> = self
+            .store
+            .events(run_id)?
+            .iter()
+            .filter_map(|event| match event.kind.as_str() {
+                "said" => Some(format!("Person: {}", event.data["message"].as_str()?)),
+                "agent_end" => Some(format!(
+                    "Agent: {}",
+                    crate::pibolt::final_answer(&event.data)?
+                )),
+                _ => None,
+            })
+            .collect();
+        let text = lines.join("\n\n");
+        let start = text
+            .char_indices()
+            .rev()
+            .nth(CONVERSATION_LIMIT.saturating_sub(1))
+            .map_or(0, |(i, _)| i);
+        Ok(text[start..].to_string())
     }
 
     /// A person writes to a chat that has not ended: the chat keeps the message as a `said` event, and the agent

@@ -98,13 +98,15 @@ pub trait Runs: Send + Sync {
     fn stop(&self, run_id: i64) -> bool;
 
     /// Starts a chat with `agent`, which answers `message`, in a branch of `repository` or in an empty directory,
-    /// and returns it without waiting for the answer. A harness without chats refuses.
+    /// and returns it without waiting for the answer. A chat that continues an ended one gives the agent `earlier`,
+    /// the conversation so far, before the message. A harness without chats refuses.
     fn start_chat(
         &self,
         _app: &Arc<App>,
         _agent: &str,
         _repository: Option<&Repository>,
         _message: &str,
+        _earlier: Option<&str>,
     ) -> Result<Run, String> {
         Err("this harness has no chats".into())
     }

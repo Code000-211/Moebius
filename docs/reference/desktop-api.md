@@ -559,10 +559,13 @@ Request:
 | `agent` | string | An agent of the configuration, `Moebius` or `Grilling-partner`. Without it the chat is with the Moebius agent (see [configuration](configuration.md)). With `Grilling-partner` the chat is a grilling (see `POST /v1/grillings/{id}/confirm`) and `repository` is required. |
 | `message` | string | Required, not blank. Sent to the agent as it is, with no issue prompt around it. |
 | `repository` | number | The id of a repository to work in. |
+| `continues` | number | The id of an ended chat this one goes on from. Its agent and repository are used unless `agent` or `repository` name others, and the agent is given what was said in it (the person's messages and the agent's answers, at most the last 20 000 characters) before `message`. The new chat's `said` event holds only `message`. |
 
-Response: the `Run` (`purpose` `chat`, `card_id` null). Errors: `404` no such repository; `422` the message is blank, the
-agent does not exist, it is a built-in agent and neither its own `[agents.<name>]` nor `[agents.Coder]` is configured (the
-message says so), or it is the Grilling partner and there is no `repository`; `500` the worktree cannot be made.
+Response: the `Run` (`purpose` `chat`, `card_id` null). Errors: `404` no such repository or no run `continues`; `422`
+the message is blank, the agent does not exist, it is a built-in agent and neither its own `[agents.<name>]` nor
+`[agents.Coder]` is configured (the message says so), it is the Grilling partner and there is no `repository`, or
+`continues` is not a chat or has not ended (write to it with `POST /v1/chats/{id}/messages`); `500` the worktree cannot
+be made.
 
 ### `GET /v1/chats`
 

@@ -508,6 +508,7 @@ impl Runs for PiBolt {
         agent: &str,
         repository: Option<&Repository>,
         message: &str,
+        earlier: Option<&str>,
     ) -> Result<Run, String> {
         let config = self.agent(app, agent)?;
         let run = app
@@ -556,7 +557,15 @@ impl Runs for PiBolt {
         };
         let said = json!({ "message": redact(message) });
         let _ = app.record_run_event(run.id, "said", &said);
-        self.launch_or_undo(app, None, &config, running, message)
+        // The chat shows what the person wrote; the agent is also told what was said before.
+        let prompt = match earlier {
+            Some(earlier) => format!(
+                "This chat continues an earlier one, which ended. What was said in it:\n\n{earlier}\n\n\
+                 The person now writes:\n\n{message}"
+            ),
+            None => message.to_string(),
+        };
+        self.launch_or_undo(app, None, &config, running, &prompt)
     }
 
     fn start_retro(
@@ -787,7 +796,7 @@ fn prompt_for(card: &Card, purpose: &str, note: Option<&str>) -> String {
 }
 
 /// The text of the last assistant message in an `agent_end` record, if it has any.
-fn final_answer(agent_end: &Value) -> Option<String> {
+pub(crate) fn final_answer(agent_end: &Value) -> Option<String> {
     let messages = agent_end["messages"].as_array()?;
     let last = messages.iter().rev().find(|m| m["role"] == "assistant")?;
     let text: String = last["content"]

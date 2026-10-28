@@ -560,6 +560,23 @@ async fn a_chat_is_started_written_to_and_followed_through_the_stream() {
         app.view(),
     );
     assert!(ui.find("second question").is_ok());
+
+    // An ended chat goes on in a new chat with the same agent.
+    client.end_chat(run.id).await.unwrap();
+    let ended = loop {
+        let chats = client.chats().await.unwrap();
+        if !chats[0].is_open() {
+            break chats;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    };
+    assert_eq!(ended[0].id, run.id);
+    let next_chat = client.continue_chat(run.id, "go on").await.unwrap();
+    assert_ne!(next_chat.id, run.id);
+    assert_eq!(
+        (next_chat.purpose.as_str(), next_chat.agent.as_str()),
+        ("chat", "Moebius")
+    );
 }
 
 /// A bare harness configuration repository with the agent Coder, a skill and an MCP server.

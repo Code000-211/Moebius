@@ -1162,6 +1162,15 @@ impl Client {
         self.post("/v1/chats", body).await
     }
 
+    /// Starts a chat that continues the ended chat `chat`: its agent and repository, told what was said in it.
+    pub async fn continue_chat(&self, chat: i64, message: &str) -> Result<Run, ClientError> {
+        self.post(
+            "/v1/chats",
+            serde_json::json!({ "message": message, "continues": chat }),
+        )
+        .await
+    }
+
     /// Writes to a chat; a working agent gets the message as a follow-up.
     pub async fn say(&self, chat: i64, message: &str) -> Result<Run, ClientError> {
         self.post(

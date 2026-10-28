@@ -40,6 +40,8 @@ pub enum Message {
     Send,
     /// The server took the message, or said why not.
     Sent(Result<Run, ClientError>),
+    /// The server started the chat that continues the open, ended one, or said why not.
+    Continued(Result<Run, ClientError>),
     AskStop,
     KeepGoing,
     Stop,
@@ -291,12 +293,26 @@ impl Chats {
             Message::Send => {
                 if let Some(open) = &self.open
                     && !open.message.trim().is_empty()
-                    && self.chat(open.id).is_some_and(Chat::is_open)
+                    && let Some(chat) = self.chat(open.id)
                 {
                     let (id, message) = (open.id, open.message.clone());
+                    // Writing to an ended chat goes on in a new chat that is told this one.
+                    if !chat.is_open() {
+                        return request(settings, Message::Continued, move |client| async move {
+                            client.continue_chat(id, &message).await
+                        });
+                    }
                     return request(settings, Message::Sent, move |client| async move {
                         client.say(id, &message).await
                     });
+                }
+            }
+            Message::Continued(Ok(run)) => {
+                return Task::batch([self.open(run.id, settings), self.reload(settings)]);
+            }
+            Message::Continued(Err(e)) => {
+                if let Some(open) = &mut self.open {
+                    open.notice = Some(say(&e));
                 }
             }
             Message::Sent(result) => {
@@ -478,11 +494,13 @@ impl Chats {
         inbox: &'a Inbox,
     ) -> Element<'a, AppMessage> {
         let repository = repository_name(snapshot, chat.repository_id);
+        // The title takes what the tag leaves, so a long one wraps instead of squeezing the tag.
         let title = row![
             text(chat.title.as_str())
                 .size(theme::BOX_HEADING)
                 .font(theme::manrope(Weight::Bold))
-                .wrapping(Wrapping::WordOrGlyph),
+                .wrapping(Wrapping::WordOrGlyph)
+                .width(Length::Fill),
             status_tag(&chat.status),
         ]
         .spacing(10)
@@ -567,7 +585,7 @@ fn status_tag<'a>(status: &str) -> Element<'a, AppMessage> {
         "running" => ("Running", Tone::Teal),
         "waiting" => ("Waiting", Tone::Amber),
         "succeeded" => ("Ended", Tone::Plain),
-        "failed" => ("Failed", Tone::Plain),
+        "failed" => ("Failed", Tone::Red),
         "stopped" => ("Stopped", Tone::Plain),
         other => (other, Tone::Plain),
     };
@@ -910,11 +928,10 @@ fn change_view<'a>(
 /// The field to write in and the Send button, the primary one unless `send_is_primary` is false; under them what the
 /// chat does with the message.
 fn compose_view<'a>(chat: &Chat, open: &'a Open, send_is_primary: bool) -> Element<'a, AppMessage> {
-    let writable = chat.is_open();
-    let can_send = writable && !open.message.trim().is_empty();
+    let can_send = !open.message.trim().is_empty();
     let send = can_send.then_some(AppMessage::Chat(Message::Send));
     let field = text_input("Write to the agent", &open.message)
-        .on_input_maybe(writable.then_some(|text| AppMessage::Chat(Message::Edited(text))))
+        .on_input(|text| AppMessage::Chat(Message::Edited(text)))
         .on_submit_maybe(send.clone())
         .size(theme::BODY)
         .padding([10, 12])
@@ -925,7 +942,9 @@ fn compose_view<'a>(chat: &Chat, open: &'a Open, send_is_primary: bool) -> Eleme
             "The agent is working. Your message is queued and sent when it is done with this turn."
         }
         (None, "waiting") => "The agent answers at once.",
-        (None, _) => "This chat has ended.",
+        (None, _) => {
+            "This chat has ended. What you send starts a new chat with the same agent, which is told this one."
+        }
     };
     column![
         row![
