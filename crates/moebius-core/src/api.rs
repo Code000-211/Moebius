@@ -24,8 +24,8 @@
 //! - `POST /v1/runs/{id}/steer` `{message}`: a person sends a message to a running run.
 //! - `POST /v1/runs/{id}/stop` `{reason}`: a person stops a running run; a chat ends as stopped.
 //! - `GET /v1/runs/{id}/terminal`: a WebSocket on a shell in the run's worktree (see [`crate::terminal`]).
-//! - `GET /v1/chats/{id}/tui`: a WebSocket on Pi-Bolt's own terminal interface in a waiting chat's worktree (see
-//!   [`crate::terminal`]).
+//! - `GET /v1/chats/{id}/tui`: a WebSocket on Pi-Bolt's own terminal interface in a waiting chat's worktree, continuing
+//!   the chat's conversation (see [`crate::terminal`] and [`crate::pibolt`]).
 //! - `GET /v1/terminal`: a WebSocket on a shell in the directory of `moebius.toml`, recorded as an `open_terminal`
 //!   decision (see [`crate::terminal`]).
 //! - `GET /v1/agents`: the agents the server can run. `GET`, `PUT` and `DELETE /v1/agents/{name}`: read, write and delete
@@ -736,11 +736,14 @@ async fn chat_tui(
 ) -> Result<Response, ApiError> {
     person_only(&by)?;
     let runs = state.runs.clone();
-    let axum::Json((tui, slot)) = blocking(&state.app, move |app| app.open_tui(&*runs, id)).await?;
+    let axum::Json((tui, mut slot)) =
+        blocking(&state.app, move |app| app.open_tui(runs, id)).await?;
     Ok(upgrade.on_upgrade(move |socket| async move {
         let command = crate::terminal::on_terminal(&tui.command);
-        crate::terminal::serve_command(socket, command, slot).await;
-        drop(tui);
+        crate::terminal::serve_command(socket, command, &mut slot).await;
+        // The chat's own process is back before the chat takes a message again.
+        let _ = tokio::task::spawn_blocking(move || drop(tui)).await;
+        drop(slot);
     }))
 }
 
@@ -3792,7 +3795,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_waiting_chat_opens_pi_in_its_terminal_as_the_chat_runs_it() {
+    async fn a_waiting_chat_goes_on_in_pis_terminal_as_the_same_conversation() {
         let (_dir, state, addr) = start().await;
         let app = &state.app;
         let run = chat(&state, &addr, "Hello", None).await;
@@ -3800,77 +3803,143 @@ mod tests {
         let read = |file: &str| -> serde_json::Value {
             serde_json::from_slice(&std::fs::read(run_dir.join(file)).unwrap()).unwrap()
         };
+        let argv = || -> Vec<String> { serde_json::from_value(read("agent/argv.json")).unwrap() };
+        let pid = || std::fs::read_to_string(run_dir.join("agent/pid.txt")).unwrap();
+        let rpc_argv = argv();
+        let rpc_pid = pid();
+        let token = read("agent/env.json")["MOEBIUS_RUN_TOKEN"].clone();
+        let seen = app.store.events(run.id).unwrap().len();
 
         let mut tui = open_at(&addr, &state.token, &format!("/v1/chats/{}/tui", run.id))
             .await
             .unwrap();
         read_until(&mut tui, "(tui ready)").await;
-        type_in(&mut tui, "hi there\n").await;
-        assert_eq!(
-            read_until(&mut tui, "tui heard: (hi there)").await,
-            "hi there"
-        );
 
-        // It is the chat's Pi without `--mode rpc`: the same model, provider, bridge and router, with a token of its own.
-        let chat_argv = read("agent/argv.json");
-        let argv = read("tui-agent/argv.json");
-        let argv: Vec<&str> = argv
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|a| a.as_str().unwrap())
-            .collect();
-        assert!(!argv.contains(&"--mode"), "{argv:?}");
-        let value_of = |flag: &str| argv[argv.iter().position(|a| *a == flag).unwrap() + 1];
-        assert_eq!(value_of("--model"), "fake");
-        assert_eq!(value_of("--provider"), "moebius");
+        // The chat's own Pi has ended, and Pi's interactive mode continues the chat's session with the chat's agent
+        // directory and token: it is the same command without `--mode rpc`, and with `--continue`.
+        assert!(!std::path::Path::new(&format!("/proc/{rpc_pid}")).exists());
+        let interactive = argv();
+        assert!(
+            !interactive.contains(&"--mode".to_string()),
+            "{interactive:?}"
+        );
+        assert!(interactive.contains(&"--continue".to_string()));
+        let value_of = |argv: &[String], flag: &str| {
+            argv[argv.iter().position(|a| a == flag).unwrap() + 1].clone()
+        };
+        let sessions = value_of(&interactive, "--session-dir");
+        assert_eq!(sessions, value_of(&rpc_argv, "--session-dir"));
+        assert!(sessions.ends_with("/sessions"), "{sessions}");
+        assert_eq!(value_of(&interactive, "--model"), "fake");
         assert_eq!(
-            argv.last().copied(),
-            chat_argv.as_array().unwrap().last().unwrap().as_str(),
-            "the bridge is loaded last, as in the chat"
+            interactive.last(),
+            rpc_argv.last(),
+            "the bridge is loaded last"
         );
-        assert!(argv.contains(&"--offline") && argv.contains(&"--no-approve"));
-        let env = read("tui-agent/env.json");
-        assert_eq!(env["MOEBIUS_CHECK_URL"], "http://127.0.0.1:9");
-        assert_eq!(env["MOEBIUS"], "/usr/local/bin/moebius");
-        let token = env["MOEBIUS_RUN_TOKEN"].as_str().unwrap();
-        assert_ne!(
-            token,
-            read("agent/env.json")["MOEBIUS_RUN_TOKEN"]
-                .as_str()
-                .unwrap()
-        );
-        let models: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(run_dir.join("tui-agent/models.json")).unwrap())
-                .unwrap();
-        assert_eq!(models["providers"]["moebius"]["apiKey"], token);
-        assert_eq!(
-            models["providers"]["moebius"]["baseUrl"],
-            "http://127.0.0.1:9/v1"
-        );
+        assert_eq!(read("agent/env.json")["MOEBIUS_RUN_TOKEN"], token);
+        assert_eq!(status(app, run.id), "waiting");
 
-        // Its opening is stored, what is typed is not; the chat takes no message meanwhile, nor a second terminal.
+        // What is said in the terminal is recorded as the chat's events, in the shapes of Pi's records.
+        type_in(&mut tui, "notes\n").await;
+        assert_eq!(read_until(&mut tui, "tui heard: (notes)").await, "notes");
+        until("the answer is recorded", || {
+            app.store.events(run.id).unwrap().iter().any(|e| {
+                e.kind == "message_update"
+                    && e.data["assistantMessageEvent"]["delta"] == "You said: notes"
+            })
+        })
+        .await;
         let events = app.store.events(run.id).unwrap();
-        let opened: Vec<_> = events.iter().filter(|e| e.kind == "tui_opened").collect();
-        assert_eq!(opened.len(), 1);
-        assert_eq!(opened[0].data, serde_json::json!({ "who": "person" }));
-        assert!(!format!("{events:?}").contains("hi there"));
+        let added: Vec<(&str, serde_json::Value)> = events[seen..]
+            .iter()
+            .map(|e| (e.kind.as_str(), e.data.clone()))
+            .collect();
+        let delta = |kind: &str, index: usize, text: &str| serde_json::json!({ "assistantMessageEvent": { "type": kind, "contentIndex": index, "delta": text } });
+        assert_eq!(
+            added[0],
+            ("tui_opened", serde_json::json!({ "who": "person" }))
+        );
+        assert_eq!(
+            added[1..8],
+            [
+                ("said", serde_json::json!({ "message": "notes" })),
+                ("agent_start", serde_json::json!({})),
+                ("message_update", delta("thinking_delta", 0, "Let me look.")),
+                ("message_update", delta("text_delta", 1, "Reading.")),
+                (
+                    "tool_execution_start",
+                    serde_json::json!({ "toolCallId": "tui-1", "toolName": "read", "args": { "path": "notes.txt" } })
+                ),
+                (
+                    "tool_execution_end",
+                    serde_json::json!({ "toolCallId": "tui-1", "toolName": "read", "isError": true, "durationMs": 3,
+                        "result": { "content": [{ "type": "text", "text": "no such file" }] } })
+                ),
+                ("message_update", delta("text_delta", 0, "You said: notes")),
+            ]
+        );
+        assert_eq!(added[8].0, "agent_end");
+        until("the chat waits", || status(app, run.id) == "waiting").await;
+        assert_eq!(
+            app.run(run.id).unwrap().summary.as_deref(),
+            Some("You said: notes")
+        );
+
+        // The chat takes no message meanwhile, nor a second terminal.
         assert_eq!(say(&state, &addr, run.id, "Again").await.status(), 409);
         let second = open_at(&addr, &state.token, &format!("/v1/chats/{}/tui", run.id)).await;
         assert_eq!(status_of(second.unwrap_err()), 409);
 
-        // Closing the socket ends the process, and the chat takes messages again.
-        let pid = std::fs::read_to_string(run_dir.join("tui-agent/pid.txt")).unwrap();
+        // Closing the terminal starts the chat's Pi again on the same session, and the chat takes a message again.
+        let tui_pid = pid();
         tui.close(None).await.unwrap();
-        until("pi is gone", || {
-            !std::path::Path::new(&format!("/proc/{pid}")).exists()
-        })
-        .await;
         until("the chat takes a message", || {
             !app.terminals.is_open(crate::terminal::tui_key(run.id))
         })
         .await;
+        assert!(!std::path::Path::new(&format!("/proc/{tui_pid}")).exists());
+        until("the chat's Pi has started", || pid() != tui_pid).await;
+        let again = argv();
+        assert_eq!(value_of(&again, "--mode"), "rpc");
+        assert!(again.contains(&"--continue".to_string()), "{again:?}");
+        assert_eq!(status(app, run.id), "waiting");
         assert_eq!(say(&state, &addr, run.id, "Again").await.status(), 200);
+        until("the agent answers", || {
+            app.store.events(run.id).unwrap().iter().any(|e| {
+                e.kind == "message_update"
+                    && e.data["assistantMessageEvent"]["delta"] == "You said: Again"
+            })
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn a_chat_ended_in_its_terminal_ends_when_the_terminal_closes() {
+        let (_dir, state, addr) = start().await;
+        let app = &state.app;
+        let run = chat(&state, &addr, "Hello", None).await;
+        let mut tui = open_at(&addr, &state.token, &format!("/v1/chats/{}/tui", run.id))
+            .await
+            .unwrap();
+        read_until(&mut tui, "(tui ready)").await;
+        let pid =
+            std::fs::read_to_string(app.data_dir.join(format!("runs/{}/agent/pid.txt", run.id)))
+                .unwrap();
+
+        // Ending the chat closes its terminal, and the chat ends without its Pi starting again.
+        assert_eq!(end(&state, &addr, run.id).await.status(), 200);
+        until("the chat has ended", || {
+            app.store.run(run.id).unwrap().unwrap().ended_at.is_some()
+        })
+        .await;
+        assert_eq!(status(app, run.id), "succeeded");
+        assert_eq!(
+            std::fs::read_to_string(app.data_dir.join(format!("runs/{}/agent/pid.txt", run.id)))
+                .unwrap(),
+            pid,
+            "no Pi was started after the terminal's"
+        );
+        assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists());
     }
 
     #[tokio::test]

@@ -12,7 +12,10 @@
 # A "[put NAME]" line, the text to write and a "[/put]" line make a chat write that text to the file NAME, with its directories, and commit nothing.
 # A "[run COMMAND]" in a chat message runs COMMAND in a shell in the worktree and appends what it printed to the answer.
 # While a "[hang]" prompt waits, a prompt with streamingBehavior is queued (kept in queued.txt). Its pid is kept in pid.txt.
-# Started without `--mode rpc` (the terminal interface of a chat) it prints "tui ready" and repeats each line typed as "tui heard: LINE".
+# Started without `--mode rpc` (the terminal interface of a chat) it prints "tui ready" and repeats each line typed as "tui heard: LINE";
+# with `--continue` it also appends what Pi's session file would hold for the line to the newest session file in
+# `--session-dir` (one it makes if there is none): the person's message, an answer that thinks, says "Reading." and
+# reads LINE.txt, the tool's result, and a final answer "You said: LINE".
 # A `steer` is answered with a response that echoes the message. The prompt is kept in prompt.txt next to argv.json. The final answer is reported in agent_end, as Pi does.
 import json
 import os
@@ -39,9 +42,29 @@ with open(os.path.join(os.environ["PI_CODING_AGENT_DIR"], "pid.txt"), "w") as f:
 
 # Without `--mode rpc` it is Pi's interactive mode on a terminal: it says it is ready and repeats each line it is typed.
 if "--mode" not in sys.argv:
+    sessions = sys.argv[sys.argv.index("--session-dir") + 1]
     print("tui ready", flush=True)
     for line in sys.stdin:
-        print("tui heard: " + line.strip(), flush=True)
+        line = line.strip()
+        if "--continue" in sys.argv:
+            os.makedirs(sessions, exist_ok=True)
+            files = sorted((f for f in os.listdir(sessions) if f.endswith(".jsonl")),
+                           key=lambda f: os.path.getmtime(os.path.join(sessions, f)))
+            path = os.path.join(sessions, files[-1] if files else "fake.jsonl")
+            entries = [] if files else [{"type": "session", "version": 3, "id": "fake", "cwd": os.getcwd()}]
+            call = {"type": "toolCall", "id": "tui-1", "name": "read", "arguments": {"path": line + ".txt"}}
+            entries += [{"type": "message", "message": message} for message in [
+                {"role": "user", "content": [{"type": "text", "text": line}]},
+                {"role": "assistant", "stopReason": "toolUse", "content": [
+                    {"type": "thinking", "thinking": "Let me look."}, {"type": "text", "text": "Reading."}, call]},
+                {"role": "toolResult", "toolCallId": "tui-1", "toolName": "read", "isError": True, "durationMs": 3,
+                 "content": [{"type": "text", "text": "no such file"}]},
+                {"role": "assistant", "stopReason": "stop", "content": [{"type": "text", "text": "You said: " + line}]},
+            ]]
+            with open(path, "a") as f:
+                for entry in entries:
+                    f.write(json.dumps(entry) + "\n")
+        print("tui heard: " + line, flush=True)
     sys.exit(0)
 
 instructions = ""

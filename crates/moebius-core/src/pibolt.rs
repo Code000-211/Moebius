@@ -16,8 +16,10 @@
 //! are the guide and the task skills (see `skill`), and its model comes from `[agents.Moebius]` or else from the Coder. The Retro analyst
 //! (see `retro`) is built the same way; its run works in a worktree of the harness configuration repository. So is the
 //! Autoresearcher (see `research`), whose run works in a worktree of the repository it researches. A person can also
-//! open a waiting chat in Pi-Bolt's own interactive mode (`tui`): the same command without `--mode rpc`, with sessions
-//! and a run token of its own.
+//! open a waiting chat in Pi-Bolt's own interactive mode (`tui`), and it stays one conversation: the chat's idle Pi is
+//! ended, Pi's interactive mode continues the chat's session (`--continue`, the same agent directory, sessions and run
+//! token), and what it adds to the session file is recorded as the chat's events (see `session_events`). When the
+//! interface closes, the chat's Pi starts again with `--continue` and waits for the next message.
 
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -30,7 +32,7 @@ use serde_json::{Value, json};
 
 use crate::app::App;
 use crate::blobs::redact;
-use crate::board::{AgentInfo, Runs, Tui};
+use crate::board::{AgentInfo, Runs};
 use crate::bus::AppEvent;
 use crate::config::{AgentConfig, AgentSet};
 use crate::mcp;
@@ -181,29 +183,22 @@ pub struct PiBolt {
     /// The agents runs use. The harness configuration repository swaps them when it changes.
     pub agents: Arc<RwLock<AgentSet>>,
     live: Arc<Mutex<HashMap<i64, Live>>>,
+    /// The chats whose terminal interface is open, which have no Pi of their own meanwhile. Taken before `live` by
+    /// whoever takes both, and held while a chat moves between the two.
+    paused: Arc<Mutex<HashMap<i64, Paused>>>,
 }
 
-/// Where a Pi starts and what it is given: the worktree it works in, its agent directory and sessions, the bridge
-/// extension, the token of the router and whether it operates Moebius with the desktop API.
+/// Where a Pi starts and what it is given: the worktree it works in, its agent directory and sessions, whether it
+/// continues the latest session there, the bridge extension, the token of the router and whether it operates Moebius
+/// with the desktop API.
 struct Place<'a> {
     worktree: &'a Path,
     agent_dir: &'a Path,
     sessions: &'a Path,
+    continues: bool,
     bridge: &'a Path,
     token: &'a str,
     operates: bool,
-}
-
-/// A token of the router that is revoked when dropped.
-struct Held {
-    router: Arc<Router>,
-    token: String,
-}
-
-impl Drop for Held {
-    fn drop(&mut self) {
-        self.router.revoke_token(&self.token);
-    }
 }
 
 /// A run whose Pi has not ended yet.
@@ -214,12 +209,23 @@ struct Live {
     chat: bool,
     /// Why a chat's Pi was asked to exit, so that its exit is no failure.
     closing: Arc<Mutex<Option<Closing>>>,
+    run: RunningRun,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Closing {
     Stopped,
     Ended,
+    /// The chat goes on in its terminal interface: the exit ends nothing.
+    Paused,
+}
+
+/// A chat in its terminal interface: the run its Pi held, the follower of its session file, and whether the person
+/// ended or stopped the chat meanwhile.
+struct Paused {
+    run: RunningRun,
+    follower: Follower,
+    closing: Option<Closing>,
 }
 
 impl PiBolt {
@@ -241,6 +247,7 @@ impl PiBolt {
                 errors: BTreeMap::new(),
             })),
             live: Arc::new(Mutex::new(HashMap::new())),
+            paused: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -300,8 +307,8 @@ impl PiBolt {
     }
 
     /// The command that starts Pi for a run: `--mode rpc` for the run's own process, or, for the terminal interface of
-    /// a chat, Pi's interactive mode on the sessions of its own. Both get the same provider, model, instructions,
-    /// skills, MCP servers, extensions and bridge, so the checks see the same tool calls.
+    /// a chat, Pi's interactive mode. Both get the same provider, model, instructions, skills, MCP servers, extensions
+    /// and bridge, so the checks see the same tool calls.
     fn command(&self, agent: &AgentConfig, place: &Place, interactive: bool) -> Command {
         let mut command = Command::new(&self.program);
         command
@@ -326,7 +333,7 @@ impl PiBolt {
             .args(["--no-extensions", "--no-skills"])
             .arg("--session-dir")
             .arg(place.sessions);
-        if interactive {
+        if place.continues {
             command.arg("--continue");
         }
         if let Some(thinking) = &agent.thinking {
@@ -426,14 +433,15 @@ impl PiBolt {
         self.launch_or_undo(app, None, &config, running, prompt)
     }
 
-    /// Starts Pi for a run whose worktree and token exist, and the thread that reads it.
+    /// Starts Pi for a run whose worktree and token exist, and the thread that reads it. Pi is given `prompt`; without
+    /// one, a chat's Pi continues the chat's session and the chat waits for the person's next message.
     fn launch(
         &self,
         app: &Arc<App>,
         card: Option<&Card>,
         agent: &AgentConfig,
         run: RunningRun,
-        prompt: &str,
+        prompt: Option<&str>,
     ) -> Result<(), String> {
         app.store
             .set_run_worktree(run.id, &run.worktree.to_string_lossy())
@@ -445,8 +453,11 @@ impl PiBolt {
         let bridge = run_dir.join("moebius-bridge.ts");
         std::fs::write(&bridge, BRIDGE)
             .map_err(|e| format!("cannot write the bridge extension: {e}"))?;
-        let stderr =
-            std::fs::File::create(run_dir.join("stderr.log")).map_err(|e| e.to_string())?;
+        let stderr = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(run_dir.join("stderr.log"))
+            .map_err(|e| e.to_string())?;
         let operates = app
             .store
             .run(run.id)
@@ -457,6 +468,7 @@ impl PiBolt {
             worktree: &run.worktree,
             agent_dir: &agent_dir,
             sessions: &sessions,
+            continues: prompt.is_none(),
             bridge: &bridge,
             token: &run.token,
             operates,
@@ -474,19 +486,28 @@ impl PiBolt {
             child: Arc::new(Mutex::new(child)),
             chat: run.purpose == "chat",
             closing: Arc::new(Mutex::new(None)),
+            run: run.clone(),
         };
         lock(&self.live).insert(run.id, live.clone());
-        app.store
-            .set_run_status(run.id, "running")
-            .map_err(|e| e.to_string())?;
-        app.bus.publish(AppEvent::new(
-            "run_started",
-            json!({ "run": run.id, "card": card.map(|card| card.id) }),
-        ));
-        send(
-            &live.stdin,
-            &json!({ "id": "moebius-prompt", "type": "prompt", "message": prompt }),
-        );
+        match prompt {
+            Some(prompt) => {
+                app.store
+                    .set_run_status(run.id, "running")
+                    .map_err(|e| e.to_string())?;
+                app.bus.publish(AppEvent::new(
+                    "run_started",
+                    json!({ "run": run.id, "card": card.map(|card| card.id) }),
+                ));
+                send(
+                    &live.stdin,
+                    &json!({ "id": "moebius-prompt", "type": "prompt", "message": prompt }),
+                );
+            }
+            None => app
+                .store
+                .set_run_status(run.id, "waiting")
+                .map_err(|e| e.to_string())?,
+        }
         let reader = Reader {
             app: app.clone(),
             run,
@@ -511,7 +532,7 @@ impl PiBolt {
         running: RunningRun,
         prompt: &str,
     ) -> Result<Run, String> {
-        if let Err(e) = self.launch(app, card, config, running.clone(), prompt) {
+        if let Err(e) = self.launch(app, card, config, running.clone(), Some(prompt)) {
             // Nothing reads this run: undo what was set up for it.
             self.router.revoke_token(&running.token);
             running.remove_worktree(app);
@@ -684,39 +705,91 @@ impl Runs for PiBolt {
         self.launch_or_undo(app, None, &config, running, &prompt)
     }
 
-    fn tui(&self, app: &Arc<App>, run_id: i64) -> Result<Tui, String> {
-        let run = app.run(run_id).map_err(|e| e.to_string())?;
-        let worktree = run
-            .worktree
-            .map(PathBuf::from)
-            .ok_or_else(|| format!("chat {run_id} has no worktree"))?;
-        let config = self.agent(app, &run.agent)?;
-        // The token of its own, so that the chat's process and the interface are told apart in the router and one
-        // ending does not revoke the other's.
-        let held = Held {
-            router: self.router.clone(),
-            token: self.router.issue_token(Grant {
-                run_id,
-                card_id: None,
-                budget: config.token_budget,
-            }),
-        };
+    /// Ends the chat's idle Pi and returns Pi's interactive mode on the chat's own agent directory, run token and
+    /// sessions, continuing the chat's session; what it adds to the session file is recorded as the chat's events
+    /// until `close_tui`.
+    fn tui(&self, app: &Arc<App>, run_id: i64) -> Result<Command, String> {
+        let stored = app.run(run_id).map_err(|e| e.to_string())?;
+        let config = self.agent(app, &stored.agent)?;
+        let mut paused = lock(&self.paused);
+        let ended = || format!("chat {run_id} has ended");
+        let live = lock(&self.live)
+            .get(&run_id)
+            .cloned()
+            .filter(|live| live.chat)
+            .ok_or_else(ended)?;
         let run_dir = app.data_dir.join("runs").join(run_id.to_string());
-        let agent_dir = self.write_agent_dir(run_dir.join("tui-agent"), &config, &held.token)?;
-        let sessions = run_dir.join("tui-sessions");
+        let agent_dir = self.write_agent_dir(run_dir.join("agent"), &config, &live.run.token)?;
+        {
+            let mut closing = lock(&live.closing);
+            if closing.is_some() {
+                return Err(ended());
+            }
+            *closing = Some(Closing::Paused);
+        }
+        // Closing stdin asks Pi to shut down; it is idle, as the chat waits.
+        lock(&live.stdin).take();
+        if !wait_for_exit(&live.child, STOP_GRACE) {
+            let mut child = lock(&live.child);
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        lock(&self.live).remove(&run_id);
+        let sessions = run_dir.join("sessions");
         let place = Place {
-            worktree: &worktree,
+            worktree: &live.run.worktree,
             agent_dir: &agent_dir,
             sessions: &sessions,
+            continues: true,
             bridge: &run_dir.join("moebius-bridge.ts"),
-            token: &held.token,
-            operates: run.agent == MOEBIUS_AGENT,
+            token: &live.run.token,
+            operates: stored.agent == MOEBIUS_AGENT,
         };
         let command = self.command(&config, &place, true);
-        Ok(Tui {
-            command,
-            _held: Box::new(held),
-        })
+        let follower = Follower::start(app.clone(), run_id, sessions);
+        let run = live.run;
+        paused.insert(
+            run_id,
+            Paused {
+                run,
+                follower,
+                closing: None,
+            },
+        );
+        Ok(command)
+    }
+
+    /// Stops following the chat's session file and starts the chat's Pi again on the same session, waiting for the
+    /// next message; a chat that was ended or stopped meanwhile ends instead.
+    fn close_tui(&self, app: &Arc<App>, run_id: i64) {
+        let mut paused = lock(&self.paused);
+        let Some(Paused {
+            run,
+            follower,
+            closing,
+        }) = paused.remove(&run_id)
+        else {
+            return;
+        };
+        follower.stop();
+        if let Some(closing) = closing {
+            return finish(
+                app,
+                run,
+                &self.router,
+                &self.live,
+                Ok(closing == Closing::Stopped),
+            );
+        }
+        let agent = app.run(run_id).map(|stored| stored.agent);
+        let launched = agent
+            .map_err(|e| e.to_string())
+            .and_then(|agent| self.agent(app, &agent))
+            .and_then(|config| self.launch(app, None, &config, run.clone(), None));
+        if let Err(e) = launched {
+            let why = format!("cannot start the chat's pi-bolt again after its terminal: {e}");
+            finish(app, run, &self.router, &self.live, Err(why));
+        }
     }
 
     fn start_retro(
@@ -759,6 +832,12 @@ impl Runs for PiBolt {
     }
 
     fn end(&self, run_id: i64) -> bool {
+        // Held throughout, so that the chat does not move to or from its terminal interface meanwhile.
+        let mut paused = lock(&self.paused);
+        if let Some(paused) = paused.get_mut(&run_id) {
+            paused.closing = Some(Closing::Ended);
+            return true;
+        }
         let Some(live) = lock(&self.live).get(&run_id).cloned().filter(|l| l.chat) else {
             return false;
         };
@@ -843,6 +922,12 @@ impl Runs for PiBolt {
     /// Asks Pi to abort; the run ends with status `stopped` once Pi has settled. A Pi that does not exit within
     /// `STOP_GRACE` is killed.
     fn stop(&self, run_id: i64) -> bool {
+        // Held throughout, so that the chat does not move to or from its terminal interface meanwhile.
+        let mut paused = lock(&self.paused);
+        if let Some(paused) = paused.get_mut(&run_id) {
+            paused.closing = Some(Closing::Stopped);
+            return true;
+        }
         let Some(live) = lock(&self.live).get(&run_id).cloned() else {
             return false;
         };
@@ -880,6 +965,21 @@ struct RunningRun {
 }
 
 impl RunningRun {
+    /// Commits what the agent left in the worktree of a repository; false when it changed nothing, that is, left
+    /// the worktree clean and made no commit of its own. A chat without a repository has nothing to commit.
+    fn commit(&self) -> crate::repos::Result<bool> {
+        if self.clone.is_none() {
+            return Ok(false);
+        }
+        let worktree = &self.worktree;
+        git(worktree, &["add", "--all"])?;
+        if git(worktree, &["status", "--porcelain"])?.is_empty() {
+            return Ok(git(worktree, &["rev-parse", "HEAD"])? != self.start);
+        }
+        git(worktree, &["commit", "--quiet", "-m", &self.commit_message])?;
+        Ok(true)
+    }
+
     /// Closes the terminals open on the run, then removes the worktree, or the chat's empty directory.
     fn remove_worktree(&self, app: &App) {
         app.terminals.close(self.id);
@@ -1009,8 +1109,11 @@ impl Reader {
             record.clear();
             match lines.read_until(b'\n', &mut record) {
                 Ok(0) => {
-                    if let Some(closing) = *lock(&self.live.closing) {
-                        ending = Ok(closing == Closing::Stopped);
+                    match *lock(&self.live.closing) {
+                        // The chat goes on in its terminal interface, which `close_tui` ends.
+                        Some(Closing::Paused) => return,
+                        Some(closing) => ending = Ok(closing == Closing::Stopped),
+                        None => {}
                     }
                     break;
                 }
@@ -1034,23 +1137,9 @@ impl Reader {
                 .and_then(Value::as_str)
                 .unwrap_or("unknown")
                 .to_string();
-            // What an event says about the run is stored before the event is published, so that a client acting on
-            // the event reads the run as it is now.
             let chat = self.run.purpose == "chat";
             let aborted = value["aborted"] == true;
-            if kind == "agent_end"
-                && let Some(answer) = final_answer(&value)
-            {
-                let _ = self.app.store.set_run_summary(self.run.id, &answer);
-            }
-            if chat && kind == "agent_start" {
-                let _ = self.app.store.set_run_status(self.run.id, "running");
-            }
-            // A chat waits for the person's next message; only an abort ends it.
-            if chat && kind == "agent_settled" && !aborted {
-                let _ = self.app.store.set_run_status(self.run.id, "waiting");
-            }
-            let _ = self.app.record_run_event(self.run.id, &kind, &value);
+            keep(&self.app, self.run.id, chat, &kind, &value);
             if kind == "response" && value["command"] == "prompt" && value["success"] == false {
                 ending = Err(format!("pi-bolt refused the prompt: {}", value["error"]));
                 break;
@@ -1063,7 +1152,7 @@ impl Reader {
         self.end(ending);
     }
 
-    /// Ends the run: `Ok(aborted)` when Pi settled, `Err(why)` when it failed.
+    /// Ends Pi, then the run: `Ok(aborted)` when Pi settled, `Err(why)` when it failed.
     fn end(self, ending: Result<bool, String>) {
         // Closing stdin asks Pi to shut down.
         lock(&self.live.stdin).take();
@@ -1072,90 +1161,250 @@ impl Reader {
             let _ = child.kill();
             let _ = child.wait();
         }
-        self.router.revoke_token(&self.run.token);
-        // A grilling leaves its result for Moebius to read, not a change to offer.
-        let grilling = self.run.purpose == "chat"
-            && self
-                .app
-                .run(self.run.id)
-                .is_ok_and(|run| run.agent == GRILLING_AGENT);
-        let status = match ending {
-            Ok(aborted) if grilling => {
-                if aborted {
-                    "stopped"
-                } else {
-                    "succeeded"
+        finish(&self.app, self.run, &self.router, &self.lives, ending);
+    }
+}
+
+/// Stores what a record of Pi says about the run (the final answer as its summary; for a chat, whether the agent works
+/// or waits for the person), then the record as a run event. The run is updated before the event is published, so
+/// that a client acting on the event reads the run as it is now.
+fn keep(app: &App, run_id: i64, chat: bool, kind: &str, value: &Value) {
+    if kind == "agent_end"
+        && let Some(answer) = final_answer(value)
+    {
+        let _ = app.store.set_run_summary(run_id, &answer);
+    }
+    if chat && kind == "agent_start" {
+        let _ = app.store.set_run_status(run_id, "running");
+    }
+    // A chat waits for the person's next message; only an abort ends it.
+    if chat && kind == "agent_settled" && value["aborted"] != true {
+        let _ = app.store.set_run_status(run_id, "waiting");
+    }
+    let _ = app.record_run_event(run_id, kind, value);
+}
+
+/// Ends a run whose Pi is gone: `Ok(aborted)` when it settled, `Err(why)` when it failed. What the agent left is
+/// committed (and a chat's work offered as a change), the worktree removed, the token revoked and the end published.
+fn finish(
+    app: &Arc<App>,
+    run: RunningRun,
+    router: &Router,
+    lives: &Mutex<HashMap<i64, Live>>,
+    ending: Result<bool, String>,
+) {
+    router.revoke_token(&run.token);
+    let failed = |why: &str| {
+        let _ = app.record_run_event(run.id, "moebius_error", &json!({ "message": why }));
+        "failed"
+    };
+    // A grilling leaves its result for Moebius to read, not a change to offer.
+    let grilling =
+        run.purpose == "chat" && app.run(run.id).is_ok_and(|run| run.agent == GRILLING_AGENT);
+    let status = match ending {
+        Ok(aborted) if grilling => {
+            if aborted {
+                "stopped"
+            } else {
+                "succeeded"
+            }
+        }
+        Ok(aborted) if run.purpose == "chat" => match run.commit() {
+            // A chat that changed nothing has still succeeded.
+            Ok(_) if aborted => "stopped",
+            Ok(_) => "succeeded",
+            Err(e) => failed(&e.to_string()),
+        },
+        Ok(true) => "stopped",
+        Ok(false) if !matches!(run.purpose.as_str(), "code" | "trial") => "succeeded",
+        Ok(false) => match run.commit() {
+            Ok(true) => "succeeded",
+            Ok(false) => failed("the agent changed nothing"),
+            Err(e) => failed(&e.to_string()),
+        },
+        Err(why) => failed(&why),
+    };
+    if grilling && status != "failed" {
+        // Before the worktree is removed, with the result in it.
+        if let Err(e) = crate::grilling::conclude(app, run.id, &run.worktree) {
+            failed(&format!("cannot read the result of the grilling: {e}"));
+        }
+    }
+    run.remove_worktree(app);
+    if run.purpose == "chat" && !grilling && status != "failed" {
+        // Before the status is set, so that an ended chat has offered what it made.
+        if let Err(e) = app.offer_chat_change(run.id) {
+            failed(&format!("cannot offer the chat's work as a change: {e}"));
+        }
+    }
+    let _ = app.store.set_run_status(run.id, status);
+    lock(lives).remove(&run.id);
+    app.bus.publish(AppEvent::new(
+        "run_ended",
+        json!({ "run": run.id, "status": status }),
+    ));
+}
+
+/// How often the session file of a chat in its terminal interface is read.
+const FOLLOW_EVERY: Duration = Duration::from_millis(500);
+
+/// Follows the Pi session files of a chat while its terminal interface is open: every [`FOLLOW_EVERY`], the complete
+/// lines added to the newest file are recorded as the chat's events (see `session_events`). What the files held when
+/// it started is not recorded again.
+struct Follower {
+    stop: std::sync::mpsc::Sender<()>,
+    thread: std::thread::JoinHandle<()>,
+}
+
+impl Follower {
+    fn start(app: Arc<App>, run_id: i64, sessions: PathBuf) -> Follower {
+        // How far each file has been read: those there now, to their end.
+        let mut read: HashMap<PathBuf, u64> = session_files(&sessions)
+            .into_iter()
+            .map(|(path, len, _)| (path, len))
+            .collect();
+        let (stop, stopped) = std::sync::mpsc::channel::<()>();
+        let thread = std::thread::Builder::new()
+            .name(format!("pi-bolt terminal {run_id}"))
+            .spawn(move || {
+                loop {
+                    let last = !matches!(
+                        stopped.recv_timeout(FOLLOW_EVERY),
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+                    );
+                    for line in new_lines(&sessions, &mut read) {
+                        let Ok(entry) = serde_json::from_slice::<Value>(&line) else {
+                            continue;
+                        };
+                        for (kind, data) in session_events(&entry) {
+                            keep(&app, run_id, true, kind, &data);
+                        }
+                    }
+                    if last {
+                        break;
+                    }
+                }
+            })
+            .expect("a thread can be started");
+        Follower { stop, thread }
+    }
+
+    /// Reads what was added last, then stops.
+    fn stop(self) {
+        let _ = self.stop.send(());
+        let _ = self.thread.join();
+    }
+}
+
+/// The session files in `sessions`: each one's path, length and when it was last written.
+fn session_files(sessions: &Path) -> Vec<(PathBuf, u64, std::time::SystemTime)> {
+    let Ok(entries) = std::fs::read_dir(sessions) else {
+        return vec![];
+    };
+    entries
+        .flatten()
+        .filter(|entry| entry.path().extension().is_some_and(|e| e == "jsonl"))
+        .filter_map(|entry| {
+            let meta = entry.metadata().ok()?;
+            Some((entry.path(), meta.len(), meta.modified().ok()?))
+        })
+        .collect()
+}
+
+/// The complete lines added to the newest session file in `sessions` since `read` says it was read up to, which then
+/// says how far they go. A file that is new is read from its start.
+fn new_lines(sessions: &Path, read: &mut HashMap<PathBuf, u64>) -> Vec<Vec<u8>> {
+    use std::io::{Seek, SeekFrom};
+    let newest = session_files(sessions)
+        .into_iter()
+        .max_by(|a, b| a.2.cmp(&b.2).then_with(|| a.0.cmp(&b.0)));
+    let Some((path, _, _)) = newest else {
+        return vec![];
+    };
+    let from = read.get(&path).copied().unwrap_or(0);
+    let mut added = Vec::new();
+    let opened = std::fs::File::open(&path).and_then(|mut file| {
+        file.seek(SeekFrom::Start(from))?;
+        file.read_to_end(&mut added)
+    });
+    if opened.is_err() {
+        return vec![];
+    }
+    // A line Pi is still writing is read the next time.
+    let complete = added.iter().rposition(|b| *b == b'\n').map_or(0, |i| i + 1);
+    added.truncate(complete);
+    read.insert(path, from + complete as u64);
+    added
+        .split(|b| *b == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(<[u8]>::to_vec)
+        .collect()
+}
+
+/// The chat's events for one entry of a Pi session file, in the shapes of the records Pi's RPC mode writes for the
+/// same, so the chat reads the same either way: a person's message is a `said` event and starts the agent
+/// (`agent_start`); an assistant message is a `message_update` with a `thinking_delta` or `text_delta` for each
+/// thinking and text part and a `tool_execution_start` for each tool call, and, unless it ends in a tool call, the
+/// end of the agent's turn (`agent_end` with the message, then `agent_settled`); a tool's result is a
+/// `tool_execution_end`. Other entries (the header, model changes, the system prompt, ...) are none.
+fn session_events(entry: &Value) -> Vec<(&'static str, Value)> {
+    if entry["type"] != "message" {
+        return vec![];
+    }
+    let message = &entry["message"];
+    let parts = message["content"].as_array().map_or(&[][..], Vec::as_slice);
+    match message["role"].as_str() {
+        Some("user") => {
+            let text = match &message["content"] {
+                Value::String(text) => text.clone(),
+                _ => parts
+                    .iter()
+                    .filter_map(|part| part["text"].as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            };
+            vec![
+                ("said", json!({ "message": text })),
+                ("agent_start", json!({})),
+            ]
+        }
+        Some("assistant") => {
+            let mut events = Vec::new();
+            for (index, part) in parts.iter().enumerate() {
+                let delta = |kind: &str, text: &Value| {
+                    let update = json!({ "type": kind, "contentIndex": index, "delta": text });
+                    ("message_update", json!({ "assistantMessageEvent": update }))
+                };
+                match part["type"].as_str() {
+                    Some("text") => events.push(delta("text_delta", &part["text"])),
+                    Some("thinking") => events.push(delta("thinking_delta", &part["thinking"])),
+                    Some("toolCall") => events.push((
+                        "tool_execution_start",
+                        json!({ "toolCallId": part["id"], "toolName": part["name"], "args": part["arguments"] }),
+                    )),
+                    _ => {}
                 }
             }
-            Ok(aborted) if self.run.purpose == "chat" => match self.commit() {
-                // A chat that changed nothing has still succeeded.
-                Ok(_) if aborted => "stopped",
-                Ok(_) => "succeeded",
-                Err(e) => self.failed(&e.to_string()),
-            },
-            Ok(true) => "stopped",
-            Ok(false) if !matches!(self.run.purpose.as_str(), "code" | "trial") => "succeeded",
-            Ok(false) => match self.commit() {
-                Ok(true) => "succeeded",
-                Ok(false) => self.failed("the agent changed nothing"),
-                Err(e) => self.failed(&e.to_string()),
-            },
-            Err(why) => self.failed(&why),
-        };
-        if grilling && status != "failed" {
-            // Before the worktree is removed, with the result in it.
-            if let Err(e) = crate::grilling::conclude(&self.app, self.run.id, &self.run.worktree) {
-                let why = format!("cannot read the result of the grilling: {e}");
-                let _ = self.app.record_run_event(
-                    self.run.id,
-                    "moebius_error",
-                    &json!({ "message": why }),
-                );
+            if message["stopReason"] != "toolUse" {
+                events.push(("agent_end", json!({ "messages": [message] })));
+                // Not `aborted` even when the person interrupted it: the chat still waits for them.
+                events.push(("agent_settled", json!({ "aborted": false })));
             }
+            events
         }
-        self.run.remove_worktree(&self.app);
-        if self.run.purpose == "chat" && !grilling && status != "failed" {
-            // Before the status is set, so that an ended chat has offered what it made.
-            if let Err(e) = self.app.offer_chat_change(self.run.id) {
-                let why = format!("cannot offer the chat's work as a change: {e}");
-                let _ = self.app.record_run_event(
-                    self.run.id,
-                    "moebius_error",
-                    &json!({ "message": why }),
-                );
+        Some("toolResult") => {
+            let mut end = json!({
+                "toolCallId": message["toolCallId"],
+                "toolName": message["toolName"],
+                "result": { "content": message["content"] },
+                "isError": message["isError"].as_bool().unwrap_or(false),
+            });
+            if message["durationMs"].is_number() {
+                end["durationMs"] = message["durationMs"].clone();
             }
+            vec![("tool_execution_end", end)]
         }
-        let _ = self.app.store.set_run_status(self.run.id, status);
-        lock(&self.lives).remove(&self.run.id);
-        self.app.bus.publish(AppEvent::new(
-            "run_ended",
-            json!({ "run": self.run.id, "status": status }),
-        ));
-    }
-
-    /// Commits what the agent left in the worktree of a repository; false when it changed nothing, that is, left
-    /// the worktree clean and made no commit of its own. A chat without a repository has nothing to commit.
-    fn commit(&self) -> crate::repos::Result<bool> {
-        if self.run.clone.is_none() {
-            return Ok(false);
-        }
-        let worktree = &self.run.worktree;
-        git(worktree, &["add", "--all"])?;
-        if git(worktree, &["status", "--porcelain"])?.is_empty() {
-            return Ok(git(worktree, &["rev-parse", "HEAD"])? != self.run.start);
-        }
-        git(
-            worktree,
-            &["commit", "--quiet", "-m", &self.run.commit_message],
-        )?;
-        Ok(true)
-    }
-
-    fn failed(&self, why: &str) -> &'static str {
-        let _ = self
-            .app
-            .record_run_event(self.run.id, "moebius_error", &json!({ "message": why }));
-        "failed"
+        _ => vec![],
     }
 }
 
@@ -1509,5 +1758,61 @@ mod tests {
         let run = app.store.runs_for_card(card.id).unwrap().pop().unwrap();
         assert_eq!(run.status, "failed");
         assert!(!PathBuf::from(run.worktree.unwrap()).exists());
+    }
+
+    #[test]
+    fn only_complete_lines_added_to_the_newest_session_file_are_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let old = dir.path().join("old.jsonl");
+        std::fs::write(&old, "{\"type\":\"session\"}\n").unwrap();
+        let mut read: HashMap<PathBuf, u64> = session_files(dir.path())
+            .into_iter()
+            .map(|(path, len, _)| (path, len))
+            .collect();
+        assert!(
+            new_lines(dir.path(), &mut read).is_empty(),
+            "what was there is not read again"
+        );
+
+        let mut file = std::fs::OpenOptions::new().append(true).open(&old).unwrap();
+        file.write_all(b"{\"a\":1}\n{\"b\":").unwrap();
+        assert_eq!(new_lines(dir.path(), &mut read), [b"{\"a\":1}".to_vec()]);
+        file.write_all(b"2}\n").unwrap();
+        assert_eq!(new_lines(dir.path(), &mut read), [b"{\"b\":2}".to_vec()]);
+
+        // A session started later is read from its start.
+        let new = dir.path().join("new.jsonl");
+        std::fs::write(&new, "{\"c\":3}\n").unwrap();
+        let later = std::time::SystemTime::now() + Duration::from_secs(60);
+        let opened = std::fs::File::options().write(true).open(&new).unwrap();
+        opened.set_modified(later).unwrap();
+        assert_eq!(new_lines(dir.path(), &mut read), [b"{\"c\":3}".to_vec()]);
+    }
+
+    #[test]
+    fn a_session_entry_is_recorded_as_pis_records_of_the_same() {
+        let entry = |message: Value| json!({ "type": "message", "id": "a1", "parentId": null, "message": message });
+        let kinds = |events: Vec<(&'static str, Value)>| -> Vec<&'static str> {
+            events.into_iter().map(|(kind, _)| kind).collect()
+        };
+        assert!(session_events(&json!({ "type": "session", "version": 3 })).is_empty());
+        assert!(session_events(&entry(json!({ "role": "system", "content": "" }))).is_empty());
+        let said = session_events(&entry(json!({ "role": "user", "content": "Hi" })));
+        assert_eq!(said[0], ("said", json!({ "message": "Hi" })));
+        let working = json!({ "role": "assistant", "stopReason": "toolUse", "content": [
+            { "type": "text", "text": "Looking." },
+            { "type": "toolCall", "id": "c1", "name": "bash", "arguments": { "command": "ls" } }
+        ]});
+        assert_eq!(
+            kinds(session_events(&entry(working))),
+            ["message_update", "tool_execution_start"]
+        );
+        let done = json!({ "role": "assistant", "stopReason": "stop", "content": [{ "type": "text", "text": "Done." }] });
+        let events = session_events(&entry(done));
+        assert_eq!(
+            kinds(events.clone()),
+            ["message_update", "agent_end", "agent_settled"]
+        );
+        assert_eq!(final_answer(&events[1].1).as_deref(), Some("Done."));
     }
 }

@@ -460,17 +460,37 @@ The worktree exists while the run or chat is `starting`, `running` or `waiting`.
 Pi-Bolt's own terminal interface for a chat, for the person who prefers it to the conversation view. It upgrades to a
 WebSocket and works like [the shell of a run](#get-v1runsidterminal), with the same binary and resize messages, but the
 program on the pseudo-terminal is `pi-bolt` in its interactive mode, in the chat's worktree, started as the chat's own
-process is: the same agent, model, provider (the router, with a run token of its own for the chat's run, revoked when
-the terminal closes), instructions, skills, MCP servers, extensions and the Moebius bridge, so every tool call is still
-checked and recorded as a decision of the chat's run. Only `--mode rpc` is left out. Its conversation is a Pi session
-of its own (kept under the run's `tui-sessions`, continued when the terminal is opened again), not the chat's: what is
-said in it is neither shown as the chat's events nor stored. What is recorded is the opening, as a `tui_opened` run
-event `{"who": "person"}`, and the tool calls the bridge checks.
+process is: the same agent, model, provider (the router, with the chat's run token), instructions, skills, MCP servers,
+extensions and the Moebius bridge, so every tool call is still checked and recorded as a decision of the chat's run.
+Only `--mode rpc` is left out.
 
-- A chat has one terminal open at a time. While it is open the chat's own process is idle and the chat takes no message
-  (`POST /v1/chats/{id}/messages` answers `409`), so the two never work in the worktree at the same time.
-- It opens only while the chat is `waiting`, that is, between turns; while the agent works it is `409`.
-- Closing the socket kills Pi-Bolt and its process group; ending or stopping the chat closes the terminal.
+The chat and its terminal are one conversation:
+
+- Opening it ends the chat's own Pi (idle, as the chat waits; the chat stays `waiting`) and starts the interactive one
+  with `--continue` on the chat's own agent directory and Pi sessions (`runs/<id>/agent`, `runs/<id>/sessions`), so it
+  continues the chat's session with everything said so far.
+- While it is open, Moebius reads what Pi adds to the session file (the newest one in the chat's sessions, every half
+  second) and records it as the chat's run events, in the shapes Pi's RPC records have, so the chat view, the Fleet and
+  the event stream show it as it happens: the person's message as a `said` event followed by `agent_start`; each
+  thinking and text part of an answer as a `message_update` with a `thinking_delta` or `text_delta`
+  (`{"assistantMessageEvent": {"type", "contentIndex", "delta"}}`); each tool call as a `tool_execution_start`
+  (`{"toolCallId", "toolName", "args"}`) and its result as a `tool_execution_end`
+  (`{"toolCallId", "toolName", "result": {"content"}, "isError", "durationMs"}`); an answer that does not end in a tool
+  call as `agent_end` (`{"messages": [the answer]}`, which also makes it the run's summary) and `agent_settled`
+  (`{"aborted": false}`). So the chat's status follows the agent as it does in the chat: `running` while it answers,
+  `waiting` while the terminal waits for the person. What the session held before the terminal opened is not recorded
+  again, and secrets are removed as from every event. As the file is read every half second, the `tool_check` event of
+  a call made in the terminal (recorded when the bridge asks) can come before the events of the message that made it.
+- Closing it (the socket closes, or the program exits) ends Pi-Bolt and its process group and starts the chat's own Pi
+  again with `--continue` on the same session, without a message; the chat is `waiting` and its next message continues
+  the whole conversation, the terminal's part included. The terminal's place is given back only then, so a message sent
+  as it closes is answered `409`, never lost.
+- Ending or stopping the chat while the terminal is open closes the terminal, and the chat ends (committed and offered
+  as when it ends otherwise) without its own Pi starting again.
+
+A chat has one terminal open at a time. While it is open the chat takes no message: `POST /v1/chats/{id}/messages`
+answers `409`, as what is said goes through the terminal. It opens only while the chat is `waiting`, that is, between
+turns; while the agent works it is `409`. The opening is recorded as a `tui_opened` run event `{"who": "person"}`.
 
 Errors, answered before the upgrade: `401`; `403` for the run token of an agent (the terminal stays with a person);
 `404` no such run; `409` the chat is not waiting, or has its terminal open already; `422` the run is not a chat or it

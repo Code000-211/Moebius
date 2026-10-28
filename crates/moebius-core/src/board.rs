@@ -65,14 +65,39 @@ pub struct AgentInfo {
     pub error: Option<String>,
 }
 
-/// Starts runs for the engine. The real one drives a harness (Pi-Bolt); tests use a fake.
-/// The terminal interface of a chat: the program to run on a terminal, and what is given back when it ends.
+/// The terminal interface of a chat while it is open: the program to run on a terminal. Dropped once the program has
+/// ended, it gives the chat back to its own process (see [`Runs::close_tui`]).
 pub struct Tui {
     pub command: std::process::Command,
-    /// Dropped when the program has ended; it gives back what the program was given, such as its token.
-    pub _held: Box<dyn Send>,
+    runs: Arc<dyn Runs>,
+    app: Arc<App>,
+    run_id: i64,
 }
 
+impl Tui {
+    /// The terminal interface `command` that `runs` opened for the chat `run_id`.
+    pub fn new(
+        command: std::process::Command,
+        runs: Arc<dyn Runs>,
+        app: Arc<App>,
+        run_id: i64,
+    ) -> Self {
+        Self {
+            command,
+            runs,
+            app,
+            run_id,
+        }
+    }
+}
+
+impl Drop for Tui {
+    fn drop(&mut self) {
+        self.runs.close_tui(&self.app, self.run_id);
+    }
+}
+
+/// Starts runs for the engine. The real one drives a harness (Pi-Bolt); tests use a fake.
 pub trait Runs: Send + Sync {
     /// Starts a run for `card` and returns it without waiting for it to end.
     fn start(
@@ -104,11 +129,17 @@ pub trait Runs: Send + Sync {
     /// Asks a running run to stop; it ends as `stopped`. False when the run is not running.
     fn stop(&self, run_id: i64) -> bool;
 
-    /// The program of the terminal interface of the waiting chat `run_id`: the harness's interactive mode in the
-    /// chat's worktree, set up as the chat's own process is. A harness without one refuses.
-    fn tui(&self, _app: &Arc<App>, _run_id: i64) -> Result<Tui, String> {
+    /// Moves the waiting chat `run_id` to its terminal interface and returns the program: the harness's interactive
+    /// mode in the chat's worktree, set up as the chat's own process is and continuing the chat's conversation, whose
+    /// process is ended meanwhile. What is said in the interface is recorded as the chat's events. A harness without
+    /// one refuses.
+    fn tui(&self, _app: &Arc<App>, _run_id: i64) -> Result<std::process::Command, String> {
         Err("this harness has no terminal interface".into())
     }
+
+    /// The terminal interface of the chat `run_id` has ended: the chat's own process starts again on the same
+    /// conversation and waits for the next message, or, when the chat was ended or stopped meanwhile, the chat ends.
+    fn close_tui(&self, _app: &Arc<App>, _run_id: i64) {}
 
     /// Starts a chat with `agent`, which answers `message`, in a branch of `repository`, of the harness configuration
     /// repository when `harness` is set, or in an empty directory, and returns it without waiting for the answer. A chat that continues an ended one gives the agent `earlier`,

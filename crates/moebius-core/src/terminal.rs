@@ -76,9 +76,18 @@ impl Slots {
     /// Closes the terminals open on `run`, its chat's terminal interface included, for when its worktree is gone:
     /// their programs are killed.
     pub fn close(&self, run: i64) {
+        self.close_keys(&[run, tui_key(run)]);
+    }
+
+    /// Closes the terminal interface of the chat `run`, if it is open, for when the chat ends or stops.
+    pub fn close_tui(&self, run: i64) {
+        self.close_keys(&[tui_key(run)]);
+    }
+
+    fn close_keys(&self, keys: &[i64]) {
         let open = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        for key in [run, tui_key(run)] {
-            if let Some(open) = open.get(&key) {
+        for key in keys {
+            if let Some(open) = open.get(key) {
                 open.closed.send_replace(true);
             }
         }
@@ -129,12 +138,13 @@ fn size(cols: u16, rows: u16) -> PtySize {
 /// Runs the person's shell in `worktree` for as long as `socket` is open: until either the
 /// shell exits, which closes the socket, or the socket closes or the run ends, which kills the shell and its process
 /// group.
-pub async fn serve(socket: WebSocket, worktree: &Path, slot: Slot) {
-    serve_command(socket, shell(worktree), slot).await;
+pub async fn serve(socket: WebSocket, worktree: &Path, mut slot: Slot) {
+    serve_command(socket, shell(worktree), &mut slot).await;
 }
 
-/// Runs `command` on a pseudo-terminal for as long as `socket` is open, as [`serve`] does the shell.
-pub async fn serve_command(mut socket: WebSocket, command: CommandBuilder, mut slot: Slot) {
+/// Runs `command` on a pseudo-terminal for as long as `socket` is open, as [`serve`] does the shell. The caller gives
+/// back `slot` when it is done with what the program leaves.
+pub async fn serve_command(mut socket: WebSocket, command: CommandBuilder, slot: &mut Slot) {
     let (master, mut child, reader, writer) = match start(command) {
         Ok(started) => started,
         Err(e) => {

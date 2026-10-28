@@ -629,6 +629,8 @@ impl App {
         if !runs.stop(run_id) {
             return Err(AppError::Invalid(format!("run {run_id} is not running")));
         }
+        // A chat in its terminal interface stops once the interface has closed.
+        self.terminals.close_tui(run_id);
         self.record_action(
             by,
             "stop",
@@ -666,11 +668,13 @@ impl App {
         Ok((worktree, slot))
     }
 
-    /// A person opens Pi-Bolt's own terminal interface in the chat `run_id`. The chat must be waiting: while its agent
-    /// works its process owns the worktree, so the answer is a conflict. Only one is open per chat, and while it is open
-    /// the chat takes no message (see `say_in_chat`), so the chat's own process never works at the same time. Returns
-    /// the program and the interface's place; only the opening is recorded, as a `tui_opened` event.
-    pub fn open_tui(self: &Arc<Self>, runs: &dyn Runs, run_id: i64) -> Result<(Tui, Slot)> {
+    /// A person opens Pi-Bolt's own terminal interface in the chat `run_id`, which continues the chat's conversation
+    /// in place of the chat's own process (see [`Runs::tui`]). The chat must be waiting: while its agent works its
+    /// process owns the worktree, so the answer is a conflict. Only one is open per chat, and while it is open the chat
+    /// takes no message (see `say_in_chat`): the conversation goes on in the interface. Returns the program and the
+    /// interface's place, to be dropped in that order once the program has ended; the opening is recorded as a
+    /// `tui_opened` event.
+    pub fn open_tui(self: &Arc<Self>, runs: Arc<dyn Runs>, run_id: i64) -> Result<(Tui, Slot)> {
         let run = self.running_chat(run_id)?;
         if run.status != "waiting" {
             return Err(AppError::Conflict(format!(
@@ -682,7 +686,8 @@ impl App {
             .terminals
             .take_up_to(tui_key(run_id), 1)
             .ok_or_else(|| AppError::Conflict(format!("chat {run_id} has its terminal open")))?;
-        let tui = runs.tui(self, run_id).map_err(AppError::Invalid)?;
+        let command = runs.tui(self, run_id).map_err(AppError::Invalid)?;
+        let tui = Tui::new(command, runs, self.clone(), run_id);
         self.record_run_event(run_id, "tui_opened", &json!({ "who": PERSON }))?;
         Ok((tui, slot))
     }
@@ -829,6 +834,8 @@ impl App {
         if !runs.end(run_id) {
             return Err(AppError::Invalid(format!("chat {run_id} has ended")));
         }
+        // A chat in its terminal interface ends once the interface has closed.
+        self.terminals.close_tui(run_id);
         Ok(run)
     }
 
