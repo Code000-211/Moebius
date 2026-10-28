@@ -145,7 +145,7 @@ pub const SIDEBAR_WIDTH: f32 = 248.0;
 pub const RAIL_WIDTH: f32 = 68.0;
 pub const PAGE_PADDING: [f32; 2] = [20.0, 24.0];
 pub const PAGE_GAP: f32 = 18.0;
-pub const ICON: f32 = 16.0;
+pub const ICON: f32 = 20.0;
 pub const DOT: f32 = 8.0;
 
 /// Manrope in one of the weights that are bundled.

@@ -418,7 +418,11 @@ fn item<'a>(
     collapsed: bool,
 ) -> Element<'a, Message> {
     let selected = *current == target;
-    let icon_color = if selected {
+    // Something new there turns the icon to the alert colour.
+    let new = matches!(trailing, Trailing::Badge(count) if count > 0);
+    let icon_color = if new {
+        theme::AMBER
+    } else if selected {
         theme::TEXT
     } else {
         theme::TEXT_MUTED
@@ -436,22 +440,11 @@ fn item<'a>(
             })
             .into(),
     };
-    let badge = |count: usize| {
-        container(
-            text(count.to_string())
-                .size(if collapsed { 11.0 } else { theme::LABEL })
-                .font(theme::manrope(Weight::Bold))
-                .color(theme::ON_FILL),
-        )
-        .padding(if collapsed { [0, 5] } else { [1, 8] })
-        .style(|_| container::Style {
-            background: Some(theme::AMBER.into()),
-            border: Border {
-                radius: theme::RADIUS_ROUND.into(),
-                ..Border::default()
-            },
-            ..container::Style::default()
-        })
+    let count = |count: usize| {
+        text(count.to_string())
+            .size(theme::LABEL)
+            .font(theme::manrope(Weight::Semibold))
+            .color(theme::AMBER)
     };
     let weight = if selected {
         Weight::Semibold
@@ -459,13 +452,7 @@ fn item<'a>(
         Weight::Normal
     };
     let content: Element<'a, Message> = if collapsed {
-        let mut rail = row![lead].spacing(4).align_y(Center);
-        if let Trailing::Badge(count) = trailing
-            && count > 0
-        {
-            rail = rail.push(badge(count));
-        }
-        container(rail).center_x(Length::Fill).into()
+        container(lead).center_x(Length::Fill).into()
     } else {
         let mut line = row![
             lead,
@@ -481,7 +468,7 @@ fn item<'a>(
             Trailing::Text(shown) => {
                 line = line.push(text(shown).size(theme::LABEL).color(theme::TEXT_MUTED));
             }
-            Trailing::Badge(count) => line = line.push(badge(count)),
+            Trailing::Badge(shown) => line = line.push(count(shown)),
         }
         line.into()
     };

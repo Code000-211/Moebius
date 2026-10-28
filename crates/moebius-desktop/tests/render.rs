@@ -223,14 +223,10 @@ fn the_expanded_sidebar_lists_the_repositories_and_the_board_is_named() {
 }
 
 #[test]
-fn the_collapsed_sidebar_keeps_the_inbox_count() {
+fn the_collapsed_sidebar_marks_the_inbox_in_the_alert_colour() {
     let mut app = App::with_snapshot(overview());
     let _ = app.update(Message::ToggleSidebar);
-    draw(
-        &app,
-        "shell-collapsed",
-        &["6", "GitHub · Code000-211/Radiance"],
-    );
+    draw(&app, "shell-collapsed", &["GitHub · Code000-211/Radiance"]);
 }
 
 #[test]
