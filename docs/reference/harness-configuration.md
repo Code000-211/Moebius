@@ -76,7 +76,9 @@ mcp = ["docs"]
 A skill as Pi-Bolt documents it: a directory with a `SKILL.md` and whatever else the skill uses. A directory without a
 `SKILL.md` is not a skill. An agent that names a skill that is missing is left out with an error. A run is given exactly
 its agent's skills, in the order of the `skills` key, and no skill Pi-Bolt would find on its own. The Moebius agent has
-its built-in `moebius` skill first, then those of `agents/Moebius.toml`.
+its built-in skills first, the `moebius` skill and the task skills `moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions` and `moebius-plugins`, then those of
+`agents/Moebius.toml`. The other built-in agents have the `moebius` skill first. A directory of `skills/` with the name
+of a built-in skill is ignored.
 
 ## `rules.md`
 
@@ -167,7 +169,8 @@ as they are.
 - `PUT /v1/skills/{name}` takes `{"description": "...", "text": "..."}` and writes `skills/<name>/SKILL.md`: the
   frontmatter `name` and `description` (a double-quoted line), then the text. The skill's other files are kept. The
   message is `Add the skill <name>` or `Update the skill <name>`, the decision kind `edit_skill`. `DELETE` removes the
-  directory (`Delete the skill <name>`). The built-in `moebius` skill cannot be changed or deleted.
+  directory (`Delete the skill <name>`). The built-in skills (`moebius` and the task skills) cannot be changed or
+  deleted.
 - `PUT /v1/mcp-servers/{name}` takes the keys of a server of [`mcp.toml`](#mcptoml) and rewrites its table in the file,
   checked as reading checks it (so a `${NAME}` outside `mcp_env` is refused). The table is rewritten in place, or added
   at the end; the other tables and the comments of the file are kept, but comments inside the rewritten table are lost.

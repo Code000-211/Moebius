@@ -2,7 +2,7 @@
 //! board engine, which runs every card's column script on a fixed tick, the poll of GitHub and, every 30 seconds,
 //! the refresh of the clones of repositories without a forge and of the harness configuration repository, and, once
 //! a minute, the check whether the Retro is due, a proposal of the Retro is to be tried or a research is to start. The
-//! `moebius` skill is written to the data directory at start.
+//! built-in skills are written to the data directory at start.
 
 use std::net::SocketAddr;
 use std::path::Path;
@@ -142,7 +142,7 @@ impl Server {
         std::fs::create_dir_all(&config.data_dir)
             .map_err(|e| format!("cannot create {}: {e}", config.data_dir.display()))?;
         skill::write(&config.data_dir)
-            .map_err(|e| format!("cannot write the moebius skill: {e}"))?;
+            .map_err(|e| format!("cannot write the built-in skills: {e}"))?;
         let store = Arc::new(
             Store::open(&config.data_dir).map_err(|e| format!("cannot open the store: {e}"))?,
         );
@@ -515,6 +515,21 @@ mod tests {
         let skill = dir.path().join(".moebius/skills/moebius");
         let skill_md = std::fs::read_to_string(skill.join("SKILL.md")).unwrap();
         assert!(skill_md.starts_with("---\nname: moebius\n"));
+        for task in [
+            "moebius-operate",
+            "moebius-configure",
+            "moebius-workflows",
+            "moebius-extensions",
+            "moebius-plugins",
+        ] {
+            let page = dir
+                .path()
+                .join(".moebius/skills")
+                .join(task)
+                .join("SKILL.md");
+            let page = std::fs::read_to_string(page).unwrap();
+            assert!(page.starts_with(&format!("---\nname: {task}\n")));
+        }
         let docs = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs");
         for directory in ["guide", "reference"] {
             for page in std::fs::read_dir(docs.join(directory)).unwrap() {

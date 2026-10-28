@@ -86,7 +86,7 @@ use crate::harness_repo::{
     SkillView,
 };
 use crate::mcp::McpServer;
-use crate::pibolt::MOEBIUS_AGENT;
+use crate::pibolt::{BuiltInAgent, MOEBIUS_AGENT, built_in_agent};
 use crate::replay;
 use crate::repos::GitError;
 use crate::research::{self, NewResearch, ResearchView};
@@ -987,12 +987,42 @@ async fn delete_mcp_server(
     .await
 }
 
+/// What `GET /v1/agents/{name}` answers: the agent's files, when it has them, and what a built-in agent brings itself.
+#[derive(Debug, Serialize)]
+struct AgentAnswer {
+    name: String,
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    definition: Option<AgentDefinition>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    built_in: Option<BuiltInAgent>,
+}
+
+/// A built-in agent is answered without files and without a harness configuration repository; any other agent needs
+/// both.
 async fn get_agent(
     State(state): State<ApiState>,
     UrlPath(name): UrlPath<String>,
-) -> Result<axum::Json<AgentView>, ApiError> {
-    let repo = harness_repo(&state)?;
-    blocking(&state.app, move |_| repo.agent(&name)).await
+) -> Result<axum::Json<AgentAnswer>, ApiError> {
+    let built_in = built_in_agent(&name);
+    let repo = match (harness_repo(&state), &built_in) {
+        (Ok(repo), _) => Some(repo),
+        (Err(_), Some(_)) => None,
+        (Err(e), None) => return Err(e.into()),
+    };
+    blocking(&state.app, move |_| {
+        let definition = match repo.map(|repo| repo.agent(&name)) {
+            Some(Ok(view)) => Some(view.definition),
+            Some(Err(AppError::NotFound(_))) if built_in.is_some() => None,
+            Some(Err(e)) => return Err(e),
+            None => None,
+        };
+        Ok(AgentAnswer {
+            name,
+            definition,
+            built_in,
+        })
+    })
+    .await
 }
 
 async fn put_agent(
@@ -3180,6 +3210,58 @@ mod tests {
         run
     }
 
+    /// Where the Moebius agent's built-in skills are written: the reference library, then the task skills.
+    fn built_in_skill_dirs(app: &App) -> Vec<String> {
+        crate::skill::all()
+            .map(|skill| {
+                crate::skill::dir(&app.data_dir, skill.name)
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn a_built_in_agent_shows_its_built_in_instructions_and_skills_without_a_harness_repository()
+     {
+        let (_dir, state, addr) = start().await;
+        let moebius: serde_json::Value = get(&state, &addr, "/v1/agents/Moebius").await;
+        assert_eq!(moebius["name"], "Moebius");
+        // No files: the agent is the Coder's model and the built-in part.
+        assert!(moebius.get("settings").is_none(), "{moebius}");
+        let instructions = moebius["built_in"]["instructions"].as_str().unwrap();
+        assert!(instructions.starts_with("You are the Moebius agent."));
+        let skills = moebius["built_in"]["skills"].as_array().unwrap();
+        let names: Vec<&str> = skills.iter().map(|s| s["name"].as_str().unwrap()).collect();
+        assert_eq!(
+            names,
+            [
+                "moebius",
+                "moebius-operate",
+                "moebius-configure",
+                "moebius-workflows",
+                "moebius-extensions",
+                "moebius-plugins"
+            ]
+        );
+        assert!(
+            skills
+                .iter()
+                .all(|s| s["description"].as_str().unwrap().contains("Use it"))
+        );
+
+        // The Grilling partner keeps the reference library only.
+        let grilling: serde_json::Value = get(&state, &addr, "/v1/agents/Grilling-partner").await;
+        assert!(
+            grilling["built_in"]["instructions"]
+                .as_str()
+                .unwrap()
+                .starts_with("You are the Grilling partner.")
+        );
+        assert_eq!(grilling["built_in"]["skills"].as_array().unwrap().len(), 1);
+        assert_eq!(grilling["built_in"]["skills"][0]["name"], "moebius");
+    }
+
     #[tokio::test]
     async fn a_chat_without_an_agent_is_with_the_moebius_agent_on_the_coders_model() {
         let (_dir, state, addr) = start().await;
@@ -3189,11 +3271,20 @@ mod tests {
         assert!(argv.windows(2).any(|w| w == ["--model", "fake"]));
         // Only the Coder's model and protocol carry over.
         assert!(!argv.iter().any(|a| a == "--thinking"));
-        let skill = crate::skill::dir(&state.app.data_dir);
-        let skills: Vec<_> = argv.windows(2).filter(|w| w[0] == "--skill").collect();
-        assert_eq!(skills, [["--skill", skill.to_str().unwrap()]]);
+        // The reference library, then each task skill.
+        let skills: Vec<&str> = argv
+            .windows(2)
+            .filter(|w| w[0] == "--skill")
+            .map(|w| w[1].as_str())
+            .collect();
+        assert_eq!(skills, built_in_skill_dirs(&state.app));
+        assert_eq!(skills.len(), 6);
         let instructions = argv.windows(2).find(|w| w[0] == "--append-system-prompt");
-        assert!(instructions.unwrap()[1].starts_with("You are the Moebius agent."));
+        let instructions = &instructions.unwrap()[1];
+        assert!(instructions.starts_with("You are the Moebius agent."));
+        for task in &crate::skill::TASKS {
+            assert!(instructions.contains(task.name), "{}", task.name);
+        }
 
         // Asking for the agent by name is the same.
         let named = serde_json::json!({ "agent": "Moebius", "message": "Hello" });
@@ -3275,16 +3366,15 @@ mod tests {
         let argv = argv(&state.app, run.id);
         assert!(argv.windows(2).any(|w| w == ["--model", "own-model"]));
         assert!(argv.windows(2).any(|w| w == ["--thinking", "high"]));
-        // The moebius skill always comes first.
-        let skill = crate::skill::dir(&state.app.data_dir);
-        let skills: Vec<_> = argv.windows(2).filter(|w| w[0] == "--skill").collect();
-        assert_eq!(
-            skills,
-            [
-                ["--skill", skill.to_str().unwrap()],
-                ["--skill", "/skills/house-style"]
-            ]
-        );
+        // The built-in skills always come first.
+        let skills: Vec<&str> = argv
+            .windows(2)
+            .filter(|w| w[0] == "--skill")
+            .map(|w| w[1].as_str())
+            .collect();
+        let mut expected = built_in_skill_dirs(&state.app);
+        expected.push("/skills/house-style".into());
+        assert_eq!(skills, expected);
         let instructions = argv.windows(2).find(|w| w[0] == "--append-system-prompt");
         let instructions = &instructions.unwrap()[1];
         assert!(instructions.starts_with("You are the Moebius agent."));

@@ -666,21 +666,34 @@ async fn editing_an_agent_is_a_commit_on_the_harness_repository_and_a_bad_edit_i
     let skills = client.skills().await.unwrap();
     assert_eq!(skills[0].name, "moebius");
     assert!(skills[0].built_in);
-    assert_eq!(skills[1].name, "house-style");
-    assert_eq!(skills[1].description, "Write plainly.");
+    assert!(skills[1..6].iter().all(|skill| skill.built_in));
+    assert_eq!(skills[6].name, "house-style");
+    assert_eq!(skills[6].description, "Write plainly.");
     let servers = client.mcp_servers().await.unwrap();
     assert_eq!(
         (servers[0].name.as_str(), servers[0].kind.as_str()),
         ("docs", "stdio")
     );
 
-    let mut coder = client.agent("Coder").await.unwrap();
+    let coder = client.agent("Coder").await.unwrap();
     assert_eq!(coder.instructions, "Keep changes small.\n");
-    coder.settings.model = "better-model".into();
-    coder.settings.thinking = Some("high".into());
-    coder.settings.mcp = vec!["docs".into()];
+    assert!(coder.built_in.is_none());
+    let moebius = client.agent("Moebius").await.unwrap();
+    assert!(moebius.settings.is_none());
+    let built_in = moebius.built_in.expect("the Moebius agent is built in");
+    assert!(
+        built_in
+            .instructions
+            .starts_with("You are the Moebius agent.")
+    );
+    assert_eq!(built_in.skills.len(), 6);
+    assert_eq!(built_in.skills[1].name, "moebius-operate");
+    let mut coder = coder.settings.expect("the Coder has files");
+    coder.model = "better-model".into();
+    coder.thinking = Some("high".into());
+    coder.mcp = vec!["docs".into()];
     let saved = client
-        .save_agent("Coder", &coder.settings, "Be careful.")
+        .save_agent("Coder", &coder, "Be careful.")
         .await
         .unwrap();
     let commit = saved.commit.expect("the edit is a commit");
@@ -701,7 +714,7 @@ async fn editing_an_agent_is_a_commit_on_the_harness_repository_and_a_bad_edit_i
     );
 
     // A new agent is a commit too, and an agent that names what is not there is refused with the reason.
-    let mut strong = coder.settings.clone();
+    let mut strong = coder.clone();
     strong.model = "big".into();
     client.save_agent("Strong", &strong, "").await.unwrap();
     assert_eq!(
@@ -1610,12 +1623,9 @@ async fn editing_a_skill_and_an_mcp_server_is_a_commit_and_a_named_one_is_not_de
     assert_eq!(subject(), "Add the MCP server search");
 
     // house-style and docs are named by the Coder.
-    let mut coder = client.agent("Coder").await.unwrap();
-    coder.settings.mcp = vec!["docs".into()];
-    client
-        .save_agent("Coder", &coder.settings, "")
-        .await
-        .unwrap();
+    let mut coder = client.agent("Coder").await.unwrap().settings.unwrap();
+    coder.mcp = vec!["docs".into()];
+    client.save_agent("Coder", &coder, "").await.unwrap();
     for result in [
         client.delete_skill("house-style").await,
         client.delete_mcp_server("docs").await,

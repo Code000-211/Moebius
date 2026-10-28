@@ -19,9 +19,10 @@ changes ready to merge. Read `GLOSSARY.md` for the words, `docs/spec.md` for wha
 - `crates/moebius`: the `moebius` binary (`init`, `serve`, `check-script`, `export`, and in `cli.rs` the commands that
   operate a running server through the desktop API: `api` for any route, a command for what is done often; the Moebius
   agent uses them as `"$MOEBIUS"`).
-- `crates/moebius-core/skill/SKILL.md` and `src/skill.rs`: the `moebius` skill of the Moebius agent, which is `SKILL.md`
-  plus every page of `docs/guide/` and `docs/reference/`. Add a new page to the list in `skill.rs`; a test fails if you
-  forget.
+- `crates/moebius-core/skill/` and `src/skill.rs`: the built-in skills. The `moebius` skill is `SKILL.md` plus every page
+  of `docs/guide/` and `docs/reference/` (add a new page to the list in `skill.rs`; a test fails if you forget); the
+  Moebius agent's task skills are `skill/moebius-<task>/SKILL.md`, and every `"$MOEBIUS"` command and route they name is
+  checked by a test.
 - `crates/moebius-desktop`: the iced desktop app (built to `docs/design.md`). It talks to the server only through the
   desktop API and does not depend on `moebius-core` (a dev-dependency starts a real server in its tests). `app.rs` is
   the state, messages and view, `client.rs` the API client and event stream, `settings.rs` the saved address and token,

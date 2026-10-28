@@ -353,16 +353,37 @@ pub struct AgentSettings {
     pub mcp: Vec<String>,
 }
 
-/// An agent of the harness configuration repository: what `GET /v1/agents/{name}` answers, and `PUT` after it.
+/// An agent: what `GET /v1/agents/{name}` answers, and `PUT` after it.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct AgentDetail {
     pub name: String,
-    pub settings: AgentSettings,
+    /// The settings of its files in the harness configuration repository; none for a built-in agent without files.
+    #[serde(default)]
+    pub settings: Option<AgentSettings>,
     #[serde(default)]
     pub instructions: String,
+    /// What a built-in agent brings itself, read only.
+    #[serde(default)]
+    pub built_in: Option<BuiltInAgent>,
     /// The short id of the commit a `PUT` made; none when the edit changed nothing.
     #[serde(default)]
     pub commit: Option<String>,
+}
+
+/// The built-in instructions and skills of a built-in agent.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct BuiltInAgent {
+    pub instructions: String,
+    #[serde(default)]
+    pub skills: Vec<BuiltInSkill>,
+}
+
+/// A built-in skill of a built-in agent.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct BuiltInSkill {
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
 }
 
 /// A built-in rule, as `GET /v1/rules` lists it.

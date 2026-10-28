@@ -279,11 +279,33 @@ async fn the_skills_and_mcp_servers_an_agent_can_name_are_listed_without_secrets
             .unwrap()
             .contains("Moebius")
     );
+    // The task skills of the Moebius agent are built in too, and come before the repository's.
+    let names: Vec<&str> = skills
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|skill| skill["name"].as_str().unwrap())
+        .collect();
     assert_eq!(
-        skills[1],
+        names,
+        [
+            "moebius",
+            "moebius-operate",
+            "moebius-configure",
+            "moebius-workflows",
+            "moebius-extensions",
+            "moebius-plugins",
+            "house-style"
+        ]
+    );
+    for skill in &skills.as_array().unwrap()[..6] {
+        assert_eq!(skill["built_in"], true);
+        assert!(skill["description"].as_str().unwrap().contains("Use it"));
+    }
+    assert_eq!(
+        skills[6],
         json!({"name": "house-style", "description": "Write plainly.", "built_in": false})
     );
-    assert_eq!(skills.as_array().unwrap().len(), 2);
 
     let (status, servers) = api
         .call(reqwest::Method::GET, "/v1/mcp-servers", None)
@@ -308,6 +330,54 @@ async fn the_skills_and_mcp_servers_an_agent_can_name_are_listed_without_secrets
             .unwrap()
             .contains("OPENAI_API_KEY")
     );
+}
+
+#[tokio::test]
+async fn a_built_in_agent_is_read_with_its_built_in_part_and_its_own_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let origin = harness_origin(dir.path());
+    let server = server(dir.path(), &origin);
+    let api = Api::start(&server).await;
+
+    // Without files, only what Moebius brings.
+    let (status, body) = api
+        .call(reqwest::Method::GET, "/v1/agents/Moebius", None)
+        .await;
+    assert_eq!(status, 200, "{body}");
+    let read: Value = serde_json::from_str(&body).unwrap();
+    assert!(read.get("settings").is_none(), "{read}");
+    assert_eq!(read["built_in"]["skills"].as_array().unwrap().len(), 6);
+
+    // With files, both; what the person saves is only the files.
+    let edit = json!({"settings": {"model": "own-model"}, "instructions": "Prefer small scripts."});
+    let (status, body) = api
+        .call(reqwest::Method::PUT, "/v1/agents/Moebius", Some(edit))
+        .await;
+    assert_eq!(status, 200, "{body}");
+    let saved: Value = serde_json::from_str(&body).unwrap();
+    assert!(saved.get("built_in").is_none(), "{saved}");
+    let (_, body) = api
+        .call(reqwest::Method::GET, "/v1/agents/Moebius", None)
+        .await;
+    let read: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(read["settings"]["model"], "own-model");
+    assert_eq!(
+        read["instructions"].as_str().unwrap().trim(),
+        "Prefer small scripts."
+    );
+    assert!(
+        read["built_in"]["instructions"]
+            .as_str()
+            .unwrap()
+            .contains("moebius-configure")
+    );
+
+    // An agent of the person's has no built-in part.
+    let (_, body) = api
+        .call(reqwest::Method::GET, "/v1/agents/Coder", None)
+        .await;
+    let read: Value = serde_json::from_str(&body).unwrap();
+    assert!(read.get("built_in").is_none(), "{read}");
 }
 
 #[tokio::test]
@@ -941,6 +1011,13 @@ async fn skills_are_edited_as_commits_and_an_agent_is_given_a_new_skill() {
     assert_eq!(status, 200, "{body}");
     let built_in: Value = serde_json::from_str(&body).unwrap();
     assert!(built_in["files"].as_array().unwrap().len() > 5);
+    let (status, body) = api
+        .call(Method::GET, "/v1/skills/moebius-workflows", None)
+        .await;
+    assert_eq!(status, 200, "{body}");
+    let task: Value = serde_json::from_str(&body).unwrap();
+    assert!(task["text"].as_str().unwrap().contains("check-script"));
+    assert_eq!(task["files"], json!([]));
     for missing in ["nothing", "..%2Fagents"] {
         let path = format!("/v1/skills/{missing}");
         assert_eq!(api.call(Method::GET, &path, None).await.0, 404);
@@ -1006,15 +1083,16 @@ async fn skills_are_edited_as_commits_and_an_agent_is_given_a_new_skill() {
         ("greeting", json!({"description": "x", "color": "red"}), 422),
         ("bad%20name", json!({"description": "x"}), 422),
         ("moebius", json!({"description": "x"}), 409),
+        ("moebius-operate", json!({"description": "x"}), 409),
     ] {
         let path = format!("/v1/skills/{name}");
         let (status, text) = api.call(Method::PUT, &path, Some(body)).await;
         assert_eq!(status, expected, "{name}: {text}");
     }
-    assert_eq!(
-        api.call(Method::DELETE, "/v1/skills/moebius", None).await.0,
-        409
-    );
+    for name in ["moebius", "moebius-configure"] {
+        let path = format!("/v1/skills/{name}");
+        assert_eq!(api.call(Method::DELETE, &path, None).await.0, 409);
+    }
     assert_eq!(head(&clone), before);
     assert_eq!(git(&clone, &["status", "--porcelain"]).unwrap(), "");
 

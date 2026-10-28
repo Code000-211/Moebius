@@ -129,8 +129,8 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
     is set, a chat in a repository whose branch has commits beyond the default branch is offered as a change without a card
     (`App::offer_chat_change`: the forge publishes the branch, a change with a null card and a `ready_to_merge` inbox
     item are stored, `change_offered` is published); merging it is the same `App::merge_change`. `PiBolt::agent` makes
-    the agent of a run; for `Moebius`, the bundled agent, it adds the built-in instructions and the `moebius` skill to
-    the Moebius or Coder configuration. Every run has `$MOEBIUS`, the `moebius` executable, for `check-script`. Chats are not
+    the agent of a run; for `Moebius`, the bundled agent, it adds the built-in instructions, the `moebius` skill and the
+    task skills to the Moebius or Coder configuration. Every run has `$MOEBIUS`, the `moebius` executable, for `check-script`. Chats are not
     counted by `moebius.runs_active()`, so they do not use the board's run limit; the daily budget applies to them.
     `GET /v1/chats` (`App::chats`) lists them, newest first.
     A chat can work in the harness configuration repository (`harness: true`; the run's `harness_repository`): its worktree
@@ -294,7 +294,7 @@ The server runs on a multi-threaded tokio runtime.
 | `server.rs` | Wires everything from the configuration and runs the loops. |
 | `settings.rs` | Editing `moebius.toml` while the server runs: changes applied to the file's text, the keys that take effect at once, the API keys kept in `secrets.toml`, and the restart. |
 | `setup.rs` | What the Models, Plugins and Get started pages show: the router's upstreams, the agents, the teacher, the decision model and the plugins, without a secret, and the steps to a first card (`GET /v1/start`). |
-| `skill.rs` | The `moebius` skill (the guide and the references, bundled with `include_str!`), written to `<data_dir>/skills/moebius/` at start. |
+| `skill.rs` | The built-in skills, bundled with `include_str!` and written to `<data_dir>/skills/<name>/` at start: the `moebius` skill (the guide and the references) and the task skills of the Moebius agent (`moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions` and `moebius-plugins`, in `crates/moebius-core/skill/<name>/SKILL.md`). |
 | `store.rs` | The SQLite records and their migrations. |
 | `terminal.rs` | A person's shell in a run's worktree on a pseudo-terminal (`portable-pty`), served over the WebSocket `GET /v1/runs/{id}/terminal` (and `GET /v1/terminal`, in the directory of `moebius.toml`); at most 4 per run or on the server, not checked by the guard. The same serving carries Pi-Bolt's interactive mode for a waiting chat (`GET /v1/chats/{id}/tui`, one per chat), whose tool calls the bridge still checks. |
 | `trial.rs` | Trials: each proposal tried on the cards of the errors it addresses, measured against the cards' first runs, and offered when positive. |

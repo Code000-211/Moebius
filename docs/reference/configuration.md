@@ -46,7 +46,7 @@ An absolute path is used as it is.
 
 | Key | Type | Default | Meaning and validation |
 |---|---|---|---|
-| `data_dir` | path | `.moebius` | Where Moebius keeps its files: `moebius.sqlite` (the store), `blobs/`, `repos/<name>` (the clones), `harness/` (the clone of the harness configuration repository), `worktrees/<name>/run-<id>` (`chat-<id>` for a chat), `chats/<id>` (the empty directory of a chat without a repository), `runs/<id>/` (a run's agent directory, bridge, sessions and `stderr.log`), `skills/moebius/` (the skill of the Moebius agent, written again at every start) and by default `token`. Created if missing. |
+| `data_dir` | path | `.moebius` | Where Moebius keeps its files: `moebius.sqlite` (the store), `blobs/`, `repos/<name>` (the clones), `harness/` (the clone of the harness configuration repository), `worktrees/<name>/run-<id>` (`chat-<id>` for a chat), `chats/<id>` (the empty directory of a chat without a repository), `runs/<id>/` (a run's agent directory, bridge, sessions and `stderr.log`), `skills/<name>/` (the built-in skills, `moebius` and the task skills of the Moebius agent, written again at every start) and by default `token`. Created if missing. |
 | `listen` | string | `127.0.0.1:7171` | The address of the desktop API, as `ip:port` (a host name is not accepted). Keep it on a private network. |
 | `token_file` | path | `token` | The file with the token the desktop app sends. Created with a random token (64 hex digits, readable by the owner only) when missing or empty. |
 | `run_limit` | integer | `3` | How many runs may go at once across all boards. At least 1, else the file is refused. Scripts read it as `moebius.run_limit`. |
@@ -196,8 +196,8 @@ bundled, so it needs no table, but it needs a model:
 
 Its instructions are built in (who it is, that it works for the person in the chat and builds what they ask for with the
 `moebius` skill); `agents.Moebius.instructions` is added after them. Its skills always begin with the `moebius` skill,
-which is the [guide](../guide/README.md) and this reference, written to `<data_dir>/skills/moebius/` when the server
-starts; `agents.Moebius.skills` adds more, and `agents.Moebius.extensions` adds extensions. The keys are the same as for
+which is the [guide](../guide/README.md) and this reference, and the task skills `moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions` and `moebius-plugins`, each with the steps of one
+kind of task, all written to `<data_dir>/skills/<name>/` when the server starts; `agents.Moebius.skills` adds more, and `agents.Moebius.extensions` adds extensions. The keys are the same as for
 any agent. What a chat with it leaves in its repository is offered as a change when the chat ends, see the
 [desktop API](desktop-api.md).
 

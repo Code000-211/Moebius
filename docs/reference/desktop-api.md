@@ -507,6 +507,13 @@ An agent of the harness configuration repository, as its files say: `{"name": st
 left out when not set). The files hold no secrets and are returned in full. Errors: `404` no such agent; `422` its files
 are broken (the message says how), or the server has no `[harness]` and its agents are in `moebius.toml`.
 
+A built-in agent (`Moebius`, `Grilling-partner`, `Retro-analyst`, `Autoresearcher`) also has `"built_in":
+{"instructions": string, "skills": [{"name": string, "description": string}]}`: the instructions it is always given
+before its own, and the built-in skills it always has before its own, which nobody can change. The Moebius agent's are
+the `moebius` skill and the task skills `moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions` and `moebius-plugins`; the others have the `moebius` skill. A built-in agent is answered
+without files (then `settings` and `instructions` are left out) and without `[harness]`. `PUT` saves only the agent's
+files and answers without `built_in`.
+
 ### `PUT /v1/agents/{name}`
 
 A person adds or changes an agent of the harness configuration repository. Request: `{"settings": {...}, "instructions":
@@ -571,13 +578,14 @@ commit (left out when the text changed nothing, and always for a `rules_file`). 
 ### `GET /v1/skills`
 
 The skills an agent's `skills` can name, for an editor to offer: an array of `{"name": string, "description": string,
-"built_in": boolean}`, the built-in `moebius` skill first, then the directories of `skills/` in the harness configuration
-repository by name. `description` is the `description` of the frontmatter of the skill's `SKILL.md`, empty when there is
+"built_in": boolean}`, the built-in skills first (`moebius`, then the task skills `moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions` and `moebius-plugins`), then the
+directories of `skills/` in the harness configuration repository by name; a directory with the name of a built-in skill
+is left out. `description` is the `description` of the frontmatter of the skill's `SKILL.md`, empty when there is
 none. Without `[harness]` the array is empty.
 
 ### `GET /v1/skills/{name}`
 
-A skill of the harness configuration repository, or the built-in `moebius` skill: `{"name": string, "description":
+A skill of the harness configuration repository, or a built-in skill: `{"name": string, "description":
 string, "text": string, "files": [string]}`. `text` is the `SKILL.md` after its frontmatter; `files` are the paths of the
 skill's other files, relative to its directory, sorted (they are listed, not returned). Errors: `404` no such skill;
 `409` the server has no `[harness]`: skills and MCP servers are edited in a harness configuration repository.
@@ -590,13 +598,13 @@ blank. It writes `skills/<name>/SKILL.md` with the frontmatter `name` and `descr
 files are left as they are. The edit is committed (`Add the skill <name>` or `Update the skill <name>`) on the default
 branch and pushed to `origin`, the decision is recorded (kind `edit_skill`, decider `person`), and the agents are read
 again. Response: the skill as `GET` answers it, with `commit`, the short id of the commit (left out when nothing
-changed). Errors: `409` no `[harness]`, or the skill is `moebius`, which is built in and read only; `422` an invalid
+changed). Errors: `409` no `[harness]`, or the skill is built in (`moebius` or a task skill) and read only; `422` an invalid
 name or description; `500` as for `PUT /v1/agents/{name}`.
 
 ### `DELETE /v1/skills/{name}`
 
 A person deletes a skill and its directory, committed and pushed the same way (`Delete the skill <name>`, kind
-`edit_skill`). Response: `null`. Errors: `404` no such skill; `409` no `[harness]`, the skill is `moebius`, or an agent
+`edit_skill`). Response: `null`. Errors: `404` no such skill; `409` no `[harness]`, the skill is built in, or an agent
 names it (the message names the agents); `500` as for `PUT`.
 
 ### `GET /v1/mcp-servers`

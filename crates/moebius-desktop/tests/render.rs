@@ -2102,6 +2102,110 @@ fn the_agents_screen_lists_the_agents_and_edits_one_like_the_mockup() {
     );
 }
 
+/// The Moebius agent as `GET /v1/agents/Moebius` answers it: its own files and what it brings itself.
+fn moebius_agent() -> moebius_desktop::client::AgentDetail {
+    serde_json::from_value(json!({
+        "name": "Moebius",
+        "settings": {"model": "claude-fake", "protocol": "anthropic", "skills": [], "extensions": [], "mcp": []},
+        "instructions": "Write scripts in the style of the repository's other scripts.",
+        "built_in": {
+            "instructions": "You are the Moebius agent. You work for the person in this chat.\n\nKnow before you act. Each kind of task has a skill with its steps; read it first.",
+            "skills": [
+                {"name": "moebius", "description": "The guide and the exact references of Moebius."},
+                {"name": "moebius-operate", "description": "Read the state of a Moebius server and act on it."},
+                {"name": "moebius-configure", "description": "Change agents, rules, scripts, settings, skills and MCP servers."}
+            ]
+        }
+    }))
+    .unwrap()
+}
+
+/// A built-in agent shows what it always has, read only, above what the person adds.
+#[test]
+fn the_moebius_agent_shows_its_built_in_instructions_and_skills() {
+    let mut app = App::with_snapshot(overview());
+    let _ = app.update(Message::Select(Page::Agents));
+    let agents = |message| Message::Agents(message);
+    let _ = app.update(agents(agents::Message::Listed(Ok(agent_listing()))));
+    let _ = app.update(agents(agents::Message::SkillsListed(Ok(skill_listing()))));
+    let _ = app.update(agents(agents::Message::McpListed(Ok(mcp_listing()))));
+    let _ = app.update(agents(agents::Message::Select("Moebius".into())));
+    let _ = app.update(agents(agents::Message::Opened(
+        "Moebius".into(),
+        Ok(moebius_agent()),
+    )));
+    draw_sized(
+        &app,
+        "agents-moebius",
+        &[
+            "Moebius",
+            "Built-in instructions",
+            "Read only · Moebius brings them",
+            "Built-in skills",
+            "Read only · 3 skills",
+            "moebius-operate",
+            "Read the state of a Moebius server and act on it.",
+            "Markdown · added after the built-in instructions",
+            "Model",
+            "Save",
+        ],
+        Size::new(1440.0, 1500.0),
+    );
+
+    // An agent of the person's has no built-in part.
+    let _ = app.update(agents(agents::Message::Select("Coder".into())));
+    let _ = app.update(agents(agents::Message::Opened("Coder".into(), Ok(coder()))));
+    assert!(!shows(&app, "Built-in instructions"));
+}
+
+#[test]
+fn a_built_in_agent_without_files_is_edited_from_blank_and_shows_its_built_in_part() {
+    let mut app = App::with_snapshot(overview());
+    let _ = app.update(Message::Select(Page::Agents));
+    let agents = |message| Message::Agents(message);
+    let _ = app.update(agents(agents::Message::Listed(Ok(agent_listing()))));
+    let _ = app.update(agents(agents::Message::SkillsListed(Ok(skill_listing()))));
+    let _ = app.update(agents(agents::Message::Select("Moebius".into())));
+    let mut answer = moebius_agent();
+    answer.settings = None;
+    answer.instructions = String::new();
+    let _ = app.update(agents(agents::Message::Opened(
+        "Moebius".into(),
+        Ok(answer),
+    )));
+    assert!(shows(&app, "Built-in skills"));
+    // Nothing to delete: the agent has no files.
+    assert!(!shows(&app, "Delete"));
+
+    // Without a harness repository the built-in part is read besides moebius.toml.
+    let mut app = App::with_snapshot(overview());
+    let _ = app.update(Message::Select(Page::Agents));
+    let _ = app.update(agents(agents::Message::Listed(Ok(agent_listing()))));
+    let _ = app.update(agents(agents::Message::SkillsListed(Ok(vec![]))));
+    assert_eq!(
+        app.update(agents(agents::Message::Select("Moebius".into())))
+            .units(),
+        2
+    );
+    assert_eq!(
+        app.update(agents(agents::Message::Select("Coder".into())))
+            .units(),
+        1
+    );
+    let _ = app.update(agents(agents::Message::Select("Moebius".into())));
+    let _ = app.update(agents(agents::Message::BuiltIn(
+        "Moebius".into(),
+        Ok(moebius_agent()),
+    )));
+    let server = settings_answer(json!({}), json!({}));
+    let _ = app.update(agents(agents::Message::OpenedFromFile(
+        "Moebius".into(),
+        Ok(serde_json::from_value(server).unwrap()),
+    )));
+    assert!(shows(&app, "Built-in instructions"));
+    assert!(shows(&app, "moebius-configure"));
+}
+
 #[test]
 fn a_server_without_a_harness_repository_edits_its_agents_in_moebius_toml() {
     let mut app = App::with_snapshot(overview());

@@ -13,8 +13,8 @@ use iced::{Alignment, Border, Element, Length, Task};
 
 use crate::app::Message as AppMessage;
 use crate::client::{
-    Agent, AgentDetail, AgentSettings, Available, AvailableModel, Client, ClientError, McpServer,
-    Proposal, Run, ServerSettings, Skill,
+    Agent, AgentDetail, AgentSettings, Available, AvailableModel, BuiltInAgent, Client,
+    ClientError, McpServer, Proposal, Run, ServerSettings, Skill,
 };
 use crate::live::say;
 use crate::model_picker;
@@ -44,6 +44,9 @@ pub enum Message {
     Select(String),
     /// The files of the agent with this name were read.
     Opened(String, Result<AgentDetail, ClientError>),
+    /// The built-in part of the built-in agent with this name was read, for a server that keeps its agents in
+    /// `moebius.toml`.
+    BuiltIn(String, Result<AgentDetail, ClientError>),
     /// The settings of a server that keeps its agents in `moebius.toml` were read to open the agent with this name.
     OpenedFromFile(String, Result<ServerSettings, ClientError>),
     NewAgent,
@@ -124,6 +127,8 @@ struct Editor {
     notice: Option<Notice>,
     /// Whether "Delete" asks to be confirmed.
     confirming: bool,
+    /// What a built-in agent brings itself, shown read only.
+    built_in: Option<BuiltInAgent>,
 }
 
 impl Editor {
@@ -149,6 +154,7 @@ impl Editor {
             skill_path: String::new(),
             notice: None,
             confirming: false,
+            built_in: None,
         }
     }
 
@@ -156,10 +162,18 @@ impl Editor {
         let AgentDetail {
             settings,
             instructions,
+            built_in,
             ..
         } = detail;
-        self.exists = true;
         self.files = Files::Ready;
+        if built_in.is_some() {
+            self.built_in = built_in;
+        }
+        // A built-in agent without files is edited from blank; saving it makes them.
+        let Some(settings) = settings else {
+            return;
+        };
+        self.exists = true;
         self.model = settings.model;
         self.protocol = settings.protocol;
         self.thinking = settings.thinking;
@@ -267,7 +281,7 @@ fn from_file(name: &str, server: &ServerSettings) -> Result<AgentDetail, ClientE
     };
     Ok(AgentDetail {
         name: name.to_string(),
-        settings: AgentSettings {
+        settings: Some(AgentSettings {
             model: text("model").unwrap_or_default(),
             protocol: text("protocol").unwrap_or_else(|| PROTOCOLS[0].to_string()),
             thinking: text("thinking"),
@@ -275,8 +289,9 @@ fn from_file(name: &str, server: &ServerSettings) -> Result<AgentDetail, ClientE
             skills: paths("skills"),
             extensions: paths("extensions"),
             mcp: vec![],
-        },
+        }),
         instructions: text("instructions").unwrap_or_default(),
+        built_in: None,
         commit: None,
     })
 }
@@ -395,6 +410,12 @@ impl Agents {
             | Message::ProposalsListed(Err(_)) => {}
             Message::Select(name) => return self.open(name, settings),
             Message::Opened(name, result) => self.opened(&name, result),
+            Message::BuiltIn(name, Ok(detail)) => {
+                if let Some(editor) = self.editor.as_mut().filter(|editor| editor.name == name) {
+                    editor.built_in = detail.built_in;
+                }
+            }
+            Message::BuiltIn(_, Err(_)) => {}
             Message::OpenedFromFile(name, result) => {
                 let result = result.and_then(|server| from_file(&name, &server));
                 self.opened(&name, result);
@@ -541,10 +562,30 @@ impl Agents {
         self.editor = Some(editor);
         let client = Client::new(settings.clone());
         if self.in_file() {
-            return Task::perform(
-                async move { client.server_settings().await },
-                move |result| AppMessage::Agents(Message::OpenedFromFile(name.clone(), result)),
+            let built_in = self
+                .list
+                .iter()
+                .any(|agent| agent.name == name && agent.built_in);
+            let read = {
+                let client = Client::new(settings.clone());
+                let name = name.clone();
+                Task::perform(
+                    async move { client.server_settings().await },
+                    move |result| AppMessage::Agents(Message::OpenedFromFile(name.clone(), result)),
+                )
+            };
+            if !built_in {
+                return read;
+            }
+            // The server answers a built-in agent's built-in part without a harness configuration repository.
+            let built_in = Task::perform(
+                {
+                    let name = name.clone();
+                    async move { client.agent(&name).await }
+                },
+                move |result| AppMessage::Agents(Message::BuiltIn(name.clone(), result)),
             );
+            return Task::batch([read, built_in]);
         }
         Task::perform(
             {
@@ -602,8 +643,9 @@ impl Agents {
                                 .await
                                 .map(|_| AgentDetail {
                                     name,
-                                    settings: agent,
+                                    settings: Some(agent),
                                     instructions,
+                                    built_in: None,
                                     commit: None,
                                 })
                         },
@@ -807,6 +849,11 @@ impl Agents {
                     extensions_box(editor)
                 ]
             };
+            if let Some(built_in) = &editor.built_in {
+                boxes = boxes
+                    .push(built_in_instructions_box(built_in))
+                    .push(built_in_skills_box(built_in));
+            }
             boxes = boxes.push(instructions_box(editor)).push(paths.spacing(14));
         }
         boxes.into()
@@ -1151,9 +1198,13 @@ fn instructions_box(editor: &Editor) -> Element<'_, AppMessage> {
             .size(theme::BOX_HEADING)
             .font(theme::manrope(Weight::Bold)),
         space::horizontal(),
-        text("Markdown · added to the harness's system prompt")
-            .size(theme::LABEL)
-            .color(theme::TEXT_MUTED),
+        text(if editor.built_in.is_some() {
+            "Markdown · added after the built-in instructions"
+        } else {
+            "Markdown · added to the harness's system prompt"
+        })
+        .size(theme::LABEL)
+        .color(theme::TEXT_MUTED),
     ]
     .align_y(Alignment::Center);
     if editor.by_agent && !editor.naming {
@@ -1196,6 +1247,51 @@ fn instructions_box(editor: &Editor) -> Element<'_, AppMessage> {
         .width(Length::Fill)
         .style(|_| page::box_style())
         .into()
+}
+
+/// What a built-in agent is always told, which the person cannot change.
+fn built_in_instructions_box(built_in: &BuiltInAgent) -> Element<'_, AppMessage> {
+    let body = container(
+        text(built_in.instructions.as_str())
+            .font(theme::MONO)
+            .size(theme::CODE_SMALL)
+            .color(theme::TEXT_SECONDARY)
+            .wrapping(Wrapping::WordOrGlyph),
+    )
+    .padding(14)
+    .width(Length::Fill)
+    .style(|_| container::Style {
+        background: Some(theme::LANE.into()),
+        border: Border {
+            color: theme::LINE,
+            width: 1.0,
+            radius: theme::RADIUS_CARD.into(),
+        },
+        ..container::Style::default()
+    });
+    section(
+        "Built-in instructions",
+        "Read only · Moebius brings them",
+        std::iter::once(body.into()),
+        "",
+        None,
+    )
+}
+
+/// The skills a built-in agent always has, before any of its own.
+fn built_in_skills_box(built_in: &BuiltInAgent) -> Element<'_, AppMessage> {
+    let items = built_in.skills.iter().map(|skill| {
+        let name = text(skill.name.as_str())
+            .font(theme::MONO)
+            .size(theme::CODE)
+            .color(theme::TEXT);
+        item(name.into(), &skill.description, false)
+    });
+    let aside = match built_in.skills.len() {
+        1 => "Read only · 1 skill".to_string(),
+        n => format!("Read only · {n} skills"),
+    };
+    section("Built-in skills", &aside, items, "No built-in skill.", None)
 }
 
 fn editor_style(_: &iced::Theme, status: text_editor::Status) -> text_editor::Style {

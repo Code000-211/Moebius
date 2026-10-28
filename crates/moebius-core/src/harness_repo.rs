@@ -568,13 +568,20 @@ impl HarnessRepo {
         })
     }
 
-    /// The skills of `skills/`, by name.
+    /// The built-in skills, then those of `skills/` by name. A directory with the name of a built-in skill is left
+    /// out, since agents cannot name it.
     pub fn skills(&self) -> Vec<SkillInfo> {
         let _read_at = self.lock();
-        let mut skills: Vec<SkillInfo> = self
+        let built_in = skill::all().map(|built_in| SkillInfo {
+            name: built_in.name.into(),
+            description: built_in.description(),
+            built_in: true,
+        });
+        let own = self
             .layout()
             .skills
             .into_iter()
+            .filter(|name| skill::built_in(name).is_none())
             .map(|name| {
                 let text =
                     std::fs::read_to_string(self.path.join("skills").join(&name).join("SKILL.md"));
@@ -586,17 +593,8 @@ impl HarnessRepo {
                         .unwrap_or_default(),
                     built_in: false,
                 }
-            })
-            .collect();
-        skills.insert(
-            0,
-            SkillInfo {
-                name: skill::NAME.into(),
-                description: skill::description(skill::PAGE).unwrap_or_default(),
-                built_in: true,
-            },
-        );
-        skills
+            });
+        built_in.chain(own).collect()
     }
 
     /// The servers of `mcp.toml`, by name. A file that cannot be read is no servers.
@@ -800,15 +798,15 @@ struct Edit<'a> {
 }
 
 impl HarnessRepo {
-    /// The skill `name` as its `SKILL.md` says. The built-in skill is read from the binary.
+    /// The skill `name` as its `SKILL.md` says. A built-in skill is read from the binary.
     pub fn skill(&self, name: &str) -> Result<SkillView> {
         let _read_at = self.lock();
-        if name == skill::NAME {
+        if let Some(built_in) = skill::built_in(name) {
             return Ok(SkillView {
                 name: name.into(),
-                description: skill::description(skill::PAGE).unwrap_or_default(),
-                text: skill::body(skill::PAGE).into(),
-                files: skill::files().into_iter().map(String::from).collect(),
+                description: built_in.description(),
+                text: skill::body(built_in.page()).into(),
+                files: built_in.files().into_iter().map(String::from).collect(),
                 commit: None,
             });
         }
@@ -844,8 +842,8 @@ impl HarnessRepo {
         new: &SkillText,
     ) -> Result<SkillView> {
         let mut read_at = self.lock();
-        if name == skill::NAME {
-            return Err(built_in());
+        if skill::built_in(name).is_some() {
+            return Err(built_in(name));
         }
         if !valid_agent_name(name) {
             return Err(AppError::Invalid(format!(
@@ -894,8 +892,8 @@ impl HarnessRepo {
     /// A person deletes the skill `name` and its directory, the same way. A skill an agent names is not deleted.
     pub fn delete_skill(&self, app: &App, by: &Actor, name: &str) -> Result<()> {
         let mut read_at = self.lock();
-        if name == skill::NAME {
-            return Err(built_in());
+        if skill::built_in(name).is_some() {
+            return Err(built_in(name));
         }
         let dir = self.path.join("skills").join(name);
         if !valid_agent_name(name) || !dir.join("SKILL.md").is_file() {
@@ -1027,11 +1025,8 @@ impl HarnessRepo {
     }
 }
 
-fn built_in() -> AppError {
-    AppError::Conflict(format!(
-        "the skill {} is built in and read only",
-        skill::NAME
-    ))
+fn built_in(name: &str) -> AppError {
+    AppError::Conflict(format!("the skill {name} is built in and read only"))
 }
 
 /// The text of `mcp.toml`, empty when there is none.

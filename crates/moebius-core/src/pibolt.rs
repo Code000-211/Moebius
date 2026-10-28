@@ -12,8 +12,8 @@
 //! configuration found in the worktree, and loads only the extensions, skills and MCP servers the agent is configured with (see `mcp`). The
 //! Moebius bridge (`bridge/moebius-bridge.ts`) is loaded into every run after the agent's own extensions, so that it
 //! sees the final input and content of each tool call; it asks the check for each tool call and result (see `check`). Every run is told the path of the
-//! `moebius` executable as `$MOEBIUS`. The Moebius agent is always available: its instructions are built in, its skill
-//! is the guide (see `skill`), and its model comes from `[agents.Moebius]` or else from the Coder. The Retro analyst
+//! `moebius` executable as `$MOEBIUS`. The Moebius agent is always available: its instructions are built in, its skills
+//! are the guide and the task skills (see `skill`), and its model comes from `[agents.Moebius]` or else from the Coder. The Retro analyst
 //! (see `retro`) is built the same way; its run works in a worktree of the harness configuration repository. So is the
 //! Autoresearcher (see `research`), whose run works in a worktree of the repository it researches. A person can also
 //! open a waiting chat in Pi-Bolt's own interactive mode (`tui`): the same command without `--mode rpc`, with sessions
@@ -101,9 +101,13 @@ const MOEBIUS_INSTRUCTIONS: &str = "You are the Moebius agent. You work for the 
      questions about Moebius and their work in it, and you build or change whatever they ask for: column scripts and \
      workflows, rules, agents, skills, MCP servers, Pi extensions, plugins, settings, repositories, issues, briefs and \
      the rest of what the desktop app does.\n\n\
-     Know before you act. The moebius skill holds the guide (how to do each task, with examples that work) and the \
-     reference (every exact name). Read the guide page for the task first, and check every name you use in the \
-     reference: what it does not list does not exist. To know the state of Moebius (boards, cards, runs, the inbox, \
+     Know before you act. Each kind of task has a skill with its steps; read it first: moebius-operate to read the \
+     state and act on it (board, inbox, cards, chats, usage, repositories, issues, research, grillings), \
+     moebius-configure for agents, rules, a column's script, settings, skills and MCP servers, moebius-workflows for \
+     column scripts and workflows in a repository, moebius-extensions for Pi extensions, moebius-plugins for decider \
+     plugins. The moebius skill holds the guide (how to do each task, with examples that work) and the reference \
+     (every exact name): read the page the task skill names, and check every name you use in the reference: what it \
+     does not list does not exist. To know the state of Moebius (boards, cards, runs, the inbox, \
      chats, usage, agents, rules, settings), ask the server with `\"$MOEBIUS\"`, for example `\"$MOEBIUS\" board` or \
      `\"$MOEBIUS\" api GET /v1/snapshot`; the cli reference lists every command. Never guess the state.\n\n\
      Where things go. What belongs to one repository (column scripts, its rules, its checks) is files in its `.moebius/` \
@@ -124,6 +128,32 @@ const MOEBIUS_INSTRUCTIONS: &str = "You are the Moebius agent. You work for the 
      person.\n\n\
      End every answer with what you made or found, how you tried it, and what the person has to do now (merge the \
      change, set a key, restart the server), if anything. Answer in the person's language, and keep it short.";
+
+/// What a built-in agent brings itself, as `GET /v1/agents/{name}` shows it: read only, and given to every run before
+/// what the agent's configuration adds.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct BuiltInAgent {
+    pub instructions: String,
+    pub skills: Vec<skill::Summary>,
+}
+
+/// The built-in instructions and skills of the agent `name`, if Moebius brings it.
+pub fn built_in_agent(name: &str) -> Option<BuiltInAgent> {
+    Some(BuiltInAgent {
+        instructions: built_in_instructions(name)?.into(),
+        skills: built_in_skills(name).map(skill::BuiltIn::summary).collect(),
+    })
+}
+
+/// The built-in skills of a built-in agent: the reference library, and for the Moebius agent the task skills after it.
+fn built_in_skills(name: &str) -> impl Iterator<Item = &'static skill::BuiltIn> {
+    let tasks: &[skill::BuiltIn] = if name == MOEBIUS_AGENT {
+        &skill::TASKS
+    } else {
+        &[]
+    };
+    std::iter::once(&skill::MOEBIUS).chain(tasks)
+}
 
 /// The instructions of a built-in agent, which exists without configuration.
 fn built_in_instructions(name: &str) -> Option<&'static str> {
@@ -215,7 +245,7 @@ impl PiBolt {
     }
 
     /// The agent `name` as a run uses it. The Moebius agent and the Retro analyst are made of their configuration, or
-    /// else the Coder's model and protocol, and always have their built-in instructions and the `moebius` skill.
+    /// else the Coder's model and protocol, and always have their built-in instructions and skills before their own.
     fn agent(&self, app: &App, name: &str) -> Result<AgentConfig, String> {
         let set = self.agent_set();
         let configured = set.agents.get(name);
@@ -249,7 +279,9 @@ impl PiBolt {
             Some(extra) => format!("{built_in}\n\n{extra}"),
             None => built_in.into(),
         });
-        agent.skills.insert(0, skill::dir(&app.data_dir));
+        let built_in_skills =
+            built_in_skills(name).map(|built_in| skill::dir(&app.data_dir, built_in.name));
+        agent.skills.splice(0..0, built_in_skills);
         Ok(agent)
     }
 

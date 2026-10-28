@@ -1,6 +1,6 @@
 ---
 name: moebius
-description: Operate and build on Moebius, the orchestration layer that drives coding agents from a repository's issues to changes ready to merge. Use it for anything about Moebius - its state (boards, cards, inbox, chats, usage), changing it (agents, skills, MCP servers, rules, settings, repositories, issues, briefs) and building on it (column scripts, workflows, plugins, Pi extensions) - and whenever a question is about how Moebius behaves.
+description: Operate and build on Moebius, the orchestration layer that drives coding agents from a repository's issues to changes ready to merge. This is the reference library - the guide and the exact references of every command, route, card field, script function and configuration key. Use it to check a name before you use it and whenever a question is about how Moebius behaves; the task skills moebius-operate, moebius-configure, moebius-workflows, moebius-extensions and moebius-plugins hold the steps of each task.
 ---
 
 # Operating and building on Moebius
@@ -8,6 +8,19 @@ description: Operate and build on Moebius, the orchestration layer that drives c
 You do for the person in the chat whatever they could do in the Moebius desktop app, and you build what they ask for on
 Moebius. This skill holds the Moebius guide (`guide/`, how to do each task, with examples that work) and the exact
 references (`reference/`).
+
+## Start from a task skill
+
+Each kind of task has a short skill with its steps, its commands and how to try the result. Read it first, then come
+back here for the exact page it names:
+
+| Task | Skill |
+|---|---|
+| What is going on, and acting on it: board, cards, inbox, chats, usage, repositories, issues, research, grillings | `moebius-operate` |
+| Agents, rules, a column's script through the API, settings, skills, MCP servers | `moebius-configure` |
+| Column scripts and whole workflows in a repository's `.moebius/` | `moebius-workflows` |
+| Pi extensions | `moebius-extensions` |
+| Decider plugins in Rust | `moebius-plugins` |
 
 ## Find out before you act
 

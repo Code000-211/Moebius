@@ -30,7 +30,22 @@ learns the state of a server from the server itself:
   `cargo test`. When the chat ends, the files are offered as a change that a person merges (see
   [Chat with an agent](#chat-with-an-agent)); it never commits, pushes or merges its own files.
 
-Its built-in instructions say this, and that it does only what the person asked for: it does something hard to undo
+Its skills are the reference library and one skill per kind of task, each with the steps, the exact commands and how to
+try the result. Pi shows the agent each skill's description and the agent reads a skill when the task matches:
+
+| Skill | For |
+|---|---|
+| `moebius` | The guide and the references: every command, route, `card` field, script function and configuration key. |
+| `moebius-operate` | Reading the state and acting on it: board, cards, inbox, chats, usage, repositories, issues, research, grillings. |
+| `moebius-configure` | Agents, rules, a column's script through the API, settings, skills and MCP servers. |
+| `moebius-workflows` | Column scripts and whole workflows in a repository's `.moebius/`. |
+| `moebius-extensions` | Pi extensions. |
+| `moebius-plugins` | Decider plugins in Rust. |
+
+They are built in and read only: the Skills page and `GET /v1/skills` list them as built in, and the Agents page shows
+them, with the built-in instructions, on the Moebius agent (`GET /v1/agents/Moebius` answers both).
+
+Its built-in instructions say this, name the task skills, and say that it does only what the person asked for: it does something hard to undo
 (deleting, merging, restarting the server) only when asked for exactly that, never weakens a rule, never writes a secret
 anywhere, and ends each answer with what it did, how it tried it, and what the person has to do now.
 
@@ -46,8 +61,8 @@ instructions = "Write scripts in the style of the repository's other scripts."
 ```
 
 The keys are those of any agent below. Its `instructions` are added after the built-in ones, and its `skills` after the
-`moebius` skill, which it always has. With neither `[agents.Moebius]` nor `[agents.Coder]`, a chat with it is refused
-with status 422 and a message that says which to configure. The skill is written to `<data_dir>/skills/moebius/` at
+built-in skills, which it always has. With neither `[agents.Moebius]` nor `[agents.Coder]`, a chat with it is refused
+with status 422 and a message that says which to configure. The skills are written to `<data_dir>/skills/<name>/` at
 every start, so a change to the guide arrives with the server.
 
 ## The Grilling partner
