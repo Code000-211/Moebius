@@ -103,7 +103,7 @@ Moebius agent", starts a chat with what you typed as its first message.
 |---|---|
 | `crates/moebius-core/` | Everything the server does. `src/` has one module per part; `workflow/` the built-in column scripts; `bridge/` the Pi extension that checks tool calls. |
 | `crates/moebius-plugin-api/` | The plugin trait and the host that calls plugins with a time limit, failing closed. |
-| `crates/moebius/` | The `moebius` binary (`init`, `serve`, `check-script`, `export`). |
+| `crates/moebius/` | The `moebius` binary (`init`, `serve`, `check-script`, `export`, and the commands that operate a running server). |
 | `crates/moebius-desktop/` | The desktop app (iced), built to `docs/design.md`; it uses only the desktop API. |
 | `examples/` | A column script, rules, a decider plugin and a Pi extension that run in CI. |
 | `docs/` | Documentation, below. |
@@ -118,7 +118,7 @@ Moebius agent", starts a chat with what you typed as its first message.
   [configuration](docs/reference/configuration.md), [plugin API](docs/reference/plugin-api.md),
   [bridge protocol](docs/reference/bridge-protocol.md), [router](docs/reference/router.md),
   [desktop API](docs/reference/desktop-api.md), [harness configuration](docs/reference/harness-configuration.md),
-  [training export](docs/reference/training-export.md),
+  [command line](docs/reference/cli.md), [training export](docs/reference/training-export.md),
   [decision model](docs/reference/decision-model.md).
 - [`docs/guide/`](docs/guide/README.md): the guide, how to build on Moebius step by step (column scripts, workflows,
   rules, agents, plugins, extensions, the desktop API, grilling, autoresearch), with examples that tests run.

@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 
 use crate::app::{App, PERSON};
 use crate::blobs::redact_json;
-use crate::decide::Question;
+use crate::decide::{Actor, Question};
 use crate::store::{self, Judgement, Store, StoreError};
 
 /// How many judgements are read from the store at a time.
@@ -238,7 +238,7 @@ fn ids(data_dir: &Path) -> Vec<i64> {
 
 /// Exports for a person who asked in the app: writes the files, keeps the record and records the person's decision.
 /// The export does not contain the judgement of its own decision.
-pub fn create(app: &App, kinds: Option<&[String]>) -> Result<Export, ExportError> {
+pub fn create(app: &App, by: &Actor, kinds: Option<&[String]>) -> Result<Export, ExportError> {
     let (id, dir) = new_directory(&app.data_dir)?;
     let summary = match export(&app.store, &dir, kinds) {
         Ok(summary) => summary,
@@ -260,7 +260,8 @@ pub fn create(app: &App, kinds: Option<&[String]>) -> Result<Export, ExportError
     std::fs::rename(&temporary, dir.join(RECORD))?;
     let names: Vec<&str> = export.kinds.iter().map(|c| c.kind.as_str()).collect();
     let judgements: i64 = export.kinds.iter().map(|c| c.count).sum();
-    app.decisions.record_person(
+    app.decisions.record_by(
+        by,
         &Question {
             kind: "export".into(),
             context: BTreeMap::from([

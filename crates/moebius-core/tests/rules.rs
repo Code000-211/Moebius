@@ -90,6 +90,7 @@ impl Setup {
             harness_repo: server.harness_repo.clone(),
             config: server.live.clone(),
             token: server.token.clone(),
+            router: server.router.clone(),
         };
         tokio::spawn(api::serve(listener, state));
 

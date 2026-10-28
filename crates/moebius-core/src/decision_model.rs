@@ -24,7 +24,7 @@ use crate::app::{App, AppError, Result};
 use crate::blobs::redact;
 use crate::bus::AppEvent;
 use crate::config::DecisionModelConfig;
-use crate::decide::Question;
+use crate::decide::{Actor, Question};
 use crate::export::held_out;
 use crate::store::{Judgement, NewShadow, ShadowStats, Takeover};
 
@@ -471,6 +471,7 @@ fn publish_status(app: &App, takeover: i64, status: &str) {
 /// Records the person's decision about a takeover, then moves it from `from` to `to`.
 fn decide_takeover(
     app: &App,
+    by: &Actor,
     id: i64,
     from: &str,
     (choice, other): (&str, &str),
@@ -487,7 +488,8 @@ fn decide_takeover(
             takeover.status
         )));
     }
-    app.decisions.record_person(
+    app.decisions.record_by(
+        by,
         &Question {
             kind: "takeover".into(),
             context: BTreeMap::from([
@@ -517,20 +519,36 @@ fn decide_takeover(
 }
 
 /// A person merges an open takeover: from now on the decision model decides the kind.
-pub fn merge(app: &App, id: i64, reason: &str) -> Result<Takeover> {
-    let takeover = decide_takeover(app, id, "open", ("merge", "dismiss"), reason, "merged")?;
+pub fn merge(app: &App, by: &Actor, id: i64, reason: &str) -> Result<Takeover> {
+    let takeover = decide_takeover(app, by, id, "open", ("merge", "dismiss"), reason, "merged")?;
     app.decisions.routed().add(&takeover.kind);
     Ok(takeover)
 }
 
 /// A person dismisses an open takeover.
-pub fn dismiss(app: &App, id: i64, reason: &str) -> Result<Takeover> {
-    decide_takeover(app, id, "open", ("dismiss", "merge"), reason, "dismissed")
+pub fn dismiss(app: &App, by: &Actor, id: i64, reason: &str) -> Result<Takeover> {
+    decide_takeover(
+        app,
+        by,
+        id,
+        "open",
+        ("dismiss", "merge"),
+        reason,
+        "dismissed",
+    )
 }
 
 /// A person hands a merged kind back to the decider it had before.
-pub fn release(app: &App, id: i64, reason: &str) -> Result<Takeover> {
-    let takeover = decide_takeover(app, id, "merged", ("release", "keep"), reason, "released")?;
+pub fn release(app: &App, by: &Actor, id: i64, reason: &str) -> Result<Takeover> {
+    let takeover = decide_takeover(
+        app,
+        by,
+        id,
+        "merged",
+        ("release", "keep"),
+        reason,
+        "released",
+    )?;
     app.decisions.routed().remove(&takeover.kind);
     Ok(takeover)
 }

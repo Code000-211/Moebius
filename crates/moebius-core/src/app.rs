@@ -17,7 +17,7 @@ use serde_json::json;
 use crate::blobs::redact;
 use crate::board::Runs;
 use crate::bus::{AppEvent, Bus};
-use crate::decide::{Decisions, Question};
+use crate::decide::{Actor, Decisions, Question};
 use crate::forge::{Forge, ForgeError, NoForge};
 use crate::github::Issue;
 use crate::repos::{GitError, Repos, git};
@@ -425,14 +425,15 @@ impl App {
     }
 
     /// A person approves an outside issue: the decision is recorded and the card moves to ready.
-    pub fn approve_issue(&self, card_id: i64, reason: &str) -> Result<Card> {
+    pub fn approve_issue(&self, by: &Actor, card_id: i64, reason: &str) -> Result<Card> {
         let card = self.card(card_id)?;
         if card.column != columns::BACKLOG {
             return Err(AppError::Invalid(format!(
                 "card {card_id} is not in the backlog"
             )));
         }
-        self.decisions.record_person(
+        self.decisions.record_by(
+            by,
             &Question {
                 kind: "approve_issue".into(),
                 context: BTreeMap::from([
@@ -456,13 +457,15 @@ impl App {
     /// things as they were.
     fn record_action(
         &self,
+        by: &Actor,
         kind: &str,
         card_id: Option<i64>,
         run_id: Option<i64>,
         context: BTreeMap<String, String>,
         reason: &str,
     ) -> Result<()> {
-        self.decisions.record_person(
+        self.decisions.record_by(
+            by,
             &Question {
                 kind: kind.into(),
                 context,
@@ -480,7 +483,7 @@ impl App {
     /// A person retries a card that is stuck or whose pull request was closed without a merge: the decision is
     /// recorded, the card's item is resolved and its limits start afresh, so the board starts work on it again. A card
     /// with a closed change goes back to In progress with a note saying so; its next publish opens a new change.
-    pub fn retry_card(&self, card_id: i64, reason: &str) -> Result<Card> {
+    pub fn retry_card(&self, by: &Actor, card_id: i64, reason: &str) -> Result<Card> {
         let card = self.card(card_id)?;
         let stuck = self.store.has_open_inbox_item(card_id, "stuck")?;
         let closed = self.store.has_open_inbox_item(card_id, "change_closed")?;
@@ -490,7 +493,7 @@ impl App {
             )));
         }
         let context = BTreeMap::from([("title".into(), card.title.clone())]);
-        self.record_action("retry", Some(card_id), None, context, reason)?;
+        self.record_action(by, "retry", Some(card_id), None, context, reason)?;
         self.store.set_card_retried(card_id)?;
         self.store.resolve_inbox_for_card(card_id)?;
         if closed {
@@ -504,7 +507,7 @@ impl App {
 
     /// A person rejects the change waiting to be merged: the decision is recorded and the card goes back to coding,
     /// where the next round is told the reason. The change stays open and is updated by that round.
-    pub fn reject_change(&self, change_id: i64, reason: &str) -> Result<Card> {
+    pub fn reject_change(&self, by: &Actor, change_id: i64, reason: &str) -> Result<Card> {
         let change = self.change(change_id)?;
         let card = match change.card_id.map(|id| self.card(id)).transpose()? {
             Some(card) if change.state == "open" && card.column == columns::READY_TO_MERGE => card,
@@ -518,7 +521,7 @@ impl App {
             ("title".into(), card.title.clone()),
             ("branch".into(), change.branch.clone()),
         ]);
-        self.record_action("reject", Some(card.id), None, context, reason)?;
+        self.record_action(by, "reject", Some(card.id), None, context, reason)?;
         let note = match reason.trim() {
             "" => "A person rejected the change.",
             reason => reason,
@@ -529,7 +532,13 @@ impl App {
     }
 
     /// A person sends a message to a running run: the agent gets it and the run keeps it as a `steered` event.
-    pub fn steer_run(&self, runs: &dyn Runs, run_id: i64, message: &str) -> Result<Run> {
+    pub fn steer_run(
+        &self,
+        by: &Actor,
+        runs: &dyn Runs,
+        run_id: i64,
+        message: &str,
+    ) -> Result<Run> {
         let run = self.run(run_id)?;
         if message.trim().is_empty() {
             return Err(AppError::Invalid("a steer needs a message".into()));
@@ -540,18 +549,25 @@ impl App {
         let message = redact(message);
         self.record_run_event(run_id, "steered", &json!({ "message": message }))?;
         let context = BTreeMap::from([("message".into(), message)]);
-        self.record_action("steer", run.card_id, Some(run_id), context, "")?;
+        self.record_action(by, "steer", run.card_id, Some(run_id), context, "")?;
         Ok(run)
     }
 
     /// A person stops a running run. It ends as `stopped` once its agent has settled, and its card then waits in the
     /// inbox as stuck.
-    pub fn stop_run(&self, runs: &dyn Runs, run_id: i64, reason: &str) -> Result<Run> {
+    pub fn stop_run(&self, by: &Actor, runs: &dyn Runs, run_id: i64, reason: &str) -> Result<Run> {
         let run = self.run(run_id)?;
         if !runs.stop(run_id) {
             return Err(AppError::Invalid(format!("run {run_id} is not running")));
         }
-        self.record_action("stop", run.card_id, Some(run_id), BTreeMap::new(), reason)?;
+        self.record_action(
+            by,
+            "stop",
+            run.card_id,
+            Some(run_id),
+            BTreeMap::new(),
+            reason,
+        )?;
         Ok(run)
     }
 
@@ -1096,7 +1112,7 @@ impl App {
     }
 
     /// A person merges a change: the decision is recorded, the forge merges, and the card moves to done.
-    pub fn merge_change(&self, change_id: i64, reason: &str) -> Result<String> {
+    pub fn merge_change(&self, by: &Actor, change_id: i64, reason: &str) -> Result<String> {
         let change = self.change(change_id)?;
         if change.state != "open" {
             return Err(AppError::Invalid(format!(
@@ -1106,7 +1122,8 @@ impl App {
         }
         let repository = self.repository(change.repository_id)?;
         let forge = self.forge(&repository)?;
-        self.decisions.record_person(
+        self.decisions.record_by(
+            by,
             &Question {
                 kind: "merge".into(),
                 context: BTreeMap::from([

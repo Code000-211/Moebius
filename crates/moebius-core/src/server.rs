@@ -109,6 +109,17 @@ fn end_runs_of_a_previous_server(app: &App) -> Result<(), String> {
     Ok(())
 }
 
+/// The URL runs reach the desktop API on: the address it listens on, with the loopback address for one that listens on
+/// all interfaces.
+fn api_url(listening: SocketAddr) -> String {
+    let ip = match listening.ip() {
+        ip if ip.is_unspecified() && ip.is_ipv6() => std::net::Ipv6Addr::LOCALHOST.into(),
+        ip if ip.is_unspecified() => std::net::Ipv4Addr::LOCALHOST.into(),
+        ip => ip,
+    };
+    format!("http://{}", SocketAddr::new(ip, listening.port()))
+}
+
 pub struct Server {
     pub config: Config,
     pub app: Arc<App>,
@@ -306,11 +317,15 @@ impl Server {
         api_listener: TcpListener,
         router_listener: TcpListener,
     ) -> std::io::Result<()> {
+        if let Ok(address) = api_listener.local_addr() {
+            let _ = self.harness.api_url.set(api_url(address));
+        }
         let state = ApiState {
             app: self.app.clone(),
             runs: self.harness.clone(),
             harness_repo: self.harness_repo.clone(),
             token: self.token.clone(),
+            router: self.router.clone(),
             config: self.live.clone(),
         };
         let board = {
@@ -1155,10 +1170,12 @@ mod tests {
 
         let card = f.card(1).unwrap();
         let app = f.server.app.clone();
-        let retried = tokio::task::spawn_blocking(move || app.retry_card(card.id, "Try again."))
-            .await
-            .unwrap()
-            .unwrap();
+        let retried = tokio::task::spawn_blocking(move || {
+            app.retry_card(&crate::decide::Actor::Person, card.id, "Try again.")
+        })
+        .await
+        .unwrap()
+        .unwrap();
         assert_eq!(retried.column, "In progress");
         assert_eq!(
             retried.note.as_deref(),
@@ -1228,10 +1245,12 @@ mod tests {
         let change = f.offered_change().await;
 
         let app = f.server.app.clone();
-        let commit = tokio::task::spawn_blocking(move || app.merge_change(change.id, "looks good"))
-            .await
-            .unwrap()
-            .unwrap();
+        let commit = tokio::task::spawn_blocking(move || {
+            app.merge_change(&crate::decide::Actor::Person, change.id, "looks good")
+        })
+        .await
+        .unwrap()
+        .unwrap();
 
         assert_eq!(commit, "c0ffee");
         let merged = f.fake.pulls.lock().unwrap().merged.clone();

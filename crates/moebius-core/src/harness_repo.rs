@@ -17,7 +17,7 @@ use serde_json::json;
 use crate::app::{App, AppError, Result};
 use crate::bus::AppEvent;
 use crate::config::{AgentConfig, AgentSet, default_protocol, valid_agent_name};
-use crate::decide::Question;
+use crate::decide::{Actor, Question};
 use crate::mcp::{McpServer, parse_file};
 use crate::repos::{Repos, git};
 use crate::router::Protocol;
@@ -365,6 +365,7 @@ impl HarnessRepo {
     pub fn merge_proposal(
         &self,
         app: &App,
+        by: &Actor,
         branch: &str,
         title: &str,
         reason: &str,
@@ -384,7 +385,7 @@ impl HarnessRepo {
         let head = git(&self.path, &["rev-parse", "HEAD"])?;
         let short = git(&self.path, &["rev-parse", "--short", "HEAD"])?;
         self.read(app, &mut read_at, head);
-        self.record_proposal(app, branch, title, "merge_proposal", reason)?;
+        self.record_proposal(app, by, branch, title, "merge_proposal", reason)?;
         Ok(short)
     }
 
@@ -392,22 +393,25 @@ impl HarnessRepo {
     pub fn dismiss_proposal(
         &self,
         app: &App,
+        by: &Actor,
         branch: &str,
         title: &str,
         reason: &str,
     ) -> Result<()> {
-        self.record_proposal(app, branch, title, "dismiss", reason)
+        self.record_proposal(app, by, branch, title, "dismiss", reason)
     }
 
     fn record_proposal(
         &self,
         app: &App,
+        by: &Actor,
         branch: &str,
         title: &str,
         choice: &str,
         reason: &str,
     ) -> Result<()> {
-        app.decisions.record_person(
+        app.decisions.record_by(
+            by,
             &Question {
                 kind: "merge_proposal".into(),
                 context: BTreeMap::from([
@@ -548,6 +552,7 @@ impl HarnessRepo {
     pub fn save_agent(
         &self,
         app: &App,
+        by: &Actor,
         name: &str,
         definition: &AgentDefinition,
     ) -> Result<AgentView> {
@@ -586,6 +591,7 @@ impl HarnessRepo {
         let files = format!("agents/{name}.*");
         let commit = self.commit(
             app,
+            by,
             &mut read_at,
             &Edit {
                 kind: "edit_agent",
@@ -603,7 +609,7 @@ impl HarnessRepo {
     }
 
     /// A person deletes the agent `name`, the same way.
-    pub fn delete_agent(&self, app: &App, name: &str) -> Result<()> {
+    pub fn delete_agent(&self, app: &App, by: &Actor, name: &str) -> Result<()> {
         let mut read_at = self.lock();
         let (settings, markdown) = (self.agent_file(name, "toml"), self.agent_file(name, "md"));
         if !valid_agent_name(name) || !(settings.exists() || markdown.exists()) {
@@ -621,7 +627,7 @@ impl HarnessRepo {
             message: &message,
         };
         let context = BTreeMap::from([("agent".to_string(), name.to_string())]);
-        self.commit(app, &mut read_at, &edit, context, write)
+        self.commit(app, by, &mut read_at, &edit, context, write)
             .map(drop)
     }
 
@@ -629,7 +635,7 @@ impl HarnessRepo {
     /// pushed to `origin`, the same way. The text must pass `rules::check`. The short id of the commit is given;
     /// text that changes nothing makes no commit. Every tool call reads the file afresh, so the next one is checked
     /// against the new rules.
-    pub fn save_rules(&self, app: &App, text: &str) -> Result<Option<String>> {
+    pub fn save_rules(&self, app: &App, by: &Actor, text: &str) -> Result<Option<String>> {
         let mut read_at = self.lock();
         rules::check(text).map_err(AppError::Invalid)?;
         let mut text = text.to_string();
@@ -643,7 +649,7 @@ impl HarnessRepo {
         };
         let context = BTreeMap::from([("text".to_string(), text.clone())]);
         let write = || Ok(std::fs::write(self.path.join("rules.md"), &text)?);
-        self.commit(app, &mut read_at, &edit, context, write)
+        self.commit(app, by, &mut read_at, &edit, context, write)
     }
 
     /// Makes the change `write` does to the files of `edit` a commit on the default branch and pushes it. Whatever
@@ -653,6 +659,7 @@ impl HarnessRepo {
     fn commit(
         &self,
         app: &App,
+        by: &Actor,
         read_at: &mut String,
         edit: &Edit,
         mut context: BTreeMap<String, String>,
@@ -689,7 +696,8 @@ impl HarnessRepo {
         let short = git(&self.path, &["rev-parse", "--short", "HEAD"])?;
         self.read(app, read_at, head);
         context.insert("change".into(), message.into());
-        app.decisions.record_person(
+        app.decisions.record_by(
+            by,
             &Question {
                 kind: kind.into(),
                 context,

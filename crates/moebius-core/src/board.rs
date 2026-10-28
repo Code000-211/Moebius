@@ -1158,7 +1158,8 @@ mod tests {
         assert_eq!(runs[0].summary.as_deref(), Some("Done."));
         let change = app.store.changes(repo).unwrap().pop().unwrap();
         assert_eq!(change.branch, "moebius/card-1");
-        app.merge_change(change.id, "fine").unwrap();
+        app.merge_change(&crate::decide::Actor::Person, change.id, "fine")
+            .unwrap();
         assert_eq!(app.card(card.id).unwrap().column, "Done");
         engine.settle(card.id).unwrap();
         let judgements = app.store.judgements_for_card(card.id).unwrap();
@@ -1526,7 +1527,12 @@ mod tests {
         );
 
         // Neither the round limit nor the budget stops it any more.
-        app.retry_card(card.id, "I raised the budget.").unwrap();
+        app.retry_card(
+            &crate::decide::Actor::Person,
+            card.id,
+            "I raised the budget.",
+        )
+        .unwrap();
         assert!(app.waiting(std::slice::from_ref(&card)).is_empty());
         assert!(app.store.inbox().unwrap().is_empty());
         let step = engine.settle(card.id).unwrap();
@@ -1540,7 +1546,8 @@ mod tests {
         // A stopped card, too, starts again instead of being stuck again.
         let (stopped, _) = card_after_a_run(&app, repo, "stopped");
         engine.settle(stopped.id).unwrap();
-        app.retry_card(stopped.id, "Go on.").unwrap();
+        app.retry_card(&crate::decide::Actor::Person, stopped.id, "Go on.")
+            .unwrap();
         let step = engine.settle(stopped.id).unwrap();
         assert!(step.started_run.is_some(), "{step:?}");
         assert_eq!(app.card(stopped.id).unwrap().column, "In progress");
@@ -1556,7 +1563,12 @@ mod tests {
         assert_eq!(column(&app, &card), "Ready to merge");
         let change = app.store.changes(repo).unwrap().pop().unwrap();
 
-        app.reject_change(change.id, "Please add a test.").unwrap();
+        app.reject_change(
+            &crate::decide::Actor::Person,
+            change.id,
+            "Please add a test.",
+        )
+        .unwrap();
         assert_eq!(column(&app, &card), "In progress");
         assert!(app.store.inbox().unwrap().is_empty());
         let step = engine.settle(card.id).unwrap();
@@ -1866,7 +1878,8 @@ mod tests {
         );
 
         // Once the card moves it waits for something else or for nothing.
-        app.approve_issue(card.id, "fine").unwrap();
+        app.approve_issue(&crate::decide::Actor::Person, card.id, "fine")
+            .unwrap();
         assert!(app.waiting(&cards).is_empty());
         let cleared = std::iter::from_fn(|| events.try_recv().ok())
             .find(|event| event.kind == "card_waiting")
@@ -1894,7 +1907,8 @@ mod tests {
         let inbox = app.store.inbox().unwrap();
         assert_eq!((inbox.len(), inbox[0].kind.as_str()), (1, "approve_issue"));
 
-        app.approve_issue(card.id, "fine by me").unwrap();
+        app.approve_issue(&crate::decide::Actor::Person, card.id, "fine by me")
+            .unwrap();
         assert_eq!(app.card(card.id).unwrap().column, "Ready");
         assert!(app.store.inbox().unwrap().is_empty());
         assert_eq!(

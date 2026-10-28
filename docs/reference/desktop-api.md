@@ -13,6 +13,16 @@ Every request, the WebSocket upgrade included, carries `Authorization: Bearer <t
 `token_file` (by default `<data_dir>/token`, created when the server first starts). A missing or wrong token is answered
 with `401` and the plain text `a valid token is needed`.
 
+The run token of a run of the Moebius agent (`MOEBIUS_TOKEN` in its environment, see the [bridge
+protocol](bridge-protocol.md#the-environment-of-the-harness)) is accepted as well, while the run lasts: it is how the
+agent operates Moebius with the [command line](cli.md). A request made with it acts as the agent: every decision it
+records has the decider `agent:Moebius` instead of `person`, and the run is the judgement's `run` (for a decision about
+another run, such as a steer, the judgement keeps that run, and the agent's run is in the context as `acting_run`).
+The run token of any other agent, and a revoked one, is answered with `401`. Two routes stay with a person and answer
+`403` with `only a person can do this` to a run token: `PUT /v1/secrets/{name}` (an agent must not set keys) and
+`GET /v1/runs/{id}/terminal` (the shell). Where a route below says "a person" and "decider `person`", an agent that
+uses its token is the decider instead.
+
 ```sh
 TOKEN=$(cat .moebius/token)
 curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:7171/v1/health
@@ -25,6 +35,7 @@ A failed request has a status code and a plain-text message as its body.
 | Status | Meaning |
 |---|---|
 | `401` | No valid token. |
+| `403` | A run token of the Moebius agent on a route that only a person may use. |
 | `404` | The repository, card, change or run in the path does not exist. |
 | `409` | A merge conflicts: the default branch is left as it was. |
 | `422` | The request is understood but not allowed: invalid values, or a card or change in the wrong state. Also what axum answers for a JSON body with a missing or mistyped field. |

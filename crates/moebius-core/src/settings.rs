@@ -20,7 +20,7 @@ use crate::app::{App, AppError, Result};
 use crate::blobs::redact;
 use crate::board::Engine;
 use crate::config::{AgentSet, Config, valid_agent_name};
-use crate::decide::Question;
+use crate::decide::{Actor, Question};
 use crate::router::{Router, Upstream};
 use crate::setup::without_credentials;
 
@@ -630,7 +630,7 @@ impl Live {
     /// Applies `changes` to the file: refused with the message of the parse when the result is not a valid
     /// configuration, and then nothing is written. Otherwise the file is replaced in one step, the person's decision
     /// is recorded and the live keys are applied.
-    pub fn save(&self, app: &App, changes: &Changes) -> Result<Saved> {
+    pub fn save(&self, app: &App, by: &Actor, changes: &Changes) -> Result<Saved> {
         let _writing = self.writing.lock().unwrap_or_else(|e| e.into_inner());
         let (text, _) = read_raw(&self.started.file)?;
         let edited = edit(&text, changes)?;
@@ -656,7 +656,8 @@ impl Live {
             ),
             ("remove".to_string(), changes.remove.join(", ")),
         ]);
-        app.decisions.record_person(
+        app.decisions.record_by(
+            by,
             &Question {
                 kind: "edit_settings".into(),
                 context,

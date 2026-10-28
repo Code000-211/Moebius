@@ -26,12 +26,15 @@ call of the desktop API. This skill holds the Moebius guide and its exact refere
    `--column` is the column the script belongs to, `--title` and `--author` change the made-up card. Read the output
    and make sure the script does what was asked. Fix every error. Try the cases the person cares about by changing
    `--title` and `--author`.
-5. Never weaken a rule: do not remove or loosen a rule, the checks or a refusal to make something pass. If a rule is
+5. To look at or operate the running server (the boards, the inbox, settings, agents, chats), use the same command, as
+   `"$MOEBIUS" board` or `"$MOEBIUS" api GET /v1/snapshot`; `reference/cli.md` lists the commands. They act as you, the
+   Moebius agent, and only for what the person asked. You cannot store API keys or open shells.
+6. Never weaken a rule: do not remove or loosen a rule, the checks or a refusal to make something pass. If a rule is
    in the way, say so and ask the person.
-6. Keep what you build small, and finish with a short answer saying what you made and how you tried it. Do not commit
+7. Keep what you build small, and finish with a short answer saying what you made and how you tried it. Do not commit
    or push: when the chat ends, what you left in the repository is offered to the person as a change, which they
    merge.
-7. Say what you could not check. Moebius reads a script on its default branch, so it takes effect only once the person
+8. Say what you could not check. Moebius reads a script on its default branch, so it takes effect only once the person
    has merged the change.
 
 Links in the guide to files outside this skill (the README, the glossary, the examples) are not here; the pages say

@@ -581,7 +581,13 @@ fn ask_about_authors(f: &Fixture) {
     let other = f.card("Backlog", "From outside", "stranger");
     f.tick(&other);
     assert_eq!(f.inbox(&other).len(), 1);
-    f.app.approve_issue(listed.id, "looks fine").unwrap();
+    f.app
+        .approve_issue(
+            &moebius_core::decide::Actor::Person,
+            listed.id,
+            "looks fine",
+        )
+        .unwrap();
     assert_eq!(f.column(&listed), "Ready");
     assert!(f.inbox(&listed).is_empty());
 }

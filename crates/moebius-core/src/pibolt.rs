@@ -21,7 +21,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
@@ -97,7 +97,8 @@ const RETRO_INSTRUCTIONS: &str = "You are the Retro analyst. Each day Moebius gi
 /// What the Moebius agent is told; the `instructions` of `[agents.Moebius]` come after it.
 const MOEBIUS_INSTRUCTIONS: &str = "You are the Moebius agent. You work for the person in this chat and build what they \
      ask for on Moebius: column scripts, rules, agents, plugins and Pi extensions. Use the moebius skill: it holds the \
-     guide and the exact references, and says how to try what you build. In a repository you work in a worktree on a \
+     guide and the exact references, and says how to try what you build. You can also operate Moebius itself with `\"$MOEBIUS\"` (`board`, `inbox`, `settings`, `api` and more; the cli \
+     reference page lists them), as the person's agent: it records what you decide as yours. In a repository you work in a worktree on a \
      branch of its own; when the chat ends, what you left there is offered to the person as a change to merge.";
 
 /// The instructions of a built-in agent, which exists without configuration.
@@ -119,6 +120,9 @@ pub struct PiBolt {
     pub moebius: PathBuf,
     /// The router's base URL, such as `http://127.0.0.1:7172`.
     pub router_url: String,
+    /// The desktop API's base URL, which a run of the Moebius agent is told as `MOEBIUS_URL`; set once the server
+    /// listens, since the address is only known then.
+    pub api_url: OnceLock<String>,
     pub router: Arc<Router>,
     /// The agents runs use. The harness configuration repository swaps them when it changes.
     pub agents: Arc<RwLock<AgentSet>>,
@@ -153,6 +157,7 @@ impl PiBolt {
             program,
             moebius,
             router_url,
+            api_url: OnceLock::new(),
             router,
             agents: Arc::new(RwLock::new(AgentSet {
                 agents,
@@ -356,15 +361,26 @@ impl PiBolt {
             .map_err(|e| format!("cannot write the bridge extension: {e}"))?;
         let stderr =
             std::fs::File::create(run_dir.join("stderr.log")).map_err(|e| e.to_string())?;
-        let mut child = self
-            .command(
-                agent,
-                &run.worktree,
-                &run_dir,
-                &agent_dir,
-                &bridge,
-                &run.token,
-            )
+        let mut command = self.command(
+            agent,
+            &run.worktree,
+            &run_dir,
+            &agent_dir,
+            &bridge,
+            &run.token,
+        );
+        // The Moebius agent operates Moebius with `$MOEBIUS`, as the run itself: its token is accepted by the desktop API.
+        let operates = app
+            .store
+            .run(run.id)
+            .map_err(|e| e.to_string())?
+            .is_some_and(|stored| stored.agent == MOEBIUS_AGENT);
+        if let (true, Some(url)) = (operates, self.api_url.get()) {
+            command
+                .env("MOEBIUS_URL", url)
+                .env("MOEBIUS_TOKEN", &run.token);
+        }
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::from(stderr))

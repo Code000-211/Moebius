@@ -38,7 +38,7 @@ use crate::app::{App, AppError, Result, tail};
 use crate::board::Runs;
 use crate::bus::AppEvent;
 use crate::config::TimeOfDay;
-use crate::decide::Question;
+use crate::decide::{Actor, Question};
 use crate::replay::run_apart;
 use crate::repos::git;
 use crate::retro::wait_for_end;
@@ -183,7 +183,7 @@ pub fn create(app: &App, new: NewResearch) -> Result<ResearchView> {
 }
 
 /// A person confirms the brief of a draft: the decision is recorded and the research waits for its time.
-pub fn confirm(app: &App, id: i64) -> Result<ResearchView> {
+pub fn confirm(app: &App, by: &Actor, id: i64) -> Result<ResearchView> {
     let research = app
         .store
         .research(id)?
@@ -198,7 +198,8 @@ pub fn confirm(app: &App, id: i64) -> Result<ResearchView> {
             research.status
         )));
     }
-    app.decisions.record_person(
+    app.decisions.record_by(
+        by,
         &Question {
             kind: "confirm_brief".into(),
             context: [

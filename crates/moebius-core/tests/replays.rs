@@ -156,6 +156,7 @@ impl Api {
             runs: server.harness.clone(),
             harness_repo: server.harness_repo.clone(),
             token: server.token.clone(),
+            router: server.router.clone(),
             config: server.live.clone(),
         };
         tokio::spawn(api::serve(listener, state));
@@ -283,7 +284,12 @@ async fn a_replayed_refusal_gets_an_outcome_and_the_worktree_is_untouched() {
     // Once the run is over its worktree is gone, and the copy is a checkout of the repository.
     server
         .app
-        .stop_run(&*server.harness, run.id, "done")
+        .stop_run(
+            &moebius_core::decide::Actor::Person,
+            &*server.harness,
+            run.id,
+            "done",
+        )
         .unwrap();
     wait_until_ended(&server, run.id);
     assert!(!worktree.exists());
@@ -352,7 +358,8 @@ async fn a_call_that_is_not_reversible_is_refused_by_the_api_and_never_picked() 
     let person = server
         .app
         .decisions
-        .record_person(
+        .record_by(
+            &moebius_core::decide::Actor::Person,
             &Question {
                 kind: "stop".into(),
                 run_id: Some(run.id),
@@ -418,7 +425,12 @@ async fn a_call_that_is_not_reversible_is_refused_by_the_api_and_never_picked() 
     assert_eq!(leftovers(&server), Vec::<String>::new());
     server
         .app
-        .stop_run(&*server.harness, run.id, "done")
+        .stop_run(
+            &moebius_core::decide::Actor::Person,
+            &*server.harness,
+            run.id,
+            "done",
+        )
         .unwrap();
 }
 
@@ -454,7 +466,12 @@ async fn a_command_that_hangs_is_killed_at_the_time_limit() {
     assert_eq!(leftovers(&server), Vec::<String>::new());
     server
         .app
-        .stop_run(&*server.harness, run.id, "done")
+        .stop_run(
+            &moebius_core::decide::Actor::Person,
+            &*server.harness,
+            run.id,
+            "done",
+        )
         .unwrap();
 }
 
@@ -475,6 +492,11 @@ async fn secrets_in_what_a_call_printed_are_not_stored() {
     assert_eq!(replayed.exit, Some(0));
     server
         .app
-        .stop_run(&*server.harness, run.id, "done")
+        .stop_run(
+            &moebius_core::decide::Actor::Person,
+            &*server.harness,
+            run.id,
+            "done",
+        )
         .unwrap();
 }

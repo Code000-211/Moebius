@@ -24,7 +24,7 @@ use serde_json::json;
 use crate::app::{App, AppError, PERSON, Result};
 use crate::blobs::redact;
 use crate::bus::AppEvent;
-use crate::decide::Question;
+use crate::decide::{Actor, Question};
 use crate::store::{Grilling, GrillingIssue};
 
 /// What a grilling's worktree holds.
@@ -176,7 +176,7 @@ pub fn view(app: &App, id: i64) -> Result<Grilling> {
 /// A person confirms the grilling `id` with `issues`, the list as they left it after editing, dropping and
 /// reordering: the decision is recorded, a card is made for each issue in the repository's Backlog (after opening it
 /// on GitHub, where the repository is), and the inbox item is resolved. A failure leaves the grilling to confirm again.
-pub fn confirm(app: &App, id: i64, issues: Vec<GrillingIssue>) -> Result<Grilling> {
+pub fn confirm(app: &App, by: &Actor, id: i64, issues: Vec<GrillingIssue>) -> Result<Grilling> {
     let grilling = view(app, id)?;
     let order = creation_order(&issues).map_err(AppError::Invalid)?;
     if !app.store.move_grilling(id, &["proposed"], "confirmed")? {
@@ -202,7 +202,8 @@ pub fn confirm(app: &App, id: i64, issues: Vec<GrillingIssue>) -> Result<Grillin
         app.store.move_grilling(id, &["confirmed"], "proposed")?;
         return Err(e);
     }
-    app.decisions.record_person(
+    app.decisions.record_by(
+        by,
         &Question {
             kind: "confirm_grilling".into(),
             context: [

@@ -1,5 +1,5 @@
 //! Decision points (spec 3.2, ADR 0010): every decision, whoever makes it, goes through [`Decisions::decide`] or
-//! [`Decisions::record_person`] and leaves exactly one judgement with its full context.
+//! [`Decisions::record_by`] and leaves exactly one judgement with its full context.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -22,6 +22,23 @@ pub struct Question {
     pub fail_closed: String,
     pub run_id: Option<i64>,
     pub card_id: Option<i64>,
+}
+
+/// Who acts through the desktop API: a person, or a run of the Moebius agent operating Moebius with its own token.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Actor {
+    Person,
+    Agent { name: String, run: i64 },
+}
+
+impl Actor {
+    /// The decider a judgement records for this actor: `person`, or `agent:<name>`.
+    pub fn decider(&self) -> String {
+        match self {
+            Actor::Person => crate::app::PERSON.to_string(),
+            Actor::Agent { name, .. } => format!("agent:{name}"),
+        }
+    }
 }
 
 /// The answer to a [`Question`], as recorded.
@@ -163,20 +180,30 @@ impl Decisions {
         self.record(question, context, choice, reason, decider, refused)
     }
 
-    /// Records a decision a person made in the desktop app (merge, reject, approve, steer, stop).
-    pub fn record_person(
+    /// Records a decision made through the desktop API (merge, reject, approve, steer, stop): by a person, or by a run
+    /// of the Moebius agent, whose id is the judgement's run unless the decision is about another run, and is then in
+    /// the context as `acting_run`.
+    pub fn record_by(
         &self,
+        actor: &Actor,
         question: &Question,
         choice: &str,
         reason: &str,
     ) -> Result<Decision> {
-        let context = self.keep_context(question)?;
+        let mut question = question.clone();
+        if let Actor::Agent { run, .. } = actor {
+            question.run_id.get_or_insert(*run);
+            question
+                .context
+                .insert("acting_run".to_string(), run.to_string());
+        }
+        let context = self.keep_context(&question)?;
         self.record(
-            question,
+            &question,
             context,
             choice.to_string(),
             reason.to_string(),
-            crate::app::PERSON.to_string(),
+            actor.decider(),
             false,
         )
     }
@@ -329,7 +356,7 @@ mod tests {
     fn a_persons_decision_takes_the_same_path() {
         let (_dir, store, d) = setup();
         let decision = d
-            .record_person(&question("merge"), "allow", "looks good")
+            .record_by(&Actor::Person, &question("merge"), "allow", "looks good")
             .unwrap();
         assert_eq!(decision.decider, "person");
         assert_eq!(store.judgements("merge").unwrap().len(), 1);

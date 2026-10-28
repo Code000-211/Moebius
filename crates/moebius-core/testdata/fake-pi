@@ -10,6 +10,7 @@
 # A "[lever BRANCH FILE TEXT]" makes the branch BRANCH from the commit it starts at, with a commit that sets the file FILE to
 # the line TEXT, unless the branch exists already.
 # A "[put NAME]" line, the text to write and a "[/put]" line make a chat write that text to the file NAME, with its directories, and commit nothing.
+# A "[run COMMAND]" in a chat message runs COMMAND in a shell in the worktree and appends what it printed to the answer.
 # While a "[hang]" prompt waits, a prompt with streamingBehavior is queued (kept in queued.txt). Its pid is kept in pid.txt.
 # A `steer` is answered with a response that echoes the message. The prompt is kept in prompt.txt next to argv.json. The final answer is reported in agent_end, as Pi does.
 import json
@@ -30,7 +31,7 @@ def emit(record):
 with open(os.path.join(os.environ["PI_CODING_AGENT_DIR"], "argv.json"), "w") as f:
     json.dump(sys.argv[1:], f)
 with open(os.path.join(os.environ["PI_CODING_AGENT_DIR"], "env.json"), "w") as f:
-    json.dump({k: os.environ.get(k) for k in ("MOEBIUS", "MOEBIUS_CHECK_URL", "MOEBIUS_RUN_TOKEN")}, f)
+    json.dump({k: os.environ.get(k) for k in ("MOEBIUS", "MOEBIUS_CHECK_URL", "MOEBIUS_RUN_TOKEN", "MOEBIUS_URL", "MOEBIUS_TOKEN")}, f)
 
 with open(os.path.join(os.environ["PI_CODING_AGENT_DIR"], "pid.txt"), "w") as f:
     f.write(str(os.getpid()))
@@ -68,6 +69,9 @@ for line in sys.stdin.buffer:
                 os.makedirs(os.path.dirname(name) or ".", exist_ok=True)
                 with open(name, "w") as f:
                     f.write(text + "\n")
+            for shell in re.findall(r"\[run ([^\]]+)\]", command["message"]):
+                done = subprocess.run(shell, shell=True, capture_output=True, text=True)
+                answer += "\n" + done.stdout + done.stderr
             git = ["git", "-c", "user.name=pi", "-c", "user.email=pi@example.com"]
             proposals = re.findall(r"\[propose ([^\]\s]+) ([^\]\s]+)(?: cards=([0-9,]+))?\]", command["message"])
             levers = re.findall(r"\[lever ([^\]\s]+) ([^\]\s]+) ([^\]\s]+)\]", command["message"])

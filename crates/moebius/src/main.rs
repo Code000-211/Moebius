@@ -1,5 +1,7 @@
 //! `moebius`: the headless server that holds the boards, schedules the work and drives the harnesses.
 
+mod cli;
+
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -19,6 +21,16 @@ struct Cli {
     /// The configuration file.
     #[arg(long, global = true, default_value = "moebius.toml")]
     config: PathBuf,
+    /// The server the commands that operate it talk to. Without it: the desktop app's saved address, else the `listen`
+    /// of the configuration file.
+    #[arg(long, global = true, env = "MOEBIUS_URL")]
+    server: Option<String>,
+    /// The token for `--server`. Without it: the desktop app's, else the configuration's token file.
+    #[arg(long, global = true, env = "MOEBIUS_TOKEN", hide_env_values = true)]
+    token: Option<String>,
+    /// Print the API's JSON as it came instead of plain text.
+    #[arg(long, global = true)]
+    json: bool,
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -52,6 +64,8 @@ enum Command {
         #[arg(long, default_value = "person")]
         author: String,
     },
+    #[command(flatten)]
+    Operate(cli::Operate),
 }
 
 fn main() -> ExitCode {
@@ -122,6 +136,18 @@ fn run(cli: Cli) -> Result<(), String> {
                     c.held_out
                 );
             }
+            Ok(())
+        }
+        Some(Command::Operate(command)) => {
+            let connection = cli::connect(
+                cli.server.as_deref(),
+                cli.token.as_deref(),
+                cli::desktop_settings_path().as_deref(),
+                &cli.config,
+            )?;
+            let client = cli::Client::new(connection)?;
+            let text = cli::operate(&client, &command, cli.json)?;
+            println!("{text}");
             Ok(())
         }
         Some(Command::Serve) => {
@@ -199,6 +225,9 @@ mod tests {
         let path = dir.path().join("moebius.toml");
         let cli = |c| Cli {
             config: path.clone(),
+            server: None,
+            token: None,
+            json: false,
             command: Some(c),
         };
         run(cli(Command::Init)).unwrap();

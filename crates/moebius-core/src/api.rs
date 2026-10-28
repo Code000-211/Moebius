@@ -47,12 +47,15 @@
 //!   `POST /v1/chats/{id}/messages` `{message}`: writes to a chat. `POST /v1/chats/{id}/end`: ends a chat.
 //!   `POST /v1/chats/{id}/seen` `{seq}`: a person has read a chat that far.
 //!
-//! Every request carries `Authorization: Bearer <token>`; anything else is answered with 401.
+//! Every request carries `Authorization: Bearer <token>`: the server's token, or the run token of a run of the Moebius
+//! agent, which acts as that agent (`PUT /v1/secrets/{name}` and the terminal stay with a person); anything else is
+//! answered with 401.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use axum::Extension;
 use axum::Router;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path as UrlPath, Query, Request, State};
@@ -66,11 +69,13 @@ use tokio::sync::broadcast::error::RecvError;
 use crate::app::{App, AppError, Chat, HistoryEntry, PERSON, columns, runs_since_retry};
 use crate::board::{AgentInfo, Runs, latest_review};
 use crate::bus::AppEvent;
+use crate::decide::Actor;
 use crate::decision_model;
 use crate::export::{self, Export, ExportError, KindCounts};
 use crate::forge::ForgeError;
 use crate::grilling;
 use crate::harness_repo::{AgentDefinition, AgentView, HarnessRepo, McpServerInfo, SkillInfo};
+use crate::pibolt::MOEBIUS_AGENT;
 use crate::replay;
 use crate::repos::GitError;
 use crate::research::{self, NewResearch, ResearchView};
@@ -93,6 +98,8 @@ pub struct ApiState {
     /// The harness configuration repository, if one is configured; without it agents are edited in `moebius.toml`.
     pub harness_repo: Option<Arc<HarnessRepo>>,
     pub token: Arc<str>,
+    /// The run tokens, one of which a run of the Moebius agent uses to operate Moebius.
+    pub router: Arc<crate::router::Router>,
     /// What the server runs with, which the Models and Settings screens show and edit. The rounds a card gets and the
     /// day's token budget, which boards and the usage screen show, are read from it.
     pub config: Arc<Live>,
@@ -444,15 +451,46 @@ pub async fn serve(listener: tokio::net::TcpListener, state: ApiState) -> std::i
     axum::serve(listener, router(state)).await
 }
 
-async fn authenticate(State(state): State<ApiState>, request: Request, next: Next) -> Response {
+/// Lets a request through as the actor its token names: a person with the server's token, or the run of the Moebius agent
+/// whose unrevoked run token it is. Any other token is refused.
+async fn authenticate(State(state): State<ApiState>, mut request: Request, next: Next) -> Response {
     let given = request
         .headers()
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "));
-    match given {
-        Some(token) if same(token.as_bytes(), state.token.as_bytes()) => next.run(request).await,
-        _ => (StatusCode::UNAUTHORIZED, "a valid token is needed").into_response(),
+    let actor = match given {
+        Some(token) if same(token.as_bytes(), state.token.as_bytes()) => Some(Actor::Person),
+        Some(_) => agent_of(&state, request.headers()),
+        None => None,
+    };
+    match actor {
+        Some(actor) => {
+            request.extensions_mut().insert(actor);
+            next.run(request).await
+        }
+        None => (StatusCode::UNAUTHORIZED, "a valid token is needed").into_response(),
+    }
+}
+
+/// The Moebius agent's run that the run token in `headers` belongs to; none for any other token.
+fn agent_of(state: &ApiState, headers: &axum::http::HeaderMap) -> Option<Actor> {
+    let grant = state.router.grant(headers)?;
+    let run = state.app.store.run(grant.run_id).ok()??;
+    (run.agent == MOEBIUS_AGENT).then_some(Actor::Agent {
+        name: run.agent,
+        run: run.id,
+    })
+}
+
+/// Refuses an agent what only a person may do.
+fn person_only(by: &Actor) -> Result<(), ApiError> {
+    match by {
+        Actor::Person => Ok(()),
+        Actor::Agent { .. } => Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "only a person can do this".into(),
+        )),
     }
 }
 
@@ -568,22 +606,24 @@ async fn create_issue(
 
 async fn approve_issue(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     axum::Json(approval): axum::Json<Reason>,
 ) -> Result<axum::Json<Card>, ApiError> {
     blocking(&state.app, move |app| {
-        app.approve_issue(id, &approval.reason)
+        app.approve_issue(&by, id, &approval.reason)
     })
     .await
 }
 
 async fn merge_change(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     axum::Json(merge): axum::Json<Reason>,
 ) -> Result<axum::Json<Merged>, ApiError> {
     blocking(&state.app, move |app| {
-        app.merge_change(id, &merge.reason)
+        app.merge_change(&by, id, &merge.reason)
             .map(|commit| Merged { commit })
     })
     .await
@@ -591,52 +631,61 @@ async fn merge_change(
 
 async fn retry_card(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     axum::Json(retry): axum::Json<Reason>,
 ) -> Result<axum::Json<Card>, ApiError> {
-    blocking(&state.app, move |app| app.retry_card(id, &retry.reason)).await
+    blocking(&state.app, move |app| {
+        app.retry_card(&by, id, &retry.reason)
+    })
+    .await
 }
 
 async fn reject_change(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     axum::Json(rejection): axum::Json<Reason>,
 ) -> Result<axum::Json<Card>, ApiError> {
     blocking(&state.app, move |app| {
-        app.reject_change(id, &rejection.reason)
+        app.reject_change(&by, id, &rejection.reason)
     })
     .await
 }
 
 async fn steer_run(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     axum::Json(steer): axum::Json<Steer>,
 ) -> Result<axum::Json<Run>, ApiError> {
     let runs = state.runs.clone();
     blocking(&state.app, move |app| {
-        app.steer_run(&*runs, id, &steer.message)
+        app.steer_run(&by, &*runs, id, &steer.message)
     })
     .await
 }
 
 async fn stop_run(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     axum::Json(stop): axum::Json<Reason>,
 ) -> Result<axum::Json<Run>, ApiError> {
     let runs = state.runs.clone();
     blocking(&state.app, move |app| {
-        app.stop_run(&*runs, id, &stop.reason)
+        app.stop_run(&by, &*runs, id, &stop.reason)
     })
     .await
 }
 
 async fn run_terminal(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     upgrade: WebSocketUpgrade,
 ) -> Result<Response, ApiError> {
+    person_only(&by)?;
     let axum::Json((worktree, slot)) = blocking(&state.app, move |app| app.open_shell(id)).await?;
     Ok(upgrade.on_upgrade(move |socket| async move {
         crate::terminal::serve(socket, &worktree, slot).await
@@ -662,10 +711,11 @@ async fn settings(State(state): State<ApiState>) -> Result<axum::Json<SettingsVi
 
 async fn put_settings(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     axum::Json(changes): axum::Json<Changes>,
 ) -> Result<axum::Json<Saved>, ApiError> {
     let live = state.config.clone();
-    blocking(&state.app, move |app| live.save(app, &changes)).await
+    blocking(&state.app, move |app| live.save(app, &by, &changes)).await
 }
 
 /// What `PUT /v1/secrets/{name}` takes. Not `Debug`, so that the key cannot be printed by accident.
@@ -676,9 +726,11 @@ struct NewSecret {
 
 async fn put_secret(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(name): UrlPath<String>,
     axum::Json(secret): axum::Json<NewSecret>,
 ) -> Result<axum::Json<Vec<String>>, ApiError> {
+    person_only(&by)?;
     let live = state.config.clone();
     blocking(&state.app, move |_| {
         live.secrets().set(&name, &secret.value)?;
@@ -748,22 +800,24 @@ async fn get_agent(
 
 async fn put_agent(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(name): UrlPath<String>,
     axum::Json(definition): axum::Json<AgentDefinition>,
 ) -> Result<axum::Json<AgentView>, ApiError> {
     let repo = harness_repo(&state)?;
     blocking(&state.app, move |app| {
-        repo.save_agent(app, &name, &definition)
+        repo.save_agent(app, &by, &name, &definition)
     })
     .await
 }
 
 async fn delete_agent(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(name): UrlPath<String>,
 ) -> Result<axum::Json<()>, ApiError> {
     let repo = harness_repo(&state)?;
-    blocking(&state.app, move |app| repo.delete_agent(app, &name)).await
+    blocking(&state.app, move |app| repo.delete_agent(app, &by, &name)).await
 }
 
 /// What `PUT /v1/rules` takes.
@@ -800,6 +854,7 @@ async fn get_rules(State(state): State<ApiState>) -> Result<axum::Json<rules::Vi
 
 async fn put_rules(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     axum::Json(new): axum::Json<NewRules>,
 ) -> Result<axum::Json<SavedRules>, ApiError> {
     let Some(repo) = state.harness_repo.clone() else {
@@ -810,7 +865,7 @@ async fn put_rules(
     };
     let (file, editable) = rules_source(&state);
     blocking(&state.app, move |app| {
-        let commit = repo.save_rules(app, &new.text)?;
+        let commit = repo.save_rules(app, &by, &new.text)?;
         let view = rules::view(app, file.as_deref(), editable)?;
         Ok(SavedRules { view, commit })
     })
@@ -864,21 +919,26 @@ async fn try_proposal(
 
 async fn merge_proposal(
     State(state): State<ApiState>,
-    UrlPath(id): UrlPath<i64>,
-    axum::Json(decision): axum::Json<Reason>,
-) -> Result<axum::Json<Proposal>, ApiError> {
-    let (repo, reason) = (harness_repo(&state)?, decision.reason);
-    blocking(&state.app, move |app| trial::merge(app, &repo, id, &reason)).await
-}
-
-async fn dismiss_proposal(
-    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     axum::Json(decision): axum::Json<Reason>,
 ) -> Result<axum::Json<Proposal>, ApiError> {
     let (repo, reason) = (harness_repo(&state)?, decision.reason);
     blocking(&state.app, move |app| {
-        trial::dismiss(app, &repo, id, &reason)
+        trial::merge(app, &by, &repo, id, &reason)
+    })
+    .await
+}
+
+async fn dismiss_proposal(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    axum::Json(decision): axum::Json<Reason>,
+) -> Result<axum::Json<Proposal>, ApiError> {
+    let (repo, reason) = (harness_repo(&state)?, decision.reason);
+    blocking(&state.app, move |app| {
+        trial::dismiss(app, &by, &repo, id, &reason)
     })
     .await
 }
@@ -895,33 +955,36 @@ async fn takeovers(State(state): State<ApiState>) -> Result<axum::Json<Vec<Takeo
 
 async fn merge_takeover(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     axum::Json(decision): axum::Json<Reason>,
 ) -> Result<axum::Json<Takeover>, ApiError> {
     blocking(&state.app, move |app| {
-        decision_model::merge(app, id, &decision.reason)
+        decision_model::merge(app, &by, id, &decision.reason)
     })
     .await
 }
 
 async fn dismiss_takeover(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     axum::Json(decision): axum::Json<Reason>,
 ) -> Result<axum::Json<Takeover>, ApiError> {
     blocking(&state.app, move |app| {
-        decision_model::dismiss(app, id, &decision.reason)
+        decision_model::dismiss(app, &by, id, &decision.reason)
     })
     .await
 }
 
 async fn release_takeover(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     axum::Json(decision): axum::Json<Reason>,
 ) -> Result<axum::Json<Takeover>, ApiError> {
     blocking(&state.app, move |app| {
-        decision_model::release(app, id, &decision.reason)
+        decision_model::release(app, &by, id, &decision.reason)
     })
     .await
 }
@@ -945,11 +1008,12 @@ pub struct ConfirmedIssues {
 
 async fn confirm_grilling(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     axum::Json(confirmed): axum::Json<ConfirmedIssues>,
 ) -> Result<axum::Json<Grilling>, ApiError> {
     blocking(&state.app, move |app| {
-        grilling::confirm(app, id, confirmed.issues)
+        grilling::confirm(app, &by, id, confirmed.issues)
     })
     .await
 }
@@ -983,9 +1047,10 @@ async fn get_research(
 
 async fn confirm_research(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
 ) -> Result<axum::Json<ResearchView>, ApiError> {
-    blocking(&state.app, move |app| research::confirm(app, id)).await
+    blocking(&state.app, move |app| research::confirm(app, &by, id)).await
 }
 
 async fn start_research(
@@ -1162,10 +1227,11 @@ async fn exports(State(state): State<ApiState>) -> Result<axum::Json<Vec<Export>
 
 async fn start_export(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     axum::Json(request): axum::Json<NewExport>,
 ) -> Result<axum::Json<Export>, ApiError> {
     blocking(&state.app, move |app| {
-        export::create(app, request.kinds.as_deref()).map_err(export_failed)
+        export::create(app, &by, request.kinds.as_deref()).map_err(export_failed)
     })
     .await
 }
@@ -1344,11 +1410,12 @@ mod tests {
             std::time::Duration::from_secs(1),
         ));
         // The harness is the real one over a Pi that is a script.
+        let router = Arc::new(Router::new(store.clone(), vec![]));
         let pi = PiBolt::new(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/fake-pi"),
             "/usr/local/bin/moebius".into(),
             "http://127.0.0.1:9".into(),
-            Arc::new(Router::new(store.clone(), vec![])),
+            router.clone(),
             agents,
         );
         let state = ApiState {
@@ -1356,6 +1423,7 @@ mod tests {
             runs: Arc::new(pi),
             harness_repo: None,
             token: token.into(),
+            router,
             config: Arc::new(Live::new(
                 Config::parse(
                     "[budgets]\nday_tokens = 10000\n",
@@ -1807,7 +1875,8 @@ mod tests {
         assert_eq!(reject(change.id, "again").await.status(), 422);
 
         // A change that was merged cannot be rejected either.
-        app.merge_change(change.id, "fine").unwrap();
+        app.merge_change(&crate::decide::Actor::Person, change.id, "fine")
+            .unwrap();
         assert_eq!(reject(change.id, "too late").await.status(), 422);
     }
 

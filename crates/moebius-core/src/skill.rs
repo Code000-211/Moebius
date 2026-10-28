@@ -73,6 +73,10 @@ const FILES: &[(&str, &str)] = &[
         include_str!("../../../docs/reference/bridge-protocol.md"),
     ),
     (
+        "reference/cli.md",
+        include_str!("../../../docs/reference/cli.md"),
+    ),
+    (
         "reference/column-scripts.md",
         include_str!("../../../docs/reference/column-scripts.md"),
     ),

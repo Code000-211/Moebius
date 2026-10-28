@@ -141,6 +141,7 @@ impl Api {
             runs: server.harness.clone(),
             harness_repo: server.harness_repo.clone(),
             token: server.token.clone(),
+            router: server.router.clone(),
             config: server.live.clone(),
         };
         tokio::spawn(api::serve(listener, state));

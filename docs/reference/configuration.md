@@ -27,6 +27,8 @@ Keys of a table are written with the table's name, such as `board.tick_ms`. A ke
   kinds or only the kinds given, and prints one line per file with its counts. It writes only to `<dir>`; it changes
   nothing in the store, and works while the server runs. It fails when `data_dir` has no store, or when a kind has no
   judgements. See [the training export](training-export.md).
+- `api`, `board`, `inbox`, `chat`, `settings` and the other commands that operate a running server through the desktop
+  API, with `--server`, `--token` and `--json`: see [the command line](cli.md).
 
 ## Paths
 

@@ -1024,7 +1024,12 @@ async fn the_client_counts_judgements_and_starts_an_export() {
     let id = server
         .app
         .decisions
-        .record_person(&question, "merge", "fine")
+        .record_by(
+            &moebius_core::decide::Actor::Person,
+            &question,
+            "merge",
+            "fine",
+        )
         .unwrap()
         .judgement_id;
     server.app.store.set_outcome(id, "merged").unwrap();

@@ -102,6 +102,7 @@ protocol = "anthropic"
         runs: server.harness.clone(),
         harness_repo: None,
         token: server.token.clone(),
+        router: server.router.clone(),
         config: server.live.clone(),
     };
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -235,6 +236,7 @@ async fn a_server_without_a_teacher_a_decision_model_or_github_says_so() {
         runs: server.harness.clone(),
         harness_repo: None,
         token: server.token.clone(),
+        router: server.router.clone(),
         config: server.live.clone(),
     };
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

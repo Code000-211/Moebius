@@ -21,6 +21,7 @@ use crate::app::{App, AppError, Result};
 use crate::board::Runs;
 use crate::bus::AppEvent;
 use crate::config::TimeOfDay;
+use crate::decide::Actor;
 use crate::harness_repo::HarnessRepo;
 use crate::repos::trial_name;
 use crate::retro::{Report, wait_for_end};
@@ -501,16 +502,22 @@ fn decided(app: &App, id: i64, status: &str) -> Result<Proposal> {
 }
 
 /// A person merges a positive or untried proposal into the harness configuration. A conflict changes nothing.
-pub fn merge(app: &App, repo: &HarnessRepo, id: i64, reason: &str) -> Result<Proposal> {
+pub fn merge(app: &App, by: &Actor, repo: &HarnessRepo, id: i64, reason: &str) -> Result<Proposal> {
     let proposal = to_decide(app, id)?;
-    repo.merge_proposal(app, &proposal.branch, &proposal.title, reason)?;
+    repo.merge_proposal(app, by, &proposal.branch, &proposal.title, reason)?;
     decided(app, id, "merged")
 }
 
 /// A person dismisses a positive or untried proposal.
-pub fn dismiss(app: &App, repo: &HarnessRepo, id: i64, reason: &str) -> Result<Proposal> {
+pub fn dismiss(
+    app: &App,
+    by: &Actor,
+    repo: &HarnessRepo,
+    id: i64,
+    reason: &str,
+) -> Result<Proposal> {
     let proposal = to_decide(app, id)?;
-    repo.dismiss_proposal(app, &proposal.branch, &proposal.title, reason)?;
+    repo.dismiss_proposal(app, by, &proposal.branch, &proposal.title, reason)?;
     decided(app, id, "dismissed")
 }
 
