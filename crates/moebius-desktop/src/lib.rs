@@ -13,4 +13,5 @@ pub mod page;
 pub mod settings;
 pub mod sidebar;
 pub mod soon;
+pub mod terminal;
 pub mod theme;

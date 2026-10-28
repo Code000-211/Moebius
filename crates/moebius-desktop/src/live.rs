@@ -1,6 +1,6 @@
 //! The live view of a run (`docs/design/live-view.png`): its conversation (the agent's text, tool calls with the
 //! decision of each check, the person's steers, errors), the steer field, stopping, and the panel of what the server
-//! knows of the run. The state follows one run: a load of its events, then the stream's `run_event`s, which
+//! knows of the run, and the shell in its worktree. The state follows one run: a load of its events, then the stream's `run_event`s, which
 //! `Conversation` puts together without gaps or repeats.
 
 use iced::font::Weight;
@@ -9,13 +9,18 @@ use iced::widget::text::Wrapping;
 use iced::widget::{
     button, column, container, rich_text, row, scrollable, space, span, text, text_input,
 };
-use iced::{Alignment, Border, Color, Element, Font, Length, Padding, Task};
+use iced::{
+    Alignment, Border, Color, Element, Font, Length, Padding, Size, Subscription, Task, keyboard,
+};
 
 use crate::app::Message as AppMessage;
-use crate::client::{Board, Card, Client, ClientError, Judgement, Run, RunEvent};
+use crate::client::{
+    self, Board, Card, Client, ClientError, Judgement, Run, RunEvent, TerminalEvent,
+};
 use crate::conversation::{Conversation, Entry, Execution, Input, Said, ToolCall};
 use crate::page::{self, Tone, tag};
 use crate::settings::Settings;
+use crate::terminal::Shell;
 use crate::theme;
 
 /// The most lines of a tool's output, or of a diff or a file, drawn; the rest is said to be left out.
@@ -48,6 +53,14 @@ pub enum Message {
     Stopped(Result<Run, ClientError>),
     /// The clock, for how long ago the run started.
     Tick(i64),
+    /// "Open shell in worktree" or "Close shell".
+    ToggleShell,
+    /// Something the shell's connection did.
+    Shell(TerminalEvent),
+    /// The shell's pane was laid out at this size.
+    ShellSize(Size),
+    /// A key nothing else took, for the shell.
+    Key(keyboard::Event),
 }
 
 /// The run being watched.
@@ -63,6 +76,10 @@ pub struct Live {
     /// The last thing that went wrong, as a short line.
     notice: Option<String>,
     now: i64,
+    /// The shell in the worktree, while its pane is open.
+    shell: Option<Shell>,
+    /// How many shells were opened, which tells one's connection from the next one's.
+    shells: u32,
 }
 
 /// Unix seconds now.
@@ -107,6 +124,8 @@ impl Live {
             confirming: false,
             notice: None,
             now: now(),
+            shell: None,
+            shells: 0,
         }
     }
 
@@ -120,6 +139,11 @@ impl Live {
 
     fn running(&self) -> bool {
         self.run.status == RUNNING
+    }
+
+    /// Whether the run has a worktree: from its start until it has ended.
+    fn has_worktree(&self) -> bool {
+        matches!(self.run.status.as_str(), "starting" | RUNNING | "waiting")
     }
 
     fn live(&self) -> bool {
@@ -204,8 +228,54 @@ impl Live {
             }
             Message::Stopped(Ok(_)) => self.notice = None,
             Message::Tick(now) => self.now = now,
+            Message::ToggleShell => {
+                self.shell = match self.shell {
+                    Some(_) => None,
+                    None if self.has_worktree() => {
+                        self.shells += 1;
+                        Some(Shell::new(self.shells))
+                    }
+                    None => None,
+                };
+            }
+            Message::Shell(event) => {
+                if let Some(shell) = &mut self.shell {
+                    shell.on_event(event);
+                }
+            }
+            Message::ShellSize(size) => {
+                if let Some(shell) = &mut self.shell {
+                    shell.resized(size);
+                }
+            }
+            Message::Key(keyboard::Event::KeyPressed {
+                key,
+                modifiers,
+                text,
+                ..
+            }) => {
+                if let Some(shell) = &mut self.shell {
+                    shell.key(&key, modifiers, text.as_deref());
+                }
+            }
+            Message::Key(_) => {}
         }
         Task::none()
+    }
+
+    /// The shell's connection and the keys that go to it, while its pane is open. Closing the pane drops both,
+    /// which closes the socket.
+    pub fn subscription(&self, settings: &Settings) -> Subscription<AppMessage> {
+        let Some(shell) = &self.shell else {
+            return Subscription::none();
+        };
+        let connection = Subscription::run_with(
+            (settings.clone(), self.run.id, shell.generation),
+            |(settings, run, _)| client::terminal(settings.clone(), *run),
+        )
+        .map(|event| AppMessage::Live(Message::Shell(event)));
+        let keys = keyboard::listen().map(|event| AppMessage::Live(Message::Key(event)));
+        Subscription::batch([connection, keys])
     }
 
     /// The page: header, conversation with the steer field, and the panel of the run.
@@ -265,22 +335,27 @@ impl Live {
             context.into(),
             self.actions(),
         );
-        let stream = container(
-            column![
-                scrollable(
-                    container(self.conversation_view())
-                        .padding(Padding::from([16, 16]))
-                        .width(Length::Fill)
-                )
-                .anchor_bottom()
-                .height(Length::Fill),
-                self.steer_view(),
-            ]
-            .width(Length::Fill),
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .style(|_| boxed());
+        let mut stream = column![
+            scrollable(
+                container(self.conversation_view())
+                    .padding(Padding::from([16, 16]))
+                    .width(Length::Fill)
+            )
+            .anchor_bottom()
+            .height(Length::Fill),
+        ]
+        .width(Length::Fill);
+        if let Some(shell) = &self.shell {
+            stream = stream.push(
+                container(shell.view(|size| AppMessage::Live(Message::ShellSize(size))))
+                    .padding([0, 16])
+                    .width(Length::Fill),
+            );
+        }
+        let stream = container(stream.push(self.steer_view()))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(|_| boxed());
         column![
             header,
             row![stream, self.panel(board, card, refused)]
@@ -292,24 +367,32 @@ impl Live {
         .into()
     }
 
-    /// "Stop run", or the question that confirms it, on the right of the header.
+    /// "Open shell in worktree" and "Stop run" (or the question that confirms it), on the right of the header.
     fn actions(&self) -> Element<'_, AppMessage> {
-        if !self.running() {
-            return space().into();
+        let mut actions = row![].spacing(10).align_y(Alignment::Center);
+        if self.has_worktree() {
+            let label = match self.shell {
+                Some(_) => "Close shell",
+                None => "Open shell in worktree",
+            };
+            actions = actions.push(white_button(label, AppMessage::Live(Message::ToggleShell)));
         }
-        if self.confirming {
-            return row![
-                text("Stop this run?")
-                    .size(theme::CONTEXT)
-                    .color(theme::TEXT_SECONDARY),
-                white_button("Keep going", AppMessage::Live(Message::KeepGoing)),
-                white_button("Stop run", AppMessage::Live(Message::Stop)),
-            ]
-            .spacing(10)
-            .align_y(Alignment::Center)
-            .into();
+        if self.running() && self.confirming {
+            actions = actions
+                .push(
+                    text("Stop this run?")
+                        .size(theme::CONTEXT)
+                        .color(theme::TEXT_SECONDARY),
+                )
+                .push(white_button(
+                    "Keep going",
+                    AppMessage::Live(Message::KeepGoing),
+                ))
+                .push(white_button("Stop run", AppMessage::Live(Message::Stop)));
+        } else if self.running() {
+            actions = actions.push(white_button("Stop run", AppMessage::Live(Message::AskStop)));
         }
-        white_button("Stop run", AppMessage::Live(Message::AskStop))
+        actions.into()
     }
 
     fn conversation_view(&self) -> Element<'_, AppMessage> {

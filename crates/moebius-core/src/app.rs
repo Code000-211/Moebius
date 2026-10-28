@@ -22,6 +22,7 @@ use crate::forge::{Forge, ForgeError, NoForge};
 use crate::github::Issue;
 use crate::repos::{GitError, Repos, git};
 use crate::store::{Card, Change, Repository, Run, Store, StoreError, now};
+use crate::terminal::{MAX_PER_RUN, Slot, Slots};
 
 /// The columns of the default workflow (spec 6).
 pub mod columns {
@@ -135,6 +136,8 @@ pub struct App {
     checking: Mutex<BTreeSet<(i64, String)>>,
     /// Held while a run event is stored and published, so that events are published in the order of their `seq`.
     run_events: Mutex<()>,
+    /// The terminals open on each run.
+    pub terminals: Arc<Slots>,
     /// Why each waiting card waits, as its column script last said (`moebius.wait`, `ask`, `stuck`). Not stored: a
     /// reason is rebuilt by the next tick after a restart.
     waiting: Mutex<HashMap<i64, String>>,
@@ -157,6 +160,7 @@ impl App {
             checks_timeout: Duration::from_secs(1800),
             checking: Mutex::default(),
             run_events: Mutex::default(),
+            terminals: Arc::default(),
             waiting: Mutex::default(),
             forges,
         }
@@ -478,6 +482,32 @@ impl App {
         }
         self.record_action("stop", run.card_id, Some(run_id), BTreeMap::new(), reason)?;
         Ok(run)
+    }
+
+    /// A person opens a shell in the worktree of `run_id`, which has one while the run is starting, running or
+    /// waiting, and at most [`MAX_PER_RUN`] shells at a time. Returns the worktree and the shell's place among the
+    /// run's. Only the opening is recorded, as a `shell_opened` event: never what is typed or printed.
+    pub fn open_shell(&self, run_id: i64) -> Result<(PathBuf, Slot)> {
+        let run = self.run(run_id)?;
+        let worktree = match (run.status.as_str(), run.worktree) {
+            ("starting" | "running" | "waiting", Some(worktree))
+                if Path::new(&worktree).is_dir() =>
+            {
+                PathBuf::from(worktree)
+            }
+            _ => {
+                return Err(AppError::Invalid(format!(
+                    "run {run_id} has no worktree to open a shell in"
+                )));
+            }
+        };
+        let slot = self.terminals.take(run_id).ok_or_else(|| {
+            AppError::Invalid(format!(
+                "run {run_id} has {MAX_PER_RUN} terminals open already"
+            ))
+        })?;
+        self.record_run_event(run_id, "shell_opened", &json!({ "who": PERSON }))?;
+        Ok((worktree, slot))
     }
 
     /// A person starts a chat with `agent`, in a branch of the repository `repository_id` or, without one, in an empty

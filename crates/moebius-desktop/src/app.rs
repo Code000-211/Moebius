@@ -423,7 +423,11 @@ impl App {
                         .map(|_| Message::Live(live::Message::Tick(live::now()))),
                     _ => Subscription::none(),
                 };
-                Subscription::batch([stream, clock])
+                let shell = match &self.opened {
+                    Some(Opened::Run(live)) => live.subscription(settings),
+                    _ => Subscription::none(),
+                };
+                Subscription::batch([stream, clock, shell])
             }
             _ => Subscription::none(),
         }

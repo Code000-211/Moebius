@@ -4,7 +4,7 @@
 use iced::{Settings, Size};
 use iced_test::Simulator;
 use moebius_desktop::app::{App, Message, Page};
-use moebius_desktop::client::{ClientError, Snapshot};
+use moebius_desktop::client::{ClientError, Snapshot, TerminalEvent};
 use moebius_desktop::live;
 use moebius_desktop::theme;
 use serde_json::json;
@@ -529,6 +529,37 @@ fn a_running_run_is_drawn_like_the_live_view_of_the_mockup() {
             "412k tokens",
             "moebius/card-48",
             "Right, vendor code is off limits. The cap belongs in our own tree builder.",
+        ],
+    );
+}
+
+/// A run with its shell open and a few lines printed in it, drawn: compare `tests/snapshots/live-view-shell-tiny-skia.png`
+/// with `docs/design/live-view.png`.
+#[test]
+fn a_shell_in_the_worktree_is_drawn_under_the_conversation() {
+    let mut app = watching("running");
+    let (input, _sent) = iced::futures::channel::mpsc::channel(16);
+    let printed = "\x1b[1;32mcoder@moebius\x1b[0m:\x1b[1;34m~/worktrees/run-9\x1b[0m$ git status --short\r\n \
+        \x1b[33mM\x1b[0m core/sched/mtp_tree.cpp\r\n\x1b[31m??\x1b[0m notes.txt\r\n\
+        \x1b[1;32mcoder@moebius\x1b[0m:\x1b[1;34m~/worktrees/run-9\x1b[0m$ ls tests | head -3\r\n\
+        test_tree.cpp  test_walk.cpp  \x1b[7mCMakeLists.txt\x1b[0m\r\n\
+        \x1b[1;32mcoder@moebius\x1b[0m:\x1b[1;34m~/worktrees/run-9\x1b[0m$ ";
+    for message in [
+        live::Message::ToggleShell,
+        live::Message::Shell(TerminalEvent::Connected(input)),
+        live::Message::ShellSize(Size::new(796.0, 250.0)),
+        live::Message::Shell(TerminalEvent::Output(printed.as_bytes().to_vec())),
+    ] {
+        let _ = app.update(Message::Live(message));
+    }
+    draw(
+        &app,
+        "live-view-shell",
+        &[
+            "Close shell",
+            "Stop run",
+            "Shell in the worktree",
+            "connected",
         ],
     );
 }

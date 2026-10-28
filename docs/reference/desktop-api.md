@@ -269,6 +269,24 @@ running.
 A chat that is stopped, also while it waits, ends as `stopped`; what it left in its repository's worktree is committed
 on its branch first.
 
+### `GET /v1/runs/{id}/terminal`
+
+A shell in the run's worktree, for the person to look around and run commands. It upgrades to a WebSocket (with the
+token, like every route) and starts the person's shell (`$SHELL`, else `/bin/sh`) on a pseudo-terminal in the worktree
+of the run or chat, with `TERM=xterm-256color`.
+
+- Binary messages carry bytes both ways: from the client to the shell's input, from the shell's output to the client.
+- A text message `{"type": "resize", "cols": N, "rows": M}` sets the size of the terminal in cells (the size is 80 by
+  24 until then).
+- When the shell exits the server closes the socket; when the socket closes the server kills the shell and its process
+  group.
+- A run has at most 4 terminals open at a time.
+- It is a person's shell, so the guard (which checks the tool calls of agents) does not look at it, and nothing the
+  person types or sees is stored. Opening one stores a `shell_opened` run event, `{"who": "person"}`.
+
+The worktree exists while the run or chat is `starting`, `running` or `waiting`. Errors, answered before the upgrade:
+`404` no such run; `422` the run has no worktree (it is over) or already has 4 terminals open.
+
 ### `POST /v1/chats`
 
 Starts a chat: an interactive run without a card. The agent answers the first message as a stream of run events, and
@@ -362,6 +380,6 @@ A `run_event` has two sources, told apart by its inner `kind`:
 `seq` is the number the event is stored under, the same as in `GET /v1/runs/{id}/events`. Events of a run are published in
 the order of their `seq`. Every event of a run is published and stored: Pi's records, `tool_check` events, `steered` events
 (`{"message"}`, a person's steer, with secrets removed), `said` events (`{"message"}`, a person's message to a chat, the first
-one included, with secrets removed; stored before the agent's records of its answer) and `moebius_error` events (`{"message"}`) that explain why a
+one included, with secrets removed; stored before the agent's records of its answer) `shell_opened` events (`{"who"}`, a person opened a shell in the worktree; see `GET /v1/runs/{id}/terminal`) and `moebius_error` events (`{"message"}`) that explain why a
 run failed. The one exception is a run that was still going when the server stopped: it is failed at the next start with
 a `moebius_error` that is stored but not published.

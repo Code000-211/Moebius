@@ -7,13 +7,18 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::{Stream, StreamExt};
+use iced::keyboard::key::Named;
+use iced::keyboard::{Key, Modifiers};
 use moebius_core::config::Config;
 use moebius_core::repos::git;
 use moebius_core::server::Server;
 use moebius_core::store::Usage;
-use moebius_desktop::client::{Client, ClientError, RunEvent, StreamEvent, events};
+use moebius_desktop::client::{
+    Client, ClientError, RunEvent, StreamEvent, TerminalEvent, events, terminal,
+};
 use moebius_desktop::conversation::{Conversation, Entry, Said};
 use moebius_desktop::settings::Settings;
+use moebius_desktop::terminal::Shell;
 use serde_json::json;
 
 /// A server with no agents on a free port; returns the settings that connect to it and the server.
@@ -304,6 +309,76 @@ async fn the_live_view_loads_follows_steers_and_stops_a_run() {
             assert_eq!(status, 422);
             assert!(message.contains("not running"), "{message}");
         }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_apps_shell_echoes_a_command_run_in_a_real_servers_worktree() {
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, _) = start_with_fake_pi(dir.path()).await;
+    let origin = origin(dir.path());
+    let repository = post(
+        &settings,
+        "/v1/repositories",
+        json!({"name": "demo", "url": origin.to_str().unwrap()}),
+    )
+    .await;
+    post(
+        &settings,
+        &format!("/v1/repositories/{}/issues", repository["id"]),
+        json!({"title": "Add a feature", "body": "[hang]"}),
+    )
+    .await;
+    let client = Client::new(settings.clone());
+    let run = loop {
+        let snapshot = client.snapshot().await.unwrap();
+        if let Some(run) = snapshot.boards[0].cards[0].run.clone()
+            && run.status == "running"
+        {
+            break run;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
+
+    // The shell starts in the run's worktree; what it prints reaches the terminal state.
+    let mut shell = Shell::new(1);
+    let mut stream = Box::pin(terminal(settings.clone(), run.id));
+    let limit = Duration::from_secs(60);
+    let mut sent = false;
+    while !shell.lines().iter().any(|line| line == "moebius-42") {
+        let event = tokio::time::timeout(limit, stream.next())
+            .await
+            .expect("nothing was printed in a minute")
+            .expect("the shell's stream ended");
+        assert!(!matches!(event, TerminalEvent::Closed(_)), "{event:?}");
+        shell.on_event(event);
+        if shell.is_open() && !sent {
+            sent = true;
+            let enter = Key::Named(Named::Enter);
+            for c in "echo moebius-$((40+2))".chars() {
+                let text = c.to_string();
+                shell.key(
+                    &Key::Character(text.as_str().into()),
+                    Modifiers::empty(),
+                    Some(&text),
+                );
+            }
+            shell.key(&enter, Modifiers::empty(), Some("\r"));
+        }
+    }
+
+    // A run that is over has no shell: the stream says why and ends.
+    client.stop(run.id).await.unwrap();
+    loop {
+        if client.run(run.id).await.unwrap().status == "stopped" {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let mut stream = Box::pin(terminal(settings, run.id));
+    match stream.next().await.unwrap() {
+        TerminalEvent::Closed(reason) => assert!(reason.contains("422"), "{reason}"),
         other => panic!("{other:?}"),
     }
 }

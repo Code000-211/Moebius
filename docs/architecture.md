@@ -202,6 +202,8 @@ The server runs on a multi-threaded tokio runtime.
 | `crates/moebius-desktop/src/sidebar.rs`, `connect.rs`, `board.rs`, `soon.rs`, `page.rs`, `icons.rs` | The sidebar, the connect screen and Settings page, the board page (its columns and cards), the "comes with M<n>" page, the page header and box, the icons. |
 | `crates/moebius-desktop/src/conversation.rs` | Folds a run's events into a conversation (text, tool calls with their checks, steers, errors); pure, takes events in any order and drops repeats. |
 | `crates/moebius-desktop/src/live.rs`, `history.rs` | What a click on a card opens: the live view of its latest run (conversation, steer, stop, the run's panel), or the card's history when it has no run. |
+| `crates/moebius-desktop/src/terminal.rs` | The shell pane of the live view: bytes from the server parsed by `alacritty_terminal` into a grid and drawn in JetBrains Mono, keys turned into bytes, the pane's size in cells sent as a resize. The connection is `client::terminal`, a subscription that lives while the pane is open. |
+| `terminal.rs` | A person's shell in a run's worktree on a pseudo-terminal (`portable-pty`), served over the WebSocket `GET /v1/runs/{id}/terminal`; at most 4 per run, not checked by the guard. |
 | `api.rs` | The desktop API: routes, token check, the event WebSocket. |
 | `app.rs` | The core put together; the operations on cards, changes and issues, each published on the bus, including publishing a change and running its checks. |
 | `blobs.rs` | The content-addressed blob store and secret redaction. |

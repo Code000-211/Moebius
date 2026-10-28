@@ -15,6 +15,7 @@
 //! - `GET /v1/judgements?card=&kind=&limit=`: the recorded decisions, newest first.
 //! - `POST /v1/runs/{id}/steer` `{message}`: a person sends a message to a running run.
 //! - `POST /v1/runs/{id}/stop` `{reason}`: a person stops a running run; a chat ends as stopped.
+//! - `GET /v1/runs/{id}/terminal`: a WebSocket on a shell in the run's worktree (see [`crate::terminal`]).
 //! - `POST /v1/chats` `{agent?, message, repository?}`: starts a chat, with the Moebius agent unless `agent` names
 //!   another. `GET /v1/chats`: the chats, newest first.
 //!   `POST /v1/chats/{id}/messages` `{message}`: writes to a chat. `POST /v1/chats/{id}/end`: ends a chat.
@@ -282,6 +283,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/runs/{id}/events", get(run_events))
         .route("/v1/runs/{id}/steer", post(steer_run))
         .route("/v1/runs/{id}/stop", post(stop_run))
+        .route("/v1/runs/{id}/terminal", get(run_terminal))
         .route("/v1/chats", get(chats).post(start_chat))
         .route("/v1/chats/{id}/messages", post(say_in_chat))
         .route("/v1/chats/{id}/end", post(end_chat))
@@ -480,6 +482,17 @@ async fn stop_run(
         app.stop_run(&*runs, id, &stop.reason)
     })
     .await
+}
+
+async fn run_terminal(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+    upgrade: WebSocketUpgrade,
+) -> Result<Response, ApiError> {
+    let axum::Json((worktree, slot)) = blocking(&state.app, move |app| app.open_shell(id)).await?;
+    Ok(upgrade.on_upgrade(move |socket| async move {
+        crate::terminal::serve(socket, &worktree, slot).await
+    }))
 }
 
 async fn start_chat(
@@ -2027,5 +2040,176 @@ mod tests {
         let a = load_or_create_token(&path).unwrap();
         assert_eq!(a.len(), 64);
         assert_eq!(load_or_create_token(&path).unwrap(), a);
+    }
+
+    type Terminal = tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >;
+
+    async fn open_terminal(
+        addr: &str,
+        token: &str,
+        run: i64,
+    ) -> Result<Terminal, tokio_tungstenite::tungstenite::Error> {
+        let mut request = format!("ws://{addr}/v1/runs/{run}/terminal")
+            .into_client_request()
+            .unwrap();
+        request
+            .headers_mut()
+            .insert("authorization", format!("Bearer {token}").parse().unwrap());
+        tokio_tungstenite::connect_async(request)
+            .await
+            .map(|(socket, _)| socket)
+    }
+
+    /// Reads what the shell prints until `pattern` matches it, and returns the match's first group.
+    async fn read_until(terminal: &mut Terminal, pattern: &str) -> String {
+        let pattern = regex::Regex::new(pattern).unwrap();
+        let mut printed = String::new();
+        let read = async {
+            while let Some(message) = terminal.next().await {
+                if let tokio_tungstenite::tungstenite::Message::Binary(bytes) = message.unwrap() {
+                    printed.push_str(&String::from_utf8_lossy(&bytes));
+                    if let Some(found) = pattern.captures(&printed) {
+                        return found[1].to_string();
+                    }
+                }
+            }
+            panic!("the terminal closed before {pattern} was printed: {printed:?}");
+        };
+        tokio::time::timeout(std::time::Duration::from_secs(60), read)
+            .await
+            .expect("the shell printed nothing in a minute")
+    }
+
+    async fn type_in(terminal: &mut Terminal, text: &str) {
+        use futures_util::SinkExt;
+        let bytes = text.as_bytes().to_vec().into();
+        terminal
+            .send(tokio_tungstenite::tungstenite::Message::Binary(bytes))
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_person_opens_a_shell_in_the_worktree_of_a_running_chat() {
+        use futures_util::SinkExt;
+        let (_dir, state, addr) = start().await;
+        let app = &state.app;
+        let started = post(
+            &state,
+            &addr,
+            "/v1/chats".into(),
+            serde_json::json!({ "agent": "Coder", "message": "Work for ever [hang]" }),
+        )
+        .await;
+        let chat: Run = started.json().await.unwrap();
+        until("the agent works", || {
+            app.store.run(chat.id).unwrap().unwrap().status == "running"
+        })
+        .await;
+        let worktree = app.store.run(chat.id).unwrap().unwrap().worktree.unwrap();
+
+        let mut terminal = open_terminal(&addr, &state.token, chat.id).await.unwrap();
+        type_in(&mut terminal, "echo moebius-$((40+2))\n").await;
+        assert_eq!(
+            read_until(&mut terminal, "(moebius-42)").await,
+            "moebius-42"
+        );
+
+        // The shell starts in the worktree and takes the size it is sent.
+        type_in(&mut terminal, "echo where-$(pwd -P)-end\n").await;
+        let printed = read_until(&mut terminal, "where-(/[^\\s]*)-end").await;
+        assert_eq!(
+            std::path::Path::new(&printed),
+            std::fs::canonicalize(&worktree).unwrap()
+        );
+        let resize = r#"{"type":"resize","cols":100,"rows":30}"#;
+        terminal.send(resize.into()).await.unwrap();
+        type_in(&mut terminal, "stty size\n").await;
+        assert_eq!(read_until(&mut terminal, "(30 100)").await, "30 100");
+
+        // What a person typed is not stored; that a shell was opened is.
+        let events = app.store.events(chat.id).unwrap();
+        let opened: Vec<_> = events.iter().filter(|e| e.kind == "shell_opened").collect();
+        assert_eq!(opened.len(), 1);
+        assert_eq!(opened[0].data, serde_json::json!({ "who": "person" }));
+        assert!(opened[0].at > 0);
+        assert!(!format!("{events:?}").contains("moebius-42"));
+
+        // Closing the socket kills the shell.
+        type_in(&mut terminal, "echo pid-$$-end\n").await;
+        let pid = read_until(&mut terminal, "pid-(\\d+)-end").await;
+        terminal.close(None).await.unwrap();
+        until("the shell is gone", || {
+            !std::path::Path::new(&format!("/proc/{pid}")).exists()
+        })
+        .await;
+
+        // A shell that exits closes the socket.
+        let mut terminal = open_terminal(&addr, &state.token, chat.id).await.unwrap();
+        type_in(&mut terminal, "exit\n").await;
+        let closed = async {
+            while let Some(message) = terminal.next().await {
+                if message.is_err() || message.unwrap().is_close() {
+                    break;
+                }
+            }
+        };
+        tokio::time::timeout(std::time::Duration::from_secs(60), closed)
+            .await
+            .expect("the socket stays open after the shell exits");
+    }
+
+    #[tokio::test]
+    async fn a_shell_needs_the_token_a_worktree_and_a_free_place() {
+        use tokio_tungstenite::tungstenite::Error;
+        let (_dir, state, addr) = start().await;
+        let app = &state.app;
+        let status = |e: Error| match e {
+            Error::Http(response) => response.status().as_u16(),
+            other => panic!("{other:?}"),
+        };
+        let run = app.store.add_run(Some(1), "Coder", "test", "code").unwrap();
+        let wd = tempfile::tempdir().unwrap();
+        app.store
+            .set_run_worktree(run.id, &wd.path().to_string_lossy())
+            .unwrap();
+
+        // A run that is not over has a worktree; with the wrong token nobody gets in.
+        app.store.set_run_status(run.id, "running").unwrap();
+        assert_eq!(
+            status(open_terminal(&addr, "nope", run.id).await.unwrap_err()),
+            401
+        );
+        assert_eq!(
+            status(
+                open_terminal(&addr, &state.token, run.id + 1)
+                    .await
+                    .unwrap_err()
+            ),
+            404
+        );
+
+        // At most a few at once, and a closed one makes room.
+        let mut open = Vec::new();
+        for _ in 0..crate::terminal::MAX_PER_RUN {
+            open.push(open_terminal(&addr, &state.token, run.id).await.unwrap());
+        }
+        let refused = open_terminal(&addr, &state.token, run.id).await;
+        assert_eq!(status(refused.unwrap_err()), 422);
+        let events = app.store.events(run.id).unwrap();
+        assert_eq!(
+            events.iter().filter(|e| e.kind == "shell_opened").count(),
+            4
+        );
+        open.pop().unwrap().close(None).await.unwrap();
+        until("a place is free", || app.terminals.take(run.id).is_some()).await;
+        drop(open);
+
+        // Once the run is over its worktree is gone.
+        app.store.set_run_status(run.id, "succeeded").unwrap();
+        let finished = open_terminal(&addr, &state.token, run.id).await;
+        assert_eq!(status(finished.unwrap_err()), 422);
     }
 }

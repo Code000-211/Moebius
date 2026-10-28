@@ -24,6 +24,7 @@ futures-util = "0.3.34"
 jsonwebtoken = { version = "10.3.0", features = ["aws_lc_rs"] }
 base64 = "0.22.1"
 time = { version = "0.3.55", features = ["formatting", "parsing"] }
+portable-pty = "0.9.0"
 
 [lints]
 workspace = true

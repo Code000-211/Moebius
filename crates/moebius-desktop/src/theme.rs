@@ -50,6 +50,25 @@ pub const DIFF_ADDED_MARK: Color = hex(0x15803D);
 pub const TERMINAL: Color = hex(0x1E293B);
 pub const TERMINAL_TEXT: Color = hex(0xE2E8F0);
 pub const TERMINAL_DIM: Color = hex(0x94A3B8);
+/// The sixteen colours of a shell: black to white, then the bright ones.
+pub const TERMINAL_ANSI: [Color; 16] = [
+    hex(0x475569),
+    hex(0xF87171),
+    hex(0x4ADE80),
+    hex(0xFACC15),
+    hex(0x60A5FA),
+    hex(0xC084FC),
+    hex(0x22D3EE),
+    hex(0xE2E8F0),
+    hex(0x64748B),
+    hex(0xFCA5A5),
+    hex(0x86EFAC),
+    hex(0xFDE047),
+    hex(0x93C5FD),
+    hex(0xD8B4FE),
+    hex(0x67E8F9),
+    hex(0xF8FAFC),
+];
 
 // The sidebar of the mockups.
 pub const SIDEBAR: Color = hex(0xF7F8FA);
@@ -76,6 +95,9 @@ pub const APP_NAME: f32 = 16.5;
 pub const GROUP_LABEL: f32 = 12.5;
 pub const CODE: f32 = 12.5;
 pub const CODE_SMALL: f32 = 12.0;
+/// The shell's text, and the width and height of one of its cells (JetBrains Mono is 0.6 em wide).
+pub const SHELL: f32 = 13.0;
+pub const SHELL_CELL: [f32; 2] = [SHELL * 0.6, 18.0];
 
 // Shape.
 pub const RADIUS_BOX: f32 = 16.0;
