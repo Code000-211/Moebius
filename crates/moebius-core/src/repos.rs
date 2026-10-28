@@ -30,6 +30,16 @@ pub fn git(dir: &Path, args: &[&str]) -> Result<String> {
     git_with_config(dir, args, &[])
 }
 
+/// Commits everything in the worktree `worktree`, new files too, with `message`; false when there was nothing to commit.
+pub fn commit_all(worktree: &Path, message: &str) -> Result<bool> {
+    git(worktree, &["add", "--all"])?;
+    if git(worktree, &["status", "--porcelain"])?.is_empty() {
+        return Ok(false);
+    }
+    git(worktree, &["commit", "--quiet", "-m", message])?;
+    Ok(true)
+}
+
 /// Runs git in `dir` with the configuration `config` (name and value) for this command only. It is handed over in
 /// the environment, so a credential in it shows up neither in `.git/config`, nor in an error message.
 fn git_with_config(dir: &Path, args: &[&str], config: &[(&str, &str)]) -> Result<String> {

@@ -78,6 +78,7 @@ takes a repository's name.
 | `chats` | `GET /v1/chats` | Table `id agent status repository title`. |
 | `chat start <message> [--agent <name>] [--repository <id>] [--continues <id>]` | `POST /v1/chats` | The run. `-` as the message reads standard input. |
 | `chat say <id> <message>` | `POST /v1/chats/{id}/messages` | The run. `-` reads standard input. |
+| `chat offer <id> [--reason <text>]` | `POST /v1/chats/{id}/offer` | The change. |
 | `chat end <id>` | `POST /v1/chats/{id}/end` | The run. |
 | `agents` | `GET /v1/agents` | Table `name model protocol built_in error`. |
 | `agent show <name>` | `GET /v1/agents/{name}` | The agent: settings as JSON, instructions below, and for a built-in agent its built-in instructions and skills (`built_in`). |

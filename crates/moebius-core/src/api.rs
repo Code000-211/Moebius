@@ -51,7 +51,8 @@
 //! - `GET /v1/usage?days=`: the tokens, calls, model time and tool waits of the last days, and the daily tokens by model.
 //! - `POST /v1/chats` `{agent?, message, repository?, continues?}`: starts a chat, with the Moebius agent unless
 //!   `agent` names another, or goes on from the ended chat `continues`. `GET /v1/chats`: the chats, newest first.
-//!   `POST /v1/chats/{id}/messages` `{message}`: writes to a chat. `POST /v1/chats/{id}/end`: ends a chat.
+//!   `POST /v1/chats/{id}/messages` `{message}`: writes to a chat. `POST /v1/chats/{id}/offer` `{reason?}`: offers
+//!   what a chat's worktree changes as a change without ending the chat. `POST /v1/chats/{id}/end`: ends a chat.
 //!   `POST /v1/chats/{id}/seen` `{seq}`: a person has read a chat that far.
 //!
 //! Every request carries `Authorization: Bearer <token>`: the server's token, or the run token of a run of the Moebius
@@ -475,6 +476,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/grillings/{id}/dismiss", post(dismiss_grilling))
         .route("/v1/chats", get(chats).post(start_chat))
         .route("/v1/chats/{id}/messages", post(say_in_chat))
+        .route("/v1/chats/{id}/offer", post(offer_chat_changes))
         .route("/v1/chats/{id}/end", post(end_chat))
         .route("/v1/chats/{id}/seen", post(chat_seen))
         .layer(middleware::from_fn_with_state(state.clone(), authenticate))
@@ -1338,6 +1340,19 @@ async fn say_in_chat(
     let runs = state.runs.clone();
     blocking(&state.app, move |app| {
         app.say_in_chat(&*runs, id, &said.message)
+    })
+    .await
+}
+
+async fn offer_chat_changes(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    body: Option<axum::Json<Reason>>,
+) -> Result<axum::Json<Change>, ApiError> {
+    let reason = body.map(|body| body.0.reason).unwrap_or_default();
+    blocking(&state.app, move |app| {
+        app.offer_chat_changes(&by, id, &reason)
     })
     .await
 }
@@ -3014,6 +3029,144 @@ mod tests {
             kinds(app, run.id).iter().filter(|k| *k == "said").count(),
             1
         );
+    }
+
+    async fn offer(state: &ApiState, addr: &str, run_id: i64) -> reqwest::Response {
+        post(
+            state,
+            addr,
+            format!("/v1/chats/{run_id}/offer"),
+            serde_json::json!({ "reason": "ready to look at" }),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn a_chat_offers_its_changes_and_goes_on_and_a_second_offer_updates_the_change() {
+        let (dir, state, addr) = start().await;
+        let app = &state.app;
+        let repo = app
+            .add_repository("demo", origin(dir.path()).to_str().unwrap())
+            .unwrap();
+        let clone = std::path::PathBuf::from(&repo.path);
+        let run = chat(&state, &addr, "Make notes [write notes.txt]", Some(repo.id)).await;
+        let changed = || async {
+            let listed: Vec<Chat> = get(&state, &addr, "/v1/chats").await;
+            listed
+                .iter()
+                .find(|c| c.id == run.id)
+                .unwrap()
+                .changed_files
+        };
+        assert_eq!(changed().await, 1);
+
+        let offered = offer(&state, &addr, run.id).await;
+        assert_eq!(offered.status(), 200);
+        let change: Change = offered.json().await.unwrap();
+        assert_eq!(
+            (
+                change.branch.as_str(),
+                change.state.as_str(),
+                change.card_id
+            ),
+            (run.branch().as_str(), "open", None)
+        );
+        assert_eq!(
+            git(&clone, &["show", &format!("{}:notes.txt", run.branch())]).unwrap(),
+            "written"
+        );
+        let items = |change: i64| {
+            app.store
+                .inbox()
+                .unwrap()
+                .into_iter()
+                .filter(|item| item.kind == "ready_to_merge" && item.data["change"] == change)
+                .count()
+        };
+        assert_eq!(items(change.id), 1);
+        // The chat goes on in the same worktree and takes the next message.
+        assert_eq!(status(app, run.id), "waiting");
+        assert_eq!(changed().await, 1);
+        assert_eq!(
+            say(&state, &addr, run.id, "More [write more.txt]")
+                .await
+                .status(),
+            200
+        );
+        until("the second answer", || {
+            kinds(app, run.id)
+                .iter()
+                .filter(|k| *k == "agent_settled")
+                .count()
+                == 2
+                && status(app, run.id) == "waiting"
+        })
+        .await;
+        assert_eq!(changed().await, 2);
+
+        // Offered again, the same change takes the newer commit.
+        let again: Change = offer(&state, &addr, run.id).await.json().await.unwrap();
+        assert_eq!(again.id, change.id);
+        let head = git(&clone, &["rev-parse", &run.branch()]).unwrap();
+        assert_eq!(again.head.as_deref(), Some(head.as_str()));
+        assert_ne!(again.head, change.head);
+        assert_eq!(items(change.id), 1);
+        // Nothing moved since: the open change is the answer, and nothing new is made.
+        let same: Change = offer(&state, &addr, run.id).await.json().await.unwrap();
+        assert_eq!((same.id, same.head), (change.id, again.head.clone()));
+        let judged: Vec<serde_json::Value> = get(
+            &state,
+            &addr,
+            &format!("/v1/judgements?run={}&kind=offer_chat_changes", run.id),
+        )
+        .await;
+        assert_eq!(judged.len(), 3);
+
+        // Ending the chat offers nothing more.
+        assert_eq!(end(&state, &addr, run.id).await.status(), 200);
+        until("the chat ends", || status(app, run.id) == "succeeded").await;
+        assert_eq!(app.store.changes(repo.id).unwrap().len(), 1);
+        assert_eq!(changed().await, 0);
+        assert_eq!(offer(&state, &addr, run.id).await.status(), 422);
+    }
+
+    #[tokio::test]
+    async fn a_chat_with_nothing_to_offer_or_at_work_is_refused() {
+        let (dir, state, addr) = start().await;
+        let app = &state.app;
+        let repo = app
+            .add_repository("demo", origin(dir.path()).to_str().unwrap())
+            .unwrap();
+        let quiet = chat(&state, &addr, "Hello", Some(repo.id)).await;
+        let refused = offer(&state, &addr, quiet.id).await;
+        assert_eq!(refused.status(), 422);
+        assert!(refused.text().await.unwrap().contains("nothing to offer"));
+        let nowhere = chat(&state, &addr, "Hello", None).await;
+        assert_eq!(offer(&state, &addr, nowhere.id).await.status(), 422);
+
+        let started = post(
+            &state,
+            &addr,
+            "/v1/chats".into(),
+            serde_json::json!({ "agent": "Coder", "message": "Work for ever [hang]", "repository": repo.id }),
+        )
+        .await;
+        let working: Run = started.json().await.unwrap();
+        until("the agent works", || {
+            kinds(app, working.id).contains(&"agent_start".to_string())
+        })
+        .await;
+        assert_eq!(offer(&state, &addr, working.id).await.status(), 409);
+        assert!(app.store.changes(repo.id).unwrap().is_empty());
+        for id in [quiet.id, nowhere.id, working.id] {
+            let stop = post(
+                &state,
+                &addr,
+                format!("/v1/runs/{id}/stop"),
+                serde_json::json!({}),
+            );
+            assert_eq!(stop.await.status(), 200);
+        }
     }
 
     #[tokio::test]

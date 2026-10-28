@@ -122,6 +122,20 @@ pub struct Chat {
     pub answered: i64,
     /// How far the person has read the chat (`POST /v1/chats/{id}/seen`); unread while below `answered`.
     pub seen: i64,
+    /// How many files the chat's worktree changes against the default branch, committed or not: what
+    /// `POST /v1/chats/{id}/offer` would offer. 0 for an ended chat or one without a repository.
+    #[serde(default)]
+    pub changed_files: usize,
+}
+
+/// What became of the last offer of a chat's branch (see `App::earlier_offer`).
+enum Earlier {
+    /// The branch has not moved since: the change, while it is open; none once it was merged or closed.
+    Same(Option<Change>),
+    /// The branch moved on from the open change.
+    Open(Change),
+    /// Its work was never offered, or the last offer was merged or closed before the branch moved on.
+    None,
 }
 
 /// One thing in a card's history: `moved`, `run_started`, `run_ended`, `decided`, `inbox_added` or `inbox_resolved`.
@@ -157,6 +171,9 @@ pub struct App {
     checking: Mutex<BTreeSet<(i64, String)>>,
     /// Held while a run event is stored and published, so that events are published in the order of their `seq`.
     run_events: Mutex<()>,
+    /// Held while a message is given to a chat's agent or a chat's work is committed to be offered, so that the agent
+    /// does not start on a message while its worktree is committed.
+    chat_turns: Mutex<()>,
     /// The terminals open on each run.
     pub terminals: Arc<Slots>,
     /// Why each waiting card waits, as its column script last said (`moebius.wait`, `ask`, `stuck`). Not stored: a
@@ -183,6 +200,7 @@ impl App {
             checks_timeout: Duration::from_secs(1800),
             checking: Mutex::default(),
             run_events: Mutex::default(),
+            chat_turns: Mutex::default(),
             terminals: Arc::default(),
             waiting: Mutex::default(),
             forges,
@@ -819,8 +837,11 @@ impl App {
                 "chat {run_id} is in its terminal: close it to write to the chat"
             )));
         }
+        let _turn = self.chat_turns.lock().unwrap_or_else(|e| e.into_inner());
         // Stored first, so that it comes before the agent's records of its answer.
         self.record_run_event(run_id, "said", &json!({ "message": redact(message) }))?;
+        // The chat works from now on, before its agent says so, so that its worktree is not offered meanwhile.
+        self.store.set_chat_working(run_id)?;
         if !runs.say(run_id, message) {
             return Err(AppError::Invalid(format!("chat {run_id} has ended")));
         }
@@ -860,8 +881,8 @@ impl App {
                 let title = self.chat_title(run.id)?;
                 Ok(Chat {
                     id: run.id,
-                    agent: run.agent,
-                    status: run.status,
+                    agent: run.agent.clone(),
+                    status: run.status.clone(),
                     repository_id: run.repository_id,
                     harness_repository: run.harness_repository,
                     started_at: run.started_at,
@@ -869,6 +890,7 @@ impl App {
                     title,
                     answered: self.store.answered_seq(run.id)?,
                     seen: self.store.seen_seq(run.id)?,
+                    changed_files: self.changed_files(&run),
                 })
             })
             .collect()
@@ -1058,55 +1080,195 @@ impl App {
     /// repository's forge and put in the inbox, ready to merge. A chat that left nothing beyond the repository's
     /// default branch, or has no repository, offers nothing. What a chat in the harness configuration repository
     /// left is offered the same way once it passes the check of a proposal (see `HarnessRepo::check_chat_branch`);
-    /// a branch that fails it is not offered, the chat says why, and the branch stays.
+    /// a branch that fails it is not offered, the chat says why, and the branch stays. A chat whose work was offered
+    /// before updates that change while it is open, and offers nothing new when the branch has not moved since.
     pub fn offer_chat_change(&self, run_id: i64) -> Result<Option<Change>> {
         let run = self.run(run_id)?;
-        if run.harness_repository {
-            return self.offer_harness_chat_change(&run);
-        }
-        let Some(repository_id) = run.repository_id else {
-            return Ok(None);
-        };
-        let repository = self.repository(repository_id)?;
-        let clone = Path::new(&repository.path);
-        let branch = run.branch();
-        let beyond_base = format!("{}..{branch}", repository.base_ref());
-        if git(clone, &["rev-list", "--count", &beyond_base])? == "0" {
-            return Ok(None);
-        }
-        let title = self.chat_title(run_id)?;
-        let body = format!(
-            "This change came from chat {run_id} with the agent {}.\n\nMade by Moebius.",
-            run.agent
-        );
-        self.offer_branch_change(&repository, &branch, &title, &body)
-            .map(Some)
-    }
-
-    fn offer_harness_chat_change(&self, run: &Run) -> Result<Option<Change>> {
-        let branch = run.branch();
-        match self.harness_repo()?.check_chat_branch(self, &branch) {
-            Ok(None) => Ok(None),
+        match self.offer_chat_branch(&run)? {
+            Ok(offered) => Ok(offered),
             Err(why) => {
                 let message = format!("the work is not offered as a change: {why}");
                 self.record_run_event(run.id, "moebius_error", &json!({ "message": message }))?;
                 Ok(None)
             }
-            Ok(Some(_)) => {
-                let head = git(self.harness_repo()?.path(), &["rev-parse", &branch])?;
-                let title = self.chat_title(run.id)?;
-                let change = self.store.add_harness_change(&branch, &head)?;
-                self.store.add_inbox_item(
-                    "ready_to_merge",
-                    None,
-                    &title,
-                    &json!({ "change": change.id, "branch": change.branch }),
-                )?;
-                self.bus
-                    .publish(AppEvent::new("change_offered", json!(change)));
-                Ok(Some(change))
-            }
         }
+    }
+
+    /// The chat `run_id` offers its worktree as it is now as a change, without ending: what the agent left is committed
+    /// on the chat's branch and offered as the chat's end would (see `offer_chat_change`), and the chat goes on in the
+    /// same worktree. Offered again later, the chat's open change is updated. Refused while the agent works, whose
+    /// worktree may be half edited, and when there is nothing to offer. Recorded as a decision of kind
+    /// `offer_chat_changes`.
+    pub fn offer_chat_changes(&self, by: &Actor, run_id: i64, reason: &str) -> Result<Change> {
+        let run = self.running_chat(run_id)?;
+        if run.agent == crate::pibolt::GRILLING_AGENT {
+            return Err(AppError::Invalid(format!(
+                "chat {run_id} is a grilling, which ends in issues, not a change"
+            )));
+        }
+        let worktree = match (
+            &run.worktree,
+            run.repository_id.is_some() || run.harness_repository,
+        ) {
+            (Some(worktree), true) => PathBuf::from(worktree),
+            _ => {
+                return Err(AppError::Invalid(format!(
+                    "chat {run_id} works in no repository: it has nothing to offer"
+                )));
+            }
+        };
+        {
+            let _turn = self.chat_turns.lock().unwrap_or_else(|e| e.into_inner());
+            let status = self.run(run_id)?.status;
+            if matches!(status.as_str(), "starting" | "running") {
+                return Err(AppError::Conflict(format!(
+                    "chat {run_id} is working: its changes can be offered once the agent has answered"
+                )));
+            }
+            let message =
+                format!("Chat {run_id}\n\nCommitted by Moebius when the chat's work was offered.");
+            crate::repos::commit_all(&worktree, &message)?;
+        }
+        let change = match self.offer_chat_branch(&run)? {
+            Ok(Some(change)) => change,
+            Ok(None) => {
+                return Err(AppError::Invalid(format!(
+                    "chat {run_id} has nothing to offer: its branch changes nothing that was not offered"
+                )));
+            }
+            Err(why) => {
+                return Err(AppError::Invalid(format!(
+                    "the work is not offered as a change: {why}"
+                )));
+            }
+        };
+        let context = BTreeMap::from([
+            ("change".to_string(), change.id.to_string()),
+            ("branch".to_string(), change.branch.clone()),
+        ]);
+        self.record_action(
+            by,
+            "offer_chat_changes",
+            None,
+            Some(run_id),
+            context,
+            reason,
+        )?;
+        Ok(change)
+    }
+
+    /// Offers the branch of the chat `run`, as `offer_chat_change` says. The inner error says why the branch of a chat
+    /// in the harness configuration repository is not fit to offer.
+    fn offer_chat_branch(&self, run: &Run) -> Result<std::result::Result<Option<Change>, String>> {
+        let branch = run.branch();
+        let title = self.chat_title(run.id)?;
+        if run.harness_repository {
+            let harness_repo = self.harness_repo()?;
+            match harness_repo.check_chat_branch(self, &branch) {
+                Ok(None) => return Ok(Ok(None)),
+                Err(why) => return Ok(Err(why)),
+                Ok(Some(_)) => {}
+            }
+            let head = git(harness_repo.path(), &["rev-parse", &branch])?;
+            return Ok(Ok(match self.earlier_offer(&branch, &head)? {
+                Earlier::Same(change) => change,
+                Earlier::Open(change) => Some(self.offer_again(change.id, &head, &title)?),
+                Earlier::None => {
+                    let change = self.store.add_harness_change(&branch, &head)?;
+                    Some(self.put_in_inbox(change, &title)?)
+                }
+            }));
+        }
+        let Some(repository_id) = run.repository_id else {
+            return Ok(Ok(None));
+        };
+        let repository = self.repository(repository_id)?;
+        let clone = Path::new(&repository.path);
+        let beyond_base = format!("{}..{branch}", repository.base_ref());
+        if git(clone, &["rev-list", "--count", &beyond_base])? == "0" {
+            return Ok(Ok(None));
+        }
+        let head = git(clone, &["rev-parse", &branch])?;
+        let body = format!(
+            "This change came from chat {} with the agent {}.\n\nMade by Moebius.",
+            run.id, run.agent
+        );
+        Ok(Ok(match self.earlier_offer(&branch, &head)? {
+            Earlier::Same(change) => change,
+            Earlier::Open(change) => {
+                let forge = self.forge(&repository)?;
+                forge.publish(&repository, &title, &body, &branch, change.pull_request)?;
+                Some(self.offer_again(change.id, &head, &title)?)
+            }
+            Earlier::None => Some(self.offer_branch_change(&repository, &branch, &title, &body)?),
+        }))
+    }
+
+    /// What became of the last offer of a chat's `branch`, whose commit is now `head`.
+    fn earlier_offer(&self, branch: &str, head: &str) -> Result<Earlier> {
+        Ok(match self.store.latest_change_on_branch(branch)? {
+            // Nothing moved since: the open change still holds it, and a merged or closed one took it.
+            Some(change) if change.head.as_deref() == Some(head) => {
+                Earlier::Same((change.state == "open").then_some(change))
+            }
+            Some(change) if change.state == "open" => Earlier::Open(change),
+            _ => Earlier::None,
+        })
+    }
+
+    /// Records the newer commit `head` of an open change and puts it in the inbox again, ready to merge.
+    fn offer_again(&self, change_id: i64, head: &str, title: &str) -> Result<Change> {
+        self.store.set_change_head(change_id, head, now())?;
+        self.store.resolve_inbox_for_change(change_id)?;
+        self.put_in_inbox(self.change(change_id)?, title)
+    }
+
+    /// Puts a change without a card in the inbox, ready to merge, and says it was offered.
+    fn put_in_inbox(&self, change: Change, title: &str) -> Result<Change> {
+        self.store.add_inbox_item(
+            "ready_to_merge",
+            None,
+            title,
+            &json!({ "change": change.id, "branch": change.branch }),
+        )?;
+        self.bus
+            .publish(AppEvent::new("change_offered", json!(change)));
+        Ok(change)
+    }
+
+    /// How many files the worktree of the chat `run` changes against its default branch, committed or not; 0 for an
+    /// ended chat, one without a repository, or when git cannot tell.
+    fn changed_files(&self, run: &Run) -> usize {
+        let Some(worktree) = run.worktree.as_deref().filter(|_| run.ended_at.is_none()) else {
+            return 0;
+        };
+        let base = if run.harness_repository {
+            self.harness_repo()
+                .ok()
+                .and_then(|repo| self.repos.default_branch(repo.path()).ok())
+        } else {
+            run.repository_id
+                .and_then(|id| self.repository(id).ok())
+                .map(|repository| repository.base_ref())
+        };
+        let Some(base) = base else {
+            return 0;
+        };
+        let worktree = Path::new(worktree);
+        let committed = format!("{base}...HEAD");
+        let lists = [
+            git(worktree, &["diff", "--name-only", &committed]),
+            git(worktree, &["diff", "--name-only", "HEAD"]),
+            git(worktree, &["ls-files", "--others", "--exclude-standard"]),
+        ];
+        let mut files = BTreeSet::new();
+        for list in lists {
+            let Ok(list) = list else {
+                return 0;
+            };
+            files.extend(list.lines().map(str::to_string));
+        }
+        files.len()
     }
 
     /// Offers `branch` of `repository`, which has commits beyond the default branch, as a change without a card:
@@ -1124,15 +1286,7 @@ impl App {
         let change = self
             .store
             .add_change(repository.id, None, branch, pull_request, &head)?;
-        self.store.add_inbox_item(
-            "ready_to_merge",
-            None,
-            title,
-            &json!({ "change": change.id, "branch": change.branch }),
-        )?;
-        self.bus
-            .publish(AppEvent::new("change_offered", json!(change)));
-        Ok(change)
+        self.put_in_inbox(change, title)
     }
 
     /// How the checks of the change stand for its current commit: `pending`, `success`, `failure` or `none`. Checks

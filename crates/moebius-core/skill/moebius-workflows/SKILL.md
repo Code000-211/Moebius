@@ -36,8 +36,8 @@ the person merges your change.
    `"$MOEBIUS" check-script .moebius/ready.luau --column Ready`, again with `--title "[large] ..."` or
    `--author someone` for the other branches. It prints what the script did (`moved the card to In progress`,
    `waited: ...`) or the error, with exit status 1.
-4. Leave the file in the worktree; it is offered as a change when the chat ends. In a chat without the repository,
-   save it with `"$MOEBIUS" api PUT /v1/repositories/<id>/scripts/Ready` instead (see the `moebius-configure` skill).
+4. Leave the file in the worktree; it is offered as a change when the person offers the chat's changes, after your
+   answer, or the chat ends. In a chat without the repository, save it with `"$MOEBIUS" api PUT /v1/repositories/<id>/scripts/Ready` instead (see the `moebius-configure` skill).
 
 ## What a script can use
 

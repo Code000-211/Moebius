@@ -150,12 +150,20 @@ pub struct Chat {
     /// How far the person has read the chat; unread while below `answered`.
     #[serde(default)]
     pub seen: i64,
+    /// How many files the chat's worktree changes, committed or not: what offering its changes would offer.
+    #[serde(default)]
+    pub changed_files: usize,
 }
 
 impl Chat {
     /// Whether the chat can still be written to.
     pub fn is_open(&self) -> bool {
         matches!(self.status.as_str(), "starting" | "running" | "waiting")
+    }
+
+    /// Whether the chat's agent is at work, whose worktree is not offered meanwhile.
+    pub fn is_working(&self) -> bool {
+        matches!(self.status.as_str(), "starting" | "running")
     }
 
     /// The branch that holds the chat's work in its repository.
@@ -1498,6 +1506,12 @@ impl Client {
             serde_json::json!({ "message": message }),
         )
         .await
+    }
+
+    /// Offers what a chat's worktree changes as a change; the chat goes on.
+    pub async fn offer_chat(&self, chat: i64) -> Result<Change, ClientError> {
+        self.post(&format!("/v1/chats/{chat}/offer"), serde_json::json!({}))
+            .await
     }
 
     /// Ends a chat: its work is committed and offered as a change.

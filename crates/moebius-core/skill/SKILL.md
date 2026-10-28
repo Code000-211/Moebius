@@ -49,8 +49,9 @@ back here for the exact page it names:
 | A number improved, or an idea turned into issues | `guide/autoresearch.md`, `guide/grilling.md` | `"$MOEBIUS" research new ...`, or a grilling chat | `"$MOEBIUS" research <id>` |
 | Something only the desktop API can do | `guide/desktop-api.md`, `reference/desktop-api.md` | `"$MOEBIUS" api <METHOD> <route> --body <json>` | The answer, and reading the state again |
 
-Files you leave in your worktree are offered to the person as a change when the chat ends; in a chat in the harness
-configuration repository, merging that change puts them on the server. Commands act at once.
+Files you leave in your worktree are offered to the person as a change when they offer the chat's changes (between your
+answers) or the chat ends; in a chat in the harness configuration repository, merging that change puts them on the
+server. Commands act at once.
 
 ## Rules for your work
 

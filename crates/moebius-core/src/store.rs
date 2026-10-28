@@ -1203,6 +1203,18 @@ impl Store {
             .optional()?)
     }
 
+    /// The latest change made of `branch`, open or not, if there is one.
+    pub fn latest_change_on_branch(&self, branch: &str) -> Result<Option<Change>> {
+        Ok(self
+            .conn()
+            .query_row(
+                &format!("SELECT {CHANGE_COLUMNS} FROM changes WHERE branch = ?1 ORDER BY id DESC"),
+                [branch],
+                change_from_row,
+            )
+            .optional()?)
+    }
+
     /// Records that `head` of the change's branch was published just now.
     pub fn set_change_head(&self, id: i64, head: &str, published_at: i64) -> Result<()> {
         self.conn().execute(
@@ -1414,6 +1426,15 @@ impl Store {
             self.set_run_status(run.id, "failed")?;
         }
         Ok(runs)
+    }
+
+    /// Marks a waiting chat as running; a chat in any other state stays as it is.
+    pub fn set_chat_working(&self, id: i64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE runs SET status = 'running' WHERE id = ?1 AND status = 'waiting'",
+            [id],
+        )?;
+        Ok(())
     }
 
     pub fn set_run_status(&self, id: i64, status: &str) -> Result<()> {

@@ -1508,6 +1508,62 @@ fn a_chat_is_drawn_with_its_markdown_tool_calls_and_offered_change() {
     );
 }
 
+/// A waiting chat whose worktree changes files offers them with "Offer changes (3 files)" in its head, which asks the
+/// server to offer them; it has no "End chat", and no "Stop" while the agent waits. Compare
+/// `tests/snapshots/chat-offer-tiny-skia.png`.
+#[test]
+fn a_chat_with_changed_files_offers_them_and_has_no_end() {
+    let mut app = chatting("waiting", false);
+    let mut listing = chat_listing("waiting");
+    listing[0].changed_files = 3;
+    let _ = app.update(Message::Chat(chat::Message::Listed(Ok(listing.clone()))));
+    draw_sized(
+        &app,
+        "chat-offer",
+        &["Waiting", "Offer changes (3 files)", "Chat", "Terminal"],
+        Size::new(1440.0, 1100.0),
+    );
+    assert!(!shows(&app, "End chat"));
+    assert!(!shows(&app, "Stop"));
+    assert!(matches!(
+        &clicked(&app, "Offer changes (3 files)")[..],
+        [Message::Chat(chat::Message::Offer)]
+    ));
+    assert_eq!(app.update(Message::Chat(chat::Message::Offer)).units(), 1);
+
+    // The answer shows under the field: the change in the Inbox, or why the server refused.
+    let offered: moebius_desktop::client::Change = serde_json::from_value(json!({
+        "id": 3, "branch": "moebius/chat-7", "state": "open"
+    }))
+    .unwrap();
+    let _ = app.update(Message::Chat(chat::Message::Offered(Ok(offered))));
+    assert!(shows(
+        &app,
+        "Offered as a change on moebius/chat-7: it waits in the Inbox, ready to merge."
+    ));
+    let refused = moebius_desktop::client::ClientError::Server {
+        status: 422,
+        message: "chat 7 has nothing to offer".into(),
+    };
+    let _ = app.update(Message::Chat(chat::Message::Offered(Err(refused))));
+    assert!(shows(&app, "chat 7 has nothing to offer"));
+
+    // While the agent works the button is there but does nothing; Stop is offered then.
+    listing[0].status = "running".into();
+    let _ = app.update(Message::Chat(chat::Message::Listed(Ok(listing.clone()))));
+    assert_eq!(
+        pressed(&app, "Offer changes (3 files)").as_deref(),
+        Some("[]")
+    );
+    assert!(shows(&app, "Stop"));
+
+    // A chat that changes nothing has no button.
+    listing[0].changed_files = 0;
+    listing[0].status = "waiting".into();
+    let _ = app.update(Message::Chat(chat::Message::Listed(Ok(listing))));
+    assert!(!shows(&app, "Offer changes"));
+}
+
 /// A chat whose agent is still at work shows its steps under "Agent is working" with the time and the tool calls so
 /// far, one folded line each: compare `tests/snapshots/chat-working-tiny-skia.png`.
 #[test]
@@ -1623,7 +1679,6 @@ fn a_chat_in_its_terminal_is_drawn_with_pi_bolts_screen() {
         &[
             "Chat",
             "Terminal",
-            "End chat",
             "Pi-Bolt in the chat's worktree",
             "connected",
         ],
@@ -1865,7 +1920,7 @@ fn a_new_chat_offers_the_harness_configuration_only_when_the_server_has_one() {
     let _ = app.update(Message::Chat(chat::Message::HarnessChosen));
     assert!(shows(
         &app,
-        "The agent works on a branch of the harness configuration repository: agents, skills, extensions, MCP servers and rules. Ending the chat offers what it built as a change, if every agent still works with it."
+        "The agent works on a branch of the harness configuration repository: agents, skills, extensions, MCP servers and rules. \"Offer changes\" offers what it built as a change, if every agent still works with it."
     ));
     let _ = app.update(Message::Chat(chat::Message::Start));
     assert!(shows(&app, "Moebius in the harness configuration"));
@@ -1906,10 +1961,7 @@ fn sending_needs_a_message_and_goes_to_the_open_chat() {
         "The agent is working. Your message is queued and sent when it is done with this turn."
     ));
     let mut app = working;
-    assert!(matches!(
-        &clicked(&app, "End chat")[..],
-        [Message::Chat(chat::Message::End)]
-    ));
+    assert!(!shows(&app, "End chat"));
     for message in clicked(&app, "Stop") {
         let _ = app.update(message);
     }

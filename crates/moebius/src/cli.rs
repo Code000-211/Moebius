@@ -247,7 +247,7 @@ pub enum Operate {
     },
     /// The chats, newest first.
     Chats,
-    /// Start, write to and end a chat.
+    /// Start, write to, offer the changes of and end a chat.
     Chat {
         #[command(subcommand)]
         command: ChatCommand,
@@ -387,6 +387,12 @@ pub enum ChatCommand {
         id: i64,
         /// The message, or `-` for standard input.
         message: String,
+    },
+    /// Offer what a chat's worktree changes as a change, without ending the chat.
+    Offer {
+        id: i64,
+        #[arg(long, default_value = "")]
+        reason: String,
     },
     /// End a chat.
     End { id: i64 },
@@ -709,6 +715,12 @@ impl Operate {
                     format!("/v1/chats/{id}/messages"),
                     json!({ "message": text_argument(message)? }),
                 ),
+                Show::Object,
+            ),
+            Chat {
+                command: ChatCommand::Offer { id, reason: why },
+            } => (
+                Request::post(format!("/v1/chats/{id}/offer"), reason(why)),
                 Show::Object,
             ),
             Chat {
@@ -1648,6 +1660,14 @@ mod tests {
             )
         );
         assert_eq!(route(&["chat", "end", "7"]).1, "/v1/chats/7/end");
+        assert_eq!(
+            route(&["chat", "offer", "7", "--reason", "ready"]),
+            (
+                "POST".into(),
+                "/v1/chats/7/offer".into(),
+                Some(json!({"reason": "ready"}))
+            )
+        );
         assert_eq!(
             route(&["issue", "create", "1", "Fix it", "--body", "now"]),
             (

@@ -1,7 +1,8 @@
 //! The server put together (spec 2): the store and the core, the desktop API, the router, the Pi-Bolt harness, the
 //! board engine, which runs every card's column script on a fixed tick, the poll of GitHub and, every 30 seconds,
 //! the refresh of the clones of repositories without a forge and of the harness configuration repository, and, once
-//! a minute, the check whether the Retro is due, a proposal of the Retro is to be tried or a research is to start. The
+//! a minute, the check whether the Retro is due, a proposal of the Retro is to be tried or a research is to start, and
+//! the pause of the Pi of each chat that has waited long for its next message (`PiBolt::pause_idle_chats`). The
 //! built-in skills are written to the data directory at start.
 
 use std::net::SocketAddr;
@@ -39,7 +40,7 @@ use crate::trial;
 /// How often the clones of repositories without a forge are brought up to date with where they were cloned from.
 const PLAIN_REFRESH: std::time::Duration = std::time::Duration::from_secs(30);
 
-/// How often the schedule looks at the clock to see whether the Retro is due or trials may start.
+/// How often the schedule looks at the clock to see whether the Retro is due, trials may start or chats wait idle.
 const RETRO_CHECK: std::time::Duration = std::time::Duration::from_secs(60);
 
 const PLUGIN_TIME_LIMIT: std::time::Duration =
@@ -404,6 +405,8 @@ impl Server {
                             research::MEASURE_LIMIT,
                         ));
                         report(replay::on_schedule(&s.app, window));
+                        s.harness
+                            .pause_idle_chats(&s.app, std::time::Instant::now());
                     })
                     .await;
                 }

@@ -839,12 +839,21 @@ impl App {
         let chat_checked = data["run"]
             .as_i64()
             .is_some_and(|run| self.chats.on_event(run, &event));
+        // A chat's answer can change the files its worktree changes, which "Offer changes" counts.
+        let listed = match (&self.settings, data["run"].as_i64()) {
+            (Some(settings), Some(run))
+                if event.kind == "agent_settled" && self.chats.lists(run) =>
+            {
+                self.chats.reload_list(settings)
+            }
+            _ => Task::none(),
+        };
         let live = self.on_live_event(data, event);
         match &self.settings {
             Some(settings) if chat_checked => {
-                Task::batch([self.chats.reload_judgements(settings), live])
+                Task::batch([self.chats.reload_judgements(settings), live, listed])
             }
-            _ => live,
+            _ => Task::batch([live, listed]),
         }
     }
 

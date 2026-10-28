@@ -617,6 +617,58 @@ async fn a_chat_is_started_written_to_and_followed_through_the_stream() {
     );
 }
 
+/// A chat in a repository offers what its worktree changes through the app's client: the change waits in the inbox and
+/// the chat goes on.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_chats_changes_are_offered_and_the_chat_goes_on() {
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, _) = start_with_fake_pi(dir.path()).await;
+    let origin = origin(dir.path());
+    let repository = post(
+        &settings,
+        "/v1/repositories",
+        json!({"name": "demo", "url": origin.to_str().unwrap()}),
+    )
+    .await;
+    let client = Client::new(settings);
+    let run = client
+        .start_chat(
+            "Coder",
+            "Make notes [write notes.txt]",
+            repository["id"].as_i64(),
+            false,
+        )
+        .await
+        .unwrap();
+    let chat = tokio::time::timeout(Duration::from_secs(60), async {
+        loop {
+            let chats = client.chats().await.unwrap();
+            if chats[0].status == "waiting" {
+                return chats[0].clone();
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("the chat did not answer in a minute");
+    assert_eq!((chat.id, chat.changed_files), (run.id, 1));
+
+    let change = client.offer_chat(run.id).await.unwrap();
+    assert_eq!(change.branch, chat.branch());
+    let snapshot = snapshot_where(&client, |s| {
+        s.inbox.iter().any(|item| item.change() == Some(change.id))
+    })
+    .await;
+    assert!(
+        snapshot
+            .inbox
+            .iter()
+            .any(|item| item.kind == "ready_to_merge")
+    );
+    assert!(client.chats().await.unwrap()[0].is_open());
+    client.say(run.id, "Thanks").await.unwrap();
+}
+
 /// A bare harness configuration repository with the agent Coder, a skill and an MCP server.
 fn harness_origin(dir: &Path) -> std::path::PathBuf {
     let work = dir.join("harness-work");

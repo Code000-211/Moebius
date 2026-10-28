@@ -132,7 +132,15 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
     the agent of a run; for `Moebius`, the bundled agent, it adds the built-in instructions, the `moebius` skill and the
     task skills to the Moebius or Coder configuration. Every run has `$MOEBIUS`, the `moebius` executable, for `check-script`. Chats are not
     counted by `moebius.runs_active()`, so they do not use the board's run limit; the daily budget applies to them.
-    `GET /v1/chats` (`App::chats`) lists them, newest first.
+    `GET /v1/chats` (`App::chats`) lists them, newest first, each with the files its worktree changes
+    (`App::changed_files`). `POST /v1/chats/{id}/offer` (`App::offer_chat_changes`) offers the work without ending the
+    chat: refused while the chat is `running` (`App::say_in_chat` marks it so before it hands the message on, under the
+    same lock), it commits the worktree (`repos::commit_all`) and offers the branch as the end does
+    (`App::offer_chat_branch`, shared with `offer_chat_change`); a branch offered before updates its open change
+    (`Store::latest_change_on_branch`, `set_change_head`) instead of making another. Once a minute `server.rs` calls
+    `PiBolt::pause_idle_chats`, which ends the Pi of each chat that has waited `pibolt::IDLE` (30 minutes, from its
+    last `agent_settled`) the way the terminal interface does, keeping the chat `waiting` among the paused ones;
+    `Runs::say` starts its Pi again with `--continue` before the message, and an end or stop finishes it at once.
     A chat can work in the harness configuration repository (`harness: true`; the run's `harness_repository`): its worktree
     is a chat worktree of the harness clone (`HarnessRepo::add_chat_worktree`), and what it leaves is checked as a Retro
     proposal is (`HarnessRepo::check_chat_branch`, which shares `check_branch` with `proposed`) before `App::offer_chat_change`

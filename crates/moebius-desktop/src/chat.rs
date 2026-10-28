@@ -46,9 +46,14 @@ pub enum Message {
     AskStop,
     KeepGoing,
     Stop,
+    /// End a grilling, which ends in the issues it proposes.
     End,
     /// The server answered stopping or ending the chat.
     Ended(Result<Run, ClientError>),
+    /// Offer what the open chat's worktree changes as a change; the chat goes on.
+    Offer,
+    /// The server offered the change, or said why not.
+    Offered(Result<Change, ClientError>),
     /// Open the form of a new chat, or close it.
     NewChat(bool),
     /// The agents the form can offer were read.
@@ -193,14 +198,14 @@ fn load_judgements(settings: Settings, chat: i64) -> Task<AppMessage> {
 }
 
 /// Sends a request about a chat and tells `then` how it went.
-fn request<F, Fut>(
+fn request<T: Send + 'static, F, Fut>(
     settings: &Settings,
-    then: fn(Result<Run, ClientError>) -> Message,
+    then: fn(Result<T, ClientError>) -> Message,
     ask: F,
 ) -> Task<AppMessage>
 where
     F: FnOnce(Client) -> Fut + Send + 'static,
-    Fut: Future<Output = Result<Run, ClientError>> + Send + 'static,
+    Fut: Future<Output = Result<T, ClientError>> + Send + 'static,
 {
     let client = Client::new(settings.clone());
     Task::perform(ask(client), move |run| AppMessage::Chat(then(run)))
@@ -262,10 +267,7 @@ impl Chats {
 
     /// Reads the chats again, and what the open chat missed.
     pub fn reload(&self, settings: &Settings) -> Task<AppMessage> {
-        let client = Client::new(settings.clone());
-        let list = Task::perform(async move { client.chats().await }, |chats| {
-            AppMessage::Chat(Message::Listed(chats))
-        });
+        let list = self.reload_list(settings);
         match &self.open {
             Some(open) => Task::batch([
                 list,
@@ -340,6 +342,19 @@ impl Chats {
         };
         open.push(event.clone());
         event.kind == "tool_check"
+    }
+
+    /// Reads the chats again.
+    pub fn reload_list(&self, settings: &Settings) -> Task<AppMessage> {
+        let client = Client::new(settings.clone());
+        Task::perform(async move { client.chats().await }, |chats| {
+            AppMessage::Chat(Message::Listed(chats))
+        })
+    }
+
+    /// Whether the run `run` is a chat of the list.
+    pub fn lists(&self, run: i64) -> bool {
+        self.chat(run).is_some()
     }
 
     /// Reads the open chat's judgements again.
@@ -495,6 +510,26 @@ impl Chats {
                 if let Some(open) = &mut self.open {
                     open.notice = result.err().map(|e| say(&e));
                 }
+            }
+            Message::Offer => {
+                if let Some(open) = &self.open {
+                    let id = open.id;
+                    return request(settings, Message::Offered, move |client| async move {
+                        client.offer_chat(id).await
+                    });
+                }
+            }
+            Message::Offered(result) => {
+                if let Some(open) = &mut self.open {
+                    open.notice = Some(match result {
+                        Ok(change) => format!(
+                            "Offered as a change on {}: it waits in the Inbox, ready to merge.",
+                            change.branch
+                        ),
+                        Err(e) => say(&e),
+                    });
+                }
+                return self.reload(settings);
             }
             Message::NewChat(shown) => {
                 self.draft = None;
@@ -888,7 +923,9 @@ fn switch<'a>(chat: &Chat, terminal: bool) -> Element<'a, AppMessage> {
     switch.into()
 }
 
-/// The right of the chat's head: ending it and stopping it (or the question that confirms stopping), while it lasts.
+/// The right of the chat's head, while it lasts: offering what its worktree changes, stopping its agent while it works
+/// (or the question that confirms stopping), and ending a grilling, which ends in the issues it proposes. Other chats
+/// are not ended here: they wait for the next message as long as the person likes.
 fn actions<'a>(chat: &Chat, open: &Open) -> Element<'a, AppMessage> {
     let mut actions = row![].spacing(10).align_y(Alignment::Center);
     if !chat.is_open() {
@@ -910,17 +947,43 @@ fn actions<'a>(chat: &Chat, open: &Open) -> Element<'a, AppMessage> {
                 Some(AppMessage::Chat(Message::Stop)),
             ));
     } else {
-        actions = actions
-            .push(page::white_button(
+        if chat.changed_files > 0 {
+            actions = actions.push(offer_button(chat));
+        }
+        if chat.agent == GRILLING_AGENT {
+            actions = actions.push(page::white_button(
                 "End chat",
                 Some(AppMessage::Chat(Message::End)),
-            ))
-            .push(page::white_button(
+            ));
+        }
+        if chat.is_working() {
+            actions = actions.push(page::white_button(
                 "Stop",
                 Some(AppMessage::Chat(Message::AskStop)),
             ));
+        }
     }
     actions.into()
+}
+
+/// "Offer changes (n files)": pressed, the chat's work is offered as a change. While the agent works its worktree may be
+/// half edited, so the button is muted and says on hover when it can be pressed.
+fn offer_button<'a>(chat: &Chat) -> Element<'a, AppMessage> {
+    let label = match chat.changed_files {
+        1 => "Offer changes (1 file)".to_string(),
+        n => format!("Offer changes ({n} files)"),
+    };
+    if !chat.is_working() {
+        return page::white_button(label, Some(AppMessage::Chat(Message::Offer)));
+    }
+    iced::widget::tooltip(
+        page::white_button(label, None),
+        container(text("Offer once the agent has answered").size(theme::LABEL))
+            .padding([4, 8])
+            .style(|_| page::box_style()),
+        iced::widget::tooltip::Position::Bottom,
+    )
+    .into()
 }
 
 /// What stands in the right pane when no chat is chosen.
@@ -980,11 +1043,11 @@ fn new_chat_view<'a>(
     }
     let start = form.ready().then_some(AppMessage::Chat(Message::Start));
     let hint = if form.harness {
-        "The agent works on a branch of the harness configuration repository: agents, skills, extensions, MCP servers and rules. Ending the chat offers what it built as a change, if every agent still works with it."
+        "The agent works on a branch of the harness configuration repository: agents, skills, extensions, MCP servers and rules. \"Offer changes\" offers what it built as a change, if every agent still works with it."
     } else if form.agent == GRILLING_AGENT {
         "The Grilling partner questions your idea in a repository. Ending the chat puts the issues it proposes in the Inbox, to confirm."
     } else {
-        "With a repository the agent works on its own branch. Ending the chat offers what it built as a change."
+        "With a repository the agent works on its own branch. \"Offer changes\" offers what it built as a change."
     };
     let mut content = column![
         text("New chat")
@@ -1114,7 +1177,7 @@ fn offered_change<'a>(
         .iter()
         .flat_map(|board| &board.changes)
         .chain(&snapshot.harness_changes)
-        .find(|change| change.branch == branch)?;
+        .rfind(|change| change.branch == branch)?;
     let item = snapshot
         .inbox
         .iter()

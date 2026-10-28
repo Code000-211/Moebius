@@ -240,7 +240,7 @@ pub fn primary_button<'a, Message: Clone + 'a>(
 /// A white button with a line, for everything that is not the one primary button. Without a message it is drawn
 /// muted and does nothing.
 pub fn white_button<'a, Message: Clone + 'a>(
-    label: &'a str,
+    label: impl text::IntoFragment<'a>,
     message: Option<Message>,
 ) -> Element<'a, Message> {
     button(

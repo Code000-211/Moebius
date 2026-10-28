@@ -42,6 +42,7 @@ Add `--json` to any command to read fields (`"$MOEBIUS" board --json`). For anyt
 | A grilling's issues made into cards | `"$MOEBIUS" grilling confirm <id>`; or `"$MOEBIUS" grilling dismiss <id>` |
 | A Retro proposal decided | `"$MOEBIUS" proposal merge <id>` or `"$MOEBIUS" proposal dismiss <id>` |
 | A chat with another agent | `"$MOEBIUS" chat start "<message>" --agent <name> --repository <id>` |
+| Another chat's work offered as a change, the chat going on | `"$MOEBIUS" chat offer <id> --reason "..."` (once its agent has answered) |
 | A run steered or stopped | `"$MOEBIUS" api POST /v1/runs/<id>/steer --body '{"message": "..."}'`, `"$MOEBIUS" api POST /v1/runs/<id>/stop --body '{"reason": "..."}'` |
 
 The inbox item's kind decides which actions it takes; `inbox act` refuses any other and lists those it takes.

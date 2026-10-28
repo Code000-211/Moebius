@@ -68,8 +68,10 @@ repository](harness-configuration.md#changing-it-in-a-chat); `harness` is the na
 `Chat`: `id` (the id of its run), `agent`, `status` (that of the run), `repository_id` (or null), `harness_repository`
 (true for a chat in the harness configuration repository), `started_at`, `ended_at`, `title` (the first line of the
 first message, at most 80 characters), `answered` (the `seq` of the chat's last `agent_settled` or `moebius_error`
-event, 0 without one) and `seen` (how far a person has read it, see `POST /v1/chats/{id}/seen`). A chat is unread while
-`answered` is greater than `seen`.
+event, 0 without one), `seen` (how far a person has read it, see `POST /v1/chats/{id}/seen`) and `changed_files` (how
+many files the chat's worktree changes against the default branch of its repository, committed or not, new files
+included: what `POST /v1/chats/{id}/offer` would offer; 0 for an ended chat and one without a repository). A chat is
+unread while `answered` is greater than `seen`.
 
 `Change`: `id`, `repository_id` (null for a change of the harness configuration repository), `harness_repository` (true
 for such a change), `card_id` (or null), `branch`, `state` (`open`, `merged` or `closed`), `pull_request`
@@ -819,9 +821,14 @@ connection and make it again. A server that is not the `moebius` binary only sto
 Starts a chat: an interactive run without a card. The agent answers the first message as a stream of run events, and
 the chat then waits (status `waiting`) for the next message. It works in a new worktree on the branch `moebius/chat-<run id>`
 from the repository's default branch when `repository` is given, so that what the agent builds can be offered as a
-change (see `POST /v1/chats/{id}/end`), or otherwise in an empty directory `chats/<run id>` under the data directory, which is removed when the
+change (see `POST /v1/chats/{id}/offer` and `POST /v1/chats/{id}/end`), or otherwise in an empty directory `chats/<run id>` under the data directory, which is removed when the
 chat ends. The chat's run uses the agent's configuration like any run; its `token_budget` counts the chat's own tokens, the
 daily budget applies, and a chat does not count against the board's run limit.
+
+A chat lasts until it is ended or stopped. A chat that has waited 30 minutes for its next message, with no terminal open,
+has its Pi ended to free what it holds; the chat stays `waiting` with its worktree, and the next message starts its Pi
+again with `--continue` on the chat's own session, so the agent answers it with the whole conversation. Ending, stopping
+or opening the terminal of such a chat works as for any waiting chat.
 
 Request:
 
@@ -855,6 +862,34 @@ Request: `{"message": "..."}`; `message` is required and must not be blank.
 
 Response: the `Run`. Errors: `404` no such run; `422` the run is not a chat, the chat has ended, or the message is blank.
 
+The chat is `running` from the request on, before the agent says it has started, until the agent has answered.
+
+### `POST /v1/chats/{id}/offer`
+
+Offers what the chat's worktree changes as a change, without ending the chat: what the agent left in the worktree is
+committed on the chat's branch (message `Chat <id>`, "Committed by Moebius when the chat's work was offered."), and the
+branch is offered exactly as when the chat ends (see `POST /v1/chats/{id}/end`): a change without a card on
+`moebius/chat-<run id>`, published through the repository's forge, an open `ready_to_merge` inbox item with the chat's
+title and the event `change_offered`; for a chat in the harness configuration repository, after the same check of the
+branch. The chat goes on in the same worktree and takes messages as before.
+
+Offered again after the chat has changed more, the chat's open change is updated rather than a second one made: its
+`head` becomes the branch's new commit (on GitHub the branch is pushed to the same pull request), its inbox item is
+resolved and a new one added, and `change_offered` is published. Offered again when the branch has not moved since, the
+open change is the answer and nothing is made. A chat whose change was merged or closed offers a new change once it has
+changed more. Ending the chat later offers what it changed since in the same way.
+
+The offer is recorded as a decision of kind `offer_chat_changes` (decider `person`, or `agent:Moebius` for the Moebius
+agent's run token), with the chat's run and the context `change` and `branch`.
+
+Request: `{"reason": "..."}`, or `{}`; `reason` is optional.
+
+Response: the `Change`. Errors: `404` no such run; `409` the chat's agent is working (`starting` or `running`), as its
+worktree may be half edited: offer once it has answered; `422` the run is not a chat, the chat has ended, it is a
+grilling, it works in no repository, it has nothing to offer (its branch changes nothing beyond the default branch, or
+nothing that was not offered in a change since merged or closed), or its harness configuration branch fails the check
+(the message says why).
+
 ### `POST /v1/chats/{id}/seen`
 
 A person has read the chat up to the event `seq`: `{"seq": number}`. The chat's `seen` becomes that `seq`, unless it is
@@ -864,7 +899,9 @@ is not a chat.
 
 ### `POST /v1/chats/{id}/end`
 
-A person ends a chat that has not ended: Pi is asked to shut down (its standard input is closed; a Pi that has not exited
+The desktop app offers no way to end a chat (its work is offered with `POST /v1/chats/{id}/offer`, and a chat that waits
+long frees its Pi by itself); the command line and the Moebius agent end chats with this route, and a grilling ends with
+it. A person ends a chat that has not ended: Pi is asked to shut down (its standard input is closed; a Pi that has not exited
 after 10 seconds is killed). With a repository, what the agent left in the worktree is committed on the chat's branch
 (a chat that changed nothing has still succeeded), and then the worktree, or the empty directory, is removed.
 
@@ -873,8 +910,9 @@ that has no card: a `Change` with `card_id` null on the branch `moebius/chat-<ru
 repository's forge (on GitHub the branch is pushed and a pull request is opened whose title is the chat's title and
 whose body says it came from the chat; without a forge there is nothing to publish), an open `ready_to_merge` inbox item
 with the chat's title (`card_id` null, `data.change`, `data.branch`) and the event `change_offered`. A person merges it
-with `POST /v1/changes/{id}/merge`, which resolves the item; the merge commit's message is `Merge <branch>`. A chat that
-changed nothing, or has no repository, offers nothing, and a chat that ends as `failed` offers nothing. If the offer
+with `POST /v1/changes/{id}/merge`, which resolves the item; the merge commit's message is `Merge <branch>`. A chat
+whose work was offered with `POST /v1/chats/{id}/offer` updates its open change instead, and offers nothing new when it
+changed nothing since. A chat that changed nothing, or has no repository, offers nothing, and a chat that ends as `failed` offers nothing. If the offer
 fails, the chat's run gets a `moebius_error` event saying why and the work stays on the branch. A chat that is stopped
 offers what it made in the same way.
 

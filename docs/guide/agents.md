@@ -27,8 +27,9 @@ learns the state of a server from the server itself:
 - It builds files: in a repository, what belongs to that repository (its `.moebius/`); in the harness configuration
   repository (see [Build an extension or skill in a chat](#build-an-extension-or-skill-in-a-chat)), agents, skills,
   extensions, MCP servers and the server's rules. It tries a column script with `moebius check-script` and a plugin with
-  `cargo test`. When the chat ends, the files are offered as a change that a person merges (see
-  [Chat with an agent](#chat-with-an-agent)); it never commits, pushes or merges its own files.
+  `cargo test`. The person offers the files as a change between its answers ("Offer changes" in the desktop app,
+  `moebius chat offer <id>`), and they are offered when the chat ends; a person merges the change (see
+  [Chat with an agent](#chat-with-an-agent)). It never commits, pushes or merges its own files.
 
 Its skills are the reference library and one skill per kind of task, each with the steps, the exact commands and how to
 try the result. Pi shows the agent each skill's description and the agent reads a skill when the task matches:
@@ -327,20 +328,30 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/
   -d '{"message": "Write a ready.luau that starts a card only when nothing blocks it.", "repository": 1}' $API/v1/chats
 ```
 
-With `repository` the agent works in a new worktree on the branch `moebius/chat-<run id>` and what it leaves is committed
-there when the chat ends. If the branch then has commits that the default branch does not, they are offered as a change
-without a card: an inbox item of kind `ready_to_merge`, the event `change_offered` and, on GitHub, a pull request titled
-as the chat is. A person merges it with `POST /v1/changes/{id}/merge`. A chat that changed nothing offers nothing.
-Without `repository`, the agent works in an empty directory and nothing is offered. The answer is the run; its `id` is the
-chat's id. Read what the agent says as run events and send the next message:
+With `repository` the agent works in a new worktree on the branch `moebius/chat-<run id>`. The chats list says how many
+files the worktree changes (`changed_files`). To offer them, without ending the chat, use `POST /v1/chats/{id}/offer` (the
+desktop app's "Offer changes (n files)", or `moebius chat offer <id>`) once the agent has answered: what the agent left is
+committed there and, as the branch then has commits that the default branch does not, offered as a change without a
+card: an inbox item of kind `ready_to_merge`, the event `change_offered` and, on GitHub, a pull request titled as the
+chat is. The chat goes on in the same worktree; offer again after more work and the same change gets the newer commit. A
+person merges it with `POST /v1/changes/{id}/merge`. Ending the chat offers what it left in the same way. A chat that
+changed nothing offers nothing (`422`), and while the agent works the offer is refused (`409`). Without `repository`, the
+agent works in an empty directory and nothing is offered. The answer is the run; its `id` is the chat's id. Read what the
+agent says as run events and send the next message:
 
 ```sh
 curl -s -H "Authorization: Bearer $TOKEN" "$API/v1/runs/$CHAT/events?after=0"
 curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
   -d '{"message": "Now the budgets."}' $API/v1/chats/$CHAT/messages
 curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
-  -d '{}' $API/v1/chats/$CHAT/end
+  -d '{"reason": "the budgets are in"}' $API/v1/chats/$CHAT/offer
 ```
+
+A chat is not ended in the desktop app: it waits for the next message as long as you like. One that has waited 30
+minutes, with no terminal open, has its Pi ended to free it, and stays `waiting`; the next message starts Pi again on the
+chat's own session, so the agent knows the whole conversation. The command line and the API still end a chat
+(`moebius chat end <id>`, `POST /v1/chats/{id}/end`), which offers its work a last time and removes its worktree, and
+"Stop" (`POST /v1/runs/{id}/stop`) ends one whose agent is working.
 
 ### A chat in Pi-Bolt's own terminal interface
 
@@ -354,7 +365,7 @@ in the chat; what is said in the terminal is recorded as the chat's events as it
 show it; and when the terminal closes, the chat's own process continues the same session, so the next message in the
 chat knows what was said in the terminal. The chat takes no message while the terminal is open (`409`), and it opens
 only between turns: `409` while the agent works. The files the terminal changes are in the chat's worktree and are
-committed and offered when the chat ends, as the agent's are. See the [desktop API](desktop-api.md#get-v1chatsidtui).
+committed and offered with the chat's offer, or when it ends, as the agent's are. See the [desktop API](desktop-api.md#get-v1chatsidtui).
 
 To build on the harness configuration (a skill, an extension, an MCP server, an agent, the server's rules) in a chat,
 see [Build an extension or skill in a chat](#build-an-extension-or-skill-in-a-chat).
@@ -379,10 +390,11 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/
 2. The agent works in a worktree of the clone, on the branch `moebius/chat-<run id>`. A skill is
    `skills/<name>/SKILL.md`; an extension is a TypeScript file, `extensions/<name>.ts`; an agent names them in
    `skills` and `extensions` of `agents/<name>.toml` (see [harness configuration](../reference/harness-configuration.md)).
-3. End the chat (`POST /v1/chats/{id}/end`). Moebius checks that the branch changes only configuration files and that
+3. Offer the work (`POST /v1/chats/{id}/offer`, "Offer changes" in the desktop app), or end the chat
+   (`POST /v1/chats/{id}/end`). Moebius checks that the branch changes only configuration files and that
    every agent can still be read. If so, the work is offered as a change of the harness configuration repository, with a
-   `ready_to_merge` item in the inbox. If not, the run gets a `moebius_error` event saying why and the branch stays in the
-   clone.
+   `ready_to_merge` item in the inbox. If not, the offer is refused with why (`422`), or, when the chat ends, the run gets
+   a `moebius_error` event saying why, and the branch stays in the clone.
 4. Merge it with `POST /v1/changes/{id}/merge`. The merge is pushed to `origin`, the agents are read again, and the next
    run of the Coder has the skill. Try it by starting a chat with that agent.
 

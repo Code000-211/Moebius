@@ -44,6 +44,10 @@ use crate::store::{Card, Repository, Run};
 /// How long Pi may take to exit after it was asked to stop.
 const STOP_GRACE: Duration = Duration::from_secs(10);
 
+/// How long a chat waits for the person's next message before its Pi is ended, to be started again on the same session
+/// by the next message (see `PiBolt::pause_idle_chats`).
+pub const IDLE: Duration = Duration::from_secs(30 * 60);
+
 /// The bridge extension, written into each run's directory.
 const BRIDGE: &str = include_str!("../bridge/moebius-bridge.ts");
 
@@ -117,8 +121,8 @@ const MOEBIUS_INSTRUCTIONS: &str = "You are the Moebius agent. You work for the 
      files in the harness configuration repository when this chat is in it, or the matching command otherwise \
      (`\"$MOEBIUS\" agent save`, `rules save`, `api PUT /v1/skills/<name>`). Settings, repositories, issues, briefs, the \
      inbox and everything else are commands. A plugin is a Rust crate as the plugin guide shows, built and tested with \
-     cargo. Files you leave in a worktree are offered to the person as a change when the chat ends; commands act at \
-     once, as yours: the server records each decision you make as the Moebius agent's.\n\n\
+     cargo. Files you leave in a worktree are offered to the person as a change when they offer the chat's changes, \
+     between your answers, or the chat ends; commands act at once, as yours: the server records each decision you make as the Moebius agent's.\n\n\
      How you work. Understand what is wanted; if it is unclear, ask one short question, but decide what you can decide \
      yourself. Build the smallest thing that does it, try it the way the guide says (`\"$MOEBIUS\" check-script` for a \
      column script, cargo test for a plugin, reading it back with the cli after a command) and fix what fails. Before \
@@ -183,8 +187,8 @@ pub struct PiBolt {
     /// The agents runs use. The harness configuration repository swaps them when it changes.
     pub agents: Arc<RwLock<AgentSet>>,
     live: Arc<Mutex<HashMap<i64, Live>>>,
-    /// The chats whose terminal interface is open, which have no Pi of their own meanwhile. Taken before `live` by
-    /// whoever takes both, and held while a chat moves between the two.
+    /// The chats whose terminal interface is open, or that waited [`IDLE`], which have no Pi of their own meanwhile.
+    /// Taken before `live` by whoever takes both, and held while a chat moves between the two.
     paused: Arc<Mutex<HashMap<i64, Paused>>>,
 }
 
@@ -209,6 +213,8 @@ struct Live {
     chat: bool,
     /// Why a chat's Pi was asked to exit, so that its exit is no failure.
     closing: Arc<Mutex<Option<Closing>>>,
+    /// Since when a chat has waited for the person's next message; none while its agent works.
+    waiting_since: Arc<Mutex<Option<Instant>>>,
     run: RunningRun,
 }
 
@@ -216,16 +222,18 @@ struct Live {
 enum Closing {
     Stopped,
     Ended,
-    /// The chat goes on in its terminal interface: the exit ends nothing.
+    /// The chat goes on in its terminal interface, or waits without a Pi: the exit ends nothing.
     Paused,
 }
 
-/// A chat in its terminal interface: the run its Pi held, the follower of its session file, and whether the person
-/// ended or stopped the chat meanwhile.
+/// A chat without a Pi of its own: the run its Pi held, the follower of its session file while its terminal interface
+/// is open (none for a chat that waited [`IDLE`]), whether the person ended or stopped the chat meanwhile, and the core,
+/// to start its Pi again or end it.
 struct Paused {
     run: RunningRun,
-    follower: Follower,
+    follower: Option<Follower>,
     closing: Option<Closing>,
+    app: Arc<App>,
 }
 
 impl PiBolt {
@@ -486,6 +494,7 @@ impl PiBolt {
             child: Arc::new(Mutex::new(child)),
             chat: run.purpose == "chat",
             closing: Arc::new(Mutex::new(None)),
+            waiting_since: Arc::new(Mutex::new(prompt.is_none().then(Instant::now))),
             run: run.clone(),
         };
         lock(&self.live).insert(run.id, live.clone());
@@ -547,6 +556,71 @@ impl PiBolt {
 }
 
 impl PiBolt {
+    /// Ends the Pi of every chat that has waited [`IDLE`] for the person's next message at `now`, with no terminal
+    /// interface open. The chat stays `waiting`, and the next message starts its Pi again on the same session (see
+    /// `say`); ending or stopping it ends it at once. The server calls this every minute.
+    pub fn pause_idle_chats(&self, app: &Arc<App>, now: Instant) {
+        let mut paused = lock(&self.paused);
+        let idle: Vec<Live> = lock(&self.live)
+            .values()
+            .filter(|live| live.chat)
+            .filter(|live| {
+                lock(&live.waiting_since)
+                    .is_some_and(|since| now.saturating_duration_since(since) >= IDLE)
+            })
+            .cloned()
+            .collect();
+        for live in idle {
+            let id = live.run.id;
+            if !app.run(id).is_ok_and(|run| run.status == "waiting") || !self.end_waiting_pi(&live)
+            {
+                continue;
+            }
+            paused.insert(
+                id,
+                Paused {
+                    run: live.run,
+                    follower: None,
+                    closing: None,
+                    app: app.clone(),
+                },
+            );
+        }
+    }
+
+    /// Ends the Pi of a chat that waits, which leaves the chat as it is: false when the chat was ending already.
+    fn end_waiting_pi(&self, live: &Live) -> bool {
+        {
+            let mut closing = lock(&live.closing);
+            if closing.is_some() {
+                return false;
+            }
+            *closing = Some(Closing::Paused);
+        }
+        // Closing stdin asks Pi to shut down; it is idle, as the chat waits.
+        lock(&live.stdin).take();
+        if !wait_for_exit(&live.child, STOP_GRACE) {
+            let mut child = lock(&live.child);
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        lock(&self.live).remove(&live.run.id);
+        true
+    }
+
+    /// Starts the Pi of a chat that has none again, on the chat's session, waiting for the next message.
+    fn relaunch(&self, app: &Arc<App>, run: &RunningRun) -> Result<(), String> {
+        let agent = app.run(run.id).map_err(|e| e.to_string())?.agent;
+        let config = self.agent(app, &agent)?;
+        self.launch(app, None, &config, run.clone(), None)
+    }
+
+    /// Ends a chat that waited [`IDLE`] and has no Pi, on a thread of its own, as `stopped` when `stopped`.
+    fn finish_paused(&self, chat: Paused, stopped: bool) {
+        let (router, lives) = (self.router.clone(), self.live.clone());
+        std::thread::spawn(move || finish(&chat.app, chat.run, &router, &lives, Ok(stopped)));
+    }
+
     /// Starts a run of `card` by `agent`, as `config` has it, in a worktree `worktree` makes for the run, and returns
     /// it. The agent leaves its work in the worktree, which is committed when the run ends.
     fn start_card_run(
@@ -713,47 +787,44 @@ impl Runs for PiBolt {
         let config = self.agent(app, &stored.agent)?;
         let mut paused = lock(&self.paused);
         let ended = || format!("chat {run_id} has ended");
-        let live = lock(&self.live)
-            .get(&run_id)
-            .cloned()
-            .filter(|live| live.chat)
-            .ok_or_else(ended)?;
         let run_dir = app.data_dir.join("runs").join(run_id.to_string());
-        let agent_dir = self.write_agent_dir(run_dir.join("agent"), &config, &live.run.token)?;
-        {
-            let mut closing = lock(&live.closing);
-            if closing.is_some() {
+        // A chat that waited long has no Pi to end.
+        let idle = paused
+            .get(&run_id)
+            .is_some_and(|p| p.follower.is_none() && p.closing.is_none());
+        let run = if idle {
+            paused.remove(&run_id).expect("the chat is paused").run
+        } else {
+            let live = lock(&self.live)
+                .get(&run_id)
+                .cloned()
+                .filter(|live| live.chat)
+                .ok_or_else(ended)?;
+            if !self.end_waiting_pi(&live) {
                 return Err(ended());
             }
-            *closing = Some(Closing::Paused);
-        }
-        // Closing stdin asks Pi to shut down; it is idle, as the chat waits.
-        lock(&live.stdin).take();
-        if !wait_for_exit(&live.child, STOP_GRACE) {
-            let mut child = lock(&live.child);
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-        lock(&self.live).remove(&run_id);
+            live.run
+        };
+        let agent_dir = self.write_agent_dir(run_dir.join("agent"), &config, &run.token)?;
         let sessions = run_dir.join("sessions");
         let place = Place {
-            worktree: &live.run.worktree,
+            worktree: &run.worktree,
             agent_dir: &agent_dir,
             sessions: &sessions,
             continues: true,
             bridge: &run_dir.join("moebius-bridge.ts"),
-            token: &live.run.token,
+            token: &run.token,
             operates: stored.agent == MOEBIUS_AGENT,
         };
         let command = self.command(&config, &place, true);
         let follower = Follower::start(app.clone(), run_id, sessions);
-        let run = live.run;
         paused.insert(
             run_id,
             Paused {
                 run,
-                follower,
+                follower: Some(follower),
                 closing: None,
+                app: app.clone(),
             },
         );
         Ok(command)
@@ -763,15 +834,21 @@ impl Runs for PiBolt {
     /// next message; a chat that was ended or stopped meanwhile ends instead.
     fn close_tui(&self, app: &Arc<App>, run_id: i64) {
         let mut paused = lock(&self.paused);
+        if paused.get(&run_id).is_none_or(|p| p.follower.is_none()) {
+            return;
+        }
         let Some(Paused {
             run,
             follower,
             closing,
+            ..
         }) = paused.remove(&run_id)
         else {
             return;
         };
-        follower.stop();
+        if let Some(follower) = follower {
+            follower.stop();
+        }
         if let Some(closing) = closing {
             return finish(
                 app,
@@ -781,12 +858,7 @@ impl Runs for PiBolt {
                 Ok(closing == Closing::Stopped),
             );
         }
-        let agent = app.run(run_id).map(|stored| stored.agent);
-        let launched = agent
-            .map_err(|e| e.to_string())
-            .and_then(|agent| self.agent(app, &agent))
-            .and_then(|config| self.launch(app, None, &config, run.clone(), None));
-        if let Err(e) = launched {
+        if let Err(e) = self.relaunch(app, &run) {
             let why = format!("cannot start the chat's pi-bolt again after its terminal: {e}");
             finish(app, run, &self.router, &self.live, Err(why));
         }
@@ -820,9 +892,26 @@ impl Runs for PiBolt {
     }
 
     fn say(&self, run_id: i64, message: &str) -> bool {
+        // Held throughout, so that the chat is not paused while it is told the message.
+        let mut paused = lock(&self.paused);
+        // A chat that waited long gets its Pi again, on the same session.
+        if paused
+            .get(&run_id)
+            .is_some_and(|p| p.follower.is_none() && p.closing.is_none())
+        {
+            let Paused { run, app, .. } = paused.remove(&run_id).expect("the chat is paused");
+            if let Err(e) = self.relaunch(&app, &run) {
+                let why = format!("cannot start the chat's pi-bolt again: {e}");
+                finish(&app, run, &self.router, &self.live, Err(why));
+                return false;
+            }
+            // Started, it waits; the message makes it work.
+            let _ = app.store.set_chat_working(run_id);
+        }
         let Some(live) = lock(&self.live).get(&run_id).cloned().filter(|l| l.chat) else {
             return false;
         };
+        *lock(&live.waiting_since) = None;
         // Pi starts a run for the prompt, or queues it when the agent is working, so the answer does not depend on
         // whether the agent has just settled.
         send(
@@ -834,8 +923,13 @@ impl Runs for PiBolt {
     fn end(&self, run_id: i64) -> bool {
         // Held throughout, so that the chat does not move to or from its terminal interface meanwhile.
         let mut paused = lock(&self.paused);
-        if let Some(paused) = paused.get_mut(&run_id) {
-            paused.closing = Some(Closing::Ended);
+        if let Some(chat) = paused.get_mut(&run_id) {
+            if chat.follower.is_none() {
+                let chat = paused.remove(&run_id).expect("the chat is paused");
+                self.finish_paused(chat, false);
+            } else {
+                chat.closing = Some(Closing::Ended);
+            }
             return true;
         }
         let Some(live) = lock(&self.live).get(&run_id).cloned().filter(|l| l.chat) else {
@@ -924,8 +1018,13 @@ impl Runs for PiBolt {
     fn stop(&self, run_id: i64) -> bool {
         // Held throughout, so that the chat does not move to or from its terminal interface meanwhile.
         let mut paused = lock(&self.paused);
-        if let Some(paused) = paused.get_mut(&run_id) {
-            paused.closing = Some(Closing::Stopped);
+        if let Some(chat) = paused.get_mut(&run_id) {
+            if chat.follower.is_none() {
+                let chat = paused.remove(&run_id).expect("the chat is paused");
+                self.finish_paused(chat, true);
+            } else {
+                chat.closing = Some(Closing::Stopped);
+            }
             return true;
         }
         let Some(live) = lock(&self.live).get(&run_id).cloned() else {
@@ -972,12 +1071,10 @@ impl RunningRun {
             return Ok(false);
         }
         let worktree = &self.worktree;
-        git(worktree, &["add", "--all"])?;
-        if git(worktree, &["status", "--porcelain"])?.is_empty() {
-            return Ok(git(worktree, &["rev-parse", "HEAD"])? != self.start);
+        if crate::repos::commit_all(worktree, &self.commit_message)? {
+            return Ok(true);
         }
-        git(worktree, &["commit", "--quiet", "-m", &self.commit_message])?;
-        Ok(true)
+        Ok(git(worktree, &["rev-parse", "HEAD"])? != self.start)
     }
 
     /// Closes the terminals open on the run, then removes the worktree, or the chat's empty directory.
@@ -1139,6 +1236,13 @@ impl Reader {
                 .to_string();
             let chat = self.run.purpose == "chat";
             let aborted = value["aborted"] == true;
+            // Before the chat's status, which says the same, so that a chat that reads as waiting has waited.
+            if chat && kind == "agent_start" {
+                *lock(&self.live.waiting_since) = None;
+            }
+            if chat && kind == "agent_settled" && !aborted {
+                *lock(&self.live.waiting_since) = Some(Instant::now());
+            }
             keep(&self.app, self.run.id, chat, &kind, &value);
             if kind == "response" && value["command"] == "prompt" && value["success"] == false {
                 ending = Err(format!("pi-bolt refused the prompt: {}", value["error"]));
@@ -1698,6 +1802,68 @@ mod tests {
         let prompt = prompt_of(&code);
         assert!(prompt.contains("Moebius commits what you leave"));
         assert!(!prompt.contains("Notes from the last round"));
+    }
+
+    /// Waits until `holds` holds of the run `run_id`.
+    fn wait_for_run(app: &App, run_id: i64, what: &str, holds: impl Fn(&Run) -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            let run = app.store.run(run_id).unwrap().unwrap();
+            if holds(&run) {
+                return;
+            }
+            assert!(Instant::now() < deadline, "{what}: {run:?}");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    #[test]
+    fn a_chat_idle_for_long_loses_its_pi_and_the_next_message_starts_it_again() {
+        let (_dir, app, pi, repo) = setup();
+        let repository = app.repository(repo).unwrap();
+        let run = pi
+            .start_chat(&app, "Coder", Some(&repository), false, "Hello", None)
+            .unwrap();
+        let waiting = |run: &Run| run.status == "waiting";
+        wait_for_run(&app, run.id, "the agent answers", waiting);
+        let agent_dir = app.data_dir.join(format!("runs/{}/agent", run.id));
+        let pid = std::fs::read_to_string(agent_dir.join("pid.txt")).unwrap();
+
+        // Before IDLE has passed the chat keeps its Pi.
+        pi.pause_idle_chats(&app, Instant::now());
+        assert!(lock(&pi.live).contains_key(&run.id));
+        pi.pause_idle_chats(&app, Instant::now() + IDLE);
+        assert!(!lock(&pi.live).contains_key(&run.id));
+        assert!(!Path::new(&format!("/proc/{pid}")).exists());
+        assert_eq!(app.run(run.id).unwrap().status, "waiting");
+
+        // The next message starts Pi again on the same session, and it answers.
+        app.say_in_chat(&pi, run.id, "Again").unwrap();
+        let answered = |run: &Run| {
+            run.status == "waiting"
+                && app
+                    .store
+                    .events(run.id)
+                    .unwrap()
+                    .iter()
+                    .filter(|e| e.kind == "agent_settled")
+                    .count()
+                    == 2
+        };
+        wait_for_run(&app, run.id, "the agent answers again", answered);
+        let argv = std::fs::read_to_string(agent_dir.join("argv.json")).unwrap();
+        assert!(argv.contains("--continue"), "{argv}");
+        assert_eq!(
+            std::fs::read_to_string(agent_dir.join("prompt.txt")).unwrap(),
+            "Again"
+        );
+
+        // A chat that is paused ends at once when it is ended.
+        pi.pause_idle_chats(&app, Instant::now() + IDLE);
+        assert!(lock(&pi.paused).contains_key(&run.id));
+        app.end_chat(&pi, run.id).unwrap();
+        assert_eq!(wait_until_ended(&app, run.id).status, "succeeded");
+        assert!(!pi.say(run.id, "Hello?"));
     }
 
     #[test]
