@@ -2,12 +2,13 @@
 //! Build, Improve and Setup. It collapses to a rail of icons. Every number in it comes from the server.
 
 use iced::font::Weight;
-use iced::widget::{button, column, container, row, scrollable, space, text, tooltip};
+use iced::widget::{button, column, container, row, scrollable, space, text, text_input, tooltip};
 use iced::{Border, Center, Color, Element, Length, Padding};
 
 use crate::app::{Connection, Message, Page};
 use crate::client::Snapshot;
 use crate::icons::{self, Icon};
+use crate::search;
 use crate::theme;
 use crate::usage::short;
 
@@ -50,6 +51,7 @@ pub fn view<'a>(
     chats_waiting: usize,
     tokens_today: Option<(i64, Option<i64>)>,
     collapsed: bool,
+    search: &str,
 ) -> Element<'a, Message> {
     let inbox = item(
         Lead::Icon(Icon::Inbox),
@@ -130,7 +132,7 @@ pub fn view<'a>(
     };
     let sidebar = container(
         column![
-            top(connection, collapsed),
+            top(connection, collapsed, search),
             scrollable(groups).height(Length::Fill),
             tokens_meter(tokens_today, collapsed),
         ]
@@ -231,7 +233,7 @@ fn divider<'a>() -> Element<'a, Message> {
 }
 
 /// The app name with the connection, the toggle and the search field.
-fn top<'a>(connection: Connection, collapsed: bool) -> Element<'a, Message> {
+fn top<'a>(connection: Connection, collapsed: bool, search: &str) -> Element<'a, Message> {
     let (state, color, text_color) = match connection {
         Connection::Online => ("Online", theme::TEAL, theme::ONLINE_TEXT),
         Connection::Connecting => ("Connecting", theme::TEXT_MUTED, theme::TEXT_MUTED),
@@ -290,35 +292,45 @@ fn top<'a>(connection: Connection, collapsed: bool) -> Element<'a, Message> {
         .padding(Padding::from([0.0, 4.0]))
         .into()
     };
-    // A placeholder: searching and running commands come later.
-    let search = container(
-        row![
-            Icon::Search.view(theme::TEXT_MUTED, theme::ICON),
-            text("Search or run…")
-                .size(theme::CONTEXT)
-                .color(theme::TEXT_MUTED),
-        ]
-        .spacing(8)
-        .align_y(Center),
-    )
-    .width(Length::Fill)
-    .padding([8, 10])
-    .style(|_| container::Style {
-        background: Some(theme::SURFACE.into()),
-        border: Border {
-            color: theme::SIDEBAR_LINE,
-            width: 1.0,
-            radius: theme::RADIUS_CONTROL.into(),
-        },
-        ..container::Style::default()
-    });
+    let field = text_input("Search or run…", search)
+        .id(search::FIELD)
+        .on_input(|text| Message::Search(search::Message::Edited(text)))
+        .on_submit(Message::Search(search::Message::Submit))
+        .size(theme::CONTEXT)
+        .padding(0)
+        .style(|_, _| text_input::Style {
+            background: Color::TRANSPARENT.into(),
+            border: Border::default(),
+            icon: theme::TEXT_MUTED,
+            placeholder: theme::TEXT_MUTED,
+            value: theme::TEXT,
+            selection: theme::TEAL_BORDER,
+        });
     let search: Element<'a, Message> = if collapsed {
-        container(Icon::Search.view(theme::TEXT_MUTED, theme::ICON))
-            .center_x(Length::Fill)
+        button(container(Icon::Search.view(theme::TEXT_MUTED, theme::ICON)).center_x(Length::Fill))
+            .width(Length::Fill)
             .padding([8, 0])
+            .on_press(Message::Search(search::Message::Focus))
+            .style(|_, _| button::Style::default())
             .into()
     } else {
-        search.into()
+        container(
+            row![Icon::Search.view(theme::TEXT_MUTED, theme::ICON), field]
+                .spacing(8)
+                .align_y(Center),
+        )
+        .width(Length::Fill)
+        .padding([8, 10])
+        .style(|_| container::Style {
+            background: Some(theme::SURFACE.into()),
+            border: Border {
+                color: theme::SIDEBAR_LINE,
+                width: 1.0,
+                radius: theme::RADIUS_CONTROL.into(),
+            },
+            ..container::Style::default()
+        })
+        .into()
     };
     container(column![mark_row, search].spacing(12))
         .padding(Padding {

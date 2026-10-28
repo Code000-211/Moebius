@@ -4,8 +4,8 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use iced::widget::{container, row};
-use iced::{Element, Length, Subscription, Task};
+use iced::widget::{container, opaque, row, stack};
+use iced::{Element, Length, Padding, Subscription, Task};
 
 use crate::add_repository::{self, AddRepository};
 use crate::agents::{self, Agents};
@@ -18,6 +18,7 @@ use crate::live::{self, Live};
 use crate::new_issue::{self, NewIssue};
 use crate::retro::{self, Retros};
 use crate::rules::{self, Rules};
+use crate::search::{self, Search, Target};
 use crate::settings::{self, Settings};
 use crate::setup::{self, Setup};
 use crate::usage::{self, Usage};
@@ -132,6 +133,7 @@ pub enum Message {
     OpenChat(i64),
     /// The history of the card was read.
     History(i64, Result<Vec<HistoryEntry>, ClientError>),
+    Search(search::Message),
     ToggleSidebar,
     ChangeConnection,
 }
@@ -171,6 +173,7 @@ pub struct App {
     add_repository: AddRepository,
     new_issue: NewIssue,
     collapsed: bool,
+    search: Search,
     /// Counts the reads of the snapshot, so that an older answer never replaces a newer one.
     requested: u64,
     shown: u64,
@@ -210,6 +213,7 @@ impl App {
             add_repository: AddRepository::default(),
             new_issue: NewIssue::default(),
             collapsed: false,
+            search: Search::default(),
             requested: 0,
             shown: 0,
         };
@@ -381,6 +385,7 @@ impl App {
                 }
             }
             Message::History(_, Err(_)) => {}
+            Message::Search(message) => return self.on_search(message),
             Message::ToggleSidebar => self.collapsed = !self.collapsed,
             Message::ChangeConnection => {
                 self.form.error = None;
@@ -389,6 +394,86 @@ impl App {
             }
         }
         Task::none()
+    }
+
+    /// Something on the search field or its list.
+    fn on_search(&mut self, message: search::Message) -> Task<Message> {
+        match message {
+            search::Message::Edited(text) => {
+                let opening = !self.search.is_open();
+                self.search.text = text;
+                self.search.selected = 0;
+                self.search.notice = None;
+                // The agents are listed only when their page is opened; the search needs them.
+                if opening
+                    && self.search.is_open()
+                    && let Some(settings) = &self.settings
+                {
+                    return self.agents.reload(settings);
+                }
+            }
+            search::Message::Move(direction) => {
+                let count = self.search_entries().len();
+                self.search.step(direction, count);
+            }
+            search::Message::Submit => {
+                let selected = self.search.selected;
+                return self.open_entry(selected);
+            }
+            search::Message::Pick(index) => return self.open_entry(index),
+            search::Message::Close => self.search.clear(),
+            search::Message::Focus => {
+                self.collapsed = false;
+                return iced::widget::operation::focus(search::FIELD);
+            }
+            search::Message::Started(_, Ok(run)) => {
+                self.page = Some(Page::Chat);
+                self.opened = None;
+                return self
+                    .chats
+                    .update(chat::Message::Started(Ok(run)), self.settings.as_ref());
+            }
+            search::Message::Started(text, Err(ClientError::Unauthorized)) => {
+                self.search.text = text;
+                self.show_connect_error(&ClientError::Unauthorized);
+            }
+            search::Message::Started(text, Err(e)) => {
+                self.search.text = text;
+                self.search.notice = Some(live::say(&e));
+            }
+        }
+        Task::none()
+    }
+
+    /// The entries the search matches now.
+    fn search_entries(&self) -> Vec<search::Entry> {
+        search::matches(
+            &self.search.text,
+            &self.snapshot,
+            self.chats.list(),
+            self.agents.list(),
+        )
+    }
+
+    /// Opens the entry at `index` of the list, and clears the field.
+    fn open_entry(&mut self, index: usize) -> Task<Message> {
+        let Some(entry) = self.search_entries().into_iter().nth(index) else {
+            return Task::none();
+        };
+        self.search.clear();
+        match entry.target {
+            Target::Card(id) => self.open(id),
+            Target::Chat(id) => self.update(Message::OpenChat(id)),
+            Target::Agent(name) => Task::batch([
+                self.update(Message::Select(Page::Agents)),
+                self.update(Message::Agents(agents::Message::Select(name))),
+            ]),
+            Target::Page(page) => self.update(Message::Select(page)),
+            Target::Ask(text) => match &self.settings {
+                Some(settings) => search::ask(settings, text),
+                None => Task::none(),
+            },
+        }
     }
 
     /// Something on the inbox page. The snapshot is read again when a request succeeded, without waiting for the event.
@@ -657,7 +742,8 @@ impl App {
                     Some(Opened::Run(live)) => live.subscription(settings),
                     _ => Subscription::none(),
                 };
-                Subscription::batch([stream, clock, inbox, chats, shell])
+                let keys = iced::event::listen_with(search::key);
+                Subscription::batch([stream, clock, inbox, chats, shell, keys])
             }
             _ => Subscription::none(),
         }
@@ -686,21 +772,35 @@ impl App {
             Screen::Connect => connect::view(&self.form, self.settings.as_ref()),
             Screen::Main => {
                 let page = self.page();
-                row![
+                let shell = row![
                     sidebar::view(
                         &self.snapshot,
                         self.connection,
                         &page,
                         self.chats.waiting(),
                         self.usage.today(),
-                        self.collapsed
+                        self.collapsed,
+                        &self.search.text
                     ),
                     container(self.page_view(page))
                         .padding(theme::PAGE_PADDING)
                         .width(Length::Fill)
                         .height(Length::Fill),
-                ]
-                .into()
+                ];
+                if !self.search.is_open() {
+                    return shell.into();
+                }
+                // The list stands under the field, over the page.
+                let entries = self.search_entries();
+                let list = container(opaque(self.search.view(&entries)))
+                    .padding(Padding {
+                        top: 100.0,
+                        left: 12.0,
+                        ..Padding::ZERO
+                    })
+                    .width(Length::Fill)
+                    .height(Length::Fill);
+                stack![shell, list].into()
             }
         }
     }

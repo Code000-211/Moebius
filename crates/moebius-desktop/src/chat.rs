@@ -22,7 +22,7 @@ use crate::settings::Settings;
 use crate::{connect, theme, transcript};
 
 /// The agent a chat is with unless another is named.
-const DEFAULT_AGENT: &str = "Moebius";
+pub const DEFAULT_AGENT: &str = "Moebius";
 
 /// The agent of a grilling, which needs a repository to end in issues of.
 const GRILLING_AGENT: &str = "Grilling-partner";
@@ -175,6 +175,11 @@ impl Chats {
             form: None,
             now,
         }
+    }
+
+    /// The chats, newest first.
+    pub fn list(&self) -> &[Chat] {
+        &self.list
     }
 
     /// How many chats wait for the person's next message.

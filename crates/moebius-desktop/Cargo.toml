@@ -19,6 +19,7 @@ tokio-tungstenite = "0.30.0"
 toml = "1.1.8"
 
 [dev-dependencies]
+iced_runtime = "0.14"
 iced_test = "0.14"
 moebius-core = { path = "../moebius-core" }
 tempfile = "3.27.0"

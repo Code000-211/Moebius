@@ -215,6 +215,11 @@ impl Agents {
             .is_some_and(|skills| !skills.is_empty())
     }
 
+    /// The agents, as the server last listed them.
+    pub fn list(&self) -> &[Agent] {
+        &self.list
+    }
+
     /// Reads the agents, skills and MCP servers again.
     pub fn reload(&self, settings: &Settings) -> Task<AppMessage> {
         let client = |settings: &Settings| Client::new(settings.clone());

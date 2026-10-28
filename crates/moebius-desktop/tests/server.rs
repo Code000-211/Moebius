@@ -21,6 +21,7 @@ use moebius_desktop::client::{
     terminal,
 };
 use moebius_desktop::conversation::{Conversation, Entry, Said};
+use moebius_desktop::search;
 use moebius_desktop::settings::Settings;
 use moebius_desktop::terminal::Shell;
 use serde_json::json;
@@ -1221,4 +1222,40 @@ async fn the_client_adds_a_repository_from_a_bare_clone_and_creates_an_issue_on_
         .await
         .unwrap_err();
     assert!(matches!(blank, ClientError::Server { status: 422, .. }));
+}
+
+/// The ask entry of the search starts a real chat with the Moebius agent, which the fake Pi answers, and it opens.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_ask_entry_of_the_search_starts_a_chat_that_opens() {
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, _) = start_with_fake_pi(dir.path()).await;
+    let client = Client::new(settings.clone());
+    let mut app = App::with_snapshot(Snapshot::default());
+    let _ = app.update(Message::Checked(Ok((
+        settings.clone(),
+        client.snapshot().await.unwrap(),
+    ))));
+
+    let _ = app.update(Message::Search(search::Message::Edited(
+        "what is a column script".into(),
+    )));
+    let task = app.update(Message::Search(search::Message::Submit));
+    let mut stream = iced_runtime::task::into_stream(task).expect("the ask starts a request");
+    let started = loop {
+        match stream.next().await.expect("the request answers") {
+            iced_runtime::Action::Output(message) => break message,
+            _ => continue,
+        }
+    };
+    assert!(matches!(
+        started,
+        Message::Search(search::Message::Started(_, Ok(_)))
+    ));
+    let _ = app.update(started);
+    assert_eq!(app.page(), Page::Chat);
+
+    let chats = client.chats().await.unwrap();
+    assert_eq!(chats.len(), 1);
+    assert_eq!(chats[0].agent, "Moebius");
+    assert_eq!(chats[0].title, "what is a column script");
 }

@@ -92,6 +92,11 @@ of the server's `token` file) and saves them in `<config dir>/moebius/desktop.to
 reached or does not accept the token, the app asks again. The address is plain HTTP, so keep the server on a private
 network. The window needs a GPU or a software Vulkan/OpenGL driver; the app finds it when it starts.
 
+**Search and run.** The field at the top of the sidebar (Ctrl+K, Cmd+K on macOS, focuses it from anywhere) lists, as you
+type, the cards of every board by title words or `#number`, the chats, the agents and the pages that contain every word
+you typed, at most eight entries. Up and Down choose, Enter or a click opens, Escape closes. The last entry, "Ask the
+Moebius agent", starts a chat with what you typed as its first message.
+
 ## Where everything is
 
 | Path | What |

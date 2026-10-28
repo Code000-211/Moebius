@@ -17,6 +17,7 @@ use moebius_desktop::live;
 use moebius_desktop::new_issue;
 use moebius_desktop::retro;
 use moebius_desktop::rules;
+use moebius_desktop::search;
 use moebius_desktop::setup;
 use moebius_desktop::terminal::PaneEvent;
 use moebius_desktop::theme;
@@ -2888,4 +2889,212 @@ fn a_boards_new_issue_button_opens_a_form_above_the_columns_that_creates_or_is_c
     let _ = app.update(Message::NewIssue(new_issue::Message::Cancel));
     assert!(!shows(&app, "Cancel"));
     assert!(shows(&app, "New issue"));
+}
+
+/// Two boards, chats and agents, with `text` typed into the search field.
+fn searching(text: &str) -> App {
+    let moebius = board(
+        repository(2, "moebius", None),
+        vec![
+            card(60, 2, "Backlog", "Retry the usage report"),
+            card(61, 2, "Ready", "Write the retro page"),
+        ],
+    );
+    let mut app = App::with_snapshot(snapshot(vec![radiance("Ready"), moebius], vec![]));
+    let _ = app.update(Message::Chat(chat::Message::Listed(Ok(chat_listing(
+        "waiting",
+    )))));
+    let _ = app.update(Message::Agents(agents::Message::Listed(
+        Ok(agent_listing()),
+    )));
+    let _ = app.update(Message::Search(search::Message::Edited(text.into())));
+    app
+}
+
+fn key_pressed(key: iced::keyboard::Key, modifiers: iced::keyboard::Modifiers) -> iced::Event {
+    iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+        key: key.clone(),
+        modified_key: key,
+        physical_key: iced::keyboard::key::Physical::Unidentified(
+            iced::keyboard::key::NativeCode::Unidentified,
+        ),
+        location: iced::keyboard::Location::Standard,
+        modifiers,
+        text: None,
+        repeat: false,
+    })
+}
+
+/// The list of matches stands under the field, over the board: compare `tests/snapshots/search-tiny-skia.png`.
+#[test]
+fn the_list_of_matches_is_drawn_under_the_field_over_the_board() {
+    let app = searching("retr");
+    draw(
+        &app,
+        "search",
+        &[
+            "Cards",
+            "#50 Retry model downloads on HTTP 5xx",
+            "#60 Retry the usage report",
+            "moebius · Backlog",
+            "Pages",
+            "Retro",
+            "Ask the Moebius agent: retr",
+        ],
+    );
+}
+
+/// Typing a title of another board and pressing Enter opens that card, and the field is empty again.
+#[test]
+fn enter_opens_a_card_of_another_board_and_clears_the_field() {
+    let mut app = searching("usage report");
+    assert!(shows(&app, "#60 Retry the usage report"));
+    assert!(matches!(app.page(), Page::Board(1)));
+    let mut ui = simulator(&app);
+    ui.click("usage report").unwrap();
+    ui.tap_key(iced::keyboard::key::Named::Enter);
+    let messages: Vec<_> = ui.into_messages().collect();
+    assert!(matches!(
+        &messages[..],
+        [Message::Search(search::Message::Submit)]
+    ));
+    for message in messages {
+        let _ = app.update(message);
+    }
+    assert!(matches!(app.page(), Page::Board(2)));
+    assert!(shows(&app, "Retry the usage report"));
+    assert!(!shows(&app, "Ask the Moebius agent: usage report"));
+    assert!(shows(&app, "Search or run…"));
+}
+
+/// `#48` finds the card by its number, and a click on the entry opens its live view because its run is working.
+#[test]
+fn a_number_finds_the_card_and_a_click_opens_its_live_view() {
+    let mut app = searching("#48");
+    let label = "#48 MTP drafter: cap the candidate tree depth";
+    assert!(shows(&app, label));
+    assert!(shows(&app, "radiance · In progress"));
+    let messages = clicked(&app, label);
+    assert!(matches!(
+        &messages[..],
+        [Message::Search(search::Message::Pick(0))]
+    ));
+    for message in messages {
+        let _ = app.update(message);
+    }
+    assert!(shows(&app, "This run"));
+}
+
+/// The arrows move the selection; a chat, an agent and a page open what they are.
+#[test]
+fn the_arrows_move_the_selection_and_chats_agents_and_pages_open() {
+    // Entries for "co": the agent Coder, then the pages with "co" in their title, then the ask entry.
+    let mut app = searching("coder");
+    let _ = app.update(Message::Search(search::Message::Move(
+        search::Direction::Down,
+    )));
+    let _ = app.update(Message::Search(search::Message::Move(
+        search::Direction::Up,
+    )));
+    let _ = app.update(Message::Search(search::Message::Submit));
+    assert!(matches!(app.page(), Page::Agents));
+
+    let mut app = searching("ready.luau");
+    let _ = app.update(Message::Search(search::Message::Submit));
+    assert!(matches!(app.page(), Page::Chat));
+
+    let mut app = searching("usage");
+    // The card of the moebius board, the chat of the same words in no title, then the page.
+    for _ in 0..1 {
+        let _ = app.update(Message::Search(search::Message::Move(
+            search::Direction::Down,
+        )));
+    }
+    let _ = app.update(Message::Search(search::Message::Submit));
+    assert!(matches!(app.page(), Page::Usage));
+}
+
+/// The ask entry sends the first message to the Moebius agent, and the chat opens when the server has started it.
+#[test]
+fn the_ask_entry_starts_a_chat_and_a_failure_keeps_the_text() {
+    let mut app = searching("how do I add a rule");
+    let label = "Ask the Moebius agent: how do I add a rule";
+    let messages = clicked(&app, label);
+    assert!(matches!(
+        &messages[..],
+        [Message::Search(search::Message::Pick(_))]
+    ));
+    let mut sent = 0;
+    for message in messages {
+        sent += app.update(message).units();
+    }
+    assert_eq!(sent, 1, "one request starts the chat");
+    assert!(!shows(&app, label), "the field is cleared");
+
+    let run = serde_json::from_value(json!({"id": 8, "agent": "Moebius", "purpose": "chat",
+                                            "status": "running"}))
+    .unwrap();
+    let _ = app.update(Message::Search(search::Message::Started(
+        "how do I add a rule".into(),
+        Ok(run),
+    )));
+    assert!(matches!(app.page(), Page::Chat));
+
+    let mut app = searching("how");
+    let _ = app.update(Message::Search(search::Message::Submit));
+    let _ = app.update(Message::Search(search::Message::Started(
+        "how".into(),
+        Err(ClientError::Unreachable("http://x".into())),
+    )));
+    assert!(shows(&app, "Ask the Moebius agent: how"));
+    assert!(shows(&app, "cannot reach http://x"));
+}
+
+/// Escape and an empty field close the list; Ctrl+K and the arrows are what the keys say.
+#[test]
+fn escape_or_clearing_the_field_closes_the_list() {
+    let mut app = searching("usage");
+    assert!(shows(&app, "Ask the Moebius agent: usage"));
+    let escape = key_pressed(
+        iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
+        iced::keyboard::Modifiers::empty(),
+    );
+    let message = search::key(
+        escape,
+        iced::event::Status::Ignored,
+        iced::window::Id::unique(),
+    );
+    assert!(matches!(
+        message,
+        Some(Message::Search(search::Message::Close))
+    ));
+    let _ = app.update(message.unwrap());
+    assert!(!shows(&app, "Ask the Moebius agent: usage"));
+
+    let mut app = searching("usage");
+    let _ = app.update(Message::Search(search::Message::Edited(String::new())));
+    assert!(!shows(&app, "Ask the Moebius agent: "));
+
+    let ctrl_k = key_pressed(
+        iced::keyboard::Key::Character("k".into()),
+        iced::keyboard::Modifiers::COMMAND,
+    );
+    assert!(matches!(
+        search::key(
+            ctrl_k,
+            iced::event::Status::Captured,
+            iced::window::Id::unique()
+        ),
+        Some(Message::Search(search::Message::Focus))
+    ));
+}
+
+/// In the collapsed sidebar the search icon opens the sidebar, whose field shows.
+#[test]
+fn the_collapsed_sidebars_search_opens_the_sidebar() {
+    let mut app = App::with_snapshot(overview());
+    let _ = app.update(Message::ToggleSidebar);
+    assert!(!shows(&app, "Search or run…"));
+    let _ = app.update(Message::Search(search::Message::Focus));
+    assert!(shows(&app, "Search or run…"));
 }

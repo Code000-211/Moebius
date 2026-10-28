@@ -2718,6 +2718,7 @@ dependencies = [
  "dirs",
  "futures-util",
  "iced",
+ "iced_runtime",
  "iced_test",
  "moebius-core",
  "reqwest",
