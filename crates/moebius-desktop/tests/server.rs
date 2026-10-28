@@ -35,7 +35,9 @@ async fn start(dir: &Path) -> (Settings, Arc<Server>) {
 
 /// Like `start`, with `more` added to `moebius.toml`.
 async fn start_with(dir: &Path, more: &str) -> (Settings, Arc<Server>) {
-    let text = format!("[router]\nlisten = \"127.0.0.1:0\"\n{more}");
+    // Keys outside a table come before the first table.
+    let (top, tables) = more.split_at(more.find('[').unwrap_or(more.len()));
+    let text = format!("{top}[router]\nlisten = \"127.0.0.1:0\"\n{tables}");
     std::fs::write(dir.join("moebius.toml"), &text).unwrap();
     let config = Config::parse(&text, dir, &dir.join("moebius.toml")).unwrap();
     let api_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -912,8 +914,10 @@ async fn the_client_runs_the_retro_and_reads_its_report_and_proposals() {
     let dir = tempfile::tempdir().unwrap();
     let origin = harness_origin(dir.path());
     let fake_pi = Path::new(env!("CARGO_MANIFEST_DIR")).join("../moebius-core/testdata/fake-pi");
+    // The nightly Retro is set to the day's last minute, so that the server does not run one of its own while the
+    // test runs (the test's day is read once, so it may not cross midnight anyway).
     let more = format!(
-        "[pi_bolt]\nprogram = {:?}\n[harness]\nurl = {:?}\n",
+        "retro_at = \"23:59\"\n[pi_bolt]\nprogram = {:?}\n[harness]\nurl = {:?}\n",
         fake_pi.display().to_string(),
         origin.display().to_string()
     );
@@ -1811,11 +1815,58 @@ async fn the_client_reads_the_steps_to_a_first_card_of_a_real_server() {
         [
             ("upstream", false),
             ("pi_bolt", false),
+            ("harness", false),
             ("coder", true),
             ("repository", false)
         ]
     );
     assert_eq!(start.steps[0].detail, "Add an upstream on the Models page.");
+}
+
+/// "Set up" against a real server: the agents of `moebius.toml` move into a new harness configuration repository next
+/// to it, which the file then names; the server uses it once it restarts.
+#[tokio::test(flavor = "multi_thread")]
+async fn setting_up_a_harness_repository_moves_the_agents_out_of_moebius_toml() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("rules.md"),
+        "## Small\n\nKeep changes small.\n",
+    )
+    .unwrap();
+    let (settings, _server) = start_with(
+        dir.path(),
+        "[agents.Coder]\nmodel = \"coder-model\"\ninstructions = \"Be brief.\"\n",
+    )
+    .await;
+    let client = Client::new(settings);
+    let saved = client.set_up_harness().await.unwrap();
+    assert!(saved.restart_needed);
+    let harness = dir.path().join("harness");
+    assert_eq!(
+        std::fs::read_to_string(harness.join("agents/Coder.md")).unwrap(),
+        "Be brief.\n"
+    );
+    assert!(
+        std::fs::read_to_string(harness.join("agents/Coder.toml"))
+            .unwrap()
+            .contains("model = \"coder-model\"")
+    );
+    assert_eq!(
+        std::fs::read_to_string(harness.join("rules.md")).unwrap(),
+        "## Small\n\nKeep changes small.\n"
+    );
+    let text = std::fs::read_to_string(dir.path().join("moebius.toml")).unwrap();
+    assert!(
+        text.contains(&format!("[harness]\nurl = \"{}\"", harness.display())),
+        "{text}"
+    );
+    assert!(!text.contains("[agents"), "{text}");
+    // A second setup is refused with the server's reason.
+    let error = client.set_up_harness().await.unwrap_err();
+    assert!(
+        matches!(&error, ClientError::Server { status: 409, .. }),
+        "{error:?}"
+    );
 }
 
 /// The pencil's editor against a real server: it reads the built-in script, saves a script as a commit, shows the
