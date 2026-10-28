@@ -1,5 +1,5 @@
-//! A person's shell in a run's worktree, served over a WebSocket (`GET /v1/runs/{id}/terminal`, see the desktop API
-//! reference). The shell runs on a pseudo-terminal; binary messages carry its bytes both ways and a text message
+//! A person's shell in a run's worktree or in the server's configuration directory, served over a WebSocket
+//! (`GET /v1/runs/{id}/terminal` and `GET /v1/terminal`, see the desktop API reference). The shell runs on a pseudo-terminal; binary messages carry its bytes both ways and a text message
 //! `{"type":"resize","cols":N,"rows":M}` sets its size. The shell is the person's own, so no check looks at what is
 //! typed; Moebius records only that it was opened.
 
@@ -13,8 +13,11 @@ use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use serde::Deserialize;
 use tokio::sync::{mpsc, watch};
 
-/// The most terminals open on one run at a time.
+/// The most terminals open on one run at a time, and on the server itself.
 pub const MAX_PER_RUN: usize = 4;
+
+/// The key of the terminals opened on the server rather than on a run; run ids start at 1.
+pub const SERVER: i64 = 0;
 
 /// The size of a terminal until the client says its own.
 const SIZE: (u16, u16) = (80, 24);

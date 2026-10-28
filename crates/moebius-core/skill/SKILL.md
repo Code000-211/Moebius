@@ -49,7 +49,8 @@ configuration repository, merging that change puts them on the server. Commands 
 3. Never weaken a rule: do not remove or loosen a rule, a check or a refusal to make something pass. If a rule is in
    the way, say so.
 4. Never write a secret into a file, a message or a command line. Name the environment variable or the stored key;
-   storing a key is for the person (`PUT /v1/secrets` refuses you), and so is a shell in a worktree.
+   storing a key is for the person (`PUT /v1/secrets` refuses you), and so are the shells, in a worktree and on the
+   server.
 5. A refused tool call names its rule. Respect it: find another way, or tell the person.
 6. Do not commit or push in a worktree: what you leave there is offered as a change, which the person merges.
    Moebius reads a repository's `.moebius/` from its default branch, so it takes effect once the change is merged.

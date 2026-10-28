@@ -1442,7 +1442,7 @@ impl Client {
     }
 }
 
-/// What a shell in a run's worktree sends the app.
+/// What a shell sends the app.
 #[derive(Debug, Clone)]
 pub enum TerminalEvent {
     /// The socket is open; what is sent to the channel goes to the shell.
@@ -1460,11 +1460,14 @@ pub enum TerminalInput {
     Resize { cols: u16, rows: u16 },
 }
 
-/// A shell in the worktree of `run` (`GET /v1/runs/{id}/terminal`) for as long as the stream is held: dropping it
-/// closes the socket, which kills the shell.
-pub fn terminal(settings: Settings, run: i64) -> impl iced::futures::Stream<Item = TerminalEvent> {
+/// A shell on the WebSocket `path` (`/v1/runs/{id}/terminal` for a run's worktree, `/v1/terminal` for the server) for as
+/// long as the stream is held: dropping it closes the socket, which kills the shell.
+pub fn terminal(
+    settings: Settings,
+    path: String,
+) -> impl iced::futures::Stream<Item = TerminalEvent> {
     iced::stream::channel(64, async move |mut out: mpsc::Sender<TerminalEvent>| {
-        let mut socket = match connect(&settings, &format!("/v1/runs/{run}/terminal")).await {
+        let mut socket = match connect(&settings, &path).await {
             Ok(socket) => socket,
             Err(e) => {
                 let reason = match e {

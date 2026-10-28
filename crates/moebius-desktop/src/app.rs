@@ -20,6 +20,7 @@ use crate::new_issue::{self, NewIssue};
 use crate::retro::{self, Retros};
 use crate::rules::{self, Rules};
 use crate::search::{self, Search, Target};
+use crate::server_terminal::{self, ServerTerminal};
 use crate::settings::{self, Settings};
 use crate::setup::{self, Setup};
 use crate::skills::{self, Skills};
@@ -56,6 +57,8 @@ pub enum Page {
     Start,
     Models,
     Plugins,
+    /// A shell on the server.
+    Terminal,
     Settings,
 }
 
@@ -77,6 +80,7 @@ impl Page {
             Page::Start => "Get started",
             Page::Models => "Models",
             Page::Plugins => "Plugins",
+            Page::Terminal => "Terminal",
             Page::Settings => "Settings",
         }
     }
@@ -88,7 +92,7 @@ impl Page {
             Page::Board(_) | Page::AddRepository => "Boards",
             Page::Agents | Page::Skills | Page::McpServers | Page::Rules => "Build",
             Page::Retro | Page::Experiments | Page::DecisionModel | Page::Usage => "Improve",
-            Page::Start | Page::Models | Page::Plugins | Page::Settings => "Setup",
+            Page::Start | Page::Models | Page::Plugins | Page::Terminal | Page::Settings => "Setup",
         }
     }
 }
@@ -135,6 +139,7 @@ pub enum Message {
     Experiments(experiments::Message),
     DecisionModel(decision_model::Message),
     Setup(setup::Message),
+    Terminal(server_terminal::Message),
     Start(start::Message),
     AddRepository(add_repository::Message),
     NewIssue(new_issue::Message),
@@ -181,6 +186,7 @@ pub struct App {
     experiments: Experiments,
     decision_model: DecisionModel,
     setup: Setup,
+    terminal: ServerTerminal,
     start: Start,
     /// Set when the connection was made, until the server has said whether the first start is done: the app then
     /// opens on Get started if the person has not chosen a page by then.
@@ -227,6 +233,7 @@ impl App {
             experiments: Experiments::default(),
             decision_model: DecisionModel::default(),
             setup: Setup::default(),
+            terminal: ServerTerminal::default(),
             start: Start::default(),
             open_on_start: false,
             add_repository: AddRepository::default(),
@@ -310,6 +317,9 @@ impl App {
             Message::Select(page) => {
                 self.page = Some(page);
                 self.opened = None;
+                if page == Page::Terminal {
+                    self.terminal.open();
+                }
                 match (page, &self.settings) {
                     (Page::Chat, Some(settings)) => return self.chats.reload(settings),
                     (Page::Agents, Some(settings)) => return self.agents.reload(settings),
@@ -400,6 +410,7 @@ impl App {
                 self.show_connect_error(&ClientError::Unauthorized);
             }
             Message::Setup(message) => return self.setup.update(message, self.settings.as_ref()),
+            Message::Terminal(message) => self.terminal.update(message),
             Message::Start(message) if Start::refused(&message) => {
                 self.show_connect_error(&ClientError::Unauthorized);
             }
@@ -848,8 +859,12 @@ impl App {
                     Some(Opened::Run(live)) => live.subscription(settings),
                     _ => Subscription::none(),
                 };
+                let terminal = match self.page() {
+                    Page::Terminal => self.terminal.subscription(settings),
+                    _ => Subscription::none(),
+                };
                 let keys = iced::event::listen_with(search::key);
-                Subscription::batch([stream, clock, inbox, chats, shell, keys])
+                Subscription::batch([stream, clock, inbox, chats, shell, terminal, keys])
             }
             _ => Subscription::none(),
         }
@@ -947,6 +962,7 @@ impl App {
             Page::Start => self.start.view(),
             Page::Models => self.setup.models_page(),
             Page::Plugins => self.setup.plugins_page(),
+            Page::Terminal => self.terminal.view(),
             Page::Settings => self.setup.settings_page(self.settings.as_ref()),
         }
     }

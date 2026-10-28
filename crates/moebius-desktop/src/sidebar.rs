@@ -25,9 +25,10 @@ const IMPROVE: [(Page, Icon); 4] = [
     (Page::DecisionModel, Icon::DecisionModel),
     (Page::Usage, Icon::Usage),
 ];
-const SETUP: [(Page, Icon); 3] = [
+const SETUP: [(Page, Icon); 4] = [
     (Page::Models, Icon::Models),
     (Page::Plugins, Icon::Plugins),
+    (Page::Terminal, Icon::Terminal),
     (Page::Settings, Icon::Settings),
 ];
 

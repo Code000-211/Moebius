@@ -20,8 +20,8 @@ records has the decider `agent:Moebius` instead of `person`, and the run is the 
 another run, such as a steer, the judgement keeps that run, and the agent's run is in the context as `acting_run`).
 The run token of any other agent, and a revoked one, is answered with `401`. Two routes stay with a person and answer
 `403` with `only a person can do this` to a run token: `PUT /v1/secrets/{name}` (an agent must not set keys) and
-`GET /v1/runs/{id}/terminal` (the shell). Where a route below says "a person" and "decider `person`", an agent that
-uses its token is the decider instead.
+`GET /v1/runs/{id}/terminal` and `GET /v1/terminal` (the shells). Where a route below says "a person" and "decider
+`person`", an agent that uses its token is the decider instead.
 
 ```sh
 TOKEN=$(cat .moebius/token)
@@ -425,6 +425,19 @@ of the run or chat, with `TERM=xterm-256color`.
 
 The worktree exists while the run or chat is `starting`, `running` or `waiting`. Errors, answered before the upgrade:
 `404` no such run; `422` the run has no worktree (it is over) or already has 4 terminals open.
+
+### `GET /v1/terminal`
+
+A shell on the server itself, for the person to look at `moebius.toml` and the machine Moebius runs on. It works like
+[the shell of a run](#get-v1runsidterminal), with the same messages, but starts in the directory of the server's
+configuration file (`moebius.toml`), not in a worktree.
+
+- At most 4 terminals are open on the server at a time.
+- A run has no part in it, so opening one is stored as a judgement of kind `open_terminal` (decider `person`, context
+  `directory`: the directory the shell started in), never what is typed or seen.
+
+Errors, answered before the upgrade: `403` for the run token of an agent (the shell stays with a person); `422` when 4
+terminals are open already or the directory is gone.
 
 ### `GET /v1/agents`
 

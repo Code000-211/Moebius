@@ -137,6 +137,6 @@ a column script with `moebius.ask`) takes none (use `api`).
 ## What the Moebius agent can do with them
 
 Its token is accepted by the desktop API like the server's, with two exceptions: `secrets set` (an agent must not set
-keys) and a run's terminal give `403`. Everything it decides through a command is recorded as a judgement whose decider
+keys) and the terminals (of a run and of the server) give `403`. Everything it decides through a command is recorded as a judgement whose decider
 is `agent:Moebius` and whose run is the chat; see [the desktop API](desktop-api.md#authentication). The guard checks the
 commands like any other `bash` call.

@@ -40,7 +40,7 @@ chart.
 ## Layout
 
 - A sidebar on every screen, in groups divided by lines: Inbox; Boards; Build (agents, skills, MCP servers, rules);
-  Improve (Retro, experiments, decision model, usage); Setup (models, plugins, settings); tokens used today at the foot.
+  Improve (Retro, experiments, decision model, usage); Setup (models, plugins, terminal, settings); tokens used today at the foot.
   It collapses to a 68 px rail of icons. Icons are 20 px; an entry with something new (the inbox, an unread chat) has
   its icon in amber and its count in amber text beside it, without a pill.
 - Every page opens with the same header: an optional breadcrumb, the title, one line of context, and its actions on the

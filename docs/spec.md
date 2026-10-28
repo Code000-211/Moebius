@@ -157,6 +157,7 @@ Native, GPU-rendered, written in Rust with iced (ADR 0003, ADR 0011), built to [
 - **Board** per repository: columns with their scripts, cards with round, tokens and state; red for blocked and broken rules.
 - **Live view** of a run: the stream of text and tool calls with each check's decision, code with highlighting, a shell in
   the worktree, steering and stopping.
+- **Terminal** (Setup): a shell on the server, in the directory of `moebius.toml`.
 - **Inbox**: everything that needs the person, one column, filterable.
 - **Chat**: a conversation with an agent, the Moebius agent by default, with code highlighted, tool calls with their
   checks, and the changes the agent offers.

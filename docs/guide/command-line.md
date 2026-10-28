@@ -57,7 +57,7 @@ In a chat with the Moebius agent, its runs have `MOEBIUS_URL` and `MOEBIUS_TOKEN
 chat's own run token. It calls the same commands as `"$MOEBIUS" board` through its `bash` tool, so the guard checks each
 call like any other. The desktop API accepts that token only for the Moebius agent and records every decision it makes
 as `agent:Moebius` with the chat's run, so you can tell its decisions from yours in the judgements. It cannot store a
-key (`secrets set`) or open a shell in a worktree.
+key (`secrets set`) or open a shell in a worktree or on the server.
 
 Ask it for anything the app does, in your words: "what is stuck on the radiance board?", "give the Coder a token budget
 of two million", "add a rule that no run edits the migrations". It reads the state, does what you asked, reads it back,

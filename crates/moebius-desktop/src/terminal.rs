@@ -1,4 +1,5 @@
-//! The shell in a run's worktree: the pane of the live view that shows a terminal running on the server. The bytes
+//! The shell in a run's worktree: the pane of the live view that shows a terminal running on the server, and the same
+//! pane as big as the Terminal page. The bytes
 //! the server sends are parsed by `alacritty_terminal` into a grid of coloured cells, which is drawn here as rows of
 //! JetBrains Mono on the dark background of the code blocks; what is typed goes back as bytes (`key_bytes`), and the
 //! pane's size in cells goes back as a resize. Selecting, copying and pasting are not built, and nor is scrolling
@@ -260,10 +261,23 @@ pub struct Shell {
     pane: Size,
     /// Whether keys go to the shell: from when it is opened until a click lands outside the pane.
     focused: bool,
+    /// What the pane's header says, and whether the pane fills the height it is given instead of having its own.
+    title: &'static str,
+    fills: bool,
 }
 
 impl Shell {
+    /// A shell in a run's worktree, in the pane under the conversation.
     pub fn new(generation: u32) -> Self {
+        Self::pane("Shell in the worktree", false, generation)
+    }
+
+    /// A shell on the server, in a pane as big as its page.
+    pub fn on_server(generation: u32) -> Self {
+        Self::pane("Shell on the server", true, generation)
+    }
+
+    fn pane(title: &'static str, fills: bool, generation: u32) -> Self {
         let (cols, rows) = (80, 24);
         Shell {
             generation,
@@ -272,6 +286,8 @@ impl Shell {
             ended: None,
             pane: Size::ZERO,
             focused: true,
+            title,
+            fills,
         }
     }
 
@@ -355,7 +371,7 @@ impl Shell {
         };
         let header = container(
             row![
-                text("Shell in the worktree")
+                text(self.title)
                     .size(theme::LABEL)
                     .font(theme::manrope(iced::font::Weight::Bold))
                     .color(theme::TERMINAL_TEXT),
@@ -377,7 +393,11 @@ impl Shell {
             self.focused,
             on_event,
         ))
-        .height(HEIGHT)
+        .height(if self.fills {
+            Length::Fill
+        } else {
+            Length::Fixed(HEIGHT)
+        })
         .width(Length::Fill)
         .style(move |_| container::Style {
             background: Some(theme::TERMINAL.into()),

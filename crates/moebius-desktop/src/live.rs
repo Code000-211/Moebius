@@ -267,7 +267,9 @@ impl Live {
         };
         let connection = Subscription::run_with(
             (settings.clone(), self.run.id, shell.generation),
-            |(settings, run, _)| client::terminal(settings.clone(), *run),
+            |(settings, run, _)| {
+                client::terminal(settings.clone(), format!("/v1/runs/{run}/terminal"))
+            },
         )
         .map(|event| AppMessage::Live(Message::Shell(event)));
         let keys = keyboard::listen().map(|event| AppMessage::Live(Message::Key(event)));

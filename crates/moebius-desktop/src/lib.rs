@@ -22,6 +22,7 @@ pub mod page;
 pub mod retro;
 pub mod rules;
 pub mod search;
+pub mod server_terminal;
 pub mod settings;
 pub mod setup;
 pub mod sidebar;

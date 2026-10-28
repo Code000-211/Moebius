@@ -354,7 +354,10 @@ async fn the_apps_shell_echoes_a_command_run_in_a_real_servers_worktree() {
 
     // The shell starts in the run's worktree; what it prints reaches the terminal state.
     let mut shell = Shell::new(1);
-    let mut stream = Box::pin(terminal(settings.clone(), run.id));
+    let mut stream = Box::pin(terminal(
+        settings.clone(),
+        format!("/v1/runs/{}/terminal", run.id),
+    ));
     let limit = Duration::from_secs(60);
     let mut sent = false;
     while !shell.lines().iter().any(|line| line == "moebius-42") {
@@ -387,10 +390,42 @@ async fn the_apps_shell_echoes_a_command_run_in_a_real_servers_worktree() {
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    let mut stream = Box::pin(terminal(settings, run.id));
+    let mut stream = Box::pin(terminal(settings, format!("/v1/runs/{}/terminal", run.id)));
     match stream.next().await.unwrap() {
         TerminalEvent::Closed(reason) => assert!(reason.contains("422"), "{reason}"),
         other => panic!("{other:?}"),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_terminal_page_opens_a_shell_in_the_directory_of_the_configuration_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, _) = start(dir.path()).await;
+    let mut shell = Shell::on_server(1);
+    let mut stream = Box::pin(terminal(settings, "/v1/terminal".to_string()));
+    let home = std::fs::canonicalize(dir.path()).unwrap();
+    let wanted = format!("where-{}-end", home.display());
+    let limit = Duration::from_secs(60);
+    let mut sent = false;
+    while !shell.lines().contains(&wanted) {
+        let event = tokio::time::timeout(limit, stream.next())
+            .await
+            .expect("nothing was printed in a minute")
+            .expect("the shell's stream ended");
+        assert!(!matches!(event, TerminalEvent::Closed(_)), "{event:?}");
+        shell.on_event(event);
+        if shell.is_open() && !sent {
+            sent = true;
+            for c in "echo where-$(pwd -P)-end".chars() {
+                let text = c.to_string();
+                shell.key(
+                    &Key::Character(text.as_str().into()),
+                    Modifiers::empty(),
+                    Some(&text),
+                );
+            }
+            shell.key(&Key::Named(Named::Enter), Modifiers::empty(), Some("\r"));
+        }
     }
 }
 

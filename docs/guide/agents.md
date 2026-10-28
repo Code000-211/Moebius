@@ -23,7 +23,7 @@ learns the state of a server from the server itself:
   rules and settings, and it changes them (an agent, a rule, a skill, an MCP server, a setting, a repository, an issue, a
   brief, an item of the inbox). Its runs get the server's address and their own run token, which the desktop API accepts
   for the Moebius agent, so every decision it makes is recorded as `agent:Moebius` with the chat's run. It cannot store
-  an API key or open a shell in a worktree.
+  an API key or open a shell in a worktree or on the server.
 - It builds files: in a repository, what belongs to that repository (its `.moebius/`); in the harness configuration
   repository (see [Build an extension or skill in a chat](#build-an-extension-or-skill-in-a-chat)), agents, skills,
   extensions, MCP servers and the server's rules. It tries a column script with `moebius check-script` and a plugin with

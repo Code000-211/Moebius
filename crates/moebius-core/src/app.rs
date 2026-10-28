@@ -23,7 +23,7 @@ use crate::github::Issue;
 use crate::harness_repo::HarnessRepo;
 use crate::repos::{GitError, Repos, git};
 use crate::store::{Card, Change, Repository, Run, Store, StoreError, now};
-use crate::terminal::{MAX_PER_RUN, Slot, Slots};
+use crate::terminal::{MAX_PER_RUN, SERVER, Slot, Slots};
 
 /// The columns of the default workflow (spec 6).
 pub mod columns {
@@ -664,6 +664,26 @@ impl App {
         })?;
         self.record_run_event(run_id, "shell_opened", &json!({ "who": PERSON }))?;
         Ok((worktree, slot))
+    }
+
+    /// A person opens a shell on the server, in `dir` (the directory of `moebius.toml`), at most [`MAX_PER_RUN`] at a
+    /// time. There is no run to hold an event, so the opening is recorded as a decision of kind `open_terminal`: never
+    /// what is typed or printed.
+    pub fn open_server_shell(&self, dir: &Path) -> Result<Slot> {
+        if !dir.is_dir() {
+            return Err(AppError::Invalid(format!(
+                "{} is not a directory to open a shell in",
+                dir.display()
+            )));
+        }
+        let slot = self.terminals.take(SERVER).ok_or_else(|| {
+            AppError::Invalid(format!(
+                "the server has {MAX_PER_RUN} terminals open already"
+            ))
+        })?;
+        let context = BTreeMap::from([("directory".to_string(), dir.display().to_string())]);
+        self.record_action(&Actor::Person, "open_terminal", None, None, context, "")?;
+        Ok(slot)
     }
 
     /// A person starts a chat with `agent`, in a branch of the repository `repository_id`, of the harness configuration

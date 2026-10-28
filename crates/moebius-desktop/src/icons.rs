@@ -21,6 +21,7 @@ pub enum Icon {
     Usage,
     Models,
     Plugins,
+    Terminal,
     Settings,
     Start,
     Search,
@@ -54,6 +55,9 @@ impl Icon {
                 r#"<rect x="4" y="4" width="8" height="8" rx="1.5"/><path d="M6 2v2M10 2v2M6 12v2M10 12v2M2 6h2M2 10h2M12 6h2M12 10h2"/>"#
             }
             Icon::Plugins => r#"<path d="M3 5h3a1.5 1.5 0 1 1 3 0h3v3a1.5 1.5 0 1 0 0 3v3H3z"/>"#,
+            Icon::Terminal => {
+                r#"<rect x="2" y="3" width="12" height="10" rx="2"/><path d="M5 7l2 1.5L5 10M8.5 10.5H11"/>"#
+            }
             Icon::Settings => {
                 r#"<circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/>"#
             }

@@ -24,6 +24,8 @@
 //! - `POST /v1/runs/{id}/steer` `{message}`: a person sends a message to a running run.
 //! - `POST /v1/runs/{id}/stop` `{reason}`: a person stops a running run; a chat ends as stopped.
 //! - `GET /v1/runs/{id}/terminal`: a WebSocket on a shell in the run's worktree (see [`crate::terminal`]).
+//! - `GET /v1/terminal`: a WebSocket on a shell in the directory of `moebius.toml`, recorded as an `open_terminal`
+//!   decision (see [`crate::terminal`]).
 //! - `GET /v1/agents`: the agents the server can run. `GET`, `PUT` and `DELETE /v1/agents/{name}`: read, write and delete
 //!   an agent of the harness configuration repository (see [`crate::harness_repo`]). `GET /v1/skills` and
 //!   `GET /v1/mcp-servers`: the skills and MCP servers an agent can name, and `GET`, `PUT` and `DELETE` of
@@ -416,6 +418,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/runs/{id}/steer", post(steer_run))
         .route("/v1/runs/{id}/stop", post(stop_run))
         .route("/v1/runs/{id}/terminal", get(run_terminal))
+        .route("/v1/terminal", get(server_terminal))
         .route("/v1/agents", get(agents))
         .route(
             "/v1/agents/{name}",
@@ -714,6 +717,23 @@ async fn run_terminal(
     Ok(upgrade.on_upgrade(move |socket| async move {
         crate::terminal::serve(socket, &worktree, slot).await
     }))
+}
+
+async fn server_terminal(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    upgrade: WebSocketUpgrade,
+) -> Result<Response, ApiError> {
+    person_only(&by)?;
+    let file = state.config.get().file.clone();
+    let dir = match file.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => dir.to_path_buf(),
+        _ => PathBuf::from("."),
+    };
+    let work = dir.clone();
+    let axum::Json(slot) = blocking(&state.app, move |app| app.open_server_shell(&work)).await?;
+    Ok(upgrade
+        .on_upgrade(move |socket| async move { crate::terminal::serve(socket, &dir, slot).await }))
 }
 
 async fn agents(State(state): State<ApiState>) -> axum::Json<Vec<AgentInfo>> {
@@ -1550,8 +1570,8 @@ mod tests {
             config: Arc::new(Live::new(
                 Config::parse(
                     "[budgets]\nday_tokens = 10000\n",
-                    std::path::Path::new("."),
-                    std::path::Path::new("moebius.toml"),
+                    dir.path(),
+                    &dir.path().join("moebius.toml"),
                 )
                 .unwrap(),
             )),
@@ -3330,9 +3350,15 @@ mod tests {
         token: &str,
         run: i64,
     ) -> Result<Terminal, tokio_tungstenite::tungstenite::Error> {
-        let mut request = format!("ws://{addr}/v1/runs/{run}/terminal")
-            .into_client_request()
-            .unwrap();
+        open_at(addr, token, &format!("/v1/runs/{run}/terminal")).await
+    }
+
+    async fn open_at(
+        addr: &str,
+        token: &str,
+        path: &str,
+    ) -> Result<Terminal, tokio_tungstenite::tungstenite::Error> {
+        let mut request = format!("ws://{addr}{path}").into_client_request().unwrap();
         request
             .headers_mut()
             .insert("authorization", format!("Bearer {token}").parse().unwrap());
@@ -3534,5 +3560,88 @@ mod tests {
         app.store.set_run_status(run.id, "succeeded").unwrap();
         let finished = open_terminal(&addr, &state.token, run.id).await;
         assert_eq!(status(finished.unwrap_err()), 422);
+    }
+
+    #[tokio::test]
+    async fn a_person_opens_a_shell_in_the_directory_of_the_configuration_file() {
+        use futures_util::SinkExt;
+        let (dir, state, addr) = start().await;
+        let mut terminal = open_at(&addr, &state.token, "/v1/terminal").await.unwrap();
+        type_in(&mut terminal, "echo moebius-$((40+2))\n").await;
+        assert_eq!(
+            read_until(&mut terminal, "(moebius-42)").await,
+            "moebius-42"
+        );
+        type_in(&mut terminal, "echo where-$(pwd -P)-end\n").await;
+        let printed = read_until(&mut terminal, "where-(/[^\\s]*)-end").await;
+        assert_eq!(
+            std::path::Path::new(&printed),
+            std::fs::canonicalize(dir.path()).unwrap()
+        );
+        let resize = r#"{"type":"resize","cols":100,"rows":30}"#;
+        terminal.send(resize.into()).await.unwrap();
+        type_in(&mut terminal, "stty size\n").await;
+        assert_eq!(read_until(&mut terminal, "(30 100)").await, "30 100");
+
+        // That a shell was opened is a decision; what was typed is not stored.
+        let opened = state.app.store.judgements("open_terminal").unwrap();
+        assert_eq!(opened.len(), 1);
+        assert_eq!(opened[0].decider, "person");
+        assert_eq!(opened[0].choice, "open_terminal");
+
+        // Closing the socket kills the shell.
+        type_in(&mut terminal, "echo pid-$$-end\n").await;
+        let pid = read_until(&mut terminal, "pid-(\\d+)-end").await;
+        terminal.close(None).await.unwrap();
+        until("the shell is gone", || {
+            !std::path::Path::new(&format!("/proc/{pid}")).exists()
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn the_server_shell_needs_the_token_a_person_and_a_free_place() {
+        use tokio_tungstenite::tungstenite::Error;
+        let (_dir, state, addr) = start().await;
+        let status = |e: Error| match e {
+            Error::Http(response) => response.status().as_u16(),
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(
+            status(open_at(&addr, "nope", "/v1/terminal").await.unwrap_err()),
+            401
+        );
+
+        // The run token of an agent is refused: the shell stays with a person.
+        let run = state
+            .app
+            .store
+            .add_run(Some(1), "Moebius", "test", "chat")
+            .unwrap();
+        let agent_token = state.router.issue_token(crate::router::Grant {
+            run_id: run.id,
+            card_id: None,
+            budget: None,
+        });
+        assert_eq!(
+            status(
+                open_at(&addr, &agent_token, "/v1/terminal")
+                    .await
+                    .unwrap_err()
+            ),
+            403
+        );
+
+        let mut open = Vec::new();
+        for _ in 0..crate::terminal::MAX_PER_RUN {
+            open.push(open_at(&addr, &state.token, "/v1/terminal").await.unwrap());
+        }
+        let refused = open_at(&addr, &state.token, "/v1/terminal").await;
+        assert_eq!(status(refused.unwrap_err()), 422);
+        open.pop().unwrap().close(None).await.unwrap();
+        until("a place is free", || {
+            state.app.terminals.take(crate::terminal::SERVER).is_some()
+        })
+        .await;
     }
 }
