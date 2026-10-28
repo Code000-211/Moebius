@@ -1125,3 +1125,43 @@ async fn the_client_reads_the_models_plugins_and_settings_of_a_real_server() {
     assert_eq!(server.listen, "127.0.0.1:7171");
     assert!(server.github.is_none() && server.harness_url.is_none());
 }
+
+/// Saving the rules in the app is a commit in the harness configuration repository, and text that does not parse is
+/// refused with the server's message.
+#[tokio::test(flavor = "multi_thread")]
+async fn saving_the_rules_is_a_commit_on_the_harness_repository_and_bad_text_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let origin = harness_origin(dir.path());
+    let more = format!("[harness]\nurl = {:?}\n", origin.display().to_string());
+    let (settings, _server) = start_with(dir.path(), &more).await;
+    let client = Client::new(settings);
+
+    let view = client.rules().await.unwrap();
+    assert_eq!(view.patterns.len(), 4);
+    assert!(view.prose.editable && view.prose.rules.is_empty());
+
+    let text = "## leave-ci-alone\nDo not edit .github/.";
+    let saved = client.save_rules(text).await.unwrap();
+    let commit = saved.commit.expect("the save is a commit");
+    assert_eq!(saved.prose.rules[0].name, "leave-ci-alone");
+    assert_eq!(
+        git(&origin, &["log", "-1", "--format=%s", "main"]).unwrap(),
+        "Update the rules"
+    );
+    assert!(
+        git(&origin, &["rev-parse", "main"])
+            .unwrap()
+            .starts_with(&commit)
+    );
+    assert_eq!(git(&origin, &["show", "main:rules.md"]).unwrap(), text);
+    assert!(client.save_rules(text).await.unwrap().commit.is_none());
+
+    let head = git(&origin, &["rev-parse", "main"]).unwrap();
+    let Err(ClientError::Server { status, message }) = client.save_rules("## a\n## a\n").await
+    else {
+        panic!("the text was accepted");
+    };
+    assert_eq!(status, 422);
+    assert!(message.contains("named twice"), "{message}");
+    assert_eq!(git(&origin, &["rev-parse", "main"]).unwrap(), head);
+}

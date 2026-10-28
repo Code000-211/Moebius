@@ -48,6 +48,15 @@ tool call, with the reason `the rules cannot be read, so no call is allowed: <wh
 
 The built-in rules below are not in any `rules.md`; they always apply.
 
+### Changing the rules
+
+A person changes the server's rules in the desktop app's Rules page, which uses `GET` and `PUT /v1/rules` (see the
+[desktop API](desktop-api.md)), only when the rules are the `rules.md` of the harness configuration repository: the edit
+is a commit `Update the rules`, pushed to `origin`, and the decision is recorded (kind `edit_rules`). A text is refused
+with `422` when a `## ` line has no name or a name is given twice; the parser would drop such a rule without a word. A
+`rules_file` is changed by editing the file, and a repository's `.moebius/rules.md` by a change to the repository. The
+page also counts, for each rule name, the calls refused in the last 7 days.
+
 ## How a call is checked
 
 The guard (`guard/…` in a judgement's decider) judges a `tool_call` question in two steps.

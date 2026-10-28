@@ -249,7 +249,7 @@ The server runs on a multi-threaded tokio runtime.
 | `crates/moebius-desktop/src/client.rs` | The desktop API client: typed health, snapshot, runs, run events, judgements and history, steer and stop, and the event stream as an iced subscription that reconnects with a backoff. |
 | `crates/moebius-desktop/src/settings.rs` | The address and token, saved in the config directory with mode 0600. |
 | `crates/moebius-desktop/src/theme.rs` | Every colour, size, radius and spacing of `docs/design.md`, and the bundled fonts (Manrope, JetBrains Mono). |
-| `crates/moebius-desktop/src/sidebar.rs`, `connect.rs`, `board.rs`, `soon.rs`, `page.rs`, `icons.rs` | The sidebar, the connect screen and Settings page, the board page (its columns and cards), the "comes with M<n>" page, the page header and box, the icons. |
+| `crates/moebius-desktop/src/sidebar.rs`, `connect.rs`, `board.rs`, `page.rs`, `icons.rs` | The sidebar, the connect screen, the board page (its columns and cards), the page header and box, the icons. |
 | `crates/moebius-desktop/src/conversation.rs` | Folds a run's events into a conversation (text, tool calls with their checks, steers, errors); pure, takes events in any order and drops repeats. |
 | `crates/moebius-desktop/src/live.rs`, `history.rs` | What a click on a card opens: the live view of its latest run (conversation, steer, stop, the run's panel), or the card's history when it has no run. |
 | `crates/moebius-desktop/src/terminal.rs` | The shell pane of the live view: bytes from the server parsed by `alacritty_terminal` into a grid and drawn in JetBrains Mono, keys turned into bytes, the pane's size in cells sent as a resize. The connection is `client::terminal`, a subscription that lives while the pane is open. |

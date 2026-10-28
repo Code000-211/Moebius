@@ -424,6 +424,52 @@ configuration](harness-configuration.md)).
 A person deletes an agent of the harness configuration repository, committed and pushed the same way (kind `edit_agent`).
 Response: `null`. Errors: `404` no such agent; `422` no `[harness]`; `500` as for `PUT`.
 
+### `GET /v1/rules`
+
+The rules page: what the guard refuses and why. Response:
+
+```json
+{
+  "patterns": [{"name": "no-force-push", "description": "git push --force rewrites history on the remote"}],
+  "prose": {
+    "source": "harness",
+    "editable": true,
+    "text": "## no-vendoring\nDo not vendor.\n",
+    "rules": [{"name": "no-vendoring", "text": "Do not vendor."}],
+    "error": null
+  },
+  "repositories": [{"repository": "demo", "text": "...", "rules": [{"name": "...", "text": "..."}], "error": null}],
+  "refusals": {"no-force-push": 2}
+}
+```
+
+- `patterns`: the built-in rules in the order they are tested, each with its name and what it refuses (the reason a
+  refusal gives).
+- `prose`: the server's rules file as it is now. `source` is `harness` for the `rules.md` of the harness configuration
+  repository, `file` for the `rules_file` of the configuration, and `null` when the server has neither (then `text` is
+  empty and there are no rules). `editable` is true exactly when `source` is `harness`. `text` is the file's text (empty
+  when it does not exist), `rules` the rules as the parser reads them. `error` is `null` unless the file cannot be used:
+  it cannot be read, a `## ` line has no name, or a name is repeated (the repeat is dropped by the parser).
+- `repositories`: the repositories that have a `.moebius/rules.md` on their default branch, in the order of their ids,
+  with its text (without the final new line), its rules and `error` as for `prose`. A repository without the file is
+  left out.
+- `refusals`: for each rule name, the number of `tool_call` judgements in the last 7 days that refused a call because of
+  it, from the reason `<rule>: <why>` of a built-in pattern or of a rule in prose. A refusal that names no rule (the
+  teacher failing, no teacher, a rules file that cannot be read) is not counted. A rule with no refusals is left out.
+
+### `PUT /v1/rules`
+
+A person replaces the rules in prose of the harness configuration repository. Request: `{"text": string}`, the whole
+`rules.md`. The text must be fit to be saved: a `## ` line must have a name and a name must not be given twice (text
+before the first `## ` line is free). It is written to `rules.md` (a final new line is added if missing), committed on the
+default branch with the message `Update the rules` and pushed to `origin`; then the decision is recorded (kind
+`edit_rules`, decider `person`, the text in its context). Every tool call reads the file afresh, so the next one is
+checked against the new rules. Response: the same as `GET /v1/rules` after the change, with `commit`, the short id of the
+commit (left out when the text changed nothing and so made no commit). Errors: `409` the server has no `[harness]`, so the
+rules are a file of the server and read only here; `422` the text is not fit to be saved (the message says which line);
+`500` git failed, such as a push that `origin` refused, and then nothing changed and no decision was recorded (see
+[harness configuration](harness-configuration.md)).
+
 ### `GET /v1/skills`
 
 The skills an agent's `skills` can name, for an editor to offer: an array of `{"name": string, "description": string,

@@ -1,6 +1,6 @@
 //! The store: records in SQLite and large content in the blob store (see `docs/spec.md`, section 3.1).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -1563,6 +1563,22 @@ impl Store {
              ORDER BY id",
             [since],
         )
+    }
+
+    /// How many tool calls the guard refused since `since` because of each rule, by the rule's name. A pattern and a
+    /// rule in prose that the teacher names both write their reason as `<rule>: <why>`; a refusal without a rule
+    /// (the teacher's own failures, a rules file that cannot be read, a missing teacher) is not counted.
+    pub fn refusals_by_rule(&self, since: i64) -> Result<BTreeMap<String, i64>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT substr(reason, 1, instr(reason, ': ') - 1) AS rule, COUNT(*) FROM judgements
+             WHERE kind = 'tool_call' AND choice = 'refuse' AND decider IN ('guard/patterns', 'guard/teacher')
+               AND at >= ?1 AND instr(reason, ': ') > 1 AND rule <> 'teacher'
+               AND reason NOT LIKE 'the rules cannot be read%'
+             GROUP BY rule",
+        )?;
+        let rows = stmt.query_map([since], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
     // Replays
@@ -3608,5 +3624,83 @@ mod tests {
         assert!(!s.move_takeover(t.id, "open", "dismissed").unwrap());
         assert_eq!(s.takeover(t.id).unwrap().unwrap().status, "merged");
         assert_eq!(s.takeover(t.id + 1).unwrap(), None);
+    }
+
+    #[test]
+    fn refusals_are_counted_by_the_rule_named_in_the_reason() {
+        let (_dir, s) = store();
+        let judge = |kind: &str, choice: &str, reason: &str, decider: &str| {
+            s.add_judgement(&NewJudgement {
+                kind: kind.into(),
+                choice: choice.into(),
+                reason: reason.into(),
+                decider: decider.into(),
+                ..Default::default()
+            })
+            .unwrap();
+        };
+        judge(
+            "tool_call",
+            "refuse",
+            "no-force-push: it rewrites",
+            "guard/patterns",
+        );
+        judge(
+            "tool_call",
+            "refuse",
+            "no-force-push: again",
+            "guard/patterns",
+        );
+        judge(
+            "tool_call",
+            "refuse",
+            "leave-ci-alone: not .github",
+            "guard/teacher",
+        );
+        judge(
+            "tool_call",
+            "refuse",
+            "teacher: the answer is not JSON",
+            "guard/teacher",
+        );
+        judge(
+            "tool_call",
+            "refuse",
+            "the rules cannot be read, so no call is allowed: x: y",
+            "guard/patterns",
+        );
+        judge(
+            "tool_call",
+            "refuse",
+            "no teacher is configured to check the rules in prose",
+            "guard/teacher",
+        );
+        judge(
+            "tool_call",
+            "refuse",
+            "no-force-push: by a model",
+            "decision-model",
+        );
+        judge(
+            "tool_call",
+            "allow",
+            "no-force-push: allowed",
+            "guard/patterns",
+        );
+        judge(
+            "other",
+            "refuse",
+            "no-force-push: other kind",
+            "guard/patterns",
+        );
+        let counted = s.refusals_by_rule(0).unwrap();
+        assert_eq!(
+            counted,
+            BTreeMap::from([
+                ("leave-ci-alone".to_string(), 1),
+                ("no-force-push".to_string(), 2)
+            ])
+        );
+        assert!(s.refusals_by_rule(now() + 10).unwrap().is_empty());
     }
 }

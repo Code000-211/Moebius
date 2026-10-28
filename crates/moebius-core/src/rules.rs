@@ -4,14 +4,18 @@
 //! The server's rules file comes first, then the repository's `.moebius/rules.md` on its default branch. A repository
 //! may add rules but not weaken them: one named like a server rule is dropped, so the server's text stands.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
+
+use crate::app::App;
+use crate::guard;
 use crate::repos::git;
-use crate::store::Repository;
+use crate::store::{Repository, now};
 
 /// One rule: what it is called and what it says.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Rule {
     pub name: String,
     pub text: String,
@@ -37,6 +41,31 @@ pub fn parse(markdown: &str) -> Vec<Rule> {
     let mut seen = HashSet::new();
     rules.retain(|rule| !rule.name.is_empty() && seen.insert(rule.name.clone()));
     rules
+}
+
+/// Why `markdown` is not fit to be saved as a rules file, if it is not: a `## ` line without a name, or a name given
+/// twice (the parser would drop the second rule without a word).
+pub fn check(markdown: &str) -> Result<(), String> {
+    let mut seen = HashSet::new();
+    for (number, line) in markdown.lines().enumerate() {
+        let Some(name) = line.strip_prefix("## ") else {
+            continue;
+        };
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(format!(
+                "line {}: a rule needs a name after \"## \"",
+                number + 1
+            ));
+        }
+        if !seen.insert(name) {
+            return Err(format!(
+                "line {}: the rule {name:?} is named twice",
+                number + 1
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// The rules as `rules.md` text, for a decider to read.
@@ -88,6 +117,99 @@ pub fn applicable(
     Ok(rules)
 }
 
+/// A built-in rule, as `GET /v1/rules` lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Pattern {
+    pub name: String,
+    pub description: String,
+}
+
+/// The rules of a `rules.md` file, as it is and as the parser reads it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Prose {
+    /// Where the file is from: `harness` (the harness configuration repository's `rules.md`) or `file` (the
+    /// configuration's `rules_file`); none when the server has no rules file.
+    pub source: Option<String>,
+    /// Whether `PUT /v1/rules` can change the file, which it can when the source is `harness`.
+    pub editable: bool,
+    /// The file's text; empty when it is missing or cannot be read.
+    pub text: String,
+    pub rules: Vec<Rule>,
+    /// Why the file cannot be used, when it cannot.
+    pub error: Option<String>,
+}
+
+/// A repository's own `.moebius/rules.md` on its default branch.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RepositoryRules {
+    pub repository: String,
+    pub text: String,
+    pub rules: Vec<Rule>,
+    pub error: Option<String>,
+}
+
+/// What `GET /v1/rules` answers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct View {
+    pub patterns: Vec<Pattern>,
+    pub prose: Prose,
+    /// The repositories that have a `.moebius/rules.md`.
+    pub repositories: Vec<RepositoryRules>,
+    /// The tool calls refused in the last 7 days, by the name of the rule that refused them.
+    pub refusals: BTreeMap<String, i64>,
+}
+
+const WEEK: i64 = 7 * 24 * 60 * 60;
+
+/// The rules page: the built-in patterns, the rules in `file` (`editable` when it is the harness configuration
+/// repository's), those of each repository and the refusals of the last week.
+pub fn view(app: &App, file: Option<&Path>, editable: bool) -> crate::app::Result<View> {
+    let (text, error) = match file.map(std::fs::read_to_string) {
+        Some(Ok(text)) => (text, None),
+        Some(Err(e)) if e.kind() == std::io::ErrorKind::NotFound => (String::new(), None),
+        Some(Err(e)) => (
+            String::new(),
+            Some(format!("cannot read the rules file: {e}")),
+        ),
+        None => (String::new(), None),
+    };
+    let source = file.map(|_| if editable { "harness" } else { "file" }.to_string());
+    let prose = Prose {
+        source,
+        editable: editable && file.is_some(),
+        rules: parse(&text),
+        error: error.or_else(|| check(&text).err()),
+        text,
+    };
+    let repositories = app
+        .store
+        .repositories()?
+        .iter()
+        .filter_map(|repository| {
+            let spec = format!("{}:.moebius/rules.md", repository.base_ref());
+            let text = git(Path::new(&repository.path), &["show", &spec]).ok()?;
+            Some(RepositoryRules {
+                repository: repository.name.clone(),
+                rules: parse(&text),
+                error: check(&text).err(),
+                text,
+            })
+        })
+        .collect();
+    Ok(View {
+        patterns: guard::patterns()
+            .into_iter()
+            .map(|(name, description)| Pattern {
+                name: name.into(),
+                description: description.into(),
+            })
+            .collect(),
+        prose,
+        repositories,
+        refusals: app.store.refusals_by_rule(now() - WEEK)?,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -117,6 +239,21 @@ mod tests {
                     "Never change the CI configuration.\n\n### a detail\nstays"
                 ),
             ]
+        );
+    }
+
+    #[test]
+    fn a_file_with_a_nameless_or_repeated_rule_is_not_fit_to_be_saved() {
+        assert_eq!(check("intro\n\n## a\none\n\n## b\ntwo\n"), Ok(()));
+        assert_eq!(check(""), Ok(()));
+        assert!(
+            check("## a\n## \nx")
+                .unwrap_err()
+                .starts_with("line 2: a rule needs a name")
+        );
+        assert_eq!(
+            check("## a\none\n## b\n## a\n").unwrap_err(),
+            "line 4: the rule \"a\" is named twice"
         );
     }
 

@@ -40,6 +40,14 @@ variables. Rules in prose are for what the patterns cannot see.
 A repository can add rules but cannot weaken the server's: a repository rule with the same name as a server rule is
 dropped, and the server's text stands. When a name is repeated within one file, the first rule of that name stands.
 
+### Change the server's rules in the desktop app
+
+With a harness configuration repository, the Rules page of the desktop app shows the built-in patterns, the rules in
+prose and the rules of each repository, with how many calls each rule refused in the last week. The text of the server's
+rules is an editor there: Save commits it to the repository as `Update the rules`, pushes it, and the next tool call is
+checked against it. Without `[harness]` the page is read only, because the rules are a file of the server (`rules_file`).
+The same is `GET` and `PUT /v1/rules`, see the [desktop API](../reference/desktop-api.md).
+
 ## An example
 
 A rules file for one repository. Text before the first `## ` line is ignored; the name is what the model sees when it is

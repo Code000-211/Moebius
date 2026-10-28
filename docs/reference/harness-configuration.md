@@ -164,6 +164,8 @@ as they are.
   to `origin`, and then records the decision (kind `edit_agent`, decider `person`, the settings and instructions in its
   context). An edit that changes nothing commits nothing and records nothing.
 - `DELETE /v1/agents/{name}` removes both files the same way, with the message `Delete the agent <name>`.
+- `PUT /v1/rules` takes `{"text": "..."}`, writes it to `rules.md` and commits and pushes it the same way, with the
+  message `Update the rules` and the decision kind `edit_rules`.
 
 If anything fails after the commit was made, including the push, the commit is undone (`git reset --hard` to the head
 before it), so the clone never drifts from `origin`, and no decision is recorded. The request then fails with the

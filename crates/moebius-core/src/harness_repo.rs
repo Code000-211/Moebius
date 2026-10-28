@@ -21,6 +21,7 @@ use crate::decide::Question;
 use crate::mcp::{McpServer, parse_file};
 use crate::repos::{Repos, git};
 use crate::router::Protocol;
+use crate::rules;
 use crate::skill;
 
 /// The settings of an agent: the keys of `agents/<name>.toml`.
@@ -567,6 +568,7 @@ impl HarnessRepo {
             "Add"
         };
         let context = BTreeMap::from([
+            ("agent".to_string(), name.to_string()),
             ("settings".to_string(), settings.clone()),
             ("instructions".to_string(), definition.instructions.clone()),
         ]);
@@ -581,7 +583,18 @@ impl HarnessRepo {
             }
         };
         let message = format!("{verb} the agent {name}");
-        let commit = self.commit(app, &mut read_at, name, &message, context, write)?;
+        let files = format!("agents/{name}.*");
+        let commit = self.commit(
+            app,
+            &mut read_at,
+            &Edit {
+                kind: "edit_agent",
+                files: &files,
+                message: &message,
+            },
+            context,
+            write,
+        )?;
         Ok(AgentView {
             name: name.into(),
             definition: definition.clone(),
@@ -601,34 +614,65 @@ impl HarnessRepo {
             remove_if_there(&markdown)
         };
         let message = format!("Delete the agent {name}");
-        self.commit(app, &mut read_at, name, &message, BTreeMap::new(), write)
+        let files = format!("agents/{name}.*");
+        let edit = Edit {
+            kind: "edit_agent",
+            files: &files,
+            message: &message,
+        };
+        let context = BTreeMap::from([("agent".to_string(), name.to_string())]);
+        self.commit(app, &mut read_at, &edit, context, write)
             .map(drop)
     }
 
-    /// Makes the change `write` does to the agent's files a commit on the default branch and pushes it. Whatever fails
-    /// before the push is through, the working tree and the default branch are as they were. On success the agents are
-    /// read again, the person's decision is recorded and the short id of the commit is given; a change that changed
-    /// nothing makes no commit.
+    /// A person replaces the server's rules, the `rules.md` of the repository: committed on the default branch and
+    /// pushed to `origin`, the same way. The text must pass `rules::check`. The short id of the commit is given;
+    /// text that changes nothing makes no commit. Every tool call reads the file afresh, so the next one is checked
+    /// against the new rules.
+    pub fn save_rules(&self, app: &App, text: &str) -> Result<Option<String>> {
+        let mut read_at = self.lock();
+        rules::check(text).map_err(AppError::Invalid)?;
+        let mut text = text.to_string();
+        if !text.is_empty() && !text.ends_with('\n') {
+            text.push('\n');
+        }
+        let edit = Edit {
+            kind: "edit_rules",
+            files: "rules.md",
+            message: "Update the rules",
+        };
+        let context = BTreeMap::from([("text".to_string(), text.clone())]);
+        let write = || Ok(std::fs::write(self.path.join("rules.md"), &text)?);
+        self.commit(app, &mut read_at, &edit, context, write)
+    }
+
+    /// Makes the change `write` does to the files of `edit` a commit on the default branch and pushes it. Whatever
+    /// fails before the push is through, the working tree and the default branch are as they were. On success the
+    /// agents are read again, the person's decision is recorded and the short id of the commit is given; a change
+    /// that changed nothing makes no commit.
     fn commit(
         &self,
         app: &App,
         read_at: &mut String,
-        name: &str,
-        message: &str,
+        edit: &Edit,
         mut context: BTreeMap<String, String>,
         write: impl FnOnce() -> Result<()>,
     ) -> Result<Option<String>> {
+        let Edit {
+            kind,
+            files,
+            message,
+        } = *edit;
         let before = git(&self.path, &["rev-parse", "HEAD"]).map_err(|_| {
             AppError::Invalid("the harness configuration repository has no commits".into())
         })?;
         let undo = |error: AppError| {
             let _ = git(&self.path, &["reset", "--hard", "--quiet", &before]);
-            let _ = git(&self.path, &["clean", "-fdq", "--", "agents"]);
+            let _ = git(&self.path, &["clean", "-fdq", "--", files]);
             error
         };
         write().map_err(undo)?;
-        let files = format!("agents/{name}.*");
-        git(&self.path, &["add", "-A", "--", &files]).map_err(|e| undo(e.into()))?;
+        git(&self.path, &["add", "-A", "--", files]).map_err(|e| undo(e.into()))?;
         if git(&self.path, &["diff", "--cached", "--quiet"]).is_ok() {
             return Ok(None);
         }
@@ -644,22 +688,32 @@ impl HarnessRepo {
         let head = git(&self.path, &["rev-parse", "HEAD"])?;
         let short = git(&self.path, &["rev-parse", "--short", "HEAD"])?;
         self.read(app, read_at, head);
-        context.insert("agent".into(), name.into());
         context.insert("change".into(), message.into());
         app.decisions.record_person(
             &Question {
-                kind: "edit_agent".into(),
+                kind: kind.into(),
                 context,
-                options: vec!["edit_agent".into(), "leave".into()],
+                options: vec![kind.into(), "leave".into()],
                 fail_closed: "leave".into(),
                 run_id: None,
                 card_id: None,
             },
-            "edit_agent",
+            kind,
             "",
         )?;
         Ok(Some(short))
     }
+}
+
+/// A change a person makes to the repository's files, as `HarnessRepo::commit` takes it.
+#[derive(Clone, Copy)]
+struct Edit<'a> {
+    /// The kind of the decision recorded once the change is pushed.
+    kind: &'a str,
+    /// The pathspec of the files the change touches.
+    files: &'a str,
+    /// The commit message.
+    message: &'a str,
 }
 
 /// The agent `name` as its files in the repository at `root` say, or why they cannot be used.

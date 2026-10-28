@@ -15,10 +15,11 @@ use crate::experiments::{self, Experiments};
 use crate::inbox::{self, Inbox};
 use crate::live::{self, Live};
 use crate::retro::{self, Retros};
+use crate::rules::{self, Rules};
 use crate::settings::{self, Settings};
 use crate::setup::{self, Setup};
 use crate::usage::{self, Usage};
-use crate::{board, chat, connect, history, sidebar, soon, theme};
+use crate::{board, chat, connect, history, sidebar, theme};
 
 /// What the sidebar says about the connection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,24 +79,6 @@ impl Page {
             Page::Models | Page::Plugins | Page::Settings => "Setup",
         }
     }
-
-    /// The milestone that builds the page's screen, from `docs/issues-m2-m9.md`; none when no issue names one.
-    pub fn milestone(self) -> Option<&'static str> {
-        match self {
-            Page::Inbox | Page::Chat | Page::Board(_) => Some("M6"),
-            Page::Agents
-            | Page::Skills
-            | Page::McpServers
-            | Page::Rules
-            | Page::Usage
-            | Page::Retro
-            | Page::Experiments
-            | Page::DecisionModel
-            | Page::Models
-            | Page::Plugins
-            | Page::Settings => None,
-        }
-    }
 }
 
 /// The connect screen's fields.
@@ -134,6 +117,7 @@ pub enum Message {
     Agents(agents::Message),
     Usage(usage::Message),
     Retro(retro::Message),
+    Rules(rules::Message),
     Experiments(experiments::Message),
     DecisionModel(decision_model::Message),
     Setup(setup::Message),
@@ -173,6 +157,7 @@ pub struct App {
     agents: Agents,
     usage: Usage,
     retros: Retros,
+    rules: Rules,
     experiments: Experiments,
     decision_model: DecisionModel,
     setup: Setup,
@@ -209,6 +194,7 @@ impl App {
             agents: Agents::default(),
             usage: Usage::default(),
             retros: Retros::default(),
+            rules: Rules::default(),
             experiments: Experiments::default(),
             decision_model: DecisionModel::default(),
             setup: Setup::default(),
@@ -278,6 +264,7 @@ impl App {
                     }
                     (Page::Usage, Some(settings)) => return self.usage.reload(settings),
                     (Page::Retro, Some(settings)) => return self.retros.reload(settings),
+                    (Page::Rules, Some(settings)) => return self.rules.reload(settings),
                     (Page::Experiments, Some(settings)) => {
                         return self.experiments.reload(settings);
                     }
@@ -313,6 +300,10 @@ impl App {
                 self.show_connect_error(&ClientError::Unauthorized);
             }
             Message::Retro(message) => return self.retros.update(message, self.settings.as_ref()),
+            Message::Rules(message) if Rules::refused(&message) => {
+                self.show_connect_error(&ClientError::Unauthorized);
+            }
+            Message::Rules(message) => return self.rules.update(message, self.settings.as_ref()),
             Message::Experiments(message) if Experiments::refused(&message) => {
                 self.show_connect_error(&ClientError::Unauthorized);
             }
@@ -680,7 +671,8 @@ impl App {
             Page::Board(id) => {
                 let Some(board) = self.snapshot.boards.iter().find(|b| b.repository.id == id)
                 else {
-                    return soon::view(page);
+                    // A board that is gone (its repository was removed) leaves the inbox.
+                    return self.inbox.view(&self.snapshot);
                 };
                 let card_of = |id| board.cards.iter().find(|card| card.id == id);
                 match &self.opened {
@@ -700,12 +692,12 @@ impl App {
             Page::McpServers => self.agents.mcp_page(),
             Page::Usage => self.usage.view(),
             Page::Retro => self.retros.view(),
+            Page::Rules => self.rules.view(),
             Page::Experiments => self.experiments.view(&self.snapshot),
             Page::DecisionModel => self.decision_model.view(),
             Page::Models => self.setup.models_page(),
             Page::Plugins => self.setup.plugins_page(),
             Page::Settings => self.setup.settings_page(self.settings.as_ref()),
-            Page::Rules => soon::view(page),
         }
     }
 }

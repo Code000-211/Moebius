@@ -29,6 +29,9 @@
 //!   `GET /v1/mcp-servers`: the skills and MCP servers an agent can name.
 //! - `GET /v1/models`, `GET /v1/plugins` and `GET /v1/settings`: how the server is set up, never with a secret in it (see
 //!   [`crate::setup`]).
+//! - `GET /v1/rules`: the built-in patterns, the rules in prose, those of each repository and the refusals of the last
+//!   week. `PUT /v1/rules` `{text}` replaces the rules in prose of the harness configuration repository (see
+//!   [`crate::rules`]).
 //! - `POST /v1/research` `{repository, goal, measure, better, token_budget}`: stores a brief as a draft. `GET
 //!   /v1/research` and `GET /v1/research/{id}`: research with its baseline and experiments.
 //!   `POST /v1/research/{id}/confirm`, `/start` and `/stop`: a person confirms the brief, starts a confirmed research
@@ -44,7 +47,7 @@
 //! Every request carries `Authorization: Bearer <token>`; anything else is answered with 401.
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use axum::Router;
@@ -71,6 +74,7 @@ use crate::replay;
 use crate::repos::GitError;
 use crate::research::{self, NewResearch, ResearchView};
 use crate::retro::{self, RetroSummary, RetroView};
+use crate::rules;
 use crate::setup;
 use crate::store::{
     AgentUsage, Card, Change, Event, Grilling, GrillingIssue, InboxItem, ModelUsage, Proposal,
@@ -398,6 +402,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/models", get(models))
         .route("/v1/plugins", get(plugins))
         .route("/v1/settings", get(settings))
+        .route("/v1/rules", get(get_rules).put(put_rules))
         .route("/v1/skills", get(skills))
         .route("/v1/mcp-servers", get(mcp_servers))
         .route("/v1/retros", get(retros).post(start_retro))
@@ -698,6 +703,57 @@ async fn delete_agent(
 ) -> Result<axum::Json<()>, ApiError> {
     let repo = harness_repo(&state)?;
     blocking(&state.app, move |app| repo.delete_agent(app, &name)).await
+}
+
+/// What `PUT /v1/rules` takes.
+#[derive(Debug, Deserialize)]
+struct NewRules {
+    text: String,
+}
+
+/// What `PUT /v1/rules` answers: the rules page and the commit the change made.
+#[derive(Debug, Serialize)]
+struct SavedRules {
+    #[serde(flatten)]
+    view: rules::View,
+    /// The short id of the commit; left out when the text changed nothing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    commit: Option<String>,
+}
+
+/// The rules file the server reads and whether a person can change it.
+fn rules_source(state: &ApiState) -> (Option<PathBuf>, bool) {
+    match &state.harness_repo {
+        Some(repo) => (Some(repo.path().join("rules.md")), true),
+        None => (state.config.rules_file.clone(), false),
+    }
+}
+
+async fn get_rules(State(state): State<ApiState>) -> Result<axum::Json<rules::View>, ApiError> {
+    let (file, editable) = rules_source(&state);
+    blocking(&state.app, move |app| {
+        rules::view(app, file.as_deref(), editable)
+    })
+    .await
+}
+
+async fn put_rules(
+    State(state): State<ApiState>,
+    axum::Json(new): axum::Json<NewRules>,
+) -> Result<axum::Json<SavedRules>, ApiError> {
+    let Some(repo) = state.harness_repo.clone() else {
+        return Err(AppError::Conflict(
+            "the rules are a file of the server, not of a harness repository, and are read only here".into(),
+        )
+        .into());
+    };
+    let (file, editable) = rules_source(&state);
+    blocking(&state.app, move |app| {
+        let commit = repo.save_rules(app, &new.text)?;
+        let view = rules::view(app, file.as_deref(), editable)?;
+        Ok(SavedRules { view, commit })
+    })
+    .await
 }
 
 /// The body of `POST /v1/retros`.

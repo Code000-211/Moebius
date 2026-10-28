@@ -1,6 +1,7 @@
 //! Draws the shell headlessly with a fixed snapshot (no server) and checks what is on the screen. The pictures are
 //! kept in `tests/snapshots/` to be compared with `docs/design/board.png`; a later run must draw the same pixels.
 
+use iced::widget::text_editor;
 use iced::{Settings, Size};
 use iced_test::Simulator;
 use moebius_desktop::agents;
@@ -13,6 +14,7 @@ use moebius_desktop::experiments;
 use moebius_desktop::inbox::{self, Action};
 use moebius_desktop::live;
 use moebius_desktop::retro;
+use moebius_desktop::rules;
 use moebius_desktop::setup;
 use moebius_desktop::terminal::PaneEvent;
 use moebius_desktop::theme;
@@ -223,17 +225,6 @@ fn the_collapsed_sidebar_keeps_the_inbox_count() {
         &app,
         "shell-collapsed",
         &["6", "GitHub · Code000-211/Radiance"],
-    );
-}
-
-#[test]
-fn a_screen_that_is_not_built_says_which_milestone_brings_it() {
-    let mut app = App::with_snapshot(overview());
-    let _ = app.update(Message::Select(Page::Rules));
-    draw(
-        &app,
-        "shell-soon",
-        &["Rules", "This screen has no milestone yet."],
     );
 }
 
@@ -2612,4 +2603,123 @@ fn the_settings_page_shows_the_server_and_this_app_with_the_token_masked() {
         pressed(&app, "Connect to another server").as_deref(),
         Some("[ChangeConnection]")
     );
+}
+
+/// What `GET /v1/rules` answers for a server with a harness repository, two rules in prose and a repository that adds one.
+fn rules_view(editable: bool) -> moebius_desktop::client::RulesView {
+    serde_json::from_value(json!({
+        "patterns": [
+            {"name": "no-destructive-commands", "description": "commands that delete recursively outside the worktree, format a disk, overwrite a device or exhaust the machine are never run"},
+            {"name": "no-force-push", "description": "git push --force rewrites history on the remote"},
+            {"name": "stay-in-the-worktree", "description": "files are written only inside the run's worktree"},
+            {"name": "no-secrets-in-commands", "description": "a command must not contain a secret; read it from the environment instead"}
+        ],
+        "prose": {
+            "source": if editable { json!("harness") } else { json!("file") },
+            "editable": editable,
+            "text": "Rules for every run.\n\n## leave-ci-alone\nDo not edit files under .github/ or any other CI configuration.\n\n## no-vendoring\nDo not copy dependencies into the tree.\n",
+            "rules": [
+                {"name": "leave-ci-alone", "text": "Do not edit files under .github/ or any other CI configuration."},
+                {"name": "no-vendoring", "text": "Do not copy dependencies into the tree."}
+            ],
+            "error": null
+        },
+        "repositories": [{
+            "repository": "radiance",
+            "text": "## keep-migrations\nDo not edit a migration that exists.",
+            "rules": [{"name": "keep-migrations", "text": "Do not edit a migration that exists."}],
+            "error": null
+        }],
+        "refusals": {"no-force-push": 3, "leave-ci-alone": 1}
+    }))
+    .unwrap()
+}
+
+fn rules_app(editable: bool) -> App {
+    let mut app = App::with_snapshot(overview());
+    let _ = app.update(Message::Select(Page::Rules));
+    let _ = app.update(Message::Rules(rules::Message::Loaded(Ok(rules_view(
+        editable,
+    )))));
+    app
+}
+
+/// The Rules page drawn: `tests/snapshots/rules-tiny-skia.png`.
+#[test]
+fn the_rules_page_lists_the_patterns_the_rules_and_what_they_refused() {
+    draw_sized(
+        &rules_app(true),
+        "rules",
+        &[
+            "Rules",
+            "Save",
+            "Built-in patterns",
+            "no-force-push",
+            "git push --force rewrites history on the remote",
+            "3 refusals this week",
+            "No refusals this week",
+            "Rules in prose",
+            "leave-ci-alone",
+            "1 refusal this week",
+            "no-vendoring",
+            "radiance",
+            "keep-migrations",
+            "Read only: these rules change through a change to the repository (.moebius/rules.md on its default branch).",
+        ],
+        Size::new(1440.0, 1300.0),
+    );
+}
+
+#[test]
+fn without_a_harness_repository_the_rules_are_read_only_and_say_where_to_learn_more() {
+    let app = rules_app(false);
+    assert!(shows(&app, "leave-ci-alone"));
+    assert!(shows(
+        &app,
+        "These rules are read only here: this server keeps them outside a harness configuration repository. To edit them in this app, set up [harness]; docs/guide/rules.md says how."
+    ));
+    assert!(!shows(&app, "Save"));
+    let app = rules_app(true);
+    assert!(!shows(
+        &app,
+        "These rules are read only here: this server keeps them outside a harness configuration repository. To edit them in this app, set up [harness]; docs/guide/rules.md says how."
+    ));
+}
+
+#[test]
+fn editing_the_rules_and_saving_sends_the_text_and_the_answer_is_shown() {
+    let settings = settings();
+    let mut rules = rules::Rules::default();
+    let mut update = |message| rules.update(message, Some(&settings)).units();
+    update(rules::Message::Loaded(Ok(rules_view(true))));
+    update(rules::Message::Edited(text_editor::Action::Move(
+        text_editor::Motion::DocumentEnd,
+    )));
+    update(rules::Message::Edited(text_editor::Action::Edit(
+        text_editor::Edit::Paste(std::sync::Arc::new(
+            "\n## ask-first\nAsk before deleting.".into(),
+        )),
+    )));
+    assert_eq!(update(rules::Message::Save), 1);
+    assert_eq!(
+        rules.save_text(),
+        "Rules for every run.\n\n## leave-ci-alone\nDo not edit files under .github/ or any other CI configuration.\n\n## no-vendoring\nDo not copy dependencies into the tree.\n\n## ask-first\nAsk before deleting."
+    );
+
+    let mut app = rules_app(true);
+    assert!(matches!(
+        &clicked(&app, "Save")[..],
+        [Message::Rules(rules::Message::Save)]
+    ));
+    let mut saved = rules_view(true);
+    saved.commit = Some("a1b2c3d".into());
+    let _ = app.update(Message::Rules(rules::Message::Saved(Ok(saved))));
+    assert!(shows(&app, "Saved as a commit: a1b2c3d"));
+    let invalid = ClientError::Server {
+        status: 422,
+        message: "line 4: the rule \"a\" is named twice".into(),
+    };
+    let _ = app.update(Message::Rules(rules::Message::Saved(Err(invalid))));
+    assert!(shows(&app, "line 4: the rule \"a\" is named twice"));
+    assert!(!shows(&app, "Saved as a commit: a1b2c3d"));
 }

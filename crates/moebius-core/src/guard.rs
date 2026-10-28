@@ -110,6 +110,14 @@ const BUILT_IN: [BuiltIn; 4] = [
     },
 ];
 
+/// The built-in rules as a person reads them: each name with what it refuses, in the order they are tested.
+pub fn patterns() -> Vec<(&'static str, &'static str)> {
+    BUILT_IN
+        .iter()
+        .map(|rule| (rule.name, rule.prose))
+        .collect()
+}
+
 /// One simple command of a command line.
 #[derive(Default)]
 struct Simple {
@@ -824,6 +832,27 @@ mod tests {
             .iter()
             .find(|rule| (rule.broken_by)(&call))
             .map(|rule| rule.name)
+    }
+
+    #[test]
+    fn the_patterns_are_listed_with_what_they_refuse() {
+        let patterns = patterns();
+        assert_eq!(
+            patterns.iter().map(|(name, _)| *name).collect::<Vec<_>>(),
+            [
+                "no-destructive-commands",
+                "no-force-push",
+                "stay-in-the-worktree",
+                "no-secrets-in-commands"
+            ]
+        );
+        let call = ToolCall {
+            tool: "bash",
+            input: json!({ "command": "git push --force" }),
+            worktree: Some(Path::new(WORKTREE)),
+        };
+        let (name, description) = patterns[1];
+        assert_eq!(broken_rule(&call), Some(format!("{name}: {description}")));
     }
 
     fn bash(command: &str) -> Option<&'static str> {

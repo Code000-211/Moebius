@@ -278,6 +278,64 @@ pub struct AgentDetail {
     pub commit: Option<String>,
 }
 
+/// A built-in rule, as `GET /v1/rules` lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct RulePattern {
+    pub name: String,
+    pub description: String,
+}
+
+/// A rule of a `rules.md`: its name and what it says.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Rule {
+    pub name: String,
+    pub text: String,
+}
+
+/// The rules in prose of the server, as `GET /v1/rules` has them.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ProseRules {
+    /// `harness`, `file` or none.
+    #[serde(default)]
+    pub source: Option<String>,
+    /// Whether `PUT /v1/rules` can change the text.
+    #[serde(default)]
+    pub editable: bool,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub rules: Vec<Rule>,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+/// A repository's own `.moebius/rules.md`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct RepositoryRules {
+    pub repository: String,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub rules: Vec<Rule>,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+/// What `GET` and `PUT /v1/rules` answer.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct RulesView {
+    pub patterns: Vec<RulePattern>,
+    pub prose: ProseRules,
+    #[serde(default)]
+    pub repositories: Vec<RepositoryRules>,
+    /// The refusals of the last 7 days by rule name.
+    #[serde(default)]
+    pub refusals: std::collections::BTreeMap<String, i64>,
+    /// The short id of the commit a `PUT` made; none when the text changed nothing.
+    #[serde(default)]
+    pub commit: Option<String>,
+}
+
 /// A skill an agent can name, as `GET /v1/skills` lists it.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Skill {
@@ -863,6 +921,17 @@ impl Client {
             .http
             .delete(format!("{}/v1/agents/{name}", self.settings.address));
         self.send::<()>(request).await
+    }
+
+    /// The rules page: the built-in patterns, the rules in prose and those of each repository.
+    pub async fn rules(&self) -> Result<RulesView, ClientError> {
+        self.get("/v1/rules").await
+    }
+
+    /// Replaces the rules in prose; the server commits them to the harness configuration repository.
+    pub async fn save_rules(&self, text: &str) -> Result<RulesView, ClientError> {
+        self.put("/v1/rules", serde_json::json!({ "text": text }))
+            .await
     }
 
     /// The skills an agent can name; none without a harness configuration repository.
