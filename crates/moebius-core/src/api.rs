@@ -228,6 +228,18 @@ pub struct NewChat {
     /// An ended chat this one continues: its agent and place unless others are named, and its conversation.
     #[serde(default)]
     pub continues: Option<i64>,
+    /// Where the person is in the app, which the agent is told with the message and the chat does not show.
+    #[serde(default)]
+    pub context: Option<String>,
+}
+
+/// The body of a message to a chat: what the person wrote, which the chat shows, and optionally where they are in the
+/// app, which only the agent is told.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatMessage {
+    pub message: String,
+    #[serde(default)]
+    pub context: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1322,6 +1334,7 @@ async fn start_chat(
             chat.repository,
             chat.harness,
             &chat.message,
+            chat.context.as_deref(),
             chat.continues,
         )
     })
@@ -1335,11 +1348,11 @@ async fn chats(State(state): State<ApiState>) -> Result<axum::Json<Vec<Chat>>, A
 async fn say_in_chat(
     State(state): State<ApiState>,
     UrlPath(id): UrlPath<i64>,
-    axum::Json(said): axum::Json<Steer>,
+    axum::Json(said): axum::Json<ChatMessage>,
 ) -> Result<axum::Json<Run>, ApiError> {
     let runs = state.runs.clone();
     blocking(&state.app, move |app| {
-        app.say_in_chat(&*runs, id, &said.message)
+        app.say_in_chat(&*runs, id, &said.message, said.context.as_deref())
     })
     .await
 }
@@ -3313,6 +3326,69 @@ mod tests {
                 && answer.ends_with("Go on"),
             "{answer}"
         );
+    }
+
+    #[tokio::test]
+    async fn the_agent_is_told_where_the_person_is_and_the_chat_shows_only_the_message() {
+        let (_dir, state, addr) = start().await;
+        let app = &state.app;
+        let body = serde_json::json!({
+            "agent": "Coder",
+            "message": "What is this?",
+            "context": "Page: Board of widgets\nKey: sk-ant-abcdefghijklmnop1234",
+        });
+        let started = post(&state, &addr, "/v1/chats".into(), body).await;
+        assert_eq!(started.status(), 200);
+        let run: Run = started.json().await.unwrap();
+        until("the agent has answered", || {
+            status(app, run.id) == "waiting"
+        })
+        .await;
+        let body = serde_json::json!({ "message": "And this?", "context": "Page: Rules" });
+        let said = post(
+            &state,
+            &addr,
+            format!("/v1/chats/{}/messages", run.id),
+            body,
+        )
+        .await;
+        assert_eq!(said.status(), 200);
+        until("the second answer", || {
+            kinds(app, run.id)
+                .iter()
+                .filter(|k| *k == "agent_settled")
+                .count()
+                == 2
+        })
+        .await;
+        let events = app.store.events(run.id).unwrap();
+        let said: Vec<&str> = events
+            .iter()
+            .filter(|e| e.kind == "said")
+            .filter_map(|e| e.data["message"].as_str())
+            .collect();
+        assert_eq!(said, ["What is this?", "And this?"]);
+        // The fake Pi answers with its prompt: the context came first, without the secret.
+        let answers: Vec<String> = events
+            .iter()
+            .filter(|e| e.kind == "agent_end")
+            .filter_map(|e| crate::pibolt::final_answer(&e.data))
+            .collect();
+        assert_eq!(answers.len(), 2);
+        assert!(
+            answers[0].contains("Page: Board of widgets\nKey: [redacted:anthropic-key]")
+                && answers[0].ends_with("\n\nWhat is this?")
+                && !answers[0].contains("sk-ant-"),
+            "{}",
+            answers[0]
+        );
+        assert!(
+            answers[1].contains("Page: Rules") && answers[1].ends_with("\n\nAnd this?"),
+            "{}",
+            answers[1]
+        );
+        let stored = serde_json::to_string(&events.iter().map(|e| &e.data).collect::<Vec<_>>());
+        assert!(!stored.unwrap().contains("sk-ant-abcdefghijklmnop1234"));
     }
 
     #[tokio::test]

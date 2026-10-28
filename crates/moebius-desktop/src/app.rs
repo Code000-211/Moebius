@@ -14,6 +14,7 @@ use crate::client::{self, Client, ClientError, HistoryEntry, RunEvent, Snapshot,
 use crate::decision_model::{self, DecisionModel};
 use crate::experiments::{self, Experiments};
 use crate::fleet::{self, Fleet};
+use crate::float_chat::{self, FloatChat};
 use crate::inbox::{self, Inbox};
 use crate::live::{self, Live};
 use crate::mcp_servers::{self, McpServers};
@@ -152,6 +153,8 @@ pub enum Message {
     Start(start::Message),
     AddRepository(add_repository::Message),
     NewIssue(new_issue::Message),
+    /// Something on the floating chat.
+    Float(float_chat::Message),
     /// A chat was asked for, as from the inbox: its screen opens on it.
     OpenChat(i64),
     /// The history of the card was read.
@@ -205,11 +208,26 @@ pub struct App {
     open_on_start: bool,
     add_repository: AddRepository,
     new_issue: NewIssue,
+    /// The chat with the Moebius agent over every page.
+    float: FloatChat,
     collapsed: bool,
     search: Search,
     /// Counts the reads of the snapshot, so that an older answer never replaces a newer one.
     requested: u64,
     shown: u64,
+}
+
+/// How many characters of a text being edited the floating chat tells the agent, at most.
+const EXCERPT: usize = 2_500;
+
+/// `text` under `label`, cut to [`EXCERPT`] characters, saying so when it was cut.
+fn excerpt(label: &str, text: &str) -> String {
+    let count = text.chars().count();
+    if count <= EXCERPT {
+        return format!("{label}:\n{text}");
+    }
+    let start: String = text.chars().take(EXCERPT).collect();
+    format!("{label} (the first {EXCERPT} of {count} characters):\n{start}")
 }
 
 async fn check(settings: Settings) -> Result<(Settings, Snapshot), ClientError> {
@@ -251,6 +269,7 @@ impl App {
             open_on_start: false,
             add_repository: AddRepository::default(),
             new_issue: NewIssue::default(),
+            float: FloatChat::new(live::now()),
             collapsed: false,
             search: Search::default(),
             requested: 0,
@@ -390,14 +409,11 @@ impl App {
                 self.show_connect_error(&ClientError::Unauthorized);
             }
             Message::Script(script_editor::Message::AskAgent) => {
-                // The chat page opens on a draft for the Moebius agent; nothing is sent.
+                // The floating chat opens with the start of a message about the script; nothing is sent.
                 let Some(Opened::Script(editor)) = &self.opened else {
                     return Task::none();
                 };
-                let (repository, about) = (editor.repository(), editor.about());
-                self.page = Some(Page::Chat);
-                self.opened = None;
-                return self.chats.draft(repository, about);
+                return self.float.prefill(editor.about());
             }
             Message::Script(message) => {
                 if let Some(Opened::Script(editor)) = &mut self.opened {
@@ -414,17 +430,12 @@ impl App {
                 self.show_connect_error(&ClientError::Unauthorized);
             }
             Message::Agents(agents::Message::Asked(Ok(run))) => {
-                // The Moebius agent writes the instructions in a chat, which is shown.
+                // The Moebius agent writes the instructions in a chat, which the floating chat shows.
                 let settings = self.settings.clone();
                 let task = self
                     .agents
                     .update(agents::Message::Asked(Ok(run.clone())), settings.as_ref());
-                self.page = Some(Page::Chat);
-                self.opened = None;
-                let chat = self
-                    .chats
-                    .update(chat::Message::Started(Ok(run)), settings.as_ref());
-                return Task::batch([task, chat]);
+                return Task::batch([task, self.float_adopt(&run, None)]);
             }
             Message::Agents(message) if Agents::refused(&message) => {
                 self.show_connect_error(&ClientError::Unauthorized);
@@ -449,17 +460,12 @@ impl App {
             }
             Message::Retro(message) => return self.retros.update(message, self.settings.as_ref()),
             Message::Rules(rules::Message::Asked(Ok(run))) => {
-                // The Moebius agent changes the rules in a chat, which is shown.
+                // The Moebius agent changes the rules in a chat, which the floating chat shows.
                 let settings = self.settings.clone();
                 let task = self
                     .rules
                     .update(rules::Message::Asked(Ok(run.clone())), settings.as_ref());
-                self.page = Some(Page::Chat);
-                self.opened = None;
-                let chat = self
-                    .chats
-                    .update(chat::Message::Started(Ok(run)), settings.as_ref());
-                return Task::batch([task, chat]);
+                return Task::batch([task, self.float_adopt(&run, None)]);
             }
             Message::Rules(message) if Rules::refused(&message) => {
                 self.show_connect_error(&ClientError::Unauthorized);
@@ -521,17 +527,11 @@ impl App {
                 self.show_connect_error(&ClientError::Unauthorized);
             }
             Message::NewIssue(new_issue::Message::Asked(Ok(run))) => {
-                // The agent writes the issue in a chat, which is shown.
+                // The agent writes the issue in a chat in the board's repository, which the floating chat shows.
                 let task = self
                     .new_issue
                     .update(new_issue::Message::Asked(Ok(run.clone())), None);
-                self.page = Some(Page::Chat);
-                self.opened = None;
-                let settings = self.settings.clone();
-                let chat = self
-                    .chats
-                    .update(chat::Message::Started(Ok(run)), settings.as_ref());
-                return Task::batch([task, chat]);
+                return Task::batch([task, self.float_adopt(&run, self.page_repository())]);
             }
             Message::NewIssue(message) => {
                 let created = matches!(message, new_issue::Message::Answered(Ok(_)));
@@ -542,6 +542,7 @@ impl App {
                 return task;
             }
             Message::Chat(message) => return self.chats.update(message, self.settings.as_ref()),
+            Message::Float(message) => return self.on_float(message),
             Message::Fleet(message) => self.fleet.update(message),
             Message::OpenChat(id) => {
                 self.page = Some(Page::Chat);
@@ -669,6 +670,162 @@ impl App {
         self.inbox.update(message, self.settings.as_ref())
     }
 
+    /// Something on the floating chat. Sending adds where the person is, and the repository of the page when the
+    /// message starts the chat.
+    fn on_float(&mut self, message: float_chat::Message) -> Task<Message> {
+        match message {
+            float_chat::Message::Send => {
+                let Some(settings) = self.settings.clone() else {
+                    return Task::none();
+                };
+                let (context, repository) = (self.page_context(), self.page_repository());
+                self.float.send(&settings, context, repository)
+            }
+            float_chat::Message::OpenInChat => {
+                let Some(id) = self.float.chat() else {
+                    return Task::none();
+                };
+                // The window gives way to the Chat page, which shows the same chat.
+                let _ = self.float.update(float_chat::Message::Show(false), None);
+                self.update(Message::OpenChat(id))
+            }
+            float_chat::Message::Started(Err(ClientError::Unauthorized))
+            | float_chat::Message::Sent(Err(ClientError::Unauthorized)) => {
+                self.show_connect_error(&ClientError::Unauthorized);
+                Task::none()
+            }
+            message => {
+                // A chat that started is in the Chat page's list too.
+                let started = matches!(message, float_chat::Message::Started(Ok(_)));
+                let task = self.float.update(message, self.settings.as_ref());
+                match &self.settings {
+                    Some(settings) if started => Task::batch([task, self.chats.reload(settings)]),
+                    _ => task,
+                }
+            }
+        }
+    }
+
+    /// Opens the floating chat on `run`, a chat with the Moebius agent started by an "Ask the agent", in `repository`.
+    fn float_adopt(&mut self, run: &client::Run, repository: Option<i64>) -> Task<Message> {
+        let Some(settings) = self.settings.clone() else {
+            return Task::none();
+        };
+        Task::batch([
+            self.float.adopt(run, repository, &settings),
+            self.chats.reload(&settings),
+        ])
+    }
+
+    /// The repository of the page shown, if it is a board's: a chat the floating chat starts there works in it.
+    fn page_repository(&self) -> Option<i64> {
+        match self.page() {
+            Page::Board(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    /// Where the person is in the app, in a few lines for the Moebius agent: the page, the repository, what is open on
+    /// it, and the text being edited, cut to a sensible size. The floating chat sends it with every message.
+    pub fn page_context(&self) -> String {
+        let page = self.page();
+        let mut lines = vec![match page.group() {
+            "" => format!("Page: {}", page.title()),
+            group => format!("Page: {group} > {}", page.title()),
+        }];
+        match page {
+            Page::Board(id) => {
+                let Some(board) = self.snapshot.boards.iter().find(|b| b.repository.id == id)
+                else {
+                    return lines.join("\n");
+                };
+                let repository = &board.repository;
+                lines.push(format!(
+                    "Repository: {} (id {})",
+                    repository.name, repository.id
+                ));
+                let card_of = |id| board.cards.iter().find(|card| card.id == id);
+                let describe = |card: &client::Card| {
+                    format!(
+                        "Open card: #{} {} (column {}, card id {})",
+                        card.number, card.title, card.column, card.id
+                    )
+                };
+                match &self.opened {
+                    Some(Opened::Run(live)) => {
+                        if let Some(card) = card_of(live.card) {
+                            lines.push(describe(card));
+                        }
+                        let run = live.run();
+                        lines.push(format!(
+                            "Watching run {} of {}: {}",
+                            run.id, run.agent, run.status
+                        ));
+                    }
+                    Some(Opened::History { card, .. }) => {
+                        if let Some(card) = card_of(*card) {
+                            lines.push(describe(card));
+                            lines
+                                .push("The card has no run yet; its history is shown.".to_string());
+                        }
+                    }
+                    Some(Opened::Script(editor)) => {
+                        let path = match editor.path() {
+                            "" => "not read yet",
+                            path => path,
+                        };
+                        lines.push(format!(
+                            "Editing the script of the {} column ({path})",
+                            editor.column()
+                        ));
+                        lines.push(excerpt(
+                            "The script as written in the editor",
+                            &editor.request(),
+                        ));
+                    }
+                    None => lines.push(format!(
+                        "The board: {} cards, {} changes",
+                        board.cards.len(),
+                        board.changes.len()
+                    )),
+                }
+            }
+            Page::Chat => match self.chats.open_chat() {
+                Some(chat) => lines.push(format!(
+                    "Open chat {}: \"{}\" with {}, {}",
+                    chat.id, chat.title, chat.agent, chat.status
+                )),
+                None => lines.push("No chat is open.".to_string()),
+            },
+            Page::Rules => lines.push(excerpt(
+                "The rules as written in the editor",
+                &self.rules.save_text(),
+            )),
+            Page::Agents => match self.agents.editing() {
+                Some(name) => lines.push(format!("Editing the agent {name}")),
+                None => lines.push("No agent is open.".to_string()),
+            },
+            Page::Models => {
+                lines.push("The upstreams, models and API keys the server uses.".to_string())
+            }
+            Page::Settings => lines
+                .push("The settings of moebius.toml, edited while the server runs.".to_string()),
+            Page::Inbox
+            | Page::Fleet
+            | Page::AddRepository
+            | Page::Skills
+            | Page::McpServers
+            | Page::Retro
+            | Page::Experiments
+            | Page::DecisionModel
+            | Page::Usage
+            | Page::Start
+            | Page::Plugins
+            | Page::Terminal => {}
+        }
+        lines.join("\n")
+    }
+
     /// Tries what was typed; an empty token keeps the saved one.
     fn submit(&mut self) -> Task<Message> {
         let address = settings::normalize_address(&self.form.address);
@@ -757,7 +914,20 @@ impl App {
                     Some(settings) if self.start.incomplete() => self.start.reload(settings),
                     _ => Task::none(),
                 };
-                Task::batch([self.reload(), missed, chats, tiles, usage, setup, start])
+                let floating = match &self.settings {
+                    Some(settings) => self.float.reload(settings),
+                    None => Task::none(),
+                };
+                Task::batch([
+                    self.reload(),
+                    missed,
+                    chats,
+                    tiles,
+                    usage,
+                    setup,
+                    start,
+                    floating,
+                ])
             }
             StreamEvent::Disconnected(_) => {
                 self.connection = Connection::Offline;
@@ -815,6 +985,7 @@ impl App {
                     let status = event.data["status"].as_str().unwrap_or_default();
                     if let Some(run) = event.data["run"].as_i64() {
                         self.chats.on_ended(run, status);
+                        self.float.on_ended(run, status);
                     }
                     if let Some(Opened::Run(live)) = &mut self.opened
                         && event.data["run"] == live.run_id()
@@ -839,6 +1010,9 @@ impl App {
         let chat_checked = data["run"]
             .as_i64()
             .is_some_and(|run| self.chats.on_event(run, &event));
+        let float_checked = data["run"]
+            .as_i64()
+            .is_some_and(|run| self.float.on_event(run, &event));
         // A chat's answer can change the files its worktree changes, which "Offer changes" counts.
         let listed = match (&self.settings, data["run"].as_i64()) {
             (Some(settings), Some(run))
@@ -849,12 +1023,17 @@ impl App {
             _ => Task::none(),
         };
         let live = self.on_live_event(data, event);
-        match &self.settings {
-            Some(settings) if chat_checked => {
-                Task::batch([self.chats.reload_judgements(settings), live, listed])
-            }
-            _ => Task::batch([live, listed]),
+        let Some(settings) = &self.settings else {
+            return Task::batch([live, listed]);
+        };
+        let mut tasks = vec![live, listed];
+        if chat_checked {
+            tasks.push(self.chats.reload_judgements(settings));
         }
+        if float_checked {
+            tasks.push(self.float.reload_judgements(settings));
+        }
+        Task::batch(tasks)
     }
 
     /// A `run_event` of the run on the live view, if that is the one on show. The task reads its judgements again
@@ -962,6 +1141,12 @@ impl App {
                     Page::Chat => self.chats.terminal_subscription(settings),
                     _ => Subscription::none(),
                 };
+                let floating = if self.float.working() {
+                    iced::time::every(Duration::from_secs(30))
+                        .map(|_| Message::Float(float_chat::Message::Tick(live::now())))
+                } else {
+                    Subscription::none()
+                };
                 let keys = iced::event::listen_with(search::key);
                 Subscription::batch([
                     stream,
@@ -972,6 +1157,7 @@ impl App {
                     shell,
                     terminal,
                     chat_terminal,
+                    floating,
                     keys,
                 ])
             }
@@ -1021,8 +1207,15 @@ impl App {
                         .width(Length::Fill)
                         .height(Length::Fill),
                 ];
+                // The floating chat stands over the page, except on the Chat page, which holds every chat and whose
+                // own Send is where the button would stand.
+                let floating: Element<'_, Message> = if page == Page::Chat {
+                    iced::widget::space().into()
+                } else {
+                    self.float.view(self.float_place())
+                };
                 if !self.search.is_open() {
-                    return shell.into();
+                    return stack![shell, floating].into();
                 }
                 // The list stands under the field, over the page.
                 let entries = self.search_entries();
@@ -1034,8 +1227,26 @@ impl App {
                     })
                     .width(Length::Fill)
                     .height(Length::Fill);
-                stack![shell, list].into()
+                stack![shell, floating, list].into()
             }
+        }
+    }
+
+    /// Where the floating chat's chat works, or where its next message would start one: the page's repository.
+    fn float_place(&self) -> String {
+        let repository = match self.float.chat() {
+            Some(_) => self.float.repository(),
+            None => self.page_repository(),
+        };
+        let name = self
+            .snapshot
+            .boards
+            .iter()
+            .find(|board| Some(board.repository.id) == repository)
+            .map(|board| board.repository.name.as_str());
+        match name {
+            Some(name) => format!("Works in {name}"),
+            None => "No repository".to_string(),
         }
     }
 

@@ -13,6 +13,7 @@ pub mod conversation;
 pub mod decision_model;
 pub mod experiments;
 pub mod fleet;
+pub mod float_chat;
 pub mod history;
 pub mod icons;
 pub mod inbox;

@@ -103,6 +103,16 @@ impl ScriptEditor {
         self.repository
     }
 
+    /// The column whose script this is.
+    pub fn column(&self) -> &str {
+        &self.column
+    }
+
+    /// Where the repository keeps its own script, once the server has said; empty until then.
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
     fn adopt(&mut self, detail: ScriptDetail) {
         self.own = Some(detail.source == "repository");
         self.path = detail.path;

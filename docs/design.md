@@ -51,4 +51,17 @@ chart.
   the card's tokens when known, and the last four steps of the run in the compact steps box. A click opens the card's
   live view or the chat. Without a working run the page says "Nothing is working. Runs and chats appear here while
   they work." The sidebar entry says how many are working.
+- The floating chat: a round teal button (56 px, with the chat icon and a soft shadow) stands 20 px from the bottom
+  right corner of every screen but the Chat page (which holds every chat, and whose Send stands there), over the page,
+  like a website's support button. A click grows it into a window of
+  420 by at most 600 px anchored there, white with round corners and the same shadow: a head with "Moebius agent", a
+  line saying where the chat works ("Works in radiance" or "No repository"), a minimise button that turns it back into
+  the button, and, once a chat is going, "New conversation" and "Open in Chat"; under it the conversation, drawn as on
+  the Chat page with the steps box, and the field with Send. The chat stays across pages. Each message carries a few
+  lines on where the person is (the page, the repository, the open card, run or chat, the script, rules or agent being
+  edited with its text cut to 2 500 characters), which only the agent is told; the chat shows what the person wrote.
+  The first message starts a chat with the Moebius agent, in the repository of a board's page and otherwise in none.
+  The "Ask the agent" actions (a new issue, an agent's instructions, the rules) open their chat in this window, and the
+  speech bubble of the script editor opens it with the start of a message about the script. The Chat page keeps every
+  chat and the terminal mode.
 - Budgets and usage are counted in tokens, never in money.

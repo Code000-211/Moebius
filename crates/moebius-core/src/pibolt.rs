@@ -711,7 +711,7 @@ impl Runs for PiBolt {
         repository: Option<&Repository>,
         harness: bool,
         message: &str,
-        earlier: Option<&str>,
+        prompt: &str,
     ) -> Result<Run, String> {
         let config = self.agent(app, agent)?;
         let run = app
@@ -768,15 +768,7 @@ impl Runs for PiBolt {
         };
         let said = json!({ "message": redact(message) });
         let _ = app.record_run_event(run.id, "said", &said);
-        // The chat shows what the person wrote; the agent is also told what was said before.
-        let prompt = match earlier {
-            Some(earlier) => format!(
-                "This chat continues an earlier one, which ended. What was said in it:\n\n{earlier}\n\n\
-                 The person now writes:\n\n{message}"
-            ),
-            None => message.to_string(),
-        };
-        self.launch_or_undo(app, None, &config, running, &prompt)
+        self.launch_or_undo(app, None, &config, running, prompt)
     }
 
     /// Ends the chat's idle Pi and returns Pi's interactive mode on the chat's own agent directory, run token and
@@ -1822,7 +1814,7 @@ mod tests {
         let (_dir, app, pi, repo) = setup();
         let repository = app.repository(repo).unwrap();
         let run = pi
-            .start_chat(&app, "Coder", Some(&repository), false, "Hello", None)
+            .start_chat(&app, "Coder", Some(&repository), false, "Hello", "Hello")
             .unwrap();
         let waiting = |run: &Run| run.status == "waiting";
         wait_for_run(&app, run.id, "the agent answers", waiting);
@@ -1838,7 +1830,7 @@ mod tests {
         assert_eq!(app.run(run.id).unwrap().status, "waiting");
 
         // The next message starts Pi again on the same session, and it answers.
-        app.say_in_chat(&pi, run.id, "Again").unwrap();
+        app.say_in_chat(&pi, run.id, "Again", None).unwrap();
         let answered = |run: &Run| {
             run.status == "waiting"
                 && app

@@ -14,6 +14,7 @@ use moebius_desktop::client::{Export, KindCounts, ShadowedKind, Shadowing, Takeo
 use moebius_desktop::decision_model;
 use moebius_desktop::experiments;
 use moebius_desktop::fleet;
+use moebius_desktop::float_chat;
 use moebius_desktop::inbox::{self, Action};
 use moebius_desktop::live;
 use moebius_desktop::mcp_servers;
@@ -4032,8 +4033,11 @@ fn the_moebius_agent_can_change_the_rules_in_a_chat() {
         ],
         size,
     );
+    // The chat the server started opens in the floating window, over the rules: not on the Chat page.
     let _ = app.update(Message::Rules(rules::Message::Asked(Ok(moebius_chat(9)))));
-    assert_eq!(app.page(), Page::Chat);
+    assert_eq!(app.page(), Page::Rules);
+    assert!(shows(&app, "Moebius agent"));
+    assert!(shows(&app, "Open in Chat"));
 }
 
 fn add_repository_app() -> App {
@@ -4554,13 +4558,13 @@ fn the_moebius_agent_can_write_a_new_issue_from_a_few_words_in_a_chat() {
             "Ask the agent",
         ],
     );
-    // The chat the server started is shown, and the form is gone.
+    // The chat the server started opens in the floating window over the board, and the form is gone.
     let _ = app.update(Message::NewIssue(new_issue::Message::Asked(Ok(
         moebius_chat(9),
     ))));
-    assert_eq!(app.page(), Page::Chat);
-    let _ = app.update(Message::Select(Page::Board(1)));
-    assert!(!shows(&app, "Ask the agent"));
+    assert_eq!(app.page(), Page::Board(1));
+    assert!(shows(&app, "Works in radiance"));
+    assert!(!shows(&app, "Let the Moebius agent write it"));
 }
 
 #[test]
@@ -4594,7 +4598,8 @@ fn the_moebius_agent_can_write_an_agents_instructions_in_a_chat() {
         size,
     );
     let _ = app.update(Message::Agents(agents::Message::Asked(Ok(moebius_chat(9)))));
-    assert_eq!(app.page(), Page::Chat);
+    assert_eq!(app.page(), Page::Agents);
+    assert!(shows(&app, "Moebius agent"));
 }
 
 /// The app on the Terminal page with its shell connected and sized, and `sent` the channel to the server.
@@ -4791,7 +4796,7 @@ fn the_built_in_script_has_no_button_to_go_back_to_it_and_a_refusal_is_shown() {
 }
 
 #[test]
-fn the_speech_bubble_opens_a_chat_draft_with_the_moebius_agent_in_this_repository() {
+fn the_speech_bubble_opens_the_floating_chat_with_a_message_about_the_script() {
     let mut app = script_app("repository");
     let mut ui = simulator(&app);
     ui.click(iced::widget::Id::from(script_editor::ASK_AGENT))
@@ -4805,9 +4810,9 @@ fn the_speech_bubble_opens_a_chat_draft_with_the_moebius_agent_in_this_repositor
         "{messages:?}"
     );
     let _ = app.update(messages.into_iter().next().unwrap());
-    assert_eq!(app.page(), Page::Chat);
-    assert!(shows(&app, "Moebius in radiance"));
-    assert!(shows(&app, "Write the first message to start the chat."));
+    assert_eq!(app.page(), Page::Board(1));
+    assert!(shows(&app, "Works in radiance"));
+    assert!(shows(&app, "Your first message starts the chat."));
     assert!(shows(
         &app,
         "About the Ready column's script (.moebius/ready.luau): "
@@ -5023,4 +5028,215 @@ fn the_sidebar_lists_the_fleet_after_chat_with_the_number_working() {
     let app = fleet_app();
     assert!(shows(&app, "Fleet"));
     assert!(shows(&app, "3 live"));
+}
+
+/// What a click on the element named `id` sends.
+fn clicked_id(app: &App, id: &'static str) -> Vec<Message> {
+    let mut ui = simulator(app);
+    ui.click(iced::widget::Id::from(id))
+        .unwrap_or_else(|_| panic!("{id:?} is not on the screen"));
+    ui.into_messages().collect()
+}
+
+/// The board of radiance with the floating chat open on chat 7, started from it, whose events were read.
+fn floating_app() -> App {
+    let mut app = App::with_snapshot(snapshot(vec![radiance("Ready")], vec![]));
+    let _ = app.update(Message::Float(float_chat::Message::Show(true)));
+    let _ = app.update(Message::Float(float_chat::Message::Tick(1_790_000_000)));
+    let _ = app.update(Message::Float(float_chat::Message::Edited(
+        "Write a ready.luau that starts a card only when nothing blocks it.".into(),
+    )));
+    let _ = app.update(Message::Float(float_chat::Message::Send));
+    let _ = app.update(Message::Float(float_chat::Message::Started(Ok(
+        moebius_chat(7),
+    ))));
+    let _ = app.update(Message::Float(float_chat::Message::Loaded(
+        7,
+        Ok(chat_events()),
+    )));
+    app
+}
+
+/// The round button stands at the bottom right of every page; a click grows it into the window, and minimising turns it
+/// back. Compare `tests/snapshots/floating-chat-button-tiny-skia.png`.
+#[test]
+fn the_floating_button_grows_into_the_chat_window_and_minimises_back() {
+    let mut app = App::with_snapshot(snapshot(vec![radiance("Ready")], vec![]));
+    draw(&app, "floating-chat-button", &["radiance"]);
+    assert!(!shows(&app, "Moebius agent"));
+    let messages = clicked_id(&app, float_chat::BUTTON);
+    assert!(
+        matches!(
+            &messages[..],
+            [Message::Float(float_chat::Message::Show(true))]
+        ),
+        "{messages:?}"
+    );
+    let _ = app.update(Message::Float(float_chat::Message::Show(true)));
+    assert!(shows(&app, "Moebius agent"));
+    assert!(shows(&app, "Works in radiance"));
+    assert!(shows(&app, "Your first message starts the chat."));
+    // Nothing is written yet, so nothing is sent.
+    assert_eq!(
+        app.update(Message::Float(float_chat::Message::Send))
+            .units(),
+        0
+    );
+
+    let messages = clicked_id(&app, float_chat::MINIMISE);
+    assert!(
+        matches!(
+            &messages[..],
+            [Message::Float(float_chat::Message::Show(false))]
+        ),
+        "{messages:?}"
+    );
+    let _ = app.update(Message::Float(float_chat::Message::Show(false)));
+    assert!(!shows(&app, "Moebius agent"));
+
+    // The button is on the other pages too, and away from a repository's page the chat works in none.
+    let _ = app.update(Message::Select(Page::Rules));
+    let _ = app.update(Message::Float(float_chat::Message::Show(true)));
+    assert!(shows(&app, "No repository"));
+}
+
+/// The first Send starts the chat, which then stays across pages until a new conversation. Compare
+/// `tests/snapshots/floating-chat-open-tiny-skia.png`.
+#[test]
+fn the_floating_chat_starts_a_chat_and_keeps_it_across_pages() {
+    let mut app = App::with_snapshot(snapshot(vec![radiance("Ready")], vec![]));
+    let _ = app.update(Message::Float(float_chat::Message::Show(true)));
+    let _ = app.update(Message::Float(float_chat::Message::Edited(
+        "What is blocked?".into(),
+    )));
+    let mut ui = simulator(&app);
+    ui.click("Send").unwrap();
+    let messages: Vec<_> = ui.into_messages().collect();
+    assert!(
+        matches!(&messages[..], [Message::Float(float_chat::Message::Send)]),
+        "{messages:?}"
+    );
+    assert_eq!(
+        app.update(Message::Float(float_chat::Message::Send))
+            .units(),
+        1
+    );
+    // While the server starts it, a second Send waits; a refusal shows and the text stays.
+    assert_eq!(
+        app.update(Message::Float(float_chat::Message::Send))
+            .units(),
+        0
+    );
+    let refusal = ClientError::Server {
+        status: 422,
+        message: "the Moebius agent has no model".into(),
+    };
+    let _ = app.update(Message::Float(float_chat::Message::Started(Err(refusal))));
+    assert!(shows(&app, "the Moebius agent has no model"));
+    assert!(shows(&app, "What is blocked?"));
+
+    let mut app = floating_app();
+    draw(
+        &app,
+        "floating-chat-open",
+        &[
+            "Moebius agent",
+            "Works in radiance",
+            "Open in Chat",
+            "New conversation",
+        ],
+    );
+    // A later message goes to the same chat.
+    let _ = app.update(Message::Float(float_chat::Message::Edited(
+        "And now?".into(),
+    )));
+    assert_eq!(
+        app.update(Message::Float(float_chat::Message::Send))
+            .units(),
+        1
+    );
+    let _ = app.update(Message::Float(float_chat::Message::Sent(Ok(moebius_chat(
+        7,
+    )))));
+    assert!(!shows(&app, "And now?"));
+
+    // Another page keeps the chat, which still works in its repository.
+    let _ = app.update(Message::Select(Page::Rules));
+    assert_eq!(app.page(), Page::Rules);
+    assert!(shows(&app, "Works in radiance"));
+    assert!(shows(
+        &app,
+        "Write a ready.luau that starts a card only when nothing blocks it."
+    ));
+    // Minimised and opened again, it is still there.
+    let _ = app.update(Message::Float(float_chat::Message::Show(false)));
+    let _ = app.update(Message::Float(float_chat::Message::Show(true)));
+    assert!(shows(&app, "Open in Chat"));
+
+    // "Open in Chat" shows the chat on the Chat page, and the window gives way.
+    assert!(matches!(
+        &clicked(&app, "Open in Chat")[..],
+        [Message::Float(float_chat::Message::OpenInChat)]
+    ));
+    let _ = app.update(Message::Float(float_chat::Message::OpenInChat));
+    assert_eq!(app.page(), Page::Chat);
+    assert!(!shows(&app, "Moebius agent"));
+    let _ = app.update(Message::Select(Page::Board(1)));
+    assert!(!shows(&app, "Moebius agent"), "minimised");
+
+    // A new conversation starts over.
+    let _ = app.update(Message::Float(float_chat::Message::Show(true)));
+    let _ = app.update(Message::Float(float_chat::Message::NewConversation));
+    assert!(shows(&app, "Your first message starts the chat."));
+    assert!(!shows(&app, "Open in Chat"));
+}
+
+/// The floating chat follows its chat's events from the stream, as the chat page does.
+#[test]
+fn the_floating_chat_follows_its_chats_events() {
+    let mut app = floating_app();
+    assert!(shows(
+        &app,
+        "The agent is working. Your message is sent when it is done with this turn."
+    ));
+    let settled = json!({"run": 7, "seq": 100, "kind": "agent_settled", "data": {"type": "agent_settled"}, "at": 1_790_000_000});
+    let _ = app.update(Message::Stream(client::StreamEvent::Event(
+        client::ServerEvent {
+            kind: "run_event".into(),
+            data: settled,
+        },
+    )));
+    assert!(shows(&app, "The agent answers at once."));
+}
+
+/// What the agent is told of where the person is: the page, the repository, and the script being edited.
+#[test]
+fn the_page_context_names_the_script_being_edited_and_its_text() {
+    let app = script_app("repository");
+    let context = app.page_context();
+    assert!(context.contains("Page: Boards > Board"), "{context}");
+    assert!(context.contains("Repository: radiance (id 1)"), "{context}");
+    assert!(
+        context.contains("Editing the script of the Ready column (.moebius/ready.luau)"),
+        "{context}"
+    );
+    assert!(context.contains(HOLD.trim_end()), "{context}");
+
+    let rules = rules_app(true).page_context();
+    assert!(rules.starts_with("Page: Build > Rules"), "{rules}");
+    assert!(rules.contains("## leave-ci-alone"), "{rules}");
+
+    // A long text is cut, and says so.
+    let mut app = script_app("repository");
+    let long = "-- x\n".repeat(2_000);
+    let _ = app.update(Message::Script(script_editor::Message::Opened(Ok(script(
+        "repository",
+        &long,
+    )))));
+    let context = app.page_context();
+    assert!(
+        context.contains("(the first 2500 of 9999 characters)"),
+        "{context}"
+    );
+    assert!(context.chars().count() < 4_000);
 }

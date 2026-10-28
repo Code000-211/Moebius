@@ -66,6 +66,17 @@ built-in skills, which it always has. With neither `[agents.Moebius]` nor `[agen
 with status 422 and a message that says which to configure. The skills are written to `<data_dir>/skills/<name>/` at
 every start, so a change to the guide arrives with the server.
 
+### Asking it from any page
+
+In the desktop app the round button at the bottom right of every page opens a chat with the Moebius agent over the
+page. The agent is told where you are with each message (the page, the repository, the card or chat that is open, and
+the script, rules or agent being edited with its text), so "why does this column wait?" on a column's script means that
+script. A chat started on a board works in that repository; elsewhere it works in none. The chat stays while you move
+between pages; "Open in Chat" shows it on the Chat page, and "New conversation" starts over. A client does the same with
+the optional `context` of `POST /v1/chats` and `POST /v1/chats/{id}/messages` (see the
+[desktop API](../reference/desktop-api.md)): the agent is told it before the message, and the chat shows only the
+message.
+
 ## The Grilling partner
 
 The Grilling partner is bundled too: a chat with `agent` set to `Grilling-partner` in a repository questions an idea until the

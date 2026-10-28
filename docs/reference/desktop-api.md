@@ -420,7 +420,9 @@ A person sends a message to a running run: the harness passes it to the agent (P
 stores a `steered` event with `{"message": ...}` (secrets removed), and the decision is recorded (kind `steer`, decider
 `person`, the message in its context).
 
-Request: `{"message": "..."}`; `message` is required and must not be blank.
+Request: `{"message": "...", "context": "..."}`; `message` is required and must not be blank. `context` is optional and
+works as in `POST /v1/chats`: the agent is told it before the message (secrets removed, at most 4 000 characters), and
+the `said` event holds only the message.
 
 Response: the `Run`. Errors: `404` no such run; `422` the message is blank or the run is not running.
 
@@ -839,6 +841,7 @@ Request:
 | `repository` | number | The id of a repository to work in. |
 | `harness` | boolean | Work in the harness configuration repository instead (default false): in a worktree on the branch `moebius/chat-<run id>` of its default branch, so that the agents, skills, extensions, MCP servers and rules can be built as files and merged (see [changing it in a chat](harness-configuration.md#changing-it-in-a-chat)). The run has `harness_repository` true. Not together with `repository`. |
 | `continues` | number | The id of an ended chat this one goes on from. Its agent and place (repository or harness configuration repository) are used unless `agent` or `repository` name others, and the agent is given what was said in it (the person's messages and the agent's answers, at most the last 20 000 characters) before `message`. The new chat's `said` event holds only `message`. |
+| `context` | string | Where the person is in the app (the page, the repository, the open card or chat, the text being edited), as the desktop app describes it. The agent is told it before `message`, under the line `[Where the person is in the Moebius app. Use it to understand what they mean; do not repeat it.]`, with secrets removed and cut to 4 000 characters; the `said` event holds only `message`. Optional; blank is the same as none. |
 
 Response: the `Run` (`purpose` `chat`, `card_id` null). Errors: `404` no such repository or no run `continues`; `422`
 the message is blank, the agent does not exist, it is a built-in agent and neither its own `[agents.<name>]` nor
@@ -858,7 +861,9 @@ the agent as a prompt: when the agent is waiting it answers at once; when it is 
 is done with the current turn (a follow-up). To change what a working agent is doing, steer it with
 `POST /v1/runs/{id}/steer`.
 
-Request: `{"message": "..."}`; `message` is required and must not be blank.
+Request: `{"message": "...", "context": "..."}`; `message` is required and must not be blank. `context` is optional and
+works as in `POST /v1/chats`: the agent is told it before the message (secrets removed, at most 4 000 characters), and
+the `said` event holds only the message.
 
 Response: the `Run`. Errors: `404` no such run; `422` the run is not a chat, the chat has ended, or the message is blank.
 

@@ -113,6 +113,8 @@ pub const SIDEBAR_CURRENT: Color = hex(0xE7EBF0);
 pub const SIDEBAR_HOVER: Color = hex(0xEEF1F5);
 pub const ONLINE_TEXT: Color = hex(0x0F5E57);
 pub const ON_FILL: Color = SURFACE;
+/// The shadow under what floats over the page: the floating chat's button and window.
+pub const FLOAT_SHADOW: Color = Color::from_rgba(0.06, 0.09, 0.16, 0.22);
 
 // Type sizes.
 pub const PAGE_TITLE: f32 = 24.0;
@@ -151,6 +153,11 @@ pub const PAGE_PADDING: [f32; 2] = [20.0, 24.0];
 pub const PAGE_GAP: f32 = 18.0;
 pub const ICON: f32 = 20.0;
 pub const DOT: f32 = 8.0;
+/// The floating chat: the round button, the window it grows into, and their distance from the window's corner.
+pub const FLOAT_BUTTON: f32 = 56.0;
+pub const FLOAT_WIDTH: f32 = 420.0;
+pub const FLOAT_HEIGHT: f32 = 600.0;
+pub const FLOAT_MARGIN: f32 = 20.0;
 
 /// Manrope in one of the weights that are bundled.
 pub fn manrope(weight: Weight) -> Font {

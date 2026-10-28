@@ -4,6 +4,7 @@
 //! the stream's `run_event`s. The list of chats is read from the server and kept current by the same stream.
 
 use std::collections::{HashMap, HashSet};
+use std::marker::PhantomData;
 
 use iced::font::Weight;
 use iced::widget::text::Wrapping;
@@ -82,9 +83,44 @@ pub enum Message {
     Terminal(chat_terminal::Message),
 }
 
-/// The chat being read.
-struct Open {
-    id: i64,
+/// Where a chat's conversation is shown: the chat page or the floating chat. It says what the conversation's clicks
+/// and reads become.
+pub trait Place: 'static {
+    /// A step of the agent was clicked; the number is its entry's.
+    fn fold(step: usize) -> AppMessage;
+    /// A link of the agent's text was clicked.
+    fn link(uri: String) -> AppMessage;
+    /// The events of the chat were read, those after the ones already held.
+    fn loaded(chat: i64, events: Result<Vec<RunEvent>, ClientError>) -> AppMessage;
+    /// The judgements of the chat's tool calls were read.
+    fn judged(chat: i64, judgements: Result<Vec<Judgement>, ClientError>) -> AppMessage;
+}
+
+/// The chat page.
+pub struct OnPage;
+
+impl Place for OnPage {
+    fn fold(step: usize) -> AppMessage {
+        AppMessage::Chat(Message::Fold(step))
+    }
+
+    fn link(uri: String) -> AppMessage {
+        AppMessage::Chat(Message::LinkClicked(uri))
+    }
+
+    fn loaded(chat: i64, events: Result<Vec<RunEvent>, ClientError>) -> AppMessage {
+        AppMessage::Chat(Message::Loaded(chat, events))
+    }
+
+    fn judged(chat: i64, judgements: Result<Vec<Judgement>, ClientError>) -> AppMessage {
+        AppMessage::Chat(Message::Judged(chat, judgements))
+    }
+}
+
+/// The conversation of one chat as it is followed: what was said and done, who decided its tool calls, the agent's
+/// texts parsed as Markdown and the steps unfolded. The chat page and the floating chat each hold one.
+pub struct Thread {
+    pub id: i64,
     conversation: Conversation,
     /// The judgements of the chat's tool calls, oldest first, which say who decided each check.
     judgements: Vec<Judgement>,
@@ -92,28 +128,25 @@ struct Open {
     markdown: HashMap<usize, (String, Vec<markdown::Item>)>,
     /// The steps that are unfolded, by the index of their entry.
     unfolded: HashSet<usize>,
-    message: String,
-    /// Whether "Stop" asks to be confirmed.
-    confirming: bool,
-    /// The last thing that went wrong, as a short line.
-    notice: Option<String>,
 }
 
-impl Open {
-    fn new(id: i64) -> Self {
-        Open {
+impl Thread {
+    pub fn new(id: i64) -> Self {
+        Thread {
             id,
             conversation: Conversation::default(),
             judgements: Vec::new(),
             markdown: HashMap::new(),
             unfolded: HashSet::new(),
-            message: String::new(),
-            confirming: false,
-            notice: None,
         }
     }
 
-    fn push(&mut self, event: RunEvent) {
+    /// The `seq` of the last event held.
+    pub fn last_seq(&self) -> i64 {
+        self.conversation.last_seq()
+    }
+
+    pub fn push(&mut self, event: RunEvent) {
         self.conversation.push(event);
         self.conversation.name_deciders(&self.judgements);
         for (index, entry) in self.conversation.entries().iter().enumerate() {
@@ -126,6 +159,86 @@ impl Open {
                 let items = markdown::parse(text).collect();
                 self.markdown.insert(index, (text.clone(), items));
             }
+        }
+    }
+
+    /// Who decided the chat's tool calls, as read again.
+    pub fn judge(&mut self, judgements: Vec<Judgement>) {
+        self.judgements = judgements;
+        self.conversation.name_deciders(&self.judgements);
+    }
+
+    /// Unfolds the step when folded and folds it when unfolded.
+    pub fn fold(&mut self, step: usize) {
+        if !self.unfolded.remove(&step) {
+            self.unfolded.insert(step);
+        }
+    }
+
+    /// The conversation: the agent's texts as Markdown, the person's messages on the right, and the steps that follow
+    /// one another as one box, the last one working while the chat's `status` says the agent works.
+    pub fn view<P: Place>(&self, status: &str, now: i64) -> Element<'_, AppMessage> {
+        let conversation = &self.conversation;
+        let entries = conversation.entries();
+        if entries.is_empty() {
+            return page::body("Nothing has been said in this chat yet.");
+        }
+        let working = matches!(status, "starting" | "running");
+        let mut views: Vec<Element<'_, AppMessage>> = Vec::new();
+        let mut index = 0;
+        while index < entries.len() {
+            match &entries[index] {
+                Entry::Text(_) => views.push(agent_text::<P>(self.markdown.get(&index))),
+                Entry::Person(said, message) => views.push(person_view(*said, message)),
+                Entry::Error(message) => views.push(transcript::error(message)),
+                Entry::Thinking(_) | Entry::Tool(_) => {
+                    // The steps that follow one another are one box.
+                    let end = entries[index..]
+                        .iter()
+                        .position(|entry| !matches!(entry, Entry::Thinking(_) | Entry::Tool(_)))
+                        .map_or(entries.len(), |len| index + len);
+                    let last = end == entries.len();
+                    let stops = if last {
+                        if working { now } else { conversation.last_at() }
+                    } else {
+                        conversation.started(end)
+                    };
+                    views.push(steps::steps_box(
+                        &entries[index..end],
+                        index,
+                        last && working,
+                        stops - conversation.started(index),
+                        &self.unfolded,
+                        P::fold,
+                        false,
+                    ));
+                    index = end;
+                    continue;
+                }
+            }
+            index += 1;
+        }
+        column(views).spacing(12).width(Length::Fill).into()
+    }
+}
+
+/// The chat being read.
+struct Open {
+    thread: Thread,
+    message: String,
+    /// Whether "Stop" asks to be confirmed.
+    confirming: bool,
+    /// The last thing that went wrong, as a short line.
+    notice: Option<String>,
+}
+
+impl Open {
+    fn new(id: i64) -> Self {
+        Open {
+            thread: Thread::new(id),
+            message: String::new(),
+            confirming: false,
+            notice: None,
         }
     }
 }
@@ -178,22 +291,23 @@ pub struct Chats {
     now: i64,
 }
 
-/// Reads the events of the chat after `after`, and who decided its tool calls.
-fn load(settings: Settings, chat: i64, after: i64) -> Task<AppMessage> {
+/// Reads the events of the chat after `after`, and who decided its tool calls, for the conversation shown at `P`.
+pub fn load<P: Place>(settings: Settings, chat: i64, after: i64) -> Task<AppMessage> {
     let events = Task::perform(
         {
             let settings = settings.clone();
             async move { Client::new(settings).run_events(chat, after).await }
         },
-        move |events| AppMessage::Chat(Message::Loaded(chat, events)),
+        move |events| P::loaded(chat, events),
     );
-    Task::batch([events, load_judgements(settings, chat)])
+    Task::batch([events, load_judgements::<P>(settings, chat)])
 }
 
-fn load_judgements(settings: Settings, chat: i64) -> Task<AppMessage> {
+/// Reads who decided the tool calls of the chat, for the conversation shown at `P`.
+pub fn load_judgements<P: Place>(settings: Settings, chat: i64) -> Task<AppMessage> {
     Task::perform(
         async move { Client::new(settings).tool_judgements(chat).await },
-        move |judgements| AppMessage::Chat(Message::Judged(chat, judgements)),
+        move |judgements| P::judged(chat, judgements),
     )
 }
 
@@ -225,6 +339,13 @@ impl Chats {
         }
     }
 
+    /// The chat open on the page, as the list has it.
+    pub fn open_chat(&self) -> Option<&Chat> {
+        self.open
+            .as_ref()
+            .and_then(|open| self.chat(open.thread.id))
+    }
+
     /// The chats, newest first.
     pub fn list(&self) -> &[Chat] {
         &self.list
@@ -251,7 +372,7 @@ impl Chats {
         let Some(open) = &self.open else {
             return Task::none();
         };
-        let (id, seq) = (open.id, open.conversation.last_seq());
+        let (id, seq) = (open.thread.id, open.thread.last_seq());
         let Some(chat) = self.list.iter_mut().find(|chat| chat.id == id) else {
             return Task::none();
         };
@@ -271,16 +392,10 @@ impl Chats {
         match &self.open {
             Some(open) => Task::batch([
                 list,
-                load(settings.clone(), open.id, open.conversation.last_seq()),
+                load::<OnPage>(settings.clone(), open.thread.id, open.thread.last_seq()),
             ]),
             None => list,
         }
-    }
-
-    /// Opens an empty chat with the default agent in `repository`, with `message` typed in as the first message.
-    /// Nothing is sent: the person finishes the message and sends it.
-    pub fn draft(&mut self, repository: i64, message: String) -> Task<AppMessage> {
-        self.open_draft(DEFAULT_AGENT.to_string(), Some(repository), false, message)
     }
 
     fn open_draft(
@@ -317,7 +432,7 @@ impl Chats {
         self.open = Some(Open::new(id));
         self.form = None;
         self.draft = None;
-        load(settings.clone(), id, 0)
+        load::<OnPage>(settings.clone(), id, 0)
     }
 
     /// A `run_event` of the stream: the chat's status follows the agent, and the open chat takes the event. Whether
@@ -337,10 +452,10 @@ impl Chats {
                 _ => {}
             }
         }
-        let Some(open) = self.open.as_mut().filter(|open| open.id == run) else {
+        let Some(open) = self.open.as_mut().filter(|open| open.thread.id == run) else {
             return false;
         };
-        open.push(event.clone());
+        open.thread.push(event.clone());
         event.kind == "tool_check"
     }
 
@@ -360,7 +475,7 @@ impl Chats {
     /// Reads the open chat's judgements again.
     pub fn reload_judgements(&self, settings: &Settings) -> Task<AppMessage> {
         match &self.open {
-            Some(open) => load_judgements(settings.clone(), open.id),
+            Some(open) => load_judgements::<OnPage>(settings.clone(), open.thread.id),
             None => Task::none(),
         }
     }
@@ -370,7 +485,7 @@ impl Chats {
         if let Some(chat) = self.list.iter_mut().find(|chat| chat.id == run) {
             chat.status = status.to_string();
         }
-        if let Some(open) = self.open.as_mut().filter(|open| open.id == run) {
+        if let Some(open) = self.open.as_mut().filter(|open| open.thread.id == run) {
             open.confirming = false;
             self.terminal.close();
         }
@@ -379,7 +494,7 @@ impl Chats {
     /// The terminal's connection and keys, while the open chat shows it.
     pub fn terminal_subscription(&self, settings: &Settings) -> Subscription<AppMessage> {
         match &self.open {
-            Some(open) => self.terminal.subscription(open.id, settings),
+            Some(open) => self.terminal.subscription(open.thread.id, settings),
             None => Subscription::none(),
         }
     }
@@ -398,22 +513,21 @@ impl Chats {
             }
             Message::Listed(Err(_)) => {}
             Message::Loaded(id, Ok(events)) => {
-                if let Some(open) = self.open.as_mut().filter(|open| open.id == id) {
+                if let Some(open) = self.open.as_mut().filter(|open| open.thread.id == id) {
                     open.notice = None;
                     for event in events {
-                        open.push(event);
+                        open.thread.push(event);
                     }
                 }
             }
             Message::Loaded(id, Err(e)) => {
-                if let Some(open) = self.open.as_mut().filter(|open| open.id == id) {
+                if let Some(open) = self.open.as_mut().filter(|open| open.thread.id == id) {
                     open.notice = Some(say(&e));
                 }
             }
             Message::Judged(id, Ok(judgements)) => {
-                if let Some(open) = self.open.as_mut().filter(|open| open.id == id) {
-                    open.judgements = judgements;
-                    open.conversation.name_deciders(&open.judgements);
+                if let Some(open) = self.open.as_mut().filter(|open| open.thread.id == id) {
+                    open.thread.judge(judgements);
                 }
             }
             Message::Judged(_, Err(_)) => {}
@@ -422,7 +536,11 @@ impl Chats {
             Message::ShowTerminal(false) => {
                 self.terminal.close();
                 if let Some(open) = &self.open {
-                    return load(settings.clone(), open.id, open.conversation.last_seq());
+                    return load::<OnPage>(
+                        settings.clone(),
+                        open.thread.id,
+                        open.thread.last_seq(),
+                    );
                 }
             }
             Message::Terminal(message) => self.terminal.update(message),
@@ -454,9 +572,9 @@ impl Chats {
                 }
                 if let Some(open) = &self.open
                     && !open.message.trim().is_empty()
-                    && let Some(chat) = self.chat(open.id)
+                    && let Some(chat) = self.chat(open.thread.id)
                 {
-                    let (id, message) = (open.id, open.message.clone());
+                    let (id, message) = (open.thread.id, open.message.clone());
                     // Writing to an ended chat goes on in a new chat that is told this one.
                     if !chat.is_open() {
                         return request(settings, Message::Continued, move |client| async move {
@@ -464,7 +582,7 @@ impl Chats {
                         });
                     }
                     return request(settings, Message::Sent, move |client| async move {
-                        client.say(id, &message).await
+                        client.say(id, &message, None).await
                     });
                 }
             }
@@ -492,7 +610,7 @@ impl Chats {
             Message::Stop => {
                 self.set_confirming(false);
                 if let Some(open) = &self.open {
-                    let id = open.id;
+                    let id = open.thread.id;
                     return request(settings, Message::Ended, move |client| async move {
                         client.stop(id).await
                     });
@@ -500,7 +618,7 @@ impl Chats {
             }
             Message::End => {
                 if let Some(open) = &self.open {
-                    let id = open.id;
+                    let id = open.thread.id;
                     return request(settings, Message::Ended, move |client| async move {
                         client.end_chat(id).await
                     });
@@ -513,7 +631,7 @@ impl Chats {
             }
             Message::Offer => {
                 if let Some(open) = &self.open {
-                    let id = open.id;
+                    let id = open.thread.id;
                     return request(settings, Message::Offered, move |client| async move {
                         client.offer_chat(id).await
                     });
@@ -611,10 +729,8 @@ impl Chats {
             Message::Tick(now) => self.now = now,
             Message::MarkedRead => {}
             Message::Fold(step) => {
-                if let Some(open) = &mut self.open
-                    && !open.unfolded.remove(&step)
-                {
-                    open.unfolded.insert(step);
+                if let Some(open) = &mut self.open {
+                    open.thread.fold(step);
                 }
             }
             Message::LinkClicked(uri) => {
@@ -649,7 +765,7 @@ impl Chats {
         let detail: Element<_> = match (&self.form, &self.draft, &self.open) {
             (Some(form), _, _) => new_chat_view(form, &self.agents, self.has_harness, snapshot),
             (None, Some(draft), _) => draft_view(draft, snapshot),
-            (None, None, Some(open)) => match self.chat(open.id) {
+            (None, None, Some(open)) => match self.chat(open.thread.id) {
                 Some(chat) => self.chat_view(chat, open, snapshot, inbox),
                 None => empty_view("Reading the chat…"),
             },
@@ -672,7 +788,7 @@ impl Chats {
             .open
             .as_ref()
             .filter(|_| self.draft.is_none() && self.form.is_none())
-            .map(|open| open.id);
+            .map(|open| open.thread.id);
         let list: Element<_> = if self.list.is_empty() {
             page::body("No chat yet.")
         } else {
@@ -737,7 +853,7 @@ impl Chats {
                 .into();
         }
         let conversation = scrollable(
-            container(self.conversation_view(chat, open))
+            container(open.thread.view::<OnPage>(&chat.status, self.now))
                 .padding(Padding::from([16, 16]))
                 .width(Length::Fill),
         )
@@ -764,54 +880,6 @@ impl Chats {
         .height(Length::Fill)
         .style(|_| page::box_style())
         .into()
-    }
-
-    fn conversation_view<'a>(&'a self, chat: &Chat, open: &'a Open) -> Element<'a, AppMessage> {
-        let conversation = &open.conversation;
-        let entries = conversation.entries();
-        if entries.is_empty() {
-            return page::body("Nothing has been said in this chat yet.");
-        }
-        let working = matches!(chat.status.as_str(), "starting" | "running");
-        let mut views: Vec<Element<'a, AppMessage>> = Vec::new();
-        let mut index = 0;
-        while index < entries.len() {
-            match &entries[index] {
-                Entry::Text(_) => views.push(agent_text(open.markdown.get(&index))),
-                Entry::Person(said, message) => views.push(person_view(*said, message)),
-                Entry::Error(message) => views.push(transcript::error(message)),
-                Entry::Thinking(_) | Entry::Tool(_) => {
-                    // The steps that follow one another are one box.
-                    let end = entries[index..]
-                        .iter()
-                        .position(|entry| !matches!(entry, Entry::Thinking(_) | Entry::Tool(_)))
-                        .map_or(entries.len(), |len| index + len);
-                    let last = end == entries.len();
-                    let stops = if last {
-                        if working {
-                            self.now
-                        } else {
-                            conversation.last_at()
-                        }
-                    } else {
-                        conversation.started(end)
-                    };
-                    views.push(steps::steps_box(
-                        &entries[index..end],
-                        index,
-                        last && working,
-                        stops - conversation.started(index),
-                        &open.unfolded,
-                        |step| AppMessage::Chat(Message::Fold(step)),
-                        false,
-                    ));
-                    index = end;
-                    continue;
-                }
-            }
-            index += 1;
-        }
-        column(views).spacing(12).width(Length::Fill).into()
     }
 }
 
@@ -1081,12 +1149,13 @@ fn new_chat_view<'a>(
         .into()
 }
 
-/// The viewer of the agent's Markdown: a link click is a message, and a code block is drawn as a file is.
-struct Markdown;
+/// The viewer of the agent's Markdown: a link click is a message of the place it is shown at, and a code block is
+/// drawn as a file is.
+struct Markdown<P>(PhantomData<P>);
 
-impl<'a> markdown::Viewer<'a, AppMessage> for Markdown {
+impl<'a, P: Place> markdown::Viewer<'a, AppMessage> for Markdown<P> {
     fn on_link_click(uri: markdown::Uri) -> AppMessage {
-        AppMessage::Chat(Message::LinkClicked(uri))
+        P::link(uri)
     }
 
     fn code_block(
@@ -1125,11 +1194,15 @@ fn markdown_settings() -> markdown::Settings {
 }
 
 /// A text of the agent, as Markdown once it is parsed.
-fn agent_text(parsed: Option<&(String, Vec<markdown::Item>)>) -> Element<'_, AppMessage> {
+fn agent_text<P: Place>(parsed: Option<&(String, Vec<markdown::Item>)>) -> Element<'_, AppMessage> {
     let items = parsed.map_or(&[][..], |(_, items)| items.as_slice());
-    container(markdown::view_with(items, markdown_settings(), &Markdown))
-        .max_width(720)
-        .into()
+    container(markdown::view_with(
+        items,
+        markdown_settings(),
+        &Markdown::<P>(PhantomData),
+    ))
+    .max_width(720)
+    .into()
 }
 
 /// A message of the person: a box on the right.

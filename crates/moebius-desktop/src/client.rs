@@ -1479,6 +1479,23 @@ impl Client {
         self.post("/v1/chats", body).await
     }
 
+    /// Starts a chat with the Moebius agent in `repository`, or in none, from the floating chat: the agent is also told
+    /// `context`, where the person is in the app, which the chat does not show.
+    pub async fn ask(
+        &self,
+        message: &str,
+        repository: Option<i64>,
+        context: &str,
+    ) -> Result<Run, ClientError> {
+        let body = serde_json::json!({
+            "agent": crate::chat::DEFAULT_AGENT,
+            "message": message,
+            "repository": repository,
+            "context": context,
+        });
+        self.post("/v1/chats", body).await
+    }
+
     /// Starts a chat that continues the ended chat `chat`: its agent and repository, told what was said in it.
     pub async fn continue_chat(&self, chat: i64, message: &str) -> Result<Run, ClientError> {
         self.post(
@@ -1499,11 +1516,17 @@ impl Client {
         Ok(())
     }
 
-    /// Writes to a chat; a working agent gets the message as a follow-up.
-    pub async fn say(&self, chat: i64, message: &str) -> Result<Run, ClientError> {
+    /// Writes to a chat; a working agent gets the message as a follow-up. The agent is also told `context`, where the
+    /// person is in the app, when there is one.
+    pub async fn say(
+        &self,
+        chat: i64,
+        message: &str,
+        context: Option<&str>,
+    ) -> Result<Run, ClientError> {
         self.post(
             &format!("/v1/chats/{chat}/messages"),
-            serde_json::json!({ "message": message }),
+            serde_json::json!({ "message": message, "context": context }),
         )
         .await
     }

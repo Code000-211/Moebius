@@ -126,6 +126,11 @@ impl Live {
         self.run.id
     }
 
+    /// The run watched: its agent and status.
+    pub fn run(&self) -> &Run {
+        &self.run
+    }
+
     pub fn last_seq(&self) -> i64 {
         self.conversation.last_seq()
     }

@@ -37,6 +37,8 @@ pub enum Icon {
     Spark,
     /// A quarter of a ring, for what is still working.
     Spinner,
+    /// A line: a window becomes small again.
+    Minimise,
 }
 
 impl Icon {
@@ -86,6 +88,7 @@ impl Icon {
                 r#"<path d="M8 2l1.4 4.1L13.5 8 9.4 9.9 8 14l-1.4-4.1L2.5 8l4.1-1.9z"/>"#
             }
             Icon::Spinner => r#"<path d="M8 2a6 6 0 1 0 6 6"/>"#,
+            Icon::Minimise => r#"<path d="M3.5 8h9"/>"#,
             Icon::Panel => {
                 r#"<rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M6 2.5v11"/>"#
             }

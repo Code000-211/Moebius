@@ -550,7 +550,7 @@ async fn a_chat_is_started_written_to_and_followed_through_the_stream() {
     let mut conversation = Conversation::default();
     for message in ["", "second question"] {
         if !message.is_empty() {
-            client.say(run.id, message).await.unwrap();
+            client.say(run.id, message, None).await.unwrap();
         }
         let mut settled = false;
         while !settled {
@@ -666,7 +666,7 @@ async fn a_chats_changes_are_offered_and_the_chat_goes_on() {
             .any(|item| item.kind == "ready_to_merge")
     );
     assert!(client.chats().await.unwrap()[0].is_open());
-    client.say(run.id, "Thanks").await.unwrap();
+    client.say(run.id, "Thanks", None).await.unwrap();
 }
 
 /// A bare harness configuration repository with the agent Coder, a skill and an MCP server.
@@ -1765,7 +1765,8 @@ async fn the_client_reads_the_steps_to_a_first_card_of_a_real_server() {
 /// server's refusal of a bad one, and gives the script back. The speech bubble starts a draft that is not sent until
 /// "Send" is pressed, and the chat then works in the repository.
 #[tokio::test(flavor = "multi_thread")]
-async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_drafts_a_chat() {
+async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_asks_the_floating_chat()
+ {
     use iced::widget::text_editor::{Action, Edit};
     use moebius_desktop::script_editor;
 
@@ -1845,9 +1846,10 @@ async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_dra
         "repository"
     );
 
-    // The bubble opens a draft in this repository; nothing is sent until the person starts the chat.
+    // The bubble opens the floating chat over the editor with a message begun; nothing is sent until the person sends
+    // it, which starts a chat in this repository.
     let _ = app.update(Message::Script(script_editor::Message::AskAgent));
-    assert_eq!(app.page(), Page::Chat);
+    assert_ne!(app.page(), Page::Chat);
     assert!(client.chats().await.unwrap().is_empty());
     let mut ui = Simulator::with_size(
         iced::Settings::default(),
@@ -1866,7 +1868,33 @@ async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_dra
     );
     assert_eq!(
         chats[0].title,
-        "About the Ready column's script (.moebius/ready.luau): "
+        "About the Ready column's script (.moebius/ready.luau):"
+    );
+    // The agent was told where the person is (the fake Pi answers with its prompt); the chat shows only the message.
+    let answer = loop {
+        let events = client.run_events(chats[0].id, 0).await.unwrap();
+        let answered: String = events
+            .iter()
+            .filter(|event| event.kind == "message_update")
+            .filter_map(|event| event.data["assistantMessageEvent"]["delta"].as_str())
+            .collect();
+        if events.iter().any(|event| event.kind == "agent_end") {
+            let said: Vec<_> = events.iter().filter(|event| event.kind == "said").collect();
+            assert_eq!(said.len(), 1);
+            assert_eq!(
+                said[0].data["message"],
+                "About the Ready column's script (.moebius/ready.luau):"
+            );
+            break answered;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    };
+    assert!(
+        answer.contains("[Where the person is in the Moebius app.")
+            && answer.contains("Editing the script of the Ready column (.moebius/ready.luau)")
+            && answer.contains("moebius.wait('held')")
+            && answer.ends_with("About the Ready column's script (.moebius/ready.luau):"),
+        "{answer}"
     );
 
     // Back in the editor, the built-in script is used again.

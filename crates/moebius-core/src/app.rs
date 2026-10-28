@@ -159,6 +159,22 @@ impl HistoryEntry {
 /// The most characters of an ended chat's conversation that the chat continuing it is given.
 const CONVERSATION_LIMIT: usize = 20_000;
 
+/// How many characters of where a person is in the app a chat's agent is told with a message, at most.
+const CONTEXT_LIMIT: usize = 4_000;
+
+/// The prompt a chat's agent answers: `message`, after `context`, where the person who wrote it is in the app, with
+/// its secrets redacted and cut to [`CONTEXT_LIMIT`] characters. Without a context, or with a blank one, the message.
+fn with_context(context: Option<&str>, message: &str) -> String {
+    let Some(context) = context.map(str::trim).filter(|c| !c.is_empty()) else {
+        return message.to_string();
+    };
+    let context: String = redact(context).chars().take(CONTEXT_LIMIT).collect();
+    format!(
+        "[Where the person is in the Moebius app. Use it to understand what they mean; do not repeat it.]\n\
+         {context}\n\n{message}"
+    )
+}
+
 pub struct App {
     pub store: Arc<Store>,
     pub bus: Bus,
@@ -731,8 +747,10 @@ impl App {
     }
 
     /// A person starts a chat with `agent`, in a branch of the repository `repository_id`, of the harness configuration
-    /// repository when `harness` is set, or, without either, in an empty directory. The agent answers `message`; the
-    /// answer arrives as the run's events.
+    /// repository when `harness` is set, or, without either, in an empty directory. The agent answers `message`, told
+    /// first where the person is in the app when `context` is given (see `with_context`); the chat shows only the
+    /// message. The answer arrives as the run's events.
+    #[allow(clippy::too_many_arguments)]
     pub fn start_chat(
         self: &Arc<Self>,
         runs: &dyn Runs,
@@ -740,6 +758,7 @@ impl App {
         repository_id: Option<i64>,
         harness: bool,
         message: &str,
+        context: Option<&str>,
         continues: Option<i64>,
     ) -> Result<Run> {
         if harness && repository_id.is_some() {
@@ -775,15 +794,17 @@ impl App {
             .as_ref()
             .map(|run| self.conversation_of(run.id))
             .transpose()?;
-        runs.start_chat(
-            self,
-            agent,
-            repository.as_ref(),
-            harness,
-            message,
-            conversation.as_deref(),
-        )
-        .map_err(AppError::Invalid)
+        // The agent is also told what was said before, when the chat continues an ended one.
+        let told = match conversation {
+            Some(earlier) => format!(
+                "This chat continues an earlier one, which ended. What was said in it:\n\n{earlier}\n\n\
+                 The person now writes:\n\n{message}"
+            ),
+            None => message.to_string(),
+        };
+        let prompt = with_context(context, &told);
+        runs.start_chat(self, agent, repository.as_ref(), harness, message, &prompt)
+            .map_err(AppError::Invalid)
     }
 
     /// The chat `run_id`, which must have ended to be continued.
@@ -826,8 +847,14 @@ impl App {
     }
 
     /// A person writes to a chat that has not ended: the chat keeps the message as a `said` event, and the agent
-    /// answers it when it is done with what it is doing.
-    pub fn say_in_chat(&self, runs: &dyn Runs, run_id: i64, message: &str) -> Result<Run> {
+    /// answers it when it is done with what it is doing, told first where the person is when `context` is given.
+    pub fn say_in_chat(
+        &self,
+        runs: &dyn Runs,
+        run_id: i64,
+        message: &str,
+        context: Option<&str>,
+    ) -> Result<Run> {
         let run = self.running_chat(run_id)?;
         if message.trim().is_empty() {
             return Err(AppError::Invalid("a message cannot be blank".into()));
@@ -842,7 +869,7 @@ impl App {
         self.record_run_event(run_id, "said", &json!({ "message": redact(message) }))?;
         // The chat works from now on, before its agent says so, so that its worktree is not offered meanwhile.
         self.store.set_chat_working(run_id)?;
-        if !runs.say(run_id, message) {
+        if !runs.say(run_id, &with_context(context, message)) {
             return Err(AppError::Invalid(format!("chat {run_id} has ended")));
         }
         Ok(run)

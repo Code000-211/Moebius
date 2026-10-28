@@ -335,6 +335,11 @@ impl Agents {
         self.skills.as_ref().is_some_and(Vec::is_empty)
     }
 
+    /// The name of the agent being edited, if any.
+    pub fn editing(&self) -> Option<&str> {
+        self.editor.as_ref().map(|editor| editor.name.as_str())
+    }
+
     /// The agents, as the server last listed them.
     pub fn list(&self) -> &[Agent] {
         &self.list
