@@ -18,9 +18,10 @@ const LIMIT: usize = 8;
 pub const FIELD: &str = "search";
 
 /// The pages the search finds by title.
-const PAGES: [Page; 13] = [
+const PAGES: [Page; 14] = [
     Page::Inbox,
     Page::Chat,
+    Page::Fleet,
     Page::Agents,
     Page::Skills,
     Page::McpServers,

@@ -13,6 +13,7 @@ use crate::chat::Chats;
 use crate::client::{self, Client, ClientError, HistoryEntry, RunEvent, Snapshot, StreamEvent};
 use crate::decision_model::{self, DecisionModel};
 use crate::experiments::{self, Experiments};
+use crate::fleet::{self, Fleet};
 use crate::inbox::{self, Inbox};
 use crate::live::{self, Live};
 use crate::mcp_servers::{self, McpServers};
@@ -42,6 +43,8 @@ pub enum Connection {
 pub enum Page {
     Inbox,
     Chat,
+    /// Every run that is working, one tile each.
+    Fleet,
     /// The board of the repository with this id.
     Board(i64),
     /// The form that adds a repository, opened by the "+" of the sidebar.
@@ -68,6 +71,7 @@ impl Page {
         match self {
             Page::Inbox => "Inbox",
             Page::Chat => "Chat",
+            Page::Fleet => "Fleet",
             Page::Board(_) => "Board",
             Page::AddRepository => "Add a repository",
             Page::Agents => "Agents",
@@ -89,7 +93,7 @@ impl Page {
     /// The sidebar group of the page, shown as the breadcrumb of its header.
     pub fn group(self) -> &'static str {
         match self {
-            Page::Inbox | Page::Chat => "",
+            Page::Inbox | Page::Chat | Page::Fleet => "",
             Page::Board(_) | Page::AddRepository => "Boards",
             Page::Agents | Page::Skills | Page::McpServers | Page::Rules => "Build",
             Page::Retro | Page::Experiments | Page::DecisionModel | Page::Usage => "Improve",
@@ -134,6 +138,7 @@ pub enum Message {
     Live(live::Message),
     Inbox(inbox::Message),
     Chat(chat::Message),
+    Fleet(fleet::Message),
     Agents(agents::Message),
     Skills(skills::Message),
     Mcp(mcp_servers::Message),
@@ -183,6 +188,7 @@ pub struct App {
     opened: Option<Opened>,
     inbox: Inbox,
     chats: Chats,
+    fleet: Fleet,
     agents: Agents,
     skills: Skills,
     mcp_servers: McpServers,
@@ -230,6 +236,7 @@ impl App {
             opened: None,
             inbox: Inbox::new(live::now()),
             chats: Chats::new(live::now()),
+            fleet: Fleet::new(live::now()),
             agents: Agents::default(),
             skills: Skills::default(),
             mcp_servers: McpServers::default(),
@@ -291,13 +298,24 @@ impl App {
             (Some(settings), true) => Task::batch([task, self.start.reload(settings)]),
             _ => task,
         };
-        // What the chat on the screen holds is read, however it got there.
+        // What the chat on the screen holds is read, however it got there. The Fleet shows the working runs as they
+        // are now, and nothing once it is left.
         match (&self.screen, self.page(), &self.settings) {
             (Screen::Main, Page::Chat, Some(settings)) => {
                 let read = self.chats.mark_read(&settings.clone());
+                self.fleet.clear();
                 Task::batch([task, read])
             }
-            _ => task,
+            (Screen::Main, Page::Fleet, Some(settings)) => {
+                let follow = self
+                    .fleet
+                    .follow(&self.snapshot, self.chats.list(), settings);
+                Task::batch([task, follow])
+            }
+            _ => {
+                self.fleet.clear();
+                task
+            }
         }
     }
 
@@ -328,7 +346,9 @@ impl App {
                     self.terminal.open();
                 }
                 match (page, &self.settings) {
-                    (Page::Chat, Some(settings)) => return self.chats.reload(settings),
+                    (Page::Chat | Page::Fleet, Some(settings)) => {
+                        return self.chats.reload(settings);
+                    }
                     (Page::Agents, Some(settings)) => return self.agents.reload(settings),
                     (Page::Skills, Some(settings)) => return self.skills.reload(settings),
                     (Page::McpServers, Some(settings)) => {
@@ -523,6 +543,7 @@ impl App {
                 return task;
             }
             Message::Chat(message) => return self.chats.update(message, self.settings.as_ref()),
+            Message::Fleet(message) => self.fleet.update(message),
             Message::OpenChat(id) => {
                 self.page = Some(Page::Chat);
                 self.opened = None;
@@ -712,6 +733,10 @@ impl App {
             StreamEvent::Connected => {
                 self.connection = Connection::Online;
                 // Events are not replayed: the run shown reads what it missed.
+                let tiles = match &self.settings {
+                    Some(settings) => self.fleet.reload(settings),
+                    None => Task::none(),
+                };
                 let (missed, chats) = match (&self.opened, &self.settings) {
                     (Some(Opened::Run(live)), Some(settings)) => (
                         live::load(settings.clone(), live.card, live.run_id(), live.last_seq()),
@@ -733,7 +758,7 @@ impl App {
                     Some(settings) if self.start.incomplete() => self.start.reload(settings),
                     _ => Task::none(),
                 };
-                Task::batch([self.reload(), missed, chats, usage, setup, start])
+                Task::batch([self.reload(), missed, chats, tiles, usage, setup, start])
             }
             StreamEvent::Disconnected(_) => {
                 self.connection = Connection::Offline;
@@ -809,6 +834,9 @@ impl App {
         let Ok(event) = serde_json::from_value::<RunEvent>(data.clone()) else {
             return Task::none();
         };
+        if let Some(run) = data["run"].as_i64() {
+            self.fleet.on_event(run, event.clone());
+        }
         let chat_checked = data["run"]
             .as_i64()
             .is_some_and(|run| self.chats.on_event(run, &event));
@@ -904,6 +932,11 @@ impl App {
                         .map(|_| Message::Inbox(inbox::Message::Tick(live::now()))),
                     _ => Subscription::none(),
                 };
+                let fleet = match self.page() {
+                    Page::Fleet => iced::time::every(Duration::from_secs(5))
+                        .map(|_| Message::Fleet(fleet::Message::Tick(live::now()))),
+                    _ => Subscription::none(),
+                };
                 let chats = match self.page() {
                     Page::Chat => iced::time::every(Duration::from_secs(30))
                         .map(|_| Message::Chat(chat::Message::Tick(live::now()))),
@@ -926,6 +959,7 @@ impl App {
                     stream,
                     clock,
                     inbox,
+                    fleet,
                     chats,
                     shell,
                     terminal,
@@ -967,6 +1001,7 @@ impl App {
                         &page,
                         sidebar::Counts {
                             chats_unread: self.chats.unread(),
+                            working: fleet::working(&self.snapshot, self.chats.list()).len(),
                             tokens_today: self.usage.today(),
                             setup_incomplete: self.start.incomplete(),
                         },
@@ -1019,6 +1054,7 @@ impl App {
             Page::AddRepository => self.add_repository.view(),
             Page::Inbox => self.inbox.view(&self.snapshot),
             Page::Chat => self.chats.view(&self.snapshot, &self.inbox),
+            Page::Fleet => self.fleet.view(&self.snapshot, self.chats.list()),
             Page::Agents => self.agents.view(),
             Page::Skills => self.skills.view(),
             Page::McpServers => self.mcp_servers.view(),

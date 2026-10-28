@@ -1818,3 +1818,60 @@ async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_dra
         "built-in"
     );
 }
+
+/// Opening the Fleet reads the events of every working run, and a run that is stopped leaves it.
+#[tokio::test(flavor = "multi_thread")]
+async fn opening_the_fleet_reads_the_events_of_the_working_runs_and_a_stopped_run_leaves_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, _) = start_with_fake_pi(dir.path()).await;
+    let origin = origin(dir.path());
+    let repository = post(
+        &settings,
+        "/v1/repositories",
+        json!({"name": "demo", "url": origin.to_str().unwrap()}),
+    )
+    .await;
+    post(
+        &settings,
+        &format!("/v1/repositories/{}/issues", repository["id"]),
+        json!({"title": "Add a feature", "body": "[hang]"}),
+    )
+    .await;
+    let client = Client::new(settings.clone());
+    let run = loop {
+        let snapshot = client.snapshot().await.unwrap();
+        if let Some(run) = snapshot.boards[0].cards[0].run.clone()
+            && run.status == "running"
+        {
+            break run;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+
+    let mut app = App::with_snapshot(Snapshot::default());
+    let _ = app.update(Message::Checked(Ok((
+        settings.clone(),
+        client.snapshot().await.unwrap(),
+    ))));
+    let task = app.update(Message::Select(Page::Fleet));
+    settle(&mut app, task).await;
+    assert!(shown(&app, "1 agent working"));
+    assert!(shown(&app, "#1 Add a feature"));
+    // The hanging agent has taken no step, which the tile says once its events are read.
+    assert!(shown(&app, "No steps yet."));
+
+    client.stop(run.id).await.unwrap();
+    loop {
+        let snapshot = client.snapshot().await.unwrap();
+        if snapshot.boards[0].cards[0]
+            .run
+            .as_ref()
+            .is_some_and(|run| run.status != "running")
+        {
+            let _ = app.update(Message::Loaded(1, Ok(snapshot)));
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(shown(&app, "Nothing is working."));
+}

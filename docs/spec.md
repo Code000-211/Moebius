@@ -26,7 +26,7 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
 - **Chat** with any agent, and the **Moebius agent**, which knows Moebius from the guide (`docs/guide/`) and builds
   column scripts, rules, agents and extensions on request, offered as changes.
 - **Grilling** (a chat with the Grilling partner) that ends in issues a person confirms, or in a research report.
-- The desktop app's six screens: board, live view, inbox, chat, agents, usage.
+- The desktop app's seven screens: board, live view, inbox, chat, fleet, agents, usage.
 
 ### Not in the first version
 
@@ -161,6 +161,7 @@ Native, GPU-rendered, written in Rust with iced (ADR 0003, ADR 0011), built to [
 - **Inbox**: everything that needs the person, one column, filterable.
 - **Chat**: a conversation with an agent, the Moebius agent by default, with code highlighted, tool calls with their
   checks, and the changes the agent offers.
+- **Fleet**: every card run and chat that is working, one tile each with its last steps; a click opens the live view or the chat.
 - **Agents**: the agent list and editor (model, thinking, token budget, instructions, skills, MCP servers, extensions), and
   open proposals for the agent.
 - **Usage**: tokens per day by leading model, tokens by model, where the tokens go, where to save, where the model time goes,

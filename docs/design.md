@@ -39,10 +39,16 @@ chart.
 
 ## Layout
 
-- A sidebar on every screen, in groups divided by lines: Inbox; Boards; Build (agents, skills, MCP servers, rules);
+- A sidebar on every screen, in groups divided by lines: Inbox, Chat and Fleet; Boards; Build (agents, skills, MCP servers, rules);
   Improve (Retro, experiments, decision model, usage); Setup (models, plugins, terminal, settings); tokens used today at the foot.
   It collapses to a 68 px rail of icons. Icons are 20 px; an entry with something new (the inbox, an unread chat) has
   its icon in amber and its count in amber text beside it, without a pill.
 - Every page opens with the same header: an optional breadcrumb, the title, one line of context, and its actions on the
   right.
+- Fleet shows every run that is working at a glance: a grid of two or three tiles by width, one for each card whose
+  latest run is starting, running or waiting and each chat that is. A tile has the agent, a tag for what it does
+  (`code`, `review`, `chat`), the card (`#number title`) or the chat title, the repository, how long the run has run,
+  the card's tokens when known, and the last four steps of the run in the compact steps box. A click opens the card's
+  live view or the chat. Without a working run the page says "Nothing is working. Runs and chats appear here while
+  they work." The sidebar entry says how many are working.
 - Budgets and usage are counted in tokens, never in money.

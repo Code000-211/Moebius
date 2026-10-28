@@ -18,7 +18,7 @@ use crate::{theme, transcript};
 /// The most characters of a folded line, which the box clips further when it is narrower.
 const LINE: usize = 140;
 /// The same in a compact box, which shows only the last steps and has no unfolding.
-const COMPACT_LINE: usize = 56;
+const COMPACT_LINE: usize = 44;
 const COMPACT_STEPS: usize = 4;
 /// The height at which a box that is not compact starts to scroll.
 const MAX_HEIGHT: f32 = 380.0;

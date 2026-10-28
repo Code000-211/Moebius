@@ -11,6 +11,8 @@ use crate::theme;
 pub enum Icon {
     Inbox,
     Chat,
+    /// Four tiles: every agent at work.
+    Fleet,
     Pencil,
     Agents,
     Skills,
@@ -42,6 +44,9 @@ impl Icon {
         match self {
             Icon::Inbox => r#"<path d="M2 9h3l1 2h4l1-2h3"/><path d="M2 9l2-5h8l2 5v4H2z"/>"#,
             Icon::Chat => r#"<path d="M2.5 3.5h11v7h-6l-3 3v-3h-2z"/>"#,
+            Icon::Fleet => {
+                r#"<rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1"/><rect x="9" y="9" width="4.5" height="4.5" rx="1"/>"#
+            }
             Icon::Pencil => {
                 r#"<path d="M3 13l.6-3L10.4 3.2a1.2 1.2 0 0 1 1.7 0l.7.7a1.2 1.2 0 0 1 0 1.7L6 12.4z"/><path d="M9.2 4.4l2.4 2.4"/>"#
             }

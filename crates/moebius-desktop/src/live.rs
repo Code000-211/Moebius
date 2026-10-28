@@ -567,7 +567,7 @@ fn harness_name(harness: &str) -> &str {
 }
 
 /// A number of tokens: `412k`, `1.5M`.
-fn tokens(n: i64) -> String {
+pub fn tokens(n: i64) -> String {
     match n {
         n if n >= 1_000_000 => format!("{:.1}M tokens", n as f64 / 1_000_000.0),
         n if n >= 1_000 => format!("{}k tokens", n / 1_000),

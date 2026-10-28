@@ -1,4 +1,4 @@
-//! The sidebar on every screen: the app name with the connection, the search field, the Inbox and Chat, and the groups Boards,
+//! The sidebar on every screen: the app name with the connection, the search field, the Inbox, Chat and Fleet, and the groups Boards,
 //! Build, Improve and Setup. It collapses to a rail of icons. Every number in it comes from the server.
 
 use iced::font::Weight;
@@ -48,6 +48,8 @@ enum Trailing {
 /// What the sidebar tells besides the boards.
 pub struct Counts {
     pub chats_unread: usize,
+    /// How many runs and chats are working.
+    pub working: usize,
     /// The tokens used today and the day's budget, once the usage is read.
     pub tokens_today: Option<(i64, Option<i64>)>,
     /// Whether a step of Get started is missing, which makes the page listed.
@@ -64,6 +66,7 @@ pub fn view<'a>(
 ) -> Element<'a, Message> {
     let Counts {
         chats_unread,
+        working,
         tokens_today,
         setup_incomplete,
     } = counts;
@@ -84,6 +87,18 @@ pub fn view<'a>(
             Trailing::Nothing
         },
         Page::Chat,
+        page,
+        collapsed,
+    );
+    let fleet = item(
+        Lead::Icon(Icon::Fleet),
+        Page::Fleet.title(),
+        if working > 0 {
+            Trailing::Text(format!("{working} live"))
+        } else {
+            Trailing::Nothing
+        },
+        Page::Fleet,
         page,
         collapsed,
     );
@@ -130,7 +145,7 @@ pub fn view<'a>(
         .chain(SETUP)
         .collect();
     let groups = column![
-        group(None, vec![inbox, chat], collapsed),
+        group(None, vec![inbox, chat, fleet], collapsed),
         divider(),
         group_with(
             Some("Boards"),
