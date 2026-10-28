@@ -1701,7 +1701,7 @@ async fn the_client_reads_the_steps_to_a_first_card_of_a_real_server() {
 
 /// The pencil's editor against a real server: it reads the built-in script, saves a script as a commit, shows the
 /// server's refusal of a bad one, and gives the script back. The speech bubble starts a draft that is not sent until
-/// "Start chat" is pressed, and the chat then works in the repository.
+/// "Send" is pressed, and the chat then works in the repository.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_drafts_a_chat() {
     use iced::widget::text_editor::{Action, Edit};
@@ -1792,7 +1792,7 @@ async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_dra
         iced::Size::new(1440.0, 900.0),
         app.view(),
     );
-    ui.click("Start chat").unwrap();
+    ui.click("Send").unwrap();
     let messages: Vec<_> = ui.into_messages().collect();
     let task = app.update(messages.into_iter().next().unwrap());
     settle(&mut app, task).await;
@@ -1817,6 +1817,38 @@ async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_dra
         client.script(repository.id, "Ready").await.unwrap().source,
         "built-in"
     );
+}
+
+/// The New chat form opens an empty draft that makes no request; the first Send creates the chat, which is then the
+/// open one.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_first_send_of_a_draft_creates_the_chat() {
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, _) = start_with_fake_pi(dir.path()).await;
+    let client = Client::new(settings.clone());
+    let mut app = App::with_snapshot(Snapshot::default());
+    let _ = app.update(Message::Checked(Ok((
+        settings.clone(),
+        client.snapshot().await.unwrap(),
+    ))));
+    let task = app.update(Message::Select(Page::Chat));
+    settle(&mut app, task).await;
+    let task = app.update(Message::Chat(chat::Message::NewChat(true)));
+    settle(&mut app, task).await;
+    let task = app.update(Message::Chat(chat::Message::Start));
+    settle(&mut app, task).await;
+    assert!(shown(&app, "Write the first message to start the chat."));
+    assert!(client.chats().await.unwrap().is_empty());
+
+    let task = app.update(Message::Chat(chat::Message::Edited("Hello there".into())));
+    settle(&mut app, task).await;
+    let task = app.update(Message::Chat(chat::Message::Send));
+    settle(&mut app, task).await;
+    let chats = client.chats().await.unwrap();
+    assert_eq!(chats.len(), 1);
+    assert_eq!(chats[0].agent, "Moebius");
+    assert!(!shown(&app, "Write the first message to start the chat."));
+    assert!(shown(&app, "Hello there"));
 }
 
 /// Opening the Fleet reads the events of every working run, and a run that is stopped leaves it.

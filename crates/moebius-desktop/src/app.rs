@@ -341,7 +341,7 @@ impl App {
             Message::Select(page) => {
                 self.page = Some(page);
                 self.opened = None;
-                self.chats.close_terminal();
+                self.chats.leave();
                 if page == Page::Terminal {
                     self.terminal.open();
                 }
@@ -391,14 +391,13 @@ impl App {
             }
             Message::Script(script_editor::Message::AskAgent) => {
                 // The chat page opens on a draft for the Moebius agent; nothing is sent.
-                let (Some(Opened::Script(editor)), Some(settings)) = (&self.opened, &self.settings)
-                else {
+                let Some(Opened::Script(editor)) = &self.opened else {
                     return Task::none();
                 };
                 let (repository, about) = (editor.repository(), editor.about());
                 self.page = Some(Page::Chat);
                 self.opened = None;
-                return self.chats.draft(repository, about, settings);
+                return self.chats.draft(repository, about);
             }
             Message::Script(message) => {
                 if let Some(Opened::Script(editor)) = &mut self.opened {

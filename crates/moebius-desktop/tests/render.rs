@@ -1194,9 +1194,6 @@ fn a_grilling_chat_needs_a_repository_before_it_starts() {
     let _ = app.update(Message::Chat(chat::Message::AgentChosen(
         "Grilling-partner".into(),
     )));
-    let _ = app.update(Message::Chat(chat::Message::FirstEdited(
-        "Reports should be exportable.".into(),
-    )));
     assert!(shows(
         &app,
         "The Grilling partner questions your idea in a repository. Ending the chat puts the issues it proposes in the Inbox, to confirm."
@@ -1204,14 +1201,15 @@ fn a_grilling_chat_needs_a_repository_before_it_starts() {
     // Without a repository the chat does not start, with one it does.
     assert_eq!(app.update(Message::Chat(chat::Message::Start)).units(), 0);
     let mut ui = simulator(&app);
-    let _ = ui.click("Start chat");
+    let _ = ui.click("Start");
     assert_eq!(ui.into_messages().count(), 0);
     let _ = app.update(Message::Chat(chat::Message::RepositoryChosen(Some(1))));
     assert!(matches!(
-        &clicked(&app, "Start chat")[..],
+        &clicked(&app, "Start")[..],
         [Message::Chat(chat::Message::Start)]
     ));
-    assert_eq!(app.update(Message::Chat(chat::Message::Start)).units(), 1);
+    let _ = app.update(Message::Chat(chat::Message::Start));
+    assert!(shows(&app, "Grilling-partner in radiance"));
 }
 
 #[test]
@@ -1786,7 +1784,7 @@ fn a_new_chat_offers_the_servers_agents_with_the_moebius_agent_chosen() {
     draw(
         &app,
         "chat-new",
-        &["Moebius · claude-fake", "Coder · qwen-fake", "Start chat"],
+        &["Moebius · claude-fake", "Coder · qwen-fake", "Start"],
     );
     assert!(matches!(
         &clicked(&app, "Coder · qwen-fake")[..],
@@ -1865,14 +1863,16 @@ fn a_new_chat_offers_the_harness_configuration_only_when_the_server_has_one() {
         [Message::Chat(chat::Message::HarnessChosen)]
     ));
     let _ = app.update(Message::Chat(chat::Message::HarnessChosen));
-    let _ = app.update(Message::Chat(chat::Message::FirstEdited(
-        "Add a skill".into(),
-    )));
     assert!(shows(
         &app,
         "The agent works on a branch of the harness configuration repository: agents, skills, extensions, MCP servers and rules. Ending the chat offers what it built as a change, if every agent still works with it."
     ));
-    assert_eq!(app.update(Message::Chat(chat::Message::Start)).units(), 1);
+    let _ = app.update(Message::Chat(chat::Message::Start));
+    assert!(shows(&app, "Moebius in the harness configuration"));
+    // Choosing the form again drops the draft; the harness is offered only while the server has one.
+    for message in clicked(&app, "New chat") {
+        let _ = app.update(message);
+    }
     // A server without a harness configuration repository lists no skill.
     let _ = app.update(Message::Chat(chat::Message::Skills(Ok(vec![]))));
     assert!(!shows(&app, "Harness configuration"));
@@ -1921,29 +1921,77 @@ fn sending_needs_a_message_and_goes_to_the_open_chat() {
 }
 
 #[test]
-fn a_new_chat_needs_a_first_message() {
+fn a_new_chat_opens_an_empty_draft_that_the_first_message_starts() {
     let mut app = chatting("waiting", false);
     for message in clicked(&app, "New chat") {
         let _ = app.update(message);
     }
-    assert!(shows(&app, "First message"));
+    assert!(!shows(&app, "First message"));
     assert!(shows(&app, "No repository"));
     assert!(shows(&app, "radiance"));
-    assert_eq!(app.update(Message::Chat(chat::Message::Start)).units(), 0);
 
     let _ = app.update(Message::Chat(chat::Message::RepositoryChosen(Some(1))));
-    let _ = app.update(Message::Chat(chat::Message::FirstEdited(
-        "Explain the board".into(),
-    )));
-    assert_eq!(app.update(Message::Chat(chat::Message::Start)).units(), 1);
     assert!(matches!(
-        &clicked(&app, "Start chat")[..],
+        &clicked(&app, "Start")[..],
         [Message::Chat(chat::Message::Start)]
     ));
+    let _ = app.update(Message::Chat(chat::Message::Start));
+    // The draft is empty and not in the list; the first message is what sends.
+    assert!(shows(&app, "Moebius in radiance"));
+    assert!(shows(&app, "Write the first message to start the chat."));
+    assert_eq!(app.update(Message::Chat(chat::Message::Send)).units(), 0);
+    let mut ui = simulator(&app);
+    let _ = ui.click("Send");
+    assert_eq!(ui.into_messages().count(), 0);
+    draw(
+        &app,
+        "chat-draft",
+        &["New chat", "Moebius in radiance", "Send"],
+    );
+
+    let _ = app.update(Message::Chat(chat::Message::Edited(
+        "Explain the board".into(),
+    )));
+    assert!(matches!(
+        &clicked(&app, "Send")[..],
+        [Message::Chat(chat::Message::Send)]
+    ));
+    assert_eq!(app.update(Message::Chat(chat::Message::Send)).units(), 1);
+    // While the server starts it, a second Send does nothing.
+    assert_eq!(app.update(Message::Chat(chat::Message::Send)).units(), 0);
+
+    // A refusal shows and the text stays.
+    let refusal = ClientError::Server {
+        status: 422,
+        message: "the agent cannot start".into(),
+    };
+    let _ = app.update(Message::Chat(chat::Message::Started(Err(refusal))));
+    assert!(shows(&app, "the agent cannot start"));
+    assert!(!shows(&app, "Write the first message to start the chat."));
+    assert!(shows(&app, "Explain the board"));
+    assert_eq!(app.update(Message::Chat(chat::Message::Send)).units(), 1);
+
+    // Leaving drops the draft: another chat, a new form, or another page.
+    let _ = app.update(Message::Chat(chat::Message::Select(7)));
+    assert!(!shows(&app, "Write the first message to start the chat."));
+    let _ = app.update(Message::Chat(chat::Message::NewChat(true)));
+    let _ = app.update(Message::Chat(chat::Message::Start));
+    assert!(shows(&app, "Write the first message to start the chat."));
+    assert!(!shows(&app, "Explain the board"));
+    let _ = app.update(Message::Chat(chat::Message::NewChat(true)));
+    assert!(!shows(&app, "Write the first message to start the chat."));
+    let _ = app.update(Message::Chat(chat::Message::Start));
+    let _ = app.update(Message::Select(Page::Fleet));
+    let _ = app.update(Message::Select(Page::Chat));
+    assert!(!shows(&app, "Write the first message to start the chat."));
+
+    for message in clicked(&app, "New chat") {
+        let _ = app.update(message);
+    }
     for message in clicked(&app, "Cancel") {
         let _ = app.update(message);
     }
-    assert!(!shows(&app, "First message"));
+    assert!(!shows(&app, "No repository"));
 }
 
 #[test]
@@ -4602,7 +4650,8 @@ fn the_speech_bubble_opens_a_chat_draft_with_the_moebius_agent_in_this_repositor
     );
     let _ = app.update(messages.into_iter().next().unwrap());
     assert_eq!(app.page(), Page::Chat);
-    assert!(shows(&app, "Start chat"));
+    assert!(shows(&app, "Moebius in radiance"));
+    assert!(shows(&app, "Write the first message to start the chat."));
     assert!(shows(
         &app,
         "About the Ready column's script (.moebius/ready.luau): "
