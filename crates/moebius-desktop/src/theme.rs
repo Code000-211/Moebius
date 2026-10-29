@@ -276,6 +276,8 @@ pub const FACT_LABEL_WIDTH: f32 = 170.0;
 pub const NAME_INPUT_WIDTH: f32 = 360.0;
 pub const CONNECT_WIDTH: f32 = 440.0;
 pub const CONNECT_PADDING: f32 = 28.0;
+/// The tallest the list of SSH hosts grows on the connect screen before it scrolls.
+pub const HOST_LIST_HEIGHT: f32 = 220.0;
 
 /// The floating chat: the round button, the window it grows into, and their distance from the window's corner.
 pub const FLOAT_BUTTON: f32 = 40.0;

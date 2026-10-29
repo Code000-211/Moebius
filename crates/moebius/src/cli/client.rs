@@ -19,8 +19,8 @@ pub struct Connection {
 /// What the desktop app saved: `<config dir>/moebius/desktop.toml`.
 #[derive(Debug, Deserialize)]
 struct Saved {
-    address: String,
-    token: String,
+    address: Option<String>,
+    token: Option<String>,
 }
 
 /// The desktop app's settings file of this person, if the platform has a config directory.
@@ -40,10 +40,14 @@ fn desktop_settings(path: Option<&Path>) -> Result<Option<Connection>, String> {
     };
     let saved: Saved =
         toml::from_str(&text).map_err(|e| format!("{} is not valid: {e}", path.display()))?;
-    Ok(Some(Connection {
-        url: address_url(&saved.address),
-        token: saved.token,
-    }))
+    // A file that only remembers SSH hosts and preferences names no server by address.
+    Ok(match (saved.address, saved.token) {
+        (Some(address), Some(token)) => Some(Connection {
+            url: address_url(&address),
+            token,
+        }),
+        _ => None,
+    })
 }
 
 /// The server of a `moebius.toml` that exists: the `listen` address and the content of the token file.

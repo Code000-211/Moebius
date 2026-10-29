@@ -5,6 +5,7 @@ use iced::widget::{column, container, row, text, text_input};
 use iced::{Border, Center, Element, Length};
 
 use crate::app::{Form, Message};
+use crate::screens::connect_ssh::{self, SshConnect};
 use crate::settings::{self, Settings};
 use crate::theme;
 use crate::{widgets::icons, widgets::page};
@@ -40,7 +41,11 @@ fn label(name: &str) -> Element<'_, Message> {
 
 /// The screen that asks for the server's address and token. `saved` are the settings in use, whose token is shown
 /// only in part.
-pub fn view<'a>(form: &'a Form, saved: Option<&Settings>) -> Element<'a, Message> {
+pub fn view<'a>(
+    form: &'a Form,
+    saved: Option<&Settings>,
+    ssh: &'a SshConnect,
+) -> Element<'a, Message> {
     let token_hint = match saved {
         Some(saved) => format!(
             "Saved token {} (empty keeps it)",
@@ -84,35 +89,52 @@ pub fn view<'a>(form: &'a Form, saved: Option<&Settings>) -> Element<'a, Message
     } else {
         "Connect"
     };
-    let card = container(
+    let brand = row![
+        icons::logo(),
+        text("Moebius")
+            .size(theme::APP_NAME)
+            .font(theme::manrope(Weight::Bold))
+    ]
+    .spacing(theme::SPACE_8)
+    .align_y(Center);
+    let body: Element<'a, Message> = if ssh.panel {
+        let mut over_ssh = column![ssh.view()].spacing(theme::SPACE_12);
+        if let (Some(error), true) = (&form.error, ssh.host().is_none()) {
+            over_ssh = over_ssh.push(
+                text(error)
+                    .size(theme::CONTEXT)
+                    .font(theme::MONO)
+                    .color(theme::RED_TEXT),
+            );
+        }
+        over_ssh.into()
+    } else {
         column![
-            row![
-                icons::logo(),
-                text("Moebius")
-                    .size(theme::APP_NAME)
-                    .font(theme::manrope(Weight::Bold))
-            ]
-            .spacing(theme::SPACE_8)
-            .align_y(Center),
             text("Connect to a server")
                 .size(theme::PAGE_TITLE)
                 .font(theme::manrope(Weight::Bold)),
             page::context("The address of the Moebius server and its token."),
             fields,
             page::primary_button(button_label, ready.then_some(Message::Submit)),
+            page::white_button(
+                "Connect over SSH",
+                ready.then_some(Message::Ssh(connect_ssh::Message::Open))
+            ),
         ]
-        .spacing(theme::SPACE_12),
-    )
-    .padding(theme::CONNECT_PADDING)
-    .width(theme::CONNECT_WIDTH)
-    .style(|_| container::Style {
-        background: Some(theme::SURFACE.into()),
-        border: Border {
-            color: theme::LINE,
-            width: theme::HAIRLINE,
-            radius: theme::RADIUS_BOX.into(),
-        },
-        ..container::Style::default()
-    });
+        .spacing(theme::SPACE_12)
+        .into()
+    };
+    let card = container(column![brand, body].spacing(theme::SPACE_12))
+        .padding(theme::CONNECT_PADDING)
+        .width(theme::CONNECT_WIDTH)
+        .style(|_| container::Style {
+            background: Some(theme::SURFACE.into()),
+            border: Border {
+                color: theme::LINE,
+                width: theme::HAIRLINE,
+                radius: theme::RADIUS_BOX.into(),
+            },
+            ..container::Style::default()
+        });
     container(card).center(Length::Fill).into()
 }

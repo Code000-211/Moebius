@@ -5,6 +5,7 @@ use crate::screens::add_repository;
 use crate::screens::agents;
 use crate::screens::automations;
 use crate::screens::chat;
+use crate::screens::connect_ssh;
 use crate::screens::decision_model;
 use crate::screens::experiments;
 use crate::screens::fleet;
@@ -22,6 +23,9 @@ use crate::screens::start;
 use crate::screens::usage;
 use crate::search;
 use crate::settings::Settings;
+use crate::ssh::askpass::Askpass;
+use crate::ssh::remote;
+use crate::ssh::tunnel::TunnelEvent;
 use crate::widgets::edits;
 use crate::widgets::float_chat;
 use crate::widgets::new_issue;
@@ -154,4 +158,16 @@ pub enum Message {
     Search(search::Message),
     ToggleSidebar,
     ChangeConnection,
+    /// Something on the connect screen's way over SSH.
+    Ssh(connect_ssh::Message),
+    /// The listener for the passwords of `ssh` of this host is ready, and the setup starts from this step.
+    SshAskpass(String, remote::Start, Result<Askpass, String>),
+    /// The setup of the host over SSH told something.
+    SshSetup(remote::Event),
+    /// The tunnel told something.
+    Tunnel(TunnelEvent),
+    /// The sidebar's list of servers opens or closes.
+    ToggleServers,
+    /// The server at this place of the remembered ones is connected to.
+    SwitchServer(usize),
 }

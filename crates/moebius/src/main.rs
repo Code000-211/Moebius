@@ -29,6 +29,10 @@ struct Cli {
     /// The token for `--server`. Without it: the desktop app's, else the configuration's token file.
     #[arg(long, global = true, env = "MOEBIUS_TOKEN", hide_env_values = true)]
     token: Option<String>,
+    /// Reach the server of this SSH host through a tunnel opened for the command (the app's setup must have been done
+    /// there once). `moebius connect <host>` keeps a tunnel open for several commands instead.
+    #[arg(long, global = true, conflicts_with = "server")]
+    ssh: Option<String>,
     /// Print the API's JSON as it came instead of plain text.
     #[arg(long, global = true)]
     json: bool,
@@ -64,6 +68,12 @@ enum Command {
         /// The card's author; `person` is trusted, as on a repository without a forge.
         #[arg(long, default_value = "person")]
         author: String,
+    },
+    /// Open an SSH tunnel to the server of a host and keep it open, for the commands that follow in other terminals.
+    /// Stops with Ctrl+C.
+    Connect {
+        /// A host of `~/.ssh/config`, or `user@host`.
+        host: String,
     },
     #[command(flatten)]
     Operate(cli::Operate),
@@ -156,13 +166,43 @@ fn run(cli: Cli) -> Result<(), String> {
             }
             Ok(())
         }
+        Some(Command::Connect { host }) => {
+            let desktop = cli::desktop_settings_path();
+            let mut tunnel = cli::ssh::Tunnel::open(&cli::ssh::program(desktop.as_deref()), &host)?;
+            let file = cli::ssh::connected_path(desktop.as_deref())
+                .ok_or("there is no config directory to write the connection to")?;
+            cli::ssh::write_connected(&file, &tunnel)?;
+            println!(
+                "Connected to {host}: {}. The other moebius commands use it until this one ends (Ctrl+C).",
+                tunnel.connection.url
+            );
+            let ended = tunnel.wait();
+            let _ = std::fs::remove_file(&file);
+            ended?;
+            Err(format!("the connection to {host} ended"))
+        }
         Some(Command::Operate(command)) => {
-            let connection = cli::connect(
-                cli.server.as_deref(),
-                cli.token.as_deref(),
-                cli::desktop_settings_path().as_deref(),
-                &cli.config,
-            )?;
+            let desktop = cli::desktop_settings_path();
+            // Kept until the command is done: dropping it closes the tunnel.
+            let _tunnel;
+            let connection = if let Some(host) = &cli.ssh {
+                let tunnel = cli::ssh::Tunnel::open(&cli::ssh::program(desktop.as_deref()), host)?;
+                let connection = tunnel.connection.clone();
+                _tunnel = Some(tunnel);
+                connection
+            } else if let (None, Some(open)) = (
+                &cli.server,
+                cli::ssh::connected(cli::ssh::connected_path(desktop.as_deref()).as_deref()),
+            ) {
+                open
+            } else {
+                cli::connect(
+                    cli.server.as_deref(),
+                    cli.token.as_deref(),
+                    desktop.as_deref(),
+                    &cli.config,
+                )?
+            };
             let client = cli::Client::new(connection)?;
             let (text, ready) = cli::operate(&client, &command, cli.json)?;
             println!("{text}");
@@ -317,6 +357,7 @@ mod tests {
         let cli = |c| Cli {
             config: path.clone(),
             server: None,
+            ssh: None,
             token: None,
             json: false,
             command: Some(c),
@@ -362,6 +403,7 @@ mod tests {
         let error = run(Cli {
             config: path.clone(),
             server: None,
+            ssh: None,
             token: None,
             json: false,
             command: Some(Command::Init),

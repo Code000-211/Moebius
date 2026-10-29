@@ -14,13 +14,19 @@ The commands `init`, `serve`, `export` and `check-script` work on files and do n
 |---|---|---|
 | `--server <url>` | `MOEBIUS_URL` | The server's address, such as `http://127.0.0.1:7171`. Without a scheme, `http://` is assumed. |
 | `--token <token>` | `MOEBIUS_TOKEN` | The token the server accepts: the server's [token](desktop-api.md#authentication), or a run token of the Moebius agent. |
+| `--ssh <host>` | | Reach the server of an SSH host through a tunnel opened for this command; conflicts with `--server`. |
 | `--json` | | Write the API's JSON as it came (pretty printed) instead of plain text. |
 | `--config <file>` | | The configuration file (default `moebius.toml`), read when nothing else names the server. |
 
 The server is the first of these that exists:
 
+0. `--ssh <host>`: one `ssh -L` to the host forwards a free port of this machine to `127.0.0.1:7171` there and, on the
+   same login, reads the token from `~/.moebius/server/.moebius/token`, where the desktop app's setup left it. The tunnel
+   closes when the command ends. `ssh` asks for a password on the terminal if it needs one; keys are recommended. The
+   program is `ssh`, or `ssh_program` of `desktop.toml`.
 1. `--server` (or `MOEBIUS_URL`). It must come with `--token` (or `MOEBIUS_TOKEN`), so that a token is never sent to a
    server it does not belong to.
+   Before this, a tunnel that `moebius connect` holds open is used, if there is one (see below).
 2. The address and token the desktop app saved, `<config dir>/moebius/desktop.toml` (`address` and `token`; on Linux
    `~/.config/moebius/desktop.toml`, on Windows `%APPDATA%\moebius\desktop.toml`). A `--token` alone replaces the saved token.
 3. The `moebius.toml` of the current directory (or `--config`): its `listen` address (`0.0.0.0` is reached as
@@ -30,6 +36,14 @@ The server is the first of these that exists:
 A run of the Moebius agent has `MOEBIUS_URL` and `MOEBIUS_TOKEN` set by the server (see [the bridge
 protocol](bridge-protocol.md#the-environment-of-the-harness)); what it does is recorded as the agent's (see
 [the desktop API](desktop-api.md#authentication)).
+
+### `connect <host>`
+
+Opens the same tunnel as `--ssh` and keeps it open until Ctrl+C. It writes the tunnel's address and token to
+`connected.toml` next to `desktop.toml` (mode 0600) and prints `Connected to <host>: http://127.0.0.1:<port>.` The
+`moebius` commands run meanwhile, without `--server`, use it; a file whose port no longer answers is removed and
+ignored. The server must have been set up on the host once, by the desktop app. `desktop.toml` may name another client
+with `ssh_program`.
 
 ## Output and exit codes
 

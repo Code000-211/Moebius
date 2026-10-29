@@ -14,7 +14,8 @@ cargo run -p moebius-desktop
 |---|---|
 | `src/app/` | The state, every message, how a message changes the state, and how the window is drawn. |
 | `src/client/` | The desktop API client: the types, the calls (`client/calls/`), the event stream and the terminal socket. |
-| `src/settings.rs` | The saved address and token. |
+| `src/settings.rs` | The saved address and token, the servers connected to before and the SSH preferences. |
+| `src/ssh/` | Connecting over SSH: the SSH configuration, the askpass, the setup of the host and the tunnel. |
 | `src/theme.rs` | Every colour, size and font. |
 | `src/sidebar.rs`, `src/search.rs` | The sidebar on every screen. |
 | `src/screens/` | One module or folder per page. |

@@ -46,6 +46,17 @@ enum Trailing {
     Badge(usize),
 }
 
+/// The server the app is connected to and the ones it can switch to, shown under the app name when there is more than
+/// one server or the connection is over SSH.
+#[derive(Debug, Clone, Default)]
+pub struct ServerMenu {
+    /// The name of the server in use; none when the header names nothing.
+    pub name: Option<String>,
+    /// The servers remembered, by name, in order.
+    pub servers: Vec<String>,
+    pub open: bool,
+}
+
 /// What the sidebar tells besides the boards.
 pub struct Counts {
     pub chats_unread: usize,
@@ -55,6 +66,7 @@ pub struct Counts {
     pub tokens_today: Option<(i64, Option<i64>)>,
     /// Whether a step of Get started is missing, which makes the page listed.
     pub setup_incomplete: bool,
+    pub menu: ServerMenu,
 }
 
 pub fn view<'a>(
@@ -70,6 +82,7 @@ pub fn view<'a>(
         working,
         tokens_today,
         setup_incomplete,
+        menu,
     } = counts;
     let inbox = item(
         Lead::Icon(Icon::Inbox),
@@ -176,7 +189,7 @@ pub fn view<'a>(
     };
     let sidebar = container(
         column![
-            top(connection, collapsed, search),
+            top(connection, collapsed, search, menu),
             scrollable(groups).height(Length::Fill),
             tokens_meter(tokens_today, collapsed),
         ]
@@ -287,12 +300,20 @@ fn divider<'a>() -> Element<'a, Message> {
 }
 
 /// The app name with the connection, the toggle and the search field.
-fn top<'a>(connection: Connection, collapsed: bool, search: &str) -> Element<'a, Message> {
+fn top<'a>(
+    connection: Connection,
+    collapsed: bool,
+    search: &str,
+    menu: ServerMenu,
+) -> Element<'a, Message> {
     let (state, color, text_color) = match connection {
         Connection::Online => ("Online", theme::TEAL, theme::ONLINE_TEXT),
         Connection::Connecting => ("Connecting", theme::TEXT_MUTED, theme::TEXT_MUTED),
         Connection::Offline => ("Offline", theme::AMBER, theme::AMBER),
+        Connection::Reconnecting => ("Reconnecting…", theme::AMBER, theme::AMBER),
     };
+    // With a server named, its line says the state, and the first row has room for the toggle only.
+    let named = menu.name.is_some() && !collapsed;
     let label = if collapsed {
         "Expand the sidebar"
     } else {
@@ -325,32 +346,31 @@ fn top<'a>(connection: Connection, collapsed: bool, search: &str) -> Element<'a,
             .align_x(Center)
             .into()
     } else {
-        row![
+        let mut head = row![
             icons::logo(),
             text("Moebius")
                 .size(theme::APP_NAME)
                 .font(theme::manrope(Weight::Bold)),
             space::horizontal(),
-            container(space().width(theme::DOT).height(theme::DOT)).style(move |_| {
-                container::Style {
-                    background: Some(color.into()),
-                    border: Border {
-                        radius: (theme::DOT / 2.0).into(),
-                        ..Border::default()
-                    },
-                    ..container::Style::default()
-                }
-            }),
-            text(state)
-                .size(theme::LABEL)
-                .font(theme::MONO)
-                .color(text_color),
-            toggle,
+        ];
+        if !named {
+            let (dot, label) = state_parts(state, color, text_color);
+            head = head.push(dot).push(label);
+        }
+        head.push(toggle)
+            .spacing(theme::SPACE_8)
+            .align_y(Center)
+            .padding(Padding::from([0.0, theme::SPACE_4]))
+            .into()
+    };
+    let mark_row: Element<'a, Message> = match (menu.name.clone(), named) {
+        (Some(name), true) => column![
+            mark_row,
+            server_button(name, menu, state, color, text_color)
         ]
         .spacing(theme::SPACE_8)
-        .align_y(Center)
-        .padding(Padding::from([0.0, theme::SPACE_4]))
-        .into()
+        .into(),
+        _ => mark_row,
     };
     let field = text_input("Search or run…", search)
         .id(search::FIELD)
@@ -400,6 +420,123 @@ fn top<'a>(connection: Connection, collapsed: bool, search: &str) -> Element<'a,
             left: theme::SPACE_12,
         })
         .into()
+}
+
+/// A dot and the state of the connection.
+fn state_line<'a>(state: &'a str, color: Color, text_color: Color) -> Element<'a, Message> {
+    let (dot, label) = state_parts(state, color, text_color);
+    row![dot, label]
+        .spacing(theme::SPACE_8)
+        .align_y(Center)
+        .into()
+}
+
+fn state_parts<'a>(
+    state: &'a str,
+    color: Color,
+    text_color: Color,
+) -> (Element<'a, Message>, Element<'a, Message>) {
+    (
+        container(space().width(theme::DOT).height(theme::DOT))
+            .style(move |_| container::Style {
+                background: Some(color.into()),
+                border: Border {
+                    radius: (theme::DOT / 2.0).into(),
+                    ..Border::default()
+                },
+                ..container::Style::default()
+            })
+            .into(),
+        text(state)
+            .size(theme::LABEL)
+            .font(theme::MONO)
+            .color(text_color)
+            .into(),
+    )
+}
+
+/// The server in use with the state of the connection under its name; a click lists the servers to switch to.
+fn server_button<'a>(
+    name: String,
+    menu: ServerMenu,
+    state: &'a str,
+    color: Color,
+    text_color: Color,
+) -> Element<'a, Message> {
+    let head = button(
+        row![
+            column![
+                text(name.clone())
+                    .size(theme::CODE_SMALL)
+                    .font(theme::MONO)
+                    .color(theme::TEXT),
+                state_line(state, color, text_color),
+            ]
+            .spacing(theme::SPACE_2),
+            space::horizontal(),
+            if menu.open {
+                Icon::ChevronDown.view(theme::TEXT_MUTED, theme::ICON_SMALL)
+            } else {
+                Icon::ChevronRight.view(theme::TEXT_MUTED, theme::ICON_SMALL)
+            },
+        ]
+        .align_y(Center),
+    )
+    .width(Length::Fill)
+    .padding(theme::FIELD_PADDING)
+    .on_press(Message::ToggleServers)
+    .style(|_, status| button::Style {
+        background: Some(
+            if status == button::Status::Hovered {
+                theme::SIDEBAR_HOVER
+            } else {
+                theme::SURFACE
+            }
+            .into(),
+        ),
+        text_color: theme::TEXT,
+        border: Border {
+            color: theme::SIDEBAR_LINE,
+            width: theme::HAIRLINE,
+            radius: theme::RADIUS_CONTROL.into(),
+        },
+        ..button::Style::default()
+    });
+    if !menu.open {
+        return head.into();
+    }
+    let entry = |label: String, current: bool, message: Message| {
+        button(
+            text(label)
+                .size(theme::CODE_SMALL)
+                .font(theme::MONO)
+                .color(theme::TEXT),
+        )
+        .width(Length::Fill)
+        .padding(theme::FIELD_PADDING)
+        .on_press(message)
+        .style(move |_, status| button::Style {
+            background: (current || status == button::Status::Hovered)
+                .then(|| theme::SIDEBAR_HOVER.into()),
+            text_color: theme::TEXT,
+            border: Border {
+                radius: theme::RADIUS_CONTROL.into(),
+                ..Border::default()
+            },
+            ..button::Style::default()
+        })
+    };
+    let mut list = column![head].spacing(theme::SPACE_2);
+    for (index, server) in menu.servers.into_iter().enumerate() {
+        let current = server == name;
+        list = list.push(entry(server, current, Message::SwitchServer(index)));
+    }
+    list.push(entry(
+        "Add a server…".to_string(),
+        false,
+        Message::ChangeConnection,
+    ))
+    .into()
 }
 
 /// A group of items under a bold name, which a collapsed sidebar does not show.

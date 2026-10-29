@@ -5,6 +5,7 @@
 //! events change, `navigation` the way back, `context` what the floating chat tells the agent of the page, and `view`
 //! how it is all drawn.
 
+mod connection;
 mod context;
 mod message;
 mod navigation;
@@ -55,6 +56,8 @@ pub enum Connection {
     Connecting,
     Online,
     Offline,
+    /// The tunnel to a server over SSH is down and is made again.
+    Reconnecting,
 }
 
 /// The connect screen's fields.
@@ -87,6 +90,8 @@ enum Opened {
 
 pub struct App {
     settings_path: Option<PathBuf>,
+    /// The way over SSH: the host list, the setup, the tunnel and the servers remembered.
+    ssh: connection::SshState,
     /// The settings in use, as saved.
     settings: Option<Settings>,
     screen: Screen,
@@ -146,7 +151,12 @@ impl App {
     }
 
     pub fn start(settings_path: Option<PathBuf>) -> (Self, Task<Message>) {
+        let stored = settings_path
+            .as_deref()
+            .and_then(|path| settings::load_all(path).ok())
+            .unwrap_or_default();
         let mut app = App {
+            ssh: connection::SshState::new(&stored),
             settings_path,
             settings: None,
             screen: Screen::Connect,
@@ -187,6 +197,11 @@ impl App {
             Some(path) => settings::load(path),
             None => Ok(None),
         };
+        if let Some(host) = stored.last_ssh.clone() {
+            // The last server was reached over SSH: the connection is made again at once.
+            let task = app.begin_ssh(host, crate::ssh::remote::Start::Check);
+            return (app, task);
+        }
         match loaded {
             Ok(Some(saved)) => {
                 app.form.address = saved.address.clone();
@@ -214,6 +229,12 @@ impl App {
         app.snapshot = snapshot;
         app.inbox.follow(&app.snapshot);
         app
+    }
+
+    /// Lists the hosts of `file` and writes new hosts to it, instead of `~/.ssh/config`, for the render tests.
+    pub fn with_ssh_config(mut self, file: PathBuf) -> Self {
+        self.ssh.use_config(file);
+        self
     }
 
     /// The page shown: the one chosen if it still exists, else the first board, else the Inbox.

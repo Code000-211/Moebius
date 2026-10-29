@@ -28,8 +28,8 @@ documentation; `CONTRIBUTING.md` says the same as this file for people.
   route they name is checked by a test.
 - `crates/moebius-desktop`: the iced desktop app (built to `docs/design.md`). It talks to the server only through the
   desktop API and does not depend on `moebius-core` (a dev-dependency starts a real server in its tests). At the top:
-  `app/` the state, messages and view, `client/` the API client and event stream, `settings.rs` the saved address
-  and token, `theme.rs` every colour and size, `sidebar.rs` and `search.rs`. `screens/` has one module per page,
+  `app/` the state, messages and view, `client/` the API client and event stream, `ssh/` connecting over SSH (config,
+  askpass, remote setup, tunnel), `settings.rs` the saved address and token, `theme.rs` every colour and size, `sidebar.rs` and `search.rs`. `screens/` has one module per page,
   `widgets/` the pieces screens share. `tests/snapshots/` holds the pictures its render tests compare against (delete
   one to store a new picture).
 - `docs/guide/`: how to build on Moebius, one how-to per page (column scripts, workflows, rules, agents, plugins,

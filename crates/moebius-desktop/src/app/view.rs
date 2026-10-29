@@ -94,9 +94,10 @@ impl App {
                     save,
                     find,
                     back,
+                    self.tunnel_subscription(),
                 ])
             }
-            _ => Subscription::none(),
+            _ => self.tunnel_subscription(),
         }
     }
 
@@ -106,19 +107,20 @@ impl App {
 
     pub fn view(&self) -> Element<'_, Message> {
         match self.screen {
-            Screen::Connect => connect::view(&self.form, self.settings.as_ref()),
+            Screen::Connect => connect::view(&self.form, self.settings.as_ref(), &self.ssh.connect),
             Screen::Main => {
                 let page = self.page();
                 let shell = row![
                     sidebar::view(
                         &self.snapshot,
-                        self.connection,
+                        self.shown_connection(),
                         &page,
                         sidebar::Counts {
                             chats_unread: self.chats.unread(),
                             working: fleet::working(&self.snapshot, self.chats.list()).len(),
                             tokens_today: self.usage.today(),
                             setup_incomplete: self.start.incomplete(),
+                            menu: self.server_menu(),
                         },
                         self.collapsed,
                         &self.search.text

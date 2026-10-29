@@ -467,3 +467,95 @@ fn init_points_the_configuration_at_the_pi_bolt_on_the_path() {
     let without = init(&dir.path().join("empty"));
     assert!(without.contains("\nprogram = \"pi-bolt\"\n"));
 }
+
+/// A fake remote machine for `--ssh` and `connect`: a home directory that holds the token, and an `ssh` (the fake of
+/// `moebius-core`, behind a script that points its tunnel at the server of the test and gives it that home). Returns the
+/// directory that is `XDG_CONFIG_HOME` of the commands, with the app's settings naming the script.
+#[cfg(unix)] // The fake ssh is a Python script started by its `#!` line, and the wrapper is a shell script.
+fn fake_remote(s: &Running) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let config = s.dir.path().join("config");
+    let remote_home = s.dir.path().join("remote-home");
+    std::fs::create_dir_all(remote_home.join(".moebius/server/.moebius")).unwrap();
+    std::fs::write(remote_home.join(".moebius/server/.moebius/token"), &s.token).unwrap();
+    let port = s.url.rsplit(':').next().unwrap();
+    let fake = Path::new(env!("CARGO_MANIFEST_DIR")).join("../moebius-core/testdata/fake-ssh");
+    let wrapper = s.dir.path().join("ssh");
+    std::fs::write(
+        &wrapper,
+        format!(
+            "#!/usr/bin/env python3\nimport os, sys\nargs = [a.replace(':7171', ':{port}') for a in sys.argv[1:]]\n\
+             os.environ['HOME'] = {remote_home:?}\nos.execv({fake:?}, [{fake:?}] + args)\n"
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::create_dir_all(config.join("moebius")).unwrap();
+    std::fs::write(
+        config.join("moebius/desktop.toml"),
+        format!("ssh_program = {:?}\n", wrapper.to_str().unwrap()),
+    )
+    .unwrap();
+    config
+}
+
+#[cfg(unix)] // Uses the fake ssh, a Python script.
+#[tokio::test(flavor = "multi_thread")]
+async fn ssh_opens_a_tunnel_for_one_command_and_reads_the_token_over_it() {
+    let s = start().await;
+    let config = fake_remote(&s);
+    let output = in_dir(
+        s.dir.path(),
+        &config,
+        &["--ssh", "fakehost", "api", "GET", "/v1/snapshot"],
+    )
+    .await;
+    let snapshot: Value = serde_json::from_str(&out(&output)).unwrap();
+    assert_eq!(snapshot["boards"], json!([]));
+    // A host with no token to read is named in the error.
+    std::fs::remove_file(
+        s.dir
+            .path()
+            .join("remote-home/.moebius/server/.moebius/token"),
+    )
+    .unwrap();
+    let output = in_dir(s.dir.path(), &config, &["--ssh", "fakehost", "board"]).await;
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("cannot read the token on fakehost"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[cfg(unix)] // Uses the fake ssh, a Python script.
+#[tokio::test(flavor = "multi_thread")]
+async fn connect_holds_a_tunnel_that_the_following_commands_use() {
+    use std::io::BufRead;
+    let s = start().await;
+    let config = fake_remote(&s);
+    let mut connect = std::process::Command::new(env!("CARGO_BIN_EXE_moebius"))
+        .args(["connect", "fakehost"])
+        .env_remove("MOEBIUS_URL")
+        .env_remove("MOEBIUS_TOKEN")
+        .env("XDG_CONFIG_HOME", &config)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(connect.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    assert!(
+        line.starts_with("Connected to fakehost: http://127.0.0.1:"),
+        "{line}"
+    );
+
+    let output = in_dir(s.dir.path(), &config, &["api", "GET", "/v1/health"]).await;
+    let health = out(&output);
+    assert!(health.contains("version"), "{health}");
+
+    let _ = connect.kill();
+    let _ = connect.wait();
+}

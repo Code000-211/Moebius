@@ -22,6 +22,11 @@ fn icon() -> Option<iced::window::Icon> {
 }
 
 fn main() -> iced::Result {
+    // `ssh` starts this program to ask for a password: it asks the running app and prints the answer.
+    if std::env::var_os(moebius_desktop::ssh::askpass::ADDRESS_VARIABLE).is_some() {
+        let prompt = std::env::args().nth(1).unwrap_or_default();
+        std::process::exit(moebius_desktop::ssh::askpass::helper(&prompt));
+    }
     let mut app = iced::application(App::new, App::update, App::view)
         .title("Moebius")
         .subscription(App::subscription)

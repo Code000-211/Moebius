@@ -12,6 +12,20 @@ the server in WSL (see [On Windows](#on-windows)). Every key named here is in th
 
 ## The steps
 
+0. **Connect over SSH** (the way that needs nothing but a login). In the desktop app's connect screen, press "Connect
+   over SSH" and pick a host of your `~/.ssh/config`, or "Add new SSH host" and type `user@host` or a whole `ssh …`
+   command, which is written to the config as a `Host` entry. The app uses the system's `ssh`, so keys, `ssh-agent`,
+   `ProxyJump` and known hosts work as in a terminal; use key-based login. A password or passphrase that `ssh` asks for is
+   shown in the app and never saved. The app then finds `moebius` on the host's `PATH` or in `~/.moebius/bin` (and offers
+   to install the release, downloaded there or, when the host has no internet, downloaded here and uploaded), runs
+   `moebius init` in `~/.moebius/server` if there is no configuration, starts `moebius serve` (a systemd user service
+   where there is one, else detached), reads the token and opens `ssh -N -L` to the server. The steps and the log are on
+   the screen. The server listens on `127.0.0.1` only and nothing else on the host needs to be reachable; if the tunnel
+   drops, the sidebar says "Reconnecting…" and it is made again. Hosts connected to before are in the sidebar header's
+   menu. On the command line, `moebius connect <host>` or `--ssh <host>` does the same tunnel (see
+   [the command line](../reference/cli.md#connect-host)). The rest of the steps below are for installing by hand and for a
+   server that listens on a private network.
+
 1. Install from a release. Download the archive for your machine and `SHA256SUMS` from the
    [releases page](https://github.com/Code000-211/Moebius/releases), check the archive against the list, and unpack it.
    The server archive holds the program and the service file described below:

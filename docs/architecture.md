@@ -330,6 +330,7 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | `main.rs` | The `moebius` binary: `init` writes the example configuration (with the `pi-bolt` found on `PATH`) and the harness configuration repository next to it (`harness::repo::create`), `serve` starts the server, `check-script` runs a column script once against a made-up card (`board::check_script`), `export` writes the training set (`improve::export`). |
 | `cli/mod.rs` | The commands that operate a running server through the desktop API (`api` for any route, and `doctor`, `board`, `issue`, `agent`, `repo` and the others for what is done often): the commands as clap sees them, the dispatch to their groups, and writing answers as plain text. |
 | `cli/client.rs` | Where the server is (`--server` and `--token`, the desktop app's saved settings, `moebius.toml`), the one request a command makes, and sending it with the token. |
+| `cli/ssh.rs` | A server reached over SSH: one `ssh -L` that also reads the token, for `--ssh <host>` and `connect <host>`, and the `connected.toml` that `connect` leaves for the commands that follow. |
 | `cli/api.rs` | `api`: any route, with a method and a JSON body. |
 | `cli/board.rs` | `board`, `card`, `inbox` (and `inbox act`, as the app's buttons) and `issue create`. |
 | `cli/chats.rs` | `chats`, `chat` (start, say, offer, end), `grillings` and `grilling`. |
@@ -599,9 +600,14 @@ At the top:
 |---|---|
 | `main.rs` | The desktop app's start: fonts, theme, window. |
 | `lib.rs` | The crate's parts. |
-| `settings.rs` | The address and token, saved in the config directory with mode 0600. |
+| `settings.rs` | The address and token, the servers connected to before and the SSH preferences, saved in the config directory with mode 0600; a server over SSH is remembered by its host, never its token. |
 | `theme.rs` | Every colour, size, radius and spacing of `docs/design.md`, and the bundled fonts (Manrope, JetBrains Mono). |
-| `sidebar.rs`, `search.rs` | The sidebar on every screen, and its search field. |
+| `sidebar.rs`, `search.rs` | The sidebar on every screen with the header that names the server and switches between the remembered ones, and its search field. |
+| `ssh/mod.rs` | Connecting to a server over SSH with the system's `ssh`: running a script on the host, quoting for its shell, and what the other modules of the folder share. |
+| `ssh/config.rs` | The hosts of an SSH configuration file (`Host`, `Include`, wildcards) and writing the entry of a new host from `user@host` or an `ssh` command. |
+| `ssh/askpass.rs` | The passwords and passphrases of `ssh` shown in the app: the app started again as `SSH_ASKPASS`, and the loopback listener it asks. |
+| `ssh/remote.rs` | The setup of the server on the host as a stream of progress: system, `moebius` found or installed (downloaded there or uploaded), `init`, `serve`, the token. |
+| `ssh/tunnel.rs` | The port forward `ssh -N -L` with keep-alives, as a stream that says up and down and starts `ssh` again with a backoff. |
 
 `app/`, the app's state and how it changes:
 
@@ -609,6 +615,7 @@ At the top:
 |---|---|
 | `app/mod.rs` | The state: the connection, the page chosen, what a click on a card opened, each screen's own state. |
 | `app/message.rs` | The pages the sidebar opens, and every `Message`. |
+| `app/connection.rs` | The app's side of SSH: the host list and setup on the connect screen, the tunnel held while connected, "Reconnecting…", and switching between remembered servers. |
 | `app/update.rs` | How a message changes the state: handed to its screen, a refused token back to the connect screen, connecting, reading the snapshot again, opening a card or a page. |
 | `app/stream.rs` | What the event stream changes: what to read again on an event, and a run's steps to the screens that show them. |
 | `app/navigation.rs` | Where the person is and the way back: "Back", Alt+Left, the mouse's back button, Escape in an editor. |
@@ -638,6 +645,7 @@ At the top:
 |---|---|
 | `screens/mod.rs` | The pages of the app, one module each. |
 | `screens/connect.rs` | The connect screen, for when there are no settings yet or the connection fails. |
+| `screens/connect_ssh.rs` | The connect screen's way over SSH: the hosts, adding one, the steps with the log, the question of `ssh`, and the offer to install. |
 | `screens/start.rs` | The Get started page: the steps of `GET /v1/start` with a button to the page that fixes each. |
 | `screens/inbox/mod.rs`, `screens/inbox/view.rs` | The inbox: everything that needs the person, newest first, filtered by kind and repository, and its actions; and how it is drawn. |
 | `screens/inbox/item.rs` | What an inbox item says of itself: what it is about, its kind, why it is there, its facts. |

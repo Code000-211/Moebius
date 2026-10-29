@@ -6,6 +6,7 @@ pub mod automations;
 pub mod board;
 pub mod chat;
 pub mod connect;
+pub mod connect_ssh;
 pub mod decision_model;
 pub mod experiments;
 pub mod fleet;

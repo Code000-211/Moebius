@@ -322,6 +322,14 @@ impl App {
             Message::History(_, Err(_)) => {}
             Message::Search(message) => return self.on_search(message),
             Message::ToggleSidebar => self.collapsed = !self.collapsed,
+            Message::Ssh(message) => return self.on_ssh(message),
+            Message::SshAskpass(host, start, askpass) => {
+                return self.ssh_ready(host, start, askpass);
+            }
+            Message::SshSetup(event) => return self.on_setup(event),
+            Message::Tunnel(event) => return self.on_tunnel(event),
+            Message::ToggleServers => self.ssh.servers_open = !self.ssh.servers_open,
+            Message::SwitchServer(index) => return self.switch_server(index),
             Message::ChangeConnection => {
                 self.form.error = None;
                 self.form.token.clear();
@@ -499,10 +507,14 @@ impl App {
 
     /// The server took the settings: save them if they are new and show the shell.
     pub(super) fn adopt(&mut self, settings: Settings, snapshot: Snapshot) -> Task<Message> {
-        if self.settings.as_ref() != Some(&settings) {
-            let saved = match &self.settings_path {
-                Some(path) => settings::save(path, &settings),
-                None => Ok(()),
+        if self.ssh.session.is_some() || self.settings.as_ref() != Some(&settings) {
+            let saved = if self.ssh.session.is_some() {
+                self.ssh_adopted()
+            } else {
+                match &self.settings_path {
+                    Some(path) => settings::save(path, &settings).map(|()| self.refresh_servers()),
+                    None => Ok(()),
+                }
             };
             if let Err(e) = saved {
                 self.form.connecting = false;
@@ -530,11 +542,19 @@ impl App {
 
     pub(super) fn show_connect_error(&mut self, error: &ClientError) {
         self.form.connecting = false;
-        self.form.error = Some(match error {
+        let message = match error {
             ClientError::Unauthorized => "The token is not accepted.".to_string(),
             ClientError::Unreachable(address) => format!("Cannot reach {address}."),
             other => other.to_string(),
-        });
+        };
+        // Over SSH the steps show where it failed.
+        if self.ssh.session.is_some() {
+            self.ssh.connect.panel = true;
+            self.ssh
+                .connect
+                .on_setup(crate::ssh::remote::Event::Failed(message.clone()));
+        }
+        self.form.error = Some(message);
         self.screen = Screen::Connect;
     }
 

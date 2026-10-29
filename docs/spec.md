@@ -65,6 +65,12 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
   poll of that repository run at once. The poll stays the source of truth and goes on at its pace (ADR 0012, amending
   ADR 0003).
 
+- **Connecting over SSH**, as an editor's remote mode does: the desktop app picks a host of `~/.ssh/config` (or adds
+  one), finds or installs `moebius` there, runs `moebius init` and `moebius serve` (a systemd user service, else
+  detached), reads the token over SSH and talks to the server through `ssh -L`, which it keeps alive and makes again with
+  a backoff. The server listens on `127.0.0.1` only. Several servers are remembered and switched from the sidebar's
+  header; `moebius connect <host>` and `--ssh <host>` do the same for the command line.
+
 ### Not in the first version
 
 - Harnesses other than Pi-Bolt and Claude Code.

@@ -80,6 +80,25 @@ Short and technical, in the voice of a tool: "Committed: abc123", "No changes to
 explain what the screen is for. Errors name the cause. Notice, status and error lines are in the code font; an error
 is red, a note is secondary grey.
 
+## Connecting over SSH
+
+The connect screen has a white "Connect over SSH" button under Connect. It turns the card into a list of hosts (the hosts of
+`~/.ssh/config`, of the file named in the settings, and the servers connected to before), each row the name in semibold
+and `user@host:port` in the code font; under the list a white "Add new SSH host" (a field for `user@host` or an `ssh`
+command and an "Add host" button) and "Connect by address". A pick opens the steps: a tag column (`done` teal, `running`
+plain, `failed` red) and the step's name, the question of `ssh` in the code font with a hidden field and Answer and
+Cancel, a "Show log" button that opens the log in a recessed box, and Cancel (Try again and Back after a failure). A host
+without Moebius shows what is missing, the release's URL and two buttons: "Install on the host" (primary) and "Download
+here and upload". In the sidebar, when the connection is over SSH or more than one server is remembered, a bordered
+button under the app name holds the server's name in the code font and the state under it with its dot ("Reconnecting…" in
+amber while the tunnel is down); it opens the list of servers and "Add a server…".
+
+## Security
+
+The server never has to listen beyond `127.0.0.1`: over SSH the only way to it is the tunnel, and the token is read over the
+same login and held in memory, not saved. `ssh` does the login; the app only answers its prompts, over the loopback and
+with a secret that only the processes it starts know, and keeps no password.
+
 ## Layout
 
 - A sidebar on every screen, in groups divided by lines: Inbox, Chat, Fleet and Automations; Projects (one per
