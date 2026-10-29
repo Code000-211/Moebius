@@ -330,6 +330,7 @@ async fn the_moebius_agent_operates_moebius_from_its_chat() {
 }
 
 /// An upstream that lists one model, and its address.
+#[cfg(unix)]
 async fn fake_upstream() -> String {
     let app = axum::Router::new().route(
         "/models",
@@ -388,6 +389,8 @@ async fn doctor_warns_of_an_upstream_that_logs_in_with_oauth() {
     assert!(last.contains("may break the provider's terms"), "{text}");
 }
 
+// `/bin/true` stands in for Pi-Bolt, and Windows has no such program.
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn doctor_succeeds_when_everything_is_in_place() {
     let upstream = fake_upstream().await;

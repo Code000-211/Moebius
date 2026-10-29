@@ -94,6 +94,13 @@ fn a_plugin_in_its_own_process_decides_and_one_that_crashes_fails_closed() {
     );
 
     let data_dir = &server.config.data_dir;
+    // The refusal comes from the call; the thread that looks after the process records why it stopped a moment later.
+    eventually(|| {
+        decisions
+            .host()
+            .status("crashes")
+            .is_some_and(|status| status.error.is_some())
+    });
     let plugins = setup::plugins(decisions, data_dir);
     let plugin = |name: &str| {
         plugins
