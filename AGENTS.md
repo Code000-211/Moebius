@@ -16,7 +16,7 @@ changes ready to merge. Read `GLOSSARY.md` for the words, `docs/spec.md` for wha
   configuration repository, `mcp`, `skill`, `grilling`) and `improve/` (`retro`, `trial`, `replay`, `research`,
   `export`). `docs/architecture.md` lists every module. Column scripts are in `workflow/*.luau`.
 - `crates/moebius-plugin-api`: the plugin trait and the host that calls plugins with a time limit, failing closed.
-- `crates/moebius`: the `moebius` binary (`init`, `serve`, `check-script`, `export`, and in `cli.rs` the commands that
+- `crates/moebius`: the `moebius` binary (`init`, `serve`, `check-script`, `export`, and in `cli/` the commands that
   operate a running server through the desktop API: `api` for any route, a command for what is done often; the Moebius
   agent uses them as `"$MOEBIUS"`).
 - `crates/moebius-core/skill/` and `src/harness/skill.rs`: the built-in skills. The `moebius` skill is `SKILL.md` plus every page

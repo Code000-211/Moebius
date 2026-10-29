@@ -3,7 +3,7 @@
 The `moebius` binary also operates a running server. Each command makes one request to the [desktop
 API](desktop-api.md) and writes the answer; `api` calls any route. A person uses them in a terminal, and the Moebius
 agent uses them in its chats as `"$MOEBIUS" board`. This page is for anyone who scripts Moebius or builds on it. The
-code is in `crates/moebius/src/cli.rs`.
+code is in `crates/moebius/src/cli/`, one module per group of commands.
 
 The commands `init`, `serve`, `export` and `check-script` work on files and do not connect to a server; see
 [configuration](configuration.md), [training export](training-export.md) and [column scripts](column-scripts.md).

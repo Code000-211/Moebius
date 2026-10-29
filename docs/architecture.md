@@ -262,7 +262,16 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | Module | What it is for |
 |---|---|
 | `main.rs` | The `moebius` binary: `init` writes the example configuration (with the `pi-bolt` found on `PATH`) and the harness configuration repository next to it (`harness::repo::create`), `serve` starts the server, `check-script` runs a column script once against a made-up card (`board::check_script`), `export` writes the training set (`improve::export`). |
-| `cli.rs` | The commands that operate a running server through the desktop API (`api` for any route, and `doctor`, `board`, `issue`, `agent`, `repo` and the others for what is done often). |
+| `cli/mod.rs` | The commands that operate a running server through the desktop API (`api` for any route, and `doctor`, `board`, `issue`, `agent`, `repo` and the others for what is done often): the commands as clap sees them, the dispatch to their groups, and writing answers as plain text. |
+| `cli/client.rs` | Where the server is (`--server` and `--token`, the desktop app's saved settings, `moebius.toml`), the one request a command makes, and sending it with the token. |
+| `cli/api.rs` | `api`: any route, with a method and a JSON body. |
+| `cli/board.rs` | `board`, `card`, `inbox` (and `inbox act`, as the app's buttons) and `issue create`. |
+| `cli/chats.rs` | `chats`, `chat` (start, say, offer, end), `grillings` and `grilling`. |
+| `cli/agents.rs` | `agents` and `agent` (show, save, delete). |
+| `cli/rules.rs` | `rules` and `rules save`. |
+| `cli/repos.rs` | `repos` and `repo add`. |
+| `cli/setup.rs` | `doctor`, `settings`, `secrets set`, `usage` and `server restart`. |
+| `cli/improve.rs` | `retro`, `proposals` and `proposal`, `research`, `decision-model`, `takeovers` and `takeover`. |
 
 ### `crates/moebius-plugin-api`
 
