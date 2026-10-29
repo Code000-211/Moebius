@@ -63,16 +63,19 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: release
           merge-multiple: true
       - name: Write SHA256SUMS
         working-directory: release
-        run: sha256sum *.tar.gz *.zip > SHA256SUMS
+        run: sha256sum *.tar.gz *.zip moebius-x86_64-* > SHA256SUMS
       - name: Publish the release
         uses: softprops/action-gh-release@v2.2.2
         with:
           files: release/*
+          # The notes of the version, written in docs/releases/; the list of changes is added below them.
+          body_path: docs/releases/${{ github.ref_name }}.md
           generate_release_notes: true
           fail_on_unmatched_files: true

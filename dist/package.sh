@@ -9,6 +9,7 @@
 # `dist/out/SHA256SUMS`:
 #
 #   moebius-<version>-<target>.tar.gz           Linux, the server: the program and the unit files
+#   moebius-<target>                            Linux, the server's program alone, which the desktop app installs over SSH
 #   moebius-desktop-<version>-<target>.tar.gz   Linux, the desktop app: the program, the icon and the desktop entry
 #   moebius-windows-x86_64.zip                  Windows: moebius.exe, moebius-desktop.exe, LICENSE and NOTICE
 set -euo pipefail
@@ -76,6 +77,8 @@ case $name in
         cp "$dist/moebius.service" "$root/README.md" "$root/LICENSE" "$root/NOTICE" "$stage/"
         archive=$out/$name-$version-$target.tar.gz
         tar -C "$work" -czf "$archive" "$(basename "$stage")"
+        install -m 755 "$binary" "$out/moebius-$target"
+        checksum "$out/moebius-$target"
         ;;
     moebius-desktop)
         cp "$binary" "$stage/moebius-desktop"
