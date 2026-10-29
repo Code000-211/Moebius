@@ -43,7 +43,14 @@ impl Server {
             config.retro_at,
         ));
         let (window, limit) = (config.trial_window, config.run_limit);
-        report(trial::on_schedule(&self.app, &runs, repo, window, limit));
+        let regression = config.regression();
+        report(trial::on_schedule(
+            &self.app,
+            &runs,
+            repo,
+            (window, limit),
+            regression,
+        ));
         report(research::on_schedule(
             &self.app,
             &runs,

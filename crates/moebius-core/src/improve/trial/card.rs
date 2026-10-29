@@ -1,6 +1,7 @@
 //! One card's trial: the card's task run again by its agent with the agent's definition from the proposal's branch,
 //! in a worktree of its own, then measured (its errors, the repository's checks, its tokens) and compared with the
-//! card's first code run. The trial's worktree and branch are removed afterwards.
+//! card's first code run. The trial's worktree and branch are removed afterwards. `run_trial` is shared with the trials
+//! of the regression set (see `regression`).
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -14,7 +15,7 @@ use crate::board::Runs;
 use crate::harness::repo::HarnessRepo;
 use crate::improve::retro::{Report, wait_for_end};
 use crate::repos::trial_name;
-use crate::store::{Found, Proposal, Repository, Store, StoreError};
+use crate::store::{Card, Found, Proposal, Repository, Store, StoreError};
 
 /// The agent that tried a card's task when the report does not say who made its error.
 const DEFAULT_AGENT: &str = "Coder";
@@ -43,7 +44,7 @@ impl Tried {
     }
 
     /// Nothing could be tried: something went wrong.
-    fn failed(run: Option<i64>, reason: impl ToString) -> Self {
+    pub fn failed(run: Option<i64>, reason: impl ToString) -> Self {
         Self::new(run, "failed", reason.to_string())
     }
 }
@@ -59,7 +60,7 @@ fn run_errors(store: &Store, run: i64) -> Result<Vec<Found>> {
 }
 
 /// The tokens a run used.
-fn run_tokens(store: &Store, run: i64) -> Result<i64> {
+pub(super) fn run_tokens(store: &Store, run: i64) -> Result<i64> {
     Ok(store.usage_for_run(run)?.iter().map(|u| u.total()).sum())
 }
 
@@ -129,10 +130,37 @@ pub(super) fn try_card(
         .repository(card.repository_id)
         .map_err(|e| broken(e.into()))?
         .ok_or_else(|| Tried::skipped("the card's repository is gone".into()))?;
+    let task = Task {
+        card: &card,
+        repository: &repository,
+        agent: &agent,
+        base: &repository.base_ref(),
+    };
+    run_trial(app, runs, repo, proposal, task, (&kinds, &original))
+}
 
-    let name = trial_name(proposal.id, card_id);
+/// What a trial run works on: the card's task, by `agent`, in a worktree of `repository` at `base`.
+pub(super) struct Task<'a> {
+    pub card: &'a Card,
+    pub repository: &'a Repository,
+    pub agent: &'a str,
+    pub base: &'a str,
+}
+
+/// Runs the task with the agent's definition from the proposal's branch, measures the run against `original`, looking
+/// for the error kinds `kinds`, and removes the trial's worktree and branch.
+pub(super) fn run_trial(
+    app: &Arc<App>,
+    runs: &Arc<dyn Runs>,
+    repo: &HarnessRepo,
+    proposal: &Proposal,
+    task: Task,
+    (kinds, original): (&BTreeSet<String>, &Original),
+) -> std::result::Result<Tried, Tried> {
+    let (card, agent) = (task.card, task.agent);
+    let name = trial_name(proposal.id, card.id);
     let (definition, root) = repo
-        .agent_on_branch(app, &proposal.branch, &name, &agent)
+        .agent_on_branch(app, &proposal.branch, &name, agent)
         .map_err(|e| {
             Tried::failed(
                 None,
@@ -143,14 +171,7 @@ pub(super) fn try_card(
             )
         })?;
     let mut ended = app.bus.subscribe();
-    let started = runs.start_trial(
-        app,
-        &card,
-        &agent,
-        definition,
-        proposal.id,
-        &repository.base_ref(),
-    );
+    let started = runs.start_trial(app, card, agent, definition, proposal.id, task.base);
     let tried = match started {
         Err(e) => Err(Tried::failed(
             None,
@@ -158,13 +179,13 @@ pub(super) fn try_card(
         )),
         Ok(run) => {
             wait_for_end(app, &mut ended, run.id);
-            measure(app, &repository, run.id, &name, &kinds, &original)
+            measure(app, task.repository, run.id, &name, kinds, original)
         }
     };
     repo.remove_worktree(app, &root);
     let _ = app
         .repos
-        .remove_trial_branch(Path::new(&repository.path), proposal.id, card_id);
+        .remove_trial_branch(Path::new(&task.repository.path), proposal.id, card.id);
     tried
 }
 

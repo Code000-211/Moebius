@@ -1,6 +1,7 @@
 //! Trials: a proposal of the Retro is tried on the card whose error it addresses, with a fake Pi. A proposal that
 //! makes the Coder do its work is told apart from one that changes nothing that matters; the positive one reaches the
-//! inbox, and a person merges it into the harness configuration repository or dismisses it.
+//! inbox, and a person merges it into the harness configuration repository or dismisses it. A proposal that fixes its
+//! card but breaks a card of the regression set is not offered.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -314,7 +315,7 @@ async fn a_proposal_that_fixes_the_error_is_told_apart_from_one_that_does_not() 
     assert_eq!(status, "positive");
     assert_eq!(
         done,
-        [json!({ "proposal": helps, "card": card, "outcome": "positive" })]
+        [json!({ "proposal": helps, "card": card, "outcome": "positive", "regression": false })]
     );
     let (_, proposals) = api.call(reqwest::Method::GET, "/v1/proposals", None).await;
     let positive = proposals
@@ -402,7 +403,7 @@ async fn a_proposal_that_fixes_the_error_is_told_apart_from_one_that_does_not() 
     assert_eq!(status, "negative");
     assert_eq!(
         done,
-        [json!({ "proposal": nothing, "card": card, "outcome": "negative" })]
+        [json!({ "proposal": nothing, "card": card, "outcome": "negative", "regression": false })]
     );
     let negative = store.proposal(nothing).unwrap().unwrap();
     assert_eq!(negative.trials[0].outcome, "negative");
@@ -605,8 +606,8 @@ async fn trials_start_in_the_window_only_one_at_a_time_and_a_server_start_reopen
     let open = |id: i64| store.proposal(id).unwrap().unwrap().status == "open";
 
     // Outside the window, and with no run to spare, nothing starts.
-    trial::on_schedule(&server.app, &runs, repo, around(120, 180), 3).unwrap();
-    trial::on_schedule(&server.app, &runs, repo, around(1380, 60), 0).unwrap();
+    trial::on_schedule(&server.app, &runs, repo, (around(120, 180), 3), 5).unwrap();
+    trial::on_schedule(&server.app, &runs, repo, (around(1380, 60), 0), 5).unwrap();
     assert!(open(first) && open(second));
     assert!(trial::in_window(TimeOfDay(now), around(1380, 60)));
     assert!(!trial::in_window(TimeOfDay(now), around(120, 180)));
@@ -617,7 +618,7 @@ async fn trials_start_in_the_window_only_one_at_a_time_and_a_server_start_reopen
 
     // Inside it, the oldest open proposal is tried.
     let mut events = server.app.bus.subscribe();
-    trial::on_schedule(&server.app, &runs, repo, around(1380, 60), 3).unwrap();
+    trial::on_schedule(&server.app, &runs, repo, (around(1380, 60), 3), 5).unwrap();
     let wait = async {
         loop {
             let event = events.recv().await.unwrap();
@@ -634,7 +635,7 @@ async fn trials_start_in_the_window_only_one_at_a_time_and_a_server_start_reopen
 
     // While one is going, no other starts.
     assert!(store.start_trying(second).unwrap());
-    trial::on_schedule(&server.app, &runs, repo, around(1380, 60), 3).unwrap();
+    trial::on_schedule(&server.app, &runs, repo, (around(1380, 60), 3), 5).unwrap();
     assert_eq!(store.proposal(first).unwrap().unwrap().status, "untried");
     let (status, _) = Api::start(&server)
         .await
@@ -658,4 +659,166 @@ async fn trials_start_in_the_window_only_one_at_a_time_and_a_server_start_reopen
         again.app.store.proposal(first).unwrap().unwrap().status,
         "untried"
     );
+}
+
+/// A card of the repository `repo` whose code run succeeded and whose change was merged; with `reproduce`, the change
+/// also adds a reproduction test. Returns the card's id.
+fn a_merged_card(server: &Server, repo: i64, title: &str, reproduce: bool) -> i64 {
+    let app = &server.app;
+    let card = app.create_issue(repo, title, "", PERSON).unwrap();
+    let run = server
+        .harness
+        .start(app, &card, "Coder", "code", None)
+        .unwrap();
+    wait_until_ended(server, run.id);
+    let run = app.store.run(run.id).unwrap().unwrap();
+    assert_eq!(run.status, "succeeded");
+    let clone = PathBuf::from(&app.store.repository(repo).unwrap().unwrap().path);
+    let mut head = git(&clone, &["rev-parse", &run.branch()]).unwrap();
+    if reproduce {
+        let work = clone.with_file_name(format!("reproduce-{}", card.id));
+        let target = work.to_str().unwrap();
+        git(
+            &clone,
+            &["worktree", "add", "--quiet", "--detach", target, &head],
+        )
+        .unwrap();
+        write(&work, ".moebius/reproduce", "test -f done.txt\n");
+        git(&work, &["add", "-A"]).unwrap();
+        git(
+            &work,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "--quiet",
+                "-m",
+                "reproduce",
+            ],
+        )
+        .unwrap();
+        head = git(&work, &["rev-parse", "HEAD"]).unwrap();
+        git(&clone, &["worktree", "remove", "--force", target]).unwrap();
+    }
+    let change = app
+        .store
+        .add_change(repo, Some(card.id), &run.branch(), None, head.trim())
+        .unwrap();
+    app.store.set_change_state(change.id, "merged").unwrap();
+    card.id
+}
+
+#[tokio::test]
+async fn a_proposal_that_fixes_its_card_but_breaks_a_regression_card_is_not_offered() {
+    let dir = tempfile::tempdir().unwrap();
+    let origin = harness_origin(dir.path());
+    let server = server(dir.path(), &origin);
+    let card = a_card_that_failed(&server, dir.path());
+    let repo = server.app.store.card(card).unwrap().unwrap().repository_id;
+    // The careful card merged first; the plain one, with a reproduction test, after it.
+    let careful = a_merged_card(&server, repo, "Tidy up [careful]", false);
+    let plain = a_merged_card(&server, repo, "Add a line", true);
+    let breaks = |name| {
+        propose(
+            &server,
+            dir.path(),
+            name,
+            (
+                "agents/Coder.md",
+                &format!(
+                    "Keep changes small.\nWrite always. [write anyway] [break careful] {name}\n"
+                ),
+            ),
+            &[card],
+        )
+    };
+    let (broken, ungated) = (breaks("breaks"), breaks("ungated"));
+    let helps = propose(
+        &server,
+        dir.path(),
+        "helps",
+        (
+            "agents/Coder.md",
+            "Keep changes small.\nWrite always. [write anyway]\n",
+        ),
+        &[card],
+    );
+    let api = Api::start(&server).await;
+    let mut events = server.app.bus.subscribe();
+    let store = &server.app.store;
+
+    // It fixes its own card, and the card with the reproduction test is tried first, but the careful card fails.
+    let (status, done) = api.try_now(&server, broken, &mut events).await;
+    assert_eq!(status, "negative");
+    assert_eq!(
+        done,
+        [
+            json!({ "proposal": broken, "card": card, "outcome": "positive", "regression": false }),
+            json!({ "proposal": broken, "card": plain, "outcome": "positive", "regression": true }),
+            json!({ "proposal": broken, "card": careful, "outcome": "negative", "regression": true }),
+        ]
+    );
+    let trials = store.proposal(broken).unwrap().unwrap().trials;
+    assert_eq!(trials[2].reason, "the run did not succeed");
+    assert_eq!(
+        trials[1].reason,
+        "the run succeeded, the checks pass, and it used 0 tokens against 0"
+    );
+    // The regression trial is the card's task, by its Coder, from the commit its first code run started at.
+    let run = store.run(trials[2].run_id.unwrap()).unwrap().unwrap();
+    assert_eq!(
+        (run.purpose.as_str(), run.card_id, run.agent.as_str()),
+        ("trial", Some(careful), "Coder")
+    );
+    let first = &store.runs_for_card(careful).unwrap()[0];
+    assert_eq!(
+        store.run_base(run.id).unwrap(),
+        store.run_base(first.id).unwrap()
+    );
+    // It is not offered, and the regression trials leave no branch behind.
+    assert!(store.inbox().unwrap().is_empty());
+    let clone = PathBuf::from(&store.repository(repo).unwrap().unwrap().path);
+    assert_eq!(
+        git(&clone, &["branch", "--list", "moebius/trial-*"]).unwrap(),
+        ""
+    );
+
+    // One that breaks nothing is offered with the results of both.
+    let (status, done) = api.try_now(&server, helps, &mut events).await;
+    assert_eq!(status, "positive");
+    assert_eq!(done.len(), 3);
+    let inbox = store.inbox().unwrap();
+    assert_eq!(inbox.len(), 1);
+    assert_eq!(inbox[0].data["proposal"], helps);
+    assert_eq!(inbox[0].data["trials"].as_array().unwrap().len(), 1);
+    let regression = inbox[0].data["regression"].as_array().unwrap();
+    let cards: Vec<&Value> = regression.iter().map(|t| &t["card"]).collect();
+    assert_eq!(cards, [&json!(plain), &json!(careful)]);
+    assert!(regression.iter().all(|t| t["outcome"] == "positive"));
+
+    // With the gate off, the regression set is not tried, and the same change is positive.
+    let runs: Arc<dyn Runs> = server.harness.clone();
+    let harness = server.harness_repo.clone().unwrap();
+    let started = trial::start(&server.app, &runs, &harness, ungated, 0).unwrap();
+    assert_eq!(started.status, "trying");
+    let wait = async {
+        loop {
+            let event = events.recv().await.unwrap();
+            if event.kind == "proposal_status"
+                && event.data["proposal"] == ungated
+                && event.data["status"] != "trying"
+            {
+                return event.data["status"].clone();
+            }
+        }
+    };
+    let status = tokio::time::timeout(Duration::from_secs(120), wait)
+        .await
+        .unwrap();
+    assert_eq!(status, "positive");
+    let trials = store.proposal(ungated).unwrap().unwrap().trials;
+    assert_eq!(trials.len(), 1);
+    assert!(!trials[0].regression);
 }

@@ -64,13 +64,16 @@ pub fn compare(trial: &Measured, original: &Original) -> (bool, String) {
         Some(false) => "the checks fail as they did before",
         None => "there were no checks",
     };
+    let gone = if original.errors.is_empty() {
+        String::new()
+    } else {
+        format!(" {} did not happen again,", original.errors.join(", "))
+    };
     (
         true,
         format!(
-            "the run succeeded, {} did not happen again, {checks}, and it used {} tokens against {}",
-            original.errors.join(", "),
-            trial.tokens,
-            original.tokens
+            "the run succeeded,{gone} {checks}, and it used {} tokens against {}",
+            trial.tokens, original.tokens
         ),
     )
 }
@@ -132,6 +135,25 @@ mod tests {
             ..original()
         };
         assert!(compare(&failing, &failed_before).0);
+    }
+
+    #[test]
+    fn a_regression_trial_passes_where_the_card_passed_before() {
+        let passed = Original {
+            errors: vec![],
+            ..original()
+        };
+        let (positive, reason) = compare(&measured(), &passed);
+        assert!(positive);
+        assert_eq!(
+            reason,
+            "the run succeeded, the checks pass, and it used 150 tokens against 100"
+        );
+        let failing = Measured {
+            checks: Some(false),
+            ..measured()
+        };
+        assert!(!compare(&failing, &passed).0);
     }
 
     #[test]

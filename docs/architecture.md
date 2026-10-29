@@ -165,7 +165,9 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
     reads the day's errors from the store, one `Store` function per source (failed and refused tool calls, failed and stopped
     runs, steering, cards sent back from review), into the stored report. With errors and a harness repository,
     `Runs::start_retro` (`PiBolt::start_retro`) starts a `retro` run of the built-in `Retro-analyst` in a detached worktree of
-    the harness clone; a thread waits for the run, then `HarnessRepo::proposed` checks, pushes and returns the
+    the harness clone, with the raw traces of the report's runs (`retro::traces`: each run's events and the diff of what it
+    made, redacted, at most 20 runs) written under `.retro/` of the worktree and left out of git through the clone's
+    `info/exclude`; a thread waits for the run, then `HarnessRepo::proposed` checks, pushes and returns the
     `proposal/<date>-*` branches, which are stored in `proposals` with the cards of their `Cards:` line, and `retro_done`
     is published. Before that, `HarnessRepo::take_own_branches` reads and deletes the branches that change only files
     under `moebius/`, the analyst's proposals for Moebius's own configuration (what it is told about them is
@@ -182,7 +184,11 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
     (`PiBolt::start_trial`) starts a `trial` run of it on the card's task on a branch of its own, `App::local_checks` runs the
     repository's checks on the result, and `trial::compare` sets the measurements against the card's first code run. The
     trial is stored in `trials`, its branch and worktrees are removed (`trial_done`), and the proposal becomes `positive`,
-    `negative` or `untried` (`proposal_status`). A positive or untried one gets a `proposal` inbox item; `trial::merge`
+    `negative` or `untried` (`proposal_status`). Before that, unless the own trials made it negative or `[regression]`
+    turns the gate off, `trial::regression` tries it the same way (`run_trial`) on the regression set of each repository of
+    its cards: the latest merged cards (`Store::merged_card_changes`), those whose change touches `.moebius/reproduce`
+    first, each from the commit its first code run started at (`Store::run_base`, recorded by `PiBolt::start_card_run`),
+    stopping at the first that fails; these trials are stored with `regression` set. A positive or untried one gets a `proposal` inbox item; `trial::merge`
     (`HarnessRepo::merge_proposal`) or `trial::dismiss` ends it. `Store::runs_for_card` and the Retro's sources leave trial
     runs out. A server start opens the `trying` proposals again.
 12e. **The replays.** After the trials, `server/schedule.rs` asks `replay::on_schedule`, which inside `[trial_window]` calls
@@ -506,10 +512,12 @@ At the top:
 | Module | What it is for |
 |---|---|
 | `improve/mod.rs` | What the improve folder holds. |
-| `improve/retro.rs` | The Retro: the day's errors collected into a report without a model, the Retro analyst's run, and its proposal branches. |
+| `improve/retro/mod.rs` | The Retro: the day's errors collected into a report without a model, the Retro analyst's run, and its proposal branches. |
+| `improve/retro/traces.rs` | The raw traces the Retro analyst reads besides the report: the events and diffs of the report's runs, redacted and bounded, as files under `.retro/` of its worktree. |
 | `improve/trial/mod.rs` | Trials: the trial window, and what the parts share. |
 | `improve/trial/verdict.rs` | What a trial run and the card's first code run measured, whether a trial is positive, and the status a proposal gets from its trials. |
 | `improve/trial/card.rs` | One card's trial: its task run again by its agent with the definition from the proposal's branch, then measured and compared, its worktree and branch removed. |
+| `improve/trial/regression.rs` | The regression set of a repository (its latest merged cards, those with a reproduction test first) and the trials of a proposal on it. |
 | `improve/trial/schedule.rs` | Trying a proposal on a thread of its own, card after card, each trial stored and published, its status and inbox item; and the schedule's start inside the trial window. |
 | `improve/trial/decision.rs` | A person's merge or dismissal of a positive or untried proposal. |
 | `improve/own/mod.rs` | The Retro's proposals for Moebius's own configuration (`moebius.toml` and a repository's `.moebius/`): the keys and files it may change, and what the analyst is told about them. |

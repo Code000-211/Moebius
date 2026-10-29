@@ -4,6 +4,11 @@
 //! the proposals are stored with the branches the analyst left in the harness configuration clone, after they were
 //! checked and pushed to `origin`; trying them is the work of `trial`. The schedule asks `due` once a
 //! minute; `POST /v1/retros` starts a Retro by hand. Nothing here waits for a person.
+//!
+//! This module holds the report, the analyst's run and what becomes of it; `traces` has the raw traces of the
+//! report's runs that the analyst reads besides the report.
+
+mod traces;
 
 use std::sync::Arc;
 
@@ -149,7 +154,7 @@ pub fn summaries(store: &Store) -> Result<Vec<RetroSummary>> {
 
 /// What the analyst is told after the report; `own` is what it is told about proposals for Moebius's own
 /// configuration (see `own::brief`).
-fn prompt(report: &Report, own: &str) -> String {
+fn prompt(report: &Report, own: &str, traces: &str) -> String {
     let json = serde_json::to_string_pretty(report).unwrap_or_default();
     format!(
         "This is the Retro of {day}. Below are the errors of that day, collected by Moebius. Find what they have in \
@@ -159,6 +164,7 @@ fn prompt(report: &Report, own: &str) -> String {
          report that it addresses, and change only harness configuration files, but see below. Commit with `git -c \
          user.name=Retro -c user.email=retro@localhost commit`. Propose nothing the errors do not call for.\n\n\
          {own}\n\
+         {traces}\n\
          The report:\n\n{json}\n",
         day = report.date
     )
@@ -207,7 +213,9 @@ fn launch(
     let base = repo.default_branch().map_err(|e| e.to_string())?;
     let mut ended = app.bus.subscribe();
     let own = own::brief(app, live, report).map_err(|e| e.to_string())?;
-    let run = runs.start_retro(app, repo.path(), &base, &prompt(report, &own))?;
+    let files = traces::files(app, report);
+    let prompt = prompt(report, &own, &traces::brief(report, &files));
+    let run = runs.start_retro(app, repo.path(), &base, &prompt, &files)?;
     app.store
         .set_retro_run(&report.date, run.id)
         .map_err(|e| e.to_string())?;

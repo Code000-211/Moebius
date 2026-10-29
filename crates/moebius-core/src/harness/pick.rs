@@ -3,6 +3,7 @@
 //! Coder's harness. What is done to a running run (steering, stopping, a chat's messages) goes to the harness that runs
 //! it.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
@@ -152,9 +153,10 @@ impl Runs for Harnesses {
         clone: &Path,
         base: &str,
         prompt: &str,
+        files: &BTreeMap<String, String>,
     ) -> Result<Run, String> {
         self.of_agent(app, RETRO_AGENT)
-            .start_retro(app, clone, base, prompt)
+            .start_retro(app, clone, base, prompt, files)
     }
 
     fn start_research(

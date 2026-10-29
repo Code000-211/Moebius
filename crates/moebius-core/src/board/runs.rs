@@ -3,6 +3,7 @@
 //! Claude Code (`claude`) are the real ones, and `Harnesses` picks between them by each agent's `harness`; the tests
 //! also use fakes.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -137,13 +138,16 @@ pub trait Runs: Send + Sync {
     }
 
     /// Starts the Retro analyst with `prompt` in a fresh worktree of the harness configuration clone at `clone`,
-    /// checked out at `base`, and returns the run without waiting for it to end. A harness without retros refuses.
+    /// checked out at `base`, and returns the run without waiting for it to end. `files` (paths relative to the worktree,
+    /// and their text) are written into the worktree before the analyst starts, and git leaves them out. A harness
+    /// without retros refuses.
     fn start_retro(
         &self,
         _app: &Arc<App>,
         _clone: &Path,
         _base: &str,
         _prompt: &str,
+        _files: &BTreeMap<String, String>,
     ) -> Result<Run, String> {
         Err("this harness has no retros".into())
     }

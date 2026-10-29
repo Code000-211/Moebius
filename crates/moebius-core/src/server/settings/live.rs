@@ -214,6 +214,8 @@ impl Live {
         running.day_tokens = new.day_tokens;
         running.retro_at = new.retro_at;
         running.trial_window = new.trial_window;
+        running.regression_size = new.regression_size;
+        running.regression_gate = new.regression_gate;
         running.board_tick = new.board_tick;
         running.upstreams = new.upstreams.clone();
         running.classes = new.classes.clone();

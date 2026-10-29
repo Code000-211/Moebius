@@ -249,9 +249,10 @@ impl Runs for PiBolt {
         clone: &Path,
         base: &str,
         prompt: &str,
+        files: &BTreeMap<String, String>,
     ) -> Result<Run, String> {
         let place = ("harness", clone, None);
-        self.start_detached(app, (RETRO_AGENT, "retro"), place, base, prompt)
+        self.start_detached(app, (RETRO_AGENT, "retro"), place, base, (prompt, files))
     }
 
     fn start_research(
@@ -267,7 +268,8 @@ impl Runs for PiBolt {
             clone.as_path(),
             Some(repository.id),
         );
-        self.start_detached(app, (AUTORESEARCHER_AGENT, "research"), place, base, prompt)
+        let start = (prompt, &BTreeMap::new());
+        self.start_detached(app, (AUTORESEARCHER_AGENT, "research"), place, base, start)
     }
 
     fn say(&self, run_id: i64, message: &str) -> bool {

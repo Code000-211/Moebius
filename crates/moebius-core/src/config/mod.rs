@@ -118,6 +118,10 @@ pub struct Config {
     pub run_limit: u32,
     pub retro_at: TimeOfDay,
     pub trial_window: (TimeOfDay, TimeOfDay),
+    /// How many past merged cards of a repository a proposal is also tried on (see `trial::regression`).
+    pub regression_size: usize,
+    /// Whether a proposal must pass the regression set to be positive; when off, it is not tried on it.
+    pub regression_gate: bool,
     pub board_tick: Duration,
     pub round_limit: u32,
     /// The most tokens all runs may use in a day, if limited.
@@ -281,6 +285,8 @@ impl Config {
                 )?,
                 TimeOfDay::parse("trial_window.end", window.end.as_deref().unwrap_or("06:00"))?,
             ),
+            regression_size: raw.regression.size.unwrap_or(5) as usize,
+            regression_gate: raw.regression.gate.unwrap_or(true),
             board_tick: Duration::from_millis(raw.board.tick_ms.unwrap_or(2000).max(50)),
             round_limit: raw.board.round_limit.unwrap_or(5),
             day_tokens: raw.budgets.day_tokens,
@@ -317,6 +323,15 @@ impl Config {
             agents: raw.agents,
             data_dir,
         })
+    }
+
+    /// The size of the regression set a proposal is tried on: 0 when the gate is off.
+    pub fn regression(&self) -> usize {
+        if self.regression_gate {
+            self.regression_size
+        } else {
+            0
+        }
     }
 
     /// The directory of the configuration file, which the plugins in their own process run in.
@@ -376,6 +391,17 @@ mod tests {
         assert_eq!(c.run_limit, 3);
         assert_eq!(c.retro_at, TimeOfDay(23 * 60 + 30));
         assert_eq!(c.trial_window, (TimeOfDay(0), TimeOfDay(6 * 60)));
+        assert_eq!((c.regression_size, c.regression_gate), (5, true));
+        assert_eq!(c.regression(), 5);
+    }
+
+    #[test]
+    fn the_regression_set_has_a_size_and_a_gate_that_turns_it_off() {
+        let c = parse("[regression]\nsize = 2\n").unwrap();
+        assert_eq!(c.regression(), 2);
+        let c = parse("[regression]\nsize = 2\ngate = false\n").unwrap();
+        assert_eq!((c.regression_size, c.regression()), (2, 0));
+        assert!(parse("[regression]\nsize = -1\n").is_err());
     }
 
     #[test]

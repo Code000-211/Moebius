@@ -372,9 +372,10 @@ fn trial(trial: &Trial) -> Element<'_, AppMessage> {
         _ => Tone::Plain,
     };
     let outcome = trial.outcome[..1].to_uppercase() + &trial.outcome[1..];
-    let card = match trial.card_id {
-        Some(card) => format!("Card {card}"),
-        None => "No card".to_string(),
+    let card = match (trial.card_id, trial.regression) {
+        (Some(card), true) => format!("Regression card {card}"),
+        (Some(card), false) => format!("Card {card}"),
+        (None, _) => "No card".to_string(),
     };
     row![
         page::tag(outcome, tone),

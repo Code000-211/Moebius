@@ -30,6 +30,14 @@ retro_at = "23:30"
 start = "00:00"
 end = "06:00"
 
+# Each proposal of the Retro is also tried on a regression set of each repository its cards belong to: the latest `size`
+# merged cards, those with a reproduction test (.moebius/reproduce) first. It is positive only when none of them fails
+# where it passed before. This adds at most `size` trial runs per repository to a proposal. With gate = false the
+# regression set is not tried.
+[regression]
+size = 5
+gate = true
+
 # How often the board engine runs the column scripts, and how many coding rounds a card gets.
 [board]
 tick_ms = 2000

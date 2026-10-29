@@ -274,6 +274,53 @@ async fn a_branch_that_does_not_change_harness_configuration_is_left_out_with_a_
 }
 
 #[tokio::test]
+async fn the_analyst_reads_the_raw_traces_of_the_reports_runs_in_its_worktree_and_git_leaves_them_out()
+ {
+    let (dir, _origin, server, day) = bad_day_server(|_| {
+        "stalled token=ghp_abcdefghijklmnopqrstuvwxyz0123456789 [run ls .retro; echo status=$(git status --porcelain | wc -l); cat .retro/run-1.events.jsonl]".to_string()
+    });
+    let mut events = server.app.bus.subscribe();
+    Api::start(&server)
+        .await
+        .call(
+            reqwest::Method::POST,
+            "/v1/retros",
+            Some(json!({ "date": day })),
+        )
+        .await;
+    assert_eq!(done(&mut events).await["status"], "proposed");
+    let retro = server.app.store.retro(&day).unwrap().unwrap();
+    let run = server
+        .app
+        .store
+        .run(retro.run_id.unwrap())
+        .unwrap()
+        .unwrap();
+    let answer = run.summary.unwrap();
+    // Each run the report names has its events there, and git sees nothing new in the worktree.
+    assert!(
+        answer.contains("run-1.events.jsonl\nrun-2.events.jsonl"),
+        "{answer}"
+    );
+    assert!(answer.contains("status=0"), "{answer}");
+    assert!(answer.contains("\"kind\":\"moebius_error\""), "{answer}");
+    assert!(
+        !answer.contains("ghp_abcdefghijklmnopqrstuvwxyz0123456789"),
+        "{answer}"
+    );
+    let prompt = std::fs::read_to_string(
+        dir.path()
+            .join(format!(".moebius/runs/{}/agent/prompt.txt", run.id)),
+    )
+    .unwrap();
+    assert!(
+        prompt.contains("The raw traces of the runs the report names are in .retro/"),
+        "{prompt}"
+    );
+    assert!(prompt.contains(".retro/run-2.events.jsonl"), "{prompt}");
+}
+
+#[tokio::test]
 async fn a_day_without_errors_makes_no_run() {
     let dir = tempfile::tempdir().unwrap();
     let server = server(dir.path(), Some(&harness_origin(dir.path())));

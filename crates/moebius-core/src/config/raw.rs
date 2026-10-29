@@ -30,6 +30,13 @@ pub(super) struct RawChecks {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub(super) struct RawRegression {
+    pub(super) size: Option<u32>,
+    pub(super) gate: Option<bool>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct RawBoard {
     pub(super) tick_ms: Option<u64>,
     pub(super) round_limit: Option<u32>,
@@ -114,6 +121,8 @@ pub(super) struct Raw {
     pub(super) run_limit: Option<u32>,
     pub(super) retro_at: Option<String>,
     pub(super) trial_window: Option<RawWindow>,
+    #[serde(default)]
+    pub(super) regression: RawRegression,
     #[serde(default)]
     pub(super) board: RawBoard,
     #[serde(default)]

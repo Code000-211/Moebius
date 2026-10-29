@@ -241,6 +241,43 @@ fn the_inbox_offers_a_proposal_of_the_retro_to_merge_or_dismiss() {
     );
 }
 
+/// The inbox with a proposal tried on its card and on the regression set: compare
+/// `tests/snapshots/inbox-regression-tiny-skia.png`.
+#[test]
+fn the_inbox_shows_a_proposal_with_the_results_of_its_cards_and_of_the_regression_set() {
+    let proposal = entry(
+        5,
+        "proposal",
+        None,
+        "Tell the Coder to run the tests first",
+        json!({"proposal": 5, "branch": "proposal/2026-10-28-tests-first", "trials": [
+            {"card": 48, "outcome": "positive",
+             "reason": "the run succeeded, checks_failed did not happen again, the checks pass, and it used 41200 tokens against 38900"}],
+            "regression": [
+            {"card": 31, "outcome": "positive",
+             "reason": "the run succeeded, the checks pass, and it used 30100 tokens against 52000"},
+            {"card": 27, "outcome": "positive",
+             "reason": "the run succeeded, there were no checks, and it used 9800 tokens against 11000"}]}),
+        3600,
+    );
+    let mut app = App::with_snapshot(snapshot(vec![], vec![proposal]));
+    let _ = app.update(Message::Select(Page::Inbox));
+    let _ = app.update(Message::Inbox(inbox::Message::Tick(NOW)));
+    draw_sized(
+        &app,
+        "inbox-regression",
+        &[
+            "Tell the Coder to run the tests first",
+            "Card 48",
+            "Regression set: past merged cards it must not break",
+            "Card 31",
+            "Card 27",
+            "the run succeeded, the checks pass, and it used 30100 tokens against 52000",
+        ],
+        Size::new(1440.0, 900.0),
+    );
+}
+
 /// A change to `moebius.toml` and one to a repository's rules that the Retro proposes, waiting for a person.
 fn own_proposals_app() -> App {
     let items = vec![

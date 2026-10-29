@@ -153,7 +153,10 @@ A card that reaches its round limit (default 5) or its token budget stops and go
 - **Retro** (23:30): Moebius collects the day's errors without a model (failed tool calls, refused calls, aborted runs,
   steering, CI failures, review findings) into a report; the Retro analyst agent writes proposals from it.
 - **Trials** (00:00–06:00): each proposal is tried on the task its error happened in, on its own branch; positive when the
-  error is gone and nothing got worse (tests, rounds, tokens). Positive proposals go to the inbox as changes to merge.
+  error is gone and nothing got worse (tests, rounds, tokens). It is also tried on a regression set of each repository's
+  past merged cards (default 5, those with a reproduction test first) and is positive only when none of them fails where it
+  passed; this adds a bounded number of runs. Positive proposals go to the inbox, with both results, as changes to merge.
+  The Retro analyst reads the raw traces (events and diffs, redacted) of the report's runs, not only the report.
 - **Proposals for Moebius itself**: the Retro may also propose a change to `moebius.toml` (limits, budgets, windows, the
   teacher) or to a repository's own rules and column scripts. These are not tried: each goes to the inbox at once as a
   diff with the Retro's reason. Merging saves a `moebius.toml` change through the settings code, restarting the server

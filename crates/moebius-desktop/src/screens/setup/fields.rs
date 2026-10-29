@@ -55,6 +55,8 @@ pub(super) const GROUPS: &[(&str, &[Spec])] = &[
             ("retro_at", "Retro at (HH:MM)", Kind::Text),
             ("trial_window.start", "Trial window starts", Kind::Text),
             ("trial_window.end", "Trial window ends", Kind::Text),
+            ("regression.size", "Regression cards", Kind::Whole),
+            ("regression.gate", "Regression gate", Kind::Pick(&YES_NO)),
         ],
     ),
     (
@@ -136,6 +138,9 @@ pub(super) const DECISION_MODEL: &[Spec] = &[
     ),
 ];
 
+/// The choices of a key that is true or false, sent as a JSON boolean.
+const YES_NO: [&str; 2] = ["true", "false"];
+
 /// One key of the configuration as an input.
 #[derive(Debug, Clone)]
 pub(super) struct Field {
@@ -195,6 +200,7 @@ impl Field {
         }
         let wrong = |what: &str| format!("{} is {what}.", self.label);
         Ok(Some(match self.kind {
+            Kind::Pick(options) if options == YES_NO => json!(text == "true"),
             Kind::Text | Kind::Code | Kind::Model | Kind::Pick(_) => json!(text),
             Kind::Whole => json!(text.parse::<i64>().map_err(|_| wrong("a whole number"))?),
             Kind::Decimal => json!(text.parse::<f64>().map_err(|_| wrong("a number"))?),

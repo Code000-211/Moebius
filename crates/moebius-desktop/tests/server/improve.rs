@@ -166,10 +166,12 @@ async fn the_client_lists_proposals_with_their_trials_and_merges_one() {
     let runs: Arc<dyn moebius_core::board::Runs> = server.harness.clone();
     let repo = server.harness_repo.clone().unwrap();
     let app = server.app.clone();
-    tokio::task::spawn_blocking(move || moebius_core::improve::trial::start(&app, &runs, &repo, 1))
-        .await
-        .unwrap()
-        .unwrap();
+    tokio::task::spawn_blocking(move || {
+        moebius_core::improve::trial::start(&app, &runs, &repo, 1, 5)
+    })
+    .await
+    .unwrap()
+    .unwrap();
     let client = Client::new(settings.clone());
     let proposal = loop {
         let proposals = client.proposals().await.unwrap();

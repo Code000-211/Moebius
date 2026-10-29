@@ -263,6 +263,12 @@ configured, the built-in agent `Retro-analyst` turns the report into proposals. 
 - Its run has the purpose `retro` and no card. It works in a fresh detached worktree of the clone at the default branch
   (`<data_dir>/worktrees/harness/retro-<run id>`), which is removed when the run ends. It is told the report as JSON. It
   never waits for a person.
+- It reads the raw traces too, not only the report's summary of each error: before it starts, the events of each run the
+  report names are written to `.retro/run-<id>.events.jsonl` of its worktree (one JSON object a line: `seq`, `kind`,
+  `data`, `at`), and what a run of a card changed, from the commit it started at to its branch, to `.retro/run-<id>.diff`
+  while the branch is there. Every secret is redacted; at most the report's first 20 runs are written, each file at most
+  200 000 bytes (an events file then ends with a `moebius_cut` line saying how many events are left out). Git leaves
+  `.retro/` out (the clone's `info/exclude`), and the analyst is told never to commit it.
 - Each proposal is a branch `proposal/<date>-<short-name>` made from the default branch, with one commit whose message is
   the proposal: the subject is its title, the body says what changes and which errors it addresses, and the last line is
   `Cards: 48, 50`, the `card` of each error of the report that it addresses (numbers that are not ids are ignored). It
@@ -332,7 +338,8 @@ proposal's branch, the run cannot start) is `failed`.
 
   A trial is one round, and the card needed at least one, so rounds never make a trial negative.
 - **Afterwards** the trial's branch and worktrees are removed; the trial is stored (`GET /v1/proposals`) with the
-  measurements and the reason. The proposal becomes `positive` when every trial was positive, `negative` when some was
+  measurements and the reason. Unless these trials made it negative, the proposal is then tried on the regression set
+  (below). The proposal becomes `positive` when every trial of both was positive, `negative` when some was
   negative, and else `untried`. A `positive` or `untried` proposal gets an inbox item of the kind `proposal`; a `negative`
   one gets none, and stays on the Retro page.
 - **Deciding.** `POST /v1/proposals/{id}/merge` merges the branch into the default branch of the clone with a merge commit,
@@ -340,6 +347,30 @@ proposal's branch, the run cannot start) is `failed`.
   decision (kind `merge_proposal`) and resolve the inbox item. A merge that conflicts changes nothing.
 - A server that starts finds the proposals the last server was trying and opens them again, without their trials, and ends
   the trial runs it left going as it ends other runs.
+
+### The regression set
+
+A proposal that fixes its own cards may still break what worked before, and changes to skills and instructions often
+help nothing or harm, so each is measured on past work as well. The regression set of a repository is a fixed sample of
+the cards merged there: the latest `regression.size` (default 5; see [configuration](configuration.md#regression)), chosen
+among the latest 50 merged changes, the cards whose change adds or changes a reproduction test (`.moebius/reproduce`)
+first, latest first among equals. It changes only as new cards merge. A card is in it only when its first code run
+recorded the commit it started at; the proposal's own cards are left out.
+
+- **The runs.** After its own trials, a proposal is tried on the regression set of each repository its cards belong to,
+  one card after the other, as above: a `trial` run of the card's task by the agent of its last code run, with the
+  definition from the proposal's branch, in a fresh worktree at the commit the card's first code run started at (the
+  repository as it was when the card was worked on), on `moebius/trial-<proposal id>-card-<card id>`, then the checks.
+- **The comparison** is with the card's code runs together, which passed: the card was merged. A regression trial is
+  positive when the run succeeded, the checks passed (or there are none), and it used no more than 1.5 times their
+  tokens; else negative. It is one round, never more than the card needed.
+- **The bound.** A proposal adds at most `regression.size` runs for each repository of its cards. They run on the
+  proposal's own thread, one at a time, like its other trials (so one proposal is tried at a time, and the schedule starts
+  one only inside the trial window and when the board has a run to spare); the first regression card that fails ends the
+  rest, which are stored as `skipped`. A proposal whose own trials are negative is not tried on it.
+- Each regression trial is stored with `regression` true. A proposal that fixes its cards but makes a regression card
+  fail is `negative` and not offered; the inbox item of one that is offered lists both results. `regression.gate =
+  false` turns all of this off.
 
 ### The replays
 

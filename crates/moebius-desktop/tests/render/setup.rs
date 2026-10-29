@@ -23,6 +23,8 @@ pub fn settings_answer(set: serde_json::Value, more: serde_json::Value) -> serde
         ("harness.url", json!(null)),
         ("trial_window.start", json!("00:00")),
         ("trial_window.end", json!("06:00")),
+        ("regression.size", json!(5)),
+        ("regression.gate", json!(true)),
         ("board.tick_ms", json!(2000)),
         ("board.round_limit", json!(5)),
         ("budgets.day_tokens", json!(null)),
@@ -274,16 +276,17 @@ fn the_settings_page_has_every_key_in_a_box_with_its_default_and_this_app_with_t
             "This app",
             "http://127.0.0.1:7171",
             "••••oken",
+            "Regression cards",
             "Connect to another server",
             "Save",
         ],
-        Size::new(1440.0, 1700.0),
+        Size::new(1440.0, 2000.0),
     );
     assert!(simulator(&app).find("not-a-real-token").is_err());
     assert_eq!(
         format!(
             "{:?}",
-            clicked_sized(&app, "Connect to another server", Size::new(1440.0, 1700.0))
+            clicked_sized(&app, "Connect to another server", Size::new(1440.0, 2000.0))
         ),
         "[ChangeConnection]"
     );

@@ -11,12 +11,17 @@
 //! schedule asks `on_schedule` once a minute, and trials only start inside the trial window; `POST
 //! /v1/proposals/{id}/trial` tries a proposal at any hour. Nothing here waits for a person.
 //!
+//! Unless the regression gate is off (`[regression]`), a proposal whose own trials are not negative is also tried on the
+//! regression set of the repositories of its cards (see `regression`): past merged cards, which must not fail with it.
+//! The proposal is positive only when every trial of both was.
+//!
 //! This module holds the trial window and what the parts share; `verdict` has what a trial measured and whether it is
-//! positive, `card` one card's trial, `schedule` trying a proposal and when it starts, and `decision` a person's merge
-//! or dismissal of a tried proposal.
+//! positive, `card` one card's trial, `regression` the regression set and its trials, `schedule` trying a proposal and
+//! when it starts, and `decision` a person's merge or dismissal of a tried proposal.
 
 mod card;
 mod decision;
+mod regression;
 mod schedule;
 mod verdict;
 

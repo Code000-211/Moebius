@@ -365,6 +365,10 @@ CREATE TABLE firings (
     at INTEGER NOT NULL
 );
 "#,
+    r#"
+ALTER TABLE runs ADD COLUMN base TEXT;
+ALTER TABLE trials ADD COLUMN regression INTEGER NOT NULL DEFAULT 0;
+"#,
 ];
 
 pub fn now() -> i64 {

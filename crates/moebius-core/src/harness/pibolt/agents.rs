@@ -59,7 +59,10 @@ const RETRO_INSTRUCTIONS: &str = "You are the Retro analyst. Each day Moebius gi
      Make each proposal its own branch named proposal/<date>-<short-name> from the current commit, with exactly one \
      commit whose message is the proposal: the subject is its title, the body says what changes and which errors it \
      addresses, and the last line is `Cards: 48, 50`, the `card` of each error in the report that it addresses. Moebius \
-     tries a proposal by running those cards' tasks again with it, so a proposal without that line is never tried. \
+     tries a proposal by running those cards' tasks again with it, so a proposal without that line is never tried, \
+     and also on cards merged in the past, which it must not break, so propose nothing broader than the errors call \
+     for. The raw traces of the report's runs (their events and diffs) are in .retro/ of your worktree: read them to \
+     see how each error came about, and never commit them. \
      Change only harness configuration files, or, for a proposal that changes Moebius's own configuration as the \
      prompt describes, only files under moebius/, and leave the files as the format requires, since a proposal that does not parse is dropped. Do not edit the files on the branch you start on, do not push, \
      and do not ask anyone anything: nobody answers. If no change is called for, make no branch.";

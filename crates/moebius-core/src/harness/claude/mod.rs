@@ -21,7 +21,7 @@ mod reader;
 #[cfg(test)]
 mod tests;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin};
@@ -271,6 +271,7 @@ impl Runs for ClaudeCode {
         clone: &Path,
         base: &str,
         prompt: &str,
+        files: &BTreeMap<String, String>,
     ) -> Result<Run, String> {
         let config = self.agent(app, RETRO_AGENT)?;
         let place = ("harness", clone, None);
@@ -279,7 +280,7 @@ impl Runs for ClaudeCode {
             &self.router,
             (RETRO_AGENT, "retro"),
             place,
-            base,
+            (base, files),
             &config,
         )?;
         self.launch_or_undo(app, None, &config, running, Some(prompt))
@@ -300,7 +301,8 @@ impl Runs for ClaudeCode {
             Some(repository.id),
         );
         let purpose = (AUTORESEARCHER_AGENT, "research");
-        let running = detached_run(app, &self.router, purpose, place, base, &config)?;
+        let start = (base, &BTreeMap::new());
+        let running = detached_run(app, &self.router, purpose, place, start, &config)?;
         self.launch_or_undo(app, None, &config, running, Some(prompt))
     }
 

@@ -216,6 +216,17 @@ impl Store {
         Ok(())
     }
 
+    /// The merged changes of cards of the repository, the latest first, at most `limit`.
+    pub fn merged_card_changes(&self, repository_id: i64, limit: usize) -> Result<Vec<Change>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {CHANGE_COLUMNS} FROM changes
+             WHERE repository_id = ?1 AND card_id IS NOT NULL AND state = 'merged' ORDER BY id DESC LIMIT ?2"
+        ))?;
+        let rows = stmt.query_map(params![repository_id, limit as i64], change_from_row)?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     pub fn set_change_state(&self, id: i64, state: &str) -> Result<()> {
         self.conn().execute(
             "UPDATE changes SET state = ?1 WHERE id = ?2",

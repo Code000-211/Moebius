@@ -96,6 +96,20 @@ start is empty, so nothing starts.
 | `trial_window.start` | string | `00:00` | Start, as `HH:MM` as for `retro_at`. |
 | `trial_window.end` | string | `06:00` | End, as `HH:MM`. |
 
+## `[regression]`
+
+The regression gate of the trials (see [the regression set](harness-configuration.md#the-regression-set)). Besides the
+cards whose errors it addresses, a proposal is tried on the regression set of each repository of its cards: the latest
+`size` cards merged there, those whose change adds a reproduction test (`.moebius/reproduce`) first. It is positive only
+when none of them fails where it passed before. The regression trials run one after the other on the proposal's thread,
+like its other trials, and stop at the first that fails, so a proposal adds at most `size` runs for each repository of its
+cards; one proposal is tried at a time, and only when the board has a run to spare.
+
+| Key | Type | Default | Meaning and validation |
+|---|---|---|---|
+| `regression.size` | integer | `5` | How many merged cards of a repository the set holds, at least 0; 0 tries none. |
+| `regression.gate` | boolean | `true` | Whether proposals are tried on the regression set at all. With `false`, a proposal is judged on its own cards only. |
+
 ## `[board]`
 
 | Key | Type | Default | Meaning and validation |
@@ -355,6 +369,7 @@ A change applies to the running server at once for these keys:
 
 - `run_limit`, `board.round_limit` and `budgets.day_tokens`: the limits column scripts and the router read;
 - `board.tick_ms`, `retro_at`, `trial_window.start` and `trial_window.end`: read by the board's loop and the schedule;
+- `regression.size` and `regression.gate`: read when a proposal's trials start;
 - `router.upstreams`, with their keys;
 - `router.classes`, set as a whole table (`{"fast": ["a", {"model": "b", "day_tokens": 100}]}`);
 - `agents.<name>`, on a server without `[harness]`.

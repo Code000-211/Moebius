@@ -164,39 +164,58 @@ pub(super) fn own_change(item: &InboxItem) -> Element<'_, AppMessage> {
         .into()
 }
 
-/// What the trials of a proposal found, one line for each: the card, the outcome and why.
+/// What the trials of a proposal found, one line for each: the card, the outcome and why; then, under a label of its
+/// own, the same for the cards of the regression set.
 pub(super) fn trials(item: &InboxItem) -> Element<'_, AppMessage> {
-    let lines = item.data["trials"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .map(|trial| {
-            let outcome = trial["outcome"].as_str().unwrap_or_default();
-            let card = match trial["card"].as_i64() {
-                Some(card) => format!("Card {card}"),
-                None => "No card".to_string(),
-            };
-            row![
-                tag(card, Tone::Plain),
-                tag(
-                    sentence(outcome),
-                    if outcome == "positive" {
-                        Tone::Teal
-                    } else {
-                        Tone::Plain
-                    }
-                ),
-                text(trial["reason"].as_str().unwrap_or_default())
-                    .size(theme::BODY)
-                    .color(theme::TEXT_SECONDARY)
-                    .width(Length::Fill)
-                    .wrapping(Wrapping::WordOrGlyph),
-            ]
-            .spacing(8)
-            .align_y(Alignment::Center)
-            .into()
-        });
-    column(lines).spacing(6).into()
+    let lines = |key: &str| {
+        item.data[key]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(trial_line)
+            .collect::<Vec<_>>()
+    };
+    let mut content = column(lines("trials")).spacing(6);
+    let regression = lines("regression");
+    if !regression.is_empty() {
+        content = content
+            .push(
+                text("Regression set: past merged cards it must not break")
+                    .size(theme::LABEL)
+                    .font(theme::manrope(iced::font::Weight::Semibold))
+                    .color(theme::TEXT_MUTED),
+            )
+            .push(column(regression).spacing(6));
+    }
+    content.into()
+}
+
+/// One trial of a proposal: the card, the outcome and why.
+fn trial_line(trial: &serde_json::Value) -> Element<'_, AppMessage> {
+    let outcome = trial["outcome"].as_str().unwrap_or_default();
+    let card = match trial["card"].as_i64() {
+        Some(card) => format!("Card {card}"),
+        None => "No card".to_string(),
+    };
+    row![
+        tag(card, Tone::Plain),
+        tag(
+            sentence(outcome),
+            if outcome == "positive" {
+                Tone::Teal
+            } else {
+                Tone::Plain
+            }
+        ),
+        text(trial["reason"].as_str().unwrap_or_default())
+            .size(theme::BODY)
+            .color(theme::TEXT_SECONDARY)
+            .width(Length::Fill)
+            .wrapping(Wrapping::WordOrGlyph),
+    ]
+    .spacing(8)
+    .align_y(Alignment::Center)
+    .into()
 }
 
 /// The facts of a change that waits to be merged: what it took, how its checks stand and where it is.

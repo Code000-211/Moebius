@@ -206,6 +206,11 @@ The experiment that tests one proposal: the task the error happened in, repeated
 when the error no longer occurs and the result is no worse.
 _Avoid_: test, probe
 
+**Regression set**:
+A fixed sample of a repository's cards merged in the past, on which every proposal is also tried; a proposal that makes one
+of them fail where it passed before is not offered.
+_Avoid_: test suite, benchmark
+
 **Trial window**:
 The daily stretch of time in which Moebius may run trials without asking.
 _Avoid_: test window, maintenance window

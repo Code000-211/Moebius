@@ -72,6 +72,9 @@ pub struct Trial {
     /// The card it was tried on; none when the proposal names no cards.
     #[serde(default)]
     pub card_id: Option<i64>,
+    /// Whether the card is one of the regression set rather than one whose errors the proposal addresses.
+    #[serde(default)]
+    pub regression: bool,
     /// `positive`, `negative`, `skipped` or `failed`.
     pub outcome: String,
     pub reason: String,

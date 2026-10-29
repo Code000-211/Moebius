@@ -3,6 +3,7 @@
 //! what a run holds until it ends: what its agent left is committed when it does. Making the run, its worktree and its
 //! token is the same for every harness (see `claude`), which then starts its own process.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -17,17 +18,24 @@ use crate::store::{Card, Repository, Run};
 
 impl PiBolt {
     /// Starts `agent` for `purpose`, with no card, on `prompt` in a fresh detached worktree of the clone `place` names
-    /// (see [`detached_run`]), checked out at `base`.
+    /// (see [`detached_run`]), checked out at `base`, with `files` written into it.
     pub(super) fn start_detached(
         &self,
         app: &Arc<App>,
         (agent, purpose): (&str, &str),
         place: (&str, &Path, Option<i64>),
         base: &str,
-        prompt: &str,
+        (prompt, files): (&str, &BTreeMap<String, String>),
     ) -> Result<Run, String> {
         let config = self.agent(app, agent)?;
-        let running = detached_run(app, &self.router, (agent, purpose), place, base, &config)?;
+        let running = detached_run(
+            app,
+            &self.router,
+            (agent, purpose),
+            place,
+            (base, files),
+            &config,
+        )?;
         self.launch_or_undo(app, None, &config, running, Some(prompt))
     }
 
@@ -62,13 +70,14 @@ pub(in crate::harness) fn issue_token(
 
 /// Records a run of `agent` (on the harness `config` names) for `purpose`, with no card, and makes it a fresh detached
 /// worktree of the clone `place` names (the name its worktrees go under, its path, and the repository the run records,
-/// if any), checked out at `base`, and its token. The run fails when that cannot be done.
+/// if any), checked out at `base`, with `files` written into it (see `write_untracked`), and its token. The run fails
+/// when that cannot be done.
 pub(in crate::harness) fn detached_run(
     app: &App,
     router: &Router,
     (agent, purpose): (&str, &str),
     (name, clone, repository): (&str, &Path, Option<i64>),
-    base: &str,
+    (base, files): (&str, &BTreeMap<String, String>),
     config: &AgentConfig,
 ) -> Result<RunningRun, String> {
     let run = app
@@ -83,6 +92,13 @@ pub(in crate::harness) fn detached_run(
             app.repos
                 .add_detached_worktree(name, clone, &worktree, base)
                 .map_err(|e| e.to_string())
+        })
+        .and_then(|worktree| match write_untracked(&worktree, files) {
+            Ok(()) => Ok(worktree),
+            Err(e) => {
+                let _ = app.repos.remove_worktree(clone, &worktree);
+                Err(format!("cannot write the files of the run: {e}"))
+            }
         })
         .map_err(|e| fail(app, run.id, e))?;
     let start = head(app, run.id, &worktree)?;
@@ -104,7 +120,8 @@ pub(in crate::harness) fn detached_run(
 
 /// Records a run of `card` by `agent`, as `config` has it (on the harness it names), for `purpose`, with the worktree
 /// `worktree` makes for the run and its token. The agent leaves its work in the worktree, which is committed when the
-/// run ends. The run fails when that cannot be done.
+/// run ends. The commit the worktree starts at is recorded with the run (`Store::set_run_base`), which the trials of the
+/// regression set start from. The run fails when that cannot be done.
 pub(in crate::harness) fn card_run(
     app: &App,
     router: &Router,
@@ -126,6 +143,9 @@ pub(in crate::harness) fn card_run(
     let worktree =
         worktree(&repository, &clone, run.id).map_err(|e| fail(app, run.id, e.to_string()))?;
     let start = head(app, run.id, &worktree.path)?;
+    app.store
+        .set_run_base(run.id, &start)
+        .map_err(|e| fail(app, run.id, e.to_string()))?;
     let grant = Grant {
         run_id: run.id,
         card_id: Some(card.id),
@@ -203,6 +223,55 @@ const REVIEW_PROMPT: &str = "You are the reviewer. You are in a git worktree on 
      asks? Do not edit any files. Write your findings, then end your answer with one last line, either \
      `VERDICT: approve` or `VERDICT: changes`.";
 
+/// Writes `files` (paths relative to `worktree`, and their text) into the worktree and keeps them out of git: the first
+/// directory of each path is added to the clone's `info/exclude`, which its worktrees share.
+fn write_untracked(worktree: &Path, files: &BTreeMap<String, String>) -> Result<(), String> {
+    if files.is_empty() {
+        return Ok(());
+    }
+    let mut excluded = BTreeSet::new();
+    for (path, text) in files {
+        let relative = Path::new(path);
+        if relative.is_absolute()
+            || relative
+                .components()
+                .any(|c| !matches!(c, std::path::Component::Normal(_)))
+        {
+            return Err(format!("{path} is not a path inside the worktree"));
+        }
+        let file = worktree.join(relative);
+        if let Some(parent) = file.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(&file, text).map_err(|e| e.to_string())?;
+        if let Some(first) = relative.components().next() {
+            excluded.insert(format!("/{}", first.as_os_str().to_string_lossy()));
+        }
+    }
+    let exclude =
+        git(worktree, &["rev-parse", "--git-path", "info/exclude"]).map_err(|e| e.to_string())?;
+    let exclude = worktree.join(exclude.trim());
+    let mut text = std::fs::read_to_string(&exclude).unwrap_or_default();
+    let missing: Vec<_> = excluded
+        .iter()
+        .filter(|pattern| !text.lines().any(|line| line == pattern.as_str()))
+        .collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    if !text.is_empty() && !text.ends_with('\n') {
+        text.push('\n');
+    }
+    for pattern in missing {
+        text.push_str(pattern);
+        text.push('\n');
+    }
+    if let Some(parent) = exclude.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&exclude, text).map_err(|e| e.to_string())
+}
+
 /// The commit `worktree` of the run `run_id` is at, which fails the run when git cannot say.
 pub(in crate::harness) fn head(app: &App, run_id: i64, worktree: &Path) -> Result<String, String> {
     git(worktree, &["rev-parse", "HEAD"]).map_err(|e| fail(app, run_id, e.to_string()))
@@ -240,6 +309,27 @@ mod tests {
     use super::*;
     use crate::board::Runs;
     use crate::harness::pibolt::testing::{setup, wait_until_ended};
+
+    #[test]
+    fn files_written_into_a_worktree_stay_out_of_git_and_inside_it() {
+        let dir = tempfile::tempdir().unwrap();
+        git(dir.path(), &["init", "--quiet"]).unwrap();
+        let files = BTreeMap::from([
+            (".retro/run-1.events.jsonl".to_string(), "{}\n".to_string()),
+            (".retro/run-1.diff".to_string(), "diff\n".to_string()),
+        ]);
+        write_untracked(dir.path(), &files).unwrap();
+        write_untracked(dir.path(), &files).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join(".retro/run-1.diff")).unwrap(),
+            "diff\n"
+        );
+        assert_eq!(git(dir.path(), &["status", "--porcelain"]).unwrap(), "");
+        let exclude = std::fs::read_to_string(dir.path().join(".git/info/exclude")).unwrap();
+        assert_eq!(exclude.matches("/.retro\n").count(), 1, "{exclude}");
+        let outside = BTreeMap::from([("../x".to_string(), String::new())]);
+        assert!(write_untracked(dir.path(), &outside).is_err());
+    }
 
     #[test]
     fn a_review_run_starts_from_the_code_branch_and_commits_nothing() {

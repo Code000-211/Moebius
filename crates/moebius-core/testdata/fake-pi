@@ -2,7 +2,8 @@
 # A stand-in for `pi-bolt --mode rpc` in tests: it speaks Pi's RPC protocol (JSON Lines, split on LF only).
 # A prompt containing "[commit]" commits own.txt itself and leaves the worktree clean. A prompt containing "[hang]" waits for `abort`, one containing "[nothing]" settles without changing anything, and
 # a prompt for the reviewer changes nothing and answers with a verdict; any other prompt writes a file and settles.
-# The text of `--append-system-prompt` containing "[write anyway]" makes the run write a file whatever the prompt says.
+# The text of `--append-system-prompt` containing "[write anyway]" makes the run write a file whatever the prompt says;
+# containing "[break careful]", it makes a prompt containing "[careful]" change nothing.
 # A prompt that does not start with "Work on issue" is a chat message: it is answered with "You said: <message>" (and
 # writes the file NAME, with its directories, first if it contains "[write NAME]", and makes the branch BRANCH from the
 # commit it starts at, with a commit that appends to the file FILE, for each "[propose BRANCH FILE]" in it; a
@@ -155,6 +156,7 @@ for line in sys.stdin.buffer:
         emit({"type": "message_update",
               "assistantMessageEvent": {"type": "text_delta", "contentIndex": 0, "delta": "line one line two"}})
         nothing = "[nothing]" in command["message"] and "[write anyway]" not in instructions
+        nothing = nothing or ("[careful]" in command["message"] and "[break careful]" in instructions)
         if not nothing and "[commit]" not in command["message"] and not reviewing:
             emit({"type": "tool_execution_start", "toolCallId": "t1", "toolName": "write",
                   "args": {"path": "done.txt"}})

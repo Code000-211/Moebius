@@ -209,7 +209,11 @@ async fn try_proposal(
     UrlPath(id): UrlPath<i64>,
 ) -> Result<axum::Json<Proposal>, ApiError> {
     let (runs, repo) = (state.runs.clone(), harness_repo(&state)?);
-    blocking(&state.app, move |app| trial::start(app, &runs, &repo, id)).await
+    let regression = state.config.get().regression();
+    blocking(&state.app, move |app| {
+        trial::start(app, &runs, &repo, id, regression)
+    })
+    .await
 }
 
 async fn merge_proposal(

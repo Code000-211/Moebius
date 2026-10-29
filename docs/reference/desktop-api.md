@@ -4,7 +4,7 @@ The desktop API is how the desktop app, or any client such as `curl`, reads the 
 anyone who writes a client or a script against a running server. The code is in `crates/moebius-core/src/server/api/`,
 anyone who writes a client or a script against a running server. The code is in `crates/moebius-core/src/server/api/`,
 one module per part; the events are published from `app/`, `harness/pibolt/`, `decide/check/`, `repos/poll/`,
-`improve/retro.rs`, `improve/trial/`, `server/loops.rs` and `server/schedule.rs`.
+`improve/retro/`, `improve/trial/`, `server/loops.rs` and `server/schedule.rs`.
 
 The API is HTTP with JSON bodies plus one WebSocket, served on `listen` (default `127.0.0.1:7171`). Keep it on a private
 network.
@@ -105,7 +105,8 @@ end of the output of the repository's own checks, or null). A change's `branch` 
 `InboxItem`: `id`, `kind`, `card_id` (or null), `title`, `data` (an object that depends on the kind), `resolved_at` (null
 in the snapshot, which holds only open items), `at`. Kinds the core adds: `approve_issue` (`data.reason`), `stuck`
 (`data.reason`), `ready_to_merge` (`data.change`, `data.branch`), `change_closed` (`data.change`, `data.pull_request`) and
-`proposal` (`data.proposal`, `data.branch`, `data.trials`: an array of `{"card", "outcome", "reason"}`; its `title` is the
+`proposal` (`data.proposal`, `data.branch`, `data.trials`: an array of `{"card", "outcome", "reason"}` for the cards it
+addresses, and `data.regression`: the same for the cards of the regression set, empty when none was tried; its `title` is the
 proposal's and it has no card; a proposal for Moebius's own configuration has `data.kind` (`settings` or
 `repository`), `data.repository` (the repository's id, or null), `data.reason` (the Retro's reason) and `data.diff`
 instead of `data.trials`), `grilling_issues` (`data.grilling`, `data.repository`, `data.issues`: an array of `{"title",
@@ -1306,7 +1307,9 @@ nobody knows), `merged` or `dismissed`. A `positive` or `untried` proposal has a
 A `settings` or `repository` proposal is never tried: it is `untried` and in the inbox from the start.
 
 `Trial`: `id`, `proposal_id`, `card_id` (the card it was tried on; null for the one trial of a proposal that names no
-cards), `run_id` (the trial's run, or null when none was started), `outcome` (`positive`, `negative`, `skipped`: there was
+cards), `regression` (true for a card of the regression set, see
+[the regression set](harness-configuration.md#the-regression-set); its `original` is then the card's code runs together,
+with no `errors`, and its trial must pass where they did), `run_id` (the trial's run, or null when none was started), `outcome` (`positive`, `negative`, `skipped`: there was
 nothing to try it on, or `failed`: it could not be tried), `reason` (text), `measurements` (an object, `{}` when
 nothing was run) and `at`. `measurements` is `{"trial": {...}, "original": {...}}`: for the trial run `succeeded`,
 `errors` (the kinds of the addressed errors that happened in the run), `checks` (true, false, or null when the repository
@@ -1548,7 +1551,7 @@ like `POST /v1/runs/{id}/stop` does. Experiments done stay, and so do the lever 
 | `retro_done` | A Retro ended: it was `reported`, or the analyst's run ended and its proposals were stored (`proposed`), or it `failed`. | `{"date": "YYYY-MM-DD", "status": "reported" \| "proposed" \| "failed", "proposals": number}` |
 | `retro_error` | The schedule could not start the day's Retro, the trials of a proposal, a research or the replays, or the trials of a proposal broke off; it is tried again a minute later. | `{"message": string}` |
 | `replayed` | A refused tool call was replayed and its judgement has the outcome. | `{"judgement": id, "run": id, "outcome": string}` |
-| `trial_done` | One trial of a proposal ended and was stored. | `{"proposal": id, "card": id or null, "outcome": "positive" \| "negative" \| "skipped" \| "failed"}` |
+| `trial_done` | One trial of a proposal ended and was stored. | `{"proposal": id, "card": id or null, "outcome": "positive" \| "negative" \| "skipped" \| "failed", "regression": bool}` |
 | `proposal_status` | A proposal's status changed: it is being tried, was tried, was merged or dismissed, or a proposal for Moebius's own configuration was stored, `untried`. | `{"proposal": id, "status": string}` (the statuses above) |
 | `takeover_proposed` | The decision model earned a takeover proposal for a kind, which is in the inbox. | `{"takeover": id, "kind": string, "agreement": number}` |
 | `takeover_status` | A takeover was merged, dismissed or released. | `{"takeover": id, "status": string}` (the statuses above) |

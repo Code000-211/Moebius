@@ -71,6 +71,9 @@ pub struct Trial {
     pub proposal_id: i64,
     /// The card it was tried on; none for the one trial of a proposal that names no cards.
     pub card_id: Option<i64>,
+    /// Whether the card is one of the regression set (see `trial::regression`), not one whose errors the proposal
+    /// addresses.
+    pub regression: bool,
     /// The trial's run, if one was started.
     pub run_id: Option<i64>,
     /// `positive`, `negative`, `skipped` or `failed`.
@@ -255,7 +258,7 @@ impl Store {
             ))
         })?;
         let mut stmt = conn.prepare(
-            "SELECT id, proposal_id, card_id, run_id, outcome, reason, measurements, at FROM trials
+            "SELECT id, proposal_id, card_id, run_id, outcome, reason, measurements, at, regression FROM trials
              WHERE proposal_id = ?1 ORDER BY id",
         )?;
         rows.map(|row| {
@@ -266,6 +269,7 @@ impl Store {
                         id: r.get(0)?,
                         proposal_id: r.get(1)?,
                         card_id: r.get(2)?,
+                        regression: r.get(8)?,
                         run_id: r.get(3)?,
                         outcome: r.get(4)?,
                         reason: r.get(5)?,
@@ -340,6 +344,7 @@ impl Store {
         Ok(())
     }
 
+    /// Stores a trial of a card whose errors the proposal addresses.
     pub fn add_trial(
         &self,
         proposal_id: i64,
@@ -349,9 +354,40 @@ impl Store {
         reason: &str,
         measurements: &serde_json::Value,
     ) -> Result<()> {
+        self.insert_trial(
+            proposal_id,
+            (card_id, false),
+            run_id,
+            (outcome, reason),
+            measurements,
+        )
+    }
+
+    /// Stores a trial of a card of the regression set.
+    pub fn add_regression_trial(
+        &self,
+        proposal_id: i64,
+        card_id: i64,
+        run_id: Option<i64>,
+        outcome: &str,
+        reason: &str,
+        measurements: &serde_json::Value,
+    ) -> Result<()> {
+        let card = (Some(card_id), true);
+        self.insert_trial(proposal_id, card, run_id, (outcome, reason), measurements)
+    }
+
+    fn insert_trial(
+        &self,
+        proposal_id: i64,
+        (card_id, regression): (Option<i64>, bool),
+        run_id: Option<i64>,
+        (outcome, reason): (&str, &str),
+        measurements: &serde_json::Value,
+    ) -> Result<()> {
         self.conn().execute(
-            "INSERT INTO trials (proposal_id, card_id, run_id, outcome, reason, measurements, at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO trials (proposal_id, card_id, run_id, outcome, reason, measurements, at, regression)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 proposal_id,
                 card_id,
@@ -359,7 +395,8 @@ impl Store {
                 outcome,
                 reason,
                 serde_json::to_string(measurements)?,
-                now()
+                now(),
+                regression
             ],
         )?;
         Ok(())
@@ -472,6 +509,11 @@ mod tests {
             (trials[0].outcome.as_str(), &trials[0].measurements),
             ("skipped", &json!({ "a": 1 }))
         );
+        assert!(!trials[0].regression);
+        s.add_regression_trial(1, 7, None, "failed", "gone", &json!({}))
+            .unwrap();
+        let trials = s.proposal(1).unwrap().unwrap().trials;
+        assert_eq!((trials[1].card_id, trials[1].regression), (Some(7), true));
         s.reopen_trying_proposals().unwrap();
         let proposal = s.proposal(1).unwrap().unwrap();
         assert_eq!(proposal.status, "open");

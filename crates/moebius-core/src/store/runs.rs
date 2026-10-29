@@ -1,6 +1,6 @@
 //! Runs: an agent's work in a harness, for a card or not, from its start to its end.
 
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
 use super::{Result, Store, now};
@@ -162,6 +162,24 @@ impl Store {
             .map(Run::branch))
     }
 
+    /// Records the commit a run of a card started from.
+    pub fn set_run_base(&self, id: i64, commit: &str) -> Result<()> {
+        self.conn().execute(
+            "UPDATE runs SET base = ?1 WHERE id = ?2",
+            params![commit, id],
+        )?;
+        Ok(())
+    }
+
+    /// The commit a run of a card started from, if it was recorded.
+    pub fn run_base(&self, id: i64) -> Result<Option<String>> {
+        Ok(self
+            .conn()
+            .query_row("SELECT base FROM runs WHERE id = ?1", [id], |r| r.get(0))
+            .optional()?
+            .flatten())
+    }
+
     pub fn set_run_worktree(&self, id: i64, worktree: &str) -> Result<()> {
         self.conn().execute(
             "UPDATE runs SET worktree = ?1 WHERE id = ?2",
@@ -196,5 +214,44 @@ mod tests {
         let coded = s.add_run(Some(card.id), "Coder", "x", "code").unwrap();
         s.set_run_status(coded.id, "succeeded").unwrap();
         assert_eq!(note(), None);
+    }
+
+    #[test]
+    fn a_run_keeps_the_commit_it_started_from_and_merged_changes_are_listed_latest_first() {
+        let (_dir, s) = store();
+        let repo = s.add_repository("r", "/srv/r", "none", "main").unwrap();
+        let card = s.add_card(repo.id, "First", "", "leon", "Backlog").unwrap();
+        let run = s.add_run(Some(card.id), "Coder", "x", "code").unwrap();
+        assert_eq!(s.run_base(run.id).unwrap(), None);
+        s.set_run_base(run.id, "abc").unwrap();
+        assert_eq!(s.run_base(run.id).unwrap().as_deref(), Some("abc"));
+        assert_eq!(s.run_base(99).unwrap(), None);
+
+        let other = s
+            .add_card(repo.id, "Second", "", "leon", "Backlog")
+            .unwrap();
+        let first = s
+            .add_change(repo.id, Some(card.id), "a", None, "h1")
+            .unwrap();
+        let open = s
+            .add_change(repo.id, Some(other.id), "b", None, "h2")
+            .unwrap();
+        let second = s
+            .add_change(repo.id, Some(other.id), "c", None, "h3")
+            .unwrap();
+        let chat = s.add_change(repo.id, None, "d", None, "h4").unwrap();
+        for change in [&first, &second, &chat] {
+            s.set_change_state(change.id, "merged").unwrap();
+        }
+        let ids = |limit| -> Vec<i64> {
+            s.merged_card_changes(repo.id, limit)
+                .unwrap()
+                .iter()
+                .map(|c| c.id)
+                .collect()
+        };
+        assert_eq!(ids(10), [second.id, first.id]);
+        assert_eq!(ids(1), [second.id]);
+        assert_ne!(open.id, second.id);
     }
 }
