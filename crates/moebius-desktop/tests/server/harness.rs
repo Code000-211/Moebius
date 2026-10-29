@@ -25,9 +25,11 @@ async fn editing_an_agent_is_a_commit_on_the_harness_repository_and_a_bad_edit_i
     let skills = client.skills().await.unwrap();
     assert_eq!(skills[0].name, "moebius");
     assert!(skills[0].built_in);
-    assert!(skills[1..6].iter().all(|skill| skill.built_in));
-    assert_eq!(skills[6].name, "house-style");
-    assert_eq!(skills[6].description, "Write plainly.");
+    // The built-in skills come first, then the harness repository's own.
+    let own = skills.iter().position(|skill| !skill.built_in).unwrap();
+    assert!(skills[..own].iter().all(|skill| skill.built_in));
+    assert_eq!(skills[own].name, "house-style");
+    assert_eq!(skills[own].description, "Write plainly.");
     let servers = client.mcp_servers().await.unwrap();
     assert_eq!(
         (servers[0].name.as_str(), servers[0].kind.as_str()),
