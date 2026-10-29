@@ -179,7 +179,8 @@ pub(super) fn status(app: &App, run_id: i64) -> String {
     app.store.run(run_id).unwrap().unwrap().status
 }
 
-/// Starts a chat with the Coder; returns its run once the agent has answered the first message.
+/// Starts a chat with the Coder; returns its run once the agent has answered the first message and its settling is
+/// stored (the run reads as waiting just before the event is).
 pub(super) async fn chat(
     state: &ApiState,
     addr: &str,
@@ -198,6 +199,9 @@ pub(super) async fn chat(
     assert_eq!((run.purpose.as_str(), run.card_id), ("chat", None));
     until("the agent has answered", || {
         status(&state.app, run.id) == "waiting"
+            && kinds(&state.app, run.id)
+                .iter()
+                .any(|k| k == "agent_settled")
     })
     .await;
     run
