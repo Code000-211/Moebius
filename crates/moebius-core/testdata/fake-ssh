@@ -26,6 +26,9 @@ tunnel = False
 i = 0
 while i < len(args):
     arg = args[i]
+    if arg == "--":
+        i += 1
+        break
     if arg.startswith("-") and len(arg) > 1:
         flag = arg[1]
         if flag in WITH_VALUE:

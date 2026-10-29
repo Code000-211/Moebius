@@ -67,6 +67,8 @@ impl Tunnel {
                 "ServerAliveCountMax=3",
                 "-o",
                 "ExitOnForwardFailure=yes",
+                // A host is never read as an option, whatever its name.
+                "--",
                 host,
                 REMOTE_COMMAND,
             ])

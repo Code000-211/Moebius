@@ -91,6 +91,8 @@ impl Ssh {
             "-T".to_string(),
             "-o".to_string(),
             "ConnectTimeout=30".to_string(),
+            // A host is never read as an option, whatever its name.
+            "--".to_string(),
             host.to_string(),
             format!("sh -c {}", quote(script)),
         ];

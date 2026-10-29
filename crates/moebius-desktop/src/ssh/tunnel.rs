@@ -69,6 +69,8 @@ impl Tunnel {
             &format!("ServerAliveCountMax={KEEP_ALIVE_COUNT}"),
             "-o",
             "ExitOnForwardFailure=yes",
+            // A host is never read as an option, whatever its name.
+            "--",
             &self.host,
         ]
         .map(str::to_string)
@@ -143,14 +145,14 @@ mod tests {
     fn the_tunnel_forwards_the_loopback_with_keep_alives() {
         let tunnel = Tunnel {
             ssh: Ssh::new("ssh"),
-            host: "build".into(),
+            host: "-oProxyCommand=x".into(),
             local_port: 50123,
             remote_port: 7171,
         };
         assert_eq!(
             tunnel.arguments().join(" "),
             "-N -L 127.0.0.1:50123:127.0.0.1:7171 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
-             -o ExitOnForwardFailure=yes build"
+             -o ExitOnForwardFailure=yes -- -oProxyCommand=x"
         );
     }
 
