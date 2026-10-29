@@ -85,6 +85,10 @@ pub(super) fn propose(app: &App, config: &DecisionModelConfig) -> Result<Option<
     if !app.decisions.decides(KIND) {
         return Ok(None);
     }
+    // The shadowing thread and the one that records an outcome may both ask at once; one at a time, so that a takeover
+    // that is due is opened once.
+    static PROPOSING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _one = PROPOSING.lock().unwrap_or_else(|p| p.into_inner());
     let measure = measure(&app.store)?;
     let latest = app
         .store
