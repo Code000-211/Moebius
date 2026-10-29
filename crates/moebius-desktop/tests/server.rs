@@ -14,18 +14,18 @@ use moebius_core::config::Config;
 use moebius_core::repos::git;
 use moebius_core::server::Server;
 use moebius_core::store::Usage;
-use moebius_desktop::agents;
 use moebius_desktop::app::{App, Message, Page};
-use moebius_desktop::chat;
 use moebius_desktop::client::{
     Client, ClientError, NewChat, NewRepository, RunEvent, Snapshot, StreamEvent, TerminalEvent,
     events, terminal,
 };
-use moebius_desktop::conversation::{Conversation, Entry, Said};
+use moebius_desktop::screens::agents;
+use moebius_desktop::screens::chat;
+use moebius_desktop::screens::setup;
 use moebius_desktop::search;
 use moebius_desktop::settings::Settings;
-use moebius_desktop::setup;
-use moebius_desktop::terminal::Shell;
+use moebius_desktop::widgets::conversation::{Conversation, Entry, Said};
+use moebius_desktop::widgets::terminal::Shell;
 use serde_json::json;
 
 /// A server with no agents on a free port; returns the settings that connect to it and the server.
@@ -1013,7 +1013,7 @@ async fn the_client_lists_proposals_with_their_trials_and_merges_one() {
     let runs: Arc<dyn moebius_core::board::Runs> = server.harness.clone();
     let repo = server.harness_repo.clone().unwrap();
     let app = server.app.clone();
-    tokio::task::spawn_blocking(move || moebius_core::trial::start(&app, &runs, &repo, 1))
+    tokio::task::spawn_blocking(move || moebius_core::improve::trial::start(&app, &runs, &repo, 1))
         .await
         .unwrap()
         .unwrap();
@@ -1887,7 +1887,7 @@ async fn setting_up_a_harness_repository_moves_the_agents_out_of_moebius_toml() 
 async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_asks_the_floating_chat()
  {
     use iced::widget::text_editor::{Action, Edit};
-    use moebius_desktop::script_editor;
+    use moebius_desktop::widgets::script_editor;
 
     let dir = tempfile::tempdir().unwrap();
     let (settings, _) = start_with_fake_pi(dir.path()).await;
@@ -2171,7 +2171,7 @@ async fn opening_the_fleet_reads_the_events_of_the_working_runs_and_a_stopped_ru
 #[tokio::test(flavor = "multi_thread")]
 async fn the_project_lists_reads_and_saves_a_file_as_a_commit() {
     use iced::widget::text_editor::{Action, Edit};
-    use moebius_desktop::project;
+    use moebius_desktop::screens::project;
 
     let dir = tempfile::tempdir().unwrap();
     let (settings, _) = start(dir.path()).await;

@@ -372,7 +372,7 @@ async fn doctor_succeeds_when_everything_is_in_place() {
         mcp: Default::default(),
         token_budget: None,
     };
-    moebius_core::harness_repo::create(&harness, &[("Coder".to_string(), coder)].into(), None)
+    moebius_core::harness::repo::create(&harness, &[("Coder".to_string(), coder)].into(), None)
         .unwrap();
     let text = format!(
         "[router]\nlisten = \"127.0.0.1:0\"\n[pi_bolt]\nprogram = \"/bin/true\"\n[[router.upstreams]]\nprotocol = \"openai\"\n\

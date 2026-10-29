@@ -184,7 +184,7 @@ pub fn ask(settings: &Settings, text: String) -> Task<AppMessage> {
     Task::perform(
         async move {
             let chat = NewChat {
-                agent: Some(crate::chat::DEFAULT_AGENT.into()),
+                agent: Some(crate::screens::chat::DEFAULT_AGENT.into()),
                 message: Some(message),
                 ..NewChat::default()
             };

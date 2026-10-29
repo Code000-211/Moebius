@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
-use crate::mcp::{McpServer, valid_variable};
+use crate::harness::mcp::{McpServer, valid_variable};
 use crate::router::Protocol;
 
 /// The commented example `moebius init` writes. Every value in it is the default.

@@ -3,7 +3,7 @@
 Every decision Moebius or a person makes is recorded as a judgement with its full context (ADR 0010). The training
 export writes them out for fine-tuning one decision model. Judgements leave the server only this way, and only when a
 person starts it: `moebius export` (see [configuration](configuration.md#the-commands)) or `POST /v1/exports` (see the
-[desktop API](desktop-api.md)). The code is in `crates/moebius-core/src/export.rs`.
+[desktop API](desktop-api.md)). The code is in `crates/moebius-core/src/improve/export.rs`.
 
 ## Files
 

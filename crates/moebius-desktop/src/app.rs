@@ -8,33 +8,36 @@ use std::time::Duration;
 use iced::widget::{column, container, opaque, row, stack};
 use iced::{Element, Length, Padding, Subscription, Task};
 
-use crate::add_repository::{self, AddRepository};
-use crate::agents::{self, Agents};
-use crate::chat::Chats;
 use crate::client::{self, Client, ClientError, HistoryEntry, RunEvent, Snapshot, StreamEvent};
-use crate::decision_model::{self, DecisionModel};
-use crate::edits::{self, Edits};
-use crate::experiments::{self, Experiments};
-use crate::fleet::{self, Fleet};
-use crate::float_chat::{self, FloatChat};
-use crate::harness_setup::{self, HarnessSetup};
-use crate::import;
-use crate::inbox::{self, Inbox};
-use crate::live::{self, Live};
-use crate::mcp_servers::{self, McpServers};
-use crate::new_issue::{self, NewIssue};
-use crate::project::{self, Project, Tab};
-use crate::retro::{self, Retros};
-use crate::rules::{self, Rules};
-use crate::script_editor::{self, ScriptEditor};
+use crate::screens::add_repository::{self, AddRepository};
+use crate::screens::agents::{self, Agents};
+use crate::screens::chat::Chats;
+use crate::screens::decision_model::{self, DecisionModel};
+use crate::screens::experiments::{self, Experiments};
+use crate::screens::fleet::{self, Fleet};
+use crate::screens::harness_setup::{self, HarnessSetup};
+use crate::screens::inbox::{self, Inbox};
+use crate::screens::live::{self, Live};
+use crate::screens::mcp_servers::{self, McpServers};
+use crate::screens::project::{self, Project, Tab};
+use crate::screens::retro::{self, Retros};
+use crate::screens::rules::{self, Rules};
+use crate::screens::server_terminal::{self, ServerTerminal};
+use crate::screens::setup::{self, Setup};
+use crate::screens::skills::{self, Skills};
+use crate::screens::start::{self, Start};
+use crate::screens::usage::{self, Usage};
 use crate::search::{self, Search, Target};
-use crate::server_terminal::{self, ServerTerminal};
 use crate::settings::{self, Settings};
-use crate::setup::{self, Setup};
-use crate::skills::{self, Skills};
-use crate::start::{self, Start};
-use crate::usage::{self, Usage};
-use crate::{board, chat, connect, history, page, sidebar, theme};
+use crate::widgets::edits::{self, Edits};
+use crate::widgets::float_chat::{self, FloatChat};
+use crate::widgets::import;
+use crate::widgets::new_issue::{self, NewIssue};
+use crate::widgets::script_editor::{self, ScriptEditor};
+use crate::{
+    screens::board, screens::chat, screens::connect, screens::history, sidebar, theme,
+    widgets::page,
+};
 
 /// What the sidebar says about the connection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

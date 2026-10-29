@@ -22,9 +22,9 @@ use std::time::Duration;
 use moebius_core::app::{App, PERSON};
 use moebius_core::board::{Engine, Limits, Runs, Step, Workflow};
 use moebius_core::config::Config;
-use moebius_core::harness_repo::AgentSettings;
+use moebius_core::decide::rules;
+use moebius_core::harness::repo::AgentSettings;
 use moebius_core::repos::git;
-use moebius_core::rules;
 use moebius_core::store::{Card, Run, Store};
 use moebius_plugin_api::{
     Call, DecideRequest, Decision, Host, Kind, Manifest, Plugin, PluginError,
@@ -273,7 +273,7 @@ fn unmarked_rust_and_typescript_blocks_do_not_exist() {
 
 /// The routes of the desktop API as written in `api.rs`: path and the methods it answers.
 fn routes() -> Vec<(String, BTreeSet<&'static str>)> {
-    let source = read("crates/moebius-core/src/api.rs");
+    let source = read("crates/moebius-core/src/server/api.rs");
     let source = source.split("#[cfg(test)]").next().unwrap();
     source
         .split(".route(")

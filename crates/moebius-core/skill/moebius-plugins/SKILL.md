@@ -18,7 +18,7 @@ the person rebuilds and restarts the server to use it.
    `PluginError::Failed` for anything you cannot answer. It may be called from several threads at once.
 2. Test it through a `Host`, as the core calls it: `Host::new(Duration::from_secs(5))`, `host.add(MyPlugin)`, then
    `host.decide("my-plugin", &request)` and assert the choice. Cover every option and a kind it does not take.
-3. Register it in `Server::new` (`crates/moebius-core/src/server.rs`) next to the guard with `host.add(...)`, and route
+3. Register it in `Server::new` (`crates/moebius-core/src/server/mod.rs`) next to the guard with `host.add(...)`, and route
    the kind after `App::new` with `app.decisions.route("start_card", "my-plugin")`. Never route `tool_call`: that
    removes the guard, the built-in rules and the teacher.
 4. Ask it from a column script with `moebius.decide(kind, context, options, fail_closed)` (see the `moebius-workflows`

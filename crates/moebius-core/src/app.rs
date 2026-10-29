@@ -19,13 +19,13 @@ use crate::board::{Runs, Tui};
 use crate::bus::{AppEvent, Bus};
 use crate::config::AgentConfig;
 use crate::decide::{Actor, Decisions, Question};
-use crate::forge::{Forge, ForgeError, NoForge};
-use crate::github::Issue;
-use crate::harness_repo::HarnessRepo;
+use crate::harness::repo::HarnessRepo;
+use crate::harness::terminal::{MAX_PER_RUN, SERVER, Slot, Slots, tui_key};
+use crate::repos::forge::{Forge, ForgeError, NoForge};
+use crate::repos::github::Issue;
 use crate::repos::{GitError, Repos, git};
 use crate::router::Protocol;
 use crate::store::{Card, Change, Repository, Run, Store, StoreError, now};
-use crate::terminal::{MAX_PER_RUN, SERVER, Slot, Slots, tui_key};
 
 /// The columns of the default workflow (spec 6).
 pub mod columns {
@@ -958,7 +958,7 @@ impl App {
         let earlier = continues.map(|id| self.ended_chat(id)).transpose()?;
         let agent = agent
             .or(earlier.as_ref().map(|run| run.agent.as_str()))
-            .unwrap_or(crate::pibolt::MOEBIUS_AGENT);
+            .unwrap_or(crate::harness::pibolt::MOEBIUS_AGENT);
         let harness = harness
             || (repository_id.is_none()
                 && earlier.as_ref().is_some_and(|run| run.harness_repository));
@@ -978,7 +978,7 @@ impl App {
         if harness {
             self.harness_repo()?;
         }
-        if agent == crate::pibolt::GRILLING_AGENT && repository_id.is_none() {
+        if agent == crate::harness::pibolt::GRILLING_AGENT && repository_id.is_none() {
             return Err(AppError::Invalid(
                 "a grilling needs a repository, whose issues it ends in".into(),
             ));
@@ -1090,7 +1090,7 @@ impl App {
                 "said" => Some(format!("Person: {}", event.data["message"].as_str()?)),
                 "agent_end" => Some(format!(
                     "Agent: {}",
-                    crate::pibolt::final_answer(&event.data)?
+                    crate::harness::pibolt::final_answer(&event.data)?
                 )),
                 _ => None,
             })
@@ -1391,7 +1391,7 @@ impl App {
     /// `offer_chat_changes`.
     pub fn offer_chat_changes(&self, by: &Actor, run_id: i64, reason: &str) -> Result<Change> {
         let run = self.running_chat(run_id)?;
-        if run.agent == crate::pibolt::GRILLING_AGENT {
+        if run.agent == crate::harness::pibolt::GRILLING_AGENT {
             return Err(AppError::Invalid(format!(
                 "chat {run_id} is a grilling, which ends in issues, not a change"
             )));

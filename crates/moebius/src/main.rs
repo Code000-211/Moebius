@@ -10,8 +10,8 @@ use std::sync::Arc;
 use clap::{Parser, Subcommand};
 use moebius_core::board;
 use moebius_core::config::{self, Config};
-use moebius_core::export;
-use moebius_core::harness_repo;
+use moebius_core::harness::repo;
+use moebius_core::improve::export;
 use moebius_core::server::Server;
 use moebius_core::store::Store;
 
@@ -102,7 +102,7 @@ fn run(cli: Cli) -> Result<(), String> {
             let config = std::path::absolute(&cli.config)
                 .map_err(|e| format!("cannot find {}: {e}", cli.config.display()))?;
             let harness = config.with_file_name("harness");
-            harness_repo::create(&harness, &Default::default(), None)
+            repo::create(&harness, &Default::default(), None)
                 .map_err(|e| format!("cannot set up {}: {e}", harness.display()))?;
             println!(
                 "set up the harness configuration repository {}",
@@ -483,7 +483,7 @@ mod tests {
         )
         .unwrap();
         let mut checked = 0;
-        for skill in moebius_core::skill::all() {
+        for skill in moebius_core::harness::skill::all() {
             for words in commands(skill.page()) {
                 check(&words).unwrap_or_else(|e| {
                     panic!("{}: \"$MOEBIUS\" {}: {e}", skill.name, words.join(" "))

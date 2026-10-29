@@ -4,9 +4,9 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use axum::response::IntoResponse;
-use moebius_core::api::{self, ApiState};
 use moebius_core::config::Config;
 use moebius_core::server::Server;
+use moebius_core::server::api::{self, ApiState};
 use serde_json::{Value, json};
 
 /// A server for `toml`, whose data and relative paths are in `dir`, and the address and token to ask it.
@@ -139,7 +139,7 @@ async fn a_server_with_everything_in_place_is_done() {
     let coder = Config::parse("[agents.Coder]\nmodel = \"qwen\"\n", dir.path(), dir.path())
         .unwrap()
         .agents;
-    moebius_core::harness_repo::create(&harness, &coder, None).unwrap();
+    moebius_core::harness::repo::create(&harness, &coder, None).unwrap();
     let toml = format!(
         "[pi_bolt]\nprogram = \"{pi_bolt}\"\n[[router.upstreams]]\nprotocol = \"openai\"\nbase_url = \"{listing}\"\n[harness]\nurl = {:?}\n",
         harness.display().to_string()

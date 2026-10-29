@@ -3,7 +3,7 @@
 A rule is something a run must or must not do. Moebius checks every tool call of every run against the rules before the
 call runs, and a call that breaks one is refused with the rule's name, so that the model can find another way; the run
 goes on. This page is for anyone who writes a `rules.md` file or wants to know exactly what the built-in rules refuse.
-The code is in `crates/moebius-core/src/rules.rs` (the file format), `guard.rs` (the built-in rules and the teacher) and
+The code is in `crates/moebius-core/src/decide/rules.rs` (the file format), `guard.rs` (the built-in rules and the teacher) and
 `check.rs` (where they are asked).
 
 ## The `rules.md` format

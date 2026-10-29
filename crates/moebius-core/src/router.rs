@@ -28,7 +28,7 @@ use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::setup::without_credentials;
+use crate::server::setup::without_credentials;
 use crate::store::{Store, Usage};
 
 /// How long one upstream has to list its models.

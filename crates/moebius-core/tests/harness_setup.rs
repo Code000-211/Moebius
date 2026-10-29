@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use moebius_core::config::Config;
 use moebius_core::decide::Actor;
-use moebius_core::harness_repo::{AgentDefinition, AgentSettings};
+use moebius_core::harness::repo::{AgentDefinition, AgentSettings};
 use moebius_core::repos::git;
 use moebius_core::router::Protocol;
 use moebius_core::server::Server;
@@ -235,7 +235,7 @@ async fn a_server_with_a_harness_repository_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     let origin = dir.path().join("origin");
     std::fs::create_dir(&origin).unwrap();
-    moebius_core::harness_repo::create(&origin, &Default::default(), None).unwrap();
+    moebius_core::harness::repo::create(&origin, &Default::default(), None).unwrap();
     let text = format!(
         "[router]\nlisten = \"127.0.0.1:0\"\n[harness]\nurl = {:?}\n",
         origin.display().to_string()

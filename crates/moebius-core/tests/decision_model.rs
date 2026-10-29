@@ -12,13 +12,13 @@ use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
-use moebius_core::api::{self, ApiState};
 use moebius_core::app::App;
 use moebius_core::config::Config;
+use moebius_core::decide::model::{self, DecisionModel};
 use moebius_core::decide::{Decision, Question};
-use moebius_core::decision_model::{self, DecisionModel};
-use moebius_core::export::held_out;
+use moebius_core::improve::export::held_out;
 use moebius_core::server::Server;
+use moebius_core::server::api::{self, ApiState};
 use moebius_core::store::Store;
 use moebius_plugin_api::{Call, DecideRequest, Host, Kind, Manifest, Plugin, PluginError};
 use serde_json::{Value, json};
@@ -146,7 +146,7 @@ fn start_app(dir: &Path, fake: &Fake, min_judgements: i64) -> Arc<App> {
     let app = App::new(store, Arc::new(host), &data);
     app.decisions.route("triage", "fixed");
     let app = Arc::new(app);
-    decision_model::start(&app, model).unwrap();
+    model::start(&app, model).unwrap();
     app
 }
 
@@ -298,7 +298,7 @@ fn merged(app: &Arc<App>) -> i64 {
         !app.store.inbox().unwrap().is_empty()
     });
     let takeover = app.store.takeovers().unwrap().remove(0);
-    decision_model::merge(
+    model::merge(
         app,
         &moebius_core::decide::Actor::Person,
         takeover.id,
@@ -375,7 +375,7 @@ fn a_takeover_is_proposed_in_the_inbox_and_merging_it_routes_the_kind() {
     );
 
     // The person merges: the decision is recorded, the item is resolved, and the model decides from now on.
-    let merged = decision_model::merge(
+    let merged = model::merge(
         &app,
         &moebius_core::decide::Actor::Person,
         takeover.id,
@@ -410,10 +410,10 @@ fn a_takeover_is_proposed_in_the_inbox_and_merging_it_routes_the_kind() {
         app.store.judgements("triage").unwrap().last().unwrap().id
     );
     assert!(
-        decision_model::merge(&app, &moebius_core::decide::Actor::Person, takeover.id, "").is_err(),
+        model::merge(&app, &moebius_core::decide::Actor::Person, takeover.id, "").is_err(),
         "a takeover is merged once"
     );
-    let view = decision_model::view(&app).unwrap();
+    let view = model::view(&app).unwrap();
     let triage = view.kinds.iter().find(|k| k.kind == "triage").unwrap();
     assert!(triage.routed && triage.shadows >= 3);
     assert!(
@@ -469,7 +469,7 @@ fn the_route_survives_a_restart_and_a_release_hands_the_kind_back() {
     );
     fake.reply(Reply::Scripted);
 
-    let released = decision_model::release(
+    let released = model::release(
         &app,
         &moebius_core::decide::Actor::Person,
         id,
@@ -489,7 +489,7 @@ fn the_route_survives_a_restart_and_a_release_hands_the_kind_back() {
         (decision.choice.as_str(), decision.decider.as_str()),
         ("allow", "fixed")
     );
-    assert!(decision_model::release(&app, &moebius_core::decide::Actor::Person, id, "").is_err());
+    assert!(model::release(&app, &moebius_core::decide::Actor::Person, id, "").is_err());
     // Released, it is not routed after a restart either.
     drop(app);
     let app = start_app(dir.path(), &fake, 3);
@@ -511,7 +511,7 @@ fn a_dismissed_takeover_leaves_the_kind_with_its_decider() {
     });
     let id = app.store.takeovers().unwrap()[0].id;
     let dismissed =
-        decision_model::dismiss(&app, &moebius_core::decide::Actor::Person, id, "not yet").unwrap();
+        model::dismiss(&app, &moebius_core::decide::Actor::Person, id, "not yet").unwrap();
     assert_eq!(dismissed.status, "dismissed");
     assert!(app.store.inbox().unwrap().is_empty());
     let decision = app

@@ -8,8 +8,8 @@ working decider is in
 
 Today every plugin is compiled into the `moebius` binary. Plugins in their own process are not supported yet: the
 messages below exist so that they can be, but nothing starts or talks to such a process. The plugins that go
-through this API today are the `guard` decider (`crates/moebius-core/src/guard.rs`) and, when a `[decision_model]` is
-configured, the `decision-model` decider (`crates/moebius-core/src/decision_model.rs`, see
+through this API today are the `guard` decider (`crates/moebius-core/src/decide/guard.rs`) and, when a `[decision_model]` is
+configured, the `decision-model` decider (`crates/moebius-core/src/decide/model.rs`, see
 [the decision model](decision-model.md)).
 
 ## The trait
@@ -121,7 +121,7 @@ answers nonsense therefore blocks the thing it was asked about; it never lets it
 
 ## Decision points and routing
 
-A decision point is a `Question` handed to `Decisions::decide` (`crates/moebius-core/src/decide.rs`):
+A decision point is a `Question` handed to `Decisions::decide` (`crates/moebius-core/src/decide/mod.rs`):
 
 | Field | Meaning |
 |---|---|
@@ -143,7 +143,7 @@ A person's decisions (approve an issue, merge a change) are recorded the same wa
 
 ### Registering a compiled-in plugin
 
-In `Server::new` (`crates/moebius-core/src/server.rs`), the host is built, the plugin added, and the route set before the
+In `Server::new` (`crates/moebius-core/src/server/mod.rs`), the host is built, the plugin added, and the route set before the
 `App` is shared:
 
 ```rust

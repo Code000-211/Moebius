@@ -13,8 +13,21 @@ fn read(path: &str) -> String {
     std::fs::read_to_string(&file).unwrap_or_else(|e| panic!("{}: {e}", file.display()))
 }
 
-/// The source of a module without its tests.
+/// The source of a module without its tests: one file, or every `.rs` file in a folder and the folders in it.
 fn source(path: &str) -> String {
+    let full = repository_root().join(path);
+    if full.is_dir() {
+        let mut entries: Vec<String> = std::fs::read_dir(&full)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        entries.sort();
+        return entries
+            .iter()
+            .filter(|name| name.ends_with(".rs") || full.join(name).is_dir())
+            .map(|name| source(&format!("{path}/{name}")))
+            .collect();
+    }
     let text = read(path);
     match text.split_once("#[cfg(test)]\nmod tests") {
         Some((code, _)) => code.to_string(),
@@ -45,8 +58,8 @@ fn quoted_after(code: &str, before: &str) -> Vec<String> {
 #[test]
 fn every_route_is_in_the_reference() {
     for (module, page) in [
-        ("api.rs", "docs/reference/desktop-api.md"),
-        ("check.rs", "docs/reference/bridge-protocol.md"),
+        ("server/api.rs", "docs/reference/desktop-api.md"),
+        ("repos/check.rs", "docs/reference/bridge-protocol.md"),
         ("router.rs", "docs/reference/router.md"),
     ] {
         let routes = quoted_after(
@@ -60,7 +73,7 @@ fn every_route_is_in_the_reference() {
 
 #[test]
 fn every_script_function_constant_and_card_field_is_in_the_reference() {
-    let board = source("crates/moebius-core/src/board.rs");
+    let board = source("crates/moebius-core/src/board");
     // `m` is the `moebius` table, `t` the `card` table and `r` its `run` table.
     let moebius: Vec<String> = quoted_after(&board, "m.set(")
         .into_iter()
@@ -143,13 +156,10 @@ fn every_configuration_key_is_in_the_reference() {
 #[test]
 fn every_event_kind_is_in_the_reference() {
     let mut kinds = Vec::new();
-    for entry in std::fs::read_dir(repository_root().join("crates/moebius-core/src")).unwrap() {
-        let name = entry.unwrap().file_name().to_string_lossy().into_owned();
-        kinds.extend(quoted_after(
-            &source(&format!("crates/moebius-core/src/{name}")),
-            "AppEvent::new(",
-        ));
-    }
+    kinds.extend(quoted_after(
+        &source("crates/moebius-core/src"),
+        "AppEvent::new(",
+    ));
     kinds.sort();
     kinds.dedup();
     assert!(kinds.len() >= 14, "{kinds:?}");

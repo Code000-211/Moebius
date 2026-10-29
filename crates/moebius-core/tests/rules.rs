@@ -4,12 +4,12 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use moebius_core::api::{self, ApiState};
-use moebius_core::check;
 use moebius_core::config::Config;
+use moebius_core::repos::check;
 use moebius_core::repos::git;
 use moebius_core::router::Grant;
 use moebius_core::server::Server;
+use moebius_core::server::api::{self, ApiState};
 use serde_json::{Value, json};
 
 fn write(dir: &Path, file: &str, text: &str) {

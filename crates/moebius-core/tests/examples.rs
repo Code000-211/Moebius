@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use moebius_core::app::{App, PERSON};
 use moebius_core::board::{Engine, Limits, Runs, Workflow};
+use moebius_core::decide::rules;
 use moebius_core::repos::git;
-use moebius_core::rules;
 use moebius_core::store::{Card, Run, Store};
 use moebius_plugin_api::Host;
 

@@ -1,8 +1,8 @@
 # Desktop API
 
 The desktop API is how the desktop app, or any client such as `curl`, reads the boards and acts on them. This page is for
-anyone who writes a client or a script against a running server. The code is in `crates/moebius-core/src/api.rs`; the
-events are published from `app.rs`, `pibolt.rs`, `check.rs`, `poll.rs`, `retro.rs`, `trial.rs` and `server.rs`.
+anyone who writes a client or a script against a running server. The code is in `crates/moebius-core/src/server/api.rs`; the
+events are published from `app.rs`, `harness/pibolt.rs`, `repos/check.rs`, `repos/poll.rs`, `improve/retro.rs`, `improve/trial.rs` and `server/mod.rs`.
 
 The API is HTTP with JSON bodies plus one WebSocket, served on `listen` (default `127.0.0.1:7171`). Keep it on a private
 network.

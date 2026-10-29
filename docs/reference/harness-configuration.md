@@ -2,7 +2,7 @@
 
 The harness configuration is a git repository that holds the agents, their skills, the server's rules and the MCP servers.
 This page is for whoever sets it up or edits it, by hand or through the desktop API: it lists every file and key. The code
-is in `crates/moebius-core/src/harness_repo.rs`.
+is in `crates/moebius-core/src/harness/repo.rs`.
 
 ## Using it
 

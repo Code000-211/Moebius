@@ -4,14 +4,14 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use moebius_core::api::{self, ApiState};
 use moebius_core::app::PERSON;
 use moebius_core::board::Runs;
 use moebius_core::config::Config;
+use moebius_core::decide::rules;
 use moebius_core::repos::git;
 use moebius_core::router::Protocol;
-use moebius_core::rules;
 use moebius_core::server::Server;
+use moebius_core::server::api::{self, ApiState};
 use serde_json::{Value, json};
 
 const CODER: &str = "model = \"coder-model\"\nthinking = \"low\"\nskills = [\"house-style\"]\nextensions = [\"extensions/log.ts\"]\nmcp = [\"docs\"]\n";

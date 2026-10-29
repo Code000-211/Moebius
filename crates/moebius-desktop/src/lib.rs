@@ -1,44 +1,14 @@
 //! The Moebius desktop app, built to `docs/design.md`. It talks to the server only through the desktop API
 //! (`docs/reference/desktop-api.md`) and does not depend on `moebius-core`.
+//!
+//! `app` holds the state and draws the window, `client` talks to the server, `sidebar` and `search` are on every
+//! screen, `theme` has every colour and size. `screens` has one module per page, `widgets` the pieces screens share.
 
-pub mod add_repository;
-pub mod agents;
 pub mod app;
-pub mod board;
-pub mod chat;
-pub mod chat_terminal;
 pub mod client;
-pub mod connect;
-pub mod conversation;
-pub mod decision_model;
-pub mod edits;
-pub mod experiments;
-pub mod fleet;
-pub mod float_chat;
-pub mod harness_setup;
-pub mod history;
-pub mod icons;
-pub mod import;
-pub mod inbox;
-pub mod inline_edit;
-pub mod live;
-pub mod mcp_servers;
-pub mod model_picker;
-pub mod new_issue;
-pub mod page;
-pub mod project;
-pub mod retro;
-pub mod rules;
-pub mod script_editor;
+pub mod screens;
 pub mod search;
-pub mod server_terminal;
 pub mod settings;
-pub mod setup;
 pub mod sidebar;
-pub mod skills;
-pub mod start;
-pub mod steps;
-pub mod terminal;
 pub mod theme;
-pub mod transcript;
-pub mod usage;
+pub mod widgets;

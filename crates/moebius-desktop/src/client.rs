@@ -1667,7 +1667,7 @@ impl Client {
         context: &str,
     ) -> Result<Run, ClientError> {
         let body = serde_json::json!({
-            "agent": crate::chat::DEFAULT_AGENT,
+            "agent": crate::screens::chat::DEFAULT_AGENT,
             "message": message,
             "repository": repository,
             "context": context,

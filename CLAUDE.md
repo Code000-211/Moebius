@@ -6,28 +6,28 @@ changes ready to merge. Read `GLOSSARY.md` for the words, `docs/spec.md` for wha
 
 ## Layout
 
-- `crates/moebius-core`: everything the server does. `app.rs` ties the store, bus, repositories, forges and decisions
-  together; `server.rs` wires the API, router, harness, board engine and the nightly schedule; one module per part:
-  `store`, `blobs`, `bus`, `repos`, `forge`, `github` (the API client), `poll` (GitHub without webhooks), `check` (local
-  checks), `decide`, `guard` (the guard deciders), `rules`, `scripts` (editing a column's script), `files` (a
-  repository's files on its default branch, read and committed), `board`, `router`, `pibolt`, `terminal` (shells in a worktree and on the server), `harness_repo` (the harness configuration repository),
-  `mcp` (its MCP servers), `skill`, `retro`, `trial`, `replay`, `research` (autoresearch), `grilling` (chats that end in
-  issues), `export` (the training set), `decision_model` (shadowing and takeovers), `setup` (what the Models and Plugins
-  pages show), `settings` (editing `moebius.toml` and the API keys while the server runs), `api`, `config`.
-  Column scripts are in `workflow/*.luau`.
+- `crates/moebius-core`: everything the server does. At the top of `src/`: `app.rs` ties the store, bus, repositories,
+  forges and decisions together; `config`, `store`, `blobs` (and `blobs::redact`), `bus` and `router` (the model
+  provider). The rest is grouped by part, one folder each: `server/` (the wiring and nightly schedule, `api`,
+  `settings` for editing `moebius.toml` while it runs, `setup` for the Models, Plugins and Get started pages), `repos/`
+  (git, `forge`, `github`, `poll`, `files`, `check`), `board/` (the engine and `scripts`), `decide/` (decision points,
+  `guard`, `rules`, `model` for shadowing and takeovers), `harness/` (`pibolt`, `terminal`, `repo` for the harness
+  configuration repository, `mcp`, `skill`, `grilling`) and `improve/` (`retro`, `trial`, `replay`, `research`,
+  `export`). `docs/architecture.md` lists every module. Column scripts are in `workflow/*.luau`.
 - `crates/moebius-plugin-api`: the plugin trait and the host that calls plugins with a time limit, failing closed.
 - `crates/moebius`: the `moebius` binary (`init`, `serve`, `check-script`, `export`, and in `cli.rs` the commands that
   operate a running server through the desktop API: `api` for any route, a command for what is done often; the Moebius
   agent uses them as `"$MOEBIUS"`).
-- `crates/moebius-core/skill/` and `src/skill.rs`: the built-in skills. The `moebius` skill is `SKILL.md` plus every page
-  of `docs/guide/` and `docs/reference/` (add a new page to the list in `skill.rs`; a test fails if you forget); the
+- `crates/moebius-core/skill/` and `src/harness/skill.rs`: the built-in skills. The `moebius` skill is `SKILL.md` plus every page
+  of `docs/guide/` and `docs/reference/` (add a new page to the list in `harness/skill.rs`; a test fails if you forget); the
   Moebius agent's task skills are `skill/moebius-<task>/SKILL.md`, and every `"$MOEBIUS"` command and route they name is
   checked by a test.
 - `crates/moebius-desktop`: the iced desktop app (built to `docs/design.md`). It talks to the server only through the
-  desktop API and does not depend on `moebius-core` (a dev-dependency starts a real server in its tests). `app.rs` is
-  the state, messages and view, `client.rs` the API client and event stream, `settings.rs` the saved address and token,
-  `theme.rs` every colour and size, `sidebar.rs` and one module per screen. `tests/snapshots/` holds the pictures its
-  render tests compare against (delete one to store a new picture).
+  desktop API and does not depend on `moebius-core` (a dev-dependency starts a real server in its tests). At the top:
+  `app.rs` the state, messages and view, `client.rs` the API client and event stream, `settings.rs` the saved address
+  and token, `theme.rs` every colour and size, `sidebar.rs` and `search.rs`. `screens/` has one module per page,
+  `widgets/` the pieces screens share. `tests/snapshots/` holds the pictures its render tests compare against (delete
+  one to store a new picture).
 - `docs/guide/`: how to build on Moebius, one how-to per page (column scripts, workflows, rules, agents, plugins,
   extensions, the desktop API). Every `luau` block in it is a complete column script that `tests/guide.rs` runs; read it
   before you build anything for a user, and keep it in step with the code.

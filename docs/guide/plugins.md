@@ -18,7 +18,7 @@ answers `tool_call` today, and it holds the built-in rules and the teacher. A ki
 ## The steps
 
 1. Write a type that implements `Plugin`: a manifest and a `call` method. The example below answers `start_card`.
-2. Add it to the host and route a decision kind to it, in `Server::new` in `crates/moebius-core/src/server.rs`.
+2. Add it to the host and route a decision kind to it, in `Server::new` in `crates/moebius-core/src/server/mod.rs`.
 3. Ask the kind from a column script with `moebius.decide`.
 4. Rebuild the `moebius` binary and restart the server.
 
@@ -125,7 +125,7 @@ you cannot answer; both are refusals to the core.
 
 The server builds the host, adds the guard and routes `tool_call` to it in `Server::new`:
 
-<!-- excerpt: crates/moebius-core/src/server.rs -->
+<!-- excerpt: crates/moebius-core/src/server/mod.rs -->
 ```rust
 host.add(guard);
 let mut app = App::new(store.clone(), Arc::new(host), &config.data_dir);

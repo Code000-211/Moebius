@@ -6,7 +6,7 @@ use iced_test::Simulator;
 use moebius_desktop::app::{App, Message, Page};
 use moebius_desktop::client::{ClientError, Snapshot};
 use moebius_desktop::settings::Settings as Connection;
-use moebius_desktop::{harness_setup, start, theme};
+use moebius_desktop::{screens::harness_setup, screens::start, theme};
 use serde_json::json;
 
 fn answer(missing: &[&str]) -> moebius_desktop::client::Start {

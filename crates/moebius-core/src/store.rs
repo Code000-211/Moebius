@@ -3582,7 +3582,7 @@ mod tests {
 
     #[test]
     fn a_retro_collects_the_errors_of_one_local_day_and_nothing_at_or_after_its_end() {
-        use crate::retro::report;
+        use crate::improve::retro::report;
         let (_dir, s) = store();
         let repo = s.add_repository("r", "/r", "none", "main").unwrap();
         let card = s.add_card(repo.id, "Card", "", "leon", "Backlog").unwrap();

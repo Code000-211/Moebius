@@ -3,7 +3,7 @@
 The bridge is the part of Moebius that lives inside a harness and through which every tool call is checked before it
 runs. This page is for anyone who writes a bridge for another harness or tests the endpoints: it describes the two HTTP
 endpoints the server offers, their JSON, the rules a client must follow so that it fails closed, and how the harness is
-told where the server is. The server side is `crates/moebius-core/src/check.rs`; the reference client is the Pi
+told where the server is. The server side is `crates/moebius-core/src/repos/check.rs`; the reference client is the Pi
 extension `crates/moebius-core/bridge/moebius-bridge.ts`.
 
 ## Endpoints

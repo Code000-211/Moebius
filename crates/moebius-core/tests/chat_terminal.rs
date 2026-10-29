@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use common::{last_message, recorded_upstream, start, text_answer, tool_call_answer};
 use futures_util::{SinkExt, StreamExt};
-use moebius_core::terminal::tui_key;
+use moebius_core::harness::terminal::tui_key;
 use serde_json::{Value, json};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;

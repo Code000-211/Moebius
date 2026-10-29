@@ -7,10 +7,10 @@ use iced::{Border, Center, Color, Element, Length, Padding};
 
 use crate::app::{Connection, Message, Page};
 use crate::client::Snapshot;
-use crate::icons::{self, Icon};
+use crate::screens::usage::short;
 use crate::search;
 use crate::theme;
-use crate::usage::short;
+use crate::widgets::icons::{self, Icon};
 
 /// The groups below the Inbox and what each holds.
 const BUILD: [(Page, Icon); 4] = [

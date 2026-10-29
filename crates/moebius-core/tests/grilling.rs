@@ -8,10 +8,10 @@ use std::time::{Duration, Instant};
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::{get, post};
-use moebius_core::api::{self, ApiState};
 use moebius_core::config::Config;
 use moebius_core::repos::git;
 use moebius_core::server::Server;
+use moebius_core::server::api::{self, ApiState};
 use serde_json::{Value, json};
 
 /// A repository with one commit.

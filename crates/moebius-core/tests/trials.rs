@@ -6,14 +6,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use moebius_core::api::{self, ApiState};
 use moebius_core::app::PERSON;
 use moebius_core::board::Runs;
 use moebius_core::bus::AppEvent;
 use moebius_core::config::{Config, TimeOfDay};
 use moebius_core::repos::git;
 use moebius_core::server::Server;
-use moebius_core::{retro, trial};
+use moebius_core::server::api::{self, ApiState};
+use moebius_core::{improve::retro, improve::trial};
 use serde_json::{Value, json};
 
 fn write(dir: &Path, file: &str, text: &str) {
