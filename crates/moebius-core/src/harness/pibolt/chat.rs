@@ -255,7 +255,6 @@ impl PiBolt {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
 
     use serde_json::{Value, json};
 
@@ -293,7 +292,7 @@ mod tests {
         assert!(lock(&pi.live).contains_key(&run.id));
         pi.pause_idle_chats(&app, Instant::now() + IDLE);
         assert!(!lock(&pi.live).contains_key(&run.id));
-        assert!(!Path::new(&format!("/proc/{pid}")).exists());
+        assert!(!alive(&pid));
         assert_eq!(app.run(run.id).unwrap().status, "waiting");
 
         // The next message starts Pi again on the same session, and it answers.
@@ -323,6 +322,14 @@ mod tests {
         app.end_chat(&pi, run.id).unwrap();
         assert_eq!(wait_until_ended(&app, run.id).status, "succeeded");
         assert!(!pi.say(run.id, "Hello?"));
+    }
+
+    /// Whether the process `pid` still runs: it exists and has not exited (a zombie has, it only waits to be reaped).
+    fn alive(pid: &str) -> bool {
+        std::fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|stat| {
+            stat.rsplit_once(") ")
+                .is_some_and(|(_, rest)| !rest.starts_with('Z'))
+        })
     }
 
     #[test]
@@ -366,9 +373,14 @@ mod tests {
         assert_eq!(listed.title, "");
 
         // Another reasoning level is told to the waiting Pi.
-        let pid =
-            std::fs::read_to_string(app.data_dir.join(format!("runs/{}/agent/pid.txt", run.id)))
-                .unwrap();
+        let pid_file = app.data_dir.join(format!("runs/{}/agent/pid.txt", run.id));
+        wait_for("Pi writes its pid", || {
+            std::fs::read_to_string(&pid_file).is_ok_and(|pid| !pid.trim().is_empty())
+        });
+        let pid = std::fs::read_to_string(&pid_file)
+            .unwrap()
+            .trim()
+            .to_string();
         app.change_chat_settings(&pi, run.id, (None, Some("low"), &[]))
             .unwrap();
         wait_for("Pi is told the level", || {
@@ -379,13 +391,13 @@ mod tests {
             stdin,
             [json!({ "id": "moebius-settings", "type": "set_thinking_level", "level": "low" })]
         );
-        assert!(Path::new(&format!("/proc/{pid}")).exists());
+        assert!(alive(&pid));
 
         // Another model needs a new Pi on the same session, started with it.
         app.change_chat_settings(&pi, run.id, (Some("other-model"), None, &[]))
             .unwrap();
         assert_eq!(app.run(run.id).unwrap().status, "waiting");
-        assert!(!Path::new(&format!("/proc/{pid}")).exists());
+        wait_for("the first Pi ends", || !alive(&pid));
         wait_for("Pi starts again", || {
             flag(&argv_and_stdin(&app, run.id).0, "--model") == Some("other-model")
         });
