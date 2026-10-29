@@ -5,6 +5,7 @@
 //! - `card.review`: the verdict and findings of the review since the card's latest `code` run, if there is one.
 //! - `card.note`: why the card went back to coding, if it did and no `code` run has succeeded since.
 //! - `card.change`: the card's open change: its checks, the failing ones and whether it still merges cleanly.
+//! - `card.test_first`: whether the card's repository works test first (see `app::reproduce`).
 //! - `card.stopped`: whether a person stopped the card's latest run and has not retried the card since.
 //! - `card.rounds`, `card.reviews`, `card.tokens`: the `code` runs, `review` runs and tokens of the card since it was
 //!   last retried.
@@ -73,6 +74,15 @@ impl Engine {
         t.set("change", change_table(&self.app, lua, card.id)?)?;
         t.set("trusted", self.app.is_trusted(card))?;
         t.set("confirmed", card.confirmed)?;
+        let repository = self
+            .app
+            .store
+            .repository(card.repository_id)
+            .map_err(mlua::Error::external)?;
+        t.set(
+            "test_first",
+            repository.is_some_and(|r| self.app.test_first(&r)),
+        )?;
         let blocked_by = self.app.blocked_by(card).map_err(mlua::Error::external)?;
         t.set("blocked_by", blocked_by)?;
         let since_retry = || runs_since_retry(&runs, card);

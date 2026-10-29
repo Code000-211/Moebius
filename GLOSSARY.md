@@ -130,6 +130,11 @@ The columns a card goes through on its own and the behaviour behind them, by def
 back to coding while anything is still wrong, until its change is ready to merge; a person steps in only before the merge.
 _Avoid_: pipeline, process, flow
 
+**Reproduction test**:
+A test the Coder writes from the issue before the fix, which fails without the change and passes with it; in a
+repository that works test first, a change goes on to review only when its reproduction test does both.
+_Avoid_: regression test, acceptance test
+
 **Experiment**:
 Changing one thing on a branch of its own, measuring the result and keeping the change only if it is better; a trial and each
 step of an autoresearch are experiments, which differ only in how they measure.

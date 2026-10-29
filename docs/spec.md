@@ -157,6 +157,13 @@ steer, stop) go through the same record.
 
 A card that reaches its round limit (default 5) or its token budget stops and goes to the inbox as stuck.
 
+A repository can work **test first** (a file `.moebius/test-first` on its default branch). The Coder then writes a test
+that reproduces the issue and names it in `.moebius/reproduce`, committed with the change, and `review.luau` lets the
+change on only when that test fails on the commit the change starts from (with the test's files added) and passes on
+the change, both run like the repository's checks; a change that cannot be tested says why there, and the Reviewer
+judges the reason. Tests generated from the issue and used as a gate raise the precision of offered changes the most of
+any review step (Otter, arXiv 2502.05368).
+
 ## 7. Self-improvement
 
 - **Retro** (23:30): Moebius collects the day's errors without a model (failed tool calls, refused calls, aborted runs,

@@ -384,4 +384,137 @@ mod tests {
         assert!(note(&app, &card).unwrap().contains("run-1.txt"));
         assert!(app.store.inbox().unwrap().is_empty());
     }
+
+    /// Ticks the card until it no longer waits for its reproduction test.
+    fn settle_test(engine: &crate::board::Engine, card: &Card) -> crate::board::Step {
+        let give_up = Instant::now() + Duration::from_secs(60);
+        loop {
+            let step = engine.tick(card.id).unwrap();
+            if step.waiting.as_deref() != Some("running the reproduction test") {
+                return step;
+            }
+            assert!(Instant::now() < give_up, "the test never ended");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// A card of a repository that works test first, whose every round commits `files`, coded and moved to review.
+    fn test_first_card(
+        files: Vec<(&'static str, &'static str)>,
+        reviewer: bool,
+    ) -> (
+        tempfile::TempDir,
+        Arc<App>,
+        crate::board::Engine,
+        Card,
+        Arc<FakeHarness>,
+    ) {
+        let harness = Arc::new(FakeHarness {
+            files,
+            reviewer,
+            ..FakeHarness::default()
+        });
+        let (dir, app, engine, repo) = setup_with_harness(None, harness.clone());
+        commit_to_base(&app, repo, ".moebius/test-first", "");
+        let card = app.create_issue(repo, "Fix a bug", "", PERSON).unwrap();
+        engine.settle(card.id).unwrap();
+        engine.tick(card.id).unwrap();
+        assert_eq!(column(&app, &card), "In review");
+        (dir, app, engine, card, harness)
+    }
+
+    // Unix only: the reproduction test is run with `sh`.
+    #[cfg(unix)]
+    #[test]
+    fn test_first_a_test_that_fails_at_the_base_and_passes_on_the_change_lets_the_card_on() {
+        // The test looks for the file each round adds, which the base commit does not have.
+        let (_dir, app, engine, card, _) = test_first_card(
+            vec![
+                (".moebius/reproduce", "sh tests/repro.sh\ntests/repro.sh\n"),
+                ("tests/repro.sh", "ls run-*.txt\n"),
+            ],
+            false,
+        );
+        let step = engine.tick(card.id).unwrap();
+        assert_eq!(
+            step.waiting.as_deref(),
+            Some("running the reproduction test")
+        );
+        settle_test(&engine, &card);
+        assert_eq!(
+            column(&app, &card),
+            "Ready to merge",
+            "{:?}",
+            note(&app, &card)
+        );
+    }
+
+    // Unix only: the reproduction test is run with `sh`.
+    #[cfg(unix)]
+    #[test]
+    fn test_first_a_test_that_does_not_fail_at_the_base_sends_the_card_back_saying_so() {
+        let (_dir, app, engine, card, harness) = test_first_card(
+            vec![
+                (".moebius/reproduce", "sh tests/repro.sh\ntests/repro.sh\n"),
+                ("tests/repro.sh", "echo always fine\n"),
+            ],
+            false,
+        );
+        settle_test(&engine, &card);
+        assert_eq!(column(&app, &card), "In progress");
+        let note = note(&app, &card).unwrap();
+        assert!(
+            note.starts_with(
+                "Test first: the reproduction test `sh tests/repro.sh` does not hold."
+            ),
+            "{note}"
+        );
+        assert!(
+            note.contains("It passes on the commit the change starts from"),
+            "{note}"
+        );
+        assert!(note.contains("always fine"), "{note}");
+        assert!(!note.contains("on the change"), "{note}");
+        engine.tick(card.id).unwrap();
+        assert_eq!(harness.notes.lock().unwrap()[1].as_deref(), Some(&*note));
+    }
+
+    #[test]
+    fn test_first_a_change_without_a_reproduction_test_goes_back_and_one_that_cannot_be_tested_is_judged()
+     {
+        let (_dir, app, engine, card, _) = test_first_card(vec![], false);
+        engine.tick(card.id).unwrap();
+        assert_eq!(column(&app, &card), "In progress");
+        assert!(
+            note(&app, &card)
+                .unwrap()
+                .contains("the change names no reproduction test")
+        );
+
+        let (_dir, app, engine, card, harness) = test_first_card(
+            vec![(
+                ".moebius/reproduce",
+                "untestable: only the README changes\n",
+            )],
+            true,
+        );
+        let step = engine.tick(card.id).unwrap();
+        assert_eq!(step.waiting.as_deref(), Some("reviewing"));
+        let review_note = harness.notes.lock().unwrap()[1].clone().unwrap();
+        assert!(
+            review_note.contains("only the README changes"),
+            "{review_note}"
+        );
+        engine.settle(card.id).unwrap();
+        assert_eq!(column(&app, &card), "Ready to merge");
+    }
+
+    #[test]
+    fn without_test_first_the_reproduction_test_is_not_asked_for() {
+        let (_dir, app, engine, repo) = setup();
+        let card = app.create_issue(repo, "Fix a bug", "", PERSON).unwrap();
+        engine.settle(card.id).unwrap();
+        engine.settle(card.id).unwrap();
+        assert_eq!(column(&app, &card), "Ready to merge");
+    }
 }

@@ -59,6 +59,7 @@ fn made_up_card(lua: &Lua, column: &str, title: &str, author: &str) -> mlua::Res
     t.set("column", column)?;
     t.set("trusted", author == PERSON)?;
     t.set("confirmed", false)?;
+    t.set("test_first", false)?;
     t.set("blocked_by", lua.create_table()?)?;
     t.set("rounds", 0)?;
     t.set("reviews", 0)?;
@@ -161,6 +162,28 @@ fn recording_api(
             made_up_change(lua)
         })?,
     )?;
+
+    m.set(
+        "reproduction",
+        lua.create_function(|_, ()| Ok(None::<Table>))?,
+    )?;
+
+    for (function, place) in [
+        ("run_test", "the change"),
+        ("run_test_at_base", "the base commit"),
+    ] {
+        let log = record.clone();
+        m.set(
+            function,
+            lua.create_function(move |lua, (command, _): (String, Option<Vec<String>>)| {
+                log(format!("started the test {command:?} on {place}"));
+                let table = lua.create_table()?;
+                table.set("status", "pending")?;
+                table.set("output", "")?;
+                Ok(table)
+            })?,
+        )?;
+    }
 
     let log = record.clone();
     m.set(

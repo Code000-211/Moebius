@@ -118,6 +118,8 @@ pub struct Worktree {
 pub struct Repos {
     clones: PathBuf,
     worktrees: PathBuf,
+    /// Held while worktrees are added or removed: git cannot add one while another is pruned or added beside it.
+    worktree_lock: std::sync::Arc<std::sync::Mutex<()>>,
 }
 
 impl Repos {
@@ -125,7 +127,13 @@ impl Repos {
         Self {
             clones: data_dir.join("repos"),
             worktrees: data_dir.join("worktrees"),
+            worktree_lock: Default::default(),
         }
+    }
+
+    /// Keeps other threads from adding or removing worktrees until it is dropped.
+    fn hold_worktrees(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.worktree_lock.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Where the clone of the repository `name` lives.
@@ -244,6 +252,7 @@ impl Repos {
         let path = self.worktrees.join(repository).join(name);
         std::fs::create_dir_all(path.parent().expect("worktrees have a parent"))?;
         let target = path.to_string_lossy().into_owned();
+        let _held = self.hold_worktrees();
         git(
             clone,
             &["worktree", "add", "--quiet", "-b", &branch, &target, base],
@@ -265,6 +274,7 @@ impl Repos {
         if path.exists() {
             std::fs::remove_dir_all(&path)?;
         }
+        let _held = self.hold_worktrees();
         git(clone, &["worktree", "prune"])?;
         let target = path.to_string_lossy().into_owned();
         git(
@@ -277,6 +287,7 @@ impl Repos {
     /// Removes a worktree; the branch of a run's worktree is kept, since the change lives on it.
     pub fn remove_worktree(&self, clone: &Path, worktree: &Path) -> Result<()> {
         let target = worktree.to_string_lossy().into_owned();
+        let _held = self.hold_worktrees();
         git(clone, &["worktree", "remove", "--force", &target])?;
         git(clone, &["worktree", "prune"]).map(drop)
     }
@@ -350,6 +361,34 @@ mod tests {
         std::fs::write(dir.join(file), text).unwrap();
         git(dir, &["add", "."]).unwrap();
         git(dir, &["commit", "--quiet", "-m", file]).unwrap();
+    }
+
+    #[test]
+    fn throwaway_worktrees_made_and_removed_at_once_on_many_threads_all_work() {
+        let dir = tempfile::tempdir().unwrap();
+        let origin = origin(dir.path());
+        let repos = Repos::new(&dir.path().join("data"));
+        let clone = repos
+            .clone_or_fetch("demo", origin.to_str().unwrap(), None)
+            .unwrap();
+        let threads: Vec<_> = (0..8)
+            .map(|i| {
+                let (repos, clone) = (repos.clone(), clone.clone());
+                std::thread::spawn(move || {
+                    for round in 0..3 {
+                        let name = format!("throwaway-{i}-{round}");
+                        let worktree = repos
+                            .add_detached_worktree("demo", &clone, &name, "main")
+                            .unwrap();
+                        assert!(worktree.join("README.md").exists());
+                        repos.remove_worktree(&clone, &worktree).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for thread in threads {
+            thread.join().unwrap();
+        }
     }
 
     #[test]

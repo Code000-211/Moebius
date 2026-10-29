@@ -272,13 +272,28 @@ fn write_untracked(worktree: &Path, files: &BTreeMap<String, String>) -> Result<
     std::fs::write(&exclude, text).map_err(|e| e.to_string())
 }
 
+/// What a `code` run is told in a repository that works test first (see `app::reproduce`).
+const TEST_FIRST_PROMPT: &str = "This repository works test first: red, then green. Before you change any code, write \
+     a test that reproduces the issue, in a file of its own, and run it to see it fail. Then make the change and run \
+     it again to see it pass. Write the file `.moebius/reproduce`: its first line is the command that runs only that \
+     test, and each further line names a file that holds the test. Moebius runs the command on the commit your change \
+     starts from with those files added, where it must fail, and on your change, where it must pass; otherwise the \
+     card comes back to you. If the issue cannot be tested this way, as for documentation or configuration only, \
+     write the single line `untestable: <why>` in that file instead; the reviewer judges the reason.";
+
 /// The commit `worktree` of the run `run_id` is at, which fails the run when git cannot say.
 pub(in crate::harness) fn head(app: &App, run_id: i64, worktree: &Path) -> Result<String, String> {
     git(worktree, &["rev-parse", "HEAD"]).map_err(|e| fail(app, run_id, e.to_string()))
 }
 
-/// The prompt for a run of `card`; `note` is added under a heading of its own.
-pub(in crate::harness) fn prompt_for(card: &Card, purpose: &str, note: Option<&str>) -> String {
+/// The prompt for a run of `card`; `note` is added under a heading of its own. A `code` run in a repository that works
+/// test first is told the rule of red, then green.
+pub(in crate::harness) fn prompt_for(
+    app: &App,
+    card: &Card,
+    purpose: &str,
+    note: Option<&str>,
+) -> String {
     let mut prompt = format!("Work on issue #{}: {}\n", card.number, card.title);
     if !card.body.trim().is_empty() {
         prompt.push('\n');
@@ -292,6 +307,18 @@ pub(in crate::harness) fn prompt_for(card: &Card, purpose: &str, note: Option<&s
         CODE_PROMPT
     });
     prompt.push('\n');
+    let test_first = || {
+        app.store
+            .repository(card.repository_id)
+            .ok()
+            .flatten()
+            .is_some_and(|repository| app.test_first(&repository))
+    };
+    if purpose != "review" && test_first() {
+        prompt.push('\n');
+        prompt.push_str(TEST_FIRST_PROMPT);
+        prompt.push('\n');
+    }
     if let Some(note) = note {
         prompt.push_str("\nNotes from the last round:\n\n");
         prompt.push_str(note);
@@ -374,6 +401,23 @@ mod tests {
         let prompt = prompt_of(&code);
         assert!(prompt.contains("Moebius commits what you leave"));
         assert!(!prompt.contains("Notes from the last round"));
+    }
+
+    #[test]
+    fn a_code_run_in_a_repository_that_works_test_first_is_told_red_then_green() {
+        let (_dir, app, _pi, repo) = setup();
+        let card = app.create_issue(repo, "Fix a bug", "", "person").unwrap();
+        assert!(!prompt_for(&app, &card, "code", None).contains("red, then green"));
+
+        let clone = PathBuf::from(&app.store.repository(repo).unwrap().unwrap().path);
+        std::fs::create_dir_all(clone.join(".moebius")).unwrap();
+        std::fs::write(clone.join(".moebius/test-first"), "").unwrap();
+        git(&clone, &["add", "."]).unwrap();
+        git(&clone, &["commit", "--quiet", "-m", "test first"]).unwrap();
+        let prompt = prompt_for(&app, &card, "code", None);
+        assert!(prompt.contains("red, then green"), "{prompt}");
+        assert!(prompt.contains("`.moebius/reproduce`"), "{prompt}");
+        assert!(!prompt_for(&app, &card, "review", None).contains("red, then green"));
     }
 
     #[test]

@@ -50,6 +50,7 @@ end
 | `card.column` | string | The column the card is in. |
 | `card.confirmed` | boolean | True for a card made from a grilling a person confirmed (see `desktop-api.md`, grillings); the person has decided on it, so it needs no approval. |
 | `card.trusted` | boolean | True when the issue may move on without approval: it was made by a person in the desktop app on a repository without a forge, or its author is one of the repository's trusted GitHub logins (compared without regard to case). |
+| `card.test_first` | boolean | True when the card's repository works test first: its default branch has a file `.moebius/test-first`. See Test first. |
 | `card.blocked_by` | table (array of numbers) | The issue numbers the card is blocked by that are not done yet. A number counts as not done when it has no card or its card is not in `Done`. Empty (never nil) when nothing blocks the card. The numbers come from "blocked by #12" lines in the issue's body on GitHub. |
 | `card.rounds` | number | How many runs with purpose `code` the card has had since it was last retried, whatever their status (a running one counts). |
 | `card.reviews` | number | How many runs with purpose `review` the card has had since it was last retried, whatever their status. |
@@ -149,6 +150,28 @@ or are running for it. It returns at once; the returned `checks` is `pending` wh
 error `the card has no change to check` before the change is published. The time this call takes does not count
 against the time limit.
 
+`moebius.reproduction()` returns a table or nil.
+: What the card's change says of its reproduction test in `.moebius/reproduce` (see Test first), read from the change's
+latest commit: `command` (a string) and `files` (an array of strings) for a test, or `untestable` (a string, the
+reason) and an empty `files` for a change that cannot be tested this way. nil when the change has no such file, or has
+it exactly as the commit the change starts from has it (a file an earlier change left says nothing about this one).
+Raises an error `the card has no change to test` before the change is published. The time this call takes does not
+count against the time limit.
+
+`moebius.run_test(command)` returns a table.
+: Runs `command` on the change's current commit, as the repository's checks run (see Checks and conflicts): with `sh -c`
+in a throwaway worktree, on a thread of its own, with the cleared environment and stopped after
+`checks.timeout_seconds`. It returns at once with how the run stands: `status` is `pending` while it runs, then `passed`
+(exit status 0), `failed`, or `error` when it could not run; `output` is the last 4 KB of what it printed with secrets
+removed, or why it could not run. A command runs once for each commit of the change; later calls return its result.
+The result is kept in the server's memory, so after a restart the command runs again. Raises an error `the card has no
+change to test` before the change is published. The time this call takes does not count against the time limit.
+
+`moebius.run_test_at_base(command, files)` returns a table like `moebius.run_test`.
+: The same, but on the commit the change starts from (where it leaves the default branch, `git merge-base`) with the
+files `files` (an array of paths, optional) added as the change's current commit has them. A path the change does not
+have makes the run an `error`. Its result is kept apart from `moebius.run_test`'s for the same command.
+
 `moebius.offer_change()` returns the change's id (a number).
 : Publishes the change as `moebius.publish_change` does and offers it to a person: it adds an item `ready_to_merge` to
 the inbox with `{change, branch}` as its data, publishes `change_offered`, and moves the card to `Ready to merge` at
@@ -197,6 +220,7 @@ Error messages that come from Moebius:
 | `no agent named <name>` | `moebius.start_run` with an agent that is not configured. |
 | `the card has no code run to publish` | `moebius.publish_change` or `moebius.offer_change` on a card without a successful `code` run. |
 | `the card has no change to check` | `moebius.run_checks` before the change is published. |
+| `the card has no change to test` | `moebius.reproduction`, `moebius.run_test` or `moebius.run_test_at_base` before the change is published. |
 
 ## The sandbox
 
@@ -215,8 +239,8 @@ What is left is the base functions (`assert`, `error`, `pairs`, `ipairs`, `pcall
 ## Limits
 
 - Time: 2 seconds for one run of a script, loading included. Only the time a script itself spends counts. The time
-  spent inside `moebius.decide`, `moebius.start_run`, `moebius.publish_change`, `moebius.run_checks` and
-  `moebius.offer_change` is added back to the deadline, so a slow decider, harness start or push does not fail a
+  spent inside `moebius.decide`, `moebius.start_run`, `moebius.publish_change`, `moebius.run_checks`,
+  `moebius.reproduction`, `moebius.run_test`, `moebius.run_test_at_base` and `moebius.offer_change` is added back to the deadline, so a slow decider, harness start or push does not fail a
   script, nor does the time Moebius takes to describe the card (`card.change` needs git).
 - Memory: 16 MiB for one run of a script.
 
@@ -235,14 +259,15 @@ configuration and no repository, and it stores and starts nothing.
 | `--title` | `A card to check the script with` | The card's `title`. |
 | `--author` | `person` | The card's `author`. `card.trusted` is true only for `person`, as on a repository without a forge. |
 
-The made-up card has `id` and `number` 1, an empty `body`, `blocked_by` empty, `rounds`, `reviews` and `tokens` 0 and
-`stopped` false. It has no `note`, `change`, `run` or `review`. The `moebius` table has every constant and function of
+The made-up card has `id` and `number` 1, an empty `body`, `blocked_by` empty, `rounds`, `reviews` and `tokens` 0, and
+`stopped` and `test_first` false. It has no `note`, `change`, `run` or `review`. The `moebius` table has every constant and function of
 this page, but records its calls instead of acting:
 
 - `moebius.decide` takes the fail-closed option and says so; it raises an error when that is not one of the options.
 - `moebius.start_run` returns 1, then 2 and so on. `moebius.has_agent` says yes for every name.
 - `moebius.publish_change` and `moebius.run_checks` return a change on branch `moebius/card-1` whose `checks` is `none`.
-  `moebius.offer_change` returns 1. `moebius.record_outcome` returns 0.
+  `moebius.offer_change` returns 1. `moebius.record_outcome` returns 0. `moebius.reproduction` returns nil, and
+  `moebius.run_test` and `moebius.run_test_at_base` return `status` `pending` with an empty `output`.
 - `moebius.agent_budget` returns nil, `moebius.tokens_today` and `moebius.runs_active` return 0, and the limits are the
   defaults.
 - `moebius.move` raises `no column "<name>"` for a column that does not exist.
@@ -259,6 +284,7 @@ The output is one line for each call that does something, in the order of the ca
 | `decided <kind>: ... the fail-closed option "<option>" was taken` | `moebius.decide` |
 | `published the change`, `started the checks of the change`, `offered the change to a person, and the card moved to Ready to merge` | `moebius.publish_change`, `moebius.run_checks`, `moebius.offer_change` |
 | `recorded the outcome "<outcome>"` | `moebius.record_outcome` |
+| `started the test "<command>" on the change` or `on the base commit` | `moebius.run_test`, `moebius.run_test_at_base` |
 
 A script that calls none of them prints `The script did nothing: it did not move, wait, ask or start anything.` A script
 that fails (see Errors), a file that cannot be read and a column that does not exist print the message on standard
@@ -306,10 +332,35 @@ time opens the pull request; later it updates it with a push. Without a forge th
   `checks.timeout_seconds` (see the [configuration](configuration.md)). While it runs `checks` is `pending`, then
   `success` (exit status 0) or `failure`, and `card.change.check_output` holds the last 4 KB of its output, standard
   output and error together, with secrets removed. It runs once for each published commit. Without the file `checks` is
-  `none`.
+  `none`. The command runs with the server's environment cleared but for `PATH`, `HOME`, `USER`, `LANG` and `TMPDIR`,
+  so that the change's code, which the checks run, sees no token or key of the server.
 
 `card.change.conflict` lists the files that keep the change from merging cleanly into `card.change.base` (found with
 `git merge-tree`; nothing is checked out), or is nil when it merges cleanly.
+
+## Test first
+
+A repository works test first when its default branch has a file `.moebius/test-first` (its content does not matter);
+`card.test_first` is then true. The Coder's prompt then tells it to write a test that reproduces the issue before it
+changes any code, see it fail, make the change and see it pass, and to name the test in `.moebius/reproduce`, committed
+with the change:
+
+```
+# Lines that are empty or start with # are skipped.
+cargo test --test issue_42
+tests/issue_42.rs
+```
+
+The first line is the command that runs only the reproduction test; every further line is a file, relative to the
+repository's root, that holds it. A change that cannot be tested this way, such as one of the documentation or the
+configuration only, has the single line `untestable: <why>` instead (more lines after it belong to the reason).
+
+`moebius.reproduction()` reads the file. The default `review.luau` then runs the command with
+`moebius.run_test_at_base(command, files)`, where it must fail, and with `moebius.run_test(command)`, where it must pass.
+Until both have ended the card waits with `running the reproduction test`. When either does not hold, or the change has
+no `.moebius/reproduce`, the card goes back to `In progress` with a note that starts `Test first:` and says which did
+not hold, with the output. A change that says it is untestable goes on to the review, whose run is given the reason to
+judge. All of this comes after the checks and conflicts and before the review.
 
 ## The default workflow
 
@@ -318,7 +369,7 @@ time opens the pull request; later it updates it with a push. Without a forge th
 | `backlog.luau` | If `card.trusted` or `card.confirmed`, moves the card to `Ready`. Otherwise asks a person (`moebius.ask("approve_issue", ...)`) and waits; approving the issue in the desktop API moves the card to `Ready`. |
 | `ready.luau` | Waits while `card.blocked_by` is not empty, naming the issues. Waits with `the daily token budget is spent` when `moebius.day_budget` is set and `moebius.tokens_today()` has reached it. Waits while `moebius.runs_active() >= moebius.run_limit`. Otherwise moves the card to `In progress`. |
 | `code.luau` | Waits while the latest run is `starting` or `running`. Moves the card to `In review` when the latest run is a `code` run that `succeeded` and the card has no `card.note`. Otherwise marks the card stuck with `stopped by a person` when `card.stopped`, with `the round limit is reached` when `card.rounds >= moebius.round_limit`, and with `the token budget of N is spent` when `card.tokens` has reached `moebius.agent_budget("Coder")`; waits with `the daily token budget is spent` when the day's budget is spent; and else starts a `Coder` run with purpose `code` and `card.note` as its note: the first round, a retry after a `code` run that `failed` or was `stopped`, or the next round after the card was sent back. |
-| `review.luau` | Waits while the latest run is going, and moves the card back to `In progress` when its latest run is neither a succeeded `code` run nor a `review` run. Then, in this order: publishes the change (`moebius.publish_change`) and starts its own checks (`moebius.run_checks`); waits while `card.change.checks` is `pending`; sends the card back to `In progress` when they are `failure`, with the note `The checks failed:` and the failing checks or the output; sends it back when `card.change.conflict` is set, with the conflicting files and the instruction to merge `card.change.base` into its branch and resolve them; without an agent `Reviewer` (`moebius.has_agent`), or when `card.review.verdict` is `approve`, offers the change; sends the card back with `card.review.findings` as the note when the verdict is `changes`; starts a `Reviewer` run with purpose `review` otherwise. A `review` run that `failed` is started again, until `card.reviews >= moebius.round_limit`, when the card is marked stuck with `the round limit is reached`. The card is marked stuck with `stopped by a person` when `card.stopped`, before anything else, and with `the token budget of N is spent` when `card.tokens` has reached `moebius.agent_budget("Reviewer")`; it waits with `the daily token budget is spent` while the day's budget is spent, instead of starting a review. |
+| `review.luau` | Waits while the latest run is going, and moves the card back to `In progress` when its latest run is neither a succeeded `code` run nor a `review` run. Then, in this order: publishes the change (`moebius.publish_change`) and starts its own checks (`moebius.run_checks`); waits while `card.change.checks` is `pending`; sends the card back to `In progress` when they are `failure`, with the note `The checks failed:` and the failing checks or the output; sends it back when `card.change.conflict` is set, with the conflicting files and the instruction to merge `card.change.base` into its branch and resolve them; when `card.test_first`, waits for the reproduction test and sends the card back when it does not hold (see Test first); without an agent `Reviewer` (`moebius.has_agent`), or when `card.review.verdict` is `approve`, offers the change; sends the card back with `card.review.findings` as the note when the verdict is `changes`; starts a `Reviewer` run with purpose `review` otherwise. A `review` run that `failed` is started again, until `card.reviews >= moebius.round_limit`, when the card is marked stuck with `the round limit is reached`. The card is marked stuck with `stopped by a person` when `card.stopped`, before anything else, and with `the token budget of N is spent` when `card.tokens` has reached `moebius.agent_budget("Reviewer")`; it waits with `the daily token budget is spent` while the day's budget is spent, instead of starting a review. |
 | `merge.luau` | Waits for a person to merge the change. The merge happens through the desktop API or, on GitHub, on the pull request. When the change no longer merges cleanly (the default branch moved), sends the card back to `In progress` with the conflict as the note; that resolves the change's inbox item. |
 | `done.luau` | Calls `moebius.record_outcome("merged")`, so every judgement made for the card learns how it ended. |
 

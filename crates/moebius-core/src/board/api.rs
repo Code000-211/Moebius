@@ -8,6 +8,9 @@
 //! - `moebius.publish_change() -> change`: publishes the card's latest successful `code` run on the branch of its
 //!   change (once per commit) and returns the change, as `card.change` is.
 //! - `moebius.run_checks() -> change`: starts the repository's own checks on the change, if it has any.
+//! - `moebius.reproduction() -> table`: what the change names in `.moebius/reproduce`, for test first.
+//! - `moebius.run_test(command) -> test`, `moebius.run_test_at_base(command, files) -> test`: run the change's
+//!   reproduction test on the change, or on the commit it was made from with the test's files added.
 //! - `moebius.offer_change()`: publishes the change and offers it to a person; the card moves to "Ready to merge".
 //! - `moebius.ask(kind, reason)`: puts the card in the inbox for a person (once) and leaves it where it is.
 //! - `moebius.stuck(reason)`: puts the card in the inbox as stuck (once).
@@ -29,7 +32,7 @@ use super::Engine;
 use super::card::change_table;
 use super::engine::Effects;
 use super::sandbox::outside_script;
-use crate::app::{App, columns};
+use crate::app::{App, Reproduction, TestRun, columns};
 use crate::decide::Question;
 use crate::store::Card;
 
@@ -156,6 +159,53 @@ impl Engine {
             })?,
         )?;
 
+        let (app, clock) = (self.app.clone(), deadline.clone());
+        m.set(
+            "reproduction",
+            lua.create_function(move |lua, ()| {
+                let reproduction = outside_script(&clock, || app.reproduction(card_id))
+                    .map_err(mlua::Error::external)?;
+                let Some(reproduction) = reproduction else {
+                    return Ok(None);
+                };
+                let table = lua.create_table()?;
+                match reproduction {
+                    Reproduction::Test { command, files } => {
+                        table.set("command", command)?;
+                        table.set("files", files)?;
+                    }
+                    Reproduction::Untestable(why) => {
+                        table.set("files", Vec::<String>::new())?;
+                        table.set("untestable", why)?;
+                    }
+                }
+                Ok(Some(table))
+            })?,
+        )?;
+
+        let (app, clock) = (self.app.clone(), deadline.clone());
+        m.set(
+            "run_test",
+            lua.create_function(move |lua, command: String| {
+                let run = outside_script(&clock, || app.run_test(card_id, &command, None))
+                    .map_err(mlua::Error::external)?;
+                test_table(lua, run)
+            })?,
+        )?;
+
+        let (app, clock) = (self.app.clone(), deadline.clone());
+        m.set(
+            "run_test_at_base",
+            lua.create_function(
+                move |lua, (command, files): (String, Option<Vec<String>>)| {
+                    let files = Some(files.unwrap_or_default());
+                    let run = outside_script(&clock, || app.run_test(card_id, &command, files))
+                        .map_err(mlua::Error::external)?;
+                    test_table(lua, run)
+                },
+            )?,
+        )?;
+
         let (app, fx, clock) = (self.app.clone(), effects.clone(), deadline);
         m.set(
             "offer_change",
@@ -233,6 +283,14 @@ impl Engine {
 
         Ok(m)
     }
+}
+
+/// A run of a reproduction test as scripts see it: `status` and `output`.
+fn test_table(lua: &Lua, run: TestRun) -> mlua::Result<Table> {
+    let table = lua.create_table()?;
+    table.set("status", run.status)?;
+    table.set("output", run.output)?;
+    Ok(table)
 }
 
 /// Puts the card in the inbox as `kind`, unless an item of that kind is already open for it.

@@ -4,8 +4,9 @@
 //! This module holds `App` itself, its errors and the lookups every operation shares; the operations are grouped by
 //! what they act on: `repositories` adds and edits repositories, `cards` keeps cards in line with their issues and
 //! moves them, `runs` is a person's hand in a running run (steering, stopping, shells), `chats` starts and carries on
-//! chats, `changes` publishes, offers and merges changes, `checks` runs a repository's own checks on them, and
-//! `automations` keeps the automations and starts their chats when their schedules come due.
+//! chats, `changes` publishes, offers and merges changes, `checks` runs a repository's own checks on them,
+//! `reproduce` runs a change's reproduction test for a repository that works test first, and `automations` keeps
+//! the automations and starts their chats when their schedules come due.
 
 mod automations;
 mod cards;
@@ -13,6 +14,7 @@ mod changes;
 mod chats;
 mod checks;
 mod repositories;
+mod reproduce;
 mod runs;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -37,6 +39,7 @@ pub use automations::{
 pub use cards::HistoryEntry;
 pub use chats::{ASSISTANT_ORIGIN, CHAT_ORIGIN, Chat, ChatSettings, THINKING_LEVELS};
 pub(crate) use checks::tail;
+pub use reproduce::{Reproduction, TestRun};
 
 /// The columns of the default workflow (spec 6).
 pub mod columns {
@@ -90,6 +93,8 @@ pub struct App {
     pub checks_timeout: Duration,
     /// The checks going now, as change and commit.
     checking: Mutex<BTreeSet<(i64, String)>>,
+    /// The runs of reproduction tests, going or ended (see `reproduce`).
+    tests: Mutex<HashMap<reproduce::TestKey, TestRun>>,
     /// Held while a run event is stored and published, so that events are published in the order of their `seq`.
     run_events: Mutex<()>,
     /// Held while a message is given to a chat's agent or a chat's work is committed to be offered, so that the agent
@@ -120,6 +125,7 @@ impl App {
             data_dir: data_dir.to_path_buf(),
             checks_timeout: Duration::from_secs(1800),
             checking: Mutex::default(),
+            tests: Mutex::default(),
             run_events: Mutex::default(),
             chat_turns: Mutex::default(),
             terminals: Arc::default(),

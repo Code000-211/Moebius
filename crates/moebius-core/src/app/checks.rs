@@ -1,5 +1,6 @@
 //! A change's checks: how they stand for its current commit, and a repository's own checks (`.moebius/checks`) run
-//! on a change, or on a trial's commit, in a throwaway worktree with a time limit.
+//! on a change, or on a trial's commit, in a throwaway worktree with a time limit and a cleared environment. A
+//! change's reproduction test (see `reproduce`) runs the same way.
 
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
@@ -116,20 +117,35 @@ impl App {
         rev: &str,
         script: &str,
     ) -> (bool, String) {
+        match self.run_prepared(repository, (name, rev), |_| Ok(()), ("The checks", script)) {
+            Ok(result) => result,
+            Err(e) => (false, e),
+        }
+    }
+
+    /// Runs `script`, which `what` names in its output, on the commit `rev` in a throwaway worktree named `name`, after
+    /// `prepare` has changed the worktree, and returns whether it succeeded and the end of its output. An error when
+    /// the worktree cannot be made or prepared.
+    pub(super) fn run_prepared(
+        &self,
+        repository: &Repository,
+        (name, rev): (&str, &str),
+        prepare: impl FnOnce(&Path) -> std::result::Result<(), String>,
+        (what, script): (&str, &str),
+    ) -> std::result::Result<(bool, String), String> {
         let clone = Path::new(&repository.path);
-        match self
+        let worktree = self
             .repos
             .add_detached_worktree(&repository.name, clone, name, rev)
-        {
-            Ok(worktree) => {
-                let log = self.data_dir.join(format!("{name}.log"));
-                let result = execute(script, &worktree, &log, self.checks_timeout);
-                let _ = std::fs::remove_file(&log);
-                let _ = self.repos.remove_worktree(clone, &worktree);
-                result
-            }
-            Err(e) => (false, format!("cannot make a worktree for the checks: {e}")),
-        }
+            .map_err(|e| format!("cannot make a worktree for {}: {e}", what.to_lowercase()))?;
+        let result = prepare(&worktree).map(|()| {
+            let log = self.data_dir.join(format!("{name}.log"));
+            let result = execute(what, script, &worktree, &log, self.checks_timeout);
+            let _ = std::fs::remove_file(&log);
+            result
+        });
+        let _ = self.repos.remove_worktree(clone, &worktree);
+        result
     }
 
     /// Runs the repository's own checks on the commit `rev` and waits for them: whether they succeeded, or none when the
@@ -158,15 +174,25 @@ impl App {
     }
 }
 
-/// Runs `script` with `sh -c` in `dir`, writing its output to `log`, and stops it (and what it started) after
-/// `timeout`. Returns whether it succeeded and the end of its output with secrets removed.
-fn execute(script: &str, dir: &Path, log: &Path, timeout: Duration) -> (bool, String) {
+/// The variables of the server's environment a repository's checks and tests keep; every other one, such as a token
+/// or a key, is removed.
+const KEPT_VARIABLES: [&str; 5] = ["PATH", "HOME", "USER", "LANG", "TMPDIR"];
+
+/// Runs `script` with `sh -c` in `dir`, with the environment cleared but for [`KEPT_VARIABLES`], writing its output to
+/// `log`, and stops it (and what it started) after `timeout`. Returns whether it succeeded and the end of its output
+/// with secrets removed; `what` names the script in what is said of it.
+fn execute(what: &str, script: &str, dir: &Path, log: &Path, timeout: Duration) -> (bool, String) {
     let run = || -> std::io::Result<(bool, bool)> {
         let file = std::fs::File::create(log)?;
+        let kept = KEPT_VARIABLES
+            .iter()
+            .filter_map(|name| std::env::var_os(name).map(|value| (*name, value)));
         let mut child = crate::platform::own_group(
             Command::new("sh")
                 .args(["-c", script])
                 .current_dir(dir)
+                .env_clear()
+                .envs(kept)
                 .stdin(Stdio::null())
                 .stdout(file.try_clone()?)
                 .stderr(file),
@@ -191,13 +217,13 @@ fn execute(script: &str, dir: &Path, log: &Path, timeout: Duration) -> (bool, St
             let mut output = tail(log);
             if timed_out {
                 output.push_str(&format!(
-                    "\nThe checks were stopped after {} seconds.",
+                    "\n{what} were stopped after {} seconds.",
                     timeout.as_secs()
                 ));
             }
             (succeeded, output)
         }
-        Err(e) => (false, format!("cannot run the checks: {e}")),
+        Err(e) => (false, format!("cannot run {}: {e}", what.to_lowercase())),
     }
 }
 
@@ -230,8 +256,15 @@ mod tests {
     fn checks_are_stopped_after_their_time_and_their_output_is_cut_and_cleaned() {
         let dir = tempfile::tempdir().unwrap();
         let log = dir.path().join("log");
-        let run =
-            |script: &str, seconds| execute(script, dir.path(), &log, Duration::from_secs(seconds));
+        let run = |script: &str, seconds| {
+            execute(
+                "The checks",
+                script,
+                dir.path(),
+                &log,
+                Duration::from_secs(seconds),
+            )
+        };
 
         let (succeeded, output) = run("echo started; sleep 30", 1);
         assert!(!succeeded);
@@ -251,5 +284,21 @@ mod tests {
 
         let (succeeded, output) = run("echo nope >&2; exit 3", 30);
         assert_eq!((succeeded, output.as_str()), (false, "nope"));
+    }
+
+    #[test]
+    fn checks_see_none_of_the_servers_variables_but_the_few_they_need() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("log");
+        // Cargo gives the tests this variable; it stands for a token in the server's environment.
+        let (succeeded, output) = execute(
+            "The checks",
+            "echo \"[$CARGO_PKG_NAME]\"; command -v sh >/dev/null && echo path",
+            dir.path(),
+            &log,
+            Duration::from_secs(30),
+        );
+        assert!(succeeded, "{output}");
+        assert_eq!(output, "[]\npath");
     }
 }

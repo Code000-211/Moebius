@@ -191,7 +191,7 @@ impl Runs for PiBolt {
         note: Option<&str>,
     ) -> Result<Run, String> {
         let config = self.agent(app, agent)?;
-        let prompt = prompt_for(card, purpose, note);
+        let prompt = prompt_for(app, card, purpose, note);
         let code_branch = app.store.code_branch(card.id).map_err(|e| e.to_string())?;
         let worktree = |repository: &Repository, clone: &Path, run_id: i64| {
             let base = code_branch.unwrap_or_else(|| repository.base_ref());
@@ -210,7 +210,7 @@ impl Runs for PiBolt {
         proposal: i64,
         base: &str,
     ) -> Result<Run, String> {
-        let prompt = prompt_for(card, "code", None);
+        let prompt = prompt_for(app, card, "code", None);
         let worktree = |repository: &Repository, clone: &Path, _run_id: i64| {
             let name = &repository.name;
             app.repos

@@ -94,9 +94,77 @@ progress too.
    stuck. A stopped run, or a spent token budget of the Reviewer, also marks it stuck. While the daily budget is
    spent no review starts.
 
+In a repository that works **test first**, a step comes between 4 and 5: the change's reproduction test must hold
+before anyone reviews the change. See [Test first](#test-first) below.
+
 The loop of coding, checks and review ends when the change is offered or when the Coder's rounds reach the limit.
 A send-back from any of steps 3 to 5 is a new `code` round with the reason in its prompt, on top of the last round's
 branch.
+
+### Test first
+
+Tests generated from the issue and used as a gate are the review step with the best evidence: in a study on SWE-bench
+Verified they raised the share of correct changes among those let through from 61% to 92% (Otter, arXiv 2502.05368).
+A test that runs says more than a reviewer's opinion. A repository turns it on by committing an empty file
+`.moebius/test-first` to its default branch. Then:
+
+1. The Coder is told the rule of red, then green: before it changes any code it writes a test that reproduces the issue
+   in a file of its own and sees it fail, then makes the change and sees it pass. It names the test in
+   `.moebius/reproduce`, committed with the change: the command that runs only that test on the first line, the files
+   that hold the test on the next ones. A change that cannot be tested this way (documentation, configuration) writes
+   the single line `untestable: <why>` instead.
+2. In review, after the checks and the conflict check, Moebius runs the command twice, each in a throwaway worktree
+   with the time limit and cleared environment of the repository's checks: on the commit the change starts from with
+   the test's files added, where it must fail, and on the change, where it must pass. The card waits with
+   `running the reproduction test` meanwhile.
+3. When the test passes without the fix, fails with it, cannot run, or the change names no test, the card goes back to
+   `In progress` with a note that starts `Test first:` and says which did not hold, with the test's output.
+4. A change that says it is untestable goes on to the review, and the reviewer is given the reason to judge.
+
+The file formats and the functions behind this are in the [column script reference](../reference/column-scripts.md#test-first).
+A repository can also write its own gate. This `review.luau` reviews by the reproduction test alone, without a
+Reviewer, and offers a change that says it is untestable for the person to judge when they merge:
+
+<!-- script: review.luau -->
+```luau
+function on_card(card)
+  local run = card.run
+  if run == nil or run.purpose ~= "code" or run.status ~= "succeeded" then
+    moebius.move("In progress")
+    return
+  end
+  moebius.publish_change()
+  local change = moebius.run_checks()
+  if change.checks == "pending" then
+    moebius.wait("waiting for the checks")
+    return
+  elseif change.checks == "failure" then
+    moebius.move("In progress", "The checks failed:\n" .. (change.failed_checks or change.check_output or ""))
+    return
+  end
+
+  local test = moebius.reproduction()
+  if test == nil then
+    moebius.move("In progress", "Name the test that reproduces the issue in .moebius/reproduce.")
+    return
+  end
+  if test.untestable ~= nil then
+    moebius.offer_change()
+    return
+  end
+  local before = moebius.run_test_at_base(test.command, test.files)
+  local after = moebius.run_test(test.command)
+  if before.status == "pending" or after.status == "pending" then
+    moebius.wait("running the reproduction test")
+  elseif before.status ~= "failed" then
+    moebius.move("In progress", "The test must fail without your fix, but it did not:\n" .. before.output)
+  elseif after.status ~= "passed" then
+    moebius.move("In progress", "The test must pass with your fix, but it did not:\n" .. after.output)
+  else
+    moebius.offer_change()
+  end
+end
+```
 
 ### Ready to merge
 

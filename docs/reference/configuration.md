@@ -128,11 +128,13 @@ Token budgets that are not an agent's own (see `agents.<name>.token_budget`). Th
 ## `[checks]`
 
 A repository without a forge may name its own checks in `.moebius/checks` on its default branch, see
-[column scripts](column-scripts.md).
+[column scripts](column-scripts.md). The same limit holds for the reproduction test of a repository that works test
+first, on any forge. Both run with the server's environment cleared but for `PATH`, `HOME`, `USER`, `LANG` and
+`TMPDIR`.
 
 | Key | Type | Default | Meaning and validation |
 |---|---|---|---|
-| `checks.timeout_seconds` | integer | `1800` | How long the checks of one change may run. After that they are stopped, with everything they started, and count as failed. At least 1, else the file is refused. |
+| `checks.timeout_seconds` | integer | `1800` | How long the checks of one change, or one run of its reproduction test, may run. After that they are stopped, with everything they started, and count as failed. At least 1, else the file is refused. |
 
 ## `[router]`
 
