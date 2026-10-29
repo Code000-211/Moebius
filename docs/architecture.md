@@ -15,7 +15,7 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
  │  board engine ── runs Luau column scripts per card, every tick                  (board.rs)   │
  │  core: App ── store (SQLite + blobs), bus, repos (git), forges, decisions   (app/, ...)     │
  │  poll ── GitHub issues and pull requests, every poll_seconds                    (poll.rs)    │
- │  router + check ── model endpoints and tool-call check, one listener (127.0.0.1:7172)        │
+ │  router + check + MCP gateway ── model endpoints, tool-call check, MCP (127.0.0.1:7172)      │
  └──────────────────────────────────────┬──────────────────────────────▲──────────────────────┘
                                         │ spawns                       │ model requests, /moebius/check
                                         ▼                              │ (the run's token)
@@ -68,7 +68,12 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
    a time limit. `Guard::call` tests the built-in patterns, then the prose rules with the teacher model (`Teacher::judge`,
    which calls the router with a token for this run; once a takeover of `tool_call` is merged, `DecisionModel::ask` answers the prose rules instead). The answer is stored as one judgement, as a `tool_check` run
    event, and returned. A refusal goes back to the model as the tool's result and the run goes on. The result of each
-   tool is cleaned of secrets through `/moebius/result` (`check::result`).
+   tool is cleaned of secrets through `/moebius/result` (`check::result`). A run whose agent has MCP servers reaches
+   them only through the MCP gateway (`POST /mcp`, `harness/gateway/`): its `mcp.json` names the gateway with the run's
+   token, which `PiBolt::write_agent_dir` gave the agent's servers (`Router::allow_mcp`). The gateway starts or connects
+   to them at the run's first request, lists their tools as `<server>__<tool>`, checks every call with
+   `check::decide_call` before the server sees it, cleans the result of secrets and records an `mcp_call` run event;
+   it stops the servers when the run ends (`Gateway::stop_ended_runs`).
 8. **The run ends.** At `agent_settled`, `Reader::end` closes Pi's standard input, revokes the token, commits what the
    agent left (`Reader::commit`: `git add --all` and a commit by Moebius; for `code` runs, and for chats, see 12b), sets the status (`succeeded`,
    `failed` when a `code` run changed nothing or anything went wrong, `stopped` when aborted), removes the worktree
@@ -317,7 +322,7 @@ At the top:
 | `router/mod.rs` | The router, its upstreams and its routes `POST /v1/chat/completions` and `POST /v1/messages`. |
 | `router/proxy.rs` | A run's request forwarded to the upstream with the provider's key, and the answer back, streamed or not. |
 | `router/usage.rs` | The tokens and tools of an answer, read from a body or from a stream as it passes, recorded against the run. |
-| `router/grants.rs` | The runs' tokens and what each allows: the card's, the run's and the day's token budgets. |
+| `router/grants.rs` | The runs' tokens and what each allows: the card's, the run's and the day's token budgets, and the MCP servers the gateway gives the run. |
 | `router/models.rs` | The models the upstreams serve, for the pickers of the desktop app. |
 
 `store/`, the records:
@@ -400,7 +405,7 @@ At the top:
 | Module | What it is for |
 |---|---|
 | `decide/mod.rs` | Decision points: routing a question to a decider, failing closed, recording the judgement. |
-| `decide/check.rs` | The tool-call check: the endpoints `/moebius/check` and `/moebius/result` the bridge calls on the router's listener, every call asked before it runs and every result reported. |
+| `decide/check.rs` | The tool-call check: the endpoints `/moebius/check` and `/moebius/result` the bridge calls on the router's listener, every call asked before it runs and every result reported; the MCP gateway decides its calls with the same question. |
 | `decide/guard/mod.rs` | The `guard` decider: built-in rules first, then the rules in prose for the teacher or the decision model. |
 | `decide/guard/shell.rs` | How the guard reads a tool call: simple commands, redirects, nested shells, `cd`, and paths. |
 | `decide/guard/patterns.rs` | The built-in rules, fixed patterns over a tool call. |
@@ -432,7 +437,9 @@ At the top:
 | `harness/repo/edits.rs` | A person's edits of agents, skills, MCP servers and rules, as commits pushed to its origin. |
 | `harness/repo/branches.rs` | Its branches: the Retro's proposals and chats' branches checked, pushed, merged or dismissed, and a trial's worktree of a branch. |
 | `harness/repo/create.rs` | `create`: a new repository from the agents and rules of `moebius.toml` (`POST /v1/harness/setup`, `moebius init`). |
-| `harness/mcp.rs` | The MCP servers of `mcp.toml`, checked when read, and the `mcp.json` a run of an agent that names them is given. |
+| `harness/mcp.rs` | The MCP servers of `mcp.toml`, checked when read, their `${NAME}` values filled in, and the `mcp.json` that names the MCP gateway for a run of an agent that names them. |
+| `harness/gateway/mod.rs` | The MCP gateway, `POST /mcp` on the router's listener: a run's servers bundled as one MCP server, every tool call checked, its result cleaned of secrets and recorded as an `mcp_call` run event. |
+| `harness/gateway/upstream.rs` | One server of a run as the gateway reaches it: a stdio child process or a remote server over streamable HTTP, initialized and its tools listed. |
 | `harness/skill.rs` | The built-in skills, bundled with `include_str!` and written to `<data_dir>/skills/<name>/` at start: the `moebius` skill (the guide and the references) and the task skills of the Moebius agent (`moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions` and `moebius-plugins`, in `crates/moebius-core/skill/<name>/SKILL.md`). |
 | `harness/grilling.rs` | The Grilling partner's end: the issues or report it left in its worktree, confirming the issues as cards (on GitHub opened there first) and dismissing. |
 

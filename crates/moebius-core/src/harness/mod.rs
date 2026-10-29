@@ -1,7 +1,9 @@
 //! The coding-agent harness and what it is given: Pi-Bolt runs and chats (`pibolt`), shells in a worktree and on the
 //! server (`terminal`), the harness configuration repository with the agents, skills, MCP servers and rules
-//! (`repo`, `skill`, `mcp`), and the chats that end in issues (`grilling`).
+//! (`repo`, `skill`, `mcp`), the MCP gateway through which a run reaches its MCP servers (`gateway`), and the chats that
+//! end in issues (`grilling`).
 
+pub mod gateway;
 pub mod grilling;
 pub mod mcp;
 pub mod pibolt;

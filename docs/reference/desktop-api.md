@@ -1358,16 +1358,21 @@ like `POST /v1/runs/{id}/stop` does. Experiments done stay, and so do the lever 
 | `grilling_ended` | A grilling chat ended and its result was stored. | `{"grilling": id, "status": "proposed" \| "reported" \| "empty"}` |
 | `lagged` | This client fell too far behind (more than 1024 events) and lost the oldest. | `{"missed": number}` |
 
-A `run_event` has two sources, told apart by its inner `kind`:
+A `run_event`'s source is told by its inner `kind`:
 
 - `tool_check`: the answer to a tool-call check, `{"tool", "tool_call_id", "decision": "allow" | "refuse", "reason"}`. See
   the [bridge protocol](bridge-protocol.md).
+- `mcp_call`: a call of a tool of an MCP server through the MCP gateway, `{"server", "tool", "tool_call_id", "input",
+  "decision", "reason", "result"}`, where `result` is what the harness was given (the refusal for a refused call). See
+  the [MCP gateway](bridge-protocol.md#the-mcp-gateway).
+- `mcp_error`: an MCP server of the run's agent could not be started or reached, `{"server", "message"}`; its tools are
+  left out.
 - Every other kind is a record Pi-Bolt wrote on its RPC channel, with its `type` as the kind (for example
   `agent_settled`, `tool_execution_end`, `response`) and the whole record as `data`. A line that is not JSON is passed on
   as kind `unparsed` with `{"type": "unparsed", "error", "text"}`.
 
 `seq` is the number the event is stored under, the same as in `GET /v1/runs/{id}/events`. Events of a run are published in
-the order of their `seq`. Every event of a run is published and stored: Pi's records, `tool_check` events, `steered` events
+the order of their `seq`. Every event of a run is published and stored: Pi's records, `tool_check`, `mcp_call` and `mcp_error` events, `steered` events
 (`{"message"}`, a person's steer, with secrets removed), `said` events (`{"message"}`, a person's message to a chat, the first
 one included, with secrets removed; stored before the agent's records of its answer) `shell_opened` events (`{"who"}`, a person opened a shell in the worktree; see `GET /v1/runs/{id}/terminal`), `tui_opened` events (`{"who"}`, a person opened Pi-Bolt's terminal interface in a chat; see `GET /v1/chats/{id}/tui`), `settings_changed` events (`{"model", "protocol", "thinking"}`, what a chat runs with in place of its agent's; see `POST /v1/chats/{id}/settings`) and `moebius_error` events (`{"message"}`) that explain why a
 run failed. The one exception is a run that was still going when the server stopped: it is failed at the next start with

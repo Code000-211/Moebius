@@ -151,10 +151,11 @@ command = "docs-server"
 env = { API_KEY = "${DOCS_TOKEN}" }
 ```
 
-With `mcp_env = ["DOCS_TOKEN"]` in `moebius.toml` and `mcp = ["docs"]` in the agent's file, its runs get the server's
-tools as `mcp__docs__<tool>`, checked by the rules like any tool call. A run is given exactly its agent's skills and
-servers. The agent can read what a server is given, so give it only what the agent may see; see the
-[reference](../reference/harness-configuration.md#mcptoml).
+With `mcp_env = ["DOCS_TOKEN"]` in `moebius.toml` and `mcp = ["docs"]` in the agent's file, its runs reach the server
+through the MCP gateway, Moebius's one MCP server for every harness, which starts `docs-server` itself and gives the run
+its tools as `docs__<tool>` (in Pi, `mcp__moebius__docs__<tool>`). Every call is checked by the rules like any tool
+call, and recorded as an `mcp_call` run event with what the server answered. A run is given exactly its agent's skills
+and servers, and never the server's values; see the [reference](../reference/harness-configuration.md#mcptoml).
 
 `agents/Coder.md`:
 

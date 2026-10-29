@@ -107,7 +107,7 @@ steer, stop) go through the same record.
 | Pi-Bolt harness | Starts `pi-bolt --mode rpc` per run with the agent's model, thinking level, instructions (`--append-system-prompt`), skills (`--skill`) and extensions; maps Pi's events to run events. |
 | Bridge (Pi-Bolt) | A Pi extension (`crates/moebius-core/bridge/moebius-bridge.ts`) that Moebius loads into every run with `--extension`: on `tool_call` asks the core and blocks with the rule on refusal; on `tool_result` reports the result and removes secrets; answers extension UI questions through `decide`. |
 | Router | OpenAI- and Anthropic-compatible endpoints for the harnesses; upstreams with API keys and local servers; reports usage per call; refuses calls over budget. |
-| MCP gateway | One MCP server for every harness, bundling the MCP servers enabled for the run's agent. |
+| MCP gateway | One MCP server for every harness, bundling the MCP servers enabled for the run's agent: served as `POST /mcp` (streamable HTTP) on the router's listener with the run's token, it starts the agent's stdio servers and connects to its remote ones, lists their tools as `<server>__<tool>`, checks every call through `decide("tool_call")`, removes secrets from the results and records each call as a run event. A run's `mcp.json` names only the gateway. |
 | Guard deciders | Fixed patterns (destructive commands, secrets, paths a rule forbids), then the teacher model for rules in prose. |
 | Self-improvement | The Retro at 23:30, proposals, experiments (trials and autoresearch) in the trial window 00:00–06:00, replays of refused calls, shadowing and takeover proposals. |
 | Grilling | An interactive run with the grilling partner agent; ends in a confirmed set of issues or a research report. |

@@ -10,6 +10,8 @@
 //! - `POST /moebius/result` takes `{ "content": [ { "type": "text", "text" }, .. ] }` (Pi's tool result blocks; the
 //!   bridge may add `tool_call_id`, `tool` and `is_error`, which are not read) and answers `{ "content": [..] }` with
 //!   the secrets removed from every text block and other blocks unchanged.
+//!
+//! The MCP gateway (`harness::gateway`) decides each call of an MCP tool with the same question (`decide_call`).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -51,17 +53,19 @@ pub fn routes(app: Arc<App>, router: Arc<Router>, rules_file: Option<PathBuf>) -
         })
 }
 
+/// A tool call to check: what the bridge sends, and what the MCP gateway asks for each call of an MCP tool.
 #[derive(Debug, Deserialize)]
-struct CheckRequest {
-    tool: String,
-    input: Value,
-    tool_call_id: String,
+pub(crate) struct CheckRequest {
+    pub(crate) tool: String,
+    pub(crate) input: Value,
+    pub(crate) tool_call_id: String,
 }
 
+/// The answer to a tool call: `allow` or `refuse`, and why.
 #[derive(Debug, Serialize)]
-struct CheckReply {
-    decision: String,
-    reason: String,
+pub(crate) struct CheckReply {
+    pub(crate) decision: String,
+    pub(crate) reason: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -117,15 +121,27 @@ fn ask(
     grant: &Grant,
     request: &CheckRequest,
 ) -> Option<CheckReply> {
-    let question = tool_call_question(app, rules_file, grant, request)?;
-    let decision = app.decisions.decide(&question).ok()?;
+    let reply = decide_call(app, rules_file, grant, request)?;
     let event = json!({
         "tool": request.tool,
         "tool_call_id": request.tool_call_id,
-        "decision": decision.choice,
-        "reason": decision.reason,
+        "decision": reply.decision,
+        "reason": reply.reason,
     });
     let _ = app.record_run_event(grant.run_id, "tool_check", &event);
+    Some(reply)
+}
+
+/// Decides one tool call of the run `grant` names through `decide("tool_call")`, which leaves one judgement. None when
+/// the store fails, which the caller must take as a refusal.
+pub(crate) fn decide_call(
+    app: &App,
+    rules_file: Option<&Path>,
+    grant: &Grant,
+    request: &CheckRequest,
+) -> Option<CheckReply> {
+    let question = tool_call_question(app, rules_file, grant, request)?;
+    let decision = app.decisions.decide(&question).ok()?;
     Some(CheckReply {
         decision: decision.choice,
         reason: decision.reason,

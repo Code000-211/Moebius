@@ -12,7 +12,8 @@
 //! The router can also ask its upstreams which models they serve ([`Router::available_models`]), for the pickers of the
 //! desktop app.
 //!
-//! The server serves these routes together with the tool-call check (`check`) on one listener.
+//! The server serves these routes together with the tool-call check (`check`) and the MCP gateway (`gateway`) on one
+//! listener. A run's token also names the MCP servers the gateway gives the run.
 //!
 //! This module holds the router, its upstreams and its routes; `proxy` forwards a request upstream, `usage` counts
 //! the tokens and tools of what comes back, `grants` are the runs' tokens and the budgets they are checked against,
@@ -23,7 +24,7 @@ mod models;
 mod proxy;
 mod usage;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 
@@ -36,9 +37,10 @@ use axum::routing::post;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use crate::harness::mcp::McpServer;
 use crate::store::Store;
 
-pub use grants::Grant;
+pub use grants::{Grant, token};
 pub use models::{AvailableModel, AvailableModels, UpstreamError};
 
 /// The protocol an endpoint or an upstream speaks.
@@ -77,6 +79,8 @@ pub struct Router {
     /// The most tokens all runs may use in a day, if limited; replaced when the budget is edited.
     day_budget: RwLock<Option<i64>>,
     grants: RwLock<HashMap<String, Grant>>,
+    /// The MCP servers each token's run may use through the MCP gateway, with their values filled in.
+    mcp: RwLock<HashMap<String, BTreeMap<String, McpServer>>>,
     client: reqwest::Client,
     /// The last list of available models and when it was made.
     available: Mutex<Option<(Instant, AvailableModels)>>,
@@ -89,6 +93,7 @@ impl Router {
             upstreams: RwLock::new(upstreams),
             day_budget: RwLock::new(None),
             grants: RwLock::new(HashMap::new()),
+            mcp: RwLock::new(HashMap::new()),
             client: reqwest::Client::new(),
             available: Mutex::new(None),
         }

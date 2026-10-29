@@ -24,7 +24,7 @@ The other parts have one folder each:
 | `repos/` | Git, the forges, GitHub and its poll, the files of a repository. |
 | `board/` | The board engine and its Luau sandbox, and editing a column's script. |
 | `decide/` | Decision points, the tool-call check, the guard, the rules, the decision model. |
-| `harness/` | Pi-Bolt runs and chats, terminals, the harness configuration repository, MCP servers, skills, grilling. |
+| `harness/` | Pi-Bolt runs and chats, terminals, the harness configuration repository, MCP servers and the MCP gateway, skills, grilling. |
 | `improve/` | The Retro, trials, replays, autoresearch, the training-set export. |
 
 Outside `src/`:

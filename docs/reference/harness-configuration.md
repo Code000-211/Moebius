@@ -120,12 +120,12 @@ letters, digits, `-` and `_`. A server is one of two kinds, and a table that is 
 |---|---|---|
 | `command` | string | A stdio server: the executable, not a shell command line. Not blank. |
 | `args` | array of strings | Its arguments. Only with `command`. Default none. |
-| `env` | table of strings | Its environment, added to Pi-Bolt's. Only with `command`. Default none. |
+| `env` | table of strings | Its environment, added to the Moebius server's, which starts it. Only with `command`. Default none. |
 | `url` | string | A remote server (streamable HTTP). |
 | `headers` | table of strings | Sent with every request, such as `Authorization`. Only with `url`. Default none. |
 
 Unknown keys are errors. Every string value may contain `${NAME}`, which is replaced by the value of the environment
-variable `NAME` of the Moebius server, when the run's files are written. Only the names in `mcp_env` of `[harness]` in
+variable `NAME` of the Moebius server, when the run starts. Only the names in `mcp_env` of `[harness]` in
 `moebius.toml` may be used (see [configuration](configuration.md)); any other name is an error for the server, so that
 a repository cannot read secrets such as a provider's key. A name that is listed but not set in the server's
 environment fails a run of an agent that uses the server (`cannot write the agent directory: ...`). Never write a
@@ -147,18 +147,26 @@ servers and agents are not affected.
 
 ### What a run is given
 
-A run of an agent that names servers has the file `<run-dir>/agent/mcp.json` in Pi's format, with exactly those servers
-and the values of `${NAME}` filled in, so the run is given values, not names. Pi-Bolt is started with
-`--extension builtin:mcp` before the agent's own extensions (the bridge stays last), because Pi's MCP support is an
-extension that `--no-extensions` turns off. Every server has `"exposure": "direct"`, so its tools are declared to the
-model as `mcp__<server>__<tool>` like Pi's own tools, and every call passes through `tool_call` and so through the
-bridge's check, which decides it by the rules like any tool call. A run of an agent without servers has no `mcp.json`
-and no MCP support, and no agent is given a server of another agent.
+A run reaches its servers only through the MCP gateway, Moebius's one MCP server for every harness (see the
+[bridge protocol](bridge-protocol.md#the-mcp-gateway)). A run of an agent that names servers has the file
+`<run-dir>/agent/mcp.json` in Pi's format with one server, `moebius`: the gateway's URL (`<router>/mcp`) and the run's
+token as `Authorization: Bearer <token>`. The servers themselves, with the values of `${NAME}` filled in, are given to
+the gateway for the run's token, so the run sees neither the servers' commands nor their values. Pi-Bolt is started
+with `--extension builtin:mcp` before the agent's own extensions (the bridge stays last), because Pi's MCP support is
+an extension that `--no-extensions` turns off. The gateway has `"exposure": "direct"`, so its tools are declared to the
+model like Pi's own tools.
 
-`mcp.json` and `models.json` (which holds the run's token) can be read only by the server's user (mode `0600`).
-What a server is given is visible to the run: the agent can read its own environment and files, `mcp.json` among them,
-and with a `bash` tool can read the headers and variables it was given. Give a server only what the agents that name it
-may see.
+At the run's first request the gateway starts every stdio server as a child process of the Moebius server, in the run's
+worktree, and connects to every remote one. It lists their tools as `<server>__<tool>`, so Pi names them
+`mcp__moebius__<server>__<tool>`. Every call is checked twice: by the bridge under Pi's name, like any tool call, and by
+the gateway under the name `mcp__<server>__<tool>`, so that a harness without a bridge is checked too. A refused call
+never reaches the server. A server that cannot be started or reached leaves out its tools and is reported as an
+`mcp_error` run event; the other servers still serve. The servers of a run are stopped when the run ends. A run of an
+agent without servers has no `mcp.json` and no MCP support, and no agent is given a server of another agent.
+
+`mcp.json` and `models.json` (which both hold the run's token) can be read only by the server's user (mode `0600`).
+A stdio server runs with the Moebius server's environment and its own `env`, and works in the run's worktree, so it can
+read and change what the agent works on: give a run only servers you trust.
 
 ## A broken agent
 

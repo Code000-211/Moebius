@@ -1,6 +1,7 @@
 //! Starting Pi for a run: its agent directory (`models.json` with the router as the only provider, and `mcp.json` with
-//! the agent's MCP servers), the command line that gives it the agent's model, instructions, skills, extensions and the
-//! bridge, and the process itself with the thread that reads it (see `reader`).
+//! the MCP gateway, which serves the agent's MCP servers), the command line that gives it the agent's model,
+//! instructions, skills, extensions and the bridge, and the process itself with the thread that reads it (see
+//! `reader`).
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -86,10 +87,10 @@ impl PiBolt {
         command
     }
 
-    /// Writes the agent directory `agent_dir`: `models.json` with the router as the `moebius` provider, and `mcp.json` with
-    /// the agent's MCP servers, if it has any (without it Pi connects to none). Both hold secrets (the run's token, the
-    /// servers' environment), so only the server's user can read them. The model is marked as one that reasons when the
-    /// agent has a reasoning level other than `off`, without which Pi would turn the level off.
+    /// Writes the agent directory `agent_dir`: `models.json` with the router as the `moebius` provider, and, if the agent
+    /// has MCP servers, `mcp.json` with the MCP gateway, which is told the servers the run's token may use (without it
+    /// Pi connects to none). Both hold the run's token, so only the server's user can read them. The model is marked as
+    /// one that reasons when the agent has a reasoning level other than `off`, without which Pi would turn the level off.
     pub(super) fn write_agent_dir(
         &self,
         agent_dir: PathBuf,
@@ -98,8 +99,11 @@ impl PiBolt {
     ) -> Result<PathBuf, String> {
         std::fs::create_dir_all(&agent_dir).map_err(|e| e.to_string())?;
         if !agent.mcp.is_empty() {
-            let servers = mcp::pi_config(&agent.mcp, &|name| std::env::var(name).ok())?;
-            write_private(&agent_dir.join("mcp.json"), &servers)?;
+            // The run reaches its servers only through the MCP gateway, which is given their values.
+            let servers = mcp::with_values(&agent.mcp, &|name| std::env::var(name).ok())?;
+            self.router.allow_mcp(token, servers);
+            let gateway = mcp::pi_config(&format!("{}/mcp", self.router_url), token);
+            write_private(&agent_dir.join("mcp.json"), &gateway)?;
         }
         let (api, base_url) = match agent.protocol {
             Protocol::OpenAi => ("openai-completions", format!("{}/v1", self.router_url)),
@@ -414,12 +418,22 @@ mod tests {
             std::os::unix::fs::PermissionsExt::mode(&mode) & 0o777,
             0o600
         );
-        let config: Value = serde_json::from_slice(&std::fs::read(mcp_json).unwrap()).unwrap();
-        assert_eq!(
-            config,
-            json!({ "mcpServers": { "docs": {
-                "command": "docs", "args": ["--name", "moebius-core"], "env": {}, "exposure": "direct"
-            } } })
+        // The run is given only the gateway, with its token; the servers and their values stay with the server.
+        let text = std::fs::read_to_string(mcp_json).unwrap();
+        assert!(
+            !text.contains("moebius-core") && !text.contains("docs"),
+            "{text}"
+        );
+        let config: Value = serde_json::from_str(&text).unwrap();
+        let gateway = &config["mcpServers"]["moebius"];
+        assert_eq!(config["mcpServers"].as_object().unwrap().len(), 1);
+        assert_eq!(gateway["url"], "http://127.0.0.1:9/mcp");
+        assert_eq!(gateway["exposure"], "direct");
+        assert!(
+            gateway["headers"]["Authorization"]
+                .as_str()
+                .unwrap()
+                .starts_with("Bearer moebius-run-")
         );
         // Pi's MCP support is switched on explicitly, before the bridge, which is still last.
         let extensions = values(&argv, "--extension");
@@ -428,18 +442,41 @@ mod tests {
 
         let (argv, mcp_json) = run_agent("B");
         assert_eq!(values(&argv, "--skill"), ["/skills/b"]);
-        let config: Value = serde_json::from_slice(&std::fs::read(mcp_json).unwrap()).unwrap();
-        assert_eq!(
-            config,
-            json!({ "mcpServers": { "search": {
-                "url": "https://search.test/mcp", "headers": { "Name": "moebius-core" }, "exposure": "direct"
-            } } })
-        );
+        let text = std::fs::read_to_string(mcp_json).unwrap();
+        assert!(!text.contains("search.test"), "{text}");
 
         // An agent without servers gets no mcp.json and no MCP support.
         let (argv, mcp_json) = run_agent("C");
         assert_eq!(values(&argv, "--skill"), ["/skills/c"]);
         assert!(!mcp_json.exists());
         assert_eq!(values(&argv, "--extension").len(), 1);
+    }
+
+    #[test]
+    fn the_gateway_is_given_the_servers_of_the_runs_token_with_their_values() {
+        let (dir, _app, pi, _repo) = setup();
+        let servers = mcp::parse_file(
+            "[docs]\ncommand = \"docs\"\nargs = [\"${CARGO_PKG_NAME}\"]\n",
+            &["CARGO_PKG_NAME".to_string()],
+        )
+        .unwrap();
+        let agent = AgentConfig {
+            mcp: servers
+                .into_iter()
+                .map(|(name, server)| (name, server.unwrap()))
+                .collect(),
+            ..pi.agent_set().agents["Coder"].clone()
+        };
+        let token = pi.router.issue_token(crate::router::Grant {
+            run_id: 1,
+            card_id: None,
+            budget: None,
+        });
+        pi.write_agent_dir(dir.path().join("agent"), &agent, &token)
+            .unwrap();
+        let (_, given) = pi.router.mcp_grant(&token).unwrap();
+        assert_eq!(given["docs"].args, ["moebius-core"]);
+        pi.router.revoke_token(&token);
+        assert!(pi.router.mcp_grant(&token).is_none());
     }
 }

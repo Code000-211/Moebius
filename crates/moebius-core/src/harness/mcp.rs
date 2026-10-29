@@ -1,10 +1,11 @@
 //! The MCP servers of the harness configuration repository (`mcp.toml`, see
-//! `docs/reference/harness-configuration.md`) and Pi's `mcp.json`, which a run is given for the servers of its agent.
+//! `docs/reference/harness-configuration.md`) and Pi's `mcp.json`, which names only the MCP gateway (see `gateway`):
+//! the gateway starts or connects to the servers of the run's agent itself.
 //!
 //! A value of a server may take a value from the server's environment with `${NAME}`. Only the names the
 //! administrator lists in `[harness] mcp_env` may be taken, so that a repository cannot pull other secrets of the
 //! server, such as a provider's key, into a run. The names are checked when `mcp.toml` is read and the values are
-//! looked up when a run's `mcp.json` is written, so the run is given values, not names.
+//! looked up when a run's `mcp.json` is written, and handed to the gateway, not to the run.
 
 use std::collections::BTreeMap;
 
@@ -164,9 +165,8 @@ impl McpServer {
             .chain(self.headers.values())
     }
 
-    /// The server as an `mcpServers` entry of Pi's `mcp.json`, with every `${NAME}` replaced by what `lookup` gives.
-    /// Its tools are declared to the model directly, so that they pass through `tool_call` like Pi's own.
-    fn to_pi(&self, lookup: &impl Fn(&str) -> Option<String>) -> Result<Value, String> {
+    /// The server with every `${NAME}` replaced by what `lookup` gives, as the gateway starts or connects to it.
+    fn with_values(&self, lookup: &impl Fn(&str) -> Option<String>) -> Result<McpServer, String> {
         let fill = |value: &String| fill(value, lookup);
         let fill_all = |values: &BTreeMap<String, String>| {
             values
@@ -174,39 +174,46 @@ impl McpServer {
                 .map(|(key, value)| Ok((key.clone(), fill(value)?)))
                 .collect::<Result<BTreeMap<_, _>, String>>()
         };
-        Ok(match (&self.command, &self.url) {
-            (Some(command), _) => json!({
-                "command": fill(command)?,
-                "args": self.args.iter().map(fill).collect::<Result<Vec<_>, _>>()?,
-                "env": fill_all(&self.env)?,
-                "exposure": "direct",
-            }),
-            (None, url) => json!({
-                "url": fill(url.as_ref().expect("a server has a command or a url"))?,
-                "headers": fill_all(&self.headers)?,
-                "exposure": "direct",
-            }),
+        Ok(McpServer {
+            command: self.command.as_ref().map(fill).transpose()?,
+            args: self.args.iter().map(fill).collect::<Result<_, _>>()?,
+            env: fill_all(&self.env)?,
+            url: self.url.as_ref().map(fill).transpose()?,
+            headers: fill_all(&self.headers)?,
         })
     }
 }
 
-/// Pi's `mcp.json` for `servers`, with the values of `${NAME}` taken from `lookup`; a name `lookup` does not know is an
-/// error, since the run would be given a server that cannot work.
-pub fn pi_config(
+/// `servers` with the values of `${NAME}` taken from `lookup`; a name `lookup` does not know is an error, since the run
+/// would be given a server that cannot work.
+pub fn with_values(
     servers: &BTreeMap<String, McpServer>,
     lookup: &impl Fn(&str) -> Option<String>,
-) -> Result<Value, String> {
-    let servers = servers
+) -> Result<BTreeMap<String, McpServer>, String> {
+    servers
         .iter()
         .map(|(name, server)| {
-            let entry = server
-                .to_pi(lookup)
+            let filled = server
+                .with_values(lookup)
                 .map_err(|e| format!("the MCP server {name:?}: {e}"))?;
-            Ok((name.clone(), entry))
+            Ok((name.clone(), filled))
         })
-        .collect::<Result<serde_json::Map<_, _>, String>>()?;
-    Ok(json!({ "mcpServers": servers }))
+        .collect()
 }
+
+/// Pi's `mcp.json` for a run whose agent names servers: the MCP gateway at `url` as its only server, named
+/// [`GATEWAY`], with the run's token. Its tools are declared to the model directly, so that they pass through
+/// `tool_call` like Pi's own.
+pub fn pi_config(url: &str, token: &str) -> Value {
+    json!({ "mcpServers": { GATEWAY: {
+        "url": url,
+        "headers": { "Authorization": format!("Bearer {token}") },
+        "exposure": "direct",
+    } } })
+}
+
+/// The name of the MCP gateway in a run's `mcp.json`.
+pub const GATEWAY: &str = "moebius";
 
 /// The names `${NAME}` in `text`. A `${` that does not close over a name is an error.
 fn variables(text: &str) -> Result<Vec<String>, String> {
@@ -376,7 +383,7 @@ mod tests {
     }
 
     #[test]
-    fn pi_is_given_the_values_not_the_names() {
+    fn the_gateway_is_given_the_values_not_the_names() {
         let docs = server(
             "command = \"docs-${V}\"\nargs = [\"${V}\"]\nenv = { KEY = \"k-${V}-${W}\" }\n",
             &["V", "W"],
@@ -387,17 +394,21 @@ mod tests {
             "W" => Some("2".to_string()),
             _ => None,
         };
-        let config = pi_config(
-            &BTreeMap::from([("docs".to_string(), docs.clone())]),
-            &lookup,
-        );
+        let servers = BTreeMap::from([("docs".to_string(), docs.clone())]);
+        let filled = with_values(&servers, &lookup).unwrap();
+        assert_eq!(filled["docs"].command.as_deref(), Some("docs-1"));
+        assert_eq!(filled["docs"].args, ["1"]);
+        assert_eq!(filled["docs"].env["KEY"], "k-1-2");
+        let unset = with_values(&servers, &|_| None);
+        assert!(unset.unwrap_err().contains("${V} is not set"));
+
         assert_eq!(
-            config.unwrap(),
-            json!({ "mcpServers": { "docs": {
-                "command": "docs-1", "args": ["1"], "env": { "KEY": "k-1-2" }, "exposure": "direct"
+            pi_config("http://127.0.0.1:9/mcp", "moebius-run-x"),
+            json!({ "mcpServers": { "moebius": {
+                "url": "http://127.0.0.1:9/mcp",
+                "headers": { "Authorization": "Bearer moebius-run-x" },
+                "exposure": "direct"
             } } })
         );
-        let unset = pi_config(&BTreeMap::from([("docs".to_string(), docs)]), &|_| None);
-        assert!(unset.unwrap_err().contains("${V} is not set"));
     }
 }

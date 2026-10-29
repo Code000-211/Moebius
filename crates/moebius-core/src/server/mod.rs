@@ -1,5 +1,6 @@
-//! The server put together (spec 2): the store and the core, the desktop API, the router, the Pi-Bolt harness, the
-//! board engine and the loops that keep them going. The built-in skills are written to the data directory at start.
+//! The server put together (spec 2): the store and the core, the desktop API, the router with the check and the MCP
+//! gateway, the Pi-Bolt harness, the board engine and the loops that keep them going. The built-in skills are written
+//! to the data directory at start.
 //!
 //! This module wires every part from the configuration and serves them; `leftovers` ends what a server that stopped
 //! left going, `loops` holds the board's tick, the poll of GitHub and the refresh of the clones, and `schedule` what is
@@ -27,6 +28,7 @@ use crate::config::Config;
 use crate::decide::check;
 use crate::decide::guard::{self, Guard, Teacher};
 use crate::decide::model::{self, DecisionModel, Routed};
+use crate::harness::gateway::Gateway;
 use crate::harness::pibolt::PiBolt;
 use crate::harness::repo::HarnessRepo;
 use crate::harness::skill;
@@ -196,14 +198,25 @@ impl Server {
             router: self.router.clone(),
             config: self.live.clone(),
         };
-        let router_routes = self.router.clone().routes().merge(check::routes(
+        let gateway = Arc::new(Gateway::new(
             self.app.clone(),
             self.router.clone(),
             self.config.rules_path(),
         ));
+        let router_routes = self
+            .router
+            .clone()
+            .routes()
+            .merge(check::routes(
+                self.app.clone(),
+                self.router.clone(),
+                self.config.rules_path(),
+            ))
+            .merge(gateway.clone().routes());
         tokio::select! {
             served = api::serve(api_listener, state) => served,
             served = axum::serve(router_listener, router_routes) => served,
+            () = gateway.stop_ended_runs() => Ok(()),
             () = loops::board(self.clone()) => Ok(()),
             () = loops::poll(self.clone()) => Ok(()),
             () = loops::refresh(self.clone()) => Ok(()),

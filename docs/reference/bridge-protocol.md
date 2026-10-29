@@ -3,7 +3,8 @@
 The bridge is the part of Moebius that lives inside a harness and through which every tool call is checked before it
 runs. This page is for anyone who writes a bridge for another harness or tests the endpoints: it describes the two HTTP
 endpoints the server offers, their JSON, the rules a client must follow so that it fails closed, and how the harness is
-told where the server is. The server side is `crates/moebius-core/src/decide/check.rs`; the reference client is the Pi
+told where the server is. It also describes the [MCP gateway](#the-mcp-gateway), the one MCP server every harness is
+given, which checks the calls of MCP tools on the server's side. The server side is `crates/moebius-core/src/decide/check.rs`; the reference client is the Pi
 extension `crates/moebius-core/bridge/moebius-bridge.ts`.
 
 ## Endpoints
@@ -140,3 +141,53 @@ this order must not be used.
 
 A bridge for another harness does the same with that harness's hooks. See
 [`examples/pi-extension/log-tool-calls.ts`](../../examples/pi-extension/log-tool-calls.ts) for the smallest extension.
+
+## The MCP gateway
+
+The MCP gateway is Moebius's one MCP server for every harness: it bundles the MCP servers of the run's agent (see
+[harness configuration](harness-configuration.md#mcptoml)), so that every call of their tools passes through Moebius.
+The server side is `crates/moebius-core/src/harness/gateway/`.
+
+### `POST /mcp`
+
+Served on the router's listener next to the check, as MCP's streamable HTTP transport. Authentication is the same as
+above: the run's token as `Authorization: Bearer <token>` (or `x-api-key`), checked before the body; an unknown,
+missing or expired token is answered `401` with `{"error": "not a run's token"}`. Pi-Bolt is given it in its
+`mcp.json` as the server `moebius`:
+
+```json
+{"mcpServers": {"moebius": {"url": "http://127.0.0.1:7172/mcp", "headers": {"Authorization": "Bearer moebius-run-..."}, "exposure": "direct"}}}
+```
+
+The body is one JSON-RPC 2.0 message or an array of them. A request is answered `200` with its JSON-RPC response as
+`application/json` (an array for an array); notifications and responses are taken with `202` and no body; a body that
+is not JSON is `400` with a JSON-RPC parse error (`-32700`). The gateway gives no `Mcp-Session-Id`: the run's token is
+the session. `GET /mcp` and `DELETE /mcp` are answered `405` with a valid token (there is no stream from the server and
+no session to end), `401` without one.
+
+| Method | Answer |
+|---|---|
+| `initialize` | Starts the run's servers (below), then `{"protocolVersion"` (the client's), `"capabilities": {"tools": {"listChanged": false}}`, `"serverInfo": {"name": "moebius", "version"}}`. |
+| `ping` | `{}`. |
+| `tools/list` | `{"tools": [...]}`: every tool of every server of the run that could be reached, as the server describes it, named `<server>__<tool>`. All in one page. |
+| `tools/call` | `{"name": "<server>__<tool>", "arguments"}`: the call checked, then made (below). A name the run does not have is the error `-32602`. |
+| anything else | The error `-32601`. |
+
+At the run's first request the gateway starts each stdio server of the run as a child process of the Moebius server,
+in the run's worktree, and connects to each remote one, sending its `headers`; it initializes each and lists its tools.
+A server that cannot be started, reached or initialized within 60 seconds leaves out its tools and is stored as an
+`mcp_error` run event, `{"server", "message"}`. When the run ends, its token is withdrawn and its servers are stopped.
+
+Every `tools/call` is a tool call like any other: it goes through `decide("tool_call")` with the tool named
+`mcp__<server>__<tool>`, the `arguments` as its input and `mcp-<JSON-RPC id>` as its `tool_call_id`, and leaves one
+judgement (see [above](#post-moebiuscheck)). A refused call never reaches the server; its result is
+`{"content": [{"type": "text", "text": "Moebius refused this call: <reason>"}], "isError": true}`, and the reason names
+the rule. Anything that fails while deciding refuses the call. An allowed call goes to the server, which may take ten
+minutes; what it answers comes back with every secret in its strings replaced by `[redacted:<kind>]`, as from
+`/moebius/result`, and a server that fails gives `isError: true` with why. Every call is stored and published as an
+`mcp_call` run event, `{"server", "tool", "tool_call_id", "input", "decision", "reason", "result"}`, with secrets
+removed.
+
+A harness with a bridge checks the call under its own name too (Pi-Bolt names the tools
+`mcp__moebius__<server>__<tool>`), so with Pi-Bolt each call of an MCP tool leaves two judgements; a harness without a
+bridge is still checked by the gateway.
