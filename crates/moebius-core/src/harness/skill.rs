@@ -2,7 +2,11 @@
 //! the built-in agents find them. The `moebius` skill is the reference library: its pages are the files of `docs/guide/`
 //! and `docs/reference/`, so it cannot say anything the documentation does not, and every built-in agent has it. The
 //! task skills (`moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions`, `moebius-plugins`)
-//! are one `SKILL.md` each with the steps of one kind of task, and only the Moebius agent has them.
+//! are one `SKILL.md` each with the steps of one kind of task, and only the Moebius agent has them. The engineering
+//! skills are copied unchanged from Matt Pocock's skills (`skill/vendor/mattpocock/`) and given to the Coder, the
+//! Reviewer and the Grilling partner, with `moebius-autonomous`, which says what to do where they assume a person.
+//! Unlike the others they are not reserved names: a skill of the harness configuration repository with the same name
+//! replaces the copy, which is how a person updates or changes one.
 
 use std::path::{Path, PathBuf};
 
@@ -20,6 +24,12 @@ pub struct BuiltIn {
     pub name: &'static str,
     files: &'static [(&'static str, &'static str)],
 }
+
+/// Where the engineering skills were copied from.
+pub const VENDORED_URL: &str = "https://github.com/mattpocock/skills";
+
+/// The commit of [`VENDORED_URL`] they were copied at, as `skill/vendor/mattpocock/README.md` says.
+pub const VENDORED_COMMIT: &str = "59db609eb1e18aaf59b63284d0e52255aff0c63c";
 
 /// A built-in skill as an agent's page shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -106,9 +116,121 @@ pub const TASKS: [BuiltIn; 5] = [
     },
 ];
 
-/// Every built-in skill: the reference library first, then the task skills.
+/// What the engineering skills need said where they assume a person; given with them.
+pub const AUTONOMOUS: BuiltIn = BuiltIn {
+    name: "moebius-autonomous",
+    files: &[(
+        "SKILL.md",
+        include_str!("../../skill/moebius-autonomous/SKILL.md"),
+    )],
+};
+
+/// The license of the engineering skills, written beside each of them.
+const VENDORED_LICENSE: &str = include_str!("../../skill/vendor/mattpocock/LICENSE");
+
+/// The engineering skills, as they are upstream.
+pub const VENDORED: [BuiltIn; 5] = [
+    BuiltIn {
+        name: "tdd",
+        files: &[
+            (
+                "SKILL.md",
+                include_str!("../../skill/vendor/mattpocock/tdd/SKILL.md"),
+            ),
+            (
+                "tests.md",
+                include_str!("../../skill/vendor/mattpocock/tdd/tests.md"),
+            ),
+            (
+                "mocking.md",
+                include_str!("../../skill/vendor/mattpocock/tdd/mocking.md"),
+            ),
+            ("LICENSE", VENDORED_LICENSE),
+        ],
+    },
+    BuiltIn {
+        name: "diagnosing-bugs",
+        files: &[
+            (
+                "SKILL.md",
+                include_str!("../../skill/vendor/mattpocock/diagnosing-bugs/SKILL.md"),
+            ),
+            (
+                "scripts/hitl-loop.template.sh",
+                include_str!(
+                    "../../skill/vendor/mattpocock/diagnosing-bugs/scripts/hitl-loop.template.sh"
+                ),
+            ),
+            ("LICENSE", VENDORED_LICENSE),
+        ],
+    },
+    BuiltIn {
+        name: "code-review",
+        files: &[
+            (
+                "SKILL.md",
+                include_str!("../../skill/vendor/mattpocock/code-review/SKILL.md"),
+            ),
+            ("LICENSE", VENDORED_LICENSE),
+        ],
+    },
+    BuiltIn {
+        name: "grilling",
+        files: &[
+            (
+                "SKILL.md",
+                include_str!("../../skill/vendor/mattpocock/grilling/SKILL.md"),
+            ),
+            ("LICENSE", VENDORED_LICENSE),
+        ],
+    },
+    BuiltIn {
+        name: "to-tickets",
+        files: &[
+            (
+                "SKILL.md",
+                include_str!("../../skill/vendor/mattpocock/to-tickets/SKILL.md"),
+            ),
+            ("LICENSE", VENDORED_LICENSE),
+        ],
+    },
+];
+
+/// Every reserved built-in skill: the reference library first, then the task skills and the adapter of the
+/// engineering skills.
 pub fn all() -> impl Iterator<Item = &'static BuiltIn> {
-    std::iter::once(&MOEBIUS).chain(TASKS.iter())
+    std::iter::once(&MOEBIUS)
+        .chain(TASKS.iter())
+        .chain(std::iter::once(&AUTONOMOUS))
+}
+
+/// The engineering skill `name`.
+pub fn vendored(name: &str) -> Option<&'static BuiltIn> {
+    VENDORED.iter().find(|skill| skill.name == name)
+}
+
+/// The engineering skills the built-in skills of the agent `name` hold, which the agent's `engineering_skills` turns
+/// off together with the adapter: the Coder's, the Reviewer's and the Grilling partner's.
+pub fn engineering(agent: &str) -> Vec<&'static BuiltIn> {
+    let names: &[&str] = match agent {
+        "Coder" => &["tdd", "diagnosing-bugs"],
+        "Reviewer" => &["code-review"],
+        "Grilling-partner" => &["grilling", "to-tickets"],
+        _ => return vec![],
+    };
+    names.iter().filter_map(|name| vendored(name)).collect()
+}
+
+/// Whether the page of a skill hides it from the model's list of skills (`disable-model-invocation: true`), so that the
+/// agent must be told where it is.
+pub fn hidden_from_model(page: &str) -> bool {
+    page.strip_prefix("---\n")
+        .and_then(|rest| rest.split("\n---").next())
+        .is_some_and(|frontmatter| {
+            frontmatter
+                .lines()
+                .any(|line| line.trim() == "disable-model-invocation: true")
+        })
 }
 
 /// The built-in skill `name`.
@@ -253,9 +375,9 @@ pub fn dir(data_dir: &Path, name: &str) -> PathBuf {
     data_dir.join("skills").join(name)
 }
 
-/// Writes every built-in skill, replacing what an earlier start left.
+/// Writes every built-in skill and the engineering skills, replacing what an earlier start left.
 pub fn write(data_dir: &Path) -> std::io::Result<()> {
-    for skill in all() {
+    for skill in all().chain(VENDORED.iter()) {
         let root = dir(data_dir, skill.name);
         match std::fs::remove_dir_all(&root) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
@@ -355,7 +477,13 @@ mod tests {
             let page = std::fs::read_to_string(root.join("SKILL.md")).unwrap();
             assert!(page.starts_with(&format!("---\nname: {}\ndescription: ", built_in.name)));
         }
-        assert_eq!(all().count(), 6);
+        assert_eq!(all().count(), 7);
+        for vendored in &VENDORED {
+            let root = super::dir(dir.path(), vendored.name);
+            for (path, text) in vendored.files {
+                assert_eq!(&std::fs::read_to_string(root.join(path)).unwrap(), text);
+            }
+        }
     }
 
     #[test]
@@ -447,5 +575,63 @@ mod tests {
             }
         }
         assert!(checked >= 1);
+    }
+
+    #[test]
+    fn the_engineering_skills_are_the_upstream_ones_at_the_commit_the_readme_names() {
+        let readme = include_str!("../../skill/vendor/mattpocock/README.md");
+        assert!(readme.contains(VENDORED_COMMIT));
+        assert!(readme.contains(VENDORED_URL));
+        assert!(VENDORED_LICENSE.starts_with("MIT License"));
+        assert_eq!(VENDORED.len(), 5);
+        for skill in &VENDORED {
+            assert!(readme.contains(&format!("| `{}` |", skill.name)));
+            let frontmatter = skill.page().split("\n---\n").next().unwrap();
+            assert!(
+                frontmatter
+                    .lines()
+                    .any(|line| line == format!("name: {}", skill.name)),
+                "{}",
+                skill.name
+            );
+            assert!(!skill.description().is_empty(), "{}", skill.name);
+            assert_eq!(skill.file("LICENSE"), Some(VENDORED_LICENSE));
+            // They may be replaced by a skill of the harness configuration repository, so they are not reserved.
+            assert!(built_in(skill.name).is_none());
+            assert_eq!(vendored(skill.name).unwrap().name, skill.name);
+        }
+        assert_eq!(VENDORED[0].files(), ["tests.md", "mocking.md", "LICENSE"]);
+        assert!(hidden_from_model(vendored("to-tickets").unwrap().page()));
+        assert!(!hidden_from_model(vendored("tdd").unwrap().page()));
+    }
+
+    #[test]
+    fn each_role_has_its_engineering_skills() {
+        let names = |agent| {
+            engineering(agent)
+                .into_iter()
+                .map(|skill| skill.name)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(names("Coder"), ["tdd", "diagnosing-bugs"]);
+        assert_eq!(names("Reviewer"), ["code-review"]);
+        assert_eq!(names("Grilling-partner"), ["grilling", "to-tickets"]);
+        assert!(names("Moebius").is_empty() && names("Planner").is_empty());
+    }
+
+    #[test]
+    fn the_adapter_says_what_to_do_where_the_skills_ask_a_person() {
+        let page = body(AUTONOMOUS.page());
+        for needed in [
+            "tdd",
+            "diagnosing-bugs",
+            "code-review",
+            "to-tickets",
+            "issues.json",
+            "setup-matt-pocock-skills",
+            "merge-base",
+        ] {
+            assert!(page.contains(needed), "{needed}");
+        }
     }
 }

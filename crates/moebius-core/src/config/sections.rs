@@ -228,6 +228,15 @@ pub struct AgentConfig {
     /// How the outputs of the agent's tools are kept small (`[agents.<name>.tool_output]`).
     #[serde(default)]
     pub tool_output: ToolOutput,
+    /// Whether the agent is given the engineering skills Moebius brings for it, with `moebius-autonomous` (see
+    /// `harness::skill::engineering`). Only the Coder, the Reviewer and the Grilling partner have any.
+    #[serde(default = "default_true")]
+    pub engineering_skills: bool,
+}
+
+/// The default of the keys that are on unless they are turned off.
+pub(crate) fn default_true() -> bool {
+    true
 }
 
 /// How the outputs of an agent's tools are kept small before the model reads them: older ones hidden (by the bridge),
@@ -316,6 +325,9 @@ pub struct AgentSet {
     pub agents: BTreeMap<String, AgentConfig>,
     /// Why each agent that is left out is, by name.
     pub errors: BTreeMap<String, String>,
+    /// The engineering skills the harness configuration repository replaces with a skill of its own of the same name:
+    /// the name, and where the skill is.
+    pub skill_overrides: BTreeMap<String, PathBuf>,
 }
 
 /// The timeout of a decider, `seconds`, which must be at least 1 and below the plugin limit; else `error` with

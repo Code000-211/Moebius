@@ -86,6 +86,28 @@ work is clear and ends in issues you confirm, or in a research report (see [Gril
 agent it takes the Coder's model unless `[agents.Grilling-partner]` gives it one, and its `instructions` are added after the
 built-in ones.
 
+## The engineering skills
+
+The Coder, the Reviewer and the Grilling partner are given skills from [Matt Pocock's skills](https://github.com/mattpocock/skills)
+(MIT license), which Moebius brings itself: the Coder `tdd` (red, then green, one slice at a time, tests at the public
+seams) and `diagnosing-bugs` (build a tight feedback loop before guessing), the Reviewer `code-review` (the Standards
+and the Spec of a change, reported apart), the Grilling partner `grilling` and `to-tickets`. Those skills are written for
+a person at the keyboard; a run never waits for one. So every one of these agents also has `moebius-autonomous`, which
+says what to do where a skill asks the user: decide, and put the decision and the reason in the run's summary; the
+card's issue is the spec; there is no tracker to publish to and no setup skill to run (the Grilling partner writes
+`.moebius/grilling/issues.json` as before).
+
+- They apply to agents with these names, on both harnesses, in addition to the agent's own `skills`. Nothing is needed to
+  get them.
+- To go without them, set `engineering_skills = false` on the agent (in `agents/<name>.toml` or `[agents.<name>]`; the
+  Agents page has the setting for these three agents, `"$MOEBIUS" agent save` the flag `--no-engineering-skills`).
+- The Skills page lists them as built in, with the repository and the commit they were copied from. To change one, or to
+  take a newer version, save a skill of the same name in the harness configuration repository: it replaces the built-in
+  copy for every agent that has it. "Update from upstream" on the skill's page starts a chat with the Moebius agent that
+  imports it from upstream into the repository that way.
+
+The exact rules are in [harness configuration](../reference/harness-configuration.md#engineering-skills).
+
 ## The steps
 
 1. Add an `[agents.<name>]` table to `moebius.toml`. The name is made of letters, digits, `-` and `_`. Only `model` is

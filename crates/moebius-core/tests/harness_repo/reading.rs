@@ -123,15 +123,26 @@ async fn the_skills_and_mcp_servers_an_agent_can_name_are_listed_without_secrets
             "moebius-workflows",
             "moebius-extensions",
             "moebius-plugins",
+            "moebius-autonomous",
+            "tdd",
+            "diagnosing-bugs",
+            "code-review",
+            "grilling",
+            "to-tickets",
             "house-style"
         ]
     );
-    for skill in &skills.as_array().unwrap()[..6] {
+    for skill in &skills.as_array().unwrap()[..7] {
         assert_eq!(skill["built_in"], true);
         assert!(skill["description"].as_str().unwrap().contains("Use it"));
     }
+    // The engineering skills are built in too, and say where they came from.
+    for skill in &skills.as_array().unwrap()[7..12] {
+        assert_eq!(skill["built_in"], true);
+        assert!(skill["source"]["commit"].is_string(), "{skill}");
+    }
     assert_eq!(
-        skills[6],
+        skills[12],
         json!({"name": "house-style", "description": "Write plainly.", "built_in": false})
     );
 

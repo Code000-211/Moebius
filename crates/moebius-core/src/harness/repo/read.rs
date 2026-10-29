@@ -2,7 +2,7 @@
 //! they name, as the API shows them and as a run uses them, and the skills and MCP servers themselves.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -11,7 +11,8 @@ use super::HarnessRepo;
 use crate::app::{App, AppError, Result};
 use crate::bus::AppEvent;
 use crate::config::{
-    AgentConfig, AgentSet, HarnessKind, ToolOutput, default_protocol, valid_agent_name,
+    AgentConfig, AgentSet, HarnessKind, ToolOutput, default_protocol, default_true,
+    valid_agent_name,
 };
 use crate::harness::mcp::{McpServer, parse_file};
 use crate::harness::skill;
@@ -43,6 +44,13 @@ pub struct AgentSettings {
     /// How the outputs of its tools are kept small (the table `[tool_output]`); left out when it is the default.
     #[serde(default, skip_serializing_if = "ToolOutput::is_default")]
     pub tool_output: ToolOutput,
+    /// Whether it is given the engineering skills Moebius brings for it; on unless the file says `false`.
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub engineering_skills: bool,
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
 }
 
 /// An agent as the API takes and gives it: its settings and its instructions (`agents/<name>.md`, empty without).
@@ -65,6 +73,23 @@ pub struct AgentView {
     pub commit: Option<String>,
 }
 
+/// Where a skill Moebius copied from elsewhere comes from: the repository and the commit it was copied at.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillSource {
+    pub url: String,
+    pub commit: String,
+}
+
+impl SkillSource {
+    /// The source of the engineering skills.
+    fn vendored() -> Self {
+        SkillSource {
+            url: skill::VENDORED_URL.into(),
+            commit: skill::VENDORED_COMMIT.into(),
+        }
+    }
+}
+
 /// A skill an agent can name, as `GET /v1/skills` lists it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SkillInfo {
@@ -73,6 +98,9 @@ pub struct SkillInfo {
     pub description: String,
     /// Whether Moebius brings the skill itself, as it does `moebius`.
     pub built_in: bool,
+    /// Where a built-in skill was copied from; left out for the others.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<SkillSource>,
 }
 
 /// An MCP server an agent can name, as `GET /v1/mcp-servers` lists it: never its environment or headers.
@@ -98,6 +126,9 @@ pub struct SkillView {
     /// The short id of the commit a `PUT` made; left out by `GET` and by a `PUT` that changed nothing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub commit: Option<String>,
+    /// Where a built-in skill was copied from; left out for the others.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<SkillSource>,
 }
 
 /// What `PUT /v1/skills/{name}` takes.
@@ -219,6 +250,7 @@ pub(super) fn agent_config(
         token_budget: settings.token_budget,
         harness: settings.harness,
         tool_output: settings.tool_output,
+        engineering_skills: settings.engineering_skills,
     }
 }
 
@@ -244,6 +276,12 @@ impl HarnessRepo {
                 }
             }
         }
+        set.skill_overrides = skill::VENDORED
+            .iter()
+            .map(|vendored| (vendored.name, self.path.join("skills").join(vendored.name)))
+            .filter(|(_, path)| path.join("SKILL.md").is_file())
+            .map(|(name, path)| (name.to_string(), path))
+            .collect();
         *self.agents.write().unwrap_or_else(|e| e.into_inner()) = set;
         *read_at = head;
     }
@@ -275,15 +313,25 @@ impl HarnessRepo {
         })
     }
 
-    /// The built-in skills, then those of `skills/` by name. A directory with the name of a built-in skill is left
-    /// out, since agents cannot name it.
+    /// The built-in skills, then the engineering skills that a skill of `skills/` does not replace, then those of
+    /// `skills/` by name. A directory with the name of a built-in skill is left out, since agents cannot name it.
     pub fn skills(&self) -> Vec<SkillInfo> {
         let _read_at = self.lock();
         let built_in = skill::all().map(|built_in| SkillInfo {
             name: built_in.name.into(),
             description: built_in.description(),
             built_in: true,
+            source: None,
         });
+        let vendored = skill::VENDORED
+            .iter()
+            .filter(|vendored| self.replacement(vendored.name).is_none())
+            .map(|vendored| SkillInfo {
+                name: vendored.name.into(),
+                description: vendored.description(),
+                built_in: true,
+                source: Some(SkillSource::vendored()),
+            });
         let own = self
             .layout()
             .skills
@@ -299,9 +347,20 @@ impl HarnessRepo {
                         .and_then(|text| skill::description(&text))
                         .unwrap_or_default(),
                     built_in: false,
+                    source: None,
                 }
             });
-        built_in.chain(own).collect()
+        built_in.chain(vendored).chain(own).collect()
+    }
+
+    /// The engineering skill `name` as Moebius brings it, unless a skill of `skills/` with its name replaces it.
+    pub(super) fn vendored(&self, name: &str) -> Option<&'static skill::BuiltIn> {
+        skill::vendored(name).filter(|_| self.replacement(name).is_none())
+    }
+
+    /// The `SKILL.md` of the skill of `skills/` named `name`, if there is one.
+    fn replacement(&self, name: &str) -> Option<PathBuf> {
+        Some(self.path.join("skills").join(name).join("SKILL.md")).filter(|page| page.is_file())
     }
 
     /// The servers of `mcp.toml`, by name. A file that cannot be read is no servers.
@@ -330,13 +389,14 @@ impl HarnessRepo {
     /// The skill `name` as its `SKILL.md` says. A built-in skill is read from the binary.
     pub fn skill(&self, name: &str) -> Result<SkillView> {
         let _read_at = self.lock();
-        if let Some(built_in) = skill::built_in(name) {
+        if let Some(built_in) = skill::built_in(name).or_else(|| self.vendored(name)) {
             return Ok(SkillView {
                 name: name.into(),
                 description: built_in.description(),
                 text: skill::body(built_in.page()).into(),
                 files: built_in.files().into_iter().map(String::from).collect(),
                 commit: None,
+                source: skill::vendored(name).map(|_| SkillSource::vendored()),
             });
         }
         let page = std::fs::read_to_string(self.path.join("skills").join(name).join("SKILL.md"))
@@ -358,6 +418,7 @@ impl HarnessRepo {
             text: skill::body(page).into(),
             files,
             commit,
+            source: None,
         }
     }
 

@@ -117,6 +117,7 @@ fn fill(
             mcp: vec![],
             harness: agent.harness,
             tool_output: agent.tool_output,
+            engineering_skills: agent.engineering_skills,
         };
         let settings = toml::to_string(&settings)
             .map_err(|e| AppError::Invalid(format!("cannot write the agent {name}: {e}")))?;

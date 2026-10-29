@@ -22,7 +22,7 @@ and are recorded as yours.
 Write the instructions to a file first (`coder.md`, outside the worktree's tracked files or delete it after) and pass
 it with `--instructions`; `-` reads standard input. Keep `--thinking`, `--token-budget`, `--harness`, every `--skill`, `--mcp` and
 `--extension` the agent had, and its `tool_output` (`--hide-outputs-after`, `--output-lines`, `--output-bytes`,
-`--no-compress`; left out, each is its default), unless the person asked to change them. `--harness claude-code` runs the agent on Claude
+`--no-compress`; left out, each is its default) and `--no-engineering-skills` if it had `engineering_skills = false`, unless the person asked to change them. `--harness claude-code` runs the agent on Claude
 Code, which needs `--protocol anthropic` and no extensions. These commands need a harness configuration
 repository; without one the agents are the `agents` tables of `moebius.toml` (see Settings below). The built-in agents
 (`Moebius`, `Grilling-partner`) keep their built-in instructions and skills; what you save is added after them.

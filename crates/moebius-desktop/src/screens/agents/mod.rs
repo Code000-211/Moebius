@@ -31,6 +31,10 @@ pub(crate) use crate::widgets::form::{field, menu_style, notice_line, pick_style
 const NOT_SET: &str = "Not set";
 /// What the list of whether tool outputs are compressed offers: on, then off.
 const COMPRESS: [&str; 2] = ["Compressed", "As they are"];
+/// What the list of whether the engineering skills are given offers: on, then off.
+const ENGINEERING: [&str; 2] = ["Given", "Not given"];
+/// The agents Moebius brings engineering skills for.
+const ENGINEERING_AGENTS: [&str; 3] = ["Coder", "Reviewer", "Grilling-partner"];
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -67,6 +71,7 @@ pub enum Message {
     MaxLinesEdited(String),
     MaxBytesEdited(String),
     CompressChosen(String),
+    EngineeringChosen(String),
     Instructions(text_editor::Action),
     /// "Write them" (false) or "Let the Moebius agent write them" (true) was chosen for the instructions.
     InstructionsByAgent(bool),

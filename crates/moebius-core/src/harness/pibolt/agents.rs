@@ -106,6 +106,9 @@ const MOEBIUS_INSTRUCTIONS: &str = "You are the Moebius agent. You work for the 
 pub struct BuiltInAgent {
     pub instructions: String,
     pub skills: Vec<skill::Summary>,
+    /// The engineering skills it is given besides, unless its configuration turns them off with
+    /// `engineering_skills = false`.
+    pub engineering_skills: Vec<skill::Summary>,
 }
 
 /// The built-in instructions and skills of the agent `name`, if Moebius brings it.
@@ -113,10 +116,15 @@ pub fn built_in_agent(name: &str) -> Option<BuiltInAgent> {
     Some(BuiltInAgent {
         instructions: built_in_instructions(name)?.into(),
         skills: built_in_skills(name).map(skill::BuiltIn::summary).collect(),
+        engineering_skills: engineering_skills(name)
+            .into_iter()
+            .map(skill::BuiltIn::summary)
+            .collect(),
     })
 }
 
 /// The built-in skills of a built-in agent: the reference library, and for the Moebius agent the task skills after it.
+/// The engineering skills of the Grilling partner (see [`engineering_skills`]) are not among them.
 fn built_in_skills(name: &str) -> impl Iterator<Item = &'static skill::BuiltIn> {
     let tasks: &[skill::BuiltIn] = if name == MOEBIUS_AGENT {
         &skill::TASKS
@@ -124,6 +132,16 @@ fn built_in_skills(name: &str) -> impl Iterator<Item = &'static skill::BuiltIn> 
         &[]
     };
     std::iter::once(&skill::MOEBIUS).chain(tasks)
+}
+
+/// The skills Moebius brings for the agent `name` besides its built-in ones: the engineering skills it has, then
+/// `moebius-autonomous`. Only the Coder, the Reviewer and the Grilling partner have any.
+fn engineering_skills(name: &str) -> Vec<&'static skill::BuiltIn> {
+    let mut skills = skill::engineering(name);
+    if !skills.is_empty() {
+        skills.push(&skill::AUTONOMOUS);
+    }
+    skills
 }
 
 /// The instructions of a built-in agent, which exists without configuration.
@@ -172,12 +190,14 @@ pub fn has_agent(set: &AgentSet, name: &str) -> bool {
 pub fn resolve(set: &AgentSet, data_dir: &Path, name: &str) -> Result<AgentConfig, String> {
     let configured = set.agents.get(name);
     let Some(built_in) = built_in_instructions(name) else {
-        return configured
+        let mut agent = configured
             .cloned()
             .ok_or_else(|| match set.errors.get(name) {
                 Some(error) => format!("the agent {name} cannot be used: {error}"),
                 None => format!("no agent named {name}"),
-            });
+            })?;
+        give_engineering_skills(set, data_dir, name, &mut agent);
+        return Ok(agent);
     };
     let mut agent = match (configured, set.agents.get("Coder")) {
         (Some(own), _) => own.clone(),
@@ -192,6 +212,7 @@ pub fn resolve(set: &AgentSet, data_dir: &Path, name: &str) -> Result<AgentConfi
             token_budget: None,
             harness: coder.harness,
             tool_output: coder.tool_output,
+            engineering_skills: coder.engineering_skills,
         },
         (None, None) => {
             return Err(format!(
@@ -205,7 +226,47 @@ pub fn resolve(set: &AgentSet, data_dir: &Path, name: &str) -> Result<AgentConfi
     });
     let built_in_skills = built_in_skills(name).map(|built_in| skill::dir(data_dir, built_in.name));
     agent.skills.splice(0..0, built_in_skills);
+    give_engineering_skills(set, data_dir, name, &mut agent);
     Ok(agent)
+}
+
+/// Adds the engineering skills Moebius brings for the agent `name` (see [`engineering_skills`]) to `agent`'s skills,
+/// before the agent's own, unless it turns them off or already names the skill. A skill of the harness configuration
+/// repository with the name of one replaces it. A skill that its author hides from the model's list is named in the
+/// instructions with where it is, so that the agent can read it.
+fn give_engineering_skills(set: &AgentSet, data_dir: &Path, name: &str, agent: &mut AgentConfig) {
+    if !agent.engineering_skills {
+        return;
+    }
+    let mut hidden = vec![];
+    let mut given = vec![];
+    for built_in in engineering_skills(name) {
+        let path = set
+            .skill_overrides
+            .get(built_in.name)
+            .cloned()
+            .unwrap_or_else(|| skill::dir(data_dir, built_in.name));
+        if agent.skills.contains(&path) || given.contains(&path) {
+            continue;
+        }
+        if skill::hidden_from_model(built_in.page()) {
+            hidden.push(path.join("SKILL.md"));
+        }
+        given.push(path);
+    }
+    agent.skills.splice(0..0, given);
+    if !hidden.is_empty() {
+        let files: Vec<_> = hidden.iter().map(|p| p.display().to_string()).collect();
+        let note = format!(
+            "Skills that are not in your list of skills, because their author hides them from the model, are still \
+             yours: read {} when you need them.",
+            files.join(" and ")
+        );
+        agent.instructions = Some(match agent.instructions.take() {
+            Some(text) => format!("{text}\n\n{note}"),
+            None => note,
+        });
+    }
 }
 
 /// The agents of `set` as the API lists them: the built-in chat agents first, the Moebius agent and the Grilling
@@ -261,4 +322,154 @@ pub fn agent_list(set: &AgentSet) -> Vec<AgentInfo> {
     let mut agents: Vec<AgentInfo> = configured.chain(broken).collect();
     agents.sort_by(|a, b| a.name.cmp(&b.name));
     built_in.chain(agents).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+
+    fn agent(skills: &[&str]) -> AgentConfig {
+        AgentConfig {
+            model: "m".into(),
+            protocol: Protocol::OpenAi,
+            thinking: None,
+            instructions: None,
+            skills: skills.iter().map(PathBuf::from).collect(),
+            extensions: vec![],
+            mcp: BTreeMap::new(),
+            token_budget: None,
+            harness: HarnessKind::PiBolt,
+            tool_output: Default::default(),
+            engineering_skills: true,
+        }
+    }
+
+    fn set() -> AgentSet {
+        AgentSet {
+            agents: BTreeMap::from([
+                ("Coder".to_string(), agent(&["/own/house-style"])),
+                ("Reviewer".to_string(), agent(&[])),
+                ("Planner".to_string(), agent(&[])),
+            ]),
+            ..AgentSet::default()
+        }
+    }
+
+    fn skills(agent: &AgentConfig) -> Vec<String> {
+        agent
+            .skills
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn the_built_in_agents_name_their_engineering_skills_and_the_adapter() {
+        let data = Path::new("/data");
+        let coder = resolve(&set(), data, "Coder").unwrap();
+        assert_eq!(
+            skills(&coder),
+            [
+                "/data/skills/tdd",
+                "/data/skills/diagnosing-bugs",
+                "/data/skills/moebius-autonomous",
+                "/own/house-style"
+            ]
+        );
+        let reviewer = resolve(&set(), data, "Reviewer").unwrap();
+        assert_eq!(
+            skills(&reviewer),
+            [
+                "/data/skills/code-review",
+                "/data/skills/moebius-autonomous"
+            ]
+        );
+        // Another agent has none.
+        assert!(resolve(&set(), data, "Planner").unwrap().skills.is_empty());
+
+        // The Grilling partner has the reference library after them, and is told where the skill that its author hides
+        // from the model is.
+        let grilling = resolve(&set(), data, GRILLING_AGENT).unwrap();
+        assert_eq!(
+            skills(&grilling),
+            [
+                "/data/skills/grilling",
+                "/data/skills/to-tickets",
+                "/data/skills/moebius-autonomous",
+                "/data/skills/moebius"
+            ]
+        );
+        let instructions = grilling.instructions.unwrap();
+        assert!(instructions.starts_with("You are the Grilling partner."));
+        assert!(
+            instructions.ends_with("read /data/skills/to-tickets/SKILL.md when you need them.")
+        );
+        assert!(
+            resolve(&set(), data, "Coder")
+                .unwrap()
+                .instructions
+                .is_none()
+        );
+
+        // The built-in agents list them for the desktop app.
+        let shown = built_in_agent(GRILLING_AGENT).unwrap();
+        let names: Vec<_> = shown
+            .engineering_skills
+            .iter()
+            .map(|s| &s.name[..])
+            .collect();
+        assert_eq!(names, ["grilling", "to-tickets", "moebius-autonomous"]);
+        assert!(
+            built_in_agent(MOEBIUS_AGENT)
+                .unwrap()
+                .engineering_skills
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn turning_the_engineering_skills_off_leaves_the_agent_its_own() {
+        let data = Path::new("/data");
+        let mut off = set();
+        for name in ["Coder", GRILLING_AGENT] {
+            let mut agent = agent(&["/own/house-style"]);
+            agent.engineering_skills = false;
+            off.agents.insert(name.into(), agent);
+        }
+        let coder = resolve(&off, data, "Coder").unwrap();
+        assert_eq!(skills(&coder), ["/own/house-style"]);
+        let grilling = resolve(&off, data, GRILLING_AGENT).unwrap();
+        assert_eq!(
+            skills(&grilling),
+            ["/data/skills/moebius", "/own/house-style"]
+        );
+        assert!(!grilling.instructions.unwrap().contains("to-tickets"));
+    }
+
+    #[test]
+    fn a_skill_of_the_harness_repository_replaces_the_one_moebius_brings() {
+        let data = Path::new("/data");
+        let mut replaced = set();
+        replaced
+            .skill_overrides
+            .insert("tdd".into(), "/harness/skills/tdd".into());
+        // The agent that names it too has it once.
+        replaced
+            .agents
+            .insert("Coder".into(), agent(&["/harness/skills/tdd"]));
+        let coder = resolve(&replaced, data, "Coder").unwrap();
+        assert_eq!(
+            skills(&coder),
+            [
+                "/data/skills/diagnosing-bugs",
+                "/data/skills/moebius-autonomous",
+                "/harness/skills/tdd"
+            ]
+        );
+        replaced.agents.insert("Coder".into(), agent(&[]));
+        let coder = resolve(&replaced, data, "Coder").unwrap();
+        assert_eq!(skills(&coder)[0], "/harness/skills/tdd");
+    }
 }

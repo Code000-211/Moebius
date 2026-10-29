@@ -643,13 +643,13 @@ included.
 ### `GET /v1/agents/{name}`
 
 An agent of the harness configuration repository, as its files say: `{"name": string, "settings": {"model", "protocol",
-"thinking", "token_budget", "harness", "skills", "extensions", "mcp", "tool_output"}, "instructions": string}` (`thinking`,
-`token_budget` and `harness` are left out when not set; no `harness` is `pi-bolt`; `tool_output` is left out when it is the defaults). The files hold no secrets and are returned in full. Errors: `404` no such agent; `422` its files
+"thinking", "token_budget", "harness", "skills", "extensions", "mcp", "tool_output", "engineering_skills"}, "instructions": string}` (`thinking`,
+`token_budget` and `harness` are left out when not set; no `harness` is `pi-bolt`; `tool_output` is left out when it is the defaults; `engineering_skills` is left out when it is `true`, and `false` gives the agent none of the [engineering skills](harness-configuration.md#engineering-skills) of the Coder, the Reviewer and the Grilling partner). The files hold no secrets and are returned in full. Errors: `404` no such agent; `422` its files
 are broken (the message says how), or the server has no `[harness]` and its agents are in `moebius.toml`.
 
 A built-in agent (`Moebius`, `Grilling-partner`, `Retro-analyst`, `Autoresearcher`) also has `"built_in":
-{"instructions": string, "skills": [{"name": string, "description": string}]}`: the instructions it is always given
-before its own, and the built-in skills it always has before its own, which nobody can change. The Moebius agent's are
+{"instructions": string, "skills": [{"name": string, "description": string}], "engineering_skills": [...]}`: the instructions it is always given
+before its own, `engineering_skills` the skills of the same shape it is given besides unless its `engineering_skills` is `false` (the Grilling partner's `grilling`, `to-tickets` and `moebius-autonomous`; empty for the others), and the built-in skills it always has before its own, which nobody can change. The Moebius agent's are
 the `moebius` skill and the task skills `moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions` and `moebius-plugins`; the others have the `moebius` skill. A built-in agent is answered
 without files (then `settings` and `instructions` are left out) and without `[harness]`. `PUT` saves only the agent's
 files and answers without `built_in`.
@@ -719,15 +719,16 @@ commit (left out when the text changed nothing, and always for a `rules_file`). 
 ### `GET /v1/skills`
 
 The skills an agent's `skills` can name, for an editor to offer: an array of `{"name": string, "description": string,
-"built_in": boolean}`, the built-in skills first (`moebius`, then the task skills `moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions` and `moebius-plugins`), then the
-directories of `skills/` in the harness configuration repository by name; a directory with the name of a built-in skill
-is left out. `description` is the `description` of the frontmatter of the skill's `SKILL.md`, empty when there is
+"built_in": boolean, "source": {"url": string, "commit": string}}`, the built-in skills first (`moebius`, then the task skills `moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions` and `moebius-plugins`, then `moebius-autonomous`), then the
+engineering skills (`tdd`, `diagnosing-bugs`, `code-review`, `grilling`, `to-tickets`) with `built_in` true and a `source`, the repository they were copied from and the commit, unless the harness configuration repository has a skill of that name, then the
+directories of `skills/` in the harness configuration repository by name; a directory with the name of a reserved built-in skill
+is left out (one with the name of an engineering skill replaces it). `description` is the `description` of the frontmatter of the skill's `SKILL.md`, empty when there is
 none. Without `[harness]` the array is empty.
 
 ### `GET /v1/skills/{name}`
 
 A skill of the harness configuration repository, or a built-in skill: `{"name": string, "description":
-string, "text": string, "files": [string]}`. `text` is the `SKILL.md` after its frontmatter; `files` are the paths of the
+string, "text": string, "files": [string], "source": {"url": string, "commit": string}}` (`source` only for an engineering skill that the repository does not replace). `text` is the `SKILL.md` after its frontmatter; `files` are the paths of the
 skill's other files, relative to its directory, sorted (each is read with `GET /v1/skills/{name}/files/{*path}`). Errors: `404` no such skill;
 `409` the server has no `[harness]`: skills and MCP servers are edited in a harness configuration repository.
 

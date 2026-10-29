@@ -45,6 +45,18 @@ pub struct AgentSettings {
     pub harness: Option<String>,
     #[serde(default, skip_serializing_if = "ToolOutput::is_default")]
     pub tool_output: ToolOutput,
+    /// Whether it is given the engineering skills Moebius brings for it (only the Coder, the Reviewer and the Grilling
+    /// partner have any).
+    #[serde(default = "yes", skip_serializing_if = "is_yes")]
+    pub engineering_skills: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+fn is_yes(value: &bool) -> bool {
+    *value
 }
 
 /// How the outputs of an agent's tools are kept small: older ones hidden, each one compressed and cut to a budget.
@@ -179,6 +191,16 @@ pub struct Skill {
     pub description: String,
     #[serde(default)]
     pub built_in: bool,
+    /// Where a built-in skill was copied from.
+    #[serde(default)]
+    pub source: Option<SkillSource>,
+}
+
+/// The repository a built-in skill was copied from and the commit it was copied at.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct SkillSource {
+    pub url: String,
+    pub commit: String,
 }
 
 /// A skill as `GET /v1/skills/{name}` answers it: its description, the text of its `SKILL.md` and the other files.
@@ -195,6 +217,9 @@ pub struct SkillDetail {
     /// The short id of the commit a `PUT` made; none when the edit changed nothing.
     #[serde(default)]
     pub commit: Option<String>,
+    /// Where a built-in skill was copied from.
+    #[serde(default)]
+    pub source: Option<SkillSource>,
 }
 
 /// An MCP server an agent can name, as `GET /v1/mcp-servers` lists it.

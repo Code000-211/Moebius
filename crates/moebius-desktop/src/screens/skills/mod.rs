@@ -10,7 +10,7 @@ use iced::widget::{column, row, text_editor, text_input};
 use iced::{Alignment, Element, Length, Task};
 
 use crate::app::Message as AppMessage;
-use crate::client::{Client, ClientError, Skill, SkillDetail};
+use crate::client::{Client, ClientError, Run, Skill, SkillDetail, SkillSource};
 use crate::screens::harness_setup::{self, HarnessSetup};
 use crate::screens::live::say;
 use crate::settings::Settings;
@@ -43,6 +43,10 @@ pub enum Message {
     Deleted(Result<(), ClientError>),
     /// A message of the import panel.
     Import(import::Message),
+    /// "Update from upstream" of a built-in skill that was copied from a repository.
+    UpdateFromUpstream,
+    /// The server started the Moebius agent's chat that updates the skill, or said why not.
+    UpdateAsked(Result<Run, ClientError>),
     /// A message about the skill's files.
     File(files::Message),
 }
@@ -62,6 +66,10 @@ struct Editor {
     /// Whether the skill is in the repository, so that it can be deleted.
     exists: bool,
     built_in: bool,
+    /// Where the built-in skill was copied from.
+    source: Option<SkillSource>,
+    /// Whether the request to update the skill is on its way.
+    updating: bool,
     reading: bool,
     description: String,
     text: text_editor::Content,
@@ -81,6 +89,8 @@ impl Editor {
             naming: false,
             exists: false,
             built_in: false,
+            source: None,
+            updating: false,
             reading: false,
             description: String::new(),
             text: text_editor::Content::new(),
@@ -181,11 +191,13 @@ impl Skills {
             Message::Select(name) => {
                 let mut editor = Editor::blank(&name);
                 editor.reading = true;
-                editor.built_in = self
+                let listed = self
                     .list
                     .iter()
                     .flatten()
-                    .any(|skill| skill.name == name && skill.built_in);
+                    .find(|skill| skill.name == name && skill.built_in);
+                editor.built_in = listed.is_some();
+                editor.source = listed.and_then(|skill| skill.source.clone());
                 self.editor = Some(editor);
                 let client = Client::new(settings.clone());
                 return Task::perform(
@@ -205,6 +217,7 @@ impl Skills {
                             editor.description = detail.description;
                             editor.text = text_editor::Content::with_text(&detail.text);
                             editor.files = detail.files;
+                            editor.source = detail.source;
                         }
                         Err(e) => editor.notice = Some(Notice::Failed(say(&e))),
                     }
@@ -247,6 +260,28 @@ impl Skills {
                 }
             }
             Message::Import(message) => return self.import.update(message, settings),
+            Message::UpdateFromUpstream => {
+                if let Some(editor) = &mut self.editor
+                    && let Some(source) = editor.source.clone().filter(|_| !editor.updating)
+                {
+                    editor.updating = true;
+                    editor.notice = None;
+                    let asked = update_request(&editor.name, &source);
+                    let client = Client::new(settings.clone());
+                    return Task::perform(
+                        async move { client.ask(&asked, None, "").await },
+                        |result| AppMessage::Skills(Message::UpdateAsked(result)),
+                    );
+                }
+            }
+            Message::UpdateAsked(result) => {
+                if let Some(editor) = &mut self.editor {
+                    editor.updating = false;
+                    if let Err(e) = result {
+                        editor.notice = Some(Notice::Failed(say(&e)));
+                    }
+                }
+            }
             Message::File(message) => {
                 if let Some(editor) = &mut self.editor {
                     return files::update(editor, message, settings);
@@ -368,6 +403,25 @@ impl Skills {
     }
 }
 
+/// What the Moebius agent is asked to update the built-in skill `name` from where it was copied: the import of skills,
+/// told that the person asked for the replacement, which a skill of the harness configuration repository with the
+/// same name makes.
+pub fn update_request(name: &str, source: &SkillSource) -> String {
+    let note = format!(
+        "Update the skill {name} from its source. The Moebius copy of it is built in and read only, and a skill of the \
+         harness configuration repository with the same name replaces it: so import only the skill {name}, the \
+         directory of the repository whose SKILL.md has `name: {name}`, with all its other files, under the name \
+         {name}. Replacing the built-in copy is what the person asked for. The copy was made at commit {}; say which \
+         commit you imported and what changed.",
+        source.commit
+    );
+    import::request(
+        import::Kind::Skills,
+        &import::Source::Link(source.url.clone()),
+        &note,
+    )
+}
+
 fn text_action(action: text_editor::Action) -> AppMessage {
     AppMessage::Skills(Message::Text(action))
 }
@@ -375,9 +429,20 @@ fn text_action(action: text_editor::Action) -> AppMessage {
 fn editor_view(editor: &Editor) -> Element<'_, AppMessage> {
     let message = AppMessage::Skills;
     let actions = if editor.built_in {
-        row![page::tag("Built in · read only".to_string(), Tone::Plain)]
+        let mut actions = row![page::tag("Built in · read only".to_string(), Tone::Plain)]
             .spacing(10)
-            .align_y(Alignment::Center)
+            .align_y(Alignment::Center);
+        if editor.source.is_some() {
+            actions = actions.push(page::white_button(
+                if editor.updating {
+                    "Asking…"
+                } else {
+                    "Update from upstream"
+                },
+                (!editor.updating).then_some(message(Message::UpdateFromUpstream)),
+            ));
+        }
+        actions
     } else {
         list_editor::actions(
             &editor.name,
@@ -417,6 +482,16 @@ fn editor_view(editor: &Editor) -> Element<'_, AppMessage> {
             .into()
         };
         top = top.push(field("Description", description));
+        if let Some(source) = &editor.source {
+            top = top.push(aside(format!(
+                "Copied from {} at commit {}",
+                source.url,
+                source.commit.get(..12).unwrap_or(&source.commit),
+            )));
+            top = top.push(aside(
+                "A skill with this name in the harness configuration repository replaces it.",
+            ));
+        }
     }
     match &editor.notice {
         Some(Notice::Saved(commit)) => top = top.push(committed_line(commit.as_deref())),

@@ -407,6 +407,7 @@ async fn doctor_succeeds_when_everything_is_in_place() {
         token_budget: None,
         harness: Default::default(),
         tool_output: Default::default(),
+        engineering_skills: true,
     };
     moebius_core::harness::repo::create(&harness, &[("Coder".to_string(), coder)].into(), None)
         .unwrap();

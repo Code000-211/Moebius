@@ -75,6 +75,7 @@ fn setup_with(router: Option<(Arc<Router>, String)>) -> Setup {
         token_budget: None,
         harness: HarnessKind::ClaudeCode,
         tool_output: Default::default(),
+        engineering_skills: true,
     };
     let (router, url) = router.unwrap_or_else(|| {
         (
@@ -86,6 +87,7 @@ fn setup_with(router: Option<(Arc<Router>, String)>) -> Setup {
     let agents = AgentSet {
         agents: BTreeMap::from([("Coder".to_string(), coder)]),
         errors: BTreeMap::new(),
+        skill_overrides: BTreeMap::new(),
     };
     let claude = ClaudeCode::new(
         Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/fake-claude"),

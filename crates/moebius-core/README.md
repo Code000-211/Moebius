@@ -34,7 +34,7 @@ Outside `src/`:
 |---|---|
 | `workflow/` | The built-in column scripts. |
 | `bridge/` | The Pi extension loaded into every run. |
-| `skill/` | The built-in skills. |
+| `skill/` | The built-in skills, and in `vendor/` the engineering skills copied from Matt Pocock's skills with their license. |
 | `testdata/` | The fake Pi, the fake `claude`, an MCP server that echoes, and a GitHub App key. |
 | `tests/` | The integration tests, one file per feature. |
 

@@ -151,6 +151,7 @@ impl PiBolt {
             agents: Arc::new(RwLock::new(AgentSet {
                 agents,
                 errors: BTreeMap::new(),
+                skill_overrides: BTreeMap::new(),
             })),
             live: Arc::new(Mutex::new(HashMap::new())),
             paused: Arc::new(Mutex::new(HashMap::new())),

@@ -55,6 +55,10 @@ pub struct SaveAgent {
     /// Give tool outputs as they are: no compression of test runs and build logs.
     #[arg(long)]
     no_compress: bool,
+    /// Do not give the agent the engineering skills Moebius brings for it (only the Coder, the Reviewer and the
+    /// Grilling partner have any).
+    #[arg(long)]
+    no_engineering_skills: bool,
     /// A file with the agent's instructions, or `-` for standard input.
     #[arg(long)]
     instructions: Option<String>,
@@ -87,6 +91,7 @@ pub fn agent(command: &AgentCommand) -> Plan {
                 output_lines,
                 output_bytes,
                 no_compress,
+                no_engineering_skills,
                 instructions,
             } = save.as_ref();
             let mut settings = json!({
@@ -104,6 +109,9 @@ pub fn agent(command: &AgentCommand) -> Plan {
                 if !value.is_null() {
                     settings[key] = value;
                 }
+            }
+            if *no_engineering_skills {
+                settings["engineering_skills"] = json!(false);
             }
             // What is not given of the tool outputs keeps its default.
             let mut tool_output = serde_json::Map::new();
@@ -200,6 +208,20 @@ mod tests {
         assert_eq!(
             request.body.unwrap()["settings"]["tool_output"],
             json!({"hide_after_turns": 0, "compress": false})
+        );
+    }
+
+    #[test]
+    fn the_engineering_skills_are_turned_off_only_by_the_flag() {
+        let save = |extra: &[&str]| {
+            let mut words = vec!["agent", "save", "Coder", "--model", "m"];
+            words.extend(extra);
+            plan(&words).unwrap().0.body.unwrap()["settings"].clone()
+        };
+        assert!(save(&[]).get("engineering_skills").is_none());
+        assert_eq!(
+            save(&["--no-engineering-skills"])["engineering_skills"],
+            json!(false)
         );
     }
 }

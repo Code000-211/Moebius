@@ -109,7 +109,8 @@ impl ClaudeCode {
                 continue;
             };
             let link = skills.join(name);
-            if !link.exists() {
+            // A link from an earlier start of the run stays, even if what it leads to is not there.
+            if link.symlink_metadata().is_err() {
                 crate::platform::link_dir(skill, &link).map_err(|e| e.to_string())?;
             }
         }

@@ -82,6 +82,7 @@ Nothing else is read. The Moebius agent stays built in: `agents/Moebius.toml` co
 | `skills` | array of strings | `[]` | Names of directories under `skills/` that hold a `SKILL.md`. Each is given to Pi-Bolt as `--skill`. A name that is not there is an error. |
 | `extensions` | array of strings | `[]` | Paths of files in the repository, relative to its root and without `..`. Each is given to Pi-Bolt as `--extension`, before the bridge. A path that is not a file is an error. |
 | `tool_output` | table | the defaults | `hide_after_turns`, `max_lines`, `max_bytes` and `compress`, as `agents.<name>.tool_output` in [configuration](configuration.md); a key left out has its default. Pi-Bolt runs only. |
+| `engineering_skills` | boolean | `true` | Whether the agent is given the engineering skills Moebius brings for it (see [Engineering skills](#engineering-skills)); written only when it is `false`. Only the `Coder`, the `Reviewer` and the `Grilling-partner` have any. |
 | `mcp` | array of strings | `[]` | Names of servers in `mcp.toml`. A run of the agent is given exactly these servers. A name that is not there, a server that cannot be used (see [`mcp.toml`](#mcptoml)), or any name while `mcp.toml` cannot be read, is an error. |
 
 The instructions are not a key: they are the text of `agents/<name>.md`, given to Pi-Bolt as `--append-system-prompt`.
@@ -104,7 +105,39 @@ A skill as Pi-Bolt documents it: a directory with a `SKILL.md` and whatever else
 its agent's skills, in the order of the `skills` key, and no skill Pi-Bolt would find on its own. The Moebius agent has
 its built-in skills first, the `moebius` skill and the task skills `moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions` and `moebius-plugins`, then those of
 `agents/Moebius.toml`. The other built-in agents have the `moebius` skill first. A directory of `skills/` with the name
-of a built-in skill is ignored.
+of a built-in skill is ignored, except for the engineering skills below.
+
+### Engineering skills
+
+Moebius brings five skills from [Matt Pocock's skills](https://github.com/mattpocock/skills) (MIT license), copied
+unchanged at a pinned commit (`crates/moebius-core/skill/vendor/mattpocock/` in the source, with the license), and the
+small skill `moebius-autonomous`. The skills are written for work with a person: the adapter says what to do where one
+asks the user (decide, and give the decision and its reason in the run's summary), that the card's issue is the spec and
+the tracker, and that the setup skill is never run. They are written to `<data_dir>/skills/<name>/` with the other
+built-in skills when the server starts, and given to a run before the agent's own `skills`:
+
+| Agent | Skills |
+|---|---|
+| `Coder` | `tdd`, `diagnosing-bugs`, `moebius-autonomous` |
+| `Reviewer` | `code-review`, `moebius-autonomous` |
+| `Grilling-partner` | `grilling`, `to-tickets`, `moebius-autonomous` (in front of the `moebius` skill) |
+
+An agent with any other name has none. This holds on both harnesses (Claude Code gets them as skills of its run's
+configuration directory). `to-tickets` asks not to be offered to the model on its own, so the Grilling partner is told in
+its instructions where its `SKILL.md` is.
+
+- **Turn them off** for an agent with `engineering_skills = false` in its `agents/<name>.toml` (or its
+  `[agents.<name>]` table); the app has the setting on the agent's page, and `agent save` has `--no-engineering-skills`.
+  It turns off the five skills and the adapter together; the `moebius` skill stays on the Grilling partner.
+- **Replace one** with a skill of your own: a directory `skills/<name>/` of this repository with a `SKILL.md` and the
+  name of the skill (`tdd`, `diagnosing-bugs`, `code-review`, `grilling` or `to-tickets`) takes its place for every agent that has it, with all its files. These
+  names, unlike `moebius` and the `moebius-` skills, are not reserved. `moebius-autonomous` cannot be replaced.
+- **Update them from upstream**: the Skills page shows each one as built in with the source and the commit it was copied
+  at, and "Update from upstream" asks the Moebius agent to import that skill from the repository with the Skills import,
+  which saves it as a skill of this repository with the same name (so it replaces the built-in copy, as above). The
+  copies that ship with Moebius move only with a new release.
+
+`GET /v1/skills` and `GET /v1/skills/{name}` give these skills `"source": {"url", "commit"}`.
 
 ## `rules.md`
 
@@ -191,7 +224,7 @@ model providers' keys are read from the environment by the router, so the files 
 as they are.
 
 - `GET /v1/agents/{name}` answers `{"name", "settings", "instructions"}`, where `settings` has the keys of the table above
-  (`protocol` always, `skills`, `extensions` and `mcp` always, `thinking` and `token_budget` when set, `tool_output` when it is not the defaults) and `instructions`
+  (`protocol` always, `skills`, `extensions` and `mcp` always, `thinking` and `token_budget` when set, `tool_output` when it is not the defaults, `engineering_skills` when it is `false`) and `instructions`
   is the text of the `.md` file, empty without one.
 - `PUT /v1/agents/{name}` takes `{"settings": {...}, "instructions": "..."}` (`instructions` may be left out) and
   is checked as a file read is. It writes `agents/<name>.toml` (the file is written again from the settings, so comments
@@ -203,8 +236,9 @@ as they are.
 - `PUT /v1/skills/{name}` takes `{"description": "...", "text": "..."}` and writes `skills/<name>/SKILL.md`: the
   frontmatter `name` and `description` (a double-quoted line), then the text. The skill's other files are kept. The
   message is `Add the skill <name>` or `Update the skill <name>`, the decision kind `edit_skill`. `DELETE` removes the
-  directory (`Delete the skill <name>`). The built-in skills (`moebius` and the task skills) cannot be changed or
-  deleted.
+  directory (`Delete the skill <name>`). The built-in skills (`moebius`, the task skills and `moebius-autonomous`) cannot be changed or
+  deleted; the engineering skills cannot while the repository has no skill of the same name, and then they are the
+  repository's own.
 - `PUT /v1/skills/{name}/files/{*path}` takes `{"text": "..."}` and writes one of the skill's other files, such as
   `scripts/fill.py`, with its directories (`Add <path> of the skill <name>` or `Update <path> of the skill <name>`,
   the decision kind `edit_skill`); `DELETE` removes it and the directories it leaves empty (`Delete <path> of the
@@ -427,7 +461,7 @@ instructions. It works with or without a harness configuration repository (witho
 
 A grilling (see `POST /v1/grillings/{id}/confirm` in the [desktop API](desktop-api.md)) is a chat with the built-in agent
 `Grilling-partner`, which grills a person's idea until the work is clear. Like the Moebius agent it is built in: its
-instructions are built in, it has the `moebius` skill, and its model comes from `agents/Grilling-partner.toml` (or
+instructions are built in, it has the `moebius` skill and the engineering skills `grilling` and `to-tickets` with `moebius-autonomous` (see [Engineering skills](#engineering-skills)), and its model comes from `agents/Grilling-partner.toml` (or
 `[agents.Grilling-partner]`) or else from the Coder. `agents/Grilling-partner.md` is added after the built-in instructions;
 `agents/Grilling-partner.toml` may set its model, skills and the rest. It is listed by `GET /v1/agents` after the Moebius
 agent, and a chat with it needs a repository.

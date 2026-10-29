@@ -242,6 +242,7 @@ fn the_built_in_skill_is_shown_and_cannot_be_changed() {
         text: "# Moebius\n".into(),
         files: vec!["guide/agents.md".into()],
         commit: None,
+        source: None,
     };
     let _ = app.update(Message::Skills(skills::Message::Select("moebius".into())));
     let _ = app.update(Message::Skills(skills::Message::Opened(
@@ -269,6 +270,59 @@ fn the_built_in_skill_is_shown_and_cannot_be_changed() {
     assert!(!shows(&app, "Markdown · the text after the frontmatter"));
     let mut ui = simulator(&app);
     assert!(ui.find("Save file").is_err() && ui.find("Delete file").is_err());
+}
+
+/// A skill Moebius copied from Matt Pocock's skills, as the server lists and reads it.
+const SOURCE: &str = r#"{"url": "https://github.com/mattpocock/skills", "commit": "59db609eb1e18aaf59b63284d0e52255aff0c63c"}"#;
+
+#[test]
+fn a_skill_copied_from_upstream_shows_its_source_and_can_be_updated_from_it() {
+    let mut app = skills_app();
+    let mut listing = skill_listing();
+    listing.push(
+        serde_json::from_value(json!({
+            "name": "tdd", "description": "Test-driven development.", "built_in": true,
+            "source": serde_json::from_str::<serde_json::Value>(SOURCE).unwrap()
+        }))
+        .unwrap(),
+    );
+    let _ = app.update(Message::Skills(skills::Message::Listed(Ok(listing))));
+    let detail = serde_json::from_value(json!({
+        "name": "tdd", "description": "Test-driven development.", "text": "# Test-Driven Development\n",
+        "files": ["tests.md", "mocking.md", "LICENSE"],
+        "source": serde_json::from_str::<serde_json::Value>(SOURCE).unwrap()
+    }))
+    .unwrap();
+    let _ = app.update(Message::Skills(skills::Message::Select("tdd".into())));
+    let _ = app.update(Message::Skills(skills::Message::Opened(
+        "tdd".into(),
+        Ok(detail),
+    )));
+    draw_sized(
+        &app,
+        "skills-upstream",
+        &[
+            "Built in · read only",
+            "Update from upstream",
+            "Copied from https://github.com/mattpocock/skills at commit 59db609eb1e1",
+            "tests.md",
+        ],
+        Size::new(1440.0, 900.0),
+    );
+    assert!(matches!(
+        &clicked(&app, "Update from upstream")[..],
+        [Message::Skills(skills::Message::UpdateFromUpstream)]
+    ));
+    // The request is the skills import of the source, for this skill, by name and with the person's consent.
+    let source = serde_json::from_str(SOURCE).unwrap();
+    let asked = skills::update_request("tdd", &source);
+    assert!(asked.contains("git clone --depth 1 https://github.com/mattpocock/skills import"));
+    assert!(asked.contains("import only the skill tdd"));
+    assert!(asked.contains("Replacing the built-in copy is what the person asked for"));
+    assert!(asked.contains("commit 59db609eb1e18aaf59b63284d0e52255aff0c63c"));
+    // A skill without a source has no such button.
+    let _ = app.update(Message::Skills(skills::Message::Select("moebius".into())));
+    assert!(!shows(&app, "Update from upstream"));
 }
 
 #[test]

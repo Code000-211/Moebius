@@ -30,6 +30,8 @@ pub(super) struct Editor {
     pub(super) max_lines: String,
     pub(super) max_bytes: String,
     pub(super) compress: bool,
+    /// Whether the agent is given the engineering skills Moebius brings for it.
+    pub(super) engineering_skills: bool,
     pub(super) instructions: text_editor::Content,
     /// Whether the Moebius agent writes the instructions from `wish`.
     pub(super) by_agent: bool,
@@ -68,6 +70,7 @@ impl Editor {
             max_lines: String::new(),
             max_bytes: String::new(),
             compress: true,
+            engineering_skills: true,
             instructions: text_editor::Content::new(),
             by_agent: false,
             wish: text_editor::Content::new(),
@@ -122,6 +125,7 @@ impl Editor {
         self.mcp = settings.mcp;
         self.extensions = settings.extensions;
         self.set_tool_output(settings.tool_output);
+        self.engineering_skills = settings.engineering_skills;
         self.kept = self.request().ok();
     }
 
@@ -173,6 +177,7 @@ impl Editor {
                 max_bytes,
                 compress: self.compress,
             },
+            engineering_skills: self.engineering_skills,
         };
         let mut instructions = self.instructions.text();
         // The editor keeps a final line break of its own; the file is not given a second one.
@@ -238,6 +243,10 @@ pub(super) fn from_file(name: &str, server: &ServerSettings) -> Result<AgentDeta
                 .get("tool_output")
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
                 .unwrap_or_default(),
+            engineering_skills: table
+                .get("engineering_skills")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true),
         }),
         instructions: text("instructions").unwrap_or_default(),
         built_in: None,
@@ -264,6 +273,9 @@ pub(super) fn file_table(agent: &AgentSettings, instructions: &str) -> serde_jso
     }
     if !agent.tool_output.is_default() {
         table.insert("tool_output".into(), serde_json::json!(agent.tool_output));
+    }
+    if !agent.engineering_skills {
+        table.insert("engineering_skills".into(), false.into());
     }
     for (key, paths) in [("skills", &agent.skills), ("extensions", &agent.extensions)] {
         if !paths.is_empty() {

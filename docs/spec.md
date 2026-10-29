@@ -35,6 +35,10 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
 - **Self-improvement** as a bundled plugin: the Retro, proposals, trials, autoresearch and shadowing.
 - **Chat** with any agent, and the **Moebius agent**, which knows Moebius from the guide (`docs/guide/`) and builds
   column scripts, rules, agents and extensions on request, offered as changes.
+- **Engineering skills** from Matt Pocock's skills (MIT) for the Coder (`tdd`, `diagnosing-bugs`), the Reviewer
+  (`code-review`) and the Grilling partner (`grilling`, `to-tickets`), copied unchanged at a pinned commit and loaded with
+  `moebius-autonomous`, which says what to do where they ask a person. An agent turns them off with
+  `engineering_skills = false`, and a skill of the harness configuration repository with the same name replaces one.
 - **Grilling** (a chat with the Grilling partner) that ends in issues a person confirms, or in a research report.
 - **Automations**: recurring work that runs on its own. An automation is a cron schedule in the server's local time, an
   agent, a prompt and a place; when it comes due the server starts a chat with that agent and prompt, ends it once the

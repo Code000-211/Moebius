@@ -2,3 +2,8 @@ Moebius
 Copyright 2026 The Moebius authors
 
 This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes skills from https://github.com/mattpocock/skills (tdd, diagnosing-bugs, code-review, grilling and
+to-tickets), copyright (c) 2026 Matt Pocock, used under the MIT License. They are in
+crates/moebius-core/skill/vendor/mattpocock/ unchanged, with the license text (LICENSE there), and are written to the
+data directory with it.

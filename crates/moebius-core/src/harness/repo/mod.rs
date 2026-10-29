@@ -29,8 +29,8 @@ pub use branches::{OwnBranch, Proposed};
 pub use create::{SET_UP_MESSAGE, create};
 use read::Layout;
 pub use read::{
-    AgentDefinition, AgentSettings, AgentView, McpServerInfo, McpServerView, SkillInfo, SkillText,
-    SkillView,
+    AgentDefinition, AgentSettings, AgentView, McpServerInfo, McpServerView, SkillInfo,
+    SkillSource, SkillText, SkillView,
 };
 pub use skill_files::SkillFileText;
 

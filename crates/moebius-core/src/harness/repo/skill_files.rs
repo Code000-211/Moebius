@@ -29,7 +29,7 @@ impl HarnessRepo {
         let _read_at = self.lock();
         let path = file_path(path)?;
         let not_found = || AppError::NotFound(format!("file {path} of the skill {name}"));
-        if let Some(built_in) = skill::built_in(name) {
+        if let Some(built_in) = skill::built_in(name).or_else(|| self.vendored(name)) {
             let text = built_in.file(&path).ok_or_else(not_found)?;
             return Ok(FileView {
                 path: path.clone(),
@@ -146,7 +146,10 @@ impl HarnessRepo {
 
     /// Where the file at `path` of the skill `name` of the repository is, refused when the skill is built in.
     fn editable_skill_file(&self, name: &str, path: &str) -> Result<PathBuf> {
-        if skill::built_in(name).is_some() {
+        if skill::built_in(name)
+            .or_else(|| self.vendored(name))
+            .is_some()
+        {
             return Err(AppError::Conflict(format!(
                 "the skill {name} is built in and read only"
             )));

@@ -21,7 +21,7 @@ use crate::{screens::connect, theme};
 use super::Agents;
 use super::editor::Editor;
 use super::editor::add_chosen;
-use super::{COMPRESS, Message, NOT_SET};
+use super::{COMPRESS, ENGINEERING, ENGINEERING_AGENTS, Message, NOT_SET};
 
 /// A row of a list: what names it, and a line under it that is red when something is wrong.
 fn item<'a>(name: Element<'a, AppMessage>, line: &str, red: bool) -> Element<'a, AppMessage> {
@@ -140,10 +140,31 @@ fn settings_row<'a>(editor: &'a Editor, models: &[AvailableModel]) -> Element<'a
         field("Token budget per card", budget),
     ]
     .spacing(14);
+    // The skills Moebius brings for some of the built-in roles can be turned off for the agent.
+    let engineering = ENGINEERING_AGENTS.contains(&editor.name.as_str()).then(|| {
+        let given = pick_list(
+            ENGINEERING.map(String::from).to_vec(),
+            Some(ENGINEERING[usize::from(!editor.engineering_skills)].to_string()),
+            move |choice| message(Message::EngineeringChosen(choice)),
+        )
+        .text_size(theme::BODY)
+        .padding([9, 12])
+        .width(Length::Fill)
+        .style(pick_style)
+        .menu_style(menu_style);
+        row![
+            field("Engineering skills", given),
+            space().width(Length::FillPortion(4))
+        ]
+        .spacing(14)
+    });
     // How the outputs of its tools are kept small (see the reference's `tool_output`): Pi-Bolt's bridge does it, so
     // an agent on another harness has no such settings.
     if editor.harness != HARNESSES[0] {
-        return settings.into();
+        return match engineering {
+            Some(engineering) => column![settings, engineering].spacing(12).into(),
+            None => settings.into(),
+        };
     }
     let outputs = row![
         field(
@@ -161,7 +182,11 @@ fn settings_row<'a>(editor: &'a Editor, models: &[AvailableModel]) -> Element<'a
         field("Tool outputs", compress),
     ]
     .spacing(14);
-    column![settings, outputs].spacing(12).into()
+    let mut rows = column![settings, outputs].spacing(12);
+    if let Some(engineering) = engineering {
+        rows = rows.push(engineering);
+    }
+    rows.into()
 }
 
 /// What the Moebius agent is asked to write the instructions of the agent `name`, with what the person wants.

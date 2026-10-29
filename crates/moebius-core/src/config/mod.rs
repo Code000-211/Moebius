@@ -20,12 +20,12 @@ use crate::harness::mcp::valid_variable;
 use crate::router::{Classes, check_class};
 
 pub use example::EXAMPLE;
-pub(crate) use sections::default_protocol;
 pub use sections::{
     AgentConfig, AgentSet, DecisionModelConfig, ForgejoConfig, GitHubConfig, GitLabConfig,
     HarnessKind, PLUGIN_TIME_LIMIT_SECONDS, PluginConfig, TeacherConfig, TimeOfDay, TokenSource,
     ToolOutput, UpstreamConfig, valid_agent_name,
 };
+pub(crate) use sections::{default_protocol, default_true};
 
 /// Why a configuration could not be read.
 #[derive(Debug, thiserror::Error)]

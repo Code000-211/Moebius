@@ -289,7 +289,8 @@ mod tests {
 
     /// Where the Moebius agent's built-in skills are written: the reference library, then the task skills.
     fn built_in_skill_dirs(app: &App) -> Vec<String> {
-        crate::harness::skill::all()
+        std::iter::once(&crate::harness::skill::MOEBIUS)
+            .chain(crate::harness::skill::TASKS.iter())
             .map(|skill| {
                 crate::harness::skill::dir(&app.data_dir, skill.name)
                     .to_string_lossy()
@@ -337,6 +338,23 @@ mod tests {
         );
         assert_eq!(grilling["built_in"]["skills"].as_array().unwrap().len(), 1);
         assert_eq!(grilling["built_in"]["skills"][0]["name"], "moebius");
+        // Its engineering skills are shown apart; the Moebius agent has none.
+        let engineering: Vec<&str> = grilling["built_in"]["engineering_skills"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            engineering,
+            ["grilling", "to-tickets", "moebius-autonomous"]
+        );
+        assert!(
+            moebius["built_in"]["engineering_skills"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
     }
 
     // Unix only: the fake Pi is a Python script started by its `#!` line.

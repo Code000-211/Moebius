@@ -87,6 +87,7 @@ fn the_agents_screen_lists_the_agents_and_edits_one_like_the_mockup() {
             "Protocol",
             "Thinking",
             "Token budget per card",
+            "Engineering skills",
             "Instructions",
             "Skills",
             "1 of 2",
