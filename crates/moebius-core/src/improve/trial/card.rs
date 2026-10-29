@@ -13,6 +13,7 @@ use super::verdict::{Measured, Original, compare};
 use crate::app::{App, AppError, Result};
 use crate::board::Runs;
 use crate::harness::repo::HarnessRepo;
+use crate::improve::lessons;
 use crate::improve::retro::{Report, wait_for_end};
 use crate::repos::trial_name;
 use crate::store::{Card, Found, Proposal, Repository, Store, StoreError};
@@ -171,6 +172,7 @@ pub(super) fn run_trial(
             )
         })?;
     let mut ended = app.bus.subscribe();
+    let began = crate::store::now();
     let started = runs.start_trial(app, card, agent, definition, proposal.id, task.base);
     let tried = match started {
         Err(e) => Err(Tried::failed(
@@ -182,6 +184,12 @@ pub(super) fn run_trial(
             measure(app, task.repository, run.id, &name, kinds, original)
         }
     };
+    // The lessons the run was given are no help when it turned out worse.
+    if let Ok(tried) = &tried
+        && tried.outcome == "negative"
+    {
+        lessons::retire_harmful(app, card.id, began, &tried.reason);
+    }
     repo.remove_worktree(app, &root);
     let _ = app
         .repos

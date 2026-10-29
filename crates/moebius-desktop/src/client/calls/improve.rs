@@ -1,7 +1,7 @@
 //! The calls of the Improve pages: usage, the Retro and its proposals, the decision model, exports and research.
 
 use crate::client::{
-    Client, ClientError, Export, KindCounts, Proposal, Research, RetroSummary, RetroView,
+    Client, ClientError, Export, KindCounts, Lesson, Proposal, Research, RetroSummary, RetroView,
     Shadowing, UsageReport,
 };
 
@@ -23,6 +23,27 @@ impl Client {
     /// Runs today's Retro now.
     pub async fn start_retro(&self) -> Result<RetroView, ClientError> {
         self.post("/v1/retros", serde_json::json!({})).await
+    }
+
+    /// The lessons of the Retro, the newest first, the retired ones too.
+    pub async fn lessons(&self) -> Result<Vec<Lesson>, ClientError> {
+        self.get("/v1/lessons?retired=true").await
+    }
+
+    /// Rewrites the text of a lesson.
+    pub async fn edit_lesson(
+        &self,
+        id: i64,
+        (situation, lesson, advice): (&str, &str, &str),
+    ) -> Result<Lesson, ClientError> {
+        let body =
+            serde_json::json!({ "situation": situation, "lesson": lesson, "advice": advice });
+        self.put(&format!("/v1/lessons/{id}"), body).await
+    }
+
+    pub async fn delete_lesson(&self, id: i64) -> Result<(), ClientError> {
+        let _: serde_json::Value = self.delete(&format!("/v1/lessons/{id}")).await?;
+        Ok(())
     }
 
     /// The proposals of all Retros, the newest first.

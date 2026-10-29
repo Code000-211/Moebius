@@ -176,6 +176,11 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
     stores a change with a null repository (`Store::add_harness_change`; `harness_repository` set). A branch that fails the
     check is not offered and the chat gets a `moebius_error`. `App::merge_change` merges such a change with
     `HarnessRepo::merge_branch`, which `merge_proposal` uses too.
+12c0. **Lessons.** `retro::conclude` stores the `lessons` block of the analyst's answer (`lessons::store_written`). `prompt_with`
+    (`harness/pibolt/runs.rs`) puts the best matches for the issue's text under "Lessons from earlier cards" in a code or
+    review prompt (`lessons::for_prompt`, FTS5 BM25 in `store/lessons.rs`); the bridge's tool `lessons` asks
+    `/moebius/lessons` (`lessons::tool`). `server/schedule.rs` retires the lessons not retrieved for 60 days, and
+    `trial::card::run_trial` those given to a negative trial run.
 12c. **The Retro.** Once a minute `server/schedule.rs` asks `retro::on_schedule`, which starts today's Retro when `retro_at` has passed
     and the `retros` table has no row for the day (`retro::due`); `POST /v1/retros` calls `retro::start` too. `retro::report`
     reads the day's errors from the store, one `Store` function per source (failed and refused tool calls, failed and stopped
@@ -415,6 +420,7 @@ At the top:
 | `store/grillings.rs` | What a grilling chat ended in: the issues it proposes or its report. |
 | `store/shadows.rs` | The decision model's shadows, how well they agree, and the takeovers proposed from them. |
 | `store/usage.rs` | The usage of every model call and what it adds up to by card, day, model, agent, activity and tool. |
+| `store/lessons.rs` | Lessons of the Retro per repository with their source cards, an FTS5 index kept by triggers, the record of which card was given which lesson, and retirement. |
 | `store/found.rs` | What went wrong in a window of time, as the Retro collects it. |
 | `store/retros.rs` | The Retro of each day, its proposals and their trials. |
 | `store/research.rs` | Research: its brief, its runs and the experiments they try. |
@@ -440,6 +446,7 @@ At the top:
 | `server/api/harness.rs` | The agents, skills and MCP servers of the harness configuration repository, and `POST /v1/harness/setup`. |
 | `server/api/rules.rs` | The rules page and the rules in prose. |
 | `server/api/settings.rs` | `moebius.toml`, the API keys and the restart, and what the Models, Plugins and Get started pages show. |
+| `server/api/lessons.rs` | The lessons: list, read, edit and delete. |
 | `server/api/improve.rs` | Usage, judgements and replays, the Retro and its proposals, the decision model and its takeovers, research and exports. |
 | `server/api/uploads.rs` | `POST /v1/uploads`: zip files for the Moebius agent to import from. |
 | `server/api/terminals.rs` | The terminal WebSockets: a shell in a run's worktree or on the server, and Pi's terminal interface of a chat. |
@@ -557,6 +564,8 @@ At the top:
 |---|---|
 | `improve/mod.rs` | What the improve folder holds. |
 | `improve/retro/mod.rs` | The Retro: the day's errors collected into a report without a model, the Retro analyst's run, and its proposal branches. |
+| `improve/lessons/mod.rs` | Lessons: read from the analyst's answer and stored, the prompt section of a code or review run (`for_prompt`), retirement of unused and harmful ones. |
+| `improve/lessons/tool.rs` | `POST /moebius/lessons` on the router's listener, the route of the Pi tool `lessons(query)`, authenticated by the run's token. |
 | `improve/retro/traces.rs` | The raw traces the Retro analyst reads besides the report: the events and diffs of the report's runs, redacted and bounded, as files under `.retro/` of its worktree. |
 | `improve/trial/mod.rs` | Trials: the trial window, and what the parts share. |
 | `improve/trial/verdict.rs` | What a trial run and the card's first code run measured, whether a trial is positive, and the status a proposal gets from its trials. |
@@ -661,7 +670,8 @@ At the top:
 | `screens/usage/heatmap.rs` | The heatmap of the last year, and the colour each model keeps on every chart. |
 | `screens/usage/boxes.rs` | The tiles of the totals and the boxes of tokens by model, model time, tool waits and agents. |
 | `screens/usage/table.rs` | The panel and the table the boxes are made of. |
-| `screens/retro.rs` | The Retro page: the Retros of the days, their errors by kind, and their proposals. |
+| `screens/retro/mod.rs` | The Retro page: the Retros of the days, their errors by kind, and their proposals. |
+| `screens/retro/lessons.rs` | The lessons box of the Retro page: each lesson with its kind and cards, edited in place and deleted after asking. |
 | `screens/experiments/mod.rs`, `screens/experiments/update.rs` | The Experiments page (autoresearch): its state and layout, and how a message changes it. |
 | `screens/experiments/brief.rs` | The form of a new brief and the editor of a draft's, with the inputs they share. |
 | `screens/experiments/research.rs` | A research's card, brief, baseline and experiments table, with its numbers and changes. |

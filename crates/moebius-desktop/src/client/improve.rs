@@ -92,6 +92,31 @@ pub struct RetroView {
     pub proposals: Vec<Proposal>,
 }
 
+/// A lesson the Retro learned from earlier cards, as `GET /v1/lessons` lists it.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Lesson {
+    pub id: i64,
+    pub repository_id: i64,
+    /// `failure`, `rejection` or `success`.
+    pub kind: String,
+    /// The kind of task the lesson is about.
+    pub situation: String,
+    /// What went wrong, or what worked.
+    pub lesson: String,
+    /// What to do.
+    pub advice: String,
+    /// The cards it was learned from.
+    #[serde(default)]
+    pub cards: Vec<i64>,
+    /// `active` or `retired`.
+    pub status: String,
+    /// Why it was retired.
+    #[serde(default)]
+    pub retired_reason: Option<String>,
+    #[serde(default)]
+    pub retrievals: i64,
+}
+
 /// One lever of a research, tried on a branch of its own.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Experiment {

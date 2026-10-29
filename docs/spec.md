@@ -208,6 +208,12 @@ failure anywhere starts the run without a hint (Agentless, AutoCodeRover).
   past merged cards (default 5, those with a reproduction test first) and is positive only when none of them fails where it
   passed; this adds a bounded number of runs. Positive proposals go to the inbox, with both results, as changes to merge.
   The Retro analyst reads the raw traces (events and diffs, redacted) of the report's runs, not only the report.
+- **Lessons**: the Retro analyst also writes short lessons (the situation, what went wrong or worked, what to do) from the
+  day's failed runs, review rejections and cards that merged at once. They are kept per repository with their source
+  cards and searched with SQLite FTS5. At the start of a code or review run the 3 to 5 lessons that best match the issue's text
+  are put in the prompt under "Lessons from earlier cards", and the Pi tool `lessons(query)` finds more. A lesson that a
+  negative trial shows to be harmful, or that is not retrieved for 60 days, is retired. A person sees, edits and deletes
+  lessons on the Retro page.
 - **Proposals for Moebius itself**: the Retro may also propose a change to `moebius.toml` (limits, budgets, windows, the
   teacher) or to a repository's own rules and column scripts. These are not tried: each goes to the inbox at once as a
   diff with the Retro's reason. Merging saves a `moebius.toml` change through the settings code, restarting the server

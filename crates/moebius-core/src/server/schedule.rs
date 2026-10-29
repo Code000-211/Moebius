@@ -1,5 +1,5 @@
 //! The schedule: once a minute, whether the Retro is due, a proposal of the Retro is to be tried, a research is to
-//! start, a replay is to run or an automation is to fire (see `app::automations`), and the pause of the Pi of each
+//! start, a replay is to run, a lesson is to be retired or an automation is to fire (see `app::automations`), and the pause of the Pi of each
 //! chat that has waited long for its next message (`PiBolt::pause_idle_chats`). What fails is reported on the bus as
 //! `retro_error`.
 
@@ -12,7 +12,7 @@ use super::Server;
 use super::loops::every;
 use crate::board::Runs;
 use crate::bus::AppEvent;
-use crate::improve::{replay, research, retro, trial};
+use crate::improve::{lessons, replay, research, retro, trial};
 
 /// How often the schedule looks at the clock to see whether the Retro is due, trials may start or chats wait idle.
 const RETRO_CHECK: Duration = Duration::from_secs(60);
@@ -58,6 +58,7 @@ impl Server {
             research::MEASURE_LIMIT,
         ));
         report(replay::on_schedule(&self.app, window));
+        lessons::on_schedule(&self.app);
         report(self.on_automations(&*runs));
         self.harness.pause_idle_chats(&self.app, Instant::now());
     }

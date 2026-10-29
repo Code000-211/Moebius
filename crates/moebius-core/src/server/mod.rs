@@ -43,6 +43,7 @@ use crate::harness::pick::Harnesses;
 use crate::harness::remote::Runners;
 use crate::harness::repo::HarnessRepo;
 use crate::harness::skill;
+use crate::improve::lessons;
 use crate::repos::forge::{ForgejoForge, GitHubForge, GitLabForge};
 use crate::repos::forgejo::Forgejo;
 use crate::repos::github::GitHub;
@@ -299,6 +300,7 @@ impl Server {
                 self.config.rules_path(),
             ))
             .merge(lens::routes(self.app.clone(), self.router.clone()))
+            .merge(lessons::tool::routes(self.app.clone(), self.router.clone()))
             .merge(gateway.clone().routes());
         tokio::select! {
             served = api::serve(api_listener, state) => served,

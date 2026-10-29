@@ -137,6 +137,7 @@ mod tests {
         let report = Report {
             date: "2026-03-10".into(),
             errors: vec![error(Some(3)), error(None), error(Some(1)), error(Some(3))],
+            merged: vec![],
         };
         assert_eq!(runs_of(&report), [3, 1]);
         let files = BTreeMap::from([(format!("{DIR}/run-3.events.jsonl"), String::new())]);

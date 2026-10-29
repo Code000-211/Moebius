@@ -1,15 +1,15 @@
 # Bridge protocol
 
 The bridge is the part of Moebius that lives inside a harness and through which every tool call is checked before it
-runs. This page is for anyone who writes a bridge for another harness or tests the endpoints: it describes the two HTTP
-endpoints the server offers, their JSON, the rules a client must follow so that it fails closed, and how the harness is
+runs. This page is for anyone who writes a bridge for another harness or tests the endpoints: it describes the HTTP
+endpoints the server offers (the check, the result and the lessons), their JSON, the rules a client must follow so that it fails closed, and how the harness is
 told where the server is. It also describes the [MCP gateway](#the-mcp-gateway), the one MCP server every harness is
 given, which checks the calls of MCP tools on the server's side. The server side is `crates/moebius-core/src/decide/check/`; the reference client is the Pi
 extension `crates/moebius-core/bridge/moebius-bridge.ts`.
 
 ## Endpoints
 
-Both are served on the router's listener (`router.listen`, default `127.0.0.1:7172`), next to the model endpoints. They
+The endpoints below are served on the router's listener (`router.listen`, default `127.0.0.1:7172`), next to the model endpoints. They
 take and give JSON.
 
 ### Authentication
@@ -113,6 +113,19 @@ made (the server side is `crates/moebius-core/src/harness/output/`):
 Status codes: `200`, `401` and the `400` and `422` of the check endpoint. Nothing but the `tool_output` events is
 recorded.
 
+### `POST /moebius/lessons`
+
+Looks up the lessons the Retro learned from earlier cards (see [the Retro](harness-configuration.md#the-retro)). The Pi
+bridge offers it as the tool `lessons(query)`; a bridge for another harness may offer the same. The repository searched
+is the one of the run's card, or, for a chat, the one it works in; a run with neither gets no lessons. Only active
+lessons are found, best match first by BM25 over the situation, the lesson and the advice, at most 8.
+
+Request: `{"query": string}`, the words of the task or the problem. Response: `{"lessons": [...], "text": string}`:
+`lessons` are the stored lessons as `GET /v1/lessons` has them, and `text` is what the agent is shown, under the heading
+"Lessons from earlier cards", or `No lessons match.` Each lesson found counts as retrieved, which keeps it from being retired
+for lack of use. Errors: `401` for a token that is not a run's; `500` when the lessons cannot be searched, which the tool
+reports to the agent as text.
+
 ## Rules for a client
 
 A client must fail closed. Do this:
@@ -157,8 +170,9 @@ this order must not be used.
 
 ## The bridge as the reference client
 
-`crates/moebius-core/bridge/moebius-bridge.ts` is a Pi extension of about a hundred and twenty lines. It registers three
-handlers with `pi.on`:
+`crates/moebius-core/bridge/moebius-bridge.ts` is a Pi extension of about a hundred and fifty lines. It registers the tool `lessons` with `pi.registerTool` (its
+only parameter is `query`; it asks `/moebius/lessons` and shows `text`, or says that the lessons could not be looked up)
+and three handlers with `pi.on`:
 
 - `tool_call` (event fields `toolName`, `input`, `toolCallId`): asks `/moebius/check` and returns `undefined` to let the
   call run or `{ block: true, reason }` to block it.

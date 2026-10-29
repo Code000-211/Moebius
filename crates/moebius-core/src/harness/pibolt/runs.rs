@@ -413,6 +413,10 @@ fn prompt_with(
         prompt.push('\n');
         prompt.push_str(hint);
     }
+    if let Some(lessons) = crate::improve::lessons::for_prompt(app, card, purpose) {
+        prompt.push('\n');
+        prompt.push_str(&lessons);
+    }
     let test_first = || {
         app.store
             .repository(card.repository_id)
@@ -546,6 +550,41 @@ mod tests {
         assert!(prompt.contains("red, then green"), "{prompt}");
         assert!(prompt.contains("`.moebius/reproduce`"), "{prompt}");
         assert!(!prompt_for(&app, &card, "review", None).contains("red, then green"));
+    }
+
+    #[test]
+    fn a_code_or_review_run_is_given_the_lessons_that_match_its_issue() {
+        let (_dir, app, _pi, repo) = setup();
+        let card = app
+            .create_issue(repo, "Fix the tokenizer", "It breaks on emoji", "person")
+            .unwrap();
+        assert!(!prompt_for(&app, &card, "code", None).contains("Lessons from earlier cards"));
+        app.store
+            .add_lesson(&crate::store::NewLesson {
+                repository_id: repo,
+                kind: "rejection".into(),
+                situation: "Changing the tokenizer".into(),
+                lesson: "The reviewer found no test for emoji".into(),
+                advice: "Add a test with a multi-byte character".into(),
+                cards: vec![card.id],
+                retro_date: None,
+            })
+            .unwrap();
+        let code = prompt_for(&app, &card, "code", None);
+        assert!(code.contains("Lessons from earlier cards"), "{code}");
+        assert!(code.contains("Do: Add a test with a multi-byte character"));
+        // After the issue and the instructions, before the notes of the last round.
+        let note = prompt_for(&app, &card, "code", Some("Fix it."));
+        assert!(
+            note.find("Lessons from").unwrap() < note.find("Notes from the last round").unwrap()
+        );
+        assert!(
+            prompt_for(&app, &card, "review-spec", None).contains("Lessons from earlier cards")
+        );
+        let other = app
+            .create_issue(repo, "Paint the button", "Make it red", "person")
+            .unwrap();
+        assert!(!prompt_for(&app, &other, "code", None).contains("Lessons from earlier cards"));
     }
 
     /// Commits `files` (path and text) in the clone of the repository `repo`.

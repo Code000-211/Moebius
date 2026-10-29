@@ -20,7 +20,7 @@ use crate::board::Runs;
 use crate::bus::AppEvent;
 use crate::config::TimeOfDay;
 use crate::harness::repo::HarnessRepo;
-use crate::improve::own;
+use crate::improve::{lessons, own};
 use crate::server::settings::Live;
 use crate::store::{Found, Proposal, Retro, Store};
 
@@ -39,11 +39,23 @@ pub struct ReportError {
     pub text: String,
 }
 
-/// The errors of one local day.
+/// A card that reached Done after one code run and was never sent back from review.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MergedCard {
+    pub card: i64,
+    pub title: String,
+    /// The start of the issue.
+    pub text: String,
+}
+
+/// The errors of one local day, and the cards that merged at once.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Report {
     pub date: String,
     pub errors: Vec<ReportError>,
+    /// The cards that merged at once; the Retro writes lessons from them too.
+    #[serde(default)]
+    pub merged: Vec<MergedCard>,
 }
 
 /// A Retro as the list shows it: without its report.
@@ -103,6 +115,15 @@ pub fn report(store: &Store, day: &str) -> Result<Report> {
                 text: shorten(&f.text),
             })
             .collect(),
+        merged: store
+            .merged_at_once(from, to)?
+            .into_iter()
+            .map(|(card, title, text)| MergedCard {
+                card,
+                title: shorten(&title),
+                text: shorten(&text),
+            })
+            .collect(),
     })
 }
 
@@ -155,6 +176,7 @@ pub fn summaries(store: &Store) -> Result<Vec<RetroSummary>> {
 /// What the analyst is told after the report; `own` is what it is told about proposals for Moebius's own
 /// configuration (see `own::brief`).
 fn prompt(report: &Report, own: &str, traces: &str) -> String {
+    let lessons = lessons::BRIEF;
     let json = serde_json::to_string_pretty(report).unwrap_or_default();
     format!(
         "This is the Retro of {day}. Below are the errors of that day, collected by Moebius. Find what they have in \
@@ -164,6 +186,7 @@ fn prompt(report: &Report, own: &str, traces: &str) -> String {
          report that it addresses, and change only harness configuration files, but see below. Commit with `git -c \
          user.name=Retro -c user.email=retro@localhost commit`. Propose nothing the errors do not call for.\n\n\
          {own}\n\
+         {lessons}\n\
          {traces}\n\
          The report:\n\n{json}\n",
         day = report.date
@@ -180,7 +203,7 @@ pub fn start(
     day: &str,
 ) -> Result<RetroView> {
     let report = report(&app.store, day)?;
-    let analyse = repo.filter(|_| !report.errors.is_empty());
+    let analyse = repo.filter(|_| !report.errors.is_empty() || !report.merged.is_empty());
     let status = if analyse.is_some() {
         "analysing"
     } else {
@@ -287,9 +310,12 @@ fn conclude(
         },
         Err(e) => return ("failed", vec![format!("cannot read the proposals: {e}")]),
     };
+    let lesson_warnings =
+        lessons::store_written(app, day, &run.and_then(|r| r.summary).unwrap_or_default());
     match repo.proposed(app, &prefix) {
         Ok((proposed, mut warnings)) => {
             warnings.splice(0..0, own_warnings);
+            warnings.extend(lesson_warnings);
             for p in &proposed {
                 if let Err(e) = app
                     .store

@@ -4,6 +4,8 @@
 // agent's `tool_output` as JSON) for the Pi process.
 // It never waits for a person: a refusal is an answer, and the run goes on. It fails closed: when the server cannot be
 // asked, the call is blocked and the result is withheld.
+// It offers the tool `lessons(query)`, which asks the server for the lessons of earlier cards of the run's repository
+// that best match the query (`/moebius/lessons`), as many as the prompt's "Lessons from earlier cards" or more.
 // It also keeps the model's context small: the server cuts each result to the agent's budget, and before each model
 // request the outputs of tool calls older than the last `hide_after_turns` turns are replaced by a placeholder. The
 // session and the run's events keep them whole.
@@ -82,6 +84,29 @@ export default function (pi: ExtensionAPI) {
 		} catch (error) {
 			return { block: true, reason: `Moebius refused this call: the check could not be reached (${error})` };
 		}
+	});
+
+	pi.registerTool({
+		name: "lessons",
+		label: "Lessons",
+		description:
+			"Look up lessons Moebius learned from earlier cards of this repository (what went wrong or worked, and what to do). " +
+			"Give the words of the task or the problem; the best matches come back.",
+		parameters: {
+			type: "object",
+			properties: { query: { type: "string", description: "What the task or problem is about" } },
+			required: ["query"],
+		} as any,
+		async execute(_toolCallId: string, params: { query: string }) {
+			let text: string;
+			try {
+				const answer = await ask("lessons", { query: String(params.query ?? "") });
+				text = typeof answer.text === "string" ? answer.text : "No lessons match.";
+			} catch (error) {
+				text = `The lessons could not be looked up (${error}).`;
+			}
+			return { content: [{ type: "text" as const, text }], details: {} };
+		},
 	});
 
 	// Returning only `content` also drops `structuredContent`, which may hold what was removed from the text.

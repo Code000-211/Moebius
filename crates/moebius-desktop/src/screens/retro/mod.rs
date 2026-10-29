@@ -1,7 +1,10 @@
-//! The Retro screen: the Retros of the days, the errors of the one chosen grouped by kind, and the proposals the Retro
-//! analyst made, each with its status and what its trials found. "Run the Retro now" is `POST /v1/retros`; the
-//! server says when a Retro ends with the event `retro_done`, and when a trial or a proposal's status changes with
-//! `trial_done` and `proposal_status`, which the app answers by reading the screen again.
+//! The Retro screen: the Retros of the days, the errors of the one chosen grouped by kind, the proposals the Retro
+//! analyst made, each with its status and what its trials found, and under them the lessons it learned (see
+//! `lessons`). "Run the Retro now" is `POST /v1/retros`; the server says when a Retro ends with the event
+//! `retro_done`, and when a trial or a proposal's status changes with `trial_done` and `proposal_status`, which the
+//! app answers by reading the screen again.
+
+pub mod lessons;
 
 use iced::font::Weight;
 use iced::widget::text::Wrapping;
@@ -14,6 +17,7 @@ use crate::settings::Settings;
 use crate::theme;
 use crate::widgets::list_editor;
 use crate::widgets::page::{self, Tone};
+use lessons::Lessons;
 
 /// The kinds of error of a report, in the order the page lists them, with what the page calls them.
 const KINDS: [(&str, &str); 8] = [
@@ -38,6 +42,8 @@ pub enum Message {
     Run,
     /// The server answered it.
     Started(Result<RetroView, ClientError>),
+    /// Something on the lessons box.
+    Lessons(lessons::Message),
 }
 
 #[derive(Default)]
@@ -48,6 +54,7 @@ pub struct Retros {
     opened: Option<RetroView>,
     /// Why the last "Run the Retro now" did not start one.
     failed: Option<String>,
+    lessons: Lessons,
 }
 
 impl Retros {
@@ -57,9 +64,10 @@ impl Retros {
         let list = Task::perform(async move { client.retros().await }, |result| {
             AppMessage::Retro(Message::Listed(result))
         });
+        let lessons = self.lessons.reload(settings);
         match &self.chosen {
-            Some(date) => Task::batch([list, open(settings, date)]),
-            None => list,
+            Some(date) => Task::batch([list, lessons, open(settings, date)]),
+            None => Task::batch([list, lessons]),
         }
     }
 
@@ -70,7 +78,7 @@ impl Retros {
             Message::Listed(Err(ClientError::Unauthorized))
                 | Message::Opened(_, Err(ClientError::Unauthorized))
                 | Message::Started(Err(ClientError::Unauthorized))
-        )
+        ) || matches!(message, Message::Lessons(m) if Lessons::refused(m))
     }
 
     pub fn update(&mut self, message: Message, settings: Option<&Settings>) -> Task<AppMessage> {
@@ -108,6 +116,7 @@ impl Retros {
                 return self.reload(settings);
             }
             Message::Started(Err(e)) => self.failed = Some(e.to_string()),
+            Message::Lessons(message) => return self.lessons.update(message, settings),
         }
         Task::none()
     }
@@ -147,7 +156,8 @@ impl Retros {
                 page::body("The first runs at retro_at, or press \"Run the Retro now\"."),
             )),
             None => detail.push(page::boxed("Retro", page::body("Reading the Retro…"))),
-        };
+        }
+        .push(self.lessons.view());
         column![
             header,
             row![
@@ -434,14 +444,19 @@ pub fn proposal(proposal: &Proposal) -> Element<'_, AppMessage> {
     container(content)
         .padding(theme::BOX_PADDING)
         .width(Length::Fill)
-        .style(|_| container::Style {
-            background: Some(theme::LANE.into()),
-            border: Border {
-                color: theme::LINE,
-                width: 1.0,
-                radius: theme::RADIUS_CARD.into(),
-            },
-            ..container::Style::default()
-        })
+        .style(|_| card_style())
         .into()
+}
+
+/// The style of a card inside a box: a proposal or a lesson.
+fn card_style() -> container::Style {
+    container::Style {
+        background: Some(theme::LANE.into()),
+        border: Border {
+            color: theme::LINE,
+            width: 1.0,
+            radius: theme::RADIUS_CARD.into(),
+        },
+        ..container::Style::default()
+    }
 }

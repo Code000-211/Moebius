@@ -14,6 +14,7 @@
 //! - `settings`: `moebius.toml`, the API keys, the restart, and what the Models, Plugins and Get started pages show.
 //! - `improve`: usage, judgements and replays, the Retro and its proposals, the decision model, research and
 //!   exports.
+//! - `lessons`: the lessons the Retro learned from earlier cards, edited and deleted by a person.
 //! - `uploads`: zip files for the Moebius agent to import from.
 //! - `terminals`: shells and Pi's terminal interface over a WebSocket.
 //! - `events`: the WebSocket on which every event of the core arrives.
@@ -29,6 +30,7 @@ mod chats;
 mod events;
 mod harness;
 mod improve;
+mod lessons;
 mod repositories;
 mod rules;
 mod runs;
@@ -171,6 +173,7 @@ pub fn router(state: ApiState) -> Router {
         .merge(rules::routes())
         .merge(settings::routes())
         .merge(improve::routes())
+        .merge(lessons::routes())
         .merge(uploads::routes())
         .merge(terminals::routes())
         .merge(events::routes())

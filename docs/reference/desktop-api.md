@@ -1347,7 +1347,10 @@ ran and its proposals are stored, there may be none; `failed`: its run failed or
 meanwhile), `run_id` (the analyst's run, or null), `warnings` (array of strings: the branches left out and why, or why it
 failed), `at`, `report` and `proposals` (array of `Proposal`).
 
-`report`: `{"date", "errors": [...]}`, in the order in time. Each error is `{"kind", "run", "card", "agent", "text"}`;
+`report`: `{"date", "errors": [...], "merged": [...]}`; `merged` are the cards that reached Done that day after one code
+run and without being sent back from review, each `{"card", "title", "text"}` (`text` the start of the issue), which the
+Retro analyst writes lessons from (see [lessons](#get-v1lessons)). A day with errors or merged cards starts the analyst.
+`errors` are in the order in time. Each error is `{"kind", "run", "card", "agent", "text"}`;
 `run`, `card` and `agent` are null where the error has none, and `text` is at most 500 characters, with secrets removed as
 stored. The kinds are `tool_failed` (a tool call that ended in error: the tool and the start of what it said, not a call
 Moebius refused), `tool_refused` (the tool and the rule's reason), `run_failed` (the run's last `moebius_error`),
@@ -1392,6 +1395,33 @@ holds), "proposals" (how many), "at"}`.
 ### `GET /v1/retros/{date}`
 
 One Retro as the `RetroView`. Errors: `404` the day has none.
+
+### `GET /v1/lessons`
+
+The lessons the Retro learned from earlier cards, newest first; the analyst writes them at the end of its answer from the
+day's failed runs, review rejections and merged cards. Query: `repository` (an id; only that repository's lessons) and
+`retired` (`true` to include retired lessons, which are left out otherwise). Response: an array of `Lesson`: `id`,
+`repository_id`, `kind` (`failure`, `rejection` or `success`), `situation`, `lesson` (what went wrong or what worked),
+`advice` (what to do), `cards` (the cards it was learned from), `retro_date` (null for none), `status` (`active` or
+`retired`), `retired_reason` (null while active: `not retrieved for 60 days`, or `harmful: ...` when a trial run the
+lesson was given to was negative), `created_at`, `last_retrieved_at` (null if never) and `retrievals`.
+
+At the start of a `code` or `review` run, the up to 5 active lessons of the card's repository that best match the issue's
+text are put in the prompt under "Lessons from earlier cards", and the Pi tool `lessons(query)` finds more (see the
+[bridge protocol](bridge-protocol.md#post-moebiuslessons)). Each counts as retrieved.
+
+### `GET /v1/lessons/{id}`
+
+One `Lesson`. Errors: `404`.
+
+### `PUT /v1/lessons/{id}`
+
+Rewrites a lesson's text. Request: `{"situation", "lesson", "advice"}`, each non-empty and at most 1000 characters;
+secrets are removed. Response: the `Lesson`. Errors: `404`; `422` for an empty or long part.
+
+### `DELETE /v1/lessons/{id}`
+
+Deletes a lesson, retired or not. Response: `{}`. Errors: `404`.
 
 ### `GET /v1/proposals`
 

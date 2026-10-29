@@ -6,9 +6,10 @@ use moebius_desktop::app::{App, Message, Page};
 use moebius_desktop::client::{self, ClientError};
 use moebius_desktop::screens::experiments;
 use moebius_desktop::screens::retro;
+use moebius_desktop::screens::retro::lessons;
 use serde_json::json;
 
-use crate::fixtures::{draw_sized, overview, pressed, shows};
+use crate::fixtures::{clicked_sized, draw_sized, overview, pressed, shows};
 
 fn retro_listing() -> Vec<client::RetroSummary> {
     serde_json::from_value(json!([
@@ -60,6 +61,31 @@ fn retro_view() -> client::RetroView {
     .unwrap()
 }
 
+fn lessons_json() -> serde_json::Value {
+    json!([
+        {"id": 3, "repository_id": 1, "kind": "rejection", "situation": "Changing the tokenizer",
+         "lesson": "The Reviewer sent two changes back for lacking a test with a multi-byte character.",
+         "advice": "Add a test with emoji before you change the tokenizer.", "cards": [48, 50],
+         "status": "active", "retired_reason": null, "retrievals": 4},
+        {"id": 2, "repository_id": 1, "kind": "success", "situation": "Adding a configuration key",
+         "lesson": "Cards that listed the key in the reference page in the same commit merged at once.",
+         "advice": "Update the reference page and its example together with the code.", "cards": [47],
+         "status": "active", "retired_reason": null, "retrievals": 1},
+        {"id": 1, "repository_id": 1, "kind": "failure", "situation": "Running the whole test suite",
+         "lesson": "The run failed after the shell timed out on the full suite.",
+         "advice": "Run only the tests of the crate you changed.", "cards": [41],
+         "status": "retired", "retired_reason": "not retrieved for 60 days", "retrievals": 0},
+    ])
+}
+
+fn lessons() -> Vec<client::Lesson> {
+    serde_json::from_value(lessons_json()).unwrap()
+}
+
+fn lesson_message(message: lessons::Message) -> Message {
+    Message::Retro(retro::Message::Lessons(message))
+}
+
 fn retro_app() -> App {
     let mut app = App::with_snapshot(overview());
     let _ = app.update(Message::Select(Page::Retro));
@@ -70,6 +96,7 @@ fn retro_app() -> App {
         "2026-10-28".into(),
         Ok(retro_view()),
     )));
+    let _ = app.update(lesson_message(lessons::Message::Listed(Ok(lessons()))));
     app
 }
 
@@ -111,9 +138,59 @@ fn the_retro_screen_lists_the_days_and_shows_the_errors_and_proposals_of_one() {
             "Ask the Coder to write plainly",
             "Negative",
             "the run did not succeed; it still has run_failed",
+            "Lessons",
+            "Changing the tokenizer",
+            "Rejected",
+            "Do: Add a test with emoji before you change the tokenizer.",
+            "Cards 48, 50 · given 4 times",
+            "Worked",
+            "Retired",
+            "Cards 41 · given 0 times · not retrieved for 60 days",
         ],
-        Size::new(1440.0, 1500.0),
+        Size::new(1440.0, 2100.0),
     );
+}
+
+#[test]
+fn a_lesson_is_edited_in_place_and_saved_or_deleted_after_asking() {
+    let mut app = retro_app();
+    let _ = app.update(lesson_message(lessons::Message::Edit(3)));
+    assert!(shows(&app, "What happened"));
+    assert!(shows(&app, "Situation"));
+    assert!(shows(&app, "Cancel"));
+    draw_sized(
+        &app,
+        "retro-lesson-edit",
+        &["Situation", "What happened", "What to do", "Save", "Cancel"],
+        Size::new(1440.0, 2100.0),
+    );
+    let _ = app.update(lesson_message(lessons::Message::Cancel));
+    assert!(!shows(&app, "What to do"));
+
+    // The server's answer replaces the lesson.
+    let mut saved = lessons().remove(0);
+    saved.advice = "Always add a test with emoji.".into();
+    let _ = app.update(lesson_message(lessons::Message::Edit(3)));
+    let _ = app.update(lesson_message(lessons::Message::Saved(Ok(saved))));
+    assert!(shows(&app, "Do: Always add a test with emoji."));
+    let _ = app.update(lesson_message(lessons::Message::Edit(3)));
+    let _ = app.update(lesson_message(lessons::Message::Saved(Err(
+        ClientError::Server {
+            status: 422,
+            message: "the advice is empty".into(),
+        },
+    ))));
+    assert!(shows(&app, "the server answered 422: the advice is empty"));
+    let _ = app.update(lesson_message(lessons::Message::Cancel));
+
+    // Delete asks first.
+    assert!(!shows(&app, "Delete this lesson?"));
+    let _ = app.update(lesson_message(lessons::Message::AskDelete(2)));
+    assert!(shows(&app, "Delete this lesson?"));
+    let sent = clicked_sized(&app, "Delete lesson", Size::new(1440.0, 2100.0));
+    assert!(format!("{sent:?}").contains("Delete(2)"), "{sent:?}");
+    let _ = app.update(lesson_message(lessons::Message::Keep));
+    assert!(!shows(&app, "Delete this lesson?"));
 }
 
 #[test]

@@ -5,8 +5,8 @@
 //! methods of `Store` that read and write it: `cards` (repositories, cards, dependencies and moves), `changes`, `runs`,
 //! `events` (a run's events), `chats`, `judgements`, `replays`, `inbox`, `grillings`, `shadows` (the decision model's
 //! shadows and takeovers), `usage`, `found` (what the Retro collects), `retros` (Retros, proposals and trials),
-//! `research` (research, its runs and experiments) and `automations` (automations, their firings and the local
-//! clock). Every public type is re-exported here, as `store::Card` and the like.
+//! `lessons` (what the Retro learned from earlier cards), `research` (research, its runs and experiments) and
+//! `automations` (automations, their firings and the local clock). Every public type is re-exported here, as `store::Card` and the like.
 
 mod automations;
 mod cards;
@@ -17,6 +17,7 @@ mod found;
 mod grillings;
 mod inbox;
 mod judgements;
+mod lessons;
 mod localize;
 mod replays;
 mod research;
@@ -41,6 +42,7 @@ pub use found::Found;
 pub use grillings::{Grilling, GrillingIssue};
 pub use inbox::InboxItem;
 pub use judgements::{Judgement, NewJudgement};
+pub use lessons::{Lesson, NewLesson};
 pub use localize::IndexedFile;
 pub use replays::Replay;
 pub use research::{Experiment, Research};
@@ -380,6 +382,7 @@ CREATE TABLE localize_indexed (
     at INTEGER NOT NULL
 );
 "#,
+    lessons::SCHEMA,
 ];
 
 pub fn now() -> i64 {

@@ -1,5 +1,5 @@
 //! What went wrong in a window of time, as the Retro collects it (see `retro`): failed and refused tool calls, failed
-//! and stopped runs, steering, and cards sent back from review.
+//! and stopped runs, steering, and cards sent back from review, and the cards that merged at once.
 
 use rusqlite::params;
 
@@ -162,12 +162,72 @@ impl Store {
     }
 }
 
+impl Store {
+    /// The cards that reached Done in `[from, to)` after one code run and without ever being sent back from review:
+    /// the card, its title and the start of its issue.
+    pub fn merged_at_once(&self, from: i64, to: i64) -> Result<Vec<(i64, String, String)>> {
+        self.rows(
+            "SELECT c.id, c.title, c.body FROM cards c
+             WHERE EXISTS (SELECT 1 FROM card_moves m WHERE m.card_id = c.id AND m.to_column = 'Done'
+                           AND m.at >= ?1 AND m.at < ?2)
+               AND (SELECT COUNT(*) FROM runs r WHERE r.card_id = c.id AND r.purpose = 'code') = 1
+               AND NOT EXISTS (SELECT 1 FROM card_moves b WHERE b.card_id = c.id
+                               AND b.from_column = 'In review' AND b.to_column = 'In progress')
+             ORDER BY c.id",
+            params![from, to],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
 
     use super::*;
     use crate::store::{Usage, test_store as store};
+
+    #[test]
+    fn a_card_that_reached_done_after_one_code_run_and_no_sending_back_merged_at_once() {
+        let (_dir, s) = store();
+        let repo = s.add_repository("r", "/r", "none", "main").unwrap();
+        let (from, to) = s.day_window("2026-03-10").unwrap().unwrap();
+        let card = |title: &str, runs: usize, sent_back: bool| {
+            let card = s
+                .add_card(repo.id, title, "the issue", "leon", "Backlog")
+                .unwrap();
+            for _ in 0..runs {
+                s.add_run(Some(card.id), "Coder", "pi-bolt", "code")
+                    .unwrap();
+            }
+            if sent_back {
+                s.move_card(card.id, "In review").unwrap();
+                s.move_card(card.id, "In progress").unwrap();
+            }
+            s.move_card(card.id, "Done").unwrap();
+            s.conn()
+                .execute(
+                    "UPDATE card_moves SET at = ?1 WHERE card_id = ?2 AND to_column = 'Done'",
+                    params![from + 10, card.id],
+                )
+                .unwrap();
+            card
+        };
+        let once = card("Once", 1, false);
+        card("Twice", 2, false);
+        card("Sent back", 1, true);
+        let late = card("Late", 1, false);
+        s.conn()
+            .execute(
+                "UPDATE card_moves SET at = ?1 WHERE card_id = ?2 AND to_column = 'Done'",
+                params![to, late.id],
+            )
+            .unwrap();
+        assert_eq!(
+            s.merged_at_once(from, to).unwrap(),
+            [(once.id, "Once".to_string(), "the issue".to_string())]
+        );
+    }
 
     #[test]
     fn a_retro_collects_the_errors_of_one_local_day_and_nothing_at_or_after_its_end() {
