@@ -8,7 +8,7 @@ working decider is in
 
 Today every plugin is compiled into the `moebius` binary. Plugins in their own process are not supported yet: the
 messages below exist so that they can be, but nothing starts or talks to such a process. The plugins that go
-through this API today are the `guard` decider (`crates/moebius-core/src/decide/guard.rs`) and, when a `[decision_model]` is
+through this API today are the `guard` decider (`crates/moebius-core/src/decide/guard/`) and, when a `[decision_model]` is
 configured, the `decision-model` decider (`crates/moebius-core/src/decide/model.rs`, see
 [the decision model](decision-model.md)).
 
@@ -39,7 +39,7 @@ Serialised in lower case with underscores, as in `"decider"`.
 | Kind | Meant for | Used by the core today |
 |---|---|---|
 | `forge` | Issues and changes: GitHub, plain git, later Codeberg and GitLab. | No. The forges are a Rust trait in `forge.rs`. |
-| `harness` | Drives a coding-agent harness such as Pi-Bolt. | No. `pibolt.rs` is called directly. |
+| `harness` | Drives a coding-agent harness such as Pi-Bolt. | No. `harness/pibolt/` is called directly. |
 | `runner` | Where harnesses run: local worktrees, later GPU machines. | No. |
 | `decider` | Answers decision points. | Yes: `guard` decides `tool_call`. |
 | `router` | The model provider the harnesses use. | No. `router.rs` is part of the core. |

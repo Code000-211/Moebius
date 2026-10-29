@@ -240,7 +240,7 @@ The server runs on a multi-threaded tokio runtime.
 - Every plugin call runs on a thread of its own, started by the `Host` for that call, with a time limit. The teacher uses a
   blocking HTTP client there.
 - A repository's own checks run on a thread of their own per change (`App::run_checks`), so the board is not blocked.
-- Each Pi run has one reader thread (`pibolt.rs`), and `Runs::stop` (`PiBolt`) starts a short thread that kills Pi when it does not
+- Each Pi run has one reader thread (`harness/pibolt/reader.rs`), and `Runs::stop` (`PiBolt`) starts a short thread that kills Pi when it does not
   settle in time.
 - The store is one SQLite connection behind a mutex. Calls are short and take it one at a time.
 - The event bus is a tokio broadcast channel of 1024 events; a slow listener loses the oldest and is told with `lagged`.
@@ -346,7 +346,15 @@ At the top:
 
 | Module | What it is for |
 |---|---|
-| `board/mod.rs` | The board engine: the Luau sandbox, the `moebius` table and the default workflow. |
+| `board/mod.rs` | What the board folder holds, and the paths the rest of the server uses. |
+| `board/engine.rs` | The board engine: runs the script of a card's column (`tick`, `settle`) and applies what it did. |
+| `board/api.rs` | The `moebius` table, the functions a script acts through. |
+| `board/card.rs` | The `card` table a script reads, with the card's change and the verdict of its review. |
+| `board/sandbox.rs` | The Luau sandbox every script runs in, with its memory and time limits. |
+| `board/limits.rs` | The run, round and token limits scripts see, and a script call's memory and time. |
+| `board/workflow.rs` | The columns, the default workflow's scripts built into the server, and a repository's overrides. |
+| `board/runs.rs` | What the engine needs of a harness (`Runs`), and the agents it lists. |
+| `board/dry_run.rs` | `check_script`: a script run once against a made-up card, for `moebius check-script`. |
 | `board/scripts.rs` | Editing a column's script: the script in force, saved as a commit in the repository. |
 
 `decide/`, every decision on the way:
@@ -354,7 +362,11 @@ At the top:
 | Module | What it is for |
 |---|---|
 | `decide/mod.rs` | Decision points: routing a question to a decider, failing closed, recording the judgement. |
-| `decide/guard.rs` | The `guard` decider: built-in pattern rules and the teacher model. |
+| `decide/guard/mod.rs` | The `guard` decider: built-in rules first, then the rules in prose for the teacher or the decision model. |
+| `decide/guard/shell.rs` | How the guard reads a tool call: simple commands, redirects, nested shells, `cd`, and paths. |
+| `decide/guard/patterns.rs` | The built-in rules, fixed patterns over a tool call. |
+| `decide/guard/reversible.rs` | Whether a tool call can be replayed: its effects stay in the worktree. |
+| `decide/guard/teacher.rs` | The teacher model: what it is told, the request through the router, and reading its answer. |
 | `decide/rules.rs` | The `rules.md` format and where rules come from. |
 | `decide/model.rs` | The decision model: asking an OpenAI-compatible endpoint, shadowing held-out judgements in the background, takeover proposals and their merge, dismissal and release. |
 
@@ -362,8 +374,14 @@ At the top:
 
 | Module | What it is for |
 |---|---|
-| `harness/pibolt.rs` | The Pi-Bolt harness: starting, reading and stopping runs and chats. |
-| `harness/terminal.rs` | A person's shell in a run's worktree on a pseudo-terminal (`portable-pty`), served over the WebSocket `GET /v1/runs/{id}/terminal` (and `GET /v1/terminal`, in the directory of `moebius.toml`); at most 4 per run or on the server, not checked by the guard. The same serving carries Pi-Bolt's interactive mode for a waiting chat (`GET /v1/chats/{id}/tui`, one per chat), whose tool calls the bridge still checks; `harness/pibolt.rs` ends the chat's own Pi for it, continues the chat's Pi session in it, records what it adds to the session file as the chat's events, and starts the chat's Pi again on the same session when it closes. |
+| `harness/pibolt/mod.rs` | The Pi-Bolt harness: what it holds of every run's Pi, and `Runs` for it, steering and stopping runs. |
+| `harness/pibolt/agents.rs` | The built-in agents with their instructions and skills, and the agent a run uses. |
+| `harness/pibolt/process.rs` | Starting Pi: its agent directory (`models.json`, `mcp.json`), its command line and its process. |
+| `harness/pibolt/runs.rs` | The runs of a card, of the Retro analyst and of the Autoresearcher, and committing what a run left. |
+| `harness/pibolt/reader.rs` | Reading Pi's records as run events, and ending the run. |
+| `harness/pibolt/chat.rs` | Chats: their Pi between messages, their settings, and pausing one that waited long. |
+| `harness/pibolt/tui.rs` | A waiting chat in Pi's interactive mode, and following its session file. |
+| `harness/terminal.rs` | A person's shell in a run's worktree on a pseudo-terminal (`portable-pty`), served over the WebSocket `GET /v1/runs/{id}/terminal` (and `GET /v1/terminal`, in the directory of `moebius.toml`); at most 4 per run or on the server, not checked by the guard. The same serving carries Pi-Bolt's interactive mode for a waiting chat (`GET /v1/chats/{id}/tui`, one per chat), whose tool calls the bridge still checks; `harness/pibolt/tui.rs` ends the chat's own Pi for it, continues the chat's Pi session in it, records what it adds to the session file as the chat's events, and starts the chat's Pi again on the same session when it closes. |
 | `harness/repo.rs` | The harness configuration repository: its clone, reading agents, skills, rules and MCP servers from it, and edits as commits pushed to its origin; `create` makes a new one from the agents and rules of `moebius.toml` (`POST /v1/harness/setup`, `moebius init`). |
 | `harness/mcp.rs` | The MCP servers of `mcp.toml`, checked when read, and the `mcp.json` a run of an agent that names them is given. |
 | `harness/skill.rs` | The built-in skills, bundled with `include_str!` and written to `<data_dir>/skills/<name>/` at start: the `moebius` skill (the guide and the references) and the task skills of the Moebius agent (`moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions` and `moebius-plugins`, in `crates/moebius-core/skill/<name>/SKILL.md`). |

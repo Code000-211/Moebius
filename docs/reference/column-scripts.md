@@ -2,7 +2,7 @@
 
 A column script is the behaviour behind one column of a board, written in Luau. This page is for anyone who writes or
 changes a script: a person, or an agent such as the Moebius agent. It lists everything a script can read and do. The
-code is in `crates/moebius-core/src/board/mod.rs`; the default scripts are in `crates/moebius-core/workflow/`.
+code is in `crates/moebius-core/src/board/` (`api.rs` for the `moebius` table, `card.rs` for the `card` table); the default scripts are in `crates/moebius-core/workflow/`.
 
 ## How a column maps to a script
 
