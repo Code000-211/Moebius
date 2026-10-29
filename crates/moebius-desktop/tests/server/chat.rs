@@ -287,7 +287,11 @@ async fn a_harness_chat_offers_its_change_in_the_snapshot_and_the_client_merges_
     assert!(waiting[0].harness_repository);
     client.end_chat(run.id).await.unwrap();
 
-    let snapshot = snapshot_where(&client, |s| !s.harness_changes.is_empty()).await;
+    // The change is stored a moment before its inbox item, so wait for both.
+    let snapshot = snapshot_where(&client, |s| {
+        !s.harness_changes.is_empty() && !s.inbox.is_empty()
+    })
+    .await;
     let change = &snapshot.harness_changes[0];
     assert_eq!(
         (change.repository_id, change.harness_repository),
