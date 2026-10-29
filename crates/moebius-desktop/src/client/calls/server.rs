@@ -3,7 +3,7 @@
 
 use crate::client::{
     Available, Client, ClientError, Health, Login, Models, Plugins, SavedSettings, ServerSettings,
-    Start,
+    Start, Webhook,
 };
 
 impl Client {
@@ -64,6 +64,20 @@ impl Client {
     ) -> Result<SavedSettings, ClientError> {
         let body = serde_json::json!({ "set": set, "remove": remove });
         self.put("/v1/settings", body).await
+    }
+
+    /// The webhooks of the forges the server is set up for, with their secrets.
+    pub async fn webhooks(&self) -> Result<Vec<Webhook>, ClientError> {
+        self.get("/v1/webhooks").await
+    }
+
+    /// Makes a new secret for the webhook of `forge`, replacing the old one.
+    pub async fn make_webhook_secret(&self, forge: &str) -> Result<Webhook, ClientError> {
+        self.post(
+            &format!("/v1/webhooks/{forge}/secret"),
+            serde_json::json!({}),
+        )
+        .await
     }
 
     /// Stores an API key under `name`, on the server only.

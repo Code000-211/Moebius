@@ -1,4 +1,4 @@
-//! The poll of the forges (ADR 0003: no webhooks). Every repository on a forge is brought up to date in turn: its
+//! The poll of the forges (ADR 0003, with webhooks to wake it: ADR 0012). Every repository on a forge is brought up to date in turn: its
 //! clone fetches `origin`, its issues become and update cards, and the pull or merge requests of its open changes are
 //! read. A repository that fails is reported on the bus and tried again at the next poll.
 //!
@@ -66,6 +66,11 @@ pub trait Polled: Send + Sync {
 
 /// Polls every repository on the forge of `client` once.
 pub async fn poll<F: Polled>(app: &Arc<App>, client: &F) {
+    poll_only(app, client, None).await
+}
+
+/// Polls the repositories on the forge of `client` that are called one of `only` on it, or all of them without `only`.
+pub async fn poll_only<F: Polled>(app: &Arc<App>, client: &F, only: Option<&[String]>) {
     let Ok(repositories) = app.store.repositories() else {
         return;
     };
@@ -76,6 +81,9 @@ pub async fn poll<F: Polled>(app: &Arc<App>, client: &F) {
         let Some(name) = repository.forge_name().map(str::to_string) else {
             continue;
         };
+        if only.is_some_and(|only| !only.contains(&name)) {
+            continue;
+        }
         if let Err(message) = poll_repository(app, client, repository, &name).await {
             app.bus.publish(AppEvent::new(
                 "forge_error",

@@ -5,7 +5,8 @@
 //! This module wires every part from the configuration and serves them; `leftovers` ends what a server that stopped
 //! left going, `loops` holds the board's tick, the polls of the forges and the refresh of the clones, and `schedule` what is
 //! looked at once a minute. `api` is the desktop API, `settings` edits `moebius.toml` while the server runs, and
-//! `setup` is what the Models, Plugins and Get started pages show. `plugins` starts the plugins in their own process.
+//! `setup` is what the Models, Plugins and Get started pages show. `plugins` starts the plugins in their own process, and
+//! `webhooks` is how a forge's webhook wakes its poll.
 
 pub mod api;
 #[cfg(test)]
@@ -20,6 +21,7 @@ mod plugins;
 mod schedule;
 pub mod settings;
 pub mod setup;
+pub mod webhooks;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -251,6 +253,18 @@ impl Server {
         })
     }
 
+    /// What the desktop API needs from the server.
+    pub fn api_state(&self) -> ApiState {
+        ApiState {
+            app: self.app.clone(),
+            runs: self.harness.clone(),
+            harness_repo: self.harness_repo.clone(),
+            token: self.token.clone(),
+            router: self.router.clone(),
+            config: self.live.clone(),
+        }
+    }
+
     /// Serves the desktop API and the router, ticks the board and polls the forges, until the future is dropped.
     pub async fn serve(
         self: Arc<Self>,
@@ -260,14 +274,7 @@ impl Server {
         if let Ok(address) = api_listener.local_addr() {
             self.harness.set_api_url(api_url(address));
         }
-        let state = ApiState {
-            app: self.app.clone(),
-            runs: self.harness.clone(),
-            harness_repo: self.harness_repo.clone(),
-            token: self.token.clone(),
-            router: self.router.clone(),
-            config: self.live.clone(),
-        };
+        let state = self.api_state();
         let gateway = Arc::new(Gateway::new(
             self.app.clone(),
             self.router.clone(),

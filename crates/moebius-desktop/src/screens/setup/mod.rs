@@ -22,7 +22,7 @@ use serde_json::{Map, Value};
 use crate::app::Message as AppMessage;
 use crate::client::{
     Available, AvailableModel, Client, ClientError, Login, Models, Plugins, SavedSettings,
-    ServerSettings, unauthorized,
+    ServerSettings, Webhook, unauthorized,
 };
 use crate::settings::Settings;
 
@@ -76,6 +76,16 @@ pub enum Message {
     LoginAnswer(usize, Result<Login, ClientError>),
     /// A page of the provider is opened in the browser.
     OpenPage(String),
+    /// The webhooks of the forges the server is set up for.
+    Webhooks(Result<Vec<Webhook>, ClientError>),
+    /// The secret of this forge's webhook is shown or hidden.
+    ShowWebhookSecret(String),
+    /// The secret of this forge's webhook is copied to the clipboard.
+    CopyWebhookSecret(String),
+    /// A new secret for this forge's webhook was asked for.
+    MakeWebhookSecret(String),
+    /// The server made a secret, or said why not.
+    WebhookSecretMade(Result<Webhook, ClientError>),
 }
 
 /// What an API key belongs to.
@@ -136,12 +146,16 @@ pub struct Setup {
     restarting: bool,
     /// The OAuth logins on the page, by the place of their upstream in the file.
     logins: std::collections::BTreeMap<usize, LoginStep>,
+    /// The webhooks of the forges, and the forges whose secret is shown.
+    webhooks: Vec<Webhook>,
+    shown_webhooks: std::collections::BTreeSet<String>,
 }
 
 impl Setup {
     /// Reads the three answers again.
     pub fn reload(&self, settings: &Settings) -> Task<AppMessage> {
-        let (models, plugins, server) = (
+        let (models, plugins, server, webhooks) = (
+            Client::new(settings.clone()),
             Client::new(settings.clone()),
             Client::new(settings.clone()),
             Client::new(settings.clone()),
@@ -156,6 +170,9 @@ impl Setup {
             }),
             Task::perform(async move { server.server_settings().await }, |result| {
                 AppMessage::Setup(Message::Server(result))
+            }),
+            Task::perform(async move { webhooks.webhooks().await }, |result| {
+                AppMessage::Setup(Message::Webhooks(result))
             }),
         ])
     }
@@ -204,6 +221,8 @@ impl Setup {
             Message::Server(result) => unauthorized(result),
             Message::Saved(result) => unauthorized(result),
             Message::Restarting(result) => unauthorized(result),
+            Message::Webhooks(result) => unauthorized(result),
+            Message::WebhookSecretMade(result) => unauthorized(result),
             Message::LoginStarted(_, result) | Message::LoginAnswer(_, result) => {
                 unauthorized(result)
             }

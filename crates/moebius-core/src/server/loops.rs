@@ -11,6 +11,7 @@ use serde_json::json;
 use tokio::time::{Interval, MissedTickBehavior};
 
 use super::Server;
+use super::webhooks::{Wake, Webhooks};
 use crate::app::columns;
 use crate::bus::AppEvent;
 use crate::repos::poll;
@@ -53,22 +54,37 @@ impl Server {
 
     /// Polls every GitHub repository once (see `poll`).
     pub async fn poll_github(&self) {
+        self.poll_github_of(None).await
+    }
+
+    /// Polls the GitHub repositories called one of `only`, or all of them (see `poll`).
+    pub async fn poll_github_of(&self, only: Option<&[String]>) {
         if let Some(github) = &self.github {
-            poll::poll(&self.app, &**github).await;
+            poll::poll_only(&self.app, &**github, only).await;
         }
     }
 
     /// Polls every GitLab repository once (see `poll`).
     pub async fn poll_gitlab(&self) {
+        self.poll_gitlab_of(None).await
+    }
+
+    /// Polls the GitLab repositories called one of `only`, or all of them (see `poll`).
+    pub async fn poll_gitlab_of(&self, only: Option<&[String]>) {
         if let Some(gitlab) = &self.gitlab {
-            poll::poll(&self.app, &**gitlab).await;
+            poll::poll_only(&self.app, &**gitlab, only).await;
         }
     }
 
     /// Polls every Forgejo repository once (see `poll`).
     pub async fn poll_forgejo(&self) {
+        self.poll_forgejo_of(None).await
+    }
+
+    /// Polls the Forgejo repositories called one of `only`, or all of them (see `poll`).
+    pub async fn poll_forgejo_of(&self, only: Option<&[String]>) {
         if let Some(forgejo) = &self.forgejo {
-            poll::poll(&self.app, &**forgejo).await;
+            poll::poll_only(&self.app, &**forgejo, only).await;
         }
     }
 
@@ -113,32 +129,47 @@ pub(super) async fn board(server: Arc<Server>) {
     }
 }
 
-/// Polls GitHub, GitLab and Forgejo each as often as its `poll_seconds` says, until the future is dropped; a forge that
-/// is not set up, never.
+/// Polls GitHub, GitLab and Forgejo each as often as its `poll_seconds` says, and at once for the repository a verified
+/// webhook names, until the future is dropped; a forge that is not set up, never.
 pub(super) async fn poll(server: Arc<Server>) {
     let github = server.config.github.as_ref().map(|g| g.poll);
     let gitlab = server.config.gitlab.as_ref().map(|g| g.poll);
     let forgejo = server.config.forgejo.as_ref().map(|f| f.poll);
     tokio::join!(
-        poll_every(server.clone(), github, |s| Box::pin(s.poll_github())),
-        poll_every(server.clone(), gitlab, |s| Box::pin(s.poll_gitlab())),
-        poll_every(server.clone(), forgejo, |s| Box::pin(s.poll_forgejo())),
+        poll_every(server.clone(), github, Webhooks::github, |s, only| {
+            Box::pin(s.poll_github_of(only))
+        }),
+        poll_every(server.clone(), gitlab, Webhooks::gitlab, |s, only| {
+            Box::pin(s.poll_gitlab_of(only))
+        }),
+        poll_every(server.clone(), forgejo, Webhooks::forgejo, |s, only| {
+            Box::pin(s.poll_forgejo_of(only))
+        }),
     );
 }
 
-/// Does `work` every `period` until the future is dropped; without a period, never.
+/// What a poll does for the repositories it is asked about; none means all of them.
+type PollWork =
+    for<'a> fn(&'a Server, Option<&'a [String]>) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
+
+/// Does `work` for all repositories every `period`, and for the ones `wake` names whenever it is asked, until the
+/// future is dropped; without a period, never.
 async fn poll_every(
     server: Arc<Server>,
     period: Option<Duration>,
-    work: for<'a> fn(&'a Server) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>,
+    wake: fn(&Webhooks) -> &Wake,
+    work: PollWork,
 ) {
     let Some(period) = period else {
         return std::future::pending().await;
     };
     let mut interval = interval(period);
     loop {
-        interval.tick().await;
-        work(&server).await;
+        let only = tokio::select! {
+            _ = interval.tick() => None,
+            only = wake(server.live.webhooks()).wait() => only,
+        };
+        work(&server, only.as_deref()).await;
     }
 }
 

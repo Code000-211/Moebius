@@ -446,6 +446,11 @@ impl Setup {
             }
             content = content.push(line);
         }
+        if let Some(address) = saved.map(|saved| &saved.address)
+            && !self.webhooks.is_empty()
+        {
+            content = content.push(self.webhooks_box(address));
+        }
         content = content.push(app);
         opened(
             "Settings",
@@ -455,6 +460,63 @@ impl Setup {
             ),
             page::primary_button("Save", Some(AppMessage::Setup(Message::SaveSettings))),
             content,
+        )
+    }
+
+    /// The webhooks of the forges the server is set up for: where each forge sends to and the secret it signs with, which
+    /// is shown only when asked for.
+    fn webhooks_box(&self, address: &str) -> Element<'_, AppMessage> {
+        let forges = self.webhooks.iter().map(|webhook| {
+            let forge = webhook.forge.clone();
+            let shown = self.shown_webhooks.contains(&forge);
+            let secret = match (&webhook.secret, shown) {
+                (None, _) => "No secret yet: webhooks of this forge are off".to_string(),
+                (Some(secret), true) => secret.clone(),
+                (Some(_), false) => "••••••••••••".to_string(),
+            };
+            let message = |message: Message| Some(AppMessage::Setup(message));
+            let mut buttons = row![].spacing(8);
+            if webhook.secret.is_some() {
+                buttons = buttons
+                    .push(page::white_button(
+                        if shown { "Hide" } else { "Show" },
+                        message(Message::ShowWebhookSecret(forge.clone())),
+                    ))
+                    .push(page::white_button(
+                        "Copy",
+                        message(Message::CopyWebhookSecret(forge.clone())),
+                    ));
+            }
+            buttons = buttons.push(page::white_button(
+                if webhook.secret.is_some() {
+                    "Make a new secret"
+                } else {
+                    "Make a secret"
+                },
+                message(Message::MakeWebhookSecret(forge.clone())),
+            ));
+            column![
+                strong(&webhook.forge),
+                facts(vec![
+                    ("URL", mono(format!("{address}{}", webhook.path))),
+                    ("Secret", mono(secret)),
+                    ("Sent in", plain(webhook.header.clone())),
+                ]),
+                buttons,
+            ]
+            .spacing(10)
+            .into()
+        });
+        page::boxed(
+            "Webhooks",
+            column![
+                page::body(
+                    "A forge that can reach the server tells it at once that something changed. Set the URL and the \
+                     secret in the forge's webhook settings, with JSON content; the server still polls."
+                ),
+                column(forges).spacing(16),
+            ]
+            .spacing(12),
         )
     }
 

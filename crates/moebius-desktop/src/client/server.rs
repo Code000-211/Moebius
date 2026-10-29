@@ -228,3 +228,26 @@ pub struct SavedSettings {
     #[serde(default)]
     pub restart_keys: Vec<String>,
 }
+
+/// A forge's webhook as `GET /v1/webhooks` tells it: where the forge sends deliveries and the secret it signs them with.
+#[derive(Clone, PartialEq, Eq, Deserialize)]
+pub struct Webhook {
+    /// `github`, `gitlab` or `forgejo`.
+    pub forge: String,
+    /// The path on the server that the forge is told to send to.
+    pub path: String,
+    /// The header in which the forge proves a delivery.
+    pub header: String,
+    /// The secret to set on the forge; none until one is made.
+    pub secret: Option<String>,
+}
+
+// Not derived, so that the secret cannot be printed by accident.
+impl std::fmt::Debug for Webhook {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Webhook")
+            .field("forge", &self.forge)
+            .field("path", &self.path)
+            .finish_non_exhaustive()
+    }
+}

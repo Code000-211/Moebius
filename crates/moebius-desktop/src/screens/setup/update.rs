@@ -44,6 +44,37 @@ impl Setup {
                 self.server = Some(server);
             }
             Message::Models(Err(_)) | Message::Plugins(Err(_)) | Message::Server(Err(_)) => {}
+            Message::Webhooks(Ok(webhooks)) => self.webhooks = webhooks,
+            Message::Webhooks(Err(_)) => {}
+            Message::ShowWebhookSecret(forge) => {
+                if !self.shown_webhooks.remove(&forge) {
+                    self.shown_webhooks.insert(forge);
+                }
+            }
+            Message::CopyWebhookSecret(forge) => {
+                let secret = self.webhooks.iter().find(|w| w.forge == forge);
+                if let Some(secret) = secret.and_then(|w| w.secret.clone()) {
+                    return iced::clipboard::write(secret);
+                }
+            }
+            Message::MakeWebhookSecret(forge) => {
+                if let Some(settings) = settings {
+                    let client = Client::new(settings.clone());
+                    return Task::perform(
+                        async move { client.make_webhook_secret(&forge).await },
+                        |result| AppMessage::Setup(Message::WebhookSecretMade(result)),
+                    );
+                }
+            }
+            Message::WebhookSecretMade(Ok(made)) => {
+                // The new secret is shown once, since it is to be copied to the forge.
+                self.shown_webhooks.insert(made.forge.clone());
+                match self.webhooks.iter_mut().find(|w| w.forge == made.forge) {
+                    Some(webhook) => *webhook = made,
+                    None => self.webhooks.push(made),
+                }
+            }
+            Message::WebhookSecretMade(Err(e)) => self.notice = Some(Notice::Failed(say(&e))),
             Message::SaveSettings => return self.save(settings, false),
             Message::SaveModels => return self.save(settings, true),
             Message::Saved(Ok(_)) => {

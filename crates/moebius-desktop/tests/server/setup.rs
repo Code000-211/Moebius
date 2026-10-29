@@ -250,3 +250,41 @@ async fn the_client_reads_the_steps_to_a_first_card_of_a_real_server() {
     );
     assert_eq!(start.steps[0].detail, "Add an upstream on the Models page.");
 }
+
+#[tokio::test]
+async fn the_client_reads_and_makes_the_webhook_secrets_of_the_forges_a_real_server_is_set_up_for()
+{
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("gitlab-token"),
+        "glpat-test-token-0123456789\n",
+    )
+    .unwrap();
+    let (settings, _server) =
+        start_with(dir.path(), "[gitlab]\ntoken_file = \"gitlab-token\"\n").await;
+    let client = Client::new(settings);
+
+    let webhooks = client.webhooks().await.unwrap();
+    assert_eq!(webhooks.len(), 1);
+    assert_eq!(
+        (webhooks[0].forge.as_str(), webhooks[0].path.as_str()),
+        ("gitlab", "/v1/webhooks/gitlab")
+    );
+    assert_eq!(webhooks[0].header, "X-Gitlab-Token");
+    assert_eq!(webhooks[0].secret, None);
+
+    let made = client.make_webhook_secret("gitlab").await.unwrap();
+    let secret = made.secret.unwrap();
+    assert!(secret.starts_with("whsec_"));
+    assert_eq!(client.webhooks().await.unwrap()[0].secret, Some(secret));
+    // The secret is stored under a name, which the settings list without its value.
+    assert!(
+        client
+            .server_settings()
+            .await
+            .unwrap()
+            .secrets
+            .contains(&"webhook-gitlab".to_string())
+    );
+    assert!(client.make_webhook_secret("github").await.is_err());
+}

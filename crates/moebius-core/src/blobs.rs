@@ -28,6 +28,7 @@ static SECRETS: LazyLock<Vec<(&'static str, Regex)>> = LazyLock::new(|| {
         ),
         ("gitlab-token", r"glpat-[A-Za-z0-9_\-]{20,}"),
         ("aws-access-key", r"AKIA[0-9A-Z]{16}"),
+        ("webhook-secret", r"whsec_[A-Za-z0-9]{20,}"),
     ]
     .into_iter()
     .map(|(name, pattern)| (name, Regex::new(pattern).expect("secret pattern compiles")))

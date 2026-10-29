@@ -52,12 +52,16 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
   that speaks JSON Lines on stdin and stdout, called with the same time limit, failing closed, and started again with a
   growing pause when it stops (see `docs/reference/plugin-api.md`).
 
+- **Webhooks from the forges**, optional: where a forge can reach the server, a signed webhook (`POST
+  /v1/webhooks/{forge}`, verified against the secret `webhook-<forge>`, which the Settings page makes and shows) makes the
+  poll of that repository run at once. The poll stays the source of truth and goes on at its pace (ADR 0012, amending
+  ADR 0003).
+
 ### Not in the first version
 
 - Harnesses other than Pi-Bolt and Claude Code.
 - Forges other than GitHub, GitLab and Forgejo (with Gitea).
 - Training the decision model; the first version records judgements and exports them.
-- Webhooks; forges are polled (ADR 0003).
 - More than one person.
 
 ## 2. Processes and how they talk

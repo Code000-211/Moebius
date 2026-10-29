@@ -7,7 +7,9 @@ use moebius_desktop::client;
 use moebius_desktop::screens::setup;
 use serde_json::json;
 
-use crate::fixtures::{clicked_sized, draw, draw_sized, overview, pressed, shows, simulator};
+use crate::fixtures::{
+    clicked_sized, draw, draw_sized, overview, pressed, shows, simulator, simulator_sized,
+};
 
 /// The answer of `GET /v1/settings`: every key of the reference with its default, and `set` (keys of the file) on top.
 pub fn settings_answer(set: serde_json::Value, more: serde_json::Value) -> serde_json::Value {
@@ -299,6 +301,51 @@ fn the_settings_page_has_every_key_in_a_box_with_its_default_and_this_app_with_t
         pressed(&app, "Save").as_deref(),
         Some("[Setup(SaveSettings)]")
     );
+}
+
+#[test]
+fn the_settings_page_shows_the_webhooks_of_the_forges_with_their_secret_hidden_until_asked() {
+    let mut app = setup_app(Page::Settings);
+    assert!(!shows(&app, "Webhooks"));
+    let webhooks = serde_json::from_value(json!([
+        {"forge": "github", "path": "/v1/webhooks/github", "header": "X-Hub-Signature-256",
+         "secret": "whsec_0123456789abcdef0123456789abcdef"},
+        {"forge": "gitlab", "path": "/v1/webhooks/gitlab", "header": "X-Gitlab-Token", "secret": null},
+    ]))
+    .unwrap();
+    let _ = app.update(Message::Setup(setup::Message::Webhooks(Ok(webhooks))));
+    draw_sized(
+        &app,
+        "settings-webhooks",
+        &[
+            "Webhooks",
+            "http://127.0.0.1:7171/v1/webhooks/github",
+            "X-Hub-Signature-256",
+            "Show",
+            "Copy",
+            "Make a new secret",
+            "No secret yet: webhooks of this forge are off",
+            "Make a secret",
+        ],
+        Size::new(1440.0, 2400.0),
+    );
+    let tall = Size::new(1440.0, 2400.0);
+    let secret = "whsec_0123456789abcdef0123456789abcdef";
+    assert!(simulator_sized(&app, tall).find(secret).is_err());
+    assert_eq!(
+        format!("{:?}", clicked_sized(&app, "Show", tall)),
+        "[Setup(ShowWebhookSecret(\"github\"))]"
+    );
+    assert_eq!(
+        format!("{:?}", clicked_sized(&app, "Make a secret", tall)),
+        "[Setup(MakeWebhookSecret(\"gitlab\"))]"
+    );
+    let _ = app.update(Message::Setup(setup::Message::ShowWebhookSecret(
+        "github".into(),
+    )));
+    let mut ui = simulator_sized(&app, tall);
+    assert!(ui.find(secret).is_ok());
+    assert!(ui.find("Hide").is_ok());
 }
 
 #[test]

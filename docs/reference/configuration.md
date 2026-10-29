@@ -290,7 +290,8 @@ key must be in the server user's `known_hosts`.
 
 ## `[github]`
 
-Moebius acts as its own GitHub App, with webhooks off; it polls. The table is optional. Without it, repositories on
+Moebius acts as its own GitHub App, with the App's own webhooks off; it polls, and a webhook set up on the repository only
+wakes the poll (see [Webhooks](#webhooks)). The table is optional. Without it, repositories on
 GitHub cannot be polled or merged.
 
 | Key | Type | Default | Meaning and validation |
@@ -303,7 +304,7 @@ GitHub cannot be polled or merged.
 ## `[gitlab]`
 
 Repositories on GitLab, gitlab.com or a GitLab hosted elsewhere, are reached with an access token: a personal, project
-or group access token with the scope `api`. Webhooks are not used; the server polls. The table is optional. Without it,
+or group access token with the scope `api`. The server polls; a webhook only wakes the poll (see [Webhooks](#webhooks)). The table is optional. Without it,
 repositories on GitLab cannot be polled or merged. The token is sent to the API as `PRIVATE-TOKEN`, and to git (as the
 password of the user `oauth2`) only for remotes whose URL starts with `gitlab.url` followed by `/`.
 
@@ -317,7 +318,7 @@ password of the user `oauth2`) only for remotes whose URL starts with `gitlab.ur
 ## `[forgejo]`
 
 Repositories on Forgejo or Gitea, Codeberg or one hosted elsewhere, are reached with an access token with the scopes
-`write:issue` and `write:repository`. Webhooks are not used; the server polls. The table is optional. Without it,
+`write:issue` and `write:repository`. The server polls; a webhook only wakes the poll (see [Webhooks](#webhooks)). The table is optional. Without it,
 repositories on Forgejo cannot be polled or merged. The token is sent to the API (`<url>/api/v1`) as
 `Authorization: token <token>`, and to git (as the user name, with the password `x-oauth-basic`) only for remotes whose
 URL starts with `forgejo.url` followed by `/`. Forgejo tokens are 40 hexadecimal digits, the same shape as a commit id,
@@ -444,6 +445,30 @@ in a log. A key is stored with `PUT /v1/secrets/{name}` and removed with `DELETE
 `api_key_secret`, `gitlab.token_secret` or `forgejo.token_secret` still names makes the next start fail, as an unset `api_key_env` variable does.
 The refresh token of an OAuth login is kept the same way, under `router.upstreams.oauth.secret`, and replaced when the
 provider rotates it.
+
+### Webhooks
+
+A forge that can reach the server may send webhooks, which save the wait for the next poll. There is no key for them in
+`moebius.toml`: a forge takes webhooks when a secret named `webhook-github`, `webhook-gitlab` or `webhook-forgejo` is
+stored (for a forge that is set up above), and without it `POST /v1/webhooks/{forge}` answers `404`. The server makes the
+secret (`POST /v1/webhooks/{forge}/secret`, the button of the Settings page, which also shows it to set on the forge), or a
+person stores one with `PUT /v1/secrets/{name}`. A generated secret is `whsec_` and 64 hexadecimal digits, which
+`blobs::redact` recognises; a secret of another shape is remembered by its value once it is used. It is never in
+`moebius.toml`, and only a person can read it from the API.
+
+On the forge, add a webhook for the repository (or the group) with the URL `<server address>/v1/webhooks/<forge>`, the
+content type `application/json`, the events issues, pull requests, pushes, reviews and checks, and the secret:
+
+| Forge | `<forge>` | The forge proves a delivery with |
+|---|---|---|
+| GitHub | `github` | `X-Hub-Signature-256: sha256=<hex>`, the HMAC-SHA256 of the body under the secret. |
+| GitLab | `gitlab` | `X-Gitlab-Token`, the secret itself. |
+| Forgejo, Gitea | `forgejo` | `X-Gitea-Signature`, the HMAC-SHA256 of the body as hexadecimal digits. |
+
+The server reads nothing from a delivery as data. A verified one only makes the poll of that forge run at once, for the
+repository the body names (`repository.full_name`, GitLab's `project.path_with_namespace`) or for all of them when it
+names none; a delivery that is not verified is answered with `401` and changes nothing. Polling goes on at
+`poll_seconds`, as the safety net for deliveries that do not arrive. See [ADR 0012](../adr/0012-forge-webhooks-wake-the-poll.md).
 
 ## Environment variables
 

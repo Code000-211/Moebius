@@ -419,7 +419,7 @@ At the top:
 |---|---|
 | `server/mod.rs` | Wires everything from the configuration and serves the desktop API, the router and the loops. |
 | `server/leftovers.rs` | What a server that stopped left going, ended at the next start: its runs failed and their worktrees removed, its Retros, research and trials set back. |
-| `server/loops.rs` | The board's tick, the polls of GitHub, GitLab and Forgejo, and the refresh of the clones every 30 seconds. |
+| `server/loops.rs` | The board's tick, the polls of GitHub, GitLab and Forgejo (also at once when a webhook wakes one), and the refresh of the clones every 30 seconds. |
 | `server/plugins.rs` | Starting the plugins in their own process that `[[plugins]]` names, with their standard error in `<data_dir>/plugins/<name>.log`, redacted. |
 | `server/schedule.rs` | Once a minute: the Retro, trials, research, replays and automations when they are due, and the pause of chats that wait idle. |
 | `server/fake_github.rs` | For the tests only: a fake GitHub with one repository, and a server that polls it. |
@@ -444,6 +444,8 @@ At the top:
 | `server/settings/keys.rs` | Every key with its default and whether it takes effect at once, and their values without passwords. |
 | `server/settings/live.rs` | The configuration the running server reads: a change saved and its live keys applied, the agents and rules moved into a new harness configuration repository, and the restart. |
 | `server/settings/secrets.rs` | The API keys kept in `secrets.toml`, and the keys the upstreams and the decision model are given. |
+| `server/webhooks.rs` | Webhooks from the forges (ADR 0012): the check of a delivery against the secret of its forge (HMAC-SHA256 or token, in constant time), and the wake-up that makes the poll of a forge run at once. |
+| `server/api/webhooks.rs` | `POST /v1/webhooks/{forge}` (no token, a signature instead), `GET /v1/webhooks` and `POST /v1/webhooks/{forge}/secret`. |
 | `server/setup.rs` | What the Models, Plugins and Get started pages show: the router's upstreams, the agents, the teacher, the decision model and the plugins, without a secret, and the steps to a first card (`GET /v1/start`). |
 
 `repos/`, the repositories and their forges:

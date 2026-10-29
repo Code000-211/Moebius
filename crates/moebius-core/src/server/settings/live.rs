@@ -20,6 +20,7 @@ use crate::config::{AgentSet, Config};
 use crate::decide::Actor;
 use crate::harness::repo;
 use crate::router::{Router, Upstream};
+use crate::server::webhooks::Webhooks;
 
 /// The parts of the running server that take live keys.
 struct Targets {
@@ -36,6 +37,8 @@ pub struct Live {
     started_raw: toml::Table,
     current: RwLock<Arc<Config>>,
     secrets: Secrets,
+    /// The polls the forges' webhooks wake.
+    webhooks: Webhooks,
     /// Held while the file is read, changed and written, so that two edits do not overwrite each other.
     writing: Mutex<()>,
     targets: Option<Targets>,
@@ -50,6 +53,7 @@ impl Live {
             .unwrap_or_default();
         Self {
             secrets: Secrets::new(&config.data_dir),
+            webhooks: Webhooks::default(),
             current: RwLock::new(Arc::new(config.clone())),
             started: config,
             started_raw,
@@ -85,6 +89,10 @@ impl Live {
 
     pub fn secrets(&self) -> &Secrets {
         &self.secrets
+    }
+
+    pub fn webhooks(&self) -> &Webhooks {
+        &self.webhooks
     }
 
     /// What `GET /v1/settings` answers: the file and the value of every key in it.

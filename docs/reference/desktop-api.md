@@ -13,7 +13,8 @@ network.
 
 Every request, the WebSocket upgrade included, carries `Authorization: Bearer <token>`. The token is the content of
 `token_file` (by default `<data_dir>/token`, created when the server first starts). A missing or wrong token is answered
-with `401` and the plain text `a valid token is needed`.
+with `401` and the plain text `a valid token is needed`. The one exception is `POST /v1/webhooks/{forge}`, which a forge
+sends and which carries the forge's signature instead.
 
 The run token of a run of the Moebius agent (`MOEBIUS_TOKEN` in its environment, see the [bridge
 protocol](bridge-protocol.md#the-environment-of-the-harness)) is accepted as well, while the run lasts: it is how the
@@ -22,6 +23,7 @@ records has the decider `agent:Moebius` instead of `person`, and the run is the 
 another run, such as a steer, the judgement keeps that run, and the agent's run is in the context as `acting_run`).
 The run token of any other agent, and a revoked one, is answered with `401`. Two routes stay with a person and answer
 `403` with `only a person can do this` to a run token: `PUT /v1/secrets/{name}` (an agent must not set keys),
+`GET /v1/webhooks` and `POST /v1/webhooks/{forge}/secret` (they hold the webhook secrets),
 `POST /v1/harness/setup` (moving the agents is a person's choice) and `GET /v1/runs/{id}/terminal`, `GET /v1/chats/{id}/tui` and `GET /v1/terminal` (the shells). Where a route below says "a person" and "decider
 `person`", an agent that uses its token is the decider instead.
 
@@ -1038,6 +1040,31 @@ not allowed.
 
 Removes the key stored under `name`. Response: the names of the keys left. Errors: `404` there is none. A key that
 `api_key_secret` still names is not checked: the next start fails until the name is stored again.
+
+### `POST /v1/webhooks/{forge}`
+
+A forge's webhook delivery (`github`, `gitlab` or `forgejo`; see [Webhooks](configuration.md#webhooks)). It needs no
+token: the forge proves the delivery with `X-Hub-Signature-256` (GitHub), `X-Gitlab-Token` (GitLab) or `X-Gitea-Signature`
+(Forgejo), checked in constant time against the secret `webhook-<forge>`. The body is JSON from the forge and is not
+stored or used as data; it only names the repository to poll. Answers `202` with an empty body when the delivery is
+verified, and the poll of the forge runs at once (for the repository `repository.full_name`, GitLab's
+`project.path_with_namespace`, names, or for all of the forge's repositories when it names none). Errors: `401` the
+signature is missing, malformed or wrong, and nothing changed; `404` the forge is unknown, is not set up, or has no
+secret stored.
+
+### `GET /v1/webhooks`
+
+For each forge that is set up, its webhook as the Settings page shows it: `[{"forge": "github", "path":
+"/v1/webhooks/github", "header": "X-Hub-Signature-256", "secret": string or null}]`. `path` is appended to the address the
+forge reaches the server at; `header` is where the forge puts its proof; `secret` is the secret to set on the forge, null
+until one is made or stored. This is the one answer that holds a secret, so only a person may read it (`403` to a run
+token).
+
+### `POST /v1/webhooks/{forge}/secret`
+
+Makes a new random secret for the forge's webhook, stores it as `webhook-<forge>` and replaces the one before, which stops
+working at once. No request body. Response: the forge's entry of `GET /v1/webhooks`. Errors: `403` to a run token; `404`
+the forge is unknown or not set up.
 
 ### `POST /v1/server/restart`
 

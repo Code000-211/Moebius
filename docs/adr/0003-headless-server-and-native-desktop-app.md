@@ -9,3 +9,5 @@ engine (neither Electron nor a system WebView), because Orca, built the other wa
 - The server is reachable only from a private network, and nothing on it is public. Forges therefore learn nothing by
   pushing to Moebius: the GitHub forge acts as its own GitHub App with the App's webhooks turned off and polls GitHub about
   every 30 seconds, because receiving webhooks would need an address GitHub can reach from the internet.
+  [0012](0012-forge-webhooks-wake-the-poll.md) amends this: a forge that can reach the server may send webhooks, which only
+  wake the poll.

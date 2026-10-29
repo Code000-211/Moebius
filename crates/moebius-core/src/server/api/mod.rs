@@ -17,9 +17,10 @@
 //! - `uploads`: zip files for the Moebius agent to import from.
 //! - `terminals`: shells and Pi's terminal interface over a WebSocket.
 //! - `events`: the WebSocket on which every event of the core arrives.
+//! - `webhooks`: the deliveries of the forges, which need no token but a signature, and the secrets to set on the forges.
 //!
-//! Every request carries `Authorization: Bearer <token>`: the server's token, or the run token of a run of the Moebius
-//! agent, which acts as that agent (`PUT /v1/secrets/{name}` and the terminal stay with a person); anything else is
+//! Every request but a forge's webhook delivery carries `Authorization: Bearer <token>`: the server's token, or the run
+//! token of a run of the Moebius agent, which acts as that agent (`PUT /v1/secrets/{name}` and the terminal stay with a person); anything else is
 //! answered with 401.
 
 mod automations;
@@ -34,6 +35,7 @@ mod runs;
 mod settings;
 mod terminals;
 mod uploads;
+mod webhooks;
 
 #[cfg(test)]
 mod testing;
@@ -172,7 +174,9 @@ pub fn router(state: ApiState) -> Router {
         .merge(uploads::routes())
         .merge(terminals::routes())
         .merge(events::routes())
+        .merge(webhooks::routes())
         .layer(middleware::from_fn_with_state(state.clone(), authenticate))
+        .merge(webhooks::public_routes())
         .with_state(state)
 }
 
