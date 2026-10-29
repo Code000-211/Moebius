@@ -49,6 +49,37 @@ pub fn git_bytes(dir: &Path, args: &[&str]) -> Result<Vec<u8>> {
     Ok(output.stdout)
 }
 
+/// Runs git in `dir` with `input` on its standard input and returns its standard output as it is, for `cat-file --batch`.
+pub fn git_with_input(dir: &Path, args: &[&str], input: Vec<u8>) -> Result<Vec<u8>> {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let mut child = Command::new("git")
+        .args(IDENTITY)
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    // Written on a thread of its own, so that git never waits for us to read while we wait for it to read.
+    let mut stdin = child.stdin.take().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::BrokenPipe, "git has no standard input")
+    })?;
+    let writer = std::thread::spawn(move || stdin.write_all(&input));
+    let output = child.wait_with_output()?;
+    let _ = writer.join();
+    if !output.status.success() {
+        return Err(GitError::Failed {
+            args: args.join(" "),
+            stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        });
+    }
+    Ok(output.stdout)
+}
+
 /// Commits everything in the worktree `worktree`, new files too, with `message`; false when there was nothing to commit.
 pub fn commit_all(worktree: &Path, message: &str) -> Result<bool> {
     git(worktree, &["add", "--all"])?;

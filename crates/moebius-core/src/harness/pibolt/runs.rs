@@ -349,6 +349,20 @@ pub(in crate::harness) fn head(app: &App, run_id: i64, worktree: &Path) -> Resul
     git(worktree, &["rev-parse", "HEAD"]).map_err(|e| fail(app, run_id, e.to_string()))
 }
 
+/// The prompt for a run of `card` that the card's board starts: as [`prompt_for`], and a `code` run is also given the
+/// files that are likely relevant (see `App::localize_hint`), when there is such a hint.
+pub(in crate::harness) fn run_prompt(
+    app: &App,
+    card: &Card,
+    purpose: &str,
+    note: Option<&str>,
+) -> String {
+    let hint = (purpose == "code")
+        .then(|| app.localize_hint(card))
+        .flatten();
+    prompt_with(app, card, purpose, note, hint.as_deref())
+}
+
 /// The prompt for a run of `card`; `note` is added under a heading of its own. A `code` run in a repository that works
 /// test first is told the rule of red, then green.
 pub(in crate::harness) fn prompt_for(
@@ -356,6 +370,16 @@ pub(in crate::harness) fn prompt_for(
     card: &Card,
     purpose: &str,
     note: Option<&str>,
+) -> String {
+    prompt_with(app, card, purpose, note, None)
+}
+
+fn prompt_with(
+    app: &App,
+    card: &Card,
+    purpose: &str,
+    note: Option<&str>,
+    hint: Option<&str>,
 ) -> String {
     let mut prompt = format!("Work on issue #{}: {}\n", card.number, card.title);
     if !card.body.trim().is_empty() {
@@ -385,6 +409,10 @@ pub(in crate::harness) fn prompt_for(
         _ => prompt.push_str(CODE_PROMPT),
     }
     prompt.push('\n');
+    if let Some(hint) = hint {
+        prompt.push('\n');
+        prompt.push_str(hint);
+    }
     let test_first = || {
         app.store
             .repository(card.repository_id)
@@ -414,7 +442,7 @@ mod tests {
 
     use super::*;
     use crate::board::Runs;
-    use crate::harness::pibolt::testing::{setup, wait_until_ended};
+    use crate::harness::pibolt::testing::{setup, setup_localizing, wait_until_ended};
 
     #[test]
     fn files_written_into_a_worktree_stay_out_of_git_and_inside_it() {
@@ -518,6 +546,121 @@ mod tests {
         assert!(prompt.contains("red, then green"), "{prompt}");
         assert!(prompt.contains("`.moebius/reproduce`"), "{prompt}");
         assert!(!prompt_for(&app, &card, "review", None).contains("red, then green"));
+    }
+
+    /// Commits `files` (path and text) in the clone of the repository `repo`.
+    fn commit_files(app: &App, repo: i64, files: &[(&str, &str)]) -> PathBuf {
+        let clone = PathBuf::from(&app.store.repository(repo).unwrap().unwrap().path);
+        for (path, text) in files {
+            let file = clone.join(path);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, text).unwrap();
+        }
+        git(&clone, &["add", "."]).unwrap();
+        git(&clone, &["commit", "--quiet", "-m", "files"]).unwrap();
+        clone
+    }
+
+    #[test]
+    fn a_code_run_is_given_the_likely_files_and_the_files_its_change_touched_become_the_outcome() {
+        let (_dir, app, pi, repo) = setup_localizing();
+        commit_files(
+            &app,
+            repo,
+            &[
+                ("done.txt", "old\n"),
+                ("src/render.rs", "fn draw() {}\n"),
+                ("src/parser.rs", "fn parse() {}\n"),
+            ],
+        );
+        let card = app
+            .create_issue(repo, "Write done.txt", "Its text is wrong.", "person")
+            .unwrap();
+        let run = pi.start(&app, &card, "Coder", "code", None).unwrap();
+        let run = wait_until_ended(&app, run.id);
+        assert_eq!(run.status, "succeeded");
+
+        let prompt = std::fs::read_to_string(
+            app.data_dir
+                .join(format!("runs/{}/agent/prompt.txt", run.id)),
+        )
+        .unwrap();
+        assert!(
+            prompt.contains("Files that are likely relevant (a hint, not a limit):\n\n- done.txt: named in the issue"),
+            "{prompt}"
+        );
+        assert!(
+            prompt.contains("Verify them before you rely on them"),
+            "{prompt}"
+        );
+        assert!(
+            prompt.find("Files that are likely").unwrap()
+                < prompt.find("Moebius commits").unwrap() + 400
+        );
+
+        let hints = app.store.judgements("localize").unwrap();
+        assert_eq!(hints.len(), 1);
+        assert_eq!(
+            (hints[0].decider.as_str(), hints[0].card_id),
+            ("localize", Some(card.id))
+        );
+        assert!(
+            hints[0].choice.starts_with("[{\"path\":\"done.txt\""),
+            "{}",
+            hints[0].choice
+        );
+        let outcome: crate::decide::localize::Outcome =
+            serde_json::from_str(hints[0].outcome.as_deref().unwrap()).unwrap();
+        assert_eq!(outcome.touched, ["done.txt"]);
+        assert_eq!((outcome.recall, outcome.precision), (Some(1.0), Some(1.0)));
+        // The card's other judgements did not get the hint's outcome from a script.
+        assert_eq!(
+            app.store.set_missing_outcomes(card.id, "merged").unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn a_repository_can_turn_the_hint_off_for_its_own_workflow() {
+        let (_dir, app, _pi, repo) = setup_localizing();
+        let card = app
+            .create_issue(repo, "Change README.md", "", "person")
+            .unwrap();
+        assert!(run_prompt(&app, &card, "code", None).contains("- README.md"));
+        // Only a code run asks.
+        assert!(!run_prompt(&app, &card, "review", None).contains("likely relevant"));
+        commit_files(
+            &app,
+            repo,
+            &[(".moebius/localize", "# nothing here\noff\n")],
+        );
+        assert!(!run_prompt(&app, &card, "code", None).contains("likely relevant"));
+        commit_files(&app, repo, &[(".moebius/localize", "on\nfiles 1\n")]);
+        let prompt = run_prompt(&app, &card, "code", None);
+        assert_eq!(prompt.matches("\n- ").count(), 1, "{prompt}");
+        // Two hints were asked for and recorded, and the one that was not asked for left no judgement.
+        assert_eq!(app.store.judgements("localize").unwrap().len(), 2);
+    }
+
+    #[test]
+    fn a_decider_that_fails_leaves_the_run_without_a_hint() {
+        let (_dir, app, _pi, repo) = setup();
+        app.decisions.route(crate::decide::localize::KIND, "nobody");
+        let card = app
+            .create_issue(repo, "Change README.md", "", "person")
+            .unwrap();
+        let prompt = run_prompt(&app, &card, "code", None);
+        assert!(!prompt.contains("likely relevant"), "{prompt}");
+        assert!(prompt.contains("Moebius commits what you leave"));
+        // The failure is recorded as the decision point records any: the fail-closed answer, and why.
+        let hints = app.store.judgements("localize").unwrap();
+        assert_eq!(hints.len(), 1);
+        assert_eq!(hints[0].choice, "[]");
+        assert!(
+            hints[0].reason.starts_with("refused: "),
+            "{}",
+            hints[0].reason
+        );
     }
 
     #[test]

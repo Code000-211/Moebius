@@ -405,7 +405,7 @@ of `{"at": number, "kind": string, "data": object}` with these kinds:
 | `moved` | The card moved to another column. Moves from before moves were recorded are not in the history. | `{"from": column, "to": column, "note": string or null}`, the card's `note` when it moved |
 | `run_started` | The run was stored. | `{"run": id, "agent": string, "purpose": string}` |
 | `run_ended` | The run ended. | `{"run": id, "status": "succeeded" \| "failed" \| "stopped"}` |
-| `decided` | A decision was recorded for the card. | `{"judgement": id, "kind": string, "choice": string, "decider": string, "reason": string}` |
+| `decided` | A decision was recorded for the card. | `{"judgement": id, "kind": string, "choice": string, "decider": string, "reason": string, "outcome": string or null}` |
 | `inbox_added` | An inbox item about the card was added. | `{"item": id, "kind": string, "title": string}` |
 | `inbox_resolved` | That item was resolved. | `{"item": id, "kind": string, "title": string}` |
 
@@ -1423,7 +1423,10 @@ What the decision model has measured (see [the decision model](decision-model.md
 `shadows` (held-out judgements the model was asked about), `agreement` (the share of them where it chose the recorded
 choice, null before there is a shadow), `failed` (the shadows where it failed, counted as disagreement), `dropped`
 (requests dropped because the queue was full, since the server started) and `routed` (the model decides the kind now).
-`takeovers` are all of them, oldest first.
+The kind `localize` is measured by the recall of its files and not by agreement (see
+[`localize`](decision-model.md#localize)): its entry has a null `agreement` and besides `measured` (the cards whose
+change is known), `recall` (the model's mean recall at ten over them) and `baseline_recall` (the recorded hints'), null
+before there is one; it is listed whenever a decision model is configured. `takeovers` are all of them, oldest first.
 
 ### `GET /v1/takeovers`
 

@@ -34,6 +34,7 @@ use crate::board::{Engine, Limits, Workflow};
 use crate::config::{Config, TokenSource};
 use crate::decide::check;
 use crate::decide::guard::{self, Guard, Teacher};
+use crate::decide::localize::{self, Localizer};
 use crate::decide::model::{self, DecisionModel, Routed};
 use crate::harness::gateway::Gateway;
 use crate::harness::pibolt::PiBolt;
@@ -141,11 +142,14 @@ impl Server {
             guard = guard.with_decision_model(model.clone(), routed.clone());
             host.add(model.clone());
         }
+        host.add(Localizer::new(store.clone()));
         host.add(guard);
         let mut app = App::new(store.clone(), Arc::new(host), &config.data_dir);
         app.decisions.share_routed(routed);
         app.checks_timeout = config.checks_timeout;
         app.decisions.route("tool_call", guard::NAME);
+        app.decisions.route(localize::KIND, localize::KIND);
+        app.localize = config.localize;
         for plugin in &config.plugins {
             for kind in &plugin.decides {
                 app.decisions.route(kind, &plugin.name);

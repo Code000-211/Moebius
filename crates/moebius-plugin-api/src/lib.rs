@@ -81,7 +81,8 @@ pub struct DecideRequest {
     pub kind: String,
     /// The context, keyed by name, in full (secrets removed).
     pub context: BTreeMap<String, String>,
-    /// The choices the decider must pick from.
+    /// The choices the decider must pick from; none for a kind whose answer is not one of a few choices, such as a
+    /// ranked list of files, and the decider then answers with any text.
     pub options: Vec<String>,
 }
 
@@ -251,14 +252,15 @@ impl Host {
         }
     }
 
-    /// Asks a decider plugin to decide; an answer outside the options is refused like any other failure.
+    /// Asks a decider plugin to decide; an answer outside the options is refused like any other failure, unless the
+    /// request has no options.
     pub fn decide(&self, plugin: &str, request: &DecideRequest) -> Result<Decision, Refusal> {
         let value = self.call(plugin, Call::new(Kind::Decider, "decide", request))?;
         let decision: Decision = serde_json::from_value(value).map_err(|e| Refusal::BadReply {
             plugin: plugin.to_string(),
             message: e.to_string(),
         })?;
-        if !request.options.contains(&decision.choice) {
+        if !request.options.is_empty() && !request.options.contains(&decision.choice) {
             return Err(Refusal::BadReply {
                 plugin: plugin.to_string(),
                 message: format!("{:?} is not one of the options", decision.choice),

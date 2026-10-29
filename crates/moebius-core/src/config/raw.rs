@@ -37,6 +37,13 @@ pub(super) struct RawRegression {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub(super) struct RawLocalize {
+    pub(super) enabled: Option<bool>,
+    pub(super) files: Option<u32>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct RawBoard {
     pub(super) tick_ms: Option<u64>,
     pub(super) round_limit: Option<u32>,
@@ -134,6 +141,8 @@ pub(super) struct Raw {
     pub(super) regression: RawRegression,
     #[serde(default)]
     pub(super) board: RawBoard,
+    #[serde(default)]
+    pub(super) localize: RawLocalize,
     #[serde(default)]
     pub(super) budgets: RawBudgets,
     #[serde(default)]

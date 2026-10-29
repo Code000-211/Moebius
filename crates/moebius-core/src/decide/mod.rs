@@ -3,6 +3,7 @@
 
 pub mod check;
 pub mod guard;
+pub mod localize;
 pub mod model;
 pub mod rules;
 

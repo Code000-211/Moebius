@@ -171,6 +171,10 @@ pub(in crate::harness) fn finish<L>(
             failed(&format!("cannot read the result of the grilling: {e}"));
         }
     }
+    if run.purpose == "code" && status == "succeeded" {
+        // Before the worktree is removed, with the change in it.
+        app.localize_run_ended(run.id, &run.worktree);
+    }
     run.remove_worktree(app);
     if run.purpose == "chat" && !grilling && status != "failed" {
         // Before the status is set, so that an ended chat has offered what it made.

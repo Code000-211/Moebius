@@ -35,9 +35,17 @@ read in pages of 1000 and never all held in memory. A judgement recorded while t
 | `decider` | string | Who decided: `person`, or a plugin as `<plugin>` or `<plugin>/<part>` (such as `guard/patterns`), or `none` when no decider answers the kind. |
 | `run` | number or null | The run the decision was made in. |
 | `card` | number or null | The card it was made for. |
-| `outcome` | string or null | What came of it, null until known: a card that is done gives each of its judgements without an outcome the card's outcome (`merged`); a replayed refusal has `replayed: <how it ended>; <what happened to the files>` (see [the replays](harness-configuration.md#the-replays)). |
+| `outcome` | string or null | What came of it, null until known: a card that is done gives each of its judgements without an outcome the card's outcome (`merged`), except those of `localize`, whose outcome is the files the change touched (below); a replayed refusal has `replayed: <how it ended>; <what happened to the files>` (see [the replays](harness-configuration.md#the-replays)). |
 | `at` | number | When it was recorded, in seconds since 1970. |
 | `split` | string | `train` or `held_out`, see below. |
+
+The kind `localize` (a hint of the files a code run is likely to touch, see [the decision model](decision-model.md#localize))
+has these rows: `context` holds `title`, `body`, `repository`, `card`, `files` (how many to name) and `candidates` (the
+files whose text best matches the issue, one per line); `options` is empty; `choice` is a JSON list of `{"path", "reason"}`
+objects, best first, at most ten, `[]` when nothing was hinted; and `outcome` is, once the card's change is known, a JSON
+object `{"touched": [paths, alphabetical], "hinted": number, "recall": number or null, "precision": number or null}`, the
+files the change touched with the share of them among the first ten hinted and the share of the hinted files among them
+(`{"unknown": true}` when the change could not be read). The label of the row is `touched`.
 
 Secrets are removed from a context when it is recorded. Every string of a line is checked for them again when the line
 is written, so a secret in an old blob does not leave the server; they appear as `[redacted:<kind>]`.

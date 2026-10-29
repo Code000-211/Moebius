@@ -17,6 +17,7 @@ mod found;
 mod grillings;
 mod inbox;
 mod judgements;
+mod localize;
 mod replays;
 mod research;
 mod retros;
@@ -40,11 +41,12 @@ pub use found::Found;
 pub use grillings::{Grilling, GrillingIssue};
 pub use inbox::InboxItem;
 pub use judgements::{Judgement, NewJudgement};
+pub use localize::IndexedFile;
 pub use replays::Replay;
 pub use research::{Experiment, Research};
 pub use retros::{OwnEdits, Proposal, Retro, Trial};
 pub use runs::Run;
-pub use shadows::{NewShadow, ShadowStats, Takeover};
+pub use shadows::{NewShadow, ShadowStats, ShadowedOutcome, Takeover};
 pub use usage::{
     ANSWERING, ActivityUsage, AgentUsage, ClassUsage, ModelUsage, NO_RUN, ToolOutputSaving,
     ToolWait, UNKNOWN, Usage, UsageTotals,
@@ -370,6 +372,14 @@ ALTER TABLE runs ADD COLUMN base TEXT;
 ALTER TABLE trials ADD COLUMN regression INTEGER NOT NULL DEFAULT 0;
 "#,
     "ALTER TABLE runs ADD COLUMN runner TEXT;",
+    r#"
+CREATE TABLE localize_indexed (
+    repository_id INTEGER PRIMARY KEY REFERENCES repositories(id),
+    commit_id TEXT NOT NULL,
+    files INTEGER NOT NULL,
+    at INTEGER NOT NULL
+);
+"#,
 ];
 
 pub fn now() -> i64 {

@@ -8,11 +8,13 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::json;
 
+use super::localize as localize_takeover;
 use super::{DecisionModel, KEPT_BY_ITS_DECIDER, NAME, TEACHER};
 use crate::app::{App, AppError, Result};
 use crate::blobs::redact;
 use crate::bus::AppEvent;
 use crate::config::DecisionModelConfig;
+use crate::decide::localize;
 use crate::improve::export::held_out;
 use crate::store::{Judgement, NewShadow, ShadowStats, Takeover};
 
@@ -123,14 +125,20 @@ fn shadow(app: &App, model: &DecisionModel, job: Job) -> Result<()> {
     propose(app, &model.config, &job.kind).map(drop)
 }
 
-/// Whether a kind with these `stats` is due a takeover proposal, given the kind's latest takeover. A kind with an
-/// open or merged takeover is not. One that was dismissed or released is proposed again only once `min_judgements`
-/// more shadows have been measured since.
+/// How many shadows a kind needs for a takeover proposal, given the kind's latest takeover: none when it has an open
+/// or merged one, and when it was dismissed or released `min_judgements` more than were measured then.
+pub(super) fn needed(config: &DecisionModelConfig, latest: Option<&Takeover>) -> Option<i64> {
+    match latest {
+        None => Some(config.min_judgements),
+        Some(t) if matches!(t.status.as_str(), "open" | "merged") => None,
+        Some(t) => Some(t.count + config.min_judgements),
+    }
+}
+
+/// Whether a kind with these `stats` is due a takeover proposal, given the kind's latest takeover (see [`needed`]).
 fn due(config: &DecisionModelConfig, stats: &ShadowStats, latest: Option<&Takeover>) -> bool {
-    let needed = match latest {
-        None => config.min_judgements,
-        Some(t) if matches!(t.status.as_str(), "open" | "merged") => return false,
-        Some(t) => t.count + config.min_judgements,
+    let Some(needed) = needed(config, latest) else {
+        return false;
     };
     stats.shadows >= needed && stats.agreement().is_some_and(|a| a >= config.agreement)
 }
@@ -140,6 +148,9 @@ fn due(config: &DecisionModelConfig, stats: &ShadowStats, latest: Option<&Takeov
 fn propose(app: &App, config: &DecisionModelConfig, kind: &str) -> Result<Option<Takeover>> {
     if !app.decisions.decides(kind) {
         return Ok(None);
+    }
+    if kind == localize::KIND {
+        return localize_takeover::propose(app, config);
     }
     let Some(stats) = app.store.shadow_stats(Some(kind))?.pop() else {
         return Ok(None);
@@ -153,7 +164,12 @@ fn propose(app: &App, config: &DecisionModelConfig, kind: &str) -> Result<Option
         return Ok(None);
     }
     let agreement = stats.agreement().unwrap_or_default();
-    let takeover = app.store.add_takeover(kind, agreement, stats.shadows)?;
+    open_takeover(app, kind, agreement, stats.shadows).map(Some)
+}
+
+/// Proposes the takeover of `kind`: a row, an inbox item and an event.
+pub(super) fn open_takeover(app: &App, kind: &str, agreement: f64, count: i64) -> Result<Takeover> {
+    let takeover = app.store.add_takeover(kind, agreement, count)?;
     app.store.add_inbox_item(
         "takeover",
         None,
@@ -162,14 +178,14 @@ fn propose(app: &App, config: &DecisionModelConfig, kind: &str) -> Result<Option
             "takeover": takeover.id,
             "kind": kind,
             "agreement": agreement,
-            "count": stats.shadows,
+            "count": count,
         }),
     )?;
     app.bus.publish(AppEvent::new(
         "takeover_proposed",
         json!({ "takeover": takeover.id, "kind": kind, "agreement": agreement }),
     ));
-    Ok(Some(takeover))
+    Ok(takeover)
 }
 
 #[cfg(test)]

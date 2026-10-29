@@ -32,6 +32,7 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
 - The **default workflow** (section 6), with Luau scripts behind the columns and repository overrides in `.moebius/`.
 - **Rules** checked on every tool call: fixed patterns and the teacher model; nothing waits for a person.
 - **Judgements** recorded at every decision point, in full, with export of a training set.
+- **Localizing** the files of a card before its code run, as a decision point the decision model can learn (section 6).
 - **Self-improvement** as a bundled plugin: the Retro, proposals, trials, autoresearch and shadowing.
 - **Chat** with any agent, and the **Moebius agent**, which knows Moebius from the guide (`docs/guide/`) and builds
   column scripts, rules, agents and extensions on request, offered as changes.
@@ -179,6 +180,17 @@ change on only when that test fails on the commit the change starts from (with t
 the change, both run like the repository's checks; a change that cannot be tested says why there, and the Reviewer
 judges the reason. Tests generated from the issue and used as a gate raise the precision of offered changes the most of
 any review step (Otter, arXiv 2502.05368).
+
+Before a `code` run Moebius **localizes** the card's issue: the decision point `localize` ranks at most ten files of the
+repository's default branch that the change is likely to touch, each with a short reason, and the run is given the list as
+"Files that are likely relevant (a hint, not a limit)" with the instruction to verify it. The first decider needs no model:
+BM25 over the path and contents of the files (identifiers split on camelCase and snake_case, kept in an FTS5 index per
+repository that is made again when the default branch moves), boosted for the paths and identifiers the issue names
+literally and for the files earlier cards with similar issues changed. When the card's change is known, at the end of each
+code run and on merge, the judgement's outcome is the files it touched with the recall at ten and the precision of the
+list; the decision model shadows the kind and may take it over when its recall beats the baseline's. The hint is on or off
+for the server (`[localize]`) and for a repository (`.moebius/localize`), which also say how many files it names; a
+failure anywhere starts the run without a hint (Agentless, AutoCodeRover).
 
 ## 7. Self-improvement
 

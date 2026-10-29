@@ -13,7 +13,7 @@ mod view;
 use iced::{Subscription, Task, keyboard};
 
 use crate::app::Message as AppMessage;
-use crate::client::{self, Client, ClientError, Judgement, Run, RunEvent, TerminalEvent};
+use crate::client::{self, Client, ClientError, Hint, Judgement, Run, RunEvent, TerminalEvent};
 use crate::settings::Settings;
 use crate::widgets::conversation::Conversation;
 use crate::widgets::terminal::{PaneEvent, Shell};
@@ -65,6 +65,8 @@ pub struct Live {
     conversation: Conversation,
     /// The decisions of this run's tool calls, oldest first.
     judgements: Vec<Judgement>,
+    /// What the card's latest code run was hinted, and how much of it the change touched.
+    hint: Option<Hint>,
     steer: String,
     /// Whether "Stop run" asks to be confirmed.
     confirming: bool,
@@ -116,6 +118,7 @@ impl Live {
             run,
             conversation: Conversation::default(),
             judgements: Vec::new(),
+            hint: None,
             steer: String::new(),
             confirming: false,
             notice: None,
@@ -153,6 +156,7 @@ impl Live {
 
     /// Takes the judgements of this run's tool calls and names the deciders of the checks.
     fn set_judgements(&mut self, judgements: Vec<Judgement>) {
+        self.hint = judgements.iter().rev().find_map(Judgement::hint);
         self.judgements = judgements
             .into_iter()
             .filter(|j| j.kind == "tool_call" && j.run == Some(self.run.id))

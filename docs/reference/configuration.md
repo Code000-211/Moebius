@@ -110,6 +110,21 @@ cards; one proposal is tried at a time, and only when the board has a run to spa
 | `regression.size` | integer | `5` | How many merged cards of a repository the set holds, at least 0; 0 tries none. |
 | `regression.gate` | boolean | `true` | Whether proposals are tried on the regression set at all. With `false`, a proposal is judged on its own cards only. |
 
+## `[localize]`
+
+The hint a `code` run is given: the files of the repository that its issue is likely to touch, ranked by the decision point
+`localize` (see [the decision model](decision-model.md#localize)). The table is optional; a change needs a restart.
+
+| Key | Type | Default | Meaning and validation |
+|---|---|---|---|
+| `localize.enabled` | boolean | `true` | Whether a run is given the hint. With `false` it starts without, and no judgement of `localize` is recorded. |
+| `localize.files` | integer | `10` | How many files the hint names at most, from 1 to 10. |
+
+A repository decides for itself in the file `.moebius/localize` on its default branch (as `.moebius/test-first` turns test
+first on), over these keys: lines that are empty or start with `#` are skipped, `on` and `off` turn the hint on and off,
+and `files <n>` (1 to 10) says how many files it names. A line that says anything else is ignored. The default branch is
+the repository's workflow: a repository that wants no hint for its coding writes `off` there.
+
 ## `[board]`
 
 | Key | Type | Default | Meaning and validation |

@@ -12,6 +12,7 @@ use serde_json::Value;
 use super::PiBolt;
 use crate::app::App;
 use crate::config::AgentConfig;
+use crate::decide::localize::{self, Localizer};
 use crate::repos::git;
 use crate::router::{Protocol, Router};
 use crate::store::{Run, Store};
@@ -21,6 +22,15 @@ pub(super) fn fake_pi() -> PathBuf {
 }
 
 pub(super) fn setup() -> (tempfile::TempDir, Arc<App>, PiBolt, i64) {
+    setup_in(false)
+}
+
+/// As `setup`, with the baseline decider of `localize` answering the hints of code runs.
+pub(super) fn setup_localizing() -> (tempfile::TempDir, Arc<App>, PiBolt, i64) {
+    setup_in(true)
+}
+
+fn setup_in(localizing: bool) -> (tempfile::TempDir, Arc<App>, PiBolt, i64) {
     let dir = tempfile::tempdir().unwrap();
     let origin = dir.path().join("origin");
     std::fs::create_dir_all(&origin).unwrap();
@@ -29,11 +39,15 @@ pub(super) fn setup() -> (tempfile::TempDir, Arc<App>, PiBolt, i64) {
     git(&origin, &["add", "."]).unwrap();
     git(&origin, &["commit", "--quiet", "-m", "first"]).unwrap();
     let store = Arc::new(Store::in_memory(&dir.path().join("blobs")).unwrap());
-    let app = Arc::new(App::new(
-        store.clone(),
-        Arc::new(Host::new(Duration::from_secs(1))),
-        &dir.path().join("data"),
-    ));
+    let mut host = Host::new(Duration::from_secs(1));
+    if localizing {
+        host.add(Localizer::new(store.clone()));
+    }
+    let app = App::new(store.clone(), Arc::new(host), &dir.path().join("data"));
+    if localizing {
+        app.decisions.route(localize::KIND, localize::KIND);
+    }
+    let app = Arc::new(app);
     let repo = app
         .add_repository("demo", origin.to_str().unwrap())
         .unwrap();

@@ -6,7 +6,7 @@ use iced::widget::{column, row, scrollable, space, text};
 use iced::{Length, Padding};
 
 use crate::app::Message;
-use crate::client::{Board, Card, HistoryEntry};
+use crate::client::{Board, Card, Hint, HistoryEntry};
 use crate::{theme, widgets::edits, widgets::inline_edit, widgets::page};
 
 /// What a person reads of one entry.
@@ -25,6 +25,16 @@ fn describe(entry: &HistoryEntry) -> String {
             word("purpose")
         ),
         "run_ended" => format!("Run {} {}", data["run"], word("status")),
+        "decided" if word("kind") == "localize" => {
+            match Hint::of("localize", word("choice"), data["outcome"].as_str()) {
+                Some(hint) => format!(
+                    "Hinted files: {}; {}",
+                    hint.paths.join(", "),
+                    hint.summary()
+                ),
+                None => "Hinted no files".to_string(),
+            }
+        }
         "decided" => format!(
             "{} decided {}: {}",
             word("decider"),

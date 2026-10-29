@@ -39,6 +39,8 @@ const KEYS: &[Key] = &[
     key("trial_window.end", "\"06:00\"", true),
     key("regression.size", "5", true),
     key("regression.gate", "true", true),
+    key("localize.enabled", "true", false),
+    key("localize.files", "10", false),
     key("board.tick_ms", "2000", true),
     key("board.round_limit", "5", true),
     key("budgets.day_tokens", "", true),

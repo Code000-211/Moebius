@@ -84,6 +84,43 @@ as a judgement of kind `takeover` (decider `person`; choices `merge`, `dismiss` 
 - A merged kind is no longer shadowed, because the model would be measured against itself. After a release shadowing
   starts again.
 
+## `localize`
+
+The kind `localize` is the decision point at the start of every `code` run: which files will the card's change touch? Its
+question carries the card's issue and the repository (see [the context](plugin-api.md#the-localize-context)), has no
+options, and its fail-closed answer is the empty list, which starts the run without a hint. The answer is the `choice`: a
+JSON list of at most ten (`localize.files`) objects `{"path": string, "reason": string}`, best first, each path inside the
+repository and once. The run is told the files that exist under "Files that are likely relevant (a hint, not a limit)" and
+to verify them before relying on them; the hint is on or off per server and per repository (see
+[`[localize]`](configuration.md#localize)).
+
+**The baseline.** The first decider, `localize`, uses no model. It keeps for each repository an FTS5 index of the text
+files of the default branch (not larger than 200 kB, not under `node_modules`, `target`, `vendor`, `dist` or `.git`, not
+lock files), the path and the contents split into words (identifiers on camelCase and snake_case, with the whole
+identifier kept), and makes it again when the default branch has moved. It ranks the files by BM25 for the issue's words
+(a word of the path weighs four times one of the contents), adds 1.5 for a file whose path the issue names and 1.0 for one
+whose bare name it names, 0.3 for each identifier (in snake_case, camelCase or backticks) the issue names that the file
+holds, at most 0.9, and for each earlier card of the repository whose issue shares a Jaccard similarity of at least 0.15
+of its words with this one, the similarity for each file its change touched.
+
+**The outcome.** When the card's change is known, at the end of each successful `code` run (the files its branch changed
+since the default branch) and when the change is merged, each hint of the card gets as its `outcome` the JSON object
+`{"touched": [...], "hinted": n, "recall": r, "precision": p}`: the files the change touched, how many files were
+hinted, the recall at ten (the share of the touched files among the first ten hinted; null when none were touched) and
+the precision (the share of the hinted files that were touched; null when none were hinted). When the change cannot be
+read the outcome is `{"unknown": true}`, which a known one replaces later. The desktop app shows how many of the hinted
+files were touched.
+
+**The decision model.** `localize` is shadowed like the other kinds (held-out judgements only), with the issue and the
+`candidates` as the context. The model must answer with a `choice` that is such a list, not one of options; anything else
+is a failure. A list has no recorded choice to be equal to, so a shadow is measured against the outcome of its judgement:
+its recall at ten for the touched files, which is 0 when the model failed, against the recall recorded in the outcome,
+the baseline's, over the cards whose change touched at least one file. A takeover of `localize` is proposed, when a
+decider plugin answers the kind, once `min_judgements` such cards are measured and the model's mean recall is at least
+0.05 above the baseline's; it is considered again whenever an outcome is recorded. The takeover's `agreement` is the model's
+mean recall, and `count` the cards measured; after a dismissal or release `min_judgements` more cards are needed.
+`GET /v1/decision-model` shows `measured`, `recall` and `baseline_recall` for the kind.
+
 ## Without a decision model
 
 Without the table nothing is shadowed, no takeover is proposed, `GET /v1/decision-model` says `configured: false`, and

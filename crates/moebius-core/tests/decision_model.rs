@@ -521,6 +521,188 @@ fn a_dismissed_takeover_leaves_the_kind_with_its_decider() {
     assert_eq!(decision.decider, "fixed");
 }
 
+/// The baseline of `localize` in these tests: it always names the same two files.
+struct Baseline;
+
+impl Plugin for Baseline {
+    fn manifest(&self) -> Manifest {
+        Manifest {
+            name: "baseline".into(),
+            version: "0".into(),
+            kinds: vec![Kind::Decider],
+        }
+    }
+
+    fn call(&self, call: Call) -> Result<Value, PluginError> {
+        let _: DecideRequest = serde_json::from_value(call.params).unwrap();
+        Ok(json!({ "choice": ranking(&["a.rs", "x.rs"]), "reason": "baseline" }))
+    }
+}
+
+/// A list of files as the answer to `localize` is.
+fn ranking(paths: &[&str]) -> String {
+    let hints: Vec<Value> = paths.iter().map(|path| json!({ "path": path })).collect();
+    Value::Array(hints).to_string()
+}
+
+fn localize_question(says: &str, n: usize) -> Question {
+    Question {
+        kind: "localize".into(),
+        context: BTreeMap::from([
+            ("model_says".to_string(), says.to_string()),
+            ("n".to_string(), n.to_string()),
+        ]),
+        options: Vec::new(),
+        fail_closed: "[]".into(),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn the_model_takes_localize_over_when_its_files_beat_the_baselines_recall() {
+    use moebius_core::decide::localize::Outcome;
+
+    let dir = tempfile::tempdir().unwrap();
+    let fake = Fake::start(true);
+    let config = config(dir.path(), &fake, 3);
+    let model = DecisionModel::new(config.decision_model.as_ref().unwrap(), None);
+    let data = dir.path().join("data");
+    let store = Arc::new(Store::open(&data).unwrap());
+    let mut host = Host::new(Duration::from_secs(30));
+    host.add(Baseline).add(model.clone());
+    let app = App::new(store, Arc::new(host), &data);
+    app.decisions.route("localize", "baseline");
+    let app = Arc::new(app);
+    model::start(&app, model).unwrap();
+
+    // The baseline names a.rs and x.rs; the change touched a.rs and b.rs; the model names both.
+    let model_says = ranking(&["a.rs", "b.rs"]);
+    let baseline_files = ["a.rs".to_string(), "x.rs".to_string()];
+    let touched = ["a.rs".to_string(), "b.rs".to_string()];
+    let mut held = 0;
+    for n in 0.. {
+        assert!(n < 5000, "no judgement was held out");
+        if held == 3 {
+            break;
+        }
+        let decision = app
+            .decisions
+            .decide(&localize_question(&model_says, n))
+            .unwrap();
+        assert_eq!(decision.choice, ranking(&["a.rs", "x.rs"]));
+        let outcome = Outcome::of(&baseline_files, &touched);
+        app.store
+            .set_outcome(decision.judgement_id, &outcome.json())
+            .unwrap();
+        held += usize::from(held_out(decision.judgement_id));
+    }
+    wait_for("the shadows", || shadows(&app, "localize") == 3);
+    // The outcomes arrived after the shadows could be asked about, so the takeover is considered once they are known.
+    model::localize::reconsider(&app);
+
+    let view = model::view(&app).unwrap();
+    let kind = view.kinds.iter().find(|k| k.kind == "localize").unwrap();
+    assert_eq!(kind.shadows, 3);
+    assert_eq!(
+        kind.agreement, None,
+        "a list is measured by recall, not by agreement"
+    );
+    assert_eq!(
+        (kind.measured, kind.recall, kind.baseline_recall),
+        (Some(3), Some(1.0), Some(0.5))
+    );
+    let takeovers = app.store.takeovers().unwrap();
+    assert_eq!(takeovers.len(), 1);
+    assert_eq!(
+        (
+            takeovers[0].kind.as_str(),
+            takeovers[0].agreement,
+            takeovers[0].count
+        ),
+        ("localize", 1.0, 3)
+    );
+
+    // Merged, the model answers with its list; a list that cannot be recorded fails closed to no hint.
+    model::merge(
+        &app,
+        &moebius_core::decide::Actor::Person,
+        takeovers[0].id,
+        "",
+    )
+    .unwrap();
+    let decision = app
+        .decisions
+        .decide(&localize_question(&model_says, 1000))
+        .unwrap();
+    assert_eq!(
+        (decision.decider.as_str(), decision.choice.as_str()),
+        ("decision-model", model_says.as_str())
+    );
+    for bad in [
+        "allow",
+        &ranking(&["a.rs", "a.rs"]),
+        &ranking(&["../etc/passwd"]),
+    ] {
+        let decision = app.decisions.decide(&localize_question(bad, 1001)).unwrap();
+        assert!(decision.refused, "{bad}");
+        assert_eq!(decision.choice, "[]");
+    }
+}
+
+#[test]
+fn localize_shows_up_in_the_decision_model_of_the_api_with_its_recall() {
+    use moebius_core::decide::localize::Outcome;
+
+    let dir = tempfile::tempdir().unwrap();
+    let fake = Fake::start(true);
+    let config = config(dir.path(), &fake, 2);
+    let _runtime = fake.runtime.enter();
+    let server = Server::new(config, "127.0.0.1:1".parse().unwrap()).unwrap();
+    let api = Api::start(&fake, &server);
+    assert!(
+        api.get("/v1/decision-model").1["kinds"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+
+    // The built-in baseline answers, here for a repository that does not exist, so it fails closed.
+    let mut n = 0;
+    let decision = loop {
+        let mut question = localize_question(&ranking(&["a.rs"]), n);
+        question
+            .context
+            .insert("repository".into(), "nowhere".into());
+        let decision = server.app.decisions.decide(&question).unwrap();
+        assert_eq!(
+            (decision.decider.as_str(), decision.choice.as_str()),
+            ("localize", "[]")
+        );
+        if held_out(decision.judgement_id) {
+            break decision;
+        }
+        n += 1;
+        assert!(n < 5000, "no judgement was held out");
+    };
+    server
+        .app
+        .store
+        .set_outcome(
+            decision.judgement_id,
+            &Outcome::of(&[], &["a.rs".to_string()]).json(),
+        )
+        .unwrap();
+    wait_for("the shadow", || shadows(&server.app, "localize") == 1);
+    let (status, view) = api.get("/v1/decision-model");
+    assert_eq!(status, 200, "{view}");
+    let kind = &view["kinds"][0];
+    assert_eq!(kind["kind"], "localize");
+    assert_eq!(kind["shadows"], 1);
+    assert_eq!(kind["agreement"], Value::Null);
+    assert_eq!(kind["measured"], 1);
+    assert_eq!(kind["baseline_recall"], 0.0);
+}
+
 /// The API of a server, on the fake's runtime.
 struct Api {
     base: String,

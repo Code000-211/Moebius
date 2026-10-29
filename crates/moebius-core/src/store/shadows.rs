@@ -36,6 +36,16 @@ impl ShadowStats {
     }
 }
 
+/// A shadow with the recorded choice and the outcome of its judgement.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShadowedOutcome {
+    /// The choice that was recorded.
+    pub choice: String,
+    /// The model's choice; none when it failed.
+    pub shadow_choice: Option<String>,
+    pub outcome: String,
+}
+
 /// A proposal that the decision model take over a kind of decision.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Takeover {
@@ -78,6 +88,23 @@ impl Store {
                 failed: r.get(3)?,
             })
         })
+    }
+
+    /// The shadows of `kind` whose judgement has an outcome, oldest first, for the kinds whose answers are compared with
+    /// the outcome and not with the recorded choice.
+    pub fn shadows_with_outcome(&self, kind: &str) -> Result<Vec<ShadowedOutcome>> {
+        self.rows(
+            "SELECT j.choice, s.choice, j.outcome FROM shadows s JOIN judgements j ON j.id = s.judgement_id
+             WHERE s.kind = ?1 AND j.outcome IS NOT NULL ORDER BY s.id",
+            [kind],
+            |r| {
+                Ok(ShadowedOutcome {
+                    choice: r.get(0)?,
+                    shadow_choice: r.get(1)?,
+                    outcome: r.get(2)?,
+                })
+            },
+        )
     }
 
     pub fn add_takeover(&self, kind: &str, agreement: f64, count: i64) -> Result<Takeover> {

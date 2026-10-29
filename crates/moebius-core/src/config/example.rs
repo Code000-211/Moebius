@@ -38,6 +38,14 @@ end = "06:00"
 size = 5
 gate = true
 
+# A code run is told which files are likely relevant to its issue, as a hint and not a limit: the decision point
+# `localize` ranks at most `files` (1 to 10) of the repository's files, first by Moebius's own search over them. With
+# `enabled` false no run is told. A repository can turn it on or off for itself, and name its own number of files, in
+# the file .moebius/localize on its default branch.
+[localize]
+enabled = true
+files = 10
+
 # How often the board engine runs the column scripts, and how many coding rounds a card gets.
 [board]
 tick_ms = 2000

@@ -67,6 +67,24 @@ impl Live {
             );
         }
         items.push(item("Judgements", None, judgements.into()));
+        if let Some(hint) = &self.hint {
+            let paths = hint.paths.iter().map(|path| {
+                text(path.as_str())
+                    .font(theme::MONO)
+                    .size(theme::CODE)
+                    .wrapping(Wrapping::WordOrGlyph)
+                    .color(theme::TEXT_MUTED)
+                    .into()
+            });
+            items.push(item(
+                "Hinted files",
+                None,
+                column![text(hint.summary()).size(theme::BODY)]
+                    .extend(paths)
+                    .spacing(2)
+                    .into(),
+            ));
+        }
         if let Some(change) = board.changes.iter().find(|c| c.card_id == Some(card.id)) {
             items.push(item(
                 "Branch",

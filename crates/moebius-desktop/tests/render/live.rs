@@ -183,6 +183,55 @@ fn a_run_on_a_runner_names_it_in_the_panel() {
     assert!(simulator(&watching("running")).find("Runner").is_err());
 }
 
+/// The judgement of a code run's hint: three files, and, once the change is known, the files it touched.
+fn hint(outcome: Option<&str>) -> moebius_desktop::client::Judgement {
+    moebius_desktop::client::Judgement {
+        kind: "localize".into(),
+        choice: json!([
+            {"path": "crates/core/src/tree.rs", "reason": "named in the issue"},
+            {"path": "crates/core/src/drafter.rs", "reason": "its text matches the issue"},
+            {"path": "docs/drafter.md", "reason": "its text matches the issue"}
+        ])
+        .to_string(),
+        reason: "3 files ranked by BM25 over the default branch".into(),
+        decider: "localize".into(),
+        outcome: outcome.map(String::from),
+        run: None,
+    }
+}
+
+/// The panel names the files the run was hinted and, once the change is known, how many of them it touched: compare
+/// `tests/snapshots/live-view-hint-tiny-skia.png`.
+#[test]
+fn the_panel_shows_the_hint_and_how_many_of_its_files_the_change_touched() {
+    let mut app = watching("running");
+    assert!(!shows(&app, "Hinted files"));
+    let tool_calls = vec![judgement("allow", "no rule is broken", "patterns")];
+    let with = |hint| {
+        let mut judgements = tool_calls.clone();
+        judgements.insert(0, hint);
+        Message::Live(live::Message::Judgements(Ok(judgements)))
+    };
+    let _ = app.update(with(hint(None)));
+    assert!(shows(&app, "3 files hinted"));
+    assert!(!shows(&app, "of 3 hinted files touched"));
+
+    let touched = json!({"touched": ["crates/core/src/drafter.rs", "crates/core/src/new.rs"],
+                         "hinted": 3, "recall": 0.5, "precision": 0.33})
+    .to_string();
+    let _ = app.update(with(hint(Some(&touched))));
+    draw(
+        &app,
+        "live-view-hint",
+        &[
+            "Hinted files",
+            "1 of 3 hinted files touched",
+            "crates/core/src/tree.rs",
+            "This run",
+        ],
+    );
+}
+
 /// A refusal whose call was replayed in a copy of the worktree says what came of it, small and muted under the rule:
 /// compare `tests/snapshots/live-view-replayed-tiny-skia.png`.
 #[test]
@@ -477,4 +526,34 @@ fn a_card_without_a_run_shows_its_history() {
     ] {
         assert!(ui.find(text).is_ok(), "{text:?} is not on the screen");
     }
+}
+
+/// The history of a card says which files its code run was hinted and, once known, how many the change touched.
+#[test]
+fn the_history_shows_the_hint_and_how_many_of_its_files_were_touched() {
+    let mut app = radiance_app();
+    let _ = app.update(Message::OpenCard(50));
+    let choice =
+        json!([{"path": "src/a.rs", "reason": "named"}, {"path": "src/b.rs", "reason": ""}])
+            .to_string();
+    let entry = |outcome: serde_json::Value| {
+        json!({"at": 1_790_000_100, "kind": "decided",
+               "data": {"judgement": 2, "kind": "localize", "choice": choice, "decider": "localize",
+                        "reason": "2 files ranked", "outcome": outcome}})
+    };
+    let before = serde_json::from_value(json!([entry(serde_json::Value::Null)])).unwrap();
+    let _ = app.update(Message::History(50, Ok(before)));
+    assert!(shows(
+        &app,
+        "Hinted files: src/a.rs, src/b.rs; 2 files hinted"
+    ));
+
+    let outcome =
+        json!({"touched": ["src/b.rs"], "hinted": 2, "recall": 1.0, "precision": 0.5}).to_string();
+    let after = serde_json::from_value(json!([entry(json!(outcome))])).unwrap();
+    let _ = app.update(Message::History(50, Ok(after)));
+    assert!(shows(
+        &app,
+        "Hinted files: src/a.rs, src/b.rs; 1 of 2 hinted files touched"
+    ));
 }

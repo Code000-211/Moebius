@@ -24,7 +24,7 @@ The other parts have one folder each:
 | `server/` | The wiring, the loops, the desktop API (`server/api/`), the settings. |
 | `repos/` | Git, the forges, GitHub, GitLab, Forgejo and their poll, the files of a repository. |
 | `board/` | The board engine and its Luau sandbox, and editing a column's script. |
-| `decide/` | Decision points, the tool-call check, the guard, the rules, the decision model. |
+| `decide/` | Decision points, the tool-call check, the guard, the rules, the files a code run is hinted, the decision model. |
 | `harness/` | Pi-Bolt and Claude Code runs and chats, terminals, the harness configuration repository, MCP servers and the MCP gateway, skills, grilling, tool outputs kept small, runners (machines that run a harness over SSH). |
 | `improve/` | The Retro, trials, the Retro's proposals to Moebius's own configuration, replays, autoresearch, the training-set export. |
 

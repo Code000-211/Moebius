@@ -151,6 +151,14 @@ impl Store {
         )
     }
 
+    /// The judgements of `kind` that have an outcome, newest first; at most `limit`.
+    pub fn judgements_with_outcome(&self, kind: &str, limit: i64) -> Result<Vec<Judgement>> {
+        self.judgements_query(
+            "WHERE kind = ?1 AND outcome IS NOT NULL ORDER BY id DESC LIMIT ?2",
+            params![kind, limit],
+        )
+    }
+
     /// Calls `each` with the kind, the id, whether there is an outcome and the decider of every judgement, oldest
     /// first, without reading them all into memory.
     pub fn each_judgement(&self, mut each: impl FnMut(&str, i64, bool, &str)) -> Result<()> {
@@ -189,10 +197,11 @@ impl Store {
         Ok(())
     }
 
-    /// Sets `outcome` on every judgement made for the card that has none yet; returns how many were set.
+    /// Sets `outcome` on every judgement made for the card that has none yet, except the hints of `localize`, whose
+    /// outcome is the files the change touched; returns how many were set.
     pub fn set_missing_outcomes(&self, card_id: i64, outcome: &str) -> Result<usize> {
         Ok(self.conn().execute(
-            "UPDATE judgements SET outcome = ?1 WHERE card_id = ?2 AND outcome IS NULL",
+            "UPDATE judgements SET outcome = ?1 WHERE card_id = ?2 AND outcome IS NULL AND kind <> 'localize'",
             params![outcome, card_id],
         )?)
     }

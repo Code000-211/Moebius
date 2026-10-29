@@ -15,9 +15,11 @@
 //!
 //! This module holds the names and the kinds routed to the model; `ask` has the request to the model and reading its
 //! answer, `shadow` the shadowing and the takeover proposals, `view` what the API shows of it, and `takeovers` a
-//! person's merge, dismissal and release of a takeover.
+//! person's merge, dismissal and release of a takeover. `localize` is how the answers to the kind `localize` are
+//! compared, since a ranked list of files has no choice to be equal to.
 
 mod ask;
+pub mod localize;
 mod shadow;
 mod takeovers;
 mod view;

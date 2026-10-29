@@ -7,7 +7,7 @@ use moebius_plugin_api::{Call, DecideRequest, Decision, Kind, Manifest, Plugin, 
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::NAME;
+use super::{NAME, localize};
 use crate::config::DecisionModelConfig;
 
 /// The most characters of one field of a context the model is shown. What the model sees is cut from the full
@@ -89,7 +89,7 @@ impl DecisionModel {
             .pointer("/choices/0/message/content")
             .and_then(Value::as_str)
             .ok_or("the reply has no text")?;
-        parse_answer(text, options)
+        parse_answer(kind, text, options)
     }
 
     fn request_body(
@@ -150,7 +150,7 @@ fn user_message(kind: &str, context: &BTreeMap<String, String>, options: &[Strin
 
 /// Reads the model's reply: exactly the JSON asked for, bare. A reply in a code fence is a failure, since the model
 /// is trained to answer without one.
-fn parse_answer(text: &str, options: &[String]) -> std::result::Result<Answer, String> {
+fn parse_answer(kind: &str, text: &str, options: &[String]) -> std::result::Result<Answer, String> {
     let not_json = |e: serde_json::Error| format!("the answer is not the JSON asked for ({e})");
     let value: Value = serde_json::from_str(text.trim()).map_err(not_json)?;
     // A derived struct would also be read from a JSON array.
@@ -158,7 +158,10 @@ fn parse_answer(text: &str, options: &[String]) -> std::result::Result<Answer, S
         return Err("the answer is not a JSON object".into());
     }
     let answer: RawAnswer = serde_json::from_value(value).map_err(not_json)?;
-    if !options.contains(&answer.choice) {
+    if kind == crate::decide::localize::KIND {
+        // A ranked list of files is no option; it must be a list that can be recorded.
+        localize::check_answer(&answer.choice)?;
+    } else if !options.contains(&answer.choice) {
         return Err(format!(
             "the answer {:?} is not one of the options",
             answer.choice
@@ -219,14 +222,19 @@ mod tests {
 
     #[test]
     fn an_answer_must_be_exactly_the_json_asked_for() {
-        let good = parse_answer(r#"{"choice": "allow", "reason": "fine"}"#, &options()).unwrap();
+        let good = parse_answer(
+            "merge",
+            r#"{"choice": "allow", "reason": "fine"}"#,
+            &options(),
+        )
+        .unwrap();
         assert_eq!(
             (good.choice.as_str(), good.reason.as_str()),
             ("allow", "fine")
         );
         // The reason is optional; padding around the JSON is not a problem.
         assert_eq!(
-            parse_answer("\n {\"choice\": \"refuse\"} \n", &options())
+            parse_answer("merge", "\n {\"choice\": \"refuse\"} \n", &options())
                 .unwrap()
                 .reason,
             ""
@@ -241,10 +249,10 @@ mod tests {
             r#"["allow"]"#,
             "```json\n{\"choice\": \"allow\", \"reason\": \"x\"}\n```",
         ] {
-            assert!(parse_answer(bad, &options()).is_err(), "{bad}");
+            assert!(parse_answer("merge", bad, &options()).is_err(), "{bad}");
         }
         assert!(
-            parse_answer(r#"{"choice": "maybe"}"#, &options())
+            parse_answer("merge", r#"{"choice": "maybe"}"#, &options())
                 .unwrap_err()
                 .contains("not one of the options")
         );

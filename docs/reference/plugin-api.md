@@ -69,13 +69,13 @@ The parameters are a `DecideRequest`:
 |---|---|---|
 | `kind` | string | The kind of decision, such as `tool_call`. |
 | `context` | map of string to string | Everything the decision is about, in full. Secrets are replaced by `[redacted:<kind>]` before the plugin sees them. |
-| `options` | array of strings | The choices. The plugin must pick one of them. |
+| `options` | array of strings | The choices. The plugin must pick one of them. A kind whose answer is no choice among a few, such as the ranked list of files of `localize`, has none, and the plugin then answers with any text as `choice`. |
 
 The result is a `Decision`:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `choice` | string | One of `options`, exactly. Anything else is refused as `BadReply`. |
+| `choice` | string | One of `options`, exactly. Anything else is refused as `BadReply`, unless the request has no options. |
 | `reason` | string | Why, in a sentence. It is recorded in the judgement and, for a refused tool call, shown to the model. |
 | `by` | string or missing | Which part of the plugin decided, when it has several. The core records the decider as `<plugin>/<by>`, and as `<plugin>` when `by` is missing. The guard uses `patterns` and `teacher`. |
 
@@ -179,6 +179,16 @@ fail-closed option `refuse`. All context values are strings:
 
 A decider for `tool_call` that refuses should say which rule it applied at the start of `reason`, followed by a colon,
 as the guard does (`no-force-push: ...`).
+
+### The `localize` context
+
+The kind `localize` is asked once at the start of every `code` run of a card, with no options and the fail-closed answer
+`[]`, which gives the run no hint. A plugin of a repository's own that decides it (`decides = ["localize"]` in
+`[[plugins]]`) replaces the built-in decider. All context values are strings: `title` and `body` (the card's issue),
+`repository` (its name), `card` (its id), `files` (how many files to name at most, 1 to 10) and `candidates` (the files
+whose text best matches the issue, one path per line). The `choice` is a JSON list of at most `files` objects
+`{"path": string, "reason": string}`, best first, each path of a file of the repository once; see
+[the decision model](decision-model.md#localize).
 
 ## Plugins in their own process
 

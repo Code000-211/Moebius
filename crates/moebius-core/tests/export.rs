@@ -65,7 +65,8 @@ fn server(dir: &Path) -> Arc<Server> {
     let harness = harness_origin(dir);
     let fake_pi = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/fake-pi");
     let text = format!(
-        "[pi_bolt]\nprogram = {:?}\n[harness]\nurl = {:?}\n",
+        // The hint of files is not what this test is about: its judgement belongs to the card, not to a run.
+        "[pi_bolt]\nprogram = {:?}\n[harness]\nurl = {:?}\n[localize]\nenabled = false\n",
         fake_pi.display().to_string(),
         harness.display().to_string()
     );

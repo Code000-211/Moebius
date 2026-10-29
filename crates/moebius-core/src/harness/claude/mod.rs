@@ -35,7 +35,7 @@ use crate::board::{AgentInfo, Runs};
 use crate::config::{AgentConfig, AgentSet, HarnessKind};
 use crate::harness::pibolt::{
     AUTORESEARCHER_AGENT, RETRO_AGENT, RunningRun, agent_list, card_run, chat_run, detached_run,
-    fail, finish, has_agent, keep, prompt_for, resolve_agent,
+    fail, finish, has_agent, keep, prompt_for, resolve_agent, run_prompt,
 };
 use crate::harness::remote::Runners;
 use crate::router::Router;
@@ -191,7 +191,7 @@ impl Runs for ClaudeCode {
         if runner.is_some() {
             config.runner = runner.map(String::from);
         }
-        let prompt = prompt_for(app, card, purpose, note);
+        let prompt = run_prompt(app, card, purpose, note);
         let code_branch = app.store.code_branch(card.id).map_err(|e| e.to_string())?;
         let worktree = |repository: &Repository, clone: &Path, run_id: i64| {
             let base = code_branch.unwrap_or_else(|| repository.base_ref());

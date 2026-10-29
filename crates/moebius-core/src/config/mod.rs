@@ -22,8 +22,9 @@ use crate::router::{Classes, check_class};
 pub use example::EXAMPLE;
 pub use sections::{
     AgentConfig, AgentSet, DecisionModelConfig, ForgejoConfig, GitHubConfig, GitLabConfig,
-    HarnessKind, PLUGIN_TIME_LIMIT_SECONDS, PluginConfig, RunnerConfig, TeacherConfig, TimeOfDay,
-    TokenSource, ToolOutput, UpstreamConfig, valid_agent_name,
+    HarnessKind, LocalizeConfig, MAX_LOCALIZE_FILES, PLUGIN_TIME_LIMIT_SECONDS, PluginConfig,
+    RunnerConfig, TeacherConfig, TimeOfDay, TokenSource, ToolOutput, UpstreamConfig,
+    valid_agent_name,
 };
 pub(crate) use sections::{default_protocol, default_true};
 
@@ -54,6 +55,8 @@ pub enum ConfigError {
     DecisionModelAgreement(f64),
     #[error("decision_model.min_judgements must be at least 1")]
     DecisionModelMinJudgements,
+    #[error("localize.files must be between 1 and {max}, not {value}")]
+    LocalizeFiles { value: u32, max: usize },
     #[error("decision_model.url and decision_model.model must not be empty")]
     DecisionModelEmpty,
     #[error("decision_model.api_key_env: {name:?} is not the name of an environment variable")]
@@ -177,6 +180,8 @@ pub struct Config {
     pub teacher: Option<TeacherConfig>,
     /// The decision model; without one nothing is shadowed and nothing can be taken over.
     pub decision_model: Option<DecisionModelConfig>,
+    /// Whether code runs are told which files are likely relevant, and how many.
+    pub localize: LocalizeConfig,
     /// The plugins in their own process, with their paths made absolute.
     pub plugins: Vec<PluginConfig>,
     /// The machines that run harnesses over SSH, with their key files made absolute.
@@ -302,6 +307,18 @@ impl Config {
         if raw.budgets.day_tokens.is_some_and(|tokens| tokens < 1) {
             return Err(ConfigError::DayTokens);
         }
+        let defaults = LocalizeConfig::default();
+        let files = raw.localize.files.unwrap_or(defaults.files as u32);
+        if !(1..=MAX_LOCALIZE_FILES as u32).contains(&files) {
+            return Err(ConfigError::LocalizeFiles {
+                value: files,
+                max: MAX_LOCALIZE_FILES,
+            });
+        }
+        let localize = LocalizeConfig {
+            enabled: raw.localize.enabled.unwrap_or(defaults.enabled),
+            files: files as usize,
+        };
         let checks_timeout = raw.checks.timeout_seconds.unwrap_or(1800);
         if checks_timeout == 0 {
             return Err(ConfigError::ChecksTimeout);
@@ -360,6 +377,7 @@ impl Config {
             forgejo,
             teacher,
             decision_model,
+            localize,
             plugins,
             runners,
             agents: raw.agents,

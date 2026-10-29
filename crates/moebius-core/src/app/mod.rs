@@ -5,7 +5,7 @@
 //! what they act on: `repositories` adds and edits repositories, `cards` keeps cards in line with their issues and
 //! moves them, `runs` is a person's hand in a running run (steering, stopping, shells), `chats` starts and carries on
 //! chats, `changes` publishes, offers and merges changes, `checks` runs a repository's own checks on them,
-//! `reproduce` runs a change's reproduction test for a repository that works test first, and `automations` keeps
+//! `localize` gives a code run the files its issue is likely to touch and records what came of it, `reproduce` runs a change's reproduction test for a repository that works test first, and `automations` keeps
 //! the automations and starts their chats when their schedules come due.
 
 mod automations;
@@ -13,6 +13,7 @@ mod cards;
 mod changes;
 mod chats;
 mod checks;
+mod localize;
 mod repositories;
 mod reproduce;
 mod runs;
@@ -26,6 +27,7 @@ use moebius_plugin_api::Host;
 use serde_json::json;
 
 use crate::bus::{AppEvent, Bus};
+use crate::config::LocalizeConfig;
 use crate::decide::{Actor, Decisions, Question};
 use crate::harness::repo::HarnessRepo;
 use crate::harness::terminal::Slots;
@@ -91,6 +93,8 @@ pub struct App {
     pub data_dir: PathBuf,
     /// How long a repository's own checks may run.
     pub checks_timeout: Duration,
+    /// Whether code runs are given a hint of the files that are likely relevant, and how many (see `localize`).
+    pub localize: LocalizeConfig,
     /// The checks going now, as change and commit.
     checking: Mutex<BTreeSet<(i64, String)>>,
     /// The runs of reproduction tests, going or ended (see `reproduce`).
@@ -124,6 +128,7 @@ impl App {
             repos,
             data_dir: data_dir.to_path_buf(),
             checks_timeout: Duration::from_secs(1800),
+            localize: LocalizeConfig::default(),
             checking: Mutex::default(),
             tests: Mutex::default(),
             run_events: Mutex::default(),

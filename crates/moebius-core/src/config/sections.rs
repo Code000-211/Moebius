@@ -161,6 +161,27 @@ pub(super) fn forgejo(
     })
 }
 
+/// Whether a code run is told which files are likely relevant, and how many (see `decide::localize`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LocalizeConfig {
+    /// Whether the hint is asked for at the start of a code run; a repository can turn it on or off for itself.
+    pub enabled: bool,
+    /// The most files a hint names, from 1 to [`MAX_LOCALIZE_FILES`].
+    pub files: usize,
+}
+
+/// The most files a hint can name.
+pub const MAX_LOCALIZE_FILES: usize = 10;
+
+impl Default for LocalizeConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            files: MAX_LOCALIZE_FILES,
+        }
+    }
+}
+
 /// The teacher model, which judges the rules written in prose.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TeacherConfig {

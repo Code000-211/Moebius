@@ -107,6 +107,15 @@ The loop of coding, checks and review ends when the change is offered or when th
 A send-back from any of steps 3 to 5 is a new `code` round with the reason in its prompt, on top of the last round's
 branch.
 
+### Which files a code run is told about
+
+Localizing before repairing is a strong, cheap step. Before each `code` run Moebius asks the decision point `localize`
+which files the card's change is likely to touch, and the run is given the answer under "Files that are likely relevant
+(a hint, not a limit)", told to verify it. A repository settles this for its own workflow in a file `.moebius/localize`
+on its default branch, over the `[localize]` table of the server: `off` gives its runs no hint, and `files 5` names at
+most five. When the card's change is known, each hint is judged by the files the change touched; the desktop app shows
+how many of the hinted files they were. The rules are in the [decision model reference](../reference/decision-model.md#localize).
+
 ### Test first
 
 Tests generated from the issue and used as a gate are the review step with the best evidence: in a study on SWE-bench

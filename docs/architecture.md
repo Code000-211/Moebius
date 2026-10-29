@@ -364,6 +364,7 @@ At the top:
 | `app/chats.rs` | Chats: starting one, continuing an ended one, writing to it, its model and reasoning, ending it, and the list of chats. |
 | `app/changes.rs` | Changes: a card's work published through the forge, offered with a chat's work in the inbox, rejected or merged, and what the forge says became of them. |
 | `app/checks.rs` | How a change's checks stand, and a repository's own checks (`.moebius/checks`) run in a throwaway worktree with a time limit and a cleared environment. |
+| `app/localize.rs` | The hint of files a code run is given, whether a repository wants it, and the outcome recorded from the files the card's change touched at the end of a code run and on merge. |
 | `app/reproduce.rs` | Test first: a repository's opt-in (`.moebius/test-first`), what a change names in `.moebius/reproduce`, and the runs of that reproduction test on the change and on the commit it starts from with the test's files added. |
 
 `config/`, `moebius.toml`:
@@ -403,6 +404,7 @@ At the top:
 | `store/events.rs` | A run's events, in order, redacted before they are stored. |
 | `store/automations.rs` | Automations, their firings with the status of each chat, and the server's local minute. |
 | `store/chats.rs` | Chats: where they were started, what they work in and how far a person has read them. |
+| `store/localize.rs` | The search index of `localize`: a repository's files in an FTS5 table of their own, split into words for ranking by BM25, and the commit it was made from. |
 | `store/judgements.rs` | Judgements at decision points, their outcomes, and the refusals counted by rule. |
 | `store/replays.rs` | Replays of refused tool calls and the refusals still to replay. |
 | `store/inbox.rs` | The inbox: what waits for a person, until it is resolved. |
@@ -492,6 +494,11 @@ At the top:
 | `decide/guard/patterns.rs` | The built-in rules, fixed patterns over a tool call. |
 | `decide/guard/reversible.rs` | Whether a tool call can be replayed: its effects stay in the worktree. |
 | `decide/guard/teacher.rs` | The teacher model: what it is told, the request through the router, and reading its answer. |
+| `decide/localize/mod.rs` | The decision point `localize`: the ranked list of files as a choice, the outcome of a hint with its recall and precision, and the baseline decider that answers it. |
+| `decide/localize/index.rs` | The search index of a repository, read from the files of its default branch and made again when the branch moves. |
+| `decide/localize/rank.rs` | The baseline's ranking: BM25 for the issue's words, boosts for the paths and identifiers it names and for files earlier cards with similar issues changed. |
+| `decide/localize/text.rs` | Reading text for the search: identifiers split on camelCase and snake_case, the issue's terms, and the identifiers and file names it names. |
+| `decide/model/localize.rs` | How the decision model's answers to `localize` are compared: its recall at ten against the baseline's over the cards whose change is known, and the takeover that follows. |
 | `decide/rules.rs` | The `rules.md` format and where rules come from. |
 | `decide/model/mod.rs` | The decision model (ADR 0010): its name as a decider plugin, the kind its decider keeps, and the kinds routed to it. |
 | `decide/model/ask.rs` | Asking the model through its OpenAI-compatible endpoint, with every field of the context cut; reading its answer, which must be exactly the JSON asked for; and the model as the decider plugin `decision-model`. |

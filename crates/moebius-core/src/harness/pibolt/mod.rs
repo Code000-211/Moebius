@@ -66,7 +66,9 @@ pub(crate) use agents::{agent_list, has_agent, resolve as resolve_agent};
 pub(in crate::harness) use chat::chat_run;
 pub(crate) use reader::final_answer;
 pub(in crate::harness) use reader::{finish, keep};
-pub(in crate::harness) use runs::{RunningRun, card_run, detached_run, fail, prompt_for};
+pub(in crate::harness) use runs::{
+    RunningRun, card_run, detached_run, fail, prompt_for, run_prompt,
+};
 
 /// How long Pi may take to exit after it was asked to stop.
 const STOP_GRACE: Duration = Duration::from_secs(10);
@@ -213,7 +215,7 @@ impl Runs for PiBolt {
         if runner.is_some() {
             config.runner = runner.map(String::from);
         }
-        let prompt = prompt_for(app, card, purpose, note);
+        let prompt = run_prompt(app, card, purpose, note);
         let code_branch = app.store.code_branch(card.id).map_err(|e| e.to_string())?;
         let worktree = |repository: &Repository, clone: &Path, run_id: i64| {
             let base = code_branch.unwrap_or_else(|| repository.base_ref());

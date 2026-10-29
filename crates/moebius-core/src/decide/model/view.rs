@@ -5,7 +5,9 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use super::localize as localize_model;
 use crate::app::{App, Result};
+use crate::decide::localize;
 use crate::store::Takeover;
 
 /// What `GET /v1/decision-model` says about one kind.
@@ -17,6 +19,14 @@ pub struct KindView {
     pub failed: i64,
     pub dropped: i64,
     pub routed: bool,
+    /// For `localize`, the cards whose change is known and the model's mean recall at ten and the baseline's over them
+    /// (see `localize`); its `agreement` is none. Absent for the other kinds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub measured: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recall: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub baseline_recall: Option<f64>,
 }
 
 /// What `GET /v1/decision-model` returns.
@@ -44,6 +54,9 @@ fn kind_view<'a>(
         failed: 0,
         dropped: 0,
         routed: app.decisions.routed().contains(kind),
+        measured: None,
+        recall: None,
+        baseline_recall: None,
     })
 }
 
@@ -75,6 +88,15 @@ pub fn view(app: &App) -> Result<View> {
     }
     for takeover in takeovers_merged {
         kind_view(&mut kinds, app, &takeover);
+    }
+    // A ranked list of files is not measured by agreement but by the recall of its files against the change's.
+    if kinds.contains_key(localize::KIND) {
+        let measure = localize_model::measure(&app.store)?;
+        let view = kind_view(&mut kinds, app, localize::KIND);
+        view.agreement = None;
+        view.measured = Some(measure.measured);
+        view.recall = measure.recall;
+        view.baseline_recall = measure.baseline_recall;
     }
     Ok(View {
         configured: true,

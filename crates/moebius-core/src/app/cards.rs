@@ -274,6 +274,7 @@ impl App {
         for j in self.store.judgements_for_card(card_id)? {
             let data = json!({
                 "judgement": j.id, "kind": j.kind, "choice": j.choice, "decider": j.decider, "reason": j.reason,
+                "outcome": j.outcome,
             });
             history.push(HistoryEntry::new(j.at, "decided", data));
         }

@@ -362,6 +362,7 @@ impl App {
             "change_merged",
             json!({ "change": change.id, "commit": commit }),
         ));
+        self.localize_change_merged(change, commit);
         match change.card_id {
             Some(card_id) => {
                 self.store.resolve_inbox_for_card(card_id)?;
