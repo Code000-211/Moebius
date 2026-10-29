@@ -34,6 +34,7 @@ Built and described here:
   agent, the default agent of a chat, operates Moebius through the command line and builds scripts, rules, agents,
   skills and extensions from this guide; see [Agents](agents.md#the-moebius-agent).
 - The nightly Retro, trials and replays, autoresearch, grilling, the training-set export and the decision model.
+- [Automations](automations.md): chats that start on their own, on a schedule.
 
 ## The how-tos
 
@@ -46,6 +47,7 @@ Built and described here:
 | Set up the Coder, the Reviewer or another agent, chat with one, or have the Moebius agent build something | [Agents](agents.md) |
 | Have an agent look for ways to improve a number you can measure, and keep what helps | [Autoresearch](autoresearch.md) |
 | Turn an idea into issues by being questioned about it | [Grilling](grilling.md) |
+| Have an agent do recurring work on a schedule, such as triaging new issues every morning | [Automations](automations.md) |
 | Answer your own decision points with Rust code | [Plugins](plugins.md) |
 | Add behaviour inside the Pi process of a run | [Extensions](extensions.md) |
 | Operate Moebius from a terminal or a script, or let the Moebius agent do it | [Command line](command-line.md) |

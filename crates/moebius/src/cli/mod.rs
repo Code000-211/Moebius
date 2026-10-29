@@ -9,12 +9,13 @@
 //! This module holds the commands as clap sees them, the dispatch to the command groups and the helpers they share
 //! for reading input and writing answers. `client` finds the server and sends the requests; each other module is one
 //! group of commands, with its requests and how its answers are written: `api` (any route), `board` (the board,
-//! cards, the inbox and issues), `chats` (chats and grillings), `agents`, `rules`, `repos` (repositories), `setup`
-//! (`doctor`, settings, API keys, usage and the server itself) and `improve` (Retros, proposals, research, the
-//! decision model and its takeovers).
+//! cards, the inbox and issues), `chats` (chats and grillings), `automations`, `agents`, `rules`, `repos`
+//! (repositories), `setup` (`doctor`, settings, API keys, usage and the server itself) and `improve` (Retros,
+//! proposals, research, the decision model and its takeovers).
 
 mod agents;
 mod api;
+mod automations;
 mod board;
 mod chats;
 mod client;
@@ -29,6 +30,7 @@ use clap::Subcommand;
 use serde_json::Value;
 
 use agents::AgentCommand;
+use automations::AutomationCommand;
 use board::{InboxCommand, IssueCommand};
 use chats::{ChatCommand, GrillingCommand};
 use client::Request;
@@ -75,6 +77,11 @@ pub enum Operate {
     Chat {
         #[command(subcommand)]
         command: ChatCommand,
+    },
+    /// List, save, run and delete automations: chats a schedule starts.
+    Automation {
+        #[command(subcommand)]
+        command: AutomationCommand,
     },
     /// The agents the server can run.
     Agents,
@@ -188,6 +195,7 @@ impl Operate {
             Chat { command } => chats::chat(command),
             Grillings => chats::grillings(),
             Grilling { command } => chats::grilling(command, get),
+            Automation { command } => automations::automation(command),
             Agents => agents::agents(),
             Agent { command } => agents::agent(command),
             Rules { command } => rules::rules(command.as_ref()),

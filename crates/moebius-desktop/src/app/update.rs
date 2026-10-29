@@ -6,6 +6,7 @@ use iced::Task;
 use crate::client::{self, Client, ClientError, Snapshot};
 use crate::screens::add_repository::{self, AddRepository};
 use crate::screens::agents::{self, Agents};
+use crate::screens::automations::Automations;
 use crate::screens::chat;
 use crate::screens::decision_model::DecisionModel;
 use crate::screens::experiments::Experiments;
@@ -288,6 +289,9 @@ impl App {
             Message::Chat(message) => return self.chats.update(message, self.settings.as_ref()),
             Message::Float(message) => return self.on_float(message),
             Message::Fleet(message) => self.fleet.update(message),
+            Message::Automations(message) => {
+                return self.automations.update(message, self.settings.as_ref());
+            }
             Message::OpenChat(id) => {
                 self.page = Some(Page::Chat);
                 self.opened = None;
@@ -576,6 +580,7 @@ impl App {
         }
         match (page, &self.settings) {
             (Page::Chat | Page::Fleet, Some(settings)) => self.chats.reload(settings),
+            (Page::Automations, Some(settings)) => self.automations.reload(settings),
             (Page::Agents, Some(settings)) => self.agents.reload(settings),
             (Page::Skills, Some(settings)) => self.skills.reload(settings),
             (Page::McpServers, Some(settings)) => self.mcp_servers.reload(settings),
@@ -613,6 +618,7 @@ fn refused(message: &Message) -> bool {
         Message::Script(message) => ScriptEditor::refused(message),
         Message::Chat(chat::Message::Listed(result)) => client::unauthorized(result),
         Message::Agents(message) => Agents::refused(message),
+        Message::Automations(message) => Automations::refused(message),
         Message::Skills(message) => Skills::refused(message),
         Message::Mcp(message) => McpServers::refused(message),
         Message::Usage(message) => Usage::refused(message),

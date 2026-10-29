@@ -7,6 +7,7 @@ use iced::widget::{column, container, opaque, row, stack};
 use iced::{Element, Length, Padding, Subscription};
 
 use crate::client;
+use crate::screens::automations;
 use crate::screens::fleet;
 use crate::screens::inbox;
 use crate::screens::live;
@@ -46,6 +47,11 @@ impl App {
                         .map(|_| Message::Fleet(fleet::Message::Tick(live::now()))),
                     _ => Subscription::none(),
                 };
+                let automations = match self.page() {
+                    Page::Automations => iced::time::every(Duration::from_secs(30))
+                        .map(|_| Message::Automations(automations::Message::Tick(live::now()))),
+                    _ => Subscription::none(),
+                };
                 let chats = match self.page() {
                     Page::Chat => iced::time::every(Duration::from_secs(30))
                         .map(|_| Message::Chat(chat::Message::Tick(live::now()))),
@@ -77,6 +83,7 @@ impl App {
                     clock,
                     inbox,
                     fleet,
+                    automations,
                     chats,
                     shell,
                     terminal,
@@ -202,6 +209,7 @@ impl App {
             Page::Inbox => self.inbox.view(&self.snapshot),
             Page::Chat => self.chats.view(&self.snapshot, &self.inbox),
             Page::Fleet => self.fleet.view(&self.snapshot, self.chats.list()),
+            Page::Automations => self.automations.view(&self.snapshot),
             Page::Agents => self.agents.view(&self.harness),
             Page::Skills => self.skills.view(&self.harness),
             Page::McpServers => self.mcp_servers.view(&self.harness),

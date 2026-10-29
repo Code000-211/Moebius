@@ -3,6 +3,7 @@
 use crate::client::{ClientError, HistoryEntry, Snapshot, StreamEvent};
 use crate::screens::add_repository;
 use crate::screens::agents;
+use crate::screens::automations;
 use crate::screens::chat;
 use crate::screens::decision_model;
 use crate::screens::experiments;
@@ -33,6 +34,8 @@ pub enum Page {
     Chat,
     /// Every run that is working, one tile each.
     Fleet,
+    /// Chats that start on their own, on a schedule.
+    Automations,
     /// The project of the repository with this id: its board, files and editor, in tabs.
     Board(i64),
     /// The form that adds a repository, opened by the "+" of the sidebar.
@@ -60,6 +63,7 @@ impl Page {
             Page::Inbox => "Inbox",
             Page::Chat => "Chat",
             Page::Fleet => "Fleet",
+            Page::Automations => "Automations",
             Page::Board(_) => "Board",
             Page::AddRepository => "Add a repository",
             Page::Agents => "Agents",
@@ -81,7 +85,7 @@ impl Page {
     /// The sidebar group of the page, shown as the breadcrumb of its header.
     pub fn group(self) -> &'static str {
         match self {
-            Page::Inbox | Page::Chat | Page::Fleet => "",
+            Page::Inbox | Page::Chat | Page::Fleet | Page::Automations => "",
             Page::Board(_) | Page::AddRepository => "Projects",
             Page::Agents | Page::Skills | Page::McpServers | Page::Rules => "Build",
             Page::Retro | Page::Experiments | Page::DecisionModel | Page::Usage => "Improve",
@@ -121,6 +125,7 @@ pub enum Message {
     Inbox(inbox::Message),
     Chat(chat::Message),
     Fleet(fleet::Message),
+    Automations(automations::Message),
     Agents(agents::Message),
     Skills(skills::Message),
     Mcp(mcp_servers::Message),

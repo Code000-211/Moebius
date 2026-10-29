@@ -80,6 +80,10 @@ takes a repository's name.
 | `chat say <id> <message>` | `POST /v1/chats/{id}/messages` | The run. `-` reads standard input. |
 | `chat offer <id> [--reason <text>]` | `POST /v1/chats/{id}/offer` | The change. |
 | `chat end <id>` | `POST /v1/chats/{id}/end` | The run. |
+| `automation list` | `GET /v1/automations` | Table `id name schedule agent enabled next_firing` (`next_firing` in Unix seconds). |
+| `automation save --name <n> --schedule <cron> --prompt <text\|-> [--agent <name>] [--repository <id> \| --harness] [--off] [--id <id>]` | `POST /v1/automations`, or `PUT /v1/automations/{id}` with `--id` | The automation. Without `--agent` its chats are with the Moebius agent; `--off` saves it switched off; `-` as the prompt reads standard input. Replaces the whole automation, as the route does. |
+| `automation run <id>` | `POST /v1/automations/{id}/run` | The firing: `started` with its chat's `run_id`, or `skipped` or `failed` with the reason. |
+| `automation delete <id>` | `DELETE /v1/automations/{id}` | `deleted the automation <id>`. |
 | `agents` | `GET /v1/agents` | Table `name model protocol built_in error`. |
 | `agent show <name>` | `GET /v1/agents/{name}` | The agent: settings as JSON, instructions below, and for a built-in agent its built-in instructions and skills (`built_in`). |
 | `agent save <name> --model <m> [--protocol <p>] [--thinking <t>] [--token-budget <n>] [--harness <h>] [--skill <s>]... [--extension <f>]... [--mcp <m>]... [--instructions <file\|->]` | `PUT /v1/agents/{name}` | The agent, with `commit`. Replaces the whole agent, as the route does. |

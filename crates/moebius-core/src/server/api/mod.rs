@@ -8,6 +8,7 @@
 //! - `repositories`: adding and editing repositories, and their column scripts and files.
 //! - `runs`: a run and its events, steering and stopping it.
 //! - `chats`: chats with an agent, and what grilling chats ended in.
+//! - `automations`: chats a schedule starts, and their firings.
 //! - `harness`: the agents, skills and MCP servers of the harness configuration repository, and setting one up.
 //! - `rules`: the rules page and the rules in prose.
 //! - `settings`: `moebius.toml`, the API keys, the restart, and what the Models, Plugins and Get started pages show.
@@ -21,6 +22,7 @@
 //! agent, which acts as that agent (`PUT /v1/secrets/{name}` and the terminal stay with a person); anything else is
 //! answered with 401.
 
+mod automations;
 mod cards;
 mod chats;
 mod events;
@@ -166,6 +168,7 @@ pub fn router(state: ApiState) -> Router {
         .merge(repositories::routes())
         .merge(runs::routes())
         .merge(chats::routes())
+        .merge(automations::routes())
         .merge(harness::routes())
         .merge(rules::routes())
         .merge(settings::routes())

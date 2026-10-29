@@ -107,6 +107,13 @@ impl App {
                 {
                     tasks.push(self.experiments.reload(settings));
                 }
+                if matches!(event.kind.as_str(), "automation_fired" | "run_ended")
+                    && self.page() == super::message::Page::Automations
+                    && let Some(settings) = &self.settings
+                {
+                    // A firing, or the end of a chat one started, shows on the page.
+                    tasks.push(self.automations.refresh(settings));
+                }
                 if event.kind == "replayed"
                     && let Some(settings) = &self.settings
                 {

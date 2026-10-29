@@ -20,6 +20,7 @@ use iced::Task;
 use crate::client::{Client, ClientError, HistoryEntry, Snapshot};
 use crate::screens::add_repository::AddRepository;
 use crate::screens::agents::Agents;
+use crate::screens::automations::Automations;
 use crate::screens::chat::Chats;
 use crate::screens::decision_model::DecisionModel;
 use crate::screens::experiments::Experiments;
@@ -99,6 +100,7 @@ pub struct App {
     inbox: Inbox,
     chats: Chats,
     fleet: Fleet,
+    automations: Automations,
     agents: Agents,
     skills: Skills,
     mcp_servers: McpServers,
@@ -156,6 +158,7 @@ impl App {
             inbox: Inbox::new(live::now()),
             chats: Chats::new(live::now()),
             fleet: Fleet::new(live::now()),
+            automations: Automations::new(live::now()),
             agents: Agents::default(),
             skills: Skills::default(),
             mcp_servers: McpServers::default(),

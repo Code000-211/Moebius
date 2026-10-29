@@ -6,9 +6,11 @@
 //!
 //! The types are grouped by part of the API: `board` (repositories, cards, changes, the inbox, the snapshot and a
 //! repository's files), `runs` (runs and chats), `harness` (agents, rules, skills, MCP servers), `server` (models,
-//! plugins, the first start and the settings) and `improve` (the Retro, research, the decision model, usage). `calls`
-//! has every route, one module per part of the API too; `events` is the event stream and `terminal` a shell's socket.
+//! plugins, the first start and the settings), `improve` (the Retro, research, the decision model, usage) and
+//! `automations` (automations and their firings). `calls` has every route, one module per part of the API too;
+//! `events` is the event stream and `terminal` a shell's socket.
 
+mod automations;
 mod board;
 mod calls;
 mod events;
@@ -20,6 +22,7 @@ mod terminal;
 
 use crate::settings::Settings;
 
+pub use automations::*;
 pub use board::*;
 pub use events::{ServerEvent, StreamEvent, events};
 pub use harness::*;

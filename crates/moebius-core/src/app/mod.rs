@@ -4,8 +4,10 @@
 //! This module holds `App` itself, its errors and the lookups every operation shares; the operations are grouped by
 //! what they act on: `repositories` adds and edits repositories, `cards` keeps cards in line with their issues and
 //! moves them, `runs` is a person's hand in a running run (steering, stopping, shells), `chats` starts and carries on
-//! chats, `changes` publishes, offers and merges changes, and `checks` runs a repository's own checks on them.
+//! chats, `changes` publishes, offers and merges changes, `checks` runs a repository's own checks on them, and
+//! `automations` keeps the automations and starts their chats when their schedules come due.
 
+mod automations;
 mod cards;
 mod changes;
 mod chats;
@@ -29,6 +31,9 @@ use crate::repos::forge::{Forge, ForgeError, NoForge};
 use crate::repos::{GitError, Repos};
 use crate::store::{Card, Change, Repository, Run, Store, StoreError};
 
+pub use automations::{
+    AUTOMATION_ORIGIN, AutomationView, cron, on_schedule as on_automation_schedule,
+};
 pub use cards::HistoryEntry;
 pub use chats::{ASSISTANT_ORIGIN, CHAT_ORIGIN, Chat, ChatSettings, THINKING_LEVELS};
 pub(crate) use checks::tail;

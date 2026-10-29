@@ -40,7 +40,7 @@ pub struct Chat {
     /// `POST /v1/chats/{id}/offer` would offer. 0 for an ended chat or one without a repository.
     #[serde(default)]
     pub changed_files: usize,
-    /// Where the chat was started: `chat` or `assistant` (see `Run::origin`).
+    /// Where the chat was started: `chat`, `assistant` or `automation` (see `Run::origin`).
     #[serde(default = "chat_origin")]
     pub origin: String,
     /// The model the chat was given in place of its agent's; none while it runs on its agent's.
@@ -179,9 +179,10 @@ impl App {
         (model, thinking, served): (Option<&str>, Option<&str>, &[Protocol]),
     ) -> Result<Run> {
         let origin = origin.unwrap_or(CHAT_ORIGIN);
-        if ![CHAT_ORIGIN, ASSISTANT_ORIGIN].contains(&origin) {
+        let automation = super::automations::AUTOMATION_ORIGIN;
+        if ![CHAT_ORIGIN, ASSISTANT_ORIGIN, automation].contains(&origin) {
             return Err(AppError::Invalid(format!(
-                "a chat's origin is {CHAT_ORIGIN} or {ASSISTANT_ORIGIN}, not {origin}"
+                "a chat's origin is {CHAT_ORIGIN}, {ASSISTANT_ORIGIN} or {automation}, not {origin}"
             )));
         }
         if harness && repository_id.is_some() {

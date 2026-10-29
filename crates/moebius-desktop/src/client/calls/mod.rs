@@ -1,6 +1,7 @@
 //! The calls of the client, one module per part of the API, and what they share: the requests with the token, the
 //! answers read as JSON or as an error, and the routes whose parts are encoded.
 
+mod automations;
 mod board;
 mod harness;
 mod improve;

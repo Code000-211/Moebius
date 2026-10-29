@@ -4,10 +4,11 @@
 //! the clock and the helpers that read rows. Each kind of record has a module of its own, with its types and the
 //! methods of `Store` that read and write it: `cards` (repositories, cards, dependencies and moves), `changes`, `runs`,
 //! `events` (a run's events), `chats`, `judgements`, `replays`, `inbox`, `grillings`, `shadows` (the decision model's
-//! shadows and takeovers), `usage`, `found` (what the Retro collects), `retros` (Retros, proposals and trials) and
-//! `research` (research, its runs and experiments). Every public type is re-exported here, as `store::Card` and the
-//! like.
+//! shadows and takeovers), `usage`, `found` (what the Retro collects), `retros` (Retros, proposals and trials),
+//! `research` (research, its runs and experiments) and `automations` (automations, their firings and the local
+//! clock). Every public type is re-exported here, as `store::Card` and the like.
 
+mod automations;
 mod cards;
 mod changes;
 mod chats;
@@ -31,6 +32,7 @@ use rusqlite::{Connection, OptionalExtension, Params, Row};
 
 use crate::blobs::BlobStore;
 
+pub use automations::{Automation, Firing, NewAutomation};
 pub use cards::{Card, CardMove, Repository};
 pub use changes::Change;
 pub use events::Event;
@@ -340,6 +342,29 @@ ALTER TABLE proposals ADD COLUMN change_id INTEGER REFERENCES changes(id);
 "#,
     "ALTER TABLE usage ADD COLUMN class TEXT;",
     "ALTER TABLE repositories ADD COLUMN project TEXT;",
+    r#"
+CREATE TABLE automations (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    schedule TEXT NOT NULL,
+    agent TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    repository_id INTEGER REFERENCES repositories(id),
+    harness_repository INTEGER NOT NULL DEFAULT 0,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    checked_at TEXT,
+    created_at INTEGER NOT NULL
+);
+CREATE TABLE firings (
+    id INTEGER PRIMARY KEY,
+    automation_id INTEGER NOT NULL REFERENCES automations(id),
+    status TEXT NOT NULL,
+    run_id INTEGER REFERENCES runs(id),
+    manual INTEGER NOT NULL,
+    reason TEXT NOT NULL,
+    at INTEGER NOT NULL
+);
+"#,
 ];
 
 pub fn now() -> i64 {

@@ -122,6 +122,7 @@ impl App {
                 Some(name) => lines.push(format!("Editing the agent {name}")),
                 None => lines.push("No agent is open.".to_string()),
             },
+            Page::Automations => lines.push(self.automations.context()),
             Page::Models => {
                 lines.push("The upstreams, models and API keys the server uses.".to_string())
             }

@@ -22,8 +22,8 @@ pub struct Run {
     pub repository_id: Option<i64>,
     /// Whether a chat works in the harness configuration repository.
     pub harness_repository: bool,
-    /// Where a chat was started: `chat`, on the Chat page or by a client, or `assistant`, in the desktop app's floating
-    /// window. `chat` for every other run.
+    /// Where a chat was started: `chat`, on the Chat page or by a client, `assistant`, in the desktop app's floating
+    /// window, or `automation`, by an automation's schedule. `chat` for every other run.
     pub origin: String,
 }
 

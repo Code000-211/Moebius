@@ -78,9 +78,19 @@ first message, at most 80 characters; empty while a chat started without a messa
 event, 0 without one), `seen` (how far a person has read it, see `POST /v1/chats/{id}/seen`) and `changed_files` (how
 many files the chat's worktree changes against the default branch of its repository, committed or not, new files
 included: what `POST /v1/chats/{id}/offer` would offer; 0 for an ended chat and one without a repository) and `origin`
-(`chat`, or `assistant` for a chat of the desktop app's floating window, see `POST /v1/chats`), `model` and `thinking`
+(`chat`, `assistant` for a chat of the desktop app's floating window, see `POST /v1/chats`, or `automation` for a chat an
+automation started, see `POST /v1/automations`), `model` and `thinking`
 (the model and reasoning level the chat was given in place of its agent's, see `POST /v1/chats` and
 `POST /v1/chats/{id}/settings`; null while it uses its agent's). A chat is unread while `answered` is greater than `seen`.
+
+`Automation`: `id`, `name`, `schedule` (a cron expression of five fields in the server's local time), `agent`, `prompt`,
+`repository_id` (the repository its chats work in, or null), `harness_repository` (true when they work in the harness
+configuration repository), `enabled`, `created_at`, `next_firing` (when the schedule comes due next, as Unix seconds;
+null while it is off or when the schedule never comes due) and `last_firing` (its latest `Firing`, or null).
+
+`Firing`: `id`, `automation_id`, `status` (`started`, `skipped` or `failed`), `run_id` (the chat it started, or null),
+`chat_status` (that chat's status now, or null), `manual` (true when a person fired it with
+`POST /v1/automations/{id}/run`), `reason` (why it was skipped or failed; else empty) and `at`.
 
 `Change`: `id`, `repository_id` (null for a change of the harness configuration repository), `harness_repository` (true
 for such a change), `card_id` (or null), `branch`, `state` (`open`, `merged` or `closed`), `pull_request`
@@ -1071,13 +1081,13 @@ Request:
 | `harness` | boolean | Work in the harness configuration repository instead (default false): in a worktree on the branch `moebius/chat-<run id>` of its default branch, so that the agents, skills, extensions, MCP servers and rules can be built as files and merged (see [changing it in a chat](harness-configuration.md#changing-it-in-a-chat)). The run has `harness_repository` true. Not together with `repository`. |
 | `continues` | number | The id of an ended chat this one goes on from. Its agent, place (repository or harness configuration repository), model and reasoning level are used unless `agent`, `repository`, `model` or `thinking` name others, and the agent is given what was said in it (the person's messages and the agent's answers, at most the last 20 000 characters) before `message`. The new chat's `said` event holds only `message`. |
 | `context` | string | Where the person is in the app (the page, the repository, the open card or chat, the text being edited), as the desktop app describes it. The agent is told it before `message`, under the line `[Where the person is in the Moebius app. Use it to understand what they mean; do not repeat it.]`, with secrets removed and cut to 4 000 characters; the `said` event holds only `message`. Optional; blank is the same as none. |
-| `origin` | string | Where the chat is started: `chat` (the default), on the Chat page or by any client, or `assistant`, a conversation in the desktop app's floating window, which the person reads there. `GET /v1/chats` leaves out the chats of origin `assistant` unless asked for them, so the Chat page and its unread count do not show them; the run, its events and every other chat route work as for any chat. |
+| `origin` | string | Where the chat is started: `chat` (the default), on the Chat page or by any client, `automation`, as an automation's chats are (see `POST /v1/automations`), or `assistant`, a conversation in the desktop app's floating window, which the person reads there. `GET /v1/chats` leaves out the chats of origin `assistant` unless asked for them, so the Chat page and its unread count do not show them; the run, its events and every other chat route work as for any chat. |
 
 Response: the `Run` (`purpose` `chat`, `card_id` null). Errors: `404` no such repository or no run `continues`; `422`
 the message is blank or missing with `continues`, `model` is blank, `thinking` is not one of the levels, the agent does not exist, it is a built-in agent and neither its own `[agents.<name>]` nor
 `[agents.Coder]` is configured (the message says so), it is the Grilling partner and there is no `repository`, or
-`continues` is not a chat or has not ended (write to it with `POST /v1/chats/{id}/messages`), `origin` is neither `chat`
-nor `assistant`, `harness` is set together with `repository`, or `harness` is set and the server has no `[harness]`; `500` the worktree cannot be made.
+`continues` is not a chat or has not ended (write to it with `POST /v1/chats/{id}/messages`), `origin` is none of `chat`,
+`assistant` and `automation`, `harness` is set together with `repository`, or `harness` is set and the server has no `[harness]`; `500` the worktree cannot be made.
 
 ### `GET /v1/chats`
 
@@ -1193,6 +1203,61 @@ Request: `{}`.
 
 Response: the `Run`, as it was when the request was made. Errors: `404` no such run; `422` the run is not a chat or has
 ended.
+
+### `GET /v1/automations`
+
+The automations, by name: an array of `Automation`.
+
+### `POST /v1/automations`
+
+Adds an automation: recurring work that runs on its own. Once a minute the server reads its local time; each automation
+that is on and whose schedule came due since the minute before (or, after a late check, within the last five minutes)
+fires: the server starts a chat as `POST /v1/chats` would, with the automation's agent, place and `prompt` as the first
+message, and `origin` `automation`. A firing that came due while the server was not running is not made up. A run never
+waits for a person: once the chat's agent has answered and the chat waits for a message, the next check ends it as
+`POST /v1/chats/{id}/end` does, so what it changed is offered as a change and lands in the inbox. A firing due while the
+chat of the automation's last started firing has neither ended nor answered is skipped and recorded as `skipped`. A chat
+that cannot be started (its agent can no longer run, say) is recorded as `failed` with the reason. Each firing publishes
+`automation_fired`.
+
+Request:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `name` | string | Not blank. |
+| `schedule` | string | A cron expression of five fields, minute (0-59), hour (0-23), day of the month (1-31), month (1-12 or `jan`-`dec`) and day of the week (0-7 or `sun`-`sat`, Sunday 0 or 7), in the server's local time. A field is `*`, a number, a range `a-b`, either with a step (`*/15`, `8-18/2`, `5/10` from 5 on), or a list of these separated by commas. When both the day of the month and the day of the week are restricted (neither starts with `*`), a day that matches either comes due, as in cron. |
+| `agent` | string | An agent the server can run, as `GET /v1/agents` lists them. |
+| `prompt` | string | The first message of each chat, not blank. Stored with secrets removed. |
+| `repository` | number | The id of a repository its chats work in. Optional; without it and without `harness` each chat works in an empty directory. |
+| `harness` | boolean | Its chats work in the harness configuration repository (default false). Not together with `repository`. |
+| `enabled` | boolean | Whether the schedule fires it (default true). An automation that is off fires only with `POST /v1/automations/{id}/run`. |
+
+Response: the `Automation`. Errors: `404` no such repository; `422` the name or prompt is blank, the schedule does not
+parse (the message says which field is wrong), the agent does not exist, `harness` is set together with `repository`, or
+`harness` is set and the server has no `[harness]`.
+
+### `GET /v1/automations/{id}`
+
+The `Automation`. Errors: `404` no such automation.
+
+### `PUT /v1/automations/{id}`
+
+Replaces an automation: the same body and checks as `POST /v1/automations`. Its firings stay, and it fires next when
+its new schedule comes due. Response: the `Automation`. Errors: as `POST /v1/automations`, and `404` no such automation.
+
+### `DELETE /v1/automations/{id}`
+
+Deletes an automation and its firings; the chats it started stay. Response: `{}`. Errors: `404` no such automation.
+
+### `POST /v1/automations/{id}/run`
+
+Fires an automation now ("Run now"), whether it is on or not, as its schedule would: it is skipped while the chat of its
+last started firing still runs. Request: `{}`. Response: the `Firing` (`manual` true). Errors: `404` no such automation.
+
+### `GET /v1/automations/{id}/firings`
+
+The automation's firings, newest first, at most 50: an array of `Firing`, each with its chat (`run_id`, whose events
+are `GET /v1/runs/{id}/events`) and that chat's status. Errors: `404` no such automation.
 
 ### `POST /v1/retros`
 
@@ -1485,6 +1550,7 @@ like `POST /v1/runs/{id}/stop` does. Experiments done stay, and so do the lever 
 | `takeover_status` | A takeover was merged, dismissed or released. | `{"takeover": id, "status": string}` (the statuses above) |
 | `research_status` | A research was stored, its brief was edited, or it was confirmed, started, stopped or ended. | `{"research": id, "status": string}` (the statuses above) |
 | `experiment_done` | An experiment of a research ended and was stored. | `{"research": id, "lever": the lever's branch, "value": number or null, "kept": boolean}` |
+| `automation_fired` | An automation fired, by its schedule or `POST /v1/automations/{id}/run`. | `{"automation": id, "firing": id, "status": "started" \| "skipped" \| "failed", "run": id or null}` |
 | `grilling_ended` | A grilling chat ended and its result was stored. | `{"grilling": id, "status": "proposed" \| "reported" \| "empty"}` |
 | `lagged` | This client fell too far behind (more than 1024 events) and lost the oldest. | `{"missed": number}` |
 

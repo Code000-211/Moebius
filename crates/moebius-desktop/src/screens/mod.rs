@@ -2,6 +2,7 @@
 
 pub mod add_repository;
 pub mod agents;
+pub mod automations;
 pub mod board;
 pub mod chat;
 pub mod connect;

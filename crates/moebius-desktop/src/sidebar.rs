@@ -1,5 +1,6 @@
-//! The sidebar on every screen: the app name with the connection, the search field, the Inbox, Chat and Fleet, and the groups Projects,
-//! Build, Improve and Setup. It collapses to a rail of icons. Every number in it comes from the server.
+//! The sidebar on every screen: the app name with the connection, the search field, the Inbox, Chat, Fleet and
+//! Automations, and the groups Projects, Build, Improve and Setup. It collapses to a rail of icons. Every number in it
+//! comes from the server.
 
 use iced::font::Weight;
 use iced::widget::{button, column, container, row, scrollable, space, text, text_input, tooltip};
@@ -102,6 +103,14 @@ pub fn view<'a>(
         page,
         collapsed,
     );
+    let automations = item(
+        Lead::Icon(Icon::Automations),
+        Page::Automations.title(),
+        Trailing::Nothing,
+        Page::Automations,
+        page,
+        collapsed,
+    );
     let boards = snapshot.boards.iter().map(|board| {
         let repository = &board.repository;
         let live = board.live_runs();
@@ -145,7 +154,7 @@ pub fn view<'a>(
         .chain(SETUP)
         .collect();
     let groups = column![
-        group(None, vec![inbox, chat, fleet], collapsed),
+        group(None, vec![inbox, chat, fleet, automations], collapsed),
         divider(),
         group_with(
             Some("Projects"),

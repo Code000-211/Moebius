@@ -1,6 +1,7 @@
 //! The schedule: once a minute, whether the Retro is due, a proposal of the Retro is to be tried, a research is to
-//! start or a replay is to run, and the pause of the Pi of each chat that has waited long for its next message
-//! (`PiBolt::pause_idle_chats`). What fails is reported on the bus as `retro_error`.
+//! start, a replay is to run or an automation is to fire (see `app::automations`), and the pause of the Pi of each
+//! chat that has waited long for its next message (`PiBolt::pause_idle_chats`). What fails is reported on the bus as
+//! `retro_error`.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -50,6 +51,16 @@ impl Server {
             research::MEASURE_LIMIT,
         ));
         report(replay::on_schedule(&self.app, window));
+        report(self.on_automations(&*runs));
         self.harness.pause_idle_chats(&self.app, Instant::now());
+    }
+
+    /// Ends the chats of automations that have answered and fires the automations that came due, at the local minute.
+    fn on_automations(&self, runs: &dyn Runs) -> crate::app::Result<()> {
+        let now = self.app.store.local_minute()?;
+        match crate::app::cron::parse_minute(&now) {
+            Some(now) => crate::app::on_automation_schedule(&self.app, runs, now),
+            None => Ok(()),
+        }
     }
 }

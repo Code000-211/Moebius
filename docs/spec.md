@@ -32,6 +32,9 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
 - **Chat** with any agent, and the **Moebius agent**, which knows Moebius from the guide (`docs/guide/`) and builds
   column scripts, rules, agents and extensions on request, offered as changes.
 - **Grilling** (a chat with the Grilling partner) that ends in issues a person confirms, or in a research report.
+- **Automations**: recurring work that runs on its own. An automation is a cron schedule in the server's local time, an
+  agent, a prompt and a place; when it comes due the server starts a chat with that agent and prompt, ends it once the
+  agent has answered so that what it offers lands in the inbox, and skips a firing while the chat before still runs.
 - The desktop app's seven screens: board, live view, inbox, chat, fleet, agents, usage.
 - **Plugins in their own process** besides the compiled-in ones: a program named under `[[plugins]]` in `moebius.toml`
   that speaks JSON Lines on stdin and stdout, called with the same time limit, failing closed, and started again with a
@@ -175,6 +178,8 @@ Native, GPU-rendered, written in Rust with iced (ADR 0003, ADR 0011), built to [
 - **Chat**: a conversation with an agent, the Moebius agent by default, with code highlighted, tool calls with their
   checks, and the changes the agent offers.
 - **Fleet**: every card run and chat that is working, one tile each with its last steps; a click opens the live view or the chat.
+- **Automations**: the automations and an editor of each (name, schedule with a picker of common ones and its next
+  firing, agent, place, prompt, on or off, "Run now"), with its past firings, each of which opens its chat.
 - **Agents**: the agent list and editor (model, thinking, token budget, instructions, skills, MCP servers, extensions), and
   open proposals for the agent.
 - **Skills**: each skill of `skills/` as a list of its files, `SKILL.md` and the others, each edited as a commit; skills

@@ -159,6 +159,10 @@ const FILES: &[(&str, &str)] = &[
         include_str!("../../../../docs/guide/agents.md"),
     ),
     (
+        "guide/automations.md",
+        include_str!("../../../../docs/guide/automations.md"),
+    ),
+    (
         "guide/autoresearch.md",
         include_str!("../../../../docs/guide/autoresearch.md"),
     ),

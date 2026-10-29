@@ -214,6 +214,16 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
     `Blocked by` line, through `GitHub::create_issue`) with `Store::add_confirmed_card`, which stores the card as
     `confirmed` together with its dependencies. `backlog.luau` moves such a card to Ready (`card.confirmed`); a
     `confirm_grilling` judgement by `person` is recorded and the inbox item resolved.
+12h. **Automations.** `POST /v1/automations` (`App::save_automation`) checks the schedule (`cron::parse`), the agent
+    (`Runs::has_agent`) and the place, and stores the automation (`automations` table) with `checked_at`, the local
+    minute it was made. Once a minute `server/schedule.rs` reads the server's local minute (`Store::local_minute`, SQLite's
+    `localtime`) and asks `automations::on_schedule`, which first ends each automation's chat that has answered and waits
+    (`Store::waiting_automation_chats`, `App::end_chat`, so its work is offered as for any chat), then fires each
+    automation that is on and whose schedule came due after its `checked_at` (at most five minutes back) and up to now,
+    and sets every `checked_at` to now. A firing (`fire`, also `POST /v1/automations/{id}/run`) is skipped while the chat
+    of the automation's last started firing has neither ended nor answered; otherwise it calls `App::start_chat` with the
+    automation's agent, place and prompt and the origin `automation`. Each firing is stored (`firings` table: `started`
+    with its chat, `skipped` or `failed` with the reason) and published as `automation_fired`.
 13. **The forge reports.** `poll::poll_requests` reads each open change's pull or merge request: checks and review
     (on GitLab, whether anyone approved) are recorded (`change_updated`), a merged one calls `App::change_merged`, a
     closed one calls `App::change_closed`.
@@ -291,6 +301,7 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | `cli/api.rs` | `api`: any route, with a method and a JSON body. |
 | `cli/board.rs` | `board`, `card`, `inbox` (and `inbox act`, as the app's buttons) and `issue create`. |
 | `cli/chats.rs` | `chats`, `chat` (start, say, offer, end), `grillings` and `grilling`. |
+| `cli/automations.rs` | `automation` (list, save, run, delete). |
 | `cli/agents.rs` | `agents` and `agent` (show, save, delete). |
 | `cli/rules.rs` | `rules` and `rules save`. |
 | `cli/repos.rs` | `repos` and `repo add`. |
@@ -324,6 +335,8 @@ At the top:
 | `app/repositories.rs` | Adding a repository (a path, a URL or GitHub), whom a GitHub repository trusts, and whether a card's issue is trusted. |
 | `app/cards.rs` | Cards and their issues: kept in line with the forge's issues, created, edited, approved, retried and moved; why a card waits, what blocks it, its history. |
 | `app/runs.rs` | A person's hand in a run: steering, stopping, a shell in its worktree, a chat's terminal interface, and a shell on the server. |
+| `app/automations/mod.rs` | Automations: saving and listing them with their next firing, firing one (a chat with origin `automation`, or a skipped or failed firing), and the check once a minute that ends their answered chats and fires those that came due. |
+| `app/automations/cron.rs` | A schedule: a cron expression of five fields in the server's local time, parsed, and the next minute it comes due. |
 | `app/chats.rs` | Chats: starting one, continuing an ended one, writing to it, its model and reasoning, ending it, and the list of chats. |
 | `app/changes.rs` | Changes: a card's work published through the forge, offered with a chat's work in the inbox, rejected or merged, and what the forge says became of them. |
 | `app/checks.rs` | How a change's checks stand, and a repository's own checks (`.moebius/checks`) run in a throwaway worktree with a time limit. |
@@ -363,6 +376,7 @@ At the top:
 | `store/changes.rs` | Changes: a branch offered for merging, with its pull request, checks and review. |
 | `store/runs.rs` | Runs: an agent's work in a harness, from its start to its end. |
 | `store/events.rs` | A run's events, in order, redacted before they are stored. |
+| `store/automations.rs` | Automations, their firings with the status of each chat, and the server's local minute. |
 | `store/chats.rs` | Chats: where they were started, what they work in and how far a person has read them. |
 | `store/judgements.rs` | Judgements at decision points, their outcomes, and the refusals counted by rule. |
 | `store/replays.rs` | Replays of refused tool calls and the refusals still to replay. |
@@ -382,13 +396,14 @@ At the top:
 | `server/leftovers.rs` | What a server that stopped left going, ended at the next start: its runs failed and their worktrees removed, its Retros, research and trials set back. |
 | `server/loops.rs` | The board's tick, the polls of GitHub and GitLab, and the refresh of the clones every 30 seconds. |
 | `server/plugins.rs` | Starting the plugins in their own process that `[[plugins]]` names, with their standard error in `<data_dir>/plugins/<name>.log`, redacted. |
-| `server/schedule.rs` | Once a minute: the Retro, trials, research and replays when they are due, and the pause of chats that wait idle. |
+| `server/schedule.rs` | Once a minute: the Retro, trials, research, replays and automations when they are due, and the pause of chats that wait idle. |
 | `server/fake_github.rs` | For the tests only: a fake GitHub with one repository, and a server that polls it. |
 | `server/fake_gitlab.rs` | For the tests only: a fake GitLab with one project, a server that polls it, and the tests of the GitLab forge through it. |
 | `server/api/mod.rs` | The desktop API: the state it needs, the token check, the router that merges the routes of its parts, how a failure becomes a status, and `GET /v1/health`. |
 | `server/api/cards.rs` | The snapshot of every board, issues, cards and their changes (edit, approve, retry, merge, reject), a card's runs and history. |
 | `server/api/repositories.rs` | Adding and editing repositories, and their column scripts and files. |
 | `server/api/runs.rs` | A run and its events in pages, steering and stopping it. |
+| `server/api/automations.rs` | Automations: list, add, read, replace, delete, run now, and their firings. |
 | `server/api/chats.rs` | Chats with an agent (start, write, offer, end, seen, settings) and what grilling chats ended in. |
 | `server/api/harness.rs` | The agents, skills and MCP servers of the harness configuration repository, and `POST /v1/harness/setup`. |
 | `server/api/rules.rs` | The rules page and the rules in prose. |
@@ -544,6 +559,8 @@ At the top:
 | `client/board.rs`, `client/runs.rs`, `client/harness.rs`, `client/server.rs`, `client/improve.rs` | The answers by part of the API: boards, cards, the inbox and the snapshot; runs and chats; agents, rules, skills and MCP servers; models, plugins, the first start and the settings; the Improve pages. |
 | `client/calls/mod.rs` | The calls of the client, one module per part of the API, and the requests with the token they share. |
 | `client/calls/board.rs` | The calls about boards: the snapshot, repositories, cards and issues, the inbox's decisions, a repository's files and scripts. |
+| `client/automations.rs` | Automations and their firings, and what a save sends. |
+| `client/calls/automations.rs` | The calls about automations: list, save, delete, run now, firings. |
 | `client/calls/runs.rs` | The calls about runs and chats: a run's events and decisions, steering and stopping, every step of a chat. |
 | `client/calls/harness.rs` | The calls about the harness configuration: agents, rules, skills, MCP servers and uploads. |
 | `client/calls/server.rs` | The calls about what the server runs with: health, models, plugins, the first start, settings, secrets and the restart. |
@@ -560,6 +577,7 @@ At the top:
 | `screens/start.rs` | The Get started page: the steps of `GET /v1/start` with a button to the page that fixes each. |
 | `screens/inbox/mod.rs`, `screens/inbox/view.rs` | The inbox: everything that needs the person, newest first, filtered by kind and repository, and its actions; and how it is drawn. |
 | `screens/inbox/item.rs` | What an inbox item says of itself: what it is about, its kind, why it is there, its facts. |
+| `screens/automations/mod.rs`, `screens/automations/view.rs` | The Automations page (the list and the editor of the one chosen, with its schedule, chat, "Run now" and firings), how a message changes it, and how it is drawn. |
 | `screens/chat/mod.rs`, `screens/chat/update.rs`, `screens/chat/view.rs` | The chat screen (the chats with agents and the one chosen), how a message changes it, and how it is drawn. |
 | `screens/chat/thread.rs` | A chat's conversation wherever it is shown, here and in the floating chat. |
 | `screens/chat/draft.rs` | A chat not yet started, and the pickers of agent, place, model and reasoning level under the field. |
