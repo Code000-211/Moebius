@@ -52,9 +52,9 @@ A request with a body must have `Content-Type: application/json` and a JSON obje
 
 These objects appear in the responses. All ids are numbers; times are Unix seconds.
 
-`Repository`: `id`, `name`, `path` (the clone on the server), `forge` (`none`, `github` or `gitlab`), `default_branch`,
-`github` (`owner/repo` or null), `trusted` (array of logins on the forge), `project` (the path on GitLab, such as
-`group/project`, or null).
+`Repository`: `id`, `name`, `path` (the clone on the server), `forge` (`none`, `github`, `gitlab` or `forgejo`),
+`default_branch`, `github` (`owner/repo` or null), `trusted` (array of logins on the forge), `project` (the path on
+GitLab, such as `group/project`, or the repository on Forgejo as `owner/repo`, or null).
 
 `Card`: `id`, `repository_id`, `number`, `title`, `body`, `author`, `column`, `created_at`, `note` (why the card was sent
 back to coding, or null), `retried_after` (the id of the card's latest run when a person last retried it, or null) and
@@ -94,12 +94,14 @@ null while it is off or when the schedule never comes due) and `last_firing` (it
 
 `Change`: `id`, `repository_id` (null for a change of the harness configuration repository), `harness_repository` (true
 for such a change), `card_id` (or null), `branch`, `state` (`open`, `merged` or `closed`), `pull_request`
-(the number of the pull request on GitHub or of the merge request on GitLab, or null), `checks` (`pending`, `success`,
-`failure` or null; on GitLab the latest pipeline of the head commit: `failed` and `canceled` are `failure`, `success`
-and `skipped` are `success`, anything else is `pending`), `review` (the latest review's state in lower case, such as
-`approved`; on GitLab `approved` once anyone approved, or null), `head` (the published commit), `published_at`, `checks_head` (the commit
-`checks` are for), `failed_checks` (the failing checks of a pull request, or the failed jobs of a pipeline, one per line,
-or null) and `check_output` (the
+(the number of the pull request on GitHub or Forgejo or of the merge request on GitLab, or null), `checks` (`pending`,
+`success`, `failure` or null; on GitLab the latest pipeline of the head commit: `failed` and `canceled` are `failure`,
+`success` and `skipped` are `success`, anything else is `pending`; on Forgejo the latest status of each context of the
+head commit: any `failure` or `error` is `failure`, else any `pending` is `pending`, else `success`), `review` (the
+latest review's state in lower case, such as `approved`; on GitLab `approved` once anyone approved; on Forgejo the
+latest review given that was not dismissed, with `REQUEST_CHANGES` as `changes_requested`; or null), `head` (the published commit), `published_at`, `checks_head` (the commit
+`checks` are for), `failed_checks` (the failing checks of a pull request, the failed jobs of a pipeline, or the failed
+statuses of a commit, one per line, or null) and `check_output` (the
 end of the output of the repository's own checks, or null). A change's `branch` is `moebius/card-<number>`, `moebius/chat-<run id>` for the work of a chat, which has no card, or `research/<research id>-<name>` for a lever of a research, which has none either.
 
 `InboxItem`: `id`, `kind`, `card_id` (or null), `title`, `data` (an object that depends on the kind), `resolved_at` (null
@@ -178,15 +180,15 @@ Request:
 |---|---|---|
 | `name` | string | Required. Letters, digits, `-`, `_` and `.`, and not starting with a dot. Must be unique. |
 | `url` | string | Required. Anything `git clone` takes: a URL or a path on the server. Without a forge, an absolute path that does not exist, or an empty folder, is first made a new repository: branch `main` with one empty commit, "Start the repository". |
-| `forge` | string | `none` (the default), `github` or `gitlab`. |
+| `forge` | string | `none` (the default), `github`, `gitlab` or `forgejo`. |
 | `github` | string | `owner/repo` on GitHub. Required with the forge `github`, not allowed otherwise. Both parts are made of letters, digits, `-`, `_` and `.`. |
-| `project` | string | The project's path on GitLab, groups first: `group/project` or `group/subgroup/project`. Required with the forge `gitlab`, not allowed otherwise. At least two parts, each made of letters, digits, `-`, `_` and `.` and not starting with a dot. |
-| `trusted` | array of strings | Logins on the forge (GitHub logins, GitLab usernames) whose issues need no approval. Only with a forge. |
+| `project` | string | The project's path on GitLab, groups first: `group/project` or `group/subgroup/project`. Required with the forge `gitlab`. At least two parts, each made of letters, digits, `-`, `_` and `.` and not starting with a dot. With the forge `forgejo`, the repository as `owner/repo`: exactly two such parts. Not allowed otherwise. |
+| `trusted` | array of strings | Logins on the forge (GitHub logins, GitLab usernames, Forgejo logins) whose issues need no approval. Only with a forge. |
 
 Response: the `Repository`. Errors: `422` for an invalid name, an absolute path to a folder with files that is not a git
 repository (nothing is created then), a `github` that is not `owner/repo`, a `project` that is not a path as above, or
-a combination other than "no forge, no `github`, no `project`, no `trusted`", "forge `github` with `github`" and "forge
-`gitlab` with `project`"; `422` also when the name is taken (nothing is cloned or created then); `500` when the clone
+a combination other than "no forge, no `github`, no `project`, no `trusted`", "forge `github` with `github`" , "forge
+`gitlab` with `project`" and "forge `forgejo` with `project`"; `422` also when the name is taken (nothing is cloned or created then); `500` when the clone
 fails.
 
 ```sh
@@ -207,9 +209,15 @@ works:
 {"name": "tools", "url": "https://gitlab.com/acme/platform/tools.git", "forge": "gitlab", "project": "acme/platform/tools", "trusted": ["leon"]}
 ```
 
+For Forgejo, such as Codeberg, with `[forgejo]` set up, the clone sends the access token when `url` is on that forge:
+
+```json
+{"name": "gadgets", "url": "https://codeberg.org/acme/gadgets.git", "forge": "forgejo", "project": "acme/gadgets", "trusted": ["leon"]}
+```
+
 ### `PUT /v1/repositories/{id}`
 
-A person, or the Moebius agent, replaces the logins whose issues on a repository on GitHub or GitLab need no approval.
+A person, or the Moebius agent, replaces the logins whose issues on a repository on a forge need no approval.
 Request: `{"trusted": [string], "reason": string}`; `reason` is optional and is kept with the decision. Each login is
 trimmed and kept once (in any case); a login must be made of letters, digits and `-_.[]`. The decision is recorded
 (kind `edit_repository`, decider `person` or `agent:Moebius`; its context has `repository`, `trusted` and
@@ -304,7 +312,8 @@ A person, or the Moebius agent, changes a card's title and body, in any column. 
 string, "reason": string}`; `body` and `reason` are optional (`body` left out is empty), and `reason` is kept with the
 decision. The title is trimmed and must not be blank. On a repository with a forge the issue is changed there first
 (for GitHub, `PATCH /repos/{owner}/{repo}/issues/{number}` with the installation's token; for GitLab,
-`PUT /projects/{path}/issues/{number}` with the access token), and "blocked by #n" in the
+`PUT /projects/{path}/issues/{number}` with the access token; for Forgejo, `PATCH /repos/{owner}/{repo}/issues/{number}`
+with the access token), and "blocked by #n" in the
 new body becomes the card's blockers, as the poll reads them; without a forge the blockers stay as they are. Then the
 card is stored, the decision is recorded (kind `edit_card`, choice `edit_card`, decider `person` or `agent:Moebius`,
 the card's id; its context has `title`, `body`, `previous_title` and `previous_body`) and the event `card_updated` is
@@ -324,7 +333,8 @@ Response: the `Card`. Errors: `404` no such card; `422` the card is not in `Back
 
 A person merges an open change: the decision is recorded (kind `merge`, decider `person`), the forge merges it (a
 no-fast-forward merge into the default branch of the clone for a repository without a forge; the GitHub API for a pull
-request; the GitLab API for a merge request, with the merge commit's message), the change becomes `merged`, its inbox items are resolved and its card, if it has one, moves to `Done`. A
+request; the GitLab API for a merge request, with the merge commit's message; the Forgejo API for a pull request, with a
+merge commit titled with the message), the change becomes `merged`, its inbox items are resolved and its card, if it has one, moves to `Done`. A
 change from a chat has no card: its `ready_to_merge` item is resolved and the commit message is `Merge <branch>`.
 
 A change of the harness configuration repository (`harness_repository` true) is merged into the default branch of its
@@ -1534,8 +1544,8 @@ like `POST /v1/runs/{id}/stop` does. Experiments done stay, and so do the lever 
 | `repository_updated` | The logins a repository on a forge trusts were changed through the API. | The `Repository`. |
 | `file_changed` | A file of a repository was saved through the API. | `{"repository": id, "path": string}` |
 | `script_changed` | A column's script was saved or removed for a repository, through the API. | `{"repository": id, "column": string, "path": string}` |
-| `card_added` | An issue became a card: created through the API or found on GitHub or GitLab. | The `Card`. |
-| `card_updated` | The title or body of a card changed: edited through the API, or changed on GitHub or GitLab. | The `Card`. |
+| `card_added` | An issue became a card: created through the API or found on GitHub, GitLab or Forgejo. | The `Card`. |
+| `card_updated` | The title or body of a card changed: edited through the API, or changed on GitHub, GitLab or Forgejo. | The `Card`. |
 | `card_moved` | A card moved to another column. | `{"card": id, "from": column, "to": column}` |
 | `card_waiting` | The reason a card waits changed: set, replaced, or cleared because the card moved or its script did not wait. Not sent when it stays the same. | `{"card": id, "reason": string or null}` |
 | `change_offered` | A card's change, the work of a chat or a kept lever of a research was offered to a person to merge. | The `Change` (`card_id` is null for a chat's or a lever's). |
@@ -1546,7 +1556,7 @@ like `POST /v1/runs/{id}/stop` does. Experiments done stay, and so do the lever 
 | `run_event` | Something happened in a run. | `{"run": id, "seq": number, "kind": string, "data": object}` (below) |
 | `run_ended` | A run ended. | `{"run": id, "status": "succeeded" \| "failed" \| "stopped"}` |
 | `board_error` | A column script failed; the card stays where it is. | `{"card": id, "message": string}` |
-| `forge_error` | Polling a repository on GitHub or GitLab, or refreshing the clone of a repository without a forge, failed; it is tried again at the next poll or refresh (every 30 seconds without a forge). | `{"repository": "owner/repo" (GitHub), the project's path (GitLab) or the repository's name, "message": string}` |
+| `forge_error` | Polling a repository on GitHub, GitLab or Forgejo, or refreshing the clone of a repository without a forge, failed; it is tried again at the next poll or refresh (every 30 seconds without a forge). | `{"repository": "owner/repo" (GitHub, Forgejo), the project's path (GitLab) or the repository's name, "message": string}` |
 | `harness_error` | An agent's files in the harness configuration repository are broken (it is left out), or refreshing the repository failed (every 30 seconds). | `{"agent": name (left out when the refresh failed), "message": string}` |
 | `retro_done` | A Retro ended: it was `reported`, or the analyst's run ended and its proposals were stored (`proposed`), or it `failed`. | `{"date": "YYYY-MM-DD", "status": "reported" \| "proposed" \| "failed", "proposals": number}` |
 | `retro_error` | The schedule could not start the day's Retro, the trials of a proposal, a research or the replays, or the trials of a proposal broke off; it is tried again a minute later. | `{"message": string}` |

@@ -13,7 +13,7 @@ documentation; `CONTRIBUTING.md` says the same as this file for people.
   provider) and `platform` (what differs between Linux and Windows). The rest is grouped by part, one folder each:
   `server/` (the wiring and nightly schedule, `api`,
   `settings` for editing `moebius.toml` while it runs, `setup` for the Models, Plugins and Get started pages), `repos/`
-  (git, `forge`, `github`, `gitlab`, `poll`, `files`), `board/` (the engine and `scripts`), `decide/` (decision points,
+  (git, `forge`, `github`, `gitlab`, `forgejo`, `poll`, `files`), `board/` (the engine and `scripts`), `decide/` (decision points,
   `check` for the bridge's tool-call check, `guard`, `rules`, `model` for shadowing and takeovers), `harness/`
   (`pibolt`, `claude` for Claude Code, `pick` choosing per agent, `terminal`, `repo` for the harness configuration
   repository, `mcp`, `gateway` for the MCP gateway, `skill`, `grilling`) and `improve/` (`retro`, `trial`, `own` for the

@@ -1,5 +1,5 @@
-//! The loops that keep the server going: the board's tick, which runs every card's column script, the polls of GitHub
-//! and GitLab, and, every 30 seconds, the refresh of the clones of repositories without a forge and of the harness configuration
+//! The loops that keep the server going: the board's tick, which runs every card's column script, the polls of GitHub,
+//! GitLab and Forgejo, and, every 30 seconds, the refresh of the clones of repositories without a forge and of the harness configuration
 //! repository. `serve` runs them, and the schedule (`schedule`), side by side until it stops.
 
 use std::future::Future;
@@ -65,6 +65,13 @@ impl Server {
         }
     }
 
+    /// Polls every Forgejo repository once (see `poll`).
+    pub async fn poll_forgejo(&self) {
+        if let Some(forgejo) = &self.forgejo {
+            poll::poll(&self.app, &**forgejo).await;
+        }
+    }
+
     /// Refreshes the clone of every repository without a forge from where it was cloned; a failure is reported on the
     /// bus. The repositories on a forge are refreshed by its poll.
     pub fn refresh_plain_repositories(&self) {
@@ -106,14 +113,16 @@ pub(super) async fn board(server: Arc<Server>) {
     }
 }
 
-/// Polls GitHub as often as `github.poll_seconds` says, and GitLab as often as `gitlab.poll_seconds` says, until the
-/// future is dropped; a forge that is not set up, never.
+/// Polls GitHub, GitLab and Forgejo each as often as its `poll_seconds` says, until the future is dropped; a forge that
+/// is not set up, never.
 pub(super) async fn poll(server: Arc<Server>) {
     let github = server.config.github.as_ref().map(|g| g.poll);
     let gitlab = server.config.gitlab.as_ref().map(|g| g.poll);
+    let forgejo = server.config.forgejo.as_ref().map(|f| f.poll);
     tokio::join!(
         poll_every(server.clone(), github, |s| Box::pin(s.poll_github())),
         poll_every(server.clone(), gitlab, |s| Box::pin(s.poll_gitlab())),
+        poll_every(server.clone(), forgejo, |s| Box::pin(s.poll_forgejo())),
     );
 }
 

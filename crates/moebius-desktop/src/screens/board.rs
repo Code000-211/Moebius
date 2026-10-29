@@ -63,7 +63,7 @@ fn cards_of<'a>(board: &'a Board, column: &str) -> Vec<&'a Card> {
     cards
 }
 
-/// The page of a board: its header, the project's tabs and the columns. The header of a repository on GitHub or GitLab
+/// The page of a board: its header, the project's tabs and the columns. The header of a repository on a forge
 /// names the logins it trusts, with the pencil that edits them in place.
 pub fn view<'a>(
     board: &'a Board,

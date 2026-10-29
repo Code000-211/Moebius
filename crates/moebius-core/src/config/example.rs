@@ -155,6 +155,14 @@ program = "claude"
 # token_secret = "gitlab"                 # instead of token_file
 # poll_seconds = 30                       # how often each GitLab repository's issues and merge requests are polled
 
+# Repositories on Forgejo or Gitea, Codeberg or one hosted elsewhere, with an access token (scopes write:issue and
+# write:repository). It is read at start from token_file, or from the secret named by token_secret.
+# [forgejo]
+# url = "https://codeberg.org"
+# token_file = "forgejo-token"
+# token_secret = "forgejo"                # instead of token_file
+# poll_seconds = 30                       # how often each repository's issues and pull requests are polled
+
 # The harness configuration repository: a git repository with agents/<name>.toml, agents/<name>.md, skills/, rules.md
 # and mcp.toml, cloned to data_dir/harness. Agents and rules then come from it, edits through the API are commits to it,
 # and [agents.*] and rules_file are errors.

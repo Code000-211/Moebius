@@ -4,9 +4,10 @@
 //!
 //! What every forge shares is here: the loop over the repositories, the issues handed to the board as
 //! [`Issue`](crate::repos::forge::Issue)s (trusted authors and "blocked by #n" are the board's), and what became of each
-//! change as a [`Request`]. What a forge's API answers is turned into those by its client's [`Polled`], in `github`
-//! and `gitlab`.
+//! change as a [`Request`]. What a forge's API answers is turned into those by its client's [`Polled`], in `github`,
+//! `gitlab` and `forgejo`.
 
+mod forgejo;
 mod github;
 mod gitlab;
 

@@ -468,6 +468,10 @@ pub(crate) mod tests {
                 json!({"name": "t", "url": "/srv/t", "forge": "gitlab", "project": "acme/tools/t"})
             )
         );
+        assert_eq!(
+            route(&["repo", "add", "c", "/srv/c", "--forgejo", "acme/c"]).2,
+            Some(json!({"name": "c", "url": "/srv/c", "forge": "forgejo", "project": "acme/c"}))
+        );
         assert_eq!(route(&["usage", "--days", "7"]).1, "/v1/usage?days=7");
         assert_eq!(
             route(&["takeover", "release", "3", "--reason", "back"]),

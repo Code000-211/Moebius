@@ -1,5 +1,5 @@
-//! Adding a repository, by cloning it from a path, a URL, GitHub or GitLab, editing whom a repository on a forge
-//! trusts, and whether a card's issue is trusted to move on without a person's approval.
+//! Adding a repository, by cloning it from a path, a URL, GitHub, GitLab or Forgejo, editing whom a repository on a
+//! forge trusts, and whether a card's issue is trusted to move on without a person's approval.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -78,8 +78,8 @@ impl App {
         Ok(repository)
     }
 
-    /// Clones `url` and adds it as a repository whose issues are polled from `forge` (`gitlab`), where its path is
-    /// `project` (`group/project`, with any subgroups between). Issues by the logins in `trusted` need no approval.
+    /// Clones `url` and adds it as a repository whose issues are polled from `forge`, where its path is `project`: on
+    /// `gitlab` `group/project`, with any subgroups between, on `forgejo` `owner/repo`. Issues by the logins in `trusted` need no approval.
     /// With the forge set up, the clone authenticates with its token when `url` is on it, so private projects work too.
     pub fn add_project_repository(
         &self,
@@ -89,20 +89,27 @@ impl App {
         project: &str,
         trusted: &[String],
     ) -> Result<Repository> {
-        if forge != "gitlab" {
-            return Err(AppError::Invalid(format!(
-                "{forge:?} is not a forge that names repositories by their path"
-            )));
-        }
         let segments: Vec<&str> = project.split('/').collect();
-        if segments.len() < 2
-            || !segments
-                .iter()
-                .all(|s| is_plain_name(s) && !s.starts_with('.'))
-        {
-            return Err(AppError::Invalid(format!(
-                "{project:?} is not a project path as group/project"
-            )));
+        let plain = segments
+            .iter()
+            .all(|s| is_plain_name(s) && !s.starts_with('.'));
+        match forge {
+            "gitlab" if segments.len() < 2 || !plain => {
+                return Err(AppError::Invalid(format!(
+                    "{project:?} is not a project path as group/project"
+                )));
+            }
+            "forgejo" if segments.len() != 2 || !plain => {
+                return Err(AppError::Invalid(format!(
+                    "{project:?} is not a repository as owner/repo"
+                )));
+            }
+            "gitlab" | "forgejo" => {}
+            _ => {
+                return Err(AppError::Invalid(format!(
+                    "{forge:?} is not a forge that names repositories by their path"
+                )));
+            }
         }
         let auth = match self.forges.get(forge) {
             Some(forge) => forge.auth(url, project)?,
@@ -160,7 +167,7 @@ impl App {
             .any(|login| login.eq_ignore_ascii_case(&card.author))
     }
 
-    /// A person, or the Moebius agent, replaces the logins whose issues on a repository on GitHub or GitLab need no
+    /// A person, or the Moebius agent, replaces the logins whose issues on a repository on a forge need no
     /// approval. Each login is trimmed and kept once; the edit is recorded as an `edit_repository` decision and
     /// announced as `repository_updated`. A list that changes nothing does neither.
     pub fn edit_repository(

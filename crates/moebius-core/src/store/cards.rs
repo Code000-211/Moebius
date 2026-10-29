@@ -19,8 +19,8 @@ pub struct Repository {
     pub github: Option<String>,
     /// The logins on its forge whose issues move on without a person's approval.
     pub trusted: Vec<String>,
-    /// The repository's path on a forge other than GitHub, such as `group/subgroup/project` on GitLab; none for
-    /// GitHub and without a forge.
+    /// The repository's path on a forge other than GitHub, such as `group/subgroup/project` on GitLab or `owner/repo`
+    /// on Forgejo; none for GitHub and without a forge.
     #[serde(default)]
     pub project: Option<String>,
 }

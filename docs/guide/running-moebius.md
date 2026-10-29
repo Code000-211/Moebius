@@ -126,6 +126,30 @@ the server in WSL (see [On Windows](#on-windows)). Every key named here is in th
    latest pipeline of a merge request's head commit is its checks, an approval is its review, and a merge on GitLab, or
    in the app, finishes its card. See [configuration](../reference/configuration.md#gitlab).
 
+8. Work on Codeberg, or another Forgejo or Gitea. In the forge's settings (Settings, Applications), generate an access
+   token with the scopes `write:issue` and `write:repository`. Give it to the server in a file only you can read, or as
+   a secret (`moebius secrets set codeberg`, then `token_secret = "codeberg"`). Without `url`, the server reaches
+   Codeberg; for a Forgejo or Gitea of your own, set `url` to its web address:
+
+   ```sh
+   printf '%s' "$CODEBERG_TOKEN" > ~/.config/moebius/forgejo-token
+   chmod 600 ~/.config/moebius/forgejo-token
+   cat >> ~/.config/moebius/moebius.toml <<'TOML'
+   [forgejo]
+   url = "https://codeberg.org"
+   token_file = "forgejo-token"
+   TOML
+   systemctl --user restart moebius
+   moebius repo add gadgets https://codeberg.org/acme/gadgets.git --forgejo acme/gadgets --trusted leon
+   ```
+
+   In the app, the "+" of the sidebar does the same with the forge Forgejo. The server polls the repository's issues
+   every `forgejo.poll_seconds`: open issues become cards, issues by the trusted logins move on without your approval,
+   and "blocked by #n" in an issue becomes a dependency. Changes are pushed with the token and opened as pull requests;
+   the statuses of a pull request's head commit (those of Forgejo Actions, or any CI that reports them) are its checks,
+   its latest review is its review, and a merge on the forge, or in the app, finishes its card. One server reaches one
+   Forgejo. See [configuration](../reference/configuration.md#forgejo).
+
 ## On Windows
 
 The desktop app and the `moebius` commands that operate a server run on Windows. Download
@@ -185,6 +209,8 @@ run the `sha256sum` line of step 1 on it: it must print `FAILED`.
 - GitLab repositories report `forge_error` with `401` or `403`: the token expired, lacks the `api` scope, or (a project
   or group token) does not reach the project. With `404`, the project's path is not the one GitLab shows under the
   project's name, groups first.
+- Forgejo repositories report `forge_error` with `401` or `403`: the token was revoked or lacks a scope. With `404`, the
+  repository is not `owner/repo` as its address on the forge shows it, or the token's user cannot see it.
 - Runs fail because `pi-bolt` is not found: the service's `PATH` is not yours. Set `pi_bolt.program` to the full path.
 - The app cannot connect from another machine: the server still listens on `127.0.0.1`, or a firewall blocks the port.
   `listen` takes an address of the machine, and a change of it needs a restart.

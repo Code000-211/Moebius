@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use raw::{Raw, RawWindow};
-use sections::{check_key, decision_model, gitlab, plugins, teacher};
+use sections::{check_key, decision_model, forgejo, gitlab, plugins, teacher};
 
 use crate::harness::mcp::valid_variable;
 use crate::router::{Classes, check_class};
@@ -22,9 +22,9 @@ use crate::router::{Classes, check_class};
 pub use example::EXAMPLE;
 pub(crate) use sections::default_protocol;
 pub use sections::{
-    AgentConfig, AgentSet, DecisionModelConfig, GitHubConfig, GitLabConfig, HarnessKind,
-    PLUGIN_TIME_LIMIT_SECONDS, PluginConfig, TeacherConfig, TimeOfDay, TokenSource, ToolOutput,
-    UpstreamConfig, valid_agent_name,
+    AgentConfig, AgentSet, DecisionModelConfig, ForgejoConfig, GitHubConfig, GitLabConfig,
+    HarnessKind, PLUGIN_TIME_LIMIT_SECONDS, PluginConfig, TeacherConfig, TimeOfDay, TokenSource,
+    ToolOutput, UpstreamConfig, valid_agent_name,
 };
 
 /// Why a configuration could not be read.
@@ -88,6 +88,12 @@ pub enum ConfigError {
     GitLabSecret { name: String },
     #[error("gitlab.url must not be empty")]
     GitLabUrl,
+    #[error("[forgejo] needs exactly one of token_file and token_secret")]
+    ForgejoToken,
+    #[error("forgejo.token_secret: {name:?} is not a name (letters, digits, - and _)")]
+    ForgejoSecret { name: String },
+    #[error("forgejo.url must not be empty")]
+    ForgejoUrl,
     #[error(
         "{key} cannot be set together with [harness]: move it into the harness configuration repository ({place})"
     )]
@@ -147,6 +153,8 @@ pub struct Config {
     pub github: Option<GitHubConfig>,
     /// The GitLab, if repositories on one are polled.
     pub gitlab: Option<GitLabConfig>,
+    /// The Forgejo or Gitea (such as Codeberg), if repositories on one are polled.
+    pub forgejo: Option<ForgejoConfig>,
     /// The teacher model; without one, calls are refused while prose rules apply.
     pub teacher: Option<TeacherConfig>,
     /// The decision model; without one nothing is shadowed and nothing can be taken over.
@@ -258,6 +266,7 @@ impl Config {
             .unwrap_or_else(|| PathBuf::from("claude"));
         let teacher = raw.teacher.map(teacher).transpose()?;
         let gitlab = raw.gitlab.map(|g| gitlab(g, base)).transpose()?;
+        let forgejo = raw.forgejo.map(|f| forgejo(f, base)).transpose()?;
         let decision_model = raw.decision_model.map(decision_model).transpose()?;
         if raw.budgets.day_tokens.is_some_and(|tokens| tokens < 1) {
             return Err(ConfigError::DayTokens);
@@ -317,6 +326,7 @@ impl Config {
                 poll: Duration::from_secs(g.poll_seconds.unwrap_or(30).max(1)),
             }),
             gitlab,
+            forgejo,
             teacher,
             decision_model,
             plugins,
@@ -656,6 +666,46 @@ mod tests {
         assert!(matches!(
             parse("[gitlab]\nurl = \" \"\ntoken_file = \"t\"\n"),
             Err(ConfigError::GitLabUrl)
+        ));
+    }
+
+    #[test]
+    fn the_forgejo_is_codeberg_unless_named_with_its_token_from_a_file_or_a_secret() {
+        assert_eq!(parse("").unwrap().forgejo, None);
+        let forgejo = parse("[forgejo]\ntoken_file = \"forgejo-token\"\n")
+            .unwrap()
+            .forgejo
+            .unwrap();
+        assert_eq!(forgejo.url, "https://codeberg.org");
+        assert_eq!(
+            forgejo.token,
+            TokenSource::File(PathBuf::from("/srv/forgejo-token"))
+        );
+        assert_eq!(forgejo.poll, Duration::from_secs(30));
+        let forgejo = parse(
+            "[forgejo]\nurl = \"https://gitea.example.org/\"\ntoken_secret = \"forgejo\"\npoll_seconds = 0\n",
+        )
+        .unwrap()
+        .forgejo
+        .unwrap();
+        assert_eq!(forgejo.url, "https://gitea.example.org");
+        assert_eq!(forgejo.token, TokenSource::Secret("forgejo".into()));
+        assert_eq!(forgejo.poll, Duration::from_secs(1));
+        assert!(matches!(
+            parse("[forgejo]\n"),
+            Err(ConfigError::ForgejoToken)
+        ));
+        assert!(matches!(
+            parse("[forgejo]\ntoken_file = \"t\"\ntoken_secret = \"s\"\n"),
+            Err(ConfigError::ForgejoToken)
+        ));
+        assert!(matches!(
+            parse("[forgejo]\ntoken_secret = \"a b\"\n"),
+            Err(ConfigError::ForgejoSecret { .. })
+        ));
+        assert!(matches!(
+            parse("[forgejo]\nurl = \" \"\ntoken_file = \"t\"\n"),
+            Err(ConfigError::ForgejoUrl)
         ));
     }
 

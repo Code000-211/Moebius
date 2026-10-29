@@ -14,7 +14,7 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
  ┌──────────────────────────────────────────────── moebius serve ───────────────────────────────┐
  │  board engine ── runs Luau column scripts per card, every tick                  (board.rs)   │
  │  core: App ── store (SQLite + blobs), bus, repos (git), forges, decisions   (app/, ...)     │
- │  poll ── GitHub and GitLab issues and pull/merge requests, every poll_seconds  (poll/)      │
+ │  poll ── GitHub, GitLab, Forgejo issues and pull/merge requests, every poll_seconds (poll/) │
  │  router + check + MCP gateway ── model endpoints, tool-call check, MCP (127.0.0.1:7172)      │
  └──────────────────────────────────────┬──────────────────────────────▲──────────────────────┘
                                         │ spawns                       │ model requests, /moebius/check
@@ -37,9 +37,10 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
 
 1. **An issue arrives.** Without a forge: `POST /v1/repositories/{id}/issues` (`api::create_issue`) calls
    `App::create_issue`, which stores a card in `Backlog` (`Store::add_card`) and publishes `card_added`. On GitHub: the
-   loop in `Server::serve` calls `poll::poll` with the GitHub client every `github.poll_seconds`, and on GitLab with the
-   GitLab client every `gitlab.poll_seconds`. That fetches the clone (`App::refresh`), lists issues with `GitHub::issues`
-   or `GitLab::issues` (conditional on the ETag), turns them into the forge-neutral `forge::Issue` (the client's
+   loop in `Server::serve` calls `poll::poll` with the GitHub client every `github.poll_seconds`, on GitLab with the
+   GitLab client every `gitlab.poll_seconds`, and on Forgejo with the Forgejo client every `forgejo.poll_seconds`. That
+   fetches the clone (`App::refresh`), lists issues with `GitHub::issues`, `GitLab::issues` or `Forgejo::issues`
+   (conditional on the ETag where the forge gives one), turns them into the forge-neutral `forge::Issue` (the client's
    `poll::Polled`), and `App::sync_issues` adds or updates the cards and their "blocked by #n" dependencies
    (`Store::set_dependencies`). A repository without a forge has no
    poll; the loop in `Server::serve` calls `Server::refresh_plain_repositories` every 30 seconds, which refreshes it
@@ -89,11 +90,12 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
    `moebius/card-<number>` is pointed at the latest successful `code` run's commit (`Repos::point_branch`; each round's
    branch descends from the last, so the branch only moves forward) and the forge publishes it (`Forge::publish`:
    `NoForge` does nothing; `GitHubForge` pushes and, the first time, opens the pull request; `GitLabForge` the same with a
-   merge request). The change is stored
+   merge request, `ForgejoForge` with a pull request on Forgejo). The change is stored
    (`Store::add_change`, later `Store::set_change_head`) with the published commit and time, and `change_updated` is
    published. A card has one change, one branch and one pull request for all its rounds.
 10. **The change is checked.** On GitHub the poll records the check runs of the pull request's head commit, on GitLab
-    the latest pipeline of the merge request's head commit and its failed jobs (`poll::poll_requests`, which reads them
+    the latest pipeline of the merge request's head commit and its failed jobs, on Forgejo the commit statuses of the
+    pull request's head commit (`poll::poll_requests`, which reads them
     as a `poll::Request` through the client's `Polled::request`, then `App::record_change_status`), with the head they
     are for and the failing ones. Without
     a forge, `moebius.run_checks` calls `App::run_checks`: if `.moebius/checks` exists on the default branch, a thread
@@ -231,10 +233,11 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
     automation's agent, place and prompt and the origin `automation`. Each firing is stored (`firings` table: `started`
     with its chat, `skipped` or `failed` with the reason) and published as `automation_fired`.
 13. **The forge reports.** `poll::poll_requests` reads each open change's pull or merge request: checks and review
-    (on GitLab, whether anyone approved) are recorded (`change_updated`), a merged one calls `App::change_merged`, a
+    (on GitLab, whether anyone approved; on Forgejo, the latest review given) are recorded (`change_updated`), a merged one calls `App::change_merged`, a
     closed one calls `App::change_closed`.
 14. **A person merges.** `POST /v1/changes/{id}/merge` calls `App::merge_change`: it records a judgement by `person`,
-    the forge merges (`Repos::merge`, a `--no-ff` merge, `GitHub::merge_pull_request` or `GitLab::merge`), and `App::change_merged`
+    the forge merges (`Repos::merge`, a `--no-ff` merge, `GitHub::merge_pull_request`, `GitLab::merge` or
+    `Forgejo::merge`), and `App::change_merged`
     marks the change merged, resolves the inbox, publishes `change_merged` and moves the card to `Done`.
 15. **Done.** `done.luau` calls `moebius.record_outcome("merged")`, so every judgement made for the card gets an outcome.
 
@@ -248,7 +251,7 @@ start; its version is `PRAGMA user_version`.
 
 | Record | Holds |
 |---|---|
-| `repositories` | Name, clone path, forge (`none`, `github` or `gitlab`), default branch, GitHub name, trusted logins, and the project's path on another forge (GitLab). |
+| `repositories` | Name, clone path, forge (`none`, `github`, `gitlab` or `forgejo`), default branch, GitHub name, trusted logins, and the project's path on another forge (GitLab, Forgejo). |
 | `cards` | One per issue: number (unique per repository), title, body, author, column, note (why it went back to coding). |
 | `card_moves` | Each move of a card (`Store::move_card`, called by `App::move_card`): from, to, the card's note then, time. Moves before this table existed are not recorded. |
 | `dependencies` | For a card, the issue numbers it is blocked by. |
@@ -270,7 +273,7 @@ The server runs on a multi-threaded tokio runtime.
 - HTTP handlers are async and never block. Anything that touches the store or git runs in `tokio::task::spawn_blocking`:
   the desktop API (`api::blocking`), the check endpoint, the board tick and the poll's store and git calls
   (`poll::blocking`).
-- Forge methods block. `GitHubForge` and `GitLabForge` wait for their async clients with `Handle::block_on`, so they must
+- Forge methods block. `GitHubForge`, `GitLabForge` and `ForgejoForge` wait for their async clients with `Handle::block_on`, so they must
   be called from a blocking thread, never from an async task.
 - Column scripts run on the blocking thread of the tick. A Luau state is made and dropped per script run, and is never
   shared between threads.
@@ -405,11 +408,12 @@ At the top:
 |---|---|
 | `server/mod.rs` | Wires everything from the configuration and serves the desktop API, the router and the loops. |
 | `server/leftovers.rs` | What a server that stopped left going, ended at the next start: its runs failed and their worktrees removed, its Retros, research and trials set back. |
-| `server/loops.rs` | The board's tick, the polls of GitHub and GitLab, and the refresh of the clones every 30 seconds. |
+| `server/loops.rs` | The board's tick, the polls of GitHub, GitLab and Forgejo, and the refresh of the clones every 30 seconds. |
 | `server/plugins.rs` | Starting the plugins in their own process that `[[plugins]]` names, with their standard error in `<data_dir>/plugins/<name>.log`, redacted. |
 | `server/schedule.rs` | Once a minute: the Retro, trials, research, replays and automations when they are due, and the pause of chats that wait idle. |
 | `server/fake_github.rs` | For the tests only: a fake GitHub with one repository, and a server that polls it. |
 | `server/fake_gitlab.rs` | For the tests only: a fake GitLab with one project, a server that polls it, and the tests of the GitLab forge through it. |
+| `server/fake_forgejo.rs` | For the tests only: a fake Forgejo with one repository, a server that polls it, and the tests of the Forgejo forge through it. |
 | `server/api/mod.rs` | The desktop API: the state it needs, the token check, the router that merges the routes of its parts, how a failure becomes a status, and `GET /v1/health`. |
 | `server/api/cards.rs` | The snapshot of every board, issues, cards and their changes (edit, approve, retry, merge, reject), a card's runs and history. |
 | `server/api/repositories.rs` | Adding and editing repositories, and their column scripts and files. |
@@ -436,12 +440,14 @@ At the top:
 | Module | What it is for |
 |---|---|
 | `repos/mod.rs` | Clones, worktrees, branches, pushes, merges and conflict checks through the `git` command line. |
-| `repos/forge.rs` | The `Forge` trait with the forges `none`, `github` and `gitlab`, and the forge-neutral `Issue`. |
+| `repos/forge.rs` | The `Forge` trait with the forges `none`, `github`, `gitlab` and `forgejo`, and the forge-neutral `Issue`. |
 | `repos/github.rs` | The GitHub App client: JWT, installation tokens, issues with ETags, pull requests, checks, reviews, merge. |
 | `repos/gitlab.rs` | The GitLab client: the access token, issues with ETags, merge requests, pipelines and their failed jobs, approvals, merge. |
+| `repos/forgejo.rs` | The Forgejo client (Codeberg, Forgejo, Gitea): the access token, issues with ETags where given, pull requests, commit statuses, reviews, merge. |
 | `repos/poll/mod.rs` | The poll of the forges: the loop over their repositories, issues into cards, and what became of each change (`Polled`, `Request`). |
 | `repos/poll/github.rs` | What GitHub answers, read for the poll: issues, a pull request with its check runs and latest review. |
 | `repos/poll/gitlab.rs` | What GitLab answers, read for the poll: issues, a merge request with its latest pipeline, failed jobs and approvals. |
+| `repos/poll/forgejo.rs` | What Forgejo answers, read for the poll: issues, a pull request with the statuses of its head commit and its latest review. |
 | `repos/files.rs` | A repository's files on its default branch, read and committed (the Files and Editor tabs of a project). |
 
 `board/`, the workflow:

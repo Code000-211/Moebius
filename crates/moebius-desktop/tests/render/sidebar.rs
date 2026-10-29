@@ -230,6 +230,18 @@ fn adding_needs_a_name_and_a_url_and_with_github_the_repository_and_sends_what_t
         json!({"name": "demo", "url": "/srv/git/demo", "forge": "gitlab", "project": "acme/platform/demo",
                "trusted": ["leon", "mona"]})
     );
+
+    for message in [
+        add_repository::Message::ForgeChosen(add_repository::Forge::Forgejo),
+        add_repository::Message::ProjectEdited(" acme/demo ".into()),
+    ] {
+        let _ = form.update(message, None);
+    }
+    assert_eq!(
+        serde_json::to_value(form.request().unwrap()).unwrap(),
+        json!({"name": "demo", "url": "/srv/git/demo", "forge": "forgejo", "project": "acme/demo",
+               "trusted": ["leon", "mona"]})
+    );
 }
 
 /// The page with the forge GitLab: compare `tests/snapshots/add-repository-gitlab-tiny-skia.png`.
@@ -265,6 +277,41 @@ fn the_add_page_asks_for_the_gitlab_project_and_the_trusted_usernames() {
             "GitLab project",
             "Trusted authors",
             "GitLab usernames, separated by commas. Their issues need no approval.",
+        ],
+    );
+}
+
+/// The page with the forge Forgejo: compare `tests/snapshots/add-repository-forgejo-tiny-skia.png`.
+#[test]
+fn the_add_page_asks_for_the_forgejo_repository_and_the_trusted_logins() {
+    let mut app = add_repository_app();
+    typed(
+        &mut app,
+        vec![
+            add_repository::Message::NameEdited("widgets".into()),
+            add_repository::Message::UrlEdited("https://codeberg.org/acme/widgets.git".into()),
+            add_repository::Message::ForgeChosen(add_repository::Forge::Forgejo),
+        ],
+    );
+    let add = |app: &App| pressed(app, "Add") == Some("[AddRepository(Add)]".into());
+    assert!(!add(&app), "Forgejo needs owner/name");
+    typed(
+        &mut app,
+        vec![
+            add_repository::Message::ProjectEdited("acme/widgets".into()),
+            add_repository::Message::TrustedEdited("leon".into()),
+        ],
+    );
+    assert!(add(&app));
+    assert!(!shows(&app, "GitLab project"));
+    draw(
+        &app,
+        "add-repository-forgejo",
+        &[
+            "Forgejo",
+            "Forgejo repository",
+            "Trusted authors",
+            "Forgejo logins, separated by commas. Their issues need no approval.",
         ],
     );
 }

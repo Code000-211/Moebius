@@ -8,7 +8,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 use super::ConfigError;
-use super::raw::{RawDecisionModel, RawGitLab, RawTeacher};
+use super::raw::{RawDecisionModel, RawForgejo, RawGitLab, RawTeacher};
 use crate::harness::mcp::{McpServer, valid_variable};
 use crate::router::{OAuthConfig, Protocol};
 
@@ -119,6 +119,42 @@ pub(super) fn gitlab(raw: RawGitLab, base: &std::path::Path) -> Result<GitLabCon
         return Err(ConfigError::GitLabUrl);
     }
     Ok(GitLabConfig {
+        url,
+        token,
+        poll: Duration::from_secs(raw.poll_seconds.unwrap_or(30).max(1)),
+    })
+}
+
+/// The Forgejo or Gitea Moebius reaches with an access token: Codeberg, or one hosted elsewhere.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ForgejoConfig {
+    /// The forge's web address, such as `https://codeberg.org`, without a trailing `/`; its API is at `<url>/api/v1`.
+    pub url: String,
+    /// Where the access token is read from when the server starts.
+    pub token: TokenSource,
+    /// How often the issues and pull requests of each repository on it are polled.
+    pub poll: Duration,
+}
+
+/// The Forgejo of `[forgejo]`, with its defaults: exactly one of `token_file` and `token_secret`.
+pub(super) fn forgejo(
+    raw: RawForgejo,
+    base: &std::path::Path,
+) -> Result<ForgejoConfig, ConfigError> {
+    let token = match (raw.token_file, raw.token_secret) {
+        (Some(file), None) => TokenSource::File(base.join(file)),
+        (None, Some(name)) if valid_agent_name(&name) => TokenSource::Secret(name),
+        (None, Some(name)) => return Err(ConfigError::ForgejoSecret { name }),
+        _ => return Err(ConfigError::ForgejoToken),
+    };
+    let url = raw
+        .url
+        .unwrap_or_else(|| "https://codeberg.org".to_string());
+    let url = url.trim().trim_end_matches('/').to_string();
+    if url.is_empty() {
+        return Err(ConfigError::ForgejoUrl);
+    }
+    Ok(ForgejoConfig {
         url,
         token,
         poll: Duration::from_secs(raw.poll_seconds.unwrap_or(30).max(1)),

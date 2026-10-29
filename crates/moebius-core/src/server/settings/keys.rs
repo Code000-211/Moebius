@@ -68,6 +68,10 @@ const KEYS: &[Key] = &[
     key("gitlab.token_file", "", false),
     key("gitlab.token_secret", "", false),
     key("gitlab.poll_seconds", "30", false),
+    key("forgejo.url", "\"https://codeberg.org\"", false),
+    key("forgejo.token_file", "", false),
+    key("forgejo.token_secret", "", false),
+    key("forgejo.poll_seconds", "30", false),
     key("agents", "{}", true),
 ];
 
@@ -77,6 +81,7 @@ const URLS: &[&str] = &[
     "decision_model.url",
     "router.upstreams",
     "gitlab.url",
+    "forgejo.url",
 ];
 
 /// The value at the dotted `name` of the parsed file.

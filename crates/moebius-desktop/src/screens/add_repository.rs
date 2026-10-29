@@ -1,5 +1,5 @@
-//! The "Add a repository" page the "+" of the sidebar opens: a name, where to clone from, the forge (none, GitHub or
-//! GitLab) with the repository's name there, and the trusted authors. Add sends `POST /v1/repositories`; the new board opens when the server took it, and what it refused is
+//! The "Add a repository" page the "+" of the sidebar opens: a name, where to clone from, the forge (none, GitHub,
+//! GitLab or Forgejo) with the repository's name there, and the trusted authors. Add sends `POST /v1/repositories`; the new board opens when the server took it, and what it refused is
 //! shown under the form.
 
 use iced::font::Weight;
@@ -20,6 +20,8 @@ pub enum Forge {
     None,
     GitHub,
     GitLab,
+    /// Codeberg, or any Forgejo or Gitea.
+    Forgejo,
 }
 
 impl Forge {
@@ -29,6 +31,7 @@ impl Forge {
             Forge::None => "none",
             Forge::GitHub => "github",
             Forge::GitLab => "gitlab",
+            Forge::Forgejo => "forgejo",
         }
     }
 }
@@ -39,7 +42,7 @@ pub enum Message {
     UrlEdited(String),
     ForgeChosen(Forge),
     GithubEdited(String),
-    /// The project's path on GitLab was edited.
+    /// The project's path on GitLab, or the repository on Forgejo, was edited.
     ProjectEdited(String),
     TrustedEdited(String),
     /// "Add" was pressed.
@@ -70,7 +73,7 @@ impl AddRepository {
         let forge_name = match self.forge {
             Forge::None => "-",
             Forge::GitHub => github,
-            Forge::GitLab => project,
+            Forge::GitLab | Forge::Forgejo => project,
         };
         if name.is_empty() || url.is_empty() || forge_name.is_empty() {
             return None;
@@ -80,7 +83,8 @@ impl AddRepository {
             url: url.to_string(),
             forge: self.forge.name(),
             github: (self.forge == Forge::GitHub).then(|| github.to_string()),
-            project: (self.forge == Forge::GitLab).then(|| project.to_string()),
+            project: matches!(self.forge, Forge::GitLab | Forge::Forgejo)
+                .then(|| project.to_string()),
             trusted: if self.forge != Forge::None {
                 self.trusted
                     .split(',')
@@ -168,7 +172,8 @@ impl AddRepository {
             row([
                 ("None", Forge::None),
                 ("GitHub", Forge::GitHub),
-                ("GitLab", Forge::GitLab)
+                ("GitLab", Forge::GitLab),
+                ("Forgejo", Forge::Forgejo)
             ]
             .map(|(label, forge)| page::chip(
                 label.to_string(),
@@ -207,6 +212,20 @@ impl AddRepository {
                     .push(field("leon, mona", &self.trusted, Message::TrustedEdited))
                     .push(page::body(
                         "GitLab usernames, separated by commas. Their issues need no approval.",
+                    ));
+            }
+            Forge::Forgejo => {
+                content = content
+                    .push(label("Forgejo repository"))
+                    .push(field("acme/radiance", &self.project, Message::ProjectEdited))
+                    .push(page::body(
+                        "Owner and name, as on Codeberg. The server reaches the Forgejo of [forgejo] in its \
+                         settings with its access token.",
+                    ))
+                    .push(label("Trusted authors"))
+                    .push(field("leon, mona", &self.trusted, Message::TrustedEdited))
+                    .push(page::body(
+                        "Forgejo logins, separated by commas. Their issues need no approval.",
                     ));
             }
         }

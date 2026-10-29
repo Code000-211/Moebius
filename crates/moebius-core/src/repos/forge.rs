@@ -1,7 +1,8 @@
 //! Forges: where a repository's issues and changes live (ADR 0009). The git forge "none" is for repositories whose
 //! issues and changes live in Moebius and are merged locally; the GitHub forge offers changes as pull requests and
-//! merges them through the GitHub API, and the GitLab forge does the same with merge requests. An issue as every forge
-//! lists it is an [`Issue`], which the poll hands to the board.
+//! merges them through the GitHub API, the GitLab forge does the same with merge requests, and the Forgejo forge with
+//! pull requests on Codeberg, Forgejo or Gitea. An issue as every forge lists it is an [`Issue`], which the poll hands
+//! to the board.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -9,6 +10,7 @@ use std::sync::Arc;
 use base64::Engine;
 use tokio::runtime::Handle;
 
+use crate::repos::forgejo::{Forgejo, ForgejoError};
 use crate::repos::github::{GitHub, GitHubError};
 use crate::repos::gitlab::{GitLab, GitLabError};
 use crate::repos::{GitError, Repos, git};
@@ -23,6 +25,8 @@ pub enum ForgeError {
     GitHub(#[from] GitHubError),
     #[error(transparent)]
     GitLab(#[from] GitLabError),
+    #[error(transparent)]
+    Forgejo(#[from] ForgejoError),
     #[error("{0}")]
     Invalid(String),
 }
@@ -398,5 +402,127 @@ impl Forge for GitLabForge {
             return Ok(None);
         }
         Ok(Some(basic_auth("oauth2", self.gitlab.token())))
+    }
+}
+
+/// The forge for repositories on Forgejo or Gitea, such as Codeberg: a change is a branch pushed with the access token
+/// and a pull request, which later pushes update. Like [`GitHubForge`], its methods wait for the asynchronous client on
+/// `runtime`, so they must be called from a thread that may block.
+pub struct ForgejoForge {
+    forgejo: Arc<Forgejo>,
+    repos: Repos,
+    runtime: Handle,
+}
+
+impl ForgejoForge {
+    pub fn new(forgejo: Arc<Forgejo>, repos: Repos, runtime: Handle) -> Self {
+        Self {
+            forgejo,
+            repos,
+            runtime,
+        }
+    }
+
+    /// The repository's name on Forgejo, as `owner/repo`.
+    fn repo(repository: &Repository) -> Result<&str, ForgeError> {
+        repository
+            .project
+            .as_deref()
+            .filter(|_| repository.forge == "forgejo")
+            .ok_or_else(|| {
+                ForgeError::Invalid(format!("{} is not a Forgejo repository", repository.name))
+            })
+    }
+
+    /// The header for git to reach the clone's `origin` (see `Forge::auth`).
+    fn origin_auth(&self, clone: &Path) -> Result<Option<String>, ForgeError> {
+        self.auth(&self.repos.origin_url(clone)?, "")
+    }
+}
+
+impl Forge for ForgejoForge {
+    fn name(&self) -> &'static str {
+        "forgejo"
+    }
+
+    fn publish(
+        &self,
+        repository: &Repository,
+        title: &str,
+        body: &str,
+        branch: &str,
+        pull_request: Option<i64>,
+    ) -> Result<Option<i64>, ForgeError> {
+        let repo = Self::repo(repository)?;
+        let clone = Path::new(&repository.path);
+        let header = self.origin_auth(clone)?;
+        self.repos.push(clone, branch, header.as_deref())?;
+        if pull_request.is_some() {
+            return Ok(pull_request);
+        }
+        let number = self.runtime.block_on(self.forgejo.open_pull_request(
+            repo,
+            title,
+            branch,
+            &repository.default_branch,
+            body,
+        ))?;
+        Ok(Some(number))
+    }
+
+    fn merge(
+        &self,
+        repository: &Repository,
+        change: &Change,
+        message: &str,
+    ) -> Result<String, ForgeError> {
+        let repo = Self::repo(repository)?;
+        let number = change.pull_request.ok_or_else(|| {
+            ForgeError::Invalid(format!("change {} has no pull request", change.id))
+        })?;
+        Ok(self
+            .runtime
+            .block_on(self.forgejo.merge(repo, number, message))?)
+    }
+
+    fn create_issue(
+        &self,
+        repository: &Repository,
+        title: &str,
+        body: &str,
+    ) -> Result<i64, ForgeError> {
+        let repo = Self::repo(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.forgejo.create_issue(repo, title, body))?)
+    }
+
+    fn update_issue(
+        &self,
+        repository: &Repository,
+        number: i64,
+        title: &str,
+        body: &str,
+    ) -> Result<(), ForgeError> {
+        let repo = Self::repo(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.forgejo.update_issue(repo, number, title, body))?)
+    }
+
+    fn refresh(&self, repository: &Repository) -> Result<(), ForgeError> {
+        Self::repo(repository)?;
+        let clone = Path::new(&repository.path);
+        let header = self.origin_auth(clone)?;
+        Ok(self.repos.fetch(clone, header.as_deref())?)
+    }
+
+    /// The access token as a basic-auth header, the token as the user name, for addresses on this Forgejo only: the
+    /// token goes to no other host, and a local directory needs none.
+    fn auth(&self, url: &str, _name: &str) -> Result<Option<String>, ForgeError> {
+        if !url.starts_with(&format!("{}/", self.forgejo.url())) {
+            return Ok(None);
+        }
+        Ok(Some(basic_auth(self.forgejo.token(), "x-oauth-basic")))
     }
 }

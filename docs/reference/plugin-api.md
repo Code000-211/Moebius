@@ -40,7 +40,7 @@ Serialised in lower case with underscores, as in `"decider"`.
 
 | Kind | Meant for | Used by the core today |
 |---|---|---|
-| `forge` | Issues and changes: GitHub, plain git, later Codeberg and GitLab. | No. The forges are a Rust trait in `forge.rs`. |
+| `forge` | Issues and changes: GitHub, GitLab, Forgejo (Codeberg, Gitea), plain git. | No. The forges are a Rust trait in `forge.rs`. |
 | `harness` | Drives a coding-agent harness such as Pi-Bolt. | No. `harness/pibolt/` is called directly. |
 | `runner` | Where harnesses run: local worktrees, later GPU machines. | No. |
 | `decider` | Answers decision points. | Yes: `guard` decides `tool_call`. |

@@ -1,5 +1,5 @@
-//! The repositories: `repos` lists those of the boards, `repo add` clones one into the server, on the GitHub or GitLab
-//! forge when it names one.
+//! The repositories: `repos` lists those of the boards, `repo add` clones one into the server, on the GitHub, GitLab
+//! or Forgejo forge when it names one.
 
 use clap::Subcommand;
 use serde_json::{Value, json};
@@ -15,11 +15,14 @@ pub enum RepoCommand {
         /// folder, becomes a new repository.
         url: String,
         /// `owner/repo` on GitHub; the repository then uses the GitHub forge.
-        #[arg(long, conflicts_with = "gitlab")]
+        #[arg(long, conflicts_with_all = ["gitlab", "forgejo"])]
         github: Option<String>,
         /// The project's path on GitLab, such as `group/project`; the repository then uses the GitLab forge.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "forgejo")]
         gitlab: Option<String>,
+        /// `owner/repo` on Forgejo, such as Codeberg; the repository then uses the Forgejo forge.
+        #[arg(long)]
+        forgejo: Option<String>,
         /// A login on the forge whose issues need no approval; give it again for more.
         #[arg(long = "trusted")]
         trusted: Vec<String>,
@@ -38,6 +41,7 @@ pub fn repo(command: &RepoCommand) -> Plan {
         url,
         github,
         gitlab,
+        forgejo,
         trusted,
     } = command;
     let mut body = json!({ "name": name, "url": url });
@@ -48,6 +52,10 @@ pub fn repo(command: &RepoCommand) -> Plan {
     if let Some(project) = gitlab {
         body["forge"] = "gitlab".into();
         body["project"] = project.clone().into();
+    }
+    if let Some(repo) = forgejo {
+        body["forge"] = "forgejo".into();
+        body["project"] = repo.clone().into();
     }
     if !trusted.is_empty() {
         body["trusted"] = json!(trusted);

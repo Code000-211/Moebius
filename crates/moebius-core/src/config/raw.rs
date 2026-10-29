@@ -83,6 +83,15 @@ pub(super) struct RawGitLab {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub(super) struct RawForgejo {
+    pub(super) url: Option<String>,
+    pub(super) token_file: Option<PathBuf>,
+    pub(super) token_secret: Option<String>,
+    pub(super) poll_seconds: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct RawGitHub {
     pub(super) app_id: u64,
     pub(super) private_key_file: PathBuf,
@@ -139,6 +148,7 @@ pub(super) struct Raw {
     pub(super) harness: Option<RawHarness>,
     pub(super) github: Option<RawGitHub>,
     pub(super) gitlab: Option<RawGitLab>,
+    pub(super) forgejo: Option<RawForgejo>,
     pub(super) teacher: Option<RawTeacher>,
     pub(super) decision_model: Option<RawDecisionModel>,
     #[serde(default)]

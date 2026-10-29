@@ -124,6 +124,15 @@ fn the_pencil_in_a_github_boards_header_edits_the_trusted_authors() {
     assert!(shows(&app, "GitLab · acme/platform/tools"));
     assert!(shows(&app, " · trusts leon"));
     assert_eq!(clicked_id(&app, "edit-trusted").len(), 1);
+
+    // One on Forgejo names its repository there.
+    let mut gadgets = repository(4, "gadgets", None);
+    gadgets["forge"] = "forgejo".into();
+    gadgets["project"] = "acme/gadgets".into();
+    let app = App::with_snapshot(snapshot(vec![board(gadgets, vec![])], vec![]));
+    assert!(shows(&app, "Forgejo · acme/gadgets"));
+    assert!(shows(&app, " · no trusted authors"));
+    assert_eq!(clicked_id(&app, "edit-trusted").len(), 1);
 }
 
 #[test]

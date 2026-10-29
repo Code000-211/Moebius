@@ -18,7 +18,8 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
   parts that need a Unix shell say they need Linux or WSL. The desktop app and the `moebius` commands that operate a
   server run on Linux and Windows. Releases are built for Linux x86_64 and Windows x86_64.
 - Repositories with the **GitHub forge**, with the **GitLab forge** (gitlab.com or self-hosted, with an access token),
-  and repositories **without a forge** (plain git).
+  with the **Forgejo forge** (Codeberg, or a Forgejo or Gitea of one's own, with an access token), and repositories
+  **without a forge** (plain git).
 - Two harnesses, picked per agent by its `harness`: **Pi-Bolt**, driven in its RPC mode, with the Moebius **bridge**
   loaded into every run as a Pi extension, and **Claude Code**'s command line (`claude -p` with `stream-json`), which
   has no bridge: the router checks every tool call in its model's answers with `decide("tool_call")` and replaces a
@@ -46,7 +47,7 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
 ### Not in the first version
 
 - Harnesses other than Pi-Bolt and Claude Code.
-- Forges other than GitHub and GitLab (Codeberg comes later).
+- Forges other than GitHub, GitLab and Forgejo (with Gitea).
 - Runners other than local worktrees on the server (GPU machines come as runner plugins).
 - Training the decision model; the first version records judgements and exports them.
 - Webhooks; forges are polled (ADR 0003).
@@ -116,6 +117,7 @@ steer, stop) go through the same record.
 |---|---|
 | GitHub forge | Acts as its own GitHub App with webhooks off; polls issues, pull requests, checks and reviews about every 30 seconds with conditional requests; opens and updates changes; maps trusted authors and "blocked by". |
 | GitLab forge | Reaches gitlab.com or a self-hosted GitLab with a personal, project or group access token from a file or the secrets; polls issues (conditional on the ETag where GitLab gives one), merge requests, their pipelines and approvals; opens, updates and merges changes as merge requests; maps trusted authors and "blocked by" as the GitHub forge does. |
+| Forgejo forge | Reaches Codeberg, or any Forgejo or Gitea, with an access token from a file or the secrets; polls issues (conditional on the ETag where the forge gives one), pull requests, the commit statuses of their head and their reviews; opens, updates and merges changes as pull requests; maps trusted authors and "blocked by" as the GitHub forge does. |
 | Git forge (none) | For a repository without a forge: issues and changes live in Moebius; merging happens in the desktop app. |
 | Pi-Bolt harness | Starts `pi-bolt --mode rpc` per run with the agent's model, thinking level, instructions (`--append-system-prompt`), skills (`--skill`) and extensions; maps Pi's events to run events. |
 | Claude Code harness | Starts `claude -p --input-format stream-json --output-format stream-json --verbose` per run with the router as `ANTHROPIC_BASE_URL`, the run's token as its key, the agent's model, instructions, skills and MCP servers; maps its records to the same run events. |

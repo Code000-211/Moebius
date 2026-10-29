@@ -37,10 +37,10 @@ Add `--json` to any command to read fields (`"$MOEBIUS" board --json`). For anyt
 | The person wants | Command |
 |---|---|
 | An inbox item answered as the app's button does | `"$MOEBIUS" inbox act <item> <approve\|reject\|merge\|retry\|confirm\|dismiss> --reason "..."` |
-| A repository added | `"$MOEBIUS" repo add <name> <url>` (`--github owner/repo` for GitHub, `--gitlab group/project` for GitLab) |
+| A repository added | `"$MOEBIUS" repo add <name> <url>` (`--github owner/repo` for GitHub, `--gitlab group/project` for GitLab, `--forgejo owner/repo` for Codeberg or another Forgejo) |
 | An issue (a card in the backlog) | `"$MOEBIUS" issue create <repository id> "<title>" --body "..."` |
 | A card's title or body changed (on GitHub the issue too; "blocked by #n" in the body sets its blockers) | `"$MOEBIUS" api PUT /v1/cards/<id> --body '{"title": "...", "body": "...", "reason": "..."}'` |
-| The logins a repository on GitHub or GitLab trusts | `"$MOEBIUS" api PUT /v1/repositories/<id> --body '{"trusted": ["leon"], "reason": "..."}'` (the whole list) |
+| The logins a repository on a forge trusts | `"$MOEBIUS" api PUT /v1/repositories/<id> --body '{"trusted": ["leon"], "reason": "..."}'` (the whole list) |
 | A draft's brief changed before it is confirmed | `"$MOEBIUS" api PUT /v1/research/<id> --body '{"goal": "...", "measure": "...", "better": "lower", "token_budget": <n>}'` |
 | A research brief | `"$MOEBIUS" research new --repository <id> --goal "..." --measure "<command>" --better lower --token-budget <n>`, then `"$MOEBIUS" research confirm <id>` once the person agrees |
 | A grilling's issues made into cards | `"$MOEBIUS" grilling confirm <id>`; or `"$MOEBIUS" grilling dismiss <id>` |

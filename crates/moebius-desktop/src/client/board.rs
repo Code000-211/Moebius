@@ -13,7 +13,7 @@ pub struct Repository {
     pub name: String,
     #[serde(default)]
     pub path: String,
-    /// `none`, `github` or `gitlab`.
+    /// `none`, `github`, `gitlab` or `forgejo`.
     #[serde(default)]
     pub forge: String,
     #[serde(default)]
@@ -22,7 +22,7 @@ pub struct Repository {
     pub github: Option<String>,
     #[serde(default)]
     pub trusted: Vec<String>,
-    /// The project's path on GitLab.
+    /// The project's path on GitLab, or `owner/repo` on Forgejo.
     #[serde(default)]
     pub project: Option<String>,
 }
@@ -32,6 +32,7 @@ impl Repository {
     pub fn forge_tag(&self) -> String {
         match (self.forge.as_str(), &self.github, &self.project) {
             ("gitlab", _, Some(project)) => format!("GitLab · {project}"),
+            ("forgejo", _, Some(project)) => format!("Forgejo · {project}"),
             (_, Some(github), _) => format!("GitHub · {github}"),
             _ => "No forge".to_string(),
         }
@@ -48,12 +49,12 @@ impl Repository {
 pub struct NewRepository {
     pub name: String,
     pub url: String,
-    /// `none`, `github` or `gitlab`.
+    /// `none`, `github`, `gitlab` or `forgejo`.
     pub forge: &'static str,
     /// `owner/name`, with the forge `github`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub github: Option<String>,
-    /// `group/project`, with the forge `gitlab`.
+    /// `group/project`, with the forge `gitlab`; `owner/name`, with the forge `forgejo`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]

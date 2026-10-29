@@ -3,11 +3,13 @@
 //! data directory at start.
 //!
 //! This module wires every part from the configuration and serves them; `leftovers` ends what a server that stopped
-//! left going, `loops` holds the board's tick, the polls of GitHub and GitLab and the refresh of the clones, and `schedule` what is
+//! left going, `loops` holds the board's tick, the polls of the forges and the refresh of the clones, and `schedule` what is
 //! looked at once a minute. `api` is the desktop API, `settings` edits `moebius.toml` while the server runs, and
 //! `setup` is what the Models, Plugins and Get started pages show. `plugins` starts the plugins in their own process.
 
 pub mod api;
+#[cfg(test)]
+mod fake_forgejo;
 #[cfg(test)]
 mod fake_github;
 #[cfg(test)]
@@ -36,7 +38,8 @@ use crate::harness::pibolt::PiBolt;
 use crate::harness::pick::Harnesses;
 use crate::harness::repo::HarnessRepo;
 use crate::harness::skill;
-use crate::repos::forge::{GitHubForge, GitLabForge};
+use crate::repos::forge::{ForgejoForge, GitHubForge, GitLabForge};
+use crate::repos::forgejo::Forgejo;
 use crate::repos::github::GitHub;
 use crate::repos::gitlab::GitLab;
 use crate::router::Router;
@@ -74,7 +77,22 @@ pub struct Server {
     pub github: Option<Arc<GitHub>>,
     /// The client for the GitLab, if one is configured.
     pub gitlab: Option<Arc<GitLab>>,
+    /// The client for the Forgejo (such as Codeberg), if one is configured.
+    pub forgejo: Option<Arc<Forgejo>>,
     pub token: Arc<str>,
+}
+
+/// The access token of `forge` from where the configuration keeps it: a file, or a secret. An empty token is an error.
+fn read_token(token: &TokenSource, secrets: &Secrets, forge: &str) -> Result<String, String> {
+    let token = match token {
+        TokenSource::File(file) => std::fs::read_to_string(file)
+            .map_err(|e| format!("cannot read {}: {e}", file.display()))?,
+        TokenSource::Secret(name) => secrets.resolve(None, Some(name))?.unwrap_or_default(),
+    };
+    if token.trim().is_empty() {
+        return Err(format!("the {forge} access token is empty"));
+    }
+    Ok(token)
 }
 
 impl Server {
@@ -147,16 +165,7 @@ impl Server {
         };
         let gitlab = match &config.gitlab {
             Some(g) => {
-                let token = match &g.token {
-                    TokenSource::File(file) => std::fs::read_to_string(file)
-                        .map_err(|e| format!("cannot read {}: {e}", file.display()))?,
-                    TokenSource::Secret(name) => {
-                        secrets.resolve(None, Some(name))?.unwrap_or_default()
-                    }
-                };
-                if token.trim().is_empty() {
-                    return Err("the GitLab access token is empty".into());
-                }
+                let token = read_token(&g.token, &secrets, "GitLab")?;
                 let gitlab = Arc::new(GitLab::new(&g.url, &token));
                 app.add_forge(Box::new(GitLabForge::new(
                     gitlab.clone(),
@@ -164,6 +173,19 @@ impl Server {
                     tokio::runtime::Handle::current(),
                 )));
                 Some(gitlab)
+            }
+            None => None,
+        };
+        let forgejo = match &config.forgejo {
+            Some(f) => {
+                let token = read_token(&f.token, &secrets, "Forgejo")?;
+                let forgejo = Arc::new(Forgejo::new(&f.url, &token));
+                app.add_forge(Box::new(ForgejoForge::new(
+                    forgejo.clone(),
+                    app.repos.clone(),
+                    tokio::runtime::Handle::current(),
+                )));
+                Some(forgejo)
             }
             None => None,
         };
@@ -222,11 +244,12 @@ impl Server {
             harness_repo,
             github,
             gitlab,
+            forgejo,
             token: token.into(),
         })
     }
 
-    /// Serves the desktop API and the router, ticks the board and polls GitHub and GitLab, until the future is dropped.
+    /// Serves the desktop API and the router, ticks the board and polls the forges, until the future is dropped.
     pub async fn serve(
         self: Arc<Self>,
         api_listener: TcpListener,
@@ -322,6 +345,39 @@ mod tests {
             .err()
             .unwrap();
         assert!(error.contains("missing.pem"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn the_server_needs_the_forgejo_token_from_its_file_or_its_secret() {
+        let dir = tempfile::tempdir().unwrap();
+        let start = |text: &str| {
+            let config = Config::parse(text, dir.path(), &dir.path().join("moebius.toml")).unwrap();
+            Server::new(config, "127.0.0.1:1".parse().unwrap())
+        };
+        let error = start("[forgejo]\ntoken_file = \"missing-token\"\n")
+            .err()
+            .unwrap();
+        assert!(error.contains("missing-token"), "{error}");
+        let error = start("[forgejo]\ntoken_secret = \"codeberg\"\n")
+            .err()
+            .unwrap();
+        assert!(
+            error.contains("the secret codeberg is not stored"),
+            "{error}"
+        );
+        std::fs::write(dir.path().join("empty"), "\n").unwrap();
+        let error = start("[forgejo]\ntoken_file = \"empty\"\n").err().unwrap();
+        assert_eq!(error, "the Forgejo access token is empty");
+
+        Secrets::new(&dir.path().join(".moebius"))
+            .set("codeberg", "secret-token")
+            .unwrap();
+        let server = start("[forgejo]\ntoken_secret = \"codeberg\"\n").unwrap();
+        let forgejo = server.forgejo.unwrap();
+        assert_eq!(
+            (forgejo.url(), forgejo.token()),
+            ("https://codeberg.org", "secret-token")
+        );
     }
 
     #[tokio::test]

@@ -52,6 +52,10 @@ pub fn settings_answer(set: serde_json::Value, more: serde_json::Value) -> serde
         ("gitlab.token_file", json!(null)),
         ("gitlab.token_secret", json!(null)),
         ("gitlab.poll_seconds", json!(30)),
+        ("forgejo.url", json!("https://codeberg.org")),
+        ("forgejo.token_file", json!(null)),
+        ("forgejo.token_secret", json!(null)),
+        ("forgejo.poll_seconds", json!(30)),
         ("agents", json!({})),
     ] {
         values.insert(key.into(), json!({"value": default, "default": true}));
@@ -273,6 +277,7 @@ fn the_settings_page_has_every_key_in_a_box_with_its_default_and_this_app_with_t
             "GitLab",
             "Token file",
             "Token secret",
+            "Forgejo",
             "This app",
             "http://127.0.0.1:7171",
             "••••oken",

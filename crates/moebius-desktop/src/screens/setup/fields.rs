@@ -86,6 +86,15 @@ pub(super) const GROUPS: &[(&str, &[Spec])] = &[
             ("gitlab.poll_seconds", "Poll every (s)", Kind::Whole),
         ],
     ),
+    (
+        "Forgejo",
+        &[
+            ("forgejo.url", "URL", Kind::Code),
+            ("forgejo.token_file", "Token file", Kind::Code),
+            ("forgejo.token_secret", "Token secret", Kind::Code),
+            ("forgejo.poll_seconds", "Poll every (s)", Kind::Whole),
+        ],
+    ),
 ];
 
 /// The tables of the file that are there or not: when every key of one is blank the table is removed.
@@ -106,6 +115,15 @@ pub(super) const TABLES: &[(&str, &[&str])] = &[
             "gitlab.token_file",
             "gitlab.token_secret",
             "gitlab.poll_seconds",
+        ],
+    ),
+    (
+        "forgejo",
+        &[
+            "forgejo.url",
+            "forgejo.token_file",
+            "forgejo.token_secret",
+            "forgejo.poll_seconds",
         ],
     ),
     ("harness", &["harness.url", "harness.mcp_env"]),
