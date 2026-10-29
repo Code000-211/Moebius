@@ -1,12 +1,18 @@
 name: Release
 
 # A tag `vX.Y.Z` builds the server and the desktop app for Linux x86_64 and for Windows x86_64, packages them with
-# `dist/package.sh` and publishes a GitHub release with the archives and `SHA256SUMS`. Started by hand, it builds and keeps the archives as workflow artifacts and
-# publishes nothing.
+# `dist/package.sh` and publishes a GitHub release with the archives and `SHA256SUMS`. Started by hand, it builds and keeps
+# the archives as workflow artifacts and publishes nothing, unless `publish` is set: then it releases the version of
+# Cargo.toml and makes its tag `vX.Y.Z` on the commit it built.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the version of Cargo.toml as a release, with its tag
+        type: boolean
+        default: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -40,6 +46,8 @@ jobs:
         run: |
           if [ "$GITHUB_REF_TYPE" = tag ]; then
             version=${GITHUB_REF_NAME#v}
+          elif [ "${{ inputs.publish }}" = true ]; then
+            version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
           else
             version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)-dev
           fi
@@ -58,7 +66,7 @@ jobs:
 
   publish:
     needs: build
-    if: github.ref_type == 'tag'
+    if: github.ref_type == 'tag' || inputs.publish
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -68,6 +76,14 @@ jobs:
         with:
           path: release
           merge-multiple: true
+      - name: Work out the tag
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            tag=$GITHUB_REF_NAME
+          else
+            tag=v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          fi
+          echo "TAG=$tag" >> "$GITHUB_ENV"
       - name: Write SHA256SUMS
         working-directory: release
         run: sha256sum *.tar.gz *.zip moebius-x86_64-* > SHA256SUMS
@@ -75,7 +91,11 @@ jobs:
         uses: softprops/action-gh-release@v2.2.2
         with:
           files: release/*
+          # The tag is made on the commit that was built when it does not exist yet.
+          tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
+          name: Moebius ${{ env.TAG }}
           # The notes of the version, written in docs/releases/; the list of changes is added below them.
-          body_path: docs/releases/${{ github.ref_name }}.md
+          body_path: docs/releases/${{ env.TAG }}.md
           generate_release_notes: true
           fail_on_unmatched_files: true
