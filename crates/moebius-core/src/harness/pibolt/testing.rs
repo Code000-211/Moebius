@@ -96,7 +96,7 @@ pub(super) fn wait_for_run(app: &App, run_id: i64, what: &str, holds: impl Fn(&R
 }
 
 /// Waits until `holds` holds.
-pub(super) fn wait_for(what: &str, holds: impl Fn() -> bool) {
+pub(super) fn wait_for(what: &str, mut holds: impl FnMut() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(20);
     while !holds() {
         assert!(Instant::now() < deadline, "{what}");
@@ -112,10 +112,16 @@ pub(super) fn argv_and_stdin(app: &App, run_id: i64) -> (Vec<String>, Vec<Value>
         let argv = std::fs::read(agent_dir.join("argv.json")).ok()?;
         serde_json::from_slice::<Vec<String>>(&argv).ok()
     };
-    wait_for("Pi writes its arguments", || argv().is_some());
+    // Keep the arguments that were read: a Pi started again writes the file anew, and a second read can fall
+    // between the two.
+    let mut read = None;
+    wait_for("Pi writes its arguments", || {
+        read = argv();
+        read.is_some()
+    });
     let stdin = std::fs::read_to_string(agent_dir.join("stdin.jsonl")).unwrap_or_default();
     let stdin = stdin.lines().filter_map(|l| serde_json::from_str(l).ok());
-    (argv().unwrap(), stdin.collect())
+    (read.unwrap(), stdin.collect())
 }
 
 /// The value after `flag` in `argv`.
