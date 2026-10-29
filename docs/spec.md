@@ -145,6 +145,10 @@ A card that reaches its round limit (default 5) or its token budget stops and go
   steering, CI failures, review findings) into a report; the Retro analyst agent writes proposals from it.
 - **Trials** (00:00–06:00): each proposal is tried on the task its error happened in, on its own branch; positive when the
   error is gone and nothing got worse (tests, rounds, tokens). Positive proposals go to the inbox as changes to merge.
+- **Proposals for Moebius itself**: the Retro may also propose a change to `moebius.toml` (limits, budgets, windows, the
+  teacher) or to a repository's own rules and column scripts. These are not tried: each goes to the inbox at once as a
+  diff with the Retro's reason. Merging saves a `moebius.toml` change through the settings code, restarting the server
+  when a key needs it, and offers a `.moebius/` change on its repository through the forge; dismissing changes nothing.
 - **Autoresearch**: starts from a brief a person confirms; measures a baseline, then the Autoresearcher finds levers (code and
   profiles, its own history, papers and the web) and runs an experiment for each; every lever kept becomes its own change.
   Ends when the brief's token budget is spent or a person stops it.
@@ -200,4 +204,3 @@ Native, GPU-rendered, written in Rust with iced (ADR 0003, ADR 0011), built to [
 
 - Exact formats of the plugin API messages and the desktop API; both are designed in M0.
 - How the router's model catalogue is configured (which provider models map to which model class).
-- How a person approves a proposal that changes Moebius itself, as opposed to a harness configuration.

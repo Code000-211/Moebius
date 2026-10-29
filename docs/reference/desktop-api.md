@@ -92,7 +92,9 @@ end of the output of the repository's own checks, or null). A change's `branch` 
 in the snapshot, which holds only open items), `at`. Kinds the core adds: `approve_issue` (`data.reason`), `stuck`
 (`data.reason`), `ready_to_merge` (`data.change`, `data.branch`), `change_closed` (`data.change`, `data.pull_request`) and
 `proposal` (`data.proposal`, `data.branch`, `data.trials`: an array of `{"card", "outcome", "reason"}`; its `title` is the
-proposal's and it has no card), `grilling_issues` (`data.grilling`, `data.repository`, `data.issues`: an array of `{"title",
+proposal's and it has no card; a proposal for Moebius's own configuration has `data.kind` (`settings` or
+`repository`), `data.repository` (the repository's id, or null), `data.reason` (the Retro's reason) and `data.diff`
+instead of `data.trials`), `grilling_issues` (`data.grilling`, `data.repository`, `data.issues`: an array of `{"title",
 "body", "blocked_by"}`; its `title` is "N issues from a grilling" and it has no card) and `grilling_report` (`data.grilling`,
 `data.repository`, `data.report`: the text; no card) and `takeover` (`data.takeover`, `data.kind`, `data.agreement`,
 `data.count`; its `title` is "The decision model can take over <kind>" and it has no card).
@@ -1189,14 +1191,24 @@ Moebius refused), `tool_refused` (the tool and the rule's reason), `run_failed` 
 `run_stopped`, `steered` (a person's message to a running run), and `checks_failed`, `conflict` and `review_findings`
 (a card sent back from In review to In progress, with its note). The runs of the Retro analyst itself are left out.
 
-`Proposal`: `id`, `retro_date`, `branch` (`proposal/<date>-<name>`, also on the harness repository's `origin`), `title` (the
-subject of its commit), `body` (the rest of the message, without its `Cards:` line), `agents` (the names of the agents
-whose files it changes), `cards` (the ids of the cards whose errors it addresses, from the `Cards: 48, 50` line that ends
-its commit message; empty without one), `status`, `trials` (array of `Trial`, oldest first) and `at`.
+`Proposal`: `id`, `kind`, `retro_date`, `branch` (`proposal/<date>-<name>`, also on the harness repository's `origin` for
+a `harness` proposal), `title` (the subject of its commit), `body` (the rest of the message, without its `Cards:` line:
+the Retro's reason), `agents` (the names of the agents whose files it changes), `cards` (the ids of the cards whose
+errors it addresses, from the `Cards: 48, 50` line that ends its commit message; empty without one), `status`, `trials`
+(array of `Trial`, oldest first), `diff`, `edits`, `repository`, `change` and `at`.
+
+`kind` of a proposal: `harness` (a change to the harness configuration, on its branch), `settings` (a change to
+`moebius.toml`) or `repository` (a change to a repository's own rules or column scripts in its `.moebius/`); see
+[the Retro](harness-configuration.md#the-retro). For `settings` and `repository`, `diff` is a unified diff of what it
+changes, `edits` is what it sets and removes (`{"set", "remove"}`, as `PUT /v1/settings` takes it) or the new text of
+each file (`{"files": {".moebius/<file>": text}}`), `repository` is the repository's id for `repository` (else null),
+and `change` is the id of the change a merged `repository` proposal was offered as (else null). A `harness` proposal has
+an empty `diff`, `edits` `{}` and both null.
 
 `status` of a proposal: `open` (not tried yet), `trying` (its trials are going on), `positive` (every trial was positive),
 `negative` (some trial was), `untried` (no trial was negative, but some was skipped or failed, or it names no cards, so
 nobody knows), `merged` or `dismissed`. A `positive` or `untried` proposal has an open inbox item of the kind `proposal`.
+A `settings` or `repository` proposal is never tried: it is `untried` and in the inbox from the start.
 
 `Trial`: `id`, `proposal_id`, `card_id` (the card it was tried on; null for the one trial of a proposal that names no
 cards), `run_id` (the trial's run, or null when none was started), `outcome` (`positive`, `negative`, `skipped`: there was
@@ -1225,8 +1237,8 @@ All proposals, the newest first. Response: an array of `Proposal`, each with its
 Tries a proposal now, at any hour, as the schedule does inside `[trial_window]`: its status becomes `trying`, the trials
 go on after the response, and each trial ends with the event `trial_done` and the proposal with `proposal_status`.
 Request: no body. Response: the `Proposal`, with the status `trying`. Errors: `404` no such
-proposal; `409` the proposal is not `open`, or another proposal is being tried (only one is at a time); `422` there is no
-harness configuration repository.
+proposal; `409` the proposal is not `open`, is not of the kind `harness`, or another proposal is being tried (only one is
+at a time); `422` there is no harness configuration repository.
 
 ### `POST /v1/proposals/{id}/merge`
 
@@ -1237,11 +1249,21 @@ its status becomes `merged`. A merge that conflicts, and a push that fails, chan
 (optional). Response: the `Proposal`. Errors: `404` no such proposal; `409` the proposal is neither `positive` nor `untried`,
 or its branch does not merge cleanly; `422` there is no harness configuration repository.
 
+A `settings` proposal is merged by saving its `edits` to `moebius.toml` as `PUT /v1/settings` saves a change (refused
+with `422`, and nothing written, when the result is not a valid configuration), which records `edit_settings` too; when
+the file then has a key the running server only uses after a restart, the server restarts shortly after the response,
+as after `POST /v1/server/restart`. A `repository` proposal is merged by committing its files on the branch
+`moebius/proposal-<id>` of the repository's clone, from its default branch, and offering that branch as a change
+through the repository's forge (a pull request on GitHub), with a `ready_to_merge` inbox item; the change then merges as
+any change does, and `change` names it. Both record the decision as a `harness` proposal does, with the proposal's
+`kind` and `diff` in its context.
+
 ### `POST /v1/proposals/{id}/dismiss`
 
 A person dismisses a `positive` or `untried` proposal: the decision is recorded (kind `merge_proposal`, choice `dismiss`,
-decider `person`), the inbox item is resolved and the status becomes `dismissed`. The repository is not changed. Request
-and errors as for `merge`, without the conflict. Response: the `Proposal`.
+decider `person`), the inbox item is resolved and the status becomes `dismissed`. The repository is not changed, nor is
+`moebius.toml` or any repository for a `settings` or `repository` proposal. Request and errors as for `merge`, without
+the conflict. Response: the `Proposal`.
 
 ### `GET /v1/decision-model`
 
@@ -1432,7 +1454,7 @@ like `POST /v1/runs/{id}/stop` does. Experiments done stay, and so do the lever 
 | `retro_error` | The schedule could not start the day's Retro, the trials of a proposal, a research or the replays, or the trials of a proposal broke off; it is tried again a minute later. | `{"message": string}` |
 | `replayed` | A refused tool call was replayed and its judgement has the outcome. | `{"judgement": id, "run": id, "outcome": string}` |
 | `trial_done` | One trial of a proposal ended and was stored. | `{"proposal": id, "card": id or null, "outcome": "positive" \| "negative" \| "skipped" \| "failed"}` |
-| `proposal_status` | A proposal's status changed: it is being tried, was tried, was merged or dismissed. | `{"proposal": id, "status": string}` (the statuses above) |
+| `proposal_status` | A proposal's status changed: it is being tried, was tried, was merged or dismissed, or a proposal for Moebius's own configuration was stored, `untried`. | `{"proposal": id, "status": string}` (the statuses above) |
 | `takeover_proposed` | The decision model earned a takeover proposal for a kind, which is in the inbox. | `{"takeover": id, "kind": string, "agreement": number}` |
 | `takeover_status` | A takeover was merged, dismissed or released. | `{"takeover": id, "status": string}` (the statuses above) |
 | `research_status` | A research was stored, its brief was edited, or it was confirmed, started, stopped or ended. | `{"research": id, "status": string}` (the statuses above) |

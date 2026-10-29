@@ -36,10 +36,13 @@ pub struct Report {
     pub errors: Vec<ReportError>,
 }
 
-/// A change to the harness configuration that a Retro proposes, on a branch.
+/// A change that a Retro proposes: to the harness configuration, on a branch, or to Moebius's own configuration.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Proposal {
     pub id: i64,
+    /// `harness`, `settings` (a change to `moebius.toml`) or `repository` (a change to a repository's `.moebius/`).
+    #[serde(default = "harness")]
+    pub kind: String,
     pub branch: String,
     pub title: String,
     #[serde(default)]
@@ -54,6 +57,13 @@ pub struct Proposal {
     pub status: String,
     #[serde(default)]
     pub trials: Vec<Trial>,
+    /// What a `settings` or `repository` proposal changes, as a unified diff.
+    #[serde(default)]
+    pub diff: String,
+}
+
+fn harness() -> String {
+    "harness".into()
 }
 
 /// A proposal tried on one card.

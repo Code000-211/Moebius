@@ -10,7 +10,8 @@
 //!   /v1/exports/{id}/{file}` downloads a file (`<kind>.jsonl`) of one (see [`crate::improve::export`]).
 //! - `POST /v1/retros` `{date?}`, `GET /v1/retros` and `GET /v1/retros/{date}`: the Retro of a day (see
 //!   [`crate::improve::retro`]). `GET /v1/proposals`, `POST /v1/proposals/{id}/trial`, `/merge` and `/dismiss`: its
-//!   proposals, tried, merged or dismissed (see [`crate::improve::trial`]).
+//!   proposals, tried, merged or dismissed (see [`crate::improve::trial`] and, for those that change Moebius's own
+//!   configuration, [`crate::improve::own`]); a merged change to `moebius.toml` restarts the server when a key needs it.
 //! - `GET /v1/decision-model`: whether a decision model is configured, how well it agrees per kind and its takeovers.
 //!   `GET /v1/takeovers`: the takeovers. `POST /v1/takeovers/{id}/merge`, `/dismiss` and `/release` `{reason}`: a person
 //!   lets the model take a kind over, refuses, or hands a kind back (see [`crate::decide::model`]).
@@ -32,6 +33,7 @@ use crate::app::AppError;
 use crate::decide::Actor;
 use crate::decide::model;
 use crate::improve::export::{self, Export, ExportError, KindCounts};
+use crate::improve::own;
 use crate::improve::replay;
 use crate::improve::research::{self, NewResearch, ResearchView};
 use crate::improve::retro::{self, RetroSummary, RetroView};
@@ -164,13 +166,17 @@ async fn start_retro(
     State(state): State<ApiState>,
     axum::Json(new): axum::Json<NewRetro>,
 ) -> Result<axum::Json<RetroView>, ApiError> {
-    let (runs, repo) = (state.runs.clone(), state.harness_repo.clone());
+    let (runs, repo, live) = (
+        state.runs.clone(),
+        state.harness_repo.clone(),
+        state.config.clone(),
+    );
     blocking(&state.app, move |app| {
         let day = match new.date {
             Some(day) => day,
             None => app.store.today()?,
         };
-        retro::start(app, &runs, repo.as_ref(), &day)
+        retro::start(app, (&runs, &live), repo.as_ref(), &day)
     })
     .await
 }
@@ -204,11 +210,26 @@ async fn merge_proposal(
     UrlPath(id): UrlPath<i64>,
     axum::Json(decision): axum::Json<Reason>,
 ) -> Result<axum::Json<Proposal>, ApiError> {
-    let (repo, reason) = (harness_repo(&state)?, decision.reason);
-    blocking(&state.app, move |app| {
-        trial::merge(app, &by, &repo, id, &reason)
+    let (repo, live, reason) = (
+        state.harness_repo.clone(),
+        state.config.clone(),
+        decision.reason,
+    );
+    let restart = live.clone();
+    let (proposal, needed) = blocking(&state.app, move |app| {
+        let proposal = trial::merge(app, &by, (repo.as_deref(), &live), id, &reason)?;
+        let needed = proposal.kind == own::SETTINGS && live.view()?.restart_needed;
+        Ok((proposal, needed))
     })
-    .await
+    .await?
+    .0;
+    if needed {
+        tokio::spawn(async move {
+            tokio::time::sleep(super::settings::RESTART_DELAY).await;
+            restart.request_restart();
+        });
+    }
+    Ok(axum::Json(proposal))
 }
 
 async fn dismiss_proposal(
@@ -217,9 +238,9 @@ async fn dismiss_proposal(
     UrlPath(id): UrlPath<i64>,
     axum::Json(decision): axum::Json<Reason>,
 ) -> Result<axum::Json<Proposal>, ApiError> {
-    let (repo, reason) = (harness_repo(&state)?, decision.reason);
+    let (repo, reason) = (state.harness_repo.clone(), decision.reason);
     blocking(&state.app, move |app| {
-        trial::dismiss(app, &by, &repo, id, &reason)
+        trial::dismiss(app, &by, repo.as_deref(), id, &reason)
     })
     .await
 }

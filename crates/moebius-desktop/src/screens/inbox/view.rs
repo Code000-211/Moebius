@@ -11,7 +11,7 @@ use crate::client::{InboxItem, Snapshot};
 use crate::widgets::page::{self, Tone, tag};
 use crate::{screens::connect, theme};
 
-use super::item::{chip, chip_name, facts, found, kind_tag, report, trials, why};
+use super::item::{chip, chip_name, facts, found, kind_tag, own_change, report, trials, why};
 use super::{
     APPROVE_ISSUE, Action, CHANGE_CLOSED, GRILLING_ISSUES, GRILLING_REPORT, Inbox, KINDS, Message,
     PROPOSAL, READY_TO_MERGE, STUCK, TAKEOVER,
@@ -181,7 +181,9 @@ impl Inbox {
         if item.kind == READY_TO_MERGE {
             content = content.push(facts(item, &found));
         }
-        if item.kind == PROPOSAL {
+        if item.kind == PROPOSAL && item.data["diff"].is_string() {
+            content = content.push(own_change(item));
+        } else if item.kind == PROPOSAL {
             content = content.push(trials(item));
         }
         if item.kind == GRILLING_ISSUES {

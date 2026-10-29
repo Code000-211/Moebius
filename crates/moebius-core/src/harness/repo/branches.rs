@@ -1,5 +1,7 @@
 //! The branches of the clone: proposals of the Retro and the branches of chats, checked and pushed when they are fit,
-//! merged or dismissed by a person, and the throwaway worktree a trial runs a branch's agent in.
+//! merged or dismissed by a person, and the throwaway worktree a trial runs a branch's agent in. The Retro's branches
+//! that change only files under `moebius/` propose changes to Moebius's own configuration instead: they are read and
+//! deleted, never pushed (see `improve::own`).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -9,7 +11,7 @@ use super::read::{Layout, agent_config, broken_agents, read_agent_at};
 use crate::app::{App, AppError, Result};
 use crate::config::AgentConfig;
 use crate::decide::{Actor, Question};
-use crate::repos::git;
+use crate::repos::{git, git_bytes};
 
 impl HarnessRepo {
     /// The branches of the clone whose names start with `prefix` that are proposals: each is checked, and pushed to
@@ -32,6 +34,60 @@ impl HarnessRepo {
             }
         }
         Ok((proposed, warnings))
+    }
+
+    /// The branches of the clone whose names start with `prefix` that change only files under `moebius/` (see
+    /// `improve::own`): each is read and then deleted, since it is no harness configuration and is never pushed. A
+    /// branch whose files cannot be read is left out, deleted too, with a warning saying why. Branches that change
+    /// other files as well are left for `proposed`.
+    pub fn take_own_branches(&self, prefix: &str) -> Result<(Vec<OwnBranch>, Vec<String>)> {
+        let _read_at = self.lock();
+        let base = self.repos.default_branch(&self.path)?;
+        let pattern = format!("refs/heads/{prefix}*");
+        let branches = git(
+            &self.path,
+            &["for-each-ref", "--format=%(refname:short)", &pattern],
+        )?;
+        let (mut taken, mut warnings) = (vec![], vec![]);
+        for branch in branches.lines() {
+            let range = format!("{base}...{branch}");
+            let files = git(&self.path, &["diff", "--name-only", &range])?;
+            let files: Vec<&str> = files.lines().collect();
+            if files.is_empty() || !files.iter().all(|file| file.starts_with(OWN)) {
+                continue;
+            }
+            match self.read_own_branch(branch, &files) {
+                Ok(own) => taken.push(own),
+                Err(why) => warnings.push(format!("{branch} is left out: {why}")),
+            }
+            git(&self.path, &["branch", "-D", "--quiet", branch])?;
+        }
+        Ok((taken, warnings))
+    }
+
+    fn read_own_branch(
+        &self,
+        branch: &str,
+        files: &[&str],
+    ) -> std::result::Result<OwnBranch, String> {
+        let message =
+            git(&self.path, &["log", "-1", "--format=%B", branch]).map_err(|e| e.to_string())?;
+        let (message, cards) = split_cards(&message);
+        let (title, body) = message.split_once('\n').unwrap_or((&message, ""));
+        let mut texts = BTreeMap::new();
+        for file in files {
+            let bytes = git_bytes(&self.path, &["show", &format!("{branch}:{file}")])
+                .map_err(|_| format!("it deletes {file}, which proposes nothing"))?;
+            let text = String::from_utf8(bytes).map_err(|_| format!("{file} is not text"))?;
+            texts.insert(file[OWN.len()..].to_string(), text);
+        }
+        Ok(OwnBranch {
+            branch: branch.into(),
+            title: title.trim().into(),
+            body: body.trim().into(),
+            cards,
+            files: texts,
+        })
     }
 
     /// Checks the branch of a chat that worked in the clone, the way a proposal is checked (see `proposed`): none when it
@@ -237,6 +293,21 @@ pub struct Proposed {
     pub agents: Vec<String>,
     /// The cards named by the `Cards:` line that ends the commit message.
     pub cards: Vec<i64>,
+}
+
+/// The directory of a Retro branch that holds what it proposes for Moebius's own configuration.
+const OWN: &str = "moebius/";
+
+/// A branch of the Retro that proposes a change to Moebius's own configuration: its commit's message and the files it
+/// holds under `moebius/`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwnBranch {
+    pub branch: String,
+    pub title: String,
+    pub body: String,
+    pub cards: Vec<i64>,
+    /// Each file's path below `moebius/` and its text.
+    pub files: BTreeMap<String, String>,
 }
 
 /// The commit message without its last line when that is `Cards: 48, 50`, and the numbers it names. Anything in the

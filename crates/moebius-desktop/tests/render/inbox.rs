@@ -241,6 +241,69 @@ fn the_inbox_offers_a_proposal_of_the_retro_to_merge_or_dismiss() {
     );
 }
 
+/// A change to `moebius.toml` and one to a repository's rules that the Retro proposes, waiting for a person.
+fn own_proposals_app() -> App {
+    let items = vec![
+        entry(
+            1,
+            "proposal",
+            None,
+            "Give cards fewer rounds",
+            json!({"proposal": 3, "branch": "proposal/2026-10-28-rounds", "kind": "settings", "repository": null,
+                   "reason": "Cards 48 and 50 went round five times on the same failing test; three rounds would have stopped them sooner.",
+                   "diff": "--- a/moebius.toml\n+++ b/moebius.toml\n@@ -4,4 +4,4 @@\n [board]\n tick_ms = 2000\n-round_limit = 5\n+round_limit = 3\n"}),
+            3600,
+        ),
+        entry(
+            2,
+            "proposal",
+            None,
+            "Forbid force-pushing in radiance",
+            json!({"proposal": 4, "branch": "proposal/2026-10-28-no-force-push", "kind": "repository", "repository": 1,
+                   "reason": "The Coder force-pushed twice and lost a reviewer's commit.",
+                   "diff": "--- /dev/null\n+++ b/.moebius/rules.md\n@@ -0,0 +1,3 @@\n+## no-force-push\n+\n+Never force-push.\n"}),
+            7200,
+        ),
+    ];
+    let boards = vec![board(repository(1, "radiance", None), vec![])];
+    let mut app = App::with_snapshot(snapshot(boards, items));
+    let _ = app.update(Message::Select(Page::Inbox));
+    let _ = app.update(Message::Inbox(inbox::Message::Tick(NOW)));
+    app
+}
+
+/// The inbox with proposals for Moebius's own configuration drawn: compare
+/// `tests/snapshots/inbox-own-proposals-tiny-skia.png`.
+#[test]
+fn the_inbox_shows_a_proposal_for_moebius_itself_as_a_diff_with_the_retros_reason() {
+    let app = own_proposals_app();
+    draw_sized(
+        &app,
+        "inbox-own-proposals",
+        &[
+            "2 things need you.",
+            "Give cards fewer rounds",
+            "The Retro proposes this change to moebius.toml. Merging saves it, and restarts the server when a key needs it.",
+            "Cards 48 and 50 went round five times on the same failing test; three rounds would have stopped them sooner.",
+            "Forbid force-pushing in radiance",
+            "The Retro proposes this change to the repository's own rules or column scripts. Merging offers it as a change on the repository.",
+            "The Coder force-pushed twice and lost a reviewer's commit.",
+            "radiance",
+        ],
+        Size::new(1440.0, 1100.0),
+    );
+    let mut ui = simulator(&app);
+    ui.click("Merge").unwrap();
+    let messages: Vec<Message> = ui.into_messages().collect();
+    assert!(matches!(
+        &messages[..],
+        [Message::Inbox(inbox::Message::Act(
+            1,
+            Action::MergeProposal { proposal: 3 }
+        ))]
+    ));
+}
+
 /// The report of the grilling in `grilling_app`.
 const REPORT: &str = "# Is a local cache worth it?\n\nThe downloads are rare and large, so a cache would save\nlittle. Measure the repeat rate before building one.";
 

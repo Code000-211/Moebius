@@ -78,6 +78,11 @@ pub fn start(
     id: i64,
 ) -> Result<Proposal> {
     let proposal = find(app, id)?;
+    if proposal.kind != "harness" {
+        return Err(AppError::Conflict(format!(
+            "proposal {id} changes Moebius's own configuration, which is not tried: a person decides it in the inbox"
+        )));
+    }
     if !app.store.start_trying(id)? {
         return Err(AppError::Conflict(if proposal.status == "open" {
             "another proposal is being tried".to_string()

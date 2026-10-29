@@ -1,10 +1,12 @@
 //! The Retro: a day's errors become a report, and the Retro analyst, a fake Pi here, turns the report into a proposal
-//! branch that is pushed to the harness configuration repository's origin and listed by the API.
+//! branch that is pushed to the harness configuration repository's origin and listed by the API, or into proposals
+//! for Moebius's own configuration, which a person merges or dismisses from the inbox.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use base64::Engine;
 use moebius_core::bus::AppEvent;
 use moebius_core::config::Config;
 use moebius_core::repos::git;
@@ -46,6 +48,7 @@ fn server(dir: &Path, harness: Option<&Path>) -> Arc<Server> {
     } else {
         text += "[agents.Coder]\nmodel = \"coder-model\"\n";
     }
+    std::fs::write(dir.join("moebius.toml"), &text).unwrap();
     let config = Config::parse(&text, dir, &dir.join("moebius.toml")).unwrap();
     Arc::new(Server::new(config, "127.0.0.1:1".parse().unwrap()).unwrap())
 }
@@ -305,4 +308,236 @@ async fn without_a_harness_repository_only_the_report_is_made() {
     assert_eq!(retro["proposals"], json!([]));
     // Only the two runs of the bad day exist.
     assert!(server.app.store.run(3).unwrap().is_none());
+}
+
+/// The fake analyst's directive to make the branch `proposal/<day>-<name>` with one commit that writes `file` with
+/// `text`.
+fn propose_file(day: &str, name: &str, file: &str, text: &str) -> String {
+    let encoded = base64::engine::general_purpose::STANDARD.encode(text);
+    format!("[propose-file proposal/{day}-{name} {file} {encoded}]")
+}
+
+/// The rules the fake analyst proposes for the repository `app`.
+const RULES: &str = "# Rules\n\n## no-force-push\n\nNever force-push.\n";
+
+/// A server with a bad day whose errors make the fake analyst propose a change to `moebius.toml`, one to the rules of
+/// the repository `app`, and one to a key the Retro may not change; with the repository's clone.
+fn own_proposals_server() -> (tempfile::TempDir, Arc<Server>, String, PathBuf) {
+    let (dir, _origin, server, day) = bad_day_server(|day| {
+        [
+            propose_file(
+                day,
+                "rounds",
+                "moebius/settings.json",
+                r#"{"set": {"board.round_limit": 7, "checks.timeout_seconds": 60}}"#,
+            ),
+            propose_file(
+                day,
+                "rules",
+                "moebius/repositories/app/.moebius/rules.md",
+                RULES,
+            ),
+            propose_file(
+                day,
+                "listen",
+                "moebius/settings.json",
+                r#"{"set": {"listen": "0.0.0.0:80"}}"#,
+            ),
+        ]
+        .join(" ")
+    });
+    let repository = server
+        .app
+        .add_repository("app", dir.path().join("app").to_str().unwrap())
+        .unwrap();
+    (dir, server, day, PathBuf::from(repository.path))
+}
+
+/// Runs the Retro of `day` and returns its proposals for Moebius's own configuration by kind, and the Retro.
+async fn own_proposals(api: &Api, server: &Server, day: &str) -> (Value, Value, Value) {
+    let mut events = server.app.bus.subscribe();
+    let (status, _) = api
+        .call(
+            reqwest::Method::POST,
+            "/v1/retros",
+            Some(json!({ "date": day })),
+        )
+        .await;
+    assert_eq!(status, 200);
+    assert_eq!(done(&mut events).await["status"], "proposed");
+    let (_, retro) = api
+        .call(reqwest::Method::GET, &format!("/v1/retros/{day}"), None)
+        .await;
+    let of = |kind: &str| {
+        retro["proposals"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["kind"] == kind)
+            .cloned()
+            .unwrap_or_else(|| panic!("no {kind} proposal in {retro}"))
+    };
+    (of("settings"), of("repository"), retro)
+}
+
+#[tokio::test]
+async fn proposals_for_moebius_itself_wait_in_the_inbox_as_diffs_and_merging_applies_them() {
+    let (dir, server, day, clone) = own_proposals_server();
+    let api = Api::start(&server).await;
+    let (settings, repository, retro) = own_proposals(&api, &server, &day).await;
+
+    // The key the Retro may not change is left out with a warning, and no harness proposal was made.
+    assert_eq!(retro["proposals"].as_array().unwrap().len(), 2, "{retro}");
+    let warnings = retro["warnings"].as_array().unwrap();
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(
+        warnings[0].as_str().unwrap().contains("it changes listen"),
+        "{warnings:?}"
+    );
+
+    // Each is untried and waits in the inbox as a diff with the Retro's reason; none is tried.
+    assert_eq!(settings["status"], "untried");
+    assert_eq!(settings["branch"], format!("proposal/{day}-rounds"));
+    assert_eq!(settings["body"], "It addresses the errors.");
+    assert_eq!(
+        settings["edits"],
+        json!({ "set": { "board.round_limit": 7, "checks.timeout_seconds": 60 }, "remove": [] })
+    );
+    let diff = settings["diff"].as_str().unwrap();
+    assert!(
+        diff.starts_with("--- a/moebius.toml\n+++ b/moebius.toml\n"),
+        "{diff}"
+    );
+    assert!(diff.contains("+round_limit = 7\n"), "{diff}");
+    assert_eq!(repository["status"], "untried");
+    assert_eq!(repository["repository"], 1);
+    assert_eq!(
+        repository["edits"],
+        json!({ "files": { ".moebius/rules.md": RULES } })
+    );
+    assert!(
+        repository["diff"]
+            .as_str()
+            .unwrap()
+            .starts_with("--- /dev/null\n+++ b/.moebius/rules.md\n@@ -0,0 +1,5 @@\n+# Rules\n"),
+        "{repository}"
+    );
+    let inbox = server.app.store.inbox().unwrap();
+    let items: Vec<_> = inbox.iter().filter(|i| i.kind == "proposal").collect();
+    assert_eq!(items.len(), 2);
+    let item = items.iter().find(|i| i.data["kind"] == "settings").unwrap();
+    assert_eq!(item.data["proposal"], settings["id"]);
+    assert_eq!(item.data["diff"], settings["diff"]);
+    assert_eq!(item.data["reason"], "It addresses the errors.");
+    let (status, _) = api
+        .call(
+            reqwest::Method::POST,
+            &format!("/v1/proposals/{}/trial", settings["id"]),
+            None,
+        )
+        .await;
+    assert_eq!(status, 409);
+    // The branches were read and deleted, not pushed.
+    let harness = server.harness_repo.as_ref().unwrap().path().to_path_buf();
+    let left = git(&harness, &["branch", "--list", "proposal/*"]).unwrap();
+    assert_eq!(left, "");
+
+    // Merging the change to moebius.toml saves it: the live key at once, the other after the restart it asks for.
+    let (status, merged) = api
+        .call(
+            reqwest::Method::POST,
+            &format!("/v1/proposals/{}/merge", settings["id"]),
+            Some(json!({ "reason": "Fewer rounds." })),
+        )
+        .await;
+    assert_eq!(status, 200, "{merged}");
+    assert_eq!(merged["status"], "merged");
+    let file = std::fs::read_to_string(dir.path().join("moebius.toml")).unwrap();
+    assert!(file.contains("round_limit = 7"), "{file}");
+    assert!(file.contains("timeout_seconds = 60"), "{file}");
+    assert_eq!(server.live.get().round_limit, 7);
+    tokio::time::timeout(Duration::from_secs(30), server.live.restart_asked())
+        .await
+        .expect("no restart was asked for");
+
+    // Merging the change to the repository's rules offers it as a change, which merges as any change does.
+    let (status, merged) = api
+        .call(
+            reqwest::Method::POST,
+            &format!("/v1/proposals/{}/merge", repository["id"]),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(status, 200, "{merged}");
+    assert_eq!(merged["status"], "merged");
+    let change = merged["change"].as_i64().unwrap();
+    let branch = format!("moebius/proposal-{}", repository["id"]);
+    let offered = git(&clone, &["show", &format!("{branch}:.moebius/rules.md")]).unwrap();
+    assert_eq!(format!("{offered}\n"), RULES);
+    assert!(git(&clone, &["show", "HEAD:.moebius/rules.md"]).is_err());
+    let inbox = server.app.store.inbox().unwrap();
+    assert!(inbox.iter().all(|i| i.kind != "proposal"), "{inbox:?}");
+    let ready = inbox.iter().find(|i| i.kind == "ready_to_merge").unwrap();
+    assert_eq!(ready.data["change"], change);
+    let (status, _) = api
+        .call(
+            reqwest::Method::POST,
+            &format!("/v1/changes/{change}/merge"),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(status, 200);
+    let rules = git(&clone, &["show", "HEAD:.moebius/rules.md"]).unwrap();
+    assert_eq!(format!("{rules}\n"), RULES);
+    let decisions = server
+        .app
+        .store
+        .judgements_page(None, None, Some("merge_proposal"), 10)
+        .unwrap();
+    assert_eq!(decisions.len(), 2);
+    assert!(
+        decisions
+            .iter()
+            .all(|d| d.choice == "merge_proposal" && d.decider == "person")
+    );
+}
+
+#[tokio::test]
+async fn dismissing_a_proposal_for_moebius_itself_leaves_everything_as_it_was() {
+    let (dir, server, day, clone) = own_proposals_server();
+    let api = Api::start(&server).await;
+    let file = std::fs::read_to_string(dir.path().join("moebius.toml")).unwrap();
+    let head = git(&clone, &["rev-parse", "HEAD"]).unwrap();
+    let (settings, repository, _) = own_proposals(&api, &server, &day).await;
+
+    for proposal in [&settings, &repository] {
+        let (status, dismissed) = api
+            .call(
+                reqwest::Method::POST,
+                &format!("/v1/proposals/{}/dismiss", proposal["id"]),
+                Some(json!({ "reason": "Not now." })),
+            )
+            .await;
+        assert_eq!(status, 200, "{dismissed}");
+        assert_eq!(dismissed["status"], "dismissed");
+        assert_eq!(dismissed["change"], Value::Null);
+    }
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("moebius.toml")).unwrap(),
+        file
+    );
+    assert_eq!(server.live.get().round_limit, 5);
+    assert!(!server.live.restart_requested());
+    assert_eq!(git(&clone, &["rev-parse", "HEAD"]).unwrap(), head);
+    assert_eq!(git(&clone, &["branch", "--list", "moebius/*"]).unwrap(), "");
+    assert!(server.app.store.inbox().unwrap().is_empty());
+    // A dismissed proposal is decided.
+    let (status, _) = api
+        .call(
+            reqwest::Method::POST,
+            &format!("/v1/proposals/{}/merge", settings["id"]),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(status, 409);
 }

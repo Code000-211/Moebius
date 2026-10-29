@@ -159,7 +159,14 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
     `Runs::start_retro` (`PiBolt::start_retro`) starts a `retro` run of the built-in `Retro-analyst` in a detached worktree of
     the harness clone; a thread waits for the run, then `HarnessRepo::proposed` checks, pushes and returns the
     `proposal/<date>-*` branches, which are stored in `proposals` with the cards of their `Cards:` line, and `retro_done`
-    is published.
+    is published. Before that, `HarnessRepo::take_own_branches` reads and deletes the branches that change only files
+    under `moebius/`, the analyst's proposals for Moebius's own configuration (what it is told about them is
+    `own::brief`); `own::store` checks each (a `moebius.toml` change through `Live::preview`, a `.moebius/` change with
+    the rules check and `check_script`) and stores it in `proposals` as `settings` or `repository` with its diff
+    (`own::unified`), `untried`, with a `proposal` inbox item at once. They are never tried: `trial::merge` hands them
+    to `own::merge`, which saves a `settings` one with `Live::save` (the merge's route then restarts the server when a
+    key needs it) and commits a `repository` one on `moebius/proposal-<id>` of the repository and offers it with
+    `App::offer_branch_change`; `own::dismiss` changes nothing.
 12d. **The trials.** The same minute, `server/schedule.rs` asks `trial::on_schedule`, which inside `[trial_window]` (`trial::in_window`)
     starts the oldest `open` proposal when no other is `trying` and the board has a run to spare; `POST
     /v1/proposals/{id}/trial` calls `trial::start` at any hour. A thread tries the proposal on each card: the agent is read
@@ -447,7 +454,7 @@ At the top:
 | `harness/repo/read.rs` | Reading the agents, skills and MCP servers from it, each agent checked as a run uses it. |
 | `harness/repo/edits.rs` | A person's edits of agents, skills, MCP servers and rules, as commits pushed to its origin. |
 | `harness/repo/skill_files.rs` | A skill's other files, beside its `SKILL.md`: read, and written or deleted as commits like any edit. |
-| `harness/repo/branches.rs` | Its branches: the Retro's proposals and chats' branches checked, pushed, merged or dismissed, and a trial's worktree of a branch. |
+| `harness/repo/branches.rs` | Its branches: the Retro's proposals and chats' branches checked, pushed, merged or dismissed, the Retro's branches for Moebius's own configuration read and deleted, and a trial's worktree of a branch. |
 | `harness/repo/create.rs` | `create`: a new repository from the agents and rules of `moebius.toml` (`POST /v1/harness/setup`, `moebius init`). |
 | `harness/mcp.rs` | The MCP servers of `mcp.toml`, checked when read, their `${NAME}` values filled in, and the `mcp.json` that names the MCP gateway for a run of an agent that names them. |
 | `harness/gateway/mod.rs` | The MCP gateway, `POST /mcp` on the router's listener: a run's servers bundled as one MCP server, every tool call checked, its result cleaned of secrets and recorded as an `mcp_call` run event. |
@@ -466,6 +473,10 @@ At the top:
 | `improve/trial/card.rs` | One card's trial: its task run again by its agent with the definition from the proposal's branch, then measured and compared, its worktree and branch removed. |
 | `improve/trial/schedule.rs` | Trying a proposal on a thread of its own, card after card, each trial stored and published, its status and inbox item; and the schedule's start inside the trial window. |
 | `improve/trial/decision.rs` | A person's merge or dismissal of a positive or untried proposal. |
+| `improve/own/mod.rs` | The Retro's proposals for Moebius's own configuration (`moebius.toml` and a repository's `.moebius/`): the keys and files it may change, and what the analyst is told about them. |
+| `improve/own/read.rs` | The analyst's branches for Moebius's own configuration checked, stored with their diff and put in the inbox. |
+| `improve/own/apply.rs` | A person's merge of such a proposal, saved through the settings code or offered as a change on the repository, or its dismissal. |
+| `improve/own/diff.rs` | A unified diff of a file's text before and after, as a person reads such a proposal. |
 | `improve/replay/mod.rs` | Replays: one replay a person asks for, the due refusals, and the schedule's replays inside the trial window, at most `PER_NIGHT` a night. |
 | `improve/replay/call.rs` | The refused call read back from its judgement: tool, input, worktree, run and repository, and only when it is reversible. |
 | `improve/replay/copy.rs` | The throwaway copy, filled from the run's worktree or a checkout; its files listed with sizes and hashes; and what a call created, changed and deleted. |

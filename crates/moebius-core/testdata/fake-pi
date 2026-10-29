@@ -7,6 +7,8 @@
 # writes the file NAME, with its directories, first if it contains "[write NAME]", and makes the branch BRANCH from the
 # commit it starts at, with a commit that appends to the file FILE, for each "[propose BRANCH FILE]" in it; a
 # "[propose BRANCH FILE cards=1,2]" ends the commit message with the line "Cards: 1, 2"), and Pi stays up for the next one.
+# A "[propose-file BRANCH FILE BASE64]" makes the branch BRANCH the same way, with a commit that writes the file FILE,
+# with its directories, with the text BASE64 encodes; a "cards=1,2" after BASE64 ends the message with "Cards: 1, 2".
 # A "[lever BRANCH FILE TEXT]" makes the branch BRANCH from the commit it starts at, with a commit that sets the file FILE to
 # the line TEXT, unless the branch exists already.
 # A "[put NAME]" line, the text to write and a "[/put]" line make a chat write that text to the file NAME, with its directories, and commit nothing.
@@ -18,6 +20,7 @@
 # reads LINE.txt, the tool's result, and a final answer "You said: LINE".
 # Every command it is sent is appended to stdin.jsonl, and `set_thinking_level` and `set_model` are answered with success.
 # A `steer` is answered with a response that echoes the message. The prompt is kept in prompt.txt next to argv.json. The final answer is reported in agent_end, as Pi does.
+import base64
 import json
 import os
 import re
@@ -118,6 +121,19 @@ for line in sys.stdin.buffer:
                     f.write(text + "\n")
                 subprocess.run(git + ["add", name], check=True)
                 subprocess.run(git + ["commit", "-q", "-m", "Set " + name + " to " + text], check=True)
+            files = re.findall(r"\[propose-file ([^\]\s]+) ([^\]\s]+) ([^\]\s]+)(?: cards=([0-9,]+))?\]", command["message"])
+            if files and not start:
+                start = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+            for branch, name, encoded, cards in files:
+                subprocess.run(git + ["checkout", "-q", "-b", branch, start], check=True)
+                os.makedirs(os.path.dirname(name) or ".", exist_ok=True)
+                with open(name, "wb") as f:
+                    f.write(base64.b64decode(encoded))
+                subprocess.run(git + ["add", name], check=True)
+                message = ["-m", "Change " + name, "-m", "It addresses the errors."]
+                if cards:
+                    message += ["-m", "Cards: " + ", ".join(cards.split(","))]
+                subprocess.run(git + ["commit", "-q"] + message, check=True)
             for branch, name, cards in proposals:
                 subprocess.run(git + ["checkout", "-q", "-b", branch, start], check=True)
                 os.makedirs(os.path.dirname(name) or ".", exist_ok=True)

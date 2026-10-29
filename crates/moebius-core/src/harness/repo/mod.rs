@@ -25,7 +25,7 @@ use crate::app::{App, Result};
 use crate::config::AgentSet;
 use crate::repos::{Repos, git};
 
-pub use branches::Proposed;
+pub use branches::{OwnBranch, Proposed};
 pub use create::{SET_UP_MESSAGE, create};
 use read::Layout;
 pub use read::{

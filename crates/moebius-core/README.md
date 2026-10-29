@@ -25,7 +25,7 @@ The other parts have one folder each:
 | `board/` | The board engine and its Luau sandbox, and editing a column's script. |
 | `decide/` | Decision points, the tool-call check, the guard, the rules, the decision model. |
 | `harness/` | Pi-Bolt runs and chats, terminals, the harness configuration repository, MCP servers and the MCP gateway, skills, grilling. |
-| `improve/` | The Retro, trials, replays, autoresearch, the training-set export. |
+| `improve/` | The Retro, trials, the Retro's proposals to Moebius's own configuration, replays, autoresearch, the training-set export. |
 
 Outside `src/`:
 

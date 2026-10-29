@@ -13,8 +13,8 @@ documentation; `CONTRIBUTING.md` says the same as this file for people.
   `settings` for editing `moebius.toml` while it runs, `setup` for the Models, Plugins and Get started pages), `repos/`
   (git, `forge`, `github`, `poll`, `files`), `board/` (the engine and `scripts`), `decide/` (decision points, `check`
   for the bridge's tool-call check, `guard`, `rules`, `model` for shadowing and takeovers), `harness/` (`pibolt`, `terminal`, `repo` for the harness
-  configuration repository, `mcp`, `skill`, `grilling`) and `improve/` (`retro`, `trial`, `replay`, `research`,
-  `export`). `docs/architecture.md` lists every module. Column scripts are in `workflow/*.luau`.
+  configuration repository, `mcp`, `skill`, `grilling`) and `improve/` (`retro`, `trial`, `own` for the Retro's
+  proposals to Moebius's own configuration, `replay`, `research`, `export`). `docs/architecture.md` lists every module. Column scripts are in `workflow/*.luau`.
 - `crates/moebius-plugin-api`: the plugin trait and the host that calls plugins with a time limit, failing closed.
 - `crates/moebius`: the `moebius` binary (`init`, `serve`, `check-script`, `export`, and in `cli/` the commands that
   operate a running server through the desktop API: `api` for any route, a command for what is done often; the Moebius

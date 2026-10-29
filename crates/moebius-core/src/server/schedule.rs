@@ -35,7 +35,12 @@ impl Server {
             }
         };
         let config = self.live.get();
-        report(retro::on_schedule(&self.app, &runs, repo, config.retro_at));
+        report(retro::on_schedule(
+            &self.app,
+            (&runs, &self.live),
+            repo,
+            config.retro_at,
+        ));
         let (window, limit) = (config.trial_window, config.run_limit);
         report(trial::on_schedule(&self.app, &runs, repo, window, limit));
         report(research::on_schedule(

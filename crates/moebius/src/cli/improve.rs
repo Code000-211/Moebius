@@ -78,7 +78,7 @@ pub enum TakeoverCommand {
 }
 
 /// The columns of a list of proposals, alone and in a Retro.
-const PROPOSAL_COLUMNS: &[&str] = &["id", "status", "branch", "title"];
+const PROPOSAL_COLUMNS: &[&str] = &["id", "kind", "status", "branch", "title"];
 
 /// The columns of a list of takeovers, alone and in what the decision model measured.
 const TAKEOVER_COLUMNS: &[&str] = &["id", "kind", "status", "agreement", "count"];

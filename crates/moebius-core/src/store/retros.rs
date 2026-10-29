@@ -1,5 +1,5 @@
-//! The Retro of each day (see `retro`), the changes to the harness configuration it proposes, and the trials of them
-//! (see `trial`).
+//! The Retro of each day (see `retro`), the changes to the harness configuration and to Moebius's own configuration it
+//! proposes (see `own`), and the trials of them (see `trial`).
 
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -20,10 +20,14 @@ pub struct Retro {
     pub at: i64,
 }
 
-/// A change to the harness configuration that a Retro proposes, on a branch of its own.
+/// A change that a Retro proposes: to the harness configuration, on a branch of its own, or to Moebius's own
+/// configuration (see `own`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Proposal {
     pub id: i64,
+    /// `harness` (a branch of the harness configuration repository), `settings` (a change to `moebius.toml`) or
+    /// `repository` (a change to a repository's `.moebius/` files).
+    pub kind: String,
     pub retro_date: String,
     pub branch: String,
     /// The subject of the proposal's commit.
@@ -38,7 +42,26 @@ pub struct Proposal {
     pub status: String,
     /// The trials made of it, oldest first.
     pub trials: Vec<Trial>,
+    /// What a `settings` or `repository` proposal changes, as a unified diff; empty for `harness`.
+    pub diff: String,
+    /// What a `settings` proposal sets and removes (`{"set", "remove"}`, as `PUT /v1/settings` takes it), or the new
+    /// text of each file a `repository` proposal changes (`{"files": {path: text}}`); `{}` for `harness`.
+    pub edits: serde_json::Value,
+    /// The repository a `repository` proposal changes.
+    pub repository: Option<i64>,
+    /// The change a merged `repository` proposal was offered as.
+    pub change: Option<i64>,
     pub at: i64,
+}
+
+/// What a proposal for Moebius's own configuration adds to a proposal (see `own`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct OwnEdits {
+    /// `settings` or `repository`.
+    pub kind: String,
+    pub diff: String,
+    pub edits: serde_json::Value,
+    pub repository: Option<i64>,
 }
 
 /// A proposal tried on one card (see `trial`): how it went and what was measured.
@@ -157,6 +180,46 @@ impl Store {
         Ok(())
     }
 
+    /// Stores a proposal for Moebius's own configuration, which is never tried, so it is `untried` from the start, and
+    /// returns its id.
+    pub fn add_own_proposal(
+        &self,
+        retro_date: &str,
+        branch: &str,
+        title: &str,
+        body: &str,
+        cards: &[i64],
+        own: &OwnEdits,
+    ) -> Result<i64> {
+        let conn = self.conn();
+        conn.execute(
+            "INSERT INTO proposals (retro_date, branch, title, body, cards, status, kind, diff, edits, repository_id, at)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'untried', ?6, ?7, ?8, ?9, ?10)",
+            params![
+                retro_date,
+                branch,
+                title,
+                body,
+                serde_json::to_string(cards)?,
+                own.kind,
+                own.diff,
+                serde_json::to_string(&own.edits)?,
+                own.repository,
+                now()
+            ],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Records the change a `repository` proposal was offered as.
+    pub fn set_proposal_change(&self, id: i64, change_id: i64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE proposals SET change_id = ?1 WHERE id = ?2",
+            params![change_id, id],
+        )?;
+        Ok(())
+    }
+
     fn proposals_where(
         &self,
         clause: &str,
@@ -164,13 +227,14 @@ impl Store {
     ) -> Result<Vec<Proposal>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(&format!(
-            "SELECT id, retro_date, branch, title, body, agents, cards, status, at FROM proposals
-             WHERE {clause} ORDER BY id DESC"
+            "SELECT id, retro_date, branch, title, body, agents, cards, status, at, kind, diff, edits, repository_id,
+             change_id FROM proposals WHERE {clause} ORDER BY id DESC"
         ))?;
         let rows = stmt.query_map([param], |r| {
             Ok((
                 Proposal {
                     id: r.get(0)?,
+                    kind: r.get(9)?,
                     retro_date: r.get(1)?,
                     branch: r.get(2)?,
                     title: r.get(3)?,
@@ -179,10 +243,15 @@ impl Store {
                     cards: vec![],
                     status: r.get(7)?,
                     trials: vec![],
+                    diff: r.get(10)?,
+                    edits: serde_json::Value::Null,
+                    repository: r.get(12)?,
+                    change: r.get(13)?,
                     at: r.get(8)?,
                 },
                 r.get::<_, String>(5)?,
                 r.get::<_, String>(6)?,
+                r.get::<_, String>(11)?,
             ))
         })?;
         let mut stmt = conn.prepare(
@@ -190,7 +259,7 @@ impl Store {
              WHERE proposal_id = ?1 ORDER BY id",
         )?;
         rows.map(|row| {
-            let (proposal, agents, cards) = row?;
+            let (proposal, agents, cards, edits) = row?;
             let trials = stmt.query_map([proposal.id], |r| {
                 Ok((
                     Trial {
@@ -218,6 +287,7 @@ impl Store {
             Ok(Proposal {
                 agents: serde_json::from_str(&agents)?,
                 cards: serde_json::from_str(&cards)?,
+                edits: serde_json::from_str(&edits)?,
                 trials,
                 ..proposal
             })
@@ -341,6 +411,46 @@ mod tests {
         s.fail_analysing_retros("stopped").unwrap();
         assert_eq!(s.retro("2026-03-12").unwrap().unwrap().status, "failed");
         assert_eq!(s.retro("2026-03-11").unwrap().unwrap().status, "reported");
+    }
+
+    #[test]
+    fn a_proposal_for_moebius_itself_keeps_its_diff_and_edits_and_is_untried() {
+        let (_dir, s) = store();
+        s.add_retro("2026-03-10", &json!({}), "analysing").unwrap();
+        s.add_proposal("2026-03-10", "proposal/2026-03-10-h", "H", "", &[], &[])
+            .unwrap();
+        let own = super::OwnEdits {
+            kind: "settings".into(),
+            diff: "-a\n+b\n".into(),
+            edits: json!({ "set": { "board.round_limit": 7 }, "remove": [] }),
+            repository: None,
+        };
+        let id = s
+            .add_own_proposal(
+                "2026-03-10",
+                "proposal/2026-03-10-s",
+                "S",
+                "Why.",
+                &[3],
+                &own,
+            )
+            .unwrap();
+        let proposal = s.proposal(id).unwrap().unwrap();
+        assert_eq!(
+            (proposal.kind.as_str(), proposal.status.as_str()),
+            ("settings", "untried")
+        );
+        assert_eq!(
+            (proposal.diff.as_str(), &proposal.edits),
+            (own.diff.as_str(), &own.edits)
+        );
+        assert_eq!((proposal.cards, proposal.change), (vec![3], None));
+        // A proposal of the harness configuration is what it was.
+        let harness = s.proposal(id - 1).unwrap().unwrap();
+        assert_eq!(
+            (harness.kind.as_str(), harness.diff.as_str(), &harness.edits),
+            ("harness", "", &json!({}))
+        );
     }
 
     #[test]

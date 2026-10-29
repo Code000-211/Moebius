@@ -270,6 +270,38 @@ configured, the built-in agent `Retro-analyst` turns the report into proposals. 
   in the Retro. The others are pushed to `origin` and stored as proposals (`GET /v1/proposals`), with the agents whose files
   they change and the cards of the `Cards:` line. Nothing is merged without a person's decision, after the trials.
 
+### Proposals for Moebius itself
+
+Some errors are better avoided by Moebius's own configuration than by the harness configuration. The analyst may also
+propose a change to `moebius.toml` or to a repository's own rules and column scripts. It states one the same way, as a
+branch `proposal/<date>-<short-name>` with one commit whose message is the proposal, but the commit adds only files under
+`moebius/`, which is not harness configuration:
+
+- **A change to `moebius.toml`** adds only `moebius/settings.json`: a JSON object `{"set": {"<key>": value}, "remove":
+  ["<key>"]}` with dotted keys, as `PUT /v1/settings` takes it (see the [desktop API](desktop-api.md)). It may name only
+  `run_limit`, `retro_at`, `trial_window.start`, `trial_window.end`, `board.round_limit`, `budgets.day_tokens`,
+  `checks.timeout_seconds`, `teacher.model`, `teacher.protocol` and `teacher.timeout_seconds`; the analyst is told
+  their values now. The file must still be a valid [configuration](configuration.md) with the change.
+- **A change to a repository's `.moebius/`** adds only files `moebius/repositories/<repository>/.moebius/<file>`, each
+  the whole new text of that file, all for one repository. The files are `rules.md` and the column scripts
+  (`backlog.luau`, `ready.luau`, `code.luau`, `review.luau`, `merge.luau`, `done.luau`); rules must be fit to save (see
+  [rules](rules.md)) and a script must pass `moebius check-script`. The analyst is told the files that the repositories
+  of the report's cards have now.
+
+When the run has succeeded, these branches are read first and then deleted from the clone; they are never pushed. A
+branch that breaks these conditions, or changes nothing, is left out with a warning in the Retro; a branch that mixes
+files under `moebius/` with harness configuration is left out as one that changes another file. Each other one is
+stored as a proposal of the kind `settings` or `repository` with a diff of what it changes. Trials do not apply to
+them: each is `untried` and in the inbox at once, as its diff with the Retro's reason (the body of its commit message).
+Nothing is applied without a person:
+
+- Merging a `settings` proposal saves the change to `moebius.toml` through the same code as `PUT /v1/settings`; the
+  live keys take effect at once, and when a key needs a restart the server restarts.
+- Merging a `repository` proposal commits its files on the branch `moebius/proposal-<id>` of the repository, from its
+  default branch, and offers it as a change through the repository's forge (a pull request on GitHub). The change is in
+  the inbox, ready to merge, and merges as any change does.
+- Dismissing one changes nothing.
+
 ### The trials
 
 A stored proposal is `open`. Inside `[trial_window]` (see [configuration](configuration.md)), or when a person asks

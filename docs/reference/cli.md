@@ -95,7 +95,7 @@ takes a repository's name.
 | `retro` | `GET /v1/retros` | Table `date status errors proposals`. |
 | `retro <date>` | `GET /v1/retros/{date}` | The Retro: its errors and proposals. |
 | `retro run [--date <date>]` | `POST /v1/retros` | The Retro, as above. |
-| `proposals` | `GET /v1/proposals` | Table `id status branch title`. |
+| `proposals` | `GET /v1/proposals` | Table `id kind status branch title`. |
 | `proposal merge <id> [--reason <text>]` | `POST /v1/proposals/{id}/merge` | The proposal. |
 | `proposal dismiss <id> [--reason <text>]` | `POST /v1/proposals/{id}/dismiss` | The proposal. |
 | `research` | `GET /v1/research` | Table `id status repository goal`. |

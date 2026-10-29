@@ -100,6 +100,17 @@ impl Live {
         })
     }
 
+    /// The file's text now and as `changes` would leave it, without writing anything: refused as `save` refuses a
+    /// change whose result is not a valid configuration. The Retro shows its proposals to change the file this way.
+    pub fn preview(&self, changes: &Changes) -> Result<(String, String)> {
+        let (text, _) = read_raw(&self.started.file)?;
+        let edited = edit(&text, changes)?;
+        let base = self.started.file.parent().unwrap_or(Path::new("."));
+        Config::parse(&edited, base, &self.started.file)
+            .map_err(|e| invalid(redact(&e.to_string())))?;
+        Ok((text, edited))
+    }
+
     /// Applies `changes` to the file: refused with the message of the parse when the result is not a valid
     /// configuration, and then nothing is written. Otherwise the file is replaced in one step, the person's decision
     /// is recorded and the live keys are applied.

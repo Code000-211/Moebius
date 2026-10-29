@@ -27,7 +27,8 @@ pub(super) fn found<'a>(snapshot: &'a Snapshot, item: &InboxItem) -> Found<'a> {
     let board = snapshot.boards.iter().find(|board| {
         board.cards.iter().any(|card| Some(card.id) == item.card_id)
             || board.changes.iter().any(|c| Some(c.id) == change)
-            || (item.grilling().is_some() && item.repository() == Some(board.repository.id))
+            || ((item.grilling().is_some() || item.kind == PROPOSAL)
+                && item.repository() == Some(board.repository.id))
     });
     Found {
         board,
@@ -107,7 +108,11 @@ pub(super) fn why(item: &InboxItem, found: &Found) -> Option<String> {
             item.data["agreement"].as_f64().unwrap_or_default() * 100.0,
             item.data["count"].as_i64().unwrap_or_default()
         )),
-        PROPOSAL => Some("The Retro proposes this change to the harness configuration.".into()),
+        PROPOSAL => Some(match item.data["kind"].as_str() {
+            Some("settings") => "The Retro proposes this change to moebius.toml. Merging saves it, and restarts the server when a key needs it.".into(),
+            Some("repository") => "The Retro proposes this change to the repository's own rules or column scripts. Merging offers it as a change on the repository.".into(),
+            _ => "The Retro proposes this change to the harness configuration.".into(),
+        }),
         GRILLING_ISSUES => Some(
             "The Grilling partner ended in these issues. Edit them, remove what you do not want, and confirm to make a card of each."
                 .into(),
@@ -140,6 +145,23 @@ pub(super) fn report(report: &str) -> Element<'_, AppMessage> {
         ..container::Style::default()
     })
     .into()
+}
+
+/// A proposal for Moebius's own configuration: the Retro's reason and the diff of what it changes.
+pub(super) fn own_change(item: &InboxItem) -> Element<'_, AppMessage> {
+    let mut content = column![].spacing(8);
+    if let Some(reason) = item.data["reason"].as_str().filter(|r| !r.is_empty()) {
+        content = content.push(
+            text(reason)
+                .size(theme::BODY)
+                .color(theme::TEXT_SECONDARY)
+                .wrapping(Wrapping::WordOrGlyph),
+        );
+    }
+    let diff = item.data["diff"].as_str().unwrap_or_default();
+    content
+        .push(crate::widgets::transcript::code_block("diff", diff))
+        .into()
 }
 
 /// What the trials of a proposal found, one line for each: the card, the outcome and why.

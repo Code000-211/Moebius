@@ -390,8 +390,18 @@ fn trial(trial: &Trial) -> Element<'_, AppMessage> {
     .into()
 }
 
+/// What a proposal for Moebius's own configuration changes, as its tag says it; none for one of the harness
+/// configuration.
+pub fn own_kind(kind: &str) -> Option<&'static str> {
+    match kind {
+        "settings" => Some("moebius.toml"),
+        "repository" => Some(".moebius/"),
+        _ => None,
+    }
+}
+
 /// A proposal: its title and status, the agents it changes, its branch, what it says it does, the cards it addresses
-/// and what the trials found.
+/// and what the trials found, or the diff of a change to Moebius's own configuration.
 pub fn proposal(proposal: &Proposal) -> Element<'_, AppMessage> {
     let mut head = row![
         text(proposal.title.as_str())
@@ -404,6 +414,9 @@ pub fn proposal(proposal: &Proposal) -> Element<'_, AppMessage> {
     .align_y(Alignment::Center);
     for agent in &proposal.agents {
         head = head.push(page::tag(agent.clone(), Tone::Plain));
+    }
+    if let Some(what) = own_kind(&proposal.kind) {
+        head = head.push(page::tag(what.to_string(), Tone::Plain));
     }
     head = head.push(proposal_status(&proposal.status));
     let mut content = column![
@@ -432,6 +445,12 @@ pub fn proposal(proposal: &Proposal) -> Element<'_, AppMessage> {
     }
     if !proposal.trials.is_empty() {
         content = content.push(column(proposal.trials.iter().map(trial)).spacing(6));
+    }
+    if !proposal.diff.is_empty() {
+        content = content.push(crate::widgets::transcript::code_block(
+            "diff",
+            &proposal.diff,
+        ));
     }
     container(content)
         .padding([12, 14])

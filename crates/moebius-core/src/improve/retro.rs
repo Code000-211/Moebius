@@ -1,8 +1,8 @@
 //! The Retro (spec 4, ADR 0001): once a day the day's errors are collected, without a model, into a report, and the
 //! Retro analyst agent turns the report into proposals, which are changes to the harness configuration, each on a
-//! branch of its own. The report is stored with the day's `retros` row; the proposals are stored with the branches the
-//! analyst left in the harness configuration clone, after they were checked and pushed to `origin`; trying them is
-//! the work of `trial`. The schedule asks `due` once a
+//! branch of its own, or to Moebius's own configuration (see `own`). The report is stored with the day's `retros` row;
+//! the proposals are stored with the branches the analyst left in the harness configuration clone, after they were
+//! checked and pushed to `origin`; trying them is the work of `trial`. The schedule asks `due` once a
 //! minute; `POST /v1/retros` starts a Retro by hand. Nothing here waits for a person.
 
 use std::sync::Arc;
@@ -15,6 +15,8 @@ use crate::board::Runs;
 use crate::bus::AppEvent;
 use crate::config::TimeOfDay;
 use crate::harness::repo::HarnessRepo;
+use crate::improve::own;
+use crate::server::settings::Live;
 use crate::store::{Found, Proposal, Retro, Store};
 
 /// How many characters of a text a report keeps.
@@ -145,16 +147,18 @@ pub fn summaries(store: &Store) -> Result<Vec<RetroSummary>> {
         .collect())
 }
 
-/// What the analyst is told after the report.
-fn prompt(report: &Report) -> String {
+/// What the analyst is told after the report; `own` is what it is told about proposals for Moebius's own
+/// configuration (see `own::brief`).
+fn prompt(report: &Report, own: &str) -> String {
     let json = serde_json::to_string_pretty(report).unwrap_or_default();
     format!(
         "This is the Retro of {day}. Below are the errors of that day, collected by Moebius. Find what they have in \
          common and propose changes to the harness configuration (your worktree) that would avoid them. Make each \
          proposal its own branch named proposal/{day}-<short-name> from the current commit, with one commit whose \
          message is the proposal and ends with a line like `Cards: 48, 50` naming the `card` of each error of the \
-         report that it addresses, and change only harness configuration files. Commit with `git -c \
+         report that it addresses, and change only harness configuration files, but see below. Commit with `git -c \
          user.name=Retro -c user.email=retro@localhost commit`. Propose nothing the errors do not call for.\n\n\
+         {own}\n\
          The report:\n\n{json}\n",
         day = report.date
     )
@@ -165,7 +169,7 @@ fn prompt(report: &Report) -> String {
 /// is published as `retro_done`. A day that has a Retro already is an error.
 pub fn start(
     app: &Arc<App>,
-    runs: &Arc<dyn Runs>,
+    (runs, live): (&Arc<dyn Runs>, &Arc<Live>),
     repo: Option<&Arc<HarnessRepo>>,
     day: &str,
 ) -> Result<RetroView> {
@@ -184,7 +188,7 @@ pub fn start(
         publish_done(app, day)?;
         return view(&app.store, day);
     };
-    if let Err(why) = launch(app, runs, repo, &report) {
+    if let Err(why) = launch(app, (runs, live), repo, &report) {
         app.store.finish_retro(day, "failed", &[why])?;
         publish_done(app, day)?;
     }
@@ -194,7 +198,7 @@ pub fn start(
 /// Starts the analyst's run and the thread that waits for it.
 fn launch(
     app: &Arc<App>,
-    runs: &Arc<dyn Runs>,
+    (runs, live): (&Arc<dyn Runs>, &Arc<Live>),
     repo: &Arc<HarnessRepo>,
     report: &Report,
 ) -> std::result::Result<(), String> {
@@ -202,16 +206,17 @@ fn launch(
     let _ = repo.refresh(app);
     let base = repo.default_branch().map_err(|e| e.to_string())?;
     let mut ended = app.bus.subscribe();
-    let run = runs.start_retro(app, repo.path(), &base, &prompt(report))?;
+    let own = own::brief(app, live, report).map_err(|e| e.to_string())?;
+    let run = runs.start_retro(app, repo.path(), &base, &prompt(report, &own))?;
     app.store
         .set_retro_run(&report.date, run.id)
         .map_err(|e| e.to_string())?;
-    let (app, repo, day) = (app.clone(), repo.clone(), report.date.clone());
+    let (app, live, repo, day) = (app.clone(), live.clone(), repo.clone(), report.date.clone());
     std::thread::Builder::new()
         .name(format!("retro {day}"))
         .spawn(move || {
             wait_for_end(&app, &mut ended, run.id);
-            let (status, warnings) = conclude(&app, &repo, &day, run.id);
+            let (status, warnings) = conclude(&app, &live, &repo, &day, run.id);
             let _ = app.store.finish_retro(&day, status, &warnings);
             let _ = publish_done(&app, &day);
         })
@@ -240,8 +245,15 @@ pub fn wait_for_end(
     }
 }
 
-/// What became of the analyst's run: the status of the Retro and its warnings. The proposals are stored.
-fn conclude(app: &App, repo: &HarnessRepo, day: &str, run_id: i64) -> (&'static str, Vec<String>) {
+/// What became of the analyst's run: the status of the Retro and its warnings. The proposals are stored: first those
+/// for Moebius's own configuration, whose branches are then gone, then those of the harness configuration.
+fn conclude(
+    app: &App,
+    live: &Live,
+    repo: &HarnessRepo,
+    day: &str,
+    run_id: i64,
+) -> (&'static str, Vec<String>) {
     let run = app.store.run(run_id).ok().flatten();
     if run.as_ref().is_none_or(|run| run.status != "succeeded") {
         let status = run.map_or("gone".to_string(), |run| run.status);
@@ -256,8 +268,20 @@ fn conclude(app: &App, repo: &HarnessRepo, day: &str, run_id: i64) -> (&'static 
             .unwrap_or_default();
         return ("failed", vec![format!("the analyst's run {status}: {why}")]);
     }
-    match repo.proposed(app, &format!("proposal/{day}-")) {
-        Ok((proposed, warnings)) => {
+    let prefix = format!("proposal/{day}-");
+    let own_warnings = match repo.take_own_branches(&prefix) {
+        Ok((branches, mut warnings)) => match own::store(app, live, day, &branches) {
+            Ok(more) => {
+                warnings.extend(more);
+                warnings
+            }
+            Err(e) => return ("failed", vec![format!("cannot store the proposals: {e}")]),
+        },
+        Err(e) => return ("failed", vec![format!("cannot read the proposals: {e}")]),
+    };
+    match repo.proposed(app, &prefix) {
+        Ok((proposed, mut warnings)) => {
+            warnings.splice(0..0, own_warnings);
             for p in &proposed {
                 if let Err(e) = app
                     .store
@@ -284,7 +308,7 @@ fn publish_done(app: &App, day: &str) -> Result<()> {
 /// The schedule's check, once a minute: starts today's Retro when `retro_at` has passed and today has none.
 pub fn on_schedule(
     app: &Arc<App>,
-    runs: &Arc<dyn Runs>,
+    runs: (&Arc<dyn Runs>, &Arc<Live>),
     repo: Option<&Arc<HarnessRepo>>,
     retro_at: TimeOfDay,
 ) -> Result<()> {

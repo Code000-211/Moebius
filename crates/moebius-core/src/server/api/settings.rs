@@ -189,8 +189,9 @@ async fn delete_secret(
     .await
 }
 
-/// How long `POST /v1/server/restart` waits before it restarts the server, so that its answer is sent first.
-const RESTART_DELAY: std::time::Duration = std::time::Duration::from_millis(300);
+/// How long `POST /v1/server/restart`, and the merge of a proposal that changes a key that needs a restart, wait
+/// before they restart the server, so that the answer is sent first.
+pub(super) const RESTART_DELAY: std::time::Duration = std::time::Duration::from_millis(300);
 
 async fn restart_server(State(state): State<ApiState>) -> StatusCode {
     let live = state.config.clone();

@@ -40,7 +40,7 @@ pub use inbox::InboxItem;
 pub use judgements::{Judgement, NewJudgement};
 pub use replays::Replay;
 pub use research::{Experiment, Research};
-pub use retros::{Proposal, Retro, Trial};
+pub use retros::{OwnEdits, Proposal, Retro, Trial};
 pub use runs::Run;
 pub use shadows::{NewShadow, ShadowStats, Takeover};
 pub use usage::{
@@ -330,6 +330,13 @@ DROP TABLE changes_old;
 ALTER TABLE runs ADD COLUMN harness_repository INTEGER NOT NULL DEFAULT 0;
 "#,
     "ALTER TABLE runs ADD COLUMN origin TEXT NOT NULL DEFAULT 'chat';",
+    r#"
+ALTER TABLE proposals ADD COLUMN kind TEXT NOT NULL DEFAULT 'harness';
+ALTER TABLE proposals ADD COLUMN diff TEXT NOT NULL DEFAULT '';
+ALTER TABLE proposals ADD COLUMN edits TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE proposals ADD COLUMN repository_id INTEGER REFERENCES repositories(id);
+ALTER TABLE proposals ADD COLUMN change_id INTEGER REFERENCES changes(id);
+"#,
 ];
 
 pub fn now() -> i64 {
