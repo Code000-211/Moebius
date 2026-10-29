@@ -278,10 +278,29 @@ At the top:
 |---|---|
 | `app.rs` | The core put together; the operations on cards, changes and issues, each published on the bus, including publishing a change and running its checks. |
 | `config.rs` | `moebius.toml`: parsing, defaults, validation. |
-| `store.rs` | The SQLite records and their migrations. |
 | `blobs.rs` | The content-addressed blob store and secret redaction. |
 | `bus.rs` | The event bus behind the event stream. |
 | `router.rs` | The router: model endpoints, run tokens, usage, budgets. |
+
+`store/`, the records:
+
+| Module | What it is for |
+|---|---|
+| `store/mod.rs` | The store: opening the SQLite database, its migrations, the connection and the server's local clock, the helpers that read rows, and every record type re-exported as `store::<Type>`. |
+| `store/cards.rs` | Repositories, their cards, the issues that block a card and the moves of a card between columns. |
+| `store/changes.rs` | Changes: a branch offered for merging, with its pull request, checks and review. |
+| `store/runs.rs` | Runs: an agent's work in a harness, from its start to its end. |
+| `store/events.rs` | A run's events, in order, redacted before they are stored. |
+| `store/chats.rs` | Chats: where they were started, what they work in and how far a person has read them. |
+| `store/judgements.rs` | Judgements at decision points, their outcomes, and the refusals counted by rule. |
+| `store/replays.rs` | Replays of refused tool calls and the refusals still to replay. |
+| `store/inbox.rs` | The inbox: what waits for a person, until it is resolved. |
+| `store/grillings.rs` | What a grilling chat ended in: the issues it proposes or its report. |
+| `store/shadows.rs` | The decision model's shadows, how well they agree, and the takeovers proposed from them. |
+| `store/usage.rs` | The usage of every model call and what it adds up to by card, day, model, agent, activity and tool. |
+| `store/found.rs` | What went wrong in a window of time, as the Retro collects it. |
+| `store/retros.rs` | The Retro of each day, its proposals and their trials. |
+| `store/research.rs` | Research: its brief, its runs and the experiments they try. |
 
 `server/`, serving it all:
 
