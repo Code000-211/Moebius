@@ -221,6 +221,14 @@ mod tests {
         let e = run(&engine, &card, "function on_card(c) while true do end end").unwrap_err();
         assert!(e.contains("ran out of time"), "{e}");
         assert!(started.elapsed() < Duration::from_secs(5));
+        // With time to spare, so that a busy machine cannot run out of time before memory runs out.
+        let engine = engine_with(
+            &app,
+            Limits {
+                script_time: Duration::from_secs(60),
+                ..Limits::default()
+            },
+        );
         let e = run(&engine, &card,
             "function on_card(c) local t = {} for i = 1, 1e9 do t[i] = string.rep('x', 1024) .. i end end",
         )
