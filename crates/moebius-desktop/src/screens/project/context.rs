@@ -24,6 +24,12 @@ fn cut(text: &str, limit: usize) -> String {
 impl Project {
     /// What the floating chat is told of the tab shown, below the repository's line.
     pub fn context(&self) -> Vec<String> {
+        let mut lines = self.find_context();
+        lines.extend(self.tab_context());
+        lines
+    }
+
+    fn tab_context(&self) -> Vec<String> {
         match self.tab {
             Tab::Board => Vec::new(),
             Tab::Files => {

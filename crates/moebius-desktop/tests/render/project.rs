@@ -378,3 +378,251 @@ fn the_page_context_names_the_file_the_cursor_and_the_selection() {
         context.chars().count()
     );
 }
+
+const PATHS: [&str; 9] = [
+    ".moebius/ready.luau",
+    "Cargo.toml",
+    "README.md",
+    "docs/domain.md",
+    "src/draft/main_old.rs",
+    "src/main.rs",
+    "src/sched.rs",
+    "src/server/main.rs",
+    "tests/remain.rs",
+];
+
+fn find(message: project::find::Message) -> Message {
+    Message::Find(message)
+}
+
+/// The Files tab with "Go to file" open and `mr` typed.
+fn go_app() -> App {
+    use project::find::Message::{Go, Paths, Query};
+    let mut app = files_app();
+    let _ = app.update(find(Go));
+    let paths = client::PathList {
+        paths: PATHS.iter().map(|p| p.to_string()).collect(),
+    };
+    let _ = app.update(find(Paths(Ok(paths))));
+    let _ = app.update(find(Query("mr".into())));
+    app
+}
+
+fn hit(line: u64, text: &str) -> client::SearchHit {
+    client::SearchHit {
+        line,
+        text: text.into(),
+    }
+}
+
+/// The Editor tab with "Search in files" open and the hits of `main` listed.
+fn search_app() -> App {
+    use project::find::Message::{Found, Query, Search, Submit};
+    let mut app = editor_app();
+    let _ = app.update(find(Search));
+    let _ = app.update(find(Query("main".into())));
+    let _ = app.update(find(Submit));
+    let found = client::SearchResult {
+        files: vec![
+            client::SearchFile {
+                path: "src/main.rs".into(),
+                hits: vec![
+                    hit(6, "fn main() {"),
+                    hit(9, "        println!(\"{:?}\", stream);"),
+                ],
+            },
+            client::SearchFile {
+                path: "src/server/main.rs".into(),
+                hits: vec![hit(3, "mod main_loop;")],
+            },
+        ],
+        total: 3,
+        truncated: false,
+    };
+    let _ = app.update(find(Found(1, Ok(found))));
+    app
+}
+
+#[test]
+fn go_to_file_lists_the_best_matches_first_and_enter_opens_the_first() {
+    let app = go_app();
+    draw(
+        &app,
+        "project-go-to-file",
+        &["Go to file", "mr", "main.rs", "src/server", "remain.rs"],
+    );
+    let mut ui = simulator(&app);
+    ui.click(iced::widget::Id::from("go-src/server/main.rs"))
+        .unwrap();
+    let messages: Vec<_> = ui.into_messages().collect();
+    assert!(
+        matches!(&messages[..], [Message::Project(1, project::Message::Find(project::find::Message::Pick(i)))] if *i < 3),
+        "{messages:?}"
+    );
+
+    let mut app = app;
+    let _ = app.update(find(project::find::Message::Submit));
+    // The panel closes and the file opens in the Editor; the agent is told where it came from.
+    assert!(!shows(&app, "Go to file"));
+    let context = app.page_context();
+    assert!(context.starts_with("Page: Projects > Editor"), "{context}");
+    assert!(context.contains("Open file: "), "{context}");
+    assert!(
+        context.contains("came from: Go to file, typed \"mr\""),
+        "{context}"
+    );
+}
+
+#[test]
+fn the_agent_is_told_of_the_open_panel() {
+    let context = go_app().page_context();
+    assert!(
+        context.contains("\"Go to file\" is open; typed: \"mr\""),
+        "{context}"
+    );
+    assert!(context.contains("Best matches: "), "{context}");
+    let context = search_app().page_context();
+    assert!(
+        context.contains("\"Search in files\" is open; typed: \"main\""),
+        "{context}"
+    );
+    assert!(context.contains("found 3 hits in 2 files"), "{context}");
+    assert!(context.contains("src/main.rs:6: fn main() {"), "{context}");
+}
+
+#[test]
+fn search_in_files_lists_the_hits_per_file_and_a_click_opens_the_file_at_the_line() {
+    let app = search_app();
+    draw(
+        &app,
+        "project-search",
+        &[
+            "Search in files",
+            "main",
+            "Regex",
+            "src/main.rs",
+            "src/server/main.rs",
+            "fn main() {",
+            "mod main_loop;",
+            "3 hits in 2 files",
+        ],
+    );
+    let mut ui = simulator(&app);
+    ui.click(iced::widget::Id::from("hit-src/main.rs:6"))
+        .unwrap();
+    let messages: Vec<_> = ui.into_messages().collect();
+    assert!(
+        matches!(
+            &messages[..],
+            [Message::Project(
+                1,
+                project::Message::Find(project::find::Message::Pick(0))
+            )]
+        ),
+        "{messages:?}"
+    );
+
+    let mut app = app;
+    for message in messages {
+        let _ = app.update(message);
+    }
+    // main.rs was open already; the cursor is on the line of the hit and the agent is told so.
+    let context = app.page_context();
+    assert!(context.contains("Open file: src/main.rs"), "{context}");
+    assert!(context.contains("Cursor: line 6, column 1"), "{context}");
+    assert!(
+        context.contains("came from: Search in files for \"main\", hit at line 6"),
+        "{context}"
+    );
+
+    // A hit in a file that is not open yet opens it and goes to the line once it is read.
+    let _ = app.update(find(project::find::Message::Pick(2)));
+    let _ = app.update(project(project::Message::Read(
+        "src/server/main.rs".into(),
+        Ok(text_file(
+            "src/server/main.rs",
+            "use a;\nuse b;\nmod main_loop;\n",
+        )),
+    )));
+    let context = app.page_context();
+    assert!(
+        context.contains("Open file: src/server/main.rs"),
+        "{context}"
+    );
+    assert!(context.contains("Cursor: line 3, column 1"), "{context}");
+}
+
+#[test]
+fn enter_searches_and_then_opens_the_selected_hit_and_a_failure_is_shown() {
+    use project::find::Message::{Found, Move, Query, Regex, Search, Submit};
+    let mut app = files_app();
+    let _ = app.update(find(Search));
+    let _ = app.update(find(Regex(true)));
+    let _ = app.update(find(Query("(".into())));
+    let _ = app.update(find(Submit));
+    assert!(shows(&app, "Searching."));
+    let refusal = ClientError::Server {
+        status: 422,
+        message: "fatal: unmatched parenthesis".into(),
+    };
+    // An answer to an older search is dropped.
+    let _ = app.update(find(Found(
+        7,
+        Ok(client::SearchResult {
+            files: vec![],
+            total: 0,
+            truncated: false,
+        }),
+    )));
+    assert!(shows(&app, "Searching."));
+    let _ = app.update(find(Found(1, Err(refusal))));
+    assert!(shows(&app, "fatal: unmatched parenthesis"));
+
+    let mut app = search_app();
+    let _ = app.update(find(Move(moebius_desktop::search::Direction::Down)));
+    let _ = app.update(find(Move(moebius_desktop::search::Direction::Down)));
+    let _ = app.update(find(Submit));
+    assert!(app.page_context().contains("Open file: src/server/main.rs"));
+}
+
+#[test]
+fn ctrl_p_and_ctrl_shift_f_open_the_panels() {
+    use iced::keyboard::{self, Key, Modifiers};
+    let press = |character: &str, modifiers| {
+        iced::Event::Keyboard(keyboard::Event::KeyPressed {
+            key: Key::Character(character.into()),
+            modified_key: Key::Character(character.into()),
+            physical_key: keyboard::key::Physical::Code(keyboard::key::Code::KeyP),
+            location: keyboard::Location::Standard,
+            modifiers,
+            text: None,
+            repeat: false,
+        })
+    };
+    let key = |event| {
+        project::find_key(
+            event,
+            iced::event::Status::Ignored,
+            iced::window::Id::unique(),
+        )
+    };
+    assert!(matches!(
+        key(press("p", Modifiers::COMMAND)),
+        Some(Message::Find(project::find::Message::Go))
+    ));
+    assert!(key(press("p", Modifiers::COMMAND | Modifiers::SHIFT)).is_none());
+    assert!(matches!(
+        key(press("F", Modifiers::COMMAND | Modifiers::SHIFT)),
+        Some(Message::Find(project::find::Message::Search))
+    ));
+    assert!(key(press("f", Modifiers::COMMAND)).is_none());
+    assert!(key(press("p", Modifiers::empty())).is_none());
+
+    // On the board the keys show the Files tab with the panel.
+    let mut app = radiance_app();
+    let _ = app.update(Message::Find(project::find::Message::Search));
+    assert!(shows(&app, "Search in files"));
+    assert!(shows(&app, "Cargo.toml") || shows(&app, "Reading the default branch."));
+    let _ = app.update(Message::Find(project::find::Message::Close));
+    assert!(!shows(&app, "Search in files"));
+}

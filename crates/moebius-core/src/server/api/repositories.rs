@@ -10,6 +10,8 @@
 //!   removed as a commit (see [`crate::board::scripts`]).
 //! - `GET /v1/repositories/{id}/tree?path=` and `GET` and `PUT /v1/repositories/{id}/files/{path}`: the files on the
 //!   default branch, read and committed (see [`crate::repos::files`]).
+//! - `GET /v1/repositories/{id}/files?query=` and `GET /v1/repositories/{id}/search?q=&regex=&limit=`: the paths of the
+//!   default branch for "Go to file", and a full-text search over it (see [`crate::repos::search`]).
 
 use axum::Extension;
 use axum::Router;
@@ -22,6 +24,7 @@ use crate::app::AppError;
 use crate::board::scripts::{self, NewScript, ScriptView};
 use crate::decide::Actor;
 use crate::repos::files::{self, FileView, NewFile, Tree};
+use crate::repos::search::{self, Found, Paths, Search};
 use crate::store::Repository;
 
 /// The routes of the repositories, their scripts and their files.
@@ -34,6 +37,8 @@ pub(super) fn routes() -> Router<ApiState> {
             get(get_script).put(put_script).delete(delete_script),
         )
         .route("/v1/repositories/{id}/tree", get(get_tree))
+        .route("/v1/repositories/{id}/files", get(get_paths))
+        .route("/v1/repositories/{id}/search", get(get_search))
         .route(
             "/v1/repositories/{id}/files/{*path}",
             get(get_file).put(put_file),
@@ -152,6 +157,29 @@ async fn get_tree(
     Query(query): Query<TreeQuery>,
 ) -> Result<axum::Json<Tree>, ApiError> {
     blocking(&state.app, move |app| files::tree(app, id, &query.path)).await
+}
+
+/// What `GET /v1/repositories/{id}/files` narrows the paths to; all of them when it is left out.
+#[derive(Debug, Deserialize)]
+struct PathsQuery {
+    #[serde(default)]
+    query: String,
+}
+
+async fn get_paths(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+    Query(query): Query<PathsQuery>,
+) -> Result<axum::Json<Paths>, ApiError> {
+    blocking(&state.app, move |app| search::paths(app, id, &query.query)).await
+}
+
+async fn get_search(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+    Query(query): Query<Search>,
+) -> Result<axum::Json<Found>, ApiError> {
+    blocking(&state.app, move |app| search::search(app, id, &query)).await
 }
 
 async fn get_file(

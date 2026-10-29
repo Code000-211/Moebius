@@ -281,6 +281,23 @@ entry's `path` is from the root, `size` is in bytes (0 for a directory); directo
 name. Submodules are left out. Errors: `404` no such repository or directory (a file is not one); `422` the path is
 absolute, climbs out with `..`, or names `.git`.
 
+### `GET /v1/repositories/{id}/files`
+
+The paths of every file on the repository's default branch, for the app's "Go to file". Optional `?query=`: only the
+paths that contain the characters of the query in that order, ignoring case and surrounding blanks (the app ranks them
+itself). Response: `{"paths": [string]}`, from the repository's root, sorted; submodules are left out, and a clone
+without a commit has none. Errors: `404` no such repository.
+
+### `GET /v1/repositories/{id}/search`
+
+A full-text search of the files on the default branch, run with `git grep` in Moebius's clone, ignoring case, skipping
+binary files. `?q=` is the text to find (required, not blank); `?regex=true` takes it as an extended regular
+expression instead of the text itself; `?limit=` is the most hits answered (default 200, at most 1000). Response:
+`{"files": [{"path": string, "hits": [{"line": number, "text": string}]}], "total": number, "truncated": bool}`: files
+in path order, hits in line order (`line` from 1, `text` cut after 300 characters), `total` the hits in `files`, and
+`truncated` true when there are more than the limit. Errors: `404` no such repository; `422` `q` is blank or the
+regular expression is invalid (the message is git's).
+
 ### `GET /v1/repositories/{id}/files/{*path}`
 
 A file of the repository as it is on its default branch; `{*path}` is the rest of the URL, from the repository's root

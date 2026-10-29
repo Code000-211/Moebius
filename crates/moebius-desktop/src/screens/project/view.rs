@@ -198,10 +198,13 @@ impl Project {
             Tab::Editor => self.editor_view(id),
             _ => self.files_view(id),
         };
-        column![header, tabs, body]
+        let mut page = column![header, tabs]
             .spacing(theme::PAGE_GAP)
-            .width(Length::Fill)
-            .into()
+            .width(Length::Fill);
+        if let Some(panel) = self.find_view(id) {
+            page = page.push(panel);
+        }
+        page.push(body).into()
     }
 
     fn files_view(&self, repository: i64) -> Element<'_, AppMessage> {

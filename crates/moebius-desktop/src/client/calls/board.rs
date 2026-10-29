@@ -2,8 +2,8 @@
 //! repository's files and column scripts.
 
 use crate::client::{
-    Card, Client, ClientError, FileDetail, GrillingIssue, HistoryEntry, NewRepository, Repository,
-    ScriptDetail, Snapshot, Tree,
+    Card, Client, ClientError, FileDetail, GrillingIssue, HistoryEntry, NewRepository, PathList,
+    Repository, ScriptDetail, SearchResult, Snapshot, Tree,
 };
 
 /// The route of a column's script; a column's name may have spaces.
@@ -167,6 +167,27 @@ impl Client {
         self.get(&format!(
             "/v1/repositories/{repository}/tree?path={}",
             encoded(dir, false)
+        ))
+        .await
+    }
+
+    /// The paths of every file of a repository's default branch, for "Go to file".
+    pub async fn paths(&self, repository: i64) -> Result<PathList, ClientError> {
+        self.get(&format!("/v1/repositories/{repository}/files"))
+            .await
+    }
+
+    /// The lines of a repository's default branch that contain `query`, at most `limit`.
+    pub async fn search(
+        &self,
+        repository: i64,
+        query: &str,
+        regex: bool,
+        limit: usize,
+    ) -> Result<SearchResult, ClientError> {
+        self.get(&format!(
+            "/v1/repositories/{repository}/search?q={}&regex={regex}&limit={limit}",
+            encoded(query, false)
         ))
         .await
     }

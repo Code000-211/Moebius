@@ -468,6 +468,7 @@ At the top:
 | `repos/poll/gitlab.rs` | What GitLab answers, read for the poll: issues, a merge request with its latest pipeline, failed jobs and approvals. |
 | `repos/poll/forgejo.rs` | What Forgejo answers, read for the poll: issues, a pull request with the statuses of its head commit and its latest review. |
 | `repos/files.rs` | A repository's files on its default branch, read and committed (the Files and Editor tabs of a project). |
+| `repos/search.rs` | A repository's default branch searched for the project page: the list of its paths for "Go to file", and a full-text search with `git grep`. |
 
 `board/`, the workflow:
 
@@ -639,6 +640,7 @@ At the top:
 | `screens/project/mod.rs`, `screens/project/update.rs` | A project: the page of one repository with the tabs Board, Files and Editor, and how a message changes them. |
 | `screens/project/view.rs`, `screens/project/editor.rs` | The tabs and the Files tab's tree, and the Editor tab with the open files. |
 | `screens/project/context.rs` | What the floating chat is told of a project's tab. |
+| `screens/project/find.rs`, `screens/project/fuzzy.rs` | "Go to file" (Ctrl+P) and "Search in files" (Ctrl+Shift+F) over a project's default branch, and the fuzzy ranking of paths. |
 | `screens/board.rs` | The board of a repository: its columns in order with their cards. |
 | `screens/add_repository.rs` | The "Add a repository" page the "+" of the sidebar opens. |
 | `screens/live/mod.rs`, `screens/live/update.rs` | The live view of a run: the run being watched, its loading and the shell's subscription, and how a message changes it. |

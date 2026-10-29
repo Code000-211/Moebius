@@ -159,6 +159,15 @@ impl App {
                     );
                 }
             }
+            Message::Find(message) => {
+                if let (Page::Board(repository), None) = (self.page(), &self.opened) {
+                    return self.projects.entry(repository).or_default().update(
+                        repository,
+                        project::Message::Find(message),
+                        self.settings.as_ref(),
+                    );
+                }
+            }
             Message::Script(script_editor::Message::AskAgent) => {
                 // The floating chat opens with the start of a message about the script; nothing is sent.
                 let Some(Opened::Script(editor)) = &self.opened else {

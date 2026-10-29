@@ -48,6 +48,9 @@ CARD=$(curl -s -X POST -H "$AUTH" -H "$JSON" \
 `GET /v1/repositories/{id}/files/<path>` reads a file: its `text`, or `binary` or `too_large` with its `size`.
 `PUT` on the same route writes the file as a commit on the default branch (pushed for a repository on GitHub), which is
 what the Editor of a project's page in the desktop app does. A refused push is undone and answered with `409`.
+`GET /v1/repositories/{id}/files` lists every path (`?query=` narrows it) and `GET /v1/repositories/{id}/search?q=`
+finds lines with `git grep` (`regex=true`, `limit=`); the app's "Go to file" (Ctrl+P) and "Search in files"
+(Ctrl+Shift+F) use them.
 
 ```sh
 curl -s -H "$AUTH" "$API/v1/repositories/$REPO/tree?path=" | jq -r '.entries[] | "\(.kind) \(.path)"'

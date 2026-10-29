@@ -5,10 +5,13 @@
 //! commit on the default branch. Where the cursor is and what is selected tell the floating chat what "this" is.
 //!
 //! `update` has how a message changes the tabs, `context` what the floating chat is told of them, `view` the tabs and
-//! the Files tab, and `editor` the Editor tab.
+//! the Files tab, and `editor` the Editor tab. `find` is "Go to file" and "Search in files", which open over the Files
+//! and Editor tabs and open a file, at a line when a hit was chosen; `fuzzy` ranks the paths for the first.
 
 mod context;
 mod editor;
+pub mod find;
+mod fuzzy;
 mod update;
 mod view;
 
@@ -21,6 +24,7 @@ use crate::app::Message as AppMessage;
 use crate::client::{Client, ClientError, FileDetail, Tree, TreeEntry};
 use crate::settings::Settings;
 
+pub use find::key as find_key;
 pub(crate) use view::size;
 pub use view::tabs;
 
@@ -67,6 +71,8 @@ pub enum Message {
     Save,
     /// The server answered saving the file at the path with the text sent.
     Saved(String, String, Result<FileDetail, ClientError>),
+    /// Something of "Go to file" or "Search in files".
+    Find(find::Message),
 }
 
 /// A directory of the tree as far as it is known.
@@ -99,6 +105,8 @@ struct OpenFile {
     saving: bool,
     /// Whether the last save went through and nothing has changed since.
     committed: bool,
+    /// The line, from 1, the cursor goes to once the text is read.
+    goto: Option<usize>,
 }
 
 impl OpenFile {
@@ -125,6 +133,14 @@ pub struct Project {
     current: Option<String>,
     /// The unsaved file whose closing waits for a confirmation.
     closing: Option<String>,
+    /// The panel of "Go to file" or "Search in files", when one is open.
+    find: Option<find::Find>,
+    /// Every path of the default branch, as the server last listed them for "Go to file".
+    known_paths: Vec<String>,
+    /// The files opened lately, the latest first, which "Go to file" ranks first.
+    recent: Vec<String>,
+    /// How the file shown was opened when it came from finding.
+    origin: Option<find::Origin>,
 }
 
 /// Ctrl+S (Cmd+S on macOS) saves the file the Editor shows; the app ignores it elsewhere.
@@ -165,6 +181,10 @@ impl Project {
             Message::Listed(_, Err(ClientError::Unauthorized))
                 | Message::Read(_, Err(ClientError::Unauthorized))
                 | Message::Saved(_, _, Err(ClientError::Unauthorized))
+                | Message::Find(
+                    find::Message::Paths(Err(ClientError::Unauthorized))
+                        | find::Message::Found(_, Err(ClientError::Unauthorized))
+                )
         )
     }
 

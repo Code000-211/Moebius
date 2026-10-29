@@ -295,6 +295,37 @@ pub struct FileDetail {
     pub too_large: bool,
 }
 
+/// The paths of a repository's default branch as `GET /v1/repositories/{id}/files` answers.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct PathList {
+    pub paths: Vec<String>,
+}
+
+/// A matching line of a search.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct SearchHit {
+    /// From 1.
+    pub line: u64,
+    pub text: String,
+}
+
+/// The matching lines of one file.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct SearchFile {
+    pub path: String,
+    pub hits: Vec<SearchHit>,
+}
+
+/// What `GET /v1/repositories/{id}/search` answers.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct SearchResult {
+    pub files: Vec<SearchFile>,
+    pub total: usize,
+    /// Whether there are more hits than the limit let through.
+    #[serde(default)]
+    pub truncated: bool,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

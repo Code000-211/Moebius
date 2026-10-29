@@ -411,3 +411,111 @@ async fn on_a_forge_a_file_is_pushed_and_a_refused_push_undoes_the_commit() {
     assert_eq!(setup.get(&route).await.0, 404);
     assert_eq!(app.store.judgements("edit_file").unwrap().len(), 1);
 }
+
+/// A repository with text to search for, a binary file that holds the same word, and a submodule-free layout.
+fn searchable(dir: &Path) -> PathBuf {
+    let source = dir.join("searchable");
+    std::fs::create_dir_all(&source).unwrap();
+    git(&source, &["init", "--quiet", "-b", "main"]).unwrap();
+    write(
+        &source,
+        "src/main.rs",
+        "fn main() {\n    println!(\"Hello\");\n}\n",
+    );
+    write(&source, "src/util.rs", "// hello again\nfn util2() {}\n");
+    write(
+        &source,
+        "docs/notes.md",
+        "Say HELLO.\nfn(x) is not a regex.\n",
+    );
+    std::fs::write(source.join("logo.png"), b"\x89PNG\0hello\0").unwrap();
+    git(&source, &["add", "-A"]).unwrap();
+    git(&source, &["commit", "--quiet", "-m", "first"]).unwrap();
+    // An uncommitted change is not on the default branch.
+    write(&source, "src/draft.rs", "hello draft\n");
+    source
+}
+
+#[tokio::test]
+async fn the_paths_of_the_default_branch_are_listed_and_narrowed_by_a_query() {
+    let dir = tempfile::tempdir().unwrap();
+    let setup = Setup::start(dir.path()).await;
+    let repo = setup
+        .server
+        .app
+        .add_repository("demo", source(dir.path()).to_str().unwrap())
+        .unwrap();
+    let route = |query: &str| format!("/v1/repositories/{}/files{query}", repo.id);
+
+    let (status, all) = setup.get(&route("")).await;
+    assert_eq!(status, 200, "{all}");
+    assert_eq!(
+        all["paths"],
+        json!(["README.md", "logo.png", "src/lib/mod.rs", "src/main.rs"])
+    );
+    let (_, some) = setup.get(&route("?query=SMAIN")).await;
+    assert_eq!(some["paths"], json!(["src/main.rs"]));
+    let (_, none) = setup.get(&route("?query=zzz")).await;
+    assert_eq!(none["paths"], json!([]));
+    let (status, _) = setup
+        .get(&format!("/v1/repositories/{}/files", repo.id + 99))
+        .await;
+    assert_eq!(status, 404);
+}
+
+#[tokio::test]
+async fn a_search_finds_lines_per_file_with_a_regex_a_limit_and_binary_files_skipped() {
+    let dir = tempfile::tempdir().unwrap();
+    let setup = Setup::start(dir.path()).await;
+    let repo = setup
+        .server
+        .app
+        .add_repository("demo", searchable(dir.path()).to_str().unwrap())
+        .unwrap();
+    let route = |query: &str| format!("/v1/repositories/{}/search?{query}", repo.id);
+
+    // Case-insensitive, per file in path order; the binary file and the uncommitted file are not searched.
+    let (status, found) = setup.get(&route("q=hello")).await;
+    assert_eq!(status, 200, "{found}");
+    assert_eq!(
+        found,
+        json!({
+            "files": [
+                {"path": "docs/notes.md", "hits": [{"line": 1, "text": "Say HELLO."}]},
+                {"path": "src/main.rs", "hits": [{"line": 2, "text": "    println!(\"Hello\");"}]},
+                {"path": "src/util.rs", "hits": [{"line": 1, "text": "// hello again"}]},
+            ],
+            "total": 3,
+            "truncated": false,
+        })
+    );
+
+    // Without `regex` the text is taken as it is; with it, as an extended regular expression.
+    let (_, plain) = setup.get(&route("q=fn%5Cw%2B")).await;
+    assert_eq!(plain["total"], 0);
+    let (_, regex) = setup
+        .get(&route("q=fn%20%3F%5Cw%2B%5B0-9%5D&regex=true"))
+        .await;
+    assert_eq!(regex["total"], 1, "{regex}");
+    assert_eq!(regex["files"][0]["path"], "src/util.rs");
+    let (_, literal) = setup.get(&route("q=fn(x)")).await;
+    assert_eq!(literal["files"][0]["path"], "docs/notes.md");
+
+    // A limit cuts the hits and says so; the files stay in order.
+    let (_, limited) = setup.get(&route("q=hello&limit=2")).await;
+    assert_eq!(limited["total"], 2);
+    assert_eq!(limited["truncated"], true);
+    assert_eq!(limited["files"][1]["path"], "src/main.rs");
+    let (_, exact) = setup.get(&route("q=hello&limit=3")).await;
+    assert_eq!(exact["truncated"], false);
+
+    // Refusals: nothing to look for, a regular expression that does not parse, and no such repository.
+    let (status, _) = setup.get(&route("q=")).await;
+    assert_eq!(status, 422);
+    let (status, body) = setup.get(&route("q=(&regex=true")).await;
+    assert_eq!(status, 422, "{body}");
+    let (status, _) = setup
+        .get(&format!("/v1/repositories/{}/search?q=x", repo.id + 99))
+        .await;
+    assert_eq!(status, 404);
+}

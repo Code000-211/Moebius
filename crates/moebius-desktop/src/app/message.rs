@@ -121,6 +121,8 @@ pub enum Message {
     Project(i64, project::Message),
     /// Ctrl+S: the Editor saves the file it shows.
     SaveFile,
+    /// A key of "Go to file" or "Search in files" in the project page shown.
+    Find(project::find::Message),
     Live(live::Message),
     Inbox(inbox::Message),
     Chat(chat::Message),

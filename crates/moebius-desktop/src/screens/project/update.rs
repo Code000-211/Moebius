@@ -9,7 +9,29 @@ use crate::client::{Client, FileDetail};
 use crate::screens::live::say;
 use crate::settings::Settings;
 
+/// How many opened files are remembered for ranking.
+const RECENT_FILES: usize = 10;
+
 use super::{Body, Listing, Message, OpenFile, Project, Tab};
+
+impl OpenFile {
+    /// Puts the cursor on the line asked for, once the text is there.
+    fn go_to_line(&mut self) {
+        let Body::Text { content, .. } = &mut self.body else {
+            return;
+        };
+        let Some(line) = self.goto.take() else {
+            return;
+        };
+        let line = line
+            .saturating_sub(1)
+            .min(content.line_count().saturating_sub(1));
+        content.move_to(text_editor::Cursor {
+            position: text_editor::Position { line, column: 0 },
+            selection: None,
+        });
+    }
+}
 
 impl Project {
     pub fn update(
@@ -40,25 +62,13 @@ impl Project {
             Message::Listed(dir, Err(e)) => {
                 self.dirs.insert(dir, Listing::Failed(say(&e)));
             }
-            Message::Open(path) => {
-                self.tab = Tab::Editor;
-                self.current = Some(path.clone());
-                if self.file(&path).is_none() {
-                    self.files.push(OpenFile {
-                        path: path.clone(),
-                        size: 0,
-                        body: Body::Reading,
-                        error: None,
-                        saving: false,
-                        committed: false,
-                    });
-                    return Self::read(repository, &path, settings);
-                }
-            }
+            Message::Open(path) => return self.open(repository, &path, None, settings),
+            Message::Find(message) => return self.find_update(repository, message, settings),
             Message::Read(path, result) => {
                 let Some(file) = self.file_mut(&path) else {
                     return Task::none();
                 };
+                let goto = file.goto.take();
                 file.body = match result {
                     // The text shown already: the cursor stays where it is.
                     Ok(FileDetail {
@@ -68,6 +78,8 @@ impl Project {
                         if let Body::Text { saved, .. } = &mut file.body {
                             *saved = text;
                         }
+                        file.goto = goto;
+                        file.go_to_line();
                         return Task::none();
                     }
                     Ok(detail) => {
@@ -83,6 +95,8 @@ impl Project {
                     }
                     Err(e) => Body::Failed(say(&e)),
                 };
+                file.goto = goto;
+                file.go_to_line();
             }
             Message::Show(path) => {
                 self.current = Some(path);
@@ -157,6 +171,39 @@ impl Project {
             }
         }
         Task::none()
+    }
+
+    /// Opens `path` in the Editor, with the cursor on `line` (from 1) when it is given, reading the file if it is not
+    /// open yet.
+    pub(super) fn open(
+        &mut self,
+        repository: i64,
+        path: &str,
+        line: Option<usize>,
+        settings: &Settings,
+    ) -> Task<AppMessage> {
+        self.tab = Tab::Editor;
+        self.current = Some(path.to_string());
+        self.closing = None;
+        self.origin = None;
+        self.recent.retain(|other| other != path);
+        self.recent.insert(0, path.to_string());
+        self.recent.truncate(RECENT_FILES);
+        if let Some(file) = self.file_mut(path) {
+            file.goto = line;
+            file.go_to_line();
+            return Task::none();
+        }
+        self.files.push(OpenFile {
+            path: path.to_string(),
+            size: 0,
+            body: Body::Reading,
+            error: None,
+            saving: false,
+            committed: false,
+            goto: line,
+        });
+        Self::read(repository, path, settings)
     }
 
     pub(super) fn close(&mut self, path: &str) {

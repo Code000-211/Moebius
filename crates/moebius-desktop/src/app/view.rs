@@ -77,6 +77,7 @@ impl App {
                 };
                 let keys = iced::event::listen_with(search::key);
                 let save = iced::event::listen_with(project::key);
+                let find = iced::event::listen_with(project::find_key);
                 let back = iced::event::listen_with(back_key);
                 Subscription::batch([
                     stream,
@@ -91,6 +92,7 @@ impl App {
                     floating,
                     keys,
                     save,
+                    find,
                     back,
                 ])
             }
