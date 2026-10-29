@@ -296,7 +296,7 @@ so the redaction cannot recognise one in text: keep the token in its file or sec
 
 ## `[agents.<name>]`
 
-One table per agent; an error with `[harness]`, whose repository holds the agents (see [harness configuration](harness-configuration.md)). The default workflow starts an agent named `Coder`, so a server that runs it needs `[agents.Coder]`. It also starts an agent named `Reviewer` when there is one; without it changes are offered unreviewed.
+One table per agent; an error with `[harness]`, whose repository holds the agents (see [harness configuration](harness-configuration.md)). The default workflow starts an agent named `Coder`, so a server that runs it needs `[agents.Coder]`. It also starts an agent named `Reviewer` when there is one, for both review axes unless agents named `Standards` and `Spec` exist; without a `Reviewer` changes are offered unreviewed.
 A name is made of letters, digits, `-` and `_` and must not be empty, else the file is refused.
 
 | Key | Type | Default | Meaning and validation |

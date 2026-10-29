@@ -22,6 +22,8 @@ pub(super) struct FakeHarness {
     pub(super) notes: Mutex<Vec<Option<String>>>,
     /// Files, as path and text, that each `code` run also commits.
     pub(super) files: Vec<(&'static str, &'static str)>,
+    /// Other agents that exist besides the Coder and the Reviewer.
+    pub(super) agents: Vec<&'static str>,
 }
 
 impl FakeHarness {
@@ -79,7 +81,7 @@ impl Runs for FakeHarness {
     }
 
     fn has_agent(&self, name: &str) -> bool {
-        name == "Coder" || (self.reviewer && name == "Reviewer")
+        name == "Coder" || (self.reviewer && name == "Reviewer") || self.agents.contains(&name)
     }
 
     fn steer(&self, _: i64, _: &str) -> bool {

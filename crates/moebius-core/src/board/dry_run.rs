@@ -188,7 +188,7 @@ fn recording_api(
     let log = record.clone();
     m.set(
         "offer_change",
-        lua.create_function(move |_, ()| {
+        lua.create_function(move |_, _: Option<String>| {
             log("offered the change to a person, and the card moved to Ready to merge".into());
             Ok(1)
         })?,

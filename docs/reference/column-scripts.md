@@ -53,12 +53,14 @@ end
 | `card.test_first` | boolean | True when the card's repository works test first: its default branch has a file `.moebius/test-first`. See Test first. |
 | `card.blocked_by` | table (array of numbers) | The issue numbers the card is blocked by that are not done yet. A number counts as not done when it has no card or its card is not in `Done`. Empty (never nil) when nothing blocks the card. The numbers come from "blocked by #12" lines in the issue's body on GitHub. |
 | `card.rounds` | number | How many runs with purpose `code` the card has had since it was last retried, whatever their status (a running one counts). |
-| `card.reviews` | number | How many runs with purpose `review` the card has had since it was last retried, whatever their status. |
+| `card.reviews` | number | How many review rounds the card has had since it was last retried, whatever their status: the runs with purpose `review` and those with purpose `review-standards` (one per round of the two-axis review). |
 | `card.tokens` | number | The input and output tokens the card's runs used since it was last retried (cached tokens are not added; the teacher's count too). |
 | `card.stopped` | boolean | True when the card's latest run was stopped by a person and the card has not been retried since. |
-| `card.review` | table or nil | The latest review of the card's work: the newest `review` run that `succeeded` after the card's latest `code` run. nil when there is none, so a new `code` run clears it. |
+| `card.review` | table or nil | The latest review of the card's work: the newest `review` run that `succeeded` after the card's latest `code` run, or a `review-spec` run that `succeeded` after a `review-standards` run that `succeeded` (the two axes of one round). nil when there is none, so a new `code` run clears it. |
 | `card.review.verdict` | string | `approve` or `changes`. Read from the review run's summary (see below). |
 | `card.review.findings` | string | The summary without its verdict line; for a review with no verdict, the text `The review gave no verdict.`; for a `changes` verdict without findings, `The review asked for changes but gave no findings.` |
+| `card.review.judgements` | string | For a two-axis review, the judgement calls of both axes, each with its evidence; empty for a `review` run and when there are none. |
+| `card.review.standards`, `card.review.spec` | table | Only for a two-axis review: that axis's `verdict` (`approve` or `changes`), `findings` (its blocking findings), `judgements` (its judgement calls) and `dropped` (how many findings were dropped for lacking evidence). |
 | `card.note` | string or nil | Why the card was sent back to coding: the findings of a review, the failing checks or a conflict, as the script that moved the card wrote them (the second argument of `moebius.move`). A `code` run that succeeds clears it; one that fails keeps it, so the retry gets it too. |
 | `card.change` | table or nil | The card's open change. nil until it is published. |
 | `card.change.branch` | string | The branch the change lives on, `moebius/card-<number>`. |
@@ -103,14 +105,28 @@ decider on a server today, so any other kind returns `fail_closed` with a reason
 answers`. Returns two strings. The time this call takes does not count against the script's time limit. Raises an error
 when the judgement cannot be stored.
 
+A review along two axes is made of two runs, with purposes `review-standards` and `review-spec`, each ending with
+findings and a last line `VERDICT: approve` or `VERDICT: changes` (it only shows that the reviewer finished; without it
+the axis is `changes` with the finding `The Standards review gave no verdict.`). A finding is a line
+`FINDING blocking: <what is wrong>` or `FINDING judgement: <what is doubtful>`, followed by a line
+`EVIDENCE: <the lines of the diff, or the line of the issue, that show it>` (evidence may run over several lines).
+Moebius drops a finding without evidence, and counts it in `dropped`. A finding whose text begins `Possible` (the
+smells of the fixed baseline of the Standards axis) is a judgement call whatever it says. An axis is `changes` when it
+has a blocking finding with evidence and `approve` otherwise; the review is `changes` when either axis is, and then
+`card.review.findings` holds the blocking findings of both under the heading `Standards (...)` or `Spec (...)`, each
+with `Evidence:`. Judgement calls never send the card back; `card.review.judgements` holds them under the same headings.
+
 `moebius.start_run(agent, purpose, note)` returns the run's id (a number).
 : Starts a run of the agent named `agent` (an `[agents.<name>]` table of the configuration) for this card in a new
 worktree on a new branch `moebius/run-<id>`. The branch starts at the branch of the card's latest successful `code`
 run, so the run sees the work so far, or at the repository's default branch when the card has none. `purpose` is any
-string; the default workflow uses `code` and `review`. Only `code` runs count as `card.rounds`, and only `review` runs
-as `card.reviews`. A `code` run gets the prompt for making the change and commits what the agent leaves; it fails when
+string; the default workflow uses `code`, `review-standards` and `review-spec`. Only `code` runs count as `card.rounds`, and only
+`review` and `review-standards` runs as `card.reviews`. A `code` run gets the prompt for making the change and commits what the agent leaves; it fails when
 the agent changed nothing. A `review` run gets the prompt for reviewing the change on its branch and ending with
-the verdict line; nothing it changes is kept, and changing nothing is no failure. Any other purpose is prompted like
+the verdict line; a `review-standards` run the prompt for the standards axis (the repository's `CONTRIBUTING.md`,
+`CLAUDE.md`, `AGENTS.md` and the optional rubric `.moebius/review.md`, and the fixed smell baseline, always judgement
+calls) and a `review-spec` run the prompt for the spec axis (what the issue asked that is missing, not asked for or
+looks wrong), both asking for findings with evidence; nothing it changes is kept, and changing nothing is no failure. Any other purpose is prompted like
 `code`. `note` is optional text (a string or nil) added to the end of the prompt under the heading `Notes from the
 last round:`; the default workflow passes `card.note`. The call returns once the run is started, not when it ends. Raises an error
 when the agent does not exist (`no agent named <agent>`), the worktree cannot be made or the harness cannot be
@@ -172,7 +188,8 @@ change to test` before the change is published. The time this call takes does no
 files `files` (an array of paths, optional) added as the change's current commit has them. A path the change does not
 have makes the run an `error`. Its result is kept apart from `moebius.run_test`'s for the same command.
 
-`moebius.offer_change()` returns the change's id (a number).
+`moebius.offer_change(judgements)` returns the change's id (a number). `judgements` is optional text, which is stored in
+the inbox item as `data.judgements` for the person to read.
 : Publishes the change as `moebius.publish_change` does and offers it to a person: it adds an item `ready_to_merge` to
 the inbox with `{change, branch}` as its data, publishes `change_offered`, and moves the card to `Ready to merge` at
 once (not when the script returns). Raises the errors of `moebius.publish_change`. Call it last in a script. A person
@@ -369,13 +386,14 @@ judge. All of this comes after the checks and conflicts and before the review.
 | `backlog.luau` | If `card.trusted` or `card.confirmed`, moves the card to `Ready`. Otherwise asks a person (`moebius.ask("approve_issue", ...)`) and waits; approving the issue in the desktop API moves the card to `Ready`. |
 | `ready.luau` | Waits while `card.blocked_by` is not empty, naming the issues. Waits with `the daily token budget is spent` when `moebius.day_budget` is set and `moebius.tokens_today()` has reached it. Waits while `moebius.runs_active() >= moebius.run_limit`. Otherwise moves the card to `In progress`. |
 | `code.luau` | Waits while the latest run is `starting` or `running`. Moves the card to `In review` when the latest run is a `code` run that `succeeded` and the card has no `card.note`. Otherwise marks the card stuck with `stopped by a person` when `card.stopped`, with `the round limit is reached` when `card.rounds >= moebius.round_limit`, and with `the token budget of N is spent` when `card.tokens` has reached `moebius.agent_budget("Coder")`; waits with `the daily token budget is spent` when the day's budget is spent; and else starts a `Coder` run with purpose `code` and `card.note` as its note: the first round, a retry after a `code` run that `failed` or was `stopped`, or the next round after the card was sent back. |
-| `review.luau` | Waits while the latest run is going, and moves the card back to `In progress` when its latest run is neither a succeeded `code` run nor a `review` run. Then, in this order: publishes the change (`moebius.publish_change`) and starts its own checks (`moebius.run_checks`); waits while `card.change.checks` is `pending`; sends the card back to `In progress` when they are `failure`, with the note `The checks failed:` and the failing checks or the output; sends it back when `card.change.conflict` is set, with the conflicting files and the instruction to merge `card.change.base` into its branch and resolve them; when `card.test_first`, waits for the reproduction test and sends the card back when it does not hold (see Test first); without an agent `Reviewer` (`moebius.has_agent`), or when `card.review.verdict` is `approve`, offers the change; sends the card back with `card.review.findings` as the note when the verdict is `changes`; starts a `Reviewer` run with purpose `review` otherwise. A `review` run that `failed` is started again, until `card.reviews >= moebius.round_limit`, when the card is marked stuck with `the round limit is reached`. The card is marked stuck with `stopped by a person` when `card.stopped`, before anything else, and with `the token budget of N is spent` when `card.tokens` has reached `moebius.agent_budget("Reviewer")`; it waits with `the daily token budget is spent` while the day's budget is spent, instead of starting a review. |
+| `review.luau` | Waits while the latest run is going, and moves the card back to `In progress` when its latest run is neither a succeeded `code` run nor a review run (`review`, `review-standards` or `review-spec`). Then, in this order: publishes the change (`moebius.publish_change`) and starts its own checks (`moebius.run_checks`); waits while `card.change.checks` is `pending`; sends the card back to `In progress` when they are `failure`, with the note `The checks failed:` and the failing checks or the output; sends it back when `card.change.conflict` is set, with the conflicting files and the instruction to merge `card.change.base` into its branch and resolve them; when `card.test_first`, waits for the reproduction test and sends the card back when it does not hold (see Test first); without an agent `Reviewer` (`moebius.has_agent`), or when `card.review.verdict` is `approve`, offers the change; offers the change with `card.review.judgements` when the verdict is `approve`; sends the card back with `card.review.findings` as the note when it is `changes`; otherwise reviews along two axes: starts a run with purpose `review-standards` and, once it succeeded, one with purpose `review-spec` (given the untestable reason of test first as its note). The agent of each axis is the agent `Standards` or `Spec` when the configuration has one, else the `Reviewer`. A review run that `failed` restarts the round with the Standards axis, until `card.reviews >= moebius.round_limit`, when the card is marked stuck with `the round limit is reached`. The card is marked stuck with `stopped by a person` when `card.stopped`, before anything else, and with `the token budget of N is spent` when `card.tokens` has reached `moebius.agent_budget("Reviewer")`; it waits with `the daily token budget is spent` while the day's budget is spent, instead of starting a review. |
 | `merge.luau` | Waits for a person to merge the change. The merge happens through the desktop API or, on GitHub, on the pull request. When the change no longer merges cleanly (the default branch moved), sends the card back to `In progress` with the conflict as the note; that resolves the change's inbox item. |
 | `done.luau` | Calls `moebius.record_outcome("merged")`, so every judgement made for the card learns how it ended. |
 
 The default workflow needs an `[agents.Coder]` table in the configuration, because `code.luau` starts the agent
-`Coder`. An `[agents.Reviewer]` table is optional: with it every change is reviewed before it is offered, without it
-changes are offered unreviewed.
+`Coder`. An `[agents.Reviewer]` table is optional: with it every change is reviewed along two axes before it is offered, without
+it changes are offered unreviewed. `[agents.Standards]` and `[agents.Spec]` tables are optional too: they give an axis
+its own agent (another model, or a model class), where the Reviewer would otherwise review it.
 
 ## Example
 

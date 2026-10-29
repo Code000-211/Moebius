@@ -380,11 +380,20 @@ Moebius does the commit. A `code` run whose worktree has nothing uncommitted whe
 
 ### The Reviewer
 
-The agent named `Reviewer` is optional. With it, every change is reviewed before it is offered; without it changes are
-offered unreviewed. A review run is told to read the change on its branch, not to edit files, to write its findings and
-to end with one last line, `VERDICT: approve` or `VERDICT: changes`.
+The agent named `Reviewer` is optional. With it, every change is reviewed before it is offered, along two axes that are
+two runs of a round; without it changes are offered unreviewed. The **Standards** run checks the change against the
+repository's own rules (`CONTRIBUTING.md`, `CLAUDE.md`, `AGENTS.md` and an optional rubric `.moebius/review.md`) and a
+fixed baseline of code smells, which are always judgement calls ("Possible Feature Envy"). The **Spec** run checks it
+against the issue. Both are told to read the change on its branch and not to edit files, to report each finding as
+`FINDING blocking: <text>` or `FINDING judgement: <text>` and an `EVIDENCE:` line quoting the hunk or the line of the
+issue, and to end with one last line, `VERDICT: approve` or `VERDICT: changes`.
 
-The run's final answer, which is the text of the last assistant message, is read like this:
+Both axes use the `Reviewer` unless the configuration has an agent `Standards` or `Spec`: give that agent another
+model (or a model class) to review on a model other than the Coder's. Only blocking findings send the card back; a
+finding without evidence is dropped. Judgement calls are attached to the offered change.
+
+The rest describes a run with purpose `review`, which a script of your own can still start. Its final answer, the
+text of the last assistant message, is read like this:
 
 - The last line decides. `VERDICT: approve` (the word in any case) approves; the lines before it are the findings.
 - `VERDICT: changes` sends the card back to the Coder, and the findings are its note. A `changes` without findings
@@ -397,7 +406,8 @@ If you give the Reviewer `instructions`, keep them from adding closing remarks a
 ### Any other agent
 
 A column script starts it by name with `moebius.start_run(agent, purpose, note)`. The purpose is any string. Only
-`code` and `review` are counted by the default scripts, and a purpose other than `review` is prompted like `code`.
+`code`, `review` and `review-standards` are counted by the default scripts, and a purpose other than the three review
+purposes is prompted like `code`.
 
 ## Chat with an agent
 

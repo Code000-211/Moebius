@@ -151,11 +151,20 @@ steer, stop) go through the same record.
 | Backlog | `backlog.luau` | Outside issues wait here until a person approves them; trusted authors' issues and confirmed grilling issues move on. |
 | Ready | `ready.luau` | Starts a Coder run when the card's dependencies are merged and the run limit allows. |
 | In progress | `code.luau` | One Coder run per round; when it ends, the change is pushed and the card moves to review. |
-| In review | `review.luau` | Waits for CI and runs the Reviewer; on failures, findings or a merge conflict, back to In progress for the next round. |
+| In review | `review.luau` | Waits for CI and runs the Reviewer along two axes; on failures, blocking findings or a merge conflict, back to In progress for the next round. |
 | Ready to merge | `merge.luau` | Puts the change in the inbox; a person merges it in the app or on the forge. |
 | Done | `done.luau` | Records the outcome on every judgement made for the card. |
 
 A card that reaches its round limit (default 5) or its token budget stops and goes to the inbox as stuck.
+
+The review has two axes, run one after the other by the `Reviewer` (or by agents named `Standards` and `Spec`, which can
+be another model): **Standards** checks the change against `CONTRIBUTING.md`, `CLAUDE.md`, `AGENTS.md`, an optional
+`.moebius/review.md` rubric and a fixed baseline of code smells that are only ever judgement calls, **Spec** checks it
+against the issue (missing, not asked for, looks wrong). Every finding is `blocking` or `judgement` and quotes the hunk
+or the line of the issue; a finding without evidence is dropped, since a reviewer told to find everything produces many
+unfounded findings (CR-Bench). Only blocking findings send the card back; judgement calls go to the person with the
+offered change. It is the default review because the two axes keep one from masking the other, and findings that must
+cite evidence cost the Coder fewer wasted rounds.
 
 A repository can work **test first** (a file `.moebius/test-first` on its default branch). The Coder then writes a test
 that reproduces the issue and names it in `.moebius/reproduce`, committed with the change, and `review.luau` lets the

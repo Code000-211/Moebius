@@ -102,9 +102,14 @@ impl App {
 
     /// Publishes the card's change and puts it in the inbox, ready to merge.
     pub fn offer_change(&self, card_id: i64) -> Result<Change> {
+        self.offer_change_noted(card_id, None)
+    }
+
+    /// Like `offer_change`, with the judgement calls of the review attached to the inbox item as `judgements`.
+    pub fn offer_change_noted(&self, card_id: i64, judgements: Option<&str>) -> Result<Change> {
         let change = self.publish_change(card_id)?;
         let card = self.card(card_id)?;
-        let change = self.put_in_inbox(change, &card.title)?;
+        let change = self.put_in_inbox(change, &card.title, judgements)?;
         self.move_card(card_id, columns::READY_TO_MERGE)?;
         Ok(change)
     }
@@ -208,7 +213,7 @@ impl App {
                 Earlier::Open(change) => Some(self.offer_again(change.id, &head, &title)?),
                 Earlier::None => {
                     let change = self.store.add_harness_change(&branch, &head)?;
-                    Some(self.put_in_inbox(change, &title)?)
+                    Some(self.put_in_inbox(change, &title, None)?)
                 }
             }));
         }
@@ -253,17 +258,22 @@ impl App {
     fn offer_again(&self, change_id: i64, head: &str, title: &str) -> Result<Change> {
         self.store.set_change_head(change_id, head, now())?;
         self.store.resolve_inbox_for_change(change_id)?;
-        self.put_in_inbox(self.change(change_id)?, title)
+        self.put_in_inbox(self.change(change_id)?, title, None)
     }
 
     /// Puts a change in the inbox under its card, if it has one, ready to merge, and says it was offered.
-    fn put_in_inbox(&self, change: Change, title: &str) -> Result<Change> {
-        self.store.add_inbox_item(
-            "ready_to_merge",
-            change.card_id,
-            title,
-            &json!({ "change": change.id, "branch": change.branch }),
-        )?;
+    fn put_in_inbox(
+        &self,
+        change: Change,
+        title: &str,
+        judgements: Option<&str>,
+    ) -> Result<Change> {
+        let mut data = json!({ "change": change.id, "branch": change.branch });
+        if let Some(judgements) = judgements {
+            data["judgements"] = json!(judgements);
+        }
+        self.store
+            .add_inbox_item("ready_to_merge", change.card_id, title, &data)?;
         self.bus
             .publish(AppEvent::new("change_offered", json!(change)));
         Ok(change)
@@ -284,7 +294,7 @@ impl App {
         let change = self
             .store
             .add_change(repository.id, None, branch, pull_request, &head)?;
-        self.put_in_inbox(change, title)
+        self.put_in_inbox(change, title, None)
     }
 
     /// The files that keep the change from merging cleanly into the repository's default branch, one per line; none

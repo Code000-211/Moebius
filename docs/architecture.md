@@ -109,10 +109,12 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
     conflict move the card back to `In progress` with a note (`moebius.move(column, note)`, stored on the card by
     `Engine::tick` as `cards.note`); `code.luau` starts the next `Coder` round on top of the previous branch with the
     note in its prompt (`prompt_for`), and `Store::set_run_status` clears the note when a `code` run succeeds. Then the
-    `Reviewer`, if configured, starts a run (purpose `review`) in a worktree on the code run's branch; the run commits
-    nothing. Its summary ends with `VERDICT: approve` or `VERDICT: changes` (`board::verdict`, which treats a missing
-    verdict as `changes`), and the scripts see it as `card.review`. `changes` sends the card back with the findings as
-    the note.
+    `Reviewer`, if configured, starts two runs one after the other (purposes `review-standards` and `review-spec`, each by
+    the agent `Standards` or `Spec` if there is one) in worktrees on the code run's branch; they commit nothing. Each
+    summary holds findings with evidence and ends with `VERDICT: approve` or `VERDICT: changes`; `board::review` drops
+    findings without evidence and reads the two into `card.review`, whose `findings` are the blocking ones and
+    `judgements` the rest. Blocking findings send the card back as the note; `offer_change` stores the judgements in
+    the inbox item.
 12. **The change is offered.** When the checks and the review allow it, `review.luau` calls `moebius.offer_change`, which
     calls `App::offer_change`: it publishes the change if need be, adds a `ready_to_merge` inbox item, publishes
     `change_offered` and moves the card to `Ready to merge`. While the card waits there, `merge.luau` sends it back to
@@ -458,6 +460,7 @@ At the top:
 | `board/mod.rs` | What the board folder holds, and the paths the rest of the server uses. |
 | `board/engine.rs` | The board engine: runs the script of a card's column (`tick`, `settle`) and applies what it did. |
 | `board/api.rs` | The `moebius` table, the functions a script acts through. |
+| `board/review.rs` | The review along two axes: the findings with evidence of the Standards and Spec runs read into one verdict. |
 | `board/card.rs` | The `card` table a script reads, with the card's change and the verdict of its review. |
 | `board/sandbox.rs` | The Luau sandbox every script runs in, with its memory and time limits. |
 | `board/limits.rs` | The run, round and token limits scripts see, and a script call's memory and time. |

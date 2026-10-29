@@ -49,6 +49,11 @@ the sentence needs without them. The Coder does not refactor beyond the issue; t
 - The spec is the issue in the prompt. It is always there, so the Spec axis always runs.
 - You may not have sub-agents. Then do the Standards review and the Spec review one after the other yourself, keeping
   them apart as the skill says, and report them under `## Standards` and `## Spec`.
+- In a workflow that reviews along two axes (the default), each axis is a run of its own, and your prompt says which
+  one: a `review-standards` run does the Standards review only and a `review-spec` run the Spec review only, one
+  yourself, with no sub-agents. Report as the prompt says, each finding as `FINDING blocking:` or `FINDING judgement:`
+  with an `EVIDENCE:` line quoting the hunk or the line of the issue (a finding without evidence is dropped), instead of
+  the skill's headings. The skill's smell baseline stays: its smells are judgement calls.
 - Your instructions for the run still hold over the skill's report format: do not edit any files, and end as they say
   (the last line `VERDICT: approve` or `VERDICT: changes`).
 

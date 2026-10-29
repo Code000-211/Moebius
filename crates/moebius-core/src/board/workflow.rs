@@ -91,7 +91,9 @@ mod tests {
     #[test]
     fn a_card_goes_back_to_coding_until_the_reviewer_approves() {
         let harness = Arc::new(FakeHarness::with_reviewer(&[
-            "There is no test.\nVERDICT: changes",
+            "Follows the rules.\nVERDICT: approve",
+            "FINDING blocking: There is no test.\nEVIDENCE: the issue says \"tested\"\nVERDICT: changes",
+            "Fine now.\nVERDICT: approve",
             "Fine now.\nVERDICT: approve",
         ]));
         let (_dir, app, engine, repo) = setup_with_harness(None, harness.clone());
@@ -102,23 +104,46 @@ mod tests {
         assert_eq!(column(&app, &card), "In progress");
         let step = engine.settle(card.id).unwrap();
         assert_eq!(column(&app, &card), "In review");
-        assert_eq!(step.waiting.as_deref(), Some("reviewing"));
-
-        // Back in progress, the next Coder round starts with the findings.
+        assert_eq!(step.waiting.as_deref(), Some("reviewing the standards"));
+        let step = engine.settle(card.id).unwrap();
+        assert_eq!(step.waiting.as_deref(), Some("reviewing the spec"));
+        // The findings send it back, and the next Coder round starts with them.
         let step = engine.settle(card.id).unwrap();
         assert_eq!(column(&app, &card), "In progress");
         assert_eq!(step.waiting.as_deref(), Some("coding, round 2"));
         engine.settle(card.id).unwrap();
         assert_eq!(column(&app, &card), "In review");
         engine.settle(card.id).unwrap();
+        engine.settle(card.id).unwrap();
         assert_eq!(column(&app, &card), "Ready to merge");
 
         let runs = app.store.runs_for_card(card.id).unwrap();
         let purposes: Vec<_> = runs.iter().map(|r| r.purpose.as_str()).collect();
-        assert_eq!(purposes, ["code", "review", "code", "review"]);
+        assert_eq!(
+            purposes,
+            [
+                "code",
+                "review-standards",
+                "review-spec",
+                "code",
+                "review-standards",
+                "review-spec"
+            ]
+        );
         assert_eq!(
             *harness.notes.lock().unwrap(),
-            [None, None, Some("There is no test.".to_string()), None]
+            [
+                None,
+                None,
+                None,
+                Some(
+                    "Spec (does the change do what the issue asked):\n- There is no test.\n  \
+                     Evidence: the issue says \"tested\""
+                        .to_string()
+                ),
+                None,
+                None
+            ]
         );
 
         // The change is one branch that carries both rounds' work.
@@ -126,10 +151,91 @@ mod tests {
         assert_eq!(app.store.changes(repo).unwrap().len(), 1);
         assert_eq!(change.branch, "moebius/card-1");
         let clone = Path::new(&app.store.repository(repo).unwrap().unwrap().path).to_owned();
-        for run in [&runs[0], &runs[2]] {
+        for run in [&runs[0], &runs[3]] {
             let file = format!("{}:run-{}.txt", change.branch, run.id);
             assert_eq!(git(&clone, &["show", &file]).unwrap(), "Add a feature");
         }
+    }
+
+    /// A card coded and in review, whose standards and spec reviews answer `standards` and `spec`.
+    fn reviewed_card(
+        standards: &str,
+        spec: &str,
+    ) -> (
+        tempfile::TempDir,
+        Arc<App>,
+        crate::board::Engine,
+        Card,
+        Arc<FakeHarness>,
+    ) {
+        let harness = Arc::new(FakeHarness::with_reviewer(&[standards, spec]));
+        let (dir, app, engine, repo) = setup_with_harness(None, harness.clone());
+        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        engine.settle(card.id).unwrap();
+        engine.settle(card.id).unwrap();
+        engine.settle(card.id).unwrap();
+        engine.settle(card.id).unwrap();
+        (dir, app, engine, card, harness)
+    }
+
+    #[test]
+    fn a_blocking_finding_with_evidence_sends_the_card_back_naming_its_axis() {
+        let (_dir, app, _engine, card, harness) = reviewed_card(
+            "FINDING blocking: Breaks the naming rule.\nEVIDENCE: fn Do()\nVERDICT: changes",
+            "VERDICT: approve",
+        );
+        assert_eq!(column(&app, &card), "In progress");
+        let note = harness.notes.lock().unwrap()[3].clone().unwrap();
+        assert!(note.starts_with("Standards ("), "{note}");
+        assert!(note.contains("Evidence: fn Do()"), "{note}");
+        assert!(!note.contains("Spec"), "{note}");
+    }
+
+    #[test]
+    fn findings_without_evidence_are_dropped_and_the_card_goes_on() {
+        let (_dir, app, _engine, card, _) = reviewed_card(
+            "FINDING blocking: Feels off.\nVERDICT: changes",
+            "FINDING blocking: Not what I wanted.\nVERDICT: changes",
+        );
+        assert_eq!(column(&app, &card), "Ready to merge");
+        assert_eq!(app.store.inbox().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn judgement_calls_go_with_the_offered_change_and_do_not_send_the_card_back() {
+        let (_dir, app, _engine, card, _) = reviewed_card(
+            "FINDING judgement: Possible Feature Envy.\nEVIDENCE: order.items.len()\nVERDICT: approve",
+            "FINDING blocking: Wrong.\nFINDING judgement: Extra logging.\nEVIDENCE: + log(x)\nVERDICT: changes",
+        );
+        assert_eq!(column(&app, &card), "Ready to merge");
+        let item = app.store.inbox().unwrap().pop().unwrap();
+        assert_eq!(item.kind, "ready_to_merge");
+        let judgements = item.data["judgements"].as_str().unwrap();
+        assert!(
+            judgements.contains("Possible Feature Envy."),
+            "{judgements}"
+        );
+        assert!(judgements.contains("Extra logging."), "{judgements}");
+        assert!(judgements.contains("Standards ("), "{judgements}");
+        assert!(judgements.contains("Spec ("), "{judgements}");
+        assert!(!judgements.contains("Wrong."), "{judgements}");
+    }
+
+    #[test]
+    fn an_axis_with_an_agent_of_its_own_is_reviewed_by_it() {
+        let harness = Arc::new(FakeHarness {
+            reviewer: true,
+            agents: vec!["Spec"],
+            ..FakeHarness::default()
+        });
+        let (_dir, app, engine, repo) = setup_with_harness(None, harness);
+        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        for _ in 0..4 {
+            engine.settle(card.id).unwrap();
+        }
+        let runs = app.store.runs_for_card(card.id).unwrap();
+        let agents: Vec<_> = runs.iter().map(|r| r.agent.as_str()).collect();
+        assert_eq!(agents, ["Coder", "Reviewer", "Spec"]);
     }
 
     #[test]
@@ -137,13 +243,16 @@ mod tests {
         let harness = Arc::new(FakeHarness::with_reviewer(&["Looks fine to me."]));
         let (_dir, app, engine, repo) = setup_with_harness(None, harness.clone());
         let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
-        engine.settle(card.id).unwrap();
-        engine.settle(card.id).unwrap();
-        engine.settle(card.id).unwrap();
+        for _ in 0..4 {
+            engine.settle(card.id).unwrap();
+        }
         assert_eq!(column(&app, &card), "In progress");
         assert_eq!(
-            harness.notes.lock().unwrap()[2].as_deref(),
-            Some("The review gave no verdict.")
+            harness.notes.lock().unwrap()[3].as_deref(),
+            Some(
+                "Standards (does the change follow the repository's standards):\nThe Standards \
+                 review gave no verdict."
+            )
         );
     }
 
@@ -164,7 +273,9 @@ mod tests {
             engine.settle(card.id).unwrap();
             let reviews = |app: &App| {
                 let runs = app.store.runs_for_card(card.id).unwrap();
-                runs.iter().filter(|r| r.purpose == "review").count()
+                runs.iter()
+                    .filter(|r| r.purpose == "review-standards")
+                    .count()
             };
             assert_eq!(reviews(&app), tries as usize);
             fail_latest();
@@ -499,8 +610,10 @@ mod tests {
             true,
         );
         let step = engine.tick(card.id).unwrap();
-        assert_eq!(step.waiting.as_deref(), Some("reviewing"));
-        let review_note = harness.notes.lock().unwrap()[1].clone().unwrap();
+        assert_eq!(step.waiting.as_deref(), Some("reviewing the standards"));
+        let step = engine.tick(card.id).unwrap();
+        assert_eq!(step.waiting.as_deref(), Some("reviewing the spec"));
+        let review_note = harness.notes.lock().unwrap()[2].clone().unwrap();
         assert!(
             review_note.contains("only the README changes"),
             "{review_note}"

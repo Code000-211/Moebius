@@ -130,6 +130,12 @@ The columns a card goes through on its own and the behaviour behind them, by def
 back to coding while anything is still wrong, until its change is ready to merge; a person steps in only before the merge.
 _Avoid_: pipeline, process, flow
 
+**Review axes**:
+The two reviews of a round, Standards (does the change follow the repository's rules) and Spec (does it do what the
+issue asked); each finding is blocking or a judgement call and cites its evidence, and only blocking findings send the
+card back.
+_Avoid_: second opinion
+
 **Reproduction test**:
 A test the Coder writes from the issue before the fix, which fails without the change and passes with it; in a
 repository that works test first, a change goes on to review only when its reproduction test does both.

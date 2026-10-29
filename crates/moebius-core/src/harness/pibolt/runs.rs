@@ -223,6 +223,38 @@ const REVIEW_PROMPT: &str = "You are the reviewer. You are in a git worktree on 
      asks? Do not edit any files. Write your findings, then end your answer with one last line, either \
      `VERDICT: approve` or `VERDICT: changes`.";
 
+/// How a review of one axis reports, after what it checks.
+const FINDINGS_FORMAT: &str = "Your run covers this one axis only, so do not use the report headings of the code-review \
+     skill; instead report each finding as a line `FINDING blocking: <what is wrong>` (the change must \
+     not be merged as it is) or `FINDING judgement: <what is doubtful>` (a person should look), and on the next line \
+     `EVIDENCE: <the lines of the diff, or the line of the issue, that show it>`. A finding without evidence is \
+     dropped. Do not edit any files. End your answer with one last line, either `VERDICT: approve` or \
+     `VERDICT: changes`.";
+
+/// What a `review-standards` run is told after the issue: the change against the repository's standards.
+const STANDARDS_PROMPT: &str = "You are the reviewer of the standards. You are in a git worktree on the branch that \
+     holds the change for this issue. Look only at whether the change follows the repository's standards, not at \
+     whether it does what the issue asks. See the change with `git diff {base}...HEAD`. The standards are written in \
+     CONTRIBUTING.md, CLAUDE.md, AGENTS.md and .moebius/review.md, whichever of them exist: read them first, and \
+     quote the rule each blocking finding breaks. Skip what the repository's tooling enforces. Besides those, look \
+     for these smells, each only ever a judgement call that begins \"Possible <smell>\" and is dropped when a \
+     repository standard allows it: Mysterious Name (a name that does not say what it holds: rename it); Duplicated \
+     Code (the same logic in more than one hunk: extract it); Feature Envy (a method that uses another object's data \
+     more than its own: move it); Data Clumps (the same few fields travelling together: make them a type); \
+     Primitive Obsession (a string or number standing for a domain concept: give it a type); Repeated Switches (the \
+     same cascade on one type recurring: use one map or polymorphism); Shotgun Surgery (one change forcing edits in \
+     many files: gather what changes together); Divergent Change (one module edited for several reasons: split it); \
+     Speculative Generality (hooks for needs nobody has: delete them); Message Chains (long a.b().c().d() walks: \
+     hide them); Middle Man (a function that only delegates: call the target); Refused Bequest (an implementer that \
+     ignores most of what it inherits: compose). ";
+
+/// What a `review-spec` run is told after the issue: the change against the issue.
+const SPEC_PROMPT: &str = "You are the reviewer of the spec. You are in a git worktree on the branch that holds the \
+     change for this issue. Look only at whether the change does what the issue asks, not at style. See the change \
+     with `git diff {base}...HEAD`. Report what the issue asked for that is missing or only partly done, what the \
+     change does that the issue did not ask for, and what looks implemented but wrong. For each, the evidence is \
+     the line of the issue it rests on or the hunk that shows it. ";
+
 /// Writes `files` (paths relative to `worktree`, and their text) into the worktree and keeps them out of git: the first
 /// directory of each path is added to the clone's `info/exclude`, which its worktrees share.
 fn write_untracked(worktree: &Path, files: &BTreeMap<String, String>) -> Result<(), String> {
@@ -301,11 +333,26 @@ pub(in crate::harness) fn prompt_for(
         prompt.push('\n');
     }
     prompt.push('\n');
-    prompt.push_str(if purpose == "review" {
-        REVIEW_PROMPT
-    } else {
-        CODE_PROMPT
-    });
+    let base = || {
+        app.store
+            .repository(card.repository_id)
+            .ok()
+            .flatten()
+            .map(|repository| repository.base_ref())
+            .unwrap_or_else(|| "main".into())
+    };
+    match purpose {
+        "review" => prompt.push_str(REVIEW_PROMPT),
+        "review-standards" => {
+            prompt.push_str(&STANDARDS_PROMPT.replace("{base}", &base()));
+            prompt.push_str(FINDINGS_FORMAT);
+        }
+        "review-spec" => {
+            prompt.push_str(&SPEC_PROMPT.replace("{base}", &base()));
+            prompt.push_str(FINDINGS_FORMAT);
+        }
+        _ => prompt.push_str(CODE_PROMPT),
+    }
     prompt.push('\n');
     let test_first = || {
         app.store
@@ -314,7 +361,7 @@ pub(in crate::harness) fn prompt_for(
             .flatten()
             .is_some_and(|repository| app.test_first(&repository))
     };
-    if purpose != "review" && test_first() {
+    if !purpose.starts_with("review") && test_first() {
         prompt.push('\n');
         prompt.push_str(TEST_FIRST_PROMPT);
         prompt.push('\n');
@@ -401,6 +448,28 @@ mod tests {
         let prompt = prompt_of(&code);
         assert!(prompt.contains("Moebius commits what you leave"));
         assert!(!prompt.contains("Notes from the last round"));
+    }
+
+    #[test]
+    fn the_review_axes_are_told_their_rules_and_how_to_report_findings() {
+        let (_dir, app, _pi, repo) = setup();
+        let card = app.create_issue(repo, "Fix a bug", "", "person").unwrap();
+        let standards = prompt_for(&app, &card, "review-standards", None);
+        assert!(standards.contains("You are the reviewer"), "{standards}");
+        for word in [
+            ".moebius/review.md",
+            "CONTRIBUTING.md",
+            "Possible <smell>",
+            "Feature Envy",
+            "EVIDENCE:",
+            "git diff main...HEAD",
+        ] {
+            assert!(standards.contains(word), "{word}: {standards}");
+        }
+        let spec = prompt_for(&app, &card, "review-spec", None);
+        assert!(spec.contains("what the issue asks"), "{spec}");
+        assert!(spec.contains("FINDING blocking"), "{spec}");
+        assert!(!spec.contains("Feature Envy"), "{spec}");
     }
 
     #[test]

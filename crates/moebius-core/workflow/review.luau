@@ -1,18 +1,19 @@
 -- In review: the change is published (on GitHub that opens or updates the pull request), then waits for its checks,
--- then must merge cleanly, then the Reviewer reads it and ends with a verdict. Failing checks, a conflict or findings
--- send the card back to In progress with a note saying why. Approved, or without a Reviewer, the change is offered.
--- A review a person stopped, too many reviews or the Reviewer's spent token budget put the card in the inbox as stuck;
+-- then must merge cleanly, then the Reviewer reads it along two axes, Standards and then Spec, each ending with
+-- findings that cite evidence. Failing checks, a conflict or blocking findings send the card back to In progress with
+-- a note saying why. Approved, or without a Reviewer, the change is offered, with the judgement calls for the person.
+-- A review a person stopped, too many reviews or an agent's spent token budget put the card in the inbox as stuck;
 -- while the daily token budget is spent no review starts. In a repository that works test first (`card.test_first`),
 -- the change's reproduction test must also fail on the commit the change starts from and pass on the change before the
--- change is reviewed; a change that says it cannot be tested has the Reviewer judge why.
+-- change is reviewed; a change that says it cannot be tested has the Spec axis judge why.
 local function conflict_note(change)
   return "The change no longer merges cleanly into " .. change.base .. ". These files conflict:\n"
     .. change.conflict .. "\nMerge " .. change.base .. " into your branch and resolve the conflicts."
 end
 
--- Whether a limit keeps the Reviewer from starting now; the card is then stuck or waiting.
-local function limited(card)
-  local budget = moebius.agent_budget("Reviewer")
+-- Whether a limit keeps the agent from starting now; the card is then stuck or waiting.
+local function limited(card, agent)
+  local budget = moebius.agent_budget(agent)
   if budget ~= nil and card.tokens >= budget then
     moebius.stuck("the token budget of " .. budget .. " is spent")
   elseif moebius.day_budget ~= nil and moebius.tokens_today() >= moebius.day_budget then
@@ -21,6 +22,14 @@ local function limited(card)
     return false
   end
   return true
+end
+
+-- The agent of an axis: one named for it ("Standards", "Spec"), else the Reviewer.
+local function axis_agent(name)
+  if moebius.has_agent(name) then
+    return name
+  end
+  return "Reviewer"
 end
 
 -- Test first: how the change's reproduction test stands. "pending" while it runs; "untestable" and the reason the
@@ -74,20 +83,32 @@ local function review(card, run)
         .. "holds; if it does not, ask for changes."
     end
   end
-  if not moebius.has_agent("Reviewer") or (card.review ~= nil and card.review.verdict == "approve") then
+  if not moebius.has_agent("Reviewer") then
     moebius.offer_change()
   elseif card.review ~= nil then
-    moebius.move("In progress", card.review.findings)
-  elseif run.purpose == "code" then
-    if not limited(card) then
-      moebius.start_run("Reviewer", "review", note)
-      moebius.wait("reviewing")
+    if card.review.verdict == "approve" then
+      moebius.offer_change(card.review.judgements)
+    else
+      moebius.move("In progress", card.review.findings)
     end
-  elseif card.reviews >= moebius.round_limit then
+  elseif run.purpose == "review-standards" and run.status == "succeeded" then
+    local agent = axis_agent("Spec")
+    if not limited(card, agent) then
+      moebius.start_run(agent, "review-spec", note)
+      moebius.wait("reviewing the spec")
+    end
+  elseif run.purpose ~= "code" and card.reviews >= moebius.round_limit then
     moebius.stuck("the round limit is reached")
-  elseif not limited(card) then
-    moebius.start_run("Reviewer", "review", note)
-    moebius.wait("reviewing, try " .. (card.reviews + 1))
+  else
+    local agent = axis_agent("Standards")
+    if not limited(card, agent) then
+      moebius.start_run(agent, "review-standards")
+      if run.purpose == "code" then
+        moebius.wait("reviewing the standards")
+      else
+        moebius.wait("reviewing, try " .. (card.reviews + 1))
+      end
+    end
   end
 end
 
@@ -101,7 +122,8 @@ function on_card(card)
     moebius.stuck("stopped by a person")
     return
   end
-  if run == nil or (run.purpose ~= "code" and run.purpose ~= "review") or (run.purpose == "code" and run.status ~= "succeeded") then
+  local reviewing = run ~= nil and string.sub(run.purpose, 1, 6) == "review"
+  if run == nil or (run.purpose ~= "code" and not reviewing) or (run.purpose == "code" and run.status ~= "succeeded") then
     moebius.move("In progress")
     return
   end

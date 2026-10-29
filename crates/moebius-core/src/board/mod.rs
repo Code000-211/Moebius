@@ -4,6 +4,7 @@
 //! - `engine`: the engine itself, which runs the script of a card's column and applies what it did.
 //! - `api`: the `moebius` table, the functions a script acts through.
 //! - `card`: the `card` table, what a script knows of its card, and the verdict of its review.
+//! - `review`: the review along two axes, Standards and Spec, read from the summaries of its runs.
 //! - `sandbox`: the Luau sandbox every script runs in, with its memory and time limits.
 //! - `limits`: the run, round and token limits scripts see.
 //! - `workflow`: the columns and the default workflow's scripts built into the server, and a repository's overrides.
@@ -16,6 +17,7 @@ mod card;
 mod dry_run;
 mod engine;
 mod limits;
+mod review;
 mod runs;
 mod sandbox;
 pub mod scripts;

@@ -11,7 +11,8 @@
 //! - `moebius.reproduction() -> table`: what the change names in `.moebius/reproduce`, for test first.
 //! - `moebius.run_test(command) -> test`, `moebius.run_test_at_base(command, files) -> test`: run the change's
 //!   reproduction test on the change, or on the commit it was made from with the test's files added.
-//! - `moebius.offer_change()`: publishes the change and offers it to a person; the card moves to "Ready to merge".
+//! - `moebius.offer_change(judgements)`: publishes the change and offers it to a person; the card moves to "Ready to
+//!   merge". The optional `judgements` (text) is attached to the inbox item for the person to read.
 //! - `moebius.ask(kind, reason)`: puts the card in the inbox for a person (once) and leaves it where it is.
 //! - `moebius.stuck(reason)`: puts the card in the inbox as stuck (once).
 //! - `moebius.record_outcome(outcome) -> count`: sets the outcome of the card's judgements that have none.
@@ -209,9 +210,12 @@ impl Engine {
         let (app, fx, clock) = (self.app.clone(), effects.clone(), deadline);
         m.set(
             "offer_change",
-            lua.create_function(move |_, ()| {
-                let change = outside_script(&clock, || app.offer_change(card_id))
-                    .map_err(mlua::Error::external)?;
+            lua.create_function(move |_, judgements: Option<String>| {
+                let judgements = judgements.filter(|j| !j.trim().is_empty());
+                let change = outside_script(&clock, || {
+                    app.offer_change_noted(card_id, judgements.as_deref())
+                })
+                .map_err(mlua::Error::external)?;
                 let mut fx = fx.borrow_mut();
                 fx.moved = Some(columns::READY_TO_MERGE.into());
                 fx.move_to = None;

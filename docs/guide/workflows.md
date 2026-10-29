@@ -21,7 +21,7 @@ Backlog -> Ready -> In progress -> In review -> Ready to merge -> Done
 | `Backlog` | `backlog.luau` | Moves a trusted card, or one made from a confirmed grilling, to `Ready`. Any other card waits in the inbox as `approve_issue` until a person approves it. |
 | `Ready` | `ready.luau` | Waits while issues block the card, while the daily token budget is spent and while the run limit is reached. Then moves the card to `In progress`. |
 | `In progress` | `code.luau` | Starts a run of the agent `Coder` for each round, waits while it goes, and moves the card to `In review` when a round has succeeded. |
-| `In review` | `review.luau` | Publishes the change, waits for its checks, sends the card back when they fail or the change conflicts, has the agent `Reviewer` read it (when there is one) and offers the change to a person. |
+| `In review` | `review.luau` | Publishes the change, waits for its checks, sends the card back when they fail or the change conflicts, has the agent `Reviewer` read it along two axes, Standards and Spec (when there is one) and offers the change to a person. |
 | `Ready to merge` | `merge.luau` | Waits for a person to merge. Sends the card back when the change no longer merges cleanly. |
 | `Done` | `done.luau` | Records how every decision made for the card ended. |
 
@@ -86,11 +86,17 @@ progress too.
    failing checks or the end of the output.
 4. A change that does not merge cleanly into the default branch sends the card back with a note that names the
    conflicting files and says to merge the default branch into the branch and resolve them.
-5. Without an agent `Reviewer` the change is offered now. With one, a `Reviewer` run (purpose `review`) reads the change
-   in a worktree on the code branch; nothing it changes is kept. Its answer must end with a line `VERDICT: approve` or
-   `VERDICT: changes` (see [Agents](agents.md)). `approve` offers the change. `changes` sends the card back with the
-   findings as its note. An answer without a verdict counts as `changes`.
-6. A review run that failed is started again, until `card.reviews` reaches `board.round_limit` and the card is marked
+5. Without an agent `Reviewer` the change is offered now. With one, two review runs read the change in worktrees on the
+   code branch (nothing they change is kept): **Standards** (purpose `review-standards`: does the change follow
+   `CONTRIBUTING.md`, `CLAUDE.md`, `AGENTS.md`, the rubric in `.moebius/review.md` if there is one, and a fixed list of
+   code smells that are only ever judgement calls) and then **Spec** (purpose `review-spec`: what the issue asked that
+   is missing, what was not asked for, what looks wrong). Each ends with findings, every one a `FINDING blocking:` or
+   `FINDING judgement:` line followed by an `EVIDENCE:` line that quotes the hunk or the line of the issue, and a last
+   line `VERDICT: approve` or `VERDICT: changes` (see [Agents](agents.md)). A finding without evidence is dropped.
+   Blocking findings of either axis send the card back, with a note that names the axis of each; judgement calls never
+   do, and go to the person with the offered change (the `judgements` of its inbox item). An axis shows as a run of
+   its own in the card's history.
+6. A review that failed is started again from the Standards axis, until `card.reviews` reaches `board.round_limit` and the card is marked
    stuck. A stopped run, or a spent token budget of the Reviewer, also marks it stuck. While the daily budget is
    spent no review starts.
 

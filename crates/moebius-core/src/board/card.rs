@@ -2,17 +2,19 @@
 //!
 //! - `card.blocked_by`: the numbers of the issues blocking the card that are not done yet (an issue with no card counts
 //!   as not done); empty when nothing blocks.
-//! - `card.review`: the verdict and findings of the review since the card's latest `code` run, if there is one.
+//! - `card.review`: the verdict and findings of the review since the card's latest `code` run, if there is one; for a
+//!   review along two axes also its `judgements` and the `standards` and `spec` axes (see `review`).
 //! - `card.note`: why the card went back to coding, if it did and no `code` run has succeeded since.
 //! - `card.change`: the card's open change: its checks, the failing ones and whether it still merges cleanly.
 //! - `card.test_first`: whether the card's repository works test first (see `app::reproduce`).
 //! - `card.stopped`: whether a person stopped the card's latest run and has not retried the card since.
-//! - `card.rounds`, `card.reviews`, `card.tokens`: the `code` runs, `review` runs and tokens of the card since it was
+//! - `card.rounds`, `card.reviews`, `card.tokens`: the `code` runs, review rounds and tokens of the card since it was
 //!   last retried.
 
 use mlua::{Lua, Table};
 
 use super::Engine;
+use super::review::{AxisReview, two_axes};
 use crate::app::{App, runs_since_retry};
 use crate::store::{Card, Run};
 
@@ -21,6 +23,10 @@ use crate::store::{Card, Run};
 pub struct Review {
     pub verdict: &'static str,
     pub findings: String,
+    /// The judgement calls of a two-axis review, for the person who gets the change; empty for another review.
+    pub judgements: String,
+    /// The Standards and the Spec axis of a two-axis review, in that order; empty for another review.
+    pub axes: Vec<AxisReview>,
 }
 
 /// Reads the verdict from the end of a review run's summary: a last line `VERDICT: approve` or `VERDICT: changes`,
@@ -45,14 +51,34 @@ fn verdict(summary: Option<&str>) -> Review {
     Review {
         verdict,
         findings: findings.into(),
+        judgements: String::new(),
+        axes: Vec::new(),
     }
 }
 
-/// The review that counts: the latest finished one after the latest `code` run.
+/// The review that counts: the latest finished one after the latest `code` run. A round of two axes counts once its
+/// Spec run has finished after a finished Standards run.
 pub fn latest_review(runs: &[Run]) -> Option<Review> {
-    let mut since_code = runs.iter().rev().take_while(|r| r.purpose != "code");
-    let run = since_code.find(|r| r.purpose == "review" && r.status == "succeeded")?;
-    Some(verdict(run.summary.as_deref()))
+    let since_code: Vec<&Run> = runs
+        .iter()
+        .rev()
+        .take_while(|r| r.purpose != "code")
+        .collect();
+    let done = |r: &&&Run| r.status == "succeeded";
+    let (at, run) = since_code
+        .iter()
+        .enumerate()
+        .find(|(_, r)| done(r) && matches!(r.purpose.as_str(), "review" | "review-spec"))?;
+    if run.purpose == "review" {
+        return Some(verdict(run.summary.as_deref()));
+    }
+    let standards = since_code[at + 1..]
+        .iter()
+        .find(|r| done(r) && r.purpose == "review-standards")?;
+    Some(two_axes(
+        standards.summary.as_deref(),
+        run.summary.as_deref(),
+    ))
 }
 
 impl Engine {
@@ -88,7 +114,7 @@ impl Engine {
         let since_retry = || runs_since_retry(&runs, card);
         let count = |purpose: &str| since_retry().filter(|r| r.purpose == purpose).count();
         t.set("rounds", count("code"))?;
-        t.set("reviews", count("review"))?;
+        t.set("reviews", count("review") + count("review-standards"))?;
         t.set(
             "tokens",
             self.app
@@ -114,6 +140,15 @@ impl Engine {
             let v = lua.create_table()?;
             v.set("verdict", review.verdict)?;
             v.set("findings", review.findings)?;
+            v.set("judgements", review.judgements)?;
+            for axis in review.axes {
+                let a = lua.create_table()?;
+                a.set("verdict", axis.verdict)?;
+                a.set("findings", axis.findings)?;
+                a.set("judgements", axis.judgements)?;
+                a.set("dropped", axis.dropped)?;
+                v.set(axis.name.to_ascii_lowercase(), a)?;
+            }
             t.set("review", v)?;
         }
         Ok(t)
