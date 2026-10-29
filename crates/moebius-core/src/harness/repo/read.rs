@@ -444,14 +444,18 @@ impl HarnessRepo {
     }
 }
 
-/// Adds to `files` the paths, relative to `root`, of the files below `dir`.
+/// Adds to `files` the paths, relative to `root` and written with `/` on every system, of the files below `dir`.
 fn files_below(root: &Path, dir: &Path, files: &mut Vec<String>) {
     for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
         let path = entry.path();
         if path.is_dir() {
             files_below(root, &path, files);
         } else if let Ok(relative) = path.strip_prefix(root) {
-            files.push(relative.to_string_lossy().into_owned());
+            let parts: Vec<_> = relative
+                .components()
+                .map(|part| part.as_os_str().to_string_lossy())
+                .collect();
+            files.push(parts.join("/"));
         }
     }
 }

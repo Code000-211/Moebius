@@ -71,7 +71,7 @@ timeout_seconds = 9
 
 [github]
 app_id = 424242
-private_key_file = "{}"
+private_key_file = '{}'
 
 [agents.Coder]
 model = "coder-model"
