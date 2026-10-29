@@ -43,6 +43,10 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
 - **Automations**: recurring work that runs on its own. An automation is a cron schedule in the server's local time, an
   agent, a prompt and a place; when it comes due the server starts a chat with that agent and prompt, ends it once the
   agent has answered so that what it offers lands in the inbox, and skips a firing while the chat before still runs.
+- **Runners**: a machine under `[[runners]]` in `moebius.toml` runs the harness of a card's runs over SSH (Pi-Bolt or
+  Claude Code), chosen by an agent's `runner` or by a column script. The run's branch is pushed to a clone kept on the
+  machine, the harness reaches the router, the check and the MCP gateway through an SSH reverse tunnel, and its commits
+  are fetched back when it ends; each runner has a limit of runs at once. Machines of other kinds come as runner plugins.
 - The desktop app's seven screens: board, live view, inbox, chat, fleet, agents, usage.
 - **Plugins in their own process** besides the compiled-in ones: a program named under `[[plugins]]` in `moebius.toml`
   that speaks JSON Lines on stdin and stdout, called with the same time limit, failing closed, and started again with a
@@ -52,7 +56,6 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
 
 - Harnesses other than Pi-Bolt and Claude Code.
 - Forges other than GitHub, GitLab and Forgejo (with Gitea).
-- Runners other than local worktrees on the server (GPU machines come as runner plugins).
 - Training the decision model; the first version records judgements and exports them.
 - Webhooks; forges are polled (ADR 0003).
 - More than one person.

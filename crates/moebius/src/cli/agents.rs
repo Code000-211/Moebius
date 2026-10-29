@@ -34,6 +34,9 @@ pub struct SaveAgent {
     /// `pi-bolt` or `claude-code`.
     #[arg(long)]
     harness: Option<String>,
+    /// A runner of moebius.toml (`runners`) the agent's runs go to; without one they run on the server.
+    #[arg(long)]
+    runner: Option<String>,
     /// A skill of the repository; give it again for more.
     #[arg(long = "skill")]
     skills: Vec<String>,
@@ -72,6 +75,14 @@ pub fn agents() -> Plan {
     ))
 }
 
+/// `runners`.
+pub fn runners() -> Plan {
+    Ok((
+        Request::get("/v1/runners"),
+        Show::Table(&["name", "host", "user", "max_runs", "busy"]),
+    ))
+}
+
 /// `agent show`, `save` and `delete`.
 pub fn agent(command: &AgentCommand) -> Plan {
     Ok(match command {
@@ -84,6 +95,7 @@ pub fn agent(command: &AgentCommand) -> Plan {
                 thinking,
                 token_budget,
                 harness,
+                runner,
                 skills,
                 extensions,
                 mcp,
@@ -105,6 +117,7 @@ pub fn agent(command: &AgentCommand) -> Plan {
                 ("thinking", json!(thinking)),
                 ("token_budget", json!(token_budget)),
                 ("harness", json!(harness)),
+                ("runner", json!(runner)),
             ] {
                 if !value.is_null() {
                     settings[key] = value;
@@ -190,6 +203,17 @@ mod tests {
                 "instructions": "Be brief.\n",
             }))
         );
+    }
+
+    #[test]
+    fn the_runners_are_listed_and_an_agent_can_name_one() {
+        let (request, _) = plan(&["runners"]).unwrap();
+        assert_eq!(request.path, "/v1/runners");
+        let (request, _) = plan(&[
+            "agent", "save", "Far", "--model", "m", "--runner", "gpu-box",
+        ])
+        .unwrap();
+        assert_eq!(request.body.unwrap()["settings"]["runner"], "gpu-box");
     }
 
     #[test]

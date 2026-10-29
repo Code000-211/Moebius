@@ -49,6 +49,7 @@ pub(super) fn setup() -> (tempfile::TempDir, Arc<App>, PiBolt, i64) {
         harness: Default::default(),
         tool_output: Default::default(),
         engineering_skills: true,
+        runner: None,
     };
     let pi = PiBolt::new(
         fake_pi(),

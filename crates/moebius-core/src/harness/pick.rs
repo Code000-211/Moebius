@@ -30,13 +30,14 @@ impl Harnesses {
     /// and the `moebius` executable.
     pub fn new(pi_bolt: PiBolt, claude_code: &Path) -> Self {
         let agents = pi_bolt.agents.clone();
-        let claude = ClaudeCode::new(
+        let mut claude = ClaudeCode::new(
             claude_code.to_path_buf(),
             pi_bolt.moebius.clone(),
             pi_bolt.router_url.clone(),
             pi_bolt.router.clone(),
             agents.clone(),
         );
+        claude.runners = pi_bolt.runners.clone();
         Self {
             pi_bolt: Arc::new(pi_bolt),
             claude_code: Arc::new(claude),
@@ -99,6 +100,23 @@ impl Runs for Harnesses {
     ) -> Result<Run, String> {
         self.of_agent(app, agent)
             .start(app, card, agent, purpose, note)
+    }
+
+    fn start_on(
+        &self,
+        app: &Arc<App>,
+        card: &Card,
+        agent: &str,
+        purpose: &str,
+        note: Option<&str>,
+        runner: Option<&str>,
+    ) -> Result<Run, String> {
+        self.of_agent(app, agent)
+            .start_on(app, card, agent, purpose, note, runner)
+    }
+
+    fn runners(&self) -> Vec<crate::harness::remote::RunnerInfo> {
+        self.pi_bolt.runners.list()
     }
 
     fn has_agent(&self, name: &str) -> bool {
@@ -250,6 +268,7 @@ mod tests {
             harness: HarnessKind::PiBolt,
             tool_output: Default::default(),
             engineering_skills: true,
+            runner: None,
         };
         let claude = AgentConfig {
             harness: HarnessKind::ClaudeCode,

@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+# A stand-in for `ssh` in tests: the "remote machine" is this one, so the command it is given runs here, in a shell, with
+# the standard input and output of the ssh (for `git push`, a `tar` pipe, or a harness speaking JSON Lines). A tunnel
+# (`-N -R PORT:HOST:HOSTPORT`, PORT 0 for a free one) listens on 127.0.0.1 and forwards each connection to HOST:HOSTPORT
+# until it is killed, and says `Allocated port N for remote forward to HOST:HOSTPORT` as ssh does. When the key given
+# with `-i` is a file, each call is appended to the file of the same name with `.log` added: the target, then the
+# options and the command, one JSON line.
+import json
+import os
+import socket
+import sys
+import threading
+
+WITH_VALUE = set("bcDEeFIiJLlmOopQRSWw")
+args = sys.argv[1:]
+options = []
+forward = None
+key = None
+tunnel = False
+i = 0
+while i < len(args):
+    arg = args[i]
+    if arg.startswith("-") and len(arg) > 1:
+        flag = arg[1]
+        if flag in WITH_VALUE:
+            value = args[i + 1] if len(arg) == 2 else arg[2:]
+            i += 1 if len(arg) == 2 else 0
+            options.append([flag, value])
+            if flag == "R":
+                forward = value
+            if flag == "i":
+                key = value
+        elif arg == "-N":
+            tunnel = True
+        i += 1
+        continue
+    break
+target, command = args[i], args[i + 1:]
+
+if key and os.path.exists(key):
+    with open(key + ".log", "a") as log:
+        log.write(json.dumps({"target": target, "options": options, "command": " ".join(command), "tunnel": tunnel}) + "\n")
+
+if tunnel:
+    port, host, host_port = forward.split(":")
+    server = socket.socket()
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(("127.0.0.1", int(port)))
+    server.listen()
+    sys.stderr.write("Allocated port %d for remote forward to %s:%s\n" % (server.getsockname()[1], host, host_port))
+    sys.stderr.flush()
+
+    def pump(source, sink):
+        try:
+            while True:
+                data = source.recv(65536)
+                if not data:
+                    break
+                sink.sendall(data)
+        except OSError:
+            pass
+        for sock in (source, sink):
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+    while True:
+        client, _ = server.accept()
+        upstream = socket.create_connection((host, int(host_port)))
+        threading.Thread(target=pump, args=(client, upstream), daemon=True).start()
+        threading.Thread(target=pump, args=(upstream, client), daemon=True).start()
+
+os.execvp("sh", ["sh", "-c", " ".join(command)])

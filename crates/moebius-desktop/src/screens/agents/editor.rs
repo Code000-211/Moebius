@@ -23,6 +23,8 @@ pub(super) struct Editor {
     pub(super) protocol: String,
     /// The harness the agent runs on, one of `HARNESSES`.
     pub(super) harness: String,
+    /// The runner its runs go to; none is the server itself.
+    pub(super) runner: Option<String>,
     pub(super) thinking: Option<String>,
     pub(super) budget: String,
     /// The fields of the tool outputs: after how many turns they are hidden, and the lines and bytes of one.
@@ -64,6 +66,7 @@ impl Editor {
             typing_model: false,
             protocol: PROTOCOLS[0].to_string(),
             harness: HARNESSES[0].to_string(),
+            runner: None,
             thinking: None,
             budget: String::new(),
             hide_after: String::new(),
@@ -115,6 +118,7 @@ impl Editor {
         self.model = settings.model;
         self.protocol = settings.protocol;
         self.harness = settings.harness.unwrap_or_else(|| HARNESSES[0].to_string());
+        self.runner = settings.runner;
         self.thinking = settings.thinking;
         self.budget = settings
             .token_budget
@@ -178,6 +182,7 @@ impl Editor {
                 compress: self.compress,
             },
             engineering_skills: self.engineering_skills,
+            runner: self.runner.clone(),
         };
         let mut instructions = self.instructions.text();
         // The editor keeps a final line break of its own; the file is not given a second one.
@@ -239,6 +244,7 @@ pub(super) fn from_file(name: &str, server: &ServerSettings) -> Result<AgentDeta
             extensions: paths("extensions"),
             mcp: vec![],
             harness: text("harness"),
+            runner: text("runner"),
             tool_output: table
                 .get("tool_output")
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
@@ -264,6 +270,9 @@ pub(super) fn file_table(agent: &AgentSettings, instructions: &str) -> serde_jso
     }
     if let Some(harness) = &agent.harness {
         table.insert("harness".into(), harness.clone().into());
+    }
+    if let Some(runner) = &agent.runner {
+        table.insert("runner".into(), runner.clone().into());
     }
     if !instructions.trim().is_empty() {
         table.insert("instructions".into(), instructions.into());

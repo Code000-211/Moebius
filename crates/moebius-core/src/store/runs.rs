@@ -25,6 +25,8 @@ pub struct Run {
     /// Where a chat was started: `chat`, on the Chat page or by a client, `assistant`, in the desktop app's floating
     /// window, or `automation`, by an automation's schedule. `chat` for every other run.
     pub origin: String,
+    /// The runner (`[[runners]]`) the run's harness went on; none for a run on the server.
+    pub runner: Option<String>,
 }
 
 impl Run {
@@ -67,6 +69,7 @@ impl Store {
             repository_id: None,
             harness_repository: false,
             origin: "chat".into(),
+            runner: None,
         })
     }
 
@@ -77,7 +80,7 @@ impl Store {
     ) -> Result<Vec<Run>> {
         self.rows(&format!(
             "SELECT id, card_id, agent, harness, purpose, status, worktree, started_at, ended_at, summary, repository_id,
-                harness_repository, origin
+                harness_repository, origin, runner
              FROM runs WHERE {clause} ORDER BY id"
         ), [param], |r| {
             Ok(Run {
@@ -94,8 +97,18 @@ impl Store {
                 repository_id: r.get(10)?,
                 harness_repository: r.get(11)?,
                 origin: r.get(12)?,
+                runner: r.get(13)?,
             })
         })
+    }
+
+    /// Records the runner the run's harness goes on.
+    pub fn set_run_runner(&self, id: i64, runner: &str) -> Result<()> {
+        self.conn().execute(
+            "UPDATE runs SET runner = ?1 WHERE id = ?2",
+            params![runner, id],
+        )?;
+        Ok(())
     }
 
     pub fn run(&self, id: i64) -> Result<Option<Run>> {

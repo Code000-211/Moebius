@@ -45,6 +45,9 @@ pub struct AgentSettings {
     pub harness: Option<String>,
     #[serde(default, skip_serializing_if = "ToolOutput::is_default")]
     pub tool_output: ToolOutput,
+    /// The runner its runs go to; the server itself when none is given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runner: Option<String>,
     /// Whether it is given the engineering skills Moebius brings for it (only the Coder, the Reviewer and the Grilling
     /// partner have any).
     #[serde(default = "yes", skip_serializing_if = "is_yes")]
@@ -57,6 +60,19 @@ fn yes() -> bool {
 
 fn is_yes(value: &bool) -> bool {
     *value
+}
+
+/// A runner an agent can name, as `GET /v1/runners` lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Runner {
+    pub name: String,
+    pub host: String,
+    #[serde(default)]
+    pub user: Option<String>,
+    pub max_runs: u32,
+    /// How many runs go on it now.
+    #[serde(default)]
+    pub busy: u32,
 }
 
 /// How the outputs of an agent's tools are kept small: older ones hidden, each one compressed and cut to a budget.

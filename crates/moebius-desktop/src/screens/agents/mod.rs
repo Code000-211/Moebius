@@ -18,7 +18,7 @@ use iced::widget::text_editor;
 use crate::app::Message as AppMessage;
 use crate::client::{
     Agent, AgentDetail, AgentSettings, Available, AvailableModel, Client, ClientError, McpServer,
-    Proposal, Run, ServerSettings, Skill, unauthorized,
+    Proposal, Run, Runner, ServerSettings, Skill, unauthorized,
 };
 use crate::settings::Settings;
 
@@ -29,6 +29,8 @@ pub(crate) use crate::widgets::form::{field, menu_style, notice_line, pick_style
 
 /// What the thinking list says for no level at all.
 const NOT_SET: &str = "Not set";
+/// What the Runner list says for the server itself.
+const THIS_SERVER: &str = "This server";
 /// What the list of whether tool outputs are compressed offers: on, then off.
 const COMPRESS: [&str; 2] = ["Compressed", "As they are"];
 /// What the list of whether the engineering skills are given offers: on, then off.
@@ -42,6 +44,7 @@ pub enum Message {
     SkillsListed(Result<Vec<Skill>, ClientError>),
     McpListed(Result<Vec<McpServer>, ClientError>),
     ProposalsListed(Result<Vec<Proposal>, ClientError>),
+    RunnersListed(Result<Vec<Runner>, ClientError>),
     /// The models the upstreams serve.
     Available(Result<Available, ClientError>),
     /// The link under the Model field was pressed: ask the upstreams again.
@@ -64,6 +67,8 @@ pub enum Message {
     TypeModel,
     ProtocolChosen(String),
     HarnessChosen(String),
+    /// A runner of the list was chosen; the first entry is the server itself.
+    RunnerChosen(String),
     ThinkingChosen(String),
     BudgetEdited(String),
     /// A field of the tool outputs was edited.
@@ -123,6 +128,8 @@ pub struct Agents {
     mcp: Vec<McpServer>,
     /// The proposals of the Retros, newest first; those still to be decided are offered under the agent they change.
     proposals: Vec<Proposal>,
+    /// The runners agents can name; an agent has a Runner field only when there are some.
+    runners: Vec<Runner>,
     /// What the upstreams serve, once they have been asked.
     available: Option<Available>,
     editor: Option<Editor>,
@@ -159,8 +166,11 @@ impl Agents {
     pub fn reload(&self, settings: &Settings) -> Task<AppMessage> {
         let client = |settings: &Settings| Client::new(settings.clone());
         let (agents, skills, mcp) = (client(settings), client(settings), client(settings));
-        let proposals = client(settings);
+        let (proposals, runners) = (client(settings), client(settings));
         Task::batch([
+            Task::perform(async move { runners.runners().await }, |result| {
+                AppMessage::Agents(Message::RunnersListed(result))
+            }),
             self.ask_available(settings, false),
             Task::perform(async move { proposals.proposals().await }, |result| {
                 AppMessage::Agents(Message::ProposalsListed(result))
@@ -192,6 +202,7 @@ impl Agents {
             Message::Listed(result) => unauthorized(result),
             Message::SkillsListed(result) => unauthorized(result),
             Message::McpListed(result) => unauthorized(result),
+            Message::RunnersListed(result) => unauthorized(result),
             Message::ProposalsListed(result) => unauthorized(result),
             Message::Available(result) => unauthorized(result),
             _ => false,

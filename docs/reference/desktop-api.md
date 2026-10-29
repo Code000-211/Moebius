@@ -65,7 +65,7 @@ the person's next message), `worktree`, `started_at`, `ended_at`, `summary`, `re
 works in, or null) and `harness_repository` (true for a chat that works in the [harness configuration
 repository](harness-configuration.md#changing-it-in-a-chat); `harness` is the name of the harness that runs the agent)
 and `origin` (where a chat was started: `chat`, or `assistant` for the desktop app's floating window; `chat` for every
-other run).
+other run) and `runner` (the name of the [runner](configuration.md#runners) the run's harness goes on, or null for a run on the server).
 
 `Grilling`: `id`, `run_id` (the chat), `repository_id`, `issues` (array of `{"title", "body", "blocked_by"}`, where
 `blocked_by` is an array of indexes into `issues`; empty for a report and for an empty grilling), `report` (text or null),
@@ -628,6 +628,12 @@ configuration file (`moebius.toml`), not in a worktree.
 Errors, answered before the upgrade: `403` for the run token of an agent (the shell stays with a person); `422` when 4
 terminals are open already or the directory is gone.
 
+### `GET /v1/runners`
+
+The machines that run harnesses over SSH, the `[[runners]]` of `moebius.toml` (see [configuration](configuration.md#runners)),
+by name. Response: an array of `{"name": string, "host": string, "user": string or null, "max_runs": integer, "busy":
+integer}`; `busy` is how many runs go on the machine now. Nothing secret (the key file) is included.
+
 ### `GET /v1/agents`
 
 The agents the server can run, for choosing one to chat with: the Moebius agent first and the Grilling partner second (each
@@ -643,8 +649,8 @@ included.
 ### `GET /v1/agents/{name}`
 
 An agent of the harness configuration repository, as its files say: `{"name": string, "settings": {"model", "protocol",
-"thinking", "token_budget", "harness", "skills", "extensions", "mcp", "tool_output", "engineering_skills"}, "instructions": string}` (`thinking`,
-`token_budget` and `harness` are left out when not set; no `harness` is `pi-bolt`; `tool_output` is left out when it is the defaults; `engineering_skills` is left out when it is `true`, and `false` gives the agent none of the [engineering skills](harness-configuration.md#engineering-skills) of the Coder, the Reviewer and the Grilling partner). The files hold no secrets and are returned in full. Errors: `404` no such agent; `422` its files
+"thinking", "token_budget", "harness", "runner", "skills", "extensions", "mcp", "tool_output", "engineering_skills"}, "instructions": string}` (`thinking`,
+`token_budget`, `harness` and `runner` are left out when not set; no `harness` is `pi-bolt`, no `runner` is the server itself; `tool_output` is left out when it is the defaults; `engineering_skills` is left out when it is `true`, and `false` gives the agent none of the [engineering skills](harness-configuration.md#engineering-skills) of the Coder, the Reviewer and the Grilling partner). The files hold no secrets and are returned in full. Errors: `404` no such agent; `422` its files
 are broken (the message says how), or the server has no `[harness]` and its agents are in `moebius.toml`.
 
 A built-in agent (`Moebius`, `Grilling-partner`, `Retro-analyst`, `Autoresearcher`) also has `"built_in":

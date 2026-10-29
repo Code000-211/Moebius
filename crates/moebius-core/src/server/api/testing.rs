@@ -33,6 +33,7 @@ pub(super) fn agent(model: &str) -> AgentConfig {
         harness: Default::default(),
         tool_output: Default::default(),
         engineering_skills: true,
+        runner: None,
     }
 }
 
@@ -56,13 +57,26 @@ pub(super) async fn start_with(
     let router = Arc::new(Router::new(store.clone(), vec![]).with_secrets(
         crate::server::settings::Secrets::new(&dir.path().join(".moebius")),
     ));
-    let pi = PiBolt::new(
+    let mut pi = PiBolt::new(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/fake-pi"),
         "/usr/local/bin/moebius".into(),
         "http://127.0.0.1:9".into(),
         router.clone(),
         agents,
     );
+    pi.runners = Arc::new(crate::harness::remote::Runners::new(vec![
+        crate::config::RunnerConfig {
+            name: "gpu-box".into(),
+            host: "gpu.example.com".into(),
+            user: Some("moebius".into()),
+            port: None,
+            key_file: Some("/keys/gpu-box".into()),
+            working_dir: "/srv/moebius".into(),
+            max_runs: 2,
+            bin_dir: None,
+            ssh: "ssh".into(),
+        },
+    ]));
     let state = ApiState {
         app: Arc::new(App::new(store, host, &dir.path().join("data"))),
         runs: Arc::new(pi),

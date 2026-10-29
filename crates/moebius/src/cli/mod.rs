@@ -83,6 +83,8 @@ pub enum Operate {
         #[command(subcommand)]
         command: AutomationCommand,
     },
+    /// The runners agents can name, with how many runs go on each.
+    Runners,
     /// The agents the server can run.
     Agents,
     /// Show, save and delete an agent of the harness configuration repository.
@@ -196,6 +198,7 @@ impl Operate {
             Grillings => chats::grillings(),
             Grilling { command } => chats::grilling(command, get),
             Automation { command } => automations::automation(command),
+            Runners => agents::runners(),
             Agents => agents::agents(),
             Agent { command } => agents::agent(command),
             Rules { command } => rules::rules(command.as_ref()),

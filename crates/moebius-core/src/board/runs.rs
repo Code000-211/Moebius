@@ -79,8 +79,30 @@ pub trait Runs: Send + Sync {
         note: Option<&str>,
     ) -> Result<Run, String>;
 
+    /// Starts a run as `start` does, on the runner `runner` names in place of the agent's own. A harness without
+    /// runners refuses a runner.
+    fn start_on(
+        &self,
+        app: &Arc<App>,
+        card: &Card,
+        agent: &str,
+        purpose: &str,
+        note: Option<&str>,
+        runner: Option<&str>,
+    ) -> Result<Run, String> {
+        match runner {
+            None => self.start(app, card, agent, purpose, note),
+            Some(_) => Err("this harness has no runners".into()),
+        }
+    }
+
     /// Whether an agent of this name is configured.
     fn has_agent(&self, name: &str) -> bool;
+
+    /// The runners this harness can start runs on, with how many runs go on each.
+    fn runners(&self) -> Vec<crate::harness::remote::RunnerInfo> {
+        Vec::new()
+    }
 
     /// The agents this harness can run.
     fn agents(&self) -> Vec<AgentInfo> {

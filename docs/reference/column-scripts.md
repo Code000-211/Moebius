@@ -116,7 +116,7 @@ has a blocking finding with evidence and `approve` otherwise; the review is `cha
 `card.review.findings` holds the blocking findings of both under the heading `Standards (...)` or `Spec (...)`, each
 with `Evidence:`. Judgement calls never send the card back; `card.review.judgements` holds them under the same headings.
 
-`moebius.start_run(agent, purpose, note)` returns the run's id (a number).
+`moebius.start_run(agent, purpose, note, runner)` returns the run's id (a number).
 : Starts a run of the agent named `agent` (an `[agents.<name>]` table of the configuration) for this card in a new
 worktree on a new branch `moebius/run-<id>`. The branch starts at the branch of the card's latest successful `code`
 run, so the run sees the work so far, or at the repository's default branch when the card has none. `purpose` is any
@@ -128,8 +128,11 @@ the verdict line; a `review-standards` run the prompt for the standards axis (th
 calls) and a `review-spec` run the prompt for the spec axis (what the issue asked that is missing, not asked for or
 looks wrong), both asking for findings with evidence; nothing it changes is kept, and changing nothing is no failure. Any other purpose is prompted like
 `code`. `note` is optional text (a string or nil) added to the end of the prompt under the heading `Notes from the
-last round:`; the default workflow passes `card.note`. The call returns once the run is started, not when it ends. Raises an error
-when the agent does not exist (`no agent named <agent>`), the worktree cannot be made or the harness cannot be
+last round:`; the default workflow passes `card.note`. The call returns once the run is started, not when it ends. `runner` is optional (a string or nil): the name of a `[[runners]]` entry (see
+[configuration](configuration.md#runners)) that the run goes to over SSH in place of the agent's own `runner`; without
+it the agent's runner is used, and without that the run is on the server. Raises an error
+when the agent does not exist (`no agent named <agent>`), the runner does not exist (`there is no runner named <name>`)
+or is full (`the runner <name> is busy: ...`; no run is made then), the worktree cannot be made or the harness cannot be
 started. The time this call takes does not count against the time limit. It does not check `run_limit`; a script
 that wants the limit checks `moebius.runs_active()` first.
 
@@ -235,6 +238,8 @@ Error messages that come from Moebius:
 | a message containing `memory` | The memory limit below was reached. |
 | `no column "<name>"` | `moebius.move` with an unknown column. |
 | `no agent named <name>` | `moebius.start_run` with an agent that is not configured. |
+| `there is no runner named <name>` | `moebius.start_run` with a runner that is not configured. |
+| a message starting `the runner` and containing `is busy` | `moebius.start_run` on a runner that has `max_runs` runs going; no run was made, so a script may try again on a later tick. |
 | `the card has no code run to publish` | `moebius.publish_change` or `moebius.offer_change` on a card without a successful `code` run. |
 | `the card has no change to check` | `moebius.run_checks` before the change is published. |
 | `the card has no change to test` | `moebius.reproduction`, `moebius.run_test` or `moebius.run_test_at_base` before the change is published. |
@@ -295,7 +300,7 @@ The output is one line for each call that does something, in the order of the ca
 |---|---|
 | `moved the card to <column>`, with ` (note: <note>)` when there is one | `moebius.move` |
 | `waited: <reason>` | `moebius.wait` |
-| `started a run of <agent> for <purpose>`, with the note as above | `moebius.start_run` |
+| `started a run of <agent> for <purpose>`, then ` on <runner>` when a runner is given, with the note as above | `moebius.start_run` |
 | `asked a person (<kind>) and waited: <reason>` | `moebius.ask` |
 | `put the card in the inbox as stuck: <reason>` | `moebius.stuck` |
 | `decided <kind>: ... the fail-closed option "<option>" was taken` | `moebius.decide` |

@@ -252,6 +252,42 @@ and `GET /v1/plugins` show its state. There are none by default.
 | `plugins.args` | array of strings | `[]` | The program's arguments. |
 | `plugins.decides` | array of strings | `[]` | The kinds of decision the plugin answers, such as `start_card`. A kind named by two entries refuses the file. A kind has one decider, so naming `tool_call` replaces the guard, with the built-in rules and the teacher. |
 
+## `[[runners]]`
+
+A machine that runs the harness of a card's runs over SSH, instead of the server. An agent whose `runner` names it, or a
+column script that passes its name to `moebius.start_run`, sends its runs there (see [running on another
+machine](../guide/running-moebius.md#running-on-another-machine)); a run without a runner goes on the server. The
+machine needs `sshd` with key login, `git`, `tar` and `sh`, and the harness (`pi-bolt` or `claude`); it needs no access
+to the server's network. Runners are read when the server starts. There are none by default.
+
+How a run goes there: the server opens a reverse tunnel (`ssh -N -R 0:<router>`) to the router's listener, which gives
+the machine a loopback port that reaches the router, the tool-call check and the MCP gateway; pushes the run's commit
+over SSH as the branch `moebius/run-<id>` to a bare clone `<working_dir>/repos/repo-<repository id>.git`, which the
+machine keeps between runs; clones it to `<working_dir>/runs/<id>/work`; copies what the harness is given from the
+server (its agent directory with `models.json` and `mcp.json`, the bridge, the skills and extensions) to
+`<working_dir>/runs/<id>/files/`, at the paths the server has them under; and starts the harness there with one more
+`ssh`, whose standard input and output are the harness's (so steering and stopping work as they do locally). Its
+environment is the one a local run has, with the router's URL the tunnel's, and without `MOEBIUS`, `MOEBIUS_URL` and
+`MOEBIUS_TOKEN`: the desktop API is not tunnelled, so the Moebius agent's own commands do not work there. When the run
+ends what the agent left is committed there, fetched into the run's worktree on the server, and committed from there as
+for any run; the run's directory on the machine and its branch in the clone are removed, and the tunnel is closed. A
+connection to the machine that breaks ends the run as failed. Only the runs of a card (`code`, `review` and the other
+purposes of column scripts, and trials) go to a runner; chats, the Retro, the Autoresearcher and the Grilling partner
+always run on the server. `ssh` is started without a terminal and asks no question (`BatchMode`), so the machine's host
+key must be in the server user's `known_hosts`.
+
+| Key | Type | Default | Meaning and validation |
+|---|---|---|---|
+| `runners.name` | string | required | The name `agents.<name>.runner` and `moebius.start_run` use: letters, digits, `-` and `_`, and not the name of another entry, else the file is refused. |
+| `runners.host` | string | required | The machine's host name or address. One word that does not start with `-`. |
+| `runners.user` | string | none | The user to log in as; without one, the SSH configuration's. One word that does not start with `-`. |
+| `runners.port` | integer | none | The SSH port; without one, the SSH configuration's. |
+| `runners.key_file` | path | none | The private key to log in with (`ssh -i`, with `IdentitiesOnly`); without one, the SSH configuration's and the agent's. Resolved against the file's directory. |
+| `runners.working_dir` | string | required | An absolute path on the machine, without quotes or line breaks, under which the clones and the runs' directories are kept. Created if missing. |
+| `runners.max_runs` | integer | `1` | How many runs may go on the machine at once, at least 1. A run that would be one more is not started: `moebius.start_run` raises `the runner <name> is busy: <n> of <n> runs are going`, and no run is made. `GET /v1/runners` says how many go now. |
+| `runners.bin_dir` | string | none | An absolute path on the machine where `pi-bolt` and `claude` are; without it they are looked up on the machine's `PATH` for a non-interactive login. |
+| `runners.ssh` | path | `ssh` | The `ssh` program. See [Paths](#paths). |
+
 ## `[github]`
 
 Moebius acts as its own GitHub App, with webhooks off; it polls. The table is optional. Without it, repositories on
@@ -304,6 +340,7 @@ A name is made of letters, digits, `-` and `_` and must not be empty, else the f
 | `agents.<name>.model` | string | required | The model's name, sent to the router and given to Pi-Bolt as `--model`. |
 | `agents.<name>.protocol` | string | `openai` | `openai` or `anthropic`: which router endpoint the harness uses. |
 | `agents.<name>.harness` | string | `pi-bolt` | The harness the agent runs on: `pi-bolt`, or `claude-code` for Claude Code's command line (see [Claude Code](#claude-code)). An agent on `claude-code` must have `protocol = "anthropic"` and no `extensions`, else the file is refused. A built-in agent without its own table runs on the Coder's harness. |
+| `agents.<name>.runner` | string | none | The name of a `[[runners]]` entry the agent's runs go to, over SSH; without it they run on the server. A name that is no runner refuses the file. A column script can send a run elsewhere with the fourth argument of `moebius.start_run`. |
 | `agents.<name>.thinking` | string | none | Given to Pi-Bolt as `--thinking`, such as `low`, `medium` or `high`. Pi-Bolt checks the value. Claude Code is not given it. |
 | `agents.<name>.instructions` | string | none | Given to Pi-Bolt as `--append-system-prompt`. |
 | `agents.<name>.skills` | array of paths | `[]` | Each given to Pi-Bolt as `--skill`. |

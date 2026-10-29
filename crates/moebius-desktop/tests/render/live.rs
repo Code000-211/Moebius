@@ -89,6 +89,11 @@ pub fn judgement(choice: &str, reason: &str, decider: &str) -> moebius_desktop::
 
 /// The app showing the live view of card 48, as if its run and events were read from a server.
 fn watching(status: &str) -> App {
+    watching_on(status, None)
+}
+
+/// As `watching`, with the run's harness on the runner `runner`, if any.
+fn watching_on(status: &str, runner: Option<&str>) -> App {
     let mut board = radiance("Ready");
     board["changes"] = json!([{"id": 1, "repository_id": 1, "card_id": 48,
                                "branch": "moebius/card-48", "state": "open"}]);
@@ -96,7 +101,7 @@ fn watching(status: &str) -> App {
     let _ = app.update(Message::OpenCard(48));
     let run = serde_json::from_value(json!({
         "id": 9, "card_id": 48, "agent": "Coder", "harness": "pi-bolt", "purpose": "code",
-        "status": status, "started_at": 1_790_000_000 - 360}))
+        "status": status, "started_at": 1_790_000_000 - 360, "runner": runner}))
     .unwrap();
     let loaded = live::Loaded {
         run,
@@ -166,6 +171,16 @@ fn a_running_run_is_drawn_like_the_live_view_of_the_mockup() {
             "Right, vendor code is off limits. The cap belongs in our own tree builder.",
         ],
     );
+}
+
+/// A run on a runner says which one in the panel; a run on the server has no such line.
+#[test]
+fn a_run_on_a_runner_names_it_in_the_panel() {
+    let app = watching_on("running", Some("gpu-box"));
+    let mut ui = simulator(&app);
+    assert!(ui.find("Runner").is_ok());
+    assert!(ui.find("gpu-box").is_ok());
+    assert!(simulator(&watching("running")).find("Runner").is_err());
 }
 
 /// A refusal whose call was replayed in a copy of the worktree says what came of it, small and muted under the rule:

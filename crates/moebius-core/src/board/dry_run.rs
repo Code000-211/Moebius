@@ -111,10 +111,17 @@ fn recording_api(
     m.set(
         "start_run",
         lua.create_function(
-            move |_, (agent, purpose, note): (String, String, Option<String>)| {
+            move |_,
+                  (agent, purpose, note, runner): (
+                String,
+                String,
+                Option<String>,
+                Option<String>,
+            )| {
                 started.set(started.get() + 1);
+                let on = runner.map_or(String::new(), |runner| format!(" on {runner}"));
                 log(format!(
-                    "started a run of {agent} for {purpose}{}",
+                    "started a run of {agent} for {purpose}{on}{}",
                     with_note(note)
                 ));
                 Ok(started.get())

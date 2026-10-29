@@ -76,6 +76,7 @@ fn setup_with(router: Option<(Arc<Router>, String)>) -> Setup {
         harness: HarnessKind::ClaudeCode,
         tool_output: Default::default(),
         engineering_skills: true,
+        runner: None,
     };
     let (router, url) = router.unwrap_or_else(|| {
         (

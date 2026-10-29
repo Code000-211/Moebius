@@ -269,6 +269,7 @@ pub(in crate::harness) fn chat_run(
             "Chat {}\n\nCommitted by Moebius when the chat ended.",
             run.id
         ),
+        remote: None,
     };
     if let Some(message) = message {
         let said = json!({ "message": redact(message) });

@@ -213,6 +213,7 @@ pub fn resolve(set: &AgentSet, data_dir: &Path, name: &str) -> Result<AgentConfi
             harness: coder.harness,
             tool_output: coder.tool_output,
             engineering_skills: coder.engineering_skills,
+            runner: None,
         },
         (None, None) => {
             return Err(format!(
@@ -343,6 +344,7 @@ mod tests {
             harness: HarnessKind::PiBolt,
             tool_output: Default::default(),
             engineering_skills: true,
+            runner: None,
         }
     }
 

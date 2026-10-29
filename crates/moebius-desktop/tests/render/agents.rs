@@ -312,6 +312,37 @@ fn saving_sends_the_edited_settings_and_a_wrong_field_is_said_instead() {
     assert!(agents.save_request().is_err());
 }
 
+/// An agent has a Runner field only when the server has runners, and the choice is what a save sends.
+#[test]
+fn an_agent_can_be_sent_to_a_runner_when_the_server_has_some() {
+    let listed: Vec<moebius_desktop::client::Runner> = serde_json::from_value(json!([
+        {"name": "gpu-box", "host": "gpu.example.com", "max_runs": 2, "busy": 0}
+    ]))
+    .unwrap();
+    let mut app = agents_app();
+    assert!(!shows(&app, "Runner"));
+    let _ = app.update(Message::Agents(agents::Message::RunnersListed(Ok(
+        listed.clone()
+    ))));
+    assert!(shows(&app, "Runner"));
+
+    let settings = settings();
+    let mut agents = agents::Agents::default();
+    let mut update = |message| agents.update(message, Some(&settings)).units();
+    update(agents::Message::Select("Coder".into()));
+    update(agents::Message::Opened("Coder".into(), Ok(coder())));
+    update(agents::Message::RunnersListed(Ok(listed)));
+    update(agents::Message::RunnerChosen("gpu-box".into()));
+    let (_, sent, _) = agents.save_request().unwrap();
+    assert_eq!(sent.runner.as_deref(), Some("gpu-box"));
+    assert_eq!(serde_json::to_value(&sent).unwrap()["runner"], "gpu-box");
+    let mut update = |message| agents.update(message, Some(&settings)).units();
+    update(agents::Message::RunnerChosen("This server".into()));
+    let (_, sent, _) = agents.save_request().unwrap();
+    assert_eq!(sent.runner, None);
+    assert!(serde_json::to_value(&sent).unwrap().get("runner").is_none());
+}
+
 #[test]
 fn the_save_button_sends_the_save_message_and_the_answer_is_shown() {
     let mut app = agents_app();

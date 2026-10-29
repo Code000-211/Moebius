@@ -140,6 +140,20 @@ program = "claude"
 # args = ["--plugin"]
 # decides = ["start_card"]
 
+# A machine that runs harnesses over SSH. An agent whose `runner` names it, or a column script that passes its name
+# to moebius.start_run, runs there: the run's branch is pushed to a clone under working_dir, the harness is started
+# over SSH, it reaches the router through a reverse tunnel, and its commits are fetched back when it ends.
+# [[runners]]
+# name = "gpu-box"
+# host = "gpu.example.com"
+# user = "moebius"                        # without it, the SSH configuration's
+# port = 22                               # without it, the SSH configuration's
+# key_file = "gpu-box.key"                # without it, the SSH configuration's; relative to this file's directory
+# working_dir = "/srv/moebius"            # absolute, on the machine
+# max_runs = 1                            # how many runs may go on the machine at once
+# bin_dir = "/usr/local/bin"              # where pi-bolt and claude are on the machine; without it, its PATH
+# ssh = "ssh"                             # the ssh program
+
 # Moebius acts as its own GitHub App. The key file is read at start; relative paths are inside this file's directory.
 # [github]
 # app_id = 123456
@@ -177,6 +191,7 @@ program = "claude"
 # protocol = "openai"                     # anthropic for an agent on claude-code
 # harness = "pi-bolt"                     # or claude-code
 # thinking = "medium"
+# runner = "gpu-box"                      # a [[runners]] name; without it the agent's runs go on the server
 # instructions = "Keep changes small and run the tests."
 # token_budget = 2000000
 # engineering_skills = true               # false: not given the engineering skills Moebius brings (Coder, Reviewer, Grilling-partner)

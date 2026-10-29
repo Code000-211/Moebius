@@ -205,6 +205,86 @@ pub struct PluginConfig {
     pub decides: Vec<String>,
 }
 
+/// A machine that runs harnesses over SSH, from `[[runners]]`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RunnerConfig {
+    /// The name an agent's `runner` and a column script name it by.
+    pub name: String,
+    /// The machine's host name or address.
+    pub host: String,
+    /// The user to log in as; without one, the SSH configuration's.
+    pub user: Option<String>,
+    /// The SSH port; without one, the SSH configuration's.
+    pub port: Option<u16>,
+    /// The private key to log in with, made absolute against the file's directory; without one, the SSH
+    /// configuration's.
+    pub key_file: Option<PathBuf>,
+    /// The absolute directory on the machine that holds the clones and the runs' directories.
+    pub working_dir: String,
+    /// How many runs may go on the machine at once.
+    #[serde(default = "default_max_runs")]
+    pub max_runs: u32,
+    /// The directory on the machine that holds `pi-bolt` and `claude`; without one they are looked up on its `PATH`.
+    pub bin_dir: Option<String>,
+    /// The `ssh` program, looked up on the `PATH` when it is a bare name.
+    #[serde(default = "default_ssh")]
+    pub ssh: PathBuf,
+}
+
+fn default_max_runs() -> u32 {
+    1
+}
+
+fn default_ssh() -> PathBuf {
+    PathBuf::from("ssh")
+}
+
+/// The runners, checked, with their key files and `ssh` programs resolved like `pi_bolt.program`.
+pub(super) fn runners(
+    mut runners: Vec<RunnerConfig>,
+    base: &Path,
+) -> Result<Vec<RunnerConfig>, ConfigError> {
+    let mut names = std::collections::BTreeSet::new();
+    for runner in &mut runners {
+        let name = runner.name.clone();
+        if !valid_agent_name(&name) {
+            return Err(ConfigError::RunnerName { name });
+        }
+        if !names.insert(name.clone()) {
+            return Err(ConfigError::RunnerTwice { name });
+        }
+        let word = |text: &str| {
+            !text.is_empty()
+                && !text.starts_with('-')
+                && !text.contains(|c: char| c.is_whitespace())
+        };
+        if !word(&runner.host) || !runner.user.as_deref().is_none_or(word) {
+            return Err(ConfigError::RunnerHost { name });
+        }
+        if !runner.working_dir.starts_with('/') || runner.working_dir.contains(['\'', '\n', '\0']) {
+            return Err(ConfigError::RunnerDir { name });
+        }
+        if runner
+            .bin_dir
+            .as_deref()
+            .is_some_and(|dir| !dir.starts_with('/') || dir.contains(['\'', '\n', '\0']))
+        {
+            return Err(ConfigError::RunnerBinDir { name });
+        }
+        if runner.max_runs == 0 {
+            return Err(ConfigError::RunnerMaxRuns { name });
+        }
+        if let Some(key) = &mut runner.key_file {
+            *key = base.join(&key);
+        }
+        if runner.ssh.components().count() > 1 {
+            runner.ssh = base.join(&runner.ssh);
+        }
+    }
+    Ok(runners)
+}
+
 /// An agent as a run uses it: from `[agents.<name>]` or from the harness configuration repository.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -228,6 +308,9 @@ pub struct AgentConfig {
     /// How the outputs of the agent's tools are kept small (`[agents.<name>.tool_output]`).
     #[serde(default)]
     pub tool_output: ToolOutput,
+    /// The runner (`[[runners]]`) the agent's runs go to; without one they run on the server.
+    #[serde(default)]
+    pub runner: Option<String>,
     /// Whether the agent is given the engineering skills Moebius brings for it, with `moebius-autonomous` (see
     /// `harness::skill::engineering`). Only the Coder, the Reviewer and the Grilling partner have any.
     #[serde(default = "default_true")]

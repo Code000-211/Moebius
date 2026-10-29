@@ -49,6 +49,13 @@ impl Live {
             ]
             .into(),
         ));
+        if let Some(runner) = &self.run.runner {
+            items.push(item(
+                "Runner",
+                None,
+                text(runner.as_str()).size(theme::BODY).into(),
+            ));
+        }
         let mut judgements =
             row![text(format!("{} saved", self.judgements.len())).size(theme::BODY)];
         if refused > 0 {

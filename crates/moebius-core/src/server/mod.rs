@@ -36,6 +36,7 @@ use crate::decide::model::{self, DecisionModel, Routed};
 use crate::harness::gateway::Gateway;
 use crate::harness::pibolt::PiBolt;
 use crate::harness::pick::Harnesses;
+use crate::harness::remote::Runners;
 use crate::harness::repo::HarnessRepo;
 use crate::harness::skill;
 use crate::repos::forge::{ForgejoForge, GitHubForge, GitLabForge};
@@ -197,13 +198,14 @@ impl Server {
                 .map_err(|e| format!("cannot start the decision model: {e}"))?;
         }
 
-        let pi_bolt = PiBolt::new(
+        let mut pi_bolt = PiBolt::new(
             config.pi_bolt.clone(),
             config.moebius.clone(),
             format!("http://{router_addr}"),
             router.clone(),
             config.agents.clone(),
         );
+        pi_bolt.runners = Arc::new(Runners::new(config.runners.clone()));
         let harness = Arc::new(Harnesses::new(pi_bolt, &config.claude_code));
         let harness_repo = match &config.harness_url {
             Some(url) => Some(Arc::new(HarnessRepo::open(

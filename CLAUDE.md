@@ -15,7 +15,7 @@ documentation; `CONTRIBUTING.md` says the same as this file for people.
   (git, `forge`, `github`, `gitlab`, `forgejo`, `poll`, `files`), `board/` (the engine and `scripts`), `decide/` (decision points,
   `check` for the bridge's tool-call check, `guard`, `rules`, `model` for shadowing and takeovers), `harness/`
   (`pibolt`, `claude` for Claude Code, `pick` choosing per agent, `terminal`, `repo` for the harness configuration
-  repository, `mcp`, `gateway` for the MCP gateway, `skill`, `grilling`) and `improve/` (`retro`, `trial`, `own` for the
+  repository, `mcp`, `gateway` for the MCP gateway, `remote` for runners over SSH, `skill`, `grilling`) and `improve/` (`retro`, `trial`, `own` for the
   Retro's proposals to Moebius's own configuration, `replay`, `research`, `export`). `docs/architecture.md` lists every
   module. Column scripts are in `workflow/*.luau`.
 - `crates/moebius-plugin-api`: the plugin trait and the host that calls plugins with a time limit, failing closed.

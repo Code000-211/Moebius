@@ -129,6 +129,7 @@ The exact rules are in [harness configuration](../reference/harness-configuratio
 | `extensions` | Paths, each given to Pi-Bolt as `--extension` before the bridge. See [Extensions](extensions.md). |
 | `token_budget` | The most tokens (input plus output) the card's runs may use, the teacher's included. Over it the router answers HTTP 429 and the default scripts mark the card stuck. |
 | `harness` | `pi-bolt` (the default) or `claude-code`: which harness runs the agent. See below. |
+| `runner` | The name of a `[[runners]]` machine the agent's runs go to over SSH; without it they run on the server. See [Running on another machine](running-moebius.md#the-steps) (step 9). |
 
 A relative path in `skills` or `extensions` is relative to the directory that holds `moebius.toml`. Moebius does not
 check that the paths exist.
@@ -407,7 +408,9 @@ If you give the Reviewer `instructions`, keep them from adding closing remarks a
 
 A column script starts it by name with `moebius.start_run(agent, purpose, note)`. The purpose is any string. Only
 `code`, `review` and `review-standards` are counted by the default scripts, and a purpose other than the three review
-purposes is prompted like `code`.
+purposes is prompted like `code`. A
+fourth argument names the `[[runners]]` machine the run goes to in place of the agent's own `runner`:
+`moebius.start_run(agent, purpose, note, "gpu-box")`.
 
 ## Chat with an agent
 

@@ -12,7 +12,7 @@ use crate::widgets::form::PROTOCOLS;
 
 use super::boxes::instructions_request;
 use super::editor::{Editor, file_table, from_file, toggle};
-use super::{Agents, COMPRESS, ENGINEERING, Files, Message, NOT_SET, Notice};
+use super::{Agents, COMPRESS, ENGINEERING, Files, Message, NOT_SET, Notice, THIS_SERVER};
 
 impl Agents {
     pub fn update(&mut self, message: Message, settings: Option<&Settings>) -> Task<AppMessage> {
@@ -25,6 +25,8 @@ impl Agents {
             Message::SkillsListed(Ok(skills)) => self.skills = Some(skills),
             Message::McpListed(Ok(mcp)) => self.mcp = mcp,
             Message::ProposalsListed(Ok(proposals)) => self.proposals = proposals,
+            Message::RunnersListed(Ok(runners)) => self.runners = runners,
+            Message::RunnersListed(Err(_)) => {}
             Message::Available(Ok(available)) => self.available = Some(available),
             Message::Available(Err(_)) => {}
             Message::RefreshAvailable => return self.ask_available(settings, true),
@@ -149,6 +151,9 @@ impl Agents {
             }
             Message::ProtocolChosen(protocol) => editor.protocol = protocol,
             Message::HarnessChosen(harness) => editor.harness = harness,
+            Message::RunnerChosen(runner) => {
+                editor.runner = (runner != THIS_SERVER).then_some(runner)
+            }
             Message::ThinkingChosen(level) => {
                 editor.thinking = (level != NOT_SET).then_some(level);
             }

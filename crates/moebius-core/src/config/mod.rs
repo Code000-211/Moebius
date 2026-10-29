@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use raw::{Raw, RawWindow};
-use sections::{check_key, decision_model, forgejo, gitlab, plugins, teacher};
+use sections::{check_key, decision_model, forgejo, gitlab, plugins, runners, teacher};
 
 use crate::harness::mcp::valid_variable;
 use crate::router::{Classes, check_class};
@@ -22,8 +22,8 @@ use crate::router::{Classes, check_class};
 pub use example::EXAMPLE;
 pub use sections::{
     AgentConfig, AgentSet, DecisionModelConfig, ForgejoConfig, GitHubConfig, GitLabConfig,
-    HarnessKind, PLUGIN_TIME_LIMIT_SECONDS, PluginConfig, TeacherConfig, TimeOfDay, TokenSource,
-    ToolOutput, UpstreamConfig, valid_agent_name,
+    HarnessKind, PLUGIN_TIME_LIMIT_SECONDS, PluginConfig, RunnerConfig, TeacherConfig, TimeOfDay,
+    TokenSource, ToolOutput, UpstreamConfig, valid_agent_name,
 };
 pub(crate) use sections::{default_protocol, default_true};
 
@@ -111,6 +111,24 @@ pub enum ConfigError {
     PluginPath { name: String },
     #[error("plugins.decides: {kind:?} is decided by two plugins")]
     PluginDecidesTwice { kind: String },
+    #[error("runners.name: {name:?} is not a name (letters, digits, - and _)")]
+    RunnerName { name: String },
+    #[error("runners: two runners are named {name:?}")]
+    RunnerTwice { name: String },
+    #[error(
+        "runners.host and runners.user of {name:?} must be one word that does not start with -"
+    )]
+    RunnerHost { name: String },
+    #[error(
+        "runners.working_dir of {name:?} must be an absolute path without quotes or line breaks"
+    )]
+    RunnerDir { name: String },
+    #[error("runners.bin_dir of {name:?} must be an absolute path without quotes or line breaks")]
+    RunnerBinDir { name: String },
+    #[error("runners.max_runs of {name:?} must be at least 1")]
+    RunnerMaxRuns { name: String },
+    #[error("agents.{agent}: there is no runner named {runner:?}")]
+    AgentRunner { agent: String, runner: String },
 }
 
 /// The server's configuration, with every default applied and every path made absolute against the file's directory.
@@ -161,6 +179,8 @@ pub struct Config {
     pub decision_model: Option<DecisionModelConfig>,
     /// The plugins in their own process, with their paths made absolute.
     pub plugins: Vec<PluginConfig>,
+    /// The machines that run harnesses over SSH, with their key files made absolute.
+    pub runners: Vec<RunnerConfig>,
     pub agents: BTreeMap<String, AgentConfig>,
 }
 
@@ -260,6 +280,17 @@ impl Config {
             .program
             .unwrap_or_else(|| PathBuf::from("pi-bolt"));
         let plugins = plugins(raw.plugins, base)?;
+        let runners = runners(raw.runners, base)?;
+        for (name, agent) in &raw.agents {
+            if let Some(runner) = &agent.runner
+                && !runners.iter().any(|r| &r.name == runner)
+            {
+                return Err(ConfigError::AgentRunner {
+                    agent: name.clone(),
+                    runner: runner.clone(),
+                });
+            }
+        }
         let claude_code = raw
             .claude_code
             .program
@@ -330,6 +361,7 @@ impl Config {
             teacher,
             decision_model,
             plugins,
+            runners,
             agents: raw.agents,
             data_dir,
         })
@@ -390,6 +422,42 @@ mod tests {
 
     fn parse(text: &str) -> Result<Config, ConfigError> {
         Config::parse(text, Path::new("/srv"), Path::new("/srv/moebius.toml"))
+    }
+
+    #[test]
+    fn runners_are_read_checked_and_named_by_agents() {
+        let c = parse(
+            "[[runners]]\nname = \"gpu\"\nhost = \"gpu.example.com\"\nworking_dir = \"/srv/moebius\"\n\
+             key_file = \"keys/gpu\"\nssh = \"bin/ssh\"\n[agents.Coder]\nmodel = \"m\"\nrunner = \"gpu\"\n",
+        )
+        .unwrap();
+        let runner = &c.runners[0];
+        assert_eq!(
+            (runner.max_runs, runner.user.as_deref(), runner.port),
+            (1, None, None)
+        );
+        assert_eq!(runner.key_file, Some(PathBuf::from("/srv/keys/gpu")));
+        assert_eq!(runner.ssh, PathBuf::from("/srv/bin/ssh"));
+        assert_eq!(c.agents["Coder"].runner.as_deref(), Some("gpu"));
+        assert!(parse("").unwrap().runners.is_empty());
+
+        let runner = |extra: &str| {
+            format!("[[runners]]\nname = \"gpu\"\nhost = \"h\"\nworking_dir = \"/w\"\n{extra}")
+        };
+        let refused = |text: String| parse(&text).unwrap_err().to_string();
+        assert!(refused(runner("max_runs = 0\n")).contains("max_runs"));
+        assert!(refused(runner("user = \"-oProxyCommand=x\"\n")).contains("one word"));
+        assert!(refused(runner("bin_dir = \"bin\"\n")).contains("bin_dir"));
+        assert!(refused(runner("typo = 1\n")).contains("typo"));
+        assert!(
+            refused("[[runners]]\nname = \"g\"\nhost = \"h\"\nworking_dir = \"w\"\n".into())
+                .contains("working_dir")
+        );
+        assert!(refused(format!("{}{}", runner(""), runner(""))).contains("two runners"));
+        assert!(
+            refused("[agents.Coder]\nmodel = \"m\"\nrunner = \"nowhere\"\n".into())
+                .contains("no runner named \"nowhere\"")
+        );
     }
 
     #[test]

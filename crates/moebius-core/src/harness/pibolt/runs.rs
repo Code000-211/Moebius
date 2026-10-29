@@ -12,6 +12,7 @@ use serde_json::json;
 use super::PiBolt;
 use crate::app::App;
 use crate::config::{AgentConfig, HarnessKind};
+use crate::harness::remote::{RemoteRun, Runners};
 use crate::repos::{Worktree, git};
 use crate::router::{Grant, Router};
 use crate::store::{Card, Repository, Run};
@@ -50,7 +51,14 @@ impl PiBolt {
         (purpose, prompt): (&str, &str),
         worktree: impl FnOnce(&Repository, &Path, i64) -> crate::repos::Result<Worktree>,
     ) -> Result<Run, String> {
-        let running = card_run(app, &self.router, card, (agent, config), purpose, worktree)?;
+        let running = card_run(
+            app,
+            (&self.router, &self.runners),
+            card,
+            (agent, config),
+            purpose,
+            worktree,
+        )?;
         self.launch_or_undo(app, Some(card), config, running, Some(prompt))
     }
 }
@@ -115,21 +123,28 @@ pub(in crate::harness) fn detached_run(
         token: issue_token(router, config, grant),
         purpose: purpose.into(),
         commit_message: String::new(),
+        remote: None,
     })
 }
 
 /// Records a run of `card` by `agent`, as `config` has it (on the harness it names), for `purpose`, with the worktree
 /// `worktree` makes for the run and its token. The agent leaves its work in the worktree, which is committed when the
 /// run ends. The commit the worktree starts at is recorded with the run (`Store::set_run_base`), which the trials of the
-/// regression set start from. The run fails when that cannot be done.
+/// regression set start from. The run fails when that cannot be done. When the agent names a runner, the run holds one
+/// of its runs from here on (see `remote`), and no run is made when the runner is full.
 pub(in crate::harness) fn card_run(
     app: &App,
-    router: &Router,
+    (router, runners): (&Router, &Arc<Runners>),
     card: &Card,
     (agent, config): (&str, &AgentConfig),
     purpose: &str,
     worktree: impl FnOnce(&Repository, &Path, i64) -> crate::repos::Result<Worktree>,
 ) -> Result<RunningRun, String> {
+    let slot = config
+        .runner
+        .as_deref()
+        .map(|name| runners.claim(name))
+        .transpose()?;
     let repository = app
         .store
         .repository(card.repository_id)
@@ -162,6 +177,7 @@ pub(in crate::harness) fn card_run(
             "#{}: {}\n\nCommitted by Moebius for its run.",
             card.number, card.title
         ),
+        remote: slot.map(|slot| Arc::new(RemoteRun::new(slot, run.id))),
     })
 }
 
@@ -178,6 +194,8 @@ pub(in crate::harness) struct RunningRun {
     pub(in crate::harness) purpose: String,
     /// The message of the commit of what the agent leaves in the worktree.
     pub(in crate::harness) commit_message: String,
+    /// The runner the harness goes on, if the run is not on the server.
+    pub(in crate::harness) remote: Option<Arc<RemoteRun>>,
 }
 
 impl RunningRun {
@@ -194,9 +212,22 @@ impl RunningRun {
         Ok(git(worktree, &["rev-parse", "HEAD"])? != self.start)
     }
 
-    /// Closes the terminals open on the run, then removes the worktree, or the chat's empty directory.
+    /// Brings what the agent did on the runner into the worktree: committed there, fetched, and the worktree set to
+    /// it. A run on the server has nothing to bring.
+    pub(in crate::harness) fn bring_back(&self) -> Result<(), String> {
+        match &self.remote {
+            Some(remote) => remote.bring_back(&self.worktree, &self.commit_message),
+            None => Ok(()),
+        }
+    }
+
+    /// Closes the terminals open on the run, then removes the worktree, or the chat's empty directory, and what the
+    /// run left on its runner.
     pub(in crate::harness) fn remove_worktree(&self, app: &App) {
         app.terminals.close(self.id);
+        if let Some(remote) = &self.remote {
+            remote.cleanup();
+        }
         match &self.clone {
             Some(clone) => drop(app.repos.remove_worktree(clone, &self.worktree)),
             None => drop(std::fs::remove_dir_all(&self.worktree)),

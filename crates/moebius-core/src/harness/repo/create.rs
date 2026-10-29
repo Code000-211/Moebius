@@ -118,6 +118,7 @@ fn fill(
             harness: agent.harness,
             tool_output: agent.tool_output,
             engineering_skills: agent.engineering_skills,
+            runner: agent.runner.clone(),
         };
         let settings = toml::to_string(&settings)
             .map_err(|e| AppError::Invalid(format!("cannot write the agent {name}: {e}")))?;

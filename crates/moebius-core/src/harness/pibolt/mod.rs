@@ -34,6 +34,9 @@ mod agents;
 mod chat;
 mod process;
 mod reader;
+// Unix only: the fake `ssh` and the fake Pi are Python scripts started by their `#!` lines.
+#[cfg(all(test, unix))]
+mod remote_tests;
 mod runs;
 #[cfg(all(test, unix))]
 mod testing;
@@ -51,6 +54,7 @@ use serde_json::{Value, json};
 use crate::app::{App, ChatSettings};
 use crate::board::{AgentInfo, Runs};
 use crate::config::{AgentConfig, AgentSet};
+use crate::harness::remote::Runners;
 use crate::router::Router;
 use crate::store::{Card, Repository, Run};
 use tui::Follower;
@@ -88,6 +92,8 @@ pub struct PiBolt {
     pub router: Arc<Router>,
     /// The agents runs use. The harness configuration repository swaps them when it changes.
     pub agents: Arc<RwLock<AgentSet>>,
+    /// The machines an agent's `runner` can name; none unless the server sets them.
+    pub runners: Arc<Runners>,
     live: Arc<Mutex<HashMap<i64, Live>>>,
     /// The chats whose terminal interface is open, or that waited [`IDLE`], which have no Pi of their own meanwhile.
     /// Taken before `live` by whoever takes both, and held while a chat moves between the two.
@@ -153,6 +159,7 @@ impl PiBolt {
                 errors: BTreeMap::new(),
                 skill_overrides: BTreeMap::new(),
             })),
+            runners: Arc::new(Runners::default()),
             live: Arc::new(Mutex::new(HashMap::new())),
             paused: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -190,7 +197,22 @@ impl Runs for PiBolt {
         purpose: &str,
         note: Option<&str>,
     ) -> Result<Run, String> {
-        let config = self.agent(app, agent)?;
+        self.start_on(app, card, agent, purpose, note, None)
+    }
+
+    fn start_on(
+        &self,
+        app: &Arc<App>,
+        card: &Card,
+        agent: &str,
+        purpose: &str,
+        note: Option<&str>,
+        runner: Option<&str>,
+    ) -> Result<Run, String> {
+        let mut config = self.agent(app, agent)?;
+        if runner.is_some() {
+            config.runner = runner.map(String::from);
+        }
         let prompt = prompt_for(app, card, purpose, note);
         let code_branch = app.store.code_branch(card.id).map_err(|e| e.to_string())?;
         let worktree = |repository: &Repository, clone: &Path, run_id: i64| {
@@ -279,6 +301,10 @@ impl Runs for PiBolt {
 
     fn end(&self, run_id: i64) -> bool {
         self.end_chat(run_id)
+    }
+
+    fn runners(&self) -> Vec<crate::harness::remote::RunnerInfo> {
+        self.runners.list()
     }
 
     fn has_agent(&self, name: &str) -> bool {

@@ -369,6 +369,7 @@ CREATE TABLE firings (
 ALTER TABLE runs ADD COLUMN base TEXT;
 ALTER TABLE trials ADD COLUMN regression INTEGER NOT NULL DEFAULT 0;
 "#,
+    "ALTER TABLE runs ADD COLUMN runner TEXT;",
 ];
 
 pub fn now() -> i64 {

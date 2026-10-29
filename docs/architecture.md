@@ -65,6 +65,14 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
    the agent's `harness` names: an agent on `claude-code` is started by `ClaudeCode::start` the same way (`card_run`
    makes the run, worktree and token for both), with a checked token (`Router::issue_checked_token`), so that the router
    checks the tool calls of its answers (`router/calls/`), since Claude Code has no bridge.
+   When the agent names a runner (`agents.<name>.runner`, or the fourth argument of `moebius.start_run`, which reaches the
+   harness as `Runs::start_on`), `card_run` takes one of the runner's runs first (`Runners::claim`; a full runner makes
+   no run) and the run carries a `RemoteRun` (`harness/remote/`). Its launch opens the reverse tunnel to the router
+   (`RemoteRun::connect`), pushes the worktree's commit to the runner's clone (`prepare`), writes the agent directory with
+   the tunnel's URL in place of the router's, and starts the harness through `RemoteRun::command`, which turns the local
+   command into one `ssh` that copies the files it names and runs it in the run's checkout there. Everything after that is
+   as for a local run, the reader included. When the run ends `finish` first has the runner commit what the agent left and
+   fetches it into the worktree (`RunningRun::bring_back`), so that the commit, the checks and the change are done here.
 6. **Pi works.** A thread per run (`Reader::read`) reads Pi's records: each is stored and published as `run_event` with
    its `seq` (`App::record_run_event`, which `check::ask` and `App::steer_run` use too). Pi asks the model through the router (`Router::forward`), which counts the tokens and may
    refuse with 429.
@@ -506,6 +514,9 @@ At the top:
 | `harness/claude/process.rs` | Starting Claude Code: its own configuration directory with the agent's skills, `mcp.json`, its command line and environment (the router and the run's token) and its process. |
 | `harness/claude/reader.rs` | Reading Claude Code's `stream-json` records as the run events a Pi-Bolt run has, and ending the run. |
 | `harness/claude/tests.rs` | For the tests only: Claude Code runs and chats against the fake `claude`, and the router's check of its calls. |
+| `harness/pibolt/remote_tests.rs` | For the tests only: runs on a runner over the fake `ssh` of `testdata/`. |
+| `harness/remote/mod.rs` | The runners (`[[runners]]`): which machines there are and how many runs go on each (`Runners`, a `Slot` per run, the list `GET /v1/runners` answers). |
+| `harness/remote/session.rs` | One run on a runner over SSH (`RemoteRun`): the reverse tunnel to the router, the run's branch pushed to the machine's clone and checked out, the harness's command line turned into an `ssh` command with the files it names copied over, and the commits fetched back. |
 | `harness/pick.rs` | `Harnesses`, the server's `Runs`: Pi-Bolt and Claude Code side by side, each run on the harness its agent names. |
 | `harness/terminal.rs` | A person's shell in a run's worktree on a pseudo-terminal (`portable-pty`), served over the WebSocket `GET /v1/runs/{id}/terminal` (and `GET /v1/terminal`, in the directory of `moebius.toml`); at most 4 per run or on the server, not checked by the guard. The same serving carries Pi-Bolt's interactive mode for a waiting chat (`GET /v1/chats/{id}/tui`, one per chat), whose tool calls the bridge still checks; `harness/pibolt/tui.rs` ends the chat's own Pi for it, continues the chat's Pi session in it, records what it adds to the session file as the chat's events, and starts the chat's Pi again on the same session when it closes. |
 | `harness/repo/mod.rs` | The harness configuration repository's clone: opened, refreshed, and its agents read again when it changes. |

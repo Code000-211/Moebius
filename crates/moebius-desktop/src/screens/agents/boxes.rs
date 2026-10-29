@@ -8,7 +8,7 @@ use iced::widget::{
 use iced::{Alignment, Border, Element, Length};
 
 use crate::app::Message as AppMessage;
-use crate::client::{AvailableModel, BuiltInAgent, McpServer, Skill};
+use crate::client::{AvailableModel, BuiltInAgent, McpServer, Runner, Skill};
 use crate::widgets::form::{
     HARNESSES, LEVELS, PROTOCOLS, aside, box_heading, field, menu_style, pick_style,
 };
@@ -21,7 +21,7 @@ use crate::{screens::connect, theme};
 use super::Agents;
 use super::editor::Editor;
 use super::editor::add_chosen;
-use super::{COMPRESS, ENGINEERING, ENGINEERING_AGENTS, Message, NOT_SET};
+use super::{COMPRESS, ENGINEERING, ENGINEERING_AGENTS, Message, NOT_SET, THIS_SERVER};
 
 /// A row of a list: what names it, and a line under it that is red when something is wrong.
 fn item<'a>(name: Element<'a, AppMessage>, line: &str, red: bool) -> Element<'a, AppMessage> {
@@ -57,7 +57,11 @@ fn section<'a>(
     boxed(content)
 }
 
-fn settings_row<'a>(editor: &'a Editor, models: &[AvailableModel]) -> Element<'a, AppMessage> {
+fn settings_row<'a>(
+    editor: &'a Editor,
+    models: &[AvailableModel],
+    runners: &[Runner],
+) -> Element<'a, AppMessage> {
     let message = |message| AppMessage::Agents(message);
     let model = model_picker::field(
         models,
@@ -132,14 +136,43 @@ fn settings_row<'a>(editor: &'a Editor, models: &[AvailableModel]) -> Element<'a
     .width(Length::Fill)
     .style(pick_style)
     .menu_style(menu_style);
-    let settings = row![
+    let mut settings = row![
         field("Model", model),
         field("Protocol", protocol),
         field("Harness", harness),
-        field("Thinking", thinking),
-        field("Token budget per card", budget),
     ]
     .spacing(14);
+    // Where its runs go: the server itself, or a machine of `[[runners]]` over SSH. Shown only when there are any (or
+    // the agent names one that is gone, so that it can be taken off).
+    if !runners.is_empty() || editor.runner.is_some() {
+        let mut places: Vec<String> = std::iter::once(THIS_SERVER.to_string())
+            .chain(runners.iter().map(|runner| runner.name.clone()))
+            .collect();
+        if let Some(runner) = &editor.runner
+            && !places.contains(runner)
+        {
+            places.push(runner.clone());
+        }
+        let runner = pick_list(
+            places,
+            Some(
+                editor
+                    .runner
+                    .clone()
+                    .unwrap_or_else(|| THIS_SERVER.to_string()),
+            ),
+            move |runner| message(Message::RunnerChosen(runner)),
+        )
+        .text_size(theme::BODY)
+        .padding([9, 12])
+        .width(Length::Fill)
+        .style(pick_style)
+        .menu_style(menu_style);
+        settings = settings.push(field("Runner", runner));
+    }
+    let settings = settings
+        .push(field("Thinking", thinking))
+        .push(field("Token budget per card", budget));
     // The skills Moebius brings for some of the built-in roles can be turned off for the agent.
     let engineering = ENGINEERING_AGENTS.contains(&editor.name.as_str()).then(|| {
         let given = pick_list(
@@ -470,6 +503,6 @@ impl Agents {
     /// Model, protocol, thinking level and token budget.
     pub(super) fn settings_row<'a>(&'a self, editor: &'a Editor) -> Element<'a, AppMessage> {
         let models = self.available.as_ref().map_or(vec![], |a| a.choices());
-        settings_row(editor, &models)
+        settings_row(editor, &models, &self.runners)
     }
 }

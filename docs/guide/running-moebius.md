@@ -150,6 +150,39 @@ the server in WSL (see [On Windows](#on-windows)). Every key named here is in th
    its latest review is its review, and a merge on the forge, or in the app, finishes its card. One server reaches one
    Forgejo. See [configuration](../reference/configuration.md#forgejo).
 
+9. Run harnesses on another machine. A GPU box, a bigger build machine or a machine with tools the server lacks can run
+   the harness of an agent's runs over SSH, while the server keeps the board, the router, the checks and the store. On
+   that machine install `git`, `sshd` and the harness (`pi-bolt`, and `claude` for agents on Claude Code), and let the
+   server's user log in with a key and no passphrase; log in once by hand so that the host key is in the server's
+   `known_hosts`, because Moebius never answers an SSH question. Then name the machine in `moebius.toml` and send an
+   agent there:
+
+   ```toml
+   [[runners]]
+   name = "gpu-box"
+   host = "gpu.example.com"
+   user = "moebius"
+   key_file = "gpu-box.key"
+   working_dir = "/srv/moebius"
+   max_runs = 2
+   bin_dir = "/usr/local/bin"
+
+   [agents.Coder]
+   model = "qwen3.8-flash-next"
+   runner = "gpu-box"
+   ```
+
+   Restart the server and check `moebius runners`. A run of the Coder now pushes its branch over SSH to a clone under
+   `/srv/moebius/repos/`, starts the harness in a checkout under `/srv/moebius/runs/<id>/work`, and fetches what the
+   agent committed back into the card's worktree when it ends, so the rest of the card (the checks, the review, the
+   change) goes on at the server as always. The machine needs no access to the server's network: the harness reaches the
+   router, the tool-call check and the MCP gateway through an SSH reverse tunnel that the server holds open for the
+   run, so every tool call is still checked by the server. At most `max_runs` runs go on the machine; one more is
+   not started: `moebius.start_run` raises `the runner gpu-box is busy`, the card waits with that as its `script error`,
+   and its script is tried again on the next tick, so the card starts once a run on the machine has ended. A column script can choose the machine for one run:
+   `moebius.start_run("Coder", "code", card.note, "gpu-box")`. Chats, the Retro and the Autoresearcher always run on the
+   server. The live view shows a run's runner. See [configuration](../reference/configuration.md#runners).
+
 ## On Windows
 
 The desktop app and the `moebius` commands that operate a server run on Windows. Download
@@ -212,6 +245,12 @@ run the `sha256sum` line of step 1 on it: it must print `FAILED`.
 - Forgejo repositories report `forge_error` with `401` or `403`: the token was revoked or lacks a scope. With `404`, the
   repository is not `owner/repo` as its address on the forge shows it, or the token's user cannot see it.
 - Runs fail because `pi-bolt` is not found: the service's `PATH` is not yours. Set `pi_bolt.program` to the full path.
+- A run on a runner fails at once with `gpu.example.com failed: ...` or `the tunnel to gpu.example.com did not come up`:
+  log in from the server's user with the same command Moebius uses (`ssh -o BatchMode=yes -i <key_file> <user>@<host>
+  true`). The usual causes are a key that asks for a passphrase, a host key that is not in `known_hosts`, a
+  `working_dir` the user cannot create, and an `sshd` that forbids remote forwarding (`AllowTcpForwarding no`).
+- A run on a runner fails with `command not found`: the harness is not on the `PATH` of a non-interactive login. Set
+  `bin_dir` to its directory.
 - The app cannot connect from another machine: the server still listens on `127.0.0.1`, or a firewall blocks the port.
   `listen` takes an address of the machine, and a change of it needs a restart.
 - The app says the token is wrong after a restore or a move: the token is the content of `.moebius/token` of the server

@@ -44,6 +44,9 @@ pub struct AgentSettings {
     /// How the outputs of its tools are kept small (the table `[tool_output]`); left out when it is the default.
     #[serde(default, skip_serializing_if = "ToolOutput::is_default")]
     pub tool_output: ToolOutput,
+    /// The runner (`[[runners]]` of `moebius.toml`) the agent's runs go to; left out for the server itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runner: Option<String>,
     /// Whether it is given the engineering skills Moebius brings for it; on unless the file says `false`.
     #[serde(default = "default_true", skip_serializing_if = "is_true")]
     pub engineering_skills: bool,
@@ -251,6 +254,7 @@ pub(super) fn agent_config(
         harness: settings.harness,
         tool_output: settings.tool_output,
         engineering_skills: settings.engineering_skills,
+        runner: settings.runner.clone(),
     }
 }
 

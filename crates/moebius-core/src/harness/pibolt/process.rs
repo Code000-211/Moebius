@@ -18,6 +18,7 @@ use crate::app::App;
 use crate::bus::AppEvent;
 use crate::config::AgentConfig;
 use crate::harness::mcp;
+use crate::harness::remote::Local;
 use crate::router::Protocol;
 use crate::store::{Card, Run};
 
@@ -99,17 +100,29 @@ impl PiBolt {
         agent: &AgentConfig,
         token: &str,
     ) -> Result<PathBuf, String> {
+        self.write_agent_files(agent_dir, agent, token, &self.router_url)
+    }
+
+    /// Writes the agent directory as `write_agent_dir` does, with the router at `router_url`, which is the tunnel's end
+    /// for a run on a runner.
+    fn write_agent_files(
+        &self,
+        agent_dir: PathBuf,
+        agent: &AgentConfig,
+        token: &str,
+        router_url: &str,
+    ) -> Result<PathBuf, String> {
         std::fs::create_dir_all(&agent_dir).map_err(|e| e.to_string())?;
         if !agent.mcp.is_empty() {
             // The run reaches its servers only through the MCP gateway, which is given their values.
             let servers = mcp::with_values(&agent.mcp, &|name| std::env::var(name).ok())?;
             self.router.allow_mcp(token, servers);
-            let gateway = mcp::pi_config(&format!("{}/mcp", self.router_url), token);
+            let gateway = mcp::pi_config(&format!("{router_url}/mcp"), token);
             write_private(&agent_dir.join("mcp.json"), &gateway)?;
         }
         let (api, base_url) = match agent.protocol {
-            Protocol::OpenAi => ("openai-completions", format!("{}/v1", self.router_url)),
-            Protocol::Anthropic => ("anthropic-messages", self.router_url.clone()),
+            Protocol::OpenAi => ("openai-completions", format!("{router_url}/v1")),
+            Protocol::Anthropic => ("anthropic-messages", router_url.to_string()),
         };
         let models = json!({
             "providers": {
@@ -139,8 +152,21 @@ impl PiBolt {
             .set_run_worktree(run.id, &run.worktree.to_string_lossy())
             .map_err(|e| e.to_string())?;
         let run_dir = run_dir(app, run.id);
+        // On a runner the run reaches the router through the tunnel, whose end is where the files say it is.
+        let remote = run.remote.clone();
+        if let (Some(remote), Some(card)) = (&remote, card) {
+            remote.connect(&self.router_url)?;
+            remote.prepare(&run.worktree, &format!("repo-{}", card.repository_id))?;
+            app.store
+                .set_run_runner(run.id, remote.runner())
+                .map_err(|e| e.to_string())?;
+        }
+        let router_url = remote
+            .as_ref()
+            .and_then(|remote| remote.router_url())
+            .unwrap_or(&self.router_url);
         let agent_dir = self
-            .write_agent_dir(run_dir.join("agent"), agent, &run.token)
+            .write_agent_files(run_dir.join("agent"), agent, &run.token, router_url)
             .map_err(|e| format!("cannot write the agent directory: {e}"))?;
         let bridge = run_dir.join("moebius-bridge.ts");
         std::fs::write(&bridge, BRIDGE)
@@ -166,6 +192,14 @@ impl PiBolt {
             operates,
         };
         let mut command = self.command(agent, &place, false);
+        if let Some(remote) = &remote {
+            let local = Local {
+                worktree: &run.worktree,
+                run_dir: &run_dir,
+                router_url: &self.router_url,
+            };
+            command = remote.command(&command, &local)?;
+        }
         let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

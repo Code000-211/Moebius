@@ -37,6 +37,7 @@ use crate::harness::pibolt::{
     AUTORESEARCHER_AGENT, RETRO_AGENT, RunningRun, agent_list, card_run, chat_run, detached_run,
     fail, finish, has_agent, keep, prompt_for, resolve_agent,
 };
+use crate::harness::remote::Runners;
 use crate::router::Router;
 use crate::store::{Card, Repository, Run};
 
@@ -54,6 +55,8 @@ pub struct ClaudeCode {
     pub router: Arc<Router>,
     /// The agents, shared with Pi-Bolt.
     pub agents: Arc<RwLock<AgentSet>>,
+    /// The machines an agent's `runner` can name, shared with Pi-Bolt.
+    pub runners: Arc<Runners>,
     live: Arc<Mutex<HashMap<i64, Live>>>,
 }
 
@@ -96,6 +99,7 @@ impl ClaudeCode {
             api_url: OnceLock::new(),
             router,
             agents,
+            runners: Arc::new(Runners::default()),
             live: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -171,7 +175,22 @@ impl Runs for ClaudeCode {
         purpose: &str,
         note: Option<&str>,
     ) -> Result<Run, String> {
-        let config = self.agent(app, agent)?;
+        self.start_on(app, card, agent, purpose, note, None)
+    }
+
+    fn start_on(
+        &self,
+        app: &Arc<App>,
+        card: &Card,
+        agent: &str,
+        purpose: &str,
+        note: Option<&str>,
+        runner: Option<&str>,
+    ) -> Result<Run, String> {
+        let mut config = self.agent(app, agent)?;
+        if runner.is_some() {
+            config.runner = runner.map(String::from);
+        }
         let prompt = prompt_for(app, card, purpose, note);
         let code_branch = app.store.code_branch(card.id).map_err(|e| e.to_string())?;
         let worktree = |repository: &Repository, clone: &Path, run_id: i64| {
@@ -179,7 +198,14 @@ impl Runs for ClaudeCode {
             app.repos
                 .add_worktree(&repository.name, clone, run_id, &base)
         };
-        let running = card_run(app, &self.router, card, (agent, &config), purpose, worktree)?;
+        let running = card_run(
+            app,
+            (&self.router, &self.runners),
+            card,
+            (agent, &config),
+            purpose,
+            worktree,
+        )?;
         self.launch_or_undo(app, Some(card), &config, running, Some(&prompt))
     }
 
@@ -199,7 +225,14 @@ impl Runs for ClaudeCode {
             app.repos
                 .add_trial_worktree(name, clone, proposal, card.id, base)
         };
-        let running = card_run(app, &self.router, card, (agent, &config), "trial", worktree)?;
+        let running = card_run(
+            app,
+            (&self.router, &self.runners),
+            card,
+            (agent, &config),
+            "trial",
+            worktree,
+        )?;
         self.launch_or_undo(app, Some(card), &config, running, Some(&prompt))
     }
 

@@ -44,7 +44,7 @@ the person merges your change.
 `card` is read only: `id`, `number`, `title`, `body`, `author`, `column`, `trusted`, `confirmed`, `blocked_by`,
 `rounds`, `reviews`, `tokens`, `stopped`, `note`, and the tables `run`, `review` and `change`, which can be nil. The
 `moebius` table acts: `move(column, note)`, `wait(reason)`, `ask(kind, reason)`, `stuck(reason)`,
-`start_run(agent, purpose, note)`, `has_agent(name)`, `agent_budget(name)`, `runs_active()`, `tokens_today()`,
+`start_run(agent, purpose, note, runner)`, `has_agent(name)`, `agent_budget(name)`, `runs_active()`, `tokens_today()`,
 `decide(kind, context, options, fail_closed)`, `publish_change()`, `run_checks()`, `offer_change()`,
 `record_outcome(outcome)` and the constants `run_limit`, `round_limit`, `day_budget`. Check every other name in
 `reference/column-scripts.md` of the `moebius` skill; what it does not list does not exist. A script keeps no state between ticks, sees only its own card and has no

@@ -18,6 +18,9 @@ pub struct Run {
     /// Whether a chat works in the harness configuration repository.
     #[serde(default)]
     pub harness_repository: bool,
+    /// The runner the run's harness went on; none for a run on the server.
+    #[serde(default)]
+    pub runner: Option<String>,
 }
 
 /// One stored event of a run, as `GET /v1/runs/{id}/events` lists it and the stream's `run_event` carries it.

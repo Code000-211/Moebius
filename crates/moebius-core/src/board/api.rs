@@ -1,7 +1,8 @@
 //! The `moebius` table, through which a script acts on its card:
 //!
 //! - `moebius.decide(kind, context, options, fail_closed) -> choice, reason`: a decision point (always recorded).
-//! - `moebius.start_run(agent, purpose, note) -> run id`: starts a run for the card; `note` is added to its prompt.
+//! - `moebius.start_run(agent, purpose, note, runner) -> run id`: starts a run for the card; `note` is added to its
+//!   prompt, and `runner` names the runner (`[[runners]]`) it goes to in place of the agent's own.
 //! - `moebius.has_agent(name)`: whether an agent of that name is configured.
 //! - `moebius.move(column, note)`: moves the card when the script returns; `note` says why, for the next `code` run.
 //! - `moebius.wait(reason)`: leaves the card where it is.
@@ -91,9 +92,22 @@ impl Engine {
         m.set(
             "start_run",
             lua.create_function(
-                move |_, (agent, purpose, note): (String, String, Option<String>)| {
+                move |_,
+                      (agent, purpose, note, runner): (
+                    String,
+                    String,
+                    Option<String>,
+                    Option<String>,
+                )| {
                     let run = outside_script(&clock, || {
-                        runs.start(&app, &card_copy, &agent, &purpose, note.as_deref())
+                        runs.start_on(
+                            &app,
+                            &card_copy,
+                            &agent,
+                            &purpose,
+                            note.as_deref(),
+                            runner.as_deref(),
+                        )
                     })
                     .map_err(mlua::Error::runtime)?;
                     fx.borrow_mut().started_run = Some(run.id);

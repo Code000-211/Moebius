@@ -1,6 +1,7 @@
 //! The agents, skills and MCP servers, read from and edited in the harness configuration repository (see
 //! [`crate::harness::repo`]), and setting one up.
 //!
+//! - `GET /v1/runners`: the runners (`[[runners]]`) agents can name, with how many runs go on each.
 //! - `GET /v1/agents`: the agents the server can run. `GET`, `PUT` and `DELETE /v1/agents/{name}`: read, write and delete
 //!   an agent of the harness configuration repository; a built-in agent is read without one.
 //! - `GET /v1/skills` and `GET /v1/mcp-servers`: the skills and MCP servers an agent can name, and `GET`, `PUT` and
@@ -33,6 +34,7 @@ use crate::server::settings::Saved;
 /// The routes of the agents, skills and MCP servers.
 pub(super) fn routes() -> Router<ApiState> {
     Router::new()
+        .route("/v1/runners", get(runners))
         .route("/v1/agents", get(agents))
         .route(
             "/v1/agents/{name}",
@@ -57,6 +59,12 @@ pub(super) fn routes() -> Router<ApiState> {
                 .put(put_mcp_server)
                 .delete(delete_mcp_server),
         )
+}
+
+async fn runners(
+    State(state): State<ApiState>,
+) -> axum::Json<Vec<crate::harness::remote::RunnerInfo>> {
+    axum::Json(state.runs.runners())
 }
 
 async fn agents(State(state): State<ApiState>) -> axum::Json<Vec<AgentInfo>> {
@@ -509,6 +517,18 @@ mod tests {
         let (_dir, state, addr) = start_with(BTreeMap::new()).await;
         let listed: serde_json::Value = get(&state, &addr, "/v1/agents").await;
         assert_eq!(listed, serde_json::json!([]));
+    }
+
+    #[tokio::test]
+    async fn the_runners_are_listed_without_their_key() {
+        let (_dir, state, addr) = start().await;
+        let listed: serde_json::Value = get(&state, &addr, "/v1/runners").await;
+        assert_eq!(
+            listed,
+            serde_json::json!([
+                { "name": "gpu-box", "host": "gpu.example.com", "user": "moebius", "max_runs": 2, "busy": 0 },
+            ])
+        );
     }
 
     #[tokio::test]

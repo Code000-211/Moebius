@@ -17,6 +17,7 @@ use crate::bus::AppEvent;
 use crate::config::AgentConfig;
 use crate::harness::mcp;
 use crate::harness::pibolt::{MOEBIUS_AGENT, RunningRun, keep};
+use crate::harness::remote::Local;
 use crate::store::Card;
 
 /// A new session id for Claude Code's `--session-id`: a random UUID.
@@ -95,12 +96,13 @@ impl ClaudeCode {
     /// Writes the run's configuration directory `config_dir`, with each of the agent's skills linked (copied on Windows)
     /// into `skills/` under its directory's name, and `mcp_file` with the MCP gateway and the run's `token`, if the agent
     /// has MCP servers; returns the file then. The gateway is told the servers with their values; only the server's user can read the file.
+    /// The router is at `router_url`, which is the tunnel's end for a run on a runner.
     pub(super) fn write_config(
         &self,
         config_dir: &Path,
         mcp_file: PathBuf,
         agent: &AgentConfig,
-        token: &str,
+        (token, router_url): (&str, &str),
     ) -> Result<Option<PathBuf>, String> {
         let skills = config_dir.join("skills");
         std::fs::create_dir_all(&skills).map_err(|e| e.to_string())?;
@@ -120,7 +122,7 @@ impl ClaudeCode {
         // The run reaches its servers only through the MCP gateway, which is given their values.
         let servers = mcp::with_values(&agent.mcp, &|name| std::env::var(name).ok())?;
         self.router.allow_mcp(token, servers);
-        let gateway = mcp::claude_config(&format!("{}/mcp", self.router_url), token);
+        let gateway = mcp::claude_config(&format!("{router_url}/mcp"), token);
         write_private(&mcp_file, &gateway)?;
         Ok(Some(mcp_file))
     }
@@ -141,8 +143,26 @@ impl ClaudeCode {
             .map_err(|e| e.to_string())?;
         let run_dir = app.data_dir.join("runs").join(run.id.to_string());
         let config_dir = run_dir.join("claude");
+        // On a runner the run reaches the router through the tunnel, whose end is where the files say it is.
+        let remote = run.remote.clone();
+        if let (Some(remote), Some(card)) = (&remote, card) {
+            remote.connect(&self.router_url)?;
+            remote.prepare(&run.worktree, &format!("repo-{}", card.repository_id))?;
+            app.store
+                .set_run_runner(run.id, remote.runner())
+                .map_err(|e| e.to_string())?;
+        }
+        let router_url = remote
+            .as_ref()
+            .and_then(|remote| remote.router_url())
+            .unwrap_or(&self.router_url);
         let mcp = self
-            .write_config(&config_dir, run_dir.join("mcp.json"), agent, &run.token)
+            .write_config(
+                &config_dir,
+                run_dir.join("mcp.json"),
+                agent,
+                (&run.token, router_url),
+            )
             .map_err(|e| format!("cannot write the configuration directory: {e}"))?;
         let stderr = std::fs::OpenOptions::new()
             .create(true)
@@ -163,8 +183,16 @@ impl ClaudeCode {
             token: &run.token,
             operates,
         };
-        let mut child = self
-            .command(agent, &place)
+        let mut command = self.command(agent, &place);
+        if let Some(remote) = &remote {
+            let local = Local {
+                worktree: &run.worktree,
+                run_dir: &run_dir,
+                router_url: &self.router_url,
+            };
+            command = remote.command(&command, &local)?;
+        }
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::from(stderr))

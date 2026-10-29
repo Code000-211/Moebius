@@ -133,6 +133,8 @@ pub(in crate::harness) fn finish<L>(
     ending: Result<bool, String>,
 ) {
     router.revoke_token(&run.token);
+    // What the agent did on a runner is brought into the worktree first, so that all that follows sees it.
+    let ending = ending.and_then(|aborted| run.bring_back().map(|()| aborted));
     let failed = |why: &str| {
         let _ = app.record_run_event(run.id, "moebius_error", &json!({ "message": why }));
         "failed"

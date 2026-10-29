@@ -3,7 +3,7 @@
 use super::board::encoded;
 use crate::client::{
     Agent, AgentDetail, AgentSettings, Client, ClientError, FileDetail, McpDefinition, McpServer,
-    McpServerDetail, RulesView, Skill, SkillDetail, Upload,
+    McpServerDetail, RulesView, Runner, Skill, SkillDetail, Upload,
 };
 
 /// The route of one of a skill's other files.
@@ -15,6 +15,11 @@ impl Client {
     /// The agents a chat can be with, the Moebius agent first.
     pub async fn agents(&self) -> Result<Vec<Agent>, ClientError> {
         self.get("/v1/agents").await
+    }
+
+    /// The runners an agent can name.
+    pub async fn runners(&self) -> Result<Vec<Runner>, ClientError> {
+        self.get("/v1/runners").await
     }
 
     /// An agent of the harness configuration repository, with its instructions.
