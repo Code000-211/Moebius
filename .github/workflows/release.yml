@@ -1,7 +1,7 @@
 name: Release
 
-# A tag `vX.Y.Z` builds the server and the desktop app for Linux x86_64, packages them with `dist/package.sh` and publishes a GitHub
-# release with the archives and `SHA256SUMS`. Started by hand, it builds and keeps the archives as workflow artifacts and
+# A tag `vX.Y.Z` builds the server and the desktop app for Linux x86_64 and for Windows x86_64, packages them with
+# `dist/package.sh` and publishes a GitHub release with the archives and `SHA256SUMS`. Started by hand, it builds and keeps the archives as workflow artifacts and
 # publishes nothing.
 on:
   push:
@@ -10,6 +10,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # aws-lc-sys uses its prebuilt NASM objects on Windows, which has no NASM.
+  AWS_LC_SYS_PREBUILT_NASM: 1
 
 jobs:
   build:
@@ -19,8 +21,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, package: moebius, binary: moebius }
-          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, package: moebius-desktop, binary: moebius-desktop }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, package: moebius, packages: -p moebius, binary: moebius }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, package: moebius-desktop, packages: -p moebius-desktop, binary: moebius-desktop }
+          # One archive with both programs; package.sh takes moebius-desktop.exe from beside moebius.exe.
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, package: windows, packages: -p moebius -p moebius-desktop, binary: moebius.exe }
     defaults:
       run:
         shell: bash
@@ -41,7 +45,7 @@ jobs:
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
       - name: Build
-        run: cargo build --release --locked --target ${{ matrix.target }} -p ${{ matrix.package }}
+        run: cargo build --release --locked --target ${{ matrix.target }} ${{ matrix.packages }}
       - name: Package
         run: dist/package.sh "target/${{ matrix.target }}/release/${{ matrix.binary }}" ${{ matrix.target }} "$VERSION"
       - uses: actions/upload-artifact@v4
@@ -65,7 +69,7 @@ jobs:
           merge-multiple: true
       - name: Write SHA256SUMS
         working-directory: release
-        run: sha256sum *.tar.gz > SHA256SUMS
+        run: sha256sum *.tar.gz *.zip > SHA256SUMS
       - name: Publish the release
         uses: softprops/action-gh-release@v2.2.2
         with:

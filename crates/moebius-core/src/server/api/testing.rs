@@ -1,6 +1,9 @@
 //! What the tests of the API's parts share: a server on port 0 over a fake Pi, requests with its token, and waiting
 //! for what the harness does.
 
+// The tests that use some of these are Unix only.
+#![cfg_attr(not(unix), allow(unused))]
+
 use std::collections::BTreeMap;
 use std::sync::Arc;
 

@@ -116,6 +116,8 @@ pub(super) fn measure(
 }
 
 #[cfg(test)]
+// Some tests are Unix only; on Windows what only they use is unused.
+#[cfg_attr(not(unix), allow(unused))]
 mod tests {
     use super::*;
     use crate::repos::git;
@@ -141,6 +143,8 @@ mod tests {
         (dir, app, repository)
     }
 
+    // Unix only: the measure runs with `sh`.
+    #[cfg(unix)]
     #[test]
     fn a_measure_runs_in_a_worktree_with_a_clean_environment_and_a_time_limit() {
         let (_dir, app, repository) = app_with_repository();

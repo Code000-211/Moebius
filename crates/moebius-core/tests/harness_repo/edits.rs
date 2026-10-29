@@ -145,6 +145,7 @@ async fn an_edit_through_the_api_is_a_commit_that_is_pushed_and_a_failed_push_un
     // A push that fails undoes the commit, so the clone does not drift from the origin.
     let hook = origin.join("hooks/pre-receive");
     std::fs::write(&hook, "#!/bin/sh\necho 'closed for edits' >&2\nexit 1\n").unwrap();
+    #[cfg(unix)]
     std::fs::set_permissions(&hook, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     let edit = json!({ "settings": { "model": "never" } });
     let (status, body) = api
@@ -187,6 +188,8 @@ async fn an_edit_through_the_api_is_a_commit_that_is_pushed_and_a_failed_push_un
     assert_ne!(head(&clone), start);
 }
 
+// Unix only: the run is on the fake Pi, a Python script started by its `#!` line.
+#[cfg(unix)]
 #[tokio::test]
 async fn skills_are_edited_as_commits_and_an_agent_is_given_a_new_skill() {
     use reqwest::Method;

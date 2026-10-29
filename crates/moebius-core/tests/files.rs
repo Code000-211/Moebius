@@ -293,6 +293,8 @@ async fn a_file_is_saved_as_a_commit_and_the_decision_names_who() {
     assert!(decisions.iter().any(|d| d.reason == "greet"));
 }
 
+// Unix only: making a symbolic link needs a privilege on Windows.
+#[cfg(unix)]
 #[tokio::test]
 async fn a_path_out_of_the_repository_is_refused() {
     let dir = tempfile::tempdir().unwrap();
@@ -387,6 +389,7 @@ async fn on_a_forge_a_file_is_pushed_and_a_refused_push_undoes_the_commit() {
         "#!/bin/sh\necho 'protected branch, key sk-abcdefghijklmnopqrstuvwxyz123456' >&2\nexit 1\n",
     )
     .unwrap();
+    #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();

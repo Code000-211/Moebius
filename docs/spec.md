@@ -14,6 +14,9 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
 ### In the first version
 
 - One server process, `moebius`, headless, on a machine in a private network; one desktop app talking to it.
+- **Platforms**: the server is documented and tested on Linux and WSL 2; it builds and starts on Windows, where the
+  parts that need a Unix shell say they need Linux or WSL. The desktop app and the `moebius` commands that operate a
+  server run on Linux and Windows. Releases are built for Linux x86_64 and Windows x86_64.
 - Repositories with the **GitHub forge**, with the **GitLab forge** (gitlab.com or self-hosted, with an access token),
   and repositories **without a forge** (plain git).
 - Two harnesses, picked per agent by its `harness`: **Pi-Bolt**, driven in its RPC mode, with the Moebius **bridge**

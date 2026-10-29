@@ -22,7 +22,7 @@ The server is the first of these that exists:
 1. `--server` (or `MOEBIUS_URL`). It must come with `--token` (or `MOEBIUS_TOKEN`), so that a token is never sent to a
    server it does not belong to.
 2. The address and token the desktop app saved, `<config dir>/moebius/desktop.toml` (`address` and `token`; on Linux
-   `~/.config/moebius/desktop.toml`). A `--token` alone replaces the saved token.
+   `~/.config/moebius/desktop.toml`, on Windows `%APPDATA%\moebius\desktop.toml`). A `--token` alone replaces the saved token.
 3. The `moebius.toml` of the current directory (or `--config`): its `listen` address (`0.0.0.0` is reached as
    `127.0.0.1`) and the content of its token file. The file must exist; the server must have started once so that the
    token exists. A `--token` alone replaces the file's token.

@@ -5,6 +5,9 @@
 //! The model is a recorded OpenAI-compatible upstream that calls the tool Pi exposes for the server's `echo` and then
 //! says "Done.". Set `MOEBIUS_PI_BOLT` to the `pi-bolt` executable to run the test; without it the test is skipped.
 
+// Unix only: the stdio MCP server (testdata/echo-mcp) is a Python script started by its `#!` line.
+#![cfg(unix)]
+
 mod common;
 
 use std::path::Path;

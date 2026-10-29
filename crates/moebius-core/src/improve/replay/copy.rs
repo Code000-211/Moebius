@@ -21,7 +21,7 @@ pub struct Changes {
     pub deleted: Vec<String>,
 }
 
-/// Lists the files under `dir`, without following links.
+/// Lists the files under `dir`, without following links, by their paths with `/`.
 pub fn listing(dir: &Path) -> std::io::Result<Listing> {
     fn walk(root: &Path, dir: &Path, into: &mut Listing) -> std::io::Result<()> {
         for entry in std::fs::read_dir(dir)? {
@@ -40,10 +40,9 @@ pub fn listing(dir: &Path) -> std::io::Result<Listing> {
                 (bytes.len() as u64, bytes)
             };
             let name = path.strip_prefix(root).unwrap_or(&path);
-            into.insert(
-                name.to_string_lossy().into_owned(),
-                (size, hex::encode(Sha256::digest(bytes))),
-            );
+            // Written with `/` on every system, as the paths of a call are.
+            let name: Vec<_> = name.iter().map(|part| part.to_string_lossy()).collect();
+            into.insert(name.join("/"), (size, hex::encode(Sha256::digest(bytes))));
         }
         Ok(())
     }
@@ -203,6 +202,8 @@ mod tests {
         );
     }
 
+    // Making a symbolic link needs a privilege on Windows.
+    #[cfg(unix)]
     #[test]
     fn a_copy_has_the_files_of_the_worktree_but_not_its_git_or_its_links() {
         let dir = tempfile::tempdir().unwrap();

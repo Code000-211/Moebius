@@ -3,6 +3,9 @@
 //! inbox, and a person merges it into the harness configuration repository or dismisses it. A proposal that fixes its
 //! card but breaks a card of the regression set is not offered.
 
+// Unix only: the fake Pi (testdata/fake-pi) is a Python script started by its `#!` line.
+#![cfg(unix)]
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};

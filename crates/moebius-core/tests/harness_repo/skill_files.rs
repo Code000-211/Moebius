@@ -135,21 +135,25 @@ async fn a_skills_other_files_are_read_written_and_deleted_as_commits() {
     assert_eq!(head(&clone), before);
     assert_eq!(git(&clone, &["status", "--porcelain"]).unwrap(), "");
 
-    // A link in the skill's directory is neither read nor written through.
-    std::os::unix::fs::symlink(dir.path(), clone.join("skills/house-style/outside")).unwrap();
-    for method in [Method::GET, Method::PUT] {
-        let body = (method == Method::PUT).then(|| json!({"text": "x"}));
-        let (status, body) = api
-            .call(
-                method,
-                "/v1/skills/house-style/files/outside/moebius.toml",
-                body,
-            )
-            .await;
-        assert_eq!(status, 422, "{body}");
-        assert!(body.contains("link"), "{body}");
+    // A link in the skill's directory is neither read nor written through. (Unix only: making a link needs a
+    // privilege on Windows.)
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(dir.path(), clone.join("skills/house-style/outside")).unwrap();
+        for method in [Method::GET, Method::PUT] {
+            let body = (method == Method::PUT).then(|| json!({"text": "x"}));
+            let (status, body) = api
+                .call(
+                    method,
+                    "/v1/skills/house-style/files/outside/moebius.toml",
+                    body,
+                )
+                .await;
+            assert_eq!(status, 422, "{body}");
+            assert!(body.contains("link"), "{body}");
+        }
+        std::fs::remove_file(clone.join("skills/house-style/outside")).unwrap();
     }
-    std::fs::remove_file(clone.join("skills/house-style/outside")).unwrap();
 
     // A file is deleted, and the directory it leaves empty with it.
     let (status, body) = api

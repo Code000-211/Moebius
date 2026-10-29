@@ -348,7 +348,7 @@ An agent whose `harness` is `claude-code` runs as `claude -p --input-format stre
   Pi-Bolt, readable by the server's user only);
 - `ANTHROPIC_BASE_URL` the router and `ANTHROPIC_API_KEY` the run's token (`ANTHROPIC_AUTH_TOKEN`,
   `CLAUDE_CODE_USE_BEDROCK` and `CLAUDE_CODE_USE_VERTEX` removed), `CLAUDE_CONFIG_DIR` the run's own
-  `<data_dir>/runs/<id>/claude/` with each of the agent's skills linked into `skills/`,
+  `<data_dir>/runs/<id>/claude/` with each of the agent's skills linked (copied on Windows) into `skills/`,
   `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, and `MOEBIUS`, `MOEBIUS_RUN_TOKEN` (and for the Moebius agent
   `MOEBIUS_URL`, `MOEBIUS_TOKEN`) as a Pi-Bolt run has them.
 

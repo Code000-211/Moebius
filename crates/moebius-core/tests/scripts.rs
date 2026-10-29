@@ -312,6 +312,7 @@ async fn on_a_forge_a_script_is_pushed_and_a_refused_push_undoes_the_commit() {
         "#!/bin/sh\necho 'protected branch, key sk-abcdefghijklmnopqrstuvwxyz123456' >&2\nexit 1\n",
     )
     .unwrap();
+    #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();

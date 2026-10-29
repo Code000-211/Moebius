@@ -300,7 +300,8 @@ pub(in crate::harness) fn prompt_for(card: &Card, purpose: &str, note: Option<&s
     prompt
 }
 
-#[cfg(test)]
+// Unix only: the fake Pi is a Python script started by its `#!` line.
+#[cfg(all(test, unix))]
 mod tests {
     use std::time::{Duration, Instant};
 

@@ -38,6 +38,30 @@ jobs:
       - run: cargo run -p moebius-plugin-api --example allow_reads
       - run: cargo run -p moebius-plugin-api --example allow_reads_process
 
+  # The desktop app, the command line and the plugin API build and pass their tests on Windows, and so do the server's
+  # tests that need no Unix program (the others are `#[cfg(unix)]`, each saying why). The server is documented and
+  # tested on Linux and WSL 2; on Windows it builds and starts.
+  windows:
+    runs-on: windows-latest
+    env:
+      # aws-lc-sys uses its prebuilt NASM objects on Windows, which has no NASM.
+      AWS_LC_SYS_PREBUILT_NASM: 1
+    steps:
+      # The tests read the documentation and the scripts as they are committed, with LF line ends.
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --workspace
+      - run: cargo test -p moebius-desktop -p moebius -p moebius-plugin-api
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshot-diffs-windows
+          path: target/snapshot-diffs
+          if-no-files-found: ignore
+      - run: cargo test -p moebius-core
+
   # The code builds with the Rust version that `rust-version` in Cargo.toml names, and that is the version the README
   # tells people to install.
   msrv:

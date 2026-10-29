@@ -377,13 +377,17 @@ async fn a_failed_push_undoes_the_edit_and_records_no_decision() {
     let clone = dir.path().join(".moebius/harness");
     let start = head(&clone);
 
-    let hook = origin.join("hooks/pre-receive");
     write(
         &origin,
         "hooks/pre-receive",
         "#!/bin/sh\necho 'closed for edits' >&2\nexit 1\n",
     );
-    std::fs::set_permissions(&hook, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    #[cfg(unix)]
+    std::fs::set_permissions(
+        origin.join("hooks/pre-receive"),
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .unwrap();
     let (status, body) = setup
         .call(
             reqwest::Method::PUT,

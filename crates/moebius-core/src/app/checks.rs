@@ -2,7 +2,6 @@
 //! on a change, or on a trial's commit, in a throwaway worktree with a time limit.
 
 use std::io::{Read, Seek, SeekFrom};
-use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -164,22 +163,23 @@ impl App {
 fn execute(script: &str, dir: &Path, log: &Path, timeout: Duration) -> (bool, String) {
     let run = || -> std::io::Result<(bool, bool)> {
         let file = std::fs::File::create(log)?;
-        let mut child = Command::new("sh")
-            .args(["-c", script])
-            .current_dir(dir)
-            .stdin(Stdio::null())
-            .stdout(file.try_clone()?)
-            .stderr(file)
-            .process_group(0)
-            .spawn()?;
+        let mut child = crate::platform::own_group(
+            Command::new("sh")
+                .args(["-c", script])
+                .current_dir(dir)
+                .stdin(Stdio::null())
+                .stdout(file.try_clone()?)
+                .stderr(file),
+        )
+        .spawn()
+        .map_err(|e| crate::platform::unix_program_error("sh", e))?;
         let deadline = Instant::now() + timeout;
         loop {
             if let Some(status) = child.try_wait()? {
                 return Ok((status.success(), false));
             }
             if Instant::now() >= deadline {
-                let group = format!("-{}", child.id());
-                let _ = Command::new("kill").args(["-KILL", "--", &group]).status();
+                crate::platform::kill_tree(child.id());
                 child.wait()?;
                 return Ok((false, true));
             }
@@ -219,9 +219,13 @@ pub(crate) fn tail(log: &Path) -> String {
 }
 
 #[cfg(test)]
+// Some tests are Unix only; on Windows what only they use is unused.
+#[cfg_attr(not(unix), allow(unused))]
 mod tests {
     use super::*;
 
+    // Unix only: the repository's checks run with `sh`.
+    #[cfg(unix)]
     #[test]
     fn checks_are_stopped_after_their_time_and_their_output_is_cut_and_cleaned() {
         let dir = tempfile::tempdir().unwrap();

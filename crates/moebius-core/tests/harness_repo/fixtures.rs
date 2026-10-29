@@ -1,6 +1,9 @@
 //! What the tests share: a harness configuration repository with agents, skills, an MCP server and rules, a source
 //! repository for cards, a server that clones the first, the desktop API served on port 0, and waiting for a run.
 
+// The tests that use some of these are Unix only.
+#![cfg_attr(not(unix), allow(unused))]
+
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -208,6 +211,7 @@ pub fn argv_of_a_run(server: &Server, dir: &Path, card: &Card, agent: &str) -> V
 pub fn refuse_pushes(origin: &Path) -> PathBuf {
     let hook = origin.join("hooks/pre-receive");
     std::fs::write(&hook, "#!/bin/sh\necho 'closed for edits' >&2\nexit 1\n").unwrap();
+    #[cfg(unix)]
     std::fs::set_permissions(&hook, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     hook
 }

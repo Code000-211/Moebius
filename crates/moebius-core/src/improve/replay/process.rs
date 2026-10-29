@@ -1,7 +1,6 @@
 //! Running a call in the copy: `bash`, `grep` and `find` as processes with an empty environment and a time limit
 //! after which their process group is killed, and the file tools applied by Moebius itself.
 
-use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -10,6 +9,7 @@ use serde_json::Value;
 
 use super::call::Call;
 use crate::decide::guard;
+use crate::platform;
 
 /// Runs `program` in `dir` with an empty environment (`PATH` only, `HOME` is `dir`), no input and its output in `log`,
 /// and kills its process group when it passes `limit`. Returns the exit code and whether it was killed for the time.
@@ -33,24 +33,21 @@ pub(crate) fn run_apart(
     limit: Duration,
 ) -> std::io::Result<(Option<i32>, bool)> {
     let path = std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin:/usr/bin:/bin".into());
-    let mut child = Command::new(program)
-        .args(args)
-        .current_dir(dir)
-        .env_clear()
-        .env("PATH", path)
-        .env("HOME", dir)
-        .stdin(Stdio::null())
-        .stdout(stdout)
-        .stderr(stderr)
-        .process_group(0)
-        .spawn()?;
-    let group = format!("-{}", child.id());
-    let kill = || {
-        let _ = Command::new("kill")
-            .args(["-KILL", "--", &group])
-            .stderr(Stdio::null())
-            .status();
-    };
+    let mut child = platform::own_group(
+        Command::new(program)
+            .args(args)
+            .current_dir(dir)
+            .env_clear()
+            .env("PATH", path)
+            .env("HOME", dir)
+            .stdin(Stdio::null())
+            .stdout(stdout)
+            .stderr(stderr),
+    )
+    .spawn()
+    .map_err(|e| platform::unix_program_error(program, e))?;
+    let id = child.id();
+    let kill = || platform::kill_tree(id);
     let deadline = Instant::now() + limit;
     loop {
         if let Some(status) = child.try_wait()? {
@@ -184,9 +181,13 @@ pub(super) fn run_in_copy(
 }
 
 #[cfg(test)]
+// Some tests are Unix only; on Windows what only they use is unused.
+#[cfg_attr(not(unix), allow(unused))]
 mod tests {
     use super::*;
 
+    // Unix only: the replayed call runs with `bash`.
+    #[cfg(unix)]
     #[test]
     fn a_command_runs_with_an_empty_environment_and_is_killed_at_its_time_limit() {
         let dir = tempfile::tempdir().unwrap();

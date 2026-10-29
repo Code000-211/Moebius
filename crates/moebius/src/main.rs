@@ -207,17 +207,34 @@ fn run(cli: Cli) -> Result<(), String> {
     }
 }
 
-/// The executable file `name` in the first directory of `path` (a list in the format of `PATH`) that has one.
+/// The executable file `name` in the first directory of `path` (a list in the format of `PATH`) that has one. On
+/// Windows, `name` with `.exe`, `.cmd` or `.bat` is looked for too, before `name` itself.
 fn find_in_path(name: &str, path: &std::ffi::OsStr) -> Option<PathBuf> {
-    use std::os::unix::fs::PermissionsExt;
+    let names: Vec<String> = if cfg!(windows) {
+        [".exe", ".cmd", ".bat", ""]
+            .iter()
+            .map(|extension| format!("{name}{extension}"))
+            .collect()
+    } else {
+        vec![name.to_string()]
+    };
     std::env::split_paths(path)
-        .map(|dir| dir.join(name))
-        .find(|candidate| {
-            candidate
-                .metadata()
-                .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
-        })
+        .flat_map(|dir| names.iter().map(move |name| dir.join(name)))
+        .find(|candidate| candidate.metadata().is_ok_and(|m| is_executable(&m)))
         .map(|found| std::path::absolute(&found).unwrap_or(found))
+}
+
+/// Whether a file with this metadata can be run: a file with an execute bit on Linux, any file on Windows.
+fn is_executable(metadata: &std::fs::Metadata) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        metadata.is_file() && metadata.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(windows)]
+    {
+        metadata.is_file()
+    }
 }
 
 /// The example configuration as `init` writes it: with `[pi_bolt] program` set to `pi_bolt` if it is known, and
@@ -251,16 +268,25 @@ files of the\n# harness configuration repository (agents/Coder.toml and agents/C
 `moebius agent save`.\n";
 
 /// Starts this program again, with the arguments it was started with, in place of the running one. It returns only to
-/// say why that failed.
+/// say why that failed. Windows cannot replace a running program, so there the new one is started and this one waits
+/// for it and ends with its exit code.
 fn restart() -> String {
-    use std::os::unix::process::CommandExt;
     let program = match std::env::current_exe() {
         Ok(program) => program,
         Err(e) => return format!("cannot find the program to restart: {e}"),
     };
-    let error = std::process::Command::new(program)
-        .args(std::env::args_os().skip(1))
-        .exec();
+    let mut command = std::process::Command::new(program);
+    command.args(std::env::args_os().skip(1));
+    #[cfg(unix)]
+    let error = {
+        use std::os::unix::process::CommandExt;
+        command.exec()
+    };
+    #[cfg(windows)]
+    let error = match command.status() {
+        Ok(status) => std::process::exit(status.code().unwrap_or(1)),
+        Err(e) => e,
+    };
     format!("cannot restart: {error}")
 }
 
@@ -352,8 +378,13 @@ mod tests {
     #[test]
     fn init_sets_the_pi_bolt_program_to_the_one_on_the_path() {
         let dir = tempfile::tempdir().unwrap();
-        let program = dir.path().join("pi-bolt");
+        let program = dir.path().join(if cfg!(windows) {
+            "pi-bolt.exe"
+        } else {
+            "pi-bolt"
+        });
         std::fs::write(&program, "#!/bin/sh\n").unwrap();
+        #[cfg(unix)]
         std::fs::set_permissions(
             &program,
             std::os::unix::fs::PermissionsExt::from_mode(0o755),
@@ -365,7 +396,8 @@ mod tests {
         assert_eq!(found, program);
         let harness = dir.path().join("harness");
         let text = super::example(Some(&found), &harness);
-        assert!(text.contains(&format!("\nprogram = \"{}\"\n", program.display())));
+        let quoted = |path: &std::path::Path| toml::Value::String(path.display().to_string());
+        assert!(text.contains(&format!("\nprogram = {}\n", quoted(&program))));
         let config =
             moebius_core::config::Config::parse(&text, dir.path(), &dir.path().join("m.toml"))
                 .unwrap();
@@ -377,7 +409,7 @@ mod tests {
         // Without Pi-Bolt on the path the program is the default; [harness] replaces the commented agents.
         let text = super::example(None, &harness);
         assert!(text.contains("\nprogram = \"pi-bolt\"\n"));
-        assert!(text.contains(&format!("\n[harness]\nurl = \"{}\"\n", harness.display())));
+        assert!(text.contains(&format!("\n[harness]\nurl = {}\n", quoted(&harness))));
         assert!(!text.contains("# [agents.Coder]"));
         assert!(text.ends_with(super::INIT_AGENTS));
         let config =

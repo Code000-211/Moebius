@@ -5,6 +5,8 @@
 
 mod edits;
 mod fixtures;
+// Unix only: the chats run on the fake Pi (testdata/fake-pi), a Python script started by its `#!` line.
+#[cfg(unix)]
 mod proposals;
 mod reading;
 mod skill_files;

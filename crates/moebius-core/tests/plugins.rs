@@ -2,6 +2,9 @@
 //! server with the guide's configuration, a plugin that crashes fails closed and is started again, and the Plugins
 //! answer shows both with their state and their logs, redacted.
 
+// Unix only: the plugins are Python scripts started by their `#!` line or by `python3`.
+#![cfg(unix)]
+
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::{Duration, Instant};

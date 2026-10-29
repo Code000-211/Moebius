@@ -198,9 +198,7 @@ pub async fn serve_command(mut socket: WebSocket, command: CommandBuilder, slot:
     drop(master);
     let _ = tokio::task::spawn_blocking(move || {
         if let Some(pid) = pid {
-            let _ = std::process::Command::new("kill")
-                .args(["-KILL", "--", &format!("-{pid}")])
-                .output();
+            crate::platform::kill_tree(pid);
         }
         let _ = child.kill();
         let _ = child.wait();
@@ -219,13 +217,9 @@ type Started = (
     Box<dyn Write + Send>,
 );
 
-/// The person's shell (`$SHELL`, else `/bin/sh`) in `worktree`.
+/// The person's shell (`$SHELL`, else `/bin/sh`; PowerShell on Windows) in `worktree`.
 fn shell(worktree: &Path) -> CommandBuilder {
-    let shell = std::env::var("SHELL")
-        .ok()
-        .filter(|shell| !shell.is_empty())
-        .unwrap_or_else(|| "/bin/sh".to_string());
-    let mut command = CommandBuilder::new(shell);
+    let mut command = CommandBuilder::new(crate::platform::shell());
     command.cwd(worktree);
     command
 }

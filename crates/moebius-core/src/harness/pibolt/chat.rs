@@ -280,7 +280,8 @@ pub(in crate::harness) fn chat_run(
     Ok(running)
 }
 
-#[cfg(test)]
+// Unix only: the fake Pi is a Python script started by its `#!` line.
+#[cfg(all(test, unix))]
 mod tests {
 
     use serde_json::{Value, json};

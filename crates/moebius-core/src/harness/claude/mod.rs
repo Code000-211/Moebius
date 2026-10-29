@@ -18,7 +18,8 @@
 
 mod process;
 mod reader;
-#[cfg(test)]
+// Unix only: the fake `claude` (testdata/fake-claude) is a Python script started by its `#!` line.
+#[cfg(all(test, unix))]
 mod tests;
 
 use std::collections::{BTreeMap, HashMap};

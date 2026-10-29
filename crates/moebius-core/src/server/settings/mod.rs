@@ -76,13 +76,12 @@ pub fn read_raw(file: &Path) -> Result<(String, toml::Table)> {
 /// is readable by its owner only when `private`.
 fn write_atomically(path: &Path, bytes: &[u8], private: bool) -> std::io::Result<()> {
     use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
     let name = path.file_name().unwrap_or_default().to_string_lossy();
     let temporary = path.with_file_name(format!(".{name}.{}.tmp", std::process::id()));
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);
     if private {
-        options.mode(0o600);
+        crate::platform::owner_only(&mut options);
     }
     let written = options.open(&temporary).and_then(|mut file| {
         file.write_all(bytes)?;

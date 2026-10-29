@@ -10,8 +10,23 @@ Read [`GLOSSARY.md`](GLOSSARY.md) for the words and [`docs/architecture.md`](doc
 through the code. Each module starts with a doc comment that says what it is for. To change a contract, such as a route,
 a script function or a configuration key, read its page in [`docs/reference/`](docs/reference/) first.
 
-You need Linux, Rust 1.90 or newer, and git. The end-to-end tests also need [Pi-Bolt](https://github.com/opensec-git/Pi-Bolt)
-installed as `pi-bolt`, named by `MOEBIUS_PI_BOLT`. Without it they are skipped.
+You need Linux (or WSL 2), Rust 1.90 or newer, and git. The end-to-end tests also need
+[Pi-Bolt](https://github.com/opensec-git/Pi-Bolt) installed as `pi-bolt`, named by `MOEBIUS_PI_BOLT`. Without it they
+are skipped.
+
+The desktop app, the command line and the plugin API also build and pass their tests on Windows, and CI checks that (the
+`windows` job), with the server's tests that need no Unix program. To check your change for Windows from Linux, add the
+target and a MinGW C compiler (`gcc-mingw-w64-x86-64` and `g++-mingw-w64-x86-64` on Debian and Ubuntu); nothing needs
+to run:
+
+```sh
+rustup target add x86_64-pc-windows-gnu
+cargo clippy --workspace --all-targets --target x86_64-pc-windows-gnu -- -D warnings
+```
+
+Code that differs between the systems goes through `platform` of the server (`crates/moebius-core/src/platform.rs`), not
+`std::os::unix`. A test that needs a Unix program (`sh`, `bash`, or a fake in `testdata/` that is a Python script
+started by its `#!` line) is `#[cfg(unix)]`, with a comment that says why.
 
 ## Where the code goes
 

@@ -1,6 +1,9 @@
 //! Grilling: a chat with the Grilling partner (a fake Pi here) that ends in issues a person confirms, which become
 //! cards, or in a research report.
 
+// Unix only: the fake Pi (testdata/fake-pi) is a Python script started by its `#!` line.
+#![cfg(unix)]
+
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};

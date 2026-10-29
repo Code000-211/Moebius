@@ -3,12 +3,14 @@
 #
 #   dist/package.sh <binary> <target> <version>
 #
-# <binary> is the path of the built program (`moebius` or `moebius-desktop`), <target> the Rust target triple it was
-# built for (Moebius is released for Linux only) and <version> the version without the leading `v`. The archive is written to `dist/out/`
-# and its checksum is added to `dist/out/SHA256SUMS`:
+# <binary> is the path of the built program (`moebius` or `moebius-desktop`; on Windows `moebius.exe`, with
+# `moebius-desktop.exe` beside it), <target> the Rust target triple it was built for (Linux or Windows, x86_64) and
+# <version> the version without the leading `v`. The archive is written to `dist/out/` and its checksum is added to
+# `dist/out/SHA256SUMS`:
 #
-#   moebius-<version>-<target>.tar.gz           the server: the program and the unit files
-#   moebius-desktop-<version>-<target>.tar.gz   the desktop app: the program, the icon and the desktop entry
+#   moebius-<version>-<target>.tar.gz           Linux, the server: the program and the unit files
+#   moebius-desktop-<version>-<target>.tar.gz   Linux, the desktop app: the program, the icon and the desktop entry
+#   moebius-windows-x86_64.zip                  Windows: moebius.exe, moebius-desktop.exe, LICENSE and NOTICE
 set -euo pipefail
 
 if [ "$#" -ne 3 ]; then
@@ -24,6 +26,7 @@ root=$(dirname "$dist")
 icon=$root/crates/moebius-desktop/assets/icon.png
 out=$dist/out
 name=$(basename "$binary")
+name=${name%.exe}
 mkdir -p "$out"
 
 work=$(mktemp -d)
@@ -35,7 +38,11 @@ mkdir -p "$stage"
 checksum() {
     local file=$1
     local sum
-    sum=$(sha256sum "$file" | cut -d' ' -f1)
+    if command -v sha256sum >/dev/null 2>&1; then
+        sum=$(sha256sum "$file" | cut -d' ' -f1)
+    else
+        sum=$(shasum -a 256 "$file" | cut -d' ' -f1)
+    fi
     touch "$out/SHA256SUMS"
     grep -v "  $(basename "$file")\$" "$out/SHA256SUMS" >"$work/sums" || true
     echo "$sum  $(basename "$file")" >>"$work/sums"
@@ -43,7 +50,26 @@ checksum() {
 }
 
 archive=
+case $target in
+    x86_64-*-windows-*) name=windows ;;
+esac
 case $name in
+    windows)
+        # Both programs in one archive, named without the version.
+        stage=$work/moebius-windows-x86_64
+        mkdir -p "$stage"
+        cp "$binary" "$stage/moebius.exe"
+        cp "$(dirname "$binary")/moebius-desktop.exe" "$root/LICENSE" "$root/NOTICE" "$stage/"
+        archive=$out/moebius-windows-x86_64.zip
+        rm -f "$archive"
+        if command -v zip >/dev/null 2>&1; then
+            (cd "$work" && zip -qr "$archive" "$(basename "$stage")")
+        else
+            # The Windows runners have no zip, but they have PowerShell.
+            powershell.exe -NoProfile -Command \
+                "Compress-Archive -Path '$(cygpath -w "$stage")' -DestinationPath '$(cygpath -w "$archive")' -Force"
+        fi
+        ;;
     moebius)
         cp "$binary" "$stage/moebius"
         chmod 755 "$stage/moebius"

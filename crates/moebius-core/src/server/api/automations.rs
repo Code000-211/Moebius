@@ -91,6 +91,8 @@ async fn firings(
 }
 
 #[cfg(test)]
+// Some tests are Unix only; on Windows what only they use is unused.
+#[cfg_attr(not(unix), allow(unused))]
 mod tests {
     use serde_json::json;
 
@@ -200,6 +202,8 @@ mod tests {
         assert_eq!(gone.status(), 404);
     }
 
+    // Unix only: the fake Pi is a Python script started by its `#!` line.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_firing_starts_a_chat_with_the_agent_which_ends_once_it_has_answered() {
         let (_dir, state, addr) = start().await;
@@ -266,6 +270,8 @@ mod tests {
         assert_eq!(app.firings(id).unwrap().len(), 1);
     }
 
+    // Unix only: the fake Pi is a Python script started by its `#!` line.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_firing_due_while_the_chat_before_still_runs_is_skipped() {
         let (_dir, state, addr) = start().await;

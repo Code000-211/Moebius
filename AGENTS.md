@@ -9,8 +9,9 @@ documentation; `CONTRIBUTING.md` says the same as this file for people.
 ## Layout
 
 - `crates/moebius-core`: everything the server does. At the top of `src/`: `app/` ties the store, bus, repositories,
-  forges and decisions together; `config`, `store`, `blobs` (and `blobs::redact`), `bus` and `router` (the model
-  provider). The rest is grouped by part, one folder each: `server/` (the wiring and nightly schedule, `api`,
+  forges and decisions together; `config`, `store`, `blobs` (and `blobs::redact`), `bus`, `router` (the model
+  provider) and `platform` (what differs between Linux and Windows). The rest is grouped by part, one folder each:
+  `server/` (the wiring and nightly schedule, `api`,
   `settings` for editing `moebius.toml` while it runs, `setup` for the Models, Plugins and Get started pages), `repos/`
   (git, `forge`, `github`, `gitlab`, `poll`, `files`), `board/` (the engine and `scripts`), `decide/` (decision points,
   `check` for the bridge's tool-call check, `guard`, `rules`, `model` for shadowing and takeovers), `harness/`
@@ -69,6 +70,11 @@ The end-to-end test (`crates/moebius-core/tests/first_card.rs`) runs only when `
 executable; CI installs one.
 CI also runs the plugin examples: `cargo run -p moebius-plugin-api --example allow_reads`, and `allow_reads_process`
 for the same decider in its own process.
+
+CI builds and tests on Windows too. Check it with `cargo clippy --workspace --all-targets --target
+x86_64-pc-windows-gnu -- -D warnings` (it needs the target and a MinGW C compiler, no Windows). Code goes through
+`platform` instead of `std::os::unix`; a test that needs a Unix program (`sh`, `bash`, a fake that is a Python script
+started by its `#!` line) is `#[cfg(unix)]`, with a comment that says why.
 
 ## Style
 

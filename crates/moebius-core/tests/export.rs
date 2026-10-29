@@ -3,6 +3,9 @@
 //! judgement is in the files exactly once, with its context and outcome. The run is a fake Pi that waits in its
 //! worktree.
 
+// Unix only: the fake Pi (testdata/fake-pi) is a Python script started by its `#!` line.
+#![cfg(unix)]
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

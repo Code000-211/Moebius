@@ -58,6 +58,8 @@ fn the_agents_and_rules_are_what_the_repository_says_and_a_broken_agent_is_left_
     assert_eq!(rules[0].name, "no-vendoring");
 }
 
+// Unix only: the run is on the fake Pi, a Python script started by its `#!` line.
+#[cfg(unix)]
 #[test]
 fn an_agent_defined_only_in_the_repository_runs_with_its_model_and_instructions() {
     let dir = tempfile::tempdir().unwrap();

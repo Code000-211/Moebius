@@ -4,8 +4,10 @@
 
 You want a Moebius server that stays up: installed from a release instead of built from source, started once, kept
 running by the operating system, reachable from the desktop app on your own machine or on another one, and upgraded and
-backed up without losing a card. Releases are built for Linux x86_64 only, for the server (`moebius`) and the desktop
-app (`moebius-desktop`); on another system, build from source. Every key named here is in the
+backed up without losing a card. Releases are built for Linux x86_64, the server (`moebius`) and the desktop app
+(`moebius-desktop`) in an archive each, and for Windows x86_64, both in `moebius-windows-x86_64.zip`; on another
+system, build from source. The server is documented and tested on Linux and on WSL 2; on Windows, run the app there and
+the server in WSL (see [On Windows](#on-windows)). Every key named here is in the
 [configuration reference](../reference/configuration.md).
 
 ## The steps
@@ -124,6 +126,38 @@ app (`moebius-desktop`); on another system, build from source. Every key named h
    latest pipeline of a merge request's head commit is its checks, an approval is its review, and a merge on GitLab, or
    in the app, finishes its card. See [configuration](../reference/configuration.md#gitlab).
 
+## On Windows
+
+The desktop app and the `moebius` commands that operate a server run on Windows. Download
+`moebius-windows-x86_64.zip` and `SHA256SUMS`, check the archive and unpack it, in PowerShell:
+
+```powershell
+(Get-FileHash moebius-windows-x86_64.zip -Algorithm SHA256).Hash.ToLower()
+Select-String moebius-windows-x86_64.zip SHA256SUMS
+Expand-Archive moebius-windows-x86_64.zip -DestinationPath $env:LOCALAPPDATA\Programs
+& "$env:LOCALAPPDATA\Programs\moebius-windows-x86_64\moebius-desktop.exe"
+```
+
+The two hashes must be the same. The app keeps its address and token in `%APPDATA%\moebius\desktop.toml`, where the
+`moebius` commands find them too.
+
+Run the server on Linux or in WSL 2, as the steps above show: install a Linux distribution with `wsl --install`, and in
+it install git, Pi-Bolt and the Linux release. WSL forwards `127.0.0.1:7171` to Windows, so the app reaches a server
+started in WSL at `http://127.0.0.1:7171` with the token from `.moebius/token` (`wsl cat ~/.config/moebius/.moebius/token`
+prints it). To keep it running, enable systemd in WSL (`[boot] systemd=true` in `/etc/wsl.conf`) and use the unit of
+step 3.
+
+`moebius.exe serve` also builds and starts on Windows itself, but that is not tested, and these parts need Linux or WSL:
+
+- A repository's own checks (`.moebius/checks`), replays of refused calls and research measures run `sh` and `bash`.
+  Without them they fail and say so.
+- Files that hold secrets (`secrets.toml`, the token, a run's settings) keep the permissions of their folder instead of
+  being readable by their owner only; under your profile that is you and the administrators.
+- A program that is stopped is ended with `taskkill /T`, which misses a process whose parent has already ended.
+- Pi-Bolt and Claude Code are found on the `PATH` only as `.exe` files: name another one by its full path, with its
+  `.cmd` or `.exe`, in `pi_bolt.program` or `claude_code.program`. The terminal pages open PowerShell, and a Claude Code run
+  gets copies of its skills instead of links.
+
 ## How to try it
 
 Check that the service is up and answers with the token, from the machine that runs it and, once `listen` is changed,
@@ -156,5 +190,7 @@ run the `sha256sum` line of step 1 on it: it must print `FAILED`.
   `listen` takes an address of the machine, and a change of it needs a restart.
 - The app says the token is wrong after a restore or a move: the token is the content of `.moebius/token` of the server
   it talks to; copy it again.
+- On Windows, a change's checks say `` `sh` was not found: this needs Linux or WSL ``: the server runs on Windows itself.
+  Run it in WSL, as [On Windows](#on-windows) shows.
 - An older release started on a store that a newer one has migrated: it is not supported and may fail in odd ways.
   Install the newer release again, or restore the backup made before the upgrade.

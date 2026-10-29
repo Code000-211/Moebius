@@ -2,6 +2,9 @@
 //! branch that is pushed to the harness configuration repository's origin and listed by the API, or into proposals
 //! for Moebius's own configuration, which a person merges or dismisses from the inbox.
 
+// Unix only: the fake Pi (testdata/fake-pi) is a Python script started by its `#!` line.
+#![cfg(unix)]
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;

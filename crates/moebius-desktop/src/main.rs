@@ -1,5 +1,8 @@
 //! Starts the desktop app: loads the fonts, opens the window with its icon.
 
+// A release build on Windows opens its window without a console beside it.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 use moebius_desktop::app::App;
 use moebius_desktop::theme;
 

@@ -350,6 +350,7 @@ async fn an_upstream_with_a_typed_key_is_used_by_the_router_and_the_key_stays_se
     assert_eq!(status, 200, "{names}");
     assert_eq!(names, "[\"provider\"]");
     let secrets = f.dir.path().join(".moebius/secrets.toml");
+    #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(

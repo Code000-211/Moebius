@@ -2,6 +2,9 @@
 //! judgement's outcome, while the worktree of the run stays as it was. The run is a fake Pi that waits in its worktree;
 //! the calls are refused by the guard, which fails closed on a prose rule when no teacher is configured.
 
+// Unix only: the fake Pi (testdata/fake-pi) is a Python script started by its `#!` line. The replayed calls run with `bash`.
+#![cfg(unix)]
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

@@ -152,11 +152,7 @@ fn create_token(path: &Path) -> std::io::Result<String> {
         std::fs::create_dir_all(dir)?;
     }
     std::fs::write(path, &token)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
-    }
+    crate::platform::make_owner_only(path)?;
     Ok(token)
 }
 

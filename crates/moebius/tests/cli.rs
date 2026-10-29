@@ -252,18 +252,26 @@ async fn without_flags_the_configuration_in_the_directory_names_the_server() {
     let output = in_dir(other.path(), &home, &["api", "GET", "/v1/health"]).await;
     assert!(out(&output).contains("version"));
 
-    // The desktop app's saved settings come first.
-    let saved = home.join("moebius");
-    std::fs::create_dir_all(&saved).unwrap();
-    std::fs::write(
-        saved.join("desktop.toml"),
-        "address = \"http://127.0.0.1:1\"\ntoken = \"x\"\n",
-    )
-    .unwrap();
-    let output = in_dir(other.path(), &home, &["board"]).await;
-    assert!(String::from_utf8_lossy(&output.stderr).contains("cannot reach http://127.0.0.1:1"));
+    // The desktop app's saved settings come first. (Unix only: on Windows their place, the person's application
+    // data, is not taken from the environment, so the test cannot move it.)
+    #[cfg(unix)]
+    {
+        let saved = home.join("moebius");
+        std::fs::create_dir_all(&saved).unwrap();
+        std::fs::write(
+            saved.join("desktop.toml"),
+            "address = \"http://127.0.0.1:1\"\ntoken = \"x\"\n",
+        )
+        .unwrap();
+        let output = in_dir(other.path(), &home, &["board"]).await;
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("cannot reach http://127.0.0.1:1")
+        );
+    }
 }
 
+// Unix only: the fake Pi is a Python script started by its `#!` line.
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn the_moebius_agent_operates_moebius_from_its_chat() {
     let fake_pi = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -345,7 +353,12 @@ async fn doctor_lists_the_steps_and_fails_while_one_is_missing() {
         lines[0],
         "missing  upstream: Add an upstream on the Models page."
     );
-    assert!(lines[1].starts_with("missing  pi_bolt: Could not run /no/such/pi-bolt"));
+    // On Windows a path without a drive is resolved against the configuration's directory, so only its end is sure.
+    assert!(
+        lines[1].starts_with("missing  pi_bolt: Could not run ")
+            && lines[1].contains("no/such/pi-bolt"),
+        "{text}"
+    );
     assert!(lines[2].starts_with("missing  harness: "), "{text}");
     assert!(lines[3].starts_with("ok       coder: "), "{text}");
     assert_eq!(lines[4], "missing  repository: No repository is added yet.");
@@ -411,6 +424,8 @@ async fn doctor_succeeds_when_everything_is_in_place() {
     assert!(text.lines().all(|line| line.starts_with("ok ")), "{text}");
 }
 
+// Unix only: the made-up `PATH` holds a link to git, and making a link needs a privilege on Windows.
+#[cfg(unix)]
 #[test]
 fn init_points_the_configuration_at_the_pi_bolt_on_the_path() {
     use std::os::unix::fs::PermissionsExt;

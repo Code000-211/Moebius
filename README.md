@@ -9,7 +9,8 @@ against your rules, and learns from what went wrong.
 
 [![CI](https://github.com/Code000-211/Moebius/actions/workflows/ci.yml/badge.svg)](https://github.com/Code000-211/Moebius/actions/workflows/ci.yml)
 ![Rust 1.90+](https://img.shields.io/badge/rust-1.90%2B-orange)
-![Linux](https://img.shields.io/badge/platform-Linux-lightgrey)
+![Server: Linux and WSL 2](https://img.shields.io/badge/server-Linux%20%7C%20WSL%202-lightgrey)
+![App: Linux and Windows](https://img.shields.io/badge/app-Linux%20%7C%20Windows-lightgrey)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 ![Status: early prototype](https://img.shields.io/badge/status-early%20prototype-yellow)
 
@@ -76,10 +77,13 @@ desktop app (Rust, [iced](https://iced.rs)) talks to it over a documented API, a
 
 ## Quick start
 
-You need Linux, git, [Pi-Bolt](https://github.com/opensec-git/Pi-Bolt) installed as `pi-bolt`, and a model: a local
-OpenAI-compatible server (such as one on `http://127.0.0.1:8080`) or a provider API key.
+You need Linux (on Windows, WSL 2 for the server), git, [Pi-Bolt](https://github.com/opensec-git/Pi-Bolt) installed as
+`pi-bolt`, and a model: a local OpenAI-compatible server (such as one on `http://127.0.0.1:8080`) or a provider API key.
+The desktop app and the `moebius` commands also run on Windows itself; the
+[Windows section of Running Moebius](docs/guide/running-moebius.md#on-windows) shows how.
 
-**1. Install.** From a [release](https://github.com/Code000-211/Moebius/releases) (Linux x86_64; the page
+**1. Install.** From a [release](https://github.com/Code000-211/Moebius/releases) (Linux x86_64, and
+`moebius-windows-x86_64.zip` with the app and the commands for Windows; the page
 [Running Moebius](docs/guide/running-moebius.md) shows how to check the download), or from source with Rust 1.90 or
 newer:
 
@@ -115,7 +119,8 @@ program = "/usr/local/bin/pi-bolt"
 moebius serve     # creates .moebius/ next to the file, with the API token in .moebius/token
 ```
 
-**4. Connect the app.** Start the desktop app (from a release, or `cargo run -p moebius-desktop`), and give it the
+**4. Connect the app.** Start the desktop app (from a release for Linux or Windows, or `cargo run -p moebius-desktop`;
+on Windows it reaches a server in WSL at the same address), and give it the
 address `http://127.0.0.1:7171` and the content of `.moebius/token`. The **Get started** page lists what is still
 missing.
 

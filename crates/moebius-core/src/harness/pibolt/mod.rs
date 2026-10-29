@@ -35,7 +35,7 @@ mod chat;
 mod process;
 mod reader;
 mod runs;
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod testing;
 mod tui;
 

@@ -92,9 +92,9 @@ impl ClaudeCode {
         command
     }
 
-    /// Writes the run's configuration directory `config_dir`, with each of the agent's skills linked into `skills/`
-    /// under its directory's name, and `mcp_file` with the MCP gateway and the run's `token`, if the agent has MCP servers;
-    /// returns the file then. The gateway is told the servers with their values; only the server's user can read the file.
+    /// Writes the run's configuration directory `config_dir`, with each of the agent's skills linked (copied on Windows)
+    /// into `skills/` under its directory's name, and `mcp_file` with the MCP gateway and the run's `token`, if the agent
+    /// has MCP servers; returns the file then. The gateway is told the servers with their values; only the server's user can read the file.
     pub(super) fn write_config(
         &self,
         config_dir: &Path,
@@ -110,7 +110,7 @@ impl ClaudeCode {
             };
             let link = skills.join(name);
             if !link.exists() {
-                std::os::unix::fs::symlink(skill, &link).map_err(|e| e.to_string())?;
+                crate::platform::link_dir(skill, &link).map_err(|e| e.to_string())?;
             }
         }
         if agent.mcp.is_empty() {
@@ -216,14 +216,14 @@ impl ClaudeCode {
 
 /// Writes `value` as JSON to a new `file` that only the server's user can read.
 fn write_private(file: &Path, value: &Value) -> Result<(), String> {
-    use std::os::unix::fs::OpenOptionsExt;
     let text = serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?;
-    std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(file)
-        .and_then(|mut file| file.write_all(&text))
-        .map_err(|e| e.to_string())
+    crate::platform::owner_only(
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true),
+    )
+    .open(file)
+    .and_then(|mut file| file.write_all(&text))
+    .map_err(|e| e.to_string())
 }

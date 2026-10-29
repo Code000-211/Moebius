@@ -484,6 +484,8 @@ mod tests {
         }
     }
 
+    // Unix only: the stdio MCP server is a Python script started by its `#!` line.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_run_uses_a_tool_of_its_stdio_server_through_the_gateway() {
         let s = setup(&echo()).await;
@@ -630,6 +632,8 @@ mod tests {
         assert_eq!(stream.unwrap().status(), 405);
     }
 
+    // Unix only: the stdio MCP server is a Python script started by its `#!` line.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_server_that_cannot_start_is_reported_and_the_others_still_serve() {
         let s = setup(&format!(

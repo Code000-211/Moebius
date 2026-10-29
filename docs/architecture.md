@@ -287,8 +287,12 @@ The server runs on a multi-threaded tokio runtime.
 
 ## Known limits
 
-- The server runs on Unix (Linux, macOS): local checks run in their own process group so that a check that runs too
-  long is stopped with everything it started. The desktop app does not share this limit.
+- The server is documented and tested on Linux and WSL 2. It builds and starts on Windows (`platform.rs` keeps what
+  differs), with these limits there: a repository's own checks, replays and research measures run `sh` and `bash`, and
+  say that they need Linux or WSL when those are missing; a stopped program's processes are found by `taskkill /T`,
+  which misses one whose parent has already ended; files with secrets keep the permissions of their directory instead
+  of mode `0600`; skills are copied into a Claude Code run instead of linked; the terminal pages open PowerShell. The
+  desktop app and the `moebius` commands that operate a server have no such limits.
 - Times in the store are whole seconds. A card's history keeps entries from the same second in the order of their kinds
   (moves, runs, decisions, inbox items), not necessarily the order they happened in.
 
@@ -332,6 +336,7 @@ At the top:
 | `blobs.rs` | The content-addressed blob store and secret redaction. |
 | `bus.rs` | The event bus behind the event stream. |
 | `lib.rs` | The crate's parts, and `VERSION`. |
+| `platform.rs` | What differs between Linux and Windows: process groups and killing them, files only their owner reads, linking a skill, the shell of a terminal, and the error of a feature that needs a Unix shell. |
 
 `app/`, the core put together:
 

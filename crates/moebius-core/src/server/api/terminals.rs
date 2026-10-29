@@ -75,7 +75,8 @@ async fn server_terminal(
     }))
 }
 
-#[cfg(test)]
+// Unix only: the shells and the fake Pi on the terminals are Unix programs.
+#[cfg(all(test, unix))]
 mod tests {
     use futures_util::StreamExt;
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;

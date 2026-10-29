@@ -1,6 +1,9 @@
 //! Autoresearch: a brief a person confirms, a baseline, and the Autoresearcher (a fake Pi here) that proposes levers,
 //! each measured on a branch of its own; the lever that beats the baseline is offered as a change.
 
+// Unix only: the fake Pi (testdata/fake-pi) is a Python script started by its `#!` line. The measures run with `sh`.
+#![cfg(unix)]
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};

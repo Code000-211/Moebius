@@ -40,6 +40,8 @@ pub enum LoginStep {
 fn open_in_browser(url: &str) {
     let program = if cfg!(target_os = "macos") {
         "open"
+    } else if cfg!(windows) {
+        "explorer"
     } else {
         "xdg-open"
     };

@@ -256,6 +256,8 @@ async fn delete_agent(
 }
 
 #[cfg(test)]
+// Some tests are Unix only; on Windows what only they use is unused.
+#[cfg_attr(not(unix), allow(unused))]
 mod tests {
     use std::collections::BTreeMap;
 
@@ -337,6 +339,8 @@ mod tests {
         assert_eq!(grilling["built_in"]["skills"][0]["name"], "moebius");
     }
 
+    // Unix only: the fake Pi is a Python script started by its `#!` line.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_chat_without_an_agent_is_with_the_moebius_agent_on_the_coders_model() {
         let (_dir, state, addr) = start().await;
@@ -431,6 +435,8 @@ mod tests {
         }
     }
 
+    // Unix only: the fake Pi is a Python script started by its `#!` line.
+    #[cfg(unix)]
     #[tokio::test]
     async fn the_moebius_agent_configured_has_its_own_model_and_adds_to_what_it_is_told() {
         let own = AgentConfig {

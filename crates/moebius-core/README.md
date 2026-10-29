@@ -15,6 +15,7 @@ The modules at the top of `src/` tie everything together:
 | `blobs` | The blob store, and the redaction of secrets. |
 | `bus` | The events behind the event stream. |
 | `router` | The model provider. |
+| `platform` | What differs between Linux and Windows. |
 
 The other parts have one folder each:
 

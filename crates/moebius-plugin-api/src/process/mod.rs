@@ -286,14 +286,25 @@ mod tests {
     /// Far beyond what an answering plugin needs on a slow machine.
     const LIMIT: Duration = Duration::from_secs(30);
 
+    /// The test plugin in `mode`: started by its `#!` line, or on Windows, which has none, by `python`.
     fn spec(mode: &str, args: &[&str]) -> ProcessSpec {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata");
+        let script = dir.join("plugin.py").display().to_string();
+        let (program, script) = if cfg!(windows) {
+            ("python".into(), Some(script))
+        } else {
+            (dir.join("plugin.py"), None)
+        };
         ProcessSpec {
             name: "test".into(),
-            program: dir.join("plugin.py"),
-            args: std::iter::once(mode)
-                .chain(args.iter().copied())
-                .map(String::from)
+            program,
+            args: script
+                .into_iter()
+                .chain(
+                    std::iter::once(mode)
+                        .chain(args.iter().copied())
+                        .map(String::from),
+                )
                 .collect(),
             dir,
         }
@@ -407,9 +418,10 @@ mod tests {
         for (mode, args, why) in [
             ("exits", &[][..], "exited before its manifest"),
             ("answers", &["other"][..], "its manifest names \"other\""),
-            ("silent", &[][..], "no manifest within 300 ms"),
+            ("silent", &[][..], "no manifest within 2000 ms"),
         ] {
-            let process = Process::start(spec(mode, args), Duration::from_millis(300), |_| {});
+            // Long enough for Python to start on a slow Windows machine.
+            let process = Process::start(spec(mode, args), Duration::from_secs(2), |_| {});
             let status = process.status();
             assert_eq!(status.state, State::Restarting, "{mode}");
             assert!(status.error.as_deref().unwrap().contains(why), "{status:?}");

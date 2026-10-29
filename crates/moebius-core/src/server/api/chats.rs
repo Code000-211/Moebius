@@ -250,6 +250,8 @@ async fn chat_seen(
 }
 
 #[cfg(test)]
+// Some tests are Unix only; on Windows what only they use is unused.
+#[cfg_attr(not(unix), allow(unused))]
 mod tests {
     use super::*;
     use crate::repos::git;
@@ -259,6 +261,8 @@ mod tests {
     };
     use crate::store::Event;
 
+    // Unix only: the fake Pi is a Python script started by its `#!` line.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_chat_answers_two_messages_in_a_row_and_keeps_its_history() {
         let (_dir, state, addr) = start().await;
@@ -348,6 +352,8 @@ mod tests {
         assert_eq!(end(&state, &addr, other.id).await.status(), 200);
     }
 
+    // Unix only: the fake Pi is a Python script started by its `#!` line.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_chat_in_a_repository_commits_its_work_on_its_branch_when_it_ends() {
         let (dir, state, addr) = start().await;
@@ -402,6 +408,8 @@ mod tests {
         .await
     }
 
+    // Unix only: the fake Pi is a Python script started by its `#!` line.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_chat_offers_its_changes_and_goes_on_and_a_second_offer_updates_the_change() {
         let (dir, state, addr) = start().await;
@@ -491,6 +499,8 @@ mod tests {
         assert_eq!(offer(&state, &addr, run.id).await.status(), 422);
     }
 
+    // Unix only: the fake Pi is a Python script started by its `#!` line.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_chat_with_nothing_to_offer_or_at_work_is_refused() {
         let (dir, state, addr) = start().await;
@@ -530,6 +540,8 @@ mod tests {
         }
     }
 
+    // Unix only: the fake Pi is a Python script started by its `#!` line.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_chat_that_is_stopped_ends_and_its_agent_is_gone() {
         let (_dir, state, addr) = start().await;
@@ -597,6 +609,8 @@ mod tests {
         .await;
     }
 
+    // Unix only: the fake Pi is a Python script started by its `#!` line.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_chat_is_unread_until_the_person_has_seen_its_answer() {
         let (_dir, state, addr) = start().await;
@@ -632,6 +646,8 @@ mod tests {
         assert!(chat.answered > chat.seen);
     }
 
+    // Unix only: the fake Pi is a Python script started by its `#!` line.
+    #[cfg(unix)]
     #[tokio::test]
     async fn the_chats_of_the_floating_window_are_listed_only_when_asked_for() {
         let (_dir, state, addr) = start().await;
@@ -658,6 +674,8 @@ mod tests {
         assert_eq!(refused.status(), 422);
     }
 
+    // Unix only: the fake Pi is a Python script started by its `#!` line.
+    #[cfg(unix)]
     #[tokio::test]
     async fn an_ended_chat_goes_on_in_a_new_chat_that_is_told_what_was_said() {
         let (_dir, state, addr) = start().await;
@@ -702,6 +720,8 @@ mod tests {
         );
     }
 
+    // Unix only: the fake Pi is a Python script started by its `#!` line.
+    #[cfg(unix)]
     #[tokio::test]
     async fn the_agent_is_told_where_the_person_is_and_the_chat_shows_only_the_message() {
         let (_dir, state, addr) = start().await;
@@ -797,6 +817,8 @@ mod tests {
         assert_eq!(end(&state, &addr, run.id).await.status(), 422);
     }
 
+    // Unix only: the fake Pi is a Python script started by its `#!` line.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_chat_in_a_repository_offers_what_it_made_as_a_change_the_person_merges() {
         let (dir, state, addr) = start().await;

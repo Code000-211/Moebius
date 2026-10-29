@@ -193,6 +193,8 @@ impl Runs for Harnesses {
 }
 
 #[cfg(test)]
+// Some tests are Unix only; on Windows what only they use is unused.
+#[cfg_attr(not(unix), allow(unused))]
 mod tests {
     use std::collections::BTreeMap;
     use std::time::{Duration, Instant};
@@ -216,6 +218,8 @@ mod tests {
         }
     }
 
+    // Unix only: the fake `claude` and the fake Pi are Python scripts started by their `#!` line.
+    #[cfg(unix)]
     #[test]
     fn each_run_goes_to_the_harness_of_its_agent() {
         let dir = tempfile::tempdir().unwrap();

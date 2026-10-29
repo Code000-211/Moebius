@@ -126,9 +126,20 @@ mod tests {
     use super::*;
     use crate::app::AppError;
 
+    /// That only the owner can read `path` (on Linux; see `platform` for Windows).
+    fn assert_private(path: &std::path::Path) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+        #[cfg(windows)]
+        assert!(path.exists());
+    }
+
     #[test]
     fn a_secret_is_stored_privately_replaced_and_removed() {
-        use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let secrets = Secrets::new(dir.path());
         assert_eq!(secrets.names().unwrap(), Vec::<String>::new());
@@ -136,10 +147,7 @@ mod tests {
         secrets.set("local", "second").unwrap();
         secrets.set("anthropic", "sk-third").unwrap();
         let path = dir.path().join("secrets.toml");
-        assert_eq!(
-            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-            0o600
-        );
+        assert_private(&path);
         assert_eq!(secrets.names().unwrap(), ["anthropic", "local"]);
         assert_eq!(
             secrets.get("anthropic").unwrap().as_deref(),
@@ -148,10 +156,7 @@ mod tests {
         assert!(secrets.remove("local").unwrap());
         assert!(!secrets.remove("local").unwrap());
         assert_eq!(secrets.names().unwrap(), ["anthropic"]);
-        assert_eq!(
-            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-            0o600
-        );
+        assert_private(&path);
         assert!(matches!(secrets.set("a b", "x"), Err(AppError::Invalid(_))));
         assert!(matches!(secrets.set("ok", "  "), Err(AppError::Invalid(_))));
         // No temporary file is left.

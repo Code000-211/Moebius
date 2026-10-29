@@ -75,6 +75,8 @@ impl Default for Workflow {
 }
 
 #[cfg(test)]
+// Some tests are Unix only; on Windows what only they use is unused.
+#[cfg_attr(not(unix), allow(unused))]
 mod tests {
     use std::path::Path;
     use std::sync::Arc;
@@ -240,6 +242,8 @@ mod tests {
         app.card(card.id).unwrap().note
     }
 
+    // Unix only: the repository's checks run with `sh`.
+    #[cfg(unix)]
     #[test]
     fn failing_checks_send_the_card_back_with_their_output_and_passing_ones_let_it_on() {
         let harness = Arc::new(FakeHarness::default());
@@ -316,6 +320,8 @@ mod tests {
         assert_eq!(change.checks, None);
     }
 
+    // Unix only: the repository's checks run with `sh`.
+    #[cfg(unix)]
     #[test]
     fn the_checks_are_read_from_the_default_branch_not_from_the_change() {
         let harness = Arc::new(FakeHarness {

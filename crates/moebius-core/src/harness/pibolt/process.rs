@@ -251,19 +251,20 @@ pub(super) fn reasons(agent: &AgentConfig) -> bool {
 
 /// Writes `value` as JSON to a new `file` that only the server's user can read.
 fn write_private(file: &Path, value: &Value) -> Result<(), String> {
-    use std::os::unix::fs::OpenOptionsExt;
     let text = serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?;
-    std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(file)
-        .and_then(|mut file| file.write_all(&text))
-        .map_err(|e| e.to_string())
+    crate::platform::owner_only(
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true),
+    )
+    .open(file)
+    .and_then(|mut file| file.write_all(&text))
+    .map_err(|e| e.to_string())
 }
 
-#[cfg(test)]
+// Unix only: the fake Pi is a Python script started by its `#!` line.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use crate::board::Runs;
@@ -353,13 +354,16 @@ mod tests {
             serde_json::from_slice(&std::fs::read(run_dir.join("agent/models.json")).unwrap())
                 .unwrap();
         // The run's token is in the file, so only the server's user can read it.
-        let mode = std::fs::metadata(run_dir.join("agent/models.json"))
-            .unwrap()
-            .permissions();
-        assert_eq!(
-            std::os::unix::fs::PermissionsExt::mode(&mode) & 0o777,
-            0o600
-        );
+        #[cfg(unix)]
+        {
+            let mode = std::fs::metadata(run_dir.join("agent/models.json"))
+                .unwrap()
+                .permissions();
+            assert_eq!(
+                std::os::unix::fs::PermissionsExt::mode(&mode) & 0o777,
+                0o600
+            );
+        }
         let provider = &models["providers"]["moebius"];
         assert_eq!(provider["baseUrl"], "http://127.0.0.1:9/v1");
         assert!(
@@ -421,11 +425,14 @@ mod tests {
 
         let (argv, mcp_json) = run_agent("A");
         assert_eq!(values(&argv, "--skill"), ["/skills/a"]);
-        let mode = std::fs::metadata(&mcp_json).unwrap().permissions();
-        assert_eq!(
-            std::os::unix::fs::PermissionsExt::mode(&mode) & 0o777,
-            0o600
-        );
+        #[cfg(unix)]
+        {
+            let mode = std::fs::metadata(&mcp_json).unwrap().permissions();
+            assert_eq!(
+                std::os::unix::fs::PermissionsExt::mode(&mode) & 0o777,
+                0o600
+            );
+        }
         // The run is given only the gateway, with its token; the servers and their values stay with the server.
         let text = std::fs::read_to_string(mcp_json).unwrap();
         assert!(

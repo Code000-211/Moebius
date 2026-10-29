@@ -89,6 +89,8 @@ async fn run_events(
 }
 
 #[cfg(test)]
+// Some tests are Unix only; on Windows what only they use is unused.
+#[cfg_attr(not(unix), allow(unused))]
 mod tests {
     use std::sync::Arc;
 
@@ -101,6 +103,8 @@ mod tests {
     use crate::bus::AppEvent;
     use crate::server::api::testing::{get, origin, post, start, until};
 
+    // Unix only: the fake Pi is a Python script started by its `#!` line.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_person_steers_and_stops_a_run_and_its_card_waits_in_the_inbox() {
         let (dir, state, addr) = start().await;
@@ -252,6 +256,8 @@ mod tests {
         assert_eq!(paged, all);
     }
 
+    // Unix only: the fake Pi is a Python script started by its `#!` line.
+    #[cfg(unix)]
     #[tokio::test]
     async fn the_events_of_a_running_run_arrive_on_the_stream_with_their_seq() {
         let (dir, state, addr) = start().await;
