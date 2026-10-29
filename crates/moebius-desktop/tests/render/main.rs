@@ -1,0 +1,30 @@
+//! Draws the shell headlessly with a fixed snapshot (no server) and checks what is on the screen. The pictures are
+//! kept in `tests/snapshots/` to be compared with `docs/design/board.png`; a later run must draw the same pixels.
+//!
+//! One module per screen or area: `sidebar` (the sidebar, connect, adding a repository and search), `board` (the
+//! board, a new issue and a column's script), `live`, `inbox`, `chat` and `new_chat`, `agents`, `skills` (skills, the
+//! import panel and MCP servers), `rules`, `setup` (Models, Plugins and Settings), `terminal`, the Improve pages
+//! (`usage`, `improve` for the Retro and Experiments, `decision_model`), `fleet`, `float_chat`, `project` (Files and
+//! Editor), `edits` (editors in place) and `navigation` (going back). `fixtures` holds the snapshots, the simulator,
+//! the drawing and the clicks they share.
+
+mod agents;
+mod board;
+mod chat;
+mod decision_model;
+mod edits;
+mod fixtures;
+mod fleet;
+mod float_chat;
+mod improve;
+mod inbox;
+mod live;
+mod navigation;
+mod new_chat;
+mod project;
+mod rules;
+mod setup;
+mod sidebar;
+mod skills;
+mod terminal;
+mod usage;
