@@ -58,7 +58,7 @@ fn quoted_after(code: &str, before: &str) -> Vec<String> {
 #[test]
 fn every_route_is_in_the_reference() {
     for (module, page) in [
-        ("server/api.rs", "docs/reference/desktop-api.md"),
+        ("server/api", "docs/reference/desktop-api.md"),
         ("repos/check.rs", "docs/reference/bridge-protocol.md"),
         ("router.rs", "docs/reference/router.md"),
     ] {

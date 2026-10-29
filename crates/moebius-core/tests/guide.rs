@@ -271,17 +271,38 @@ fn unmarked_rust_and_typescript_blocks_do_not_exist() {
 
 // ---- curl commands ---------------------------------------------------------------------------------------------
 
-/// The routes of the desktop API as written in `api.rs`: path and the methods it answers.
+/// The routes of the desktop API as written in the modules of `server/api/`: path and the methods it answers.
 fn routes() -> Vec<(String, BTreeSet<&'static str>)> {
-    let source = read("crates/moebius-core/src/server/api.rs");
-    let source = source.split("#[cfg(test)]").next().unwrap();
-    source
-        .split(".route(")
-        .skip(1)
+    let dir = repository_root().join("crates/moebius-core/src/server/api");
+    let mut files: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    files.sort();
+    files
+        .iter()
+        .flat_map(|file| {
+            let source = read(&format!("crates/moebius-core/src/server/api/{file}"));
+            let source = source
+                .split("#[cfg(test)]\nmod tests")
+                .next()
+                .unwrap()
+                .to_string();
+            source
+                .split(".route(")
+                .skip(1)
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
         .filter_map(|rest| {
             let rest = rest.split(".layer(").next().unwrap();
             let path = rest.split('"').nth(1)?.to_string();
-            let end = rest.find("\n        .").unwrap_or(rest.len());
+            // A route's handlers end where the next call of the chain starts, or with the function.
+            let end = ["\n        .", "\n}"]
+                .iter()
+                .filter_map(|end| rest.find(end))
+                .min()
+                .unwrap_or(rest.len());
             let handlers = &rest[..end];
             let mut methods = BTreeSet::new();
             if handlers.contains("get(") {

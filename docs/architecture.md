@@ -9,7 +9,7 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
 
 ```
                   desktop app / curl
-                         │  HTTP + WebSocket, bearer token      (api.rs, listen = 127.0.0.1:7171)
+                         │  HTTP + WebSocket, bearer token      (server/api/, listen = 127.0.0.1:7171)
                          ▼
  ┌──────────────────────────────────────────────── moebius serve ───────────────────────────────┐
  │  board engine ── runs Luau column scripts per card, every tick                  (board.rs)   │
@@ -307,7 +307,18 @@ At the top:
 | Module | What it is for |
 |---|---|
 | `server/mod.rs` | Wires everything from the configuration and runs the loops. |
-| `server/api.rs` | The desktop API: routes, token check, the event WebSocket. |
+| `server/api/mod.rs` | The desktop API: the state it needs, the token check, the router that merges the routes of its parts, how a failure becomes a status, and `GET /v1/health`. |
+| `server/api/cards.rs` | The snapshot of every board, issues, cards and their changes (edit, approve, retry, merge, reject), a card's runs and history. |
+| `server/api/repositories.rs` | Adding and editing repositories, and their column scripts and files. |
+| `server/api/runs.rs` | A run and its events in pages, steering and stopping it. |
+| `server/api/chats.rs` | Chats with an agent (start, write, offer, end, seen, settings) and what grilling chats ended in. |
+| `server/api/harness.rs` | The agents, skills and MCP servers of the harness configuration repository, and `POST /v1/harness/setup`. |
+| `server/api/rules.rs` | The rules page and the rules in prose. |
+| `server/api/settings.rs` | `moebius.toml`, the API keys and the restart, and what the Models, Plugins and Get started pages show. |
+| `server/api/improve.rs` | Usage, judgements and replays, the Retro and its proposals, the decision model and its takeovers, research and exports. |
+| `server/api/uploads.rs` | `POST /v1/uploads`: zip files for the Moebius agent to import from. |
+| `server/api/terminals.rs` | The terminal WebSockets: a shell in a run's worktree or on the server, and Pi's terminal interface of a chat. |
+| `server/api/events.rs` | The event WebSocket `GET /v1/events`. |
 | `server/settings.rs` | Editing `moebius.toml` while the server runs: changes applied to the file's text, the keys that take effect at once, the API keys kept in `secrets.toml`, and the restart. |
 | `server/setup.rs` | What the Models, Plugins and Get started pages show: the router's upstreams, the agents, the teacher, the decision model and the plugins, without a secret, and the steps to a first card (`GET /v1/start`). |
 
