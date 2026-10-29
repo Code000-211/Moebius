@@ -201,6 +201,91 @@ fn a_replayed_refusal_shows_what_came_of_it() {
     );
 }
 
+/// A run that uses MCP servers, drawn: a call folded into Pi's own, a refused one the gateway refused, and a server
+/// that could not be reached. Compare `tests/snapshots/live-view-mcp-tiny-skia.png`.
+#[test]
+fn mcp_calls_and_errors_are_drawn_in_the_conversation() {
+    let mut board = radiance("Ready");
+    board["changes"] = json!([{"id": 1, "repository_id": 1, "card_id": 48,
+                               "branch": "moebius/card-48", "state": "open"}]);
+    let mut app = App::with_snapshot(snapshot(vec![board], vec![]));
+    let _ = app.update(Message::OpenCard(48));
+    let run = serde_json::from_value(json!({
+        "id": 9, "card_id": 48, "agent": "Coder", "harness": "pi-bolt", "purpose": "code",
+        "status": "running", "started_at": 1_790_000_000 - 360}))
+    .unwrap();
+    let records = vec![
+        (
+            "mcp_error",
+            json!({"server": "sentry", "message": "could not start: no such executable"}),
+        ),
+        (
+            "message_update",
+            json!({"assistantMessageEvent": {"type": "text_delta", "contentIndex": 0,
+            "delta": "I'll look for the open issues about the tree depth."}}),
+        ),
+        (
+            "tool_check",
+            json!({"tool": "mcp__moebius__github__search_issues", "tool_call_id": "c1",
+            "decision": "allow", "reason": "no rule is broken"}),
+        ),
+        (
+            "tool_execution_start",
+            json!({"toolCallId": "c1", "toolName": "mcp__moebius__github__search_issues",
+            "args": {"query": "tree depth"}}),
+        ),
+        (
+            "mcp_call",
+            json!({"server": "github", "tool": "search_issues", "tool_call_id": "mcp-3",
+            "input": {"query": "tree depth"}, "decision": "allow", "reason": "no rule is broken",
+            "result": {"content": [{"type": "text", "text": "2 open issues"}]}}),
+        ),
+        (
+            "tool_execution_end",
+            json!({"toolCallId": "c1", "toolName": "mcp__moebius__github__search_issues",
+            "isError": false, "durationMs": 840,
+            "result": {"content": [{"type": "text", "text": "2 open issues"}]}}),
+        ),
+        (
+            "mcp_call",
+            json!({"server": "github", "tool": "create_issue", "tool_call_id": "mcp-4",
+            "input": {"title": "Cap the tree depth"}, "decision": "refuse",
+            "reason": "no-mcp-writes: Do not write to GitHub; the card is the place for it.",
+            "result": {"content": [{"type": "text", "text": "Moebius refused this call"}], "isError": true}}),
+        ),
+    ];
+    let events = records
+        .into_iter()
+        .enumerate()
+        .map(|(n, (kind, data))| moebius_desktop::client::RunEvent {
+            seq: n as i64 + 1,
+            kind: kind.to_string(),
+            data,
+            at: 1_790_000_000,
+        })
+        .collect();
+    let loaded = live::Loaded {
+        run,
+        events,
+        judgements: vec![],
+        now: 1_790_000_000,
+    };
+    let _ = app.update(Message::Live(live::Message::Loaded(Ok(loaded))));
+    draw(
+        &app,
+        "live-view-mcp",
+        &[
+            "MCP server sentry could not be reached",
+            "could not start: no such executable",
+            "github · search_issues",
+            "github · create_issue",
+            "1 rule broken",
+            "no-mcp-writes",
+            "Blocked",
+        ],
+    );
+}
+
 /// A run with its shell open and a few lines printed in it, drawn: compare `tests/snapshots/live-view-shell-tiny-skia.png`
 /// with `docs/design/live-view.png`.
 #[test]

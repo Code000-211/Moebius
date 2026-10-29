@@ -151,7 +151,7 @@ gets. Each entry of `cards` is a `Card` with what a board shows of it, so that a
 | `rounds`, `tokens` | The card's `code` runs and the tokens of all its runs since it was last retried, as `card.rounds` and `card.tokens` in [column scripts](column-scripts.md). |
 | `run` | The card's latest run, `{"id", "agent", "purpose", "status"}`, or null when it has none. A board counts the runs working on it from the cards whose `run.status` is `starting` or `running`. |
 | `blocked_by` | The numbers of the issues that block the card and are not done yet, as `card.blocked_by`. |
-| `refusals` | How many tool calls of the latest run were refused (its `tool_check` run events with the decision `refuse`). |
+| `refusals` | How many tool calls of the latest run were refused (its `tool_check` and `mcp_call` run events with the decision `refuse`). |
 | `change` | The card's open change, `{"id", "state", "checks", "review_verdict"}`, or null. `checks` is `pending`, `success`, `failure` or `none`, as `card.change.checks`; `review_verdict` is `approve` or `changes` once a review ended since the latest `code` run, else null. Whether the change conflicts is not in the snapshot. |
 
 A card in `Done` has `rounds` and `tokens` 0, no `run`, no `change`, no blockers and no refusals: the snapshot is read on

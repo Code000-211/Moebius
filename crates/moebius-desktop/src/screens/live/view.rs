@@ -268,5 +268,6 @@ fn entry_view(entry: &Entry) -> Element<'_, AppMessage> {
             theme::TEXT_SECONDARY,
         ),
         Entry::Error(message) => transcript::error(message),
+        Entry::McpError { server, message } => transcript::mcp_error(server, message),
     }
 }

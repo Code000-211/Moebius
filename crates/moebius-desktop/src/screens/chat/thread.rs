@@ -126,6 +126,9 @@ impl Thread {
                 Entry::Text(_) => views.push(agent_text::<P>(self.markdown.get(&index))),
                 Entry::Person(said, message) => views.push(person_view(*said, message)),
                 Entry::Error(message) => views.push(transcript::error(message)),
+                Entry::McpError { server, message } => {
+                    views.push(transcript::mcp_error(server, message))
+                }
                 Entry::Thinking(_) | Entry::Tool(_) => {
                     // The steps that follow one another are one box.
                     let end = entries[index..]

@@ -89,10 +89,10 @@ impl Store {
         .collect()
     }
 
-    /// How many tool calls of a run were refused.
+    /// How many tool calls of a run were refused, by the check or by the MCP gateway.
     pub fn refused_tool_calls(&self, run_id: i64) -> Result<i64> {
         Ok(self.conn().query_row(
-            "SELECT COUNT(*) FROM events WHERE run_id = ?1 AND kind = 'tool_check'
+            "SELECT COUNT(*) FROM events WHERE run_id = ?1 AND kind IN ('tool_check', 'mcp_call')
                AND json_extract(data, '$.decision') = 'refuse'",
             [run_id],
             |r| r.get(0),
@@ -105,6 +105,25 @@ mod tests {
     use serde_json::json;
 
     use crate::store::test_store as store;
+
+    #[test]
+    fn refused_mcp_calls_count_as_refused_tool_calls() {
+        let (_dir, s) = store();
+        let run = s.add_run(None, "Coder", "pi-bolt", "code").unwrap();
+        let other = s.add_run(None, "Coder", "pi-bolt", "code").unwrap();
+        for (kind, decision) in [
+            ("tool_check", "refuse"),
+            ("tool_check", "allow"),
+            ("mcp_call", "refuse"),
+            ("mcp_call", "allow"),
+        ] {
+            s.append_event(run.id, kind, &json!({ "decision": decision }))
+                .unwrap();
+        }
+        s.append_event(other.id, "mcp_call", &json!({ "decision": "refuse" }))
+            .unwrap();
+        assert_eq!(s.refused_tool_calls(run.id).unwrap(), 2);
+    }
 
     #[test]
     fn secrets_in_run_events_are_redacted_before_they_are_stored() {

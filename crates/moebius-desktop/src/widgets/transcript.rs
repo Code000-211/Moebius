@@ -17,7 +17,7 @@ const MAX_LINES: usize = 200;
 
 /// A message in a box with a small label above it.
 pub fn note<'a>(
-    label: &'a str,
+    label: &str,
     message: &'a str,
     fill: Color,
     border: Color,
@@ -25,7 +25,7 @@ pub fn note<'a>(
 ) -> Element<'a, AppMessage> {
     container(
         column![
-            text(label)
+            text(label.to_string())
                 .size(theme::LABEL)
                 .font(theme::manrope(Weight::Bold))
                 .color(ink),
@@ -48,7 +48,7 @@ pub fn note<'a>(
 }
 
 /// The name of a tool in its pill.
-fn tool_name<'a>(name: &'a str, fill: Color) -> Element<'a, AppMessage> {
+fn tool_name<'a>(name: String, fill: Color) -> Element<'a, AppMessage> {
     container(
         text(name)
             .font(theme::MONO)
@@ -84,7 +84,7 @@ fn head<'a>(call: &'a ToolCall, blocked: bool) -> Element<'a, AppMessage> {
             theme::TEXT_SECONDARY
         });
     let mut right = row![].spacing(8).align_y(Alignment::Center);
-    match (&call.check, &call.execution) {
+    match (call.verdict(), &call.execution) {
         (Some(check), _) if !check.allowed => {
             right = right.push(tag("Blocked".to_string(), Tone::Red))
         }
@@ -93,7 +93,7 @@ fn head<'a>(call: &'a ToolCall, blocked: bool) -> Element<'a, AppMessage> {
         _ => {}
     }
     let mut notes = Vec::new();
-    if let Some(decider) = call.check.as_ref().and_then(|c| c.decider.as_deref()) {
+    if let Some(decider) = call.verdict().and_then(|c| c.decider.as_deref()) {
         notes.push(capitalized(decider));
     }
     if !blocked
@@ -115,7 +115,7 @@ fn head<'a>(call: &'a ToolCall, blocked: bool) -> Element<'a, AppMessage> {
         );
     }
     row![
-        tool_name(call.tool.as_str(), fill),
+        tool_name(call.title(), fill),
         container(arg).width(Length::Fill).clip(true),
         right,
     ]
@@ -163,6 +163,17 @@ pub fn error(message: &str) -> Element<'_, AppMessage> {
     )
 }
 
+/// An MCP server of the run's agent that could not be reached.
+pub fn mcp_error<'a>(server: &'a str, message: &'a str) -> Element<'a, AppMessage> {
+    note(
+        &format!("MCP server {server} could not be reached"),
+        message,
+        theme::RED_FILL,
+        theme::RED_BORDER,
+        theme::RED_TEXT,
+    )
+}
+
 fn tool_view(call: &ToolCall) -> Element<'_, AppMessage> {
     let mut content = column![head(call, false)].spacing(8);
     match &call.input {
@@ -197,7 +208,7 @@ fn tool_view(call: &ToolCall) -> Element<'_, AppMessage> {
 /// (the command, the diff, the file written) and what the tool printed (a file read, shown as that file).
 pub(crate) fn details(call: &ToolCall) -> Element<'_, AppMessage> {
     let mut content = column![].spacing(8);
-    if let Some(check) = call.check.as_ref().filter(|check| !check.allowed) {
+    if let Some(check) = call.verdict().filter(|check| !check.allowed) {
         let why = match check.rule() {
             Some((rule, why)) => format!("Rule broken: {rule}. {why}"),
             None => format!("Refused. {}", check.reason),
@@ -244,7 +255,7 @@ pub(crate) fn details(call: &ToolCall) -> Element<'_, AppMessage> {
 /// Who checked a call and how long it ran, as the head of a tool call says it: `Pattern · ran 3 ms`.
 fn check_line(call: &ToolCall) -> String {
     let mut notes = Vec::new();
-    if let Some(decider) = call.check.as_ref().and_then(|c| c.decider.as_deref()) {
+    if let Some(decider) = call.verdict().and_then(|c| c.decider.as_deref()) {
         notes.push(capitalized(decider));
     }
     if let Some(Execution::Finished {
@@ -262,7 +273,7 @@ fn check_line(call: &ToolCall) -> String {
 
 /// A refused call: the red box with the rule broken and why. The call did not run.
 fn refused_view(call: &ToolCall) -> Element<'_, AppMessage> {
-    let check = call.check.as_ref().expect("a refused call has its check");
+    let check = call.verdict().expect("a refused call has its check");
     let (title, why) = match check.rule() {
         Some((rule, why)) => (
             row![

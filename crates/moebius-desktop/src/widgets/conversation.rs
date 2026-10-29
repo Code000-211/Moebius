@@ -97,6 +97,14 @@ impl Check {
     }
 }
 
+/// A call of a tool of an MCP server through the gateway, and what the gateway decided on it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Mcp {
+    pub server: String,
+    pub tool: String,
+    pub check: Check,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Execution {
     Running,
@@ -113,6 +121,8 @@ pub struct ToolCall {
     pub tool: String,
     pub input: Input,
     pub check: Option<Check>,
+    /// The gateway's part, when the call is one of an MCP server.
+    pub mcp: Option<Box<Mcp>>,
     /// None while only the check has been seen.
     pub execution: Option<Execution>,
     /// What the tool printed: so far while it runs, all of it when it ended.
@@ -120,8 +130,29 @@ pub struct ToolCall {
 }
 
 impl ToolCall {
+    /// Whether the check or the gateway refused the call.
     pub fn refused(&self) -> bool {
-        self.check.as_ref().is_some_and(|check| !check.allowed)
+        self.verdict().is_some_and(|check| !check.allowed)
+    }
+
+    /// The decision the call is shown with: a refusal of either the check or the gateway, else the check's answer,
+    /// else the gateway's.
+    pub fn verdict(&self) -> Option<&Check> {
+        let gateway = self.mcp.as_ref().map(|mcp| &mcp.check);
+        [self.check.as_ref(), gateway]
+            .into_iter()
+            .flatten()
+            .find(|check| !check.allowed)
+            .or(self.check.as_ref())
+            .or(gateway)
+    }
+
+    /// The name the call is shown under: `<server> · <tool>` for a call of an MCP server, else the tool's.
+    pub fn title(&self) -> String {
+        match &self.mcp {
+            Some(mcp) => format!("{} · {}", mcp.server, mcp.tool),
+            None => self.tool.clone(),
+        }
     }
 }
 
@@ -142,6 +173,11 @@ pub enum Entry {
     Tool(ToolCall),
     Person(Said, String),
     Error(String),
+    /// An MCP server of the run's agent could not be reached; its tools are left out.
+    McpError {
+        server: String,
+        message: String,
+    },
 }
 
 /// The conversation of one run.
@@ -222,10 +258,18 @@ impl Conversation {
     /// the judgement at the same place in the order, and only when both say the same: a pair that differs is left
     /// without a decider rather than guessed.
     pub fn name_deciders(&mut self, judgements: &[Judgement]) {
-        let checked = self.entries.iter_mut().filter_map(|entry| match entry {
-            Entry::Tool(call) => call.check.as_mut(),
-            _ => None,
-        });
+        // A call has its check's decision first and the gateway's after it, as the judgements were made.
+        let checked = self
+            .entries
+            .iter_mut()
+            .filter_map(|entry| match entry {
+                Entry::Tool(call) => Some(call),
+                _ => None,
+            })
+            .flat_map(|call| {
+                let gateway = call.mcp.as_mut().map(|mcp| &mut mcp.check);
+                call.check.as_mut().into_iter().chain(gateway)
+            });
         for (check, judgement) in checked.zip(judgements) {
             if check.allowed == (judgement.choice == "allow") && check.reason == judgement.reason {
                 check.decider = Some(judgement.decider.clone());
@@ -238,7 +282,7 @@ impl Conversation {
         }
     }
 
-    /// How many tool calls the checks refused.
+    /// How many tool calls the checks or the gateway refused.
     pub fn refusals(&self) -> usize {
         self.entries
             .iter()
@@ -257,6 +301,7 @@ impl Conversation {
                 tool: tool.to_string(),
                 input: Input::Unknown,
                 check: None,
+                mcp: None,
                 execution: None,
                 output: String::new(),
             }));
@@ -331,6 +376,14 @@ impl Conversation {
                     replay: None,
                 });
             }
+            "mcp_call" => self.mcp_call(&event.data),
+            "mcp_error" => {
+                self.add(Entry::McpError {
+                    server: data["server"].as_str().unwrap_or_default().to_string(),
+                    message: data["message"].as_str().unwrap_or_default().to_string(),
+                });
+                self.close();
+            }
             "steered" | "said" => {
                 let said = if event.kind == "steered" {
                     Said::Steered
@@ -348,6 +401,74 @@ impl Conversation {
             }
             _ => {}
         }
+    }
+}
+
+impl Conversation {
+    /// A call through the MCP gateway. With Pi-Bolt the harness has the call under its own name, which is
+    /// `mcp__moebius__<server>__<tool>`: the gateway's part goes into that call (the one with the same id, else the
+    /// latest of that name without a gateway part yet) so that it is drawn once; else it is a call of its own.
+    fn mcp_call(&mut self, data: &Value) {
+        let text = |key: &str| data[key].as_str().unwrap_or_default().to_string();
+        let (server, tool) = (text("server"), text("tool"));
+        let id = text("tool_call_id");
+        let own_name = format!("__{server}__{tool}");
+        let named = |call: &ToolCall| {
+            call.mcp.is_none() && call.tool.starts_with("mcp__") && call.tool.ends_with(&own_name)
+        };
+        let by_id = (!id.is_empty())
+            .then(|| self.calls.get(&id).copied())
+            .flatten()
+            .filter(
+                |index| matches!(&self.entries[*index], Entry::Tool(call) if call.mcp.is_none()),
+            );
+        let by_name = || {
+            self.entries
+                .iter()
+                .rposition(|entry| matches!(entry, Entry::Tool(call) if named(call)))
+        };
+        let index = by_id.or_else(by_name).unwrap_or_else(|| {
+            let index = self.add(Entry::Tool(ToolCall {
+                id: id.clone(),
+                tool: format!("mcp__{server}__{tool}"),
+                input: match &data["input"] {
+                    Value::Null => Input::Unknown,
+                    input => Input::Other(input.to_string()),
+                },
+                check: None,
+                mcp: None,
+                execution: None,
+                output: String::new(),
+            }));
+            if !id.is_empty() {
+                self.calls.insert(id, index);
+            }
+            index
+        });
+        self.close();
+        let Entry::Tool(call) = &mut self.entries[index] else {
+            unreachable!("`index` points at a tool call")
+        };
+        let result = result_text(&data["result"]);
+        if call.execution.is_none() {
+            call.execution = Some(Execution::Finished {
+                failed: data["result"]["isError"].as_bool().unwrap_or(false),
+                millis: None,
+            });
+        }
+        if call.output.is_empty() {
+            call.output = result;
+        }
+        call.mcp = Some(Box::new(Mcp {
+            server,
+            tool,
+            check: Check {
+                allowed: data["decision"] == "allow",
+                reason: text("reason"),
+                decider: None,
+                replay: None,
+            },
+        }));
     }
 }
 
@@ -693,5 +814,169 @@ mod tests {
         };
         assert_eq!(replay(1), None, "only a replay is shown");
         assert_eq!(replay(2).as_deref(), Some("exit 0; deleted 3 files"));
+    }
+
+    fn mcp(seq: i64, id: &str, server: &str, tool: &str, decision: &str, reason: &str) -> RunEvent {
+        let text = if decision == "allow" {
+            "3 open issues".to_string()
+        } else {
+            format!("Moebius refused this call: {reason}")
+        };
+        event(
+            seq,
+            "mcp_call",
+            json!({"server": server, "tool": tool, "tool_call_id": id, "input": {"query": "bug"},
+                   "decision": decision, "reason": reason,
+                   "result": {"content": [{"type": "text", "text": text}], "isError": decision != "allow"}}),
+        )
+    }
+
+    #[test]
+    fn an_mcp_call_is_folded_into_pis_call_of_the_same_tool() {
+        let conversation = fold(vec![
+            check(
+                1,
+                "p1",
+                "mcp__moebius__github__search",
+                "allow",
+                "no rule is broken",
+            ),
+            start(
+                2,
+                "p1",
+                "mcp__moebius__github__search",
+                json!({"query": "bug"}),
+            ),
+            mcp(3, "mcp-7", "github", "search", "allow", "no rule is broken"),
+            end(4, "p1", "mcp__moebius__github__search", "3 open issues"),
+        ]);
+        assert_eq!(conversation.entries().len(), 1);
+        let call = call(&conversation, 0);
+        assert_eq!(call.title(), "github · search");
+        assert_eq!(call.output, "3 open issues");
+        assert!(!call.refused());
+        assert_eq!(
+            call.execution,
+            Some(Execution::Finished {
+                failed: false,
+                millis: Some(400)
+            })
+        );
+    }
+
+    #[test]
+    fn an_mcp_call_with_the_id_of_pis_call_is_folded_into_it() {
+        let conversation = fold(vec![
+            start(
+                1,
+                "same",
+                "mcp__moebius__github__search",
+                json!({"query": "bug"}),
+            ),
+            mcp(
+                2,
+                "same",
+                "github",
+                "search",
+                "refuse",
+                "no-mcp-writes: read only",
+            ),
+        ]);
+        assert_eq!(conversation.entries().len(), 1);
+        assert!(call(&conversation, 0).refused());
+        assert_eq!(conversation.refusals(), 1);
+    }
+
+    #[test]
+    fn an_mcp_call_without_a_call_of_pis_is_a_call_of_its_own() {
+        let conversation = fold(vec![
+            mcp(1, "mcp-1", "github", "search", "allow", "no rule is broken"),
+            mcp(
+                2,
+                "mcp-2",
+                "github",
+                "search",
+                "refuse",
+                "no-mcp-writes: read only",
+            ),
+        ]);
+        assert_eq!(conversation.entries().len(), 2);
+        let first = call(&conversation, 0);
+        assert_eq!(first.title(), "github · search");
+        assert_eq!(first.input, Input::Other("{\"query\":\"bug\"}".into()));
+        assert_eq!(first.output, "3 open issues");
+        assert!(matches!(
+            first.execution,
+            Some(Execution::Finished { failed: false, .. })
+        ));
+        let refused = call(&conversation, 1);
+        assert!(refused.refused());
+        assert_eq!(
+            refused.verdict().unwrap().rule(),
+            Some(("no-mcp-writes", "read only"))
+        );
+        assert_eq!(conversation.refusals(), 1);
+    }
+
+    #[test]
+    fn two_mcp_calls_go_into_two_calls_of_pi_in_order() {
+        let name = "mcp__moebius__github__search";
+        let conversation = fold(vec![
+            start(1, "a", name, json!({})),
+            mcp(2, "mcp-1", "github", "search", "allow", "no rule is broken"),
+            start(3, "b", name, json!({})),
+            mcp(
+                4,
+                "mcp-2",
+                "github",
+                "search",
+                "refuse",
+                "no-mcp-writes: read only",
+            ),
+        ]);
+        assert_eq!(conversation.entries().len(), 2);
+        assert!(!call(&conversation, 0).refused());
+        assert!(call(&conversation, 1).refused());
+    }
+
+    #[test]
+    fn an_mcp_error_is_an_entry_of_its_own() {
+        let conversation = fold(vec![event(
+            1,
+            "mcp_error",
+            json!({"server": "github", "message": "could not start"}),
+        )]);
+        assert_eq!(
+            conversation.entries(),
+            [Entry::McpError {
+                server: "github".into(),
+                message: "could not start".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn a_decider_is_named_for_the_gateway_decision_too() {
+        let mut conversation = fold(vec![
+            mcp(1, "mcp-1", "github", "search", "allow", "no rule is broken"),
+            check(2, "c", "read", "allow", "no rule is broken"),
+        ]);
+        let judgement = |decider: &str| Judgement {
+            kind: "tool_call".into(),
+            choice: "allow".into(),
+            reason: "no rule is broken".into(),
+            decider: decider.into(),
+            outcome: None,
+            run: Some(1),
+        };
+        conversation.name_deciders(&[judgement("patterns"), judgement("teacher")]);
+        assert_eq!(
+            call(&conversation, 0).verdict().unwrap().decider.as_deref(),
+            Some("patterns")
+        );
+        assert_eq!(
+            call(&conversation, 1).verdict().unwrap().decider.as_deref(),
+            Some("teacher")
+        );
     }
 }

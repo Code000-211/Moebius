@@ -236,10 +236,13 @@ fn step<'a>(
 fn tool_line(call: &ToolCall, limit: usize, size: f32) -> Element<'_, AppMessage> {
     let refused = call.refused();
     let mut line = row![
-        text(capitalized(&call.tool))
-            .size(size)
-            .font(theme::manrope(Weight::Bold))
-            .color(theme::TEXT),
+        text(match call.mcp {
+            Some(_) => call.title(),
+            None => capitalized(&call.tool),
+        })
+        .size(size)
+        .font(theme::manrope(Weight::Bold))
+        .color(theme::TEXT),
         text(shorten(&call.input.summary(), limit))
             .size(size)
             .wrapping(Wrapping::None)
