@@ -415,13 +415,24 @@ mod tests {
 
     #[test]
     fn a_process_that_does_not_start_refuses_every_call() {
-        for (mode, args, why) in [
-            ("exits", &[][..], "exited before its manifest"),
-            ("answers", &["other"][..], "its manifest names \"other\""),
-            ("silent", &[][..], "no manifest within 2000 ms"),
+        // A process that exits or names another plugin is told apart at once, so it gets all the time Python may need
+        // to start on a slow machine; only the silent one has to run out of time, and a short limit is enough for that.
+        for (mode, args, limit, why) in [
+            ("exits", &[][..], LIMIT, "exited before its manifest"),
+            (
+                "answers",
+                &["other"][..],
+                LIMIT,
+                "its manifest names \"other\"",
+            ),
+            (
+                "silent",
+                &[][..],
+                Duration::from_secs(2),
+                "no manifest within 2000 ms",
+            ),
         ] {
-            // Long enough for Python to start on a slow Windows machine.
-            let process = Process::start(spec(mode, args), Duration::from_secs(2), |_| {});
+            let process = Process::start(spec(mode, args), limit, |_| {});
             let status = process.status();
             assert_eq!(status.state, State::Restarting, "{mode}");
             assert!(status.error.as_deref().unwrap().contains(why), "{status:?}");
