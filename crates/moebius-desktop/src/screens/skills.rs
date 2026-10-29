@@ -3,22 +3,23 @@
 //! cannot be changed. A server without a harness configuration repository lists no skills, and the page then offers to
 //! set one up (see `harness_setup`).
 
-use iced::font::Weight;
 use iced::widget::text::Wrapping;
-use iced::widget::{
-    button, column, container, row, scrollable, space, text, text_editor, text_input,
-};
-use iced::{Alignment, Border, Element, Length, Task};
+use iced::widget::{column, row, text, text_editor, text_input};
+use iced::{Alignment, Element, Length, Task};
 
 use crate::app::Message as AppMessage;
 use crate::client::{Client, ClientError, Skill, SkillDetail};
-use crate::screens::agents::{field, notice_line};
 use crate::screens::harness_setup::{self, HarnessSetup};
 use crate::screens::live::say;
 use crate::settings::Settings;
+use crate::widgets::form::{aside, box_heading, committed_line, field, mono_editor, notice_line};
 use crate::widgets::import::{self, Import};
+use crate::widgets::list_editor::{self, Actions, list_card};
 use crate::widgets::page::{self, Tone};
 use crate::{screens::connect, theme};
+
+// The white box, which the import panel took from here first.
+pub(crate) use crate::widgets::list_editor::boxed;
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -319,11 +320,15 @@ impl Skills {
         let cards = column(self.list.iter().flatten().map(|skill| {
             list_card(
                 &skill.name,
-                skill.built_in.then_some("Built in"),
-                &skill.description,
+                skill
+                    .built_in
+                    .then_some(("Built in", Tone::Plain))
+                    .into_iter()
+                    .collect(),
+                skill.description.as_str(),
                 false,
                 chosen == Some(skill.name.as_str()),
-                AppMessage::Skills(Message::Select(skill.name.clone())),
+                Some(AppMessage::Skills(Message::Select(skill.name.clone()))),
             )
         }))
         .spacing(8)
@@ -332,19 +337,12 @@ impl Skills {
         if let Some(editor) = &self.editor {
             detail = detail.push(editor_view(editor));
         }
-        column![
+        list_editor::layout(
             header,
             self.import.is_open().then(|| self.import.view()),
-            row![
-                scrollable(cards).width(280),
-                scrollable(detail).width(Length::Fill)
-            ]
-            .spacing(14)
-            .height(Length::Fill),
-        ]
-        .spacing(theme::PAGE_GAP)
-        .width(Length::Fill)
-        .into()
+            cards,
+            detail,
+        )
     }
 }
 
@@ -354,48 +352,31 @@ fn text_action(action: text_editor::Action) -> AppMessage {
 
 fn editor_view(editor: &Editor) -> Element<'_, AppMessage> {
     let message = AppMessage::Skills;
-    let title: Element<_> = if editor.naming {
-        text_input("Name of the new skill", &editor.name)
-            .on_input(move |name| message(Message::NameEdited(name)))
-            .size(theme::BODY)
-            .padding([9, 12])
-            .width(280)
-            .style(connect::input_style)
-            .into()
+    let actions = if editor.built_in {
+        row![page::tag("Built in · read only".to_string(), Tone::Plain)]
+            .spacing(10)
+            .align_y(Alignment::Center)
     } else {
-        text(editor.name.as_str())
-            .size(21)
-            .font(theme::manrope(Weight::Bold))
-            .into()
+        list_editor::actions(
+            &editor.name,
+            editor.exists,
+            editor.confirming,
+            "Delete skill",
+            Actions {
+                ask_delete: message(Message::AskDelete),
+                keep: message(Message::Keep),
+                delete: message(Message::Delete),
+                save: (!editor.reading).then_some(message(Message::Save)),
+            },
+        )
     };
-    let mut actions = row![].spacing(10).align_y(Alignment::Center);
-    if editor.built_in {
-        actions = actions.push(page::tag("Built in · read only".to_string(), Tone::Plain));
-    } else if editor.confirming {
-        actions = actions
-            .push(
-                text(format!("Delete {}?", editor.name))
-                    .size(theme::CONTEXT)
-                    .color(theme::TEXT_SECONDARY),
-            )
-            .push(page::white_button("Keep", Some(message(Message::Keep))))
-            .push(page::white_button(
-                "Delete skill",
-                Some(message(Message::Delete)),
-            ));
-    } else {
-        if editor.exists {
-            actions = actions.push(page::white_button(
-                "Delete",
-                Some(message(Message::AskDelete)),
-            ));
-        }
-        actions = actions.push(page::primary_button(
-            "Save",
-            (!editor.reading).then_some(message(Message::Save)),
-        ));
-    }
-    let head = row![title, space::horizontal(), actions].align_y(Alignment::Center);
+    let head = list_editor::head(
+        editor.naming,
+        &editor.name,
+        "Name of the new skill",
+        move |name| message(Message::NameEdited(name)),
+        actions,
+    );
     let mut top = column![head].spacing(12);
     if editor.reading {
         top = top.push(page::body("Reading the skill…"));
@@ -416,15 +397,7 @@ fn editor_view(editor: &Editor) -> Element<'_, AppMessage> {
         top = top.push(field("Description", description));
     }
     match &editor.notice {
-        Some(Notice::Saved(Some(commit))) => {
-            top = top.push(notice_line(&format!("Saved as a commit: {commit}"), false));
-        }
-        Some(Notice::Saved(None)) => {
-            top = top.push(notice_line(
-                "Nothing changed, so nothing was committed.",
-                false,
-            ));
-        }
+        Some(Notice::Saved(commit)) => top = top.push(committed_line(commit.as_deref())),
         Some(Notice::Failed(error)) => top = top.push(notice_line(error, true)),
         None => {}
     }
@@ -432,16 +405,10 @@ fn editor_view(editor: &Editor) -> Element<'_, AppMessage> {
     if !editor.reading {
         boxes = boxes.push(boxed(
             column![
-                row![
-                    text("SKILL.md")
-                        .size(theme::BOX_HEADING)
-                        .font(theme::manrope(Weight::Bold)),
-                    space::horizontal(),
-                    text("Markdown · the text after the frontmatter")
-                        .size(theme::LABEL)
-                        .color(theme::TEXT_MUTED),
-                ]
-                .align_y(Alignment::Center),
+                box_heading(
+                    "SKILL.md",
+                    aside("Markdown · the text after the frontmatter")
+                ),
                 mono_editor(
                     &editor.text,
                     "What the skill teaches the agent, in Markdown.",
@@ -472,117 +439,9 @@ fn files_box(files: &[String]) -> Element<'_, AppMessage> {
     };
     boxed(
         column![
-            row![
-                text("Other files")
-                    .size(theme::BOX_HEADING)
-                    .font(theme::manrope(Weight::Bold)),
-                space::horizontal(),
-                text("Beside SKILL.md · not edited here")
-                    .size(theme::LABEL)
-                    .color(theme::TEXT_MUTED),
-            ]
-            .align_y(Alignment::Center),
+            box_heading("Other files", aside("Beside SKILL.md · not edited here")),
             list,
         ]
         .spacing(12),
     )
-}
-
-/// A white box around `content`.
-pub(crate) fn boxed<'a>(content: impl Into<Element<'a, AppMessage>>) -> Element<'a, AppMessage> {
-    container(content)
-        .padding(20)
-        .width(Length::Fill)
-        .style(|_| page::box_style())
-        .into()
-}
-
-/// The text editor of the pages, in the code font. Without `on_action` the text can be read and not changed.
-pub(crate) fn mono_editor<'a>(
-    content: &'a text_editor::Content,
-    placeholder: &'a str,
-    on_action: Option<fn(text_editor::Action) -> AppMessage>,
-    height: u32,
-) -> Element<'a, AppMessage> {
-    let mut input = text_editor(content)
-        .placeholder(placeholder)
-        .font(theme::MONO)
-        .size(theme::CODE)
-        .padding(14)
-        .height(height)
-        .style(|_, status| text_editor::Style {
-            background: theme::LANE.into(),
-            border: Border {
-                color: match status {
-                    text_editor::Status::Focused { .. } => theme::TEAL,
-                    _ => theme::LINE,
-                },
-                width: 1.0,
-                radius: theme::RADIUS_CARD.into(),
-            },
-            placeholder: theme::TEXT_MUTED,
-            value: theme::TEXT,
-            selection: theme::TEAL_FILL,
-        });
-    if let Some(on_action) = on_action {
-        input = input.on_action(on_action);
-    }
-    input.into()
-}
-
-/// A card of a list on the left: a name, an optional tag, and a line that is red when something is wrong.
-pub(crate) fn list_card<'a>(
-    name: &'a str,
-    tag: Option<&'a str>,
-    line: &'a str,
-    red: bool,
-    chosen: bool,
-    on_press: AppMessage,
-) -> Element<'a, AppMessage> {
-    let mut head = row![
-        text(name)
-            .size(theme::CARD_TITLE)
-            .font(theme::manrope(Weight::Semibold)),
-        space::horizontal(),
-    ]
-    .align_y(Alignment::Center);
-    if let Some(tag) = tag {
-        head = head.push(page::tag(tag.to_string(), Tone::Plain));
-    }
-    let mut content = column![head].spacing(4);
-    if !line.is_empty() {
-        content = content.push(
-            text(line)
-                .size(theme::LABEL)
-                .color(if red {
-                    theme::RED_TEXT
-                } else {
-                    theme::TEXT_SECONDARY
-                })
-                .wrapping(Wrapping::WordOrGlyph),
-        );
-    }
-    button(content)
-        .width(Length::Fill)
-        .padding([12, 14])
-        .on_press(on_press)
-        .style(move |_, status| {
-            let (fill, line) = match (red, chosen, status) {
-                (true, _, _) => (theme::RED_FILL, theme::RED_BORDER),
-                (false, true, _) => (theme::SURFACE, theme::TEAL),
-                (false, false, button::Status::Hovered) => (theme::LANE, theme::LINE),
-                (false, false, _) => (theme::SURFACE, theme::LINE),
-            };
-            button::Style {
-                background: Some(fill.into()),
-                text_color: theme::TEXT,
-                border: Border {
-                    color: line,
-                    width: if chosen { 2.0 } else { 1.0 },
-                    radius: theme::RADIUS_CARD.into(),
-                },
-                ..button::Style::default()
-            }
-        })
-        .into()
 }

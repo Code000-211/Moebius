@@ -7,7 +7,6 @@
 //! on its default branch that the server checks first. "Let the Moebius agent write them" asks the Moebius agent
 //! instead, in the floating chat.
 
-use iced::font::Weight;
 use iced::widget::text::Wrapping;
 use iced::widget::{column, container, row, space, text, text_editor, text_input};
 use iced::{Alignment, Border, Element, Length, Task};
@@ -16,7 +15,9 @@ use crate::app::Message as AppMessage;
 use crate::client::{Client, ClientError, RepositoryRules, Rule, RulesView, Run};
 use crate::screens::live::say;
 use crate::settings::Settings;
+use crate::widgets::form::{box_heading, notice_line};
 use crate::widgets::inline_edit::{self, editor_style};
+use crate::widgets::list_editor;
 use crate::widgets::page::{self, Tone};
 use crate::{screens::connect, theme};
 
@@ -703,37 +704,7 @@ fn boxed<'a>(
     aside: Element<'a, AppMessage>,
     content: Element<'a, AppMessage>,
 ) -> Element<'a, AppMessage> {
-    container(
-        column![
-            row![
-                text(heading)
-                    .size(theme::BOX_HEADING)
-                    .font(theme::manrope(Weight::Bold)),
-                space::horizontal(),
-                aside,
-            ]
-            .align_y(Alignment::Center),
-            content,
-        ]
-        .spacing(12),
-    )
-    .padding(20)
-    .width(Length::Fill)
-    .style(|_| page::box_style())
-    .into()
-}
-
-/// One line about what happened to the save or what is wrong with a file, red when it failed.
-fn notice_line<'a>(line: &str, red: bool) -> Element<'a, AppMessage> {
-    text(line.to_string())
-        .size(theme::CONTEXT)
-        .font(theme::manrope(Weight::Semibold))
-        .color(if red {
-            theme::RED_TEXT
-        } else {
-            theme::ONLINE_TEXT
-        })
-        .into()
+    list_editor::boxed(column![box_heading(heading, aside), content].spacing(12))
 }
 
 #[cfg(test)]

@@ -1,0 +1,88 @@
+//! The calls about what the server runs with: health, models, plugins, the first start, settings, secrets and the
+//! restart.
+
+use crate::client::{
+    Available, Client, ClientError, Health, Models, Plugins, SavedSettings, ServerSettings, Start,
+};
+
+impl Client {
+    pub async fn health(&self) -> Result<Health, ClientError> {
+        self.get("/v1/health").await
+    }
+
+    /// The upstreams, agents, teacher and decision model of the server.
+    pub async fn models(&self) -> Result<Models, ClientError> {
+        self.get("/v1/models").await
+    }
+
+    /// The models the upstreams serve; `refresh` asks them again instead of using what the server kept.
+    pub async fn available_models(&self, refresh: bool) -> Result<Available, ClientError> {
+        let path = if refresh {
+            "/v1/models/available?refresh=true"
+        } else {
+            "/v1/models/available"
+        };
+        self.get(path).await
+    }
+
+    /// The plugins the server has loaded.
+    pub async fn plugins(&self) -> Result<Plugins, ClientError> {
+        self.get("/v1/plugins").await
+    }
+
+    /// Whether the server is ready for a first card, step by step.
+    pub async fn start(&self) -> Result<Start, ClientError> {
+        self.get("/v1/start").await
+    }
+
+    /// What the server runs with.
+    pub async fn server_settings(&self) -> Result<ServerSettings, ClientError> {
+        self.get("/v1/settings").await
+    }
+
+    /// Changes `moebius.toml`: the dotted keys to set to a value and those to remove.
+    pub async fn save_settings(
+        &self,
+        set: serde_json::Map<String, serde_json::Value>,
+        remove: Vec<String>,
+    ) -> Result<SavedSettings, ClientError> {
+        let body = serde_json::json!({ "set": set, "remove": remove });
+        self.put("/v1/settings", body).await
+    }
+
+    /// Stores an API key under `name`, on the server only.
+    pub async fn store_secret(&self, name: &str, key: &str) -> Result<Vec<String>, ClientError> {
+        self.put(
+            &format!("/v1/secrets/{name}"),
+            serde_json::json!({ "value": key }),
+        )
+        .await
+    }
+
+    /// Moves the agents and rules of `moebius.toml` into a new harness configuration repository, which the server uses
+    /// once it restarts.
+    pub async fn set_up_harness(&self) -> Result<SavedSettings, ClientError> {
+        self.post("/v1/harness/setup", serde_json::json!({})).await
+    }
+
+    /// Asks the server to restart, which it answers before it does.
+    pub async fn restart_server(&self) -> Result<(), ClientError> {
+        let request = self
+            .http
+            .post(format!("{}/v1/server/restart", self.settings.address))
+            .json(&serde_json::json!({}))
+            .bearer_auth(&self.settings.token);
+        let response = request
+            .send()
+            .await
+            .map_err(|_| ClientError::Unreachable(self.settings.address.clone()))?;
+        match response.status() {
+            reqwest::StatusCode::UNAUTHORIZED => Err(ClientError::Unauthorized),
+            status if status.is_success() => Ok(()),
+            status => Err(ClientError::Server {
+                status: status.as_u16(),
+                message: response.text().await.unwrap_or_default(),
+            }),
+        }
+    }
+}

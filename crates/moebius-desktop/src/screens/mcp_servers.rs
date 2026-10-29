@@ -4,21 +4,20 @@
 //! for. A server without a harness configuration repository lists no servers, and the page then offers to set one up
 //! (see `harness_setup`).
 
-use iced::font::Weight;
 use iced::widget::text::Wrapping;
-use iced::widget::{
-    button, column, pick_list, row, scrollable, space, text, text_editor, text_input,
-};
+use iced::widget::{button, column, pick_list, row, space, text, text_editor, text_input};
 use iced::{Alignment, Border, Element, Length, Task};
 
 use crate::app::Message as AppMessage;
 use crate::client::{Client, ClientError, McpDefinition, McpServer, McpServerDetail, Skill};
-use crate::screens::agents::{field, menu_style, notice_line, pick_style};
 use crate::screens::harness_setup::{self, HarnessSetup};
 use crate::screens::live::say;
-use crate::screens::skills::{boxed, list_card, mono_editor};
 use crate::settings::Settings;
+use crate::widgets::form::{
+    box_heading, committed_line, field, menu_style, mono_editor, notice_line, pick_style,
+};
 use crate::widgets::import::{self, Import};
+use crate::widgets::list_editor::{self, Actions, boxed, list_card};
 use crate::widgets::page;
 use crate::{screens::connect, theme};
 
@@ -400,11 +399,11 @@ impl McpServers {
                 };
                 list_card(
                     &server.name,
-                    None,
+                    Vec::new(),
                     line,
                     red,
                     chosen == Some(server.name.as_str()),
-                    AppMessage::Mcp(Message::Select(server.name.clone())),
+                    Some(AppMessage::Mcp(Message::Select(server.name.clone()))),
                 )
             }))
             .spacing(8)
@@ -415,78 +414,42 @@ impl McpServers {
         if let Some(editor) = &self.editor {
             detail = detail.push(editor_view(editor));
         }
-        column![
+        list_editor::layout(
             header,
             self.import.is_open().then(|| self.import.view()),
-            row![
-                scrollable(cards).width(280),
-                scrollable(detail).width(Length::Fill)
-            ]
-            .spacing(14)
-            .height(Length::Fill),
-        ]
-        .spacing(theme::PAGE_GAP)
-        .width(Length::Fill)
-        .into()
+            cards,
+            detail,
+        )
     }
 }
 
 fn editor_view(editor: &Editor) -> Element<'_, AppMessage> {
     let message = AppMessage::Mcp;
-    let title: Element<_> = if editor.naming {
-        text_input("Name of the new server", &editor.name)
-            .on_input(move |name| message(Message::NameEdited(name)))
-            .size(theme::BODY)
-            .padding([9, 12])
-            .width(280)
-            .style(connect::input_style)
-            .into()
-    } else {
-        text(editor.name.as_str())
-            .size(21)
-            .font(theme::manrope(Weight::Bold))
-            .into()
-    };
-    let mut actions = row![].spacing(10).align_y(Alignment::Center);
-    if editor.confirming {
-        actions = actions
-            .push(
-                text(format!("Delete {}?", editor.name))
-                    .size(theme::CONTEXT)
-                    .color(theme::TEXT_SECONDARY),
-            )
-            .push(page::white_button("Keep", Some(message(Message::Keep))))
-            .push(page::white_button(
-                "Delete server",
-                Some(message(Message::Delete)),
-            ));
-    } else {
-        if editor.exists {
-            actions = actions.push(page::white_button(
-                "Delete",
-                Some(message(Message::AskDelete)),
-            ));
-        }
-        actions = actions.push(page::primary_button(
-            "Save",
-            (!editor.reading).then_some(message(Message::Save)),
-        ));
-    }
-    let head = row![title, space::horizontal(), actions].align_y(Alignment::Center);
+    let actions = list_editor::actions(
+        &editor.name,
+        editor.exists,
+        editor.confirming,
+        "Delete server",
+        Actions {
+            ask_delete: message(Message::AskDelete),
+            keep: message(Message::Keep),
+            delete: message(Message::Delete),
+            save: (!editor.reading).then_some(message(Message::Save)),
+        },
+    );
+    let head = list_editor::head(
+        editor.naming,
+        &editor.name,
+        "Name of the new server",
+        move |name| message(Message::NameEdited(name)),
+        actions,
+    );
     let mut top = column![head].spacing(12);
     if editor.reading {
         top = top.push(page::body("Reading the server…"));
     }
     match &editor.notice {
-        Some(Notice::Saved(Some(commit))) => {
-            top = top.push(notice_line(&format!("Saved as a commit: {commit}"), false));
-        }
-        Some(Notice::Saved(None)) => {
-            top = top.push(notice_line(
-                "Nothing changed, so nothing was committed.",
-                false,
-            ));
-        }
+        Some(Notice::Saved(commit)) => top = top.push(committed_line(commit.as_deref())),
         Some(Notice::Failed(error)) => top = top.push(notice_line(error, true)),
         None => {}
     }
@@ -575,19 +538,13 @@ fn definition_box(editor: &Editor) -> Element<'_, AppMessage> {
         .into()
     });
     content = content
-        .push(
-            row![
-                text(heading)
-                    .size(theme::BOX_HEADING)
-                    .font(theme::manrope(Weight::Bold)),
-                space::horizontal(),
-                text(aside)
-                    .size(theme::LABEL)
-                    .color(theme::TEXT_MUTED)
-                    .wrapping(Wrapping::None),
-            ]
-            .align_y(Alignment::Center),
-        )
+        .push(box_heading(
+            heading,
+            text(aside)
+                .size(theme::LABEL)
+                .color(theme::TEXT_MUTED)
+                .wrapping(Wrapping::None),
+        ))
         .push(column(rows).spacing(8))
         .push(page::white_button(add, Some(message(Message::AddRow))));
     boxed(content)

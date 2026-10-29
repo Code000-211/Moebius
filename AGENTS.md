@@ -25,7 +25,7 @@ changes ready to merge. Read `GLOSSARY.md` for the words, `docs/spec.md` for wha
   checked by a test.
 - `crates/moebius-desktop`: the iced desktop app (built to `docs/design.md`). It talks to the server only through the
   desktop API and does not depend on `moebius-core` (a dev-dependency starts a real server in its tests). At the top:
-  `app.rs` the state, messages and view, `client.rs` the API client and event stream, `settings.rs` the saved address
+  `app/` the state, messages and view, `client/` the API client and event stream, `settings.rs` the saved address
   and token, `theme.rs` every colour and size, `sidebar.rs` and `search.rs`. `screens/` has one module per page,
   `widgets/` the pieces screens share. `tests/snapshots/` holds the pictures its render tests compare against (delete
   one to store a new picture).

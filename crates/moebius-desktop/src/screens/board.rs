@@ -1,4 +1,4 @@
-//! The board of a repository, the first tab of its project's page (`project.rs` has the others): its columns of the default workflow, in order, with their cards, and the page that a
+//! The board of a repository, the first tab of its project's page (`project` has the others): its columns of the default workflow, in order, with their cards, and the page that a
 //! click on a card opens. Everything a card shows comes from the snapshot; `docs/design/board.png` is the picture.
 //!
 //! Cards are ordered by number. Done lists the ten highest numbers, highest first, because it keeps growing.
