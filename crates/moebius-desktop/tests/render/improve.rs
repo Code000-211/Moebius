@@ -180,7 +180,7 @@ fn the_experiments_screen_lists_the_research_and_shows_the_baseline_and_levers_o
             "New brief",
             "Draft",
             "Done",
-            "3 experiments · 1 kept",
+            "radiance · 3 experiments · 1 kept",
             "Cut the clean build time of the host",
             "./bench/build.sh",
             "radiance · Lower is better · 211400 of 500000 tokens used",

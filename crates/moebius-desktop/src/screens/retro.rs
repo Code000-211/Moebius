@@ -5,13 +5,14 @@
 
 use iced::font::Weight;
 use iced::widget::text::Wrapping;
-use iced::widget::{button, column, container, row, scrollable, space, text};
+use iced::widget::{column, container, row, scrollable, space, text};
 use iced::{Alignment, Border, Element, Length, Task};
 
 use crate::app::Message as AppMessage;
 use crate::client::{Client, ClientError, Proposal, ReportError, RetroSummary, RetroView, Trial};
 use crate::settings::Settings;
 use crate::theme;
+use crate::widgets::list_editor;
 use crate::widgets::page::{self, Tone};
 
 /// The kinds of error of a report, in the order the page lists them, with what the page calls them.
@@ -124,9 +125,7 @@ impl Retros {
             "Improve",
             "Retro",
             None,
-            page::context(
-                "Each day's errors, and the changes to the harness configuration the Retro proposes to avoid them.",
-            ),
+            page::context("Errors of each day, and the changes the Retro proposes to avoid them."),
             page::primary_button("Run the Retro now", Some(AppMessage::Retro(Message::Run))),
         );
         let mut detail = column![].spacing(theme::PAGE_GAP).width(Length::Fill);
@@ -145,18 +144,20 @@ impl Retros {
                 .push(proposals_box(&view.proposals)),
             None if self.list.is_empty() => detail.push(page::boxed(
                 "No Retro yet",
-                page::body("The first one runs at the time set by retro_at, or press \"Run the Retro now\"."),
+                page::body("The first runs at retro_at, or press \"Run the Retro now\"."),
             )),
             None => detail.push(page::boxed("Retro", page::body("Reading the Retro…"))),
         };
         column![
             header,
             row![
-                scrollable(self.list_view()).width(280),
-                scrollable(container(detail).padding(iced::Padding::default().right(12)))
-                    .width(Length::Fill)
+                scrollable(self.list_view()).width(theme::LIST_WIDTH_NARROW),
+                scrollable(
+                    container(detail).padding(iced::Padding::default().right(theme::SCROLL_GUTTER))
+                )
+                .width(Length::Fill)
             ]
-            .spacing(14)
+            .spacing(theme::PAGE_GAP)
             .height(Length::Fill),
         ]
         .spacing(theme::PAGE_GAP)
@@ -173,8 +174,8 @@ impl Retros {
                 retro_card(retro, self.chosen.as_deref() == Some(retro.date.as_str()))
             }),
         )
-        .spacing(8)
-        .padding(iced::Padding::default().right(12))
+        .spacing(theme::SPACE_8)
+        .padding(iced::Padding::default().right(theme::SCROLL_GUTTER))
         .into()
     }
 }
@@ -190,14 +191,13 @@ fn open(settings: &Settings, date: &str) -> Task<AppMessage> {
     )
 }
 
-fn status_tag<'a>(status: &str) -> Element<'a, AppMessage> {
-    let (label, tone) = match status {
+fn status_tag(status: &str) -> (&'static str, Tone) {
+    match status {
         "analysing" => ("Analysing", Tone::Amber),
         "proposed" => ("Proposed", Tone::Teal),
         "failed" => ("Failed", Tone::Red),
         _ => ("Reported", Tone::Plain),
-    };
-    page::tag(label.to_string(), tone)
+    }
 }
 
 fn plural(n: usize, one: &str, many: &str) -> String {
@@ -205,46 +205,19 @@ fn plural(n: usize, one: &str, many: &str) -> String {
 }
 
 fn retro_card(retro: &RetroSummary, chosen: bool) -> Element<'_, AppMessage> {
-    let head = row![
-        text(retro.date.as_str())
-            .size(theme::CARD_TITLE)
-            .font(theme::manrope(Weight::Semibold)),
-        space::horizontal(),
-        status_tag(&retro.status),
-    ]
-    .align_y(Alignment::Center);
     let counts = format!(
         "{} · {}",
         plural(retro.errors, "error", "errors"),
         plural(retro.proposals, "proposal", "proposals")
     );
-    let content = column![
-        head,
-        text(counts).size(theme::LABEL).color(theme::TEXT_SECONDARY)
-    ]
-    .spacing(4);
-    button(content)
-        .width(Length::Fill)
-        .padding([12, 14])
-        .on_press(AppMessage::Retro(Message::Select(retro.date.clone())))
-        .style(move |_, status| {
-            let (fill, line) = match (chosen, status) {
-                (true, _) => (theme::SURFACE, theme::TEAL),
-                (false, button::Status::Hovered) => (theme::LANE, theme::LINE),
-                (false, _) => (theme::SURFACE, theme::LINE),
-            };
-            button::Style {
-                background: Some(fill.into()),
-                text_color: theme::TEXT,
-                border: Border {
-                    color: line,
-                    width: if chosen { 2.0 } else { 1.0 },
-                    radius: theme::RADIUS_CARD.into(),
-                },
-                ..button::Style::default()
-            }
-        })
-        .into()
+    list_editor::list_card(
+        &retro.date,
+        vec![status_tag(&retro.status)],
+        counts,
+        false,
+        chosen,
+        Some(AppMessage::Retro(Message::Select(retro.date.clone()))),
+    )
 }
 
 fn warnings_box(view: &RetroView) -> Element<'_, AppMessage> {
@@ -258,7 +231,7 @@ fn warnings_box(view: &RetroView) -> Element<'_, AppMessage> {
             .wrapping(Wrapping::WordOrGlyph)
             .into()
     });
-    page::boxed("Left out", column(lines).spacing(6))
+    page::boxed("Left out", column(lines).spacing(theme::SPACE_6))
 }
 
 /// Where an error happened: its run, card and agent.
@@ -278,7 +251,7 @@ fn origin(error: &ReportError) -> String {
 
 fn errors_box(view: &RetroView) -> Element<'_, AppMessage> {
     let heading = format!("Errors of {}", view.date);
-    let mut groups = column![].spacing(14);
+    let mut groups = column![].spacing(theme::PAGE_GAP);
     for (kind, label) in KINDS {
         let errors: Vec<&ReportError> = view
             .report
@@ -293,13 +266,14 @@ fn errors_box(view: &RetroView) -> Element<'_, AppMessage> {
             column![
                 text(origin(error))
                     .size(theme::LABEL)
+                    .font(theme::MONO)
                     .color(theme::TEXT_MUTED),
                 text(error.text.as_str())
                     .size(theme::BODY)
                     .color(theme::TEXT_SECONDARY)
                     .wrapping(Wrapping::WordOrGlyph),
             ]
-            .spacing(2)
+            .spacing(theme::SPACE_2)
             .into()
         });
         let count = view.report.errors.iter().filter(|e| e.kind == kind).count();
@@ -308,9 +282,9 @@ fn errors_box(view: &RetroView) -> Element<'_, AppMessage> {
                 text(format!("{label} · {count}"))
                     .size(theme::CARD_TITLE)
                     .font(theme::manrope(Weight::Semibold)),
-                column(lines).spacing(8),
+                column(lines).spacing(theme::SPACE_8),
             ]
-            .spacing(6),
+            .spacing(theme::SPACE_6),
         );
     }
     let content: Element<_> = if view.report.errors.is_empty() {
@@ -326,9 +300,9 @@ fn errors_box(view: &RetroView) -> Element<'_, AppMessage> {
                 .font(theme::manrope(Weight::Bold)),
             content
         ]
-        .spacing(10),
+        .spacing(theme::SPACE_8),
     )
-    .padding(20)
+    .padding(theme::BOX_PADDING)
     .width(Length::Fill)
     .style(|_| page::box_style())
     .into()
@@ -340,7 +314,7 @@ fn proposals_box(proposals: &[Proposal]) -> Element<'_, AppMessage> {
     }
     page::boxed(
         "Proposals",
-        column(proposals.iter().map(proposal)).spacing(12),
+        column(proposals.iter().map(proposal)).spacing(theme::PAGE_GAP),
     )
 }
 
@@ -379,14 +353,17 @@ fn trial(trial: &Trial) -> Element<'_, AppMessage> {
     };
     row![
         page::tag(outcome, tone),
-        text(card).size(theme::LABEL).color(theme::TEXT_MUTED),
+        text(card)
+            .size(theme::LABEL)
+            .font(theme::MONO)
+            .color(theme::TEXT_MUTED),
         text(trial.reason.as_str())
             .size(theme::BODY)
             .color(theme::TEXT_SECONDARY)
             .width(Length::Fill)
             .wrapping(Wrapping::WordOrGlyph),
     ]
-    .spacing(8)
+    .spacing(theme::SPACE_8)
     .align_y(Alignment::Center)
     .into()
 }
@@ -411,7 +388,7 @@ pub fn proposal(proposal: &Proposal) -> Element<'_, AppMessage> {
             .wrapping(Wrapping::WordOrGlyph),
         space::horizontal(),
     ]
-    .spacing(6)
+    .spacing(theme::SPACE_6)
     .align_y(Alignment::Center);
     for agent in &proposal.agents {
         head = head.push(page::tag(agent.clone(), Tone::Plain));
@@ -428,7 +405,7 @@ pub fn proposal(proposal: &Proposal) -> Element<'_, AppMessage> {
             .color(theme::TEXT_MUTED)
             .wrapping(Wrapping::WordOrGlyph),
     ]
-    .spacing(4);
+    .spacing(theme::SPACE_4);
     if !proposal.body.is_empty() {
         content = content.push(
             text(proposal.body.as_str())
@@ -441,11 +418,12 @@ pub fn proposal(proposal: &Proposal) -> Element<'_, AppMessage> {
         content = content.push(
             text(cards(&proposal.cards))
                 .size(theme::LABEL)
+                .font(theme::MONO)
                 .color(theme::TEXT_MUTED),
         );
     }
     if !proposal.trials.is_empty() {
-        content = content.push(column(proposal.trials.iter().map(trial)).spacing(6));
+        content = content.push(column(proposal.trials.iter().map(trial)).spacing(theme::SPACE_6));
     }
     if !proposal.diff.is_empty() {
         content = content.push(crate::widgets::transcript::code_block(
@@ -454,7 +432,7 @@ pub fn proposal(proposal: &Proposal) -> Element<'_, AppMessage> {
         ));
     }
     container(content)
-        .padding([12, 14])
+        .padding(theme::BOX_PADDING)
         .width(Length::Fill)
         .style(|_| container::Style {
             background: Some(theme::LANE.into()),

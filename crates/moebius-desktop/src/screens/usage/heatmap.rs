@@ -17,11 +17,6 @@ use super::table::panel;
 
 /// The weeks of the heatmap: a year and the week it starts in.
 const WEEKS: i64 = 53;
-/// The height of a heatmap cell, and the gap around it.
-const CELL: f32 = 16.0;
-const CELL_GAP: f32 = 2.0;
-/// The width of the column that names the days of the week.
-const WEEKDAY_LABELS: f32 = 40.0;
 
 /// The colour of each model: the places of the models in the order in which they appear in the heatmap, then in the
 /// table, so that a model keeps its colour on every chart.
@@ -69,7 +64,7 @@ fn square<'a>(
         .style(move |_| container::Style {
             background: fill.map(Into::into),
             border: Border {
-                radius: 3.0.into(),
+                radius: theme::RADIUS_SMALL.into(),
                 ..Border::default()
             },
             ..container::Style::default()
@@ -103,8 +98,8 @@ pub fn heatmap<'a>(report: &'a UsageReport, colours: &Colours<'a>) -> Element<'a
                 _ => theme::HEAT_EMPTY,
             })
         };
-        container(square(Length::Fill, CELL, fill))
-            .padding(CELL_GAP)
+        container(square(Length::Fill, theme::HEAT_CELL, fill))
+            .padding(theme::HEAT_GAP)
             .width(Length::Fill)
             .into()
     };
@@ -114,11 +109,16 @@ pub fn heatmap<'a>(report: &'a UsageReport, colours: &Colours<'a>) -> Element<'a
         } else {
             ""
         };
-        container(text(name).size(13).color(theme::TEXT_SECONDARY))
-            .width(WEEKDAY_LABELS)
-            .align_y(Alignment::Center)
-            .height(CELL + 2.0 * CELL_GAP)
-            .into()
+        container(
+            text(name)
+                .size(theme::LABEL)
+                .font(theme::MONO)
+                .color(theme::TEXT_MUTED),
+        )
+        .width(theme::HEAT_LABELS)
+        .align_y(Alignment::Center)
+        .height(theme::HEAT_CELL + 2.0 * theme::HEAT_GAP)
+        .into()
     };
     let weeks = (0..7).map(|day_of_week| {
         let cells = (0..WEEKS).map(|week| cell(first + week * 7 + day_of_week as i64));
@@ -141,43 +141,46 @@ pub fn heatmap<'a>(report: &'a UsageReport, colours: &Colours<'a>) -> Element<'a
         let name = if weeks >= 2 { MONTHS[month] } else { "" };
         container(
             text(name)
-                .size(13)
+                .size(theme::LABEL)
+                .font(theme::MONO)
                 .wrapping(Wrapping::None)
-                .color(theme::TEXT_SECONDARY),
+                .color(theme::TEXT_MUTED),
         )
         .width(Length::FillPortion(weeks))
-        .padding(Padding::default().left(CELL_GAP))
+        .padding(Padding::default().left(theme::HEAT_GAP))
         .into()
     });
-    let months_row = row![space().width(WEEKDAY_LABELS)].extend(month_names);
+    let months_row = row![space().width(theme::HEAT_LABELS)].extend(month_names);
 
     let legend = row(colours.leading(report).into_iter().map(|model| {
         let swatches = row((1..=4).map(|level| {
             square(
-                14.0,
-                14.0,
+                theme::HEAT_CELL,
+                theme::HEAT_CELL,
                 Some(theme::shade(colours.of_model(model), level)),
             )
             .into()
         }))
-        .spacing(2);
+        .spacing(theme::SPACE_2);
         row![
             swatches,
             text(model.to_string())
-                .size(theme::CONTEXT)
+                .size(theme::LABEL)
+                .font(theme::MONO)
                 .color(theme::TEXT_SECONDARY)
         ]
-        .spacing(8)
+        .spacing(theme::SPACE_8)
         .align_y(Alignment::Center)
         .into()
     }))
-    .spacing(26)
+    .spacing(theme::PAGE_GAP * 2.0)
     .push(
-        text("Lighter means fewer tokens, darker means more")
-            .size(theme::CONTEXT)
+        text("Lighter means fewer tokens, darker more")
+            .size(theme::LABEL)
+            .font(theme::MONO)
             .color(theme::TEXT_MUTED),
     )
-    .padding(Padding::default().left(WEEKDAY_LABELS))
+    .padding(Padding::default().left(theme::HEAT_LABELS))
     .align_y(Alignment::Center);
 
     let aside = match busiest {
@@ -200,8 +203,8 @@ pub fn heatmap<'a>(report: &'a UsageReport, colours: &Colours<'a>) -> Element<'a
     panel(
         "Tokens per day",
         Some(aside),
-        column![months_row, column(weeks).spacing(0), legend]
-            .spacing(6)
+        column![months_row, column(weeks), legend]
+            .spacing(theme::SPACE_6)
             .into(),
     )
 }

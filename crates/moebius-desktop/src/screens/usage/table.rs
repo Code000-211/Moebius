@@ -8,7 +8,7 @@ use iced::{Alignment, Border, Color, Element, Length};
 
 use crate::app::Message as AppMessage;
 use crate::theme;
-use crate::widgets::form::box_heading;
+use crate::widgets::form::{aside, box_heading};
 use crate::widgets::page;
 
 /// The radii of the corners of a bar, clockwise from the top left.
@@ -27,9 +27,9 @@ pub fn panel<'a>(
     aside: Option<String>,
     content: Element<'a, AppMessage>,
 ) -> Element<'a, AppMessage> {
-    let aside = aside.map(|aside| text(aside).size(theme::LABEL).color(theme::TEXT_SECONDARY));
-    container(column![box_heading(heading, aside), content].spacing(14))
-        .padding([16, 18])
+    let line = aside.map(self::aside);
+    container(column![box_heading(heading, line), content].spacing(theme::PAGE_GAP))
+        .padding(theme::BOX_PADDING)
         .width(Length::Fill)
         .style(|_| page::box_style())
         .into()
@@ -75,16 +75,16 @@ impl Cell {
 pub fn table<'a>(columns: &[(&'a str, Length)], rows: Vec<Vec<Cell>>) -> Element<'a, AppMessage> {
     let head = row(columns.iter().enumerate().map(|(i, (name, width))| {
         let label = text(*name)
-            .size(12.5)
-            .font(theme::manrope(Weight::Bold))
-            .color(theme::SIDEBAR_GROUP);
+            .size(theme::LABEL)
+            .font(theme::manrope(Weight::Semibold))
+            .color(theme::TEXT_MUTED);
         aligned(label.into(), *width, i == 0)
     }))
-    .padding([8, 10]);
+    .padding(theme::TILE_PADDING);
     let line = |color: Color| {
         container(space())
             .width(Length::Fill)
-            .height(1)
+            .height(theme::HAIRLINE)
             .style(move |_| container::Style {
                 background: Some(color.into()),
                 ..container::Style::default()
@@ -94,26 +94,26 @@ pub fn table<'a>(columns: &[(&'a str, Length)], rows: Vec<Vec<Cell>>) -> Element
     for cells in rows {
         let cells = cells.into_iter().enumerate().map(|(i, cell)| {
             let width = columns[i].1;
-            let mut label = text(cell.text).size(14).wrapping(Wrapping::None);
+            let mut label = text(cell.text).size(theme::BODY).wrapping(Wrapping::None);
             if cell.code {
                 label = label.font(theme::MONO).size(theme::CODE);
             }
             let content: Element<'a, AppMessage> = match cell.lead {
                 Some(colour) => row![
                     container(space())
-                        .width(10)
-                        .height(10)
+                        .width(theme::SWATCH)
+                        .height(theme::SWATCH)
                         .style(move |_| container::Style {
                             background: Some(colour.into()),
                             border: Border {
-                                radius: 2.0.into(),
+                                radius: theme::RADIUS_SEGMENT.into(),
                                 ..Border::default()
                             },
                             ..container::Style::default()
                         }),
                     label
                 ]
-                .spacing(8)
+                .spacing(theme::SPACE_8)
                 .align_y(Alignment::Center)
                 .into(),
                 None => label.into(),
@@ -121,7 +121,7 @@ pub fn table<'a>(columns: &[(&'a str, Length)], rows: Vec<Vec<Cell>>) -> Element
             aligned(content, width, i == 0)
         });
         table = table
-            .push(row(cells).padding([9, 10]))
+            .push(row(cells).padding(theme::FIELD_PADDING))
             .push(line(theme::TRACK));
     }
     table.into()

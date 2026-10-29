@@ -6,7 +6,7 @@
 
 use iced::font::Weight;
 use iced::widget::{button, column, container, opaque, row, scrollable, text, text_input};
-use iced::{Alignment, Border, Element, Length, Padding, Shadow, Task, Vector};
+use iced::{Alignment, Border, Element, Length, Shadow, Task, Vector};
 
 use crate::app::Message as AppMessage;
 use crate::client::{Client, ClientError, Judgement, Run, RunEvent};
@@ -308,13 +308,16 @@ impl FloatChat {
             text("Moebius agent")
                 .size(theme::BOX_HEADING)
                 .font(theme::manrope(Weight::Bold)),
-            text(place).size(theme::LABEL).color(theme::TEXT_SECONDARY),
+            text(place)
+                .size(theme::LABEL)
+                .font(theme::MONO)
+                .color(theme::TEXT_MUTED),
         ]
-        .spacing(2)
+        .spacing(theme::SPACE_2)
         .width(Length::Fill);
         let minimise = container(
-            button(Icon::Minimise.view(theme::TEXT_SECONDARY, 18.0))
-                .padding(6)
+            button(Icon::Minimise.view(theme::TEXT_SECONDARY, theme::ICON))
+                .padding(theme::SPACE_6)
                 .on_press(AppMessage::Float(Message::Show(false)))
                 .style(|_, status| button::Style {
                     background: (status == button::Status::Hovered).then(|| theme::LANE.into()),
@@ -326,15 +329,19 @@ impl FloatChat {
                 }),
         )
         .id(MINIMISE);
-        let mut head =
-            column![row![title, minimise].spacing(8).align_y(Alignment::Center)].spacing(8);
+        let mut head = column![
+            row![title, minimise]
+                .spacing(theme::SPACE_8)
+                .align_y(Alignment::Center)
+        ]
+        .spacing(theme::SPACE_8);
         if self.thread.is_some() {
             head = head.push(
                 row![
                     link("New conversation", Message::NewConversation),
                     link("Open in Chat", Message::OpenInChat),
                 ]
-                .spacing(16),
+                .spacing(theme::PAGE_GAP),
             );
         }
         let conversation: Element<'a, AppMessage> = match &self.thread {
@@ -362,22 +369,25 @@ impl FloatChat {
                     .on_input(|text| AppMessage::Float(Message::Edited(text)))
                     .on_submit_maybe(send.clone())
                     .size(theme::BODY)
-                    .padding([10, 12])
+                    .padding(theme::FIELD_PADDING)
                     .style(connect::input_style),
                 page::primary_button("Send", send),
             ]
-            .spacing(8)
+            .spacing(theme::SPACE_8)
             .align_y(Alignment::Center),
-            text(hint).size(theme::LABEL).color(theme::TEXT_MUTED),
+            text(hint)
+                .size(theme::LABEL)
+                .font(theme::MONO)
+                .color(theme::TEXT_MUTED),
         ]
-        .spacing(6)
-        .padding([12, 14]);
+        .spacing(theme::SPACE_6)
+        .padding(theme::CARD_PADDING);
         let window = container(column![
-            container(head).padding([12, 14]),
+            container(head).padding(theme::CARD_PADDING),
             page::rule(),
             scrollable(
                 container(conversation)
-                    .padding(Padding::from([14, 14]))
+                    .padding(theme::BOX_PADDING)
                     .width(Length::Fill)
             )
             .anchor_bottom()
@@ -409,16 +419,16 @@ fn shadow() -> Shadow {
 fn round_button<'a>() -> Element<'a, AppMessage> {
     let button = button(
         row![
-            Icon::Chat.view(theme::ON_FILL, 14.0),
+            Icon::Chat.view(theme::ON_FILL, theme::ICON_SMALL),
             text("Agent")
                 .size(theme::LABEL)
                 .font(theme::MONO)
                 .color(theme::ON_FILL),
         ]
-        .spacing(6)
+        .spacing(theme::SPACE_6)
         .align_y(Alignment::Center),
     )
-    .padding([7, 12])
+    .padding(theme::CONTROL_PADDING)
     .on_press(AppMessage::Float(Message::Show(true)))
     .style(|_, status| button::Style {
         background: Some(
@@ -452,9 +462,9 @@ fn link<'a>(label: &'a str, message: Message) -> Element<'a, AppMessage> {
     .on_press(AppMessage::Float(message))
     .style(|_, status| button::Style {
         text_color: if status == button::Status::Hovered {
-            theme::ONLINE_TEXT
+            theme::TEXT
         } else {
-            theme::TEAL
+            theme::TEXT_SECONDARY
         },
         ..button::Style::default()
     })

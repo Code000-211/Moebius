@@ -133,7 +133,7 @@ pub(super) fn report(report: &str) -> Element<'_, AppMessage> {
             .width(Length::Fill)
             .wrapping(Wrapping::WordOrGlyph),
     )
-    .padding(14)
+    .padding(theme::BOX_PADDING)
     .width(Length::Fill)
     .style(|_| container::Style {
         background: Some(theme::LANE.into()),
@@ -149,7 +149,7 @@ pub(super) fn report(report: &str) -> Element<'_, AppMessage> {
 
 /// A proposal for Moebius's own configuration: the Retro's reason and the diff of what it changes.
 pub(super) fn own_change(item: &InboxItem) -> Element<'_, AppMessage> {
-    let mut content = column![].spacing(8);
+    let mut content = column![].spacing(theme::SPACE_8);
     if let Some(reason) = item.data["reason"].as_str().filter(|r| !r.is_empty()) {
         content = content.push(
             text(reason)
@@ -175,17 +175,17 @@ pub(super) fn trials(item: &InboxItem) -> Element<'_, AppMessage> {
             .map(trial_line)
             .collect::<Vec<_>>()
     };
-    let mut content = column(lines("trials")).spacing(6);
+    let mut content = column(lines("trials")).spacing(theme::SPACE_6);
     let regression = lines("regression");
     if !regression.is_empty() {
         content = content
             .push(
                 text("Regression set: past merged cards it must not break")
                     .size(theme::LABEL)
-                    .font(theme::manrope(iced::font::Weight::Semibold))
+                    .font(theme::MONO)
                     .color(theme::TEXT_MUTED),
             )
-            .push(column(regression).spacing(6));
+            .push(column(regression).spacing(theme::SPACE_6));
     }
     content.into()
 }
@@ -213,7 +213,7 @@ fn trial_line(trial: &serde_json::Value) -> Element<'_, AppMessage> {
             .width(Length::Fill)
             .wrapping(Wrapping::WordOrGlyph),
     ]
-    .spacing(8)
+    .spacing(theme::SPACE_8)
     .align_y(Alignment::Center)
     .into()
 }
@@ -252,7 +252,10 @@ pub(super) fn facts<'a>(item: &'a InboxItem, found: &Found<'a>) -> Element<'a, A
             Some(theme::MONO),
         ));
     }
-    row(facts).spacing(8).width(Length::Fill).into()
+    row(facts)
+        .spacing(theme::SPACE_8)
+        .width(Length::Fill)
+        .into()
 }
 
 /// One box of facts: a small label over a value.
@@ -268,12 +271,15 @@ fn fact<'a>(
     }
     container(
         column![
-            text(label).size(theme::LABEL).color(theme::TEXT_MUTED),
+            text(label)
+                .size(theme::LABEL)
+                .font(theme::MONO)
+                .color(theme::TEXT_MUTED),
             value
         ]
-        .spacing(2),
+        .spacing(theme::SPACE_2),
     )
-    .padding([8, 11])
+    .padding(theme::CARD_PADDING)
     .width(Length::FillPortion(1))
     .style(|_| container::Style {
         background: Some(theme::LANE.into()),

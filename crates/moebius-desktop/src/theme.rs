@@ -157,8 +157,40 @@ pub const SIDEBAR_WIDTH: f32 = 220.0;
 pub const RAIL_WIDTH: f32 = 56.0;
 pub const PAGE_PADDING: [f32; 2] = [16.0, 20.0];
 pub const PAGE_GAP: f32 = 12.0;
+/// The padding of a card of a list and of a small tile.
+pub const CARD_PADDING: [f32; 2] = [9.0, 11.0];
+pub const TILE_PADDING: [f32; 2] = [8.0, 10.0];
+/// The room a scrolling page leaves on its right for the scrollbar.
+pub const SCROLL_GUTTER: f32 = 12.0;
+/// The cells of the usage heatmap, their gap, and the column that names the weekdays.
+pub const HEAT_CELL: f32 = 14.0;
+pub const HEAT_GAP: f32 = 2.0;
+pub const HEAT_LABELS: f32 = 40.0;
+/// The thickness of a bar of the usage page, the square before a model's name, and the columns around a bar.
+pub const USAGE_BAR: f32 = 12.0;
+pub const SWATCH: f32 = 10.0;
+pub const ACTIVITY_NAME_WIDTH: f32 = 220.0;
+pub const ACTIVITY_TIME_WIDTH: f32 = 90.0;
+/// The height of a tall text editor, such as a prompt.
+pub const EDITOR_TALL: f32 = 140.0;
+/// The columns of a firing's line and the tag column of a setup step.
+pub const FIRING_TIME_WIDTH: f32 = 90.0;
+pub const FIRING_BY_WIDTH: f32 = 80.0;
+pub const STEP_TAG_WIDTH: f32 = 64.0;
+/// A thin bar, and the mark across it.
+pub const BAR_HEIGHT: f32 = 6.0;
+pub const BAR_MARK: f32 = 2.0;
+/// The width of a short field, such as a number.
+pub const FIELD_WIDTH: f32 = 220.0;
+/// The height of a small text editor in a form.
+pub const EDITOR_COMPACT: f32 = 96.0;
+/// The narrow list beside the editor of a page.
+pub const LIST_WIDTH_NARROW: f32 = 240.0;
 pub const ICON: f32 = 16.0;
 pub const ICON_SMALL: f32 = 14.0;
+/// The Moebius mark.
+pub const LOGO_WIDTH: f32 = 22.0;
+pub const LOGO_HEIGHT: f32 = 16.0;
 pub const DOT: f32 = 6.0;
 
 /// The spacing scale for gaps and paddings, named by pixels.

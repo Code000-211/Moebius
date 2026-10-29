@@ -58,7 +58,7 @@ pub fn tiles(report: &UsageReport, window: Window) -> Element<'_, AppMessage> {
             "Time the models spent answering".to_string(),
         ),
     ]
-    .spacing(12)
+    .spacing(theme::PAGE_GAP)
     .into()
 }
 
@@ -66,17 +66,20 @@ fn tile<'a>(label: &'a str, value: String, note: String) -> Element<'a, AppMessa
     container(
         column![
             text(label)
-                .size(13)
+                .size(theme::LABEL)
                 .font(theme::manrope(Weight::Semibold))
-                .color(theme::SIDEBAR_GROUP),
+                .color(theme::TEXT_MUTED),
             text(value)
                 .size(theme::TILE_VALUE)
                 .font(theme::manrope(Weight::Bold)),
-            text(note).size(13).color(theme::TEXT_SECONDARY),
+            text(note)
+                .size(theme::LABEL)
+                .font(theme::MONO)
+                .color(theme::TEXT_MUTED),
         ]
-        .spacing(4),
+        .spacing(theme::SPACE_4),
     )
-    .padding([14, 16])
+    .padding(theme::BOX_PADDING)
     .width(Length::FillPortion(1))
     .style(|_| page::box_style())
     .into()
@@ -93,15 +96,15 @@ pub fn models_box<'a>(
     let segments = report.models.iter().enumerate().map(|(i, model)| {
         let colour = colours.of_model(&model.model);
         let radius = match (i == 0, i == last) {
-            (true, true) => [7.0; 4],
-            (true, false) => [7.0, 0.0, 0.0, 7.0],
-            (false, true) => [0.0, 7.0, 7.0, 0.0],
+            (true, true) => [theme::RADIUS_SMALL; 4],
+            (true, false) => [theme::RADIUS_SMALL, 0.0, 0.0, theme::RADIUS_SMALL],
+            (false, true) => [0.0, theme::RADIUS_SMALL, theme::RADIUS_SMALL, 0.0],
             (false, false) => [0.0; 4],
         };
         let portion = (model.tokens.max(0) * 1000 / total.max(1)).max(1) as u16;
         container(space())
             .width(Length::FillPortion(portion))
-            .height(14)
+            .height(theme::USAGE_BAR)
             .style(move |_| container::Style {
                 background: Some(colour.into()),
                 border: Border {
@@ -112,7 +115,7 @@ pub fn models_box<'a>(
             })
             .into()
     });
-    let bar = row(segments).spacing(2);
+    let bar = row(segments).spacing(theme::SPACE_2);
     let rows = report
         .models
         .iter()
@@ -138,7 +141,9 @@ pub fn models_box<'a>(
     let content: Element<'a, AppMessage> = if report.models.is_empty() {
         page::body(NO_CALL)
     } else {
-        column![bar, table(&columns, rows)].spacing(16).into()
+        column![bar, table(&columns, rows)]
+            .spacing(theme::PAGE_GAP)
+            .into()
     };
     panel(
         "Tokens by model",
@@ -201,18 +206,18 @@ pub fn time_box<'a>(report: &'a UsageReport, span: &str) -> Element<'a, AppMessa
         let portion = (doing.model_ms * 1000 / longest).clamp(0, 1000) as u16;
         let bar = container(space())
             .width(Length::FillPortion(portion.max(1)))
-            .height(14)
+            .height(theme::USAGE_BAR)
             .style(|_| container::Style {
                 background: Some(theme::model_colour(0).into()),
                 border: Border {
-                    radius: corners([0.0, 4.0, 4.0, 0.0]),
+                    radius: corners([0.0, theme::RADIUS_ITEM, theme::RADIUS_ITEM, 0.0]),
                     ..Border::default()
                 },
                 ..container::Style::default()
             });
-        let name = text(doing.name).size(14).wrapping(Wrapping::None);
+        let name = text(doing.name).size(theme::BODY).wrapping(Wrapping::None);
         let name = if doing.tool {
-            name.font(theme::MONO).size(13)
+            name.font(theme::MONO).size(theme::CODE)
         } else {
             name
         };
@@ -225,11 +230,12 @@ pub fn time_box<'a>(report: &'a UsageReport, span: &str) -> Element<'a, AppMessa
             container(row![
                 name,
                 text(calls)
-                    .size(12.5)
-                    .color(theme::TEXT_SECONDARY)
+                    .size(theme::LABEL)
+                    .font(theme::MONO)
+                    .color(theme::TEXT_MUTED)
                     .wrapping(Wrapping::None)
             ])
-            .width(220),
+            .width(theme::ACTIVITY_NAME_WIDTH),
             container(row![
                 bar,
                 space().width(Length::FillPortion(1001 - portion.max(1)))
@@ -238,27 +244,28 @@ pub fn time_box<'a>(report: &'a UsageReport, span: &str) -> Element<'a, AppMessa
             .style(|_| container::Style {
                 background: Some(theme::HEAD_PILL.into()),
                 border: Border {
-                    radius: 4.0.into(),
+                    radius: theme::RADIUS_ITEM.into(),
                     ..Border::default()
                 },
                 ..container::Style::default()
             }),
             container(
                 text(duration(doing.model_ms / 1000))
-                    .size(12.5)
+                    .size(theme::CONTEXT)
+                    .font(theme::MONO)
                     .color(theme::TEXT_SECONDARY)
             )
-            .width(90)
+            .width(theme::ACTIVITY_TIME_WIDTH)
             .align_x(Alignment::End),
         ]
-        .spacing(12)
+        .spacing(theme::PAGE_GAP)
         .align_y(Alignment::Center)
         .into()
     });
     let content: Element<'a, AppMessage> = if report.activities.is_empty() {
         page::body(NO_CALL)
     } else {
-        column(bars).spacing(12).into()
+        column(bars).spacing(theme::PAGE_GAP).into()
     };
     panel(
         "Where the model time goes",

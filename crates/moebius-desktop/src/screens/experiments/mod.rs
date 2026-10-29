@@ -137,9 +137,7 @@ impl Experiments {
             "Improve",
             "Experiments",
             None,
-            page::context(
-                "A number to improve, a command that measures it, and the levers the Autoresearcher tries.",
-            ),
+            page::context("A number to improve, a command that measures it, and the levers tried."),
             page::primary_button(
                 "New brief",
                 (!self.composing).then_some(AppMessage::Experiments(Message::Compose)),
@@ -172,11 +170,13 @@ impl Experiments {
         column![
             header,
             row![
-                scrollable(self.list_view(snapshot)).width(280),
-                scrollable(container(detail).padding(iced::Padding::default().right(12)))
-                    .width(Length::Fill)
+                scrollable(self.list_view(snapshot)).width(theme::LIST_WIDTH_NARROW),
+                scrollable(
+                    container(detail).padding(iced::Padding::default().right(theme::SCROLL_GUTTER))
+                )
+                .width(Length::Fill)
             ]
-            .spacing(14)
+            .spacing(theme::PAGE_GAP)
             .height(Length::Fill),
         ]
         .spacing(theme::PAGE_GAP)
@@ -195,8 +195,8 @@ impl Experiments {
                 !self.composing && self.chosen == Some(research.id),
             )
         }))
-        .spacing(8)
-        .padding(iced::Padding::default().right(12))
+        .spacing(theme::SPACE_8)
+        .padding(iced::Padding::default().right(theme::SCROLL_GUTTER))
         .into()
     }
 }

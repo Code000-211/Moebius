@@ -74,12 +74,12 @@ impl Start {
             content = content.push(
                 text(error.clone())
                     .size(theme::CONTEXT)
-                    .font(theme::manrope(Weight::Semibold))
-                    .color(theme::AMBER),
+                    .font(theme::MONO)
+                    .color(theme::RED_TEXT),
             );
         }
         if let Some(answer) = &self.answer {
-            let mut steps = column![].spacing(14);
+            let mut steps = column![].spacing(theme::PAGE_GAP);
             for (index, step) in answer.steps.iter().enumerate() {
                 if index > 0 {
                     steps = steps.push(page::rule());
@@ -96,7 +96,7 @@ impl Start {
                 page::context(context),
                 page::white_button("Refresh", Some(AppMessage::Start(Message::Refresh))),
             ),
-            scrollable(container(content).padding(Padding::default().right(12)))
+            scrollable(container(content).padding(Padding::default().right(theme::SCROLL_GUTTER)))
                 .height(Length::Fill),
         ]
         .spacing(theme::PAGE_GAP)
@@ -131,14 +131,14 @@ fn step_row<'a>(step: &'a StartStep, harness: &'a HarnessSetup) -> Element<'a, A
             .font(theme::MANROPE)
             .color(theme::TEXT_SECONDARY),
     ]
-    .spacing(3)
+    .spacing(theme::SPACE_4)
     .width(Length::Fill);
     let set_up = step.key == "harness" && !step.done;
     if let Some(error) = harness.error().filter(|_| set_up) {
         words = words.push(text(error).size(theme::CONTEXT).color(theme::RED_TEXT));
     }
-    let mut line = row![container(mark).width(64), words]
-        .spacing(14)
+    let mut line = row![container(mark).width(theme::STEP_TAG_WIDTH), words]
+        .spacing(theme::PAGE_GAP)
         .align_y(Alignment::Center);
     if set_up {
         // The step is fixed here: the repository is made and the server restarts.

@@ -133,7 +133,7 @@ impl Usage {
             "Usage",
             None,
             page::context(
-                "Which models ran when, how many tokens went where, and what the models spent their time on.",
+                "Which models ran when, where the tokens went, and what the models spent time on.",
             ),
             text("").into(),
         );
@@ -145,7 +145,7 @@ impl Usage {
                 AppMessage::Usage(Message::Choose(window)),
             )
         }))
-        .spacing(8);
+        .spacing(theme::SPACE_8);
         let body: Element<'_, AppMessage> = match &self.report {
             Some(report) => self.report_view(report),
             None => page::boxed("Usage", page::body("Reading the usage…")),
@@ -153,7 +153,8 @@ impl Usage {
         column![
             header,
             chips,
-            scrollable(container(body).padding(Padding::default().right(12))).height(Length::Fill)
+            scrollable(container(body).padding(Padding::default().right(theme::SCROLL_GUTTER)))
+                .height(Length::Fill)
         ]
         .spacing(theme::PAGE_GAP)
         .width(Length::Fill)

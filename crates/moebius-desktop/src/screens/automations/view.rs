@@ -12,7 +12,9 @@ use crate::app::Message as AppMessage;
 use crate::client::{Firing, Snapshot};
 use crate::screens::connect;
 use crate::theme;
-use crate::widgets::form::{box_heading, field, menu_style, mono_editor, notice_line, pick_style};
+use crate::widgets::form::{
+    aside, box_heading, field, menu_style, mono_editor, notice_line, pick_style,
+};
 use crate::widgets::list_editor::{self, Actions, boxed, list_card};
 use crate::widgets::page::{self, Tone};
 
@@ -60,7 +62,7 @@ impl Automations {
             "Automations",
             None,
             page::context(
-                "Chats that start on their own, on a schedule in the server's local time. What they offer lands in the Inbox.",
+                "Chats that start on a schedule, in the server's local time. What they offer lands in the Inbox.",
             ),
             page::white_button("New automation", Some(message(Message::NewAutomation))),
         );
@@ -68,7 +70,7 @@ impl Automations {
         let cards: Element<_> = if self.list.is_empty() {
             page::boxed(
                 "Automations",
-                page::body("No automation yet. One triages new issues every morning, say."),
+                page::body("None yet. One could triage new issues every morning."),
             )
         } else {
             column(self.list.iter().map(|automation| {
@@ -100,8 +102,8 @@ impl Automations {
                     Some(message(Message::Select(automation.id))),
                 )
             }))
-            .spacing(8)
-            .padding(iced::Padding::default().right(12))
+            .spacing(theme::SPACE_8)
+            .padding(iced::Padding::default().right(theme::SCROLL_GUTTER))
             .into()
         };
         let detail: Element<_> = match &self.editor {
@@ -134,7 +136,7 @@ impl Automations {
             let run_now = editor.id.map(|_| message(Message::RunNow));
             row![page::white_button("Run now", run_now)]
                 .push(actions)
-                .spacing(10)
+                .spacing(theme::SPACE_8)
                 .align_y(Alignment::Center)
         };
         let head = list_editor::head(
@@ -144,13 +146,13 @@ impl Automations {
             |name| message(Message::NameEdited(name)),
             actions,
         );
-        let mut top = column![head].spacing(12);
+        let mut top = column![head].spacing(theme::PAGE_GAP);
         match &editor.notice {
             Some(Notice::Saved) => top = top.push(notice_line("Saved.", false)),
             Some(Notice::Ran(firing)) => {
                 let (line, red) = match firing.status.as_str() {
                     "started" => (
-                        "Started its chat; it is among the firings below.".to_string(),
+                        "Started; its chat is among the firings below.".to_string(),
                         false,
                     ),
                     _ => (format!("Not started: {}", firing.reason), true),
@@ -194,7 +196,7 @@ impl Automations {
             message(Message::PresetChosen(preset.cron))
         })
         .text_size(theme::BODY)
-        .padding([9, 12])
+        .padding(theme::FIELD_PADDING)
         .width(Length::Fill)
         .style(pick_style)
         .menu_style(menu_style);
@@ -202,7 +204,7 @@ impl Automations {
             .on_input(|schedule| message(Message::ScheduleEdited(schedule)))
             .font(theme::MONO)
             .size(theme::CODE)
-            .padding([9, 12])
+            .padding(theme::FIELD_PADDING)
             .style(connect::input_style);
         let saved = self.saved();
         let next = match saved {
@@ -233,17 +235,17 @@ impl Automations {
                 message(Message::Switched(false))
             ),
         ]
-        .spacing(6);
+        .spacing(theme::SPACE_6);
         let content = column![
             box_heading("Schedule", switch),
             row![
                 field("Repeats", picker),
                 field("Cron, in the server's local time", cron)
             ]
-            .spacing(12),
-            text(next).size(theme::CONTEXT).color(theme::TEXT_SECONDARY),
+            .spacing(theme::PAGE_GAP),
+            notice_line(&next, false),
         ]
-        .spacing(12);
+        .spacing(theme::PAGE_GAP);
         boxed(content)
     }
 
@@ -253,17 +255,17 @@ impl Automations {
             None if editor.id.is_some() => page::body("Reading the firings…"),
             Some(firings) if !firings.is_empty() => {
                 column(firings.iter().map(|firing| firing_row(firing, self.now)))
-                    .spacing(6)
+                    .spacing(theme::SPACE_6)
                     .into()
             }
             _ => page::body("It has not fired yet."),
         };
         boxed(
             column![
-                box_heading("Firings", page::body("Each opens its chat")),
+                box_heading("Firings", aside("Each opens its chat")),
                 content
             ]
-            .spacing(12),
+            .spacing(theme::PAGE_GAP),
         )
     }
 }
@@ -282,7 +284,7 @@ fn chat_box<'a>(
         message(Message::AgentChosen(agent))
     })
     .text_size(theme::BODY)
-    .padding([9, 12])
+    .padding(theme::FIELD_PADDING)
     .width(Length::Fill)
     .style(pick_style)
     .menu_style(menu_style);
@@ -305,24 +307,24 @@ fn chat_box<'a>(
         message(Message::PlaceChosen(choice.0))
     })
     .text_size(theme::BODY)
-    .padding([9, 12])
+    .padding(theme::FIELD_PADDING)
     .width(Length::Fill)
     .style(pick_style)
     .menu_style(menu_style);
     let content = column![
-        box_heading("Chat", page::body("Ends once the agent has answered")),
-        row![field("Agent", agent), field("Works in", place)].spacing(12),
+        box_heading("Chat", aside("Ends once the agent has answered")),
+        row![field("Agent", agent), field("Works in", place)].spacing(theme::PAGE_GAP),
         field(
             "Prompt",
             mono_editor(
                 &editor.prompt,
                 "Triage the issues opened since yesterday: label them and say which are ready.",
                 Some(prompt_action),
-                140,
+                theme::EDITOR_TALL as u32,
             ),
         ),
     ]
-    .spacing(12);
+    .spacing(theme::PAGE_GAP);
     boxed(content)
 }
 
@@ -341,25 +343,27 @@ fn firing_row(firing: &Firing, now: i64) -> Element<'_, AppMessage> {
     };
     let line = row![
         text(page::ago(now, firing.at))
-            .size(theme::CONTEXT)
-            .color(theme::TEXT_SECONDARY)
-            .width(90),
+            .size(theme::LABEL)
+            .font(theme::MONO)
+            .color(theme::TEXT_MUTED)
+            .width(theme::FIRING_TIME_WIDTH),
         page::tag(firing.status.clone(), tone),
         text(by)
-            .size(theme::CONTEXT)
+            .size(theme::LABEL)
+            .font(theme::MONO)
             .color(theme::TEXT_MUTED)
-            .width(80),
+            .width(theme::FIRING_BY_WIDTH),
         text(what)
             .size(theme::CONTEXT)
             .font(theme::manrope(Weight::Medium))
             .wrapping(Wrapping::WordOrGlyph),
         space::horizontal(),
     ]
-    .spacing(12)
+    .spacing(theme::PAGE_GAP)
     .align_y(Alignment::Center);
     button(line)
         .width(Length::Fill)
-        .padding([8, 12])
+        .padding(theme::CARD_PADDING)
         .on_press_maybe(firing.run_id.map(AppMessage::OpenChat))
         .style(|_, status| button::Style {
             background: Some(

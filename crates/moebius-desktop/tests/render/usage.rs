@@ -128,7 +128,7 @@ fn the_usage_screen_shows_the_heatmap_models_and_agents_like_the_mockup() {
             "Model time",
             "3 h 12 m",
             "Tokens per day",
-            "Lighter means fewer tokens, darker means more",
+            "Lighter means fewer tokens, darker more",
             "Tokens by model",
             "1.84M today across 4 models",
             "Tokens per call",

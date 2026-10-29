@@ -19,7 +19,7 @@ fn goal_input<'a>(goal: &'a str, on: fn(String) -> Message) -> TextInput<'a, App
     text_input("What should get better?", goal)
         .on_input(move |goal| AppMessage::Experiments(on(goal)))
         .size(theme::BODY)
-        .padding([9, 12])
+        .padding(theme::FIELD_PADDING)
         .style(connect::input_style)
 }
 
@@ -29,7 +29,7 @@ fn measure_input<'a>(measure: &'a str, on: fn(String) -> Message) -> TextInput<'
         .on_input(move |measure| AppMessage::Experiments(on(measure)))
         .size(theme::CODE)
         .font(theme::MONO)
-        .padding([9, 12])
+        .padding(theme::FIELD_PADDING)
         .style(connect::input_style)
 }
 
@@ -49,7 +49,7 @@ fn better_chips<'a>(better: &str, on: fn(&'static str) -> Message) -> Element<'a
             AppMessage::Experiments(on("higher")),
         ),
     ]
-    .spacing(8)
+    .spacing(theme::SPACE_8)
     .into()
 }
 
@@ -58,8 +58,8 @@ fn budget_input<'a>(budget: &'a str, on: fn(String) -> Message) -> TextInput<'a,
     text_input(DEFAULT_BUDGET, budget)
         .on_input(move |budget| AppMessage::Experiments(on(budget)))
         .size(theme::BODY)
-        .padding([9, 12])
-        .width(220)
+        .padding(theme::FIELD_PADDING)
+        .width(theme::FIELD_WIDTH)
         .style(connect::input_style)
 }
 
@@ -75,7 +75,7 @@ impl Experiments {
             better_chips(form.better, Message::BriefBetter),
             budget_input(&form.budget, Message::BriefBudget),
         ]
-        .spacing(10);
+        .spacing(theme::SPACE_8);
         let save = (!edit.saving && form.ready()).then_some(message(Message::SaveBrief));
         Some(page::boxed(
             "Brief",
@@ -95,9 +95,9 @@ impl Experiments {
             text(label)
                 .size(theme::LABEL)
                 .font(theme::manrope(Weight::Semibold))
-                .color(theme::SIDEBAR_GROUP)
+                .color(theme::TEXT_SECONDARY)
         };
-        let mut repositories = row![].spacing(8);
+        let mut repositories = row![].spacing(theme::SPACE_8);
         for board in &snapshot.boards {
             let id = board.repository.id;
             repositories = repositories.push(page::chip(
@@ -112,21 +112,21 @@ impl Experiments {
             .then_some(AppMessage::Experiments(Message::Store));
         let content = column![
             label("Repository"),
-            repositories.wrap().vertical_spacing(8),
+            repositories.wrap().vertical_spacing(theme::SPACE_8),
             label("Goal"),
             goal_input(&form.goal, Message::GoalEdited),
             label("Measure"),
             measure_input(&form.measure, Message::MeasureEdited),
             page::body(
-                "A shell command that runs in a worktree. Its result is the last number it prints; a failed command or no number is a failed measurement.",
+                "A shell command run in a worktree. Its result is the last number it prints; no number is a failed measurement.",
             ),
             label("Direction"),
             better_chips(form.better, Message::BetterChosen),
             label("Token budget"),
             budget_input(&form.budget, Message::BudgetEdited).on_submit_maybe(store.clone()),
-            row![page::white_button("Store the brief", store)].spacing(8),
+            row![page::white_button("Store the brief", store)].spacing(theme::SPACE_8),
         ]
-        .spacing(10);
+        .spacing(theme::SPACE_8);
         page::boxed("New brief", content)
     }
 }

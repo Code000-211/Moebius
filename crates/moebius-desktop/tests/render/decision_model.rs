@@ -60,7 +60,7 @@ fn the_decision_model_screen_counts_the_kinds_lists_the_exports_and_keeps_room_f
         &[
             "Decision model",
             "Export training set",
-            "1227 judgements recorded in 3 kinds; they leave the server only in an export you start.",
+            "1227 judgements in 3 kinds; they leave the server only in an export you start.",
             "Kinds of decision",
             "With an outcome",
             "By a person",
@@ -156,7 +156,7 @@ fn the_decision_model_screen_shows_the_agreement_per_kind_and_releases_a_taken_o
         "decision-model-shadowing",
         &[
             "Shadowing",
-            "moebius-decider decides alongside whoever decides now on the judgements held back from training. A kind is proposed in the inbox once it has 100 of them and agrees on at least 95%.",
+            "moebius-decider decides alongside the current decider on judgements held out of training. A kind is proposed in the inbox at 100 of them with at least 95% agreement.",
             "Shadows",
             "Agreement",
             "Decided by",

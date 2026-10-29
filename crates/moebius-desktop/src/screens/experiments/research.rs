@@ -3,20 +3,21 @@
 
 use iced::font::Weight;
 use iced::widget::text::Wrapping;
-use iced::widget::{button, column, container, row, space, text};
-use iced::{Alignment, Border, Element, Length};
+use iced::widget::{column, container, row, text};
+use iced::{Alignment, Element, Length};
 
 use crate::app::Message as AppMessage;
 use crate::client::{Experiment, Research};
 use crate::theme;
 use crate::widgets::inline_edit;
+use crate::widgets::list_editor;
 use crate::widgets::page::{self, Tone};
 
 use super::Message;
 
-/// A research's status as a tag.
-fn status_tag<'a>(status: &str) -> Element<'a, AppMessage> {
-    let (label, tone) = match status {
+/// A research's status as the label and tone of a tag.
+fn status_tag(status: &str) -> (&'static str, Tone) {
+    match status {
         "confirmed" => ("Confirmed", Tone::Amber),
         "running" => ("Running", Tone::Teal),
         "done" => ("Done", Tone::Teal),
@@ -24,8 +25,7 @@ fn status_tag<'a>(status: &str) -> Element<'a, AppMessage> {
         "stopped" => ("Stopped", Tone::Plain),
         "failed" => ("Failed", Tone::Red),
         _ => ("Draft", Tone::Plain),
-    };
-    page::tag(label.to_string(), tone)
+    }
 }
 
 /// A number as the page shows it: no more than four decimals, none when it is whole.
@@ -50,51 +50,19 @@ pub fn research_card<'a>(
     repository: &'a str,
     chosen: bool,
 ) -> Element<'a, AppMessage> {
-    let head = row![
-        text(repository)
-            .size(theme::CARD_TITLE)
-            .font(theme::manrope(Weight::Semibold)),
-        space::horizontal(),
-        status_tag(&research.status),
-    ]
-    .align_y(Alignment::Center);
     let kept = research.experiments.iter().filter(|e| e.kept).count();
-    let counts = format!(
-        "{} · {} kept",
-        plural(research.experiments.len(), "experiment", "experiments"),
-        kept
+    let line = format!(
+        "{repository} · {} · {kept} kept",
+        plural(research.experiments.len(), "experiment", "experiments")
     );
-    let content = column![
-        head,
-        text(research.goal.as_str())
-            .size(theme::BODY)
-            .color(theme::TEXT_SECONDARY)
-            .wrapping(Wrapping::WordOrGlyph),
-        text(counts).size(theme::LABEL).color(theme::TEXT_MUTED),
-    ]
-    .spacing(4);
-    button(content)
-        .width(Length::Fill)
-        .padding([12, 14])
-        .on_press(AppMessage::Experiments(Message::Select(research.id)))
-        .style(move |_, status| {
-            let (fill, line) = match (chosen, status) {
-                (true, _) => (theme::SURFACE, theme::TEAL),
-                (false, button::Status::Hovered) => (theme::LANE, theme::LINE),
-                (false, _) => (theme::SURFACE, theme::LINE),
-            };
-            button::Style {
-                background: Some(fill.into()),
-                text_color: theme::TEXT,
-                border: Border {
-                    color: line,
-                    width: if chosen { 2.0 } else { 1.0 },
-                    radius: theme::RADIUS_CARD.into(),
-                },
-                ..button::Style::default()
-            }
-        })
-        .into()
+    list_editor::list_card(
+        &research.goal,
+        vec![status_tag(&research.status)],
+        line,
+        false,
+        chosen,
+        Some(AppMessage::Experiments(Message::Select(research.id))),
+    )
 }
 
 fn plural(n: usize, one: &str, many: &str) -> String {
@@ -111,7 +79,7 @@ pub fn brief_box<'a>(research: &'a Research, repository: &'a str) -> Element<'a,
             page::white_button(label, message)
         }
     };
-    let mut buttons = row![].spacing(8);
+    let mut buttons = row![].spacing(theme::SPACE_8);
     match research.status.as_str() {
         "draft" => {
             buttons = buttons
@@ -143,7 +111,7 @@ pub fn brief_box<'a>(research: &'a Research, repository: &'a str) -> Element<'a,
                     .width(Length::Fill)
                     .wrapping(Wrapping::WordOrGlyph),
             ]
-            .spacing(8)
+            .spacing(theme::SPACE_8)
             .align_y(Alignment::Center);
             if research.status == "draft" {
                 title = title.push(inline_edit::pencil(
@@ -151,7 +119,10 @@ pub fn brief_box<'a>(research: &'a Research, repository: &'a str) -> Element<'a,
                     AppMessage::Experiments(Message::EditBrief(research.id)),
                 ));
             }
-            title.push(status_tag(&research.status))
+            {
+                let (label, tone) = status_tag(&research.status);
+                title.push(page::tag(label.to_string(), tone))
+            }
         },
         text(research.measure.as_str())
             .size(theme::CODE)
@@ -160,9 +131,10 @@ pub fn brief_box<'a>(research: &'a Research, repository: &'a str) -> Element<'a,
             .wrapping(Wrapping::WordOrGlyph),
         text(format!("{repository} · {budget}"))
             .size(theme::LABEL)
+            .font(theme::MONO)
             .color(theme::TEXT_MUTED),
     ]
-    .spacing(6);
+    .spacing(theme::SPACE_6);
     if !research.reason.is_empty() {
         content = content.push(
             text(research.reason.as_str())
@@ -218,10 +190,10 @@ pub fn experiments_box(research: &Research) -> Element<'_, AppMessage> {
             head_cell(COLUMNS[4], "Result"),
             head_cell(COLUMNS[5], "Reason"),
         ]
-        .spacing(10),
+        .spacing(theme::SPACE_8),
         page::rule(),
     ]
-    .spacing(8);
+    .spacing(theme::SPACE_8);
     for experiment in &research.experiments {
         table = table
             .push(experiment_row(experiment, research.baseline))
@@ -269,7 +241,7 @@ fn experiment_row(experiment: &Experiment, baseline: Option<f64>) -> Element<'_,
         cell(COLUMNS[4], page::tag(label.to_string(), tone)),
         cell(COLUMNS[5], plain(experiment.reason.clone())),
     ]
-    .spacing(10)
+    .spacing(theme::SPACE_8)
     .into()
 }
 

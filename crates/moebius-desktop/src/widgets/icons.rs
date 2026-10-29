@@ -126,8 +126,8 @@ impl Icon {
 pub fn logo<'a>() -> Svg<'a> {
     let source = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 26 18"><path d="M13 9 C 9 1, 2 1, 2 9 C 2 17, 9 17, 13 9 C 17 1, 24 1, 24 9 C 24 17, 17 17, 13 9" fill="none" stroke="#000" stroke-width="2.2"/></svg>"##;
     svg(svg::Handle::from_memory(source.as_bytes()))
-        .width(Length::Fixed(22.0))
-        .height(Length::Fixed(16.0))
+        .width(Length::Fixed(theme::LOGO_WIDTH))
+        .height(Length::Fixed(theme::LOGO_HEIGHT))
         .style(|_, _| svg::Style {
             color: Some(theme::TEXT),
         })

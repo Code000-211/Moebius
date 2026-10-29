@@ -8,6 +8,7 @@ use iced::{Alignment, Border, Element, Length};
 
 use crate::app::Message as AppMessage;
 use crate::client::{InboxItem, Snapshot};
+use crate::widgets::inline_edit::editor_style;
 use crate::widgets::page::{self, Tone, tag};
 use crate::{screens::connect, theme};
 
@@ -36,7 +37,7 @@ impl Inbox {
             page::boxed("Inbox", page::body(empty))
         } else {
             column(shown.into_iter().map(|item| self.item_view(snapshot, item)))
-                .spacing(12)
+                .spacing(theme::PAGE_GAP)
                 .width(Length::Fill)
                 .into()
         };
@@ -87,7 +88,7 @@ impl Inbox {
             false,
             Message::Kind(None),
         )]
-        .spacing(8);
+        .spacing(theme::SPACE_8);
         for kind in kinds {
             let label = format!("{} {}", chip_name(kind), count(Some(kind), self.repository));
             let selected = self.kind.as_deref() == Some(kind);
@@ -99,7 +100,8 @@ impl Inbox {
                 Message::Kind(Some(kind.to_string())),
             ));
         }
-        let mut filters = column![by_kind.wrap().vertical_spacing(8)].spacing(8);
+        let mut filters =
+            column![by_kind.wrap().vertical_spacing(theme::SPACE_8)].spacing(theme::SPACE_8);
         if snapshot.boards.len() > 1 {
             let mut by_repository = row![chip(
                 "Every repository".to_string(),
@@ -107,7 +109,7 @@ impl Inbox {
                 false,
                 Message::Repository(None),
             )]
-            .spacing(8);
+            .spacing(theme::SPACE_8);
             for board in &snapshot.boards {
                 let id = board.repository.id;
                 let label = format!(
@@ -122,7 +124,7 @@ impl Inbox {
                     Message::Repository(Some(id)),
                 ));
             }
-            filters = filters.push(by_repository.wrap().vertical_spacing(8));
+            filters = filters.push(by_repository.wrap().vertical_spacing(theme::SPACE_8));
         }
         filters.into()
     }
@@ -161,20 +163,24 @@ impl Inbox {
         let mut content = column![
             row![
                 tag(label, tone),
-                text(meta.join(" · ")).size(theme::LABEL).color(meta_color),
+                text(meta.join(" · "))
+                    .size(theme::LABEL)
+                    .font(theme::MONO)
+                    .color(meta_color),
                 space::horizontal(),
                 text(page::ago(self.now, item.at))
                     .size(theme::LABEL)
+                    .font(theme::MONO)
                     .color(theme::TEXT_MUTED),
             ]
-            .spacing(8)
+            .spacing(theme::SPACE_8)
             .align_y(Alignment::Center),
             text(item.title.as_str())
                 .size(theme::BOX_HEADING)
                 .font(theme::manrope(Weight::Bold))
                 .wrapping(Wrapping::WordOrGlyph),
         ]
-        .spacing(10);
+        .spacing(theme::SPACE_8);
         if let Some(why) = why(item, &found) {
             content = content.push(page::body(why));
         }
@@ -197,23 +203,23 @@ impl Inbox {
             content = content.push(
                 text(notice.as_str())
                     .size(theme::LABEL)
-                    .font(theme::manrope(Weight::Semibold))
+                    .font(theme::MONO)
                     .color(theme::AMBER_TEXT),
             );
         }
-        let (fill, border, width) = match tone {
-            Tone::Red => (theme::RED_FILL, theme::RED_BORDER, 1.5),
-            Tone::Amber => (theme::SURFACE, theme::AMBER_BORDER, 1.0),
-            _ => (theme::SURFACE, theme::LINE, 1.0),
+        let (fill, border) = match tone {
+            Tone::Red => (theme::RED_FILL, theme::RED_BORDER),
+            Tone::Amber => (theme::SURFACE, theme::AMBER_BORDER),
+            _ => (theme::SURFACE, theme::LINE),
         };
         container(content)
-            .padding(18)
+            .padding(theme::BOX_PADDING)
             .width(Length::Fill)
             .style(move |_| container::Style {
                 background: Some(fill.into()),
                 border: Border {
                     color: border,
-                    width,
+                    width: 1.0,
                     radius: theme::RADIUS_BOX.into(),
                 },
                 ..container::Style::default()
@@ -235,11 +241,11 @@ impl Inbox {
         if let (Some(reason), Some(change)) = (self.rejecting.get(&id), item.change()) {
             let ready = !reason.trim().is_empty();
             let send = Action::Reject { change };
-            let field = text_input("Why? The next round is told.", reason)
+            let field = text_input("Why? The next round is told", reason)
                 .on_input(move |typed| AppMessage::Inbox(Message::Reason(id, typed)))
                 .on_submit_maybe(ready.then(|| AppMessage::Inbox(Message::Act(id, send.clone()))))
                 .size(theme::BODY)
-                .padding([9, 12])
+                .padding(theme::FIELD_PADDING)
                 .style(connect::input_style);
             return row![
                 field,
@@ -249,7 +255,7 @@ impl Inbox {
                 ),
                 page::white_button("Cancel", Some(AppMessage::Inbox(Message::CancelReject(id)))),
             ]
-            .spacing(8)
+            .spacing(theme::SPACE_8)
             .align_y(Alignment::Center)
             .into();
         }
@@ -331,7 +337,11 @@ impl Inbox {
             }
             _ => {}
         }
-        row(buttons).spacing(8).wrap().vertical_spacing(8).into()
+        row(buttons)
+            .spacing(theme::SPACE_8)
+            .wrap()
+            .vertical_spacing(theme::SPACE_8)
+            .into()
     }
 
     /// The issues a grilling proposes as a list to edit: a title field and a body editor for each, with what blocks
@@ -342,7 +352,7 @@ impl Inbox {
         };
         column(drafts.iter().enumerate().map(|(index, draft)| {
             let mut head = row![tag(format!("Issue {}", index + 1), Tone::Plain)]
-                .spacing(8)
+                .spacing(theme::SPACE_8)
                 .align_y(Alignment::Center);
             if !draft.blocked_by.is_empty() {
                 let blockers: Vec<String> = draft
@@ -353,6 +363,7 @@ impl Inbox {
                 head = head.push(
                     text(format!("Blocked by issue {}", blockers.join(", ")))
                         .size(theme::LABEL)
+                        .font(theme::MONO)
                         .color(theme::TEXT_MUTED),
                 );
             }
@@ -363,35 +374,22 @@ impl Inbox {
             let title = text_input("Title", &draft.title)
                 .on_input(move |typed| AppMessage::Inbox(Message::Title(item, index, typed)))
                 .size(theme::BODY)
-                .padding([9, 12])
+                .padding(theme::FIELD_PADDING)
                 .style(connect::input_style);
             let body = text_editor(&draft.body)
                 .placeholder("What the issue asks for.")
                 .on_action(move |action| AppMessage::Inbox(Message::Body(item, index, action)))
                 .size(theme::BODY)
-                .padding(12)
-                .height(96)
-                .style(|_, status| text_editor::Style {
-                    background: theme::LANE.into(),
-                    border: Border {
-                        color: match status {
-                            text_editor::Status::Focused { .. } => theme::TEAL,
-                            _ => theme::LINE,
-                        },
-                        width: 1.0,
-                        radius: theme::RADIUS_CONTROL.into(),
-                    },
-                    placeholder: theme::TEXT_MUTED,
-                    value: theme::TEXT,
-                    selection: theme::TEAL_FILL,
-                });
-            container(column![head, title, body].spacing(8))
-                .padding(12)
+                .padding(theme::FIELD_PADDING)
+                .height(theme::EDITOR_COMPACT)
+                .style(editor_style);
+            container(column![head, title, body].spacing(theme::SPACE_8))
+                .padding(theme::BOX_PADDING)
                 .width(Length::Fill)
                 .style(|_| page::box_style())
                 .into()
         }))
-        .spacing(10)
+        .spacing(theme::SPACE_8)
         .into()
     }
 }

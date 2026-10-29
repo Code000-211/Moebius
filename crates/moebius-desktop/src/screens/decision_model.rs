@@ -122,7 +122,7 @@ impl DecisionModel {
             "Decision model",
             None,
             page::context(format!(
-                "{judgements} judgements recorded in {} kinds; they leave the server only in an export you start.",
+                "{judgements} judgements in {} kinds; they leave the server only in an export you start.",
                 self.kinds.len()
             )),
             page::primary_button(
@@ -145,7 +145,7 @@ impl DecisionModel {
             .push(self.shadowing_box());
         column![
             header,
-            scrollable(container(content).padding(Padding::default().right(12)))
+            scrollable(container(content).padding(Padding::default().right(theme::SCROLL_GUTTER)))
                 .height(Length::Fill)
         ]
         .spacing(theme::PAGE_GAP)
@@ -159,12 +159,12 @@ impl DecisionModel {
         };
         let needed = shadowing.agreement.unwrap_or(1.0);
         let mut content = column![page::body(format!(
-            "{} decides alongside whoever decides now on the judgements held back from training. A kind is proposed in the inbox once it has {} of them and agrees on at least {}.",
+            "{} decides alongside the current decider on judgements held out of training. A kind is proposed in the inbox at {} of them with at least {} agreement.",
             shadowing.model.as_deref().unwrap_or("The model"),
             shadowing.min_judgements.unwrap_or_default(),
             percent(needed),
         ))]
-        .spacing(10);
+        .spacing(theme::SPACE_8);
         if shadowing.kinds.is_empty() {
             content = content.push(page::body("Nothing has been shadowed yet."));
         } else {
@@ -175,10 +175,10 @@ impl DecisionModel {
                     head_cell(SHADOWS[2], "Agreement"),
                     head_cell(SHADOWS[3], "Decided by"),
                 ]
-                .spacing(10),
+                .spacing(theme::SPACE_8),
                 page::rule(),
             ]
-            .spacing(8);
+            .spacing(theme::SPACE_8);
             for kind in &shadowing.kinds {
                 table = table.push(shadow_row(kind, needed)).push(page::rule());
             }
@@ -213,7 +213,7 @@ impl DecisionModel {
                         Some(AppMessage::DecisionModel(Message::Release(takeover.id)))
                     ),
                 ]
-                .spacing(10)
+                .spacing(theme::SPACE_8)
                 .align_y(Alignment::Center),
             );
         }
@@ -244,10 +244,10 @@ impl DecisionModel {
                 head_cell(KINDS[4], "Held out"),
                 head_cell(KINDS[5], "Its file"),
             ]
-            .spacing(10),
+            .spacing(theme::SPACE_8),
             page::rule(),
         ]
-        .spacing(8);
+        .spacing(theme::SPACE_8);
         for kind in &self.kinds {
             let file = match self.route(&kind.kind) {
                 Some(route) => mono(route, theme::TEXT_SECONDARY),
@@ -271,7 +271,7 @@ impl DecisionModel {
                         cell(KINDS[4], plain(kind.held_out.to_string())),
                         cell(KINDS[5], file),
                     ]
-                    .spacing(10),
+                    .spacing(theme::SPACE_8),
                 )
                 .push(page::rule());
         }
@@ -279,12 +279,10 @@ impl DecisionModel {
             "Kinds of decision",
             column![
                 table,
-                page::body(
-                    "The files stay on the server. To write them to a directory yourself, run:"
-                ),
+                page::body("The files stay on the server. To write them to a directory, run:"),
                 mono("moebius export --out <directory>".to_string(), theme::TEXT),
             ]
-            .spacing(10),
+            .spacing(theme::SPACE_8),
         )
     }
 
@@ -300,10 +298,10 @@ impl DecisionModel {
                 head_cell(EXPORTS[3], "Held out"),
                 head_cell(EXPORTS[4], "Kinds"),
             ]
-            .spacing(10),
+            .spacing(theme::SPACE_8),
             page::rule(),
         ]
-        .spacing(8);
+        .spacing(theme::SPACE_8);
         for export in &self.exports {
             let count: i64 = export.kinds.iter().map(|k| k.count).sum();
             let held_out: i64 = export.kinds.iter().map(|k| k.held_out).sum();
@@ -322,7 +320,7 @@ impl DecisionModel {
                         cell(EXPORTS[3], plain(held_out.to_string())),
                         cell(EXPORTS[4], plain(kinds.join(", "))),
                     ]
-                    .spacing(10),
+                    .spacing(theme::SPACE_8),
                 )
                 .push(page::rule());
         }
@@ -360,7 +358,7 @@ fn shadow_row(kind: &ShadowedKind, needed: f64) -> Element<'_, AppMessage> {
                     }),
                 bar(share, needed),
             ]
-            .spacing(5)
+            .spacing(theme::SPACE_6)
             .into()
         }
         None => plain("No shadow yet".to_string()).into(),
@@ -393,7 +391,7 @@ fn shadow_row(kind: &ShadowedKind, needed: f64) -> Element<'_, AppMessage> {
             )
         ),
     ]
-    .spacing(10)
+    .spacing(theme::SPACE_8)
     .into()
 }
 
@@ -404,7 +402,7 @@ fn bar<'a>(share: f64, needed: f64) -> Element<'a, AppMessage> {
     let segment = |portion: u16, color: iced::Color| {
         container(space())
             .width(Length::FillPortion(portion.max(1)))
-            .height(6)
+            .height(theme::BAR_HEIGHT)
             .style(move |_| container::Style {
                 background: Some(color.into()),
                 ..container::Style::default()
@@ -424,8 +422,8 @@ fn bar<'a>(share: f64, needed: f64) -> Element<'a, AppMessage> {
     let threshold = row![
         space().width(Length::FillPortion(mark.saturating_sub(1).max(1))),
         container(space())
-            .width(2)
-            .height(6)
+            .width(theme::BAR_MARK)
+            .height(theme::BAR_HEIGHT)
             .style(|_| container::Style {
                 background: Some(theme::TEXT.into()),
                 ..container::Style::default()
