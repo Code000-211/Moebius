@@ -1,5 +1,5 @@
 //! The models the upstreams serve, asked of all of them at once for the pickers of the desktop app and kept for a
-//! while, without a key or a password in the answer.
+//! while, without a key or a password in the answer, and the model classes the router serves besides them.
 
 use std::time::{Duration, Instant};
 
@@ -30,17 +30,55 @@ pub struct UpstreamError {
     pub message: String,
 }
 
-/// The models of all upstreams, sorted by protocol and then id, and the upstreams that could not be asked.
+/// A model class of `[router.classes]`, which a request may name as a model.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AvailableClass {
+    pub name: String,
+    /// Its models, in the order they are tried.
+    pub models: Vec<String>,
+    /// The protocols the upstreams list any of its models under.
+    pub protocols: Vec<Protocol>,
+}
+
+/// The models of all upstreams, sorted by protocol and then id, the upstreams that could not be asked, and the model
+/// classes by name.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AvailableModels {
     pub models: Vec<AvailableModel>,
     pub errors: Vec<UpstreamError>,
+    #[serde(default)]
+    pub classes: Vec<AvailableClass>,
 }
 
 impl Router {
     /// The models the upstreams serve, asked of all of them at once. The answer is kept for five minutes unless
-    /// `refresh` is set. An upstream that fails is listed in `errors`; no key is ever in the answer.
+    /// `refresh` is set. An upstream that fails is listed in `errors`; no key is ever in the answer. The classes are
+    /// the router's at the time of asking.
     pub async fn available_models(&self, refresh: bool) -> AvailableModels {
+        let mut answer = self.listed_models(refresh).await;
+        answer.classes = self
+            .classes()
+            .into_iter()
+            .map(|(name, models)| {
+                let models: Vec<String> = models.into_iter().map(|m| m.model).collect();
+                let mut protocols = Vec::new();
+                for listed in answer.models.iter().filter(|m| models.contains(&m.id)) {
+                    if !protocols.contains(&listed.protocol) {
+                        protocols.push(listed.protocol);
+                    }
+                }
+                AvailableClass {
+                    name,
+                    models,
+                    protocols,
+                }
+            })
+            .collect();
+        answer
+    }
+
+    /// The models the upstreams list, kept for five minutes unless `refresh` is set.
+    async fn listed_models(&self, refresh: bool) -> AvailableModels {
         if !refresh {
             let kept = self.available.lock().unwrap_or_else(|p| p.into_inner());
             if let Some((at, models)) = kept.as_ref()

@@ -71,12 +71,16 @@ pub struct Models {
     pub decision_model: Option<DecisionModelEndpoint>,
 }
 
-/// A model an upstream serves, as `GET /v1/models/available` lists it. It reads as its id.
+/// A model an upstream serves, as `GET /v1/models/available` lists it, or a model class of the router. It reads as its
+/// id.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct AvailableModel {
     pub id: String,
     pub protocol: String,
     pub upstream: String,
+    /// Whether this is a model class (see [`AvailableClass`]) rather than a model.
+    #[serde(default)]
+    pub class: bool,
 }
 
 impl std::fmt::Display for AvailableModel {
@@ -92,11 +96,43 @@ pub struct UpstreamError {
     pub message: String,
 }
 
-/// What `GET /v1/models/available` says: the models of all upstreams and the upstreams that could not be asked.
+/// A model class of the router: a name for its models, tried in order.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct AvailableClass {
+    pub name: String,
+    pub models: Vec<String>,
+    /// The protocols the upstreams list any of its models under.
+    pub protocols: Vec<String>,
+}
+
+/// What `GET /v1/models/available` says: the models of all upstreams, the upstreams that could not be asked, and the
+/// model classes.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct Available {
     pub models: Vec<AvailableModel>,
     pub errors: Vec<UpstreamError>,
+    #[serde(default)]
+    pub classes: Vec<AvailableClass>,
+}
+
+impl Available {
+    /// What a Model field offers: the classes first, each with the protocol of its models when they share one, then
+    /// the models.
+    pub fn choices(&self) -> Vec<AvailableModel> {
+        self.classes
+            .iter()
+            .map(|class| AvailableModel {
+                id: class.name.clone(),
+                protocol: match class.protocols.as_slice() {
+                    [one] => one.clone(),
+                    _ => String::new(),
+                },
+                upstream: String::new(),
+                class: true,
+            })
+            .chain(self.models.iter().cloned())
+            .collect()
+    }
 }
 
 /// A plugin the server has loaded, as `GET /v1/plugins` lists it.

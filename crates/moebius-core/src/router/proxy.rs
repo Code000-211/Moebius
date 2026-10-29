@@ -1,8 +1,7 @@
-//! Forwarding a run's request to the upstream of its protocol, with the upstream's key or login in place of the run's
-//! token, and the answer back, streamed or not, its usage counted on the way.
+//! Forwarding a run's request to an upstream of its protocol (chosen by `classes`), with the upstream's key or login in
+//! place of the run's token, and the answer back, streamed or not, its usage counted on the way.
 
 use std::sync::Arc;
-use std::time::Instant;
 
 use axum::body::{Body, Bytes};
 use axum::http::{HeaderMap, StatusCode, header};
@@ -32,21 +31,15 @@ impl Router {
         if let Some(refusal) = self.clone().check_budget(protocol, &grant).await {
             return refusal;
         }
-        let upstream = self
-            .upstreams
-            .read()
-            .unwrap_or_else(|p| p.into_inner())
-            .iter()
-            .find(|u| u.protocol == protocol)
-            .cloned();
-        let Some(upstream) = upstream else {
+        let upstreams = self.upstreams_of(protocol);
+        if upstreams.is_empty() {
             return error(
                 protocol,
                 StatusCode::BAD_GATEWAY,
                 "api_error",
                 "no upstream for this protocol",
             );
-        };
+        }
         let Ok(mut request) = serde_json::from_slice::<Value>(&body) else {
             return error(
                 protocol,
@@ -69,43 +62,32 @@ impl Router {
             .unwrap_or("unknown")
             .to_string();
 
-        let mut outgoing = self
-            .client
-            .post(format!(
-                "{}{}",
-                upstream.base_url.trim_end_matches('/'),
-                path
-            ))
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(request.to_string());
-        for name in ["anthropic-version", "anthropic-beta"] {
-            if let Some(value) = headers.get(name) {
-                outgoing = outgoing.header(name, value);
-            }
-        }
-        let outgoing = match self.authenticate(&upstream, outgoing).await {
-            Ok(outgoing) => outgoing,
+        let (class, models) = match self.candidates(&model) {
+            Ok(candidates) => candidates,
             Err(message) => {
                 return error(
                     protocol,
-                    StatusCode::BAD_GATEWAY,
-                    "authentication_error",
+                    StatusCode::TOO_MANY_REQUESTS,
+                    "budget_exceeded",
                     &message,
                 );
             }
         };
-        let started = Instant::now();
-        let upstream_response = match outgoing.send().await {
-            Ok(r) => r,
-            Err(e) => {
-                return error(
-                    protocol,
-                    StatusCode::BAD_GATEWAY,
-                    "api_error",
-                    &format!("upstream: {e}"),
-                );
-            }
+        let answered = match self
+            .send_first(
+                protocol,
+                path,
+                &headers,
+                &mut request,
+                &upstreams,
+                (&models, class.is_some()),
+            )
+            .await
+        {
+            Ok(answered) => answered,
+            Err(failure) => return *failure,
         };
+        let (upstream_response, started) = (answered.response, answered.started);
         let status = upstream_response.status();
         let content_type = upstream_response
             .headers()
@@ -114,7 +96,8 @@ impl Router {
         let meter = Meter {
             store: self.store.clone(),
             run_id: grant.run_id,
-            model,
+            model: answered.model,
+            class,
             started,
         };
 

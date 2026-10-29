@@ -44,7 +44,8 @@ pub use retros::{OwnEdits, Proposal, Retro, Trial};
 pub use runs::Run;
 pub use shadows::{NewShadow, ShadowStats, Takeover};
 pub use usage::{
-    ANSWERING, ActivityUsage, AgentUsage, ModelUsage, NO_RUN, ToolWait, UNKNOWN, Usage, UsageTotals,
+    ANSWERING, ActivityUsage, AgentUsage, ClassUsage, ModelUsage, NO_RUN, ToolWait, UNKNOWN, Usage,
+    UsageTotals,
 };
 
 /// Why the store failed.
@@ -337,6 +338,7 @@ ALTER TABLE proposals ADD COLUMN edits TEXT NOT NULL DEFAULT '{}';
 ALTER TABLE proposals ADD COLUMN repository_id INTEGER REFERENCES repositories(id);
 ALTER TABLE proposals ADD COLUMN change_id INTEGER REFERENCES changes(id);
 "#,
+    "ALTER TABLE usage ADD COLUMN class TEXT;",
 ];
 
 pub fn now() -> i64 {

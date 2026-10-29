@@ -78,6 +78,15 @@ listen = "127.0.0.1:7172"
 # redirect_path = "/callback"             # for code
 # secret = "example-login"
 
+# A model class names an ordered list of models; an agent, the teacher or a chat may name the class where it names a
+# model. A request for a class goes to the first of its models that has tokens left today, on the first upstream of the
+# request's protocol; when an upstream fails before it answers (it cannot be reached, is not logged in, or answers 5xx,
+# 429 or 404) the next upstream is tried, then the next model. A model is a name, or a table with day_tokens: the most
+# tokens it may use in a day.
+# [router.classes]
+# fast = ["qwen3.8-flash-next", "claude-haiku-5"]
+# strong = [{ model = "claude-opus-5", day_tokens = 5000000 }, "claude-sonnet-5-5"]
+
 [pi_bolt]
 program = "pi-bolt"
 

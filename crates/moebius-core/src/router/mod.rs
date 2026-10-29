@@ -15,11 +15,15 @@
 //! The server serves these routes together with the tool-call check (`check`) and the MCP gateway (`gateway`) on one
 //! listener. A run's token also names the MCP servers the gateway gives the run.
 //!
+//! A request may name a model class of `[router.classes]` instead of a model: `classes` chooses the model and the
+//! upstream, falling back to the next when one fails before it answers.
+//!
 //! This module holds the router, its upstreams and its routes; `proxy` forwards a request upstream, `usage` counts
 //! the tokens and tools of what comes back, `grants` are the runs' tokens and the budgets they are checked against,
 //! `models` asks the upstreams which models they serve, and `oauth` logs an upstream in with OAuth and keeps its
 //! tokens fresh.
 
+mod classes;
 mod grants;
 mod models;
 mod oauth;
@@ -42,8 +46,9 @@ use serde_json::json;
 use crate::harness::mcp::McpServer;
 use crate::store::Store;
 
+pub use classes::{ClassModel, Classes, check_class};
 pub use grants::{Grant, token};
-pub use models::{AvailableModel, AvailableModels, UpstreamError};
+pub use models::{AvailableClass, AvailableModel, AvailableModels, UpstreamError};
 #[cfg(test)]
 pub(crate) use oauth::testing as oauth_testing;
 pub use oauth::{Flow, Login, LoginError, LoginState, OAuthConfig, TERMS_WARNING};
@@ -83,6 +88,8 @@ pub struct Router {
     store: Arc<Store>,
     /// Replaced when the upstreams are edited while the server runs.
     upstreams: RwLock<Vec<Upstream>>,
+    /// The model classes; replaced when they are edited while the server runs.
+    classes: RwLock<Classes>,
     /// The most tokens all runs may use in a day, if limited; replaced when the budget is edited.
     day_budget: RwLock<Option<i64>>,
     grants: RwLock<HashMap<String, Grant>>,
@@ -100,6 +107,7 @@ impl Router {
         Self {
             store,
             upstreams: RwLock::new(upstreams),
+            classes: RwLock::new(Classes::new()),
             day_budget: RwLock::new(None),
             grants: RwLock::new(HashMap::new()),
             mcp: RwLock::new(HashMap::new()),

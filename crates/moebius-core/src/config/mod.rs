@@ -17,6 +17,7 @@ use raw::{Raw, RawWindow};
 use sections::{check_key, decision_model, plugins, teacher};
 
 use crate::harness::mcp::valid_variable;
+use crate::router::{Classes, check_class};
 
 pub use example::EXAMPLE;
 pub(crate) use sections::default_protocol;
@@ -66,6 +67,8 @@ pub enum ConfigError {
         "router.upstreams: an upstream that logs in with oauth cannot also set api_key_env or api_key_secret"
     )]
     OAuthAndKey,
+    #[error("router.classes: {0}")]
+    Class(String),
     #[error("checks.timeout_seconds must be at least 1")]
     ChecksTimeout,
     #[error("budgets.day_tokens must be at least 1")]
@@ -114,6 +117,8 @@ pub struct Config {
     pub checks_timeout: Duration,
     pub router_listen: SocketAddr,
     pub upstreams: Vec<UpstreamConfig>,
+    /// The model classes a request may name instead of a model, by name.
+    pub classes: Classes,
     pub pi_bolt: PathBuf,
     /// The `moebius` executable that runs find as `$MOEBIUS`: the running one. It is no key of the file; a server that
     /// is not the `moebius` binary, such as a test, sets it.
@@ -183,6 +188,9 @@ impl Config {
                 }
             }
         }
+        for (name, models) in &raw.router.classes {
+            check_class(name, models).map_err(ConfigError::Class)?;
+        }
         if let Some(name) = raw.agents.keys().find(|n| !valid_agent_name(n)) {
             return Err(ConfigError::AgentName { name: name.clone() });
         }
@@ -250,6 +258,7 @@ impl Config {
             checks_timeout: Duration::from_secs(checks_timeout),
             router_listen,
             upstreams: raw.router.upstreams,
+            classes: raw.router.classes,
             moebius: std::env::current_exe().unwrap_or_else(|_| PathBuf::from("moebius")),
             // A bare name is looked up on the PATH; anything with a directory in it is a path.
             pi_bolt: if pi_bolt.components().count() > 1 {
@@ -371,6 +380,25 @@ mod tests {
         );
         let unknown = oauth.replace("scopes", "scope");
         assert!(matches!(parse(&unknown), Err(ConfigError::Parse { .. })));
+    }
+
+    #[test]
+    fn model_classes_are_read_and_checked() {
+        let c = parse(
+            "[router.classes]\nfast = [\"qwen-local\", { model = \"haiku\", day_tokens = 9 }]\nstrong = [\"big\"]\n",
+        )
+        .unwrap();
+        assert_eq!(c.classes["fast"][1].model, "haiku");
+        assert_eq!(c.classes["fast"][1].day_tokens, Some(9));
+        assert_eq!(c.classes["strong"][0].day_tokens, None);
+        assert!(matches!(
+            parse("[router.classes]\nfast = []\n"),
+            Err(ConfigError::Class(_))
+        ));
+        assert!(matches!(
+            parse("[router.classes]\nfast = [{ model = \"a\", day_tokens = 0 }]\n"),
+            Err(ConfigError::Class(_))
+        ));
     }
 
     #[test]

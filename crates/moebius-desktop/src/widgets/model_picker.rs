@@ -1,6 +1,6 @@
-//! The Model fields of the Models and Agents screens: a dropdown of the models the upstreams serve (`GET
-//! /v1/models/available`), whose last entry, "Another model…", turns the field into an input, so that a model no
-//! upstream lists can be entered. Without a list the field is an input.
+//! The Model fields of the Models and Agents screens: a dropdown of the router's model classes and the models the
+//! upstreams serve (`GET /v1/models/available`, see `Available::choices`), whose last entry, "Another model…", turns
+//! the field into an input, so that a model no upstream lists can be entered. Without a list the field is an input.
 
 use std::fmt;
 
@@ -24,6 +24,7 @@ pub enum Choice {
 impl fmt::Display for Choice {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Choice::Model(model) if model.class => write!(f, "{} (class)", model.id),
             Choice::Model(model) => f.write_str(&model.id),
             Choice::Other => f.write_str("Another model…"),
         }
@@ -60,6 +61,7 @@ pub fn field<'a, Message: Clone + 'a>(
                     id: current.to_string(),
                     protocol: String::new(),
                     upstream: String::new(),
+                    class: false,
                 }),
         )
     });

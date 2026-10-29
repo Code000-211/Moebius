@@ -334,9 +334,10 @@ At the top:
 |---|---|
 | `router/mod.rs` | The router, its upstreams and its routes `POST /v1/chat/completions` and `POST /v1/messages`. |
 | `router/proxy.rs` | A run's request forwarded to the upstream with the provider's key or login, and the answer back, streamed or not. |
+| `router/classes.rs` | Model classes (`[router.classes]`): a class named as a model is served by the first of its models within its day's tokens, on the first upstream of the protocol that answers, falling back while an upstream fails before it answers. |
 | `router/usage.rs` | The tokens and tools of an answer, read from a body or from a stream as it passes, recorded against the run. |
 | `router/grants.rs` | The runs' tokens and what each allows: the card's, the run's and the day's token budgets, and the MCP servers the gateway gives the run. |
-| `router/models.rs` | The models the upstreams serve, for the pickers of the desktop app. |
+| `router/models.rs` | The models the upstreams serve and the model classes, for the pickers of the desktop app. |
 | `router/oauth/mod.rs` | The OAuth login of an upstream: its `oauth` table, the warning confirmed before a login, the access token refreshed before it expires and the refresh token kept in `secrets.toml`. |
 | `router/oauth/device.rs` | The device authorization grant: the code the person enters at the provider, and the token URL polled until it is confirmed. |
 | `router/oauth/code.rs` | An authorization code with PKCE, the browser sent back to a loopback listener. |

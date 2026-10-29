@@ -42,6 +42,15 @@ pub struct ModelUsage {
     pub cached_tokens: i64,
 }
 
+/// What one model used when it was asked by a class, in a window of days.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClassUsage {
+    pub class: String,
+    pub model: String,
+    pub tokens: i64,
+    pub calls: i64,
+}
+
 /// What the runs of one agent used in a window of days.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentUsage {
@@ -97,11 +106,49 @@ impl Usage {
 
 impl Store {
     pub fn add_usage(&self, u: &Usage) -> Result<()> {
+        self.add_class_usage(u, None)
+    }
+
+    /// Records usage, with the model class the request named when it named one (see `router::classes`).
+    pub fn add_class_usage(&self, u: &Usage, class: Option<&str>) -> Result<()> {
         self.conn().execute(
-            "INSERT INTO usage (run_id, model, input_tokens, output_tokens, cached_tokens, duration_ms, tools, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![u.run_id, u.model, u.input_tokens, u.output_tokens, u.cached_tokens, u.duration_ms, serde_json::to_string(&u.tools)?, now()],
+            "INSERT INTO usage (run_id, model, input_tokens, output_tokens, cached_tokens, duration_ms, tools, at, class) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![u.run_id, u.model, u.input_tokens, u.output_tokens, u.cached_tokens, u.duration_ms, serde_json::to_string(&u.tools)?, now(), class],
         )?;
         Ok(())
+    }
+
+    /// Tokens `model` used since the start of the server's local day, whatever asked for it.
+    pub fn model_tokens_today(&self, model: &str) -> Result<i64> {
+        Ok(self.conn().query_row(
+            &format!(
+                "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) FROM usage
+                 WHERE at >= {WINDOW_START} AND model = ?2"
+            ),
+            params![1, model],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// What each model used when asked by each class in the last `days` days, by class and then the model with the
+    /// most tokens first. Usage asked for by a model's own name is not here.
+    pub fn usage_by_class(&self, days: i64) -> Result<Vec<ClassUsage>> {
+        self.rows(
+            &format!(
+                "SELECT class, model, SUM(input_tokens + output_tokens) AS tokens, COUNT(*)
+             FROM usage WHERE at >= {WINDOW_START} AND class IS NOT NULL
+             GROUP BY class, model ORDER BY class, tokens DESC, model"
+            ),
+            [days],
+            |r| {
+                Ok(ClassUsage {
+                    class: r.get(0)?,
+                    model: r.get(1)?,
+                    tokens: r.get(2)?,
+                    calls: r.get(3)?,
+                })
+            },
+        )
     }
 
     pub fn usage_for_run(&self, run_id: i64) -> Result<Vec<Usage>> {
@@ -544,5 +591,52 @@ mod tests {
             [wait("bash", 2, 90), wait("edit", 1, 5), wait("read", 1, 0)]
         );
         assert_eq!(s.tool_waits(1, 2).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn usage_asked_by_a_class_is_counted_by_class_and_by_model_for_today() {
+        let (_dir, s) = store();
+        let add = |model: &str, class: Option<&str>, tokens| {
+            let usage = Usage {
+                run_id: None,
+                model: model.into(),
+                input_tokens: tokens,
+                output_tokens: 0,
+                cached_tokens: 0,
+                duration_ms: 0,
+                tools: Vec::new(),
+            };
+            s.add_class_usage(&usage, class).unwrap();
+        };
+        add("big", Some("strong"), 100);
+        add("big", Some("strong"), 50);
+        add("small", Some("strong"), 500);
+        add("big", None, 7);
+        add("small", Some("fast"), 1);
+        add("big", Some("strong"), 1000);
+        s.conn()
+            .execute("UPDATE usage SET at = at - 2 * 86400 WHERE id = 6", [])
+            .unwrap();
+        let class = |class: &str, model: &str, tokens, calls| ClassUsage {
+            class: class.into(),
+            model: model.into(),
+            tokens,
+            calls,
+        };
+        assert_eq!(
+            s.usage_by_class(1).unwrap(),
+            [
+                class("fast", "small", 1, 1),
+                class("strong", "small", 500, 1),
+                class("strong", "big", 150, 2),
+            ]
+        );
+        assert_eq!(
+            s.usage_by_class(3).unwrap()[1],
+            class("strong", "big", 1150, 3)
+        );
+        // A model's tokens for today count whatever asked for it.
+        assert_eq!(s.model_tokens_today("big").unwrap(), 157);
+        assert_eq!(s.model_tokens_today("none").unwrap(), 0);
     }
 }

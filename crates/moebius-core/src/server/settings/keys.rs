@@ -23,8 +23,9 @@ const fn key(name: &'static str, default: &'static str, live: bool) -> Key {
     }
 }
 
-/// Every key of `docs/reference/configuration.md`, in its order. `router.upstreams`, `plugins` and `agents` stand for
-/// the whole array of tables and the whole table of agents.
+/// Every key of `docs/reference/configuration.md`, in its order. `router.upstreams`, `router.classes`, `plugins` and
+/// `agents` stand for the whole array of tables, the whole table of classes, the whole array of plugins and the whole
+/// table of agents.
 const KEYS: &[Key] = &[
     key("data_dir", "\".moebius\"", false),
     key("listen", "\"127.0.0.1:7171\"", false),
@@ -42,6 +43,7 @@ const KEYS: &[Key] = &[
     key("checks.timeout_seconds", "1800", false),
     key("router.listen", "\"127.0.0.1:7172\"", false),
     key("router.upstreams", "[]", true),
+    key("router.classes", "{}", true),
     key("pi_bolt.program", "\"pi-bolt\"", false),
     key("teacher.model", "", false),
     key("teacher.protocol", "\"openai\"", false),

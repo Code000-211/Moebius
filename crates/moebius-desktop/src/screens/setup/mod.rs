@@ -52,6 +52,11 @@ pub enum Message {
     RemoveUpstream(usize),
     UpstreamProtocol(usize, String),
     UpstreamUrl(usize, String),
+    AddClass,
+    RemoveClass(usize),
+    ClassName(usize, String),
+    /// The models of the class at this place were edited: names separated by commas.
+    ClassModels(usize, String),
     KeyMode(Owner, KeyMode),
     KeyEnv(Owner, String),
     KeyTyped(Owner, String),

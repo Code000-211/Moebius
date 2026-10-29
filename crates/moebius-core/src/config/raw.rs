@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use serde::Deserialize;
 
 use super::{AgentConfig, PluginConfig, UpstreamConfig, default_protocol};
-use crate::router::Protocol;
+use crate::router::{Classes, Protocol};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -41,6 +41,8 @@ pub(super) struct RawRouter {
     pub(super) listen: Option<SocketAddr>,
     #[serde(default)]
     pub(super) upstreams: Vec<UpstreamConfig>,
+    #[serde(default)]
+    pub(super) classes: Classes,
 }
 
 #[derive(Debug, Default, Deserialize)]

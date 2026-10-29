@@ -37,7 +37,20 @@ fn value_from_json(key: &str, value: &Value) -> Result<toml_edit::Value> {
         Value::Array(items) => {
             let mut array = toml_edit::Array::new();
             for item in items {
-                array.push(value_from_json(key, item)?);
+                // A table in a list that also holds values, such as a model of a class, is written inline.
+                match item {
+                    Value::Object(fields) => {
+                        let mut inline = toml_edit::InlineTable::new();
+                        for (name, value) in fields {
+                            if !valid_agent_name(name) {
+                                return Err(invalid(format!("{key}: {name:?} is not a key")));
+                            }
+                            inline.insert(name, value_from_json(&format!("{key}.{name}"), value)?);
+                        }
+                        array.push(inline);
+                    }
+                    other => array.push(value_from_json(key, other)?),
+                }
             }
             array.into()
         }
@@ -394,6 +407,34 @@ mod tests {
         assert_eq!(urls[0], "http://h0");
         assert_eq!(urls[11], "http://h11");
         assert_eq!(urls.len(), 12);
+    }
+
+    #[test]
+    fn classes_are_set_whole_with_their_models_as_names_or_tables() {
+        let classes = json!({
+            "fast": ["qwen-local", {"model": "haiku", "day_tokens": 500}],
+            "strong": [{"model": "big", "day_tokens": 9}],
+        });
+        let edited = edit(
+            "[router]\nlisten = \"127.0.0.1:7172\"\n",
+            &changes(json!({"router.classes": classes}), &["router.classes"]),
+        )
+        .unwrap();
+        let config = parse(&edited).unwrap();
+        assert_eq!(config.classes["fast"][0].model, "qwen-local");
+        assert_eq!(config.classes["fast"][1].day_tokens, Some(500));
+        assert_eq!(config.classes["strong"][0].model, "big");
+        let replaced = edit(
+            &edited,
+            &changes(
+                json!({"router.classes": {"fast": ["a"]}}),
+                &["router.classes"],
+            ),
+        )
+        .unwrap();
+        let config = parse(&replaced).unwrap();
+        assert_eq!(config.classes.len(), 1);
+        assert_eq!(config.classes["fast"][0].model, "a");
     }
 
     #[test]

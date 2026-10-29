@@ -108,7 +108,7 @@ steer, stop) go through the same record.
 | Git forge (none) | For a repository without a forge: issues and changes live in Moebius; merging happens in the desktop app. |
 | Pi-Bolt harness | Starts `pi-bolt --mode rpc` per run with the agent's model, thinking level, instructions (`--append-system-prompt`), skills (`--skill`) and extensions; maps Pi's events to run events. |
 | Bridge (Pi-Bolt) | A Pi extension (`crates/moebius-core/bridge/moebius-bridge.ts`) that Moebius loads into every run with `--extension`: on `tool_call` asks the core and blocks with the rule on refusal; on `tool_result` reports the result and removes secrets; answers extension UI questions through `decide`. |
-| Router | OpenAI- and Anthropic-compatible endpoints for the harnesses; upstreams with API keys, OAuth logins and local servers; reports usage per call; refuses calls over budget. |
+| Router | OpenAI- and Anthropic-compatible endpoints for the harnesses; upstreams with API keys, OAuth logins and local servers; model classes (`[router.classes]`: a name such as `strong` for an ordered list of models, which an agent, the teacher or a chat names instead of a model, falling back to the next upstream or model when one fails before it answers, and passing over a model whose day's tokens are spent); reports usage per call, with the class beside the model; refuses calls over budget. |
 | MCP gateway | One MCP server for every harness, bundling the MCP servers enabled for the run's agent: served as `POST /mcp` (streamable HTTP) on the router's listener with the run's token, it starts the agent's stdio servers and connects to its remote ones, lists their tools as `<server>__<tool>`, checks every call through `decide("tool_call")`, removes secrets from the results and records each call as a run event. A run's `mcp.json` names only the gateway. |
 | Guard deciders | Fixed patterns (destructive commands, secrets, paths a rule forbids), then the teacher model for rules in prose. |
 | Self-improvement | The Retro at 23:30, proposals, experiments (trials and autoresearch) in the trial window 00:00–06:00, replays of refused calls, shadowing and takeover proposals. |
@@ -202,5 +202,7 @@ Native, GPU-rendered, written in Rust with iced (ADR 0003, ADR 0011), built to [
 
 ## 11. Open questions
 
-- Exact formats of the plugin API messages and the desktop API; both are designed in M0.
-- How the router's model catalogue is configured (which provider models map to which model class).
+None is left open. The formats of the plugin API messages and of the desktop API are fixed in
+[`reference/plugin-api.md`](reference/plugin-api.md) and [`reference/desktop-api.md`](reference/desktop-api.md); model
+classes are in [`reference/router.md`](reference/router.md), and the Retro's proposals for Moebius itself in
+[`reference/harness-configuration.md`](reference/harness-configuration.md).

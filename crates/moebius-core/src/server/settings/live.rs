@@ -216,6 +216,7 @@ impl Live {
         running.trial_window = new.trial_window;
         running.board_tick = new.board_tick;
         running.upstreams = new.upstreams.clone();
+        running.classes = new.classes.clone();
         // The agents of a server with a harness configuration repository come from the repository.
         let own_agents = self.started.harness_url.is_none() && new.harness_url.is_none();
         if own_agents {
@@ -227,6 +228,7 @@ impl Live {
                 .set_limits(new.run_limit, new.round_limit, new.day_tokens);
             targets.router.set_day_budget(new.day_tokens);
             targets.router.set_upstreams(upstreams);
+            targets.router.set_classes(new.classes.clone());
             if own_agents {
                 targets
                     .agents

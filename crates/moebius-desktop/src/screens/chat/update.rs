@@ -175,7 +175,9 @@ impl Chats {
                 let mut models: Vec<String> = available.models.into_iter().map(|m| m.id).collect();
                 models.sort();
                 models.dedup();
-                self.models = models;
+                // The model classes come first.
+                let classes = available.classes.into_iter().map(|class| class.name);
+                self.models = classes.chain(models).collect();
             }
             Message::Models(Err(_)) => {}
             Message::AgentChosen(agent) => {

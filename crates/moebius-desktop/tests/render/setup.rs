@@ -29,6 +29,7 @@ pub fn settings_answer(set: serde_json::Value, more: serde_json::Value) -> serde
         ("checks.timeout_seconds", json!(1800)),
         ("router.listen", json!("127.0.0.1:7172")),
         ("router.upstreams", json!([])),
+        ("router.classes", json!({})),
         ("pi_bolt.program", json!("pi-bolt")),
         ("teacher.model", json!(null)),
         ("teacher.protocol", json!("openai")),
@@ -74,6 +75,9 @@ fn configured() -> serde_json::Value {
                 {"protocol": "anthropic", "base_url": "https://api.anthropic.com", "api_key_secret": "anthropic"},
                 {"protocol": "openai", "base_url": "https://api.example.com/v1", "api_key_env": "EXAMPLE_API_KEY"},
             ],
+            "router.classes": {
+                "strong": [{"model": "claude-opus-fake", "day_tokens": 5000000}, "qwen3.8-flash-next"],
+            },
             "teacher.model": "qwen3.8-flash-next",
             "decision_model.url": "http://127.0.0.1:8081/v1", "decision_model.model": "moebius-decider",
             "decision_model.api_key_env": "DECISION_MODEL_KEY",
@@ -163,6 +167,9 @@ fn the_models_page_has_the_upstreams_agents_the_teacher_and_the_decision_model_a
             "Key",
             "Add upstream",
             "Remove",
+            "Model classes",
+            "Models, first tried first",
+            "Add class",
             "Agents",
             "Coder",
             "qwen3.8-flash-next",
@@ -516,6 +523,8 @@ pub fn available_models() -> client::Available {
             {"id": "qwen3.8-flash-next", "protocol": "openai", "upstream": "http://127.0.0.1:8080"},
         ],
         "errors": [{"upstream": "https://api.example.com/v1", "message": "401"}],
+        "classes": [{"name": "strong", "models": ["claude-opus-fake", "qwen3.8-flash-next"],
+                     "protocols": ["anthropic", "openai"]}],
     }))
     .unwrap()
 }
@@ -570,6 +579,69 @@ fn picking_a_model_sets_the_field_and_the_protocol_and_a_typed_model_is_kept() {
     edit(&mut state, "teacher.model", "my-own-model");
     let plan = state.save_request(true).unwrap();
     assert_eq!(plan.set["teacher.model"], "my-own-model");
+}
+
+#[test]
+fn saving_the_models_sends_the_classes_whole_and_keeps_a_models_tokens_for_the_day() {
+    let mut state = setup_state(configured());
+    // A class's models are edited as names separated by commas; the table is written in place of the file's.
+    let _ = state.update(
+        setup::Message::ClassModels(0, "qwen3.8-flash-next, claude-opus-fake".into()),
+        None,
+    );
+    let _ = state.update(setup::Message::AddClass, None);
+    assert_eq!(
+        state.save_request(true),
+        Err("Enter the name of each model class.".into())
+    );
+    let _ = state.update(setup::Message::ClassName(1, "fast".into()), None);
+    assert_eq!(
+        state.save_request(true),
+        Err("Enter the models of the class fast.".into())
+    );
+    let _ = state.update(setup::Message::ClassModels(1, " small ,".into()), None);
+    let plan = state.save_request(true).unwrap();
+    assert_eq!(plan.remove, ["router.classes"]);
+    assert_eq!(
+        serde_json::Value::Object(plan.set),
+        json!({"router.classes": {
+            "strong": ["qwen3.8-flash-next", {"model": "claude-opus-fake", "day_tokens": 5000000}],
+            "fast": ["small"],
+        }})
+    );
+    let _ = state.update(setup::Message::ClassName(1, "strong".into()), None);
+    assert_eq!(
+        state.save_request(true),
+        Err("There are two classes named strong.".into())
+    );
+
+    // Without classes the table is taken out of the file.
+    let mut state = setup_state(configured());
+    let _ = state.update(setup::Message::RemoveClass(0), None);
+    let plan = state.save_request(true).unwrap();
+    assert_eq!(plan.remove, ["router.classes"]);
+    assert!(plan.set.is_empty());
+}
+
+#[test]
+fn the_teachers_model_field_offers_the_classes_first() {
+    let available = available_models();
+    let choices = available.choices();
+    let ids: Vec<&str> = choices.iter().map(|c| c.id.as_str()).collect();
+    assert_eq!(ids, ["strong", "claude-opus-fake", "qwen3.8-flash-next"]);
+    assert!(choices[0].class);
+    // Its models are served in two protocols, so picking it leaves the teacher's protocol as it is.
+    let mut state = setup_state(configured());
+    let _ = state.update(setup::Message::Available(Ok(available)), None);
+    let _ = state.update(
+        setup::Message::PickModel("teacher.model", choices[0].clone()),
+        None,
+    );
+    let plan = state.save_request(true).unwrap();
+    assert_eq!(
+        serde_json::Value::Object(plan.set),
+        json!({"teacher.model": "strong"})
+    );
 }
 
 /// The answers of a server whose second upstream logs in with OAuth by a device code.

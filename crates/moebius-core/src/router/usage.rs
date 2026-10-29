@@ -151,6 +151,8 @@ pub(super) struct Meter {
     pub(super) store: Arc<Store>,
     pub(super) run_id: i64,
     pub(super) model: String,
+    /// The class the request named, if it named one; its usage is then recorded under `model`, the class's model.
+    pub(super) class: Option<String>,
     /// When the request went upstream, which is where the model's time is counted from.
     pub(super) started: Instant,
 }
@@ -160,15 +162,20 @@ impl Meter {
         if !counted.seen {
             return;
         }
-        let _ = self.store.add_usage(&Usage {
+        let model = match (&self.class, counted.model) {
+            (None, Some(answered)) => answered,
+            _ => self.model.clone(),
+        };
+        let usage = Usage {
             run_id: Some(self.run_id),
-            model: counted.model.unwrap_or_else(|| self.model.clone()),
+            model,
             input_tokens: counted.input,
             output_tokens: counted.output,
             cached_tokens: counted.cached,
             duration_ms: i64::try_from(self.started.elapsed().as_millis()).unwrap_or(i64::MAX),
             tools: counted.tools,
-        });
+        };
+        let _ = self.store.add_class_usage(&usage, self.class.as_deref());
     }
 }
 

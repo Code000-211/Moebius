@@ -15,7 +15,7 @@ use crate::widgets::form::notice_line;
 use crate::widgets::model_picker;
 use crate::widgets::page;
 
-use super::inputs::{field_view, optional_box, upstream_row};
+use super::inputs::{class_row, field_view, optional_box, upstream_row};
 use super::login::login_view;
 use super::{Message, Notice, Owner, Setup};
 
@@ -207,6 +207,25 @@ impl Setup {
             ]
             .spacing(12),
         );
+        let classes = page::boxed(
+            "Model classes",
+            column![
+                page::body(
+                    "A class names models to try in order: an agent, the teacher or a chat may name the class \
+                     instead of a model, and the next model takes a request when an upstream fails."
+                ),
+                column(
+                    forms
+                        .classes
+                        .iter()
+                        .enumerate()
+                        .map(|(place, class)| class_row(place, class))
+                )
+                .spacing(12),
+                page::white_button("Add class", Some(AppMessage::Setup(Message::AddClass))),
+            ]
+            .spacing(12),
+        );
         let agents: Element<AppMessage> = if models.agents.is_empty() {
             page::body("The server has no agent.")
         } else {
@@ -272,7 +291,8 @@ impl Setup {
                 note(!teacher_on),
             )
         });
-        let mut content = column![self.status(), upstreams, agents].spacing(theme::PAGE_GAP);
+        let mut content =
+            column![self.status(), upstreams, classes, agents].spacing(theme::PAGE_GAP);
         let mut boxes = row![].spacing(theme::PAGE_GAP).align_y(Alignment::Start);
         for element in [teacher, decision_model].into_iter().flatten() {
             boxes = boxes.push(container(element).width(Length::FillPortion(1)));

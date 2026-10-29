@@ -22,7 +22,27 @@ upstream's key added when `api_key_env` or `api_key_secret` is set (`Authorizati
 the access token of its [OAuth login](#oauth-logins) as `Authorization: Bearer` for either protocol. The
 upstream's status, content type and body (or stream) are passed back as they are.
 
-An upstream is chosen by protocol: the first `[[router.upstreams]]` table with that `protocol`.
+## Choosing the upstream
+
+A request goes to the `[[router.upstreams]]` tables with the endpoint's `protocol`, in the order of the file: to the
+first, and to the next when one fails before it answers. An upstream fails before it answers when it cannot be reached,
+when it logs in with OAuth and is not logged in (or its token cannot be refreshed), or when it answers `5xx`, `429` or
+`404` (it does not serve the model); its answer is then dropped unread. Once an upstream has answered with any other
+status, its answer is passed on and nothing falls back any more: no request is sent twice after a byte of an answer
+reached the harness. When the last upstream fails too, the harness gets its answer, or the `502` of its failure.
+
+## Model classes
+
+A request whose `model` is the name of a class of `[router.classes]` (see
+[configuration](configuration.md#routerclasses)) is served as that model name: the router tries the class's models in
+order, each on every upstream of the protocol as above, setting the body's `model` to the model tried. A model whose
+`day_tokens` are spent (its input and output tokens since the start of the server's local day, counted over all its
+usage, at or above `day_tokens`) is passed over; when every model of the class is, the request is refused with `429`
+and `budget_exceeded`. Usage that cannot be read counts as spent. A class takes the place of a model of the same name;
+a request naming any other model goes to that model alone.
+
+`GET /v1/models/available` lists the classes beside the models (see the [desktop
+API](desktop-api.md#get-v1modelsavailable)), with the protocols the upstreams list any of their models under.
 
 ## Listing models
 
@@ -89,9 +109,10 @@ The checks run in this order:
 |---|---|---|
 | `401` | `authentication_error` | The token is missing or unknown. |
 | `429` | `budget_exceeded` | The run's budget or the day's budget is spent (below). |
+| `429` | `budget_exceeded` | The request names a model class whose every model has spent its `day_tokens` ([model classes](#model-classes)). |
 | `500` | `api_error` | The usage cannot be read from the store. |
-| `502` | `api_error` | There is no upstream for the protocol, or the upstream cannot be reached or its body cannot be read. |
-| `502` | `authentication_error` | The upstream logs in with OAuth and is not logged in, or its token could not be refreshed. |
+| `502` | `api_error` | There is no upstream for the protocol, or the last upstream tried cannot be reached, or the body of the upstream that answered cannot be read. |
+| `502` | `authentication_error` | The last upstream tried logs in with OAuth and is not logged in, or its token could not be refreshed. |
 | `400` | `invalid_request_error` | The body is not JSON. |
 
 Any other status is the upstream's own, passed on.
@@ -130,7 +151,9 @@ for an answer that asks for none, which the usage screen calls answering):
 - Anthropic: `name` of each `content[]` block of type `tool_use`. In a stream, of each `content_block_start` event whose
   `content_block` is of type `tool_use`.
 
-The model is the one the upstream names in its answer, or else the one in the request. A streamed request is recorded
+The model is the one the upstream names in its answer, or else the one in the request. For a request that names a
+model class, the model is the class's model that answered, as the class names it, and the class is recorded beside it;
+the desktop API's `GET /v1/usage` adds those calls up by class and model. A streamed request is recorded
 when its stream ends, however it ends, including when the client drops it. Nothing is recorded for an answer that is
 not a success or that reports no usage. Calls recorded before the router read tools have no tools, which the usage
 screen counts as unknown.

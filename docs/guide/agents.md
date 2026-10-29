@@ -99,7 +99,7 @@ built-in ones.
 
 | Key | What it does |
 |---|---|
-| `model` | The model's name, given to Pi-Bolt as `--model`. |
+| `model` | The model's name, given to Pi-Bolt as `--model`. It may name a model class of `[router.classes]` instead, such as `strong`: the router then asks the class's models in order and falls back to the next when an upstream fails (see [the router](../reference/router.md#model-classes)). |
 | `protocol` | `openai` or `anthropic`: which router endpoint the harness uses. |
 | `thinking` | Given to Pi-Bolt as `--thinking`, such as `low`, `medium` or `high`. Pi-Bolt checks the value. |
 | `instructions` | Text given to Pi-Bolt as `--append-system-prompt`. |

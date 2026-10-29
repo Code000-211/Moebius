@@ -393,7 +393,7 @@ impl Agents {
 
     /// Model, protocol, thinking level and token budget.
     pub(super) fn settings_row<'a>(&'a self, editor: &'a Editor) -> Element<'a, AppMessage> {
-        let models = self.available.as_ref().map_or(&[][..], |a| &a.models[..]);
-        settings_row(editor, models)
+        let models = self.available.as_ref().map_or(vec![], |a| a.choices());
+        settings_row(editor, &models)
     }
 }

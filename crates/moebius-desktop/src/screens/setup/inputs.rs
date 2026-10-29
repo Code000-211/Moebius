@@ -1,5 +1,5 @@
-//! The inputs of the forms: a key of the configuration as the input its kind asks for, an upstream's row, where an
-//! API key comes from, and the box of a part that may be left out.
+//! The inputs of the forms: a key of the configuration as the input its kind asks for, an upstream's row, a model
+//! class's row, where an API key comes from, and the box of a part that may be left out.
 
 use iced::font::Weight;
 use iced::widget::{column, container, pick_list, row, space, text, text_input};
@@ -14,7 +14,7 @@ use crate::widgets::page;
 
 use super::KeyMode;
 use super::fields::{Field, Kind};
-use super::forms::{KeyChoice, Optional, Upstream};
+use super::forms::{Class, KeyChoice, Optional, Upstream};
 use super::{Message, Owner};
 
 /// A box that holds the keys of a table, which can be turned off.
@@ -168,6 +168,35 @@ pub(super) fn upstream_row<'a>(
         container(page::white_button(
             "Remove",
             Some(message(Message::RemoveUpstream(place)))
+        ))
+        .padding(Padding::default().top(21)),
+    ]
+    .spacing(12)
+    .align_y(Alignment::Start)
+    .into()
+}
+
+/// One model class as a row of inputs: its name and its models, in the order they are tried.
+pub(super) fn class_row(place: usize, class: &Class) -> Element<'_, AppMessage> {
+    let message = |message| AppMessage::Setup(message);
+    let name = text_input("strong", &class.name)
+        .on_input(move |name| message(Message::ClassName(place, name)))
+        .font(theme::MANROPE)
+        .size(theme::BODY)
+        .padding([9, 12])
+        .style(connect::input_style);
+    let models = text_input("claude-opus-5, qwen-local", &class.models)
+        .on_input(move |models| message(Message::ClassModels(place, models)))
+        .font(theme::MONO)
+        .size(theme::CODE)
+        .padding([9, 12])
+        .style(connect::input_style);
+    row![
+        container(labelled("Class", name)).width(Length::FillPortion(2)),
+        container(labelled("Models, first tried first", models)).width(Length::FillPortion(7)),
+        container(page::white_button(
+            "Remove",
+            Some(message(Message::RemoveClass(place)))
         ))
         .padding(Padding::default().top(21)),
     ]

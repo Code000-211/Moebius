@@ -133,12 +133,16 @@ async fn dismiss_grilling(
     blocking(&state.app, move |app| grilling::dismiss(app, id)).await
 }
 
-/// The protocols the router's upstreams list `model` under; none without a model.
+/// The protocols the router's upstreams list `model` under, or the models of the class it names; none without a model.
 async fn served(state: &ApiState, model: Option<&str>) -> Vec<crate::router::Protocol> {
     let Some(model) = model.map(str::trim) else {
         return Vec::new();
     };
     let available = state.router.available_models(false).await;
+    // A model class is served in the protocols of its models.
+    if let Some(class) = available.classes.iter().find(|class| class.name == model) {
+        return class.protocols.clone();
+    }
     available
         .models
         .iter()

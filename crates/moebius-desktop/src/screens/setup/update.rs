@@ -10,7 +10,7 @@ use crate::settings::Settings;
 use crate::widgets::form::PROTOCOLS;
 
 use super::fields::Kind;
-use super::forms::{Forms, KeyChoice, Upstream};
+use super::forms::{Class, Forms, KeyChoice, Upstream};
 use super::{KeyMode, Message, Notice, Setup};
 
 impl Setup {
@@ -80,14 +80,16 @@ impl Setup {
     /// Gives the Model fields the models that were listed.
     fn offer_models(&mut self) {
         if let Some(forms) = &mut self.forms {
-            for optional in forms
-                .teacher
-                .iter_mut()
-                .chain(forms.decision_model.iter_mut())
-            {
-                for field in &mut optional.form.fields {
+            // The teacher is asked through the router, which serves the classes; the decision model is not.
+            let teacher = self.available.as_ref().map_or(vec![], |a| a.choices());
+            let decision_model = self.available.as_ref().map_or(vec![], |a| a.models.clone());
+            for (optional, models) in [
+                (forms.teacher.as_mut(), teacher),
+                (forms.decision_model.as_mut(), decision_model),
+            ] {
+                for field in optional.into_iter().flat_map(|o| &mut o.form.fields) {
                     if field.kind == Kind::Model {
-                        field.models = self.available.as_ref().map_or(vec![], |a| a.models.clone());
+                        field.models = models.clone();
                     }
                 }
             }
@@ -148,6 +150,26 @@ impl Setup {
             Message::UpstreamUrl(place, url) => {
                 if let Some(upstream) = forms.upstreams.get_mut(place) {
                     upstream.base_url = url;
+                }
+            }
+            Message::AddClass => forms.classes.push(Class {
+                name: String::new(),
+                models: String::new(),
+                day_tokens: Vec::new(),
+            }),
+            Message::RemoveClass(place) => {
+                if place < forms.classes.len() {
+                    forms.classes.remove(place);
+                }
+            }
+            Message::ClassName(place, name) => {
+                if let Some(class) = forms.classes.get_mut(place) {
+                    class.name = name;
+                }
+            }
+            Message::ClassModels(place, models) => {
+                if let Some(class) = forms.classes.get_mut(place) {
+                    class.models = models;
                 }
             }
             Message::KeyMode(owner, mode) => {

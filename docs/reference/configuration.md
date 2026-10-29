@@ -132,7 +132,8 @@ served on the same listener.
 ### `[[router.upstreams]]`
 
 Where the router sends requests, one table per upstream. A request goes to the first upstream whose protocol matches the
-endpoint it came in on; without a match the router answers 502. Without any upstream, every model request fails.
+endpoint it came in on, and to the next of that protocol when one fails before it answers (see [router](router.md#choosing-the-upstream));
+without a match the router answers 502. Without any upstream, every model request fails.
 
 | Key | Type | Default | Meaning and validation |
 |---|---|---|---|
@@ -161,6 +162,19 @@ whose upstream is not logged in starts, and the router answers its requests with
 | `router.upstreams.oauth.redirect_port` | integer | any free port | For `code`: the loopback port the browser is sent back to, for a provider that registers it. |
 | `router.upstreams.oauth.redirect_path` | string | `/callback` | For `code`: the path the browser is sent back to; it starts with `/`. |
 | `router.upstreams.oauth.secret` | string | required | The name the refresh token is kept under in `secrets.toml` (see [Secrets](#secrets)); letters, digits, `-` and `_`. |
+
+### `[router.classes]`
+
+A model class is a name, such as `fast`, `strong` or `local`, for an ordered list of models. An agent's `model`, the
+teacher's `model` and a chat's model may name a class instead of a model; the router serves the class as a model name
+(see [router](router.md#model-classes)): a request for it goes to the first of its models that has tokens left today,
+and falls back to the next when an upstream fails before it answers. A class takes the place of a model of the same
+name. The desktop app's model pickers offer the classes before the models. The decision model is not asked through
+the router, so it cannot name a class.
+
+| Key | Type | Default | Meaning and validation |
+|---|---|---|---|
+| `router.classes.<name>` | array | none | The models of the class `<name>` (letters, digits, `-` and `_`), first tried first, such as `router.classes.fast` or `router.classes.strong`. Each is a model's name as the upstream knows it, or a table `{ model = "...", day_tokens = N }` whose `day_tokens` (at least 1) is the most tokens (input plus output) that model may use in a day of the server's local time, counted over all its usage, whatever asked for it; a model at or above it is passed over. An empty list, a model without a name or a table with another key refuses the file. |
 
 ## `[pi_bolt]`
 
@@ -278,6 +292,7 @@ A change applies to the running server at once for these keys:
 - `run_limit`, `board.round_limit` and `budgets.day_tokens`: the limits column scripts and the router read;
 - `board.tick_ms`, `retro_at`, `trial_window.start` and `trial_window.end`: read by the board's loop and the schedule;
 - `router.upstreams`, with their keys;
+- `router.classes`, set as a whole table (`{"fast": ["a", {"model": "b", "day_tokens": 100}]}`);
 - `agents.<name>`, on a server without `[harness]`.
 
 Every other key is written to the file and used after the server restarts: `data_dir`, `listen`, `token_file`,

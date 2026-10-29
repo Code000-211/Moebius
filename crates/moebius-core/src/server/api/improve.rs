@@ -38,7 +38,9 @@ use crate::improve::replay;
 use crate::improve::research::{self, NewResearch, ResearchView};
 use crate::improve::retro::{self, RetroSummary, RetroView};
 use crate::improve::trial;
-use crate::store::{ActivityUsage, AgentUsage, ModelUsage, Proposal, Replay, Takeover, ToolWait};
+use crate::store::{
+    ActivityUsage, AgentUsage, ClassUsage, ModelUsage, Proposal, Replay, Takeover, ToolWait,
+};
 
 /// The routes of usage, judgements, the Retro, the decision model, research and exports.
 pub(super) fn routes() -> Router<ApiState> {
@@ -120,6 +122,9 @@ pub struct UsageAnswer {
     /// What the model did with its time, the activity with most time first.
     pub activities: Vec<ActivityUsage>,
     pub tool_waits: Vec<ToolWait>,
+    /// What each model used when a request named a model class, by class.
+    #[serde(default)]
+    pub classes: Vec<ClassUsage>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -510,6 +515,7 @@ async fn usage(
             agents: store.usage_by_agent(days)?,
             activities: store.usage_by_activity(days)?,
             tool_waits: store.tool_waits(days, TOOL_WAITS)?,
+            classes: store.usage_by_class(days)?,
         })
     })
     .await

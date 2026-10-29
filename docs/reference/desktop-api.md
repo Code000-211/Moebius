@@ -456,7 +456,8 @@ Response:
   "models": [{"model": "claude-sonnet-5-5", "tokens": 960000, "calls": 690, "input_tokens": 700000, "cached_tokens": 520000}],
   "agents": [{"agent": "Coder", "calls": 702, "tokens": 1120000, "input_tokens": 1000000, "cached_tokens": 610000, "model_ms": 7080000}],
   "activities": [{"activity": "bash", "model_ms": 2140000, "calls": 214, "output_tokens": 61000}],
-  "tool_waits": [{"tool": "bash", "calls": 31, "seconds": 2460}]
+  "tool_waits": [{"tool": "bash", "calls": 31, "seconds": 2460}],
+  "classes": [{"class": "strong", "model": "claude-sonnet-5-5", "tokens": 420000, "calls": 300}]
 }
 ```
 
@@ -481,6 +482,9 @@ Response:
 - `tool_waits` holds the tools whose calls waited longest in the window, at most 10: for each tool name, the number of
   calls and the seconds between their `tool_execution_start` and `tool_execution_end` run events, summed. Events
   are stamped in whole seconds. A call that has not ended is not counted.
+- `classes` holds the calls of the window whose request named a model class (see [the router](router.md#model-classes)):
+  for each class and the model of it that answered, the tokens and the calls, by class name and then the model with
+  the most tokens first. The same calls are counted under their model in `models` too.
 
 Errors: `422` `days` is not from 1 to 365.
 
@@ -843,11 +847,15 @@ returned if it is less than 5 minutes old. Response:
 ```json
 {
   "models": [{"id": "claude-sonnet-4-5", "protocol": "anthropic", "upstream": "https://api.anthropic.com"}],
-  "errors": [{"upstream": "https://api.example.com", "message": "401"}]
+  "errors": [{"upstream": "https://api.example.com", "message": "401"}],
+  "classes": [{"name": "strong", "models": ["claude-sonnet-4-5", "qwen-local"], "protocols": ["anthropic"]}]
 }
 ```
 
 - `models` are sorted by `protocol`, then `id`; the same model of the same upstream is listed once.
+- `classes` are the model classes of `[router.classes]` by name (see [the router](router.md#model-classes)), which may be
+  named wherever a model is: each with its models, first tried first, and the protocols `models` lists any of them
+  under (empty when none is listed). They are the router's as the request is answered, never kept.
 - An upstream that cannot be asked is in `errors` with a short `message`: an HTTP status such as `401`, `timed out`,
   `could not connect`, `the answer is not JSON` or `the answer has no model list`. It does not fail the request.
 - No key is in the answer. A user name and password in an upstream's URL are removed.
@@ -1029,7 +1037,8 @@ Without `message` the chat's Pi starts with no prompt and the chat is `waiting` 
 A chat runs on `model` and with the reasoning level `thinking` in place of its agent's when they are given: its Pi is
 started with `--model` and `--thinking` of them every time (the first time, after a terminal, after waiting long), and
 the router serves the model as for any run. The protocol to the model stays the agent's, unless the router's upstreams
-list the model (see `GET /v1/models/available`) only under the other protocol: then the chat speaks that one. The
+list the model (see `GET /v1/models/available`) only under the other protocol: then the chat speaks that one. A
+`model` that names a model class is listed under the protocols of its models. The
 choice is stored as the chat's first `settings_changed` run event and listed with the chat. Pi's `models.json` marks
 the model as one that reasons when the level is not `off`, as Pi otherwise turns any level off.
 

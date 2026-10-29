@@ -1,5 +1,5 @@
-//! The forms of the Models and Settings pages made from what the server said: the upstreams with their API keys,
-//! the teacher and the decision model that may be left out, and what a save of either page sends.
+//! The forms of the Models and Settings pages made from what the server said: the upstreams with their API keys, the
+//! model classes, the teacher and the decision model that may be left out, and what a save of either page sends.
 
 use std::collections::BTreeSet;
 
@@ -106,6 +106,52 @@ impl Upstream {
     }
 }
 
+/// A model class of `router.classes`: its name and its models, which a person types separated by commas.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct Class {
+    pub(super) name: String,
+    pub(super) models: String,
+    /// The day's tokens of its models that have them in the file, kept while the model stays in the class.
+    pub(super) day_tokens: Vec<(String, i64)>,
+}
+
+impl Class {
+    pub(super) fn read(name: &str, value: &Value) -> Self {
+        let mut models = Vec::new();
+        let mut day_tokens = Vec::new();
+        for entry in value.as_array().into_iter().flatten() {
+            let model = entry
+                .as_str()
+                .or_else(|| entry.get("model").and_then(Value::as_str))
+                .unwrap_or_default();
+            if let Some(tokens) = entry.get("day_tokens").and_then(Value::as_i64) {
+                day_tokens.push((model.to_string(), tokens));
+            }
+            models.push(model.to_string());
+        }
+        Class {
+            name: name.to_string(),
+            models: models.join(", "),
+            day_tokens,
+        }
+    }
+
+    /// The models as the file writes them: a name, or a table with the day's tokens the model had.
+    fn entries(&self) -> Vec<Value> {
+        self.models
+            .split(',')
+            .map(str::trim)
+            .filter(|model| !model.is_empty())
+            .map(
+                |model| match self.day_tokens.iter().find(|(name, _)| name == model) {
+                    Some((_, tokens)) => json!({"model": model, "day_tokens": tokens}),
+                    None => json!(model),
+                },
+            )
+            .collect()
+    }
+}
+
 /// The teacher or the decision model: a table of the file that can be turned off.
 #[derive(Debug, Clone)]
 pub(super) struct Optional {
@@ -174,6 +220,8 @@ pub(super) struct Forms {
     pub(super) settings: Vec<(&'static str, Form)>,
     pub(super) upstreams: Vec<Upstream>,
     pub(super) original_upstreams: Vec<Upstream>,
+    pub(super) classes: Vec<Class>,
+    pub(super) original_classes: Vec<Class>,
     pub(super) teacher: Option<Optional>,
     pub(super) decision_model: Option<Optional>,
 }
@@ -187,6 +235,16 @@ impl Forms {
                 list.iter()
                     .enumerate()
                     .map(|(n, u)| Upstream::read(u, n))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let classes: Vec<Class> = server
+            .value("router.classes")
+            .as_object()
+            .map(|classes| {
+                classes
+                    .iter()
+                    .map(|(name, models)| Class::read(name, models))
                     .collect()
             })
             .unwrap_or_default();
@@ -217,6 +275,8 @@ impl Forms {
                 .collect(),
             original_upstreams: upstreams.clone(),
             upstreams,
+            original_classes: classes.clone(),
+            classes,
             teacher: Some(optional(TEACHER, false)),
             decision_model: Some(optional(DECISION_MODEL, true)),
         }
@@ -320,6 +380,32 @@ impl Forms {
                 .insert(format!("router.upstreams.{place}"), Value::Object(table));
         }
 
+        if self.classes != self.original_classes {
+            // The classes are written whole, in place of what the file had.
+            let mut classes = Map::new();
+            for class in &self.classes {
+                let name = class.name.trim();
+                if name.is_empty() {
+                    return Err("Enter the name of each model class.".into());
+                }
+                let entries = class.entries();
+                if entries.is_empty() {
+                    return Err(format!("Enter the models of the class {name}."));
+                }
+                if classes
+                    .insert(name.to_string(), Value::Array(entries))
+                    .is_some()
+                {
+                    return Err(format!("There are two classes named {name}."));
+                }
+            }
+            plan.remove.push("router.classes".into());
+            if !classes.is_empty() {
+                plan.set
+                    .insert("router.classes".into(), Value::Object(classes));
+            }
+        }
+
         if let Some(teacher) = &self.teacher {
             teacher.changes("teacher", &mut plan, String::new)?;
         }
@@ -331,6 +417,7 @@ impl Forms {
 
     pub(super) fn models_dirty(&self) -> bool {
         self.upstreams != self.original_upstreams
+            || self.classes != self.original_classes
             || [&self.teacher, &self.decision_model]
                 .into_iter()
                 .flatten()
