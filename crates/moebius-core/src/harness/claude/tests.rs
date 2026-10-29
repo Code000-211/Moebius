@@ -74,6 +74,7 @@ fn setup_with(router: Option<(Arc<Router>, String)>) -> Setup {
         mcp: BTreeMap::new(),
         token_budget: None,
         harness: HarnessKind::ClaudeCode,
+        tool_output: Default::default(),
     };
     let (router, url) = router.unwrap_or_else(|| {
         (

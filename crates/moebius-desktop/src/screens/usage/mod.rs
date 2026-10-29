@@ -63,7 +63,8 @@ impl Window {
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    Loaded(Result<UsageReport, ClientError>),
+    /// The answer, boxed: a report is much larger than the other messages.
+    Loaded(Result<Box<UsageReport>, ClientError>),
     Choose(Window),
 }
 
@@ -87,7 +88,7 @@ impl Usage {
     pub fn reload(&self, settings: &Settings) -> Task<AppMessage> {
         let (client, days) = (Client::new(settings.clone()), self.window.days());
         Task::perform(async move { client.usage(days).await }, |result| {
-            AppMessage::Usage(Message::Loaded(result))
+            AppMessage::Usage(Message::Loaded(result.map(Box::new)))
         })
     }
 
@@ -101,7 +102,7 @@ impl Usage {
             Message::Loaded(Ok(report)) => {
                 // An answer for a window that is no longer the chosen one is of no use.
                 if report.days_in_window == self.window.days() {
-                    self.report = Some(report);
+                    self.report = Some(*report);
                 }
             }
             Message::Loaded(Err(_)) => {}

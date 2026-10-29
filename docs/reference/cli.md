@@ -86,7 +86,7 @@ takes a repository's name.
 | `automation delete <id>` | `DELETE /v1/automations/{id}` | `deleted the automation <id>`. |
 | `agents` | `GET /v1/agents` | Table `name model protocol built_in error`. |
 | `agent show <name>` | `GET /v1/agents/{name}` | The agent: settings as JSON, instructions below, and for a built-in agent its built-in instructions and skills (`built_in`). |
-| `agent save <name> --model <m> [--protocol <p>] [--thinking <t>] [--token-budget <n>] [--harness <h>] [--skill <s>]... [--extension <f>]... [--mcp <m>]... [--instructions <file\|->]` | `PUT /v1/agents/{name}` | The agent, with `commit`. Replaces the whole agent, as the route does. |
+| `agent save <name> --model <m> [--protocol <p>] [--thinking <t>] [--token-budget <n>] [--harness <h>] [--skill <s>]... [--extension <f>]... [--mcp <m>]... [--hide-outputs-after <turns>] [--output-lines <n>] [--output-bytes <n>] [--no-compress] [--instructions <file\|->]` | `PUT /v1/agents/{name}` | The agent, with `commit`. Replaces the whole agent, as the route does; its `tool_output` takes the flags given, the defaults for the others. |
 | `agent delete <name>` | `DELETE /v1/agents/{name}` | `deleted the agent <name>`. |
 | `rules` | `GET /v1/rules` | The built-in rules, the rules in prose, those of each repository and the refusals of the week. |
 | `rules save <file\|->` | `PUT /v1/rules` | The rules page after the change, with `committed <id>`. |

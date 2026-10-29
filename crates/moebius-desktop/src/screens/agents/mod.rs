@@ -29,6 +29,8 @@ pub(crate) use crate::widgets::form::{field, menu_style, notice_line, pick_style
 
 /// What the thinking list says for no level at all.
 const NOT_SET: &str = "Not set";
+/// What the list of whether tool outputs are compressed offers: on, then off.
+const COMPRESS: [&str; 2] = ["Compressed", "As they are"];
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -60,6 +62,11 @@ pub enum Message {
     HarnessChosen(String),
     ThinkingChosen(String),
     BudgetEdited(String),
+    /// A field of the tool outputs was edited.
+    HideAfterEdited(String),
+    MaxLinesEdited(String),
+    MaxBytesEdited(String),
+    CompressChosen(String),
     Instructions(text_editor::Action),
     /// "Write them" (false) or "Let the Moebius agent write them" (true) was chosen for the instructions.
     InstructionsByAgent(bool),

@@ -47,6 +47,7 @@ pub(super) fn setup() -> (tempfile::TempDir, Arc<App>, PiBolt, i64) {
         protocol: Protocol::OpenAi,
         token_budget: Some(1000),
         harness: Default::default(),
+        tool_output: Default::default(),
     };
     let pi = PiBolt::new(
         fake_pi(),

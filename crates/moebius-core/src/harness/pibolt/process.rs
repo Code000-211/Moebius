@@ -45,7 +45,9 @@ impl PiBolt {
             .env("PI_CODING_AGENT_DIR", place.agent_dir)
             .env("MOEBIUS", &self.moebius)
             .env("MOEBIUS_CHECK_URL", &self.router_url)
-            .env("MOEBIUS_RUN_TOKEN", place.token);
+            .env("MOEBIUS_RUN_TOKEN", place.token)
+            // How the bridge keeps the outputs of tools small (see `harness::output`).
+            .env("MOEBIUS_TOOL_OUTPUT", json!(agent.tool_output).to_string());
         if let (true, Some(url)) = (place.operates, self.api_url.get()) {
             // The Moebius agent operates Moebius with `$MOEBIUS`, as the run itself: its token is accepted by the
             // desktop API.
@@ -331,6 +333,12 @@ mod tests {
                 .unwrap();
         assert_eq!(env["MOEBIUS"], "/usr/local/bin/moebius");
         assert_eq!(env["MOEBIUS_CHECK_URL"], "http://127.0.0.1:9");
+        let tool_output: Value =
+            serde_json::from_str(env["MOEBIUS_TOOL_OUTPUT"].as_str().unwrap()).unwrap();
+        assert_eq!(
+            tool_output,
+            json!({"hide_after_turns": 10, "max_lines": 200, "max_bytes": 16384, "compress": true})
+        );
         assert!(
             env["MOEBIUS_RUN_TOKEN"]
                 .as_str()

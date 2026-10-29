@@ -277,6 +277,27 @@ A name is made of letters, digits, `-` and `_` and must not be empty, else the f
 | `agents.<name>.skills` | array of paths | `[]` | Each given to Pi-Bolt as `--skill`. |
 | `agents.<name>.extensions` | array of paths | `[]` | Each given to Pi-Bolt as `--extension`, before the bridge, which is always loaded last. Pi loads no extension or skill it discovers on its own. |
 | `agents.<name>.token_budget` | integer | none | The most tokens (input plus output, summed over all runs of the card, teacher included) a card may use. A model request over it is answered with HTTP 429 `budget_exceeded`, and the default scripts mark a card that reached it stuck instead of starting a run. Tokens used before the card's latest retry do not count. Without it there is no limit. A chat has no card, so its budget is the tokens of the chat's own run. Scripts read it as `moebius.agent_budget(name)`. |
+| `agents.<name>.tool_output.hide_after_turns` | integer | `10` | The output of a tool call older than this many turns (model responses) is replaced, in the requests to the model, by a placeholder: `[<tool> <input>: output hidden: <n> lines]`. Errors are never hidden, and the session and the run's events keep every output. `0` keeps every output. The bridge does it, through Pi's `context` hook. |
+| `agents.<name>.tool_output.max_lines` | integer | `200` | The most lines of one tool result the model reads. Above it (or above `max_bytes`), the result's head and tail are kept, half the budget each, around `[<n> lines left out; the full output is in .moebius/out/<k>.txt]`. `0` is no limit. |
+| `agents.<name>.tool_output.max_bytes` | integer | `16384` | The most bytes of one tool result, as `max_lines`. A result whose lines are each too long keeps its first and last bytes and says how many bytes were left out. `0` is no limit. |
+| `agents.<name>.tool_output.compress` | boolean | `true` | Whether escape codes and progress bars are removed from every result, runs of the same line folded into one with `(×<n>)`, and the output of well-known commands compressed: `cargo test`, `pytest`, `go test`, `jest` and `vitest` (also as `npm test`) to their failures and summary, cargo's builds to their errors and warnings with repeats folded. A compressor only removes lines it knows to be noise, so no error message and no failing test's output is lost. |
+
+The `tool_output` table keeps what the model reads of tools small (Pi-Bolt already shows at most 2000 lines or 50 KB of
+a `bash` or `read` result; these budgets are tighter). It applies to Pi-Bolt runs only: the bridge does it, and an agent
+with `harness = "claude-code"` has no bridge, so its table is accepted and has no effect. When lines are left out, the whole output, without secrets, is in
+`.moebius/out/<k>.txt` of the run's worktree, which the agent can read in ranges; that directory ignores itself in git,
+so it is never part of the change, and it goes with the worktree. Each result made smaller is a `tool_output` run event
+(see the [bridge protocol](bridge-protocol.md)), and `GET /v1/usage` adds up what they saved.
+
+```toml
+[agents.Coder]
+model = "my-local-model"
+
+[agents.Coder.tool_output]
+hide_after_turns = 0      # keep every output in the context
+max_lines = 400
+compress = false
+```
 
 ### `[agents.Moebius]`
 

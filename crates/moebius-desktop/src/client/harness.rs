@@ -43,6 +43,38 @@ pub struct AgentSettings {
     /// The harness it runs on; `pi-bolt` when none is given.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub harness: Option<String>,
+    #[serde(default, skip_serializing_if = "ToolOutput::is_default")]
+    pub tool_output: ToolOutput,
+}
+
+/// How the outputs of an agent's tools are kept small: older ones hidden, each one compressed and cut to a budget.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ToolOutput {
+    /// Outputs older than this many turns are hidden; 0 keeps them all.
+    pub hide_after_turns: u32,
+    /// The most lines of one result; 0 is no limit.
+    pub max_lines: u32,
+    /// The most bytes of one result; 0 is no limit.
+    pub max_bytes: u32,
+    pub compress: bool,
+}
+
+impl Default for ToolOutput {
+    fn default() -> Self {
+        Self {
+            hide_after_turns: 10,
+            max_lines: 200,
+            max_bytes: 16384,
+            compress: true,
+        }
+    }
+}
+
+impl ToolOutput {
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 /// An agent: what `GET /v1/agents/{name}` answers, and `PUT` after it.

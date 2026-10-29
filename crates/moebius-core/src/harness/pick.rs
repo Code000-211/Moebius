@@ -242,6 +242,7 @@ mod tests {
             mcp: BTreeMap::new(),
             token_budget: None,
             harness: HarnessKind::PiBolt,
+            tool_output: Default::default(),
         };
         let claude = AgentConfig {
             harness: HarnessKind::ClaudeCode,

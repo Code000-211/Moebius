@@ -12,7 +12,7 @@ to use them.
 
 ## What is refused without any rule from you
 
-Four built-in rules always apply, with fixed patterns that look at the tools `bash`, `write` and `edit`:
+Five built-in rules always apply, with fixed patterns that look at the tools `bash`, `write` and `edit`:
 
 | Name | Refuses |
 |---|---|
@@ -20,6 +20,7 @@ Four built-in rules always apply, with fixed patterns that look at the tools `ba
 | `no-force-push` | `git push` with `--force`, `-f` or a `+` refspec. |
 | `stay-in-the-worktree` | Writing a file outside the run's worktree (`write`, `edit`, a redirect or `tee`), except `/tmp/` and `/dev/null`. Reading is allowed anywhere. |
 | `no-secrets-in-commands` | A command that contains a key or token. |
+| `no-dumping-large-files` | `cat`, `less` or `more` of a file over 64 KB, unless piped or redirected; the reason says to read a range or grep. |
 
 The patterns are a first line. They do not see `sed -i`, `cp`, `mv`, scripts the agent writes and then runs, or
 variables. Rules in prose are for what the patterns cannot see.

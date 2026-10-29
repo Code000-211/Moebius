@@ -11,10 +11,15 @@
 //!   A harness without a bridge (Claude Code) has its calls asked the same way by the router, which finds them in the
 //!   model's answers ([`Checker`], see `router`).
 //! - `POST /moebius/result` takes `{ "content": [ { "type": "text", "text" }, .. ] }` (Pi's tool result blocks; the
-//!   bridge may add `tool_call_id`, `tool` and `is_error`, which are not read) and answers `{ "content": [..] }` with
-//!   the secrets removed from every text block and other blocks unchanged.
+//!   bridge may add `tool_call_id`, `tool`, `input` and `is_error`) and answers `{ "content": [..] }` with the secrets
+//!   removed from every text block and other blocks unchanged. With `tool_output` (the agent's budget, see
+//!   `config::ToolOutput`) each text block is also made smaller by `harness::output`, and what that saved is stored
+//!   as a `tool_output` run event.
 //!
 //! The MCP gateway (`harness::gateway`) decides each call of an MCP tool with the same question (`decide_call`).
+//! `result` is the second endpoint.
+
+mod result;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -48,7 +53,7 @@ struct Check {
 pub fn routes(app: Arc<App>, router: Arc<Router>, rules_file: Option<PathBuf>) -> Routes {
     Routes::new()
         .route("/moebius/check", post(check))
-        .route("/moebius/result", post(result))
+        .route("/moebius/result", post(result::result))
         .with_state(Check {
             app,
             router,
@@ -105,16 +110,6 @@ pub(crate) struct CheckRequest {
 pub(crate) struct CheckReply {
     pub(crate) decision: String,
     pub(crate) reason: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct ResultRequest {
-    content: Vec<Value>,
-}
-
-#[derive(Debug, Serialize)]
-struct ResultReply {
-    content: Vec<Value>,
 }
 
 fn unauthorized() -> Response {
@@ -239,31 +234,8 @@ fn tool_call_question(
     })
 }
 
-async fn result(State(state): State<Check>, headers: HeaderMap, body: Bytes) -> Response {
-    if state.router.grant(&headers).is_none() {
-        return unauthorized();
-    }
-    let request: ResultRequest = match parse(&body) {
-        Ok(request) => request,
-        Err(rejection) => return rejection.into_response(),
-    };
-    let content = request
-        .content
-        .into_iter()
-        .map(|mut block| {
-            if block["type"] == "text"
-                && let Some(text) = block["text"].as_str()
-            {
-                block["text"] = json!(crate::blobs::redact(text));
-            }
-            block
-        })
-        .collect();
-    Json(ResultReply { content }).into_response()
-}
-
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use crate::config::Config;
     use moebius_plugin_api::{Call, DecideRequest, Host, Kind, Manifest, Plugin, PluginError};
@@ -289,15 +261,15 @@ mod tests {
         }
     }
 
-    struct Setup {
-        _dir: tempfile::TempDir,
-        app: Arc<App>,
-        url: String,
-        token: String,
-        run: i64,
+    pub(super) struct Setup {
+        pub(super) _dir: tempfile::TempDir,
+        pub(super) app: Arc<App>,
+        pub(super) url: String,
+        pub(super) token: String,
+        pub(super) run: i64,
     }
 
-    async fn setup(route: bool) -> Setup {
+    pub(super) async fn setup(route: bool) -> Setup {
         let dir = tempfile::tempdir().unwrap();
         let store = Arc::new(crate::store::Store::in_memory(dir.path()).unwrap());
         let repo = store
@@ -472,28 +444,6 @@ mod tests {
             context["rules"],
             "## be-kind\nBe kind in commit messages.\n"
         );
-    }
-
-    #[tokio::test]
-    async fn a_result_comes_back_without_secrets() {
-        let s = setup(true).await;
-        let key = format!("sk-ant-{}", "k".repeat(30));
-        let image = json!({"type": "image", "data": key, "mimeType": "image/png"});
-        let reply: Value = reqwest::Client::new()
-            .post(format!("{}/moebius/result", s.url))
-            .bearer_auth(&s.token)
-            .json(&json!({
-                "tool_call_id": "call-1", "tool": "bash", "is_error": false,
-                "content": [{"type": "text", "text": format!("KEY={key}")}, image],
-            }))
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        assert_eq!(reply["content"][0]["text"], "KEY=[redacted:anthropic-key]");
-        assert_eq!(reply["content"][1], image);
     }
 
     #[tokio::test]

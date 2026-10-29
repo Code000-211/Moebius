@@ -39,7 +39,8 @@ use crate::improve::research::{self, NewResearch, ResearchView};
 use crate::improve::retro::{self, RetroSummary, RetroView};
 use crate::improve::trial;
 use crate::store::{
-    ActivityUsage, AgentUsage, ClassUsage, ModelUsage, Proposal, Replay, Takeover, ToolWait,
+    ActivityUsage, AgentUsage, ClassUsage, ModelUsage, Proposal, Replay, Takeover,
+    ToolOutputSaving, ToolWait,
 };
 
 /// The routes of usage, judgements, the Retro, the decision model, research and exports.
@@ -125,6 +126,8 @@ pub struct UsageAnswer {
     /// What each model used when a request named a model class, by class.
     #[serde(default)]
     pub classes: Vec<ClassUsage>,
+    /// What making tool outputs smaller saved.
+    pub tool_output: ToolOutputSaving,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -516,6 +519,7 @@ async fn usage(
             activities: store.usage_by_activity(days)?,
             tool_waits: store.tool_waits(days, TOOL_WAITS)?,
             classes: store.usage_by_class(days)?,
+            tool_output: store.tool_output_saving(days)?,
         })
     })
     .await
@@ -560,6 +564,8 @@ mod tests {
         store
             .append_event(coder, "tool_execution_end", &call)
             .unwrap();
+        let saved = serde_json::json!({"bytes_before": 8000, "bytes_after": 2000});
+        store.append_event(coder, "tool_output", &saved).unwrap();
 
         let answer: UsageAnswer = get(&state, &addr, "/v1/usage").await;
         assert_eq!(answer.today, store.today().unwrap());
@@ -617,6 +623,14 @@ mod tests {
         );
         assert_eq!(answer.tool_waits.len(), 1);
         assert_eq!(answer.tool_waits[0].tool, "bash");
+        assert_eq!(
+            answer.tool_output,
+            ToolOutputSaving {
+                results: 1,
+                bytes_before: 8000,
+                bytes_after: 2000
+            }
+        );
 
         let week: UsageAnswer = get(&state, &addr, "/v1/usage?days=7").await;
         assert_eq!((week.days_in_window, week.totals.tokens), (7, 2170));

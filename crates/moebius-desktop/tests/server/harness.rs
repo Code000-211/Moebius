@@ -112,7 +112,7 @@ async fn saving_the_rules_is_a_commit_on_the_harness_repository_and_bad_text_is_
     let client = Client::new(settings);
 
     let view = client.rules().await.unwrap();
-    assert_eq!(view.patterns.len(), 4);
+    assert_eq!(view.patterns.len(), 5);
     assert!(view.prose.editable && view.prose.rules.is_empty());
 
     let text = "## leave-ci-alone\nDo not edit .github/.";

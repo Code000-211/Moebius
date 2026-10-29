@@ -123,6 +123,16 @@ pub async fn start_as(
     start_from(dir, pi_bolt, upstream, agents, moebius).await
 }
 
+/// Like `start`, with `agents` (the `[agents.*]` tables) instead of the Coder.
+pub async fn start_with_agents(
+    dir: &Path,
+    pi_bolt: &std::ffi::OsStr,
+    upstream: &str,
+    agents: &str,
+) -> Started {
+    start_from(dir, pi_bolt, upstream, agents, None).await
+}
+
 /// Like `start`, with the agents from the harness configuration repository at `harness` instead of the Coder.
 pub async fn start_harness(
     dir: &Path,

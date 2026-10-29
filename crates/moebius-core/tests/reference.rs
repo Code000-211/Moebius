@@ -59,7 +59,7 @@ fn quoted_after(code: &str, before: &str) -> Vec<String> {
 fn every_route_is_in_the_reference() {
     for (module, page) in [
         ("server/api", "docs/reference/desktop-api.md"),
-        ("decide/check.rs", "docs/reference/bridge-protocol.md"),
+        ("decide/check", "docs/reference/bridge-protocol.md"),
         ("harness/gateway", "docs/reference/bridge-protocol.md"),
         ("router", "docs/reference/router.md"),
     ] {
@@ -115,8 +115,14 @@ fn configuration_keys() -> Vec<String> {
         let line = line.trim_start_matches('#').trim();
         if let Some(header) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
             table = header.trim_matches(['[', ']']).to_string();
-            if table.starts_with("agents.") {
-                table = "agents.<name>".to_string();
+            if let Some(agent) = table.strip_prefix("agents.") {
+                // A table of an agent, such as `agents.Coder.tool_output`, is written with the name left out.
+                let rest = agent.split_once('.').map_or("", |(_, rest)| rest);
+                table = ["agents.<name>", rest]
+                    .into_iter()
+                    .filter(|part| !part.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(".");
             }
         } else if let Some((key, _)) = line.split_once(" = ")
             && !key.is_empty()
@@ -145,6 +151,7 @@ fn every_configuration_key_is_in_the_reference() {
         "teacher.timeout_seconds",
         "github.poll_seconds",
         "agents.<name>.token_budget",
+        "agents.<name>.tool_output.max_lines",
     ] {
         assert!(
             keys.iter().any(|key| key == expected),

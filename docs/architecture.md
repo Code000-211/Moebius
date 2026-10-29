@@ -454,7 +454,8 @@ At the top:
 | Module | What it is for |
 |---|---|
 | `decide/mod.rs` | Decision points: routing a question to a decider, failing closed, recording the judgement. |
-| `decide/check.rs` | The tool-call check: the endpoints `/moebius/check` and `/moebius/result` the bridge calls on the router's listener, every call asked before it runs and every result reported; the MCP gateway decides its calls with the same question. |
+| `decide/check/mod.rs` | The tool-call check: the endpoints `/moebius/check` and `/moebius/result` the bridge calls on the router's listener, every call asked before it runs and every result reported; the MCP gateway decides its calls with the same question. |
+| `decide/check/result.rs` | `/moebius/result`: each text of a tool's result cleaned of secrets and, with the agent's `tool_output`, made smaller by `harness/output/`, recorded as a `tool_output` run event. |
 | `decide/guard/mod.rs` | The `guard` decider: built-in rules first, then the rules in prose for the teacher or the decision model. |
 | `decide/guard/shell.rs` | How the guard reads a tool call: simple commands, redirects, nested shells, `cd`, and paths. |
 | `decide/guard/patterns.rs` | The built-in rules, fixed patterns over a tool call. |
@@ -492,6 +493,8 @@ At the top:
 | `harness/repo/skill_files.rs` | A skill's other files, beside its `SKILL.md`: read, and written or deleted as commits like any edit. |
 | `harness/repo/branches.rs` | Its branches: the Retro's proposals and chats' branches checked, pushed, merged or dismissed, the Retro's branches for Moebius's own configuration read and deleted, and a trial's worktree of a branch. |
 | `harness/repo/create.rs` | `create`: a new repository from the agents and rules of `moebius.toml` (`POST /v1/harness/setup`, `moebius init`). |
+| `harness/output/mod.rs` | Keeping a tool's output small where it is made: compressed, cut to the agent's budget (head and tail), and the whole saved to `.moebius/out/<n>.txt` of the worktree, which git ignores. |
+| `harness/output/compress.rs` | The compressors: escape codes, progress bars and repeated lines, and the noise of `cargo test`, `pytest`, `go test`, `jest`/`vitest` and cargo builds; only known noise is removed. |
 | `harness/mcp.rs` | The MCP servers of `mcp.toml`, checked when read, their `${NAME}` values filled in, and the `mcp.json` that names the MCP gateway for a run of an agent that names them. |
 | `harness/gateway/mod.rs` | The MCP gateway, `POST /mcp` on the router's listener: a run's servers bundled as one MCP server, every tool call checked, its result cleaned of secrets and recorded as an `mcp_call` run event. |
 | `harness/gateway/upstream.rs` | One server of a run as the gateway reaches it: a stdio child process or a remote server over streamable HTTP, initialized and its tools listed. |

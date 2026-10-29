@@ -21,7 +21,7 @@ use crate::{screens::connect, theme};
 use super::Agents;
 use super::editor::Editor;
 use super::editor::add_chosen;
-use super::{Message, NOT_SET};
+use super::{COMPRESS, Message, NOT_SET};
 
 /// A row of a list: what names it, and a line under it that is red when something is wrong.
 fn item<'a>(name: Element<'a, AppMessage>, line: &str, red: bool) -> Element<'a, AppMessage> {
@@ -115,15 +115,53 @@ fn settings_row<'a>(editor: &'a Editor, models: &[AvailableModel]) -> Element<'a
         .size(theme::BODY)
         .padding([9, 12])
         .style(connect::input_style);
-    row![
+    let number = |placeholder, value: &'a str, edited: fn(String) -> Message| {
+        text_input(placeholder, value)
+            .on_input(move |value| message(edited(value)))
+            .size(theme::BODY)
+            .padding([9, 12])
+            .style(connect::input_style)
+    };
+    let compress = pick_list(
+        COMPRESS.map(String::from).to_vec(),
+        Some(COMPRESS[usize::from(!editor.compress)].to_string()),
+        move |choice| message(Message::CompressChosen(choice)),
+    )
+    .text_size(theme::BODY)
+    .padding([9, 12])
+    .width(Length::Fill)
+    .style(pick_style)
+    .menu_style(menu_style);
+    let settings = row![
         field("Model", model),
         field("Protocol", protocol),
         field("Harness", harness),
         field("Thinking", thinking),
         field("Token budget per card", budget),
     ]
-    .spacing(14)
-    .into()
+    .spacing(14);
+    // How the outputs of its tools are kept small (see the reference's `tool_output`): Pi-Bolt's bridge does it, so
+    // an agent on another harness has no such settings.
+    if editor.harness != HARNESSES[0] {
+        return settings.into();
+    }
+    let outputs = row![
+        field(
+            "Hide tool outputs after turns",
+            number("0 keeps them", &editor.hide_after, Message::HideAfterEdited)
+        ),
+        field(
+            "Lines per tool result",
+            number("0 is no limit", &editor.max_lines, Message::MaxLinesEdited)
+        ),
+        field(
+            "Bytes per tool result",
+            number("0 is no limit", &editor.max_bytes, Message::MaxBytesEdited)
+        ),
+        field("Tool outputs", compress),
+    ]
+    .spacing(14);
+    column![settings, outputs].spacing(12).into()
 }
 
 /// What the Moebius agent is asked to write the instructions of the agent `name`, with what the person wants.
@@ -131,8 +169,9 @@ pub(super) fn instructions_request(name: &str, wanted: &str) -> String {
     format!(
         "Write the instructions of the agent {name} and save them. Read the agent first with \
          `\"$MOEBIUS\" agent show {name}`, and the moebius skill's guide on agents. `\"$MOEBIUS\" agent save` \
-         replaces the whole agent, so keep its model, protocol, harness, thinking, token budget, skills, MCP servers and \
-         extensions as they are, and pass the new instructions with `--instructions <file>`. Then say what you \
+         replaces the whole agent, so keep its model, protocol, harness, thinking, token budget, tool output \
+         settings, skills, MCP servers and extensions as they are, and pass the new instructions with \
+         `--instructions <file>`. Then say what you \
          wrote.\n\nWhat the person wants {name} to do:\n\n{wanted}"
     )
 }

@@ -165,6 +165,7 @@ async fn the_agents_and_rules_move_into_a_new_repository_that_the_restarted_serv
             extensions: vec![],
             mcp: vec![],
             harness: Default::default(),
+            tool_output: Default::default(),
         },
         instructions: String::new(),
     };

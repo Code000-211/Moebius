@@ -81,6 +81,7 @@ Nothing else is read. The Moebius agent stays built in: `agents/Moebius.toml` co
 | `token_budget` | integer | none | The most tokens a card may use with this agent, as `agents.<name>.token_budget` in [configuration](configuration.md). At least 1. |
 | `skills` | array of strings | `[]` | Names of directories under `skills/` that hold a `SKILL.md`. Each is given to Pi-Bolt as `--skill`. A name that is not there is an error. |
 | `extensions` | array of strings | `[]` | Paths of files in the repository, relative to its root and without `..`. Each is given to Pi-Bolt as `--extension`, before the bridge. A path that is not a file is an error. |
+| `tool_output` | table | the defaults | `hide_after_turns`, `max_lines`, `max_bytes` and `compress`, as `agents.<name>.tool_output` in [configuration](configuration.md); a key left out has its default. Pi-Bolt runs only. |
 | `mcp` | array of strings | `[]` | Names of servers in `mcp.toml`. A run of the agent is given exactly these servers. A name that is not there, a server that cannot be used (see [`mcp.toml`](#mcptoml)), or any name while `mcp.toml` cannot be read, is an error. |
 
 The instructions are not a key: they are the text of `agents/<name>.md`, given to Pi-Bolt as `--append-system-prompt`.
@@ -190,7 +191,7 @@ model providers' keys are read from the environment by the router, so the files 
 as they are.
 
 - `GET /v1/agents/{name}` answers `{"name", "settings", "instructions"}`, where `settings` has the keys of the table above
-  (`protocol` always, `skills`, `extensions` and `mcp` always, `thinking` and `token_budget` when set) and `instructions`
+  (`protocol` always, `skills`, `extensions` and `mcp` always, `thinking` and `token_budget` when set, `tool_output` when it is not the defaults) and `instructions`
   is the text of the `.md` file, empty without one.
 - `PUT /v1/agents/{name}` takes `{"settings": {...}, "instructions": "..."}` (`instructions` may be left out) and
   is checked as a file read is. It writes `agents/<name>.toml` (the file is written again from the settings, so comments

@@ -29,6 +29,15 @@ pub fn short(n: i64) -> String {
     format!("{shown}{unit}")
 }
 
+/// A number of bytes in three figures: 640 B, 12.4 KB, 1.2 MB.
+pub fn bytes(n: i64) -> String {
+    match n {
+        ..1_000 => format!("{n} B"),
+        1_000..1_000_000 => format!("{} KB", short(n).trim_end_matches('k')),
+        _ => format!("{} MB", short(n).trim_end_matches('M')),
+    }
+}
+
 /// A whole number with thousands separators: 1,284.
 pub fn grouped(n: i64) -> String {
     let digits = n.abs().to_string();
@@ -104,6 +113,14 @@ pub fn weekday(number: i64) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bytes_are_told_in_three_figures() {
+        assert_eq!(bytes(640), "640 B");
+        assert_eq!(bytes(12_400), "12.4 KB");
+        assert_eq!(bytes(920_000), "920 KB");
+        assert_eq!(bytes(3_400_000), "3.4 MB");
+    }
 
     #[test]
     fn numbers_are_told_in_three_figures_with_separators_and_hours() {

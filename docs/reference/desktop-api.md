@@ -3,7 +3,7 @@
 The desktop API is how the desktop app, or any client such as `curl`, reads the boards and acts on them. This page is for
 anyone who writes a client or a script against a running server. The code is in `crates/moebius-core/src/server/api/`,
 anyone who writes a client or a script against a running server. The code is in `crates/moebius-core/src/server/api/`,
-one module per part; the events are published from `app/`, `harness/pibolt/`, `decide/check.rs`, `repos/poll/`,
+one module per part; the events are published from `app/`, `harness/pibolt/`, `decide/check/`, `repos/poll/`,
 `improve/retro.rs`, `improve/trial/`, `server/loops.rs` and `server/schedule.rs`.
 
 The API is HTTP with JSON bodies plus one WebSocket, served on `listen` (default `127.0.0.1:7171`). Keep it on a private
@@ -481,7 +481,8 @@ Response:
   "agents": [{"agent": "Coder", "calls": 702, "tokens": 1120000, "input_tokens": 1000000, "cached_tokens": 610000, "model_ms": 7080000}],
   "activities": [{"activity": "bash", "model_ms": 2140000, "calls": 214, "output_tokens": 61000}],
   "tool_waits": [{"tool": "bash", "calls": 31, "seconds": 2460}],
-  "classes": [{"class": "strong", "model": "claude-sonnet-5-5", "tokens": 420000, "calls": 300}]
+  "classes": [{"class": "strong", "model": "claude-sonnet-5-5", "tokens": 420000, "calls": 300}],
+  "tool_output": {"results": 96, "bytes_before": 3400000, "bytes_after": 920000}
 }
 ```
 
@@ -509,6 +510,9 @@ Response:
 - `classes` holds the calls of the window whose request named a model class (see [the router](router.md#model-classes)):
   for each class and the model of it that answered, the tokens and the calls, by class name and then the model with
   the most tokens first. The same calls are counted under their model in `models` too.
+- `tool_output` is what keeping tool outputs small saved in the window: how many results were made smaller (their
+  `tool_output` run events) and their bytes before and after, summed. See `agents.<name>.tool_output` in
+  [configuration](configuration.md).
 
 Errors: `422` `days` is not from 1 to 365.
 
@@ -628,8 +632,8 @@ included.
 ### `GET /v1/agents/{name}`
 
 An agent of the harness configuration repository, as its files say: `{"name": string, "settings": {"model", "protocol",
-"thinking", "token_budget", "harness", "skills", "extensions", "mcp"}, "instructions": string}` (`thinking`,
-`token_budget` and `harness` are left out when not set; no `harness` is `pi-bolt`). The files hold no secrets and are returned in full. Errors: `404` no such agent; `422` its files
+"thinking", "token_budget", "harness", "skills", "extensions", "mcp", "tool_output"}, "instructions": string}` (`thinking`,
+`token_budget` and `harness` are left out when not set; no `harness` is `pi-bolt`; `tool_output` is left out when it is the defaults). The files hold no secrets and are returned in full. Errors: `404` no such agent; `422` its files
 are broken (the message says how), or the server has no `[harness]` and its agents are in `moebius.toml`.
 
 A built-in agent (`Moebius`, `Grilling-partner`, `Retro-analyst`, `Autoresearcher`) also has `"built_in":
@@ -1561,6 +1565,8 @@ A `run_event`'s source is told by its inner `kind`:
 - `mcp_call`: a call of a tool of an MCP server through the MCP gateway, `{"server", "tool", "tool_call_id", "input",
   "decision", "reason", "result"}`, where `result` is what the harness was given (the refusal for a refused call). See
   the [MCP gateway](bridge-protocol.md#the-mcp-gateway).
+- `tool_output`: a tool's result made smaller before the model read it, `{"tool", "tool_call_id", "steps", "bytes_before",
+  "bytes_after", "lines_before", "lines_after", "saved"}`. See the [bridge protocol](bridge-protocol.md#post-moebiusresult).
 - `mcp_error`: an MCP server of the run's agent could not be started or reached, `{"server", "message"}`; its tools are
   left out.
 - Every other kind is a record Pi-Bolt wrote on its RPC channel, with its `type` as the kind (for example

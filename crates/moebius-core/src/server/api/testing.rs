@@ -28,6 +28,7 @@ pub(super) fn agent(model: &str) -> AgentConfig {
         protocol: Protocol::OpenAi,
         token_budget: None,
         harness: Default::default(),
+        tool_output: Default::default(),
     }
 }
 

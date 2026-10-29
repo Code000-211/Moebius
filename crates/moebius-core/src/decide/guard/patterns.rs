@@ -7,7 +7,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use super::shell::{ToolCall, any_simple, git_subcommand};
+use super::shell::{ToolCall, any_simple, git_subcommand, resolve};
 
 /// A rule checked by a pattern: its name, what it says (which is the reason given when it is broken) and whether a
 /// call breaks it.
@@ -17,7 +17,7 @@ struct BuiltIn {
     broken_by: fn(&ToolCall) -> bool,
 }
 
-const BUILT_IN: [BuiltIn; 4] = [
+const BUILT_IN: [BuiltIn; 5] = [
     BuiltIn {
         name: "no-destructive-commands",
         prose: "commands that delete recursively outside the worktree, format a disk, overwrite a device or exhaust the machine are never run",
@@ -38,7 +38,15 @@ const BUILT_IN: [BuiltIn; 4] = [
         prose: "a command must not contain a secret; read it from the environment instead",
         broken_by: secret_in_command,
     },
+    BuiltIn {
+        name: "no-dumping-large-files",
+        prose: "cat, less and more do not print a file over 64 KB whole; read a range of its lines (the read tool's offset and limit, or sed -n '100,200p' FILE) or grep for what you need",
+        broken_by: dumps_large_file,
+    },
 ];
+
+/// The largest file `cat`, `less` and `more` may print whole, in bytes.
+const LARGE_FILE: u64 = 64 * 1024;
 
 /// The built-in rules as a person reads them: each name with what it refuses, in the order they are tested.
 pub fn patterns() -> Vec<(&'static str, &'static str)> {
@@ -126,6 +134,24 @@ fn secret_in_command(call: &ToolCall) -> bool {
     call.tool == "bash" && crate::blobs::redact(call.command()) != call.command()
 }
 
+/// `cat`, `less` or `more` of a file in the worktree larger than [`LARGE_FILE`], printed for the model to read: not
+/// piped into another command or redirected to a file.
+fn dumps_large_file(call: &ToolCall) -> bool {
+    call.tool == "bash"
+        && !call.command().contains('|')
+        && any_simple(call, &|simple, cwd| {
+            let Some((name, args)) = simple.words.split_first() else {
+                return false;
+            };
+            ["cat", "less", "more"].contains(&name.as_str())
+                && simple.writes.is_empty()
+                && args.iter().filter(|arg| !arg.starts_with('-')).any(|file| {
+                    std::fs::metadata(resolve(cwd, file))
+                        .is_ok_and(|meta| meta.is_file() && meta.len() > LARGE_FILE)
+                })
+        })
+}
+
 /// The name of the first built-in rule the call breaks, with what the rule says.
 pub(super) fn broken_rule(call: &ToolCall) -> Option<String> {
     BUILT_IN
@@ -164,7 +190,8 @@ mod tests {
                 "no-destructive-commands",
                 "no-force-push",
                 "stay-in-the-worktree",
-                "no-secrets-in-commands"
+                "no-secrets-in-commands",
+                "no-dumping-large-files"
             ]
         );
         let call = ToolCall {
@@ -422,5 +449,47 @@ mod tests {
             broken("write", json!({ "path": "k.txt", "content": key })),
             None
         );
+    }
+
+    #[test]
+    fn printing_a_large_file_whole_is_refused_with_a_way_to_read_it() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("big.log"),
+            "x".repeat(LARGE_FILE as usize + 1),
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("small.txt"), "hello\n").unwrap();
+        let broken = |command: &str| {
+            let call = ToolCall {
+                tool: "bash",
+                input: json!({ "command": command }),
+                worktree: Some(dir.path()),
+            };
+            broken_rule(&call)
+        };
+        for command in [
+            "cat big.log",
+            "less ./big.log",
+            "cat small.txt big.log",
+            "cat -n big.log",
+        ] {
+            let reason = broken(command).unwrap_or_else(|| panic!("{command} was allowed"));
+            assert!(reason.starts_with("no-dumping-large-files: "), "{reason}");
+            assert!(
+                reason.contains("grep") && reason.contains("sed -n"),
+                "{reason}"
+            );
+        }
+        for command in [
+            "cat small.txt",
+            "cat big.log | grep error",
+            "cat big.log > copy.log",
+            "grep error big.log",
+            "sed -n '1,100p' big.log",
+            "cat missing.txt",
+        ] {
+            assert_eq!(broken(command), None, "{command}");
+        }
     }
 }

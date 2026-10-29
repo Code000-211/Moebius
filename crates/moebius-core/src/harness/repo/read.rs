@@ -10,7 +10,9 @@ use serde_json::json;
 use super::HarnessRepo;
 use crate::app::{App, AppError, Result};
 use crate::bus::AppEvent;
-use crate::config::{AgentConfig, AgentSet, HarnessKind, default_protocol, valid_agent_name};
+use crate::config::{
+    AgentConfig, AgentSet, HarnessKind, ToolOutput, default_protocol, valid_agent_name,
+};
 use crate::harness::mcp::{McpServer, parse_file};
 use crate::harness::skill;
 use crate::router::Protocol;
@@ -38,6 +40,9 @@ pub struct AgentSettings {
     /// The harness the agent runs on, `pi-bolt` unless it says.
     #[serde(default, skip_serializing_if = "HarnessKind::is_default")]
     pub harness: HarnessKind,
+    /// How the outputs of its tools are kept small (the table `[tool_output]`); left out when it is the default.
+    #[serde(default, skip_serializing_if = "ToolOutput::is_default")]
+    pub tool_output: ToolOutput,
 }
 
 /// An agent as the API takes and gives it: its settings and its instructions (`agents/<name>.md`, empty without).
@@ -213,6 +218,7 @@ pub(super) fn agent_config(
         mcp,
         token_budget: settings.token_budget,
         harness: settings.harness,
+        tool_output: settings.tool_output,
     }
 }
 

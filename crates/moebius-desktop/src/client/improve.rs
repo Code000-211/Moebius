@@ -202,6 +202,17 @@ pub struct UsageReport {
     /// What the model did with its time, the activity with most time first.
     pub activities: Vec<ActivityUsage>,
     pub tool_waits: Vec<ToolWait>,
+    /// What making tool outputs smaller saved; nothing from a server that does not say.
+    #[serde(default)]
+    pub tool_output: ToolOutputSaving,
+}
+
+/// How many tool results were made smaller in the window, and their bytes before and after.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+pub struct ToolOutputSaving {
+    pub results: i64,
+    pub bytes_before: i64,
+    pub bytes_after: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]

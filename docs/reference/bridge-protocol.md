@@ -4,7 +4,7 @@ The bridge is the part of Moebius that lives inside a harness and through which 
 runs. This page is for anyone who writes a bridge for another harness or tests the endpoints: it describes the two HTTP
 endpoints the server offers, their JSON, the rules a client must follow so that it fails closed, and how the harness is
 told where the server is. It also describes the [MCP gateway](#the-mcp-gateway), the one MCP server every harness is
-given, which checks the calls of MCP tools on the server's side. The server side is `crates/moebius-core/src/decide/check.rs`; the reference client is the Pi
+given, which checks the calls of MCP tools on the server's side. The server side is `crates/moebius-core/src/decide/check/`; the reference client is the Pi
 extension `crates/moebius-core/bridge/moebius-bridge.ts`.
 
 ## Endpoints
@@ -74,11 +74,33 @@ Request:
 |---|---|---|
 | `content` | array of JSON objects | The result's content blocks, as the harness has them (for Pi: `{"type": "text", "text": "..."}` and other block types). Required. |
 
-The bridge may add `tool_call_id`, `tool` and `is_error`; the server ignores them.
+| `tool_call_id` | string | The harness's id for the call. Optional; named in the `tool_output` event. |
+| `tool` | string | The tool's name. Optional; with `bash`, the command's output can be compressed by what the command is. |
+| `input` | any JSON | The call's arguments. Optional; for `bash`, `input.command` is the command line. |
+| `is_error` | boolean | Whether the call failed. Optional; not read. |
+| `tool_output` | object | The agent's budget: `{"hide_after_turns", "max_lines", "max_bytes", "compress"}`, as `agents.<name>.tool_output` in [configuration](configuration.md) (a key left out has its default; an unknown key is `422`). Optional; without it the result is only cleaned of secrets. |
 
 Response, status `200`: `{"content": [...]}` with the same blocks. In every block of `"type": "text"` each secret is
 replaced by `[redacted:<kind>]`; other blocks are unchanged. The kinds are `private-key`, `anthropic-key`, `openai-key`,
-`github-token`, `gitlab-token` and `aws-access-key`. The patterns are the ones listed under `no-secrets-in-commands` in [rules](rules.md).
+`github-token`, `gitlab-token` and `aws-access-key`. The patterns are the ones listed under `no-secrets-in-commands` in [rules](rules.md). With `tool_output`, each text is then made smaller where it is
+made (the server side is `crates/moebius-core/src/harness/output/`):
+
+1. With `compress`: terminal escape codes go, a line keeps what follows its last carriage return, and a line that is only
+   a progress bar goes. For a `bash` command line that runs `cargo test`, `pytest`, `go test`, `jest` or `vitest` (also
+   as `npm test`, `pnpm test` and the like) or a cargo build (`build`, `check`, `clippy`, `doc`, `run`, `install`), the
+   lines known to be noise go: passing tests, test binaries in which every test passed, build progress, and a cargo
+   diagnostic that repeats is kept once with `(×<n>)`. A line that is not known is kept, so error messages and failing
+   tests' output stay. A note at the end says how many lines were left out and what they were. Last, each run of the
+   same line becomes one line followed by `(×<n>)`.
+2. Above `max_lines` or `max_bytes`, the head and the tail are kept, half the budget each, around
+   `[1,840 lines left out; the full output is in .moebius/out/3.txt]`.
+3. When lines were left out by 1 or 2, the whole text (without secrets) is written to the next free
+   `.moebius/out/<n>.txt` of the run's worktree, which the agent can read in ranges; the directory holds a `.gitignore`
+   of `*`, so it is never committed.
+4. Each text made smaller is stored as a `tool_output` run event: `{"tool", "tool_call_id", "steps", "bytes_before",
+   "bytes_after", "lines_before", "lines_after", "saved"}`, where `steps` lists what was done (`clean`, the compressor's
+   name such as `cargo-test`, `fold`, `budget`) and `saved` is the path of step 3 or `null`. `GET /v1/usage` adds them
+   up.
 
 ```json
 {"content": [{"type": "text", "text": "token ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}]}
@@ -88,7 +110,8 @@ replaced by `[redacted:<kind>]`; other blocks are unchanged. The kinds are `priv
 {"content": [{"type": "text", "text": "token [redacted:github-token]"}]}
 ```
 
-Status codes: `200`, `401` and the `400` and `422` of the check endpoint. Nothing is recorded.
+Status codes: `200`, `401` and the `400` and `422` of the check endpoint. Nothing but the `tool_output` events is
+recorded.
 
 ## Rules for a client
 
@@ -115,6 +138,7 @@ The harness starts every Pi-Bolt run with these variables set:
 |---|---|
 | `MOEBIUS_CHECK_URL` | The router's base URL, such as `http://127.0.0.1:7172`, without a trailing slash. The client appends `/moebius/check` and `/moebius/result`. |
 | `MOEBIUS_RUN_TOKEN` | The run's token, of the form `moebius-run-<48 hex digits>`. |
+| `MOEBIUS_TOOL_OUTPUT` | The agent's `tool_output` as JSON, such as `{"hide_after_turns":10,"max_lines":200,"max_bytes":16384,"compress":true}`. The bridge hides older outputs by it and sends it with each result. |
 | `MOEBIUS_URL` | Only for a run of the Moebius agent: the desktop API's base URL, such as `http://127.0.0.1:7171` (a server that listens on all interfaces is given as `127.0.0.1`). The `moebius` binary the agent runs as `$MOEBIUS` connects there (see [the command line](cli.md)). |
 | `MOEBIUS_TOKEN` | Only for a run of the Moebius agent: the run's own token, the same as `MOEBIUS_RUN_TOKEN`, which the desktop API accepts while the run lasts (see [the desktop API](desktop-api.md#authentication)). |
 | `PI_CODING_AGENT_DIR` | The run's own agent directory, `<data_dir>/runs/<id>/agent`, which holds `models.json` that makes the router the `moebius` provider. |
@@ -131,13 +155,18 @@ this order must not be used.
 
 ## The bridge as the reference client
 
-`crates/moebius-core/bridge/moebius-bridge.ts` is a Pi extension of about sixty lines. It registers two handlers with
-`pi.on`:
+`crates/moebius-core/bridge/moebius-bridge.ts` is a Pi extension of about a hundred and twenty lines. It registers three
+handlers with `pi.on`:
 
 - `tool_call` (event fields `toolName`, `input`, `toolCallId`): asks `/moebius/check` and returns `undefined` to let the
   call run or `{ block: true, reason }` to block it.
-- `tool_result` (event fields `toolCallId`, `toolName`, `content`, `isError`): asks `/moebius/result` and returns
-  `{ content }` with the cleaned blocks.
+- `tool_result` (event fields `toolCallId`, `toolName`, `input`, `content`, `isError`): asks `/moebius/result` with the
+  agent's `tool_output` and returns `{ content }` with the cleaned blocks.
+- `context` (event field `messages`, the conversation of one model request): with `hide_after_turns` above 0, replaces
+  the content of each `toolResult` message whose call is older than the last `hide_after_turns` assistant messages by
+  one text block, `[<tool> <input as JSON, cut at 200 characters>: output hidden: <n> lines]`. A result with `isError`
+  is kept, and so is one shorter than its placeholder. Only the request changes: Pi's session, and the
+  `tool_execution_end` run events, keep every output. When anything fails here, the messages are left as they are.
 
 A bridge for another harness does the same with that harness's hooks. See
 [`examples/pi-extension/log-tool-calls.ts`](../../examples/pi-extension/log-tool-calls.ts) for the smallest extension.

@@ -85,6 +85,15 @@ pub struct ToolWait {
     pub seconds: i64,
 }
 
+/// What making tool outputs smaller saved in a window of days: how many results were, and their bytes before and
+/// after (the `tool_output` run events).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolOutputSaving {
+    pub results: i64,
+    pub bytes_before: i64,
+    pub bytes_after: i64,
+}
+
 /// All usage in a window of days: tokens, calls, input tokens, cached tokens and model time.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct UsageTotals {
@@ -327,6 +336,27 @@ impl Store {
                 seconds: r.get(2)?,
             })
         })
+    }
+}
+
+impl Store {
+    /// What making tool outputs smaller saved in the last `days` days.
+    pub fn tool_output_saving(&self, days: i64) -> Result<ToolOutputSaving> {
+        Ok(self.conn().query_row(
+            &format!(
+                "SELECT COUNT(*), COALESCE(SUM(json_extract(data, '$.bytes_before')), 0),
+                        COALESCE(SUM(json_extract(data, '$.bytes_after')), 0)
+                 FROM events WHERE kind = 'tool_output' AND at >= {WINDOW_START}"
+            ),
+            [days],
+            |r| {
+                Ok(ToolOutputSaving {
+                    results: r.get(0)?,
+                    bytes_before: r.get(1)?,
+                    bytes_after: r.get(2)?,
+                })
+            },
+        )?)
     }
 }
 
@@ -591,6 +621,24 @@ mod tests {
             [wait("bash", 2, 90), wait("edit", 1, 5), wait("read", 1, 0)]
         );
         assert_eq!(s.tool_waits(1, 2).unwrap().len(), 2);
+
+        // What made tool outputs smaller saved.
+        assert_eq!(
+            s.tool_output_saving(1).unwrap(),
+            ToolOutputSaving::default()
+        );
+        for (before, after) in [(9000, 1000), (500, 400)] {
+            let saved = json!({"bytes_before": before, "bytes_after": after});
+            s.append_event(coder, "tool_output", &saved).unwrap();
+        }
+        assert_eq!(
+            s.tool_output_saving(1).unwrap(),
+            ToolOutputSaving {
+                results: 2,
+                bytes_before: 9500,
+                bytes_after: 1400
+            }
+        );
     }
 
     #[test]

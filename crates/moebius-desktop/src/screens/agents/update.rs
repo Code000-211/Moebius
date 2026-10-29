@@ -12,7 +12,7 @@ use crate::widgets::form::PROTOCOLS;
 
 use super::boxes::instructions_request;
 use super::editor::{Editor, file_table, from_file, toggle};
-use super::{Agents, Files, Message, NOT_SET, Notice};
+use super::{Agents, COMPRESS, Files, Message, NOT_SET, Notice};
 
 impl Agents {
     pub fn update(&mut self, message: Message, settings: Option<&Settings>) -> Task<AppMessage> {
@@ -153,6 +153,10 @@ impl Agents {
                 editor.thinking = (level != NOT_SET).then_some(level);
             }
             Message::BudgetEdited(budget) => editor.budget = budget,
+            Message::HideAfterEdited(turns) => editor.hide_after = turns,
+            Message::MaxLinesEdited(lines) => editor.max_lines = lines,
+            Message::MaxBytesEdited(bytes) => editor.max_bytes = bytes,
+            Message::CompressChosen(choice) => editor.compress = choice == COMPRESS[0],
             Message::Instructions(action) => editor.instructions.perform(action),
             Message::InstructionsByAgent(by_agent) => editor.by_agent = by_agent,
             Message::WishEdited(action) => editor.wish.perform(action),

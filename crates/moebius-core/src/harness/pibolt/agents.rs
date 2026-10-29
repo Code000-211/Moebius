@@ -188,6 +188,7 @@ pub fn resolve(set: &AgentSet, data_dir: &Path, name: &str) -> Result<AgentConfi
             mcp: BTreeMap::new(),
             token_budget: None,
             harness: coder.harness,
+            tool_output: coder.tool_output,
         },
         (None, None) => {
             return Err(format!(

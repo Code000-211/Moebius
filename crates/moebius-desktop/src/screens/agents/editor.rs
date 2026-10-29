@@ -3,7 +3,9 @@
 
 use iced::widget::text_editor;
 
-use crate::client::{AgentDetail, AgentSettings, BuiltInAgent, ClientError, ServerSettings};
+use crate::client::{
+    AgentDetail, AgentSettings, BuiltInAgent, ClientError, ServerSettings, ToolOutput,
+};
 use crate::widgets::form::{HARNESSES, PROTOCOLS};
 
 use super::{Files, Notice};
@@ -23,6 +25,11 @@ pub(super) struct Editor {
     pub(super) harness: String,
     pub(super) thinking: Option<String>,
     pub(super) budget: String,
+    /// The fields of the tool outputs: after how many turns they are hidden, and the lines and bytes of one.
+    pub(super) hide_after: String,
+    pub(super) max_lines: String,
+    pub(super) max_bytes: String,
+    pub(super) compress: bool,
     pub(super) instructions: text_editor::Content,
     /// Whether the Moebius agent writes the instructions from `wish`.
     pub(super) by_agent: bool,
@@ -46,7 +53,7 @@ pub(super) struct Editor {
 
 impl Editor {
     pub(super) fn blank(name: &str) -> Self {
-        Editor {
+        let mut editor = Editor {
             name: name.to_string(),
             naming: false,
             exists: false,
@@ -57,6 +64,10 @@ impl Editor {
             harness: HARNESSES[0].to_string(),
             thinking: None,
             budget: String::new(),
+            hide_after: String::new(),
+            max_lines: String::new(),
+            max_bytes: String::new(),
+            compress: true,
             instructions: text_editor::Content::new(),
             by_agent: false,
             wish: text_editor::Content::new(),
@@ -70,7 +81,16 @@ impl Editor {
             confirming: false,
             built_in: None,
             kept: None,
-        }
+        };
+        editor.set_tool_output(ToolOutput::default());
+        editor
+    }
+
+    fn set_tool_output(&mut self, output: ToolOutput) {
+        self.hide_after = output.hide_after_turns.to_string();
+        self.max_lines = output.max_lines.to_string();
+        self.max_bytes = output.max_bytes.to_string();
+        self.compress = output.compress;
     }
 
     pub(super) fn fill(&mut self, detail: AgentDetail) {
@@ -101,6 +121,7 @@ impl Editor {
         self.skills = settings.skills;
         self.mcp = settings.mcp;
         self.extensions = settings.extensions;
+        self.set_tool_output(settings.tool_output);
         self.kept = self.request().ok();
     }
 
@@ -129,6 +150,14 @@ impl Editor {
                 _ => return Err("The token budget is a whole number of at least 1.".into()),
             },
         };
+        let number = |field: &str| field.trim().parse::<u32>();
+        let (Ok(hide_after_turns), Ok(max_lines), Ok(max_bytes)) = (
+            number(&self.hide_after),
+            number(&self.max_lines),
+            number(&self.max_bytes),
+        ) else {
+            return Err("The tool output fields are whole numbers; 0 turns one off.".into());
+        };
         let settings = AgentSettings {
             model: self.model.trim().to_string(),
             protocol: self.protocol.clone(),
@@ -138,6 +167,12 @@ impl Editor {
             extensions: self.extensions.clone(),
             mcp: self.mcp.clone(),
             harness: (self.harness != HARNESSES[0]).then(|| self.harness.clone()),
+            tool_output: ToolOutput {
+                hide_after_turns,
+                max_lines,
+                max_bytes,
+                compress: self.compress,
+            },
         };
         let mut instructions = self.instructions.text();
         // The editor keeps a final line break of its own; the file is not given a second one.
@@ -199,6 +234,10 @@ pub(super) fn from_file(name: &str, server: &ServerSettings) -> Result<AgentDeta
             extensions: paths("extensions"),
             mcp: vec![],
             harness: text("harness"),
+            tool_output: table
+                .get("tool_output")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default(),
         }),
         instructions: text("instructions").unwrap_or_default(),
         built_in: None,
@@ -222,6 +261,9 @@ pub(super) fn file_table(agent: &AgentSettings, instructions: &str) -> serde_jso
     }
     if let Some(budget) = agent.token_budget {
         table.insert("token_budget".into(), budget.into());
+    }
+    if !agent.tool_output.is_default() {
+        table.insert("tool_output".into(), serde_json::json!(agent.tool_output));
     }
     for (key, paths) in [("skills", &agent.skills), ("extensions", &agent.extensions)] {
         if !paths.is_empty() {

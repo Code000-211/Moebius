@@ -226,7 +226,8 @@ async fn the_page_shows_the_patterns_the_rules_and_a_repositorys_own_rules_and_c
             "no-destructive-commands",
             "no-force-push",
             "stay-in-the-worktree",
-            "no-secrets-in-commands"
+            "no-secrets-in-commands",
+            "no-dumping-large-files"
         ]
     );
     assert!(
@@ -298,7 +299,7 @@ async fn an_edit_is_a_commit_that_is_pushed_and_the_next_check_uses_the_new_rule
     );
     assert_eq!(saved["prose"]["text"], text);
     assert_eq!(saved["prose"]["rules"][0]["name"], "leave-ci-alone");
-    assert_eq!(saved["patterns"].as_array().unwrap().len(), 4);
+    assert_eq!(saved["patterns"].as_array().unwrap().len(), 5);
     assert_eq!(setup.get().await["prose"]["text"], text);
     let judgements = server.app.store.judgements("edit_rules").unwrap();
     assert_eq!(judgements.len(), 1);
@@ -421,7 +422,7 @@ async fn without_a_harness_repository_the_rules_are_the_servers_file() {
     assert_eq!(view["prose"]["source"], "file");
     assert_eq!(view["prose"]["editable"], true);
     assert_eq!(view["prose"]["rules"][0]["name"], "be-kind");
-    assert_eq!(view["patterns"].as_array().unwrap().len(), 4);
+    assert_eq!(view["patterns"].as_array().unwrap().len(), 5);
 
     let (status, body) = setup
         .call(reqwest::Method::PUT, Some(json!({ "text": "## x\ny" })))

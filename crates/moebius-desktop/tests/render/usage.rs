@@ -92,6 +92,7 @@ fn usage_report(day_budget: Option<i64>) -> client::UsageReport {
             {"tool": "bench (gpu-bench)", "calls": 7, "seconds": 660},
             {"tool": "cargo test (moebius)", "calls": 12, "seconds": 300},
         ],
+        "tool_output": {"results": 96, "bytes_before": 3_400_000, "bytes_after": 920_000},
     }))
     .unwrap()
 }
@@ -99,8 +100,8 @@ fn usage_report(day_budget: Option<i64>) -> client::UsageReport {
 fn usage_app(day_budget: Option<i64>) -> App {
     let mut app = App::with_snapshot(overview());
     let _ = app.update(Message::Select(Page::Usage));
-    let _ = app.update(Message::Usage(usage::Message::Loaded(Ok(usage_report(
-        day_budget,
+    let _ = app.update(Message::Usage(usage::Message::Loaded(Ok(Box::new(
+        usage_report(day_budget),
     )))));
     app
 }
@@ -143,6 +144,7 @@ fn the_usage_screen_shows_the_heatmap_models_and_agents_like_the_mockup() {
             "Longest tool waits",
             "ctest (radiance)",
             "41 m",
+            "Outputs cut from 3.4 MB to 920 KB",
             "By agent",
             "Autoresearcher",
             "Tokens today",
@@ -171,14 +173,14 @@ fn choosing_a_window_asks_for_it_and_an_answer_for_another_window_is_ignored() {
     ));
     let _ = app.update(Message::Usage(usage::Message::Choose(usage::Window::Week)));
     // The answer to the window that was left does not replace what is shown.
-    let _ = app.update(Message::Usage(usage::Message::Loaded(Ok(usage_report(
-        None,
+    let _ = app.update(Message::Usage(usage::Message::Loaded(Ok(Box::new(
+        usage_report(None),
     )))));
     assert!(shows(&app, "1.84M / 8M"));
     let mut week = usage_report(None);
     week.days_in_window = 7;
     week.totals.tokens = 7_000_000;
-    let _ = app.update(Message::Usage(usage::Message::Loaded(Ok(week))));
+    let _ = app.update(Message::Usage(usage::Message::Loaded(Ok(Box::new(week)))));
     assert!(shows(&app, "7M"));
     assert!(shows(&app, "1M tokens a day on average"));
     assert!(shows(&app, "1.84M in the last 7 days across 4 models"));

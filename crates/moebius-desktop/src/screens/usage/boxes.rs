@@ -12,7 +12,7 @@ use crate::theme;
 use crate::widgets::page;
 
 use super::Window;
-use super::figures::{duration, grouped, percent, share, short};
+use super::figures::{bytes, duration, grouped, percent, share, short};
 use super::heatmap::Colours;
 use super::table::{Cell, corners, panel, table};
 
@@ -293,7 +293,16 @@ pub fn waits_box(report: &UsageReport) -> Element<'_, AppMessage> {
     } else {
         table(&columns, rows)
     };
-    panel("Longest tool waits", None, content)
+    // What making the tools' outputs smaller saved, beside how long they took.
+    let saving = &report.tool_output;
+    let aside = (saving.results > 0).then(|| {
+        format!(
+            "Outputs cut from {} to {}",
+            bytes(saving.bytes_before),
+            bytes(saving.bytes_after)
+        )
+    });
+    panel("Longest tool waits", aside, content)
 }
 
 pub fn agents_box(report: &UsageReport) -> Element<'_, AppMessage> {

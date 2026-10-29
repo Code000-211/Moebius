@@ -283,13 +283,17 @@ fn saving_sends_the_edited_settings_and_a_wrong_field_is_said_instead() {
     ));
     update(agents::Message::AddExtension);
     update(agents::Message::RemoveExtension("extensions/log.ts".into()));
+    update(agents::Message::HideAfterEdited("0".into()));
+    update(agents::Message::MaxLinesEdited("80".into()));
+    update(agents::Message::CompressChosen("As they are".into()));
     assert_eq!(update(agents::Message::Save), 1);
     let (name, sent, instructions) = agents.save_request().unwrap();
     assert_eq!(name, "Coder");
     assert_eq!(
         serde_json::to_value(&sent).unwrap(),
         json!({"model": "better-model", "protocol": "anthropic", "token_budget": 2000, "harness": "claude-code",
-               "skills": ["house-style"], "extensions": ["extensions/two.ts"], "mcp": ["profiler"]})
+               "skills": ["house-style"], "extensions": ["extensions/two.ts"], "mcp": ["profiler"],
+               "tool_output": {"hide_after_turns": 0, "max_lines": 80, "max_bytes": 16384, "compress": false}})
     );
     assert_eq!(
         instructions,
@@ -298,6 +302,11 @@ fn saving_sends_the_edited_settings_and_a_wrong_field_is_said_instead() {
 
     let mut update = |message| agents.update(message, Some(&settings)).units();
     update(agents::Message::BudgetEdited("lots".into()));
+    assert_eq!(update(agents::Message::Save), 0);
+    assert!(agents.save_request().is_err());
+    let mut update = |message| agents.update(message, Some(&settings)).units();
+    update(agents::Message::BudgetEdited("2000".into()));
+    update(agents::Message::MaxBytesEdited("-1".into()));
     assert_eq!(update(agents::Message::Save), 0);
     assert!(agents.save_request().is_err());
 }

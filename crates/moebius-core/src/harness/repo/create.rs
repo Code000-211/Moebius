@@ -116,6 +116,7 @@ fn fill(
             extensions,
             mcp: vec![],
             harness: agent.harness,
+            tool_output: agent.tool_output,
         };
         let settings = toml::to_string(&settings)
             .map_err(|e| AppError::Invalid(format!("cannot write the agent {name}: {e}")))?;
