@@ -9,6 +9,11 @@
 //! While it reads an answer to count its tokens, the router also notes the names of the tools the answer asks for, so
 //! that the Usage page can say what the model's time went on.
 //!
+//! A harness without a bridge, Claude Code, has no `check` of its own: its runs' tokens are issued checked
+//! ([`Router::issue_checked_token`]), and the router checks every tool call in the answers to them with
+//! `decide("tool_call")` before the answer reaches the harness, replacing a refused call by a text naming the rule
+//! (`calls`).
+//!
 //! The router can also ask its upstreams which models they serve ([`Router::available_models`]), for the pickers of the
 //! desktop app.
 //!
@@ -20,9 +25,10 @@
 //!
 //! This module holds the router, its upstreams and its routes; `proxy` forwards a request upstream, `usage` counts
 //! the tokens and tools of what comes back, `grants` are the runs' tokens and the budgets they are checked against,
-//! `models` asks the upstreams which models they serve, and `oauth` logs an upstream in with OAuth and keeps its
-//! tokens fresh.
+//! `models` asks the upstreams which models they serve, `oauth` logs an upstream in with OAuth and keeps its tokens
+//! fresh, and `calls` checks the tool calls of answers to checked tokens.
 
+mod calls;
 mod classes;
 mod grants;
 mod models;
@@ -30,8 +36,8 @@ mod oauth;
 mod proxy;
 mod usage;
 
-use std::collections::{BTreeMap, HashMap};
-use std::sync::{Arc, Mutex, RwLock};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::Instant;
 
 use axum::Router as Routes;
@@ -43,6 +49,7 @@ use axum::routing::post;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use crate::decide::check::Checker;
 use crate::harness::mcp::McpServer;
 use crate::store::Store;
 
@@ -95,6 +102,11 @@ pub struct Router {
     grants: RwLock<HashMap<String, Grant>>,
     /// The MCP servers each token's run may use through the MCP gateway, with their values filled in.
     mcp: RwLock<HashMap<String, BTreeMap<String, McpServer>>>,
+    /// The tokens whose answers the router checks for tool calls: those of runs on a harness without a bridge.
+    checked: RwLock<HashSet<String>>,
+    /// What decides the tool calls of answers to checked tokens; set once the core exists. Without it every such call
+    /// is refused.
+    checker: OnceLock<Checker>,
     client: reqwest::Client,
     /// The last list of available models and when it was made.
     available: Mutex<Option<(Instant, AvailableModels)>>,
@@ -111,10 +123,17 @@ impl Router {
             day_budget: RwLock::new(None),
             grants: RwLock::new(HashMap::new()),
             mcp: RwLock::new(HashMap::new()),
+            checked: RwLock::new(HashSet::new()),
+            checker: OnceLock::new(),
             client: reqwest::Client::new(),
             available: Mutex::new(None),
             oauth: oauth::Logins::default(),
         }
+    }
+
+    /// Sets what decides the tool calls of answers to checked tokens (see [`Router::issue_checked_token`]).
+    pub fn set_checker(&self, checker: Checker) {
+        let _ = self.checker.set(checker);
     }
 
     /// Replaces the upstreams; the next request goes to the new ones.

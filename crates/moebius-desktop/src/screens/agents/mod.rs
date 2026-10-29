@@ -57,6 +57,7 @@ pub enum Message {
     /// "Another model…" was chosen: the Model field becomes an input.
     TypeModel,
     ProtocolChosen(String),
+    HarnessChosen(String),
     ThinkingChosen(String),
     BudgetEdited(String),
     Instructions(text_editor::Action),

@@ -76,6 +76,7 @@ Nothing else is read. The Moebius agent stays built in: `agents/Moebius.toml` co
 |---|---|---|---|
 | `model` | string | required | The model's name, sent to the router and given to Pi-Bolt as `--model`. Not blank. |
 | `protocol` | string | `openai` | `openai` or `anthropic`: which router endpoint the harness uses. |
+| `harness` | string | `pi-bolt` | `pi-bolt`, or `claude-code` to run the agent on Claude Code (see [configuration](configuration.md#claude-code)), which needs `protocol = "anthropic"` and no `extensions`, else the agent is an error. Written only when it is not `pi-bolt`. |
 | `thinking` | string | none | Given to Pi-Bolt as `--thinking`. Pi-Bolt checks the value. |
 | `token_budget` | integer | none | The most tokens a card may use with this agent, as `agents.<name>.token_budget` in [configuration](configuration.md). At least 1. |
 | `skills` | array of strings | `[]` | Names of directories under `skills/` that hold a `SKILL.md`. Each is given to Pi-Bolt as `--skill`. A name that is not there is an error. |

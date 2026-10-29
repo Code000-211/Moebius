@@ -19,6 +19,7 @@ use crate::widgets::conversation::Conversation;
 use crate::widgets::terminal::{PaneEvent, Shell};
 
 pub use panel::tokens;
+pub use view::harness_name;
 
 /// The status of a run that can be steered and stopped.
 const RUNNING: &str = "running";

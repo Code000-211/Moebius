@@ -271,6 +271,7 @@ fn saving_sends_the_edited_settings_and_a_wrong_field_is_said_instead() {
     update(agents::Message::Opened("Coder".into(), Ok(coder())));
     update(agents::Message::ModelEdited("better-model".into()));
     update(agents::Message::ProtocolChosen("anthropic".into()));
+    update(agents::Message::HarnessChosen("claude-code".into()));
     update(agents::Message::ThinkingChosen("Not set".into()));
     update(agents::Message::BudgetEdited("2000".into()));
     update(agents::Message::ToggleSkill("house-style".into()));
@@ -287,7 +288,7 @@ fn saving_sends_the_edited_settings_and_a_wrong_field_is_said_instead() {
     assert_eq!(name, "Coder");
     assert_eq!(
         serde_json::to_value(&sent).unwrap(),
-        json!({"model": "better-model", "protocol": "anthropic", "token_budget": 2000,
+        json!({"model": "better-model", "protocol": "anthropic", "token_budget": 2000, "harness": "claude-code",
                "skills": ["house-style"], "extensions": ["extensions/two.ts"], "mcp": ["profiler"]})
     );
     assert_eq!(

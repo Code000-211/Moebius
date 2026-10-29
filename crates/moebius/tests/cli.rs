@@ -389,6 +389,7 @@ async fn doctor_succeeds_when_everything_is_in_place() {
         extensions: vec![],
         mcp: Default::default(),
         token_budget: None,
+        harness: Default::default(),
     };
     moebius_core::harness::repo::create(&harness, &[("Coder".to_string(), coder)].into(), None)
         .unwrap();
@@ -439,7 +440,9 @@ fn init_points_the_configuration_at_the_pi_bolt_on_the_path() {
     };
     let with = init(&bin);
     assert!(with.contains(&format!("\nprogram = \"{}\"\n", program.display())));
-    assert_eq!(with.lines().filter(|l| l.starts_with("program")).count(), 1);
+    // One for Pi-Bolt; the other is Claude Code's.
+    let programs = with.lines().filter(|l| l.starts_with("program"));
+    assert_eq!(programs.filter(|l| !l.contains("claude")).count(), 1);
     let without = init(&dir.path().join("empty"));
     assert!(without.contains("\nprogram = \"pi-bolt\"\n"));
 }

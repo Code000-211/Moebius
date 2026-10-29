@@ -504,7 +504,8 @@ Errors: `422` `days` is not from 1 to 365.
 
 ### `POST /v1/runs/{id}/steer`
 
-A person sends a message to a running run: the harness passes it to the agent (Pi-Bolt's `steer` command), the run
+A person sends a message to a running run: the harness passes it to the agent (Pi-Bolt's `steer` command; Claude Code
+is given it as its next user message, which it answers before the run ends), the run
 stores a `steered` event with `{"message": ...}` (secrets removed), and the decision is recorded (kind `steer`, decider
 `person`, the message in its context).
 
@@ -517,7 +518,8 @@ Response: the `Run`. Errors: `404` no such run; `422` the message is blank or th
 ### `POST /v1/runs/{id}/stop`
 
 A person stops a running run: the decision is recorded (kind `stop`, decider `person`) and the harness asks the agent to
-abort (Pi-Bolt's `abort` command; a Pi-Bolt that has not exited after 10 seconds is killed). The run ends as `stopped`,
+abort (Pi-Bolt's `abort` command; a Pi-Bolt that has not exited after 10 seconds is killed; Claude Code is killed at
+once). The run ends as `stopped`,
 which publishes `run_ended`. The card is not retried by itself: its script puts it in the inbox as stuck ("stopped by a
 person"), and a person decides with retry.
 
@@ -605,7 +607,8 @@ terminals are open already or the directory is gone.
 
 The agents the server can run, for choosing one to chat with: the Moebius agent first and the Grilling partner second (each
 when its own `[agents.<name>]` or `[agents.Coder]` gives it a model), then the others by name. Response: an array of `{"name": string, "model":
-string, "protocol": "openai" or "anthropic", "thinking": string, "token_budget": integer, "built_in": boolean, "error": string}`;
+string, "protocol": "openai" or "anthropic", "thinking": string, "token_budget": integer, "harness": "pi-bolt" or
+"claude-code", "built_in": boolean, "error": string}`; `harness` is the harness the agent runs on;
 `thinking` and `token_budget` are the agent's, left out when its configuration does not set them; `built_in` is true for the Moebius
 agent and the `Grilling-partner`, which Moebius brings itself. `error` is left out unless the agent's files in the [harness
 configuration](harness-configuration.md) are broken: such an agent has an empty `model`, cannot be run, and `error` says
@@ -615,8 +618,8 @@ included.
 ### `GET /v1/agents/{name}`
 
 An agent of the harness configuration repository, as its files say: `{"name": string, "settings": {"model", "protocol",
-"thinking", "token_budget", "skills", "extensions", "mcp"}, "instructions": string}` (`thinking` and `token_budget` are
-left out when not set). The files hold no secrets and are returned in full. Errors: `404` no such agent; `422` its files
+"thinking", "token_budget", "harness", "skills", "extensions", "mcp"}, "instructions": string}` (`thinking`,
+`token_budget` and `harness` are left out when not set; no `harness` is `pi-bolt`). The files hold no secrets and are returned in full. Errors: `404` no such agent; `422` its files
 are broken (the message says how), or the server has no `[harness]` and its agents are in `moebius.toml`.
 
 A built-in agent (`Moebius`, `Grilling-partner`, `Retro-analyst`, `Autoresearcher`) also has `"built_in":
@@ -1496,7 +1499,14 @@ A `run_event`'s source is told by its inner `kind`:
   left out.
 - Every other kind is a record Pi-Bolt wrote on its RPC channel, with its `type` as the kind (for example
   `agent_settled`, `tool_execution_end`, `response`) and the whole record as `data`. A line that is not JSON is passed on
-  as kind `unparsed` with `{"type": "unparsed", "error", "text"}`.
+  as kind `unparsed` with `{"type": "unparsed", "error", "text"}`. A run on Claude Code (`harness` is `claude-code`)
+  has the same kinds, made of Claude Code's `stream-json` records: `agent_start` when it is given a message, an
+  `assistant` record as `message_start`, a `message_update` (`text_delta` or `thinking_delta`) per text and thinking
+  block, a `tool_execution_start` per `tool_use` block and `message_end`; each `tool_result` as a `tool_execution_end`
+  (`{"toolCallId", "toolName", "result": {"content"}, "isError"}`); a `result` as `agent_end` (its text the final answer,
+  with `subtype`, `is_error`, `num_turns`, `duration_ms`) and `agent_settled` (`{"aborted": false}`). Any other record is
+  kept whole as `claude_<type>` (such as `claude_system`), and a line that is not JSON as `claude_unparsed` with
+  `{"text"}`.
 
 `seq` is the number the event is stored under, the same as in `GET /v1/runs/{id}/events`. Events of a run are published in
 the order of their `seq`. Every event of a run is published and stored: Pi's records, `tool_check`, `mcp_call` and `mcp_error` events, `steered` events

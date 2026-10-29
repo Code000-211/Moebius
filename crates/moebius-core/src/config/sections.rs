@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::ConfigError;
 use super::raw::{RawDecisionModel, RawGitLab, RawTeacher};
@@ -186,6 +186,49 @@ pub struct AgentConfig {
     #[serde(skip)]
     pub mcp: BTreeMap<String, McpServer>,
     pub token_budget: Option<i64>,
+    /// The harness the agent runs on.
+    #[serde(default)]
+    pub harness: HarnessKind,
+}
+
+/// The harness an agent runs on: Pi-Bolt, or Claude Code's command line, which has no bridge, so that the router
+/// checks the tool calls of its model's answers (see `router`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum HarnessKind {
+    #[default]
+    PiBolt,
+    ClaudeCode,
+}
+
+impl HarnessKind {
+    /// The name the configuration, the API and a run's `harness` give it.
+    pub fn name(self) -> &'static str {
+        match self {
+            HarnessKind::PiBolt => "pi-bolt",
+            HarnessKind::ClaudeCode => "claude-code",
+        }
+    }
+
+    /// Whether this is the default, which a file leaves out.
+    pub fn is_default(&self) -> bool {
+        *self == HarnessKind::PiBolt
+    }
+
+    /// Why an agent speaking `protocol`, with extensions or without, cannot run on this harness, if it cannot: Claude
+    /// Code speaks only the anthropic protocol and loads no Pi extensions.
+    pub fn refuses(self, protocol: Protocol, extensions: bool) -> Option<&'static str> {
+        match self {
+            HarnessKind::PiBolt => None,
+            HarnessKind::ClaudeCode if protocol != Protocol::Anthropic => {
+                Some("an agent on claude-code speaks the anthropic protocol")
+            }
+            HarnessKind::ClaudeCode if extensions => {
+                Some("an agent on claude-code has no extensions: they are Pi-Bolt's")
+            }
+            HarnessKind::ClaudeCode => None,
+        }
+    }
 }
 
 pub(crate) fn default_protocol() -> Protocol {

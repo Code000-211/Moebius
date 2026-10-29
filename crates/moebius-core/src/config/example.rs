@@ -90,6 +90,11 @@ listen = "127.0.0.1:7172"
 [pi_bolt]
 program = "pi-bolt"
 
+# Claude Code's command line, for the agents whose harness is "claude-code". It has no bridge: the router checks the
+# tool calls in its model's answers instead (see docs/reference/router.md).
+[claude_code]
+program = "claude"
+
 # The teacher model checks the rules written in prose (a rule the built-in patterns cannot see) on every tool call.
 # It is asked through the router, so its tokens are counted against the run being checked, and it needs an upstream for
 # its protocol. Without a teacher, a call is refused whenever any prose rule applies (fail closed); without prose
@@ -149,10 +154,12 @@ program = "pi-bolt"
 # url = "https://github.com/acme/harness-configuration"
 # mcp_env = ["DOCS_TOKEN"]               # the environment variables mcp.toml may take values from, as ${NAME}
 
-# Agents run on Pi-Bolt. The default workflow starts the Coder, and the Reviewer when there is one.
+# Agents run on Pi-Bolt. The default workflow starts the Coder, and the Reviewer when there is one. An agent whose
+# harness is "claude-code" runs on Claude Code; it speaks the anthropic protocol.
 # [agents.Coder]
 # model = "qwen3.8-flash-next"
-# protocol = "openai"
+# protocol = "openai"                     # anthropic for an agent on claude-code
+# harness = "pi-bolt"                     # or claude-code
 # thinking = "medium"
 # instructions = "Keep changes small and run the tests."
 # token_budget = 2000000

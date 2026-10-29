@@ -4,7 +4,7 @@
 use iced::widget::text_editor;
 
 use crate::client::{AgentDetail, AgentSettings, BuiltInAgent, ClientError, ServerSettings};
-use crate::widgets::form::PROTOCOLS;
+use crate::widgets::form::{HARNESSES, PROTOCOLS};
 
 use super::{Files, Notice};
 
@@ -19,6 +19,8 @@ pub(super) struct Editor {
     /// Whether the Model field is an input rather than the list.
     pub(super) typing_model: bool,
     pub(super) protocol: String,
+    /// The harness the agent runs on, one of `HARNESSES`.
+    pub(super) harness: String,
     pub(super) thinking: Option<String>,
     pub(super) budget: String,
     pub(super) instructions: text_editor::Content,
@@ -52,6 +54,7 @@ impl Editor {
             model: String::new(),
             typing_model: false,
             protocol: PROTOCOLS[0].to_string(),
+            harness: HARNESSES[0].to_string(),
             thinking: None,
             budget: String::new(),
             instructions: text_editor::Content::new(),
@@ -88,6 +91,7 @@ impl Editor {
         self.exists = true;
         self.model = settings.model;
         self.protocol = settings.protocol;
+        self.harness = settings.harness.unwrap_or_else(|| HARNESSES[0].to_string());
         self.thinking = settings.thinking;
         self.budget = settings
             .token_budget
@@ -133,6 +137,7 @@ impl Editor {
             skills: self.skills.clone(),
             extensions: self.extensions.clone(),
             mcp: self.mcp.clone(),
+            harness: (self.harness != HARNESSES[0]).then(|| self.harness.clone()),
         };
         let mut instructions = self.instructions.text();
         // The editor keeps a final line break of its own; the file is not given a second one.
@@ -193,6 +198,7 @@ pub(super) fn from_file(name: &str, server: &ServerSettings) -> Result<AgentDeta
             skills: paths("skills"),
             extensions: paths("extensions"),
             mcp: vec![],
+            harness: text("harness"),
         }),
         instructions: text("instructions").unwrap_or_default(),
         built_in: None,
@@ -207,6 +213,9 @@ pub(super) fn file_table(agent: &AgentSettings, instructions: &str) -> serde_jso
     table.insert("protocol".into(), agent.protocol.clone().into());
     if let Some(thinking) = &agent.thinking {
         table.insert("thinking".into(), thinking.clone().into());
+    }
+    if let Some(harness) = &agent.harness {
+        table.insert("harness".into(), harness.clone().into());
     }
     if !instructions.trim().is_empty() {
         table.insert("instructions".into(), instructions.into());

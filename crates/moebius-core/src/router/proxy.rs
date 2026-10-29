@@ -1,5 +1,6 @@
 //! Forwarding a run's request to an upstream of its protocol (chosen by `classes`), with the upstream's key or login in
-//! place of the run's token, and the answer back, streamed or not, its usage counted on the way.
+//! place of the run's token, and the answer back, streamed or not, its usage counted on the way. The answer to a checked
+//! token has its tool calls checked on the way (see `calls`).
 
 use std::sync::Arc;
 
@@ -9,6 +10,7 @@ use axum::response::{IntoResponse, Response};
 use futures_util::StreamExt;
 use serde_json::{Value, json};
 
+use super::calls::{self, Decider};
 use super::usage::{Counted, Meter, SseUsage, Tally};
 use super::{Protocol, Router, error};
 
@@ -48,6 +50,13 @@ impl Router {
                 "the body is not JSON",
             );
         };
+        let checked = self.checks_answers(&headers).then(|| Decider {
+            checker: self.checker.get().cloned(),
+            grant: grant.clone(),
+        });
+        if checked.is_some() {
+            calls::redact_results(&mut request, protocol);
+        }
         let streaming = request
             .get("stream")
             .and_then(Value::as_bool)
@@ -106,13 +115,22 @@ impl Router {
                 scanner: SseUsage::default(),
                 meter,
             };
-            let stream = upstream_response.bytes_stream().map(move |chunk| {
-                if let Ok(bytes) = &chunk {
-                    tally.scanner.feed(bytes, protocol);
+            let upstream = upstream_response.bytes_stream();
+            match checked {
+                Some(decider) => {
+                    let seen = move |bytes: &[u8]| tally.scanner.feed(bytes, protocol);
+                    calls::checked_stream(upstream, protocol, decider, seen).into_response()
                 }
-                chunk
-            });
-            Body::from_stream(stream).into_response()
+                None => {
+                    let stream = upstream.map(move |chunk| {
+                        if let Ok(bytes) = &chunk {
+                            tally.scanner.feed(bytes, protocol);
+                        }
+                        chunk
+                    });
+                    Body::from_stream(stream).into_response()
+                }
+            }
         } else {
             let bytes = match upstream_response.bytes().await {
                 Ok(b) => b,
@@ -125,8 +143,9 @@ impl Router {
                     );
                 }
             };
+            let mut bytes = bytes;
             if status.is_success()
-                && let Ok(value) = serde_json::from_slice::<Value>(&bytes)
+                && let Ok(mut value) = serde_json::from_slice::<Value>(&bytes)
             {
                 let mut usage = Counted::default();
                 usage.read(&value, protocol);
@@ -134,6 +153,10 @@ impl Router {
                     usage.model = Some(m.to_string());
                 }
                 meter.record(usage);
+                if let Some(decider) = &checked {
+                    calls::check_answer(&mut value, protocol, decider).await;
+                    bytes = Bytes::from(value.to_string());
+                }
             }
             Body::from(bytes).into_response()
         };

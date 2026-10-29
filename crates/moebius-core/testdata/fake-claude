@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+# A stand-in for Claude Code's command line in tests: `claude -p --input-format stream-json --output-format stream-json
+# --verbose`. It reads user messages as JSON lines on stdin and writes Claude Code's records (system, assistant, user,
+# result) as JSON lines, one turn per message, and exits when stdin closes.
+# It keeps its arguments in argv.json, a few environment variables in env.json, every line it is sent in stdin.jsonl and
+# the last message in prompt.txt, all in CLAUDE_CONFIG_DIR, and its pid in pid.txt.
+# A message containing "[hang]" is never answered (the process waits to be killed). A message containing "[nothing]"
+# is answered without a change, as is one for the reviewer, which answers with a verdict. A message containing "[router]"
+# asks the router at ANTHROPIC_BASE_URL with ANTHROPIC_API_KEY and answers with what came back: the text, and each
+# tool_use as a call whose result is "ran". A message containing "[fail]" ends its turn with an error result. A message
+# that does not start with "Work on issue" is a chat message, answered "You said: <message>" (and writes the file NAME
+# first if it contains "[write NAME]"); any other message writes done.txt with a Write call.
+import json
+import os
+import re
+import sys
+import urllib.request
+
+config = os.environ["CLAUDE_CONFIG_DIR"]
+os.makedirs(config, exist_ok=True)
+
+
+def put(name, text):
+    # Written whole, so that a test never reads it half written.
+    path = os.path.join(config, name)
+    with open(path + ".part", "w") as f:
+        f.write(text)
+    os.replace(path + ".part", path)
+
+
+put("env.json", json.dumps({k: os.environ.get(k) for k in (
+    "ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "MOEBIUS", "MOEBIUS_RUN_TOKEN",
+    "MOEBIUS_URL", "MOEBIUS_TOKEN", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")}))
+put("pid.txt", str(os.getpid()))
+put("argv.json", json.dumps(sys.argv[1:]))
+
+session = None
+for flag in ("--session-id", "--resume"):
+    if flag in sys.argv:
+        session = sys.argv[sys.argv.index(flag) + 1]
+model = sys.argv[sys.argv.index("--model") + 1]
+out = sys.stdout
+
+
+def emit(record):
+    record["session_id"] = session
+    out.write(json.dumps(record) + "\n")
+    out.flush()
+
+
+def assistant(content):
+    emit({"type": "assistant", "message": {"role": "assistant", "model": model, "content": content}})
+
+
+def result(text, error=False):
+    emit({"type": "result", "subtype": "error_during_execution" if error else "success", "is_error": error,
+          "result": text, "num_turns": 1, "duration_ms": 5})
+
+
+def ask_router(message):
+    request = urllib.request.Request(
+        os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages",
+        data=json.dumps({"model": model, "max_tokens": 100,
+                         "messages": [{"role": "user", "content": message}]}).encode(),
+        headers={"content-type": "application/json", "x-api-key": os.environ["ANTHROPIC_API_KEY"],
+                 "anthropic-version": "2023-06-01"})
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(request) as response:
+        return json.load(response)
+
+
+emit({"type": "system", "subtype": "init", "cwd": os.getcwd(), "model": model, "tools": ["Read", "Write", "Bash"]})
+for line in sys.stdin:
+    with open(os.path.join(config, "stdin.jsonl"), "a") as f:
+        f.write(line)
+    message = json.loads(line)
+    text = "".join(part.get("text", "") for part in message["message"]["content"])
+    put("prompt.txt", text)
+    if "[hang]" in text:
+        assistant([{"type": "text", "text": "Waiting."}])
+        continue
+    if "[fail]" in text:
+        result("the model is overloaded", error=True)
+        continue
+    if "[router]" in text:
+        answer = ask_router(text)
+        said = []
+        for block in answer["content"]:
+            if block["type"] == "text":
+                said.append(block["text"])
+                assistant([block])
+            elif block["type"] == "tool_use":
+                assistant([block])
+                emit({"type": "user", "message": {"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": block["id"], "content": "ran"}]}})
+        result("\n".join(said))
+        continue
+    if not text.startswith("Work on issue"):
+        written = re.search(r"\[write ([^\]]+)\]", text)
+        if written:
+            with open(written.group(1), "w") as f:
+                f.write("written\n")
+        answer = "You said: " + text
+        assistant([{"type": "text", "text": answer}])
+        result(answer)
+        continue
+    if "You are the reviewer" in text or "[nothing]" in text:
+        answer = "Looks fine.\nVERDICT: approve" if "You are the reviewer" in text else "Nothing to do."
+        assistant([{"type": "text", "text": answer}])
+        result(answer)
+        continue
+    assistant([{"type": "thinking", "thinking": "Let me write it."}, {"type": "text", "text": "Writing."},
+               {"type": "tool_use", "id": "toolu_1", "name": "Write",
+                "input": {"file_path": "done.txt", "content": "done\n"}}])
+    with open("done.txt", "w") as f:
+        f.write("done\n")
+    emit({"type": "user", "message": {"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "toolu_1", "content": [{"type": "text", "text": "File written"}],
+         "is_error": False}]}})
+    assistant([{"type": "text", "text": "Done."}])
+    result("Done.")

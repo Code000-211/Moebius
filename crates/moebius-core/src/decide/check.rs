@@ -7,6 +7,9 @@
 //!   `{ "decision": "allow" | "refuse", "reason" }`. The call goes through `decide("tool_call")` and leaves one
 //!   judgement; a refusal's reason names the rule. Anything that fails while deciding answers refuse, and when even
 //!   that cannot be answered the status is 500, which the bridge must treat as a refusal.
+//!
+//!   A harness without a bridge (Claude Code) has its calls asked the same way by the router, which finds them in the
+//!   model's answers ([`Checker`], see `router`).
 //! - `POST /moebius/result` takes `{ "content": [ { "type": "text", "text" }, .. ] }` (Pi's tool result blocks; the
 //!   bridge may add `tool_call_id`, `tool` and `is_error`, which are not read) and answers `{ "content": [..] }` with
 //!   the secrets removed from every text block and other blocks unchanged.
@@ -51,6 +54,42 @@ pub fn routes(app: Arc<App>, router: Arc<Router>, rules_file: Option<PathBuf>) -
             router,
             rules_file,
         })
+}
+
+/// Decides the tool calls the router finds in the answers to a harness without a bridge, as `/moebius/check` decides
+/// the bridge's: through `decide("tool_call")`, with the same question, judgement and `tool_check` run event.
+#[derive(Clone)]
+pub struct Checker {
+    app: Arc<App>,
+    rules_file: Option<PathBuf>,
+}
+
+impl Checker {
+    /// Decides with the rules of `rules_file`, the server's rules file, and the repositories'.
+    pub fn new(app: Arc<App>, rules_file: Option<PathBuf>) -> Self {
+        Self { app, rules_file }
+    }
+
+    /// Decides the call `tool_call_id` of `tool` with `input` for the run `grant` names: `Err` with the reason, which
+    /// names the rule, when it is refused. Anything that fails while deciding refuses.
+    pub fn decide(
+        &self,
+        grant: &Grant,
+        tool: &str,
+        input: &Value,
+        tool_call_id: &str,
+    ) -> Result<(), String> {
+        let request = CheckRequest {
+            tool: tool.to_string(),
+            input: input.clone(),
+            tool_call_id: tool_call_id.to_string(),
+        };
+        match ask(&self.app, self.rules_file.as_deref(), grant, &request) {
+            Some(reply) if reply.decision == "allow" => Ok(()),
+            Some(reply) => Err(reply.reason),
+            None => Err("the call cannot be decided".into()),
+        }
+    }
 }
 
 /// A tool call to check: what the bridge sends, and what the MCP gateway asks for each call of an MCP tool.

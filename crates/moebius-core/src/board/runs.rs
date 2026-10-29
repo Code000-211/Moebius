@@ -1,11 +1,13 @@
-//! What the board engine needs of a harness (`Runs`): starting, steering and stopping runs, and the chats, retros,
-//! research and trials a harness may also offer. Pi-Bolt (`pibolt`) is the real one; the tests use fakes.
+//! What the board engine and the chats need of a harness (`Runs`): starting, steering and stopping runs, whose events
+//! the harness records, and the chats, retros, research and trials a harness may also offer. Pi-Bolt (`pibolt`) and
+//! Claude Code (`claude`) are the real ones, and `Harnesses` picks between them by each agent's `harness`; the tests
+//! also use fakes.
 
 use std::path::Path;
 use std::sync::Arc;
 
 use crate::app::{App, ChatSettings};
-use crate::config::AgentConfig;
+use crate::config::{AgentConfig, HarnessKind};
 use crate::router::Protocol;
 use crate::store::{Card, Repository, Run};
 
@@ -21,6 +23,9 @@ pub struct AgentInfo {
     /// The most tokens a card of the agent may use, if its configuration says.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token_budget: Option<i64>,
+    /// The harness the agent runs on.
+    #[serde(default)]
+    pub harness: HarnessKind,
     /// Whether Moebius brings the agent itself, as it does the Moebius agent.
     pub built_in: bool,
     /// Why the agent's files in the harness configuration repository could not be used. Such an agent has no model
@@ -61,7 +66,7 @@ impl Drop for Tui {
     }
 }
 
-/// Starts runs for the engine. The real one drives a harness (Pi-Bolt); tests use a fake.
+/// Starts runs for the engine and the chats. The real ones drive a harness (Pi-Bolt, Claude Code); tests use fakes.
 pub trait Runs: Send + Sync {
     /// Starts a run for `card` and returns it without waiting for it to end.
     fn start(

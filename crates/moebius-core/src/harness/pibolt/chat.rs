@@ -11,11 +11,12 @@ use serde_json::json;
 
 use super::process::reasons;
 use super::reader::finish;
-use super::runs::{RunningRun, fail, head};
+use super::runs::{RunningRun, fail, head, issue_token};
 use super::{Closing, IDLE, Live, Paused, PiBolt, lock, send, shut_down};
 use crate::app::{App, ChatSettings};
 use crate::blobs::redact;
-use crate::router::Grant;
+use crate::config::AgentConfig;
+use crate::router::{Grant, Router};
 use crate::store::{Repository, Run};
 
 impl PiBolt {
@@ -96,77 +97,26 @@ impl PiBolt {
     }
 
     /// Starts a chat (see `Runs::start_chat`): its worktree, its token, what the person said and the settings it was
-    /// given, then its Pi.
+    /// given (see [`chat_run`]), then its Pi.
     pub(super) fn open_chat(
         &self,
         app: &Arc<App>,
         agent: &str,
-        (repository, harness): (Option<&Repository>, bool),
+        place: (Option<&Repository>, bool),
         (message, prompt): (Option<&str>, Option<&str>),
         origin: &str,
         settings: &ChatSettings,
     ) -> Result<Run, String> {
         let config = settings.apply(&self.agent(app, agent)?);
-        let run = app
-            .store
-            .add_run(None, agent, "pi-bolt", "chat")
-            .map_err(|e| e.to_string())?;
-        app.store
-            .set_run_origin(run.id, origin)
-            .map_err(|e| fail(app, run.id, e.to_string()))?;
-        let (clone, worktree, start) = match repository {
-            None if harness => {
-                let (made, clone) = app
-                    .start_harness_chat(run.id)
-                    .map_err(|e| fail(app, run.id, e.to_string()))?;
-                let start = head(app, run.id, &made.path)?;
-                (Some(clone), made.path, start)
-            }
-            Some(repository) => {
-                let clone = PathBuf::from(&repository.path);
-                let made = app
-                    .store
-                    .set_run_repository(run.id, repository.id)
-                    .map_err(|e| e.to_string())
-                    .and_then(|()| {
-                        let base = repository.base_ref();
-                        let name = &repository.name;
-                        let worktree = app.repos.add_chat_worktree(name, &clone, run.id, &base);
-                        worktree.map_err(|e| e.to_string())
-                    })
-                    .map_err(|e| fail(app, run.id, e))?;
-                let start = head(app, run.id, &made.path)?;
-                (Some(clone), made.path, start)
-            }
-            None => {
-                let empty = app.data_dir.join("chats").join(run.id.to_string());
-                std::fs::create_dir_all(&empty).map_err(|e| fail(app, run.id, e.to_string()))?;
-                (None, empty, String::new())
-            }
-        };
-        let running = RunningRun {
-            id: run.id,
-            clone,
-            start,
-            worktree,
-            token: self.router.issue_token(Grant {
-                run_id: run.id,
-                card_id: None,
-                budget: config.token_budget,
-            }),
-            purpose: "chat".into(),
-            commit_message: format!(
-                "Chat {}\n\nCommitted by Moebius when the chat ended.",
-                run.id
-            ),
-        };
-        if let Some(message) = message {
-            let said = json!({ "message": redact(message) });
-            let _ = app.record_run_event(run.id, "said", &said);
-        }
-        if settings != &ChatSettings::default() {
-            let _ = app.record_run_event(run.id, "settings_changed", &json!(settings));
-        }
+        let running = chat_run(
+            app,
+            &self.router,
+            (agent, &config),
+            place,
+            message,
+            origin,
+            settings,
+        )?;
         self.launch_or_undo(app, None, &config, running, prompt)
     }
 
@@ -251,6 +201,83 @@ impl PiBolt {
         // Closing stdin asks Pi to shut down.
         lock(&live.stdin).take().is_some()
     }
+}
+
+/// Records a chat with `agent`, as `config` has it (on the harness it names), with `origin`, and makes its place: a
+/// worktree on `moebius/chat-<id>` of `repository`, of the harness configuration repository when `harness` is set, or
+/// an empty directory, and its token. The chat shows `message`, what the person said, and keeps the `settings` it was
+/// given in place of its agent's. The chat fails when that cannot be done.
+pub(in crate::harness) fn chat_run(
+    app: &App,
+    router: &Router,
+    (agent, config): (&str, &AgentConfig),
+    (repository, harness): (Option<&Repository>, bool),
+    message: Option<&str>,
+    origin: &str,
+    settings: &ChatSettings,
+) -> Result<RunningRun, String> {
+    let run = app
+        .store
+        .add_run(None, agent, config.harness.name(), "chat")
+        .map_err(|e| e.to_string())?;
+    app.store
+        .set_run_origin(run.id, origin)
+        .map_err(|e| fail(app, run.id, e.to_string()))?;
+    let (clone, worktree, start) = match repository {
+        None if harness => {
+            let (made, clone) = app
+                .start_harness_chat(run.id)
+                .map_err(|e| fail(app, run.id, e.to_string()))?;
+            let start = head(app, run.id, &made.path)?;
+            (Some(clone), made.path, start)
+        }
+        Some(repository) => {
+            let clone = PathBuf::from(&repository.path);
+            let made = app
+                .store
+                .set_run_repository(run.id, repository.id)
+                .map_err(|e| e.to_string())
+                .and_then(|()| {
+                    let base = repository.base_ref();
+                    let name = &repository.name;
+                    let worktree = app.repos.add_chat_worktree(name, &clone, run.id, &base);
+                    worktree.map_err(|e| e.to_string())
+                })
+                .map_err(|e| fail(app, run.id, e))?;
+            let start = head(app, run.id, &made.path)?;
+            (Some(clone), made.path, start)
+        }
+        None => {
+            let empty = app.data_dir.join("chats").join(run.id.to_string());
+            std::fs::create_dir_all(&empty).map_err(|e| fail(app, run.id, e.to_string()))?;
+            (None, empty, String::new())
+        }
+    };
+    let grant = Grant {
+        run_id: run.id,
+        card_id: None,
+        budget: config.token_budget,
+    };
+    let running = RunningRun {
+        id: run.id,
+        clone,
+        start,
+        worktree,
+        token: issue_token(router, config, grant),
+        purpose: "chat".into(),
+        commit_message: format!(
+            "Chat {}\n\nCommitted by Moebius when the chat ended.",
+            run.id
+        ),
+    };
+    if let Some(message) = message {
+        let said = json!({ "message": redact(message) });
+        let _ = app.record_run_event(run.id, "said", &said);
+    }
+    if settings != &ChatSettings::default() {
+        let _ = app.record_run_event(run.id, "settings_changed", &json!(settings));
+    }
+    Ok(running)
 }
 
 #[cfg(test)]

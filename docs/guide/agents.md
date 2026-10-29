@@ -106,9 +106,33 @@ built-in ones.
 | `skills` | Paths, each given to Pi-Bolt as `--skill`. |
 | `extensions` | Paths, each given to Pi-Bolt as `--extension` before the bridge. See [Extensions](extensions.md). |
 | `token_budget` | The most tokens (input plus output) the card's runs may use, the teacher's included. Over it the router answers HTTP 429 and the default scripts mark the card stuck. |
+| `harness` | `pi-bolt` (the default) or `claude-code`: which harness runs the agent. See below. |
 
 A relative path in `skills` or `extensions` is relative to the directory that holds `moebius.toml`. Moebius does not
 check that the paths exist.
+
+### An agent on Claude Code
+
+An agent can run on Claude Code's command line instead of Pi-Bolt. Install `claude` on the server (or name it with
+`[claude_code] program`), and give the agent `harness = "claude-code"`. Claude Code speaks only Anthropic's protocol, so
+the agent needs `protocol = "anthropic"` and an `anthropic` upstream in `[[router.upstreams]]`; it has no extensions.
+
+```toml
+[agents.Reviewer]
+model = "claude-sonnet-4-5"
+protocol = "anthropic"
+harness = "claude-code"
+instructions = "Review the change against the issue."
+```
+
+The run is `claude -p` in the card's worktree, with the router as its provider and the run's token as its key, the
+agent's model and instructions, its skills in a configuration directory of its own and its MCP servers. Claude Code has
+no bridge, so the router checks each tool call in the model's answers against the rules before Claude Code sees it, and
+puts a text naming the rule in place of a refused call; the agent usually ends its turn with that text. The run's events,
+summary, steering and stopping are the same as for Pi-Bolt (stopping kills the process). A chat with such an agent works,
+except its terminal interface, which only Pi-Bolt has, and the reasoning level, which Claude Code is not given. The exact
+command line is in [configuration](../reference/configuration.md#claude-code), the check in
+[the router](../reference/router.md#the-check-of-a-harness-without-a-bridge).
 
 ## In a harness configuration repository
 

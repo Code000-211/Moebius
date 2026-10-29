@@ -44,8 +44,8 @@ A relative path (including `agents.<name>.skills` and `extensions`) is resolved 
 configuration file, made absolute when the file is read. Exceptions:
 
 - `token_file` is resolved against `data_dir`.
-- `pi_bolt.program` is resolved only when it contains a directory (`./bin/pi-bolt`, `tools/pi-bolt`); a bare name such as
-  `pi-bolt` is looked up on the `PATH`. `plugins.path` is resolved the same way.
+- `pi_bolt.program` and `claude_code.program` are resolved only when they contain a directory (`./bin/pi-bolt`,
+  `tools/pi-bolt`); a bare name such as `pi-bolt` is looked up on the `PATH`. `plugins.path` is resolved the same way.
 
 An absolute path is used as it is.
 
@@ -182,6 +182,14 @@ the router, so it cannot name a class.
 |---|---|---|---|
 | `pi_bolt.program` | path | `pi-bolt` | The Pi-Bolt executable. See Paths. |
 
+## `[claude_code]`
+
+Claude Code's command line, which runs the agents whose `harness` is `claude-code` (see `agents.<name>.harness`).
+
+| Key | Type | Default | Meaning and validation |
+|---|---|---|---|
+| `claude_code.program` | path | `claude` | The Claude Code executable. Resolved as `pi_bolt.program` is (see Paths). Only started for an agent on `claude-code`, so a server without such an agent needs none. |
+
 ## `[teacher]`
 
 The teacher model checks the rules written in prose, see [rules](rules.md). The table is optional. Without it, a tool call
@@ -263,7 +271,8 @@ A name is made of letters, digits, `-` and `_` and must not be empty, else the f
 |---|---|---|---|
 | `agents.<name>.model` | string | required | The model's name, sent to the router and given to Pi-Bolt as `--model`. |
 | `agents.<name>.protocol` | string | `openai` | `openai` or `anthropic`: which router endpoint the harness uses. |
-| `agents.<name>.thinking` | string | none | Given to Pi-Bolt as `--thinking`, such as `low`, `medium` or `high`. Pi-Bolt checks the value. |
+| `agents.<name>.harness` | string | `pi-bolt` | The harness the agent runs on: `pi-bolt`, or `claude-code` for Claude Code's command line (see [Claude Code](#claude-code)). An agent on `claude-code` must have `protocol = "anthropic"` and no `extensions`, else the file is refused. A built-in agent without its own table runs on the Coder's harness. |
+| `agents.<name>.thinking` | string | none | Given to Pi-Bolt as `--thinking`, such as `low`, `medium` or `high`. Pi-Bolt checks the value. Claude Code is not given it. |
 | `agents.<name>.instructions` | string | none | Given to Pi-Bolt as `--append-system-prompt`. |
 | `agents.<name>.skills` | array of paths | `[]` | Each given to Pi-Bolt as `--skill`. |
 | `agents.<name>.extensions` | array of paths | `[]` | Each given to Pi-Bolt as `--extension`, before the bridge, which is always loaded last. Pi loads no extension or skill it discovers on its own. |
@@ -292,6 +301,26 @@ model, protocol, thinking level, token budget, instructions (added after the bui
 without the table it takes the Coder's model and protocol, and with neither a chat with it is refused with status 422. It
 is the agent of a grilling, see the [desktop API](desktop-api.md) and [Grilling](harness-configuration.md#grilling).
 
+
+### Claude Code
+
+An agent whose `harness` is `claude-code` runs as `claude -p --input-format stream-json --output-format stream-json
+--verbose` in the run's worktree, with:
+
+- `--model` the agent's model, `--append-system-prompt` its instructions, `--session-id` a new session (`--resume` it
+  for a chat given another model), `--permission-mode bypassPermissions`, `--setting-sources user` and
+  `--strict-mcp-config`, and `--mcp-config <data_dir>/runs/<id>/mcp.json` when the agent has MCP servers (written as for
+  Pi-Bolt, readable by the server's user only);
+- `ANTHROPIC_BASE_URL` the router and `ANTHROPIC_API_KEY` the run's token (`ANTHROPIC_AUTH_TOKEN`,
+  `CLAUDE_CODE_USE_BEDROCK` and `CLAUDE_CODE_USE_VERTEX` removed), `CLAUDE_CONFIG_DIR` the run's own
+  `<data_dir>/runs/<id>/claude/` with each of the agent's skills linked into `skills/`,
+  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, and `MOEBIUS`, `MOEBIUS_RUN_TOKEN` (and for the Moebius agent
+  `MOEBIUS_URL`, `MOEBIUS_TOKEN`) as a Pi-Bolt run has them.
+
+Claude Code has no bridge, so the router checks the tool calls of its model's answers instead (see
+[the router](router.md#the-check-of-a-harness-without-a-bridge)). Its records are kept as the run events a Pi-Bolt run
+has (see the [desktop API](desktop-api.md)). A chat on Claude Code has no terminal interface, keeps its process while it
+waits, and ignores the reasoning level.
 ## Editing the file from the app
 
 The desktop app edits every key of this page through `PUT /v1/settings` (see the [desktop API](desktop-api.md)). The

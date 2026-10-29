@@ -14,6 +14,9 @@ pub struct Agent {
     pub thinking: Option<String>,
     #[serde(default)]
     pub token_budget: Option<i64>,
+    /// The harness it runs on, `pi-bolt` or `claude-code`.
+    #[serde(default)]
+    pub harness: String,
     /// Whether Moebius brings the agent itself.
     #[serde(default)]
     pub built_in: bool,
@@ -37,6 +40,9 @@ pub struct AgentSettings {
     pub extensions: Vec<String>,
     #[serde(default)]
     pub mcp: Vec<String>,
+    /// The harness it runs on; `pi-bolt` when none is given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harness: Option<String>,
 }
 
 /// An agent: what `GET /v1/agents/{name}` answers, and `PUT` after it.

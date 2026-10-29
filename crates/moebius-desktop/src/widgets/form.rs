@@ -13,6 +13,9 @@ use crate::widgets::inline_edit::editor_style;
 /// The reasoning levels an agent or a chat can be given, as Pi-Bolt takes them.
 pub const LEVELS: [&str; 7] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
+/// The harnesses an agent can run on; the first is the default.
+pub const HARNESSES: [&str; 2] = ["pi-bolt", "claude-code"];
+
 /// The protocols an upstream or an agent can speak.
 pub const PROTOCOLS: [&str; 2] = ["openai", "anthropic"];
 

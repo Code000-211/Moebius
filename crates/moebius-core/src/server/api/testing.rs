@@ -27,6 +27,7 @@ pub(super) fn agent(model: &str) -> AgentConfig {
         mcp: BTreeMap::new(),
         protocol: Protocol::OpenAi,
         token_budget: None,
+        harness: Default::default(),
     }
 }
 

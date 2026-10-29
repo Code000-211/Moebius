@@ -9,7 +9,9 @@ use iced::{Alignment, Border, Element, Length};
 
 use crate::app::Message as AppMessage;
 use crate::client::{AvailableModel, BuiltInAgent, McpServer, Skill};
-use crate::widgets::form::{LEVELS, PROTOCOLS, aside, box_heading, field, menu_style, pick_style};
+use crate::widgets::form::{
+    HARNESSES, LEVELS, PROTOCOLS, aside, box_heading, field, menu_style, pick_style,
+};
 use crate::widgets::inline_edit::editor_style;
 use crate::widgets::list_editor::boxed;
 use crate::widgets::model_picker;
@@ -75,6 +77,15 @@ fn settings_row<'a>(editor: &'a Editor, models: &[AvailableModel]) -> Element<'a
     .width(Length::Fill)
     .style(pick_style)
     .menu_style(menu_style);
+    let harnesses: Vec<String> = HARNESSES.iter().map(|h| h.to_string()).collect();
+    let harness = pick_list(harnesses, Some(editor.harness.clone()), move |h| {
+        message(Message::HarnessChosen(h))
+    })
+    .text_size(theme::BODY)
+    .padding([9, 12])
+    .width(Length::Fill)
+    .style(pick_style)
+    .menu_style(menu_style);
     let mut levels: Vec<String> = std::iter::once(NOT_SET)
         .chain(LEVELS)
         .map(String::from)
@@ -107,6 +118,7 @@ fn settings_row<'a>(editor: &'a Editor, models: &[AvailableModel]) -> Element<'a
     row![
         field("Model", model),
         field("Protocol", protocol),
+        field("Harness", harness),
         field("Thinking", thinking),
         field("Token budget per card", budget),
     ]
@@ -119,7 +131,7 @@ pub(super) fn instructions_request(name: &str, wanted: &str) -> String {
     format!(
         "Write the instructions of the agent {name} and save them. Read the agent first with \
          `\"$MOEBIUS\" agent show {name}`, and the moebius skill's guide on agents. `\"$MOEBIUS\" agent save` \
-         replaces the whole agent, so keep its model, protocol, thinking, token budget, skills, MCP servers and \
+         replaces the whole agent, so keep its model, protocol, harness, thinking, token budget, skills, MCP servers and \
          extensions as they are, and pass the new instructions with `--instructions <file>`. Then say what you \
          wrote.\n\nWhat the person wants {name} to do:\n\n{wanted}"
     )

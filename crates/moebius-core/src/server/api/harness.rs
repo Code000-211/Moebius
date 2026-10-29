@@ -474,10 +474,10 @@ mod tests {
         assert_eq!(
             listed,
             serde_json::json!([
-                { "name": "Moebius", "model": "big", "protocol": "openai", "built_in": true },
-                { "name": "Grilling-partner", "model": "big", "protocol": "openai", "built_in": true },
-                { "name": "Coder", "model": "big", "protocol": "openai", "built_in": false },
-                { "name": "Reviewer", "model": "fast", "protocol": "anthropic", "built_in": false },
+                { "name": "Moebius", "model": "big", "protocol": "openai", "harness": "pi-bolt", "built_in": true },
+                { "name": "Grilling-partner", "model": "big", "protocol": "openai", "harness": "pi-bolt", "built_in": true },
+                { "name": "Coder", "model": "big", "protocol": "openai", "harness": "pi-bolt", "built_in": false },
+                { "name": "Reviewer", "model": "fast", "protocol": "anthropic", "harness": "pi-bolt", "built_in": false },
             ])
         );
 

@@ -164,6 +164,7 @@ async fn the_agents_and_rules_move_into_a_new_repository_that_the_restarted_serv
             skills: vec!["house-style".into()],
             extensions: vec![],
             mcp: vec![],
+            harness: Default::default(),
         },
         instructions: String::new(),
     };

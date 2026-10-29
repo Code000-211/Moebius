@@ -22,7 +22,7 @@ use crate::router::{Classes, check_class};
 pub use example::EXAMPLE;
 pub(crate) use sections::default_protocol;
 pub use sections::{
-    AgentConfig, AgentSet, DecisionModelConfig, GitHubConfig, GitLabConfig,
+    AgentConfig, AgentSet, DecisionModelConfig, GitHubConfig, GitLabConfig, HarnessKind,
     PLUGIN_TIME_LIMIT_SECONDS, PluginConfig, TeacherConfig, TimeOfDay, TokenSource, UpstreamConfig,
     valid_agent_name,
 };
@@ -76,6 +76,8 @@ pub enum ConfigError {
     DayTokens,
     #[error("{name} is not a valid agent name")]
     AgentName { name: String },
+    #[error("agents.{name}: {why}")]
+    AgentHarness { name: String, why: &'static str },
     #[error("harness.mcp_env: {name:?} is not the name of an environment variable")]
     McpEnv { name: String },
     #[error("harness.url must not be empty")]
@@ -127,6 +129,8 @@ pub struct Config {
     /// The model classes a request may name instead of a model, by name.
     pub classes: Classes,
     pub pi_bolt: PathBuf,
+    /// Claude Code's command line, for the agents whose harness is `claude-code`.
+    pub claude_code: PathBuf,
     /// The `moebius` executable that runs find as `$MOEBIUS`: the running one. It is no key of the file; a server that
     /// is not the `moebius` binary, such as a test, sets it.
     pub moebius: PathBuf,
@@ -223,6 +227,17 @@ impl Config {
                 });
             }
         }
+        for (name, agent) in &raw.agents {
+            if let Some(why) = agent
+                .harness
+                .refuses(agent.protocol, !agent.extensions.is_empty())
+            {
+                return Err(ConfigError::AgentHarness {
+                    name: name.clone(),
+                    why,
+                });
+            }
+        }
         for agent in raw.agents.values_mut() {
             for path in agent.skills.iter_mut().chain(&mut agent.extensions) {
                 *path = base.join(&path);
@@ -233,6 +248,10 @@ impl Config {
             .program
             .unwrap_or_else(|| PathBuf::from("pi-bolt"));
         let plugins = plugins(raw.plugins, base)?;
+        let claude_code = raw
+            .claude_code
+            .program
+            .unwrap_or_else(|| PathBuf::from("claude"));
         let teacher = raw.teacher.map(teacher).transpose()?;
         let gitlab = raw.gitlab.map(|g| gitlab(g, base)).transpose()?;
         let decision_model = raw.decision_model.map(decision_model).transpose()?;
@@ -270,12 +289,8 @@ impl Config {
             upstreams: raw.router.upstreams,
             classes: raw.router.classes,
             moebius: std::env::current_exe().unwrap_or_else(|_| PathBuf::from("moebius")),
-            // A bare name is looked up on the PATH; anything with a directory in it is a path.
-            pi_bolt: if pi_bolt.components().count() > 1 {
-                base.join(pi_bolt)
-            } else {
-                pi_bolt
-            },
+            pi_bolt: program(base, pi_bolt),
+            claude_code: program(base, claude_code),
             // Without a harness repository the server's rules are a file next to this one unless named; a missing
             // file means no rules.
             rules_file: match &raw.harness {
@@ -330,6 +345,16 @@ impl Config {
                 source,
             }),
         }
+    }
+}
+
+/// An executable as the file names it: a bare name is looked up on the PATH; anything with a directory in it is a path
+/// inside the file's directory `base`.
+fn program(base: &Path, program: PathBuf) -> PathBuf {
+    if program.components().count() > 1 {
+        base.join(program)
+    } else {
+        program
     }
 }
 
@@ -460,6 +485,33 @@ mod tests {
             [PathBuf::from("/srv/skills/a"), PathBuf::from("/abs/b")]
         );
         assert_eq!(coder.extensions, [PathBuf::from("/srv/ext.js")]);
+    }
+
+    #[test]
+    fn an_agent_chooses_its_harness_and_claude_code_is_found_like_pi_bolt() {
+        let c = parse("[agents.Coder]\nmodel = \"m\"\n").unwrap();
+        assert_eq!(c.agents["Coder"].harness, HarnessKind::PiBolt);
+        assert_eq!(c.claude_code, PathBuf::from("claude"));
+        let c = parse(
+            "[claude_code]\nprogram = \"bin/claude\"\n[agents.Coder]\nmodel = \"m\"\nprotocol = \"anthropic\"\n\
+             harness = \"claude-code\"\n",
+        )
+        .unwrap();
+        assert_eq!(c.agents["Coder"].harness, HarnessKind::ClaudeCode);
+        assert_eq!(c.claude_code, PathBuf::from("/srv/bin/claude"));
+        assert!(matches!(
+            parse("[agents.Coder]\nmodel = \"m\"\nharness = \"codex\"\n"),
+            Err(ConfigError::Parse { .. })
+        ));
+        // Claude Code speaks only the anthropic protocol, and loads no Pi extensions.
+        let refused = |extra: &str| {
+            let text = format!("[agents.Coder]\nmodel = \"m\"\nharness = \"claude-code\"\n{extra}");
+            parse(&text).unwrap_err().to_string()
+        };
+        assert!(refused("").contains("anthropic"));
+        assert!(
+            refused("protocol = \"anthropic\"\nextensions = [\"e.ts\"]\n").contains("extensions")
+        );
     }
 
     #[test]

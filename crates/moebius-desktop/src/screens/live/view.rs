@@ -236,6 +236,7 @@ pub fn count_rules(n: usize) -> String {
 pub fn harness_name(harness: &str) -> &str {
     match harness {
         "pi-bolt" => "Pi-Bolt",
+        "claude-code" => "Claude Code",
         "" => "an unknown harness",
         other => other,
     }

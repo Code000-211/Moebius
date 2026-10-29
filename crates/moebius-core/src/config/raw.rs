@@ -51,6 +51,12 @@ pub(super) struct RawPiBolt {
     pub(super) program: Option<PathBuf>,
 }
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct RawClaudeCode {
+    pub(super) program: Option<PathBuf>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct RawHarness {
@@ -118,6 +124,8 @@ pub(super) struct Raw {
     pub(super) router: RawRouter,
     #[serde(default)]
     pub(super) pi_bolt: RawPiBolt,
+    #[serde(default)]
+    pub(super) claude_code: RawClaudeCode,
     pub(super) rules_file: Option<PathBuf>,
     pub(super) harness: Option<RawHarness>,
     pub(super) github: Option<RawGitHub>,

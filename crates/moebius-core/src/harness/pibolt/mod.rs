@@ -53,13 +53,16 @@ use crate::board::{AgentInfo, Runs};
 use crate::config::{AgentConfig, AgentSet};
 use crate::router::Router;
 use crate::store::{Card, Repository, Run};
-use runs::{RunningRun, prompt_for};
 use tui::Follower;
 
 pub use agents::{
     AUTORESEARCHER_AGENT, BuiltInAgent, GRILLING_AGENT, MOEBIUS_AGENT, RETRO_AGENT, built_in_agent,
 };
+pub(crate) use agents::{agent_list, has_agent, resolve as resolve_agent};
+pub(in crate::harness) use chat::chat_run;
 pub(crate) use reader::final_answer;
+pub(in crate::harness) use reader::{finish, keep};
+pub(in crate::harness) use runs::{RunningRun, card_run, detached_run, fail, prompt_for};
 
 /// How long Pi may take to exit after it was asked to stop.
 const STOP_GRACE: Duration = Duration::from_secs(10);
@@ -276,9 +279,7 @@ impl Runs for PiBolt {
     }
 
     fn has_agent(&self, name: &str) -> bool {
-        name == MOEBIUS_AGENT
-            || name == GRILLING_AGENT
-            || self.agent_set().agents.contains_key(name)
+        agents::has_agent(&self.agent_set(), name)
     }
 
     fn agents(&self) -> Vec<AgentInfo> {

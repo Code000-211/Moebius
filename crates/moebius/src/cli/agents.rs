@@ -6,6 +6,8 @@ use serde_json::json;
 
 use super::{Plan, Request, Show, read_input};
 
+// Parsed once per command line, so the size of `Save` does not matter.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Subcommand)]
 pub enum AgentCommand {
     /// An agent as its files say.
@@ -22,6 +24,9 @@ pub enum AgentCommand {
         thinking: Option<String>,
         #[arg(long)]
         token_budget: Option<i64>,
+        /// `pi-bolt` or `claude-code`.
+        #[arg(long)]
+        harness: Option<String>,
         /// A skill of the repository; give it again for more.
         #[arg(long = "skill")]
         skills: Vec<String>,
@@ -43,7 +48,7 @@ pub enum AgentCommand {
 pub fn agents() -> Plan {
     Ok((
         Request::get("/v1/agents"),
-        Show::Table(&["name", "model", "protocol", "built_in", "error"]),
+        Show::Table(&["name", "model", "protocol", "harness", "built_in", "error"]),
     ))
 }
 
@@ -57,6 +62,7 @@ pub fn agent(command: &AgentCommand) -> Plan {
             protocol,
             thinking,
             token_budget,
+            harness,
             skills,
             extensions,
             mcp,
@@ -72,6 +78,7 @@ pub fn agent(command: &AgentCommand) -> Plan {
                 ("protocol", json!(protocol)),
                 ("thinking", json!(thinking)),
                 ("token_budget", json!(token_budget)),
+                ("harness", json!(harness)),
             ] {
                 if !value.is_null() {
                     settings[key] = value;
@@ -115,6 +122,8 @@ mod tests {
             "m",
             "--thinking",
             "low",
+            "--harness",
+            "claude-code",
             "--skill",
             "a",
             "--skill",
@@ -130,7 +139,8 @@ mod tests {
         assert_eq!(
             request.body,
             Some(json!({
-                "settings": {"model": "m", "thinking": "low", "skills": ["a", "b"], "extensions": [], "mcp": []},
+                "settings": {"model": "m", "thinking": "low", "harness": "claude-code", "skills": ["a", "b"],
+                             "extensions": [], "mcp": []},
                 "instructions": "Be brief.\n",
             }))
         );

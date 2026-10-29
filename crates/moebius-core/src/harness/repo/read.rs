@@ -10,7 +10,7 @@ use serde_json::json;
 use super::HarnessRepo;
 use crate::app::{App, AppError, Result};
 use crate::bus::AppEvent;
-use crate::config::{AgentConfig, AgentSet, default_protocol, valid_agent_name};
+use crate::config::{AgentConfig, AgentSet, HarnessKind, default_protocol, valid_agent_name};
 use crate::harness::mcp::{McpServer, parse_file};
 use crate::harness::skill;
 use crate::router::Protocol;
@@ -35,6 +35,9 @@ pub struct AgentSettings {
     /// Names of servers in `mcp.toml`.
     #[serde(default)]
     pub mcp: Vec<String>,
+    /// The harness the agent runs on, `pi-bolt` unless it says.
+    #[serde(default, skip_serializing_if = "HarnessKind::is_default")]
+    pub harness: HarnessKind,
 }
 
 /// An agent as the API takes and gives it: its settings and its instructions (`agents/<name>.md`, empty without).
@@ -149,6 +152,10 @@ impl Layout {
         if settings.token_budget.is_some_and(|tokens| tokens < 1) {
             return Err("token_budget must be at least 1".into());
         }
+        let extensions = !settings.extensions.is_empty();
+        if let Some(why) = settings.harness.refuses(settings.protocol, extensions) {
+            return Err(why.into());
+        }
         for skill in &settings.skills {
             if !self.skills.contains(skill) {
                 return Err(format!("the skill {skill:?} is not in skills/"));
@@ -205,6 +212,7 @@ pub(super) fn agent_config(
             .collect(),
         mcp,
         token_budget: settings.token_budget,
+        harness: settings.harness,
     }
 }
 

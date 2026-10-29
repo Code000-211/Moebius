@@ -3,11 +3,12 @@
 //! agent without one the Coder's model, with the built-in instructions and skills before its own.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 
 use super::PiBolt;
 use crate::app::App;
 use crate::board::AgentInfo;
-use crate::config::AgentConfig;
+use crate::config::{AgentConfig, AgentSet, HarnessKind};
 use crate::harness::skill;
 use crate::router::Protocol;
 
@@ -134,45 +135,9 @@ fn built_in_instructions(name: &str) -> Option<&'static str> {
 }
 
 impl PiBolt {
-    /// The agent `name` as a run uses it. The Moebius agent and the Retro analyst are made of their configuration, or
-    /// else the Coder's model and protocol, and always have their built-in instructions and skills before their own.
+    /// The agent `name` as a run uses it (see [`resolve`]).
     pub(super) fn agent(&self, app: &App, name: &str) -> Result<AgentConfig, String> {
-        let set = self.agent_set();
-        let configured = set.agents.get(name);
-        let Some(built_in) = built_in_instructions(name) else {
-            return configured
-                .cloned()
-                .ok_or_else(|| match set.errors.get(name) {
-                    Some(error) => format!("the agent {name} cannot be used: {error}"),
-                    None => format!("no agent named {name}"),
-                });
-        };
-        let mut agent = match (configured, set.agents.get("Coder")) {
-            (Some(own), _) => own.clone(),
-            (None, Some(coder)) => AgentConfig {
-                model: coder.model.clone(),
-                protocol: coder.protocol,
-                thinking: None,
-                instructions: None,
-                skills: vec![],
-                extensions: vec![],
-                mcp: BTreeMap::new(),
-                token_budget: None,
-            },
-            (None, None) => {
-                return Err(format!(
-                    "the {name} agent needs a model: configure [agents.{name}] or [agents.Coder]"
-                ));
-            }
-        };
-        agent.instructions = Some(match agent.instructions {
-            Some(extra) => format!("{built_in}\n\n{extra}"),
-            None => built_in.into(),
-        });
-        let built_in_skills =
-            built_in_skills(name).map(|built_in| skill::dir(&app.data_dir, built_in.name));
-        agent.skills.splice(0..0, built_in_skills);
-        Ok(agent)
+        resolve(&self.agent_set(), &app.data_dir, name)
     }
 
     /// The agent of the run `run_id`, a chat, as the chat runs it: with the model and reasoning level it was given in
@@ -187,56 +152,109 @@ impl PiBolt {
         Ok(settings.apply(&self.agent(app, agent)?))
     }
 
-    /// The built-in chat agents first, the Moebius agent and the Grilling partner, if they have a model, then the
-    /// agents by name, those whose files are broken among them with their error. A built-in agent with a broken file
-    /// still runs, on the Coder's model.
+    /// The agents Pi-Bolt can run (see [`agent_list`]).
     pub(super) fn agent_list(&self) -> Vec<AgentInfo> {
-        let set = self.agent_set();
-        let built_in = [MOEBIUS_AGENT, GRILLING_AGENT]
-            .into_iter()
-            .filter_map(|name| {
-                set.agents
-                    .get(name)
-                    .or_else(|| set.agents.get("Coder"))
-                    .map(|agent| AgentInfo {
-                        name: name.into(),
-                        model: agent.model.clone(),
-                        protocol: agent.protocol,
-                        thinking: agent.thinking.clone(),
-                        token_budget: agent.token_budget,
-                        built_in: true,
-                        error: set.errors.get(name).cloned(),
-                    })
-            });
-        let own = |name: &String| name != MOEBIUS_AGENT && name != GRILLING_AGENT;
-        let configured = set
-            .agents
-            .iter()
-            .filter(|(name, _)| own(name))
-            .map(|(name, agent)| AgentInfo {
-                name: name.clone(),
-                model: agent.model.clone(),
-                protocol: agent.protocol,
-                thinking: agent.thinking.clone(),
-                token_budget: agent.token_budget,
-                built_in: false,
-                error: None,
-            });
-        let broken = set
-            .errors
-            .iter()
-            .filter(|(name, _)| own(name))
-            .map(|(name, error)| AgentInfo {
-                name: name.clone(),
-                model: String::new(),
-                protocol: Protocol::OpenAi,
-                thinking: None,
-                token_budget: None,
-                built_in: false,
-                error: Some(error.clone()),
-            });
-        let mut agents: Vec<AgentInfo> = configured.chain(broken).collect();
-        agents.sort_by(|a, b| a.name.cmp(&b.name));
-        built_in.chain(agents).collect()
+        agent_list(&self.agent_set())
     }
+}
+
+/// Whether `set` has the agent `name`, or Moebius brings it.
+pub fn has_agent(set: &AgentSet, name: &str) -> bool {
+    name == MOEBIUS_AGENT || name == GRILLING_AGENT || set.agents.contains_key(name)
+}
+
+/// The agent `name` of `set` as a run uses it, whatever its harness; the built-in skills are in `data_dir`. The Moebius
+/// agent and the Retro analyst are made of their configuration, or else the Coder's model, protocol and harness, and
+/// always have their built-in instructions and skills before their own.
+pub fn resolve(set: &AgentSet, data_dir: &Path, name: &str) -> Result<AgentConfig, String> {
+    let configured = set.agents.get(name);
+    let Some(built_in) = built_in_instructions(name) else {
+        return configured
+            .cloned()
+            .ok_or_else(|| match set.errors.get(name) {
+                Some(error) => format!("the agent {name} cannot be used: {error}"),
+                None => format!("no agent named {name}"),
+            });
+    };
+    let mut agent = match (configured, set.agents.get("Coder")) {
+        (Some(own), _) => own.clone(),
+        (None, Some(coder)) => AgentConfig {
+            model: coder.model.clone(),
+            protocol: coder.protocol,
+            thinking: None,
+            instructions: None,
+            skills: vec![],
+            extensions: vec![],
+            mcp: BTreeMap::new(),
+            token_budget: None,
+            harness: coder.harness,
+        },
+        (None, None) => {
+            return Err(format!(
+                "the {name} agent needs a model: configure [agents.{name}] or [agents.Coder]"
+            ));
+        }
+    };
+    agent.instructions = Some(match agent.instructions {
+        Some(extra) => format!("{built_in}\n\n{extra}"),
+        None => built_in.into(),
+    });
+    let built_in_skills = built_in_skills(name).map(|built_in| skill::dir(data_dir, built_in.name));
+    agent.skills.splice(0..0, built_in_skills);
+    Ok(agent)
+}
+
+/// The agents of `set` as the API lists them: the built-in chat agents first, the Moebius agent and the Grilling
+/// partner, if they have a model, then the agents by name, those whose files are broken among them with their error. A
+/// built-in agent with a broken file still runs, on the Coder's model.
+pub fn agent_list(set: &AgentSet) -> Vec<AgentInfo> {
+    let built_in = [MOEBIUS_AGENT, GRILLING_AGENT]
+        .into_iter()
+        .filter_map(|name| {
+            set.agents
+                .get(name)
+                .or_else(|| set.agents.get("Coder"))
+                .map(|agent| AgentInfo {
+                    name: name.into(),
+                    model: agent.model.clone(),
+                    protocol: agent.protocol,
+                    thinking: agent.thinking.clone(),
+                    token_budget: agent.token_budget,
+                    harness: agent.harness,
+                    built_in: true,
+                    error: set.errors.get(name).cloned(),
+                })
+        });
+    let own = |name: &String| name != MOEBIUS_AGENT && name != GRILLING_AGENT;
+    let configured = set
+        .agents
+        .iter()
+        .filter(|(name, _)| own(name))
+        .map(|(name, agent)| AgentInfo {
+            name: name.clone(),
+            model: agent.model.clone(),
+            protocol: agent.protocol,
+            thinking: agent.thinking.clone(),
+            token_budget: agent.token_budget,
+            harness: agent.harness,
+            built_in: false,
+            error: None,
+        });
+    let broken = set
+        .errors
+        .iter()
+        .filter(|(name, _)| own(name))
+        .map(|(name, error)| AgentInfo {
+            name: name.clone(),
+            model: String::new(),
+            protocol: Protocol::OpenAi,
+            thinking: None,
+            token_budget: None,
+            harness: HarnessKind::PiBolt,
+            built_in: false,
+            error: Some(error.clone()),
+        });
+    let mut agents: Vec<AgentInfo> = configured.chain(broken).collect();
+    agents.sort_by(|a, b| a.name.cmp(&b.name));
+    built_in.chain(agents).collect()
 }

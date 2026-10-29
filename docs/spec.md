@@ -16,7 +16,10 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
 - One server process, `moebius`, headless, on a machine in a private network; one desktop app talking to it.
 - Repositories with the **GitHub forge**, with the **GitLab forge** (gitlab.com or self-hosted, with an access token),
   and repositories **without a forge** (plain git).
-- One harness, **Pi-Bolt**, driven in its RPC mode, with the Moebius **bridge** loaded into every run as a Pi extension.
+- Two harnesses, picked per agent by its `harness`: **Pi-Bolt**, driven in its RPC mode, with the Moebius **bridge**
+  loaded into every run as a Pi extension, and **Claude Code**'s command line (`claude -p` with `stream-json`), which
+  has no bridge: the router checks every tool call in its model's answers with `decide("tool_call")` and replaces a
+  refused one by a text naming the rule. A chat on Claude Code has no terminal interface.
 - The **router** as every harness's only model provider, with provider API keys and local OpenAI- or Anthropic-compatible
   servers (such as Radiance) upstream; budgets in tokens. An upstream may log in with OAuth instead of a key (a device
   code, or an authorization code with PKCE and a loopback redirect), started from the Models page after the person
@@ -36,7 +39,7 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
 
 ### Not in the first version
 
-- Harnesses other than Pi-Bolt; the router's fallback check for harnesses without a bridge.
+- Harnesses other than Pi-Bolt and Claude Code.
 - Forges other than GitHub and GitLab (Codeberg comes later).
 - Runners other than local worktrees on the server (GPU machines come as runner plugins).
 - Training the decision model; the first version records judgements and exports them.
@@ -109,8 +112,9 @@ steer, stop) go through the same record.
 | GitLab forge | Reaches gitlab.com or a self-hosted GitLab with a personal, project or group access token from a file or the secrets; polls issues (conditional on the ETag where GitLab gives one), merge requests, their pipelines and approvals; opens, updates and merges changes as merge requests; maps trusted authors and "blocked by" as the GitHub forge does. |
 | Git forge (none) | For a repository without a forge: issues and changes live in Moebius; merging happens in the desktop app. |
 | Pi-Bolt harness | Starts `pi-bolt --mode rpc` per run with the agent's model, thinking level, instructions (`--append-system-prompt`), skills (`--skill`) and extensions; maps Pi's events to run events. |
+| Claude Code harness | Starts `claude -p --input-format stream-json --output-format stream-json --verbose` per run with the router as `ANTHROPIC_BASE_URL`, the run's token as its key, the agent's model, instructions, skills and MCP servers; maps its records to the same run events. |
 | Bridge (Pi-Bolt) | A Pi extension (`crates/moebius-core/bridge/moebius-bridge.ts`) that Moebius loads into every run with `--extension`: on `tool_call` asks the core and blocks with the rule on refusal; on `tool_result` reports the result and removes secrets; answers extension UI questions through `decide`. |
-| Router | OpenAI- and Anthropic-compatible endpoints for the harnesses; upstreams with API keys, OAuth logins and local servers; model classes (`[router.classes]`: a name such as `strong` for an ordered list of models, which an agent, the teacher or a chat names instead of a model, falling back to the next upstream or model when one fails before it answers, and passing over a model whose day's tokens are spent); reports usage per call, with the class beside the model; refuses calls over budget. |
+| Router | OpenAI- and Anthropic-compatible endpoints for the harnesses; upstreams with API keys, OAuth logins and local servers; model classes (`[router.classes]`: a name such as `strong` for an ordered list of models, which an agent, the teacher or a chat names instead of a model, falling back to the next upstream or model when one fails before it answers, and passing over a model whose day's tokens are spent); reports usage per call, with the class beside the model; refuses calls over budget; checks the tool calls in the answers to a harness without a bridge. |
 | MCP gateway | One MCP server for every harness, bundling the MCP servers enabled for the run's agent: served as `POST /mcp` (streamable HTTP) on the router's listener with the run's token, it starts the agent's stdio servers and connects to its remote ones, lists their tools as `<server>__<tool>`, checks every call through `decide("tool_call")`, removes secrets from the results and records each call as a run event. A run's `mcp.json` names only the gateway. |
 | Guard deciders | Fixed patterns (destructive commands, secrets, paths a rule forbids), then the teacher model for rules in prose. |
 | Self-improvement | The Retro at 23:30, proposals, experiments (trials and autoresearch) in the trial window 00:00–06:00, replays of refused calls, shadowing and takeover proposals. |

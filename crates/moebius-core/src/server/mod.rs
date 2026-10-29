@@ -1,6 +1,6 @@
 //! The server put together (spec 2): the store and the core, the desktop API, the router with the check and the MCP
-//! gateway, the Pi-Bolt harness, the board engine and the loops that keep them going. The built-in skills are written
-//! to the data directory at start.
+//! gateway, the harnesses, the board engine and the loops that keep them going. The built-in skills are written to the
+//! data directory at start.
 //!
 //! This module wires every part from the configuration and serves them; `leftovers` ends what a server that stopped
 //! left going, `loops` holds the board's tick, the polls of GitHub and GitLab and the refresh of the clones, and `schedule` what is
@@ -33,6 +33,7 @@ use crate::decide::guard::{self, Guard, Teacher};
 use crate::decide::model::{self, DecisionModel, Routed};
 use crate::harness::gateway::Gateway;
 use crate::harness::pibolt::PiBolt;
+use crate::harness::pick::Harnesses;
 use crate::harness::repo::HarnessRepo;
 use crate::harness::skill;
 use crate::repos::forge::{GitHubForge, GitLabForge};
@@ -62,7 +63,8 @@ pub struct Server {
     pub config: Config,
     pub app: Arc<App>,
     pub router: Arc<Router>,
-    pub harness: Arc<PiBolt>,
+    /// Pi-Bolt and Claude Code, which run the agents.
+    pub harness: Arc<Harnesses>,
     pub engine: Arc<Engine>,
     /// The configuration the server runs with, which edits of the settings change.
     pub live: Arc<Live>,
@@ -166,19 +168,21 @@ impl Server {
             None => None,
         };
         let app = Arc::new(app);
+        router.set_checker(check::Checker::new(app.clone(), config.rules_path()));
         leftovers::end_runs_of_a_previous_server(&app)?;
         if let Some(model) = model {
             model::start(&app, model)
                 .map_err(|e| format!("cannot start the decision model: {e}"))?;
         }
 
-        let harness = Arc::new(PiBolt::new(
+        let pi_bolt = PiBolt::new(
             config.pi_bolt.clone(),
             config.moebius.clone(),
             format!("http://{router_addr}"),
             router.clone(),
             config.agents.clone(),
-        ));
+        );
+        let harness = Arc::new(Harnesses::new(pi_bolt, &config.claude_code));
         let harness_repo = match &config.harness_url {
             Some(url) => Some(Arc::new(HarnessRepo::open(
                 &app,
@@ -229,7 +233,7 @@ impl Server {
         router_listener: TcpListener,
     ) -> std::io::Result<()> {
         if let Ok(address) = api_listener.local_addr() {
-            let _ = self.harness.api_url.set(api_url(address));
+            self.harness.set_api_url(api_url(address));
         }
         let state = ApiState {
             app: self.app.clone(),

@@ -82,7 +82,7 @@ takes a repository's name.
 | `chat end <id>` | `POST /v1/chats/{id}/end` | The run. |
 | `agents` | `GET /v1/agents` | Table `name model protocol built_in error`. |
 | `agent show <name>` | `GET /v1/agents/{name}` | The agent: settings as JSON, instructions below, and for a built-in agent its built-in instructions and skills (`built_in`). |
-| `agent save <name> --model <m> [--protocol <p>] [--thinking <t>] [--token-budget <n>] [--skill <s>]... [--extension <f>]... [--mcp <m>]... [--instructions <file\|->]` | `PUT /v1/agents/{name}` | The agent, with `commit`. Replaces the whole agent, as the route does. |
+| `agent save <name> --model <m> [--protocol <p>] [--thinking <t>] [--token-budget <n>] [--harness <h>] [--skill <s>]... [--extension <f>]... [--mcp <m>]... [--instructions <file\|->]` | `PUT /v1/agents/{name}` | The agent, with `commit`. Replaces the whole agent, as the route does. |
 | `agent delete <name>` | `DELETE /v1/agents/{name}` | `deleted the agent <name>`. |
 | `rules` | `GET /v1/rules` | The built-in rules, the rules in prose, those of each repository and the refusals of the week. |
 | `rules save <file\|->` | `PUT /v1/rules` | The rules page after the change, with `committed <id>`. |

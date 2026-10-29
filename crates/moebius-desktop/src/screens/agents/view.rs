@@ -9,6 +9,7 @@ use iced::{Element, Length};
 use crate::app::Message as AppMessage;
 use crate::client::{Agent, Proposal};
 use crate::screens::harness_setup::HarnessSetup;
+use crate::screens::live::harness_name;
 use crate::widgets::form::{committed_line, notice_line};
 use crate::widgets::list_editor::{self, Actions, boxed, list_card};
 use crate::widgets::model_picker;
@@ -32,6 +33,13 @@ fn agent_card(agent: &Agent, chosen: bool, editable: bool) -> Element<'_, AppMes
             tags.push(("Broken", Tone::Red));
             error.into()
         }
+        None if agent.harness == "claude-code" => format!(
+            "{} · {} · {}",
+            agent.model,
+            agent.protocol,
+            harness_name(&agent.harness)
+        )
+        .into(),
         None => format!("{} · {}", agent.model, agent.protocol).into(),
     };
     list_card(

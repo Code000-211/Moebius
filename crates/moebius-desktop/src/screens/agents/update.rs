@@ -148,6 +148,7 @@ impl Agents {
                 }
             }
             Message::ProtocolChosen(protocol) => editor.protocol = protocol,
+            Message::HarnessChosen(harness) => editor.harness = harness,
             Message::ThinkingChosen(level) => {
                 editor.thinking = (level != NOT_SET).then_some(level);
             }

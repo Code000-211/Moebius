@@ -93,6 +93,30 @@ token identifies the run, its card and the card's token budget, so every request
 The teacher model (see [rules](rules.md)) is asked through the same endpoints, with a token issued for the run being
 checked and revoked after the call.
 
+## The check of a harness without a bridge
+
+Pi-Bolt asks for every tool call through its bridge (see the [bridge protocol](bridge-protocol.md)). Claude Code has no
+bridge, so the token of a run on Claude Code is a checked one, and the router checks the answers to it instead:
+
+- Every tool call in the answer, OpenAI `tool_calls` of a choice's message and Anthropic `tool_use` blocks, streamed or
+  not, goes through `decide("tool_call")` before the answer reaches the harness, with the same question the bridge's
+  `/moebius/check` asks (`tool` the tool's name, `input` its arguments as JSON, `tool_call_id` its id, and the rules that
+  apply). It leaves the same judgement and `tool_check` run event. OpenAI arguments are parsed as JSON; arguments that
+  are not JSON are given as text.
+- An allowed call is passed on. A refused call is replaced by the text `Moebius refused the tool call <tool> (<id>):
+  <reason>`, whose reason names the rule: an Anthropic `tool_use` block becomes a text block, an OpenAI call leaves
+  `tool_calls` and its text is added to the message's `content`. When no call is left, `stop_reason` `tool_use` becomes
+  `end_turn` and `finish_reason` `tool_calls` becomes `stop`, so the harness ends its turn with the refusal as its answer.
+- Anything that fails while deciding refuses (fail closed).
+- A stream is passed on event by event as it comes, except a tool call's events, which are held back until the call is
+  complete: an Anthropic `tool_use` block from its `content_block_start` to its `content_block_stop`, then passed on as
+  it came or replaced by a text block of the same index; OpenAI tool-call deltas until the choice's `finish_reason` (or
+  `[DONE]`), then each allowed call in one chunk (renumbered from 0) and each refused one as a `content` delta. A call
+  the stream did not finish is never passed on. Tokens are counted from the stream as it came.
+- The tool results in such a run's requests (OpenAI messages with the role `tool`, Anthropic `tool_result` blocks, as
+  text or text blocks) have their secrets removed before the request goes upstream, as `/moebius/result` removes them
+  for the bridge.
+
 ## Errors
 
 Errors are JSON in the shape of the endpoint's protocol. For OpenAI endpoints:

@@ -30,6 +30,15 @@ pub struct Grant {
     pub budget: Option<i64>,
 }
 
+/// The token a request carries: `Authorization: Bearer`, or `x-api-key` as Anthropic's clients send it.
+fn token_of(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .or_else(|| headers.get("x-api-key").and_then(|v| v.to_str().ok()))
+}
+
 impl Router {
     /// Refuses model requests once `tokens` have been used today by all runs.
     pub fn with_day_budget(self, tokens: Option<i64>) -> Self {
@@ -58,9 +67,24 @@ impl Router {
         token
     }
 
+    /// Issues a new token for a run on a harness without a bridge: as [`Router::issue_token`], and the tool calls of
+    /// the answers to its requests are checked (see `calls`).
+    pub fn issue_checked_token(&self, grant: Grant) -> String {
+        let token = self.issue_token(grant);
+        self.checked
+            .write()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(token.clone());
+        token
+    }
+
     /// Withdraws a run's token when the run ends, and with it the run's MCP servers.
     pub fn revoke_token(&self, token: &str) {
         self.grants
+            .write()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(token);
+        self.checked
             .write()
             .unwrap_or_else(|p| p.into_inner())
             .remove(token);
@@ -109,12 +133,21 @@ impl Router {
 
     /// What the token in the request's headers allows, or none for an unknown or missing token.
     pub fn grant(&self, headers: &HeaderMap) -> Option<Grant> {
-        let token = token(headers)?;
         self.grants
             .read()
             .unwrap_or_else(|p| p.into_inner())
-            .get(token)
+            .get(token_of(headers)?)
             .cloned()
+    }
+
+    /// Whether the answers to the request's token are checked for tool calls (see [`Router::issue_checked_token`]).
+    pub(super) fn checks_answers(&self, headers: &HeaderMap) -> bool {
+        token_of(headers).is_some_and(|token| {
+            self.checked
+                .read()
+                .unwrap_or_else(|p| p.into_inner())
+                .contains(token)
+        })
     }
 
     /// Why the grant's request must be refused: the day's budget or the grant's budget is spent.

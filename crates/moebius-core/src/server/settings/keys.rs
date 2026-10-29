@@ -45,6 +45,7 @@ const KEYS: &[Key] = &[
     key("router.upstreams", "[]", true),
     key("router.classes", "{}", true),
     key("pi_bolt.program", "\"pi-bolt\"", false),
+    key("claude_code.program", "\"claude\"", false),
     key("teacher.model", "", false),
     key("teacher.protocol", "\"openai\"", false),
     key("teacher.timeout_seconds", "20", false),

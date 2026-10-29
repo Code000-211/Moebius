@@ -60,7 +60,10 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
    (`Repos::add_worktree`), issues the run's token (`Router::issue_token`, carrying the agent's budget), writes the run's
    agent directory and the bridge to `<data_dir>/runs/<id>/`, spawns Pi-Bolt (`PiBolt::launch`), sets the run `running`,
    publishes `run_started` and sends the prompt (`prompt_for`: the issue, the instructions for the run's purpose, and
-   the note if there is one).
+   the note if there is one). The server's `Runs` is `Harnesses` (`harness/pick.rs`), which hands the run to the harness
+   the agent's `harness` names: an agent on `claude-code` is started by `ClaudeCode::start` the same way (`card_run`
+   makes the run, worktree and token for both), with a checked token (`Router::issue_checked_token`), so that the router
+   checks the tool calls of its answers (`router/calls/`), since Claude Code has no bridge.
 6. **Pi works.** A thread per run (`Reader::read`) reads Pi's records: each is stored and published as `run_event` with
    its `seq` (`App::record_run_event`, which `check::ask` and `App::steer_run` use too). Pi asks the model through the router (`Router::forward`), which counts the tokens and may
    refuse with 429.
@@ -342,7 +345,9 @@ At the top:
 | `router/proxy.rs` | A run's request forwarded to the upstream with the provider's key or login, and the answer back, streamed or not. |
 | `router/classes.rs` | Model classes (`[router.classes]`): a class named as a model is served by the first of its models within its day's tokens, on the first upstream of the protocol that answers, falling back while an upstream fails before it answers. |
 | `router/usage.rs` | The tokens and tools of an answer, read from a body or from a stream as it passes, recorded against the run. |
-| `router/grants.rs` | The runs' tokens and what each allows: the card's, the run's and the day's token budgets, and the MCP servers the gateway gives the run. |
+| `router/grants.rs` | The runs' tokens and what each allows: the card's, the run's and the day's token budgets, the MCP servers the gateway gives the run, and which tokens' answers are checked. |
+| `router/calls/mod.rs` | The check of the tool calls in the answers to a harness without a bridge (Claude Code): each call through `decide("tool_call")`, a refused one replaced by a text naming the rule; whole answers, and the secrets of tool results in requests. |
+| `router/calls/stream.rs` | A streamed answer checked as it passes: a tool call's events held back until the call is complete and decided. |
 | `router/models.rs` | The models the upstreams serve and the model classes, for the pickers of the desktop app. |
 | `router/oauth/mod.rs` | The OAuth login of an upstream: its `oauth` table, the warning confirmed before a login, the access token refreshed before it expires and the refresh token kept in `secrets.toml`. |
 | `router/oauth/device.rs` | The device authorization grant: the code the person enters at the provider, and the token URL polled until it is confirmed. |
@@ -453,13 +458,18 @@ At the top:
 |---|---|
 | `harness/mod.rs` | What the harness folder holds. |
 | `harness/pibolt/mod.rs` | The Pi-Bolt harness: what it holds of every run's Pi, and `Runs` for it, steering and stopping runs. |
-| `harness/pibolt/agents.rs` | The built-in agents with their instructions and skills, and the agent a run uses. |
+| `harness/pibolt/agents.rs` | The built-in agents with their instructions and skills, and the agent a run uses, on either harness. |
 | `harness/pibolt/process.rs` | Starting Pi: its agent directory (`models.json`, `mcp.json`), its command line and its process. |
 | `harness/pibolt/runs.rs` | The runs of a card, of the Retro analyst and of the Autoresearcher, and committing what a run left. |
 | `harness/pibolt/reader.rs` | Reading Pi's records as run events, and ending the run. |
 | `harness/pibolt/chat.rs` | Chats: their Pi between messages, their settings, and pausing one that waited long. |
 | `harness/pibolt/tui.rs` | A waiting chat in Pi's interactive mode, and following its session file. |
 | `harness/pibolt/testing.rs` | For the tests only: the fake Pi, a server set up for it, and reading what Pi was started with. |
+| `harness/claude/mod.rs` | The Claude Code harness: what it holds of every run's process, and `Runs` for it: card runs, trials, the Retro analyst, the Autoresearcher and chats, steered with a user message and stopped by killing it. |
+| `harness/claude/process.rs` | Starting Claude Code: its own configuration directory with the agent's skills, `mcp.json`, its command line and environment (the router and the run's token) and its process. |
+| `harness/claude/reader.rs` | Reading Claude Code's `stream-json` records as the run events a Pi-Bolt run has, and ending the run. |
+| `harness/claude/tests.rs` | For the tests only: Claude Code runs and chats against the fake `claude`, and the router's check of its calls. |
+| `harness/pick.rs` | `Harnesses`, the server's `Runs`: Pi-Bolt and Claude Code side by side, each run on the harness its agent names. |
 | `harness/terminal.rs` | A person's shell in a run's worktree on a pseudo-terminal (`portable-pty`), served over the WebSocket `GET /v1/runs/{id}/terminal` (and `GET /v1/terminal`, in the directory of `moebius.toml`); at most 4 per run or on the server, not checked by the guard. The same serving carries Pi-Bolt's interactive mode for a waiting chat (`GET /v1/chats/{id}/tui`, one per chat), whose tool calls the bridge still checks; `harness/pibolt/tui.rs` ends the chat's own Pi for it, continues the chat's Pi session in it, records what it adds to the session file as the chat's events, and starts the chat's Pi again on the same session when it closes. |
 | `harness/repo/mod.rs` | The harness configuration repository's clone: opened, refreshed, and its agents read again when it changes. |
 | `harness/repo/read.rs` | Reading the agents, skills and MCP servers from it, each agent checked as a run uses it. |

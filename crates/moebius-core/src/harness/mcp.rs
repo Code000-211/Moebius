@@ -1,6 +1,7 @@
 //! The MCP servers of the harness configuration repository (`mcp.toml`, see
-//! `docs/reference/harness-configuration.md`) and Pi's `mcp.json`, which names only the MCP gateway (see `gateway`):
-//! the gateway starts or connects to the servers of the run's agent itself.
+//! `docs/reference/harness-configuration.md`) and what a run is given for them: Pi's `mcp.json` or Claude Code's
+//! `--mcp-config`, which name only the MCP gateway (see `gateway`); the gateway starts or connects to the servers of
+//! the run's agent itself.
 //!
 //! A value of a server may take a value from the server's environment with `${NAME}`. Only the names the
 //! administrator lists in `[harness] mcp_env` may be taken, so that a repository cannot pull other secrets of the
@@ -214,6 +215,16 @@ pub fn pi_config(url: &str, token: &str) -> Value {
 
 /// The name of the MCP gateway in a run's `mcp.json`.
 pub const GATEWAY: &str = "moebius";
+
+/// Claude Code's `--mcp-config` for a run whose agent names servers: as [`pi_config`], the MCP gateway at `url` as its
+/// only server, with the run's token, in Claude Code's shape.
+pub fn claude_config(url: &str, token: &str) -> Value {
+    json!({ "mcpServers": { GATEWAY: {
+        "type": "http",
+        "url": url,
+        "headers": { "Authorization": format!("Bearer {token}") },
+    } } })
+}
 
 /// The names `${NAME}` in `text`. A `${` that does not close over a name is an error.
 fn variables(text: &str) -> Result<Vec<String>, String> {

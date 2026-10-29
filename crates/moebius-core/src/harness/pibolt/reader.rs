@@ -107,7 +107,7 @@ impl Reader {
 /// Stores what a record of Pi says about the run (the final answer as its summary; for a chat, whether the agent works
 /// or waits for the person), then the record as a run event. The run is updated before the event is published, so
 /// that a client acting on the event reads the run as it is now.
-pub(super) fn keep(app: &App, run_id: i64, chat: bool, kind: &str, value: &Value) {
+pub(in crate::harness) fn keep(app: &App, run_id: i64, chat: bool, kind: &str, value: &Value) {
     if kind == "agent_end"
         && let Some(answer) = final_answer(value)
     {
@@ -125,11 +125,11 @@ pub(super) fn keep(app: &App, run_id: i64, chat: bool, kind: &str, value: &Value
 
 /// Ends a run whose Pi is gone: `Ok(aborted)` when it settled, `Err(why)` when it failed. What the agent left is
 /// committed (and a chat's work offered as a change), the worktree removed, the token revoked and the end published.
-pub(super) fn finish(
+pub(in crate::harness) fn finish<L>(
     app: &Arc<App>,
     run: RunningRun,
     router: &Router,
-    lives: &Mutex<HashMap<i64, Live>>,
+    lives: &Mutex<HashMap<i64, L>>,
     ending: Result<bool, String>,
 ) {
     router.revoke_token(&run.token);
