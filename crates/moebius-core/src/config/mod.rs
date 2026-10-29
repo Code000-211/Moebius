@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use raw::{Raw, RawWindow};
-use sections::{check_key, decision_model, teacher};
+use sections::{check_key, decision_model, plugins, teacher};
 
 use crate::harness::mcp::valid_variable;
 
@@ -22,7 +22,7 @@ pub use example::EXAMPLE;
 pub(crate) use sections::default_protocol;
 pub use sections::{
     AgentConfig, AgentSet, DecisionModelConfig, GitHubConfig, PLUGIN_TIME_LIMIT_SECONDS,
-    TeacherConfig, TimeOfDay, UpstreamConfig, valid_agent_name,
+    PluginConfig, TeacherConfig, TimeOfDay, UpstreamConfig, valid_agent_name,
 };
 
 /// Why a configuration could not be read.
@@ -83,6 +83,16 @@ pub enum ConfigError {
         key: &'static str,
         place: &'static str,
     },
+    #[error(
+        "plugins.name: {name:?} is not a name (letters, digits, - and _) or is the name of a built-in plugin"
+    )]
+    PluginName { name: String },
+    #[error("plugins: two plugins are named {name:?}")]
+    PluginTwice { name: String },
+    #[error("plugins.path of {name:?} must not be empty")]
+    PluginPath { name: String },
+    #[error("plugins.decides: {kind:?} is decided by two plugins")]
+    PluginDecidesTwice { kind: String },
 }
 
 /// The server's configuration, with every default applied and every path made absolute against the file's directory.
@@ -119,6 +129,8 @@ pub struct Config {
     pub teacher: Option<TeacherConfig>,
     /// The decision model; without one nothing is shadowed and nothing can be taken over.
     pub decision_model: Option<DecisionModelConfig>,
+    /// The plugins in their own process, with their paths made absolute.
+    pub plugins: Vec<PluginConfig>,
     pub agents: BTreeMap<String, AgentConfig>,
 }
 
@@ -203,6 +215,7 @@ impl Config {
             .pi_bolt
             .program
             .unwrap_or_else(|| PathBuf::from("pi-bolt"));
+        let plugins = plugins(raw.plugins, base)?;
         let teacher = raw.teacher.map(teacher).transpose()?;
         let decision_model = raw.decision_model.map(decision_model).transpose()?;
         if raw.budgets.day_tokens.is_some_and(|tokens| tokens < 1) {
@@ -265,9 +278,15 @@ impl Config {
             }),
             teacher,
             decision_model,
+            plugins,
             agents: raw.agents,
             data_dir,
         })
+    }
+
+    /// The directory of the configuration file, which the plugins in their own process run in.
+    pub fn dir(&self) -> &Path {
+        self.file.parent().unwrap_or(Path::new("/"))
     }
 
     /// Reads `path`, or uses every default when the file does not exist.
@@ -503,6 +522,39 @@ mod tests {
             parse("unknown = 1"),
             Err(ConfigError::Parse { .. })
         ));
+    }
+
+    #[test]
+    fn plugins_in_their_own_process_are_read_and_checked() {
+        let c = parse(
+            "[[plugins]]\nname = \"allow-reads\"\npath = \"plugins/allow-reads\"\nargs = [\"--plugin\"]\n\
+             decides = [\"start_card\"]\n[[plugins]]\nname = \"notes\"\npath = \"notes-plugin\"\n",
+        )
+        .unwrap();
+        assert_eq!(c.plugins[0].path, PathBuf::from("/srv/plugins/allow-reads"));
+        assert_eq!(c.plugins[0].args, ["--plugin"]);
+        assert_eq!(c.plugins[0].decides, ["start_card"]);
+        assert_eq!(c.plugins[1].path, PathBuf::from("notes-plugin"));
+        assert!(c.plugins[1].decides.is_empty());
+        let plugin = |name: &str, decides: &str| {
+            format!("[[plugins]]\nname = \"{name}\"\npath = \"p\"\ndecides = [{decides}]\n")
+        };
+        for (text, wanted) in [
+            (plugin("guard", ""), "built-in"),
+            (plugin("a b", ""), "not a name"),
+            (plugin("a", "") + &plugin("a", ""), "two plugins"),
+            (
+                plugin("a", "\"x\"") + &plugin("b", "\"x\""),
+                "decided by two",
+            ),
+            (
+                "[[plugins]]\nname = \"a\"\npath = \"\"\n".to_string(),
+                "must not be empty",
+            ),
+        ] {
+            let error = parse(&text).unwrap_err().to_string();
+            assert!(error.contains(wanted), "{error}");
+        }
     }
 
     #[test]

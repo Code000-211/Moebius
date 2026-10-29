@@ -25,7 +25,8 @@ Built and described here:
 - Rules: the built-in rules, rules in prose in a server file and in a repository, and the teacher model.
 - Agents, skills and MCP servers, set up in `moebius.toml` or in a harness configuration repository. In the repository,
   every edit through the API is a commit, and it holds the server's `rules.md` too.
-- Plugins compiled into the `moebius` binary, and the plugin API.
+- Plugins compiled into the `moebius` binary or running as their own process (`[[plugins]]` in `moebius.toml`), and the
+  plugin API.
 - The bridge and Pi extensions.
 - The desktop API (HTTP and one WebSocket), the desktop app built on it, and the [command line](command-line.md),
   which reaches every route of it.
@@ -33,8 +34,6 @@ Built and described here:
   agent, the default agent of a chat, operates Moebius through the command line and builds scripts, rules, agents,
   skills and extensions from this guide; see [Agents](agents.md#the-moebius-agent).
 - The nightly Retro, trials and replays, autoresearch, grilling, the training-set export and the decision model.
-
-Not built: plugins in their own process.
 
 ## The how-tos
 

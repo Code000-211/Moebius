@@ -891,7 +891,12 @@ The plugins the plugin host has loaded, which answer the decisions (see [the plu
 ```json
 {
   "time_limit_seconds": 30,
-  "plugins": [{"name": "guard", "version": "0.1.0", "kinds": ["decider"], "decides": ["tool_call"]}]
+  "plugins": [
+    {"name": "guard", "version": "0.1.0", "kinds": ["decider"], "decides": ["tool_call"], "process": null},
+    {"name": "allow-reads", "version": "0.1.0", "kinds": ["decider"], "decides": ["start_card"],
+     "process": {"program": "/srv/plugins/allow-reads", "state": "running", "restarts": 0, "error": null,
+                 "log": "/srv/.moebius/plugins/allow-reads.log"}}
+  ]
 }
 ```
 
@@ -899,6 +904,13 @@ The plugins the plugin host has loaded, which answer the decisions (see [the plu
 by name, `kinds` are the kinds of its manifest (`forge`, `harness`, `runner`, `decider`, `router`, `view`) and `decides`
 the kinds of decision it answers now, in alphabetical order: those routed to it, and those the decision model took over
 with a merged takeover.
+
+`process` is `null` for a plugin compiled in. For a plugin in its own process (`[[plugins]]` in
+[the configuration](configuration.md#plugins)) it holds the `program` that runs; its `state`, one of `starting`,
+`running` (it takes calls), `restarting` (it stopped and waits to be started again; calls are refused) and `stopped`;
+how many times it was started again (`restarts`); why it stopped the last time (`error`, with secrets redacted, or
+`null`); and the file its standard error goes to (`log`). Until such a plugin has sent its manifest, its `version` is
+empty and its `kinds` are empty.
 
 ### `GET /v1/settings`
 

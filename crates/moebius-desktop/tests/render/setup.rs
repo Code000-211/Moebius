@@ -108,6 +108,13 @@ fn setup_messages(models: serde_json::Value, server: serde_json::Value) -> [setu
             {"name": "decision-model", "version": "0.1.0", "kinds": ["decider"], "decides": ["merge"]},
             {"name": "guard", "version": "0.1.0", "kinds": ["decider"], "decides": ["tool_call"]},
             {"name": "notes", "version": "0.2.1", "kinds": ["decider", "view"], "decides": []},
+            {"name": "allow-reads", "version": "0.1.0", "kinds": ["decider"], "decides": ["start_card"],
+             "process": {"program": "/srv/plugins/allow-reads", "state": "running", "restarts": 0, "error": null,
+                         "log": "/srv/.moebius/plugins/allow-reads.log"}},
+            {"name": "ticket-check", "version": "", "kinds": [], "decides": ["approve_issue"],
+             "process": {"program": "python3", "state": "restarting", "restarts": 3,
+                         "error": "it exited before its manifest (exit status: 1)",
+                         "log": "/srv/.moebius/plugins/ticket-check.log"}},
         ],
     });
     [
@@ -196,7 +203,7 @@ fn the_plugins_page_lists_what_the_host_loaded() {
         "plugins",
         &[
             "Plugins",
-            "3 plugins loaded; a call into one is refused after 30 s.",
+            "5 plugins loaded; a call into one is refused after 30 s.",
             "Loaded plugins",
             "decision-model",
             "guard",
@@ -204,6 +211,15 @@ fn the_plugins_page_lists_what_the_host_loaded() {
             "0.2.1",
             "decider, view",
             "No kind of decision",
+            "In the server",
+            "Running",
+            "Restarting",
+            "Plugins in their own process",
+            "/srv/plugins/allow-reads",
+            "3 times",
+            "It never stopped",
+            "it exited before its manifest (exit status: 1)",
+            "/srv/.moebius/plugins/ticket-check.log",
         ],
     );
 }

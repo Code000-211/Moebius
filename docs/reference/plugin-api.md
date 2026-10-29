@@ -2,15 +2,17 @@
 
 A plugin adds to or replaces a part of Moebius. This page is for anyone who writes a plugin: it describes the Rust trait
 every plugin implements, the calls the core makes, what happens when a plugin is slow or wrong, and the JSON Lines
-messages that plugins in their own process will use later. The code is in `crates/moebius-plugin-api/src/lib.rs`; a
-working decider is in
-[`crates/moebius-plugin-api/examples/allow_reads.rs`](../../crates/moebius-plugin-api/examples/allow_reads.rs).
+messages a plugin in its own process speaks. The code is in `crates/moebius-plugin-api/src/lib.rs` and
+`crates/moebius-plugin-api/src/process/`; a working decider is in
+[`crates/moebius-plugin-api/examples/allow_reads.rs`](../../crates/moebius-plugin-api/examples/allow_reads.rs), and the
+same decider in its own process in
+[`crates/moebius-plugin-api/examples/allow_reads_process.rs`](../../crates/moebius-plugin-api/examples/allow_reads_process.rs).
 
-Today every plugin is compiled into the `moebius` binary. Plugins in their own process are not supported yet: the
-messages below exist so that they can be, but nothing starts or talks to such a process. The plugins that go
-through this API today are the `guard` decider (`crates/moebius-core/src/decide/guard/`) and, when a `[decision_model]` is
-configured, the `decision-model` decider (`crates/moebius-core/src/decide/model/`, see
-[the decision model](decision-model.md)).
+A plugin is either compiled into the `moebius` binary, or a program of its own, in any language, that `moebius.toml`
+names under [`[[plugins]]`](configuration.md#plugins) and that speaks [JSON Lines](#plugins-in-their-own-process) on
+its standard input and output. Both get the same calls, the same time limit and the same refusals. The compiled-in
+plugins are the `guard` decider (`crates/moebius-core/src/decide/guard/`) and, when a `[decision_model]` is configured,
+the `decision-model` decider (`crates/moebius-core/src/decide/model/`, see [the decision model](decision-model.md)).
 
 ## The trait
 
@@ -100,6 +102,7 @@ The core never calls a plugin directly. It goes through a `Host`, built with `Ho
 `host.add(plugin)`. The server's limit is 30 seconds (`PLUGIN_TIME_LIMIT_SECONDS`). `host.call(plugin, call)` and
 `host.decide(plugin, &request)` return a `Result<_, Refusal>`.
 
+`host.add_process(process)` adds a plugin in its own process (below), and `host.status(name)` says how one is doing.
 The host runs every call on a thread of its own, named `plugin <name>`, and waits at most the limit. Every way a call can
 go wrong is a `Refusal`, so the core never acts on a half-answered call:
 
@@ -110,7 +113,8 @@ go wrong is a `Refusal`, so the core never acts on a half-answered call:
 | `TimedOut { plugin, millis }` | The plugin did not answer within the limit. Its thread keeps running, but its answer is never used. |
 | `Panicked { plugin, message }` | The plugin panicked. |
 | `Failed { plugin, error }` | The plugin returned a `PluginError`. |
-| `BadReply { plugin, message }` | For `decide`: the reply is not a `Decision`, or its `choice` is not one of the options. |
+| `BadReply { plugin, message }` | For `decide`: the reply is not a `Decision`, or its `choice` is not one of the options. For a plugin in its own process also: it wrote a line that is not a reply while the call waited. |
+| `NotRunning { plugin, message }` | A plugin in its own process is not running (it is starting, or waits to be started again after it stopped), or it stopped before it answered. `message` says why, such as `it exited (exit status: 1)`. |
 
 A `Refusal` is serialised as `{"refusal": "<variant in snake_case>", "detail": ...}`, for example
 `{"refusal":"unknown_plugin","detail":"x"}` and
@@ -176,22 +180,86 @@ fail-closed option `refuse`. All context values are strings:
 A decider for `tool_call` that refuses should say which rule it applied at the start of `reason`, followed by a colon,
 as the guard does (`no-force-push: ...`).
 
-## JSON Lines messages for plugins in their own process
+## Plugins in their own process
 
-This is the format the core will use to talk to a plugin that runs as its own process. It is not used yet. A line is one
-JSON object, ends with a line feed, and holds no line feed inside. The core writes calls to the plugin's standard input
-and reads replies from its standard output. Every message is an `Envelope` with a `type`:
+A plugin in its own process is a program that `moebius.toml` names (see [`[[plugins]]`](configuration.md#plugins)):
 
-```json
-{"type":"call","id":7,"call":{"kind":"decider","method":"decide","params":{"context":{"tool":"bash"},"kind":"tool_call","options":["allow","refuse"]}}}
-{"type":"reply","id":7,"result":{"choice":"allow","reason":"ok","by":null}}
-{"type":"error","id":7,"message":"boom"}
+```toml
+[[plugins]]
+name = "allow-reads"
+path = "plugins/allow-reads"
+args = ["--plugin"]
+decides = ["start_card"]
 ```
 
-- `call`: `id` (an unsigned integer chosen by the core) and a `Call`.
-- `reply`: the `id` of the call and its `result` (for `decide`, a `Decision`).
-- `error`: the `id` of the call and a `message`. It stands for a `PluginError`.
+The server starts it with `args`, in the directory of `moebius.toml`, with the server's environment, when it starts.
+It is added to the host under `name` and the kinds in `decides` are routed to it. In Rust, `Process::start(spec, limit,
+log)` does the same, and `host.add_process(process)` adds it.
 
-The host's time limit and fail-closed rules apply to such a plugin in the same way. The wrapper that would turn
-envelopes into a `Plugin` does not exist yet, so details such as the plugin's start-up and its manifest exchange are not
-defined.
+### The wire format
+
+Messages are JSON Lines: a line is one JSON object in UTF-8, ends with a line feed (`\n`), and holds no line feed
+inside. The server writes to the plugin's standard input and reads its standard output. Every message is an `Envelope`,
+told apart by its `type`:
+
+| `type` | Written by | Fields |
+|---|---|---|
+| `manifest` | the plugin, as its first line | `manifest`: a [`Manifest`](#manifest). |
+| `call` | the server | `id`: an unsigned integer, unique among the calls to this process; `call`: a [`Call`](#call). |
+| `reply` | the plugin | `id`: the call's; `result`: the method's result (for `decide`, a [`Decision`](#the-method-decide-of-a-decider)). |
+| `error` | the plugin | `id`: the call's; `message`: why it cannot answer. It is refused as `Failed { error: Failed(message) }`. |
+
+A whole exchange, the plugin's lines marked `<` and the server's `>`:
+
+```json
+< {"type":"manifest","manifest":{"name":"allow-reads","version":"0.1.0","kinds":["decider"]}}
+> {"type":"call","id":1,"call":{"kind":"decider","method":"decide","params":{"kind":"tool_call","context":{"tool":"read"},"options":["allow","refuse"]}}}
+> {"type":"call","id":2,"call":{"kind":"decider","method":"decide","params":{"kind":"merge","context":{"tool":"read"},"options":["allow","refuse"]}}}
+< {"type":"reply","id":1,"result":{"choice":"allow","reason":"read only reads","by":null}}
+< {"type":"error","id":2,"message":"this plugin decides tool calls, not \"merge\""}
+```
+
+The rules:
+
+1. The plugin's first line is its manifest, within the host's time limit (30 seconds in the server). Its `name` must be
+   the configured name. A first line that is not a manifest, another name, no line in time, or an exit before it counts
+   as a failed start.
+2. The server may send a call before the reply to an earlier one, from several threads at once. The plugin answers each
+   `id` exactly once, in any order; it may answer one at a time.
+3. A reply that comes after the time limit, or with an `id` no call waits for, is dropped.
+4. Any other line on standard output (not JSON, not an `Envelope`, a second `manifest`, a `call`) is a fault: the
+   process is killed, every call waiting on it is refused with `BadReply`, and it is started again.
+5. When its standard input closes, the plugin exits. The server closes it, and kills the process, when it stops.
+6. Standard error is free text. Each line goes to `<data_dir>/plugins/<name>.log`, after a time stamp and with secrets
+   redacted.
+
+### Failing closed, and starting again
+
+Every way a plugin process can go wrong is a refusal, never an allow:
+
+| What happens | The call is refused with |
+|---|---|
+| It does not answer within the time limit | `TimedOut`, as for a compiled-in plugin. The process keeps running. |
+| It exits or crashes while calls wait | `NotRunning` with `it exited (<status>)`, for each of them. |
+| It writes a line that is not a reply | `BadReply` with `it wrote a line that is not a reply: <the line>`, for each call waiting. |
+| It answers with `error` | `Failed` with the message. |
+| Its `result` is not a `Decision`, or picks no option | `BadReply`, as for a compiled-in plugin. |
+| It is starting, or waits to be started again | `NotRunning` with why it stopped the last time. |
+
+A process that stopped (it exited, was killed for a bad line, or did not start) is started again after a pause: 1 second
+the first time, doubled each time up to 60 seconds, and back to 1 second after it ran for at least 60 seconds. Each stop
+is written to its log as `moebius: <name> stopped: <why>; it is started again in <n> s`. `host.status(name)` gives a
+`ProcessStatus`: the `program`, the `state` (`starting`, `running`, `restarting` or `stopped`), the number of
+`restarts` and the last `error`. The Plugins page and `GET /v1/plugins` show it.
+
+### A plugin process in Rust
+
+`moebius_plugin_api::serve(&plugin, input, output)` runs any `Plugin` as a process: it writes the manifest, then
+answers each call one at a time until `input` ends. A line that is not a call is skipped with a line on standard error.
+`allow_reads_process.rs` serves `AllowReads` when started with `--plugin`:
+
+```rust
+serve(&AllowReads, std::io::stdin().lock(), std::io::stdout().lock())
+```
+
+A plugin in another language only has to follow the wire format above.

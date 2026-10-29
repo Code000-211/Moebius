@@ -1,13 +1,14 @@
 ---
 name: moebius-plugins
-description: Write a Moebius plugin, a decider in Rust that answers a decision point a column script asks with moebius.decide. Use it when a decision needs code - a lookup, a policy too large for Luau, a check against another system - or the person asks for a plugin, a decider or the plugin API.
+description: Write a Moebius plugin, a decider compiled in or run as its own process, that answers a decision point a column script asks with moebius.decide. Use it when a decision needs code - a lookup, a policy too large for Luau, a check against another system - or the person asks for a plugin, a decider or the plugin API.
 ---
 
 # Decider plugins
 
 Goal: a Rust type that answers one decision kind, tested with cargo, registered in the server and asked from a column
-script. Today a plugin is compiled into the `moebius` binary, so this work happens in a checkout of Moebius itself, and
-the person rebuilds and restarts the server to use it.
+script. A plugin is compiled into the `moebius` binary, so that work happens in a checkout of Moebius itself and the
+person rebuilds and restarts the server; or it is a program of its own, in any language, named under `[[plugins]]` in
+`moebius.toml`, which needs only a restart. Prefer the program when the person does not build Moebius themselves.
 
 ## Steps
 
@@ -52,6 +53,26 @@ impl Plugin for AllowReads {
 }
 ```
 
+## As its own process
+
+The program writes its manifest as its first line on standard output, then answers each call it reads on standard
+input with a reply carrying the call's `id`, one JSON object per line; nothing else may go to standard output, and it
+exits when standard input closes. In Rust, `moebius_plugin_api::serve(&plugin, stdin, stdout)` does this for any
+`Plugin` (see `crates/moebius-plugin-api/examples/allow_reads_process.rs`); `guide/plugins.md` has a Python decider.
+Name it in `moebius.toml`, with the kinds it answers in `decides`, and ask the person to restart the server:
+
+```toml
+[[plugins]]
+name = "start-gate"
+path = "python3"
+args = ["plugins/start_gate.py"]
+decides = ["start_card"]
+```
+
+`"$MOEBIUS" api GET /v1/plugins` shows its `process.state` (`running`, or `restarting` with the `error` why it stopped),
+and its standard error is in `<data_dir>/plugins/<name>.log`. Test it by piping a call into it:
+`echo '{"type":"call","id":1,"call":{"kind":"decider","method":"decide","params":{"kind":"start_card","context":{"title":"[wip] x"},"options":["start","hold"]}}}' | python3 plugins/start_gate.py`.
+
 ## Try it
 
 ```sh
@@ -67,10 +88,11 @@ server (`"$MOEBIUS" server restart` only when they ask), and commit the column s
 
 The host turns every failure into a refusal, and the script gets its fail-closed option with a reason that starts
 `refused:`: no route for the kind (`no decider answers`), more than 30 seconds, a panic, an error, a `choice` that is
-not one of the options, or a kind not in the manifest. A script runs every tick, so a held card is decided again every
+not one of the options, or a kind not in the manifest; for a process also a crash, a line that is not a reply, or a
+process that is not running (`is not running: <why>`). A script runs every tick, so a held card is decided again every
 tick; keep `call` fast.
 
 ## Details
 
 In the `moebius` skill: `guide/plugins.md` (the whole walk-through with a `start_card` decider) and
-`reference/plugin-api.md` (every type and the host's guarantees).
+`reference/plugin-api.md` (every type, the host's guarantees and the wire format of a plugin process).

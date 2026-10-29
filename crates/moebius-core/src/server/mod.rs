@@ -5,13 +5,14 @@
 //! This module wires every part from the configuration and serves them; `leftovers` ends what a server that stopped
 //! left going, `loops` holds the board's tick, the poll of GitHub and the refresh of the clones, and `schedule` what is
 //! looked at once a minute. `api` is the desktop API, `settings` edits `moebius.toml` while the server runs, and
-//! `setup` is what the Models, Plugins and Get started pages show.
+//! `setup` is what the Models, Plugins and Get started pages show. `plugins` starts the plugins in their own process.
 
 pub mod api;
 #[cfg(test)]
 mod fake_github;
 mod leftovers;
 mod loops;
+mod plugins;
 mod schedule;
 pub mod settings;
 pub mod setup;
@@ -104,6 +105,9 @@ impl Server {
         let routed = Arc::new(Routed::default());
         let mut guard = Guard::new(teacher);
         let mut host = Host::new(PLUGIN_TIME_LIMIT);
+        for plugin in &config.plugins {
+            host.add_process(plugins::start(&config, plugin, PLUGIN_TIME_LIMIT)?);
+        }
         if let Some(model) = &model {
             guard = guard.with_decision_model(model.clone(), routed.clone());
             host.add(model.clone());
@@ -113,6 +117,11 @@ impl Server {
         app.decisions.share_routed(routed);
         app.checks_timeout = config.checks_timeout;
         app.decisions.route("tool_call", guard::NAME);
+        for plugin in &config.plugins {
+            for kind in &plugin.decides {
+                app.decisions.route(kind, &plugin.name);
+            }
+        }
         let github = match &config.github {
             Some(g) => {
                 let key = std::fs::read(&g.private_key_file)

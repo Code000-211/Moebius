@@ -1,8 +1,8 @@
 //! The types of the configuration's sections as the server uses them: the router's upstreams, the GitHub App, the
-//! teacher, the decision model and the agents, with times of day and the checks of names, keys and timeouts.
+//! teacher, the decision model, the plugins in their own process and the agents, with times of day and the checks of names, keys and timeouts.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::Deserialize;
@@ -116,6 +116,21 @@ pub struct DecisionModelConfig {
     pub min_judgements: i64,
 }
 
+/// A plugin in its own process, from `[[plugins]]`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PluginConfig {
+    /// The name the plugin is known by, which its manifest must say too.
+    pub name: String,
+    /// The program: a bare name is looked up on the PATH, anything else is made absolute against the file's directory.
+    pub path: PathBuf,
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// The kinds of decision it answers.
+    #[serde(default)]
+    pub decides: Vec<String>,
+}
+
 /// An agent as a run uses it: from `[agents.<name>]` or from the harness configuration repository.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -207,6 +222,39 @@ pub(super) fn decision_model(m: RawDecisionModel) -> Result<DecisionModelConfig,
         agreement,
         min_judgements,
     })
+}
+
+/// The plugins in their own process, checked, with their paths resolved like `pi_bolt.program`.
+pub(super) fn plugins(
+    mut plugins: Vec<PluginConfig>,
+    base: &Path,
+) -> Result<Vec<PluginConfig>, ConfigError> {
+    let built_in = [crate::decide::guard::NAME, crate::decide::model::NAME];
+    let mut names = std::collections::BTreeSet::new();
+    let mut kinds = std::collections::BTreeSet::new();
+    for plugin in &mut plugins {
+        let name = plugin.name.clone();
+        if !valid_agent_name(&name) || built_in.contains(&name.as_str()) {
+            return Err(ConfigError::PluginName { name });
+        }
+        if !names.insert(name.clone()) {
+            return Err(ConfigError::PluginTwice { name });
+        }
+        if plugin.path.as_os_str().is_empty() {
+            return Err(ConfigError::PluginPath { name });
+        }
+        if let Some(kind) = plugin
+            .decides
+            .iter()
+            .find(|kind| !kinds.insert(kind.to_string()))
+        {
+            return Err(ConfigError::PluginDecidesTwice { kind: kind.clone() });
+        }
+        if plugin.path.components().count() > 1 {
+            plugin.path = base.join(&plugin.path);
+        }
+    }
+    Ok(plugins)
 }
 
 #[cfg(test)]

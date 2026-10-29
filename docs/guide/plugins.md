@@ -3,13 +3,13 @@
 ## When you want this
 
 A decision point is a place where Moebius asks "which of these options?" and records the answer as a judgement. A
-column script can ask its own with `moebius.decide`, and a plugin answers it in Rust code: a check against an internal
+column script can ask its own with `moebius.decide`, and a plugin answers it in code: a check against an internal
 system, a policy that is too much for Luau, a rule that needs a lookup. The plugin decides, the script acts on the answer.
 
-Today a plugin is compiled into the `moebius` binary. Plugins that run as their own process are not supported yet: the
-JSON Lines messages for them are defined in the [plugin API reference](../reference/plugin-api.md), but nothing starts
-or talks to such a process. Of the plugin kinds, only `decider` has methods defined. That reference holds the exact
-types; this page walks through writing one.
+A plugin is compiled into the `moebius` binary, or runs as a program of its own that `moebius.toml` names. The second
+needs no rebuild of Moebius and may be written in any language; see [Run it as its own process](#run-it-as-its-own-process).
+Of the plugin kinds, only `decider` has methods defined. The [plugin API reference](../reference/plugin-api.md) holds
+the exact types and the wire format; this page walks through writing one.
 
 Do not route the kind `tool_call` to your plugin unless you mean to replace the guard. The guard is the plugin that
 answers `tool_call` today, and it holds the built-in rules and the teacher. A kind has one decider, so routing
@@ -166,6 +166,63 @@ function on_card(card)
 end
 ```
 
+## Run it as its own process
+
+The same plugin can run as its own program instead, with no change to Moebius. The program writes its manifest as the
+first line of its standard output, then reads calls from its standard input and writes a reply to each, one JSON object
+per line (the exact format is in the [plugin API reference](../reference/plugin-api.md#plugins-in-their-own-process)).
+In Rust, `serve` does that for any `Plugin`; `crates/moebius-plugin-api/examples/allow_reads_process.rs` serves
+`AllowReads` when started with `--plugin`:
+
+<!-- excerpt: crates/moebius-plugin-api/examples/allow_reads_process.rs -->
+```rust
+if std::env::args().any(|arg| arg == "--plugin") {
+    serve(
+        &AllowReads,
+        std::io::stdin().lock(),
+        std::io::stdout().lock(),
+    )
+    .expect("the standard input and output work");
+    return;
+}
+```
+
+Run it with `cargo run -p moebius-plugin-api --example allow_reads_process`: started without `--plugin`, it starts
+itself as a plugin process through a `Host` and asks it the same three questions.
+
+In another language, follow the wire format. A decider in Python that holds cards whose title says `[wip]`:
+
+```python
+import json, sys
+
+def send(message):
+    print(json.dumps(message), flush=True)
+
+send({"type": "manifest", "manifest": {"name": "start-gate", "version": "0.1.0", "kinds": ["decider"]}})
+for line in sys.stdin:
+    message = json.loads(line)
+    title = message["call"]["params"]["context"].get("title", "")
+    choice = "hold" if "[wip]" in title else "start"
+    send({"type": "reply", "id": message["id"], "result": {"choice": choice, "reason": f"the title is {title!r}"}})
+```
+
+Save it as `plugins/start_gate.py` next to `moebius.toml`, name the program in `moebius.toml` and restart the server;
+there is no step 2 to do in `Server::new`. The program runs in the directory of `moebius.toml`, and `decides` routes
+the kinds to it. `crates/moebius-core/tests/plugins.rs` runs this plugin with this configuration:
+
+```toml
+[[plugins]]
+name = "start-gate"
+path = "python3"
+args = ["plugins/start_gate.py"]
+decides = ["start_card"]
+```
+
+The server starts the program when it starts and waits for its manifest. The Plugins page shows the plugin with its
+state: `running`, or `restarting` with why it stopped. A plugin that crashes, hangs, or writes a line that is not a
+reply is refused like a compiled-in one, and a stopped process is started again after a pause that doubles from 1
+second to a minute. What it writes to standard error is in `<data_dir>/plugins/<name>.log`.
+
 ## What the host guarantees
 
 The core never calls a plugin directly. Every call goes through a `Host` that runs it on a thread of its own, named
@@ -180,6 +237,7 @@ option is taken:
 | The plugin returns an error | `refused: <plugin> failed: <message>` |
 | The reply is not a `Decision`, or its `choice` is not one of the options | `refused: <plugin> answered something that is not a valid reply: ...` |
 | The call's kind is not in the manifest | `refused: <plugin> is not a Decider plugin` |
+| A plugin process is starting, waits to be started again, or exits before it answers | `refused: <plugin> is not running: <why>` |
 
 A plugin that hangs, panics or answers nonsense therefore blocks what it was asked about; it never lets it through.
 
@@ -197,5 +255,6 @@ moves on and the second waits in `Backlog` with `the title says [wip]`.
 | The script gets the fail-closed option and a reason that starts `refused:`. | The reason is the card's waiting reason (`waiting` in the snapshot). The table above says what each reason means. |
 | A judgement is recorded at every tick. | `moebius.decide` records one judgement per call, and a column script runs at every tick, so a card that is held is decided again two seconds later. Ask only where the card moves on after the answer, and expect one judgement per tick otherwise. They show up in the card's history, `GET /v1/cards/{id}/history`, as `decided`. |
 | The board slows down. | A script's `moebius.decide` waits for the plugin, up to 30 seconds, and the board's tick waits for the script. Keep `call` fast. |
-| The server does not know your plugin. | Nothing registers a plugin by itself. If you did not rebuild and restart with it added in `Server::new`, the kind has no route. |
+| The server does not know your plugin. | Nothing registers a plugin by itself. If you did not rebuild and restart with it added in `Server::new`, or name it under `[[plugins]]` with the kind in `decides`, the kind has no route. |
+| Your plugin process is `restarting` on the Plugins page. | Its `error` says why it stopped: `it exited before its manifest`, `its manifest names "x", not "y"`, `it sent no manifest within 30000 ms`, `it wrote a line that is not a reply: ...`. Its log, `<data_dir>/plugins/<name>.log`, has what it wrote to standard error. Write nothing but messages to standard output. |
 | You routed `tool_call` and rules stopped working. | The guard no longer answers. See the warning at the top. |

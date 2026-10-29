@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use serde::Deserialize;
 
-use super::{AgentConfig, UpstreamConfig, default_protocol};
+use super::{AgentConfig, PluginConfig, UpstreamConfig, default_protocol};
 use crate::router::Protocol;
 
 #[derive(Debug, Deserialize)]
@@ -112,6 +112,8 @@ pub(super) struct Raw {
     pub(super) github: Option<RawGitHub>,
     pub(super) teacher: Option<RawTeacher>,
     pub(super) decision_model: Option<RawDecisionModel>,
+    #[serde(default)]
+    pub(super) plugins: Vec<PluginConfig>,
     #[serde(default)]
     pub(super) agents: BTreeMap<String, AgentConfig>,
 }

@@ -74,6 +74,7 @@ cargo fmt --all
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo run -p moebius-plugin-api --example allow_reads
+cargo run -p moebius-plugin-api --example allow_reads_process
 ```
 
 ## Commits

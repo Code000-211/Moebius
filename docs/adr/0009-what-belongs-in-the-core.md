@@ -21,7 +21,9 @@ then keeps its issues and changes itself, and a person merges in the desktop app
   is not replaced piece by piece.
 - Subscription logins are a plugin of their own, installed separately, so that their risk under the providers' terms stays out
   of the core and out of every installation that does not want it.
-- In the first version the plugins Moebius ships are compiled in, against the same API that process plugins will use over
-  JSON Lines; plugins in their own process are opened up once that API has stopped changing.
+- In the first version the plugins Moebius ships are compiled in, against the same API that process plugins use over
+  JSON Lines. Plugins in their own process are now open as well: `[[plugins]]` in `moebius.toml` names a program, which
+  the host calls with the same time limit and failure that blocks, and starts again when it stops (see
+  `docs/reference/plugin-api.md`).
 - Plugins need a way to show their own views (lists, tables, charts, actions) in the desktop app, described as data, or each
   of them ends up built into the app.

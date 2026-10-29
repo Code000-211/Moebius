@@ -106,6 +106,22 @@ pub struct Plugin {
     pub version: String,
     pub kinds: Vec<String>,
     pub decides: Vec<String>,
+    /// How it runs when it is a plugin in its own process; none for one compiled in.
+    #[serde(default)]
+    pub process: Option<PluginProcess>,
+}
+
+/// A plugin in its own process, as `GET /v1/plugins` tells it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct PluginProcess {
+    pub program: String,
+    /// `starting`, `running`, `restarting` or `stopped`.
+    pub state: String,
+    pub restarts: u64,
+    /// Why it stopped the last time.
+    pub error: Option<String>,
+    /// The file its standard error goes to.
+    pub log: String,
 }
 
 /// What `GET /v1/plugins` says.

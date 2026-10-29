@@ -36,6 +36,7 @@ jobs:
           path: target/snapshot-diffs
           if-no-files-found: ignore
       - run: cargo run -p moebius-plugin-api --example allow_reads
+      - run: cargo run -p moebius-plugin-api --example allow_reads_process
 
   # The code builds with the Rust version that `rust-version` in Cargo.toml names, and that is the version the README
   # tells people to install.

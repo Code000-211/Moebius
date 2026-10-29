@@ -1,5 +1,5 @@
 //! What the Models and Plugins pages of the desktop app show: how the server is set up, read from its configuration and
-//! its plugin host. Nothing here is a secret: a key is told as set or not, and a URL has no credentials in it. The
+//! its plugin host, with the state of each plugin in its own process. Nothing here is a secret: a key is told as set or not, and a URL has no credentials in it. The
 //! Settings page reads and writes the configuration itself (see `settings`).
 
 use std::path::Path;
@@ -114,6 +114,21 @@ pub struct PluginView {
     pub kinds: Vec<moebius_plugin_api::Kind>,
     /// The kinds of decision it answers, those the decision model took over included.
     pub decides: Vec<String>,
+    /// How it runs when it is a plugin in its own process; none for one compiled in.
+    pub process: Option<ProcessView>,
+}
+
+/// A plugin in its own process, as the Plugins page shows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ProcessView {
+    pub program: String,
+    pub state: moebius_plugin_api::State,
+    /// How many times it was started again after it stopped.
+    pub restarts: u64,
+    /// Why it stopped the last time, with secrets redacted.
+    pub error: Option<String>,
+    /// The file its standard error goes to.
+    pub log: String,
 }
 
 /// The answer of `GET /v1/plugins`.
@@ -124,7 +139,7 @@ pub struct Plugins {
     pub plugins: Vec<PluginView>,
 }
 
-pub fn plugins(decisions: &Decisions) -> Plugins {
+pub fn plugins(decisions: &Decisions, data_dir: &Path) -> Plugins {
     let routes = decisions.routes();
     Plugins {
         time_limit_seconds: decisions.host().limit().as_secs(),
@@ -133,6 +148,18 @@ pub fn plugins(decisions: &Decisions) -> Plugins {
             .manifests()
             .into_iter()
             .map(|manifest| PluginView {
+                process: decisions
+                    .host()
+                    .status(&manifest.name)
+                    .map(|status| ProcessView {
+                        program: status.program.display().to_string(),
+                        state: status.state,
+                        restarts: status.restarts,
+                        error: status.error.as_deref().map(crate::blobs::redact),
+                        log: super::plugins::log_path(data_dir, &manifest.name)
+                            .display()
+                            .to_string(),
+                    }),
                 decides: routes
                     .iter()
                     .filter(|(_, plugin)| **plugin == manifest.name)

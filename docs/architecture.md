@@ -244,6 +244,9 @@ The server runs on a multi-threaded tokio runtime.
   shared between threads.
 - Every plugin call runs on a thread of its own, started by the `Host` for that call, with a time limit. The teacher uses a
   blocking HTTP client there.
+- Each plugin in its own process has a thread that looks after it (`process/supervise.rs` of the plugin API), one that
+  reads its standard output and one its standard error. A call writes its line and waits for the reply that thread hands
+  it by id.
 - A repository's own checks run on a thread of their own per change (`App::run_checks`), so the board is not blocked.
 - Each Pi run has one reader thread (`harness/pibolt/reader.rs`), and `Runs::stop` (`PiBolt`) starts a short thread that kills Pi when it does not
   settle in time.
@@ -283,6 +286,9 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | Module | What it is for |
 |---|---|
 | `lib.rs` | The `Plugin` trait, the call and decision types, the `Host` that calls plugins with a time limit and fails closed. |
+| `process/mod.rs` | A plugin in its own process (`Process`): its status, and a call sent as a JSON line and its reply awaited. |
+| `process/supervise.rs` | The thread that starts a plugin process, reads its manifest and replies, logs its standard error, and starts it again after a pause when it stops. |
+| `process/serve.rs` | `serve`: the plugin's side of the JSON Lines, which runs a Rust `Plugin` as its own program. |
 
 ### `crates/moebius-core` (the server)
 
@@ -356,6 +362,7 @@ At the top:
 | `server/mod.rs` | Wires everything from the configuration and serves the desktop API, the router and the loops. |
 | `server/leftovers.rs` | What a server that stopped left going, ended at the next start: its runs failed and their worktrees removed, its Retros, research and trials set back. |
 | `server/loops.rs` | The board's tick, the poll of GitHub, and the refresh of the clones every 30 seconds. |
+| `server/plugins.rs` | Starting the plugins in their own process that `[[plugins]]` names, with their standard error in `<data_dir>/plugins/<name>.log`, redacted. |
 | `server/schedule.rs` | Once a minute: the Retro, trials, research and replays when they are due, and the pause of chats that wait idle. |
 | `server/fake_github.rs` | For the tests only: a fake GitHub with one repository, and a server that polls it. |
 | `server/api/mod.rs` | The desktop API: the state it needs, the token check, the router that merges the routes of its parts, how a failure becomes a status, and `GET /v1/health`. |

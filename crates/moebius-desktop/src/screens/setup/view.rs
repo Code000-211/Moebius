@@ -7,6 +7,7 @@ use iced::widget::{column, container, row, scrollable, text};
 use iced::{Alignment, Element, Length, Padding};
 
 use crate::app::Message as AppMessage;
+use crate::client::PluginProcess;
 use crate::screens::board::tokens;
 use crate::settings::{self, Settings};
 use crate::theme;
@@ -138,6 +139,24 @@ fn plain<'a>(line: String) -> Element<'a, AppMessage> {
         .size(theme::BODY)
         .color(theme::TEXT_SECONDARY)
         .wrapping(Wrapping::WordOrGlyph)
+        .into()
+}
+
+/// How a plugin runs: in the server, or as its own process in a state, coloured by whether it takes calls.
+fn runs<'a>(process: Option<&PluginProcess>) -> Element<'a, AppMessage> {
+    let Some(process) = process else {
+        return plain("In the server".to_string());
+    };
+    let (label, colour) = match process.state.as_str() {
+        "running" => ("Running", theme::TEAL),
+        "restarting" => ("Restarting", theme::AMBER_TEXT),
+        "stopped" => ("Stopped", theme::RED_TEXT),
+        _ => ("Starting", theme::TEXT_MUTED),
+    };
+    text(label)
+        .size(theme::BODY)
+        .font(theme::manrope(Weight::Semibold))
+        .color(colour)
         .into()
 }
 
@@ -284,7 +303,7 @@ impl Setup {
                     ("Plugin", 3),
                     ("Version", 2),
                     ("Kinds", 2),
-                    ("Time limit", 2),
+                    ("Runs", 2),
                     ("Decides", 4),
                 ],
                 plugins
@@ -295,7 +314,7 @@ impl Setup {
                             mono(plugin.name.clone()),
                             plain(plugin.version.clone()),
                             plain(plugin.kinds.join(", ")),
-                            plain(format!("{} s", plugins.time_limit_seconds)),
+                            runs(plugin.process.as_ref()),
                             if plugin.decides.is_empty() {
                                 plain("No kind of decision".to_string())
                             } else {
@@ -306,6 +325,45 @@ impl Setup {
                     .collect(),
             )
         };
+        let processes: Vec<_> = plugins
+            .plugins
+            .iter()
+            .filter_map(|plugin| Some((plugin, plugin.process.as_ref()?)))
+            .map(|(plugin, process)| {
+                vec![
+                    mono(plugin.name.clone()),
+                    mono(process.program.clone()),
+                    plain(match process.restarts {
+                        0 => "Never".to_string(),
+                        1 => "Once".to_string(),
+                        n => format!("{n} times"),
+                    }),
+                    plain(
+                        process
+                            .error
+                            .clone()
+                            .unwrap_or_else(|| "It never stopped".to_string()),
+                    ),
+                    mono(process.log.clone()),
+                ]
+            })
+            .collect();
+        let mut content = column![page::boxed("Loaded plugins", list)].spacing(20);
+        if !processes.is_empty() {
+            content = content.push(page::boxed(
+                "Plugins in their own process",
+                table(
+                    &[
+                        ("Plugin", 2),
+                        ("Program", 3),
+                        ("Restarted", 2),
+                        ("Why it last stopped", 4),
+                        ("Log", 4),
+                    ],
+                    processes,
+                ),
+            ));
+        }
         opened(
             "Plugins",
             &format!(
@@ -314,7 +372,7 @@ impl Setup {
                 plugins.time_limit_seconds
             ),
             text("").into(),
-            column![page::boxed("Loaded plugins", list)],
+            content,
         )
     }
 

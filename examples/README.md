@@ -12,6 +12,9 @@ Each example is small, runs in CI and is meant to be copied. The contracts they 
 - [`../crates/moebius-plugin-api/examples/allow_reads.rs`](../crates/moebius-plugin-api/examples/allow_reads.rs): a
   decider plugin that allows tools which only read and refuses the rest, run through a `Host`. CI runs it with
   `cargo run -p moebius-plugin-api --example allow_reads`. See [plugin API](../docs/reference/plugin-api.md).
+- [`../crates/moebius-plugin-api/examples/allow_reads_process.rs`](../crates/moebius-plugin-api/examples/allow_reads_process.rs):
+  the same decider as a plugin in its own process, speaking JSON Lines; it starts itself with `--plugin` through a
+  `Host`. CI runs it with `cargo run -p moebius-plugin-api --example allow_reads_process`.
 - [`pi-extension/log-tool-calls.ts`](pi-extension/log-tool-calls.ts): a Pi extension that logs every tool call to
   standard error. It is not checked in CI, which has no TypeScript toolchain. Load it by naming its absolute path in an
   agent's `extensions`:

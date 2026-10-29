@@ -64,7 +64,8 @@ cargo test --workspace
 
 The end-to-end test (`crates/moebius-core/tests/first_card.rs`) runs only when `MOEBIUS_PI_BOLT` names a `pi-bolt`
 executable; CI installs one.
-CI also runs the plugin example: `cargo run -p moebius-plugin-api --example allow_reads`.
+CI also runs the plugin examples: `cargo run -p moebius-plugin-api --example allow_reads`, and `allow_reads_process`
+for the same decider in its own process.
 
 ## Style
 

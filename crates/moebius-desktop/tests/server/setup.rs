@@ -44,6 +44,7 @@ async fn the_client_reads_the_models_plugins_and_settings_of_a_real_server() {
     assert_eq!(plugins.time_limit_seconds, 30);
     let guard = plugins.plugins.iter().find(|p| p.name == "guard").unwrap();
     assert_eq!(guard.decides, ["tool_call"]);
+    assert_eq!(guard.process, None);
 
     let server = client.server_settings().await.unwrap();
     assert_eq!(server.value("board.round_limit"), &json!(4));

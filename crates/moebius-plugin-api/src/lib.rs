@@ -1,9 +1,12 @@
 //! The API every Moebius plugin is written against, whether it is compiled in or runs as its own process
 //! (see `docs/adr/0002-plugins-run-as-processes-or-compiled-in.md`).
 //!
-//! A plugin answers [`Call`]s. Every message is serialisable, so that the same calls can later travel as JSON Lines
-//! to a plugin in its own process ([`Envelope`]). The core never calls a plugin directly: it goes through the [`Host`],
-//! which gives every call a time limit and turns a timeout, a panic or an error into a [`Refusal`] (fail closed).
+//! A plugin answers [`Call`]s. Every message is serialisable, so that the same calls travel as JSON Lines to a plugin
+//! in its own process ([`Envelope`], and `process` which starts and looks after such a plugin). The core never calls a
+//! plugin directly: it goes through the [`Host`], which gives every call a time limit and turns a timeout, a panic, a
+//! crash or an error into a [`Refusal`] (fail closed).
+
+mod process;
 
 use std::collections::BTreeMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -12,6 +15,8 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+pub use process::{Process, ProcessSpec, ProcessStatus, State, serve};
 
 /// What a plugin can be. One plugin may be several kinds at once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -58,10 +63,12 @@ impl Call {
     }
 }
 
-/// A call or its answer as one JSON line between Moebius and a plugin in its own process.
+/// A call or its answer as one JSON line between Moebius and a plugin in its own process. The plugin's first line is
+/// its manifest.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Envelope {
+    Manifest { manifest: Manifest },
     Call { id: u64, call: Call },
     Reply { id: u64, result: Value },
     Error { id: u64, message: String },
@@ -98,8 +105,7 @@ pub enum PluginError {
     Failed(String),
 }
 
-/// A plugin. Compiled-in plugins implement this directly; a plugin in its own process will be wrapped in one that
-/// speaks [`Envelope`]s.
+/// A plugin compiled in. A plugin in its own process is a [`Process`] instead, added with [`Host::add_process`].
 pub trait Plugin: Send + Sync + 'static {
     fn manifest(&self) -> Manifest;
     fn call(&self, call: Call) -> Result<Value, PluginError>;
@@ -122,12 +128,30 @@ pub enum Refusal {
     Failed { plugin: String, error: PluginError },
     #[error("{plugin} answered something that is not a valid reply: {message}")]
     BadReply { plugin: String, message: String },
+    #[error("{plugin} is not running: {message}")]
+    NotRunning { plugin: String, message: String },
+}
+
+/// A plugin as the host holds it.
+#[derive(Clone)]
+enum Entry {
+    Compiled(Arc<dyn Plugin>),
+    Process(Arc<Process>),
+}
+
+impl Entry {
+    fn manifest(&self) -> Manifest {
+        match self {
+            Entry::Compiled(plugin) => plugin.manifest(),
+            Entry::Process(process) => process.manifest(),
+        }
+    }
 }
 
 /// Holds the plugins and makes every call into them.
 #[derive(Clone)]
 pub struct Host {
-    plugins: BTreeMap<String, Arc<dyn Plugin>>,
+    plugins: BTreeMap<String, Entry>,
     limit: Duration,
 }
 
@@ -143,8 +167,24 @@ impl Host {
     /// Adds a plugin under its manifest's name, replacing one with the same name.
     pub fn add(&mut self, plugin: impl Plugin) -> &mut Self {
         let plugin: Arc<dyn Plugin> = Arc::new(plugin);
-        self.plugins.insert(plugin.manifest().name, plugin);
+        self.plugins
+            .insert(plugin.manifest().name, Entry::Compiled(plugin));
         self
+    }
+
+    /// Adds a plugin in its own process under the name it was started with, replacing one with the same name.
+    pub fn add_process(&mut self, process: Process) -> &mut Self {
+        self.plugins
+            .insert(process.manifest().name, Entry::Process(Arc::new(process)));
+        self
+    }
+
+    /// How the plugin `plugin` is doing, if it runs in its own process.
+    pub fn status(&self, plugin: &str) -> Option<ProcessStatus> {
+        match self.plugins.get(plugin)? {
+            Entry::Process(process) => Some(process.status()),
+            Entry::Compiled(_) => None,
+        }
     }
 
     /// The manifests of the plugins the host holds, by name.
@@ -166,6 +206,11 @@ impl Host {
             .get(plugin)
             .ok_or_else(|| Refusal::UnknownPlugin(plugin.to_string()))?
             .clone();
+        if let Entry::Process(process) = &target
+            && let Some(refusal) = process.unavailable()
+        {
+            return Err(refusal);
+        }
         if !target.manifest().kinds.contains(&call.kind) {
             return Err(Refusal::WrongKind {
                 plugin: plugin.to_string(),
@@ -173,10 +218,20 @@ impl Host {
             });
         }
         let (tx, rx) = mpsc::channel();
+        let name = plugin.to_string();
         std::thread::Builder::new()
             .name(format!("plugin {plugin}"))
             .spawn(move || {
-                let result = catch_unwind(AssertUnwindSafe(|| target.call(call)));
+                let result = match target {
+                    Entry::Compiled(target) => catch_unwind(AssertUnwindSafe(|| target.call(call)))
+                        .map(|answer| {
+                            answer.map_err(|error| Refusal::Failed {
+                                plugin: name,
+                                error,
+                            })
+                        }),
+                    Entry::Process(process) => Ok(process.request(call)),
+                };
                 let _ = tx.send(result);
             })
             .map_err(|e| Refusal::Failed {
@@ -184,11 +239,7 @@ impl Host {
                 error: PluginError::Failed(format!("cannot start the call: {e}")),
             })?;
         match rx.recv_timeout(limit) {
-            Ok(Ok(Ok(value))) => Ok(value),
-            Ok(Ok(Err(error))) => Err(Refusal::Failed {
-                plugin: plugin.to_string(),
-                error,
-            }),
+            Ok(Ok(answer)) => answer,
             Ok(Err(panic)) => Err(Refusal::Panicked {
                 plugin: plugin.to_string(),
                 message: panic_message(&*panic),

@@ -107,6 +107,17 @@ program = "pi-bolt"
 # agreement = 0.95                        # the share of equal choices needed, above 0 and at most 1
 # min_judgements = 100                    # how many held-out judgements of a kind must have been asked about
 
+# A plugin in its own process: a program that speaks JSON Lines on its standard input and output (see
+# docs/reference/plugin-api.md). It is started with args in this file's directory when the server starts, and started
+# again after a pause when it stops; its standard error goes to data_dir/plugins/<name>.log. Its manifest must say the
+# same name. It answers the kinds of decision in `decides`; a kind has one decider, so naming tool_call replaces the
+# guard. A path with a directory in it is relative to this file's directory; a bare name is looked up on the PATH.
+# [[plugins]]
+# name = "allow-reads"
+# path = "plugins/allow-reads"
+# args = ["--plugin"]
+# decides = ["start_card"]
+
 # Moebius acts as its own GitHub App. The key file is read at start; relative paths are inside this file's directory.
 # [github]
 # app_id = 123456

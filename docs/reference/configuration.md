@@ -45,7 +45,7 @@ configuration file, made absolute when the file is read. Exceptions:
 
 - `token_file` is resolved against `data_dir`.
 - `pi_bolt.program` is resolved only when it contains a directory (`./bin/pi-bolt`, `tools/pi-bolt`); a bare name such as
-  `pi-bolt` is looked up on the `PATH`.
+  `pi-bolt` is looked up on the `PATH`. `plugins.path` is resolved the same way.
 
 An absolute path is used as it is.
 
@@ -197,6 +197,23 @@ the file or the start.
 | `decision_model.agreement` | number | `0.95` | The share of shadows that must agree with the recorded choice for a takeover to be proposed. Above 0 and at most 1, else the file is refused. |
 | `decision_model.min_judgements` | integer | `100` | How many shadows of a held-out judgement a kind needs before a takeover is proposed. At least 1, else the file is refused. |
 
+## `[[plugins]]`
+
+A plugin in its own process: a program, in any language, that speaks the JSON Lines of the
+[plugin API](plugin-api.md#plugins-in-their-own-process). Each entry is started when the server starts, in the directory
+of this file, and the server waits for its manifest (at most 30 seconds) before it serves. A plugin that does not start,
+exits, or writes a line that is not a reply is started again after a pause of 1 second, doubled each time up to a
+minute; meanwhile every call into it is refused, so what it decides takes the fail-closed option. Its standard error,
+and a line each time it stops, go to `<data_dir>/plugins/<name>.log` with secrets redacted. The Plugins page of the app
+and `GET /v1/plugins` show its state. There are none by default.
+
+| Key | Type | Default | Meaning and validation |
+|---|---|---|---|
+| `plugins.name` | string | required | The plugin's name: letters, digits, `-` and `_`, not `guard` or `decision-model`, and not the name of another entry, else the file is refused. The manifest the program sends must give the same name, else it counts as not started. |
+| `plugins.path` | path | required | The program. Empty refuses the file. See [Paths](#paths). |
+| `plugins.args` | array of strings | `[]` | The program's arguments. |
+| `plugins.decides` | array of strings | `[]` | The kinds of decision the plugin answers, such as `start_card`. A kind named by two entries refuses the file. A kind has one decider, so naming `tool_call` replaces the guard, with the built-in rules and the teacher. |
+
 ## `[github]`
 
 Moebius acts as its own GitHub App, with webhooks off; it polls. The table is optional. Without it, repositories on
@@ -264,8 +281,8 @@ A change applies to the running server at once for these keys:
 - `agents.<name>`, on a server without `[harness]`.
 
 Every other key is written to the file and used after the server restarts: `data_dir`, `listen`, `token_file`,
-`rules_file`, `checks.timeout_seconds`, `router.listen`, `pi_bolt.program`, `harness.*`, `github.*`, `teacher.*` and
-`decision_model.*`. The answer of `PUT /v1/settings` and `GET /v1/settings` lists the ones that differ from what the
+`rules_file`, `checks.timeout_seconds`, `router.listen`, `pi_bolt.program`, `harness.*`, `github.*`, `teacher.*`,
+`decision_model.*` and `plugins` (an entry is addressed by its position, `plugins.0`). The answer of `PUT /v1/settings` and `GET /v1/settings` lists the ones that differ from what the
 running server started with, and `POST /v1/server/restart` restarts it.
 
 ### Secrets

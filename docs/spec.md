@@ -29,14 +29,15 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
   column scripts, rules, agents and extensions on request, offered as changes.
 - **Grilling** (a chat with the Grilling partner) that ends in issues a person confirms, or in a research report.
 - The desktop app's seven screens: board, live view, inbox, chat, fleet, agents, usage.
+- **Plugins in their own process** besides the compiled-in ones: a program named under `[[plugins]]` in `moebius.toml`
+  that speaks JSON Lines on stdin and stdout, called with the same time limit, failing closed, and started again with a
+  growing pause when it stops (see `docs/reference/plugin-api.md`).
 
 ### Not in the first version
 
 - Harnesses other than Pi-Bolt; the router's fallback check for harnesses without a bridge.
 - Forges other than GitHub (Codeberg, GitLab come as plugins later).
 - Runners other than local worktrees on the server (GPU machines come as runner plugins).
-- Plugins in their own process: the API is designed for them, but they are opened up only once it has stopped changing
-  (ADR 0009). All plugins of the first version are compiled in.
 - Training the decision model; the first version records judgements and exports them.
 - Webhooks; forges are polled (ADR 0003).
 - More than one person.
@@ -71,7 +72,7 @@ The core is everything that is not a plugin (ADR 0009). Its parts:
 |---|---|---|
 | Repositories | git clones, branches, worktrees, merges | One clone per repository; a worktree per run; merge for repositories without a forge. |
 | Store | cards, changes, runs, events, judgements, agents' bindings, budgets | SQLite for records; a content-addressed blob store on disk for large and repeating content (contexts, diffs, logs). |
-| Plugin host | the plugin API and the compiled-in plugins | Every call into a plugin has a time limit and fails closed. |
+| Plugin host | the plugin API, the compiled-in plugins and the plugins in their own process | Every call into a plugin has a time limit and fails closed; a plugin process is started again when it stops. |
 | Runs and scheduling | starting, stopping and limiting runs | Global and per-column limits; a card waits for the cards it depends on; token budgets per card and per day. |
 | Boards | columns, cards, transitions | Each column's behaviour is a Luau script; scripts decide through `moebius.decide`. |
 | Inbox | what needs a person | Ready to merge, stuck, proposals, outside issues awaiting approval, takeover proposals from shadowing. |

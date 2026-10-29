@@ -137,7 +137,7 @@ async fn start_steps(State(state): State<ApiState>) -> Result<axum::Json<setup::
 }
 
 async fn plugins(State(state): State<ApiState>) -> axum::Json<setup::Plugins> {
-    axum::Json(setup::plugins(&state.app.decisions))
+    axum::Json(setup::plugins(&state.app.decisions, &state.app.data_dir))
 }
 
 async fn settings(State(state): State<ApiState>) -> Result<axum::Json<SettingsView>, ApiError> {
