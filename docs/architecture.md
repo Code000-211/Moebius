@@ -407,7 +407,11 @@ At the top:
 | `decide/guard/reversible.rs` | Whether a tool call can be replayed: its effects stay in the worktree. |
 | `decide/guard/teacher.rs` | The teacher model: what it is told, the request through the router, and reading its answer. |
 | `decide/rules.rs` | The `rules.md` format and where rules come from. |
-| `decide/model.rs` | The decision model: asking an OpenAI-compatible endpoint, shadowing held-out judgements in the background, takeover proposals and their merge, dismissal and release. |
+| `decide/model/mod.rs` | The decision model (ADR 0010): its name as a decider plugin, the kind its decider keeps, and the kinds routed to it. |
+| `decide/model/ask.rs` | Asking the model through its OpenAI-compatible endpoint, with every field of the context cut; reading its answer, which must be exactly the JSON asked for; and the model as the decider plugin `decision-model`. |
+| `decide/model/shadow.rs` | Shadowing: held-out judgements of the shadowed kinds asked in the background behind a bounded queue, each answer stored as a shadow, and a takeover proposed for a kind that has earned one. |
+| `decide/model/view.rs` | What `GET /v1/decision-model` shows: the model, its thresholds, and per kind its shadows, agreement, failures, dropped requests and whether it is routed, with the takeovers. |
+| `decide/model/takeovers.rs` | A person's decision about a takeover, recorded as a judgement: an open one merged or dismissed, a merged one released. |
 
 `harness/`, the agents and what they are given:
 
@@ -438,9 +442,20 @@ At the top:
 |---|---|
 | `improve/mod.rs` | What the improve folder holds. |
 | `improve/retro.rs` | The Retro: the day's errors collected into a report without a model, the Retro analyst's run, and its proposal branches. |
-| `improve/trial.rs` | Trials: each proposal tried on the cards of the errors it addresses, measured against the cards' first runs, and offered when positive. |
-| `improve/replay.rs` | Replays: refused, reversible tool calls run again in a throwaway copy of the worktree, and the judgement's outcome from what happened. |
-| `improve/research.rs` | Autoresearch: a confirmed brief, its baseline, the Autoresearcher's levers as branches, an experiment for each, and the kept ones offered as changes. |
+| `improve/trial/mod.rs` | Trials: the trial window, and what the parts share. |
+| `improve/trial/verdict.rs` | What a trial run and the card's first code run measured, whether a trial is positive, and the status a proposal gets from its trials. |
+| `improve/trial/card.rs` | One card's trial: its task run again by its agent with the definition from the proposal's branch, then measured and compared, its worktree and branch removed. |
+| `improve/trial/schedule.rs` | Trying a proposal on a thread of its own, card after card, each trial stored and published, its status and inbox item; and the schedule's start inside the trial window. |
+| `improve/trial/decision.rs` | A person's merge or dismissal of a positive or untried proposal. |
+| `improve/replay/mod.rs` | Replays: one replay a person asks for, the due refusals, and the schedule's replays inside the trial window, at most `PER_NIGHT` a night. |
+| `improve/replay/call.rs` | The refused call read back from its judgement: tool, input, worktree, run and repository, and only when it is reversible. |
+| `improve/replay/copy.rs` | The throwaway copy, filled from the run's worktree or a checkout; its files listed with sizes and hashes; and what a call created, changed and deleted. |
+| `improve/replay/process.rs` | Running the call in the copy: `bash`, `grep` and `find` with an empty environment and a time limit that kills their process group, and the file tools applied by Moebius. |
+| `improve/replay/outcome.rs` | A replay made and recorded: the call run in the copy, the sentence that becomes the judgement's outcome, and the replay stored and published, or why it could not be run. |
+| `improve/research/mod.rs` | Autoresearch: what the API shows of a research, and the lookups its parts share. |
+| `improve/research/brief.rs` | A research's brief: stored as a draft, written anew while it is one, confirmed as a recorded decision, and a research stopped. |
+| `improve/research/measure.rs` | A brief's measure run in a fresh worktree with a cleared environment and a time limit, the last number it printed, and whether a lever beats the baseline by enough to be kept. |
+| `improve/research/rounds.rs` | The thread that drives a research: its baseline, the Autoresearcher's rounds, each new lever measured and kept or offered, and the schedule's start of the oldest confirmed research. |
 | `improve/export.rs` | The training-set export: judgements with their contexts and outcomes as JSON Lines per kind, the held-out tenth, the exports a person started in the app. |
 
 Outside `src/`: `workflow/*.luau` holds the six built-in column scripts, `bridge/moebius-bridge.ts` the Pi extension

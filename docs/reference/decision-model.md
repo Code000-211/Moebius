@@ -4,7 +4,7 @@ Moebius trains one decision model on its judgements (ADR 0010, [the training exp
 says how a model that is served behind an OpenAI-compatible endpoint is put to work: it first decides alongside the
 existing decider without anyone noticing (shadowing), and a person can then let it take a kind of decision over (a
 takeover). Nothing here happens without a `[decision_model]` table in the [configuration](configuration.md#decision_model).
-The code is in `crates/moebius-core/src/decide/model.rs`.
+The code is in `crates/moebius-core/src/decide/model/`.
 
 ## Asking the model
 
