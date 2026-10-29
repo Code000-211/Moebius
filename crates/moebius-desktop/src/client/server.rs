@@ -16,6 +16,33 @@ pub struct Upstream {
     pub protocol: String,
     pub base_url: String,
     pub api_key_set: bool,
+    /// How the upstream logs in with OAuth, if it does instead of a key.
+    #[serde(default)]
+    pub oauth: Option<UpstreamOAuth>,
+}
+
+/// The OAuth login of an upstream, as `GET /v1/models` tells it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct UpstreamOAuth {
+    /// `device` or `code`.
+    pub flow: String,
+    /// Whether the server keeps a login for it.
+    pub logged_in: bool,
+    /// What the person confirms before a login starts.
+    pub warning: String,
+}
+
+/// Where the OAuth login of an upstream stands, as `GET` and `POST /v1/models/upstreams/{place}/login` answer.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Login {
+    /// `logged_out`, `waiting`, `logged_in` or `failed`.
+    pub state: String,
+    pub flow: String,
+    pub user_code: Option<String>,
+    pub verification_uri: Option<String>,
+    pub verification_uri_complete: Option<String>,
+    pub authorize_url: Option<String>,
+    pub message: String,
 }
 
 /// The teacher model, as `GET /v1/models` tells it.

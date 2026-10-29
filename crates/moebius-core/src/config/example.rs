@@ -60,6 +60,24 @@ listen = "127.0.0.1:7172"
 # base_url = "https://api.anthropic.com"
 # api_key_env = "ANTHROPIC_API_KEY"       # or: api_key_secret = "anthropic"
 
+# An upstream may log in with OAuth instead of a key, from the Models page of the desktop app. The flow is "device" (a
+# code to enter at the provider) or "code" (the provider's page in the browser, sent back to 127.0.0.1). The client id
+# and URLs are the provider's; the refresh token is kept in secrets.toml under the name `secret`. Using a subscription
+# through a third-party tool may break the provider's terms: the app asks you to confirm that before a login starts.
+# [[router.upstreams]]
+# protocol = "anthropic"
+# base_url = "https://api.example.com"
+# [router.upstreams.oauth]
+# flow = "device"                         # or code
+# client_id = "the-client-id"
+# token_url = "https://login.example.com/oauth/token"
+# device_url = "https://login.example.com/oauth/device/code"   # for device
+# authorize_url = "https://login.example.com/oauth/authorize"  # for code
+# scopes = ["models"]
+# redirect_port = 54545                   # for code; any free port when not set
+# redirect_path = "/callback"             # for code
+# secret = "example-login"
+
 [pi_bolt]
 program = "pi-bolt"
 

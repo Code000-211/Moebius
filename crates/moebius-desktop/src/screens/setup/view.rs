@@ -15,6 +15,7 @@ use crate::widgets::model_picker;
 use crate::widgets::page;
 
 use super::inputs::{field_view, optional_box, upstream_row};
+use super::login::login_view;
 use super::{Message, Notice, Owner, Setup};
 
 /// The amber line that says the server has to restart for some keys to be used, with the button that restarts it.
@@ -163,13 +164,16 @@ impl Setup {
         let upstreams: Element<AppMessage> = if forms.upstreams.is_empty() {
             page::body("No upstream is configured; every model request fails.")
         } else {
-            column(
-                forms
-                    .upstreams
-                    .iter()
-                    .enumerate()
-                    .map(|(place, upstream)| upstream_row(place, upstream, secrets)),
-            )
+            column(forms.upstreams.iter().enumerate().map(|(place, upstream)| {
+                let oauth = upstream.origin.and_then(|origin| {
+                    let oauth = models.upstreams.get(origin)?.oauth.as_ref()?;
+                    Some(login_view(origin, oauth, self.login(origin)))
+                });
+                column![upstream_row(place, upstream, secrets)]
+                    .push(oauth)
+                    .spacing(10)
+                    .into()
+            }))
             .spacing(12)
             .into()
         };

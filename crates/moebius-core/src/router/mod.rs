@@ -1,6 +1,6 @@
 //! The router (ADR 0006): Moebius is every harness's only model provider. It offers OpenAI- and Anthropic-compatible
 //! endpoints on localhost, knows each request's run by its per-run token, forwards it to an upstream (a provider with an
-//! API key, or a local server such as Radiance), records the tokens used against the run, and refuses requests once the
+//! API key, a provider logged in to with OAuth, or a local server such as Radiance), records the tokens used against the run, and refuses requests once the
 //! card's or run's token budget, or the day's, is spent. Provider keys stay in the router; harnesses only ever see their run's token.
 //!
 //! - `POST /v1/chat/completions`: OpenAI chat completions, streamed or not.
@@ -17,10 +17,12 @@
 //!
 //! This module holds the router, its upstreams and its routes; `proxy` forwards a request upstream, `usage` counts
 //! the tokens and tools of what comes back, `grants` are the runs' tokens and the budgets they are checked against,
-//! and `models` asks the upstreams which models they serve.
+//! `models` asks the upstreams which models they serve, and `oauth` logs an upstream in with OAuth and keeps its
+//! tokens fresh.
 
 mod grants;
 mod models;
+mod oauth;
 mod proxy;
 mod usage;
 
@@ -42,6 +44,9 @@ use crate::store::Store;
 
 pub use grants::{Grant, token};
 pub use models::{AvailableModel, AvailableModels, UpstreamError};
+#[cfg(test)]
+pub(crate) use oauth::testing as oauth_testing;
+pub use oauth::{Flow, Login, LoginError, LoginState, OAuthConfig, TERMS_WARNING};
 
 /// The protocol an endpoint or an upstream speaks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -68,8 +73,10 @@ pub struct Upstream {
     pub protocol: Protocol,
     /// The base URL the endpoint's path is appended to, such as `https://api.anthropic.com` or `http://127.0.0.1:8080`.
     pub base_url: String,
-    /// The provider's key; none for a local server.
+    /// The provider's key; none for a local server or an upstream that logs in with OAuth.
     pub api_key: Option<String>,
+    /// How the upstream logs in with OAuth instead of a key, if it does.
+    pub oauth: Option<OAuthConfig>,
 }
 
 pub struct Router {
@@ -84,6 +91,8 @@ pub struct Router {
     client: reqwest::Client,
     /// The last list of available models and when it was made.
     available: Mutex<Option<(Instant, AvailableModels)>>,
+    /// The tokens and logins of the upstreams that log in with OAuth.
+    oauth: oauth::Logins,
 }
 
 impl Router {
@@ -96,6 +105,7 @@ impl Router {
             mcp: RwLock::new(HashMap::new()),
             client: reqwest::Client::new(),
             available: Mutex::new(None),
+            oauth: oauth::Logins::default(),
         }
     }
 

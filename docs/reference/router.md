@@ -18,7 +18,8 @@ harness only ever holds its run's token. The same listener also serves the [brid
 The body is passed on to the upstream of the same protocol, unchanged except that for a streamed OpenAI request
 `stream_options.include_usage` is set to `true`, so that the upstream reports the tokens it used. The request is sent
 to `<base_url><route>`, with the headers `anthropic-version` and `anthropic-beta` copied from the client, and with the
-upstream's key added when `api_key_env` or `api_key_secret` is set (`Authorization: Bearer` for OpenAI, `x-api-key` for Anthropic). The
+upstream's key added when `api_key_env` or `api_key_secret` is set (`Authorization: Bearer` for OpenAI, `x-api-key` for Anthropic), or
+the access token of its [OAuth login](#oauth-logins) as `Authorization: Bearer` for either protocol. The
 upstream's status, content type and body (or stream) are passed back as they are.
 
 An upstream is chosen by protocol: the first `[[router.upstreams]]` table with that `protocol`.
@@ -30,6 +31,38 @@ the router. It asks each upstream, once even if it is configured twice, which mo
 `GET <base_url>/models`; for `anthropic`, `GET <base_url>/v1/models?limit=1000` with `anthropic-version: 2023-06-01`. Both
 read `data[].id`, and send the upstream's key as for a request (`Authorization: Bearer` or `x-api-key`). An upstream has
 10 seconds to answer. The answer is kept for 5 minutes, and is dropped when the upstreams are edited.
+
+## OAuth logins
+
+An upstream with a `[router.upstreams.oauth]` table (see [configuration](configuration.md#routerupstreamsoauth)) logs in
+with OAuth 2.0 instead of sending a key. A person starts the login from the Models page, which first shows the warning
+that using a subscription through a third-party tool may break the provider's terms and asks them to confirm it
+(`POST /v1/models/upstreams/{place}/login` with `"accept_terms": true`, see the [desktop API](desktop-api.md)). The
+login runs on the server in the background:
+
+- `device` posts `client_id` and `scope` to `device_url` (form-encoded, as are all requests to the provider) and shows
+  the `user_code` and `verification_uri` (or `verification_url`) it answers. It then polls `token_url` with
+  `grant_type=urn:ietf:params:oauth:grant-type:device_code`, `device_code` and `client_id` every `interval` seconds (5
+  when not given; 5 more after `slow_down`), while the answer is `authorization_pending`, until `expires_in` (900 when
+  not given) has passed. `access_denied` or `expired_token` end it.
+- `code` listens on `127.0.0.1:<redirect_port>` (any free port when not set) and answers `authorize_url` with
+  `response_type=code`, `client_id`, `redirect_uri` (`http://127.0.0.1:<port><redirect_path>`), `scope`, a random
+  `state` and an S256 `code_challenge`; the desktop app opens it in the browser. The first request to the redirect with
+  that `state` ends the wait (others are ignored): its `code` is posted to `token_url` with
+  `grant_type=authorization_code`, `redirect_uri`, `client_id` and the `code_verifier`; an `error` ends the login. The
+  browser has 10 minutes.
+
+The answer of `token_url` must carry `access_token`, and may carry `refresh_token` and `expires_in` (an hour when not
+given). The refresh token is kept in `secrets.toml` under `oauth.secret`; the access token only in memory. When the
+login has its tokens, the router asks the upstream for its models with the access token (as in [Listing
+models](#listing-models)): the login holds when that succeeds.
+
+Before each request the access token is refreshed when less than a minute of its life is left (or less than half of a
+life shorter than two minutes): `grant_type=refresh_token`, `refresh_token` and `client_id` are posted to `token_url`,
+and a new `refresh_token` in the answer replaces the stored one. One refresh serves every request waiting for it. An
+upstream with no stored refresh token, or whose refresh is refused, answers `502` with `authentication_error` and a
+message that says to log in again on the Models page; no token is ever in a message. Every token the router is given or
+reads is redacted wherever it would appear (in the store, a blob or a log) as `[redacted:secret]`.
 
 ## Run tokens
 
@@ -58,6 +91,7 @@ The checks run in this order:
 | `429` | `budget_exceeded` | The run's budget or the day's budget is spent (below). |
 | `500` | `api_error` | The usage cannot be read from the store. |
 | `502` | `api_error` | There is no upstream for the protocol, or the upstream cannot be reached or its body cannot be read. |
+| `502` | `authentication_error` | The upstream logs in with OAuth and is not logged in, or its token could not be refreshed. |
 | `400` | `invalid_request_error` | The body is not JSON. |
 
 Any other status is the upstream's own, passed on.

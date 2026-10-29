@@ -84,8 +84,11 @@ impl Server {
             .map_err(|e| format!("cannot read {}: {e}", config.token_file.display()))?;
         let secrets = Secrets::new(&config.data_dir);
         let upstreams = secrets.upstreams(&config)?;
-        let router =
-            Arc::new(Router::new(store.clone(), upstreams).with_day_budget(config.day_tokens));
+        let router = Arc::new(
+            Router::new(store.clone(), upstreams)
+                .with_day_budget(config.day_tokens)
+                .with_secrets(secrets.clone()),
+        );
 
         let teacher = config
             .teacher

@@ -141,6 +141,27 @@ endpoint it came in on; without a match the router answers 502. Without any upst
 | `router.upstreams.api_key_env` | string | none | The name of the environment variable that holds the provider's key. The key is never in the file. If the variable is not set when the server starts, the server does not start. Without this key and without `api_key_secret`, no key is sent (a local server). The key is sent as `Authorization: Bearer` (`openai`) or `x-api-key` (`anthropic`). |
 | `router.upstreams.api_key_secret` | string | none | The name of a stored key (see [Secrets](#secrets)) that holds the provider's key, for a key typed into the desktop app. A name is made of letters, digits, `-` and `_`. If no key is stored under it when the server starts, the server does not start. Setting it together with `api_key_env` refuses the file. The key is sent as for `api_key_env`. |
 
+#### `[router.upstreams.oauth]`
+
+An upstream that logs in with OAuth 2.0 instead of a key, such as a provider's subscription. Nothing of any provider is
+built in: the client id and the URLs are the provider's, written here. Setting `oauth` together with `api_key_env` or
+`api_key_secret` refuses the file. The login is started from the Models page of the desktop app (or
+`POST /v1/models/upstreams/{place}/login`, see the [desktop API](desktop-api.md)) after the person confirms that using a
+subscription through a third-party tool may break the provider's terms; `moebius doctor` repeats the warning. A server
+whose upstream is not logged in starts, and the router answers its requests with `502` (see [router](router.md#oauth-logins)).
+
+| Key | Type | Default | Meaning and validation |
+|---|---|---|---|
+| `router.upstreams.oauth.flow` | string | required | `device`: the device authorization grant (RFC 8628), a code the person enters at the provider. `code`: an authorization code with PKCE (RFC 7636), the provider's page opened in the browser and the browser sent back to `http://127.0.0.1:<port><path>`. |
+| `router.upstreams.oauth.client_id` | string | required | The OAuth client id; not empty. |
+| `router.upstreams.oauth.token_url` | string | required | The `http` or `https` URL where codes and refresh tokens are exchanged for tokens. |
+| `router.upstreams.oauth.device_url` | string | none | The device authorization URL; required by `device`. |
+| `router.upstreams.oauth.authorize_url` | string | none | The provider's authorization page; required by `code`. |
+| `router.upstreams.oauth.scopes` | array of strings | `[]` | The scopes asked for, sent space-separated as `scope`; none is sent when empty. |
+| `router.upstreams.oauth.redirect_port` | integer | any free port | For `code`: the loopback port the browser is sent back to, for a provider that registers it. |
+| `router.upstreams.oauth.redirect_path` | string | `/callback` | For `code`: the path the browser is sent back to; it starts with `/`. |
+| `router.upstreams.oauth.secret` | string | required | The name the refresh token is kept under in `secrets.toml` (see [Secrets](#secrets)); letters, digits, `-` and `_`. |
+
 ## `[pi_bolt]`
 
 | Key | Type | Default | Meaning and validation |
@@ -253,7 +274,8 @@ A key typed into the app is stored under a name in `secrets.toml` in `data_dir`,
 its owner can read (mode 0600). `moebius.toml` names it with `api_key_secret`; the key itself is never in
 `moebius.toml`, in an answer of the API, in the store, in an event or in a log. A key is stored with `PUT
 /v1/secrets/{name}` and removed with `DELETE /v1/secrets/{name}`; removing one that `api_key_secret` still names makes
-the next start fail, as an unset `api_key_env` variable does.
+the next start fail, as an unset `api_key_env` variable does. The refresh token of an OAuth login is kept the same way,
+under `router.upstreams.oauth.secret`, and replaced when the provider rotates it.
 
 ## Environment variables
 

@@ -114,6 +114,7 @@ impl Secrets {
                         upstream.api_key_env.as_deref(),
                         upstream.api_key_secret.as_deref(),
                     )?,
+                    oauth: upstream.oauth.clone(),
                 })
             })
             .collect()

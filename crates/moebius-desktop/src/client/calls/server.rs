@@ -2,7 +2,8 @@
 //! restart.
 
 use crate::client::{
-    Available, Client, ClientError, Health, Models, Plugins, SavedSettings, ServerSettings, Start,
+    Available, Client, ClientError, Health, Login, Models, Plugins, SavedSettings, ServerSettings,
+    Start,
 };
 
 impl Client {
@@ -23,6 +24,21 @@ impl Client {
             "/v1/models/available"
         };
         self.get(path).await
+    }
+
+    /// Starts the OAuth login of the upstream at `place`; the person has confirmed the warning of its terms.
+    pub async fn start_login(&self, place: usize) -> Result<Login, ClientError> {
+        self.post(
+            &format!("/v1/models/upstreams/{place}/login"),
+            serde_json::json!({ "accept_terms": true }),
+        )
+        .await
+    }
+
+    /// Where the OAuth login of the upstream at `place` stands.
+    pub async fn login(&self, place: usize) -> Result<Login, ClientError> {
+        self.get(&format!("/v1/models/upstreams/{place}/login"))
+            .await
     }
 
     /// The plugins the server has loaded.

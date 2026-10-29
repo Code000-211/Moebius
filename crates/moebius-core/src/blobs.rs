@@ -1,8 +1,9 @@
 //! The content-addressed blob store: large and repeating content (contexts, diffs, logs) kept once on disk under the
-//! SHA-256 of its bytes, with secrets removed before anything is written.
+//! SHA-256 of its bytes, with secrets removed before anything is written. [`redact`] knows secrets by their shape, and
+//! by their value for those the server was given at run time ([`remember_secret`]), such as the tokens of an OAuth login.
 
 use std::path::PathBuf;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, RwLock};
 
 use regex::Regex;
 use sha2::{Digest, Sha256};
@@ -32,9 +33,35 @@ static SECRETS: LazyLock<Vec<(&'static str, Regex)>> = LazyLock::new(|| {
     .collect()
 });
 
-/// Replaces every secret the patterns know with `[redacted:<kind>]`.
+/// The secrets the server was given while it runs, redacted by their value; shorter ones are not kept, since they
+/// would be found in ordinary text.
+static REMEMBERED: RwLock<Vec<String>> = RwLock::new(Vec::new());
+
+/// The fewest characters a remembered secret has.
+const REMEMBERED_LEAST: usize = 12;
+
+/// Has [`redact`] replace `secret` wherever it appears, from now until the server stops: for a secret of no known shape,
+/// such as an OAuth token.
+pub fn remember_secret(secret: &str) {
+    let secret = secret.trim();
+    if secret.chars().count() < REMEMBERED_LEAST {
+        return;
+    }
+    let mut remembered = REMEMBERED.write().unwrap_or_else(|p| p.into_inner());
+    if !remembered.iter().any(|known| known == secret) {
+        remembered.push(secret.to_string());
+    }
+}
+
+/// Replaces every secret the patterns know with `[redacted:<kind>]`, and every remembered one with
+/// `[redacted:secret]`.
 pub fn redact(text: &str) -> String {
     let mut out = text.to_string();
+    for secret in REMEMBERED.read().unwrap_or_else(|p| p.into_inner()).iter() {
+        if out.contains(secret.as_str()) {
+            out = out.replace(secret.as_str(), "[redacted:secret]");
+        }
+    }
     for (name, re) in SECRETS.iter() {
         out = re
             .replace_all(&out, format!("[redacted:{name}]"))
@@ -114,6 +141,22 @@ mod tests {
         assert_eq!(store.get(&a).unwrap(), "hello world");
         let files: Vec<_> = walk(dir.path());
         assert_eq!(files.len(), 1);
+    }
+
+    #[test]
+    fn a_remembered_secret_is_redacted_by_its_value() {
+        let token = "oauth-token-of-no-known-shape-41b7";
+        assert_eq!(
+            redact(&format!("bearer {token}.")),
+            format!("bearer {token}.")
+        );
+        remember_secret(token);
+        remember_secret("short");
+        assert_eq!(
+            redact(&format!("bearer {token}.")),
+            "bearer [redacted:secret]."
+        );
+        assert_eq!(redact("a short word"), "a short word");
     }
 
     #[test]

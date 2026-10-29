@@ -47,7 +47,9 @@ pub(super) async fn start_with(
         std::time::Duration::from_secs(1),
     ));
     // The harness is the real one over a Pi that is a script.
-    let router = Arc::new(Router::new(store.clone(), vec![]));
+    let router = Arc::new(Router::new(store.clone(), vec![]).with_secrets(
+        crate::server::settings::Secrets::new(&dir.path().join(".moebius")),
+    ));
     let pi = PiBolt::new(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/fake-pi"),
         "/usr/local/bin/moebius".into(),

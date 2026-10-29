@@ -159,8 +159,12 @@ pub(super) fn upstream_row<'a>(
     row![
         container(labelled("Protocol", protocol)).width(Length::FillPortion(2)),
         container(labelled("Base URL", url)).width(Length::FillPortion(6)),
-        container(key_view(Owner::Upstream(place), &upstream.key, secrets))
-            .width(Length::FillPortion(7)),
+        container(if upstream.oauth.is_some() {
+            labelled("Key", page::body("None: it logs in with OAuth")).into()
+        } else {
+            key_view(Owner::Upstream(place), &upstream.key, secrets)
+        })
+        .width(Length::FillPortion(7)),
         container(page::white_button(
             "Remove",
             Some(message(Message::RemoveUpstream(place)))

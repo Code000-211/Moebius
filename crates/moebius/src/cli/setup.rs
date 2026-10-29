@@ -1,6 +1,6 @@
-//! Setting the server up and keeping it running: `doctor` checks the steps to a first card (`GET /v1/start`),
-//! `settings` shows and changes `moebius.toml`, `secrets set` stores an API key read from standard input, `usage`
-//! writes the tokens and calls of the last days, and `server restart` restarts the server.
+//! Setting the server up and keeping it running: `doctor` checks the steps to a first card (`GET /v1/start`) and
+//! writes its warnings, `settings` shows and changes `moebius.toml`, `secrets set` stores an API key read from standard
+//! input, `usage` writes the tokens and calls of the last days, and `server restart` restarts the server.
 
 use clap::Subcommand;
 use serde_json::{Map, Value, json};
@@ -102,6 +102,7 @@ pub fn server(command: &ServerCommand) -> Plan {
 /// One line for each step of `GET /v1/start`.
 pub fn show_doctor(view: &Value) -> String {
     let steps = view["steps"].as_array().into_iter().flatten();
+    let warnings = view["warnings"].as_array().into_iter().flatten();
     steps
         .map(|step| {
             let state = if step["done"] == true {
@@ -115,6 +116,7 @@ pub fn show_doctor(view: &Value) -> String {
                 cell(&step["detail"])
             )
         })
+        .chain(warnings.map(|warning| format!("{:<8} {}", "warning", cell(warning))))
         .collect::<Vec<_>>()
         .join("\n")
 }

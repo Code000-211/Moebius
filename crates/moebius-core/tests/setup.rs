@@ -114,8 +114,8 @@ protocol = "anthropic"
     assert_eq!(
         models["upstreams"],
         json!([
-            {"protocol": "openai", "base_url": "http://127.0.0.1:8080", "api_key_set": false},
-            {"protocol": "anthropic", "base_url": "https://api.example.com", "api_key_set": true},
+            {"protocol": "openai", "base_url": "http://127.0.0.1:8080", "api_key_set": false, "oauth": null},
+            {"protocol": "anthropic", "base_url": "https://api.example.com", "api_key_set": true, "oauth": null},
         ])
     );
     let names: Vec<&str> = models["agents"]

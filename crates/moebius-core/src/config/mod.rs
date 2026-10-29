@@ -60,6 +60,12 @@ pub enum ConfigError {
     KeyTwice { key: &'static str },
     #[error("{key}.api_key_secret: {name:?} is not a name (letters, digits, - and _)")]
     KeySecret { key: &'static str, name: String },
+    #[error("router.upstreams.oauth: {0}")]
+    OAuth(String),
+    #[error(
+        "router.upstreams: an upstream that logs in with oauth cannot also set api_key_env or api_key_secret"
+    )]
+    OAuthAndKey,
     #[error("checks.timeout_seconds must be at least 1")]
     ChecksTimeout,
     #[error("budgets.day_tokens must be at least 1")]
@@ -156,6 +162,14 @@ impl Config {
                 upstream.api_key_env.as_deref(),
                 upstream.api_key_secret.as_deref(),
             )?;
+            if let Some(oauth) = &upstream.oauth {
+                if upstream.api_key_env.is_some() || upstream.api_key_secret.is_some() {
+                    return Err(ConfigError::OAuthAndKey);
+                }
+                if let Some(problem) = oauth.problem() {
+                    return Err(ConfigError::OAuth(problem));
+                }
+            }
         }
         if let Some(name) = raw.agents.keys().find(|n| !valid_agent_name(n)) {
             return Err(ConfigError::AgentName { name: name.clone() });
@@ -313,6 +327,31 @@ mod tests {
         assert_eq!(c.run_limit, 8);
         assert_eq!(c.retro_at, TimeOfDay(22 * 60 + 5));
         assert_eq!(c.trial_window, (TimeOfDay(60), TimeOfDay(5 * 60 + 30)));
+    }
+
+    #[test]
+    fn an_upstream_can_log_in_with_oauth_but_not_also_have_a_key() {
+        let oauth = "[[router.upstreams]]\nprotocol = \"anthropic\"\nbase_url = \"https://api.example.com\"\n\
+                     [router.upstreams.oauth]\nflow = \"device\"\nclient_id = \"moebius\"\n\
+                     token_url = \"https://login.example.com/token\"\n\
+                     device_url = \"https://login.example.com/device\"\nscopes = [\"models\"]\nsecret = \"example-login\"\n";
+        let c = parse(oauth).unwrap();
+        let login = c.upstreams[0].oauth.as_ref().unwrap();
+        assert_eq!(login.flow, crate::router::Flow::Device);
+        assert_eq!(login.scopes, ["models"]);
+        assert_eq!(login.secret, "example-login");
+        let keyed = oauth.replace(
+            "[router.upstreams.oauth]",
+            "api_key_env = \"KEY\"\n[router.upstreams.oauth]",
+        );
+        assert!(matches!(parse(&keyed), Err(ConfigError::OAuthAndKey)));
+        let coded = oauth.replace("\"device\"", "\"code\"");
+        assert_eq!(
+            parse(&coded).unwrap_err().to_string(),
+            "router.upstreams.oauth: authorize_url is needed by the code flow"
+        );
+        let unknown = oauth.replace("scopes", "scope");
+        assert!(matches!(parse(&unknown), Err(ConfigError::Parse { .. })));
     }
 
     #[test]

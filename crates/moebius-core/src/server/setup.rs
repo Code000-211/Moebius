@@ -11,7 +11,7 @@ use serde::Serialize;
 use crate::board::AgentInfo;
 use crate::config::Config;
 use crate::decide::Decisions;
-use crate::router::{AvailableModels, Protocol};
+use crate::router::{AvailableModels, Flow, Protocol, TERMS_WARNING};
 
 /// `url` without the user name and password in front of its host, if it has any.
 pub fn without_credentials(url: &str) -> String {
@@ -33,6 +33,18 @@ pub struct UpstreamView {
     pub base_url: String,
     /// Whether the upstream has a key; the key itself is never shown.
     pub api_key_set: bool,
+    /// How the upstream logs in with OAuth, if it does instead of a key.
+    pub oauth: Option<OAuthView>,
+}
+
+/// The OAuth login of an upstream, without any of its tokens.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct OAuthView {
+    pub flow: Flow,
+    /// Whether a refresh token is stored; `GET /v1/models/upstreams/{place}/login` tells whether it holds.
+    pub logged_in: bool,
+    /// What the person confirms before a login starts.
+    pub warning: &'static str,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -59,7 +71,8 @@ pub struct Models {
     pub decision_model: Option<DecisionModelView>,
 }
 
-pub fn models(config: &Config, agents: Vec<AgentInfo>) -> Models {
+/// What `GET /v1/models` answers; `secrets` are the names of the stored secrets.
+pub fn models(config: &Config, agents: Vec<AgentInfo>, secrets: &[String]) -> Models {
     Models {
         upstreams: config
             .upstreams
@@ -68,6 +81,11 @@ pub fn models(config: &Config, agents: Vec<AgentInfo>) -> Models {
                 protocol: upstream.protocol,
                 base_url: without_credentials(&upstream.base_url),
                 api_key_set: upstream.api_key_env.is_some() || upstream.api_key_secret.is_some(),
+                oauth: upstream.oauth.as_ref().map(|oauth| OAuthView {
+                    flow: oauth.flow,
+                    logged_in: secrets.contains(&oauth.secret),
+                    warning: TERMS_WARNING,
+                }),
             })
             .collect(),
         agents,
@@ -145,6 +163,10 @@ pub struct StartStep {
 pub struct Start {
     pub done: bool,
     pub steps: Vec<StartStep>,
+    /// What the person should know even when every step is done, such as the warning of an upstream that logs in
+    /// with OAuth.
+    #[serde(default)]
+    pub warnings: Vec<String>,
 }
 
 /// How long `pi-bolt --version` may take.
@@ -275,9 +297,21 @@ pub async fn start(
         step("coder", "Choose the Coder's model", coder),
         step("repository", "Add a repository", repository),
     ];
+    let warnings = config
+        .upstreams
+        .iter()
+        .filter(|upstream| upstream.oauth.is_some())
+        .map(|upstream| {
+            format!(
+                "{} logs in with OAuth. {TERMS_WARNING}",
+                without_credentials(&upstream.base_url)
+            )
+        })
+        .collect();
     Start {
         done: steps.iter().all(|s| s.done),
         steps,
+        warnings,
     }
 }
 
@@ -302,5 +336,33 @@ mod tests {
         ] {
             assert_eq!(without_credentials(url), expected);
         }
+    }
+
+    #[tokio::test]
+    async fn an_upstream_that_logs_in_with_oauth_carries_the_warning_to_the_models_and_the_start() {
+        let config = Config::parse(
+            "[[router.upstreams]]\nprotocol = \"anthropic\"\nbase_url = \"https://u:p@api.example.com\"\n\
+             [router.upstreams.oauth]\nflow = \"code\"\nclient_id = \"moebius\"\n\
+             token_url = \"https://login.example.com/token\"\n\
+             authorize_url = \"https://login.example.com/authorize\"\nsecret = \"example-login\"\n\
+             [pi_bolt]\nprogram = \"/nonexistent/pi-bolt\"\n",
+            Path::new("/srv"),
+            Path::new("/srv/moebius.toml"),
+        )
+        .unwrap();
+        let models = models(&config, vec![], &["example-login".to_string()]);
+        let oauth = models.upstreams[0].oauth.as_ref().unwrap();
+        assert_eq!(
+            (oauth.flow, oauth.logged_in, oauth.warning),
+            (Flow::Code, true, TERMS_WARNING)
+        );
+        assert!(!models.upstreams[0].api_key_set);
+        let start = start(&config, AvailableModels::default(), &[], 0).await;
+        assert_eq!(
+            start.warnings,
+            [format!(
+                "https://api.example.com logs in with OAuth. {TERMS_WARNING}"
+            )]
+        );
     }
 }

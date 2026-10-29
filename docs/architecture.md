@@ -320,10 +320,14 @@ At the top:
 | Module | What it is for |
 |---|---|
 | `router/mod.rs` | The router, its upstreams and its routes `POST /v1/chat/completions` and `POST /v1/messages`. |
-| `router/proxy.rs` | A run's request forwarded to the upstream with the provider's key, and the answer back, streamed or not. |
+| `router/proxy.rs` | A run's request forwarded to the upstream with the provider's key or login, and the answer back, streamed or not. |
 | `router/usage.rs` | The tokens and tools of an answer, read from a body or from a stream as it passes, recorded against the run. |
 | `router/grants.rs` | The runs' tokens and what each allows: the card's, the run's and the day's token budgets, and the MCP servers the gateway gives the run. |
 | `router/models.rs` | The models the upstreams serve, for the pickers of the desktop app. |
+| `router/oauth/mod.rs` | The OAuth login of an upstream: its `oauth` table, the warning confirmed before a login, the access token refreshed before it expires and the refresh token kept in `secrets.toml`. |
+| `router/oauth/device.rs` | The device authorization grant: the code the person enters at the provider, and the token URL polled until it is confirmed. |
+| `router/oauth/code.rs` | An authorization code with PKCE, the browser sent back to a loopback listener. |
+| `router/oauth/testing.rs` | The fake OAuth provider and upstream the tests of the logins share. |
 
 `store/`, the records:
 
@@ -550,6 +554,7 @@ At the top:
 | `screens/experiments/research.rs` | A research's card, brief, baseline and experiments table, with its numbers and changes. |
 | `screens/decision_model.rs` | The Decision model page: what was recorded of each kind of decision, the exports, shadowing and takeovers. |
 | `screens/setup/mod.rs`, `screens/setup/update.rs`, `screens/setup/view.rs` | The Setup pages (Models, Plugins and Settings, which edit `moebius.toml` through the API), how a message changes them, and how they are drawn. |
+| `screens/setup/login.rs` | The OAuth login of an upstream on the Models page: the warning to confirm, the code or the browser, and whether the login holds. |
 | `screens/setup/fields.rs`, `screens/setup/forms.rs`, `screens/setup/inputs.rs` | The keys of `moebius.toml` as inputs, the forms made of them with what a save sends, and how each input is drawn. |
 | `screens/server_terminal.rs` | The Terminal page: a shell on the server (`GET /v1/terminal`). |
 

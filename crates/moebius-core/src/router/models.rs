@@ -88,9 +88,9 @@ impl Router {
     }
 
     /// The ids of the models one upstream lists, or a short message saying why not.
-    async fn list_models(&self, upstream: &Upstream) -> Result<Vec<String>, String> {
+    pub(super) async fn list_models(&self, upstream: &Upstream) -> Result<Vec<String>, String> {
         let base = upstream.base_url.trim_end_matches('/');
-        let mut request = match upstream.protocol {
+        let request = match upstream.protocol {
             Protocol::OpenAi => self.client.get(format!("{base}/models")),
             // The default page of Anthropic's list is twenty models.
             Protocol::Anthropic => self
@@ -99,12 +99,7 @@ impl Router {
                 .header("anthropic-version", "2023-06-01"),
         }
         .timeout(MODELS_TIMEOUT);
-        if let Some(key) = &upstream.api_key {
-            request = match upstream.protocol {
-                Protocol::OpenAi => request.bearer_auth(key),
-                Protocol::Anthropic => request.header("x-api-key", key),
-            };
-        }
+        let request = self.authenticate(upstream, request).await?;
         // The messages are fixed words, so that neither the key nor the address can be in them.
         let response = request.send().await.map_err(|e| {
             if e.is_timeout() {

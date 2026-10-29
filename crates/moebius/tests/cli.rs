@@ -358,6 +358,24 @@ async fn doctor_lists_the_steps_and_fails_while_one_is_missing() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn doctor_warns_of_an_upstream_that_logs_in_with_oauth() {
+    let s = start_with(
+        "[pi_bolt]\nprogram = \"/no/such/pi-bolt\"\n[[router.upstreams]]\nprotocol = \"anthropic\"\n\
+         base_url = \"http://127.0.0.1:9\"\n[router.upstreams.oauth]\nflow = \"device\"\nclient_id = \"moebius\"\n\
+         token_url = \"http://127.0.0.1:9/token\"\ndevice_url = \"http://127.0.0.1:9/device\"\nsecret = \"login\"\n",
+    )
+    .await;
+    let output = s.run(&["doctor"]).await;
+    let text = String::from_utf8(output.stdout.clone()).unwrap();
+    let last = text.lines().last().unwrap();
+    assert!(
+        last.starts_with("warning  http://127.0.0.1:9 logs in with OAuth."),
+        "{text}"
+    );
+    assert!(last.contains("may break the provider's terms"), "{text}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn doctor_succeeds_when_everything_is_in_place() {
     let upstream = fake_upstream().await;
     let dir = tempfile::tempdir().unwrap();

@@ -555,3 +555,106 @@ fn picking_a_model_sets_the_field_and_the_protocol_and_a_typed_model_is_kept() {
     let plan = state.save_request(true).unwrap();
     assert_eq!(plan.set["teacher.model"], "my-own-model");
 }
+
+/// The answers of a server whose second upstream logs in with OAuth by a device code.
+fn oauth_answers() -> (serde_json::Value, serde_json::Value) {
+    let mut models = models_answer();
+    models["upstreams"][1] = json!({
+        "protocol": "anthropic", "base_url": "https://api.example.com", "api_key_set": false,
+        "oauth": {"flow": "device", "logged_in": false,
+                  "warning": "Using a subscription through a third-party tool may break the provider's terms of service."},
+    });
+    let server = settings_answer(
+        json!({"router.upstreams": [
+            {"protocol": "openai", "base_url": "http://127.0.0.1:8080"},
+            {"protocol": "anthropic", "base_url": "https://api.example.com",
+             "oauth": {"flow": "device", "client_id": "moebius", "token_url": "https://login.example.com/token",
+                       "device_url": "https://login.example.com/device", "secret": "example-login"}},
+        ]}),
+        json!({}),
+    );
+    (models, server)
+}
+
+fn login(state: &str, message: &str) -> client::Login {
+    serde_json::from_value(json!({
+        "state": state, "flow": "device", "user_code": "WDJB-MJHT",
+        "verification_uri": "https://login.example.com/device",
+        "verification_uri_complete": "https://login.example.com/device?code=WDJB-MJHT",
+        "authorize_url": null, "message": message,
+    }))
+    .unwrap()
+}
+
+#[test]
+fn an_upstream_that_logs_in_with_oauth_asks_to_confirm_the_warning_then_shows_the_code() {
+    let (models, server) = oauth_answers();
+    let mut app = setup_with(Page::Models, models, server);
+    for text in [
+        "Logs in with OAuth: a code you enter at the provider. Not logged in.",
+        "Using a subscription through a third-party tool may break the provider's terms of service.",
+    ] {
+        assert!(shows(&app, text), "{text:?} is not on the screen");
+    }
+    assert!(pressed(&app, "Log in").unwrap().contains("LogIn(1)"));
+    let _ = app.update(Message::Setup(setup::Message::LogIn(1)));
+    assert!(
+        pressed(&app, "I understand, log in")
+            .unwrap()
+            .contains("ConfirmLogIn(1)")
+    );
+    let _ = app.update(Message::Setup(setup::Message::CancelLogIn(1)));
+    assert!(!shows(&app, "I understand, log in"));
+
+    let _ = app.update(Message::Setup(setup::Message::LogIn(1)));
+    let _ = app.update(Message::Setup(setup::Message::LoginStarted(
+        1,
+        Ok(login("waiting", "Open the page and enter the code.")),
+    )));
+    draw_sized(
+        &app,
+        "models-oauth-login",
+        &[
+            "WDJB-MJHT",
+            "Enter this code at https://login.example.com/device",
+            "Open the page",
+            "Waiting for the login…",
+        ],
+        Size::new(1440.0, 1500.0),
+    );
+    assert!(
+        pressed(&app, "Open the page")
+            .unwrap()
+            .contains("https://login.example.com/device?code=WDJB-MJHT")
+    );
+
+    let _ = app.update(Message::Setup(setup::Message::LoginAnswer(
+        1,
+        Ok(login(
+            "logged_in",
+            "Logged in: the upstream lists 2 models.",
+        )),
+    )));
+    assert!(shows(&app, "Logged in: the upstream lists 2 models."));
+    assert!(!shows(&app, "Waiting for the login…"));
+}
+
+#[test]
+fn saving_an_upstream_that_logs_in_with_oauth_keeps_its_oauth_table() {
+    let (_, server) = oauth_answers();
+    let mut state = setup_state(server);
+    let _ = state.update(
+        setup::Message::UpstreamUrl(1, "https://api2.example.com".into()),
+        None,
+    );
+    let plan = state.save_request(true).unwrap();
+    assert_eq!(
+        plan.set["router.upstreams.1"]["oauth"]["device_url"],
+        "https://login.example.com/device"
+    );
+    assert!(
+        plan.set["router.upstreams.1"]
+            .get("api_key_secret")
+            .is_none()
+    );
+}

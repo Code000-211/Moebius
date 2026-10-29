@@ -6,11 +6,13 @@
 //! connect screen to change that.
 //!
 //! `fields` has the keys and one key as an input, `forms` the forms made of them and what a save sends, `update` how a
-//! message changes the pages, `view` how they are drawn and `inputs` the inputs of the forms.
+//! message changes the pages, `view` how they are drawn, `inputs` the inputs of the forms and `login` the OAuth login
+//! of an upstream.
 
 mod fields;
 mod forms;
 mod inputs;
+mod login;
 mod update;
 mod view;
 
@@ -19,12 +21,13 @@ use serde_json::{Map, Value};
 
 use crate::app::Message as AppMessage;
 use crate::client::{
-    Available, AvailableModel, Client, ClientError, Models, Plugins, SavedSettings, ServerSettings,
-    unauthorized,
+    Available, AvailableModel, Client, ClientError, Login, Models, Plugins, SavedSettings,
+    ServerSettings, unauthorized,
 };
 use crate::settings::Settings;
 
 use forms::Forms;
+pub use login::LoginStep;
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -57,6 +60,17 @@ pub enum Message {
     Restart,
     /// The server answered the request to restart.
     Restarting(Result<(), ClientError>),
+    /// "Log in" was pressed for the upstream at this place in the file: the warning asks for a confirmation.
+    LogIn(usize),
+    /// The person confirmed the warning: the login starts.
+    ConfirmLogIn(usize),
+    CancelLogIn(usize),
+    /// The server started the login, or said why not.
+    LoginStarted(usize, Result<Login, ClientError>),
+    /// The server said how the login stands.
+    LoginAnswer(usize, Result<Login, ClientError>),
+    /// A page of the provider is opened in the browser.
+    OpenPage(String),
 }
 
 /// What an API key belongs to.
@@ -115,6 +129,8 @@ pub struct Setup {
     notice: Option<Notice>,
     /// Whether the server was asked to restart and has not been heard from since.
     restarting: bool,
+    /// The OAuth logins on the page, by the place of their upstream in the file.
+    logins: std::collections::BTreeMap<usize, LoginStep>,
 }
 
 impl Setup {
@@ -164,6 +180,11 @@ impl Setup {
         }
     }
 
+    /// Where the login of the upstream at `place` in the file stands on the page.
+    pub fn login(&self, place: usize) -> Option<&LoginStep> {
+        self.logins.get(&place)
+    }
+
     /// Whether the server was asked to restart and the app waits for it to come back.
     pub fn restarting(&self) -> bool {
         self.restarting
@@ -178,6 +199,9 @@ impl Setup {
             Message::Server(result) => unauthorized(result),
             Message::Saved(result) => unauthorized(result),
             Message::Restarting(result) => unauthorized(result),
+            Message::LoginStarted(_, result) | Message::LoginAnswer(_, result) => {
+                unauthorized(result)
+            }
             _ => false,
         }
     }

@@ -792,9 +792,44 @@ has one. Response:
 - `upstreams` are the `[[router.upstreams]]` the server runs with, in the order of the configuration. `api_key_set` is
   true when the upstream has an `api_key_env` or an `api_key_secret`; the server does not start when that variable is not
   set or no key is stored under that name. Neither the key nor the name of the variable or the secret is shown. The configuration names no models an upstream serves, so none are listed.
+- `oauth` is `null`, or for an upstream that logs in with OAuth (see [the router](router.md#oauth-logins))
+  `{"flow": "device" | "code", "logged_in": boolean, "warning": string}`: `logged_in` is true when a refresh token is
+  stored for it (whether it still holds, `GET /v1/models/upstreams/{place}/login` tells), and `warning` the text the
+  person confirms before a login starts.
 - `agents` are the agents of [`GET /v1/agents`](#get-v1agents), with the same fields.
 - `teacher` and `decision_model` are `null` without a `[teacher]` or `[decision_model]` table.
 - A user name and password in a URL are removed from `base_url` and `url`.
+
+### `POST /v1/models/upstreams/{place}/login`
+
+A person starts the OAuth login of the upstream at `place` (from 0, in the order of `[[router.upstreams]]`). Request:
+`{"accept_terms": true}`, which says the person confirmed the upstream's `warning` (that using a subscription through a
+third-party tool may break the provider's terms). The login goes on in the background (see
+[the router](router.md#oauth-logins)); a login started before for the same upstream is replaced. The confirmation is
+recorded as a decision (kind `oauth_login`, decider `person`, the upstream's URL and the warning in its context).
+Response, a login:
+
+```json
+{"state": "waiting", "flow": "device", "user_code": "WDJB-MJHT", "verification_uri": "https://login.example.com/device",
+ "verification_uri_complete": null, "authorize_url": null, "message": "Open https://login.example.com/device and enter the code WDJB-MJHT."}
+```
+
+- `state` is `logged_out`, `waiting`, `logged_in` or `failed`.
+- For `device`, `user_code` is entered at `verification_uri`; `verification_uri_complete`, when the provider gives it,
+  is the page with the code filled in. For `code`, `authorize_url` is the provider's page, which the app opens in the
+  browser. The others are `null`.
+- `message` says in plain words where the login stands. No token is ever in a login.
+
+Errors: `403` an agent's token; `404` there is no upstream at `place`; `422` `accept_terms` is not `true`, or the
+upstream has no `oauth` table; `502` the provider's device URL refused or could not be reached.
+
+### `GET /v1/models/upstreams/{place}/login`
+
+Where the OAuth login of the upstream at `place` stands, as a login (above). While a started login waits, or after it
+failed, that login is answered. Otherwise the server checks whether the stored login holds: `logged_out` when no refresh
+token is stored or the provider refuses it, `logged_in` when the upstream lists its models with the access token
+(`Logged in: the upstream lists 2 models.`), `failed` when it does not. The desktop app asks every second while a login
+waits. Errors: `404` and `422` as above.
 
 ### `GET /v1/models/available`
 
@@ -829,7 +864,8 @@ same five, in the order a person takes them. Response:
     {"key": "harness", "title": "Keep agents, skills and MCP servers in a repository", "done": true, "detail": "Agents, skills, MCP servers and rules come from /srv/moebius/harness."},
     {"key": "coder", "title": "Choose the Coder's model", "done": true, "detail": "The Coder uses qwen."},
     {"key": "repository", "title": "Add a repository", "done": false, "detail": "No repository is added yet."}
-  ]
+  ],
+  "warnings": []
 }
 ```
 
@@ -844,6 +880,9 @@ same five, in the order a person takes them. Response:
 - `coder` is done when the agent the default workflow starts in the code column, `Coder`, has a model.
 - `repository` is done when at least one repository is added.
 - `detail` is a sentence in plain words. It holds no key and no URL credentials.
+- `warnings` are sentences the person should read even when every step is done: one for each upstream that logs in with
+  OAuth, `<url> logs in with OAuth.` followed by the warning about the provider's terms. `moebius doctor` writes them
+  after the steps.
 
 ### `GET /v1/plugins`
 

@@ -17,7 +17,9 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
 - Repositories with the **GitHub forge**, and repositories **without a forge** (plain git).
 - One harness, **Pi-Bolt**, driven in its RPC mode, with the Moebius **bridge** loaded into every run as a Pi extension.
 - The **router** as every harness's only model provider, with provider API keys and local OpenAI- or Anthropic-compatible
-  servers (such as Radiance) upstream; budgets in tokens.
+  servers (such as Radiance) upstream; budgets in tokens. An upstream may log in with OAuth instead of a key (a device
+  code, or an authorization code with PKCE and a loopback redirect), started from the Models page after the person
+  confirms a warning that using a subscription through a third-party tool may break the provider's terms.
 - The **MCP gateway**, skills and agents managed in the desktop app and kept in the harness configuration repository.
 - The **default workflow** (section 6), with Luau scripts behind the columns and repository overrides in `.moebius/`.
 - **Rules** checked on every tool call: fixed patterns and the teacher model; nothing waits for a person.
@@ -32,7 +34,6 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
 
 - Harnesses other than Pi-Bolt; the router's fallback check for harnesses without a bridge.
 - Forges other than GitHub (Codeberg, GitLab come as plugins later).
-- Subscription logins (OAuth) in the router; they come as a separately installed plugin with its warning.
 - Runners other than local worktrees on the server (GPU machines come as runner plugins).
 - Plugins in their own process: the API is designed for them, but they are opened up only once it has stopped changing
   (ADR 0009). All plugins of the first version are compiled in.
@@ -106,7 +107,7 @@ steer, stop) go through the same record.
 | Git forge (none) | For a repository without a forge: issues and changes live in Moebius; merging happens in the desktop app. |
 | Pi-Bolt harness | Starts `pi-bolt --mode rpc` per run with the agent's model, thinking level, instructions (`--append-system-prompt`), skills (`--skill`) and extensions; maps Pi's events to run events. |
 | Bridge (Pi-Bolt) | A Pi extension (`crates/moebius-core/bridge/moebius-bridge.ts`) that Moebius loads into every run with `--extension`: on `tool_call` asks the core and blocks with the rule on refusal; on `tool_result` reports the result and removes secrets; answers extension UI questions through `decide`. |
-| Router | OpenAI- and Anthropic-compatible endpoints for the harnesses; upstreams with API keys and local servers; reports usage per call; refuses calls over budget. |
+| Router | OpenAI- and Anthropic-compatible endpoints for the harnesses; upstreams with API keys, OAuth logins and local servers; reports usage per call; refuses calls over budget. |
 | MCP gateway | One MCP server for every harness, bundling the MCP servers enabled for the run's agent: served as `POST /mcp` (streamable HTTP) on the router's listener with the run's token, it starts the agent's stdio servers and connects to its remote ones, lists their tools as `<server>__<tool>`, checks every call through `decide("tool_call")`, removes secrets from the results and records each call as a run event. A run's `mcp.json` names only the gateway. |
 | Guard deciders | Fixed patterns (destructive commands, secrets, paths a rule forbids), then the teacher model for rules in prose. |
 | Self-improvement | The Retro at 23:30, proposals, experiments (trials and autoresearch) in the trial window 00:00–06:00, replays of refused calls, shadowing and takeover proposals. |

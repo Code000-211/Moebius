@@ -1,5 +1,5 @@
-//! Forwarding a run's request to the upstream of its protocol, with the provider's key in place of the run's token,
-//! and the answer back, streamed or not, its usage counted on the way.
+//! Forwarding a run's request to the upstream of its protocol, with the upstream's key or login in place of the run's
+//! token, and the answer back, streamed or not, its usage counted on the way.
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -83,12 +83,17 @@ impl Router {
                 outgoing = outgoing.header(name, value);
             }
         }
-        if let Some(key) = &upstream.api_key {
-            outgoing = match protocol {
-                Protocol::OpenAi => outgoing.bearer_auth(key),
-                Protocol::Anthropic => outgoing.header("x-api-key", key),
-            };
-        }
+        let outgoing = match self.authenticate(&upstream, outgoing).await {
+            Ok(outgoing) => outgoing,
+            Err(message) => {
+                return error(
+                    protocol,
+                    StatusCode::BAD_GATEWAY,
+                    "authentication_error",
+                    &message,
+                );
+            }
+        };
         let started = Instant::now();
         let upstream_response = match outgoing.send().await {
             Ok(r) => r,
@@ -289,11 +294,13 @@ data: [DONE]\n\n";
                         protocol: Protocol::OpenAi,
                         base_url: upstream.clone(),
                         api_key: None,
+                        oauth: None,
                     },
                     Upstream {
                         protocol: Protocol::Anthropic,
                         base_url: upstream,
                         api_key: Some("sk-provider-key".into()),
+                        oauth: None,
                     },
                 ],
             )

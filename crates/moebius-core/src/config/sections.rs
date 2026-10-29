@@ -10,7 +10,7 @@ use serde::Deserialize;
 use super::ConfigError;
 use super::raw::{RawDecisionModel, RawTeacher};
 use crate::harness::mcp::{McpServer, valid_variable};
-use crate::router::Protocol;
+use crate::router::{OAuthConfig, Protocol};
 
 /// Whether `name` can name an agent: letters, digits, `-` and `_`, and not empty.
 pub fn valid_agent_name(name: &str) -> bool {
@@ -73,6 +73,8 @@ pub struct UpstreamConfig {
     pub api_key_env: Option<String>,
     /// The name of the secret holding the provider's key (see `settings`); not set together with `api_key_env`.
     pub api_key_secret: Option<String>,
+    /// How the upstream logs in with OAuth instead of a key; not set together with a key.
+    pub oauth: Option<OAuthConfig>,
 }
 
 /// The GitHub App Moebius acts as.

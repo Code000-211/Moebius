@@ -44,6 +44,12 @@ app (`moebius-desktop`); on another system, build from source. Every key named h
    machine that runs the server the `moebius` commands find both by themselves when you run them in the directory of
    `moebius.toml`, or with `--config`.
 
+   An upstream can log in to a provider with OAuth instead of a key: write its client id and URLs in a
+   `[router.upstreams.oauth]` table (see [configuration](../reference/configuration.md#routerupstreamsoauth)), then press
+   "Log in" at the upstream on the Models page. Using a subscription through a third-party tool may break the
+   provider's terms; the page asks you to confirm that you have read the warning before the login starts, and
+   `moebius doctor` repeats it.
+
 3. Run it as a service, so that it starts with you and starts again after a failure. Stop the `moebius serve` of the
    step before first (Ctrl+C).
 

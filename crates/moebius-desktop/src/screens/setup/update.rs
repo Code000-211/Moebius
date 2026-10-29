@@ -66,6 +66,12 @@ impl Setup {
                 self.notice = Some(Notice::Failed(say(&e)));
             }
             Message::Restarting(Ok(())) => {}
+            Message::LogIn(_)
+            | Message::ConfirmLogIn(_)
+            | Message::CancelLogIn(_)
+            | Message::LoginStarted(..)
+            | Message::LoginAnswer(..)
+            | Message::OpenPage(_) => return self.update_login(message, settings),
             edit => self.edit(edit),
         }
         Task::none()
@@ -121,6 +127,7 @@ impl Setup {
                 origin: None,
                 protocol: PROTOCOLS[0].to_string(),
                 base_url: String::new(),
+                oauth: None,
                 key: KeyChoice {
                     mode: KeyMode::None,
                     env: String::new(),

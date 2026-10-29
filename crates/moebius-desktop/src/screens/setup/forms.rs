@@ -82,6 +82,8 @@ pub(super) struct Upstream {
     pub(super) origin: Option<usize>,
     pub(super) protocol: String,
     pub(super) base_url: String,
+    /// The `oauth` table of an upstream that logs in with OAuth, kept as the file has it.
+    pub(super) oauth: Option<Value>,
     pub(super) key: KeyChoice,
 }
 
@@ -98,6 +100,7 @@ impl Upstream {
             origin: Some(origin),
             protocol: text("protocol"),
             base_url: text("base_url"),
+            oauth: value.get("oauth").cloned(),
             key: KeyChoice::read(value.get("api_key_env"), value.get("api_key_secret")),
         }
     }
@@ -310,6 +313,9 @@ impl Forms {
             table.insert("protocol".into(), json!(upstream.protocol));
             table.insert("base_url".into(), json!(upstream.base_url.trim()));
             table.extend(keys);
+            if let Some(oauth) = &upstream.oauth {
+                table.insert("oauth".into(), oauth.clone());
+            }
             plan.set
                 .insert(format!("router.upstreams.{place}"), Value::Object(table));
         }
