@@ -26,14 +26,17 @@ against your rules, and learns from what went wrong.
 
 You put issues on a board. Moebius picks them up and runs the workflow on its own:
 
-1. **Code.** An agent works on the card in its own git worktree, through [Pi-Bolt](https://github.com/opensec-git/Pi-Bolt).
+1. **Code.** An agent works on the card in its own git worktree, through [Pi-Bolt](https://github.com/opensec-git/Pi-Bolt)
+   or Claude Code, on the server or on another machine over SSH. A repository can ask for a failing reproduction test
+   first.
 2. **Check.** Every tool call the agent makes is checked against built-in patterns and the rules you write in plain
    prose, before it runs. A call that breaks a rule is refused, with the rule's name.
-3. **Review.** The change is tested and reviewed by another agent, and goes back to coding while something is wrong.
+3. **Review.** The change is tested and reviewed on two axes, the repository's standards and what the issue asked
+   for, and goes back to coding while a finding with evidence says something is wrong.
 4. **Merge.** It waits in your inbox, as a branch, a GitHub or Forgejo pull request or a GitLab merge request, until you
    merge it.
-5. **Improve.** Every night the Retro looks at what went wrong and tries out fixes. Those that worked wait in the inbox
-   for you.
+5. **Improve.** Every night the Retro reads the day's failed runs and tries out fixes on their cards and on a set of
+   past cards they must not break. Those that worked wait in the inbox for you.
 
 Every decision on the way is recorded in full. Export them as a training set, plug in a small model of your own, and
 Moebius lets it decide alongside the teacher model until it agrees often enough to take a kind of decision over.
@@ -46,9 +49,14 @@ Moebius lets it decide alongside the teacher model until it agrees often enough 
 | 💬 **The Moebius agent, everywhere** | A floating chat on every page that knows what you are looking at: the file and line in the editor, the script or rule you are editing. Ask it to write an issue, a rule, an agent's instructions or a whole workflow. |
 | 🛰 **Fleet** | Every working agent at a glance, live. |
 | ⌨️ **Chat or terminal** | Chat with any agent, or switch the same conversation into Pi-Bolt's own terminal interface. |
-| 🛡 **Rules** | Built-in patterns plus rules in prose, checked on every tool call by a teacher model; per repository too. |
+| ⏰ **Automations** | Recurring work on a cron schedule: an agent, a prompt and a place, with "Run now" and the history of every run. |
+| 🧩 **Harnesses and runners** | Pi-Bolt or Claude Code per agent; runs on the server or on another machine over SSH, such as a GPU box. |
+| 🌐 **Forges** | GitHub, GitLab (also self-hosted), Forgejo and Codeberg, or plain git without a forge. |
+| 🛡 **Rules** | Built-in patterns plus rules in prose, checked on every tool call by a teacher model; per repository too. MCP tools go through one gateway and are checked the same way. |
+| 🎯 **Better output** | What the research supports: a failing test before the fix, review on two axes with evidence, old tool outputs hidden and long ones cut, and Matt Pocock's engineering skills for the built-in agents. |
 | ✏️ **Edit in place** | Agents, skills, MCP servers, rules, scripts, settings, cards: a pencil on everything, saved as a commit or in the store. |
-| 🔌 **Your models** | Local OpenAI- or Anthropic-compatible servers or provider API keys, behind one router that counts tokens and keeps budgets. |
+| 🔌 **Your models** | Local OpenAI- or Anthropic-compatible servers, provider API keys or OAuth logins, behind one router that counts tokens, keeps budgets and falls back within a model class such as `strong`. |
+| 🧱 **Plugins** | Deciders compiled in, or as their own program in any language, speaking JSON Lines. |
 | 🧰 **A command line** | Everything the app does, as `moebius` commands, for scripts and for the agent itself. |
 
 <table>
@@ -67,8 +75,9 @@ Moebius lets it decide alongside the teacher model until it agrees often enough 
 ```
 desktop app ──(private network, token)──▶ moebius server ──▶ GitHub, GitLab, Forgejo or plain git (polled)
                                               │
-                                              ├──▶ Pi-Bolt runs, one worktree each
-                                              │      └─ every tool call is checked before it runs
+                                              ├──▶ Pi-Bolt or Claude Code runs, one worktree each,
+                                              │    on the server or over SSH on another machine
+                                              │      └─ every tool call and MCP call is checked before it runs
                                               └──▶ model router ──▶ local models / provider APIs
 ```
 
