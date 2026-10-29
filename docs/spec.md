@@ -15,7 +15,7 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
 
 - One server process, `moebius`, headless, on a machine in a private network; one desktop app talking to it.
 - Repositories with the **GitHub forge**, and repositories **without a forge** (plain git).
-- One harness, **Pi-Bolt**, driven in its RPC mode, with the Moebius **bridge** compiled into it.
+- One harness, **Pi-Bolt**, driven in its RPC mode, with the Moebius **bridge** loaded into every run as a Pi extension.
 - The **router** as every harness's only model provider, with provider API keys and local OpenAI- or Anthropic-compatible
   servers (such as Radiance) upstream; budgets in tokens.
 - The **MCP gateway**, skills and agents managed in the desktop app and kept in the harness configuration repository.
@@ -49,14 +49,15 @@ desktop app ──(private network, token, WebSocket + HTTP)──▶ moebius (s
                          ▼                                    ▼                         ▼
                  forges (poll APIs)               runs: pi-bolt --mode rpc      model providers
                                                    in a worktree, with the        (via the router)
-                                                   bridge compiled in
+                                                   bridge loaded in
 ```
 
 - **`moebius`** is one binary. It holds the core and the bundled plugins (section 4), the store, the API for the desktop app,
   the router's HTTP endpoints and the MCP gateway's endpoint.
 - **A run** is a `pi-bolt` process started by the Pi-Bolt plugin in the run's worktree, controlled over Pi's RPC protocol
-  (JSON Lines on stdin and stdout, records split on LF only). The bridge inside it talks back to `moebius` over a local
-  socket: every tool call before it runs, every tool result, every question the harness asks.
+  (JSON Lines on stdin and stdout, records split on LF only). The bridge inside it talks back to `moebius` over HTTP on
+  the router's listener (`/moebius/check`, `/moebius/result`): every tool call before it runs, every tool result, every
+  question the harness asks.
 - **The router** listens on localhost; each run gets the router as its only provider and a per-run token, so that every model
   request is attributed to a run, a card and an agent.
 - **The desktop app** connects only over the private network and authenticates with a token issued by the server.
@@ -104,7 +105,7 @@ steer, stop) go through the same record.
 | GitHub forge | Acts as its own GitHub App with webhooks off; polls issues, pull requests, checks and reviews about every 30 seconds with conditional requests; opens and updates changes; maps trusted authors and "blocked by". |
 | Git forge (none) | For a repository without a forge: issues and changes live in Moebius; merging happens in the desktop app. |
 | Pi-Bolt harness | Starts `pi-bolt --mode rpc` per run with the agent's model, thinking level, instructions (`--append-system-prompt`), skills (`--skill`) and extensions; maps Pi's events to run events. |
-| Bridge (Pi-Bolt) | A Pi extension compiled into Pi-Bolt: on `tool_call` asks the core and blocks with the rule on refusal; on `tool_result` reports the result and removes secrets; answers extension UI questions through `decide`. |
+| Bridge (Pi-Bolt) | A Pi extension (`crates/moebius-core/bridge/moebius-bridge.ts`) that Moebius loads into every run with `--extension`: on `tool_call` asks the core and blocks with the rule on refusal; on `tool_result` reports the result and removes secrets; answers extension UI questions through `decide`. |
 | Router | OpenAI- and Anthropic-compatible endpoints for the harnesses; upstreams with API keys and local servers; reports usage per call; refuses calls over budget. |
 | MCP gateway | One MCP server for every harness, bundling the MCP servers enabled for the run's agent. |
 | Guard deciders | Fixed patterns (destructive commands, secrets, paths a rule forbids), then the teacher model for rules in prose. |

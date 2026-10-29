@@ -1,7 +1,7 @@
 # Rules are enforced by Moebius, inside each harness
 
 Moebius enforces the rules the work must follow itself. For each harness it ships a bridge, an extension of that harness
-(compiled into Pi-Bolt), which hands every tool call to Moebius before the harness runs it; Moebius checks it and either lets
+(for Pi-Bolt, a Pi extension loaded into every run), which hands every tool call to Moebius before the harness runs it; Moebius checks it and either lets
 it run or blocks it with the rule it broke. The check sits inside the harness rather than in the router because only there are
 the calls that a tool makes on its own visible, such as the many calls of one Pi-Bolt `codemode` script, and because a failing
 handler there blocks the call instead of letting it through. For a harness that offers no such hook, the router checks the tool

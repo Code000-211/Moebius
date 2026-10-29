@@ -2,9 +2,9 @@
 
 ## When you want this
 
-You want to do from a shell script or another program what the desktop app will do: add a repository, create issues,
-watch the board, follow a run, approve, reject, retry, merge, chat. The desktop app is not built yet; the desktop API
-is, and it is all there is. Every route and every type is in
+You want to do from a shell script or another program what the desktop app does: add a repository, create issues,
+watch the board, follow a run, approve, reject, retry, merge, chat. The desktop app and the `moebius` command line
+use the same API, so whatever they do, a script can do too. Every route and every type is in
 [`docs/reference/desktop-api.md`](../reference/desktop-api.md). This page is a walk through the routes in the order you
 need them.
 
