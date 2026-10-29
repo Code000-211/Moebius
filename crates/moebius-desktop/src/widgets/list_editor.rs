@@ -25,10 +25,10 @@ pub fn layout<'a>(
         header,
         above,
         row![
-            scrollable(list).width(280),
+            scrollable(list).width(240),
             scrollable(detail).width(Length::Fill)
         ]
-        .spacing(14)
+        .spacing(12)
         .height(Length::Fill),
     ]
     .spacing(theme::PAGE_GAP)
@@ -39,7 +39,7 @@ pub fn layout<'a>(
 /// A white box around `content`.
 pub fn boxed<'a>(content: impl Into<Element<'a, AppMessage>>) -> Element<'a, AppMessage> {
     container(content)
-        .padding(20)
+        .padding(14)
         .width(Length::Fill)
         .style(|_| page::box_style())
         .into()
@@ -66,36 +66,38 @@ pub fn list_card<'a>(
     for (tag, tone) in tags {
         head = head.push(page::tag(tag.to_string(), tone));
     }
-    let mut content = column![head].spacing(4);
+    let mut content = column![head].spacing(3);
     if !line.is_empty() {
         content = content.push(
             text(line)
                 .size(theme::LABEL)
+                .font(theme::MONO)
                 .color(if red {
                     theme::RED_TEXT
                 } else {
-                    theme::TEXT_SECONDARY
+                    theme::TEXT_MUTED
                 })
                 .wrapping(Wrapping::WordOrGlyph),
         );
     }
     button(content)
         .width(Length::Fill)
-        .padding([12, 14])
+        .padding([9, 11])
         .on_press_maybe(on_press)
         .style(move |_, status| {
-            let (fill, line) = match (red, chosen, status) {
-                (true, _, _) => (theme::RED_FILL, theme::RED_BORDER),
-                (false, true, _) => (theme::SURFACE, theme::TEAL),
-                (false, false, button::Status::Hovered) => (theme::LANE, theme::LINE),
+            let (fill, border_col) = match (red, chosen, status) {
+                (true, true, _) => (theme::RED_FILL, theme::RED),
+                (true, false, _) => (theme::RED_FILL, theme::RED_BORDER),
+                (false, true, _) => (theme::HEAD_PILL, theme::TEXT),
+                (false, false, button::Status::Hovered) => (theme::LANE, theme::TEXT_MUTED),
                 (false, false, _) => (theme::SURFACE, theme::LINE),
             };
             button::Style {
                 background: Some(fill.into()),
                 text_color: theme::TEXT,
                 border: Border {
-                    color: line,
-                    width: if chosen { 2.0 } else { 1.0 },
+                    color: border_col,
+                    width: 1.0,
                     radius: theme::RADIUS_CARD.into(),
                 },
                 ..button::Style::default()
@@ -117,13 +119,13 @@ pub fn head<'a>(
         text_input(placeholder, name)
             .on_input(on_name)
             .size(theme::BODY)
-            .padding([9, 12])
-            .width(280)
+            .padding([6, 10])
+            .width(240)
             .style(connect::input_style)
             .into()
     } else {
         text(name)
-            .size(21)
+            .size(16)
             .font(theme::manrope(Weight::Bold))
             .into()
     };
@@ -137,7 +139,6 @@ pub struct Actions {
     pub ask_delete: AppMessage,
     pub keep: AppMessage,
     pub delete: AppMessage,
-    /// Save, when it can be pressed.
     pub save: Option<AppMessage>,
 }
 
@@ -150,7 +151,7 @@ pub fn actions<'a>(
     delete_label: &'a str,
     messages: Actions,
 ) -> Row<'a, AppMessage> {
-    let actions = row![].spacing(10).align_y(Alignment::Center);
+    let actions = row![].spacing(8).align_y(Alignment::Center);
     if confirming {
         return actions
             .push(

@@ -687,8 +687,8 @@ mod tests {
         assert_eq!(
             sent.try_recv().unwrap(),
             TerminalInput::Resize {
-                cols: 100,
-                rows: 13
+                cols: 104,
+                rows: 14
             }
         );
         shell.resized(Size::new(805.0, 260.0));

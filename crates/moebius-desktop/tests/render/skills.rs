@@ -215,7 +215,7 @@ fn a_new_file_is_named_saved_as_a_commit_and_deleted_after_asking() {
     saved.files.push("scripts/fill.py".into());
     saved.commit = Some("f11e5a1".into());
     let _ = app.update(file(skills::FileMessage::Saved(Ok(saved))));
-    assert!(shows(&app, "Saved as a commit: f11e5a1"));
+    assert!(shows(&app, "Committed: f11e5a1"));
     assert!(shows(&app, "Delete file"));
     click(&mut app, "Delete file");
     assert!(shows(&app, "Delete scripts/fill.py?"));
@@ -228,7 +228,7 @@ fn a_new_file_is_named_saved_as_a_commit_and_deleted_after_asking() {
     let mut deleted = house_style();
     deleted.commit = Some("de1e7ed".into());
     let _ = app.update(file(skills::FileMessage::Deleted(Ok(deleted))));
-    assert!(shows(&app, "Saved as a commit: de1e7ed"));
+    assert!(shows(&app, "Committed: de1e7ed"));
     assert!(!shows(&app, "scripts/fill.py"));
     assert!(shows(&app, "Markdown · the text after the frontmatter"));
 }
@@ -570,7 +570,7 @@ fn a_saved_skill_says_its_commit_and_deleting_asks_first() {
     let mut saved = house_style();
     saved.commit = Some("a1b2c3d".into());
     let _ = app.update(Message::Skills(skills::Message::Saved(Ok(saved))));
-    assert!(shows(&app, "Saved as a commit: a1b2c3d"));
+    assert!(shows(&app, "Committed: a1b2c3d"));
     let named = ClientError::Server {
         status: 409,
         message: "the skill house-style is named by the agents Coder".into(),
@@ -580,7 +580,7 @@ fn a_saved_skill_says_its_commit_and_deleting_asks_first() {
         &app,
         "the skill house-style is named by the agents Coder"
     ));
-    assert!(!shows(&app, "Saved as a commit: a1b2c3d"));
+    assert!(!shows(&app, "Committed: a1b2c3d"));
     click(&mut app, "Delete");
     assert!(shows(&app, "Delete house-style?"));
     assert!(matches!(
@@ -704,7 +704,7 @@ fn an_mcp_server_save_shows_its_commit_and_the_servers_refusal() {
     let mut saved = docs_search();
     saved.commit = Some("c0ffee1".into());
     let _ = app.update(Message::Mcp(mcp_servers::Message::Saved(Ok(saved))));
-    assert!(shows(&app, "Saved as a commit: c0ffee1"));
+    assert!(shows(&app, "Committed: c0ffee1"));
     let refused = ClientError::Server {
         status: 422,
         message: "${OPENAI_API_KEY} is not in mcp_env of [harness] in moebius.toml".into(),

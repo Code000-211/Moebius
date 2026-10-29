@@ -145,7 +145,7 @@ impl Rules {
     ) -> Column<'a, AppMessage> {
         match &self.notice {
             Some((at, Notice::Saved(Some(commit)))) if *at == place => {
-                content.push(notice_line(&format!("Saved as a commit: {commit}"), false))
+                content.push(notice_line(&format!("Committed: {commit}"), false))
             }
             Some((at, Notice::Saved(None))) if *at == place => {
                 content.push(notice_line("Saved.", false))

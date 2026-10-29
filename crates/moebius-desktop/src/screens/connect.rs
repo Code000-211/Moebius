@@ -9,22 +9,24 @@ use crate::settings::{self, Settings};
 use crate::theme;
 use crate::{widgets::icons, widgets::page};
 
+/// The style of a text input: a white field whose line darkens when hovered and turns dark when focused.
 pub fn input_style(_: &iced::Theme, status: text_input::Status) -> text_input::Style {
-    let border = match status {
-        text_input::Status::Focused { .. } => theme::TEAL,
+    let line = match status {
+        text_input::Status::Focused { .. } => theme::TEXT,
+        text_input::Status::Hovered => theme::TEXT_MUTED,
         _ => theme::LINE,
     };
     text_input::Style {
         background: theme::SURFACE.into(),
         border: Border {
-            color: border,
+            color: line,
             width: 1.0,
             radius: theme::RADIUS_CONTROL.into(),
         },
         icon: theme::TEXT_MUTED,
         placeholder: theme::TEXT_MUTED,
         value: theme::TEXT,
-        selection: theme::TEAL_FILL,
+        selection: theme::HEAD_PILL,
     }
 }
 

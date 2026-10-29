@@ -353,14 +353,14 @@ fn the_save_button_sends_the_save_message_and_the_answer_is_shown() {
     let mut saved = coder();
     saved.commit = Some("a1b2c3d".into());
     let _ = app.update(Message::Agents(agents::Message::Saved(Ok(saved))));
-    assert!(shows(&app, "Saved as a commit: a1b2c3d"));
+    assert!(shows(&app, "Committed: a1b2c3d"));
     let invalid = ClientError::Server {
         status: 422,
         message: "the skill \"nope\" is not in skills/".into(),
     };
     let _ = app.update(Message::Agents(agents::Message::Saved(Err(invalid))));
     assert!(shows(&app, "the skill \"nope\" is not in skills/"));
-    assert!(!shows(&app, "Saved as a commit: a1b2c3d"));
+    assert!(!shows(&app, "Committed: a1b2c3d"));
 }
 
 #[test]

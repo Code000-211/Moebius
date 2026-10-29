@@ -19,6 +19,7 @@ pub fn header<'a, Message: 'a>(
     let breadcrumb = (!breadcrumb.is_empty()).then(|| {
         text(breadcrumb)
             .size(theme::BREADCRUMB)
+            .font(theme::MONO)
             .color(theme::TEXT_MUTED)
             .into()
     });
@@ -26,15 +27,16 @@ pub fn header<'a, Message: 'a>(
         container(
             text(tag)
                 .size(theme::LABEL)
-                .font(theme::manrope(Weight::Semibold))
+                .font(theme::MONO)
                 .color(theme::TEXT_SECONDARY),
         )
-        .padding(Padding::from([2.0, 9.0]))
+        .padding(Padding::from([2.0, 6.0]))
         .style(|_| container::Style {
+            background: Some(theme::HEAD_PILL.into()),
             border: Border {
                 color: theme::LINE,
                 width: 1.0,
-                radius: theme::RADIUS_ROUND.into(),
+                radius: theme::RADIUS_SMALL.into(),
             },
             ..container::Style::default()
         })
@@ -56,12 +58,12 @@ pub fn header_with<'a, Message: 'a>(
             .size(theme::PAGE_TITLE)
             .font(theme::manrope(Weight::Bold))
     ]
-    .spacing(10)
+    .spacing(8)
     .align_y(Alignment::Center);
     if let Some(tag) = tag {
         title_row = title_row.push(tag);
     }
-    let mut heading = column![].spacing(4).width(Length::Fill);
+    let mut heading = column![].spacing(2).width(Length::Fill);
     if let Some(breadcrumb) = breadcrumb {
         heading = heading.push(breadcrumb);
     }
@@ -80,6 +82,7 @@ pub fn card_breadcrumb<'a, Message: Clone + 'a>(
         button(
             text(repository)
                 .size(theme::BREADCRUMB)
+                .font(theme::MONO)
                 .color(theme::TEXT_SECONDARY)
         )
         .padding(0)
@@ -87,6 +90,7 @@ pub fn card_breadcrumb<'a, Message: Clone + 'a>(
         .style(|_, _| button::Style::default()),
         text(format!(" / #{number}"))
             .size(theme::BREADCRUMB)
+            .font(theme::MONO)
             .color(theme::TEXT_MUTED),
     ]
     .into()
@@ -98,7 +102,7 @@ pub fn back<'a, Message: Clone + 'a>(previous: String, on_press: Message) -> Ele
         text(format!("\u{2190} Back to {previous}"))
             .size(theme::BREADCRUMB)
             .font(theme::manrope(Weight::Semibold))
-            .color(theme::TEAL),
+            .color(theme::TEXT_SECONDARY),
     )
     .padding(0)
     .on_press(on_press)
@@ -110,7 +114,7 @@ pub fn back<'a, Message: Clone + 'a>(previous: String, on_press: Message) -> Ele
 pub fn context<'a, Message: 'a>(line: impl text::IntoFragment<'a>) -> Element<'a, Message> {
     text(line)
         .size(theme::CONTEXT)
-        .color(theme::TEXT_SECONDARY)
+        .color(theme::TEXT_MUTED)
         .into()
 }
 
@@ -123,22 +127,14 @@ pub fn boxed<'a, Message: 'a>(
         column![
             text(heading)
                 .size(theme::BOX_HEADING)
-                .font(theme::manrope(iced::font::Weight::Bold)),
+                .font(theme::manrope(Weight::Semibold)),
             content.into(),
         ]
-        .spacing(10),
+        .spacing(8),
     )
-    .padding(20)
+    .padding(14)
     .width(Length::Fill)
-    .style(|_| container::Style {
-        background: Some(theme::SURFACE.into()),
-        border: Border {
-            color: theme::LINE,
-            width: 1.0,
-            radius: theme::RADIUS_BOX.into(),
-        },
-        ..container::Style::default()
-    })
+    .style(|_| box_style())
     .into()
 }
 
@@ -159,10 +155,9 @@ pub enum Tone {
 }
 
 impl Tone {
-    /// Border, fill and text of a tag.
     fn colors(self) -> (Color, Color, Color) {
         match self {
-            Tone::Plain => (theme::LINE, Color::TRANSPARENT, theme::TEXT_SECONDARY),
+            Tone::Plain => (theme::LINE, theme::HEAD_PILL, theme::TEXT_SECONDARY),
             Tone::Teal => (theme::TEAL_BORDER, theme::TEAL_FILL, theme::ONLINE_TEXT),
             Tone::Amber => (theme::AMBER_BORDER, theme::AMBER_FILL, theme::AMBER_TEXT),
             Tone::Red => (theme::RED_BORDER, theme::RED_TAG_FILL, theme::RED_TEXT),
@@ -175,35 +170,35 @@ pub fn tag<'a, Message: 'a>(label: String, tone: Tone) -> Element<'a, Message> {
     let (border, fill, color) = tone.colors();
     let label = text(label)
         .size(theme::LABEL)
-        .font(theme::manrope(Weight::Semibold))
+        .font(theme::MONO)
         .wrapping(Wrapping::None)
         .color(color);
     let content: Element<'a, Message> = if matches!(tone, Tone::Red) {
         row![
-            container(space().width(7).height(7)).style(|_| container::Style {
+            container(space().width(6).height(6)).style(|_| container::Style {
                 background: Some(theme::RED.into()),
                 border: Border {
-                    radius: 3.5.into(),
+                    radius: 3.0.into(),
                     ..Border::default()
                 },
                 ..container::Style::default()
             }),
             label,
         ]
-        .spacing(6)
+        .spacing(5)
         .align_y(Alignment::Center)
         .into()
     } else {
         label.into()
     };
     container(content)
-        .padding([2, 9])
+        .padding([2, 6])
         .style(move |_| container::Style {
             background: Some(fill.into()),
             border: Border {
                 color: border,
                 width: 1.0,
-                radius: theme::RADIUS_ROUND.into(),
+                radius: theme::RADIUS_SMALL.into(),
             },
             ..container::Style::default()
         })
@@ -230,18 +225,22 @@ pub fn primary_button<'a, Message: Clone + 'a>(
             .size(theme::CONTEXT)
             .font(theme::manrope(Weight::Semibold)),
     )
-    .padding([8, 14])
+    .padding([6, 12])
     .on_press_maybe(message)
     .style(|_, status| button::Style {
         background: Some(
             if status == button::Status::Disabled {
-                theme::TEXT_MUTED
+                theme::LINE
             } else {
-                theme::AMBER
+                theme::TEXT
             }
             .into(),
         ),
-        text_color: theme::ON_FILL,
+        text_color: if status == button::Status::Disabled {
+            theme::TEXT_MUTED
+        } else {
+            theme::ON_FILL
+        },
         border: Border {
             radius: theme::RADIUS_CONTROL.into(),
             ..Border::default()
@@ -262,7 +261,7 @@ pub fn white_button<'a, Message: Clone + 'a>(
             .size(theme::CONTEXT)
             .font(theme::manrope(Weight::Semibold)),
     )
-    .padding([8, 14])
+    .padding([6, 12])
     .on_press_maybe(message)
     .style(|_, status| button::Style {
         background: Some(theme::SURFACE.into()),
@@ -315,16 +314,16 @@ pub fn chip<'a, Message: Clone + 'a>(
 ) -> Element<'a, Message> {
     button(
         text(label)
-            .size(theme::CONTEXT)
+            .size(theme::BREADCRUMB)
             .font(theme::manrope(Weight::Semibold)),
     )
-    .padding([5, 12])
+    .padding([4, 10])
     .on_press(message)
     .style(move |_, _| {
         let (fill, ink, line) = match (selected, red) {
             (true, _) => (theme::TEXT, theme::ON_FILL, theme::TEXT),
-            (false, true) => (theme::SURFACE, theme::RED_TEXT, theme::RED_BORDER),
-            (false, false) => (theme::SURFACE, theme::TEXT_SECONDARY, theme::LINE),
+            (false, true) => (theme::RED_FILL, theme::RED_TEXT, theme::RED_BORDER),
+            (false, false) => (theme::HEAD_PILL, theme::TEXT_SECONDARY, theme::LINE),
         };
         button::Style {
             background: Some(fill.into()),
@@ -332,7 +331,7 @@ pub fn chip<'a, Message: Clone + 'a>(
             border: Border {
                 color: line,
                 width: 1.0,
-                radius: theme::RADIUS_ROUND.into(),
+                radius: theme::RADIUS_CONTROL.into(),
             },
             ..button::Style::default()
         }

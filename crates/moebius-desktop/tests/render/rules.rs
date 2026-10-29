@@ -221,7 +221,7 @@ fn a_refused_save_stays_red_in_the_card_and_a_saved_one_shows_its_commit() {
     let _ = app.update(Message::Rules(rules::Message::RuleSaved(Ok(Some(
         "a1b2c3d".into(),
     )))));
-    assert!(shows(&app, "Saved as a commit: a1b2c3d"));
+    assert!(shows(&app, "Committed: a1b2c3d"));
     assert!(!shows(&app, "Delete rule"));
 }
 

@@ -70,20 +70,21 @@ pub fn editor_with<'a, Message: Clone + 'a>(
     content.into()
 }
 
-/// The style of a text editor in place: the lane's grey, teal while it has focus.
+/// The style of a text editor in place: a recessed field whose line turns dark when focused.
 pub fn editor_style(_: &iced::Theme, status: text_editor::Status) -> text_editor::Style {
     text_editor::Style {
         background: theme::LANE.into(),
         border: Border {
             color: match status {
-                text_editor::Status::Focused { .. } => theme::TEAL,
+                text_editor::Status::Focused { .. } => theme::TEXT,
+                text_editor::Status::Hovered => theme::TEXT_MUTED,
                 _ => theme::LINE,
             },
             width: 1.0,
-            radius: theme::RADIUS_CARD.into(),
+            radius: theme::RADIUS_CONTROL.into(),
         },
         placeholder: theme::TEXT_MUTED,
         value: theme::TEXT,
-        selection: theme::TEAL_FILL,
+        selection: theme::HEAD_PILL,
     }
 }

@@ -396,38 +396,44 @@ impl FloatChat {
     }
 }
 
-/// The shadow that lifts the button and the window off the page.
+/// The shadow under the floating button and window: tight and faint.
 fn shadow() -> Shadow {
     Shadow {
         color: theme::FLOAT_SHADOW,
-        offset: Vector::new(0.0, 6.0),
-        blur_radius: 18.0,
+        offset: Vector::new(0.0, 2.0),
+        blur_radius: 8.0,
     }
 }
 
-/// The round button that opens the window.
+/// The button at the bottom right that opens the floating chat: a small dark "Agent" button.
 fn round_button<'a>() -> Element<'a, AppMessage> {
     let button = button(
-        container(Icon::Chat.view(theme::ON_FILL, 26.0))
-            .center_x(Length::Fill)
-            .center_y(Length::Fill),
+        row![
+            Icon::Chat.view(theme::ON_FILL, 14.0),
+            text("Agent")
+                .size(theme::LABEL)
+                .font(theme::MONO)
+                .color(theme::ON_FILL),
+        ]
+        .spacing(6)
+        .align_y(Alignment::Center),
     )
-    .width(theme::FLOAT_BUTTON)
-    .height(theme::FLOAT_BUTTON)
-    .padding(0)
+    .padding([7, 12])
     .on_press(AppMessage::Float(Message::Show(true)))
     .style(|_, status| button::Style {
         background: Some(
             if status == button::Status::Hovered {
-                theme::ONLINE_TEXT
+                theme::TEXT_SECONDARY
             } else {
-                theme::TEAL
+                theme::TEXT
             }
             .into(),
         ),
+        text_color: theme::ON_FILL,
         border: Border {
-            radius: theme::RADIUS_ROUND.into(),
-            ..Border::default()
+            color: theme::LINE,
+            width: 1.0,
+            radius: theme::RADIUS_CONTROL.into(),
         },
         shadow: shadow(),
         ..button::Style::default()

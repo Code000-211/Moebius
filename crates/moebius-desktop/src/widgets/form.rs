@@ -12,10 +12,8 @@ use crate::widgets::inline_edit::editor_style;
 
 /// The reasoning levels an agent or a chat can be given, as Pi-Bolt takes them.
 pub const LEVELS: [&str; 7] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
-
 /// The harnesses an agent can run on; the first is the default.
 pub const HARNESSES: [&str; 2] = ["pi-bolt", "claude-code"];
-
 /// The protocols an upstream or an agent can speak.
 pub const PROTOCOLS: [&str; 2] = ["openai", "anthropic"];
 
@@ -26,12 +24,12 @@ pub fn labelled<'a>(
 ) -> Column<'a, AppMessage> {
     column![
         text(label)
-            .size(13)
+            .size(theme::LABEL)
             .font(theme::manrope(Weight::Semibold))
             .color(theme::TEXT_SECONDARY),
         input.into(),
     ]
-    .spacing(5)
+    .spacing(4)
 }
 
 /// `input` under its `label`, sharing a row equally with the fields beside it.
@@ -46,11 +44,11 @@ pub fn field<'a>(
 pub fn notice_line<'a>(line: &str, red: bool) -> Element<'a, AppMessage> {
     text(line.to_string())
         .size(theme::CONTEXT)
-        .font(theme::manrope(Weight::Semibold))
+        .font(theme::MONO)
         .color(if red {
             theme::RED_TEXT
         } else {
-            theme::ONLINE_TEXT
+            theme::TEXT_SECONDARY
         })
         .into()
 }
@@ -58,8 +56,8 @@ pub fn notice_line<'a>(line: &str, red: bool) -> Element<'a, AppMessage> {
 /// The line after a save to the harness configuration repository: the commit it made, or that nothing changed.
 pub fn committed_line<'a>(commit: Option<&str>) -> Element<'a, AppMessage> {
     match commit {
-        Some(commit) => notice_line(&format!("Saved as a commit: {commit}"), false),
-        None => notice_line("Nothing changed, so nothing was committed.", false),
+        Some(commit) => notice_line(&format!("Committed: {commit}"), false),
+        None => notice_line("No changes to commit.", false),
     }
 }
 
@@ -71,7 +69,7 @@ pub fn box_heading<'a>(
     row![
         text(heading)
             .size(theme::BOX_HEADING)
-            .font(theme::manrope(Weight::Bold)),
+            .font(theme::manrope(Weight::Semibold)),
         space::horizontal(),
         aside.into(),
     ]
@@ -83,6 +81,7 @@ pub fn box_heading<'a>(
 pub fn aside<'a>(line: impl text::IntoFragment<'a>) -> Element<'a, AppMessage> {
     text(line)
         .size(theme::LABEL)
+        .font(theme::MONO)
         .color(theme::TEXT_MUTED)
         .into()
 }
@@ -98,7 +97,7 @@ pub fn mono_editor<'a>(
         .placeholder(placeholder)
         .font(theme::MONO)
         .size(theme::CODE)
-        .padding(14)
+        .padding(10)
         .height(height)
         .style(editor_style);
     if let Some(on_action) = on_action {
@@ -109,7 +108,8 @@ pub fn mono_editor<'a>(
 
 pub fn pick_style(_: &iced::Theme, status: pick_list::Status) -> pick_list::Style {
     let line = match status {
-        pick_list::Status::Opened { .. } => theme::TEAL,
+        pick_list::Status::Opened { .. } => theme::TEXT,
+        pick_list::Status::Hovered => theme::TEXT_MUTED,
         _ => theme::LINE,
     };
     pick_list::Style {
@@ -135,7 +135,7 @@ pub fn menu_style(_: &iced::Theme) -> iced::overlay::menu::Style {
         },
         text_color: theme::TEXT,
         selected_text_color: theme::TEXT,
-        selected_background: theme::LANE.into(),
+        selected_background: theme::HEAD_PILL.into(),
         shadow: iced::Shadow::default(),
     }
 }
