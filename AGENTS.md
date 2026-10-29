@@ -7,7 +7,7 @@ changes ready to merge. Read `GLOSSARY.md` for the words, `docs/spec.md` for wha
 
 ## Layout
 
-- `crates/moebius-core`: everything the server does. At the top of `src/`: `app.rs` ties the store, bus, repositories,
+- `crates/moebius-core`: everything the server does. At the top of `src/`: `app/` ties the store, bus, repositories,
   forges and decisions together; `config`, `store`, `blobs` (and `blobs::redact`), `bus` and `router` (the model
   provider). The rest is grouped by part, one folder each: `server/` (the wiring and nightly schedule, `api`,
   `settings` for editing `moebius.toml` while it runs, `setup` for the Models, Plugins and Get started pages), `repos/`

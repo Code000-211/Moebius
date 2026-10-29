@@ -13,7 +13,7 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
                          ▼
  ┌──────────────────────────────────────────────── moebius serve ───────────────────────────────┐
  │  board engine ── runs Luau column scripts per card, every tick                  (board.rs)   │
- │  core: App ── store (SQLite + blobs), bus, repos (git), forges, decisions   (app.rs, ...)   │
+ │  core: App ── store (SQLite + blobs), bus, repos (git), forges, decisions   (app/, ...)     │
  │  poll ── GitHub issues and pull requests, every poll_seconds                    (poll.rs)    │
  │  router + check ── model endpoints and tool-call check, one listener (127.0.0.1:7172)        │
  └──────────────────────────────────────┬──────────────────────────────▲──────────────────────┘
@@ -137,7 +137,7 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
     chat: refused while the chat is `running` (`App::say_in_chat` marks it so before it hands the message on, under the
     same lock), it commits the worktree (`repos::commit_all`) and offers the branch as the end does
     (`App::offer_chat_branch`, shared with `offer_chat_change`); a branch offered before updates its open change
-    (`Store::latest_change_on_branch`, `set_change_head`) instead of making another. Once a minute `server/mod.rs` calls
+    (`Store::latest_change_on_branch`, `set_change_head`) instead of making another. Once a minute `server/schedule.rs` calls
     `PiBolt::pause_idle_chats`, which ends the Pi of each chat that has waited `pibolt::IDLE` (30 minutes, from its
     last `agent_settled`) the way the terminal interface does, keeping the chat `waiting` among the paused ones;
     `Runs::say` starts its Pi again with `--continue` before the message, and an end or stop finishes it at once.
@@ -147,7 +147,7 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
     stores a change with a null repository (`Store::add_harness_change`; `harness_repository` set). A branch that fails the
     check is not offered and the chat gets a `moebius_error`. `App::merge_change` merges such a change with
     `HarnessRepo::merge_branch`, which `merge_proposal` uses too.
-12c. **The Retro.** Once a minute `server/mod.rs` asks `retro::on_schedule`, which starts today's Retro when `retro_at` has passed
+12c. **The Retro.** Once a minute `server/schedule.rs` asks `retro::on_schedule`, which starts today's Retro when `retro_at` has passed
     and the `retros` table has no row for the day (`retro::due`); `POST /v1/retros` calls `retro::start` too. `retro::report`
     reads the day's errors from the store, one `Store` function per source (failed and refused tool calls, failed and stopped
     runs, steering, cards sent back from review), into the stored report. With errors and a harness repository,
@@ -155,7 +155,7 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
     the harness clone; a thread waits for the run, then `HarnessRepo::proposed` checks, pushes and returns the
     `proposal/<date>-*` branches, which are stored in `proposals` with the cards of their `Cards:` line, and `retro_done`
     is published.
-12d. **The trials.** The same minute, `server/mod.rs` asks `trial::on_schedule`, which inside `[trial_window]` (`trial::in_window`)
+12d. **The trials.** The same minute, `server/schedule.rs` asks `trial::on_schedule`, which inside `[trial_window]` (`trial::in_window`)
     starts the oldest `open` proposal when no other is `trying` and the board has a run to spare; `POST
     /v1/proposals/{id}/trial` calls `trial::start` at any hour. A thread tries the proposal on each card: the agent is read
     from the proposal's branch in a throwaway worktree (`HarnessRepo::agent_on_branch`), `Runs::start_trial`
@@ -165,14 +165,14 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
     `negative` or `untried` (`proposal_status`). A positive or untried one gets a `proposal` inbox item; `trial::merge`
     (`HarnessRepo::merge_proposal`) or `trial::dismiss` ends it. `Store::runs_for_card` and the Retro's sources leave trial
     runs out. A server start opens the `trying` proposals again.
-12e. **The replays.** After the trials, `server/mod.rs` asks `replay::on_schedule`, which inside `[trial_window]` calls
+12e. **The replays.** After the trials, `server/schedule.rs` asks `replay::on_schedule`, which inside `[trial_window]` calls
     `replay::run_due` while the night's 20 are not used up: `replay::due` takes the oldest refused `tool_call` judgements without
     an outcome or replay (`Store::replay_candidates`) whose call `guard::reversible` accepts, and each is run by
     `replay::replay_judgement` in a copy of the worktree (or a `git archive`) under `<data_dir>/replays`, never while a proposal
     is `trying`. The result is stored in `replays`, becomes the judgement's outcome (`Store::set_outcome`) and is published
     (`replayed`). `POST /v1/judgements/{id}/replay` calls `replay::replay` at any hour.
 12f. **Autoresearch.** `POST /v1/research` stores a brief (`research`, `experiments` and `research_runs` tables); `confirm`
-    records a `confirm_brief` judgement by a person. The same minute, `server/mod.rs` asks `research::on_schedule`, which inside
+    records a `confirm_brief` judgement by a person. The same minute, `server/schedule.rs` asks `research::on_schedule`, which inside
     `[trial_window]` starts the oldest `confirmed` research when no proposal is `trying` and none is `running`;
     `POST /v1/research/{id}/start` calls `research::start` at any hour. A thread measures the baseline (`research::measure`:
     the research's command through `replay::run_apart` in a detached worktree, the last number on standard output), then
@@ -285,11 +285,39 @@ At the top:
 
 | Module | What it is for |
 |---|---|
-| `app.rs` | The core put together; the operations on cards, changes and issues, each published on the bus, including publishing a change and running its checks. |
-| `config.rs` | `moebius.toml`: parsing, defaults, validation. |
 | `blobs.rs` | The content-addressed blob store and secret redaction. |
 | `bus.rs` | The event bus behind the event stream. |
-| `router.rs` | The router: model endpoints, run tokens, usage, budgets. |
+
+`app/`, the core put together:
+
+| Module | What it is for |
+|---|---|
+| `app/mod.rs` | `App`: the store, bus, repositories, forges and decisions put together, its errors and the lookups every operation shares; every change to a card is published on the bus. |
+| `app/repositories.rs` | Adding a repository (a path, a URL or GitHub), whom a GitHub repository trusts, and whether a card's issue is trusted. |
+| `app/cards.rs` | Cards and their issues: kept in line with the forge's issues, created, edited, approved, retried and moved; why a card waits, what blocks it, its history. |
+| `app/runs.rs` | A person's hand in a run: steering, stopping, a shell in its worktree, a chat's terminal interface, and a shell on the server. |
+| `app/chats.rs` | Chats: starting one, continuing an ended one, writing to it, its model and reasoning, ending it, and the list of chats. |
+| `app/changes.rs` | Changes: a card's work published through the forge, offered with a chat's work in the inbox, rejected or merged, and what the forge says became of them. |
+| `app/checks.rs` | How a change's checks stand, and a repository's own checks (`.moebius/checks`) run in a throwaway worktree with a time limit. |
+
+`config/`, `moebius.toml`:
+
+| Module | What it is for |
+|---|---|
+| `config/mod.rs` | `Config`: the file parsed, every default applied, every path made absolute, and the errors that refuse it. |
+| `config/example.rs` | The commented example `moebius init` writes, every key at its default. |
+| `config/raw.rs` | The file as it is written: every key optional, unknown keys refused. |
+| `config/sections.rs` | The types of the sections (the router's upstreams, the GitHub App, the teacher, the decision model, the agents) and their checks. |
+
+`router/`, the model provider:
+
+| Module | What it is for |
+|---|---|
+| `router/mod.rs` | The router, its upstreams and its routes `POST /v1/chat/completions` and `POST /v1/messages`. |
+| `router/proxy.rs` | A run's request forwarded to the upstream with the provider's key, and the answer back, streamed or not. |
+| `router/usage.rs` | The tokens and tools of an answer, read from a body or from a stream as it passes, recorded against the run. |
+| `router/grants.rs` | The runs' tokens and what each allows: the card's, the run's and the day's token budgets. |
+| `router/models.rs` | The models the upstreams serve, for the pickers of the desktop app. |
 
 `store/`, the records:
 
@@ -315,7 +343,11 @@ At the top:
 
 | Module | What it is for |
 |---|---|
-| `server/mod.rs` | Wires everything from the configuration and runs the loops. |
+| `server/mod.rs` | Wires everything from the configuration and serves the desktop API, the router and the loops. |
+| `server/leftovers.rs` | What a server that stopped left going, ended at the next start: its runs failed and their worktrees removed, its Retros, research and trials set back. |
+| `server/loops.rs` | The board's tick, the poll of GitHub, and the refresh of the clones every 30 seconds. |
+| `server/schedule.rs` | Once a minute: the Retro, trials, research and replays when they are due, and the pause of chats that wait idle. |
+| `server/fake_github.rs` | For the tests only: a fake GitHub with one repository, and a server that polls it. |
 | `server/api/mod.rs` | The desktop API: the state it needs, the token check, the router that merges the routes of its parts, how a failure becomes a status, and `GET /v1/health`. |
 | `server/api/cards.rs` | The snapshot of every board, issues, cards and their changes (edit, approve, retry, merge, reject), a card's runs and history. |
 | `server/api/repositories.rs` | Adding and editing repositories, and their column scripts and files. |
@@ -328,7 +360,11 @@ At the top:
 | `server/api/uploads.rs` | `POST /v1/uploads`: zip files for the Moebius agent to import from. |
 | `server/api/terminals.rs` | The terminal WebSockets: a shell in a run's worktree or on the server, and Pi's terminal interface of a chat. |
 | `server/api/events.rs` | The event WebSocket `GET /v1/events`. |
-| `server/settings.rs` | Editing `moebius.toml` while the server runs: changes applied to the file's text, the keys that take effect at once, the API keys kept in `secrets.toml`, and the restart. |
+| `server/settings/mod.rs` | Editing `moebius.toml` while the server runs: what `PUT /v1/settings` takes and answers, and reading and writing the file. |
+| `server/settings/edit.rs` | A change applied to the file's text with `toml_edit`, its comments and order kept. |
+| `server/settings/keys.rs` | Every key with its default and whether it takes effect at once, and their values without passwords. |
+| `server/settings/live.rs` | The configuration the running server reads: a change saved and its live keys applied, the agents and rules moved into a new harness configuration repository, and the restart. |
+| `server/settings/secrets.rs` | The API keys kept in `secrets.toml`, and the keys the upstreams and the decision model are given. |
 | `server/setup.rs` | What the Models, Plugins and Get started pages show: the router's upstreams, the agents, the teacher, the decision model and the plugins, without a secret, and the steps to a first card (`GET /v1/start`). |
 
 `repos/`, the repositories and their forges:
@@ -382,7 +418,11 @@ At the top:
 | `harness/pibolt/chat.rs` | Chats: their Pi between messages, their settings, and pausing one that waited long. |
 | `harness/pibolt/tui.rs` | A waiting chat in Pi's interactive mode, and following its session file. |
 | `harness/terminal.rs` | A person's shell in a run's worktree on a pseudo-terminal (`portable-pty`), served over the WebSocket `GET /v1/runs/{id}/terminal` (and `GET /v1/terminal`, in the directory of `moebius.toml`); at most 4 per run or on the server, not checked by the guard. The same serving carries Pi-Bolt's interactive mode for a waiting chat (`GET /v1/chats/{id}/tui`, one per chat), whose tool calls the bridge still checks; `harness/pibolt/tui.rs` ends the chat's own Pi for it, continues the chat's Pi session in it, records what it adds to the session file as the chat's events, and starts the chat's Pi again on the same session when it closes. |
-| `harness/repo.rs` | The harness configuration repository: its clone, reading agents, skills, rules and MCP servers from it, and edits as commits pushed to its origin; `create` makes a new one from the agents and rules of `moebius.toml` (`POST /v1/harness/setup`, `moebius init`). |
+| `harness/repo/mod.rs` | The harness configuration repository's clone: opened, refreshed, and its agents read again when it changes. |
+| `harness/repo/read.rs` | Reading the agents, skills and MCP servers from it, each agent checked as a run uses it. |
+| `harness/repo/edits.rs` | A person's edits of agents, skills, MCP servers and rules, as commits pushed to its origin. |
+| `harness/repo/branches.rs` | Its branches: the Retro's proposals and chats' branches checked, pushed, merged or dismissed, and a trial's worktree of a branch. |
+| `harness/repo/create.rs` | `create`: a new repository from the agents and rules of `moebius.toml` (`POST /v1/harness/setup`, `moebius init`). |
 | `harness/mcp.rs` | The MCP servers of `mcp.toml`, checked when read, and the `mcp.json` a run of an agent that names them is given. |
 | `harness/skill.rs` | The built-in skills, bundled with `include_str!` and written to `<data_dir>/skills/<name>/` at start: the `moebius` skill (the guide and the references) and the task skills of the Moebius agent (`moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions` and `moebius-plugins`, in `crates/moebius-core/skill/<name>/SKILL.md`). |
 | `harness/grilling.rs` | The Grilling partner's end: the issues or report it left in its worktree, confirming the issues as cards (on GitHub opened there first) and dismissing. |

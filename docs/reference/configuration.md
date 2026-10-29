@@ -1,7 +1,7 @@
 # Configuration
 
 The server reads one TOML file, `moebius.toml`, when it starts. This page is for whoever runs a Moebius server: it lists
-every key with its type, default, meaning and validation. The code is in `crates/moebius-core/src/config.rs`.
+every key with its type, default, meaning and validation. The code is in `crates/moebius-core/src/config/`.
 
 ## The file
 

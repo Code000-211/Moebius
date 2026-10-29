@@ -2,7 +2,7 @@
 
 The router is the only model provider the harnesses see (ADR 0006). This page is for anyone who points a harness at
 Moebius, configures upstreams or budgets, or reads the usage the router records. The code is in
-`crates/moebius-core/src/router.rs`.
+`crates/moebius-core/src/router/`.
 
 The router listens on `router.listen` (default `127.0.0.1:7172`, loopback only). Provider keys stay in the router: a
 harness only ever holds its run's token. The same listener also serves the [bridge protocol](bridge-protocol.md)'s

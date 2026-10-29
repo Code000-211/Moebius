@@ -60,7 +60,7 @@ fn every_route_is_in_the_reference() {
     for (module, page) in [
         ("server/api", "docs/reference/desktop-api.md"),
         ("repos/check.rs", "docs/reference/bridge-protocol.md"),
-        ("router.rs", "docs/reference/router.md"),
+        ("router", "docs/reference/router.md"),
     ] {
         let routes = quoted_after(
             &source(&format!("crates/moebius-core/src/{module}")),

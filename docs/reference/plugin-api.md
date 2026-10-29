@@ -42,7 +42,7 @@ Serialised in lower case with underscores, as in `"decider"`.
 | `harness` | Drives a coding-agent harness such as Pi-Bolt. | No. `harness/pibolt/` is called directly. |
 | `runner` | Where harnesses run: local worktrees, later GPU machines. | No. |
 | `decider` | Answers decision points. | Yes: `guard` decides `tool_call`. |
-| `router` | The model provider the harnesses use. | No. `router.rs` is part of the core. |
+| `router` | The model provider the harnesses use. | No. `router/` is part of the core. |
 | `view` | Describes a screen of the desktop app as data. | No. |
 
 Only the `decider` kind has methods defined today.
