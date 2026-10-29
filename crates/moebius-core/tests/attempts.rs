@@ -317,11 +317,21 @@ fn when_none_passes_the_round_fails_and_the_next_is_told_why() {
     s.engine.settle(s.card.id).unwrap();
     let next = s.app.store.open_attempts(s.card.id).unwrap();
     assert_eq!(next.len(), 3);
-    let prompt = std::fs::read_to_string(
-        s.app
-            .data_dir
-            .join(format!("runs/{}/agent/prompt.txt", next[0].run_id)),
-    )
-    .unwrap();
+    // The fake Pi writes its prompt once it has started.
+    let file = s
+        .app
+        .data_dir
+        .join(format!("runs/{}/agent/prompt.txt", next[0].run_id));
+    let prompt = loop {
+        if let Ok(prompt) = std::fs::read_to_string(&file) {
+            break prompt;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "{} was not written",
+            file.display()
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    };
     assert!(prompt.contains("None of the attempts passed."), "{prompt}");
 }
