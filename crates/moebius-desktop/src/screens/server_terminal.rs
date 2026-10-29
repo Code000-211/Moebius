@@ -74,7 +74,7 @@ impl ServerTerminal {
             "Setup",
             "Terminal",
             None,
-            page::context("A shell on the server, in the directory of moebius.toml."),
+            page::context("Shell on the server, in the directory of moebius.toml."),
             iced::widget::space().into(),
         );
         let mut content = column![header]

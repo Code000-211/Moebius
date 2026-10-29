@@ -4,7 +4,6 @@
 //! the repository's own. The speech bubble starts a chat draft with the Moebius agent about the script.
 
 use iced::advanced::text::highlighter::Format;
-use iced::font::Weight;
 use iced::highlighter;
 use iced::widget::{button, column, container, row, space, text, text_editor};
 use iced::{Alignment, Border, Element, Length, Task};
@@ -15,6 +14,7 @@ use crate::screens::live::say;
 use crate::settings::Settings;
 use crate::theme;
 use crate::widgets::icons::Icon;
+use crate::widgets::inline_edit::editor_style;
 use crate::widgets::page::{self, Tone};
 
 #[derive(Debug, Clone)]
@@ -197,6 +197,7 @@ impl ScriptEditor {
             button(
                 text(self.repository_name.as_str())
                     .size(theme::BREADCRUMB)
+                    .font(theme::MONO)
                     .color(theme::TEXT_SECONDARY)
             )
             .padding(0)
@@ -204,6 +205,7 @@ impl ScriptEditor {
             .style(|_, _| button::Style::default()),
             text(" / Column script")
                 .size(theme::BREADCRUMB)
+                .font(theme::MONO)
                 .color(theme::TEXT_MUTED),
         ];
         let mut actions = row![icon_button(
@@ -211,13 +213,14 @@ impl ScriptEditor {
             AppMessage::Script(Message::AskAgent),
             ASK_AGENT
         )]
-        .spacing(8)
+        .spacing(theme::SPACE_8)
         .align_y(Alignment::Center);
         if self.confirming {
             actions = actions
                 .push(
                     text("Remove the repository's script?")
                         .size(theme::CONTEXT)
+                        .font(theme::MONO)
                         .color(theme::TEXT_SECONDARY),
                 )
                 .push(page::white_button(
@@ -243,13 +246,9 @@ impl ScriptEditor {
             ));
         }
         let context = match self.own {
-            Some(true) => {
-                "The repository's own script, from its default branch. A save is a commit."
-            }
-            Some(false) => {
-                "The script built into Moebius. A save commits a script of the repository's own."
-            }
-            None => "Reading the script.",
+            Some(true) => "The repository's own script. Save commits it to the default branch.",
+            Some(false) => "The built-in script. Save commits the repository's own.",
+            None => "Reading the script…",
         };
         let header = page::header_with(
             Some(breadcrumb.into()),
@@ -269,33 +268,34 @@ impl ScriptEditor {
                 .font(theme::MONO)
                 .color(theme::TEXT_SECONDARY),
                 space::horizontal(),
-                text("Luau · checked when saved")
+                text("Luau · checked on save")
                     .size(theme::LABEL)
+                    .font(theme::MONO)
                     .color(theme::TEXT_MUTED),
             ]
             .align_y(Alignment::Center),
             code_editor(&self.text),
         ]
-        .spacing(12);
+        .spacing(theme::SPACE_12);
         if let Some(error) = &self.error {
             content = content.push(
                 text(error.as_str())
                     .size(theme::CONTEXT)
-                    .font(theme::manrope(Weight::Semibold))
+                    .font(theme::MONO)
                     .color(theme::RED_TEXT),
             );
         } else if self.saved {
             content = content.push(
-                text("Saved as a commit on the default branch.")
+                text("Committed to the default branch.")
                     .size(theme::CONTEXT)
-                    .font(theme::manrope(Weight::Semibold))
+                    .font(theme::MONO)
                     .color(theme::ONLINE_TEXT),
             );
         }
         column![
             header,
             container(content)
-                .padding(20)
+                .padding(theme::BOX_PADDING)
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .style(|_| page::box_style()),
@@ -312,7 +312,7 @@ fn code_editor(content: &text_editor::Content) -> Element<'_, AppMessage> {
         .on_action(|action| AppMessage::Script(Message::Text(action)))
         .font(theme::MONO)
         .size(theme::CODE)
-        .padding(14)
+        .padding(theme::SPACE_10)
         .height(Length::Fill)
         .highlight_with::<highlighter::Highlighter>(
             highlighter::Settings {
@@ -324,20 +324,7 @@ fn code_editor(content: &text_editor::Content) -> Element<'_, AppMessage> {
                 font: None,
             },
         )
-        .style(|_, status| text_editor::Style {
-            background: theme::LANE.into(),
-            border: Border {
-                color: match status {
-                    text_editor::Status::Focused { .. } => theme::TEAL,
-                    _ => theme::LINE,
-                },
-                width: 1.0,
-                radius: theme::RADIUS_CARD.into(),
-            },
-            placeholder: theme::TEXT_MUTED,
-            value: theme::TEXT,
-            selection: theme::TEAL_FILL,
-        })
+        .style(editor_style)
         .into()
 }
 
@@ -347,8 +334,8 @@ pub const ASK_AGENT: &str = "ask-the-moebius-agent";
 /// A square button with a line icon, for what has no words, named `id`.
 fn icon_button<'a>(icon: Icon, message: AppMessage, id: &'static str) -> Element<'a, AppMessage> {
     container(
-        button(icon.view(theme::TEXT, 16.0))
-            .padding([8, 10])
+        button(icon.view(theme::TEXT, theme::ICON))
+            .padding(theme::FIELD_PADDING)
             .on_press(message)
             .style(|_, status| button::Style {
                 background: Some(

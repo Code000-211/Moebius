@@ -188,17 +188,17 @@ impl Edits {
             text_input("Title", &draft.title)
                 .on_input(move |title| message(Message::Title(title)))
                 .size(theme::BODY)
-                .padding([9, 12])
+                .padding(theme::FIELD_PADDING)
                 .style(connect::input_style),
             text_editor(&draft.body)
                 .placeholder("What the issue asks for. \"Blocked by #12\" makes #12 block it.")
                 .on_action(move |action| message(Message::Body(action)))
                 .size(theme::BODY)
-                .padding(14)
-                .height(160)
+                .padding(theme::SPACE_10)
+                .height(theme::EDITOR_HEIGHT)
                 .style(editor_style),
         ]
-        .spacing(10)
+        .spacing(theme::SPACE_10)
         .width(Length::Fill);
         let save =
             (!self.saving && !draft.title.trim().is_empty()).then_some(message(Message::Save));
@@ -226,13 +226,14 @@ impl Edits {
                 .on_input(move |typed| message(Message::Trusted(typed)))
                 .on_submit_maybe(save.clone())
                 .size(theme::BODY)
-                .padding([9, 12])
+                .padding(theme::FIELD_PADDING)
                 .style(connect::input_style),
             text("The issues of these logins on the forge move on without your approval.")
                 .size(theme::CONTEXT)
+                .font(theme::MONO)
                 .color(theme::TEXT_SECONDARY),
         ]
-        .spacing(8);
+        .spacing(theme::SPACE_8);
         Some(page::boxed(
             "Trusted authors",
             inline_edit::editor(

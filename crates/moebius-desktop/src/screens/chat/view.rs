@@ -4,7 +4,7 @@
 use iced::font::Weight;
 use iced::widget::text::Wrapping;
 use iced::widget::{button, column, container, row, scrollable, space, text, text_input};
-use iced::{Alignment, Border, Element, Length, Padding};
+use iced::{Alignment, Border, Element, Length};
 
 use crate::app::Message as AppMessage;
 use crate::client::{Change, Chat, InboxItem, Snapshot};
@@ -59,6 +59,7 @@ fn chat_row<'a>(
             space::horizontal(),
             text(page::ago(now, chat.started_at))
                 .size(theme::LABEL)
+                .font(theme::MONO)
                 .color(theme::TEXT_MUTED),
         ]
         .align_y(Alignment::Center),
@@ -68,12 +69,13 @@ fn chat_row<'a>(
             .wrapping(Wrapping::WordOrGlyph),
         text(meta.join(" · "))
             .size(theme::LABEL)
+            .font(theme::MONO)
             .color(theme::TEXT_SECONDARY),
     ]
-    .spacing(6);
+    .spacing(theme::SPACE_6);
     button(content)
         .width(Length::Fill)
-        .padding([10, 12])
+        .padding([theme::SPACE_8, theme::SPACE_10])
         .on_press(AppMessage::Chat(Message::Select(chat.id)))
         .style(move |_, status| {
             let (fill, line) = match (chosen, status) {
@@ -107,16 +109,26 @@ fn switch<'a>(chat: &Chat, terminal: bool) -> Element<'a, AppMessage> {
         )
     };
     let mut switch = row![chip("Chat", !terminal, false)]
-        .spacing(6)
+        .spacing(theme::SPACE_6)
         .align_y(Alignment::Center);
     if terminal || chat.status == "waiting" {
         switch = switch.push(chip("Terminal", terminal, true));
     } else {
         switch = switch.push(iced::widget::tooltip(
-            container(text("Terminal").size(theme::BODY).color(theme::TEXT_MUTED)).padding([4, 12]),
-            container(text("Opens when the agent has answered").size(theme::LABEL))
-                .padding([4, 8])
-                .style(|_| page::box_style()),
+            container(
+                text("Terminal")
+                    .size(theme::BREADCRUMB)
+                    .font(theme::manrope(Weight::Semibold))
+                    .color(theme::TEXT_MUTED),
+            )
+            .padding([theme::SPACE_4, theme::SPACE_10]),
+            container(
+                text("Opens when the agent has answered")
+                    .size(theme::LABEL)
+                    .font(theme::MONO),
+            )
+            .padding([theme::SPACE_4, theme::SPACE_8])
+            .style(|_| page::box_style()),
             iced::widget::tooltip::Position::Bottom,
         ));
     }
@@ -127,7 +139,7 @@ fn switch<'a>(chat: &Chat, terminal: bool) -> Element<'a, AppMessage> {
 /// (or the question that confirms stopping), and ending a grilling, which ends in the issues it proposes. Other chats
 /// are not ended here: they wait for the next message as long as the person likes.
 fn actions<'a>(chat: &Chat, open: &Open) -> Element<'a, AppMessage> {
-    let mut actions = row![].spacing(10).align_y(Alignment::Center);
+    let mut actions = row![].spacing(theme::SPACE_10).align_y(Alignment::Center);
     if !chat.is_open() {
         return actions.into();
     }
@@ -136,6 +148,7 @@ fn actions<'a>(chat: &Chat, open: &Open) -> Element<'a, AppMessage> {
             .push(
                 text("Stop this chat?")
                     .size(theme::CONTEXT)
+                    .font(theme::MONO)
                     .color(theme::TEXT_SECONDARY),
             )
             .push(page::white_button(
@@ -178,9 +191,13 @@ fn offer_button<'a>(chat: &Chat) -> Element<'a, AppMessage> {
     }
     iced::widget::tooltip(
         page::white_button(label, None),
-        container(text("Offer once the agent has answered").size(theme::LABEL))
-            .padding([4, 8])
-            .style(|_| page::box_style()),
+        container(
+            text("Offer once the agent has answered")
+                .size(theme::LABEL)
+                .font(theme::MONO),
+        )
+        .padding([theme::SPACE_4, theme::SPACE_8])
+        .style(|_| page::box_style()),
         iced::widget::tooltip::Position::Bottom,
     )
     .into()
@@ -189,7 +206,7 @@ fn offer_button<'a>(chat: &Chat) -> Element<'a, AppMessage> {
 /// What stands in the right pane when no chat is chosen.
 fn empty_view(line: &str) -> Element<'_, AppMessage> {
     container(page::body(line))
-        .padding(20)
+        .padding(theme::BOX_PADDING)
         .width(Length::Fill)
         .height(Length::Fill)
         .style(|_| page::box_style())
@@ -236,13 +253,14 @@ fn change_view<'a>(
             .wrapping(Wrapping::WordOrGlyph),
         space::horizontal(),
     ]
-    .spacing(10)
+    .spacing(theme::SPACE_10)
     .align_y(Alignment::Center);
     if let Some(item) = item {
         if let Some(progress) = inbox.status(item.id) {
             head = head.push(
                 text(progress)
                     .size(theme::LABEL)
+                    .font(theme::MONO)
                     .color(theme::TEXT_SECONDARY),
             );
         }
@@ -255,7 +273,7 @@ fn change_view<'a>(
         });
     }
     container(head)
-        .padding([10, 12])
+        .padding([theme::SPACE_8, theme::SPACE_10])
         .width(Length::Fill)
         .style(|_| container::Style {
             background: Some(theme::LANE.into()),
@@ -276,7 +294,7 @@ pub(super) fn message_field(value: &str, send: Option<AppMessage>) -> Element<'_
         .on_input(|text| AppMessage::Chat(Message::Edited(text)))
         .on_submit_maybe(send)
         .size(theme::BODY)
-        .padding([10, 12])
+        .padding(theme::FIELD_PADDING)
         .style(connect::input_style)
         .into()
 }
@@ -307,7 +325,7 @@ impl Chats {
         column![
             header,
             row![self.list_view(snapshot), detail]
-                .spacing(14)
+                .spacing(theme::PAGE_GAP)
                 .height(Length::Fill),
         ]
         .spacing(theme::PAGE_GAP)
@@ -329,12 +347,12 @@ impl Chats {
                 let repository = place_name(snapshot, chat);
                 chat_row(chat, repository, self.now, chosen == Some(chat.id))
             }))
-            .spacing(8)
+            .spacing(theme::SPACE_8)
             .into()
         };
         container(scrollable(list).height(Length::Fill))
-            .padding(12)
-            .width(320)
+            .padding(theme::SPACE_12)
+            .width(theme::LIST_WIDTH)
             .height(Length::Fill)
             .style(|_| page::box_style())
             .into()
@@ -357,7 +375,7 @@ impl Chats {
                 .width(Length::Fill),
             status_tag(&chat.status),
         ]
-        .spacing(10)
+        .spacing(theme::SPACE_10)
         .align_y(Alignment::Center);
         let who = match repository {
             Some(_) if chat.harness_repository => {
@@ -368,17 +386,21 @@ impl Chats {
         };
         let mut head = row![
             column![title, page::context(who)]
-                .spacing(2)
+                .spacing(theme::SPACE_2)
                 .width(Length::Fill),
         ]
-        .spacing(10)
+        .spacing(theme::SPACE_10)
         .align_y(Alignment::Center);
         if chat.is_open() {
             head = head.push(switch(chat, self.terminal.is_shown()));
         }
         head = head.push(actions(chat, open));
         if let Some(terminal) = self.terminal.view() {
-            let content = column![container(head).padding([14, 18]), page::rule(), terminal];
+            let content = column![
+                container(head).padding(theme::BOX_PADDING),
+                page::rule(),
+                terminal
+            ];
             return container(content)
                 .width(Length::Fill)
                 .height(Length::Fill)
@@ -387,13 +409,13 @@ impl Chats {
         }
         let conversation = scrollable(
             container(open.thread.view::<OnPage>(&chat.status, self.now))
-                .padding(Padding::from([16, 16]))
+                .padding(theme::SPACE_16)
                 .width(Length::Fill),
         )
         .anchor_bottom()
         .height(Length::Fill);
         let mut content = column![
-            container(head).padding([14, 18]),
+            container(head).padding(theme::BOX_PADDING),
             page::rule(),
             conversation
         ];
@@ -402,7 +424,7 @@ impl Chats {
         let merge_is_primary = !chat.is_open() && offered.is_some_and(|(_, item)| item.is_some());
         if let Some((change, item)) = offered {
             let offer = change_view(change, item, inbox, merge_is_primary);
-            content = content.push(container(offer).padding([8, 16]));
+            content = content.push(container(offer).padding([theme::SPACE_8, theme::BOX_PADDING]));
         }
         container(
             content

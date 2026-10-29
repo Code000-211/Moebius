@@ -31,9 +31,9 @@ pub fn note<'a>(
                 .color(ink),
             text(message).size(theme::CONTEXT).color(theme::TEXT),
         ]
-        .spacing(4),
+        .spacing(theme::SPACE_4),
     )
-    .padding([10, 12])
+    .padding([theme::SPACE_10, theme::SPACE_12])
     .width(Length::Fill)
     .style(move |_| container::Style {
         background: Some(fill.into()),
@@ -55,11 +55,11 @@ fn tool_name<'a>(name: String, fill: Color) -> Element<'a, AppMessage> {
             .size(theme::CODE)
             .color(theme::TEXT),
     )
-    .padding([2, 8])
+    .padding([theme::SPACE_2, theme::SPACE_8])
     .style(move |_| container::Style {
         background: Some(fill.into()),
         border: Border {
-            radius: theme::RADIUS_ROUND.into(),
+            radius: theme::RADIUS_SMALL.into(),
             ..Border::default()
         },
         ..container::Style::default()
@@ -83,7 +83,7 @@ fn head<'a>(call: &'a ToolCall, blocked: bool) -> Element<'a, AppMessage> {
         } else {
             theme::TEXT_SECONDARY
         });
-    let mut right = row![].spacing(8).align_y(Alignment::Center);
+    let mut right = row![].spacing(theme::SPACE_8).align_y(Alignment::Center);
     match (call.verdict(), &call.execution) {
         (Some(check), _) if !check.allowed => {
             right = right.push(tag("Blocked".to_string(), Tone::Red))
@@ -111,6 +111,7 @@ fn head<'a>(call: &'a ToolCall, blocked: bool) -> Element<'a, AppMessage> {
         right = right.push(
             text(notes.join(" · "))
                 .size(theme::LABEL)
+                .font(theme::MONO)
                 .color(theme::TEXT_MUTED),
         );
     }
@@ -119,7 +120,7 @@ fn head<'a>(call: &'a ToolCall, blocked: bool) -> Element<'a, AppMessage> {
         container(arg).width(Length::Fill).clip(true),
         right,
     ]
-    .spacing(10)
+    .spacing(theme::SPACE_10)
     .align_y(Alignment::Center)
     .into()
 }
@@ -175,7 +176,7 @@ pub fn mcp_error<'a>(server: &'a str, message: &'a str) -> Element<'a, AppMessag
 }
 
 fn tool_view(call: &ToolCall) -> Element<'_, AppMessage> {
-    let mut content = column![head(call, false)].spacing(8);
+    let mut content = column![head(call, false)].spacing(theme::SPACE_8);
     match &call.input {
         Input::Edit { path, changes } => content = content.push(diff_view(path, changes)),
         Input::Write {
@@ -190,7 +191,7 @@ fn tool_view(call: &ToolCall) -> Element<'_, AppMessage> {
         _ => {}
     }
     container(content)
-        .padding([10, 12])
+        .padding([theme::SPACE_10, theme::SPACE_12])
         .width(Length::Fill)
         .style(|_| container::Style {
             background: Some(theme::LANE.into()),
@@ -207,7 +208,7 @@ fn tool_view(call: &ToolCall) -> Element<'_, AppMessage> {
 /// All of a tool call that its line does not say, for when its step is unfolded: why a refusal happened, the input
 /// (the command, the diff, the file written) and what the tool printed (a file read, shown as that file).
 pub(crate) fn details(call: &ToolCall) -> Element<'_, AppMessage> {
-    let mut content = column![].spacing(8);
+    let mut content = column![].spacing(theme::SPACE_8);
     if let Some(check) = call.verdict().filter(|check| !check.allowed) {
         let why = match check.rule() {
             Some((rule, why)) => format!("Rule broken: {rule}. {why}"),
@@ -218,13 +219,19 @@ pub(crate) fn details(call: &ToolCall) -> Element<'_, AppMessage> {
             content = content.push(
                 text(format!("Replayed: {replay}"))
                     .size(theme::LABEL)
+                    .font(theme::MONO)
                     .color(theme::TEXT_MUTED),
             );
         }
     }
     let who = check_line(call);
     if !who.is_empty() {
-        content = content.push(text(who).size(theme::LABEL).color(theme::TEXT_MUTED));
+        content = content.push(
+            text(who)
+                .size(theme::LABEL)
+                .font(theme::MONO)
+                .color(theme::TEXT_MUTED),
+        );
     }
     let printed = !call.output.is_empty();
     match &call.input {
@@ -278,7 +285,7 @@ fn refused_view(call: &ToolCall) -> Element<'_, AppMessage> {
         Some((rule, why)) => (
             row![
                 text("Rule broken: ")
-                    .size(13.5)
+                    .size(theme::CARD_TITLE)
                     .font(theme::manrope(Weight::Bold))
                     .color(theme::RED_TEXT),
                 text(rule)
@@ -291,42 +298,45 @@ fn refused_view(call: &ToolCall) -> Element<'_, AppMessage> {
         None => (
             row![
                 text("Refused")
-                    .size(13.5)
+                    .size(theme::CARD_TITLE)
                     .font(theme::manrope(Weight::Bold))
                     .color(theme::RED_TEXT)
             ],
             check.reason.as_str(),
         ),
     };
-    let dot = container(space().width(8).height(8)).style(|_| container::Style {
+    let dot = container(space().width(theme::DOT).height(theme::DOT)).style(|_| container::Style {
         background: Some(theme::RED.into()),
         border: Border {
-            radius: 4.0.into(),
+            radius: (theme::DOT / 2.0).into(),
             ..Border::default()
         },
         ..container::Style::default()
     });
     let mut content = column![
-        row![dot, title].spacing(8).align_y(Alignment::Center),
+        row![dot, title]
+            .spacing(theme::SPACE_8)
+            .align_y(Alignment::Center),
         head(call, true),
         text(why).size(theme::CONTEXT).color(theme::TEXT),
     ]
-    .spacing(8);
+    .spacing(theme::SPACE_8);
     if let Some(replay) = &check.replay {
         content = content.push(
             text(format!("Replayed: {replay}"))
                 .size(theme::LABEL)
+                .font(theme::MONO)
                 .color(theme::TEXT_MUTED),
         );
     }
     container(content)
-        .padding([10, 12])
+        .padding([theme::SPACE_10, theme::SPACE_12])
         .width(Length::Fill)
         .style(|_| container::Style {
             background: Some(theme::RED_FILL.into()),
             border: Border {
                 color: theme::RED_BORDER,
-                width: 1.5,
+                width: 1.0,
                 radius: theme::RADIUS_CARD.into(),
             },
             ..container::Style::default()
@@ -360,13 +370,15 @@ pub(crate) fn output_view(output: &str) -> Element<'_, AppMessage> {
         text(lines.join("\n"))
             .font(theme::MONO)
             .size(theme::CODE_SMALL)
-            .line_height(1.6)
+            .line_height(theme::CODE_LINE_HEIGHT)
             .color(theme::TERMINAL_TEXT),
     );
     container(scrollable(
-        container(block).padding([10, 12]).width(Length::Fill),
+        container(block)
+            .padding([theme::SPACE_10, theme::SPACE_12])
+            .width(Length::Fill),
     ))
-    .max_height(240)
+    .max_height(theme::OUTPUT_MAX_HEIGHT)
     .width(Length::Fill)
     .style(|_| container::Style {
         background: Some(theme::TERMINAL.into()),
@@ -461,11 +473,11 @@ fn code_row<'a>(
                 .font(theme::MONO)
                 .size(theme::CODE)
                 .color(ink)
-                .width(24)
+                .width(theme::MARKER_COLUMN)
                 .align_x(Alignment::Center),
             rich_text(spans)
                 .size(theme::CODE)
-                .line_height(1.6)
+                .line_height(theme::CODE_LINE_HEIGHT)
                 .wrapping(Wrapping::WordOrGlyph)
                 .width(Length::Fill),
         ]
@@ -511,18 +523,18 @@ fn code_frame<'a>(
                     .size(theme::CODE_SMALL)
                     .color(theme::TEXT_MUTED),
             )
-            .padding([4, 10]),
+            .padding([theme::SPACE_4, theme::SPACE_10]),
         );
     }
     container(column![
         container(title)
-            .padding([6, 10])
+            .padding([theme::SPACE_6, theme::SPACE_10])
             .width(Length::Fill)
             .style(|_| container::Style {
                 background: Some(theme::LANE.into()),
                 ..container::Style::default()
             }),
-        container(body).padding([4, 0]),
+        container(body).padding([theme::SPACE_4, 0.0]),
     ])
     .width(Length::Fill)
     .clip(true)

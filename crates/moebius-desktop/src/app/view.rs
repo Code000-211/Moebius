@@ -140,8 +140,8 @@ impl App {
                 let entries = self.search_entries();
                 let list = container(opaque(self.search.view(&entries)))
                     .padding(Padding {
-                        top: 100.0,
-                        left: 12.0,
+                        top: theme::SEARCH_TOP,
+                        left: theme::SPACE_12,
                         ..Padding::ZERO
                     })
                     .width(Length::Fill)
@@ -158,7 +158,7 @@ impl App {
                 page::back(self.location_title(left), Message::Back),
                 self.page_view(page)
             ]
-            .spacing(10)
+            .spacing(theme::PAGE_GAP)
             .into(),
             None => self.page_view(page),
         }

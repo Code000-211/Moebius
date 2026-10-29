@@ -4,7 +4,6 @@
 use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 
-use iced::font::Weight;
 use iced::widget::text::Wrapping;
 use iced::widget::{column, container, markdown, text};
 use iced::{Border, Element, Length, Padding, Task, border};
@@ -156,7 +155,10 @@ impl Thread {
             }
             index += 1;
         }
-        column(views).spacing(12).width(Length::Fill).into()
+        column(views)
+            .spacing(theme::SPACE_12)
+            .width(Length::Fill)
+            .into()
     }
 }
 
@@ -206,21 +208,21 @@ fn markdown_settings() -> markdown::Settings {
         font: theme::MANROPE,
         inline_code_highlight: markdown::Highlight {
             background: theme::HEAD_PILL.into(),
-            border: border::rounded(4),
+            border: border::rounded(theme::RADIUS_SMALL),
         },
-        inline_code_padding: Padding::from([0.0, 3.0]),
+        inline_code_padding: Padding::from([0.0, theme::SPACE_4]),
         inline_code_color: theme::TEXT,
         inline_code_font: theme::MONO,
         code_block_font: theme::MONO,
-        link_color: theme::TEAL,
+        link_color: theme::TEXT,
     };
-    let mut settings = markdown::Settings::with_text_size(15, style);
-    settings.h1_size = 20.0.into();
-    settings.h2_size = 18.0.into();
-    settings.h3_size = 16.5.into();
-    settings.h4_size = 15.0.into();
+    let mut settings = markdown::Settings::with_text_size(theme::BODY, style);
+    settings.h1_size = theme::PAGE_TITLE.into();
+    settings.h2_size = theme::BOX_HEADING.into();
+    settings.h3_size = theme::BODY.into();
+    settings.h4_size = theme::BODY.into();
     settings.code_size = theme::CODE.into();
-    settings.spacing = 10.0.into();
+    settings.spacing = theme::SPACE_10.into();
     settings
 }
 
@@ -232,18 +234,18 @@ fn agent_text<P: Place>(parsed: Option<&(String, Vec<markdown::Item>)>) -> Eleme
         markdown_settings(),
         &Markdown::<P>(PhantomData),
     ))
-    .max_width(720)
+    .max_width(theme::PROSE_WIDTH)
     .into()
 }
 
 /// A message of the person: a box on the right.
 fn person_view(said: Said, message: &str) -> Element<'_, AppMessage> {
-    let mut content = column![].spacing(4);
+    let mut content = column![].spacing(theme::SPACE_4);
     if said == Said::Steered {
         content = content.push(
             text("You steered the chat")
                 .size(theme::LABEL)
-                .font(theme::manrope(Weight::Bold))
+                .font(theme::MONO)
                 .color(theme::TEXT_SECONDARY),
         );
     }
@@ -255,8 +257,8 @@ fn person_view(said: Said, message: &str) -> Element<'_, AppMessage> {
                 .wrapping(Wrapping::WordOrGlyph),
         ),
     )
-    .padding([8, 12])
-    .max_width(560)
+    .padding([theme::SPACE_8, theme::SPACE_12])
+    .max_width(theme::MESSAGE_WIDTH)
     .style(|_| container::Style {
         background: Some(theme::LANE.into()),
         border: Border {

@@ -163,7 +163,7 @@ fn a_running_run_is_drawn_like_the_live_view_of_the_mockup() {
             "-1 +2",
             "Stop run",
             "Steer",
-            "The run keeps going while you type. Steering is saved as a judgement.",
+            "The run keeps going while you type. A steer is saved as a judgement.",
             "This run",
             "2 of 5",
             "412k tokens",
@@ -460,10 +460,7 @@ fn a_finished_run_shows_its_status_and_cannot_be_steered() {
     let mut ui = simulator(&app);
     assert!(ui.find("Succeeded · round 2 of 5").is_ok());
     assert!(ui.find("Stop run").is_err());
-    assert!(
-        ui.find("This run is not running, so it cannot be steered.")
-            .is_ok()
-    );
+    assert!(ui.find("Not running, so it cannot be steered.").is_ok());
 }
 
 /// The steer button waits for a message, and stopping asks first.
@@ -476,7 +473,7 @@ fn steering_needs_a_message_and_stopping_a_confirmation() {
     assert_eq!(ui.into_messages().count(), 0);
 
     let mut ui = simulator(&app);
-    ui.click("Steer this run, for example: also add a test for depth 0")
+    ui.click("Steer this run, e.g. also add a test for depth 0")
         .unwrap();
     ui.typewrite("also test depth 0");
     let messages: Vec<_> = ui.into_messages().collect();

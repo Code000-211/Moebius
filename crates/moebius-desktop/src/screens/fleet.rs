@@ -18,8 +18,6 @@ use crate::widgets::page::{self, Tone, tag};
 use crate::{screens::live, theme, widgets::steps};
 
 /// The narrowest a tile is drawn, which sets how many fit in a row.
-const TILE_WIDTH: f32 = 340.0;
-const TILE_GAP: f32 = 14.0;
 const MAX_COLUMNS: usize = 3;
 
 /// What reading a run brings: when it started and its events after the ones already held.
@@ -232,20 +230,20 @@ impl Fleet {
             text("").into(),
         );
         let body: Element<'a, AppMessage> = if work.is_empty() {
-            container(page::body(
-                "Nothing is working. Runs and chats appear here while they work.",
-            ))
-            .padding(20)
-            .width(Length::Fill)
-            .style(|_| page::box_style())
-            .into()
+            container(page::body("Nothing is working."))
+                .padding(theme::BOX_PADDING)
+                .width(Length::Fill)
+                .style(|_| page::box_style())
+                .into()
         } else {
             responsive(move |size| {
-                let columns = (((size.width + TILE_GAP) / (TILE_WIDTH + TILE_GAP)) as usize)
+                let columns = (((size.width + theme::PAGE_GAP)
+                    / (theme::TILE_WIDTH + theme::PAGE_GAP))
+                    as usize)
                     .clamp(1, MAX_COLUMNS);
-                let mut grid = column![].spacing(TILE_GAP).width(Length::Fill);
+                let mut grid = column![].spacing(theme::PAGE_GAP).width(Length::Fill);
                 for line in work.chunks(columns) {
-                    let mut cells = row![].spacing(TILE_GAP).width(Length::Fill);
+                    let mut cells = row![].spacing(theme::PAGE_GAP).width(Length::Fill);
                     for work in line {
                         cells = cells.push(self.tile(work));
                     }
@@ -254,7 +252,7 @@ impl Fleet {
                     }
                     grid = grid.push(cells);
                 }
-                scrollable(container(grid).padding(Padding::default().right(12)))
+                scrollable(container(grid).padding(Padding::default().right(theme::SPACE_12)))
                     .height(Length::Fill)
                     .into()
             })
@@ -278,7 +276,7 @@ impl Fleet {
                 .color(theme::TEXT),
             tag(work.kind.clone(), Tone::Plain),
         ]
-        .spacing(8)
+        .spacing(theme::SPACE_8)
         .align_y(Alignment::Center);
         if work.status == "waiting" {
             title = title.push(tag("waiting".to_string(), Tone::Amber));
@@ -288,6 +286,7 @@ impl Fleet {
             head = head.push(
                 text(steps::elapsed(self.now - started_at))
                     .size(theme::LABEL)
+                    .font(theme::MONO)
                     .color(theme::TEXT_SECONDARY),
             );
         }
@@ -305,11 +304,12 @@ impl Fleet {
                 .font(theme::manrope(Weight::Semibold))
                 .color(theme::TEXT),
         ]
-        .spacing(6);
+        .spacing(theme::SPACE_6);
         if !about.is_empty() {
             content = content.push(
                 text(about.join(" · "))
                     .size(theme::LABEL)
+                    .font(theme::MONO)
                     .wrapping(Wrapping::None)
                     .color(theme::TEXT_MUTED),
             );
@@ -320,7 +320,7 @@ impl Fleet {
             OpenTarget::Chat(id) => AppMessage::OpenChat(id),
         };
         button(content)
-            .padding([14, 16])
+            .padding(theme::BOX_PADDING)
             .width(Length::FillPortion(1))
             .on_press(target)
             .style(|_, status| button::Style {
@@ -328,7 +328,7 @@ impl Fleet {
                 text_color: theme::TEXT,
                 border: Border {
                     color: if matches!(status, button::Status::Hovered) {
-                        theme::TEAL_BORDER
+                        theme::TEXT_MUTED
                     } else {
                         theme::LINE
                     },
@@ -347,6 +347,7 @@ impl Fleet {
         }) else {
             return text("No steps yet.")
                 .size(theme::LABEL)
+                .font(theme::MONO)
                 .color(theme::TEXT_MUTED)
                 .into();
         };

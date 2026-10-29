@@ -205,7 +205,7 @@ impl Import {
                 wrap(Message::FromZip(false))
             ),
         ]
-        .spacing(8);
+        .spacing(theme::SPACE_8);
         let source: Element<_> = if self.from_zip {
             let chosen = match (&self.file, self.uploading, &self.uploaded) {
                 (Some(file), true, _) => format!("Sending {file}…"),
@@ -219,7 +219,7 @@ impl Import {
                 ),
                 page::body(chosen),
             ]
-            .spacing(12)
+            .spacing(theme::SPACE_12)
             .align_y(Alignment::Center)
             .into()
         } else {
@@ -228,7 +228,7 @@ impl Import {
                 text_input("https://github.com/acme/skills", &self.link)
                     .on_input(move |link| wrap(Message::LinkEdited(link)))
                     .size(theme::BODY)
-                    .padding([9, 12])
+                    .padding(theme::FIELD_PADDING)
                     .style(connect::input_style),
             )
         };
@@ -237,7 +237,7 @@ impl Import {
             text_input("What to import, which key it needs", &self.note)
                 .on_input(move |note| wrap(Message::NoteEdited(note)))
                 .size(theme::BODY)
-                .padding([9, 12])
+                .padding(theme::FIELD_PADDING)
                 .style(connect::input_style),
         );
         let ask = (self.request().is_some() && !self.asking && !self.uploading)
@@ -250,7 +250,7 @@ impl Import {
             source,
             note,
         ]
-        .spacing(12)
+        .spacing(theme::SPACE_12)
         .width(Length::Fill);
         if let Some(error) = &self.error {
             content = content.push(notice_line(error, true));
@@ -260,7 +260,7 @@ impl Import {
                 page::primary_button("Ask the agent", ask),
                 page::white_button("Cancel", Some(wrap(Message::Show(false)))),
             ]
-            .spacing(10),
+            .spacing(theme::SPACE_10),
         );
         boxed(content)
     }

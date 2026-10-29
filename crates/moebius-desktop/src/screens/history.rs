@@ -69,15 +69,16 @@ pub fn view<'a>(
     edit: Option<Element<'a, Message>>,
 ) -> Element<'a, Message> {
     let rows: Element<'a, Message> = match entries {
-        None => page::body("Reading the history."),
-        Some([]) => page::body("Nothing has happened to this card yet."),
+        None => page::body("Reading the history…"),
+        Some([]) => page::body("No history yet."),
         Some(entries) => scrollable(
             column(entries.iter().map(|entry| {
                 row![
                     text(page::ago(now, entry.at))
                         .size(theme::LABEL)
+                        .font(theme::MONO)
                         .color(theme::TEXT_MUTED)
-                        .width(90),
+                        .width(theme::TIME_COLUMN),
                     text(describe(entry))
                         .size(theme::BODY)
                         .color(theme::TEXT)
@@ -85,8 +86,8 @@ pub fn view<'a>(
                 ]
                 .into()
             }))
-            .spacing(8)
-            .padding(Padding::default().right(12)),
+            .spacing(theme::SPACE_8)
+            .padding(Padding::default().right(theme::SPACE_12)),
         )
         .height(Length::Fill)
         .into(),

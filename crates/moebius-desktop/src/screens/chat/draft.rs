@@ -63,7 +63,7 @@ where
 {
     let label = text(label)
         .size(theme::LABEL)
-        .font(theme::manrope(Weight::Semibold))
+        .font(theme::MONO)
         .color(theme::TEXT_MUTED);
     let field: Element<'a, AppMessage> = match on_pick {
         Some(on_pick) => pick_list(choices, chosen, move |choice| {
@@ -71,19 +71,20 @@ where
         })
         .placeholder(placeholder)
         .text_size(theme::LABEL)
-        .padding([3, 8])
+        .padding([theme::SPACE_4, theme::SPACE_8])
         .style(pick_style)
         .menu_style(menu_style)
         .into(),
         None => container(
             text(chosen.map_or(placeholder.to_string(), |chosen| chosen.to_string()))
                 .size(theme::LABEL)
+                .font(theme::MONO)
                 .color(theme::TEXT_MUTED),
         )
-        .padding([3, 8])
+        .padding([theme::SPACE_4, theme::SPACE_8])
         .style(|_| container::Style {
             border: Border {
-                color: theme::TRACK,
+                color: theme::LINE,
                 width: 1.0,
                 radius: theme::RADIUS_CONTROL.into(),
             },
@@ -92,7 +93,7 @@ where
         .into(),
     };
     row![label, field]
-        .spacing(6)
+        .spacing(theme::SPACE_6)
         .align_y(Alignment::Center)
         .into()
 }
@@ -163,7 +164,7 @@ impl Chats {
                 .font(theme::manrope(Weight::Bold)),
             page::context(who),
         ]
-        .spacing(2);
+        .spacing(theme::SPACE_2);
         let ready = draft.ready() && !draft.sending;
         let can_send = ready && !draft.message.trim().is_empty();
         let send = can_send.then_some(AppMessage::Chat(Message::Send));
@@ -223,7 +224,7 @@ impl Chats {
             self.model_picker(model, true),
             self.reasoning_picker(thinking, true),
         ]
-        .spacing(14)
+        .spacing(theme::SPACE_12)
         .align_y(Alignment::Center);
         let compose = column![
             row![
@@ -231,18 +232,21 @@ impl Chats {
                 page::primary_button("Send", send),
                 page::white_button("Terminal", terminal),
             ]
-            .spacing(10)
+            .spacing(theme::SPACE_10)
             .align_y(Alignment::Center),
-            pickers.wrap().vertical_spacing(8),
-            text(note).size(theme::LABEL).color(theme::TEXT_MUTED),
+            pickers.wrap().vertical_spacing(theme::SPACE_8),
+            text(note)
+                .size(theme::LABEL)
+                .font(theme::MONO)
+                .color(theme::TEXT_MUTED),
         ]
-        .spacing(8)
-        .padding([12, 16]);
+        .spacing(theme::SPACE_8)
+        .padding([theme::SPACE_12, theme::BOX_PADDING]);
         container(column![
-            container(head).padding([14, 18]),
+            container(head).padding(theme::BOX_PADDING),
             page::rule(),
             container(page::body(hint))
-                .padding(16)
+                .padding(theme::BOX_PADDING)
                 .width(Length::Fill)
                 .height(Length::Fill),
             page::rule(),
@@ -284,11 +288,11 @@ impl Chats {
                     page::white_button("Send", send)
                 }
             ]
-            .spacing(10)
+            .spacing(theme::SPACE_10)
             .align_y(Alignment::Center),
         ]
-        .spacing(8)
-        .padding([12, 16]);
+        .spacing(theme::SPACE_8)
+        .padding([theme::SPACE_12, theme::BOX_PADDING]);
         if chat.is_open() {
             let agent = self.agent(&chat.agent);
             let model = chat
@@ -305,12 +309,17 @@ impl Chats {
                     self.model_picker(model, waiting),
                     self.reasoning_picker(thinking, waiting),
                 ]
-                .spacing(14)
+                .spacing(theme::SPACE_12)
                 .align_y(Alignment::Center),
             );
         }
         compose
-            .push(text(hint).size(theme::LABEL).color(theme::TEXT_MUTED))
+            .push(
+                text(hint)
+                    .size(theme::LABEL)
+                    .font(theme::MONO)
+                    .color(theme::TEXT_MUTED),
+            )
             .into()
     }
 }

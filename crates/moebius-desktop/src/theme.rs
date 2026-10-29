@@ -158,7 +158,74 @@ pub const RAIL_WIDTH: f32 = 56.0;
 pub const PAGE_PADDING: [f32; 2] = [16.0, 20.0];
 pub const PAGE_GAP: f32 = 12.0;
 pub const ICON: f32 = 16.0;
+pub const ICON_SMALL: f32 = 14.0;
 pub const DOT: f32 = 6.0;
+
+/// The spacing scale for gaps and paddings, named by pixels.
+pub const SPACE_1: f32 = 1.0;
+pub const SPACE_2: f32 = 2.0;
+pub const SPACE_4: f32 = 4.0;
+pub const SPACE_6: f32 = 6.0;
+pub const SPACE_8: f32 = 8.0;
+pub const SPACE_10: f32 = 10.0;
+pub const SPACE_12: f32 = 12.0;
+pub const SPACE_14: f32 = 14.0;
+pub const SPACE_16: f32 = 16.0;
+pub const SPACE_20: f32 = 20.0;
+pub const SPACE_24: f32 = 24.0;
+/// The padding of a text field, of a compact button and of a box.
+pub const FIELD_PADDING: [f32; 2] = [6.0, 10.0];
+pub const CONTROL_PADDING: [f32; 2] = [6.0, 12.0];
+pub const BOX_PADDING: f32 = 14.0;
+/// The thickness of a line and of a progress bar, and the side of a small square button.
+pub const HAIRLINE: f32 = 1.0;
+pub const BAR: f32 = 4.0;
+pub const SQUARE_BUTTON: f32 = 26.0;
+
+/// The widest a line of prose is set, the narrower width of a message, and the width of the side panels.
+pub const PROSE_WIDTH: f32 = 720.0;
+pub const MESSAGE_WIDTH: f32 = 560.0;
+pub const PANEL_WIDTH: f32 = 300.0;
+pub const PROSE_LINE_HEIGHT: f32 = 1.5;
+
+/// The width of the marker column of a line of code.
+pub const MARKER_COLUMN: f32 = 24.0;
+/// The tallest the block of a tool's output grows before it scrolls.
+pub const OUTPUT_MAX_HEIGHT: f32 = 240.0;
+/// The line height of code.
+pub const CODE_LINE_HEIGHT: f32 = 1.5;
+
+/// The heights of a text editor in a form: a short one and a taller one.
+pub const EDITOR_HEIGHT_SMALL: f32 = 120.0;
+pub const EDITOR_HEIGHT: f32 = 160.0;
+
+/// The width of the list of chats.
+pub const LIST_WIDTH: f32 = 320.0;
+
+/// The width of the time column of a card's history.
+pub const TIME_COLUMN: f32 = 90.0;
+
+/// The width of a tile of the fleet page, the height of an agent's steps box and of the terminal block.
+pub const TILE_WIDTH: f32 = 340.0;
+pub const STEPS_MAX_HEIGHT: f32 = 380.0;
+pub const TERMINAL_HEIGHT: f32 = 250.0;
+
+/// How far each level of a file tree is indented.
+pub const TREE_INDENT: f32 = 16.0;
+
+/// The width of the list that opens over the page when searching.
+pub const SEARCH_WIDTH: f32 = 380.0;
+/// How far under the top of the window that list starts, below the sidebar's search field.
+pub const SEARCH_TOP: f32 = 100.0;
+
+/// The shadow under what floats: tight and faint.
+pub fn shadow() -> iced::Shadow {
+    iced::Shadow {
+        color: FLOAT_SHADOW,
+        offset: iced::Vector::new(0.0, 2.0),
+        blur_radius: 8.0,
+    }
+}
 
 /// The floating chat: the round button, the window it grows into, and their distance from the window's corner.
 pub const FLOAT_BUTTON: f32 = 40.0;

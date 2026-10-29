@@ -36,7 +36,7 @@ fn going_back_from_a_card_restores_the_tab_or_page_it_was_opened_from() {
     let _ = app.update(Message::OpenCard(48));
     assert!(shows(&app, "\u{2190} Back to Editor of radiance"));
     let _ = app.update(Message::Back);
-    assert!(shows(&app, "No file is open. Open one from Files."));
+    assert!(shows(&app, "No file open."));
 
     let _ = app.update(Message::Select(Page::Inbox));
     let _ = app.update(Message::OpenCard(48));

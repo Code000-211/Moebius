@@ -44,7 +44,7 @@ impl Live {
             row![
                 text(self.run.agent.as_str())
                     .size(theme::BODY)
-                    .color(theme::TEAL),
+                    .color(theme::TEXT),
                 text(format!(" · {}", harness_name(&self.run.harness))).size(theme::BODY),
             ]
             .into(),
@@ -101,7 +101,7 @@ impl Live {
                 .size(theme::BOX_HEADING)
                 .font(theme::manrope(Weight::Bold))
         ]
-        .spacing(2);
+        .spacing(theme::SPACE_2);
         for (index, item) in items.into_iter().enumerate() {
             if index > 0 {
                 panel = panel.push(page::rule());
@@ -109,8 +109,8 @@ impl Live {
             panel = panel.push(item);
         }
         container(panel)
-            .padding([14, 18])
-            .width(300)
+            .padding(theme::BOX_PADDING)
+            .width(theme::PANEL_WIDTH)
             .style(|_| page::box_style())
             .into()
     }
@@ -134,15 +134,15 @@ fn item<'a>(
     let mut item = column![
         text(label)
             .size(theme::LABEL)
-            .font(theme::manrope(Weight::Semibold))
-            .color(theme::SIDEBAR_GROUP)
+            .font(theme::MONO)
+            .color(theme::TEXT_MUTED)
     ]
-    .spacing(4);
+    .spacing(theme::SPACE_4);
     if let Some(bar) = bar {
         item = item.push(bar);
     }
     container(item.push(value))
-        .padding(Padding::from([8, 0]))
+        .padding(Padding::from([theme::SPACE_8, 0.0]))
         .into()
 }
 
@@ -156,7 +156,7 @@ fn round_bar<'a>(rounds: i64, limit: i64) -> Element<'a, AppMessage> {
         };
         container(space())
             .width(Length::FillPortion(1))
-            .height(4)
+            .height(theme::BAR)
             .style(move |_| container::Style {
                 background: Some(fill.into()),
                 border: Border {
@@ -167,7 +167,7 @@ fn round_bar<'a>(rounds: i64, limit: i64) -> Element<'a, AppMessage> {
             })
             .into()
     }))
-    .spacing(3)
+    .spacing(theme::SPACE_4)
     .width(Length::Fill)
     .into()
 }

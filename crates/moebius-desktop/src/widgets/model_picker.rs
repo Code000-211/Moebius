@@ -4,7 +4,6 @@
 
 use std::fmt;
 
-use iced::font::Weight;
 use iced::widget::{button, column, pick_list, row, space, text, text_input};
 use iced::{Border, Element, Length};
 
@@ -46,7 +45,7 @@ pub fn field<'a, Message: Clone + 'a>(
             .on_input(on_input)
             .font(theme::MANROPE)
             .size(theme::BODY)
-            .padding([9, 12])
+            .padding(theme::FIELD_PADDING)
             .width(Length::Fill)
             .style(connect::input_style)
             .into();
@@ -77,7 +76,7 @@ pub fn field<'a, Message: Clone + 'a>(
     })
     .placeholder(placeholder.to_string())
     .text_size(theme::BODY)
-    .padding([9, 12])
+    .padding(theme::FIELD_PADDING)
     .width(Length::Fill)
     .style(pick_style)
     .menu_style(menu_style)
@@ -92,21 +91,17 @@ pub fn note<'a, Message: Clone + 'a>(
     let muted = |line: String| {
         text(line)
             .size(theme::LABEL)
-            .font(theme::manrope(Weight::Medium))
+            .font(theme::MONO)
             .color(theme::TEXT_MUTED)
     };
-    let refresh = button(
-        text("Refresh")
-            .size(theme::LABEL)
-            .font(theme::manrope(Weight::Semibold)),
-    )
-    .padding(0)
-    .on_press(refresh)
-    .style(|_, _| button::Style {
-        text_color: theme::TEAL,
-        border: Border::default(),
-        ..button::Style::default()
-    });
+    let refresh = button(text("Refresh").size(theme::LABEL).font(theme::MONO))
+        .padding(0)
+        .on_press(refresh)
+        .style(|_, _| button::Style {
+            text_color: theme::TEXT_SECONDARY,
+            border: Border::default(),
+            ..button::Style::default()
+        });
     row![
         column(
             available.errors.iter().map(|e| muted(format!(
@@ -115,7 +110,7 @@ pub fn note<'a, Message: Clone + 'a>(
             ))
             .into())
         )
-        .spacing(2),
+        .spacing(theme::SPACE_2),
         space::horizontal(),
         refresh,
     ]

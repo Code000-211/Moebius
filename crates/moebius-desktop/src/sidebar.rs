@@ -198,21 +198,23 @@ fn tokens_meter<'a>(
     collapsed: bool,
 ) -> Element<'a, Message> {
     let Some((tokens, budget)) = tokens_today else {
-        return space().height(8).into();
+        return space().height(theme::SPACE_8).into();
     };
     let shown = match budget {
         Some(budget) => format!("{} / {}", short(tokens), short(budget)),
         None => short(tokens),
     };
-    let mut meter = column![].spacing(6);
+    let mut meter = column![].spacing(theme::SPACE_6);
     if !collapsed {
         meter = meter.push(
             row![
-                text("Tokens today").size(13).color(theme::SIDEBAR_TEXT),
+                text("Tokens today")
+                    .size(theme::BODY)
+                    .color(theme::SIDEBAR_TEXT),
                 space::horizontal(),
                 text(shown)
                     .size(theme::GROUP_LABEL)
-                    .font(theme::manrope(Weight::Semibold))
+                    .font(theme::MONO)
                     .color(theme::SIDEBAR_TEXT),
             ]
             .align_y(Center),
@@ -223,11 +225,11 @@ fn tokens_meter<'a>(
         let part = |portion: u16, color: Color| {
             container(space())
                 .width(Length::FillPortion(portion))
-                .height(5)
+                .height(theme::BAR)
                 .style(move |_| container::Style {
                     background: Some(color.into()),
                     border: Border {
-                        radius: 2.5.into(),
+                        radius: theme::RADIUS_SEGMENT.into(),
                         ..Border::default()
                     },
                     ..container::Style::default()
@@ -245,10 +247,18 @@ fn tokens_meter<'a>(
     column![
         divider(),
         container(meter).width(Length::Fill).padding(Padding {
-            top: 14.0,
-            right: if collapsed { 12.0 } else { 20.0 },
-            bottom: 18.0,
-            left: if collapsed { 12.0 } else { 20.0 },
+            top: theme::SPACE_12,
+            right: if collapsed {
+                theme::SPACE_12
+            } else {
+                theme::SPACE_16
+            },
+            bottom: theme::SPACE_12,
+            left: if collapsed {
+                theme::SPACE_12
+            } else {
+                theme::SPACE_16
+            },
         })
     ]
     .into()
@@ -256,7 +266,7 @@ fn tokens_meter<'a>(
 
 fn rule_vertical<'a>() -> Element<'a, Message> {
     container(space().width(0))
-        .width(1)
+        .width(theme::HAIRLINE)
         .height(Length::Fill)
         .style(|_| container::Style {
             background: Some(theme::SIDEBAR_LINE.into()),
@@ -266,9 +276,9 @@ fn rule_vertical<'a>() -> Element<'a, Message> {
 }
 
 fn divider<'a>() -> Element<'a, Message> {
-    container(column![].height(1))
+    container(column![].height(theme::HAIRLINE))
         .width(Length::Fill)
-        .height(1)
+        .height(theme::HAIRLINE)
         .style(|_| container::Style {
             background: Some(theme::SIDEBAR_LINE.into()),
             ..container::Style::default()
@@ -289,26 +299,29 @@ fn top<'a>(connection: Connection, collapsed: bool, search: &str) -> Element<'a,
         "Collapse the sidebar"
     };
     let toggle = tooltip(
-        button(container(Icon::Panel.view(theme::TEXT_SECONDARY, 14.0)).center(Length::Fill))
-            .width(26)
-            .height(26)
-            .padding(0)
-            .on_press(Message::ToggleSidebar)
-            .style(|_, _| button::Style {
-                background: Some(theme::SURFACE.into()),
-                border: Border {
-                    color: theme::SIDEBAR_LINE,
-                    width: 1.0,
-                    radius: theme::RADIUS_SMALL.into(),
-                },
-                ..button::Style::default()
-            }),
+        button(
+            container(Icon::Panel.view(theme::TEXT_SECONDARY, theme::ICON_SMALL))
+                .center(Length::Fill),
+        )
+        .width(theme::SQUARE_BUTTON)
+        .height(theme::SQUARE_BUTTON)
+        .padding(0)
+        .on_press(Message::ToggleSidebar)
+        .style(|_, _| button::Style {
+            background: Some(theme::SURFACE.into()),
+            border: Border {
+                color: theme::SIDEBAR_LINE,
+                width: 1.0,
+                radius: theme::RADIUS_SMALL.into(),
+            },
+            ..button::Style::default()
+        }),
         text(label).size(theme::LABEL),
         tooltip::Position::Bottom,
     );
     let mark_row: Element<'a, Message> = if collapsed {
         column![icons::logo(), toggle]
-            .spacing(10)
+            .spacing(theme::SPACE_10)
             .align_x(Center)
             .into()
     } else {
@@ -328,12 +341,15 @@ fn top<'a>(connection: Connection, collapsed: bool, search: &str) -> Element<'a,
                     ..container::Style::default()
                 }
             }),
-            text(state).size(theme::LABEL).color(text_color),
+            text(state)
+                .size(theme::LABEL)
+                .font(theme::MONO)
+                .color(text_color),
             toggle,
         ]
-        .spacing(9)
+        .spacing(theme::SPACE_8)
         .align_y(Center)
-        .padding(Padding::from([0.0, 4.0]))
+        .padding(Padding::from([0.0, theme::SPACE_4]))
         .into()
     };
     let field = text_input("Search or run…", search)
@@ -348,23 +364,23 @@ fn top<'a>(connection: Connection, collapsed: bool, search: &str) -> Element<'a,
             icon: theme::TEXT_MUTED,
             placeholder: theme::TEXT_MUTED,
             value: theme::TEXT,
-            selection: theme::TEAL_BORDER,
+            selection: theme::HEAD_PILL,
         });
     let search: Element<'a, Message> = if collapsed {
         button(container(Icon::Search.view(theme::TEXT_MUTED, theme::ICON)).center_x(Length::Fill))
             .width(Length::Fill)
-            .padding([8, 0])
+            .padding([theme::SPACE_8, 0.0])
             .on_press(Message::Search(search::Message::Focus))
             .style(|_, _| button::Style::default())
             .into()
     } else {
         container(
             row![Icon::Search.view(theme::TEXT_MUTED, theme::ICON), field]
-                .spacing(8)
+                .spacing(theme::SPACE_8)
                 .align_y(Center),
         )
         .width(Length::Fill)
-        .padding([8, 10])
+        .padding([theme::SPACE_8, theme::SPACE_10])
         .style(|_| container::Style {
             background: Some(theme::SURFACE.into()),
             border: Border {
@@ -376,12 +392,12 @@ fn top<'a>(connection: Connection, collapsed: bool, search: &str) -> Element<'a,
         })
         .into()
     };
-    container(column![mark_row, search].spacing(12))
+    container(column![mark_row, search].spacing(theme::SPACE_12))
         .padding(Padding {
-            top: 16.0,
-            right: 12.0,
-            bottom: 8.0,
-            left: 12.0,
+            top: theme::SPACE_12,
+            right: theme::SPACE_12,
+            bottom: theme::SPACE_8,
+            left: theme::SPACE_12,
         })
         .into()
 }
@@ -404,7 +420,7 @@ fn add_board<'a>(current: &Page) -> Element<'a, Message> {
                 .size(theme::BODY)
                 .font(theme::manrope(Weight::Bold)),
         )
-        .padding([0, 7])
+        .padding([0.0, theme::SPACE_8])
         .on_press(Message::Select(Page::AddRepository))
         .style(move |_, status| button::Style {
             background: (selected || status == button::Status::Hovered)
@@ -429,7 +445,7 @@ fn group_with<'a>(
     items: Vec<Element<'a, Message>>,
     collapsed: bool,
 ) -> Element<'a, Message> {
-    let mut content = column![].spacing(1);
+    let mut content = column![].spacing(theme::SPACE_1);
     if let (Some(name), false) = (name.into(), collapsed) {
         let mut heading = row![
             text(name)
@@ -443,13 +459,15 @@ fn group_with<'a>(
             heading = heading.push(action);
         }
         content = content.push(container(heading).padding(Padding {
-            top: 2.0,
-            right: 4.0,
-            bottom: 6.0,
-            left: 10.0,
+            top: theme::SPACE_2,
+            right: theme::SPACE_4,
+            bottom: theme::SPACE_6,
+            left: theme::SPACE_10,
         }));
     }
-    container(content.extend(items)).padding(10).into()
+    container(content.extend(items))
+        .padding(theme::SPACE_10)
+        .into()
 }
 
 /// One item: it opens `target`, and is marked when that is the page shown.
@@ -487,7 +505,7 @@ fn item<'a>(
     let count = |count: usize| {
         text(count.to_string())
             .size(theme::LABEL)
-            .font(theme::manrope(Weight::Semibold))
+            .font(theme::MONO)
             .color(theme::AMBER)
     };
     let weight = if selected {
@@ -505,12 +523,17 @@ fn item<'a>(
                 .font(theme::manrope(weight)),
             space::horizontal(),
         ]
-        .spacing(10)
+        .spacing(theme::SPACE_10)
         .align_y(Center);
         match trailing {
             Trailing::Nothing | Trailing::Badge(0) => {}
             Trailing::Text(shown) => {
-                line = line.push(text(shown).size(theme::LABEL).color(theme::TEXT_MUTED));
+                line = line.push(
+                    text(shown)
+                        .size(theme::LABEL)
+                        .font(theme::MONO)
+                        .color(theme::TEXT_MUTED),
+                );
             }
             Trailing::Badge(shown) => line = line.push(count(shown)),
         }
@@ -518,7 +541,11 @@ fn item<'a>(
     };
     let entry = button(content)
         .width(Length::Fill)
-        .padding(if collapsed { [7, 0] } else { [7, 10] })
+        .padding(if collapsed {
+            [theme::SPACE_6, 0.0]
+        } else {
+            [theme::SPACE_6, theme::SPACE_10]
+        })
         .on_press(Message::Select(target))
         .style(move |_, status| {
             let background = if selected {

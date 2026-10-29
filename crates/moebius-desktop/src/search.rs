@@ -107,7 +107,7 @@ impl Search {
 
     /// The list under the field, over the page.
     pub fn view<'a>(&'a self, entries: &[Entry]) -> Element<'a, AppMessage> {
-        let mut list = column![].spacing(1);
+        let mut list = column![].spacing(theme::SPACE_1);
         let mut group = "";
         for (index, entry) in entries.iter().enumerate() {
             if entry.group != group {
@@ -117,13 +117,14 @@ impl Search {
                         container(
                             text(group)
                                 .size(theme::GROUP_LABEL)
+                                .font(theme::MONO)
                                 .color(theme::TEXT_MUTED),
                         )
                         .padding(Padding {
-                            top: 6.0,
-                            right: 10.0,
-                            bottom: 2.0,
-                            left: 10.0,
+                            top: theme::SPACE_6,
+                            right: theme::SPACE_10,
+                            bottom: theme::SPACE_2,
+                            left: theme::SPACE_10,
                         }),
                     );
                 }
@@ -135,14 +136,15 @@ impl Search {
                     .width(Length::Fill),
                 text(entry.detail.clone())
                     .size(theme::LABEL)
+                    .font(theme::MONO)
                     .wrapping(Wrapping::None)
                     .color(theme::TEXT_MUTED),
             ]
-            .spacing(10);
+            .spacing(theme::SPACE_10);
             list = list.push(
                 button(line)
                     .width(Length::Fill)
-                    .padding([6, 10])
+                    .padding([theme::SPACE_6, theme::SPACE_10])
                     .on_press(AppMessage::Search(Message::Pick(index)))
                     .style(move |_, status| button::Style {
                         background: (selected || status == button::Status::Hovered)
@@ -158,13 +160,18 @@ impl Search {
         }
         if let Some(notice) = &self.notice {
             list = list.push(
-                container(text(notice.as_str()).size(theme::LABEL).color(theme::AMBER))
-                    .padding([6, 10]),
+                container(
+                    text(notice.as_str())
+                        .size(theme::LABEL)
+                        .font(theme::MONO)
+                        .color(theme::AMBER),
+                )
+                .padding([theme::SPACE_6, theme::SPACE_10]),
             );
         }
         container(list)
-            .width(Length::Fixed(380.0))
-            .padding(6)
+            .width(Length::Fixed(theme::SEARCH_WIDTH))
+            .padding(theme::SPACE_6)
             .style(|_| container::Style {
                 background: Some(theme::SURFACE.into()),
                 border: Border {
@@ -172,6 +179,7 @@ impl Search {
                     width: 1.0,
                     radius: theme::RADIUS_CONTROL.into(),
                 },
+                shadow: theme::shadow(),
                 ..container::Style::default()
             })
             .into()

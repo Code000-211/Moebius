@@ -5,13 +5,14 @@
 //! repository, which the app then shows.
 
 use iced::widget::{column, container, row, text, text_editor, text_input};
-use iced::{Border, Element, Task};
+use iced::{Element, Task};
 
 use crate::app::Message as AppMessage;
 use crate::client::{Client, ClientError, Run};
 use crate::screens::connect;
 use crate::settings::Settings;
 use crate::theme;
+use crate::widgets::inline_edit::editor_style;
 use crate::widgets::page;
 
 #[derive(Debug, Clone)]
@@ -151,7 +152,7 @@ impl NewIssue {
                 message(Message::ByAgent(true))
             ),
         ]
-        .spacing(8);
+        .spacing(theme::SPACE_8);
         let body = text_editor(&self.body)
             .placeholder(if self.by_agent {
                 "What the issue is about, in a few words. The agent reads the code and writes it."
@@ -160,30 +161,17 @@ impl NewIssue {
             })
             .on_action(move |action| message(Message::BodyEdited(action)))
             .size(theme::BODY)
-            .padding(12)
-            .height(120)
-            .style(|_, status| text_editor::Style {
-                background: theme::SURFACE.into(),
-                border: Border {
-                    color: match status {
-                        text_editor::Status::Focused { .. } => theme::TEAL,
-                        _ => theme::LINE,
-                    },
-                    width: 1.0,
-                    radius: theme::RADIUS_CONTROL.into(),
-                },
-                placeholder: theme::TEXT_MUTED,
-                value: theme::TEXT,
-                selection: theme::TEAL_FILL,
-            });
-        let mut content = column![ways].spacing(10);
+            .padding(theme::SPACE_10)
+            .height(theme::EDITOR_HEIGHT_SMALL)
+            .style(editor_style);
+        let mut content = column![ways].spacing(theme::SPACE_10);
         if !self.by_agent {
             content = content.push(
                 text_input("Title", &self.title)
                     .on_input(move |title| message(Message::TitleEdited(title)))
                     .on_submit_maybe(create.clone())
                     .size(theme::BODY)
-                    .padding([9, 12])
+                    .padding(theme::FIELD_PADDING)
                     .style(connect::input_style),
             );
         }
@@ -199,12 +187,13 @@ impl NewIssue {
                 ),
                 page::white_button("Cancel", Some(message(Message::Cancel))),
             ]
-            .spacing(8),
+            .spacing(theme::SPACE_8),
         );
         if let Some(failed) = &self.failed {
             content = content.push(
                 text(failed.as_str())
-                    .size(theme::BODY)
+                    .size(theme::CONTEXT)
+                    .font(theme::MONO)
                     .color(theme::RED_TEXT),
             );
         }

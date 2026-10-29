@@ -142,11 +142,7 @@ fn an_empty_fleet_says_nothing_is_working() {
     draw(
         &app,
         "fleet-empty",
-        &[
-            "Fleet",
-            "Nothing is working.",
-            "Nothing is working. Runs and chats appear here while they work.",
-        ],
+        &["Fleet", "Nothing is working.", "Nothing is working."],
     );
 }
 

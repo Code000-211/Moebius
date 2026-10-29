@@ -216,7 +216,7 @@ fn saving_clears_the_mark_and_a_refusal_is_shown() {
         edited.clone(),
         Ok(text_file("src/main.rs", &edited)),
     )));
-    assert!(shows(&app, "Saved as a commit on the default branch."));
+    assert!(shows(&app, "Committed to the default branch."));
     assert!(!app.page_context().contains("(unsaved changes)"));
     assert!(!shows(&app, "Unsaved changes."));
 }
@@ -283,7 +283,7 @@ fn closing_an_unsaved_file_asks_and_a_saved_one_closes_at_once() {
     let _ = app.update(project(project::Message::Close(
         ".moebius/ready.luau".into(),
     )));
-    assert!(shows(&app, "No file is open. Open one from Files."));
+    assert!(shows(&app, "No file open."));
 }
 
 #[test]
@@ -307,12 +307,12 @@ fn a_binary_or_too_large_file_is_said_to_be_so_and_not_edited() {
     }
     assert!(shows(
         &app,
-        "data.bin is larger than 1 MB (2000000 bytes); it is not edited here."
+        "data.bin is over 1 MB (2000000 bytes), not editable here."
     ));
     let _ = app.update(project(project::Message::Show("logo.png".into())));
     assert!(shows(
         &app,
-        "logo.png is a binary file (48211 bytes); it is not edited here."
+        "logo.png is binary (48211 bytes), not editable here."
     ));
     assert!(app.page_context().contains("It is a binary file"));
 }

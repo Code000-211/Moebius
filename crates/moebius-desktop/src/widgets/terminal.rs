@@ -25,11 +25,6 @@ use iced::{Border, Color, Element, Event, Length, Padding, Rectangle, Size, Vect
 use crate::client::{TerminalEvent, TerminalInput};
 use crate::theme;
 
-/// The height of the pane, which holds a dozen or so rows.
-const HEIGHT: f32 = 250.0;
-/// The padding around the grid.
-const PADDING: f32 = 10.0;
-
 /// Collects what the terminal asks the shell to be written, such as the answer to a cursor position request.
 #[derive(Clone, Default)]
 struct Replies(Arc<Mutex<Vec<u8>>>);
@@ -345,8 +340,12 @@ impl Shell {
     pub fn resized(&mut self, size: Size) {
         self.pane = size;
         let [width, height] = theme::SHELL_CELL;
-        let cols = ((size.width - 2.0 * PADDING) / width).floor().max(1.0) as u16;
-        let rows = ((size.height - 2.0 * PADDING) / height).floor().max(1.0) as u16;
+        let cols = ((size.width - 2.0 * theme::SPACE_10) / width)
+            .floor()
+            .max(1.0) as u16;
+        let rows = ((size.height - 2.0 * theme::SPACE_10) / height)
+            .floor()
+            .max(1.0) as u16;
         if (cols, rows) != self.terminal.size() {
             self.terminal.resize(cols, rows);
             self.send(TerminalInput::Resize { cols, rows });
@@ -366,7 +365,7 @@ impl Shell {
         self.terminal.lines()
     }
 
-    /// The pane: a header line over the screen, with a teal border while it has focus. `on_event` is told what the pane
+    /// The pane: a header line over the screen, with a light border while it has focus. `on_event` is told what the pane
     /// learns of its size and of clicks.
     pub fn view<'a, M: 'a>(&'a self, on_event: impl Fn(PaneEvent) -> M + 'a) -> Element<'a, M> {
         let state = match (&self.ended, self.input.is_some()) {
@@ -378,16 +377,19 @@ impl Shell {
             row![
                 text(self.title)
                     .size(theme::LABEL)
-                    .font(theme::manrope(iced::font::Weight::Bold))
+                    .font(theme::MONO)
                     .color(theme::TERMINAL_TEXT),
                 iced::widget::space::horizontal(),
-                text(state).size(theme::LABEL).color(theme::TERMINAL_DIM),
+                text(state)
+                    .size(theme::LABEL)
+                    .font(theme::MONO)
+                    .color(theme::TERMINAL_DIM),
             ]
-            .spacing(8),
+            .spacing(theme::SPACE_8),
         )
-        .padding([6, 10]);
+        .padding([theme::SPACE_6, theme::SPACE_10]);
         let screen = container(column(self.terminal.rows(self.is_open())))
-            .padding(PADDING)
+            .padding(theme::SPACE_10)
             .width(Length::Fill)
             .height(Length::Fill)
             .clip(true);
@@ -401,15 +403,19 @@ impl Shell {
         .height(if self.fills {
             Length::Fill
         } else {
-            Length::Fixed(HEIGHT)
+            Length::Fixed(theme::TERMINAL_HEIGHT)
         })
         .width(Length::Fill)
         .style(move |_| container::Style {
             background: Some(theme::TERMINAL.into()),
             border: Border {
                 radius: theme::RADIUS_CARD.into(),
-                color: theme::TEAL,
-                width: if focused { 2.0 } else { 0.0 },
+                color: if focused {
+                    theme::TERMINAL_TEXT
+                } else {
+                    theme::TERMINAL
+                },
+                width: 1.0,
             },
             ..container::Style::default()
         })

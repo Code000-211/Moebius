@@ -143,7 +143,7 @@ async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_ask
     let task = app.update(Message::Script(script_editor::Message::Save));
     settle(&mut app, task).await;
     assert!(shown(&app, "Repository"));
-    assert!(shown(&app, "Saved as a commit on the default branch."));
+    assert!(shown(&app, "Committed to the default branch."));
     assert_eq!(
         std::fs::read_to_string(clone.join(".moebius/ready.luau")).unwrap(),
         "function on_card(card) moebius.wait('held') end\n"
@@ -285,7 +285,7 @@ async fn the_project_lists_reads_and_saves_a_file_as_a_commit() {
     assert!(shown(&app, "Unsaved changes."));
     let task = app.update(Message::SaveFile);
     settle(&mut app, task).await;
-    assert!(shown(&app, "Saved as a commit on the default branch."));
+    assert!(shown(&app, "Committed to the default branch."));
     assert!(!shown(&app, "Unsaved changes."));
     assert_eq!(
         std::fs::read_to_string(clone.join("src/main.rs")).unwrap(),

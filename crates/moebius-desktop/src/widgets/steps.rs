@@ -20,8 +20,6 @@ const LINE: usize = 140;
 /// The same in a compact box, which shows only the last steps and has no unfolding.
 const COMPACT_LINE: usize = 44;
 const COMPACT_STEPS: usize = 4;
-/// The height at which a box that is not compact starts to scroll.
-const MAX_HEIGHT: f32 = 380.0;
 
 /// A time as a person reads it: `42s`, `7m 17s`, `1h 02m`.
 pub fn elapsed(seconds: i64) -> String {
@@ -84,20 +82,25 @@ pub fn steps_box<'a>(
         n => format!("{n} tool calls"),
     };
     let time = elapsed(seconds);
-    let note = |line: String| text(line).size(theme::LABEL).color(theme::TEXT_SECONDARY);
+    let note = |line: String| {
+        text(line)
+            .size(theme::LABEL)
+            .font(theme::MONO)
+            .color(theme::TEXT_SECONDARY)
+    };
     let (left, right) = if working {
         (
             "Agent is working".to_string(),
-            row![note(time), note(counted)].spacing(12),
+            row![note(time), note(counted)].spacing(theme::SPACE_12),
         )
     } else {
         (format!("Worked for {time}"), row![note(counted)])
     };
-    let mut title = row![Icon::Agents.view(theme::STEPS_INK, 18.0)]
-        .spacing(8)
+    let mut title = row![Icon::Agents.view(theme::STEPS_INK, theme::ICON)]
+        .spacing(theme::SPACE_8)
         .align_y(Alignment::Center);
     if working {
-        title = title.push(Icon::Spinner.view(theme::STEPS_INK, 14.0));
+        title = title.push(Icon::Spinner.view(theme::STEPS_INK, theme::ICON_SMALL));
     }
     let header = row![
         title.push(
@@ -126,17 +129,21 @@ pub fn steps_box<'a>(
                 step(entry, id, unfolded.contains(&id), toggle, compact)
             }),
     )
-    .spacing(if compact { 2 } else { 6 });
+    .spacing(if compact {
+        theme::SPACE_2
+    } else {
+        theme::SPACE_6
+    });
     let steps: Element<'a, AppMessage> = if compact {
         steps.into()
     } else {
         container(scrollable(steps))
-            .max_height(MAX_HEIGHT)
+            .max_height(theme::STEPS_MAX_HEIGHT)
             .width(Length::Fill)
             .into()
     };
-    container(column![header, steps].spacing(10))
-        .padding([12, 14])
+    container(column![header, steps].spacing(theme::SPACE_10))
+        .padding([theme::SPACE_10, theme::BOX_PADDING])
         .width(Length::Fill)
         .style(|_| container::Style {
             background: Some(theme::STEPS_FILL.into()),
@@ -168,14 +175,14 @@ fn step<'a>(
     let (line, result, body): (Element<'a, AppMessage>, _, _) = match entry {
         Entry::Thinking(thought) => (
             row![
-                Icon::Spark.view(theme::TEXT_MUTED, 14.0),
+                Icon::Spark.view(theme::TEXT_MUTED, theme::ICON_SMALL),
                 text(shorten(first_line(thought), limit))
                     .size(size)
                     .font(italic())
                     .wrapping(Wrapping::None)
                     .color(theme::TEXT_MUTED),
             ]
-            .spacing(8)
+            .spacing(theme::SPACE_8)
             .align_y(Alignment::Center)
             .into(),
             None,
@@ -203,17 +210,17 @@ fn step<'a>(
         Icon::ChevronRight
     };
     let mut head = column![
-        row![chevron.view(theme::TEXT_MUTED, 14.0), line]
-            .spacing(6)
+        row![chevron.view(theme::TEXT_MUTED, theme::ICON_SMALL), line]
+            .spacing(theme::SPACE_6)
             .align_y(Alignment::Center)
     ]
-    .spacing(2);
+    .spacing(theme::SPACE_2);
     if let (false, Some(result)) = (open, result) {
-        head = head.push(container(result).padding([0, 20]));
+        head = head.push(container(result).padding([0.0, theme::SPACE_20]));
     }
     let head = button(head)
         .width(Length::Fill)
-        .padding([3, 4])
+        .padding([theme::SPACE_4, theme::SPACE_4])
         .on_press(toggle(id))
         .style(|_, status| button::Style {
             background: matches!(status, button::Status::Hovered)
@@ -225,9 +232,9 @@ fn step<'a>(
             },
             ..button::Style::default()
         });
-    let mut step = column![head].spacing(6);
+    let mut step = column![head].spacing(theme::SPACE_6);
     if let (true, Some(body)) = (open, body) {
-        step = step.push(container(body).padding([0, 24]));
+        step = step.push(container(body).padding([0.0, theme::SPACE_24]));
     }
     Some(step.into())
 }
@@ -245,6 +252,7 @@ fn tool_line(call: &ToolCall, limit: usize, size: f32) -> Element<'_, AppMessage
         .color(theme::TEXT),
         text(shorten(&call.input.summary(), limit))
             .size(size)
+            .font(theme::MONO)
             .wrapping(Wrapping::None)
             .color(if refused {
                 theme::RED_TEXT
@@ -252,7 +260,7 @@ fn tool_line(call: &ToolCall, limit: usize, size: f32) -> Element<'_, AppMessage
                 theme::TEXT
             }),
     ]
-    .spacing(8)
+    .spacing(theme::SPACE_8)
     .align_y(Alignment::Center);
     if refused {
         line = line.push(tag("refused".to_string(), Tone::Red));

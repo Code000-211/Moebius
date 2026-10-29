@@ -14,14 +14,19 @@ use super::{Listing, Message, Project, Tab};
 
 /// A line of the tree that is not an entry: reading, failed or empty.
 fn note_row<'a>(depth: usize, line: &'a str, color: iced::Color) -> Element<'a, AppMessage> {
-    container(text(line).size(theme::CONTEXT).color(color))
-        .padding(Padding {
-            top: 6.0,
-            bottom: 6.0,
-            left: 10.0 + 18.0 * depth as f32 + 22.0,
-            right: 10.0,
-        })
-        .into()
+    container(
+        text(line)
+            .size(theme::CONTEXT)
+            .font(theme::MONO)
+            .color(color),
+    )
+    .padding(Padding {
+        top: theme::SPACE_4,
+        bottom: theme::SPACE_4,
+        left: theme::SPACE_10 + theme::TREE_INDENT * depth as f32 + theme::ICON + theme::SPACE_8,
+        right: theme::SPACE_10,
+    })
+    .into()
 }
 
 /// A directory or a file of the tree, indented by its depth.
@@ -38,14 +43,14 @@ fn entry_row<'a>(
         } else {
             Icon::ChevronRight
         };
-        icon.view(theme::TEXT_MUTED, 14.0).into()
+        icon.view(theme::TEXT_MUTED, theme::ICON_SMALL).into()
     } else {
-        space().width(14).into()
+        space().width(theme::ICON_SMALL).into()
     };
     let icon = if dir { Icon::Folder } else { Icon::File };
     let mut line = row![
         chevron,
-        icon.view(theme::TEXT_SECONDARY, 16.0),
+        icon.view(theme::TEXT_SECONDARY, theme::ICON),
         text(entry.name.as_str())
             .size(theme::CONTEXT)
             .font(if dir {
@@ -56,12 +61,13 @@ fn entry_row<'a>(
             .color(theme::TEXT),
         space::horizontal(),
     ]
-    .spacing(8)
+    .spacing(theme::SPACE_8)
     .align_y(Alignment::Center);
     if !dir {
         line = line.push(
             text(size(entry.size))
                 .size(theme::LABEL)
+                .font(theme::MONO)
                 .color(theme::TEXT_MUTED),
         );
     }
@@ -73,10 +79,10 @@ fn entry_row<'a>(
     container(
         button(line)
             .padding(Padding {
-                top: 6.0,
-                bottom: 6.0,
-                left: 10.0 + 18.0 * depth as f32,
-                right: 10.0,
+                top: theme::SPACE_4,
+                bottom: theme::SPACE_4,
+                left: theme::SPACE_10 + theme::TREE_INDENT * depth as f32,
+                right: theme::SPACE_10,
             })
             .width(Length::Fill)
             .on_press(AppMessage::Project(repository, message))
@@ -114,9 +120,9 @@ pub fn tabs<'a>(repository: i64, project: Option<&Project>) -> Element<'a, AppMe
         };
         let underline = container(space())
             .width(Length::Fill)
-            .height(2)
+            .height(theme::SPACE_2)
             .style(move |_| container::Style {
-                background: selected.then(|| theme::TEAL.into()),
+                background: selected.then(|| theme::TEXT.into()),
                 ..container::Style::default()
             });
         container(
@@ -136,14 +142,14 @@ pub fn tabs<'a>(repository: i64, project: Option<&Project>) -> Element<'a, AppMe
                         }),
                     underline,
                 ]
-                .spacing(6)
+                .spacing(theme::SPACE_6)
                 .width(Length::Shrink),
             )
             .padding(Padding {
-                top: 2.0,
+                top: theme::SPACE_2,
                 bottom: 0.0,
-                left: 2.0,
-                right: 2.0,
+                left: theme::SPACE_2,
+                right: theme::SPACE_2,
             })
             .on_press(AppMessage::Project(repository, Message::Tab(tab)))
             .style(|_, _| button::Style::default()),
@@ -152,7 +158,7 @@ pub fn tabs<'a>(repository: i64, project: Option<&Project>) -> Element<'a, AppMe
         .into()
     };
     column![
-        row![tab(Tab::Board), tab(Tab::Files), tab(Tab::Editor)].spacing(22),
+        row![tab(Tab::Board), tab(Tab::Files), tab(Tab::Editor)].spacing(theme::SPACE_20),
         page::rule(),
     ]
     .into()
@@ -172,17 +178,14 @@ impl Project {
                     .shown()
                     .is_some_and(|file| file.unsaved() && !file.saving);
                 (
-                    "A save is a commit on the default branch.",
+                    "Save commits to the default branch.",
                     page::primary_button(
                         "Save",
                         can_save.then_some(AppMessage::Project(id, Message::Save)),
                     ),
                 )
             }
-            _ => (
-                "The default branch. A click on a file opens it in the Editor.",
-                space().into(),
-            ),
+            _ => ("Default branch. Click a file to edit it.", space().into()),
         };
         let header = page::header(
             "Projects",
@@ -212,16 +215,12 @@ impl Project {
             }
             Some(Listing::Failed(error)) => vec![note_row(0, error.as_str(), theme::RED_TEXT)],
             Some(Listing::Read(entries)) if entries.is_empty() => {
-                vec![note_row(
-                    0,
-                    "The repository has no files.",
-                    theme::TEXT_MUTED,
-                )]
+                vec![note_row(0, "No files.", theme::TEXT_MUTED)]
             }
             Some(Listing::Read(entries)) => self.interleave(repository, entries, 0),
         };
-        container(scrollable(column(rows).spacing(1)).height(Length::Fill))
-            .padding(10)
+        container(scrollable(column(rows).spacing(theme::SPACE_1)).height(Length::Fill))
+            .padding(theme::SPACE_10)
             .width(Length::Fill)
             .height(Length::Fill)
             .style(|_| page::box_style())

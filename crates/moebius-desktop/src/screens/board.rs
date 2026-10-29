@@ -88,8 +88,13 @@ pub fn view<'a>(
             "changes wait for you"
         ),
     );
-    let mut line = row![text(line).size(theme::CONTEXT).color(theme::TEXT_SECONDARY)]
-        .align_y(Alignment::Center);
+    let mut line = row![
+        text(line)
+            .size(theme::CONTEXT)
+            .font(theme::MONO)
+            .color(theme::TEXT_SECONDARY)
+    ]
+    .align_y(Alignment::Center);
     if repository.on_forge() {
         let trusted = match repository.trusted.as_slice() {
             [] => " · no trusted authors".to_string(),
@@ -98,9 +103,10 @@ pub fn view<'a>(
         line = line.push(
             text(trusted)
                 .size(theme::CONTEXT)
+                .font(theme::MONO)
                 .color(theme::TEXT_SECONDARY),
         );
-        line = line.push(space().width(6));
+        line = line.push(space().width(theme::SPACE_6));
         line = line.push(inline_edit::pencil(
             "edit-trusted".to_string(),
             Message::Edit(edits::Message::EditTrusted(
@@ -136,7 +142,7 @@ pub fn view<'a>(
     page.push(
         scrollable(
             row(columns)
-                .spacing(10)
+                .spacing(theme::SPACE_10)
                 .align_y(Alignment::Start)
                 .width(Length::Fill),
         )
@@ -167,11 +173,15 @@ fn column_view<'a>(
             space::horizontal(),
             text(total.to_string())
                 .size(theme::SMALL)
+                .font(theme::MONO)
                 .color(theme::TEXT_MUTED),
         ]
         .align_y(Alignment::Center),
         row![
-            text(script).size(theme::SMALL).color(theme::TEXT_MUTED),
+            text(script)
+                .size(theme::SMALL)
+                .font(theme::MONO)
+                .color(theme::TEXT_MUTED),
             space::horizontal(),
             inline_edit::pencil(
                 format!("edit-script-{name}"),
@@ -180,14 +190,14 @@ fn column_view<'a>(
         ]
         .align_y(Alignment::Center),
     ]
-    .spacing(2)
+    .spacing(theme::SPACE_2)
     .width(Length::Fill);
     let head = column![
         container(head).padding(Padding {
-            top: 3.0,
-            right: 3.0,
-            bottom: 9.0,
-            left: 3.0,
+            top: theme::SPACE_4,
+            right: theme::SPACE_4,
+            bottom: theme::SPACE_8,
+            left: theme::SPACE_4,
         }),
         rule(),
     ];
@@ -209,9 +219,9 @@ fn column_view<'a>(
     } else {
         theme::LINE
     };
-    container(column![head, column(cards).spacing(9)].spacing(9))
+    container(column![head, column(cards).spacing(theme::SPACE_8)].spacing(theme::SPACE_8))
         .width(Length::FillPortion(1))
-        .padding(11)
+        .padding(theme::SPACE_10)
         .style(move |_| container::Style {
             background: Some(theme::LANE.into()),
             border: Border {
@@ -228,7 +238,7 @@ fn column_view<'a>(
 fn rule<'a>() -> Element<'a, Message> {
     container(space())
         .width(Length::Fill)
-        .height(1)
+        .height(theme::HAIRLINE)
         .style(|_| container::Style {
             background: Some(theme::LINE.into()),
             ..container::Style::default()
@@ -318,7 +328,7 @@ fn round_bar<'a>(rounds: i64, limit: i64) -> Element<'a, Message> {
         };
         container(space())
             .width(Length::FillPortion(1))
-            .height(4)
+            .height(theme::BAR)
             .style(move |_| container::Style {
                 background: Some(fill.into()),
                 border: Border {
@@ -329,7 +339,7 @@ fn round_bar<'a>(rounds: i64, limit: i64) -> Element<'a, Message> {
             })
             .into()
     }))
-    .spacing(3)
+    .spacing(theme::SPACE_4)
     .width(Length::Fill)
     .into()
 }
@@ -349,6 +359,7 @@ fn card_view<'a>(
     let mut content = column![
         text(card_line(card, round_limit))
             .size(theme::SMALL)
+            .font(theme::MONO)
             .color(line_color),
         text(card.title.as_str())
             .size(theme::CARD_TITLE)
@@ -357,7 +368,7 @@ fn card_view<'a>(
             .width(Length::Fill)
             .wrapping(Wrapping::WordOrGlyph),
     ]
-    .spacing(8)
+    .spacing(theme::SPACE_8)
     .width(Length::Fill);
     if round_limit > 0
         && card.rounds > 0
@@ -367,7 +378,12 @@ fn card_view<'a>(
     }
     let tags = tags(card, inbox_kind, next);
     if !tags.is_empty() {
-        content = content.push(row(tags).spacing(6).wrap().vertical_spacing(6));
+        content = content.push(
+            row(tags)
+                .spacing(theme::SPACE_6)
+                .wrap()
+                .vertical_spacing(theme::SPACE_6),
+        );
     }
     let border = if card.is_live() {
         theme::TEAL
@@ -376,7 +392,7 @@ fn card_view<'a>(
     };
     button(
         container(content)
-            .padding([12, 13])
+            .padding([theme::SPACE_10, theme::SPACE_12])
             .width(Length::Fill)
             .style(move |_| container::Style {
                 background: Some(theme::SURFACE.into()),
