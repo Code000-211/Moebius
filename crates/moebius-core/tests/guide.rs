@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use moebius_core::app::{App, PERSON};
-use moebius_core::board::{Engine, Limits, Runs, Step, Workflow};
+use moebius_core::board::{Engine, Limits, Runs, Step, Variant, Workflow};
 use moebius_core::config::Config;
 use moebius_core::decide::rules;
 use moebius_core::harness::repo::AgentSettings;
@@ -378,12 +378,16 @@ struct Started {
     agent: String,
     purpose: String,
     note: Option<String>,
+    /// The model or class an attempt was given in place of its agent's.
+    model: Option<String>,
 }
 
 /// A harness whose runs never end, with the agents it was given.
 struct Harness {
     agents: Vec<String>,
     started: Mutex<Vec<Started>>,
+    /// The token budget of every agent, if the scenario sets one.
+    budget: Mutex<Option<i64>>,
 }
 
 impl Runs for Harness {
@@ -395,14 +399,30 @@ impl Runs for Harness {
         purpose: &str,
         note: Option<&str>,
     ) -> Result<Run, String> {
+        self.start_with(app, card, agent, (purpose, note), Variant::default())
+    }
+
+    fn start_with(
+        &self,
+        app: &Arc<App>,
+        card: &Card,
+        agent: &str,
+        (purpose, note): (&str, Option<&str>),
+        variant: Variant,
+    ) -> Result<Run, String> {
         self.started.lock().unwrap().push(Started {
             agent: agent.into(),
             purpose: purpose.into(),
             note: note.map(String::from),
+            model: variant.model.map(String::from),
         });
         app.store
             .add_run(Some(card.id), agent, "idle", purpose)
             .map_err(|e| e.to_string())
+    }
+
+    fn token_budget(&self, _agent: &str) -> Option<i64> {
+        *self.budget.lock().unwrap()
     }
 
     fn has_agent(&self, name: &str) -> bool {
@@ -482,6 +502,7 @@ impl Fixture {
         let harness = Arc::new(Harness {
             agents: agents.iter().map(|a| a.to_string()).collect(),
             started: Mutex::default(),
+            budget: Mutex::default(),
         });
         let limits = Limits {
             run_limit: 3,
@@ -552,6 +573,7 @@ fn scenarios() -> Vec<(&'static str, Scenario)> {
         ("two-rounds", two_rounds),
         ("agent-by-title", agent_by_title),
         ("decide-with-a-plugin", decide_with_a_plugin),
+        ("hard-attempts", hard_attempts),
     ]
 }
 
@@ -737,10 +759,10 @@ fn every_luau_block_is_a_script_that_runs_and_the_marked_ones_do_what_the_page_s
     let mut count = 0;
     for block in all_blocks("luau") {
         let (script, key) = script_marker(&block);
-        let agents: &[&str] = if key.as_deref() == Some("agent-by-title") {
-            &["Coder", "Strong"]
-        } else {
-            &["Coder"]
+        let agents: &[&str] = match key.as_deref() {
+            Some("agent-by-title") => &["Coder", "Strong"],
+            Some("hard-attempts") => &["Coder", "Reviewer"],
+            _ => &["Coder"],
         };
 
         // It loads, defines on_card and runs without an error against a card in its column.
@@ -767,4 +789,192 @@ fn every_luau_block_is_a_script_that_runs_and_the_marked_ones_do_what_the_page_s
     for (name, _) in &scenarios {
         assert!(used.contains(*name), "no block uses the scenario {name:?}");
     }
+}
+
+/// Starts the three attempts of `card`, ends them and records how each fared (`passed` for true), as `moebius.check_attempt`
+/// would have; returns their runs.
+fn attempts_that(f: &Fixture, card: &Card, passed: [bool; 3]) -> Vec<i64> {
+    f.tick(card);
+    let runs: Vec<i64> = f
+        .app
+        .store
+        .open_attempts(card.id)
+        .unwrap()
+        .iter()
+        .map(|a| a.run_id)
+        .collect();
+    assert_eq!(runs.len(), 3);
+    for (run, passed) in runs.iter().zip(passed) {
+        f.app.store.set_run_status(*run, "succeeded").unwrap();
+        let (result, output) = if passed {
+            ("passed", "")
+        } else {
+            ("failed", "the test fails")
+        };
+        f.app
+            .store
+            .set_attempt_result(*run, result, output)
+            .unwrap();
+    }
+    runs
+}
+
+fn hard_attempts(f: &Fixture) {
+    // A card that is not hard gets one run, as before.
+    let plain = f.card("In progress", "A small fix", PERSON);
+    f.tick(&plain);
+    assert!(f.app.store.attempts_for_card(plain.id).unwrap().is_empty());
+
+    // A hard one gets three attempts, in turn with the models, and waits while they go.
+    let hard = f.card("In progress", "[hard] Rewrite the parser", PERSON);
+    let step = f.tick(&hard);
+    assert_eq!(step.waiting.as_deref(), Some("trying 3 attempts"));
+    let started = f.harness.started.lock().unwrap().clone();
+    let attempts: Vec<_> = started
+        .iter()
+        .filter(|s| s.purpose == "attempt")
+        .map(|s| (s.agent.as_str(), s.model.as_deref()))
+        .collect();
+    assert_eq!(
+        attempts,
+        [
+            ("Coder", Some("strong")),
+            ("Coder", Some("fast")),
+            ("Coder", Some("strong"))
+        ]
+    );
+    assert_eq!(f.tick(&hard).waiting.as_deref(), Some("trying 3 attempts"));
+    assert_eq!(f.app.store.open_attempts(hard.id).unwrap().len(), 3);
+
+    // One passes: it is picked without a selection run and becomes the card's code run.
+    let runs = f.app.store.open_attempts(hard.id).unwrap();
+    for (n, run) in runs.iter().enumerate() {
+        f.app.store.set_run_status(run.run_id, "succeeded").unwrap();
+        let result = if n == 1 { "passed" } else { "failed" };
+        f.app
+            .store
+            .set_attempt_result(run.run_id, result, "the test fails")
+            .unwrap();
+    }
+    f.tick(&hard);
+    assert_eq!(f.column(&hard), "In review");
+    let kept = f.app.store.attempts_for_card(hard.id).unwrap();
+    assert_eq!(
+        kept.iter().map(|a| a.picked).collect::<Vec<_>>(),
+        [false, true, false]
+    );
+    assert_eq!(
+        kept[1].reason.as_deref(),
+        Some("The only attempt that passed.")
+    );
+    let purposes: Vec<_> = f
+        .app
+        .store
+        .runs_for_card(hard.id)
+        .unwrap()
+        .into_iter()
+        .map(|r| r.purpose)
+        .collect();
+    assert_eq!(purposes, ["attempt", "code", "attempt"]);
+
+    // Two pass: the Reviewer is asked to choose, with the passing branches listed, and its pick is kept.
+    let two = f.card("In progress", "[hard] Fix the lexer", PERSON);
+    let runs = attempts_that(f, &two, [true, false, true]);
+    let step = f.tick(&two);
+    assert_eq!(step.waiting.as_deref(), Some("choosing between 2 attempts"));
+    let started = f.harness.started.lock().unwrap().clone();
+    let select = started.last().unwrap();
+    assert_eq!(
+        (select.agent.as_str(), select.purpose.as_str()),
+        ("Reviewer", "review-select")
+    );
+    let listed = select.note.clone().unwrap();
+    assert!(
+        listed.contains(&format!(
+            "- run {}: branch moebius/run-{}",
+            runs[0], runs[0]
+        )),
+        "{listed}"
+    );
+    assert!(
+        listed.contains(&format!("run {}", runs[2]))
+            && !listed.contains(&format!("run {}:", runs[1])),
+        "{listed}"
+    );
+    // Ticking while it goes starts no second selection.
+    f.tick(&two);
+    assert_eq!(
+        f.harness
+            .started
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|s| s.purpose == "review-select")
+            .count(),
+        1
+    );
+    let run = f.app.store.runs_for_card(two.id).unwrap().pop().unwrap();
+    f.app.store.set_run_status(run.id, "succeeded").unwrap();
+    f.app
+        .store
+        .set_run_summary(
+            run.id,
+            &format!("The second is smaller.\nPICK: {}", runs[2]),
+        )
+        .unwrap();
+    f.tick(&two);
+    assert_eq!(f.column(&two), "In review");
+    let kept = f.app.store.attempts_for_card(two.id).unwrap();
+    assert_eq!(
+        kept.iter().map(|a| a.picked).collect::<Vec<_>>(),
+        [false, false, true]
+    );
+    assert_eq!(kept[2].reason.as_deref(), Some("The second is smaller."));
+
+    // None passes: the round counts as a failed one and the next is told what failed.
+    let none = f.card("In progress", "[hard] Port the cache", PERSON);
+    attempts_that(f, &none, [false, false, false]);
+    let step = f.tick(&none);
+    assert_eq!(step.waiting.as_deref(), Some("no attempt passed"));
+    assert_eq!(f.column(&none), "In progress");
+    let note = f.app.card(none.id).unwrap().note.unwrap();
+    assert!(note.starts_with("None of the attempts passed."), "{note}");
+    assert!(note.contains("the test fails"), "{note}");
+    assert_eq!(f.app.store.failed_attempt_rounds(none.id).unwrap(), 1);
+    let before = f.harness.started.lock().unwrap().len();
+    f.tick(&none);
+    let started = f.harness.started.lock().unwrap().clone();
+    assert_eq!(started.len(), before + 3);
+    assert_eq!(started.last().unwrap().note.as_deref(), Some(note.as_str()));
+
+    // The agent's token budget is for all attempts together: three that used 400 each spend 1000.
+    *f.harness.budget.lock().unwrap() = Some(1000);
+    let spent = f.card("In progress", "[hard] Replace the allocator", PERSON);
+    let runs = attempts_that(f, &spent, [false, false, false]);
+    for run in runs {
+        f.app
+            .store
+            .add_usage(&moebius_core::store::Usage {
+                run_id: Some(run),
+                model: "local".into(),
+                input_tokens: 400,
+                output_tokens: 0,
+                cached_tokens: 0,
+                duration_ms: 0,
+                tools: Vec::new(),
+            })
+            .unwrap();
+    }
+    f.tick(&spent);
+    let before = f.harness.started.lock().unwrap().len();
+    let step = f.tick(&spent);
+    assert_eq!(step.started_run, None);
+    assert_eq!(f.harness.started.lock().unwrap().len(), before);
+    assert_eq!(
+        f.inbox(&spent),
+        [(
+            "stuck".to_string(),
+            "the token budget of 1000 is spent".to_string()
+        )]
+    );
 }

@@ -152,10 +152,11 @@ gets. Each entry of `cards` is a `Card` with what a board shows of it, so that a
 
 | Field | Meaning |
 |---|---|
-| `rounds`, `tokens` | The card's `code` runs and the tokens of all its runs since it was last retried, as `card.rounds` and `card.tokens` in [column scripts](column-scripts.md). |
+| `rounds`, `tokens` | The card's `code` runs (and rounds of attempts of which none passed) and the tokens of all its runs since it was last retried, as `card.rounds` and `card.tokens` in [column scripts](column-scripts.md). |
 | `run` | The card's latest run, `{"id", "agent", "purpose", "status"}`, or null when it has none. A board counts the runs working on it from the cards whose `run.status` is `starting` or `running`. |
 | `blocked_by` | The numbers of the issues that block the card and are not done yet, as `card.blocked_by`. |
 | `refusals` | How many tool calls of the latest run were refused (its `tool_check` and `mcp_call` run events with the decision `refuse`). |
+| `attempts` | The latest group of attempts of a card that was tried several times at once (see [column scripts](column-scripts.md#attempts)), oldest first, each `{"run", "model", "status", "result", "output", "picked", "reason"}`: `model` the model or class the attempt was started with, or null; `status` its run's status; `result` `passed`, `failed` or null before it was judged; `output` why it failed; `picked` whether it was the one kept, and `reason` why. Absent when the card has no attempts. |
 | `change` | The card's open change, `{"id", "state", "checks", "review_verdict"}`, or null. `checks` is `pending`, `success`, `failure` or `none`, as `card.change.checks`; `review_verdict` is `approve` or `changes` once a review ended since the latest `code` run, else null. Whether the change conflicts is not in the snapshot. |
 
 A card in `Done` has `rounds` and `tokens` 0, no `run`, no `change`, no blockers and no refusals: the snapshot is read on
@@ -423,6 +424,8 @@ of `{"at": number, "kind": string, "data": object}` with these kinds:
 | `run_started` | The run was stored. | `{"run": id, "agent": string, "purpose": string}` |
 | `run_ended` | The run ended. | `{"run": id, "status": "succeeded" \| "failed" \| "stopped"}` |
 | `decided` | A decision was recorded for the card. | `{"judgement": id, "kind": string, "choice": string, "decider": string, "reason": string, "outcome": string or null}` |
+| `attempt_judged` | An attempt of the card was judged by its tests and checks. | `{"run": id, "model": string or null, "result": "passed" \| "failed", "output": string}` |
+| `attempts_settled` | The card's attempts were settled: one picked, or none passed. | `{"runs": [id], "picked": id or null, "reason": string or null}`, the reason the picked attempt was kept |
 | `inbox_added` | An inbox item about the card was added. | `{"item": id, "kind": string, "title": string}` |
 | `inbox_resolved` | That item was resolved. | `{"item": id, "kind": string, "title": string}` |
 
@@ -1642,6 +1645,8 @@ like `POST /v1/runs/{id}/stop` does. Experiments done stay, and so do the lever 
 | `change_updated` | A change was published or published again, its checks started or ended, or the checks or review of its pull request changed. | The `Change`. |
 | `change_merged` | A change was merged, here or on its forge. | `{"change": id, "commit": sha or null}` |
 | `change_closed` | A change's pull or merge request was closed on its forge without a merge. | `{"change": id}` |
+| `attempt_judged` | An attempt of a card was judged by its tests and checks (`moebius.check_attempt`). | `{"card": id, "run": id, "result": "passed" \| "failed"}` |
+| `attempts_settled` | A card's open attempts were settled (`moebius.settle_attempts`): one picked, or none passed. | `{"card": id, "picked": id or null, "runs": [id]}` |
 | `run_started` | A harness process for a run started. | `{"run": id, "card": id or null}` (null for a chat) |
 | `run_event` | Something happened in a run. | `{"run": id, "seq": number, "kind": string, "data": object}` (below) |
 | `run_ended` | A run ended. | `{"run": id, "status": "succeeded" \| "failed" \| "stopped"}` |

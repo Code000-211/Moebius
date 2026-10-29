@@ -7,7 +7,7 @@ use iced::{Length, Padding};
 
 use crate::app::Message;
 use crate::client::{Board, Card, Hint, HistoryEntry};
-use crate::{theme, widgets::edits, widgets::inline_edit, widgets::page};
+use crate::{theme, widgets::attempts, widgets::edits, widgets::inline_edit, widgets::page};
 
 /// What a person reads of one entry.
 fn describe(entry: &HistoryEntry) -> String {
@@ -41,6 +41,38 @@ fn describe(entry: &HistoryEntry) -> String {
             word("choice"),
             word("reason")
         ),
+        "attempt_judged" => {
+            let model = data["model"]
+                .as_str()
+                .map_or(String::new(), |m| format!(" ({m})"));
+            match data["output"]
+                .as_str()
+                .and_then(|o| o.lines().find(|l| !l.trim().is_empty()))
+            {
+                Some(why) if word("result") == "failed" => {
+                    format!("Attempt, run {}{model}, failed: {why}", data["run"])
+                }
+                _ => format!("Attempt, run {}{model}, {}", data["run"], word("result")),
+            }
+        }
+        "attempts_settled" => {
+            let runs = data["runs"]
+                .as_array()
+                .map(|runs| {
+                    runs.iter()
+                        .map(|run| run.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default();
+            match (data["picked"].as_i64(), data["reason"].as_str()) {
+                (Some(run), Some(reason)) if !reason.is_empty() => {
+                    format!("Picked the attempt of run {run} of {runs}: {reason}")
+                }
+                (Some(run), _) => format!("Picked the attempt of run {run} of {runs}"),
+                (None, _) => format!("No attempt passed (runs {runs})"),
+            }
+        }
         "inbox_added" => format!("Added to the inbox: {}", word("title")),
         "inbox_resolved" => format!("Resolved in the inbox: {}", word("title")),
         other => other.to_string(),
@@ -92,7 +124,7 @@ pub fn view<'a>(
         .height(Length::Fill)
         .into(),
     };
-    column![
+    let mut screen = column![
         page::header_with(
             Some(page::card_breadcrumb(
                 &board.repository.name,
@@ -114,9 +146,11 @@ pub fn view<'a>(
                 text(body).size(theme::BODY).color(theme::TEXT_SECONDARY),
             )
         }),
-        page::boxed("History", rows),
     ]
     .spacing(theme::PAGE_GAP)
-    .width(Length::Fill)
-    .into()
+    .width(Length::Fill);
+    if !card.attempts.is_empty() {
+        screen = screen.push(page::boxed("Attempts", attempts::list(&card.attempts)));
+    }
+    screen.push(page::boxed("History", rows)).into()
 }

@@ -127,6 +127,16 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
     findings without evidence and reads the two into `card.review`, whose `findings` are the blocking ones and
     `judgements` the rest. Blocking findings send the card back as the note; `offer_change` stores the judgements in
     the inbox item.
+11a. **A hard card is tried several times.** A repository's own `code.luau` (the workflows guide has one) may call
+    `moebius.start_runs`, which starts n runs with purpose `attempt` through `Runs::start_with` (each in a worktree and
+    on a branch of its own, from the same commit, with a model or class from a list in turn) and stores them with
+    `Store::add_attempt`. Each succeeded attempt is judged by `moebius.check_attempt` (`App::check_attempt`: the
+    repository's checks and, test first, the reproduction test, on a thread of its own, the result kept in `attempts`).
+    `moebius.settle_attempts` ends the round: with one attempt that passed it is picked at once, with several a run with
+    purpose `review-select` of the Reviewer reads their diffs and ends with `PICK: <run id>` (`card.selection`), and with
+    none the round counts as failed (`card.rounds`) and its note goes to the next. The picked attempt's run becomes a
+    `code` run (`Store::settle_attempts`), so `Store::code_branch` and the review build on it; the others keep their
+    branches. The router's budget of the card counts every attempt's tokens.
 12. **The change is offered.** When the checks and the review allow it, `review.luau` calls `moebius.offer_change`, which
     calls `App::offer_change`: it publishes the change if need be, adds a `ready_to_merge` inbox item, publishes
     `change_offered` and moves the card to `Ready to merge`. While the card waits there, `merge.luau` sends it back to
@@ -374,6 +384,7 @@ At the top:
 | `app/chats.rs` | Chats: starting one, continuing an ended one, writing to it, its model and reasoning, ending it, and the list of chats. |
 | `app/changes.rs` | Changes: a card's work published through the forge, offered with a chat's work in the inbox, rejected or merged, and what the forge says became of them. |
 | `app/checks.rs` | How a change's checks stand, and a repository's own checks (`.moebius/checks`) run in a throwaway worktree with a time limit and a cleared environment. |
+| `app/attempts.rs` | Attempts: judging each attempt of a hard card by the repository's checks and its reproduction test on a thread of its own, settling a round (one picked, or none passed), and reading a selection run's pick. |
 | `app/localize.rs` | The hint of files a code run is given, whether a repository wants it, and the outcome recorded from the files the card's change touched at the end of a code run and on merge. |
 | `app/reproduce.rs` | Test first: a repository's opt-in (`.moebius/test-first`), what a change names in `.moebius/reproduce`, and the runs of that reproduction test on the change and on the commit it starts from with the test's files added. |
 
@@ -410,6 +421,7 @@ At the top:
 | `store/mod.rs` | The store: opening the SQLite database, its migrations, the connection and the server's local clock, the helpers that read rows, and every record type re-exported as `store::<Type>`. |
 | `store/cards.rs` | Repositories, their cards, the issues that block a card and the moves of a card between columns. |
 | `store/changes.rs` | Changes: a branch offered for merging, with its pull request, checks and review. |
+| `store/attempts.rs` | Attempts: the runs a card was tried with at once, how each fared, which was picked and why, and the rounds of which none passed. |
 | `store/runs.rs` | Runs: an agent's work in a harness, from its start to its end. |
 | `store/events.rs` | A run's events, in order, redacted before they are stored. |
 | `store/automations.rs` | Automations, their firings with the status of each chat, and the server's local minute. |
@@ -486,6 +498,7 @@ At the top:
 | `board/engine.rs` | The board engine: runs the script of a card's column (`tick`, `settle`) and applies what it did. |
 | `board/api.rs` | The `moebius` table, the functions a script acts through. |
 | `board/review.rs` | The review along two axes: the findings with evidence of the Standards and Spec runs read into one verdict. |
+| `board/attempts.rs` | `moebius.start_runs`, `moebius.check_attempt` and `moebius.settle_attempts`, and the `card.attempts` and `card.selection` fields. |
 | `board/card.rs` | The `card` table a script reads, with the card's change and the verdict of its review. |
 | `board/sandbox.rs` | The Luau sandbox every script runs in, with its memory and time limits. |
 | `board/limits.rs` | The run, round and token limits scripts see, and a script call's memory and time. |
@@ -695,6 +708,7 @@ At the top:
 |---|---|
 | `widgets/mod.rs` | The pieces that more than one screen uses or that stand above every screen. |
 | `widgets/page.rs`, `widgets/icons.rs` | The page header and box every page is made of, and the line icons. |
+| `widgets/attempts.rs` | The attempts of a card tried several times at once: which passed, which was picked and why. |
 | `widgets/form.rs` | The pieces of the editing pages' forms: labelled inputs, the line after a save, a box's heading, the code editor, the dropdowns' style. |
 | `widgets/list_editor.rs` | A list with an editor beside it: its layout, its cards, and the head with Save and Delete. |
 | `widgets/conversation.rs` | Folds a run's events into a conversation (text, tool calls with their checks, steers, errors); pure, takes events in any order and drops repeats. |

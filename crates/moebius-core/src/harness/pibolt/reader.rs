@@ -159,7 +159,7 @@ pub(in crate::harness) fn finish<L>(
             Err(e) => failed(&e.to_string()),
         },
         Ok(true) => "stopped",
-        Ok(false) if !matches!(run.purpose.as_str(), "code" | "trial") => "succeeded",
+        Ok(false) if !matches!(run.purpose.as_str(), "code" | "trial" | "attempt") => "succeeded",
         Ok(false) => match run.commit() {
             Ok(true) => "succeeded",
             Ok(false) => failed("the agent changed nothing"),

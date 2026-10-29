@@ -52,7 +52,7 @@ end
 | `card.trusted` | boolean | True when the issue may move on without approval: it was made by a person in the desktop app on a repository without a forge, or its author is one of the repository's trusted GitHub logins (compared without regard to case). |
 | `card.test_first` | boolean | True when the card's repository works test first: its default branch has a file `.moebius/test-first`. See Test first. |
 | `card.blocked_by` | table (array of numbers) | The issue numbers the card is blocked by that are not done yet. A number counts as not done when it has no card or its card is not in `Done`. Empty (never nil) when nothing blocks the card. The numbers come from "blocked by #12" lines in the issue's body on GitHub. |
-| `card.rounds` | number | How many runs with purpose `code` the card has had since it was last retried, whatever their status (a running one counts). |
+| `card.rounds` | number | How many runs with purpose `code` the card has had since it was last retried, whatever their status (a running one counts), and how many rounds of attempts of which none passed (see Attempts). |
 | `card.reviews` | number | How many review rounds the card has had since it was last retried, whatever their status: the runs with purpose `review` and those with purpose `review-standards` (one per round of the two-axis review). |
 | `card.tokens` | number | The input and output tokens the card's runs used since it was last retried (cached tokens are not added; the teacher's count too). |
 | `card.stopped` | boolean | True when the card's latest run was stopped by a person and the card has not been retried since. |
@@ -70,7 +70,19 @@ end
 | `card.change.failed_checks` | string or nil | On GitHub, the failing check runs, one per line; nil unless `checks` is `failure`. |
 | `card.change.check_output` | string or nil | Without a forge, the end of the output of the repository's `.moebius/checks`, once they ended for the current commit. |
 | `card.change.conflict` | string or nil | The files that conflict with `card.change.base`, one per line; nil when the change merges cleanly. |
-| `card.run` | table or nil | The card's latest run (the one with the highest id). nil when the card has had no run. |
+| `card.attempts` | table (array) | The card's attempts that have not been settled, oldest first; empty (never nil) when it has none. See Attempts. |
+| `card.attempts[i].run` | number | The attempt's run id; its branch is `moebius/run-<run>`. |
+| `card.attempts[i].agent` | string | The agent of the attempt's run. |
+| `card.attempts[i].model` | string or nil | The model or model class the attempt was started with in place of its agent's; nil when it used its agent's. |
+| `card.attempts[i].status` | string | The status of the attempt's run: `starting`, `running`, `succeeded`, `failed` or `stopped`. |
+| `card.attempts[i].result` | string or nil | `passed` or `failed` once `moebius.check_attempt` has judged the attempt; nil before. |
+| `card.attempts[i].output` | string | Why the attempt failed: the end of the output of the checks or the test that did not hold. Empty for one that passed. |
+| `card.selection` | table or nil | The latest run with purpose `review-select` started after the open attempts, if there is one. |
+| `card.selection.run` | number | The selection run's id. |
+| `card.selection.status` | string | The status of the selection run. |
+| `card.selection.pick` | number or nil | The run id on the last line `PICK: <run id>` of the summary of a selection run that `succeeded`; nil while it goes, when it failed and when it names none. |
+| `card.selection.reason` | string | The summary of a selection run that `succeeded` without its last line, the reviewer's reasons; empty otherwise. |
+| `card.run` | table or nil | The card's latest run (the one with the highest id) that is not an attempt that was not picked (see Attempts). nil when the card has had no run. |
 | `card.run.id` | number | The run's id. |
 | `card.run.agent` | string | The agent's name. |
 | `card.run.purpose` | string | The purpose the run was started with. |
@@ -82,7 +94,7 @@ The verdict of a review is read from the end of the summary of a `review` run. A
 without such a line, or with any other word, is `changes`: work that was not reviewed is not approved. A `changes` verdict
 with no findings before it has the findings `The review asked for changes but gave no findings.`
 
-Only `card.run`, `card.run.summary`, `card.review`, `card.note`, `card.change` and its `pull_request`, `failed_checks`, `check_output` and `conflict` can be nil. Check them before you read their fields.
+Only `card.run`, `card.run.summary`, `card.review`, `card.selection`, `card.note`, `card.change` and its `pull_request`, `failed_checks`, `check_output` and `conflict`, and `model` and `result` of an attempt, can be nil. Check them before you read their fields.
 
 ## The `moebius` table
 
@@ -120,7 +132,7 @@ with `Evidence:`. Judgement calls never send the card back; `card.review.judgeme
 : Starts a run of the agent named `agent` (an `[agents.<name>]` table of the configuration) for this card in a new
 worktree on a new branch `moebius/run-<id>`. The branch starts at the branch of the card's latest successful `code`
 run, so the run sees the work so far, or at the repository's default branch when the card has none. `purpose` is any
-string; the default workflow uses `code`, `review-standards` and `review-spec`. Only `code` runs count as `card.rounds`, and only
+string; the default workflow uses `code`, `review-standards` and `review-spec`, and attempts (see Attempts) use `attempt` and `review-select`. Only `code` runs count as `card.rounds`, and only
 `review` and `review-standards` runs as `card.reviews`. A `code` run gets the prompt for making the change and commits what the agent leaves; it fails when
 the agent changed nothing. A `review` run gets the prompt for reviewing the change on its branch and ending with
 the verdict line; a `review-standards` run the prompt for the standards axis (the repository's `CONTRIBUTING.md`,
@@ -191,6 +203,39 @@ change to test` before the change is published. The time this call takes does no
 files `files` (an array of paths, optional) added as the change's current commit has them. A path the change does not
 have makes the run an `error`. Its result is kept apart from `moebius.run_test`'s for the same command.
 
+`moebius.start_runs(agent, n, opts)` returns an array of run ids (numbers).
+: Starts `n` runs of the agent `agent` with the purpose `attempt` (see Attempts), `n` from 1 to 8. Each is a run as
+`moebius.start_run` makes it, in a worktree and on a branch `moebius/run-<id>` of its own, all starting at the same
+commit: the branch of the card's latest successful `code` run, or the default branch. The run is told what a `code`
+run is told. `opts` is optional, a table with these keys, all optional: `models`, an array of strings, each a model or
+a model class (see [router](router.md)), used in turn, the first for the first attempt and so on round again, in place
+of the agent's own `model`; `note`, text added to the prompt of every attempt as `moebius.start_run` adds its note;
+`runner`, the name of a runner, as for `moebius.start_run`. The attempts are recorded as one group, in `card.attempts`.
+The call returns once the runs are started. Raises an error for another `n`, and for the errors of
+`moebius.start_run`; when one run cannot be started after others were, the error names the runs that were started, and
+they stay attempts of the card. The harness refuses a model it cannot give (`this harness cannot choose the model of
+a run`). The time this call takes does not count against the time limit.
+
+`moebius.check_attempt(run)` returns a table.
+: Judges the attempt `run` (a number from `card.attempts`) against what the card is held to, as `moebius.run_test` does
+a test: on a thread of its own, answering at once with `status` `pending` while it goes, then `passed` or `failed`
+with the same answer on every later call, and `output`, why it failed. An attempt whose run did not succeed has failed
+(`The run failed.`) without more. Otherwise the repository's own checks (`.moebius/checks` on the default branch, run
+on the attempt's commit as for a change; none on a repository with a forge) must succeed, and when `card.test_first`
+the attempt's `.moebius/reproduce` must name a test that fails on the commit the attempt starts from, with the test's
+files added, and passes on the attempt, or say `untestable: <why>`; a reason is judged by the review later. The result
+is stored with the attempt (`card.attempts[i].result`) and published as the event `attempt_judged`. Raises an error
+`run <n> is not an attempt` for another run. The time this call takes does not count against the time limit.
+
+`moebius.settle_attempts(run, text)` returns nothing.
+: Settles the card's open attempts, which ends the round. With `run`, the id of an open attempt whose `result` is
+`passed`, that attempt is picked: its run's purpose becomes `code`, so that it is the card's latest successful `code`
+run and every later run builds on its branch, the card's `note` is cleared, and `text` is recorded as the reason it was
+picked. Without `run` (nil), none passed: the round counts in `card.rounds` as a failed one, and `text` (a default when
+it is empty) becomes the card's `note`, which the next round is told. The other attempts keep their branches. Publishes
+the event `attempts_settled` with `{card, picked, runs}`. Raises an error `the card has no open attempts`, `attempt <n>
+did not pass, so it cannot be picked` or `run <n> is not an open attempt of the card`.
+
 `moebius.offer_change(judgements)` returns the change's id (a number). `judgements` is optional text, which is stored in
 the inbox item as `data.judgements` for the person to read.
 : Publishes the change as `moebius.publish_change` does and offers it to a person: it adds an item `ready_to_merge` to
@@ -243,6 +288,9 @@ Error messages that come from Moebius:
 | `the card has no code run to publish` | `moebius.publish_change` or `moebius.offer_change` on a card without a successful `code` run. |
 | `the card has no change to check` | `moebius.run_checks` before the change is published. |
 | `the card has no change to test` | `moebius.reproduction`, `moebius.run_test` or `moebius.run_test_at_base` before the change is published. |
+| `n is 1 to 8 attempts` | `moebius.start_runs` with another number of attempts. |
+| `run <n> is not an attempt` | `moebius.check_attempt` with a run that is not an attempt. |
+| `the card has no open attempts`, `attempt <n> did not pass, so it cannot be picked`, `run <n> is not an open attempt of the card` | `moebius.settle_attempts`. |
 
 ## The sandbox
 
@@ -282,11 +330,12 @@ configuration and no repository, and it stores and starts nothing.
 | `--author` | `person` | The card's `author`. `card.trusted` is true only for `person`, as on a repository without a forge. |
 
 The made-up card has `id` and `number` 1, an empty `body`, `blocked_by` empty, `rounds`, `reviews` and `tokens` 0, and
-`stopped` and `test_first` false. It has no `note`, `change`, `run` or `review`. The `moebius` table has every constant and function of
+`stopped` and `test_first` false, and `attempts` empty. It has no `note`, `change`, `run`, `review` or `selection`. The `moebius` table has every constant and function of
 this page, but records its calls instead of acting:
 
 - `moebius.decide` takes the fail-closed option and says so; it raises an error when that is not one of the options.
-- `moebius.start_run` returns 1, then 2 and so on. `moebius.has_agent` says yes for every name.
+- `moebius.start_run` returns 1, then 2 and so on. `moebius.start_runs` returns the next `n` numbers, `moebius.check_attempt` returns
+  `status` `pending` with an empty `output`. `moebius.has_agent` says yes for every name.
 - `moebius.publish_change` and `moebius.run_checks` return a change on branch `moebius/card-1` whose `checks` is `none`.
   `moebius.offer_change` returns 1. `moebius.record_outcome` returns 0. `moebius.reproduction` returns nil, and
   `moebius.run_test` and `moebius.run_test_at_base` return `status` `pending` with an empty `output`.
@@ -301,6 +350,9 @@ The output is one line for each call that does something, in the order of the ca
 | `moved the card to <column>`, with ` (note: <note>)` when there is one | `moebius.move` |
 | `waited: <reason>` | `moebius.wait` |
 | `started a run of <agent> for <purpose>`, then ` on <runner>` when a runner is given, with the note as above | `moebius.start_run` |
+| `started <n> attempts of <agent>`, with the note as above | `moebius.start_runs` |
+| `started judging attempt <run>` | `moebius.check_attempt` |
+| `picked attempt <run>`, then `: <reason>` when there is one, or `settled the attempts: none passed` | `moebius.settle_attempts` |
 | `asked a person (<kind>) and waited: <reason>` | `moebius.ask` |
 | `put the card in the inbox as stuck: <reason>` | `moebius.stuck` |
 | `decided <kind>: ... the fail-closed option "<option>" was taken` | `moebius.decide` |
@@ -359,6 +411,37 @@ time opens the pull request; later it updates it with a push. Without a forge th
 
 `card.change.conflict` lists the files that keep the change from merging cleanly into `card.change.base` (found with
 `git merge-tree`; nothing is checked out), or is nil when it merges cleanly.
+
+## Attempts
+
+A card that is hard to get right can be tried several times at once, and the best attempt kept. Sampling a model many
+times solves far more tasks than one attempt does; the gain is only as large as the choice among the samples is good,
+and a choice by execution (tests and checks) together with a choice by a model is better than either alone. A column
+script does this with `moebius.start_runs`, `moebius.check_attempt` and `moebius.settle_attempts`; the
+[workflows guide](../guide/workflows.md#a-hard-card-several-attempts) shows a complete `code.luau`. The default
+`code.luau` does not use attempts: a repository opts in with its own.
+
+- An **attempt** is a run with the purpose `attempt`. It is prompted, committed and judged as a failed run as a `code`
+  run is, but it is not a `code` run: `card.rounds` does not count it, `card.run` and the branch the next run builds on
+  do not follow it, and `card.review` ignores it. Its tokens count in `card.tokens` and so against
+  `agents.<name>.token_budget`, which is one budget for all the attempts of a card together; the router refuses the
+  requests of every attempt of the card once the budget is spent.
+- The attempts started by one call are a **group**. Until a group is settled its attempts are in `card.attempts`.
+- A succeeded attempt is **judged** by `moebius.check_attempt`: the checks and, test first, the reproduction test.
+- When every attempt of the group has been judged the script **settles** it. With no attempt that passed, the round is a
+  failed one (it counts in `card.rounds`, so `board.round_limit` bounds the cost) and the next round is told why. With
+  exactly one that passed, that one is picked, without a selection run. With several, a run with the purpose
+  `review-select` of the Reviewer is started with the passing attempts listed in its `note`, one per line, as
+  `- run <id>: branch moebius/run-<id>`. It is told to compare the diffs (`git diff <base>...<branch>`), give its reasons
+  for each and end with a last line `PICK: <run id>`. Like a review run it changes nothing that is kept and
+  changing nothing is no failure. `card.selection` holds the pick and the reasons, and the script calls
+  `moebius.settle_attempts` with them. The text is kept with the picked attempt as its reason.
+- The picked attempt becomes the card's `code` run. The attempts that were not picked keep their branches
+  `moebius/run-<id>` in the repository's clone until the card is done.
+
+The desktop API shows the latest group of a card as `attempts` in its board entry (`GET /v1/snapshot`) and as
+`attempt_judged` and `attempts_settled` entries in `GET /v1/cards/{id}/history`; the desktop app's live view and its
+card page show which attempts passed, which was picked and why.
 
 ## Test first
 

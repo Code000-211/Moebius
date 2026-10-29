@@ -5,9 +5,10 @@
 //! methods of `Store` that read and write it: `cards` (repositories, cards, dependencies and moves), `changes`, `runs`,
 //! `events` (a run's events), `chats`, `judgements`, `replays`, `inbox`, `grillings`, `shadows` (the decision model's
 //! shadows and takeovers), `usage`, `found` (what the Retro collects), `retros` (Retros, proposals and trials),
-//! `lessons` (what the Retro learned from earlier cards), `research` (research, its runs and experiments) and
+//! `lessons` (what the Retro learned from earlier cards), `attempts` (the runs a hard card gets in one go and which was picked), `research` (research, its runs and experiments) and
 //! `automations` (automations, their firings and the local clock). Every public type is re-exported here, as `store::Card` and the like.
 
+mod attempts;
 mod automations;
 mod cards;
 mod changes;
@@ -34,6 +35,7 @@ use rusqlite::{Connection, OptionalExtension, Params, Row};
 
 use crate::blobs::BlobStore;
 
+pub use attempts::Attempt;
 pub use automations::{Automation, Firing, NewAutomation};
 pub use cards::{Card, CardMove, Repository};
 pub use changes::Change;
@@ -383,6 +385,7 @@ CREATE TABLE localize_indexed (
 );
 "#,
     lessons::SCHEMA,
+    attempts::SCHEMA,
 ];
 
 pub fn now() -> i64 {

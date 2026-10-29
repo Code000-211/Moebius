@@ -8,8 +8,10 @@
 //! - `card.change`: the card's open change: its checks, the failing ones and whether it still merges cleanly.
 //! - `card.test_first`: whether the card's repository works test first (see `app::reproduce`).
 //! - `card.stopped`: whether a person stopped the card's latest run and has not retried the card since.
-//! - `card.rounds`, `card.reviews`, `card.tokens`: the `code` runs, review rounds and tokens of the card since it was
-//!   last retried.
+//! - `card.rounds`, `card.reviews`, `card.tokens`: the `code` runs (and rounds of attempts of which none passed),
+//!   review rounds and tokens of the card since it was last retried.
+//! - `card.attempts`, `card.selection`: the attempts the card has not settled yet and what its selection run picked
+//!   (see `attempts`). `card.run` is the card's latest run that is not an attempt that was not picked.
 
 use mlua::{Lua, Table};
 
@@ -113,7 +115,12 @@ impl Engine {
         t.set("blocked_by", blocked_by)?;
         let since_retry = || runs_since_retry(&runs, card);
         let count = |purpose: &str| since_retry().filter(|r| r.purpose == purpose).count();
-        t.set("rounds", count("code"))?;
+        let failed_attempt_rounds = self
+            .app
+            .store
+            .failed_attempt_rounds(card.id)
+            .map_err(mlua::Error::external)?;
+        t.set("rounds", count("code") as i64 + failed_attempt_rounds)?;
         t.set("reviews", count("review") + count("review-standards"))?;
         t.set(
             "tokens",
@@ -127,7 +134,9 @@ impl Engine {
             runs.last()
                 .is_some_and(|r| r.status == "stopped" && Some(r.id) > card.retried_after),
         )?;
-        if let Some(run) = runs.last() {
+        self.attempts_table(lua, &t, card, &runs)?;
+        // An attempt that was not picked is no run of the card's own: `card.attempts` shows it.
+        if let Some(run) = runs.iter().rev().find(|r| r.purpose != "attempt") {
             let r = lua.create_table()?;
             r.set("id", run.id)?;
             r.set("agent", run.agent.as_str())?;

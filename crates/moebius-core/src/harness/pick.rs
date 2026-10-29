@@ -9,7 +9,7 @@ use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
 use crate::app::{App, ChatSettings};
-use crate::board::{AgentInfo, Runs};
+use crate::board::{AgentInfo, Runs, Variant};
 use crate::config::{AgentConfig, AgentSet, HarnessKind};
 use crate::harness::claude::ClaudeCode;
 use crate::harness::pibolt::{
@@ -113,6 +113,18 @@ impl Runs for Harnesses {
     ) -> Result<Run, String> {
         self.of_agent(app, agent)
             .start_on(app, card, agent, purpose, note, runner)
+    }
+
+    fn start_with(
+        &self,
+        app: &Arc<App>,
+        card: &Card,
+        agent: &str,
+        (purpose, note): (&str, Option<&str>),
+        variant: Variant,
+    ) -> Result<Run, String> {
+        self.of_agent(app, agent)
+            .start_with(app, card, agent, (purpose, note), variant)
     }
 
     fn runners(&self) -> Vec<crate::harness::remote::RunnerInfo> {

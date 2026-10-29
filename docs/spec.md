@@ -194,6 +194,18 @@ the change, both run like the repository's checks; a change that cannot be teste
 judges the reason. Tests generated from the issue and used as a gate raise the precision of offered changes the most of
 any review step (Otter, arXiv 2502.05368).
 
+A hard card can be tried several times at once (a repository's own `code.luau`; the workflows guide has one that does it
+for a card titled `[hard]` or reviewed twice already). `moebius.start_runs` starts n code runs, each in its own worktree
+and on its own branch and with a model or model class from a list in turn, so that the attempts differ. Every attempt is
+judged by execution, the repository's checks and the reproduction test of test first; if exactly one passes it is kept,
+if several do a selection run of the Reviewer reads their diffs and picks one with its reasons, and if none does the
+round fails as a single run's would. The attempts that were not picked keep their branches and the card's page shows
+which passed, which was picked and why. The card's token budget counts every attempt. Repeated sampling raises the share
+of solved tasks steeply (15.9% with one attempt to 56% with 250 on SWE-bench Lite, arXiv 2407.21787) and the
+choice among samples is the bottleneck: execution-based and execution-free verifiers alone stop near 42% and only
+together reach 51% (R2E-Gym, arXiv 2504.07164), which is why the attempts are filtered by execution first and a model
+chooses among the survivors only.
+
 Before a `code` run Moebius **localizes** the card's issue: the decision point `localize` ranks at most ten files of the
 repository's default branch that the change is likely to touch, each with a short reason, and the run is given the list as
 "Files that are likely relevant (a hint, not a limit)" with the instruction to verify it. The first decider needs no model:

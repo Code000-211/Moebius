@@ -8,6 +8,7 @@
 //! `localize` gives a code run the files its issue is likely to touch and records what came of it, `reproduce` runs a change's reproduction test for a repository that works test first, and `automations` keeps
 //! the automations and starts their chats when their schedules come due.
 
+mod attempts;
 mod automations;
 mod cards;
 mod changes;
@@ -35,6 +36,7 @@ use crate::repos::forge::{Forge, ForgeError, NoForge};
 use crate::repos::{GitError, Repos};
 use crate::store::{Card, Change, Repository, Run, Store, StoreError};
 
+pub use attempts::{AttemptCheck, read_pick};
 pub use automations::{
     AUTOMATION_ORIGIN, AutomationView, cron, on_schedule as on_automation_schedule,
 };
@@ -97,6 +99,8 @@ pub struct App {
     pub localize: LocalizeConfig,
     /// The checks going now, as change and commit.
     checking: Mutex<BTreeSet<(i64, String)>>,
+    /// The attempts being judged now (see `attempts`).
+    judging: Mutex<BTreeSet<i64>>,
     /// The runs of reproduction tests, going or ended (see `reproduce`).
     tests: Mutex<HashMap<reproduce::TestKey, TestRun>>,
     /// Held while a run event is stored and published, so that events are published in the order of their `seq`.
@@ -130,6 +134,7 @@ impl App {
             checks_timeout: Duration::from_secs(1800),
             localize: LocalizeConfig::default(),
             checking: Mutex::default(),
+            judging: Mutex::default(),
             tests: Mutex::default(),
             run_events: Mutex::default(),
             chat_turns: Mutex::default(),

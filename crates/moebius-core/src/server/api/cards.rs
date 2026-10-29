@@ -66,6 +66,26 @@ pub struct CardView {
     pub refusals: i64,
     /// The card's open change.
     pub change: Option<ChangeView>,
+    /// The attempts of the card's latest group, if it was ever tried several times at once.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attempts: Vec<AttemptView>,
+}
+
+/// One attempt of a card tried several times at once.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttemptView {
+    pub run: i64,
+    /// The model or model class the attempt was started with in place of its agent's, if one was given.
+    pub model: Option<String>,
+    /// The attempt's run: `starting`, `running`, `succeeded`, `failed` or `stopped`.
+    pub status: String,
+    /// `passed` or `failed` once the tests and checks have judged it.
+    pub result: Option<String>,
+    /// Why it failed, or empty.
+    pub output: String,
+    pub picked: bool,
+    /// Why it was picked.
+    pub reason: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -127,6 +147,7 @@ fn card_view(app: &App, card: Card) -> crate::app::Result<CardView> {
         blocked_by: Vec::new(),
         refusals: 0,
         change: None,
+        attempts: Vec::new(),
     };
     if view.card.column == columns::DONE {
         return Ok(view);
@@ -134,8 +155,27 @@ fn card_view(app: &App, card: Card) -> crate::app::Result<CardView> {
     let runs = app.store.runs_for_card(view.card.id)?;
     view.rounds = runs_since_retry(&runs, &view.card)
         .filter(|r| r.purpose == "code")
-        .count() as i64;
+        .count() as i64
+        + app.store.failed_attempt_rounds(view.card.id)?;
     view.tokens = app.store.tokens_for_card(view.card.id)?;
+    let attempts = app.store.attempts_for_card(view.card.id)?;
+    let latest = attempts.iter().map(|a| a.group_id).max();
+    view.attempts = attempts
+        .into_iter()
+        .filter(|a| Some(a.group_id) == latest)
+        .map(|a| AttemptView {
+            run: a.run_id,
+            model: a.model,
+            status: runs
+                .iter()
+                .find(|r| r.id == a.run_id)
+                .map_or_else(String::new, |r| r.status.clone()),
+            result: a.result,
+            output: a.output,
+            picked: a.picked,
+            reason: a.reason,
+        })
+        .collect();
     view.blocked_by = app.blocked_by(&view.card)?;
     if let Some(run) = runs.last() {
         view.refusals = app.store.refused_tool_calls(run.id)?;
@@ -654,5 +694,68 @@ mod tests {
         );
         assert_eq!(history[5].data["decider"], "person");
         assert_eq!(history[6].data["item"], item.id);
+    }
+
+    #[tokio::test]
+    async fn the_attempts_of_a_card_show_in_its_board_and_its_history() {
+        let (_dir, state, addr) = start().await;
+        let app = &state.app;
+        let mut runs = Vec::new();
+        for model in [Some("strong"), Some("fast")] {
+            let run = app
+                .store
+                .add_run(Some(1), "Coder", "test", "attempt")
+                .unwrap();
+            app.store
+                .add_attempt(run.id, 1, runs.first().copied().unwrap_or(run.id), model)
+                .unwrap();
+            app.store.set_run_status(run.id, "succeeded").unwrap();
+            runs.push(run.id);
+        }
+        app.store
+            .set_attempt_result(runs[0], "failed", "the test fails")
+            .unwrap();
+        app.store.set_attempt_result(runs[1], "passed", "").unwrap();
+        app.settle_attempts(1, Some(runs[1]), "The only attempt that passed.")
+            .unwrap();
+
+        let snapshot: Snapshot = get(&state, &addr, "/v1/snapshot").await;
+        let card = snapshot.boards[0]
+            .cards
+            .iter()
+            .find(|c| c.card.id == 1)
+            .unwrap();
+        assert_eq!(
+            card.attempts
+                .iter()
+                .map(|a| (a.run, a.model.as_deref(), a.result.as_deref(), a.picked))
+                .collect::<Vec<_>>(),
+            [
+                (runs[0], Some("strong"), Some("failed"), false),
+                (runs[1], Some("fast"), Some("passed"), true)
+            ]
+        );
+        assert_eq!(card.attempts[0].output, "the test fails");
+        assert_eq!(
+            card.attempts[1].reason.as_deref(),
+            Some("The only attempt that passed.")
+        );
+        assert_eq!(card.attempts[1].status, "succeeded");
+
+        let history: Vec<HistoryEntry> = get(&state, &addr, "/v1/cards/1/history").await;
+        let judged: Vec<_> = history
+            .iter()
+            .filter(|e| e.kind == "attempt_judged")
+            .collect();
+        assert_eq!(judged.len(), 2);
+        assert_eq!(judged[0].data["run"], runs[0]);
+        assert_eq!(judged[0].data["output"], "the test fails");
+        let settled = history
+            .iter()
+            .find(|e| e.kind == "attempts_settled")
+            .unwrap();
+        assert_eq!(settled.data["picked"], runs[1]);
+        assert_eq!(settled.data["runs"], serde_json::json!(runs));
+        assert_eq!(settled.data["reason"], "The only attempt that passed.");
     }
 }

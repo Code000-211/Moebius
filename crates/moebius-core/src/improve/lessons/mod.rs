@@ -150,7 +150,7 @@ fn best(store: &Store, card: &Card) -> Vec<Lesson> {
 /// The prompt section for a run of `card` with this purpose: the lessons that best match the issue's text, for a code
 /// or review run; none for any other, and none when nothing matches or anything fails.
 pub fn for_prompt(app: &App, card: &Card, purpose: &str) -> Option<String> {
-    if purpose != "code" && !purpose.starts_with("review") {
+    if !matches!(purpose, "code" | "attempt") && !purpose.starts_with("review") {
         return None;
     }
     let lessons = best(&app.store, card);

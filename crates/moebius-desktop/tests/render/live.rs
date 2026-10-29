@@ -94,7 +94,11 @@ fn watching(status: &str) -> App {
 
 /// As `watching`, with the run's harness on the runner `runner`, if any.
 fn watching_on(status: &str, runner: Option<&str>) -> App {
-    let mut board = radiance("Ready");
+    watching_board(status, runner, radiance("Ready"))
+}
+
+/// As `watching_on`, on `board`, which has the card 48.
+fn watching_board(status: &str, runner: Option<&str>, mut board: serde_json::Value) -> App {
     board["changes"] = json!([{"id": 1, "repository_id": 1, "card_id": 48,
                                "branch": "moebius/card-48", "state": "open"}]);
     let mut app = App::with_snapshot(snapshot(vec![board], vec![]));
@@ -553,4 +557,72 @@ fn the_history_shows_the_hint_and_how_many_of_its_files_were_touched() {
         &app,
         "Hinted files: src/a.rs, src/b.rs; 1 of 2 hinted files touched"
     ));
+}
+
+/// The attempts of a hard card as the snapshot has them: one picked with its reason, one that passed, one that failed.
+fn attempts() -> serde_json::Value {
+    json!([
+        {"run": 21, "model": "strong", "status": "succeeded", "result": "passed", "output": "",
+         "picked": true, "reason": "It caps the depth where the tree is built and covers the empty tree."},
+        {"run": 22, "model": "fast", "status": "succeeded", "result": "passed", "output": "", "picked": false},
+        {"run": 23, "model": "strong", "status": "succeeded", "result": "failed", "picked": false,
+         "output": "Test first: the reproduction test `ctest -R tree_depth` does not hold.\nIt fails on the attempt."},
+        {"run": 24, "model": null, "status": "running", "result": null, "output": "", "picked": false}
+    ])
+}
+
+/// The panel of the live view lists the attempts: which passed, which was picked and why, and why one failed. Compare
+/// `tests/snapshots/live-view-attempts-tiny-skia.png`.
+#[test]
+fn the_panel_lists_the_attempts_and_which_was_picked() {
+    let mut board = radiance("Ready");
+    board["cards"][2]["attempts"] = attempts();
+    let app = watching_board("running", None, board);
+    draw(
+        &app,
+        "live-view-attempts",
+        &[
+            "Attempts",
+            "run 21",
+            "picked",
+            "It caps the depth where the tree is built and covers the empty tree.",
+            "passed",
+            "failed",
+            "Test first: the reproduction test `ctest -R tree_depth` does not hold.",
+            "running",
+        ],
+    );
+    // A card tried once has no such line.
+    assert!(!shows(&watching("running"), "Attempts"));
+}
+
+/// The card's page lists the attempts above its history, which says how each fared and which was picked and why:
+/// compare `tests/snapshots/card-attempts-tiny-skia.png`.
+#[test]
+fn the_card_page_shows_the_attempts_and_their_history() {
+    let mut board = radiance("Ready");
+    board["cards"][1]["attempts"] = attempts();
+    let mut app = App::with_snapshot(snapshot(vec![board], vec![]));
+    let _ = app.update(Message::OpenCard(50));
+    let entries = serde_json::from_value(json!([
+        {"at": 1_790_000_000, "kind": "attempt_judged",
+         "data": {"run": 23, "model": "strong", "result": "failed",
+                  "output": "Test first: the reproduction test `ctest -R tree_depth` does not hold.\nIt fails."}},
+        {"at": 1_790_000_050, "kind": "attempt_judged",
+         "data": {"run": 21, "model": "strong", "result": "passed", "output": ""}},
+        {"at": 1_790_000_100, "kind": "attempts_settled",
+         "data": {"runs": [21, 22, 23], "picked": 21,
+                  "reason": "It caps the depth where the tree is built."}}]))
+    .unwrap();
+    let _ = app.update(Message::History(50, Ok(entries)));
+    draw(
+        &app,
+        "card-attempts",
+        &[
+            "Attempts",
+            "Attempt, run 23 (strong), failed: Test first: the reproduction test `ctest -R tree_depth` does not hold.",
+            "Attempt, run 21 (strong), passed",
+            "Picked the attempt of run 21 of 21, 22, 23: It caps the depth where the tree is built.",
+        ],
+    );
 }

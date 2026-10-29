@@ -73,15 +73,7 @@ impl App {
     /// change says nothing about this one.
     pub fn reproduction(&self, card_id: i64) -> Result<Option<Reproduction>> {
         let (_, repository, head, base) = self.change_and_base(card_id)?;
-        let clone = Path::new(&repository.path);
-        let Ok(text) = git(clone, &["show", &format!("{head}:{REPRODUCE}")]) else {
-            return Ok(None);
-        };
-        if git(clone, &["show", &format!("{base}:{REPRODUCE}")]).is_ok_and(|before| before == text)
-        {
-            return Ok(None);
-        }
-        Ok(parse(&text))
+        Ok(reproduction_at(Path::new(&repository.path), &head, &base))
     }
 
     /// Runs `command` on the card's open change, or with `files` on the commit the change was made from with those
@@ -172,6 +164,16 @@ impl App {
     }
 }
 
+/// What the commit `head` says of its reproduction test in `.moebius/reproduce`, none when it has no such file or has it
+/// as `base`, the commit it was made from, has it.
+pub(super) fn reproduction_at(clone: &Path, head: &str, base: &str) -> Option<Reproduction> {
+    let text = git(clone, &["show", &format!("{head}:{REPRODUCE}")]).ok()?;
+    if git(clone, &["show", &format!("{base}:{REPRODUCE}")]).is_ok_and(|before| before == text) {
+        return None;
+    }
+    parse(&text)
+}
+
 fn pending() -> TestRun {
     TestRun {
         status: "pending",
@@ -180,7 +182,11 @@ fn pending() -> TestRun {
 }
 
 /// Checks out `files` as the commit `head` has them in `worktree`; an error names what is missing.
-fn add_files(worktree: &Path, head: &str, files: &[String]) -> std::result::Result<(), String> {
+pub(super) fn add_files(
+    worktree: &Path,
+    head: &str,
+    files: &[String],
+) -> std::result::Result<(), String> {
     if files.is_empty() {
         return Ok(());
     }

@@ -65,6 +65,7 @@ fn made_up_card(lua: &Lua, column: &str, title: &str, author: &str) -> mlua::Res
     t.set("reviews", 0)?;
     t.set("tokens", 0)?;
     t.set("stopped", false)?;
+    t.set("attempts", lua.create_table()?)?;
     Ok(t)
 }
 
@@ -191,6 +192,48 @@ fn recording_api(
             })?,
         )?;
     }
+
+    let (log, started) = (record.clone(), Cell::new(0));
+    m.set(
+        "start_runs",
+        lua.create_function(move |_, (agent, n, opts): (String, i64, Option<Table>)| {
+            let note = opts.and_then(|opts| opts.get::<Option<String>>("note").ok().flatten());
+            log(format!(
+                "started {n} attempts of {agent}{}",
+                with_note(note)
+            ));
+            let first = started.get();
+            started.set(first + n);
+            Ok((first + 1..=first + n).collect::<Vec<_>>())
+        })?,
+    )?;
+
+    let log = record.clone();
+    m.set(
+        "check_attempt",
+        lua.create_function(move |lua, run: i64| {
+            log(format!("started judging attempt {run}"));
+            let table = lua.create_table()?;
+            table.set("status", "pending")?;
+            table.set("output", "")?;
+            Ok(table)
+        })?,
+    )?;
+
+    let log = record.clone();
+    m.set(
+        "settle_attempts",
+        lua.create_function(move |_, (run, reason): (Option<i64>, Option<String>)| {
+            match run {
+                Some(run) => log(format!(
+                    "picked attempt {run}{}",
+                    reason.map_or(String::new(), |why| format!(": {why}"))
+                )),
+                None => log("settled the attempts: none passed".into()),
+            }
+            Ok(())
+        })?,
+    )?;
 
     let log = record.clone();
     m.set(

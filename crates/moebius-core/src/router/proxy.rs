@@ -453,6 +453,34 @@ data: [DONE]\n\n";
     }
 
     #[tokio::test]
+    async fn the_attempts_of_a_card_spend_one_budget_together() {
+        let s = setup().await;
+        let sibling = s
+            .store
+            .add_run(Some(s.card), "Coder", "pi-bolt", "attempt")
+            .unwrap();
+        let token = |run: i64| {
+            s.router.issue_token(Grant {
+                run_id: run,
+                card_id: Some(s.card),
+                budget: Some(15),
+            })
+        };
+        let (first, second) = (token(s.run), token(sibling.id));
+        let client = reqwest::Client::new();
+        let send = |token: String| {
+            client
+                .post(format!("{}/v1/chat/completions", s.url))
+                .bearer_auth(token)
+                .json(&json!({"model": "local", "messages": []}))
+                .send()
+        };
+        // One attempt spends the 15 tokens of the card's budget; the other is refused though it used none.
+        assert_eq!(send(first).await.unwrap().status(), 200);
+        assert_eq!(send(second).await.unwrap().status(), 429);
+    }
+
+    #[tokio::test]
     async fn requests_over_budget_or_without_a_run_token_are_refused() {
         let s = setup().await;
         let token = s.router.issue_token(Grant {

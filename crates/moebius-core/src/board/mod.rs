@@ -3,6 +3,7 @@
 //!
 //! - `engine`: the engine itself, which runs the script of a card's column and applies what it did.
 //! - `api`: the `moebius` table, the functions a script acts through.
+//! - `attempts`: the functions for a card with several attempts, and the `card` fields that show them.
 //! - `card`: the `card` table, what a script knows of its card, and the verdict of its review.
 //! - `review`: the review along two axes, Standards and Spec, read from the summaries of its runs.
 //! - `sandbox`: the Luau sandbox every script runs in, with its memory and time limits.
@@ -13,6 +14,7 @@
 //! - `scripts`: editing a column's script, saved as a commit in the repository.
 
 mod api;
+mod attempts;
 mod card;
 mod dry_run;
 mod engine;
@@ -29,5 +31,5 @@ pub use card::{Review, latest_review};
 pub use dry_run::check_script;
 pub use engine::{BoardError, Engine, Step};
 pub use limits::Limits;
-pub use runs::{AgentInfo, Runs, Tui};
+pub use runs::{AgentInfo, Runs, Tui, Variant};
 pub use workflow::{Column, Workflow, built_in_script, column_named, repository_script};

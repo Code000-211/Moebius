@@ -3,6 +3,8 @@
 //! - `moebius.decide(kind, context, options, fail_closed) -> choice, reason`: a decision point (always recorded).
 //! - `moebius.start_run(agent, purpose, note, runner) -> run id`: starts a run for the card; `note` is added to its
 //!   prompt, and `runner` names the runner (`[[runners]]`) it goes to in place of the agent's own.
+//! - `moebius.start_runs(agent, n, opts) -> run ids`, `moebius.check_attempt(run)`, `moebius.settle_attempts(run, text)`:
+//!   a card tried several times at once (see `attempts`).
 //! - `moebius.has_agent(name)`: whether an agent of that name is configured.
 //! - `moebius.move(column, note)`: moves the card when the script returns; `note` says why, for the next `code` run.
 //! - `moebius.wait(reason)`: leaves the card where it is.
@@ -220,6 +222,8 @@ impl Engine {
                 },
             )?,
         )?;
+
+        self.attempts_api(lua, &m, card, effects.clone(), deadline.clone())?;
 
         let (app, fx, clock) = (self.app.clone(), effects.clone(), deadline);
         m.set(

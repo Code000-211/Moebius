@@ -95,6 +95,32 @@ pub struct Card {
     /// The card's open change.
     #[serde(default)]
     pub change: Option<CardChange>,
+    /// The latest group of attempts, if the card was tried several times at once.
+    #[serde(default)]
+    pub attempts: Vec<Attempt>,
+}
+
+/// One attempt of a card tried several times at once.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Attempt {
+    pub run: i64,
+    /// The model or model class the attempt was started with in place of its agent's.
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Its run's status.
+    #[serde(default)]
+    pub status: String,
+    /// `passed` or `failed` once the tests and checks have judged it.
+    #[serde(default)]
+    pub result: Option<String>,
+    /// Why it failed.
+    #[serde(default)]
+    pub output: String,
+    #[serde(default)]
+    pub picked: bool,
+    /// Why it was picked.
+    #[serde(default)]
+    pub reason: Option<String>,
 }
 
 impl Card {

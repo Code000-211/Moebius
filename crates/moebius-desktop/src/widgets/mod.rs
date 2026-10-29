@@ -1,7 +1,8 @@
-//! The pieces that more than one screen uses or that stand above every screen: the page frame, the transcript of a
-//! run, terminals, editors in place, the pieces of forms and the list with an editor beside it, pickers, icons and the
+//! The pieces that more than one screen uses or that stand above every screen: the page frame, the attempts of a
+//! card, the transcript of a run, terminals, editors in place, the pieces of forms and the list with an editor beside it, pickers, icons and the
 //! floating chat.
 
+pub mod attempts;
 pub mod chat_terminal;
 pub mod conversation;
 pub mod edits;

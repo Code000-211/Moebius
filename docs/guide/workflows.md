@@ -181,6 +181,186 @@ function on_card(card)
 end
 ```
 
+### A hard card: several attempts
+
+Sampling a model several times and keeping the best result solves far more tasks than one attempt does: on SWE-bench
+Lite the share solved rose from 15.9% with one attempt to 56% with 250 (arXiv 2407.21787). Choosing among the samples
+is the hard part. Judging them by execution alone, or by a model alone, stops near 42% on SWE-bench Verified, and
+only both together reach 51% (R2E-Gym, arXiv 2504.07164). So Moebius starts the attempts, runs the card's tests and
+checks on every one, and has a model choose only among those that pass.
+
+Attempts cost several runs, so a repository uses them where they pay. This `code.luau` gives three attempts to a card
+that is **hard**: its title has the marker `[hard]` (cards have no labels, so a marker in the title is how a person
+says it, as `[large]` and `[urgent]` do in [Column scripts](column-scripts.md)), or it was reviewed twice and sent
+back twice (`card.reviews >= 2`). Every other card gets one `Coder` run as before. The attempts use the models of
+`models` in turn; a name can be a model or a model class (see the router reference), so the attempts differ. The
+agent's token budget counts every attempt of the card together, as it counts every round.
+
+<!-- script: code.luau; test: hard-attempts -->
+```luau
+local ATTEMPTS = 3
+local MODELS = { "strong", "fast" }
+
+-- A hard card is tried several times at once.
+local function hard(card)
+  return string.find(card.title, "[hard]", 1, true) ~= nil or card.reviews >= 2
+end
+
+-- Whether a limit keeps `agent` from starting now; the card is then stuck or waits.
+local function limited(card, agent)
+  local budget = moebius.agent_budget(agent)
+  if card.stopped then
+    moebius.stuck("stopped by a person")
+  elseif card.rounds >= moebius.round_limit then
+    moebius.stuck("the round limit is reached")
+  elseif budget ~= nil and card.tokens >= budget then
+    moebius.stuck("the token budget of " .. budget .. " is spent")
+  elseif moebius.day_budget ~= nil and moebius.tokens_today() >= moebius.day_budget then
+    moebius.wait("the daily token budget is spent")
+  else
+    return false
+  end
+  return true
+end
+
+local function running(run)
+  return run.status == "starting" or run.status == "running"
+end
+
+-- The attempts that passed, once every attempt has been judged; nil while any is still being judged.
+local function passing(attempts)
+  local passed, pending = {}, false
+  for _, attempt in ipairs(attempts) do
+    local result = attempt.result or moebius.check_attempt(attempt.run).status
+    if result == "pending" then
+      pending = true
+    elseif result == "passed" then
+      table.insert(passed, attempt)
+    end
+  end
+  if pending then
+    return nil
+  end
+  return passed
+end
+
+-- Why the attempts did not pass, for the next round.
+local function failures(attempts)
+  local lines = { "None of the attempts passed." }
+  for _, attempt in ipairs(attempts) do
+    table.insert(lines, "Attempt, run " .. attempt.run .. ": " .. attempt.output)
+  end
+  return table.concat(lines, "\n\n")
+end
+
+-- The list the selection run is given.
+local function candidates(passed)
+  local lines = {}
+  for _, attempt in ipairs(passed) do
+    local line = "- run " .. attempt.run .. ": branch moebius/run-" .. attempt.run
+    if attempt.model ~= nil then
+      line = line .. ", model " .. attempt.model
+    end
+    table.insert(lines, line)
+  end
+  return table.concat(lines, "\n")
+end
+
+-- Among attempts that all passed, the Reviewer picks one; without a Reviewer, or when it picks none of them, the first.
+local function choose(card, passed)
+  local selection = card.selection
+  if selection == nil then
+    if not moebius.has_agent("Reviewer") then
+      moebius.settle_attempts(passed[1].run, "No Reviewer chooses, so the first attempt that passed is kept.")
+      moebius.move("In review")
+    elseif not limited(card, "Reviewer") then
+      moebius.start_run("Reviewer", "review-select", candidates(passed))
+      moebius.wait("choosing between " .. #passed .. " attempts")
+    end
+  elseif running(selection) then
+    moebius.wait("choosing between " .. #passed .. " attempts")
+  else
+    local pick, reason = passed[1].run, "The selection picked none of them, so the first attempt that passed is kept."
+    for _, attempt in ipairs(passed) do
+      if attempt.run == selection.pick then
+        pick, reason = attempt.run, selection.reason
+      end
+    end
+    moebius.settle_attempts(pick, reason)
+    moebius.move("In review")
+  end
+end
+
+-- The attempts of a round are going, or judged, or settled.
+local function attempts(card)
+  for _, attempt in ipairs(card.attempts) do
+    if running(attempt) then
+      moebius.wait("trying " .. #card.attempts .. " attempts")
+      return
+    end
+  end
+  if card.stopped then
+    moebius.stuck("stopped by a person")
+    return
+  end
+  local passed = passing(card.attempts)
+  if passed == nil then
+    moebius.wait("testing the attempts")
+  elseif #passed == 0 then
+    moebius.settle_attempts(nil, failures(card.attempts))
+    moebius.wait("no attempt passed")
+  elseif #passed == 1 then
+    moebius.settle_attempts(passed[1].run, "The only attempt that passed.")
+    moebius.move("In review")
+  else
+    choose(card, passed)
+  end
+end
+
+function on_card(card)
+  local run = card.run
+  if #card.attempts > 0 then
+    attempts(card)
+  elseif run ~= nil and running(run) then
+    moebius.wait("coding")
+  elseif run ~= nil and run.purpose == "code" and run.status == "succeeded" and card.note == nil then
+    moebius.move("In review")
+  elseif limited(card, "Coder") then
+    return
+  elseif hard(card) then
+    moebius.start_runs("Coder", ATTEMPTS, { models = MODELS, note = card.note })
+    moebius.wait("trying " .. ATTEMPTS .. " attempts")
+  else
+    moebius.start_run("Coder", "code", card.note)
+    moebius.wait("coding")
+  end
+end
+```
+
+What happens, in order:
+
+1. `moebius.start_runs("Coder", 3, ...)` starts three runs with the purpose `attempt`, each in a worktree and on a branch
+   `moebius/run-<id>` of its own, all from the branch of the card's latest successful `code` run (the default branch
+   for a first round). Each is told what a `code` run is told, test-first rule included. They show in the card's
+   history, and in the live view as the card's attempts.
+2. When an attempt has succeeded, `moebius.check_attempt(run)` judges it in a throwaway worktree: the repository's
+   own checks (`.moebius/checks`, without a forge) must pass, and in a repository that works test first the
+   reproduction test the attempt names must fail on the commit it starts from and pass on the attempt, as for a change
+   (see [Test first](#test-first)). An attempt whose run failed has failed too, and the output of what did not hold is
+   kept with it.
+3. If none passed, `moebius.settle_attempts(nil, note)` ends the round as a failed one (it counts in `card.rounds`,
+   so `board.round_limit` bounds the cost) and the next tick starts new attempts, told what failed.
+4. If exactly one passed, it is picked without a selection run: `moebius.settle_attempts(run, reason)` makes its run
+   the card's `code` run, and the card moves to `In review`, where the change is published, checked and reviewed as any
+   other.
+5. If several passed, a selection run (purpose `review-select`) of the Reviewer reads all of their diffs, gives its
+   reasons and ends with a last line `PICK: <run id>`. `card.selection` holds the pick and the reasons, and the script
+   settles on that attempt. A selection that names none of the candidates leaves the first that passed.
+
+The attempts that were not picked keep their branches (`moebius/run-<id>`) until the card is done. The reasons are
+recorded: the card's page shows, for each attempt, whether it passed or why it failed, which one was picked and why.
+The exact functions are in the [column script reference](../reference/column-scripts.md#attempts).
+
 ### Ready to merge
 
 Offering the change adds an inbox item `ready_to_merge` with `{change, branch}`, publishes the event `change_offered` and

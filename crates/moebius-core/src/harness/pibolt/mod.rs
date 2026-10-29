@@ -52,7 +52,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 
 use crate::app::{App, ChatSettings};
-use crate::board::{AgentInfo, Runs};
+use crate::board::{AgentInfo, Runs, Variant};
 use crate::config::{AgentConfig, AgentSet};
 use crate::harness::remote::Runners;
 use crate::router::Router;
@@ -214,9 +214,27 @@ impl Runs for PiBolt {
         note: Option<&str>,
         runner: Option<&str>,
     ) -> Result<Run, String> {
+        let variant = Variant {
+            model: None,
+            runner,
+        };
+        self.start_with(app, card, agent, (purpose, note), variant)
+    }
+
+    fn start_with(
+        &self,
+        app: &Arc<App>,
+        card: &Card,
+        agent: &str,
+        (purpose, note): (&str, Option<&str>),
+        variant: Variant,
+    ) -> Result<Run, String> {
         let mut config = self.agent(app, agent)?;
-        if runner.is_some() {
-            config.runner = runner.map(String::from);
+        if variant.runner.is_some() {
+            config.runner = variant.runner.map(String::from);
+        }
+        if let Some(model) = variant.model {
+            config.model = model.into();
         }
         let prompt = run_prompt(app, card, purpose, note);
         let code_branch = app.store.code_branch(card.id).map_err(|e| e.to_string())?;

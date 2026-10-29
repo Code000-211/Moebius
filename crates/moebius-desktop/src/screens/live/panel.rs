@@ -9,7 +9,7 @@ use iced::{Border, Element, Length, Padding};
 use crate::app::Message as AppMessage;
 use crate::client::{Board, Card};
 use crate::theme;
-use crate::widgets::page;
+use crate::widgets::{attempts, page};
 
 use super::Live;
 use super::view::{count_rules, harness_name};
@@ -55,6 +55,9 @@ impl Live {
                 None,
                 text(runner.as_str()).size(theme::BODY).into(),
             ));
+        }
+        if !card.attempts.is_empty() {
+            items.push(item("Attempts", None, attempts::list(&card.attempts)));
         }
         let mut judgements =
             row![text(format!("{} saved", self.judgements.len())).size(theme::BODY)];

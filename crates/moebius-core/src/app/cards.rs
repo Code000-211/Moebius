@@ -254,8 +254,8 @@ impl App {
         self.card(card_id)
     }
 
-    /// What happened to a card, oldest first: its moves (since they were recorded), its runs starting and ending,
-    /// the decisions made for it and its inbox items.
+    /// What happened to a card, oldest first: its moves (since they were recorded), its runs starting and ending, how
+    /// each of its attempts fared and which was picked, the decisions made for it and its inbox items.
     pub fn card_history(&self, card_id: i64) -> Result<Vec<HistoryEntry>> {
         self.card(card_id)?;
         let mut history = Vec::new();
@@ -270,6 +270,30 @@ impl App {
                 let data = json!({ "run": run.id, "status": run.status });
                 history.push(HistoryEntry::new(ended_at, "run_ended", data));
             }
+        }
+        let attempts = self.store.attempts_for_card(card_id)?;
+        for a in &attempts {
+            if let (Some(at), Some(result)) = (a.judged_at, &a.result) {
+                let data = json!({ "run": a.run_id, "model": a.model, "result": result, "output": a.output });
+                history.push(HistoryEntry::new(at, "attempt_judged", data));
+            }
+        }
+        let mut groups: Vec<(i64, Vec<&crate::store::Attempt>)> = Vec::new();
+        for a in attempts.iter().filter(|a| a.settled) {
+            match groups.iter_mut().find(|(group, _)| *group == a.group_id) {
+                Some((_, runs)) => runs.push(a),
+                None => groups.push((a.group_id, vec![a])),
+            }
+        }
+        for (_, runs) in groups {
+            let picked = runs.iter().find(|a| a.picked);
+            let data = json!({
+                "runs": runs.iter().map(|a| a.run_id).collect::<Vec<_>>(),
+                "picked": picked.map(|a| a.run_id),
+                "reason": picked.and_then(|a| a.reason.clone()),
+            });
+            let at = runs.iter().filter_map(|a| a.settled_at).max().unwrap_or(0);
+            history.push(HistoryEntry::new(at, "attempts_settled", data));
         }
         for j in self.store.judgements_for_card(card_id)? {
             let data = json!({

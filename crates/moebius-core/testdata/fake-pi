@@ -4,6 +4,8 @@
 # a prompt for the reviewer changes nothing and answers with a verdict; any other prompt writes a file and settles.
 # The text of `--append-system-prompt` containing "[write anyway]" makes the run write a file whatever the prompt says;
 # containing "[break careful]", it makes a prompt containing "[careful]" change nothing.
+# A run whose model is named "NAME:TEXT" also writes TEXT to attempt.txt, so that attempts at one issue differ; a prompt that
+# lists attempts ("Several attempts were made") picks the last one listed by "- run ID:" and says so on its last line.
 # A prompt that does not start with "Work on issue" is a chat message: it is answered with "You said: <message>" (and
 # writes the file NAME, with its directories, first if it contains "[write NAME]", and makes the branch BRANCH from the
 # commit it starts at, with a commit that appends to the file FILE, for each "[propose BRANCH FILE]" in it; a
@@ -152,7 +154,8 @@ for line in sys.stdin.buffer:
                 {"role": "assistant", "content": [{"type": "text", "text": answer}]}]})
             emit({"type": "agent_settled", "aborted": False})
             continue
-        reviewing = "You are the reviewer" in command["message"]
+        selecting = "Several attempts were made" in command["message"]
+        reviewing = "You are the reviewer" in command["message"] or selecting
         emit({"type": "message_update",
               "assistantMessageEvent": {"type": "text_delta", "contentIndex": 0, "delta": "line one line two"}})
         nothing = "[nothing]" in command["message"] and "[write anyway]" not in instructions
@@ -163,12 +166,18 @@ for line in sys.stdin.buffer:
             with open("done.txt", "w") as f:
                 f.write("done\n")
             emit({"type": "tool_execution_end", "toolCallId": "t1", "toolName": "write", "isError": False})
+        model = sys.argv[sys.argv.index("--model") + 1] if "--model" in sys.argv else ""
+        if ":" in model and not reviewing:
+            with open("attempt.txt", "w") as f:
+                f.write(model.rsplit(":", 1)[1] + "\n")
         if "[commit]" in command["message"]:
             # Leaves the worktree clean, with its own commit.
             with open("own.txt", "w") as f:
                 f.write("own\n")
             os.system("git add own.txt && git -c user.name=pi -c user.email=pi@example.com commit -q -m own")
         answer = "Looks fine.\nVERDICT: approve" if reviewing else "line one line two"
+        if selecting:
+            answer = "Both are fine; the last one is clearer.\nPICK: " + re.findall(r"- run (\d+):", command["message"])[-1]
         emit({"type": "agent_end", "willRetry": False, "messages": [
             {"role": "user", "content": command["message"]},
             {"role": "assistant", "content": [{"type": "text", "text": "Working on it."},

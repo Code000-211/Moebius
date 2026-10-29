@@ -42,7 +42,9 @@ mod webhooks;
 #[cfg(test)]
 mod testing;
 
-pub use cards::{Board, CardView, ChangeView, EditedCard, Merged, NewIssue, RunView, Snapshot};
+pub use cards::{
+    AttemptView, Board, CardView, ChangeView, EditedCard, Merged, NewIssue, RunView, Snapshot,
+};
 pub use chats::{ChatMessage, ConfirmedIssues, NewChat, NewChatSettings};
 pub use improve::{DayUsage, UsageAnswer, UsageTotals};
 pub use repositories::{EditedRepository, NewRepository};

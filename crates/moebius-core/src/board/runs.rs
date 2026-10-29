@@ -67,6 +67,14 @@ impl Drop for Tui {
     }
 }
 
+/// How one run of a card differs from the agent it is a run of: the model or model class it uses in place of the
+/// agent's, and the runner it goes to.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Variant<'a> {
+    pub model: Option<&'a str>,
+    pub runner: Option<&'a str>,
+}
+
 /// Starts runs for the engine and the chats. The real ones drive a harness (Pi-Bolt, Claude Code); tests use fakes.
 pub trait Runs: Send + Sync {
     /// Starts a run for `card` and returns it without waiting for it to end.
@@ -93,6 +101,22 @@ pub trait Runs: Send + Sync {
         match runner {
             None => self.start(app, card, agent, purpose, note),
             Some(_) => Err("this harness has no runners".into()),
+        }
+    }
+
+    /// Starts a run as `start_on` does, with the model or model class `variant` names in place of the agent's. A
+    /// harness that cannot choose a model refuses one.
+    fn start_with(
+        &self,
+        app: &Arc<App>,
+        card: &Card,
+        agent: &str,
+        (purpose, note): (&str, Option<&str>),
+        variant: Variant,
+    ) -> Result<Run, String> {
+        match variant.model {
+            None => self.start_on(app, card, agent, purpose, note, variant.runner),
+            Some(_) => Err("this harness cannot choose the model of a run".into()),
         }
     }
 

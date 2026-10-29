@@ -24,6 +24,8 @@ pub(super) struct FakeHarness {
     pub(super) files: Vec<(&'static str, &'static str)>,
     /// Other agents that exist besides the Coder and the Reviewer.
     pub(super) agents: Vec<&'static str>,
+    /// The model each run started with `start_with` was given.
+    pub(super) models: Mutex<Vec<Option<String>>>,
 }
 
 impl FakeHarness {
@@ -60,7 +62,7 @@ impl Runs for FakeHarness {
             .repos
             .add_worktree(&repo.name, clone, run.id, &base)
             .map_err(|e| e.to_string())?;
-        if purpose == "code" {
+        if matches!(purpose, "code" | "attempt") {
             std::fs::write(wt.path.join(format!("run-{}.txt", run.id)), &card.title).unwrap();
             for (path, text) in &self.files {
                 std::fs::create_dir_all(wt.path.join(path).parent().unwrap()).unwrap();
@@ -78,6 +80,21 @@ impl Runs for FakeHarness {
         app.repos.remove_worktree(clone, &wt.path).unwrap();
         store.set_run_status(run.id, "succeeded").unwrap();
         Ok(store.run(run.id).unwrap().unwrap())
+    }
+
+    fn start_with(
+        &self,
+        app: &Arc<App>,
+        card: &Card,
+        agent: &str,
+        (purpose, note): (&str, Option<&str>),
+        variant: super::Variant,
+    ) -> Result<Run, String> {
+        self.models
+            .lock()
+            .unwrap()
+            .push(variant.model.map(String::from));
+        self.start(app, card, agent, purpose, note)
     }
 
     fn has_agent(&self, name: &str) -> bool {

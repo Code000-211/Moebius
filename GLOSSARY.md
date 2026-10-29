@@ -135,6 +135,12 @@ The columns a card goes through on its own and the behaviour behind them, by def
 back to coding while anything is still wrong, until its change is ready to merge; a person steps in only before the merge.
 _Avoid_: pipeline, process, flow
 
+**Attempt**:
+One of several runs a hard card gets in one go, each in a worktree and on a branch of its own and perhaps with another
+model; each is judged by the repository's checks and the reproduction test, and one that passed is picked, by a selection
+run when several did. The one picked becomes the card's `code` run.
+_Avoid_: sample, candidate, try
+
 **Review axes**:
 The two reviews of a round, Standards (does the change follow the repository's rules) and Spec (does it do what the
 issue asked); each finding is blocking or a judgement call and cites its evidence, and only blocking findings send the
@@ -149,7 +155,7 @@ _Avoid_: regression test, acceptance test
 **Experiment**:
 Changing one thing on a branch of its own, measuring the result and keeping the change only if it is better; a trial and each
 step of an autoresearch are experiments, which differ only in how they measure.
-_Avoid_: attempt, probe, A/B test
+_Avoid_: probe, A/B test
 
 **Autoresearch**:
 A loop, bounded by its brief, that first measures a baseline for anything measurable and then has a harness keep finding new

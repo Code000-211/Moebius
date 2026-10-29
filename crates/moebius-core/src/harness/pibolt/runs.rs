@@ -286,6 +286,15 @@ const SPEC_PROMPT: &str = "You are the reviewer of the spec. You are in a git wo
      change does that the issue did not ask for, and what looks implemented but wrong. For each, the evidence is \
      the line of the issue it rests on or the hunk that shows it. ";
 
+/// What a `review-select` run is told after the issue: which of several attempts that all passed to keep.
+const SELECT_PROMPT: &str = "Several attempts were made at this issue, each on a branch of its own, and every one \
+     passed the repository's tests and checks, which are listed below the issue. You are in a git worktree; choose \
+     the attempt to keep. See an attempt with `git diff {base}...<its branch>`. Compare them on whether each does what \
+     the issue asks and nothing else, how small and clear the change is, whether it follows CONTRIBUTING.md, \
+     CLAUDE.md and AGENTS.md, whichever of them exist, and whether it leaves a case unhandled. Give your reasons for \
+     each attempt in a few lines. Do not edit any files. End your answer with one last line `PICK: <run id>` naming \
+     exactly one of the attempts by the run id the list gives.";
+
 /// Writes `files` (paths relative to `worktree`, and their text) into the worktree and keeps them out of git: the first
 /// directory of each path is added to the clone's `info/exclude`, which its worktrees share.
 fn write_untracked(worktree: &Path, files: &BTreeMap<String, String>) -> Result<(), String> {
@@ -357,7 +366,7 @@ pub(in crate::harness) fn run_prompt(
     purpose: &str,
     note: Option<&str>,
 ) -> String {
-    let hint = (purpose == "code")
+    let hint = matches!(purpose, "code" | "attempt")
         .then(|| app.localize_hint(card))
         .flatten();
     prompt_with(app, card, purpose, note, hint.as_deref())
@@ -406,6 +415,7 @@ fn prompt_with(
             prompt.push_str(&SPEC_PROMPT.replace("{base}", &base()));
             prompt.push_str(FINDINGS_FORMAT);
         }
+        "review-select" => prompt.push_str(&SELECT_PROMPT.replace("{base}", &base())),
         _ => prompt.push_str(CODE_PROMPT),
     }
     prompt.push('\n');
@@ -430,7 +440,11 @@ fn prompt_with(
         prompt.push('\n');
     }
     if let Some(note) = note {
-        prompt.push_str("\nNotes from the last round:\n\n");
+        let heading = match purpose {
+            "review-select" => "The attempts:",
+            _ => "Notes from the last round:",
+        };
+        prompt.push_str(&format!("\n{heading}\n\n"));
         prompt.push_str(note);
         prompt.push('\n');
     }

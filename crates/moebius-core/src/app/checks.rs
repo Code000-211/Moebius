@@ -100,7 +100,7 @@ impl App {
 
     /// The repository's own checks: the command in `.moebius/checks` on its default branch. None for a repository on a
     /// forge, which has its own checks, and for one without that file.
-    fn checks_script(&self, repository: &Repository) -> Option<String> {
+    pub(super) fn checks_script(&self, repository: &Repository) -> Option<String> {
         if repository.forge != "none" {
             return None;
         }
@@ -110,7 +110,7 @@ impl App {
 
     /// Runs `script` on the commit `rev` in a throwaway worktree named `name` and returns whether it succeeded and the
     /// end of its output.
-    fn run_script_on(
+    pub(super) fn run_script_on(
         &self,
         repository: &Repository,
         name: &str,
