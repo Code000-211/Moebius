@@ -148,13 +148,13 @@ fn warning<'a>(line: &'a str) -> Element<'a, AppMessage> {
             .color(theme::AMBER_TEXT)
             .wrapping(Wrapping::WordOrGlyph),
     )
-    .padding([10, 14])
+    .padding([theme::SPACE_12, theme::BOX_PADDING])
     .width(Length::Fill)
     .style(|_| container::Style {
         background: Some(theme::AMBER_FILL.into()),
         border: iced::Border {
             color: theme::AMBER_BORDER,
-            width: 1.0,
+            width: theme::HAIRLINE,
             radius: theme::RADIUS_CARD.into(),
         },
         ..container::Style::default()
@@ -192,9 +192,9 @@ pub(super) fn login_view<'a>(
             .width(Length::Fill),
         page::white_button(label, pressable.then(|| message(Message::LogIn(place)))),
     ]
-    .spacing(12)
+    .spacing(theme::SPACE_12)
     .align_y(Alignment::Center);
-    let mut content = column![head, warning(&oauth.warning)].spacing(10);
+    let mut content = column![head, warning(&oauth.warning)].spacing(theme::SPACE_12);
     match step {
         None => {}
         Some(LoginStep::Confirming) => {
@@ -206,7 +206,7 @@ pub(super) fn login_view<'a>(
                     ),
                     page::white_button("Cancel", Some(message(Message::CancelLogIn(place)))),
                 ]
-                .spacing(10),
+                .spacing(theme::SPACE_12),
             );
         }
         Some(LoginStep::Starting) => content = content.push(page::body("Starting the login…")),
@@ -221,7 +221,7 @@ fn answer<'a>(place: usize, login: &'a Login) -> Element<'a, AppMessage> {
     let message = |message| AppMessage::Setup(message);
     match login.state.as_str() {
         "waiting" => {
-            let mut waiting = column![].spacing(8);
+            let mut waiting = column![].spacing(theme::SPACE_8);
             if let Some(code) = &login.user_code {
                 let page_url = login
                     .verification_uri_complete
@@ -247,13 +247,13 @@ fn answer<'a>(place: usize, login: &'a Login) -> Element<'a, AppMessage> {
                             Some(message(Message::OpenPage(page_url)))
                         ),
                     ]
-                    .spacing(14)
+                    .spacing(theme::SPACE_12)
                     .align_y(Alignment::Center),
                 );
             } else if let Some(url) = &login.authorize_url {
                 waiting = waiting.push(
                     row![
-                        text("The provider's page was opened in your browser; log in there.")
+                        text("The provider's page opened in your browser. Log in there.")
                             .size(theme::BODY)
                             .color(theme::TEXT_SECONDARY)
                             .width(Length::Fill),
@@ -262,7 +262,7 @@ fn answer<'a>(place: usize, login: &'a Login) -> Element<'a, AppMessage> {
                             Some(message(Message::OpenPage(url.clone())))
                         ),
                     ]
-                    .spacing(14)
+                    .spacing(theme::SPACE_12)
                     .align_y(Alignment::Center),
                 );
             }

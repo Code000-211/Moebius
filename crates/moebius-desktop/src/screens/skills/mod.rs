@@ -358,9 +358,9 @@ impl Skills {
             "Skills",
             None,
             page::context(
-                "What an agent can be given: the skills in skills/ of the harness configuration repository, and the one Moebius brings. An edit is a commit.",
+                "Skills an agent can be given: skills/ of the harness repository, and Moebius's own. An edit is a commit.",
             ),
-            row(buttons).spacing(10).into(),
+            row(buttons).spacing(theme::SPACE_12).into(),
         );
         if !self.editable() {
             // Until the server has said, nothing is offered.
@@ -388,8 +388,8 @@ impl Skills {
                 Some(AppMessage::Skills(Message::Select(skill.name.clone()))),
             )
         }))
-        .spacing(8)
-        .padding(iced::Padding::default().right(12));
+        .spacing(theme::SPACE_8)
+        .padding(iced::Padding::default().right(theme::SCROLL_GUTTER));
         let mut detail = column![].spacing(theme::PAGE_GAP).width(Length::Fill);
         if let Some(editor) = &self.editor {
             detail = detail.push(editor_view(editor));
@@ -430,7 +430,7 @@ fn editor_view(editor: &Editor) -> Element<'_, AppMessage> {
     let message = AppMessage::Skills;
     let actions = if editor.built_in {
         let mut actions = row![page::tag("Built in · read only".to_string(), Tone::Plain)]
-            .spacing(10)
+            .spacing(theme::SPACE_12)
             .align_y(Alignment::Center);
         if editor.source.is_some() {
             actions = actions.push(page::white_button(
@@ -464,7 +464,7 @@ fn editor_view(editor: &Editor) -> Element<'_, AppMessage> {
         move |name| message(Message::NameEdited(name)),
         actions,
     );
-    let mut top = column![head].spacing(12);
+    let mut top = column![head].spacing(theme::SPACE_12);
     if editor.reading {
         top = top.push(page::body("Reading the skill…"));
     } else {
@@ -477,7 +477,7 @@ fn editor_view(editor: &Editor) -> Element<'_, AppMessage> {
             )
             .on_input(move |text| message(Message::DescriptionEdited(text)))
             .size(theme::BODY)
-            .padding([9, 12])
+            .padding(theme::CONTROL_PADDING)
             .style(connect::input_style)
             .into()
         };
@@ -489,7 +489,7 @@ fn editor_view(editor: &Editor) -> Element<'_, AppMessage> {
                 source.commit.get(..12).unwrap_or(&source.commit),
             )));
             top = top.push(aside(
-                "A skill with this name in the harness configuration repository replaces it.",
+                "A skill of this name in the harness repository replaces it.",
             ));
         }
     }
@@ -516,10 +516,10 @@ fn editor_view(editor: &Editor) -> Element<'_, AppMessage> {
                     &editor.text,
                     "What the skill teaches the agent, in Markdown.",
                     (!editor.built_in).then_some(text_action as fn(_) -> _),
-                    360,
+                    theme::EDITOR_FULL,
                 ),
             ]
-            .spacing(12),
+            .spacing(theme::SPACE_12),
         ));
     }
     boxes.into()

@@ -12,10 +12,11 @@ use crate::client::{Client, ClientError, SavedSettings};
 use crate::screens::live::say;
 use crate::settings::Settings;
 use crate::theme;
+use crate::widgets::form::notice_line;
 use crate::widgets::page;
 
 /// What the box says, and why the buttons that need a repository are muted.
-pub const NEEDED: &str = "Skills, MCP servers and imports need a harness configuration repository. Set it up here: your agents and rules move into it.";
+pub const NEEDED: &str = "Skills, MCP servers and imports need a harness configuration repository. Set it up here; your agents and rules move into it.";
 
 /// The tooltip of a button that needs a repository.
 pub const WHY_MUTED: &str = "Needs a harness configuration repository: set it up above.";
@@ -113,24 +114,25 @@ impl HarnessSetup {
                 .size(theme::BODY)
                 .font(theme::manrope(Weight::Semibold))
         ]
-        .spacing(4)
+        .spacing(theme::SPACE_4)
         .width(Length::Fill);
         if self.restarting {
             words = words.push(page::body(
-                "Set up. The server restarts, and the app connects again by itself.",
+                "Set up. The server restarts and the app reconnects by itself.",
             ));
         }
         if let Some(error) = &self.error {
-            words = words.push(
-                text(error.as_str())
-                    .size(theme::CONTEXT)
-                    .color(theme::RED_TEXT),
-            );
+            words = words.push(notice_line(error, true));
         }
         container(
-            row![words, space::horizontal().width(14), self.button(),].align_y(Alignment::Center),
+            row![
+                words,
+                space::horizontal().width(theme::SPACE_12),
+                self.button(),
+            ]
+            .align_y(Alignment::Center),
         )
-        .padding(20)
+        .padding(theme::BOX_PADDING)
         .width(Length::Fill)
         .style(|_| page::box_style())
         .into()
@@ -141,8 +143,8 @@ impl HarnessSetup {
 pub fn muted<'a>(button: Element<'a, AppMessage>) -> Element<'a, AppMessage> {
     iced::widget::tooltip(
         button,
-        container(text(WHY_MUTED).size(theme::LABEL))
-            .padding([4, 8])
+        container(text(WHY_MUTED).size(theme::LABEL).font(theme::MONO))
+            .padding(theme::SMALL_BUTTON_PADDING)
             .style(|_| page::box_style()),
         iced::widget::tooltip::Position::Bottom,
     )

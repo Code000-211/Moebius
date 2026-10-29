@@ -11,6 +11,7 @@ use crate::client::{Client, ClientError, NewRepository, Repository};
 use crate::screens::connect;
 use crate::settings::Settings;
 use crate::theme;
+use crate::widgets::form::notice_line;
 use crate::widgets::page;
 
 /// The forge a new repository is on.
@@ -145,13 +146,13 @@ impl AddRepository {
             text(label)
                 .size(theme::LABEL)
                 .font(theme::manrope(Weight::Semibold))
-                .color(theme::SIDEBAR_GROUP)
+                .color(theme::TEXT_SECONDARY)
         };
         let field = |placeholder: &'static str, value: &str, edited: fn(String) -> Message| {
             text_input(placeholder, value)
                 .on_input(move |value| message(edited(value)))
                 .size(theme::BODY)
-                .padding([9, 12])
+                .padding(theme::CONTROL_PADDING)
                 .style(connect::input_style)
         };
         let add = (!self.adding && self.request().is_some()).then_some(message(Message::Add));
@@ -165,8 +166,7 @@ impl AddRepository {
                 Message::UrlEdited
             ),
             page::body(
-                "Anything git clone takes: a URL, or a path on the server. A path that does not exist yet, \
-                 or an empty folder, becomes a new repository.",
+                "Anything git clone takes, or a path on the server. A new or empty path becomes a new repository.",
             ),
             label("Forge"),
             row([
@@ -181,9 +181,9 @@ impl AddRepository {
                 false,
                 message(Message::ForgeChosen(forge))
             )))
-            .spacing(8),
+            .spacing(theme::SPACE_8),
         ]
-        .spacing(10);
+        .spacing(theme::SPACE_12);
         match self.forge {
             Forge::None => {}
             Forge::GitHub => {
@@ -193,7 +193,7 @@ impl AddRepository {
                     .push(label("Trusted authors"))
                     .push(field("leon, mona", &self.trusted, Message::TrustedEdited))
                     .push(page::body(
-                        "GitHub logins, separated by commas. Their issues need no approval.",
+                        "GitHub logins, comma separated. Their issues need no approval.",
                     ));
             }
             Forge::GitLab => {
@@ -205,13 +205,12 @@ impl AddRepository {
                         Message::ProjectEdited,
                     ))
                     .push(page::body(
-                        "The project's path, groups first. The server reaches the GitLab of [gitlab] in its \
-                         settings with its access token.",
+                        "Project path, groups first. The server uses the token of [gitlab] in its settings.",
                     ))
                     .push(label("Trusted authors"))
                     .push(field("leon, mona", &self.trusted, Message::TrustedEdited))
                     .push(page::body(
-                        "GitLab usernames, separated by commas. Their issues need no approval.",
+                        "GitLab usernames, comma separated. Their issues need no approval.",
                     ));
             }
             Forge::Forgejo => {
@@ -219,23 +218,18 @@ impl AddRepository {
                     .push(label("Forgejo repository"))
                     .push(field("acme/radiance", &self.project, Message::ProjectEdited))
                     .push(page::body(
-                        "Owner and name, as on Codeberg. The server reaches the Forgejo of [forgejo] in its \
-                         settings with its access token.",
+                        "Owner and name, as on Codeberg. The server uses the token of [forgejo] in its settings.",
                     ))
                     .push(label("Trusted authors"))
                     .push(field("leon, mona", &self.trusted, Message::TrustedEdited))
                     .push(page::body(
-                        "Forgejo logins, separated by commas. Their issues need no approval.",
+                        "Forgejo logins, comma separated. Their issues need no approval.",
                     ));
             }
         }
         content = content.push(row![page::primary_button("Add", add)]);
         if let Some(failed) = &self.failed {
-            content = content.push(
-                text(failed.as_str())
-                    .size(theme::BODY)
-                    .color(theme::RED_TEXT),
-            );
+            content = content.push(notice_line(failed, true));
         }
         column![
             page::header(

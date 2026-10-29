@@ -40,7 +40,7 @@ pub(super) fn optional_box<'a>(
                 page::body(line),
                 page::white_button("Turn on", Some(toggle))
             ]
-            .spacing(12),
+            .spacing(theme::SPACE_12),
         );
     }
     let mut models_note = models_note;
@@ -52,7 +52,7 @@ pub(super) fn optional_box<'a>(
         };
         field_view(field, note)
     }))
-    .spacing(12);
+    .spacing(theme::SPACE_12);
     if let (Some((owner, secrets)), Some((now, _))) = (key, &optional.key) {
         fields = fields.push(key_view(owner, now, secrets));
     }
@@ -63,7 +63,7 @@ pub(super) fn optional_box<'a>(
             fields,
             page::white_button("Turn off", Some(toggle)),
         ]
-        .spacing(12),
+        .spacing(theme::SPACE_12),
     )
 }
 
@@ -79,7 +79,7 @@ pub(super) fn field_view<'a>(
             let options: Vec<String> = options.iter().map(|o| o.to_string()).collect();
             pick_list(options, Some(field.text.clone()), on_input)
                 .text_size(theme::BODY)
-                .padding([9, 12])
+                .padding(theme::CONTROL_PADDING)
                 .width(Length::Fill)
                 .style(pick_style)
                 .menu_style(menu_style)
@@ -106,13 +106,13 @@ pub(super) fn field_view<'a>(
             } else {
                 theme::BODY
             })
-            .padding([9, 12])
+            .padding(theme::CONTROL_PADDING)
             .style(connect::input_style)
             .into(),
     };
     let mut head = row![
         text(field.label)
-            .size(13)
+            .size(theme::LABEL)
             .font(theme::manrope(Weight::Semibold))
             .color(theme::TEXT_SECONDARY),
         space::horizontal(),
@@ -124,10 +124,11 @@ pub(super) fn field_view<'a>(
         head = head.push(
             text(format!("Default {default}"))
                 .size(theme::LABEL)
+                .font(theme::MONO)
                 .color(theme::TEXT_MUTED),
         );
     }
-    let mut shown = column![head, input].spacing(5);
+    let mut shown = column![head, input].spacing(theme::SPACE_4);
     if let Some(note) = note {
         shown = shown.push(note);
     }
@@ -146,7 +147,7 @@ pub(super) fn upstream_row<'a>(
         message(Message::UpstreamProtocol(place, p))
     })
     .text_size(theme::BODY)
-    .padding([9, 12])
+    .padding(theme::CONTROL_PADDING)
     .width(Length::Fill)
     .style(pick_style)
     .menu_style(menu_style);
@@ -154,7 +155,7 @@ pub(super) fn upstream_row<'a>(
         .on_input(move |url| message(Message::UpstreamUrl(place, url)))
         .font(theme::MONO)
         .size(theme::CODE)
-        .padding([9, 12])
+        .padding(theme::CONTROL_PADDING)
         .style(connect::input_style);
     row![
         container(labelled("Protocol", protocol)).width(Length::FillPortion(2)),
@@ -169,9 +170,9 @@ pub(super) fn upstream_row<'a>(
             "Remove",
             Some(message(Message::RemoveUpstream(place)))
         ))
-        .padding(Padding::default().top(21)),
+        .padding(Padding::default().top(theme::FIELD_LABEL_OFFSET)),
     ]
-    .spacing(12)
+    .spacing(theme::SPACE_12)
     .align_y(Alignment::Start)
     .into()
 }
@@ -183,13 +184,13 @@ pub(super) fn class_row(place: usize, class: &Class) -> Element<'_, AppMessage> 
         .on_input(move |name| message(Message::ClassName(place, name)))
         .font(theme::MANROPE)
         .size(theme::BODY)
-        .padding([9, 12])
+        .padding(theme::CONTROL_PADDING)
         .style(connect::input_style);
     let models = text_input("claude-opus-5, qwen-local", &class.models)
         .on_input(move |models| message(Message::ClassModels(place, models)))
         .font(theme::MONO)
         .size(theme::CODE)
-        .padding([9, 12])
+        .padding(theme::CONTROL_PADDING)
         .style(connect::input_style);
     row![
         container(labelled("Class", name)).width(Length::FillPortion(2)),
@@ -198,9 +199,9 @@ pub(super) fn class_row(place: usize, class: &Class) -> Element<'_, AppMessage> 
             "Remove",
             Some(message(Message::RemoveClass(place)))
         ))
-        .padding(Padding::default().top(21)),
+        .padding(Padding::default().top(theme::FIELD_LABEL_OFFSET)),
     ]
-    .spacing(12)
+    .spacing(theme::SPACE_12)
     .align_y(Alignment::Start)
     .into()
 }
@@ -226,7 +227,7 @@ fn key_view<'a>(
         },
     )
     .text_size(theme::BODY)
-    .padding([9, 12])
+    .padding(theme::CONTROL_PADDING)
     .width(Length::Fill)
     .style(pick_style)
     .menu_style(menu_style);
@@ -236,7 +237,7 @@ fn key_view<'a>(
             .on_input(move |env| message(Message::KeyEnv(owner, env)))
             .font(theme::MONO)
             .size(theme::CODE)
-            .padding([9, 12])
+            .padding(theme::CONTROL_PADDING)
             .style(connect::input_style)
             .into(),
         KeyMode::Typed => {
@@ -255,7 +256,7 @@ fn key_view<'a>(
             .on_input(move |typed| message(Message::KeyTyped(owner, typed)))
             .secure(true)
             .size(theme::BODY)
-            .padding([9, 12])
+            .padding(theme::CONTROL_PADDING)
             .style(connect::input_style)
             .into()
         }
@@ -264,6 +265,6 @@ fn key_view<'a>(
         container(labelled("Key", mode)).width(Length::FillPortion(1)),
         container(labelled(" ", detail)).width(Length::FillPortion(1)),
     ]
-    .spacing(12)
+    .spacing(theme::SPACE_12)
     .into()
 }

@@ -127,10 +127,7 @@ fn a_file_that_is_not_text_is_listed_with_its_size_and_cannot_be_edited() {
         "logo.png".into(),
         Ok(binary),
     )));
-    assert!(shows(
-        &app,
-        "This file is not text, or too large to edit here (4.2 KB); it is kept as it is."
-    ));
+    assert!(shows(&app, "Not text, or too large to edit (4.2 KB)."));
     assert!(clicked(&app, "Save file").is_empty());
     assert!(matches!(
         &clicked(&app, "Delete file")[..],

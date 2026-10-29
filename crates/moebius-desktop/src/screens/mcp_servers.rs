@@ -4,9 +4,8 @@
 //! for. A server without a harness configuration repository lists no servers, and the page then offers to set one up
 //! (see `harness_setup`).
 
-use iced::widget::text::Wrapping;
-use iced::widget::{button, column, pick_list, row, space, text, text_editor, text_input};
-use iced::{Alignment, Border, Element, Length, Task};
+use iced::widget::{column, pick_list, row, space, text_editor, text_input};
+use iced::{Alignment, Element, Length, Task};
 
 use crate::app::Message as AppMessage;
 use crate::client::{Client, ClientError, McpDefinition, McpServer, McpServerDetail, Skill};
@@ -14,7 +13,8 @@ use crate::screens::harness_setup::{self, HarnessSetup};
 use crate::screens::live::say;
 use crate::settings::Settings;
 use crate::widgets::form::{
-    box_heading, committed_line, field, menu_style, mono_editor, notice_line, pick_style,
+    aside as form_aside, box_heading, committed_line, field, menu_style, mono_editor, notice_line,
+    pick_style,
 };
 use crate::widgets::import::{self, Import};
 use crate::widgets::list_editor::{self, Actions, boxed, list_card};
@@ -373,9 +373,9 @@ impl McpServers {
             "MCP servers",
             None,
             page::context(
-                "The servers of mcp.toml in the harness configuration repository, which agents name to be given their tools. An edit is a commit.",
+                "The servers of mcp.toml in the harness repository; agents name them to get their tools. An edit is a commit.",
             ),
-            row(buttons).spacing(10).into(),
+            row(buttons).spacing(theme::SPACE_12).into(),
         );
         if !editable {
             // Until the server has said, nothing is offered.
@@ -406,8 +406,8 @@ impl McpServers {
                     Some(AppMessage::Mcp(Message::Select(server.name.clone()))),
                 )
             }))
-            .spacing(8)
-            .padding(iced::Padding::default().right(12))
+            .spacing(theme::SPACE_8)
+            .padding(iced::Padding::default().right(theme::SCROLL_GUTTER))
             .into()
         };
         let mut detail = column![].spacing(theme::PAGE_GAP).width(Length::Fill);
@@ -444,7 +444,7 @@ fn editor_view(editor: &Editor) -> Element<'_, AppMessage> {
         move |name| message(Message::NameEdited(name)),
         actions,
     );
-    let mut top = column![head].spacing(12);
+    let mut top = column![head].spacing(theme::SPACE_12);
     if editor.reading {
         top = top.push(page::body("Reading the server…"));
     }
@@ -469,7 +469,7 @@ fn mono_input<'a>(
         .on_input(move |text| AppMessage::Mcp(edited(text)))
         .font(theme::MONO)
         .size(theme::CODE)
-        .padding([8, 10])
+        .padding(theme::CONTROL_PADDING)
         .style(connect::input_style)
         .into()
 }
@@ -483,11 +483,12 @@ fn definition_box(editor: &Editor) -> Element<'_, AppMessage> {
         move |kind| message(Message::KindChosen(kind)),
     )
     .text_size(theme::BODY)
-    .padding([9, 12])
+    .padding(theme::CONTROL_PADDING)
     .width(Length::Fill)
     .style(pick_style)
     .menu_style(menu_style);
-    let mut content = column![row![field("Kind", kind), space::horizontal()]].spacing(12);
+    let mut content =
+        column![row![field("Kind", kind), space::horizontal()]].spacing(theme::SPACE_12);
     if editor.remote {
         content = content.push(field(
             "URL",
@@ -505,7 +506,12 @@ fn definition_box(editor: &Editor) -> Element<'_, AppMessage> {
             ))
             .push(field(
                 "Arguments, one per line",
-                mono_editor(&editor.args, "--root\n/srv/docs", Some(args_action), 110),
+                mono_editor(
+                    &editor.args,
+                    "--root\n/srv/docs",
+                    Some(args_action),
+                    theme::EDITOR_SHORT,
+                ),
             ));
     }
     let (heading, aside, add) = if editor.remote {
@@ -519,33 +525,15 @@ fn definition_box(editor: &Editor) -> Element<'_, AppMessage> {
             mono_input("value or ${NAME}", value, move |text| {
                 Message::RowValueEdited(at, text)
             }),
-            button(text("Remove").size(theme::LABEL))
-                .padding([3, 8])
-                .on_press(message(Message::RemoveRow(at)))
-                .style(|_, _| button::Style {
-                    background: Some(theme::SURFACE.into()),
-                    text_color: theme::TEXT_SECONDARY,
-                    border: Border {
-                        color: theme::LINE,
-                        width: 1.0,
-                        radius: theme::RADIUS_SMALL.into(),
-                    },
-                    ..button::Style::default()
-                }),
+            page::white_button("Remove", Some(message(Message::RemoveRow(at)))),
         ]
-        .spacing(8)
+        .spacing(theme::SPACE_8)
         .align_y(Alignment::Center)
         .into()
     });
     content = content
-        .push(box_heading(
-            heading,
-            text(aside)
-                .size(theme::LABEL)
-                .color(theme::TEXT_MUTED)
-                .wrapping(Wrapping::None),
-        ))
-        .push(column(rows).spacing(8))
+        .push(box_heading(heading, form_aside(aside)))
+        .push(column(rows).spacing(theme::SPACE_8))
         .push(page::white_button(add, Some(message(Message::AddRow))));
     boxed(content)
 }

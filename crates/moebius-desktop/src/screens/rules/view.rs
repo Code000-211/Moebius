@@ -8,7 +8,7 @@ use iced::{Alignment, Element, Length};
 use crate::app::Message as AppMessage;
 use crate::client::{RepositoryRules, RulesView};
 use crate::theme;
-use crate::widgets::form::{aside, box_heading, notice_line};
+use crate::widgets::form::{aside, box_heading, committed_line, notice_line};
 use crate::widgets::inline_edit::editor_style;
 use crate::widgets::list_editor;
 use crate::widgets::page::{self, Tone};
@@ -23,7 +23,7 @@ impl Rules {
             "Rules",
             None,
             page::context(
-                "What a run must not do. Every tool call is checked against these before it runs; a refusal names the rule.",
+                "What a run must not do. Every tool call is checked against these first; a refusal names the rule.",
             ),
             space().into(),
         );
@@ -39,9 +39,11 @@ impl Rules {
                 }
             }
         }
-        iced::widget::scrollable(boxes.padding(iced::Padding::default().right(12)))
-            .height(Length::Fill)
-            .into()
+        iced::widget::scrollable(
+            boxes.padding(iced::Padding::default().right(theme::SCROLL_GUTTER)),
+        )
+        .height(Length::Fill)
+        .into()
     }
 
     fn patterns_box<'a>(&'a self, view: &'a RulesView) -> Element<'a, AppMessage> {
@@ -56,18 +58,18 @@ impl Rules {
                         .color(theme::TEXT_SECONDARY)
                         .wrapping(Wrapping::Word),
                 ]
-                .spacing(3)
+                .spacing(theme::SPACE_4)
                 .width(Length::Fill),
                 refusals_tag(view, &pattern.name),
             ]
-            .spacing(14)
+            .spacing(theme::SPACE_12)
             .align_y(Alignment::Center)
             .into()
         });
         boxed(
             "Built-in patterns",
             aside("Always on · checked first, no model asked"),
-            column(rows).spacing(12).into(),
+            column(rows).spacing(theme::SPACE_12).into(),
         )
     }
 
@@ -79,7 +81,7 @@ impl Rules {
             None => "No rules file",
         };
         let mut heading_side = row![aside(where_from)]
-            .spacing(12)
+            .spacing(theme::SPACE_12)
             .align_y(Alignment::Center);
         if prose.editable && !self.by_agent {
             heading_side = heading_side.push(page::white_button(
@@ -87,7 +89,7 @@ impl Rules {
                 Some(AppMessage::Rules(Message::ByAgent(true))),
             ));
         }
-        let mut content = column![].spacing(10);
+        let mut content = column![].spacing(theme::SPACE_12);
         if prose.editable && self.by_agent {
             content = content.push(self.wish_view());
         }
@@ -103,9 +105,7 @@ impl Rules {
         ));
         content = self.with_notice(content, Place::Server);
         if !prose.editable {
-            content = content.push(page::body(
-                "These rules are read only here: this server has no rules file.",
-            ));
+            content = content.push(page::body("Read only: this server has no rules file."));
         }
         boxed("Rules in prose", heading_side.into(), content.into())
     }
@@ -116,7 +116,7 @@ impl Rules {
         view: &'a RulesView,
     ) -> Element<'a, AppMessage> {
         let place = Place::Repository(repository.repository_id);
-        let mut content = column![].spacing(10);
+        let mut content = column![].spacing(theme::SPACE_12);
         if let Some(error) = &repository.error {
             content = content.push(notice_line(error, true));
         }
@@ -128,7 +128,7 @@ impl Rules {
         ));
         content = self.with_notice(content, place);
         content = content.push(page::body(
-            "Saved as a commit on the default branch (.moebius/rules.md), checked first.",
+            "Saved as a commit on the default branch (.moebius/rules.md).",
         ));
         boxed(
             &repository.repository,
@@ -145,7 +145,7 @@ impl Rules {
     ) -> Column<'a, AppMessage> {
         match &self.notice {
             Some((at, Notice::Saved(Some(commit)))) if *at == place => {
-                content.push(notice_line(&format!("Committed: {commit}"), false))
+                content.push(committed_line(Some(commit)))
             }
             Some((at, Notice::Saved(None))) if *at == place => {
                 content.push(notice_line("Saved.", false))
@@ -164,13 +164,12 @@ impl Rules {
             .then_some(message(Message::AskAgent));
         let wish = text_editor(&self.wish)
             .placeholder(
-                "What should be allowed or forbidden, in a few words. The Moebius agent changes the rules and saves \
-                 them; the chat opens.",
+                "What should be allowed or forbidden. The Moebius agent changes the rules and saves them.",
             )
             .on_action(move |action| message(Message::WishEdited(action)))
             .size(theme::BODY)
-            .padding(14)
-            .height(120)
+            .padding(theme::EDITOR_PADDING)
+            .height(theme::EDITOR_SHORT)
             .style(editor_style);
         column![
             wish,
@@ -178,9 +177,9 @@ impl Rules {
                 page::primary_button("Ask the agent", ask),
                 page::white_button("Cancel", Some(message(Message::ByAgent(false)))),
             ]
-            .spacing(8),
+            .spacing(theme::SPACE_8),
         ]
-        .spacing(10)
+        .spacing(theme::SPACE_12)
         .into()
     }
 }
@@ -200,5 +199,5 @@ fn boxed<'a>(
     aside: Element<'a, AppMessage>,
     content: Element<'a, AppMessage>,
 ) -> Element<'a, AppMessage> {
-    list_editor::boxed(column![box_heading(heading, aside), content].spacing(12))
+    list_editor::boxed(column![box_heading(heading, aside), content].spacing(theme::SPACE_12))
 }

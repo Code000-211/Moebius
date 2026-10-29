@@ -224,7 +224,7 @@ fn a_server_without_a_harness_repository_edits_its_agents_in_moebius_toml() {
     assert!(!shows(&app, "Agents are set in moebius.toml"));
     assert!(shows(
         &app,
-        "What each run works with: its model, instructions, skills and extensions. An edit is saved in moebius.toml."
+        "What each run works with: model, instructions, skills, extensions. Saved in moebius.toml."
     ));
     assert!(shows(&app, harness_setup::NEEDED));
     assert!(matches!(

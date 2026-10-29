@@ -2,9 +2,7 @@
 //! built-in instructions and skills, the skills and MCP servers chosen, and the paths of skills and extensions.
 
 use iced::widget::text::Wrapping;
-use iced::widget::{
-    button, column, container, pick_list, row, space, text, text_editor, text_input,
-};
+use iced::widget::{column, container, pick_list, row, space, text, text_editor, text_input};
 use iced::{Alignment, Border, Element, Length};
 
 use crate::app::Message as AppMessage;
@@ -25,13 +23,18 @@ use super::{COMPRESS, ENGINEERING, ENGINEERING_AGENTS, Message, NOT_SET, THIS_SE
 
 /// A row of a list: what names it, and a line under it that is red when something is wrong.
 fn item<'a>(name: Element<'a, AppMessage>, line: &str, red: bool) -> Element<'a, AppMessage> {
-    let mut content = column![name].spacing(3);
+    let mut content = column![name].spacing(theme::SPACE_4);
     if !line.is_empty() {
-        content = content.push(text(line.to_string()).size(theme::LABEL).color(if red {
-            theme::RED_TEXT
-        } else {
-            theme::TEXT_MUTED
-        }));
+        content = content.push(
+            text(line.to_string())
+                .size(theme::LABEL)
+                .font(theme::MONO)
+                .color(if red {
+                    theme::RED_TEXT
+                } else {
+                    theme::TEXT_MUTED
+                }),
+        );
     }
     content.into()
 }
@@ -48,9 +51,10 @@ fn section<'a>(
     let list: Element<_> = if items.is_empty() {
         page::body(empty)
     } else {
-        column(items).spacing(10).into()
+        column(items).spacing(theme::SPACE_12).into()
     };
-    let mut content = column![box_heading(heading, aside(note.to_string())), list].spacing(12);
+    let mut content =
+        column![box_heading(heading, aside(note.to_string())), list].spacing(theme::SPACE_12);
     if let Some(footer) = footer {
         content = content.push(footer);
     }
@@ -66,7 +70,7 @@ fn settings_row<'a>(
     let model = model_picker::field(
         models,
         editor.typing_model,
-        "The model's name",
+        "Model name",
         &editor.model,
         move |model| message(Message::ModelEdited(model)),
         move |model| message(Message::ModelPicked(model)),
@@ -77,7 +81,7 @@ fn settings_row<'a>(
         message(Message::ProtocolChosen(p))
     })
     .text_size(theme::BODY)
-    .padding([9, 12])
+    .padding(theme::CONTROL_PADDING)
     .width(Length::Fill)
     .style(pick_style)
     .menu_style(menu_style);
@@ -86,7 +90,7 @@ fn settings_row<'a>(
         message(Message::HarnessChosen(h))
     })
     .text_size(theme::BODY)
-    .padding([9, 12])
+    .padding(theme::CONTROL_PADDING)
     .width(Length::Fill)
     .style(pick_style)
     .menu_style(menu_style);
@@ -110,20 +114,20 @@ fn settings_row<'a>(
         move |level| message(Message::ThinkingChosen(level)),
     )
     .text_size(theme::BODY)
-    .padding([9, 12])
+    .padding(theme::CONTROL_PADDING)
     .width(Length::Fill)
     .style(pick_style)
     .menu_style(menu_style);
     let budget = text_input("No limit", &editor.budget)
         .on_input(move |budget| message(Message::BudgetEdited(budget)))
         .size(theme::BODY)
-        .padding([9, 12])
+        .padding(theme::CONTROL_PADDING)
         .style(connect::input_style);
     let number = |placeholder, value: &'a str, edited: fn(String) -> Message| {
         text_input(placeholder, value)
             .on_input(move |value| message(edited(value)))
             .size(theme::BODY)
-            .padding([9, 12])
+            .padding(theme::CONTROL_PADDING)
             .style(connect::input_style)
     };
     let compress = pick_list(
@@ -132,7 +136,7 @@ fn settings_row<'a>(
         move |choice| message(Message::CompressChosen(choice)),
     )
     .text_size(theme::BODY)
-    .padding([9, 12])
+    .padding(theme::CONTROL_PADDING)
     .width(Length::Fill)
     .style(pick_style)
     .menu_style(menu_style);
@@ -141,7 +145,7 @@ fn settings_row<'a>(
         field("Protocol", protocol),
         field("Harness", harness),
     ]
-    .spacing(14);
+    .spacing(theme::SPACE_12);
     // Where its runs go: the server itself, or a machine of `[[runners]]` over SSH. Shown only when there are any (or
     // the agent names one that is gone, so that it can be taken off).
     if !runners.is_empty() || editor.runner.is_some() {
@@ -164,7 +168,7 @@ fn settings_row<'a>(
             move |runner| message(Message::RunnerChosen(runner)),
         )
         .text_size(theme::BODY)
-        .padding([9, 12])
+        .padding(theme::CONTROL_PADDING)
         .width(Length::Fill)
         .style(pick_style)
         .menu_style(menu_style);
@@ -181,7 +185,7 @@ fn settings_row<'a>(
             move |choice| message(Message::EngineeringChosen(choice)),
         )
         .text_size(theme::BODY)
-        .padding([9, 12])
+        .padding(theme::CONTROL_PADDING)
         .width(Length::Fill)
         .style(pick_style)
         .menu_style(menu_style);
@@ -189,13 +193,15 @@ fn settings_row<'a>(
             field("Engineering skills", given),
             space().width(Length::FillPortion(4))
         ]
-        .spacing(14)
+        .spacing(theme::SPACE_12)
     });
     // How the outputs of its tools are kept small (see the reference's `tool_output`): Pi-Bolt's bridge does it, so
     // an agent on another harness has no such settings.
     if editor.harness != HARNESSES[0] {
         return match engineering {
-            Some(engineering) => column![settings, engineering].spacing(12).into(),
+            Some(engineering) => column![settings, engineering]
+                .spacing(theme::SPACE_12)
+                .into(),
             None => settings.into(),
         };
     }
@@ -214,8 +220,8 @@ fn settings_row<'a>(
         ),
         field("Tool outputs", compress),
     ]
-    .spacing(14);
-    let mut rows = column![settings, outputs].spacing(12);
+    .spacing(theme::SPACE_12);
+    let mut rows = column![settings, outputs].spacing(theme::SPACE_12);
     if let Some(engineering) = engineering {
         rows = rows.push(engineering);
     }
@@ -254,7 +260,7 @@ pub(super) fn instructions_box(editor: &Editor) -> Element<'_, AppMessage> {
                 message(Message::InstructionsByAgent(true))
             ),
         ]
-        .spacing(8)
+        .spacing(theme::SPACE_8)
         .into()
     };
     let heading = box_heading(
@@ -270,13 +276,12 @@ pub(super) fn instructions_box(editor: &Editor) -> Element<'_, AppMessage> {
             .then_some(message(Message::AskAgent));
         let wish = text_editor(&editor.wish)
             .placeholder(
-                "What this agent should do and how, in a few words. The Moebius agent writes the \
-                 instructions and saves them; the chat opens.",
+                "What this agent should do and how. The Moebius agent writes and saves the instructions.",
             )
             .on_action(|action| AppMessage::Agents(Message::WishEdited(action)))
             .size(theme::BODY)
-            .padding(14)
-            .height(120)
+            .padding(theme::EDITOR_PADDING)
+            .height(theme::EDITOR_SHORT)
             .style(editor_style);
         return boxed(
             column![
@@ -285,7 +290,7 @@ pub(super) fn instructions_box(editor: &Editor) -> Element<'_, AppMessage> {
                 wish,
                 row![page::primary_button("Ask the agent", ask)]
             ]
-            .spacing(12),
+            .spacing(theme::SPACE_12),
         );
     }
     let input = text_editor(&editor.instructions)
@@ -293,10 +298,10 @@ pub(super) fn instructions_box(editor: &Editor) -> Element<'_, AppMessage> {
         .on_action(|action| AppMessage::Agents(Message::Instructions(action)))
         .font(theme::MONO)
         .size(theme::CODE)
-        .padding(14)
-        .height(220)
+        .padding(theme::EDITOR_PADDING)
+        .height(theme::EDITOR_LARGE)
         .style(editor_style);
-    boxed(column![heading, ways, input].spacing(12))
+    boxed(column![heading, ways, input].spacing(theme::SPACE_12))
 }
 
 /// What a built-in agent is always told, which the person cannot change.
@@ -308,13 +313,13 @@ pub(super) fn built_in_instructions_box(built_in: &BuiltInAgent) -> Element<'_, 
             .color(theme::TEXT_SECONDARY)
             .wrapping(Wrapping::WordOrGlyph),
     )
-    .padding(14)
+    .padding(theme::BOX_PADDING)
     .width(Length::Fill)
     .style(|_| container::Style {
         background: Some(theme::LANE.into()),
         border: Border {
             color: theme::LINE,
-            width: 1.0,
+            width: theme::HAIRLINE,
             radius: theme::RADIUS_CARD.into(),
         },
         ..container::Style::default()
@@ -402,21 +407,9 @@ fn paths_box<'a>(
                 .font(theme::MONO)
                 .width(Length::Fill)
                 .wrapping(Wrapping::WordOrGlyph),
-            button(text("Remove").size(theme::LABEL))
-                .padding([3, 8])
-                .on_press(message(remove(path.clone())))
-                .style(|_, _| button::Style {
-                    background: Some(theme::SURFACE.into()),
-                    text_color: theme::TEXT_SECONDARY,
-                    border: Border {
-                        color: theme::LINE,
-                        width: 1.0,
-                        radius: theme::RADIUS_SMALL.into(),
-                    },
-                    ..button::Style::default()
-                }),
+            page::white_button("Remove", Some(message(remove(path.clone())))),
         ]
-        .spacing(8)
+        .spacing(theme::SPACE_8)
         .align_y(Alignment::Center)
         .into()
     });
@@ -427,11 +420,11 @@ fn paths_box<'a>(
             .on_submit_maybe(can_add.then(|| message(add.clone())))
             .font(theme::MONO)
             .size(theme::CODE)
-            .padding([8, 10])
+            .padding(theme::CONTROL_PADDING)
             .style(connect::input_style),
         page::white_button(add_label, can_add.then(|| message(add))),
     ]
-    .spacing(8);
+    .spacing(theme::SPACE_8);
     section(heading, aside, paths, empty, Some(adder.into()))
 }
 

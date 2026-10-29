@@ -20,7 +20,7 @@ pub fn input_style(_: &iced::Theme, status: text_input::Status) -> text_input::S
         background: theme::SURFACE.into(),
         border: Border {
             color: line,
-            width: 1.0,
+            width: theme::HAIRLINE,
             radius: theme::RADIUS_CONTROL.into(),
         },
         icon: theme::TEXT_MUTED,
@@ -43,10 +43,10 @@ fn label(name: &str) -> Element<'_, Message> {
 pub fn view<'a>(form: &'a Form, saved: Option<&Settings>) -> Element<'a, Message> {
     let token_hint = match saved {
         Some(saved) => format!(
-            "Saved token {} (leave empty to keep it)",
+            "Saved token {} (empty keeps it)",
             settings::mask(&saved.token)
         ),
-        None => "The content of the server's token file".to_string(),
+        None => "Content of the server's token file".to_string(),
     };
     let ready = !form.connecting;
     let mut fields = column![
@@ -54,7 +54,7 @@ pub fn view<'a>(form: &'a Form, saved: Option<&Settings>) -> Element<'a, Message
         text_input("http://127.0.0.1:7171", &form.address)
             .on_input_maybe(ready.then_some(Message::AddressChanged))
             .on_submit(Message::Submit)
-            .padding([8, 10])
+            .padding(theme::CONTROL_PADDING)
             .size(theme::BODY)
             .style(input_style),
         label("Token"),
@@ -62,20 +62,21 @@ pub fn view<'a>(form: &'a Form, saved: Option<&Settings>) -> Element<'a, Message
             .on_input_maybe(ready.then_some(Message::TokenChanged))
             .on_submit(Message::Submit)
             .secure(true)
-            .padding([8, 10])
+            .padding(theme::CONTROL_PADDING)
             .size(theme::BODY)
             .style(input_style),
-        text("The token is in .moebius/token next to the server's moebius.toml.")
+        text("Token file: .moebius/token next to moebius.toml.")
             .size(theme::LABEL)
+            .font(theme::MONO)
             .color(theme::TEXT_MUTED),
     ]
-    .spacing(6);
+    .spacing(theme::SPACE_6);
     if let Some(error) = &form.error {
         fields = fields.push(
             text(error)
                 .size(theme::CONTEXT)
-                .font(theme::manrope(Weight::Semibold))
-                .color(theme::AMBER),
+                .font(theme::MONO)
+                .color(theme::RED_TEXT),
         );
     }
     let button_label = if form.connecting {
@@ -91,7 +92,7 @@ pub fn view<'a>(form: &'a Form, saved: Option<&Settings>) -> Element<'a, Message
                     .size(theme::APP_NAME)
                     .font(theme::manrope(Weight::Bold))
             ]
-            .spacing(9)
+            .spacing(theme::SPACE_8)
             .align_y(Center),
             text("Connect to a server")
                 .size(theme::PAGE_TITLE)
@@ -100,15 +101,15 @@ pub fn view<'a>(form: &'a Form, saved: Option<&Settings>) -> Element<'a, Message
             fields,
             page::primary_button(button_label, ready.then_some(Message::Submit)),
         ]
-        .spacing(14),
+        .spacing(theme::SPACE_12),
     )
-    .padding(28)
-    .width(Length::Fixed(440.0))
+    .padding(theme::CONNECT_PADDING)
+    .width(theme::CONNECT_WIDTH)
     .style(|_| container::Style {
         background: Some(theme::SURFACE.into()),
         border: Border {
             color: theme::LINE,
-            width: 1.0,
+            width: theme::HAIRLINE,
             radius: theme::RADIUS_BOX.into(),
         },
         ..container::Style::default()

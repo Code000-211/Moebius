@@ -4,7 +4,7 @@
 //! file that is not text is listed with its size and can only be deleted.
 
 use iced::widget::{button, column, container, row, space, text, text_editor, text_input};
-use iced::{Alignment, Border, Element, Length, Padding, Task};
+use iced::{Alignment, Border, Element, Length, Task};
 
 use super::{Editor, Notice};
 use crate::app::Message as AppMessage;
@@ -188,7 +188,7 @@ pub(super) fn list(editor: &Editor) -> Element<'_, AppMessage> {
         open.is_none(),
         wrap(Message::Open(None))
     )]
-    .spacing(1);
+    .spacing(theme::SPACE_4);
     for path in &editor.files {
         rows = rows.push(file_row(
             path,
@@ -205,24 +205,24 @@ pub(super) fn list(editor: &Editor) -> Element<'_, AppMessage> {
     } else {
         page::white_button("New file", Some(wrap(Message::NewFile)))
     };
-    boxed(column![box_heading("Files", new_file), rows].spacing(12))
+    boxed(column![box_heading("Files", new_file), rows].spacing(theme::SPACE_12))
 }
 
 /// A file of the list.
 fn file_row<'a>(path: &'a str, open: bool, on_press: AppMessage) -> Element<'a, AppMessage> {
     let line = row![
-        Icon::File.view(theme::TEXT_SECONDARY, 16.0),
+        Icon::File.view(theme::TEXT_SECONDARY, theme::ICON),
         text(path)
             .size(theme::CODE_SMALL)
             .font(theme::MONO)
             .color(theme::TEXT),
         space::horizontal(),
     ]
-    .spacing(8)
+    .spacing(theme::SPACE_8)
     .align_y(Alignment::Center);
     container(
         button(line)
-            .padding(Padding::from([6, 10]))
+            .padding(theme::CONTROL_PADDING)
             .width(Length::Fill)
             .on_press(on_press)
             .style(move |_, status| button::Style {
@@ -248,8 +248,8 @@ pub(super) fn editor_view(file: &FileEditor, built_in: bool) -> Element<'_, AppM
         text_input("Path in the skill, such as scripts/fill.py", &file.path)
             .on_input(|path| wrap(Message::PathEdited(path)))
             .size(theme::BODY)
-            .padding([9, 12])
-            .width(360)
+            .padding(theme::CONTROL_PADDING)
+            .width(theme::NAME_INPUT_WIDTH)
             .style(connect::input_style)
             .into()
     } else {
@@ -258,7 +258,7 @@ pub(super) fn editor_view(file: &FileEditor, built_in: bool) -> Element<'_, AppM
             .font(theme::MONO)
             .into()
     };
-    let mut actions = row![].spacing(10).align_y(Alignment::Center);
+    let mut actions = row![].spacing(theme::SPACE_12).align_y(Alignment::Center);
     if built_in {
         actions = actions.push(aside("Read only"));
     } else if file.confirming {
@@ -283,8 +283,8 @@ pub(super) fn editor_view(file: &FileEditor, built_in: bool) -> Element<'_, AppM
         let save = (!file.reading && file.text.is_some()).then(|| wrap(Message::Save));
         actions = actions.push(page::primary_button("Save file", save));
     }
-    let mut content =
-        column![row![title, space::horizontal(), actions].align_y(Alignment::Center)].spacing(12);
+    let mut content = column![row![title, space::horizontal(), actions].align_y(Alignment::Center)]
+        .spacing(theme::SPACE_12);
     match &file.notice {
         Some(Notice::Saved(commit)) => content = content.push(committed_line(commit.as_deref())),
         Some(Notice::Failed(error)) => content = content.push(notice_line(error, true)),
@@ -296,10 +296,10 @@ pub(super) fn editor_view(file: &FileEditor, built_in: bool) -> Element<'_, AppM
             text,
             "The file's text.",
             (!built_in).then_some(text_action as fn(_) -> _),
-            360,
+            theme::EDITOR_FULL,
         )),
         (None, false) => content.push(page::body(format!(
-            "This file is not text, or too large to edit here ({}); it is kept as it is.",
+            "Not text, or too large to edit ({}).",
             crate::screens::project::size(file.size)
         ))),
     };

@@ -378,7 +378,7 @@ fn a_key_that_needs_a_restart_is_a_banner_with_a_restart_button_that_is_replaced
     let _ = app.update(Message::Setup(setup::Message::Restart));
     assert!(shows(
         &app,
-        "Restarting the server. The app connects again by itself."
+        "Restarting the server. The app reconnects by itself."
     ));
     assert_eq!(pressed(&app, "Restart"), None);
     // The server's answer after it is back says nothing is left to restart.
@@ -387,7 +387,7 @@ fn a_key_that_needs_a_restart_is_a_banner_with_a_restart_button_that_is_replaced
     ))));
     assert!(!shows(
         &app,
-        "Restarting the server. The app connects again by itself."
+        "Restarting the server. The app reconnects by itself."
     ));
     assert!(!shows(
         &app,
@@ -398,11 +398,11 @@ fn a_key_that_needs_a_restart_is_a_banner_with_a_restart_button_that_is_replaced
 #[test]
 fn a_save_says_saved_or_the_servers_message() {
     let mut app = setup_app(Page::Settings);
-    assert!(!shows(&app, "Saved"));
+    assert!(!shows(&app, "Saved."));
     let saved =
         serde_json::from_value(json!({"restart_needed": false, "restart_keys": []})).unwrap();
     let _ = app.update(Message::Setup(setup::Message::Saved(Ok(Some(saved)))));
-    assert!(shows(&app, "Saved"));
+    assert!(shows(&app, "Saved."));
     let refused = client::ClientError::Server {
         status: 422,
         message: "run_limit must be at least 1".into(),
@@ -411,7 +411,7 @@ fn a_save_says_saved_or_the_servers_message() {
     assert!(shows(&app, "run_limit must be at least 1"));
     // Nothing is sent when nothing was changed.
     let _ = app.update(Message::Setup(setup::Message::SaveSettings));
-    assert!(shows(&app, "Nothing changed, so nothing was saved."));
+    assert!(shows(&app, "No changes to save."));
     // A wrong number is said, not sent.
     let _ = app.update(Message::Setup(setup::Message::Edit(
         "run_limit",

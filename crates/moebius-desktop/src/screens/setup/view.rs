@@ -24,23 +24,23 @@ fn banner<'a>(line: String, restart: Option<AppMessage>) -> Element<'a, AppMessa
     let mut content = row![
         text(line)
             .size(theme::CONTEXT)
-            .font(theme::manrope(Weight::Semibold))
+            .font(theme::MONO)
             .color(theme::AMBER_TEXT)
             .width(Length::Fill),
     ]
-    .spacing(12)
+    .spacing(theme::SPACE_12)
     .align_y(Alignment::Center);
     if restart.is_some() {
         content = content.push(page::primary_button("Restart", restart));
     }
     container(content)
-        .padding([12, 16])
+        .padding([theme::SPACE_12, theme::BOX_PADDING])
         .width(Length::Fill)
         .style(|_| container::Style {
             background: Some(theme::AMBER_FILL.into()),
             border: iced::Border {
                 color: theme::AMBER_BORDER,
-                width: 1.0,
+                width: theme::HAIRLINE,
                 radius: theme::RADIUS_CARD.into(),
             },
             ..container::Style::default()
@@ -63,7 +63,8 @@ fn opened<'a>(
             page::context(context.to_string()),
             actions,
         ),
-        scrollable(container(content).padding(Padding::default().right(12))).height(Length::Fill),
+        scrollable(container(content).padding(Padding::default().right(theme::SCROLL_GUTTER)))
+            .height(Length::Fill),
     ]
     .spacing(theme::PAGE_GAP)
     .width(Length::Fill)
@@ -75,9 +76,9 @@ pub(super) fn table<'a>(
     columns: &[(&'static str, u16)],
     rows: Vec<Vec<Element<'a, AppMessage>>>,
 ) -> Element<'a, AppMessage> {
-    let heads = columns
-        .iter()
-        .fold(row![].spacing(10), |heads, (label, portion)| {
+    let heads = columns.iter().fold(
+        row![].spacing(theme::SPACE_12),
+        |heads, (label, portion)| {
             heads.push(cell(
                 *portion,
                 text(*label)
@@ -85,15 +86,14 @@ pub(super) fn table<'a>(
                     .font(theme::manrope(Weight::Semibold))
                     .color(theme::TEXT_MUTED),
             ))
-        });
-    let mut table = column![heads, page::rule()].spacing(8);
+        },
+    );
+    let mut table = column![heads, page::rule()].spacing(theme::SPACE_8);
     for cells in rows {
-        let line = cells
-            .into_iter()
-            .zip(columns)
-            .fold(row![].spacing(10), |line, (content, (_, portion))| {
-                line.push(cell(*portion, content))
-            });
+        let line = cells.into_iter().zip(columns).fold(
+            row![].spacing(theme::SPACE_12),
+            |line, (content, (_, portion))| line.push(cell(*portion, content)),
+        );
         table = table.push(line).push(page::rule());
     }
     table.into()
@@ -101,7 +101,7 @@ pub(super) fn table<'a>(
 
 /// Labelled values, one to a line.
 fn facts<'a>(lines: Vec<(&'static str, Element<'a, AppMessage>)>) -> Element<'a, AppMessage> {
-    let mut facts = column![].spacing(10);
+    let mut facts = column![].spacing(theme::SPACE_12);
     for (label, value) in lines {
         facts = facts.push(
             row![
@@ -111,10 +111,10 @@ fn facts<'a>(lines: Vec<(&'static str, Element<'a, AppMessage>)>) -> Element<'a,
                         .font(theme::manrope(Weight::Semibold))
                         .color(theme::TEXT_MUTED)
                 )
-                .width(Length::Fixed(170.0)),
+                .width(theme::FACT_LABEL_WIDTH),
                 container(value).width(Length::Fill),
             ]
-            .spacing(10),
+            .spacing(theme::SPACE_12),
         );
     }
     facts.into()
@@ -172,12 +172,7 @@ fn mono<'a>(line: String) -> Element<'a, AppMessage> {
 impl Setup {
     pub fn models_page(&self) -> Element<'_, AppMessage> {
         let (Some(models), Some(forms)) = (&self.models, &self.forms) else {
-            return opened(
-                "Models",
-                "Reading the models of the server.",
-                text("").into(),
-                column![],
-            );
+            return opened("Models", "Reading the models…", text("").into(), column![]);
         };
         let secrets = self.server.as_ref().map_or(&[][..], |s| &s.secrets[..]);
         let upstreams: Element<AppMessage> = if forms.upstreams.is_empty() {
@@ -190,10 +185,10 @@ impl Setup {
                 });
                 column![upstream_row(place, upstream, secrets)]
                     .push(oauth)
-                    .spacing(10)
+                    .spacing(theme::SPACE_12)
                     .into()
             }))
-            .spacing(12)
+            .spacing(theme::SPACE_12)
             .into()
         };
         let upstreams = page::boxed(
@@ -205,14 +200,14 @@ impl Setup {
                     Some(AppMessage::Setup(Message::AddUpstream))
                 ),
             ]
-            .spacing(12),
+            .spacing(theme::SPACE_12),
         );
         let classes = page::boxed(
             "Model classes",
             column![
                 page::body(
-                    "A class names models to try in order: an agent, the teacher or a chat may name the class \
-                     instead of a model, and the next model takes a request when an upstream fails."
+                    "A class lists models to try in order; the next takes a request when an upstream fails. An agent, \
+                     the teacher or a chat may name a class instead of a model."
                 ),
                 column(
                     forms
@@ -221,10 +216,10 @@ impl Setup {
                         .enumerate()
                         .map(|(place, class)| class_row(place, class))
                 )
-                .spacing(12),
+                .spacing(theme::SPACE_12),
                 page::white_button("Add class", Some(AppMessage::Setup(Message::AddClass))),
             ]
-            .spacing(12),
+            .spacing(theme::SPACE_12),
         );
         let agents: Element<AppMessage> = if models.agents.is_empty() {
             page::body("The server has no agent.")
@@ -258,7 +253,8 @@ impl Setup {
         };
         let agents = page::boxed(
             "Agents",
-            column![agents, page::body("Agents are edited on the Agents page.")].spacing(10),
+            column![agents, page::body("Agents are edited on the Agents page.")]
+                .spacing(theme::SPACE_12),
         );
         // What the upstreams said is shown once, under the first Model field on the page.
         let note = |first: bool| {
@@ -310,7 +306,7 @@ impl Setup {
         let Some(plugins) = &self.plugins else {
             return opened(
                 "Plugins",
-                "Reading the plugins of the server.",
+                "Reading the plugins…",
                 text("").into(),
                 column![],
             );
@@ -368,7 +364,7 @@ impl Setup {
                 ]
             })
             .collect();
-        let mut content = column![page::boxed("Loaded plugins", list)].spacing(20);
+        let mut content = column![page::boxed("Loaded plugins", list)].spacing(theme::PAGE_GAP);
         if !processes.is_empty() {
             content = content.push(page::boxed(
                 "Plugins in their own process",
@@ -415,25 +411,23 @@ impl Setup {
                     Some(AppMessage::ChangeConnection)
                 ),
             ]
-            .spacing(14),
+            .spacing(theme::SPACE_12),
         );
         let (Some(server), Some(forms)) = (&self.server, &self.forms) else {
             return opened(
                 "Settings",
-                "Reading the settings of the server.",
+                "Reading the settings…",
                 text("").into(),
-                column![page::boxed(
-                    "Server",
-                    page::body("Reading the settings of the server.")
-                )]
-                .push(app)
-                .spacing(theme::PAGE_GAP),
+                column![page::boxed("Server", page::body("Reading the settings…"))]
+                    .push(app)
+                    .spacing(theme::PAGE_GAP),
             );
         };
         let mut boxes = forms.settings.iter().map(|(title, form)| {
             page::boxed(
                 title,
-                column(form.fields.iter().map(|field| field_view(field, None))).spacing(12),
+                column(form.fields.iter().map(|field| field_view(field, None)))
+                    .spacing(theme::SPACE_12),
             )
         });
         let mut content = column![self.status()].spacing(theme::PAGE_GAP);
@@ -522,10 +516,10 @@ impl Setup {
 
     /// The banner that says a restart is needed, and what a save said.
     pub(super) fn status(&self) -> Element<'_, AppMessage> {
-        let mut status = column![].spacing(10);
+        let mut status = column![].spacing(theme::SPACE_12);
         if self.restarting {
             status = status.push(banner(
-                "Restarting the server. The app connects again by itself.".to_string(),
+                "Restarting the server. The app reconnects by itself.".to_string(),
                 None,
             ));
         } else if let Some(server) = self.server.as_ref().filter(|s| s.restart_needed) {
@@ -538,9 +532,9 @@ impl Setup {
             ));
         }
         match &self.notice {
-            Some(Notice::Saved) => status = status.push(notice_line("Saved", false)),
+            Some(Notice::Saved) => status = status.push(notice_line("Saved.", false)),
             Some(Notice::NothingChanged) => {
-                status = status.push(notice_line("Nothing changed, so nothing was saved.", false));
+                status = status.push(notice_line("No changes to save.", false));
             }
             Some(Notice::Failed(problem)) => status = status.push(notice_line(problem, true)),
             None => {}

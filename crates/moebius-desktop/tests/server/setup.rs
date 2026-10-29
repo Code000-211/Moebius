@@ -100,7 +100,7 @@ async fn the_apps_settings_models_and_agents_are_saved_to_the_servers_file_and_r
     assert_eq!(read.value("board.round_limit"), &json!(9));
     assert_eq!(read.value("budgets.day_tokens"), &json!(5000));
     assert_eq!(read.restart_keys, ["listen"]);
-    assert!(shown(&app, "Saved"));
+    assert!(shown(&app, "Saved."));
     assert!(shown(&app, "Restart the server to use: listen"));
     assert_eq!(server.live.get().round_limit, 9);
 
@@ -179,7 +179,7 @@ async fn the_apps_settings_models_and_agents_are_saved_to_the_servers_file_and_r
         .expect("the server is asked to restart");
     assert!(shown(
         &app,
-        "Restarting the server. The app connects again by itself."
+        "Restarting the server. The app reconnects by itself."
     ));
 }
 

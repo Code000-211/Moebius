@@ -74,7 +74,7 @@ fn the_rules_page_lists_the_patterns_the_rules_and_what_they_refused() {
             "no-vendoring",
             "radiance",
             "keep-migrations",
-            "Saved as a commit on the default branch (.moebius/rules.md), checked first.",
+            "Saved as a commit on the default branch (.moebius/rules.md).",
         ],
         Size::new(1440.0, 1300.0),
     );
@@ -84,16 +84,10 @@ fn the_rules_page_lists_the_patterns_the_rules_and_what_they_refused() {
 fn a_server_without_a_rules_file_shows_its_rules_read_only() {
     let app = rules_app(false);
     assert!(shows(&app, "leave-ci-alone"));
-    assert!(shows(
-        &app,
-        "These rules are read only here: this server has no rules file."
-    ));
+    assert!(shows(&app, "Read only: this server has no rules file."));
     assert!(!shows(&app, "Save"));
     let app = rules_app(true);
-    assert!(!shows(
-        &app,
-        "These rules are read only here: this server has no rules file."
-    ));
+    assert!(!shows(&app, "Read only: this server has no rules file."));
 }
 
 fn rules_typed(text: &str) -> rules::Message {

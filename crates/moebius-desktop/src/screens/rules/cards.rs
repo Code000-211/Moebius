@@ -25,7 +25,7 @@ impl Rules {
         view: &'a RulesView,
         empty: &'a str,
     ) -> Element<'a, AppMessage> {
-        let mut cards = column![].spacing(10);
+        let mut cards = column![].spacing(theme::SPACE_12);
         if rules.is_empty() && place.is_none() {
             return page::body(empty);
         }
@@ -36,7 +36,7 @@ impl Rules {
                 continue;
             }
             let mut name = row![text(rule.name.as_str()).size(theme::BODY).font(theme::MONO)]
-                .spacing(6)
+                .spacing(theme::SPACE_6)
                 .align_y(Alignment::Center);
             if let Some(place) = place {
                 name = name.push(inline_edit::pencil(
@@ -52,11 +52,11 @@ impl Rules {
                         .color(theme::TEXT_SECONDARY)
                         .wrapping(Wrapping::Word),
                 ]
-                .spacing(3)
+                .spacing(theme::SPACE_4)
                 .width(Length::Fill),
                 refusals_tag(view, &rule.name),
             ]
-            .spacing(14)
+            .spacing(theme::SPACE_12)
             .align_y(Alignment::Center);
             cards = cards.push(card(content.into(), CardLine::Plain));
         }
@@ -80,7 +80,7 @@ impl Rules {
             .color(theme::TEXT_MUTED),
             inline_edit::pencil(id, AppMessage::Rules(Message::EditRule(place, None))),
         ]
-        .spacing(6)
+        .spacing(theme::SPACE_6)
         .align_y(Alignment::Center);
         cards.push(card(new.into(), CardLine::Muted)).into()
     }
@@ -98,17 +98,17 @@ impl Rules {
                 .on_input(move |name| message(Message::NameEdited(name)))
                 .font(theme::MONO)
                 .size(theme::BODY)
-                .padding([9, 12])
+                .padding(theme::CONTROL_PADDING)
                 .style(connect::input_style),
             text_editor(&editing.text)
-                .placeholder("What a run must not do, in a few plain sentences.")
+                .placeholder("What a run must not do.")
                 .on_action(move |action| message(Message::TextEdited(action)))
                 .size(theme::BODY)
-                .padding(14)
-                .height(110)
+                .padding(theme::EDITOR_PADDING)
+                .height(theme::EDITOR_SHORT)
                 .style(editor_style),
         ]
-        .spacing(10);
+        .spacing(theme::SPACE_12);
         let save =
             (!editing.saving && valid_name(&editing.name)).then_some(message(Message::SaveRule));
         let delete: Option<Element<'_, AppMessage>> = editing.rule.as_ref().map(|_| {
@@ -123,7 +123,7 @@ impl Rules {
                         (!editing.saving).then_some(message(Message::DeleteRule))
                     ),
                 ]
-                .spacing(8)
+                .spacing(theme::SPACE_8)
                 .align_y(Alignment::Center)
                 .into()
             } else {
@@ -157,13 +157,13 @@ enum CardLine {
 }
 
 fn card(content: Element<'_, AppMessage>, line: CardLine) -> Element<'_, AppMessage> {
-    let (color, width, fill, padding) = match line {
-        CardLine::Plain => (theme::LINE, 1.0, theme::SURFACE, 12),
-        CardLine::Muted => (theme::LINE, 1.0, theme::LANE, 12),
-        CardLine::Editing => (theme::TEAL, 2.0, theme::SURFACE, 16),
+    let (color, width, fill) = match line {
+        CardLine::Plain => (theme::LINE, theme::HAIRLINE, theme::SURFACE),
+        CardLine::Muted => (theme::LINE, theme::HAIRLINE, theme::LANE),
+        CardLine::Editing => (theme::TEXT, theme::BORDER_FOCUS, theme::SURFACE),
     };
     container(content)
-        .padding([padding, 14])
+        .padding([theme::SPACE_12, theme::BOX_PADDING])
         .width(Length::Fill)
         .style(move |_| container::Style {
             background: Some(fill.into()),

@@ -258,6 +258,24 @@ pub fn shadow() -> iced::Shadow {
         blur_radius: 8.0,
     }
 }
+/// The padding of a small button.
+pub const SMALL_BUTTON_PADDING: [f32; 2] = [3.0, 8.0];
+/// The width of the border that marks what is being edited.
+pub const BORDER_FOCUS: f32 = 2.0;
+/// How far an input beside labelled ones is moved down to line up with them: the label's line and its gap.
+pub const FIELD_LABEL_OFFSET: f32 = 18.0;
+/// The padding inside a text editor, and the heights of the short, the large and the full one.
+pub const EDITOR_PADDING: f32 = 10.0;
+pub const EDITOR_SHORT: u32 = 120;
+pub const EDITOR_LARGE: u32 = 220;
+pub const EDITOR_FULL: u32 = 360;
+/// The padding around the small pencil of editing in place.
+pub const PENCIL_PADDING: f32 = 2.0;
+/// Fixed widths: the labels of a table of facts, the input for a file's name, and the card of the connect screen.
+pub const FACT_LABEL_WIDTH: f32 = 170.0;
+pub const NAME_INPUT_WIDTH: f32 = 360.0;
+pub const CONNECT_WIDTH: f32 = 440.0;
+pub const CONNECT_PADDING: f32 = 28.0;
 
 /// The floating chat: the round button, the window it grows into, and their distance from the window's corner.
 pub const FLOAT_BUTTON: f32 = 40.0;

@@ -63,9 +63,9 @@ impl Agents {
             "Agents",
             None,
             page::context(if self.in_file() {
-                "What each run works with: its model, instructions, skills and extensions. An edit is saved in moebius.toml."
+                "What each run works with: model, instructions, skills, extensions. Saved in moebius.toml."
             } else {
-                "What each run works with: its model, instructions, skills, MCP servers and extensions. An edit is a commit."
+                "What each run works with: model, instructions, skills, MCP servers, extensions. An edit is a commit."
             }),
             page::white_button("New agent", new_agent),
         );
@@ -104,7 +104,7 @@ impl Agents {
         }
         page::boxed(
             "From the Retro",
-            column(open.into_iter().map(retro::proposal)).spacing(12),
+            column(open.into_iter().map(retro::proposal)).spacing(theme::SPACE_12),
         )
     }
 
@@ -120,8 +120,8 @@ impl Agents {
                 self.editable(),
             )
         }))
-        .spacing(8)
-        .padding(iced::Padding::default().right(12))
+        .spacing(theme::SPACE_8)
+        .padding(iced::Padding::default().right(theme::SCROLL_GUTTER))
         .into()
     }
 
@@ -147,14 +147,14 @@ impl Agents {
             move |name| message(Message::NameEdited(name)),
             actions,
         );
-        let mut content = column![head].spacing(12);
+        let mut content = column![head].spacing(theme::SPACE_12);
         match &editor.files {
             Files::Reading => content = content.push(page::body("Reading the agent…")),
             Files::Broken(error) => {
                 content = content
                     .push(notice_line(error, true))
                     .push(page::body(
-                        "Its files cannot be read, so it cannot run and is not edited here. Fix them in the repository, or delete the agent.",
+                        "Its files cannot be read, so it cannot run. Fix them in the repository or delete the agent.",
                     ));
                 return self.with_boxes(editor, content, false);
             }
@@ -203,7 +203,9 @@ impl Agents {
                     .push(built_in_instructions_box(built_in))
                     .push(built_in_skills_box(built_in));
             }
-            boxes = boxes.push(instructions_box(editor)).push(paths.spacing(14));
+            boxes = boxes
+                .push(instructions_box(editor))
+                .push(paths.spacing(theme::SPACE_12));
         }
         boxes.into()
     }

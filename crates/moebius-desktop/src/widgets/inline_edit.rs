@@ -2,7 +2,6 @@
 //! where that text was, with Save and Cancel under it and the server's refusal in red. Every screen that edits text in
 //! place draws it with these, so that it looks and works the same everywhere (`docs/design.md`, "Editing in place").
 
-use iced::font::Weight;
 use iced::widget::text::Wrapping;
 use iced::widget::{button, column, container, row, text, text_editor};
 use iced::{Border, Element};
@@ -13,8 +12,8 @@ use crate::{theme, widgets::page};
 /// The pencil that opens the editor, muted until hovered. `id` names it, so that a test can find and press it.
 pub fn pencil<'a, Message: Clone + 'a>(id: String, message: Message) -> Element<'a, Message> {
     container(
-        button(Icon::Pencil.view(theme::TEXT_MUTED, 13.0))
-            .padding(2)
+        button(Icon::Pencil.view(theme::TEXT_MUTED, theme::ICON_SMALL))
+            .padding(theme::PENCIL_PADDING)
             .on_press(message)
             .style(|_, status| button::Style {
                 background: (status == button::Status::Hovered).then(|| theme::SURFACE.into()),
@@ -52,17 +51,17 @@ pub fn editor_with<'a, Message: Clone + 'a>(
         page::primary_button("Save", save),
         page::white_button("Cancel", Some(cancel)),
     ]
-    .spacing(8)
+    .spacing(theme::SPACE_8)
     .align_y(iced::Alignment::Center);
     if let Some(more) = more {
         buttons = buttons.push(iced::widget::space::horizontal()).push(more);
     }
-    let mut content = column![fields, buttons].spacing(10);
+    let mut content = column![fields, buttons].spacing(theme::SPACE_12);
     if let Some(error) = error {
         content = content.push(
             text(error)
                 .size(theme::CONTEXT)
-                .font(theme::manrope(Weight::Semibold))
+                .font(theme::MONO)
                 .color(theme::RED_TEXT)
                 .wrapping(Wrapping::WordOrGlyph),
         );
@@ -80,7 +79,7 @@ pub fn editor_style(_: &iced::Theme, status: text_editor::Status) -> text_editor
                 text_editor::Status::Hovered => theme::TEXT_MUTED,
                 _ => theme::LINE,
             },
-            width: 1.0,
+            width: theme::HAIRLINE,
             radius: theme::RADIUS_CONTROL.into(),
         },
         placeholder: theme::TEXT_MUTED,

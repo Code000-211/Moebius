@@ -159,7 +159,7 @@ fn the_add_page_asks_for_the_github_repository_and_the_trusted_authors_and_shows
             "Add a repository",
             "GitHub repository",
             "Trusted authors",
-            "GitHub logins, separated by commas. Their issues need no approval.",
+            "GitHub logins, comma separated. Their issues need no approval.",
             "Add",
             "the server answered 422: the repository name \"widgets\" is taken",
         ],
@@ -276,7 +276,7 @@ fn the_add_page_asks_for_the_gitlab_project_and_the_trusted_usernames() {
             "GitLab",
             "GitLab project",
             "Trusted authors",
-            "GitLab usernames, separated by commas. Their issues need no approval.",
+            "GitLab usernames, comma separated. Their issues need no approval.",
         ],
     );
 }
@@ -311,7 +311,7 @@ fn the_add_page_asks_for_the_forgejo_repository_and_the_trusted_logins() {
             "Forgejo",
             "Forgejo repository",
             "Trusted authors",
-            "Forgejo logins, separated by commas. Their issues need no approval.",
+            "Forgejo logins, comma separated. Their issues need no approval.",
         ],
     );
 }
