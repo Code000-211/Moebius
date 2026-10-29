@@ -60,7 +60,7 @@ jobs:
           name: snapshot-diffs-windows
           path: target/snapshot-diffs
           if-no-files-found: ignore
-      - run: cargo test -p moebius-core
+      - run: cargo test -p moebius-core --no-fail-fast
 
   # The code builds with the Rust version that `rust-version` in Cargo.toml names, and that is the version the README
   # tells people to install.

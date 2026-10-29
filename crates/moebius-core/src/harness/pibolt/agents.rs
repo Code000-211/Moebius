@@ -359,11 +359,12 @@ mod tests {
         }
     }
 
+    /// The agent's skill folders, written with `/` on every system.
     fn skills(agent: &AgentConfig) -> Vec<String> {
         agent
             .skills
             .iter()
-            .map(|path| path.to_string_lossy().into_owned())
+            .map(|path| path.to_string_lossy().replace('\\', "/"))
             .collect()
     }
 
@@ -403,7 +404,7 @@ mod tests {
                 "/data/skills/moebius"
             ]
         );
-        let instructions = grilling.instructions.unwrap();
+        let instructions = grilling.instructions.unwrap().replace('\\', "/");
         assert!(instructions.starts_with("You are the Grilling partner."));
         assert!(
             instructions.ends_with("read /data/skills/to-tickets/SKILL.md when you need them.")
