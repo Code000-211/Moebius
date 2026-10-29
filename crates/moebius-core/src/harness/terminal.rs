@@ -36,6 +36,8 @@ struct StartError(String);
 struct Open {
     count: usize,
     closed: watch::Sender<bool>,
+    /// The processes the open terminals run, for the ports they listen on.
+    pids: Vec<u32>,
 }
 
 /// The terminals each run has open.
@@ -47,6 +49,7 @@ pub struct Slot {
     slots: Arc<Slots>,
     run: i64,
     closed: watch::Receiver<bool>,
+    pid: Option<u32>,
 }
 
 impl Slots {
@@ -61,6 +64,7 @@ impl Slots {
         let open = open.entry(key).or_insert_with(|| Open {
             count: 0,
             closed: watch::channel(false).0,
+            pids: Vec::new(),
         });
         if open.count >= most {
             return None;
@@ -70,7 +74,19 @@ impl Slots {
             slots: self.clone(),
             run: key,
             closed: open.closed.subscribe(),
+            pid: None,
         })
+    }
+
+    /// The processes the open terminals run, each with the key its terminal was opened under.
+    pub fn programs(&self) -> Vec<(i64, u32)> {
+        let open = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let mut programs: Vec<_> = open
+            .iter()
+            .flat_map(|(key, open)| open.pids.iter().map(|pid| (*key, *pid)))
+            .collect();
+        programs.sort_unstable();
+        programs
     }
 
     /// Closes the terminals open on `run`, its chat's terminal interface included, for when its worktree is gone:
@@ -101,6 +117,16 @@ impl Slots {
 }
 
 impl Slot {
+    /// Records the process the terminal runs, until the place is given back.
+    fn running(&mut self, pid: u32) {
+        let mut open = self.slots.0.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(entry) = open.get_mut(&self.run) {
+            entry.pids.retain(|known| Some(*known) != self.pid);
+            entry.pids.push(pid);
+            self.pid = Some(pid);
+        }
+    }
+
     /// Waits until the run's terminals are closed.
     async fn closed(&mut self) {
         let _ = self.closed.wait_for(|closed| *closed).await;
@@ -111,6 +137,7 @@ impl Drop for Slot {
     fn drop(&mut self) {
         let mut open = self.slots.0.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(entry) = open.get_mut(&self.run) {
+            entry.pids.retain(|known| Some(*known) != self.pid);
             entry.count -= 1;
             if entry.count == 0 {
                 open.remove(&self.run);
@@ -158,6 +185,9 @@ pub async fn serve_command(mut socket: WebSocket, command: CommandBuilder, slot:
         }
     };
     let pid = child.process_id();
+    if let Some(pid) = pid {
+        slot.running(pid);
+    }
     let mut output = pump_output(reader);
     let input = pump_input(writer);
     loop {
@@ -311,6 +341,21 @@ mod tests {
         assert!(*first.closed.borrow());
         drop(first);
         assert!(!slots.is_open(key));
+    }
+
+    #[test]
+    fn the_programs_of_open_terminals_are_listed_until_their_place_is_given_back() {
+        let slots = Arc::new(Slots::default());
+        let mut shell = slots.take(3).unwrap();
+        let mut server = slots.take(SERVER).unwrap();
+        shell.running(30);
+        server.running(10);
+        server.running(11);
+        assert_eq!(slots.programs(), vec![(0, 11), (3, 30)]);
+        drop(shell);
+        assert_eq!(slots.programs(), vec![(0, 11)]);
+        drop(server);
+        assert!(slots.programs().is_empty());
     }
 
     #[test]

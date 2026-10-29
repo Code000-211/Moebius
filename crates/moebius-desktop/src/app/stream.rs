@@ -58,6 +58,11 @@ impl App {
                     Some(settings) => self.float.reload(settings),
                     None => Task::none(),
                 };
+                // Ports that opened or closed while the stream was away.
+                let ports = match &self.settings {
+                    Some(settings) => self.ports.reload(settings),
+                    None => Task::none(),
+                };
                 Task::batch([
                     self.reload(),
                     missed,
@@ -68,6 +73,7 @@ impl App {
                     start,
                     harness,
                     floating,
+                    ports,
                 ])
             }
             StreamEvent::Disconnected(_) => {
@@ -76,6 +82,12 @@ impl App {
             }
             StreamEvent::Unauthorized => {
                 self.show_connect_error(&ClientError::Unauthorized);
+                Task::none()
+            }
+            StreamEvent::Event(event)
+                if matches!(event.kind.as_str(), "port_opened" | "port_closed") =>
+            {
+                self.on_port_event(&event);
                 Task::none()
             }
             StreamEvent::Event(event) if event.kind == "run_event" => {

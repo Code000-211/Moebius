@@ -462,6 +462,9 @@ At the top:
 | `server/api/lessons.rs` | The lessons: list, read, edit and delete. |
 | `server/api/improve.rs` | Usage, judgements and replays, the Retro and its proposals, the decision model and its takeovers, research and exports. |
 | `server/api/uploads.rs` | `POST /v1/uploads`: zip files for the Moebius agent to import from. |
+| `server/ports/mod.rs` | The ports that processes of runs, chats and terminals listen on: whose each is, and the watch that publishes `port_opened` and `port_closed` every 3 seconds. |
+| `server/ports/proc.rs` | Reading the listening sockets, their holders and the process tree from `/proc` (Linux; nothing elsewhere). |
+| `server/api/ports.rs` | `GET /v1/ports` and the WebSocket tunnel to a port of the server's loopback address. |
 | `server/api/terminals.rs` | The terminal WebSockets: a shell in a run's worktree or on the server, and Pi's terminal interface of a chat. |
 | `server/api/events.rs` | The event WebSocket `GET /v1/events`. |
 | `server/api/testing.rs` | For the tests only: a server on port 0 with a fake Pi, and the requests the tests of the API share. |
@@ -700,6 +703,14 @@ At the top:
 | `screens/setup/mod.rs`, `screens/setup/update.rs`, `screens/setup/view.rs` | The Setup pages (Models, Plugins and Settings, which edit `moebius.toml` through the API), how a message changes them, and how they are drawn. |
 | `screens/setup/login.rs` | The OAuth login of an upstream on the Models page: the warning to confirm, the code or the browser, and whether the login holds. |
 | `screens/setup/fields.rs`, `screens/setup/forms.rs`, `screens/setup/inputs.rs` | The keys of `moebius.toml` as inputs, the forms made of them with what a save sends, and how each input is drawn. |
+| `screens/ports/mod.rs` | The Ports page's state: detected ports, forwards (made at once for a port that opens, by hand, local port changed), the offers, what is remembered. |
+| `screens/ports/update.rs` | How a message changes the Ports page: forms, stopping, opening the browser, copying an address. |
+| `screens/ports/tests.rs` | For the tests only: the forwards a page makes of ports that open, close, are stopped, changed or restored. |
+| `screens/ports/view.rs` | The Ports page, the "Ports" button of other pages and the offer banner. |
+| `client/ports.rs` | The ports of the server and the forwarder: a local listener whose connections go over the tunnel WebSocket. |
+| `client/calls/ports.rs` | `Client::ports`. |
+| `app/ports.rs` | The app's part of ports: events, what is watched, forwards remembered in the settings file and restored. |
+| `widgets/browser.rs` | Opening an address in the person's browser. |
 | `screens/server_terminal.rs` | The Terminal page: a shell on the server (`GET /v1/terminal`). |
 
 `widgets/`, the pieces screens share:

@@ -9,6 +9,7 @@ mod connection;
 mod context;
 mod message;
 mod navigation;
+mod ports;
 mod stream;
 mod update;
 mod view;
@@ -30,6 +31,7 @@ use crate::screens::harness_setup::HarnessSetup;
 use crate::screens::inbox::Inbox;
 use crate::screens::live::{self, Live};
 use crate::screens::mcp_servers::McpServers;
+use crate::screens::ports::Ports;
 use crate::screens::project::Project;
 use crate::screens::retro::Retros;
 use crate::screens::rules::Rules;
@@ -117,6 +119,8 @@ pub struct App {
     setup: Setup,
     harness: HarnessSetup,
     terminal: ServerTerminal,
+    /// The ports of the server and the forwards of them to this computer.
+    ports: Ports,
     start: Start,
     /// Set when the connection was made, until the server has said whether the first start is done: the app then
     /// opens on Get started if the person has not chosen a page by then.
@@ -180,6 +184,7 @@ impl App {
             setup: Setup::default(),
             harness: HarnessSetup::default(),
             terminal: ServerTerminal::default(),
+            ports: Ports::default(),
             start: Start::default(),
             open_on_start: false,
             add_repository: AddRepository::default(),

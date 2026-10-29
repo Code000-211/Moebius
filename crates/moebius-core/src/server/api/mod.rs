@@ -17,6 +17,7 @@
 //! - `lessons`: the lessons the Retro learned from earlier cards, edited and deleted by a person.
 //! - `uploads`: zip files for the Moebius agent to import from.
 //! - `terminals`: shells and Pi's terminal interface over a WebSocket.
+//! - `ports`: the ports that runs and terminals listen on, and a WebSocket that carries a connection to one.
 //! - `events`: the WebSocket on which every event of the core arrives.
 //! - `webhooks`: the deliveries of the forges, which need no token but a signature, and the secrets to set on the forges.
 //!
@@ -31,6 +32,7 @@ mod events;
 mod harness;
 mod improve;
 mod lessons;
+mod ports;
 mod repositories;
 mod rules;
 mod runs;
@@ -178,6 +180,7 @@ pub fn router(state: ApiState) -> Router {
         .merge(lessons::routes())
         .merge(uploads::routes())
         .merge(terminals::routes())
+        .merge(ports::routes())
         .merge(events::routes())
         .merge(webhooks::routes())
         .layer(middleware::from_fn_with_state(state.clone(), authenticate))

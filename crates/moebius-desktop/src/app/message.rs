@@ -13,6 +13,7 @@ use crate::screens::harness_setup;
 use crate::screens::inbox;
 use crate::screens::live;
 use crate::screens::mcp_servers;
+use crate::screens::ports;
 use crate::screens::project;
 use crate::screens::retro;
 use crate::screens::rules;
@@ -58,6 +59,8 @@ pub enum Page {
     Plugins,
     /// A shell on the server.
     Terminal,
+    /// The ports of the server, forwarded to this computer.
+    Ports,
     Settings,
 }
 
@@ -82,6 +85,7 @@ impl Page {
             Page::Models => "Models",
             Page::Plugins => "Plugins",
             Page::Terminal => "Terminal",
+            Page::Ports => "Ports",
             Page::Settings => "Settings",
         }
     }
@@ -93,7 +97,12 @@ impl Page {
             Page::Board(_) | Page::AddRepository => "Projects",
             Page::Agents | Page::Skills | Page::McpServers | Page::Rules => "Build",
             Page::Retro | Page::Experiments | Page::DecisionModel | Page::Usage => "Improve",
-            Page::Start | Page::Models | Page::Plugins | Page::Terminal | Page::Settings => "Setup",
+            Page::Start
+            | Page::Models
+            | Page::Plugins
+            | Page::Terminal
+            | Page::Ports
+            | Page::Settings => "Setup",
         }
     }
 }
@@ -144,6 +153,10 @@ pub enum Message {
     /// Something on the box that sets up a harness configuration repository.
     Harness(harness_setup::Message),
     Terminal(server_terminal::Message),
+    /// Something on the Ports page or an offer to open a port.
+    Ports(ports::Message),
+    /// The ports of a run, chat or terminal are shown (or all of them, without a scope), as a page the way back returns from.
+    OpenPorts(Option<ports::Scope>),
     Start(start::Message),
     AddRepository(add_repository::Message),
     NewIssue(new_issue::Message),

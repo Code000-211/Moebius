@@ -36,23 +36,6 @@ pub enum LoginStep {
     Failed(String),
 }
 
-/// Opens `url` in the person's browser; the page shows the address as well, for when that fails.
-fn open_in_browser(url: &str) {
-    let program = if cfg!(target_os = "macos") {
-        "open"
-    } else if cfg!(windows) {
-        "explorer"
-    } else {
-        "xdg-open"
-    };
-    let _ = std::process::Command::new(program)
-        .arg(url)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn();
-}
-
 /// Asks how the login of the upstream at `place` stands, after `delay`.
 fn ask(settings: &Settings, place: usize, delay: Duration) -> Task<AppMessage> {
     let client = Client::new(settings.clone());
@@ -92,7 +75,7 @@ impl Setup {
             }
             Message::LoginStarted(place, Ok(login)) => {
                 if let Some(url) = &login.authorize_url {
-                    open_in_browser(url);
+                    crate::widgets::browser::open(url);
                 }
                 return self.answered(place, Ok(login), settings);
             }
@@ -105,7 +88,7 @@ impl Setup {
                     return self.answered(place, Ok(login), settings);
                 }
             }
-            Message::OpenPage(url) => open_in_browser(&url),
+            Message::OpenPage(url) => crate::widgets::browser::open(&url),
             _ => {}
         }
         Task::none()

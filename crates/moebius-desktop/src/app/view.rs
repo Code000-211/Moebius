@@ -11,6 +11,7 @@ use crate::screens::automations;
 use crate::screens::fleet;
 use crate::screens::inbox;
 use crate::screens::live;
+use crate::screens::ports;
 use crate::screens::project::{self, Tab};
 use crate::search;
 use crate::widgets::float_chat;
@@ -69,6 +70,7 @@ impl App {
                     Page::Chat => self.chats.terminal_subscription(settings),
                     _ => Subscription::none(),
                 };
+                let ports = self.ports.subscription(settings);
                 let floating = if self.float.working() {
                     iced::time::every(Duration::from_secs(30))
                         .map(|_| Message::Float(float_chat::Message::Tick(live::now())))
@@ -89,6 +91,7 @@ impl App {
                     shell,
                     terminal,
                     chat_terminal,
+                    ports,
                     floating,
                     keys,
                     save,
@@ -157,15 +160,19 @@ impl App {
 
     /// The page, under the link back to the place left last when it was reached from there.
     pub(super) fn page_with_back(&self, page: Page) -> Element<'_, Message> {
-        match self.history.last() {
-            Some(left) => column![
-                page::back(self.location_title(left), Message::Back),
-                self.page_view(page)
-            ]
-            .spacing(theme::PAGE_GAP)
-            .into(),
-            None => self.page_view(page),
+        // A port that opened in what is watched is offered over the page.
+        let offer = ports::offer_banner(&self.ports);
+        let back = self
+            .history
+            .last()
+            .map(|left| page::back(self.location_title(left), Message::Back));
+        if offer.is_none() && back.is_none() {
+            return self.page_view(page);
         }
+        column(offer.into_iter().chain(back))
+            .push(self.page_view(page))
+            .spacing(theme::PAGE_GAP)
+            .into()
     }
 
     pub(super) fn page_view(&self, page: Page) -> Element<'_, Message> {
@@ -226,6 +233,7 @@ impl App {
             Page::Models => self.setup.models_page(),
             Page::Plugins => self.setup.plugins_page(),
             Page::Terminal => self.terminal.view(),
+            Page::Ports => self.ports.view(),
             Page::Settings => self.setup.settings_page(self.settings.as_ref()),
         }
     }

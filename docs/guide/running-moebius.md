@@ -12,6 +12,14 @@ the server in WSL (see [On Windows](#on-windows)). Every key named here is in th
 
 ## The steps
 
+0a. **Forward ports.** When an agent or a terminal on the server starts a dev server, the Ports page (Setup, and the
+   "Ports" button of the live view, the chat and the Terminal page) lists it and forwards it to the same port number on
+   `127.0.0.1` here, or to a free one; "Open in browser" opens it, and a banner offers that when the port opens in the run,
+   chat or terminal you are looking at. "Forward a port…" forwards one by hand, "Change local port" and "Stop forwarding"
+   do what they say. It works the same with an address and over SSH, since each connection is carried over the API
+   (`GET /v1/ports/{port}/tunnel`) and the server listens on nothing new. The forwarded ports are remembered for each
+   server in `desktop.toml` and forwarded again when the app connects (turn this off on the Ports page, or with
+   `restore_forwards = false`). Detection needs Linux on the server.
 0. **Connect over SSH** (the way that needs nothing but a login). In the desktop app's connect screen, press "Connect
    over SSH" and pick a host of your `~/.ssh/config`, or "Add new SSH host" and type `user@host` or a whole `ssh …`
    command, which is written to the config as a `Host` entry. The app uses the system's `ssh`, so keys, `ssh-agent`,

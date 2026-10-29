@@ -7,6 +7,7 @@ use iced::{Alignment, Element, Length};
 use crate::app::Message as AppMessage;
 use crate::client::{Board, Card};
 use crate::screens::connect;
+use crate::screens::ports::Scope;
 use crate::widgets::conversation::{Entry, Said};
 use crate::widgets::page::{self, Tone, tag};
 use crate::{theme, widgets::transcript};
@@ -130,6 +131,9 @@ impl Live {
                 label,
                 Some(AppMessage::Live(Message::ToggleShell)),
             ));
+        }
+        if self.has_worktree() {
+            actions = actions.push(crate::screens::ports::button(Scope::Run(self.run_id())));
         }
         if self.running() && self.confirming {
             actions = actions

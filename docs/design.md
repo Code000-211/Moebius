@@ -103,8 +103,14 @@ with a secret that only the processes it starts know, and keeps no password.
 
 - A sidebar on every screen, in groups divided by lines: Inbox, Chat, Fleet and Automations; Projects (one per
   repository); Build (agents, skills, MCP servers, rules); Improve (Retro, experiments, decision model, usage); Setup
-  (models, plugins, terminal, settings); tokens used today at the foot. It collapses to a rail of icons. An entry with
+  (models, plugins, terminal, ports, settings); tokens used today at the foot. It collapses to a rail of icons. An entry with
   something new (the inbox, an unread chat) has its icon in amber and its count in amber text beside it, without a pill.
+- The Ports page (Setup) is one white box of rows: the port on the server in the code font with the process and what it
+  belongs to under it, the local address with a teal "forwarded" tag (red "failed" with the reason under it), and four white
+  buttons (Open in browser, Copy address, Change local port, Stop forwarding); a port that is not forwarded has "Forward".
+  "Forward a port…" in the header opens a field above the box. A white "Ports" button in the header of the live view, a chat
+  and the Terminal page opens the page on that run's ports, under a "Back" link. A port that opens in what is watched is
+  offered in a box over the page's top: "Open in browser", "Show ports", "Dismiss".
 - Every page opens with the same header (`page::header`): an optional breadcrumb in the code font, the title with an
   optional tag, one line of context, and its actions on the right.
 - Navigation keeps a way back. A click on a page that takes the person to another place (a card, a column's pencil,

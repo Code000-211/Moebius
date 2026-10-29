@@ -9,6 +9,7 @@ use iced::{Alignment, Border, Element, Length};
 use crate::app::Message as AppMessage;
 use crate::client::{Change, Chat, InboxItem, Snapshot};
 use crate::screens::inbox::{self, Action, Inbox};
+use crate::screens::ports::Scope;
 use crate::widgets::page::{self, Tone, tag};
 use crate::{screens::connect, theme};
 
@@ -160,6 +161,7 @@ fn actions<'a>(chat: &Chat, open: &Open) -> Element<'a, AppMessage> {
                 Some(AppMessage::Chat(Message::Stop)),
             ));
     } else {
+        actions = actions.push(crate::screens::ports::button(Scope::Run(chat.id)));
         if chat.changed_files > 0 {
             actions = actions.push(offer_button(chat));
         }

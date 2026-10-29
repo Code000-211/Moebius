@@ -252,6 +252,9 @@ Native, GPU-rendered, written in Rust with iced (ADR 0003, ADR 0011), built to [
 - **Live view** of a run: the stream of text and tool calls with each check's decision, code with highlighting, a shell in
   the worktree, steering and stopping.
 - **Terminal** (Setup): a shell on the server, in the directory of `moebius.toml`.
+- **Ports** (Setup): the ports that runs, chats and terminals on the server listen on (read from `/proc`, Linux only,
+  announced as `port_opened` and `port_closed`), forwarded to `127.0.0.1` here through `GET /v1/ports/{port}/tunnel`, with
+  an offer to open one in the browser, forwards by hand, and the forwards remembered per server in `desktop.toml`.
 - **Inbox**: everything that needs the person, one column, filterable.
 - **Chat**: a conversation with an agent, the Moebius agent by default, with code highlighted, tool calls with their
   checks, and the changes the agent offers.

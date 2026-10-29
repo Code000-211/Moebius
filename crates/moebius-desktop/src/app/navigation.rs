@@ -63,6 +63,7 @@ impl App {
         matches!(
             message,
             Message::Visit(_)
+                | Message::OpenPorts(_)
                 | Message::OpenCard(_)
                 | Message::CloseCard
                 | Message::EditScript(..)

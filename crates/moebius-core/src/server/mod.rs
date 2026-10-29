@@ -18,6 +18,7 @@ mod fake_gitlab;
 mod leftovers;
 mod loops;
 mod plugins;
+pub mod ports;
 mod schedule;
 pub mod settings;
 pub mod setup;
@@ -309,6 +310,7 @@ impl Server {
             () = loops::board(self.clone()) => Ok(()),
             () = loops::poll(self.clone()) => Ok(()),
             () = loops::refresh(self.clone()) => Ok(()),
+            () = ports::watch(self.app.clone(), ports::PERIOD) => Ok(()),
             () = schedule::run(self.clone()) => Ok(()),
             () = self.live.restart_asked() => Ok(()),
         }

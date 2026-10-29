@@ -8,7 +8,7 @@
 //! repository's files), `runs` (runs and chats), `harness` (agents, rules, skills, MCP servers), `server` (models,
 //! plugins, the first start and the settings), `improve` (the Retro, research, the decision model, usage) and
 //! `automations` (automations and their firings). `calls` has every route, one module per part of the API too;
-//! `events` is the event stream and `terminal` a shell's socket.
+//! `events` is the event stream, `terminal` a shell's socket and `ports` the ports of the server and the forwarder.
 
 mod automations;
 mod board;
@@ -16,6 +16,7 @@ mod calls;
 mod events;
 mod harness;
 mod improve;
+mod ports;
 mod runs;
 mod server;
 mod terminal;
@@ -27,6 +28,7 @@ pub use board::*;
 pub use events::{ServerEvent, StreamEvent, events};
 pub use harness::*;
 pub use improve::*;
+pub use ports::{ForwardEvent, Forwarding, Port, forward, serve as serve_forward};
 pub use runs::*;
 pub use server::*;
 pub use terminal::{TerminalEvent, TerminalInput, terminal};

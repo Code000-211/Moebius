@@ -15,6 +15,7 @@ pub mod history;
 pub mod inbox;
 pub mod live;
 pub mod mcp_servers;
+pub mod ports;
 pub mod project;
 pub mod retro;
 pub mod rules;

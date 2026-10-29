@@ -139,7 +139,8 @@ impl App {
             | Page::Usage
             | Page::Start
             | Page::Plugins
-            | Page::Terminal => {}
+            | Page::Terminal
+            | Page::Ports => {}
         }
         lines.join("\n")
     }

@@ -24,7 +24,7 @@ another run, such as a steer, the judgement keeps that run, and the agent's run 
 The run token of any other agent, and a revoked one, is answered with `401`. Two routes stay with a person and answer
 `403` with `only a person can do this` to a run token: `PUT /v1/secrets/{name}` (an agent must not set keys),
 `GET /v1/webhooks` and `POST /v1/webhooks/{forge}/secret` (they hold the webhook secrets),
-`POST /v1/harness/setup` (moving the agents is a person's choice) and `GET /v1/runs/{id}/terminal`, `GET /v1/chats/{id}/tui` and `GET /v1/terminal` (the shells). Where a route below says "a person" and "decider
+`POST /v1/harness/setup` (moving the agents is a person's choice) and `GET /v1/runs/{id}/terminal`, `GET /v1/chats/{id}/tui` and `GET /v1/terminal` (the shells) and `GET /v1/ports/{port}/tunnel`. Where a route below says "a person" and "decider
 `person`", an agent that uses its token is the decider instead.
 
 ```sh
@@ -655,6 +655,27 @@ configuration file (`moebius.toml`), not in a worktree.
 
 Errors, answered before the upgrade: `403` for the run token of an agent (the shell stays with a person); `422` when 4
 terminals are open already or the directory is gone.
+
+### `GET /v1/ports`
+
+The TCP ports that processes of runs, chats and terminals listen on, as an array of `{"port": integer, "pid": integer,
+"process": string, "kind": "run" \| "chat" \| "terminal", "run": id or null}`, by port. A port is listed when a socket in
+the listening state on `127.0.0.1`, `::1` or every address has a process that belongs to a run, a chat or a terminal: a
+terminal's when the process, or one that started it, is a shell a person opened (`run` is the run or chat it was opened
+on, null for `GET /v1/terminal`), else the run's or chat's when the process, or one that started it, works in its
+worktree. `process` is the program's name. It is read from `/proc` (Linux); on any other system the list is empty.
+
+### `GET /v1/ports/{port}/tunnel`
+
+Carries one TCP connection to `127.0.0.1:<port>` on the server (`[::1]` when only that answers). It upgrades to a
+WebSocket: every binary message the client sends is written to the connection and every byte the connection sends comes
+back as a binary message; either side closing ends both. The server listens on no new interface: the desktop app listens
+on its own machine and opens one tunnel for each connection made to it, with the same address and token as for every
+other route, so it works over an SSH tunnel too. A person may open a tunnel to any port of the server's loopback address,
+detected or asked for by hand.
+
+Errors, answered before the upgrade: `401`; `403` for the run token of an agent; `422` for port 0; `502` when nothing
+answers on the port within 5 seconds.
 
 ### `GET /v1/runners`
 
@@ -1664,6 +1685,8 @@ like `POST /v1/runs/{id}/stop` does. Experiments done stay, and so do the lever 
 | `experiment_done` | An experiment of a research ended and was stored. | `{"research": id, "lever": the lever's branch, "value": number or null, "kept": boolean}` |
 | `automation_fired` | An automation fired, by its schedule or `POST /v1/automations/{id}/run`. | `{"automation": id, "firing": id, "status": "started" \| "skipped" \| "failed", "run": id or null}` |
 | `grilling_ended` | A grilling chat ended and its result was stored. | `{"grilling": id, "status": "proposed" \| "reported" \| "empty"}` |
+| `port_opened` | The server noticed a port that a run, chat or terminal listens on (looked for every 3 seconds while a run or terminal exists). | `{"port": integer, "pid": integer, "process": string, "kind": "run" \| "chat" \| "terminal", "run": id or null}` (as `GET /v1/ports`) |
+| `port_closed` | A port that was listed is no longer listened on, or its run or terminal is gone. | The same as `port_opened`, for the port as it was. |
 | `lagged` | This client fell too far behind (more than 1024 events) and lost the oldest. | `{"missed": number}` |
 
 A `run_event`'s source is told by its inner `kind`:

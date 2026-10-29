@@ -3,7 +3,7 @@
 //!
 //! One module per area: `client` (the connection itself), `live` (runs, shells and the Fleet), `inbox`, `chat`,
 //! `harness` (the harness configuration repository), `import` (skills imported from a chosen zip), `improve` (usage, Retro, research and the decision model),
-//! `setup` (models, plugins and settings), `ssh` (the connection over SSH with a fake client) and `project` (repositories, scripts and files). `fixtures` holds the server
+//! `ports` (the forwarder and the ports a shell opens), `setup` (models, plugins and settings), `ssh` (the connection over SSH with a fake client) and `project` (repositories, scripts and files). `fixtures` holds the server
 //! on a free port, the repositories to add and the waiting on the stream they share.
 #![cfg(unix)]
 
@@ -15,6 +15,7 @@ mod import;
 mod improve;
 mod inbox;
 mod live;
+mod ports;
 mod project;
 mod setup;
 mod ssh;

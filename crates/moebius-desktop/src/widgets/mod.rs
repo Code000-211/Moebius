@@ -3,6 +3,7 @@
 //! floating chat.
 
 pub mod attempts;
+pub mod browser;
 pub mod chat_terminal;
 pub mod conversation;
 pub mod edits;

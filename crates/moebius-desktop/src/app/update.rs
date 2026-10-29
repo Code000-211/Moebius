@@ -253,6 +253,8 @@ impl App {
                 return task;
             }
             Message::Terminal(message) => self.terminal.update(message),
+            Message::Ports(message) => return self.on_ports(message),
+            Message::OpenPorts(scope) => return self.open_ports(scope),
             Message::Start(message) => {
                 let first = matches!(message, start::Message::Loaded(_));
                 let task = self.start.update(message, self.settings.as_ref());
@@ -534,8 +536,9 @@ impl App {
         // The server just answered. The event stream may already be open, and it does not say so again.
         self.connection = Connection::Online;
         self.open_on_start = true;
+        let ports = self.connect_ports();
         match &self.settings {
-            Some(settings) => self.start.reload(settings),
+            Some(settings) => Task::batch([self.start.reload(settings), ports]),
             None => Task::none(),
         }
     }
@@ -618,6 +621,7 @@ impl App {
             (Page::Rules, Some(settings)) => self.rules.reload(settings),
             (Page::Experiments, Some(settings)) => self.experiments.reload(settings),
             (Page::DecisionModel, Some(settings)) => self.decision_model.reload(settings),
+            (Page::Ports, Some(settings)) => self.ports.reload(settings),
             (Page::Models | Page::Plugins | Page::Settings, Some(settings)) => {
                 self.setup.reload(settings)
             }

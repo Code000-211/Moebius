@@ -6,6 +6,7 @@ use iced::{Element, Length, Subscription, keyboard};
 
 use crate::app::Message as AppMessage;
 use crate::client::{self, TerminalEvent};
+use crate::screens::ports::Scope;
 use crate::settings::Settings;
 use crate::theme;
 use crate::widgets::page;
@@ -75,7 +76,7 @@ impl ServerTerminal {
             "Terminal",
             None,
             page::context("Shell on the server, in the directory of moebius.toml."),
-            iced::widget::space().into(),
+            crate::screens::ports::button(Scope::Server),
         );
         let mut content = column![header]
             .spacing(theme::PAGE_GAP)

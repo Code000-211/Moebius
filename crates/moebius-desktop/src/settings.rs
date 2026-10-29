@@ -24,6 +24,20 @@ pub struct Server {
     pub address: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
+    /// The ports of this server that were forwarded to this computer, to be forwarded again at the next connection.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub forwards: Vec<Forwarded>,
+}
+
+/// A port of a server forwarded to this computer: the port on the server, and the one on `127.0.0.1` here.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Forwarded {
+    pub remote: u16,
+    pub local: u16,
+    /// Whether the person asked for it ("Forward a port…", or a local port they chose), so that it stays when the
+    /// port on the server closes.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub by_hand: bool,
 }
 
 impl Server {
@@ -32,6 +46,15 @@ impl Server {
             host: Some(host.to_string()),
             address: None,
             token: None,
+            forwards: Vec::new(),
+        }
+    }
+
+    /// Whether this is the server reached over SSH at `host`, or else by `address`.
+    fn is(&self, host: Option<&str>, address: &str) -> bool {
+        match host {
+            Some(host) => self.host.as_deref() == Some(host),
+            None => self.host.is_none() && self.address.as_deref() == Some(address),
         }
     }
 
@@ -72,6 +95,16 @@ pub struct Stored {
     pub ssh_program: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub servers: Vec<Server>,
+    /// Whether the ports forwarded to a server are forwarded again when the app connects to it; on unless turned off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub restore_forwards: Option<bool>,
+}
+
+impl Stored {
+    /// Whether the forwarded ports are restored at a connection: the setting, on by default.
+    pub fn restores_forwards(&self) -> bool {
+        self.restore_forwards.unwrap_or(true)
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -136,6 +169,7 @@ pub fn save(path: &Path, settings: &Settings) -> Result<(), SettingsError> {
                 host: None,
                 address: Some(settings.address.clone()),
                 token: Some(settings.token.clone()),
+                forwards: Vec::new(),
             }),
         }
     })
@@ -151,6 +185,41 @@ pub fn save_ssh(path: &Path, host: &str) -> Result<(), SettingsError> {
             .any(|server| server.host.as_deref() == Some(host))
         {
             stored.servers.push(Server::ssh(host));
+        }
+    })
+}
+
+/// The ports forwarded to the server at `address`, or reached over SSH at `host`, that the app remembers; none when it is
+/// turned off.
+pub fn forwards(path: &Path, host: Option<&str>, address: &str) -> Vec<Forwarded> {
+    let Ok(stored) = load_all(path) else {
+        return Vec::new();
+    };
+    if !stored.restores_forwards() {
+        return Vec::new();
+    }
+    stored
+        .servers
+        .iter()
+        .find(|server| server.is(host, address))
+        .map(|server| server.forwards.clone())
+        .unwrap_or_default()
+}
+
+/// Remembers `forwards` for the server at `address`, or reached over SSH at `host`.
+pub fn save_forwards(
+    path: &Path,
+    host: Option<&str>,
+    address: &str,
+    forwards: &[Forwarded],
+) -> Result<(), SettingsError> {
+    update(path, |stored| {
+        if let Some(server) = stored
+            .servers
+            .iter_mut()
+            .find(|server| server.is(host, address))
+        {
+            server.forwards = forwards.to_vec();
         }
     })
 }
@@ -275,6 +344,42 @@ mod tests {
         assert_eq!(text.matches("token =").count(), 2, "{text}");
         save_ssh(&path, "build").unwrap();
         assert_eq!(load_all(&path).unwrap().last_ssh.as_deref(), Some("build"));
+    }
+
+    #[test]
+    fn forwarded_ports_are_remembered_for_each_server_and_restored_unless_turned_off() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("desktop.toml");
+        save(&path, &settings()).unwrap();
+        save_ssh(&path, "build").unwrap();
+        let web = Forwarded {
+            remote: 3000,
+            local: 3001,
+            by_hand: true,
+        };
+        let api = Forwarded {
+            remote: 8080,
+            local: 8080,
+            by_hand: false,
+        };
+        save_forwards(
+            &path,
+            Some("build"),
+            "http://127.0.0.1:50000",
+            std::slice::from_ref(&web),
+        )
+        .unwrap();
+        save_forwards(&path, None, &settings().address, std::slice::from_ref(&api)).unwrap();
+        // An SSH server is found by its host, whatever local port the tunnel has this time.
+        assert_eq!(
+            forwards(&path, Some("build"), "http://127.0.0.1:50001"),
+            vec![web]
+        );
+        assert_eq!(forwards(&path, None, &settings().address), vec![api]);
+        assert!(forwards(&path, None, "http://elsewhere:1").is_empty());
+
+        update(&path, |stored| stored.restore_forwards = Some(false)).unwrap();
+        assert!(forwards(&path, None, &settings().address).is_empty());
     }
 
     #[test]
