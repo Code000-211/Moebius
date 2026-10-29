@@ -133,6 +133,8 @@ pub(in crate::harness) fn finish<L>(
     ending: Result<bool, String>,
 ) {
     router.revoke_token(&run.token);
+    // The findings the lens showed and the agent left are ignored.
+    crate::harness::lens::close_run(app, run.id);
     // What the agent did on a runner is brought into the worktree first, so that all that follows sees it.
     let ending = ending.and_then(|aborted| run.bring_back().map(|()| aborted));
     let failed = |why: &str| {

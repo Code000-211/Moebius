@@ -27,7 +27,7 @@ read in pages of 1000 and never all held in memory. A judgement recorded while t
 | Field | Type | Meaning |
 |---|---|---|
 | `id` | number | The judgement's id, unique across kinds. |
-| `kind` | string | The kind of decision, such as `tool_call`, `merge`, `approve_issue`, `retry`, `export`. |
+| `kind` | string | The kind of decision, such as `tool_call`, `merge`, `approve_issue`, `retry`, `export`, `lint_report`, `deep_check`. |
 | `context` | object | The full context the decision was made on: an object from names to strings, read from the context's blobs (the objects of several blobs are merged). What a kind's context holds is up to its decision point. |
 | `options` | array of strings | What could be chosen. |
 | `choice` | string | What was chosen. |
@@ -35,7 +35,7 @@ read in pages of 1000 and never all held in memory. A judgement recorded while t
 | `decider` | string | Who decided: `person`, or a plugin as `<plugin>` or `<plugin>/<part>` (such as `guard/patterns`), or `none` when no decider answers the kind. |
 | `run` | number or null | The run the decision was made in. |
 | `card` | number or null | The card it was made for. |
-| `outcome` | string or null | What came of it, null until known: a card that is done gives each of its judgements without an outcome the card's outcome (`merged`), except those of `localize`, whose outcome is the files the change touched (below); a replayed refusal has `replayed: <how it ended>; <what happened to the files>` (see [the replays](harness-configuration.md#the-replays)). |
+| `outcome` | string or null | What came of it, null until known: a card that is done gives each of its judgements without an outcome the card's outcome (`merged`), except those of `localize`, whose outcome is the files the change touched (below); a replayed refusal has `replayed: <how it ended>; <what happened to the files>` (see [the replays](harness-configuration.md#the-replays)); a `lint_report` has `fixed` or `ignored` and a `deep_check` `found something new`, `nothing new` or `not run` (see [the lens decisions](decision-model.md#the-lens-decisions)). |
 | `at` | number | When it was recorded, in seconds since 1970. |
 | `split` | string | `train` or `held_out`, see below. |
 

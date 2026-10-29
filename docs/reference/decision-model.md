@@ -121,6 +121,49 @@ decider plugin answers the kind, once `min_judgements` such cards are measured a
 mean recall, and `count` the cards measured; after a dismissal or release `min_judgements` more cards are needed.
 `GET /v1/decision-model` shows `measured`, `recall` and `baseline_recall` for the kind.
 
+## The lens decisions
+
+Two kinds of decision belong to the lens, the fast lint and type feedback an agent gets after its edits (see
+[the bridge protocol](bridge-protocol.md#the-lens)). The linters and type checkers themselves are deterministic and run in
+the run's worktree; only what the agent is told, and when the slow check runs, is decided. Both go through
+`Decisions::decide`, are answered by the compiled-in plugin `lens` (the decider of their judgements is `lens/rules`), are
+shadowed like every kind, and are proposed for a takeover after enough agreement like any kind a decider plugin answers.
+Anything that fails while deciding takes the safe option, which is to show the finding and to run the check.
+
+### `lint_report`
+
+Options `show` and `hide`, fail-closed `show`. Asked once for each new finding of an edit, errors first and then by line,
+at most 40 per edit. The rule: an error is always shown; a warning is shown when it is on a line the edit touched and fewer
+than `max_lines` findings of the edit are shown already; every other warning is hidden.
+
+Context (all text): `file`, `tool`, `severity` (`error` or `warning`), `line`, `column` and `rule` when the tool says them,
+`message`, `touched` (`true` or `false`), `key` (the tool, the rule and the message, which identify the problem across
+edits), `edit_tool` (`edit` or `write`), `edit_lines` (`<first>-<last>`, the lines the edit changed), `edit` (their new
+text, cut to 40 lines), `shown_so_far`, `max_lines` and `run_id`. The judgement has the run and its card.
+
+Outcome, filled in later, per finding: `fixed` when a later edit of the file in the run no longer has the finding (a hidden
+finding can be fixed too), `ignored` when the run ended with the finding still there, and, for a run that ended without the
+lens seeing it either way, what a card's change gets (`merged` or `rejected`). Whether a fix survived review is not
+tracked beyond that.
+
+### `deep_check`
+
+Options `run` and `skip`, fail-closed `run`. Asked when the agent is done, if a command of the plan matches a file the run
+changed. The rule: run when a file of code was changed other than by edits that only touched comments; skip when only
+documentation (`.md`, `.txt`, `.rst`, ...), configuration (`.toml`, `.json`, `.yaml`, `.lock`, ...) or comments changed.
+A file whose extension is not known is code.
+
+Context: `files` (every changed file, one per line), `code_files`, `comment_only_files`, `docs_files` and `config_files`
+(the same files by what the server makes of them, one per line, empty when none), `tools` (the commands that would run, with
+commas), `round` (from 1; the lens asks at most three times per run) and `run_id`.
+
+Outcome: `found something new` when the check told the agent about a problem it had not been told, `nothing new` when it did
+not, `not run` when every command was skipped (not installed, or over its time). A `skip` has no outcome of its own.
+
+Both kinds are listed by `GET /v1/judgements/kinds` and exported like any other (see [the training
+export](training-export.md)); with a `[decision_model]` they appear in `GET /v1/decision-model` once they are shadowed. A
+plugin can answer them instead of `lens` with `plugins.decides` in the [configuration](configuration.md).
+
 ## Without a decision model
 
 Without the table nothing is shadowed, no takeover is proposed, `GET /v1/decision-model` says `configured: false`, and

@@ -1,0 +1,15 @@
+#!/bin/sh
+# A stand-in for a fast linter in tests (Unix only: it is a shell script started by its `#!` line). It reads one file
+# and prints findings in the form `file:line:column: severity code message`:
+# - each line containing ERROR is an error L001 on that line;
+# - each line containing WARN is a warning L002 on that line;
+# - a file containing GLOBAL has a warning L003 on line 1, wherever the word is;
+# - a file containing SLOW takes five seconds first.
+file="$1"
+if grep -q SLOW "$file"; then exec sleep 5; fi
+awk -v f="$file" '
+  /ERROR/ { printf "%s:%d:1: error L001 found an error marker\n", f, NR }
+  /WARN/  { printf "%s:%d:1: warning L002 found a warning marker\n", f, NR }
+  /GLOBAL/ { global = 1 }
+  END { if (global) printf "%s:1:1: warning L003 a global marker is somewhere\n", f }
+' "$file"

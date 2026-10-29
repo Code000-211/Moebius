@@ -206,6 +206,19 @@ impl Store {
         )?)
     }
 
+    /// Sets `outcome` on every judgement of `kind` made in the run that has none yet; returns how many were set.
+    pub fn set_run_missing_outcomes(
+        &self,
+        run_id: i64,
+        kind: &str,
+        outcome: &str,
+    ) -> Result<usize> {
+        Ok(self.conn().execute(
+            "UPDATE judgements SET outcome = ?1 WHERE run_id = ?2 AND kind = ?3 AND outcome IS NULL",
+            params![outcome, run_id, kind],
+        )?)
+    }
+
     /// How many tool calls the guard refused since `since` because of each rule, by the rule's name. A pattern and a
     /// rule in prose that the teacher names both write their reason as `<rule>: <why>`; a refusal without a rule
     /// (the teacher's own failures, a rules file that cannot be read, a missing teacher) is not counted.

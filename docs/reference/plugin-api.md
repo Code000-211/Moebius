@@ -43,7 +43,7 @@ Serialised in lower case with underscores, as in `"decider"`.
 | `forge` | Issues and changes: GitHub, GitLab, Forgejo (Codeberg, Gitea), plain git. | No. The forges are a Rust trait in `forge.rs`. |
 | `harness` | Drives a coding-agent harness such as Pi-Bolt. | No. `harness/pibolt/` is called directly. |
 | `runner` | Where harnesses run: local worktrees, later GPU machines. | No. |
-| `decider` | Answers decision points. | Yes: `guard` decides `tool_call`. |
+| `decider` | Answers decision points. | Yes: `guard` decides `tool_call`, and `lens` decides `lint_report` and `deep_check` (see [the lens decisions](decision-model.md#the-lens-decisions)). |
 | `router` | The model provider the harnesses use. | No. `router/` is part of the core. |
 | `view` | Describes a screen of the desktop app as data. | No. |
 

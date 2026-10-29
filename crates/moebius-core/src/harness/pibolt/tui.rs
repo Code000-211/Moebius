@@ -37,12 +37,16 @@ impl PiBolt {
             live.run
         };
         let agent_dir = self.write_agent_dir(run_dir.join("agent"), &config, &run.token)?;
+        // A chat from before the server was started again may lack the lens.
+        std::fs::write(run_dir.join("moebius-lens.ts"), super::LENS)
+            .map_err(|e| format!("cannot write the lens extension: {e}"))?;
         let sessions = run_dir.join("sessions");
         let place = Place {
             worktree: &run.worktree,
             agent_dir: &agent_dir,
             sessions: &sessions,
             continues: true,
+            lens: &run_dir.join("moebius-lens.ts"),
             bridge: &run_dir.join("moebius-bridge.ts"),
             token: &run.token,
             operates: stored.agent == MOEBIUS_AGENT,

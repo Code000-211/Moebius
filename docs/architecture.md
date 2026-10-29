@@ -88,6 +88,10 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
    to them at the run's first request, lists their tools as `<server>__<tool>`, checks every call with
    `check::decide_call` before the server sees it, cleans the result of secrets and records an `mcp_call` run event;
    it stops the servers when the run ends (`Gateway::stop_ended_runs`).
+   The lens extension (`bridge/moebius-lens.ts`) loaded before the bridge runs the repository's fast linter on a file after each
+   edit (the plan comes from `lens::Plan`, in `MOEBIUS_LENS`) and appends the problems that are new, as
+   `lens::report` decides through `decide("lint_report")`; before the run settles it asks `decide("deep_check")` and
+   runs the slow type check once. `finish` closes the lens's judgements of the run (`lens::close_run`).
 8. **The run ends.** At `agent_settled`, `Reader::end` closes Pi's standard input, revokes the token, commits what the
    agent left (`Reader::commit`: `git add --all` and a commit by Moebius; for `code` runs, and for chats, see 12b), sets the status (`succeeded`,
    `failed` when a `code` run changed nothing or anything went wrong, `stopped` when aborted), removes the worktree
@@ -540,6 +544,10 @@ At the top:
 | `harness/gateway/mod.rs` | The MCP gateway, `POST /mcp` on the router's listener: a run's servers bundled as one MCP server, every tool call checked, its result cleaned of secrets and recorded as an `mcp_call` run event. |
 | `harness/gateway/upstream.rs` | One server of a run as the gateway reaches it: a stdio child process or a remote server over streamable HTTP, initialized and its tools listed. |
 | `harness/skill.rs` | The built-in skills, bundled with `include_str!` and written to `<data_dir>/skills/<name>/` at start: the `moebius` skill (the guide and the references) and the task skills of the Moebius agent (`moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions` and `moebius-plugins`, in `crates/moebius-core/skill/<name>/SKILL.md`), and the engineering skills copied unchanged from Matt Pocock's skills (`crates/moebius-core/skill/vendor/mattpocock/`, MIT, pinned to a commit) that the Coder, the Reviewer and the Grilling partner are given with `moebius-autonomous`, which says what to do where the skills ask a person. |
+| `harness/lens/mod.rs` | The lens, fast lint and type feedback after an agent's edits: what the folder holds, the extension it writes into each run (`bridge/moebius-lens.ts`) and the plan it hands to it. |
+| `harness/lens/plan.rs` | What the lens checks in a worktree: `.moebius/lint.toml` read and checked, or the common tools detected from the repository's files, as the JSON plan in `MOEBIUS_LENS`; globs turned into regular expressions. |
+| `harness/lens/decider.rs` | The `lens` decider, a compiled-in plugin that answers `lint_report` (errors always, warnings on touched lines up to a limit) and `deep_check` (run when code was touched), and what makes a file code, documentation or configuration. |
+| `harness/lens/report.rs` | The lens's endpoints on the router's listener (`/moebius/lens/report`, `/deep`, `/deep-result`): each new finding and the end-of-turn check go through `decide`, outcomes are filled in (`fixed`, `ignored`, what the deep check found), and the time of each check is stored as a `lens_check` run event. |
 | `harness/grilling.rs` | The Grilling partner's end: the issues or report it left in its worktree, confirming the issues as cards (on GitHub opened there first) and dismissing. |
 
 `improve/`, learning from what was recorded:
@@ -571,7 +579,7 @@ At the top:
 | `improve/export.rs` | The training-set export: judgements with their contexts and outcomes as JSON Lines per kind, the held-out tenth, the exports a person started in the app. |
 
 Outside `src/`: `workflow/*.luau` holds the six built-in column scripts, `bridge/moebius-bridge.ts` the Pi extension
-loaded into every run, `skill/` the built-in skills.
+loaded into every run and `bridge/moebius-lens.ts` the one before it that runs the linters and type checks, `skill/` the built-in skills.
 
 ### `crates/moebius-desktop` (the app)
 

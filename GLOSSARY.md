@@ -49,6 +49,11 @@ The part of Moebius that lives inside a harness, as an extension of that harness
 call before it runs.
 _Avoid_: Moebius extension, hook, plugin, adapter
 
+**Lens**:
+The extension loaded next to the bridge that shows an agent the lint, syntax and type problems its own edits made, at once
+after an edit and once more when it is done.
+_Avoid_: linter, LSP, diagnostics
+
 **Router**:
 The part of Moebius that every harness uses as its model provider and that passes each request on to a real provider.
 _Avoid_: proxy, gateway, LLM provider

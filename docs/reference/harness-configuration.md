@@ -204,6 +204,52 @@ agent without servers has no `mcp.json` and no MCP support, and no agent is give
 A stdio server runs with the Moebius server's environment and its own `env`, and works in the run's worktree, so it can
 read and change what the agent works on: give a run only servers you trust.
 
+## `.moebius/lint.toml`
+
+Not part of the harness configuration repository: a file of the *project* an agent works on, committed to it like
+`.moebius/checks`. It tells the [lens](bridge-protocol.md#the-lens) what to run after the agent's edits in the run's
+worktree. Without the file, or with no `[[check]]` in it, the lens detects the common tools from the repository's files.
+
+```toml
+budget_ms = 1500            # all per-edit checks of one edit together; a check over it is skipped and said
+max_lines = 10              # the most findings an edit's result or the end-of-turn message carries
+deep_timeout_seconds = 120  # each end-of-turn command
+syntax = true               # the built-in syntax checks (JSON, Python, shell); false turns them off
+enabled = true              # false turns the lens off for this repository
+
+[[check]]
+glob = "**/*.py"                                  # or globs = ["*.py", "*.pyi"]
+edit = "ruff check --output-format concise {file}"   # after each edit, on the one file
+deep = "pyright {files}"                           # once, when the agent is done, on the changed files
+format = "lines"                                   # how the output is read
+pattern = "^(?<file>.+?):(?<line>\\d+):(?<column>\\d+): (?<message>.*)$"   # optional, for any other output
+severity = "warning"                               # for a finding that does not say
+```
+
+`syntax` (not in the example) is a command like `edit` that runs as the syntax check of the files of the glob, instead of
+the built-in one. The keys are all optional except that a `[[check]]` needs a `glob` or `globs` and at least one of `edit`, `deep` and
+`syntax`. An unknown key, an empty command or a `pattern` that is not a regular expression makes the whole file unusable:
+the lens then does nothing in that run except to store a `lens_check` event that says why.
+
+- **Globs** are matched against the path from the worktree: `*` is any characters but `/`, `**` any characters, `**/` any
+  folders, `?` one character, `{a,b}` either. A glob without a `/` names files at any depth, so `*.py` is every Python file.
+- **Commands** are split into words as a shell would (`'single'` and `"double"` quotes), and run without a shell, in the
+  worktree, so there is no `|`, `&&` or `$VAR`; a program that is in `node_modules/.bin` is found there. In a command,
+  `{file}` is the edited file; for `deep`, an argument that is exactly `{files}` becomes the changed files that match the
+  glob, and `{dirs}` their folders (`./pkg`), once each. The program's exit status is not read, only its output.
+- **Output** is read by `format`: `lines` (the default) finds `<file>:<line>[:<column>]: <message>`, one finding per line,
+  and ignores other lines; `files` takes each line that is only a file name as "not formatted" (`gofmt -l`) and also reads
+  `lines`; `diff-in` reads `Diff in <file>:<line>:` (`rustfmt --check`); `github` reads `::error file=..,line=..,col=..,
+  title=..::message` (`biome --reporter=github`). A `pattern` replaces the line format of `lines` and `files`: a regular
+  expression with the named groups `file`, `line`, `column`, `message` and `severity`. Only findings in the file that was
+  edited count after an edit. A finding is an error when its text says error, a warning when it says warning, and has the
+  check's `severity` (default `warning`) otherwise. Two commands that print differently need two `[[check]]` entries.
+- **Without `[[check]]`** the lens uses what the files suggest: `ruff check` for Python when the repository has a
+  `pyproject.toml`, `setup.py`, `requirements.txt` or `ruff.toml`, and `pyright` at the end when it is configured;
+  `rustfmt --check` and `cargo check --message-format short` with a `Cargo.toml` (the edition from it); `gofmt -l` and
+  `go vet` with a `go.mod`; `biome lint` with a `biome.json`, or `oxlint` with an `.oxlintrc.json`; `tsc --noEmit
+  --incremental` with a `tsconfig.json`; `shellcheck` for shell scripts. A tool that is not installed is skipped.
+
 ## A broken agent
 
 A file that cannot be used leaves only its agent out; the other agents are read and used. The agent is reported:

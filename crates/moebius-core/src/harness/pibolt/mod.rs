@@ -80,6 +80,9 @@ pub const IDLE: Duration = Duration::from_secs(30 * 60);
 /// The bridge extension, written into each run's directory.
 const BRIDGE: &str = include_str!("../../../bridge/moebius-bridge.ts");
 
+/// The lens extension, written into each run's directory next to the bridge.
+use crate::harness::lens::EXTENSION as LENS;
+
 /// Starts and stops Pi-Bolt runs.
 pub struct PiBolt {
     /// The `pi-bolt` executable.

@@ -128,6 +128,7 @@ The server builds the host, adds the guard and routes `tool_call` to it in `Serv
 <!-- excerpt: crates/moebius-core/src/server/mod.rs -->
 ```rust
 host.add(guard);
+host.add(lens::Lens);
 let mut app = App::new(store.clone(), Arc::new(host), &config.data_dir);
 app.decisions.share_routed(routed);
 app.checks_timeout = config.checks_timeout;

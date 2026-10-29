@@ -112,7 +112,7 @@ pub(crate) struct CheckReply {
     pub(crate) reason: String,
 }
 
-fn unauthorized() -> Response {
+pub(crate) fn unauthorized() -> Response {
     (
         StatusCode::UNAUTHORIZED,
         Json(json!({ "error": "not a run's token" })),
@@ -122,7 +122,7 @@ fn unauthorized() -> Response {
 
 /// The body as JSON. It is read after the token is checked, so that a caller without one learns nothing about the
 /// body; a body that is not what the endpoint takes is answered 400 or 422.
-fn parse<T: DeserializeOwned>(body: &Bytes) -> Result<T, JsonRejection> {
+pub(crate) fn parse<T: DeserializeOwned>(body: &Bytes) -> Result<T, JsonRejection> {
     Json::<T>::from_bytes(body).map(|Json(value)| value)
 }
 

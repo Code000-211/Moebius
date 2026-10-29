@@ -37,6 +37,7 @@ use crate::decide::guard::{self, Guard, Teacher};
 use crate::decide::localize::{self, Localizer};
 use crate::decide::model::{self, DecisionModel, Routed};
 use crate::harness::gateway::Gateway;
+use crate::harness::lens;
 use crate::harness::pibolt::PiBolt;
 use crate::harness::pick::Harnesses;
 use crate::harness::remote::Runners;
@@ -144,12 +145,16 @@ impl Server {
         }
         host.add(Localizer::new(store.clone()));
         host.add(guard);
+        host.add(lens::Lens);
         let mut app = App::new(store.clone(), Arc::new(host), &config.data_dir);
         app.decisions.share_routed(routed);
         app.checks_timeout = config.checks_timeout;
         app.decisions.route("tool_call", guard::NAME);
         app.decisions.route(localize::KIND, localize::KIND);
         app.localize = config.localize;
+        for kind in ["lint_report", "deep_check"] {
+            app.decisions.route(kind, lens::NAME);
+        }
         for plugin in &config.plugins {
             for kind in &plugin.decides {
                 app.decisions.route(kind, &plugin.name);
@@ -293,6 +298,7 @@ impl Server {
                 self.router.clone(),
                 self.config.rules_path(),
             ))
+            .merge(lens::routes(self.app.clone(), self.router.clone()))
             .merge(gateway.clone().routes());
         tokio::select! {
             served = api::serve(api_listener, state) => served,

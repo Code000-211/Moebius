@@ -495,7 +495,9 @@ Response:
   "activities": [{"activity": "bash", "model_ms": 2140000, "calls": 214, "output_tokens": 61000}],
   "tool_waits": [{"tool": "bash", "calls": 31, "seconds": 2460}],
   "classes": [{"class": "strong", "model": "claude-sonnet-5-5", "tokens": 420000, "calls": 300}],
-  "tool_output": {"results": 96, "bytes_before": 3400000, "bytes_after": 920000}
+  "tool_output": {"results": 96, "bytes_before": 3400000, "bytes_after": 920000},
+  "lens": [{"phase": "deep", "tool": "cargo", "runs": 31, "skipped": 2, "ms": 412000, "shown": 9},
+           {"phase": "lint", "tool": "ruff", "runs": 140, "skipped": 0, "ms": 5200, "shown": 17}]
 }
 ```
 
@@ -526,6 +528,10 @@ Response:
 - `tool_output` is what keeping tool outputs small saved in the window: how many results were made smaller (their
   `tool_output` run events) and their bytes before and after, summed. See `agents.<name>.tool_output` in
   [configuration](configuration.md).
+- `lens` is where the time of the lens's checks goes (see [the lens](bridge-protocol.md#the-lens)): for each phase
+  (`syntax`, `lint` after an edit, `deep` before the run settles) and tool in the window, the checks that `runs` and the
+  ones `skipped`, the `ms` they took in all and how many problems they told the agent about (`shown`); the one that took
+  most time first. It is the sum of the `lens_check` run events.
 
 Errors: `422` `days` is not from 1 to 365.
 
@@ -1617,6 +1623,10 @@ A `run_event`'s source is told by its inner `kind`:
   the [MCP gateway](bridge-protocol.md#the-mcp-gateway).
 - `tool_output`: a tool's result made smaller before the model read it, `{"tool", "tool_call_id", "steps", "bytes_before",
   "bytes_after", "lines_before", "lines_after", "saved"}`. See the [bridge protocol](bridge-protocol.md#post-moebiusresult).
+- `lens_check`: one check of the lens after an edit or before the run settled, `{"file", "tool_call_id", "phase": "syntax" |
+  "lint" | "deep", "tool", "ms", "skipped", "findings", "shown"}`: how long the check took, why it did not run when it
+  did not (`over budget`, `not installed`, or why `.moebius/lint.toml` cannot be read), how many problems it found and how
+  many the agent was told about; `file` and `tool_call_id` are null for `deep`. See [the lens](bridge-protocol.md#the-lens).
 - `mcp_error`: an MCP server of the run's agent could not be started or reached, `{"server", "message"}`; its tools are
   left out.
 - Every other kind is a record Pi-Bolt wrote on its RPC channel, with its `type` as the kind (for example

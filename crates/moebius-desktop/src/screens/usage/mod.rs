@@ -20,7 +20,7 @@ use crate::settings::Settings;
 use crate::theme;
 use crate::widgets::page;
 
-use boxes::{agents_box, models_box, tiles, time_box, waits_box};
+use boxes::{agents_box, lens_box, models_box, tiles, time_box, waits_box};
 use heatmap::{Colours, heatmap};
 
 pub use figures::short;
@@ -163,17 +163,21 @@ impl Usage {
     fn report_view<'a>(&self, report: &'a UsageReport) -> Element<'a, AppMessage> {
         let colours = Colours::of(report);
         let span = self.window.span();
-        column![
+        let mut sections = column![
             tiles(report, self.window),
             heatmap(report, &colours),
             models_box(report, &colours, &span),
             row![time_box(report, &span), waits_box(report)]
                 .spacing(theme::PAGE_GAP)
                 .align_y(Alignment::Start),
-            agents_box(report),
-        ]
-        .spacing(theme::PAGE_GAP)
-        .width(Length::Fill)
-        .into()
+        ];
+        if let Some(lens) = lens_box(report) {
+            sections = sections.push(lens);
+        }
+        sections
+            .push(agents_box(report))
+            .spacing(theme::PAGE_GAP)
+            .width(Length::Fill)
+            .into()
     }
 }

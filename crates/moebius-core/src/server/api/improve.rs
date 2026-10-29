@@ -39,7 +39,7 @@ use crate::improve::research::{self, NewResearch, ResearchView};
 use crate::improve::retro::{self, RetroSummary, RetroView};
 use crate::improve::trial;
 use crate::store::{
-    ActivityUsage, AgentUsage, ClassUsage, ModelUsage, Proposal, Replay, Takeover,
+    ActivityUsage, AgentUsage, ClassUsage, LensTime, ModelUsage, Proposal, Replay, Takeover,
     ToolOutputSaving, ToolWait,
 };
 
@@ -128,6 +128,9 @@ pub struct UsageAnswer {
     pub classes: Vec<ClassUsage>,
     /// What making tool outputs smaller saved.
     pub tool_output: ToolOutputSaving,
+    /// What the lens's checks took after the agents' edits, by phase and tool.
+    #[serde(default)]
+    pub lens: Vec<LensTime>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -524,6 +527,7 @@ async fn usage(
             tool_waits: store.tool_waits(days, TOOL_WAITS)?,
             classes: store.usage_by_class(days)?,
             tool_output: store.tool_output_saving(days)?,
+            lens: store.lens_times(days)?,
         })
     })
     .await

@@ -61,6 +61,7 @@ fn every_route_is_in_the_reference() {
         ("server/api", "docs/reference/desktop-api.md"),
         ("decide/check", "docs/reference/bridge-protocol.md"),
         ("harness/gateway", "docs/reference/bridge-protocol.md"),
+        ("harness/lens", "docs/reference/bridge-protocol.md"),
         ("router", "docs/reference/router.md"),
     ] {
         let routes = quoted_after(

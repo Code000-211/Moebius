@@ -154,6 +154,36 @@ fn the_usage_screen_shows_the_heatmap_models_and_agents_like_the_mockup() {
     );
 }
 
+/// The lens's checks of the usage: where their time went, drawn as `tests/snapshots/usage-lens-tiny-skia.png`.
+#[test]
+fn the_usage_screen_lists_where_the_time_of_the_lint_and_type_checks_goes() {
+    let mut report = usage_report(Some(8_000_000));
+    report.lens = serde_json::from_value(json!([
+        {"phase": "deep", "tool": "cargo", "runs": 31, "skipped": 2, "ms": 412_000, "shown": 9},
+        {"phase": "lint", "tool": "ruff", "runs": 140, "skipped": 0, "ms": 5_200, "shown": 17},
+        {"phase": "syntax", "tool": "syntax", "runs": 96, "skipped": 0, "ms": 640, "shown": 1},
+    ]))
+    .unwrap();
+    let mut app = App::with_snapshot(overview());
+    let _ = app.update(Message::Select(Page::Usage));
+    let _ = app.update(Message::Usage(usage::Message::Loaded(Ok(Box::new(report)))));
+    draw_sized(
+        &app,
+        "usage-lens",
+        &[
+            "Lint and type checks",
+            "Before the run ends",
+            "After an edit",
+            "Told to the agent",
+            "6 m",
+            "640 ms",
+        ],
+        Size::new(1440.0, 1900.0),
+    );
+    // A server that reports no lens time has no box.
+    assert!(!shows(&usage_app(None), "Lint and type checks"));
+}
+
 #[test]
 fn the_sidebar_meter_is_the_tokens_alone_without_a_budget_and_absent_before_the_usage_is_read() {
     let app = usage_app(None);

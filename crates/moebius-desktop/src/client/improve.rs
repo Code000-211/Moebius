@@ -208,6 +208,22 @@ pub struct UsageReport {
     /// What making tool outputs smaller saved; nothing from a server that does not say.
     #[serde(default)]
     pub tool_output: ToolOutputSaving,
+    /// Where the time of the lens's lint and type checks went; nothing from a server that does not say.
+    #[serde(default)]
+    pub lens: Vec<LensTime>,
+}
+
+/// What the checks of one tool took in the window, in one phase: `syntax` or `lint` after an edit, `deep` before a run
+/// settles.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct LensTime {
+    pub phase: String,
+    pub tool: String,
+    pub runs: i64,
+    pub skipped: i64,
+    pub ms: i64,
+    /// The problems the agent was told about.
+    pub shown: i64,
 }
 
 /// How many tool results were made smaller in the window, and their bytes before and after.

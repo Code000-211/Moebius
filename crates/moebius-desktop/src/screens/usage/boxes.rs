@@ -1,5 +1,5 @@
 //! The boxes of the Usage page under its window: the tiles of the totals, the tokens by model, where the model time
-//! goes, the longest tool waits and the usage by agent.
+//! goes, the longest tool waits, where the lens's lint and type checks spent their time and the usage by agent.
 
 use iced::font::Weight;
 use iced::widget::text::Wrapping;
@@ -303,6 +303,57 @@ pub fn waits_box(report: &UsageReport) -> Element<'_, AppMessage> {
         )
     });
     panel("Longest tool waits", aside, content)
+}
+
+/// Where the time of the lint and type checks after the agents' edits went, by phase and tool; none when there was none.
+pub fn lens_box(report: &UsageReport) -> Option<Element<'_, AppMessage>> {
+    if report.lens.is_empty() {
+        return None;
+    }
+    let rows = report
+        .lens
+        .iter()
+        .map(|check| {
+            vec![
+                Cell::code(&check.tool),
+                Cell::plain(
+                    match check.phase.as_str() {
+                        "deep" => "Before the run ends",
+                        "syntax" => "Syntax, after an edit",
+                        _ => "After an edit",
+                    }
+                    .to_string(),
+                ),
+                Cell::plain(grouped(check.runs)),
+                Cell::plain(grouped(check.skipped)),
+                Cell::plain(milliseconds(check.ms)),
+                Cell::plain(grouped(check.shown)),
+            ]
+        })
+        .collect();
+    let columns = [
+        ("Check", Length::FillPortion(3)),
+        ("When", Length::FillPortion(3)),
+        ("Runs", Length::FillPortion(1)),
+        ("Skipped", Length::FillPortion(1)),
+        ("Time", Length::FillPortion(1)),
+        ("Told to the agent", Length::FillPortion(2)),
+    ];
+    let total: i64 = report.lens.iter().map(|check| check.ms).sum();
+    Some(panel(
+        "Lint and type checks",
+        Some(milliseconds(total)),
+        table(&columns, rows),
+    ))
+}
+
+/// A time in milliseconds up to a second, then as `duration` says it.
+fn milliseconds(ms: i64) -> String {
+    if ms < 1000 {
+        format!("{ms} ms")
+    } else {
+        duration(ms / 1000)
+    }
 }
 
 pub fn agents_box(report: &UsageReport) -> Element<'_, AppMessage> {

@@ -94,6 +94,21 @@ pub struct ToolOutputSaving {
     pub bytes_after: i64,
 }
 
+/// What the lens's checks took in a window of days, for one phase and tool (the `lens_check` run events).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LensTime {
+    /// `syntax`, `lint` or `deep`.
+    pub phase: String,
+    pub tool: String,
+    /// How many times the check ran, and how many times it was skipped.
+    pub runs: i64,
+    pub skipped: i64,
+    /// The time the runs took, in milliseconds.
+    pub ms: i64,
+    /// The findings the agent was told about.
+    pub shown: i64,
+}
+
 /// All usage in a window of days: tokens, calls, input tokens, cached tokens and model time.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct UsageTotals {
@@ -357,6 +372,32 @@ impl Store {
                 })
             },
         )?)
+    }
+}
+
+impl Store {
+    /// What the lens's checks took in the last `days` days, the phase and tool with most time first.
+    pub fn lens_times(&self, days: i64) -> Result<Vec<LensTime>> {
+        self.rows(
+            &format!(
+                "SELECT json_extract(data, '$.phase') AS phase, json_extract(data, '$.tool') AS tool,
+                        SUM(json_extract(data, '$.skipped') IS NULL), SUM(json_extract(data, '$.skipped') IS NOT NULL),
+                        COALESCE(SUM(json_extract(data, '$.ms')), 0), COALESCE(SUM(json_extract(data, '$.shown')), 0)
+                 FROM events WHERE kind = 'lens_check' AND at >= {WINDOW_START} AND phase IS NOT NULL AND tool IS NOT NULL
+                 GROUP BY phase, tool ORDER BY SUM(json_extract(data, '$.ms')) DESC, phase, tool"
+            ),
+            [days],
+            |r| {
+                Ok(LensTime {
+                    phase: r.get(0)?,
+                    tool: r.get(1)?,
+                    runs: r.get(2)?,
+                    skipped: r.get(3)?,
+                    ms: r.get(4)?,
+                    shown: r.get(5)?,
+                })
+            },
+        )
     }
 }
 
@@ -638,6 +679,33 @@ mod tests {
                 bytes_before: 9500,
                 bytes_after: 1400
             }
+        );
+
+        // Where the lens's time went.
+        assert!(s.lens_times(1).unwrap().is_empty());
+        let check = |phase: &str, tool: &str, ms, skipped: Option<&str>, shown| {
+            let data =
+                json!({"phase": phase, "tool": tool, "ms": ms, "skipped": skipped, "shown": shown});
+            s.append_event(coder, "lens_check", &data).unwrap();
+        };
+        check("lint", "ruff", 30, None, 1);
+        check("lint", "ruff", 20, None, 0);
+        check("lint", "ruff", 1500, Some("over budget"), 0);
+        check("deep", "cargo", 9000, None, 2);
+        let lens = |phase: &str, tool: &str, runs, skipped, ms, shown| LensTime {
+            phase: phase.into(),
+            tool: tool.into(),
+            runs,
+            skipped,
+            ms,
+            shown,
+        };
+        assert_eq!(
+            s.lens_times(1).unwrap(),
+            [
+                lens("deep", "cargo", 1, 0, 9000, 2),
+                lens("lint", "ruff", 2, 1, 1550, 1)
+            ]
         );
     }
 

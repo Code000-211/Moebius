@@ -48,8 +48,8 @@ pub use retros::{OwnEdits, Proposal, Retro, Trial};
 pub use runs::Run;
 pub use shadows::{NewShadow, ShadowStats, ShadowedOutcome, Takeover};
 pub use usage::{
-    ANSWERING, ActivityUsage, AgentUsage, ClassUsage, ModelUsage, NO_RUN, ToolOutputSaving,
-    ToolWait, UNKNOWN, Usage, UsageTotals,
+    ANSWERING, ActivityUsage, AgentUsage, ClassUsage, LensTime, ModelUsage, NO_RUN,
+    ToolOutputSaving, ToolWait, UNKNOWN, Usage, UsageTotals,
 };
 
 /// Why the store failed.

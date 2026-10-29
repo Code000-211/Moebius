@@ -1,0 +1,6 @@
+#!/bin/sh
+# A stand-in for a slow type checker in tests (Unix only: it is a shell script started by its `#!` line). It reads the
+# files it is given and prints `file:line:column: error T001 type mismatch` for each line containing TYPE-ERROR.
+for file in "$@"; do
+  awk -v f="$file" '/TYPE-ERROR/ { printf "%s:%d:1: error T001 type mismatch\n", f, NR }' "$file"
+done
