@@ -16,7 +16,7 @@ fn script_path(repository: i64, column: &str) -> String {
 
 /// `text` with every byte but letters, digits and `-._~` percent-encoded, and `/` kept when `slashes` says so, for a
 /// path or a query value of a route.
-fn encoded(text: &str, slashes: bool) -> String {
+pub(super) fn encoded(text: &str, slashes: bool) -> String {
     text.bytes()
         .map(|b| match b {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {

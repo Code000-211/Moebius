@@ -435,6 +435,7 @@ At the top:
 | `harness/repo/mod.rs` | The harness configuration repository's clone: opened, refreshed, and its agents read again when it changes. |
 | `harness/repo/read.rs` | Reading the agents, skills and MCP servers from it, each agent checked as a run uses it. |
 | `harness/repo/edits.rs` | A person's edits of agents, skills, MCP servers and rules, as commits pushed to its origin. |
+| `harness/repo/skill_files.rs` | A skill's other files, beside its `SKILL.md`: read, and written or deleted as commits like any edit. |
 | `harness/repo/branches.rs` | Its branches: the Retro's proposals and chats' branches checked, pushed, merged or dismissed, and a trial's worktree of a branch. |
 | `harness/repo/create.rs` | `create`: a new repository from the agents and rules of `moebius.toml` (`POST /v1/harness/setup`, `moebius init`). |
 | `harness/mcp.rs` | The MCP servers of `mcp.toml`, checked when read, their `${NAME}` values filled in, and the `mcp.json` that names the MCP gateway for a run of an agent that names them. |
@@ -532,7 +533,8 @@ At the top:
 | `screens/agents/mod.rs`, `screens/agents/update.rs`, `screens/agents/view.rs` | The Agents page (the agents and an editor for the one chosen; an edit is a commit), how a message changes it, and the list with the editor's head. |
 | `screens/agents/editor.rs` | The editor of one agent, what a save sends, and an agent of `moebius.toml`. |
 | `screens/agents/boxes.rs` | The boxes under the editor's head: model and settings, instructions, skills, MCP servers, extensions. |
-| `screens/skills.rs`, `screens/mcp_servers.rs` | The Skills and MCP servers pages, each a list with an editor; an edit is a commit. |
+| `screens/skills/mod.rs`, `screens/mcp_servers.rs` | The Skills and MCP servers pages, each a list with an editor; an edit is a commit. |
+| `screens/skills/files.rs` | A skill's files on the Skills page: the list, `SKILL.md` first, and the editor of another file. |
 | `screens/rules/mod.rs`, `screens/rules/update.rs` | The Rules page (the built-in patterns and what each refused, and the rules in prose, edited in place): its state and the file a save sends, and how a message changes it. |
 | `screens/rules/file.rs` | A rules file as text: a rule's section put back, appended or dropped, and what a name may be. |
 | `screens/rules/view.rs`, `screens/rules/cards.rs` | The boxes of the page, and the rules in them as cards with the editor a card grows into. |

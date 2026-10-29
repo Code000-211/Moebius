@@ -1,5 +1,5 @@
-//! The Skills and MCP servers pages: a skill or server listed and edited, the built-in skill, setting up a harness
-//! repository, and the panel that imports a skill from a zip or a link.
+//! The Skills and MCP servers pages: a skill or server listed and edited, a skill's files listed and edited, the
+//! built-in skill, setting up a harness repository, and the panel that imports a skill from a zip or a link.
 
 use iced::Size;
 use moebius_desktop::app::{App, Message, Page};
@@ -54,13 +54,183 @@ fn the_skills_page_lists_the_skills_and_edits_one() {
             "Delete",
             "Save",
             "Description",
+            "Files",
+            "New file",
             "SKILL.md",
-            "Other files",
             "examples/good.md",
             "examples/bad.md",
         ],
         Size::new(1440.0, 900.0),
     );
+}
+
+fn file(message: skills::FileMessage) -> Message {
+    Message::Skills(skills::Message::File(message))
+}
+
+fn good_example() -> client::FileDetail {
+    serde_json::from_value(json!({
+        "path": "examples/good.md", "size": 44,
+        "text": "We ship on Fridays.\nThe tests must pass.\n"
+    }))
+    .unwrap()
+}
+
+#[test]
+fn a_skills_other_file_opens_in_the_editor_beside_the_list() {
+    let mut app = skills_app();
+    assert!(matches!(
+        &clicked(&app, "examples/good.md")[..],
+        [Message::Skills(skills::Message::File(skills::FileMessage::Open(Some(path))))]
+            if path == "examples/good.md"
+    ));
+    let _ = app.update(file(skills::FileMessage::Open(Some(
+        "examples/good.md".into(),
+    ))));
+    assert!(shows(&app, "Reading the file…"));
+    let _ = app.update(file(skills::FileMessage::Opened(
+        "examples/good.md".into(),
+        Ok(good_example()),
+    )));
+    draw_sized(
+        &app,
+        "skills-file",
+        &[
+            "Files",
+            "SKILL.md",
+            "examples/good.md",
+            "examples/bad.md",
+            "Delete file",
+            "Save file",
+        ],
+        Size::new(1440.0, 900.0),
+    );
+    // SKILL.md is open again from the list, as it was.
+    assert!(matches!(
+        &clicked(&app, "SKILL.md")[..],
+        [Message::Skills(skills::Message::File(
+            skills::FileMessage::Open(None)
+        ))]
+    ));
+    let _ = app.update(file(skills::FileMessage::Open(None)));
+    assert!(shows(&app, "Markdown · the text after the frontmatter"));
+    assert!(!shows(&app, "Save file"));
+}
+
+#[test]
+fn a_file_that_is_not_text_is_listed_with_its_size_and_cannot_be_edited() {
+    let mut app = skills_app();
+    let _ = app.update(file(skills::FileMessage::Open(Some("logo.png".into()))));
+    let binary =
+        serde_json::from_value(json!({"path": "logo.png", "size": 4200, "binary": true})).unwrap();
+    let _ = app.update(file(skills::FileMessage::Opened(
+        "logo.png".into(),
+        Ok(binary),
+    )));
+    assert!(shows(
+        &app,
+        "This file is not text, or too large to edit here (4.2 KB); it is kept as it is."
+    ));
+    assert!(clicked(&app, "Save file").is_empty());
+    assert!(matches!(
+        &clicked(&app, "Delete file")[..],
+        [Message::Skills(skills::Message::File(
+            skills::FileMessage::AskDelete
+        ))]
+    ));
+}
+
+#[test]
+fn saving_a_file_sends_its_path_and_text_and_says_the_commit() {
+    let settings = settings();
+    let mut skills = skills::Skills::default();
+    let mut update = |message| skills.update(message, Some(&settings)).units();
+    update(skills::Message::Select("house-style".into()));
+    update(skills::Message::Opened(
+        "house-style".into(),
+        Ok(house_style()),
+    ));
+    assert_eq!(
+        update(skills::Message::File(skills::FileMessage::Open(Some(
+            "examples/good.md".into()
+        )))),
+        1,
+        "the file is read"
+    );
+    update(skills::Message::File(skills::FileMessage::Opened(
+        "examples/good.md".into(),
+        Ok(good_example()),
+    )));
+    assert_eq!(
+        skills.save_file_request().unwrap(),
+        (
+            "examples/good.md".to_string(),
+            "We ship on Fridays.\nThe tests must pass.\n".to_string()
+        )
+    );
+    let mut update = |message| skills.update(message, Some(&settings)).units();
+    assert_eq!(update(skills::Message::File(skills::FileMessage::Save)), 1);
+
+    // A new file is named first; a path that leaves the skill, or SKILL.md, is said instead of sent.
+    let _ = skills.update(
+        skills::Message::File(skills::FileMessage::NewFile),
+        Some(&settings),
+    );
+    for (path, problem) in [
+        ("", "Enter the file's path"),
+        ("../agents/Coder.toml", "Enter the file's path"),
+        ("SKILL.md", "SKILL.md is saved with the skill."),
+    ] {
+        let mut update = |message| skills.update(message, Some(&settings)).units();
+        update(skills::Message::File(skills::FileMessage::PathEdited(
+            path.into(),
+        )));
+        assert_eq!(update(skills::Message::File(skills::FileMessage::Save)), 0);
+        assert!(skills.save_file_request().unwrap_err().starts_with(problem));
+    }
+    let mut update = |message| skills.update(message, Some(&settings)).units();
+    update(skills::Message::File(skills::FileMessage::PathEdited(
+        " scripts/fill.py ".into(),
+    )));
+    assert_eq!(update(skills::Message::File(skills::FileMessage::Save)), 1);
+    assert_eq!(skills.save_file_request().unwrap().0, "scripts/fill.py");
+}
+
+#[test]
+fn a_new_file_is_named_saved_as_a_commit_and_deleted_after_asking() {
+    let mut app = skills_app();
+    assert!(matches!(
+        &clicked(&app, "New file")[..],
+        [Message::Skills(skills::Message::File(
+            skills::FileMessage::NewFile
+        ))]
+    ));
+    let _ = app.update(file(skills::FileMessage::NewFile));
+    assert!(shows(&app, "Path in the skill, such as scripts/fill.py"));
+    assert!(!shows(&app, "Delete file"));
+    let _ = app.update(file(skills::FileMessage::PathEdited(
+        "scripts/fill.py".into(),
+    )));
+    let mut saved = house_style();
+    saved.files.push("scripts/fill.py".into());
+    saved.commit = Some("f11e5a1".into());
+    let _ = app.update(file(skills::FileMessage::Saved(Ok(saved))));
+    assert!(shows(&app, "Saved as a commit: f11e5a1"));
+    assert!(shows(&app, "Delete file"));
+    click(&mut app, "Delete file");
+    assert!(shows(&app, "Delete scripts/fill.py?"));
+    assert!(matches!(
+        &clicked(&app, "Delete the file")[..],
+        [Message::Skills(skills::Message::File(
+            skills::FileMessage::Delete
+        ))]
+    ));
+    let mut deleted = house_style();
+    deleted.commit = Some("de1e7ed".into());
+    let _ = app.update(file(skills::FileMessage::Deleted(Ok(deleted))));
+    assert!(shows(&app, "Saved as a commit: de1e7ed"));
+    assert!(!shows(&app, "scripts/fill.py"));
+    assert!(shows(&app, "Markdown · the text after the frontmatter"));
 }
 
 #[test]
@@ -82,6 +252,23 @@ fn the_built_in_skill_is_shown_and_cannot_be_changed() {
     assert!(shows(&app, "guide/agents.md"));
     let mut ui = simulator(&app);
     assert!(ui.find("Save").is_err() && ui.find("Delete").is_err());
+    assert!(ui.find("New file").is_err());
+    drop(ui);
+    // A built-in skill's file is read and not changed.
+    let _ = app.update(file(skills::FileMessage::Open(Some(
+        "guide/agents.md".into(),
+    ))));
+    let page =
+        serde_json::from_value(json!({"path": "guide/agents.md", "size": 9, "text": "# Agents\n"}))
+            .unwrap();
+    let _ = app.update(file(skills::FileMessage::Opened(
+        "guide/agents.md".into(),
+        Ok(page),
+    )));
+    assert!(shows(&app, "Read only"));
+    assert!(!shows(&app, "Markdown · the text after the frontmatter"));
+    let mut ui = simulator(&app);
+    assert!(ui.find("Save file").is_err() && ui.find("Delete file").is_err());
 }
 
 #[test]

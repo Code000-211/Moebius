@@ -94,7 +94,7 @@ fn entry_row<'a>(
 }
 
 /// A size in bytes as the tree writes it: `512 B`, `4.2 KB`, `1.3 MB`.
-pub(super) fn size(bytes: u64) -> String {
+pub(crate) fn size(bytes: u64) -> String {
     match bytes {
         b if b >= 1_000_000 => format!("{:.1} MB", b as f64 / 1_000_000.0),
         b if b >= 1_000 => format!("{:.1} KB", b as f64 / 1_000.0),

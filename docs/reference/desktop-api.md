@@ -680,7 +680,7 @@ none. Without `[harness]` the array is empty.
 
 A skill of the harness configuration repository, or a built-in skill: `{"name": string, "description":
 string, "text": string, "files": [string]}`. `text` is the `SKILL.md` after its frontmatter; `files` are the paths of the
-skill's other files, relative to its directory, sorted (they are listed, not returned). Errors: `404` no such skill;
+skill's other files, relative to its directory, sorted (each is read with `GET /v1/skills/{name}/files/{*path}`). Errors: `404` no such skill;
 `409` the server has no `[harness]`: skills and MCP servers are edited in a harness configuration repository.
 
 ### `PUT /v1/skills/{name}`
@@ -699,6 +699,37 @@ name or description; `500` as for `PUT /v1/agents/{name}`.
 A person deletes a skill and its directory, committed and pushed the same way (`Delete the skill <name>`, kind
 `edit_skill`). Response: `null`. Errors: `404` no such skill; `409` no `[harness]`, the skill is built in, or an agent
 names it (the message names the agents); `500` as for `PUT`.
+
+### `GET /v1/skills/{name}/files/{*path}`
+
+One of a skill's other files; `{*path}` is the rest of the URL, from the skill's directory
+(`/v1/skills/pdf/files/scripts/fill.py`). Response: the shape `GET /v1/repositories/{id}/files/{*path}` answers,
+`{"path": string, "size": number, "text": string}`, with `binary` or `too_large` instead of `text` for a file that is
+not UTF-8 text or is larger than 1 MiB. A built-in skill's files are read too. Errors: `404` no such skill or file (a
+directory is not one); `409` no `[harness]`; `422` the path is empty, is `SKILL.md`, is absolute, climbs out with `..`,
+names `.git`, or goes through a symbolic link.
+
+### `PUT /v1/skills/{name}/files/{*path}`
+
+A person, or the Moebius agent, writes one of a skill's other files, creating it and its directories when they are
+new. Request: `{"text": string}`; unknown keys are refused. The skill must exist (its `SKILL.md` is written with `PUT
+/v1/skills/{name}`). The file is committed (`Add <path> of the skill <name>` or `Update <path> of the skill <name>`) on
+the default branch and pushed to `origin`, and the decision is recorded (kind `edit_skill`, its context `skill`, `file`
+and `text`). Text that changes nothing makes no commit and no decision. Response: the skill as `GET /v1/skills/{name}`
+answers it, with `commit` (left out when nothing changed). Errors: `404` no such skill; `409` no `[harness]`, or the
+skill is built in; `422` the path, as for `GET`, or it is a directory; `500` as for `PUT /v1/agents/{name}`.
+
+```sh
+jq -Rs '{text: .}' < fill.py > body.json
+"$MOEBIUS" api PUT /v1/skills/pdf/files/scripts/fill.py --body body.json
+```
+
+### `DELETE /v1/skills/{name}/files/{*path}`
+
+A person, or the Moebius agent, deletes one of a skill's other files, and the directories it leaves empty, committed and
+pushed the same way (`Delete <path> of the skill <name>`, kind `edit_skill`). Response: the skill as `PUT` answers it.
+Errors: `404` no such skill or file; `409` no `[harness]`, or the skill is built in; `422` the path, as for `GET`; `500`
+as for `PUT`.
 
 ### `GET /v1/mcp-servers`
 

@@ -44,6 +44,15 @@ impl BuiltIn {
         self.files.iter().skip(1).map(|(path, _)| *path).collect()
     }
 
+    /// The text of its file at `path`, one of [`BuiltIn::files`].
+    pub fn file(&self, path: &str) -> Option<&'static str> {
+        self.files
+            .iter()
+            .skip(1)
+            .find(|(p, _)| *p == path)
+            .map(|(_, text)| *text)
+    }
+
     pub fn summary(&self) -> Summary {
         Summary {
             name: self.name.into(),

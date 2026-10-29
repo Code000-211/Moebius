@@ -203,6 +203,10 @@ as they are.
   message is `Add the skill <name>` or `Update the skill <name>`, the decision kind `edit_skill`. `DELETE` removes the
   directory (`Delete the skill <name>`). The built-in skills (`moebius` and the task skills) cannot be changed or
   deleted.
+- `PUT /v1/skills/{name}/files/{*path}` takes `{"text": "..."}` and writes one of the skill's other files, such as
+  `scripts/fill.py`, with its directories (`Add <path> of the skill <name>` or `Update <path> of the skill <name>`,
+  the decision kind `edit_skill`); `DELETE` removes it and the directories it leaves empty (`Delete <path> of the
+  skill <name>`). `SKILL.md` is written only with the skill, and a path through a symbolic link is refused.
 - `PUT /v1/mcp-servers/{name}` takes the keys of a server of [`mcp.toml`](#mcptoml) and rewrites its table in the file,
   checked as reading checks it (so a `${NAME}` outside `mcp_env` is refused). The table is rewritten in place, or added
   at the end; the other tables and the comments of the file are kept, but comments inside the rewritten table are lost.

@@ -81,7 +81,7 @@ pub struct NewFile {
 
 /// `path` as a path inside the repository, without leading or trailing `/`: refused with `Invalid` when it is
 /// absolute, climbs out with `..`, or reaches into `.git`.
-fn inside(path: &str) -> Result<String> {
+pub(crate) fn inside(path: &str) -> Result<String> {
     let trimmed = path.trim_matches('/');
     if path.starts_with('/') || path.contains('\\') {
         return Err(AppError::Invalid(format!(

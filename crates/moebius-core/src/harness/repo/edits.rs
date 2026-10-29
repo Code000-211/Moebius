@@ -126,7 +126,7 @@ impl HarnessRepo {
     /// fails before the push is through, the working tree and the default branch are as they were. On success the
     /// agents are read again, the person's decision is recorded and the short id of the commit is given; a change
     /// that changed nothing makes no commit.
-    fn commit(
+    pub(super) fn commit(
         &self,
         app: &App,
         by: &Actor,
@@ -173,13 +173,13 @@ impl HarnessRepo {
 
 /// A change a person makes to the repository's files, as `HarnessRepo::commit` takes it.
 #[derive(Clone, Copy)]
-struct Edit<'a> {
+pub(super) struct Edit<'a> {
     /// The kind of the decision recorded once the change is pushed.
-    kind: &'a str,
+    pub(super) kind: &'a str,
     /// The pathspec of the files the change touches.
-    files: &'a str,
+    pub(super) files: &'a str,
     /// The commit message.
-    message: &'a str,
+    pub(super) message: &'a str,
 }
 
 impl HarnessRepo {

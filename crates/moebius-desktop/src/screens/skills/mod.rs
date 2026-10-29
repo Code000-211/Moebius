@@ -1,10 +1,12 @@
-//! The Skills page: the skills an agent can name, and an editor for the one chosen. An edit is `PUT /v1/skills/{name}`,
-//! which the server makes a commit in the harness configuration repository. The skill Moebius brings is shown and
-//! cannot be changed. A server without a harness configuration repository lists no skills, and the page then offers to
-//! set one up (see `harness_setup`).
+//! The Skills page: the skills an agent can name, and an editor for the one chosen: its description and the list of its
+//! files, with the editor of the file open (`files`). An edit of `SKILL.md` is `PUT /v1/skills/{name}`, which the server
+//! makes a commit in the harness configuration repository. The skills Moebius brings are shown and cannot be changed. A
+//! server without a harness configuration repository lists no skills, and the page then offers to set one up (see
+//! `harness_setup`).
 
-use iced::widget::text::Wrapping;
-use iced::widget::{column, row, text, text_editor, text_input};
+mod files;
+
+use iced::widget::{column, row, text_editor, text_input};
 use iced::{Alignment, Element, Length, Task};
 
 use crate::app::Message as AppMessage;
@@ -41,7 +43,11 @@ pub enum Message {
     Deleted(Result<(), ClientError>),
     /// A message of the import panel.
     Import(import::Message),
+    /// A message about the skill's files.
+    File(files::Message),
 }
+
+pub use files::Message as FileMessage;
 
 enum Notice {
     /// The edit is a commit with this short id; none when the edit changed nothing.
@@ -59,8 +65,10 @@ struct Editor {
     reading: bool,
     description: String,
     text: text_editor::Content,
-    /// The skill's other files, which are listed and not edited.
+    /// The skill's other files.
     files: Vec<String>,
+    /// The other file open in the editor; none while `SKILL.md` is.
+    file: Option<files::FileEditor>,
     notice: Option<Notice>,
     /// Whether "Delete" asks to be confirmed.
     confirming: bool,
@@ -77,6 +85,7 @@ impl Editor {
             description: String::new(),
             text: text_editor::Content::new(),
             files: vec![],
+            file: None,
             notice: None,
             confirming: false,
         }
@@ -151,6 +160,14 @@ impl Skills {
         match &self.editor {
             Some(editor) => editor.request(),
             None => Err("No skill is open.".into()),
+        }
+    }
+
+    /// What saving the file open would send: its path and text, or what is wrong.
+    pub fn save_file_request(&self) -> Result<(String, String), String> {
+        match self.editor.as_ref().and_then(|editor| editor.file.as_ref()) {
+            Some(file) => file.request(),
+            None => Err("No file is open.".into()),
         }
     }
 
@@ -230,6 +247,11 @@ impl Skills {
                 }
             }
             Message::Import(message) => return self.import.update(message, settings),
+            Message::File(message) => {
+                if let Some(editor) = &mut self.editor {
+                    return files::update(editor, message, settings);
+                }
+            }
             edit => self.edit(edit),
         }
         Task::none()
@@ -402,7 +424,13 @@ fn editor_view(editor: &Editor) -> Element<'_, AppMessage> {
         None => {}
     }
     let mut boxes = column![boxed(top)].spacing(theme::PAGE_GAP);
-    if !editor.reading {
+    if editor.reading {
+        return boxes.into();
+    }
+    boxes = boxes.push(files::list(editor));
+    if let Some(file) = &editor.file {
+        boxes = boxes.push(files::editor_view(file, editor.built_in));
+    } else {
         boxes = boxes.push(boxed(
             column![
                 box_heading(
@@ -418,30 +446,6 @@ fn editor_view(editor: &Editor) -> Element<'_, AppMessage> {
             ]
             .spacing(12),
         ));
-        boxes = boxes.push(files_box(&editor.files));
     }
     boxes.into()
-}
-
-fn files_box(files: &[String]) -> Element<'_, AppMessage> {
-    let list: Element<_> = if files.is_empty() {
-        page::body("No other file.")
-    } else {
-        column(files.iter().map(|file| {
-            text(file.as_str())
-                .size(theme::CODE_SMALL)
-                .font(theme::MONO)
-                .wrapping(Wrapping::WordOrGlyph)
-                .into()
-        }))
-        .spacing(6)
-        .into()
-    };
-    boxed(
-        column![
-            box_heading("Other files", aside("Beside SKILL.md · not edited here")),
-            list,
-        ]
-        .spacing(12),
-    )
 }

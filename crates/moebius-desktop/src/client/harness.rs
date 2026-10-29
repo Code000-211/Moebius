@@ -151,7 +151,7 @@ pub struct SkillDetail {
     pub description: String,
     #[serde(default)]
     pub text: String,
-    /// The paths of the skill's other files, which the app shows and does not edit.
+    /// The paths of the skill's other files, each read and edited on its own.
     #[serde(default)]
     pub files: Vec<String>,
     /// The short id of the commit a `PUT` made; none when the edit changed nothing.

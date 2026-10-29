@@ -1,5 +1,5 @@
-//! The harness configuration repository against a real server: agents, rules, skills and MCP servers edited as
-//! commits, and setting up the repository from `moebius.toml`.
+//! The harness configuration repository against a real server: agents, rules, skills, a skill's files and MCP servers
+//! edited as commits, and setting up the repository from `moebius.toml`.
 
 use moebius_core::repos::git;
 use moebius_desktop::client::{Client, ClientError};
@@ -171,6 +171,37 @@ async fn editing_a_skill_and_an_mcp_server_is_a_commit_and_a_named_one_is_not_de
         panic!("the built-in skill was changed");
     };
     assert_eq!(status, 409);
+
+    // A skill's other files are written, read and deleted, each a commit; a path is sent encoded.
+    let saved = client
+        .save_skill_file("greeting", "examples/a #1.md", "Hello, you.\n")
+        .await
+        .unwrap();
+    assert_eq!(saved.files, ["examples/a #1.md"]);
+    assert!(saved.commit.is_some());
+    assert_eq!(subject(), "Add examples/a #1.md of the skill greeting");
+    let read = client
+        .skill_file("greeting", "examples/a #1.md")
+        .await
+        .unwrap();
+    assert_eq!(read.text.as_deref(), Some("Hello, you.\n"));
+    let built_in = client
+        .skill_file("moebius", "guide/agents.md")
+        .await
+        .unwrap();
+    assert!(built_in.text.is_some());
+    let Err(ClientError::Server { status, .. }) =
+        client.save_skill_file("greeting", "SKILL.md", "x").await
+    else {
+        panic!("SKILL.md was written as a file");
+    };
+    assert_eq!(status, 422);
+    let deleted = client
+        .delete_skill_file("greeting", "examples/a #1.md")
+        .await
+        .unwrap();
+    assert!(deleted.files.is_empty());
+    assert_eq!(subject(), "Delete examples/a #1.md of the skill greeting");
 
     let definition = moebius_desktop::client::McpDefinition {
         command: Some("search".into()),

@@ -115,8 +115,10 @@ git clone --depth 1 https://github.com/acme/skills import
 ```
 
 Build each body from the source: for a skill, `jq -n --arg d "<description>" --rawfile text body.md '{description: $d,
-text: $text}'` with the text after the `SKILL.md` frontmatter (the route writes only `SKILL.md`: name the other files,
-which are added in a chat in the harness configuration repository). For an MCP server, read its README, package.json
+text: $text}'` with the text after the `SKILL.md` frontmatter. Then write each other text file of the skill with
+`jq -Rs '{text: .}' < scripts/fill.py > body.json` and `"$MOEBIUS" api PUT /v1/skills/pdf-forms/files/scripts/fill.py
+--body body.json` (after the skill, which must exist first); name a file that is not text, which is added in a chat in
+the harness configuration repository. For an MCP server, read its README, package.json
 or pyproject.toml and any `mcp.json` example for the command, arguments and environment, or the URL and headers, and
 put each key as `${NAME}` with `NAME` in `harness.mcp_env` (`"$MOEBIUS" settings set` it, keeping the names there).
 Never replace an existing skill or server without asking, never use a built-in skill name, never write a key. End with

@@ -165,6 +165,8 @@ Native, GPU-rendered, written in Rust with iced (ADR 0003, ADR 0011), built to [
 - **Fleet**: every card run and chat that is working, one tile each with its last steps; a click opens the live view or the chat.
 - **Agents**: the agent list and editor (model, thinking, token budget, instructions, skills, MCP servers, extensions), and
   open proposals for the agent.
+- **Skills**: each skill of `skills/` as a list of its files, `SKILL.md` and the others, each edited as a commit; skills
+  are imported from a zip file or a link by the Moebius agent.
 - **Usage**: tokens per day by leading model, tokens by model, where the tokens go, where to save, where the model time goes,
   by agent.
 

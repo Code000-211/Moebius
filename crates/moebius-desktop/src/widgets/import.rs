@@ -305,9 +305,12 @@ pub fn request(kind: Kind, source: &Source, note: &str) -> String {
              so (ask the person), and never import a skill under a built-in name (`moebius` and the `moebius-` task \
              skills); give it another name instead. For each skill, write its description (one line that says when \
              to use it) and the text of its SKILL.md after the frontmatter with `\"$MOEBIUS\" api PUT \
-             /v1/skills/<name> --body body.json`, building the body with `jq`. The route writes only SKILL.md: name \
-             the skill's other files, which the person adds through a chat in the harness configuration repository. \
-             Read each skill back with `\"$MOEBIUS\" api GET /v1/skills/<name>`.\n\nThen list what was imported, \
+             /v1/skills/<name> --body body.json`, building the body with `jq`. Then write each of the skill's other \
+             text files, such as its scripts, with `jq -Rs '{text: .}' < <file> > body.json` and `\"$MOEBIUS\" api \
+             PUT /v1/skills/<name>/files/<path> --body body.json`, <path> being the file's path from the skill's \
+             directory; name a file that is not text, which the person adds through a chat in the harness \
+             configuration repository. Read each skill back with `\"$MOEBIUS\" api GET /v1/skills/<name>`, which \
+             lists its files.\n\nThen list what was imported, \
              under which names, and what the person must do: the API keys or programs a skill needs (a key is stored \
              on the Settings page, never written into a skill) and which agents should be given the skill."
         }
@@ -346,6 +349,11 @@ mod tests {
         assert!(asked.contains("unzip -q /srv/moebius/uploads/ab12.zip -d import"));
         assert!(asked.contains(r#"`"$MOEBIUS" api GET /v1/skills`"#));
         assert!(asked.contains(r#"`"$MOEBIUS" api PUT /v1/skills/<name> --body body.json`"#));
+        assert!(
+            asked.contains(
+                r#"`"$MOEBIUS" api PUT /v1/skills/<name>/files/<path> --body body.json`"#
+            )
+        );
         assert!(asked.contains("never replace an existing skill without saying so"));
         assert!(asked.contains("built-in name"));
         assert!(asked.contains("Settings page"));

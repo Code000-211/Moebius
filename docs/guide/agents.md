@@ -439,8 +439,10 @@ servers page of the desktop app, press **Import**:
    /v1/mcp-servers/{name}` (every one a commit), and ends with what it imported and what is left to you.
 
 The agent never replaces an existing skill or server without asking, and never imports a skill under a built-in name.
-It writes only a skill's `SKILL.md`; other files of a skill are named in its answer, to be added in a chat in the
-repository (below). An MCP server takes keys as `${NAME}`: set `NAME` in the server's environment and keep it in
+It writes a skill's other text files, such as its scripts, with `PUT /v1/skills/{name}/files/{path}`; a file that is
+not text (an image, a font) is named in its answer, to be added in a chat in the repository (below). On the Skills page
+a skill is a list of its files: pick `SKILL.md` or another file to edit it, or **New file** to add one; each save or
+delete is a commit. An MCP server takes keys as `${NAME}`: set `NAME` in the server's environment and keep it in
 `harness.mcp_env`. Import needs a harness configuration repository; without one the button is disabled. The same
 works without the app: upload the zip with `curl --data-binary @skills.zip -H 'content-type: application/zip'
 $API/v1/uploads` and start a chat that names the `path` it answers.

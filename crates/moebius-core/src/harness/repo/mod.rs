@@ -9,12 +9,14 @@
 //!
 //! This module holds the clone itself: opening and refreshing it. `read` reads the agents, skills, MCP servers and
 //! rules from it, `edits` makes a person's edits commits pushed to `origin`, `branches` checks, proposes and merges
-//! the branches of the Retro, chats and trials, and `create` makes a new repository.
+//! the branches of the Retro, chats and trials, `create` makes a new repository, and `skill_files` reads and edits a
+//! skill's files beside its `SKILL.md`.
 
 mod branches;
 mod create;
 mod edits;
 mod read;
+mod skill_files;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
@@ -30,6 +32,7 @@ pub use read::{
     AgentDefinition, AgentSettings, AgentView, McpServerInfo, McpServerView, SkillInfo, SkillText,
     SkillView,
 };
+pub use skill_files::SkillFileText;
 
 /// The harness configuration repository's clone.
 pub struct HarnessRepo {

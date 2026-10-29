@@ -21,6 +21,7 @@ use crate::app::Message as AppMessage;
 use crate::client::{Client, ClientError, FileDetail, Tree, TreeEntry};
 use crate::settings::Settings;
 
+pub(crate) use view::size;
 pub use view::tabs;
 
 /// The tabs at the top of a project's page.

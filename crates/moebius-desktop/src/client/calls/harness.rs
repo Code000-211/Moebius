@@ -1,9 +1,15 @@
 //! The calls about the harness configuration: agents, rules, skills, MCP servers and uploads.
 
+use super::board::encoded;
 use crate::client::{
-    Agent, AgentDetail, AgentSettings, Client, ClientError, McpDefinition, McpServer,
+    Agent, AgentDetail, AgentSettings, Client, ClientError, FileDetail, McpDefinition, McpServer,
     McpServerDetail, RulesView, Skill, SkillDetail, Upload,
 };
+
+/// The route of one of a skill's other files.
+fn skill_file_path(name: &str, path: &str) -> String {
+    format!("/v1/skills/{name}/files/{}", encoded(path, true))
+}
 
 impl Client {
     /// The agents a chat can be with, the Moebius agent first.
@@ -67,6 +73,31 @@ impl Client {
     /// Deletes a skill of the harness configuration repository.
     pub async fn delete_skill(&self, name: &str) -> Result<(), ClientError> {
         self.delete(&format!("/v1/skills/{name}")).await
+    }
+
+    /// One of a skill's other files: its text, or for a binary or large file only its size.
+    pub async fn skill_file(&self, name: &str, path: &str) -> Result<FileDetail, ClientError> {
+        self.get(&skill_file_path(name, path)).await
+    }
+
+    /// Writes one of a skill's other files; the server commits it and answers the skill with its files.
+    pub async fn save_skill_file(
+        &self,
+        name: &str,
+        path: &str,
+        text: &str,
+    ) -> Result<SkillDetail, ClientError> {
+        let body = serde_json::json!({ "text": text });
+        self.put(&skill_file_path(name, path), body).await
+    }
+
+    /// Deletes one of a skill's other files; the server commits it and answers the skill with its files.
+    pub async fn delete_skill_file(
+        &self,
+        name: &str,
+        path: &str,
+    ) -> Result<SkillDetail, ClientError> {
+        self.delete(&skill_file_path(name, path)).await
     }
 
     /// Sends a zip file to the server, which keeps it where the Moebius agent can read it.
