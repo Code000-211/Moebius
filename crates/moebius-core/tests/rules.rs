@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use moebius_core::config::Config;
-use moebius_core::repos::check;
+use moebius_core::decide::check;
 use moebius_core::repos::git;
 use moebius_core::router::Grant;
 use moebius_core::server::Server;

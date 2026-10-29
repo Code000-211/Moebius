@@ -1,6 +1,7 @@
 //! Decision points (spec 3.2, ADR 0010): every decision, whoever makes it, goes through [`Decisions::decide`] or
 //! [`Decisions::record_by`] and leaves exactly one judgement with its full context.
 
+pub mod check;
 pub mod guard;
 pub mod model;
 pub mod rules;

@@ -1,7 +1,6 @@
 //! Repositories and worktrees (spec 3): one clone per repository under the data directory, a worktree and branch per
 //! run, and local merges for repositories without a forge. Everything goes through the `git` command line.
 
-pub mod check;
 pub mod files;
 pub mod forge;
 pub mod github;

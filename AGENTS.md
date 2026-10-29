@@ -3,7 +3,8 @@
 
 Moebius is an orchestration layer that drives coding-agent harnesses (Pi-Bolt first) from a repository's issues to
 changes ready to merge. Read `GLOSSARY.md` for the words, `docs/spec.md` for what is built, `docs/adr/` for why, and
-`docs/issues-m0-m1.md` / `docs/issues-m2-m9.md` for the work, issue by issue.
+`docs/plan/` for the work the first version was built from, issue by issue. `docs/README.md` is the map of all the
+documentation; `CONTRIBUTING.md` says the same as this file for people.
 
 ## Layout
 
@@ -11,18 +12,18 @@ changes ready to merge. Read `GLOSSARY.md` for the words, `docs/spec.md` for wha
   forges and decisions together; `config`, `store`, `blobs` (and `blobs::redact`), `bus` and `router` (the model
   provider). The rest is grouped by part, one folder each: `server/` (the wiring and nightly schedule, `api`,
   `settings` for editing `moebius.toml` while it runs, `setup` for the Models, Plugins and Get started pages), `repos/`
-  (git, `forge`, `github`, `poll`, `files`, `check`), `board/` (the engine and `scripts`), `decide/` (decision points,
-  `guard`, `rules`, `model` for shadowing and takeovers), `harness/` (`pibolt`, `terminal`, `repo` for the harness
+  (git, `forge`, `github`, `poll`, `files`), `board/` (the engine and `scripts`), `decide/` (decision points, `check`
+  for the bridge's tool-call check, `guard`, `rules`, `model` for shadowing and takeovers), `harness/` (`pibolt`, `terminal`, `repo` for the harness
   configuration repository, `mcp`, `skill`, `grilling`) and `improve/` (`retro`, `trial`, `replay`, `research`,
   `export`). `docs/architecture.md` lists every module. Column scripts are in `workflow/*.luau`.
 - `crates/moebius-plugin-api`: the plugin trait and the host that calls plugins with a time limit, failing closed.
 - `crates/moebius`: the `moebius` binary (`init`, `serve`, `check-script`, `export`, and in `cli/` the commands that
   operate a running server through the desktop API: `api` for any route, a command for what is done often; the Moebius
   agent uses them as `"$MOEBIUS"`).
-- `crates/moebius-core/skill/` and `src/harness/skill.rs`: the built-in skills. The `moebius` skill is `SKILL.md` plus every page
-  of `docs/guide/` and `docs/reference/` (add a new page to the list in `harness/skill.rs`; a test fails if you forget); the
-  Moebius agent's task skills are `skill/moebius-<task>/SKILL.md`, and every `"$MOEBIUS"` command and route they name is
-  checked by a test.
+- `crates/moebius-core/skill/` and `src/harness/skill.rs`: the built-in skills. The `moebius` skill is `SKILL.md` plus
+  every page of `docs/guide/` and `docs/reference/` (add a new page to the list in `harness/skill.rs`; a test fails if
+  you forget); the Moebius agent's task skills are `skill/moebius-<task>/SKILL.md`, and every `"$MOEBIUS"` command and
+  route they name is checked by a test.
 - `crates/moebius-desktop`: the iced desktop app (built to `docs/design.md`). It talks to the server only through the
   desktop API and does not depend on `moebius-core` (a dev-dependency starts a real server in its tests). At the top:
   `app/` the state, messages and view, `client/` the API client and event stream, `settings.rs` the saved address
@@ -35,8 +36,22 @@ changes ready to merge. Read `GLOSSARY.md` for the words, `docs/spec.md` for wha
 - `README.md` says what Moebius is and how to run it; `docs/architecture.md` says how a card moves and which module does
   what; `docs/reference/` holds one exact reference per contract; `examples/` holds the examples that run in CI (the
   decider plugin is `crates/moebius-plugin-api/examples/allow_reads.rs`).
+- Each crate has a `README.md` with its layout.
 - `AGENTS.md` is a copy of this file for agents that read that name. Edit `CLAUDE.md`, then copy it below the first
   line of `AGENTS.md`; a test fails if they differ.
+
+## Where new code goes
+
+- Into the folder of its part, never as a new module at the top of a crate's `src/` unless it ties the crate together.
+  A new route goes into the module of `server/api/` for its part of the API, its client call into `client/calls/` of
+  the app; a new kind of record into a module of `store/`; a new page into `screens/`; a piece two screens share into
+  `widgets/`.
+- A module that grows past about 600 lines, or mixes concerns, becomes a folder: `git mv x.rs x/mod.rs`, then cut it
+  by concern. `mod.rs` keeps what the parts share and re-exports their public items, so callers do not change; each
+  part takes its tests with it.
+- Every module starts with a `//!` doc comment that says what it is for and how it fits in; a folder's `mod.rs` says
+  what the folder holds. Every module has a row in the module map of `docs/architecture.md`, with its path from the
+  crate's `src/`; a test fails until it has one, and another fails for a link in the documentation that leads nowhere.
 
 ## Checks
 

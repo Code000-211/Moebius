@@ -151,6 +151,8 @@ Or just ask the Moebius agent: it knows the guide and the reference, and builds 
 
 ## Documentation
 
+[`docs/README.md`](docs/README.md) maps all of it. The main pages:
+
 | | |
 |---|---|
 | [`GLOSSARY.md`](GLOSSARY.md) | The words Moebius uses. |
@@ -160,19 +162,23 @@ Or just ask the Moebius agent: it knows the guide and the reference, and builds 
 | [`docs/guide/`](docs/guide/README.md) | How to build on Moebius, one task per page. |
 | [`docs/design.md`](docs/design.md) | The look of the desktop app. |
 | [`examples/`](examples/README.md) | Examples that run in CI. |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to work on Moebius: where new code goes, the checks, the commits. |
 
 ## Development
 
 ```
 crates/
-  moebius-core/        the server: store, board, router, agents, rules, API
+  moebius-core/        the server: app, config, store, router at the top;
+                       server/ repos/ board/ decide/ harness/ improve/
+  moebius-desktop/     the desktop app: app/ client/ at the top; screens/ widgets/
+  moebius/             the moebius binary and its command line (cli/)
   moebius-plugin-api/  the plugin trait and its host
-  moebius/             the moebius binary and command line
-  moebius-desktop/     the desktop app
-docs/                  spec, decisions, architecture, reference, guide
+docs/                  guide, reference, architecture, spec, decisions, plan
 examples/              examples that run in CI
+dist/                  the release packaging (systemd unit, desktop entry)
 ```
 
+Each crate's `README.md` gives its layout, and the [module map](docs/architecture.md#modules) gives every module.
 Before every commit, run what CI runs:
 
 ```sh
@@ -183,8 +189,9 @@ cargo run -p moebius-plugin-api --example allow_reads
 ```
 
 The end-to-end tests run only when `MOEBIUS_PI_BOLT` names a `pi-bolt` executable. The desktop app's render tests
-compare against the pictures in `crates/moebius-desktop/tests/snapshots/`. [`CLAUDE.md`](CLAUDE.md) (also
-[`AGENTS.md`](AGENTS.md)) says how to work in the repository, for people and coding agents alike.
+compare against the pictures in `crates/moebius-desktop/tests/snapshots/`. [`CONTRIBUTING.md`](CONTRIBUTING.md) says
+how to work in the repository; [`CLAUDE.md`](CLAUDE.md) (also [`AGENTS.md`](AGENTS.md)) says the same for coding
+agents.
 
 ## Feedback
 

@@ -1,6 +1,6 @@
 # Issues: M2 to M9
 
-The milestones after M1 of [`docs/spec.md`](spec.md), cut so that each is one card. Every milestone ends with a review
+The milestones after M1 of [`docs/spec.md`](../spec.md), cut so that each is one card. Every milestone ends with a review
 issue: all tests run many times, the code read for bugs, overengineering and readability, and what is found fixed.
 
 ## M2 · GitHub

@@ -1,6 +1,6 @@
 # First issues: M0 and M1
 
-Drafts for the first two milestones of [`docs/spec.md`](spec.md), cut so that each is one card a harness can finish in one
+Drafts for the first two milestones of [`docs/spec.md`](../spec.md), cut so that each is one card a harness can finish in one
 change. They are created on GitHub only after a person confirms them.
 
 ## M0 · Skeleton

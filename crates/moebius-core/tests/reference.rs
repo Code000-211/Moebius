@@ -59,7 +59,7 @@ fn quoted_after(code: &str, before: &str) -> Vec<String> {
 fn every_route_is_in_the_reference() {
     for (module, page) in [
         ("server/api", "docs/reference/desktop-api.md"),
-        ("repos/check.rs", "docs/reference/bridge-protocol.md"),
+        ("decide/check.rs", "docs/reference/bridge-protocol.md"),
         ("router", "docs/reference/router.md"),
     ] {
         let routes = quoted_after(
@@ -201,4 +201,119 @@ fn the_documentation_the_readme_and_claude_md_point_to_exists() {
     ] {
         assert!(repository_root().join(path).is_file(), "{path} is missing");
     }
+}
+
+/// The `.rs` files under `dir`, as paths relative to it, sorted.
+fn rust_files(dir: &Path) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(next) = pending.pop() {
+        for entry in std::fs::read_dir(&next).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                let relative = path.strip_prefix(dir).unwrap();
+                found.push(relative.to_string_lossy().replace('\\', "/"));
+            }
+        }
+    }
+    found.sort();
+    found
+}
+
+#[test]
+fn every_module_is_in_the_architecture_map() {
+    let map = read("docs/architecture.md");
+    let (_, modules) = map
+        .split_once("\n## Modules\n")
+        .expect("docs/architecture.md has a Modules section");
+    for krate in [
+        "moebius",
+        "moebius-plugin-api",
+        "moebius-core",
+        "moebius-desktop",
+    ] {
+        let heading = format!("\n### `crates/{krate}`");
+        let (_, section) = modules
+            .split_once(&heading)
+            .unwrap_or_else(|| panic!("the Modules section has no heading for crates/{krate}"));
+        let section = section.split("\n### ").next().unwrap();
+        let missing: Vec<String> =
+            rust_files(&repository_root().join(format!("crates/{krate}/src")))
+                .into_iter()
+                .filter(|file| !section.contains(&format!("`{file}`")))
+                .collect();
+        assert!(
+            missing.is_empty(),
+            "docs/architecture.md does not list these modules of crates/{krate}/src: {missing:?}"
+        );
+    }
+}
+
+#[test]
+fn every_link_in_the_documentation_leads_somewhere() {
+    let root = repository_root();
+    let mut pages = Vec::new();
+    let mut pending = vec![root.clone()];
+    while let Some(next) = pending.pop() {
+        for entry in std::fs::read_dir(&next).unwrap() {
+            let path = entry.unwrap().path();
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            if path.is_dir() && !name.starts_with('.') && name != "target" {
+                pending.push(path);
+            } else if name.ends_with(".md") {
+                pages.push(path);
+            }
+        }
+    }
+    let mut broken = Vec::new();
+    for page in pages {
+        let text = std::fs::read_to_string(&page).unwrap();
+        for (_, rest) in text.match_indices("](").map(|(i, _)| text.split_at(i + 2)) {
+            let Some(target) = rest.split(')').next() else {
+                continue;
+            };
+            let target = target.split('#').next().unwrap();
+            if target.is_empty() || target.contains("://") || target.starts_with("mailto:") {
+                continue;
+            }
+            if !page.parent().unwrap().join(target).exists() {
+                let page = page.strip_prefix(&root).unwrap().display().to_string();
+                broken.push(format!("{page}: {target}"));
+            }
+        }
+    }
+    assert!(broken.is_empty(), "links that lead nowhere: {broken:#?}");
+}
+
+#[test]
+fn every_path_the_documentation_names_in_the_crates_exists() {
+    let root = repository_root();
+    let mut pages = vec![
+        "README.md".to_string(),
+        "CLAUDE.md".to_string(),
+        "CONTRIBUTING.md".to_string(),
+    ];
+    for dir in ["docs", "docs/guide", "docs/reference"] {
+        for entry in std::fs::read_dir(root.join(dir)).unwrap() {
+            let name = entry.unwrap().file_name().to_string_lossy().into_owned();
+            if name.ends_with(".md") {
+                pages.push(format!("{dir}/{name}"));
+            }
+        }
+    }
+    let mut missing = Vec::new();
+    for page in pages {
+        let text = read(&page);
+        for named in text.split('`').skip(1).step_by(2) {
+            if named.starts_with("crates/")
+                && !named.contains(['*', '<', ' ', '{'])
+                && !root.join(named.trim_end_matches('/')).exists()
+            {
+                missing.push(format!("{page}: {named}"));
+            }
+        }
+    }
+    assert!(missing.is_empty(), "paths that do not exist: {missing:#?}");
 }

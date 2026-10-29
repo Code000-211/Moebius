@@ -287,6 +287,7 @@ At the top:
 |---|---|
 | `blobs.rs` | The content-addressed blob store and secret redaction. |
 | `bus.rs` | The event bus behind the event stream. |
+| `lib.rs` | The crate's parts, and `VERSION`. |
 
 `app/`, the core put together:
 
@@ -360,6 +361,7 @@ At the top:
 | `server/api/uploads.rs` | `POST /v1/uploads`: zip files for the Moebius agent to import from. |
 | `server/api/terminals.rs` | The terminal WebSockets: a shell in a run's worktree or on the server, and Pi's terminal interface of a chat. |
 | `server/api/events.rs` | The event WebSocket `GET /v1/events`. |
+| `server/api/testing.rs` | For the tests only: a server on port 0 with a fake Pi, and the requests the tests of the API share. |
 | `server/settings/mod.rs` | Editing `moebius.toml` while the server runs: what `PUT /v1/settings` takes and answers, and reading and writing the file. |
 | `server/settings/edit.rs` | A change applied to the file's text with `toml_edit`, its comments and order kept. |
 | `server/settings/keys.rs` | Every key with its default and whether it takes effect at once, and their values without passwords. |
@@ -376,7 +378,6 @@ At the top:
 | `repos/github.rs` | The GitHub App client: JWT, installation tokens, issues with ETags, pull requests, checks, reviews, merge. |
 | `repos/poll.rs` | The poll of GitHub: issues, pull requests, checks, reviews. |
 | `repos/files.rs` | A repository's files on its default branch, read and committed (the Files and Editor tabs of a project). |
-| `repos/check.rs` | The tool-call check endpoints `/moebius/check` and `/moebius/result`, and the local checks of a change. |
 
 `board/`, the workflow:
 
@@ -390,6 +391,7 @@ At the top:
 | `board/limits.rs` | The run, round and token limits scripts see, and a script call's memory and time. |
 | `board/workflow.rs` | The columns, the default workflow's scripts built into the server, and a repository's overrides. |
 | `board/runs.rs` | What the engine needs of a harness (`Runs`), and the agents it lists. |
+| `board/testing.rs` | For the tests only: a fake harness and a store with a repository and a card. |
 | `board/dry_run.rs` | `check_script`: a script run once against a made-up card, for `moebius check-script`. |
 | `board/scripts.rs` | Editing a column's script: the script in force, saved as a commit in the repository. |
 
@@ -398,6 +400,7 @@ At the top:
 | Module | What it is for |
 |---|---|
 | `decide/mod.rs` | Decision points: routing a question to a decider, failing closed, recording the judgement. |
+| `decide/check.rs` | The tool-call check: the endpoints `/moebius/check` and `/moebius/result` the bridge calls on the router's listener, every call asked before it runs and every result reported. |
 | `decide/guard/mod.rs` | The `guard` decider: built-in rules first, then the rules in prose for the teacher or the decision model. |
 | `decide/guard/shell.rs` | How the guard reads a tool call: simple commands, redirects, nested shells, `cd`, and paths. |
 | `decide/guard/patterns.rs` | The built-in rules, fixed patterns over a tool call. |
@@ -410,6 +413,7 @@ At the top:
 
 | Module | What it is for |
 |---|---|
+| `harness/mod.rs` | What the harness folder holds. |
 | `harness/pibolt/mod.rs` | The Pi-Bolt harness: what it holds of every run's Pi, and `Runs` for it, steering and stopping runs. |
 | `harness/pibolt/agents.rs` | The built-in agents with their instructions and skills, and the agent a run uses. |
 | `harness/pibolt/process.rs` | Starting Pi: its agent directory (`models.json`, `mcp.json`), its command line and its process. |
@@ -417,6 +421,7 @@ At the top:
 | `harness/pibolt/reader.rs` | Reading Pi's records as run events, and ending the run. |
 | `harness/pibolt/chat.rs` | Chats: their Pi between messages, their settings, and pausing one that waited long. |
 | `harness/pibolt/tui.rs` | A waiting chat in Pi's interactive mode, and following its session file. |
+| `harness/pibolt/testing.rs` | For the tests only: the fake Pi, a server set up for it, and reading what Pi was started with. |
 | `harness/terminal.rs` | A person's shell in a run's worktree on a pseudo-terminal (`portable-pty`), served over the WebSocket `GET /v1/runs/{id}/terminal` (and `GET /v1/terminal`, in the directory of `moebius.toml`); at most 4 per run or on the server, not checked by the guard. The same serving carries Pi-Bolt's interactive mode for a waiting chat (`GET /v1/chats/{id}/tui`, one per chat), whose tool calls the bridge still checks; `harness/pibolt/tui.rs` ends the chat's own Pi for it, continues the chat's Pi session in it, records what it adds to the session file as the chat's events, and starts the chat's Pi again on the same session when it closes. |
 | `harness/repo/mod.rs` | The harness configuration repository's clone: opened, refreshed, and its agents read again when it changes. |
 | `harness/repo/read.rs` | Reading the agents, skills and MCP servers from it, each agent checked as a run uses it. |
@@ -431,6 +436,7 @@ At the top:
 
 | Module | What it is for |
 |---|---|
+| `improve/mod.rs` | What the improve folder holds. |
 | `improve/retro.rs` | The Retro: the day's errors collected into a report without a model, the Retro analyst's run, and its proposal branches. |
 | `improve/trial.rs` | Trials: each proposal tried on the cards of the errors it addresses, measured against the cards' first runs, and offered when positive. |
 | `improve/replay.rs` | Replays: refused, reversible tool calls run again in a throwaway copy of the worktree, and the judgement's outcome from what happened. |
@@ -447,6 +453,7 @@ At the top:
 | Module | What it is for |
 |---|---|
 | `main.rs` | The desktop app's start: fonts, theme, window. |
+| `lib.rs` | The crate's parts. |
 | `settings.rs` | The address and token, saved in the config directory with mode 0600. |
 | `theme.rs` | Every colour, size, radius and spacing of `docs/design.md`, and the bundled fonts (Manrope, JetBrains Mono). |
 | `sidebar.rs`, `search.rs` | The sidebar on every screen, and its search field. |
@@ -469,49 +476,64 @@ At the top:
 |---|---|
 | `client/mod.rs` | `Client` and `ClientError`; every type is re-exported here. |
 | `client/board.rs`, `client/runs.rs`, `client/harness.rs`, `client/server.rs`, `client/improve.rs` | The answers by part of the API: boards, cards, the inbox and the snapshot; runs and chats; agents, rules, skills and MCP servers; models, plugins, the first start and the settings; the Improve pages. |
-| `client/calls/` | Every route typed, one module per part of the API like the types, and in `mod.rs` the requests with the token they share. |
+| `client/calls/mod.rs` | The calls of the client, one module per part of the API, and the requests with the token they share. |
+| `client/calls/board.rs` | The calls about boards: the snapshot, repositories, cards and issues, the inbox's decisions, a repository's files and scripts. |
+| `client/calls/runs.rs` | The calls about runs and chats: a run's events and decisions, steering and stopping, every step of a chat. |
+| `client/calls/harness.rs` | The calls about the harness configuration: agents, rules, skills, MCP servers and uploads. |
+| `client/calls/server.rs` | The calls about what the server runs with: health, models, plugins, the first start, settings, secrets and the restart. |
+| `client/calls/improve.rs` | The calls of the Improve pages: usage, the Retro and its proposals, the decision model, exports and research. |
 | `client/events.rs` | The event stream as an iced subscription that reconnects with a backoff. |
 | `client/terminal.rs` | A shell's WebSocket: what it prints, and the keys and sizes sent to it. |
 
-`screens/`, one module per page:
+`screens/`, one module per page (`screens/mod.rs` lists them):
 
 | Module | What it is for |
 |---|---|
-| `connect.rs`, `start.rs` | The connect screen, and the Get started page: the steps of `GET /v1/start` with a button to the page that fixes each. |
-| `inbox/`, `chat/`, `fleet.rs` | The inbox and its actions, the chat screen, every working run at a glance. |
-| `project/`, `board.rs`, `add_repository.rs` | A project's page with the tabs Board, Files and Editor; the board's columns and cards; adding a repository. |
-| `live.rs`, `history.rs` | What a click on a card opens: the live view of its latest run (conversation, steer, stop, the run's panel), or the card's history when it has no run. |
-| `agents/`, `skills.rs`, `mcp_servers.rs`, `rules.rs`, `harness_setup.rs` | The Agents, Skills, MCP servers and Rules pages, and setting up a harness configuration repository; an edit is a commit in it. |
-| `usage.rs`, `retro.rs`, `experiments.rs`, `decision_model.rs` | The Improve pages: usage with its heatmap, the Retro's days and proposals, autoresearch, the training set and shadowing. |
-| `setup/`, `server_terminal.rs` | The Setup pages (models and settings, which edit `moebius.toml` through the API, and the plugins), and the Terminal page: a shell on the server (`GET /v1/terminal`). |
-
-The larger pages are folders:
-
-| Module | What it is for |
-|---|---|
-| `chat/mod.rs`, `chat/update.rs`, `chat/view.rs` | The chat screen's state, how a message changes it, and how it is drawn. |
-| `chat/thread.rs` | A chat's conversation wherever it is shown, here and in the floating chat. |
-| `chat/draft.rs` | A chat not yet started, and the pickers of agent, place, model and reasoning level under the field. |
-| `inbox/mod.rs`, `inbox/view.rs` | The inbox's state and actions, and how it is drawn. |
-| `inbox/item.rs` | What an item says of itself: what it is about, its kind, why it is there, its facts. |
-| `project/mod.rs`, `project/update.rs` | A project's Files and Editor tabs, and how a message changes them. |
-| `project/context.rs` | What the floating chat is told of a project's tab. |
-| `project/view.rs`, `project/editor.rs` | The tabs and the Files tab, and the Editor tab. |
-| `agents/mod.rs`, `agents/update.rs` | The Agents page's state, and how a message changes it. |
-| `agents/editor.rs` | The editor of one agent, what a save sends, and an agent of `moebius.toml`. |
-| `agents/view.rs`, `agents/boxes.rs` | The list and the editor's head, and the boxes under it. |
-| `setup/mod.rs`, `setup/update.rs` | The Setup pages' state, and how a message changes it. |
-| `setup/fields.rs`, `setup/forms.rs` | The keys of `moebius.toml` as inputs, and the forms made of them with what a save sends. |
-| `setup/view.rs`, `setup/inputs.rs` | How the pages are drawn, and the inputs of the forms. |
+| `screens/mod.rs` | The pages of the app, one module each. |
+| `screens/connect.rs` | The connect screen, for when there are no settings yet or the connection fails. |
+| `screens/start.rs` | The Get started page: the steps of `GET /v1/start` with a button to the page that fixes each. |
+| `screens/inbox/mod.rs`, `screens/inbox/view.rs` | The inbox: everything that needs the person, newest first, filtered by kind and repository, and its actions; and how it is drawn. |
+| `screens/inbox/item.rs` | What an inbox item says of itself: what it is about, its kind, why it is there, its facts. |
+| `screens/chat/mod.rs`, `screens/chat/update.rs`, `screens/chat/view.rs` | The chat screen (the chats with agents and the one chosen), how a message changes it, and how it is drawn. |
+| `screens/chat/thread.rs` | A chat's conversation wherever it is shown, here and in the floating chat. |
+| `screens/chat/draft.rs` | A chat not yet started, and the pickers of agent, place, model and reasoning level under the field. |
+| `screens/fleet.rs` | Every working run at a glance, one tile per card. |
+| `screens/project/mod.rs`, `screens/project/update.rs` | A project: the page of one repository with the tabs Board, Files and Editor, and how a message changes them. |
+| `screens/project/view.rs`, `screens/project/editor.rs` | The tabs and the Files tab's tree, and the Editor tab with the open files. |
+| `screens/project/context.rs` | What the floating chat is told of a project's tab. |
+| `screens/board.rs` | The board of a repository: its columns in order with their cards. |
+| `screens/add_repository.rs` | The "Add a repository" page the "+" of the sidebar opens. |
+| `screens/live.rs` | The live view of a run: its conversation, steer and stop, and the run's panel. |
+| `screens/history.rs` | The page of a card that has no run to watch: its issue, runs and decisions. |
+| `screens/agents/mod.rs`, `screens/agents/update.rs`, `screens/agents/view.rs` | The Agents page (the agents and an editor for the one chosen; an edit is a commit), how a message changes it, and the list with the editor's head. |
+| `screens/agents/editor.rs` | The editor of one agent, what a save sends, and an agent of `moebius.toml`. |
+| `screens/agents/boxes.rs` | The boxes under the editor's head: model and settings, instructions, skills, MCP servers, extensions. |
+| `screens/skills.rs`, `screens/mcp_servers.rs` | The Skills and MCP servers pages, each a list with an editor; an edit is a commit. |
+| `screens/rules.rs` | The Rules page: the built-in patterns and what each refused, and the rules in prose, edited in place. |
+| `screens/harness_setup.rs` | Setting up a harness configuration repository from the app. |
+| `screens/usage.rs` | The Usage page: what the model calls used, by window, with its heatmap. |
+| `screens/retro.rs` | The Retro page: the Retros of the days, their errors by kind, and their proposals. |
+| `screens/experiments.rs` | The Experiments page: autoresearch, a new brief, and each research's baseline and experiments. |
+| `screens/decision_model.rs` | The Decision model page: what was recorded of each kind of decision, the exports, shadowing and takeovers. |
+| `screens/setup/mod.rs`, `screens/setup/update.rs`, `screens/setup/view.rs` | The Setup pages (Models, Plugins and Settings, which edit `moebius.toml` through the API), how a message changes them, and how they are drawn. |
+| `screens/setup/fields.rs`, `screens/setup/forms.rs`, `screens/setup/inputs.rs` | The keys of `moebius.toml` as inputs, the forms made of them with what a save sends, and how each input is drawn. |
+| `screens/server_terminal.rs` | The Terminal page: a shell on the server (`GET /v1/terminal`). |
 
 `widgets/`, the pieces screens share:
 
 | Module | What it is for |
 |---|---|
-| `page.rs`, `icons.rs` | The page header and box every page is made of, and the line icons. |
-| `conversation.rs` | Folds a run's events into a conversation (text, tool calls with their checks, steers, errors); pure, takes events in any order and drops repeats. |
-| `transcript.rs`, `steps.rs` | How a conversation is drawn (Markdown, tool calls, highlighted code), and the steps between two answers. |
-| `terminal.rs`, `chat_terminal.rs` | The shell pane: bytes from the server parsed by `alacritty_terminal` into a grid and drawn in JetBrains Mono, keys turned into bytes, the pane's size in cells sent as a resize (`client::terminal`); and a chat's terminal, the same pane on `GET /v1/chats/{id}/tui`. |
-| `float_chat.rs` | The floating chat with the Moebius agent on every screen, given the context of the page. |
-| `form.rs`, `list_editor.rs` | The pieces of the editing pages' forms (labelled inputs, the line after a save, a box's heading, the code editor, the dropdowns' style), and a list with an editor beside it (its layout, cards, and the head with Save and Delete). |
-| `inline_edit.rs`, `edits.rs`, `script_editor.rs`, `new_issue.rs`, `import.rs`, `model_picker.rs` | Editing in place (the pencil and its editor, a card's title and body, a column's script), the new-issue form, importing skills and MCP servers, and the model dropdown. |
+| `widgets/mod.rs` | The pieces that more than one screen uses or that stand above every screen. |
+| `widgets/page.rs`, `widgets/icons.rs` | The page header and box every page is made of, and the line icons. |
+| `widgets/form.rs` | The pieces of the editing pages' forms: labelled inputs, the line after a save, a box's heading, the code editor, the dropdowns' style. |
+| `widgets/list_editor.rs` | A list with an editor beside it: its layout, its cards, and the head with Save and Delete. |
+| `widgets/conversation.rs` | Folds a run's events into a conversation (text, tool calls with their checks, steers, errors); pure, takes events in any order and drops repeats. |
+| `widgets/transcript.rs`, `widgets/steps.rs` | How a conversation is drawn (Markdown, tool calls, highlighted code), and the steps between two answers. |
+| `widgets/terminal.rs` | The shell pane: bytes from the server parsed by `alacritty_terminal` into a grid and drawn in JetBrains Mono, keys turned into bytes, the pane's size in cells sent as a resize (`client::terminal`). |
+| `widgets/chat_terminal.rs` | A chat's terminal: the same pane on `GET /v1/chats/{id}/tui`, opened by the chat's "Chat \| Terminal" switch. |
+| `widgets/float_chat.rs` | The floating chat with the Moebius agent on every screen, given the context of the page. |
+| `widgets/inline_edit.rs`, `widgets/edits.rs` | Editing in place: the pencil and its editor, and the editors that belong to no screen (a card's title and body). |
+| `widgets/script_editor.rs` | The editor of a column's script, opened by the pencil in a column's header. |
+| `widgets/new_issue.rs` | The new-issue form of a board: written by hand or by the Moebius agent. |
+| `widgets/import.rs` | Importing skills or MCP servers from a path, a URL or an uploaded zip. |
+| `widgets/model_picker.rs` | The model dropdown of the Models and Agents pages, with "Another model…". |
