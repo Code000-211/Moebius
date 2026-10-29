@@ -240,6 +240,20 @@ GitHub cannot be polled or merged.
 | `github.api_url` | string | `https://api.github.com` | The API's base URL, for GitHub Enterprise or a test double. |
 | `github.poll_seconds` | integer | `30` | Seconds between two polls of the repositories on GitHub. A value below 1 is raised to 1. |
 
+## `[gitlab]`
+
+Repositories on GitLab, gitlab.com or a GitLab hosted elsewhere, are reached with an access token: a personal, project
+or group access token with the scope `api`. Webhooks are not used; the server polls. The table is optional. Without it,
+repositories on GitLab cannot be polled or merged. The token is sent to the API as `PRIVATE-TOKEN`, and to git (as the
+password of the user `oauth2`) only for remotes whose URL starts with `gitlab.url` followed by `/`.
+
+| Key | Type | Default | Meaning and validation |
+|---|---|---|---|
+| `gitlab.url` | string | `https://gitlab.com` | The GitLab's web address; its API is `<url>/api/v4`. A trailing `/` is dropped. Not blank. |
+| `gitlab.token_file` | path | none | The file holding the access token, relative to this file's directory. Read when the server starts; the server does not start if it cannot be read or is empty. |
+| `gitlab.token_secret` | string | none | The name of the secret holding the access token (see [Secrets](#secrets)), instead of `token_file`. Exactly one of the two is set, else the file is refused; a secret that is not stored stops the server from starting. |
+| `gitlab.poll_seconds` | integer | `30` | Seconds between two polls of the repositories on GitLab. A value below 1 is raised to 1. |
+
 ## `[agents.<name>]`
 
 One table per agent; an error with `[harness]`, whose repository holds the agents (see [harness configuration](harness-configuration.md)). The default workflow starts an agent named `Coder`, so a server that runs it needs `[agents.Coder]`. It also starts an agent named `Reviewer` when there is one; without it changes are offered unreviewed.
@@ -296,18 +310,19 @@ A change applies to the running server at once for these keys:
 - `agents.<name>`, on a server without `[harness]`.
 
 Every other key is written to the file and used after the server restarts: `data_dir`, `listen`, `token_file`,
-`rules_file`, `checks.timeout_seconds`, `router.listen`, `pi_bolt.program`, `harness.*`, `github.*`, `teacher.*`,
-`decision_model.*` and `plugins` (an entry is addressed by its position, `plugins.0`). The answer of `PUT /v1/settings` and `GET /v1/settings` lists the ones that differ from what the
+`rules_file`, `checks.timeout_seconds`, `router.listen`, `pi_bolt.program`, `harness.*`, `github.*`, `gitlab.*`,
+`teacher.*`, `decision_model.*` and `plugins` (an entry is addressed by its position, `plugins.0`). The answer of `PUT /v1/settings` and `GET /v1/settings` lists the ones that differ from what the
 running server started with, and `POST /v1/server/restart` restarts it.
 
 ### Secrets
 
 A key typed into the app is stored under a name in `secrets.toml` in `data_dir`, a TOML table of names and keys that only
-its owner can read (mode 0600). `moebius.toml` names it with `api_key_secret`; the key itself is never in
-`moebius.toml`, in an answer of the API, in the store, in an event or in a log. A key is stored with `PUT
-/v1/secrets/{name}` and removed with `DELETE /v1/secrets/{name}`; removing one that `api_key_secret` still names makes
-the next start fail, as an unset `api_key_env` variable does. The refresh token of an OAuth login is kept the same way,
-under `router.upstreams.oauth.secret`, and replaced when the provider rotates it.
+its owner can read (mode 0600). `moebius.toml` names it with `api_key_secret`, and the GitLab token with
+`gitlab.token_secret`; the key itself is never in `moebius.toml`, in an answer of the API, in the store, in an event or
+in a log. A key is stored with `PUT /v1/secrets/{name}` and removed with `DELETE /v1/secrets/{name}`; removing one that
+`api_key_secret` or `gitlab.token_secret` still names makes the next start fail, as an unset `api_key_env` variable does.
+The refresh token of an OAuth login is kept the same way, under `router.upstreams.oauth.secret`, and replaced when the
+provider rotates it.
 
 ## Environment variables
 

@@ -1,7 +1,9 @@
-//! The loops that keep the server going: the board's tick, which runs every card's column script, the poll of GitHub,
-//! and, every 30 seconds, the refresh of the clones of repositories without a forge and of the harness configuration
+//! The loops that keep the server going: the board's tick, which runs every card's column script, the polls of GitHub
+//! and GitLab, and, every 30 seconds, the refresh of the clones of repositories without a forge and of the harness configuration
 //! repository. `serve` runs them, and the schedule (`schedule`), side by side until it stops.
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -52,12 +54,19 @@ impl Server {
     /// Polls every GitHub repository once (see `poll`).
     pub async fn poll_github(&self) {
         if let Some(github) = &self.github {
-            poll::poll_github(&self.app, github).await;
+            poll::poll(&self.app, &**github).await;
+        }
+    }
+
+    /// Polls every GitLab repository once (see `poll`).
+    pub async fn poll_gitlab(&self) {
+        if let Some(gitlab) = &self.gitlab {
+            poll::poll(&self.app, &**gitlab).await;
         }
     }
 
     /// Refreshes the clone of every repository without a forge from where it was cloned; a failure is reported on the
-    /// bus. The GitHub repositories are refreshed by their poll.
+    /// bus. The repositories on a forge are refreshed by its poll.
     pub fn refresh_plain_repositories(&self) {
         let Ok(repositories) = self.app.store.repositories() else {
             return;
@@ -97,15 +106,30 @@ pub(super) async fn board(server: Arc<Server>) {
     }
 }
 
-/// Polls GitHub as often as `[github] poll` says until the future is dropped; without the GitHub App, never.
+/// Polls GitHub as often as `github.poll_seconds` says, and GitLab as often as `gitlab.poll_seconds` says, until the
+/// future is dropped; a forge that is not set up, never.
 pub(super) async fn poll(server: Arc<Server>) {
-    let Some(github) = &server.config.github else {
+    let github = server.config.github.as_ref().map(|g| g.poll);
+    let gitlab = server.config.gitlab.as_ref().map(|g| g.poll);
+    tokio::join!(
+        poll_every(server.clone(), github, |s| Box::pin(s.poll_github())),
+        poll_every(server.clone(), gitlab, |s| Box::pin(s.poll_gitlab())),
+    );
+}
+
+/// Does `work` every `period` until the future is dropped; without a period, never.
+async fn poll_every(
+    server: Arc<Server>,
+    period: Option<Duration>,
+    work: for<'a> fn(&'a Server) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>,
+) {
+    let Some(period) = period else {
         return std::future::pending().await;
     };
-    let mut interval = interval(github.poll);
+    let mut interval = interval(period);
     loop {
         interval.tick().await;
-        server.poll_github().await;
+        work(&server).await;
     }
 }
 

@@ -14,7 +14,8 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
 ### In the first version
 
 - One server process, `moebius`, headless, on a machine in a private network; one desktop app talking to it.
-- Repositories with the **GitHub forge**, and repositories **without a forge** (plain git).
+- Repositories with the **GitHub forge**, with the **GitLab forge** (gitlab.com or self-hosted, with an access token),
+  and repositories **without a forge** (plain git).
 - One harness, **Pi-Bolt**, driven in its RPC mode, with the Moebius **bridge** loaded into every run as a Pi extension.
 - The **router** as every harness's only model provider, with provider API keys and local OpenAI- or Anthropic-compatible
   servers (such as Radiance) upstream; budgets in tokens. An upstream may log in with OAuth instead of a key (a device
@@ -36,7 +37,7 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
 ### Not in the first version
 
 - Harnesses other than Pi-Bolt; the router's fallback check for harnesses without a bridge.
-- Forges other than GitHub (Codeberg, GitLab come as plugins later).
+- Forges other than GitHub and GitLab (Codeberg comes later).
 - Runners other than local worktrees on the server (GPU machines come as runner plugins).
 - Training the decision model; the first version records judgements and exports them.
 - Webhooks; forges are polled (ADR 0003).
@@ -105,6 +106,7 @@ steer, stop) go through the same record.
 | Plugin | Does |
 |---|---|
 | GitHub forge | Acts as its own GitHub App with webhooks off; polls issues, pull requests, checks and reviews about every 30 seconds with conditional requests; opens and updates changes; maps trusted authors and "blocked by". |
+| GitLab forge | Reaches gitlab.com or a self-hosted GitLab with a personal, project or group access token from a file or the secrets; polls issues (conditional on the ETag where GitLab gives one), merge requests, their pipelines and approvals; opens, updates and merges changes as merge requests; maps trusted authors and "blocked by" as the GitHub forge does. |
 | Git forge (none) | For a repository without a forge: issues and changes live in Moebius; merging happens in the desktop app. |
 | Pi-Bolt harness | Starts `pi-bolt --mode rpc` per run with the agent's model, thinking level, instructions (`--append-system-prompt`), skills (`--skill`) and extensions; maps Pi's events to run events. |
 | Bridge (Pi-Bolt) | A Pi extension (`crates/moebius-core/bridge/moebius-bridge.ts`) that Moebius loads into every run with `--extension`: on `tool_call` asks the core and blocks with the rule on refusal; on `tool_result` reports the result and removes secrets; answers extension UI questions through `decide`. |

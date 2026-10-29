@@ -1,6 +1,6 @@
 //! The editors in place that belong to no screen of their own: a card's title and body, opened by the pencil next to
-//! the title of the card's page (`PUT /v1/cards/{id}`, which changes the issue on GitHub too), and the GitHub logins a
-//! repository trusts, opened by the pencil in its board's header (`PUT /v1/repositories/{id}`). A save that went
+//! the title of the card's page (`PUT /v1/cards/{id}`, which changes the issue on the forge too), and the logins a
+//! repository on a forge trusts, opened by the pencil in its board's header (`PUT /v1/repositories/{id}`). A save that went
 //! through closes the editor and the snapshot is read again; a refusal stays in red under the editor.
 
 use iced::widget::{column, text, text_editor, text_input};
@@ -19,7 +19,7 @@ pub enum Message {
     EditCard(i64, String, String),
     Title(String),
     Body(text_editor::Action),
-    /// The pencil in a GitHub repository's header: its id and the logins it trusts.
+    /// The pencil in the header of a repository on a forge: its id and the logins it trusts.
     EditTrusted(i64, Vec<String>),
     Trusted(String),
     Save,
@@ -228,7 +228,7 @@ impl Edits {
                 .size(theme::BODY)
                 .padding([9, 12])
                 .style(connect::input_style),
-            text("The issues of these GitHub logins move on without your approval.")
+            text("The issues of these logins on the forge move on without your approval.")
                 .size(theme::CONTEXT)
                 .color(theme::TEXT_SECONDARY),
         ]

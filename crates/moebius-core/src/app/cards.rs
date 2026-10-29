@@ -10,7 +10,7 @@ use serde_json::json;
 use super::{App, AppError, PERSON, Result, columns};
 use crate::bus::AppEvent;
 use crate::decide::{Actor, Question};
-use crate::repos::github::Issue;
+use crate::repos::forge::Issue;
 use crate::store::{Card, Repository};
 
 /// The issue numbers an issue's body says it is blocked by: "blocked by #12", "Blocked by: #3, #4".
@@ -48,12 +48,12 @@ impl HistoryEntry {
 }
 
 impl App {
-    /// Brings the cards of `repository` in line with its GitHub issues: open issues get a card in the backlog,
+    /// Brings the cards of `repository` in line with its issues on its forge: open issues get a card in the backlog,
     /// changed titles and bodies are copied, closed issues move their card to done, and "blocked by #n" in a body
     /// becomes the card's dependencies. A closed issue without a card is not worth one.
     pub fn sync_issues(&self, repository: &Repository, issues: &[Issue]) -> Result<()> {
         for issue in issues {
-            let body = issue.body.as_deref().unwrap_or_default();
+            let body = issue.body.as_str();
             let card = match self.store.card_by_number(repository.id, issue.number)? {
                 Some(card) => {
                     if card.title != issue.title || card.body != body {
@@ -63,13 +63,13 @@ impl App {
                     }
                     card
                 }
-                None if issue.state == "open" => {
+                None if issue.open => {
                     let card = self.store.add_numbered_card(
                         repository.id,
                         issue.number,
                         &issue.title,
                         body,
-                        &issue.user.login,
+                        &issue.author,
                         columns::BACKLOG,
                     )?;
                     self.bus.publish(AppEvent::new("card_added", json!(card)));
@@ -80,7 +80,7 @@ impl App {
             let mut blockers = blocked_by(body);
             blockers.remove(&issue.number);
             self.store.set_dependencies(card.id, &blockers)?;
-            if issue.state == "closed" && card.column != columns::DONE {
+            if !issue.open && card.column != columns::DONE {
                 self.move_card(card.id, columns::DONE)?;
             }
         }

@@ -32,6 +32,7 @@ async fn the_client_adds_a_repository_from_a_bare_clone_and_creates_an_issue_on_
         url: bare.display().to_string(),
         forge: "none",
         github: None,
+        project: None,
         trusted: Vec::new(),
     };
     let repository = client.add_repository(&request).await.unwrap();
@@ -84,6 +85,7 @@ async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_ask
             url: origin(dir.path()).display().to_string(),
             forge: "none",
             github: None,
+            project: None,
             trusted: Vec::new(),
         })
         .await
@@ -235,6 +237,7 @@ async fn the_project_lists_reads_and_saves_a_file_as_a_commit() {
             url: source.display().to_string(),
             forge: "none",
             github: None,
+            project: None,
             trusted: Vec::new(),
         })
         .await

@@ -4,6 +4,7 @@
 pub mod files;
 pub mod forge;
 pub mod github;
+pub mod gitlab;
 pub mod poll;
 
 use std::path::{Path, PathBuf};

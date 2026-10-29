@@ -13,7 +13,7 @@ pub struct Repository {
     pub name: String,
     #[serde(default)]
     pub path: String,
-    /// `none` or `github`.
+    /// `none`, `github` or `gitlab`.
     #[serde(default)]
     pub forge: String,
     #[serde(default)]
@@ -22,6 +22,25 @@ pub struct Repository {
     pub github: Option<String>,
     #[serde(default)]
     pub trusted: Vec<String>,
+    /// The project's path on GitLab.
+    #[serde(default)]
+    pub project: Option<String>,
+}
+
+impl Repository {
+    /// The forge and the repository's name there, as a page's header shows it: `GitHub · acme/radiance`.
+    pub fn forge_tag(&self) -> String {
+        match (self.forge.as_str(), &self.github, &self.project) {
+            ("gitlab", _, Some(project)) => format!("GitLab · {project}"),
+            (_, Some(github), _) => format!("GitHub · {github}"),
+            _ => "No forge".to_string(),
+        }
+    }
+
+    /// Whether the repository is on a forge, whose logins it may trust.
+    pub fn on_forge(&self) -> bool {
+        self.github.is_some() || self.project.is_some()
+    }
 }
 
 /// What `POST /v1/repositories` takes.
@@ -29,11 +48,14 @@ pub struct Repository {
 pub struct NewRepository {
     pub name: String,
     pub url: String,
-    /// `none` or `github`.
+    /// `none`, `github` or `gitlab`.
     pub forge: &'static str,
     /// `owner/name`, with the forge `github`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub github: Option<String>,
+    /// `group/project`, with the forge `gitlab`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub trusted: Vec<String>,
 }

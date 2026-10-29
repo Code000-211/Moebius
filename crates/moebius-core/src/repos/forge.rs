@@ -1,6 +1,7 @@
 //! Forges: where a repository's issues and changes live (ADR 0009). The git forge "none" is for repositories whose
 //! issues and changes live in Moebius and are merged locally; the GitHub forge offers changes as pull requests and
-//! merges them through the GitHub API.
+//! merges them through the GitHub API, and the GitLab forge does the same with merge requests. An issue as every forge
+//! lists it is an [`Issue`], which the poll hands to the board.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -9,6 +10,7 @@ use base64::Engine;
 use tokio::runtime::Handle;
 
 use crate::repos::github::{GitHub, GitHubError};
+use crate::repos::gitlab::{GitLab, GitLabError};
 use crate::repos::{GitError, Repos, git};
 use crate::store::{Change, Repository};
 
@@ -19,8 +21,27 @@ pub enum ForgeError {
     Git(#[from] GitError),
     #[error(transparent)]
     GitHub(#[from] GitHubError),
+    #[error(transparent)]
+    GitLab(#[from] GitLabError),
     #[error("{0}")]
     Invalid(String),
+}
+
+/// An issue on a forge, the same for every forge: its number there, its title and body, whether it is open, and the
+/// login of whoever opened it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Issue {
+    pub number: i64,
+    pub title: String,
+    pub body: String,
+    pub open: bool,
+    pub author: String,
+}
+
+/// The `Authorization` header git sends to reach a forge over HTTPS as `user` with `token` as the password.
+fn basic_auth(user: &str, token: &str) -> String {
+    let credentials = base64::engine::general_purpose::STANDARD.encode(format!("{user}:{token}"));
+    format!("Authorization: Basic {credentials}")
 }
 
 /// A forge as the core uses it. Its methods block, so they are called from threads that may block.
@@ -254,8 +275,128 @@ impl Forge for GitHubForge {
         let token = self
             .runtime
             .block_on(self.github.installation_token(owner, repo))?;
-        let credentials =
-            base64::engine::general_purpose::STANDARD.encode(format!("x-access-token:{token}"));
-        Ok(Some(format!("Authorization: Basic {credentials}")))
+        Ok(Some(basic_auth("x-access-token", &token)))
+    }
+}
+
+/// The forge for repositories on GitLab: a change is a branch pushed with the access token and a merge request, which
+/// later pushes update. Like [`GitHubForge`], its methods wait for the asynchronous client on `runtime`, so they must
+/// be called from a thread that may block.
+pub struct GitLabForge {
+    gitlab: Arc<GitLab>,
+    repos: Repos,
+    runtime: Handle,
+}
+
+impl GitLabForge {
+    pub fn new(gitlab: Arc<GitLab>, repos: Repos, runtime: Handle) -> Self {
+        Self {
+            gitlab,
+            repos,
+            runtime,
+        }
+    }
+
+    /// The repository's path on GitLab, such as `group/project`.
+    fn project(repository: &Repository) -> Result<&str, ForgeError> {
+        repository
+            .project
+            .as_deref()
+            .filter(|_| repository.forge == "gitlab")
+            .ok_or_else(|| {
+                ForgeError::Invalid(format!("{} is not a GitLab repository", repository.name))
+            })
+    }
+
+    /// The header for git to reach the clone's `origin` (see `Forge::auth`).
+    fn origin_auth(&self, clone: &Path) -> Result<Option<String>, ForgeError> {
+        self.auth(&self.repos.origin_url(clone)?, "")
+    }
+}
+
+impl Forge for GitLabForge {
+    fn name(&self) -> &'static str {
+        "gitlab"
+    }
+
+    fn publish(
+        &self,
+        repository: &Repository,
+        title: &str,
+        body: &str,
+        branch: &str,
+        merge_request: Option<i64>,
+    ) -> Result<Option<i64>, ForgeError> {
+        let project = Self::project(repository)?;
+        let clone = Path::new(&repository.path);
+        let header = self.origin_auth(clone)?;
+        self.repos.push(clone, branch, header.as_deref())?;
+        if merge_request.is_some() {
+            return Ok(merge_request);
+        }
+        let number = self.runtime.block_on(self.gitlab.open_merge_request(
+            project,
+            title,
+            branch,
+            &repository.default_branch,
+            body,
+        ))?;
+        Ok(Some(number))
+    }
+
+    fn merge(
+        &self,
+        repository: &Repository,
+        change: &Change,
+        message: &str,
+    ) -> Result<String, ForgeError> {
+        let project = Self::project(repository)?;
+        let number = change.pull_request.ok_or_else(|| {
+            ForgeError::Invalid(format!("change {} has no merge request", change.id))
+        })?;
+        Ok(self
+            .runtime
+            .block_on(self.gitlab.merge(project, number, message))?)
+    }
+
+    fn create_issue(
+        &self,
+        repository: &Repository,
+        title: &str,
+        body: &str,
+    ) -> Result<i64, ForgeError> {
+        let project = Self::project(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.gitlab.create_issue(project, title, body))?)
+    }
+
+    fn update_issue(
+        &self,
+        repository: &Repository,
+        number: i64,
+        title: &str,
+        body: &str,
+    ) -> Result<(), ForgeError> {
+        let project = Self::project(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.gitlab.update_issue(project, number, title, body))?)
+    }
+
+    fn refresh(&self, repository: &Repository) -> Result<(), ForgeError> {
+        Self::project(repository)?;
+        let clone = Path::new(&repository.path);
+        let header = self.origin_auth(clone)?;
+        Ok(self.repos.fetch(clone, header.as_deref())?)
+    }
+
+    /// The access token as a basic-auth header, for addresses on this GitLab only: the token goes to no other host,
+    /// and a local directory needs none.
+    fn auth(&self, url: &str, _name: &str) -> Result<Option<String>, ForgeError> {
+        if !url.starts_with(&format!("{}/", self.gitlab.url())) {
+            return Ok(None);
+        }
+        Ok(Some(basic_auth("oauth2", self.gitlab.token())))
     }
 }

@@ -89,8 +89,8 @@ takes a repository's name.
 | `settings` | `GET /v1/settings` | `file:`, then `<key> = <value>` for every key, `(default)` after a default, the stored key names and the keys that need a restart. |
 | `settings set <KEY=VALUE>... [--remove <key>]...` | `PUT /v1/settings` | `restart_needed` and `restart_keys`. |
 | `secrets set <name>` | `PUT /v1/secrets/{name}` | `stored the key <name>`. The key is read from standard input, one trailing new line removed; it is never an argument. |
-| `repos` | `GET /v1/snapshot` | Table `id name forge default_branch github`. |
-| `repo add <name> <url> [--github <owner/repo>] [--trusted <login>]...` | `POST /v1/repositories` | The repository. `--github` selects the GitHub forge. Without it, an absolute path that does not exist, or an empty folder, becomes a new repository. |
+| `repos` | `GET /v1/snapshot` | Table `id name forge default_branch github project`. |
+| `repo add <name> <url> [--github <owner/repo> \| --gitlab <group/project>] [--trusted <login>]...` | `POST /v1/repositories` | The repository. `--github` selects the GitHub forge, `--gitlab` the GitLab forge with the project's path. Without it, an absolute path that does not exist, or an empty folder, becomes a new repository. |
 | `issue create <repository> <title> [--body <text>]` | `POST /v1/repositories/{id}/issues` | The card. |
 | `retro` | `GET /v1/retros` | Table `date status errors proposals`. |
 | `retro <date>` | `GET /v1/retros/{date}` | The Retro: its errors and proposals. |

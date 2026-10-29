@@ -21,7 +21,7 @@ The other parts have one folder each:
 | Folder | What it holds |
 |---|---|
 | `server/` | The wiring, the loops, the desktop API (`server/api/`), the settings. |
-| `repos/` | Git, the forges, GitHub and its poll, the files of a repository. |
+| `repos/` | Git, the forges, GitHub, GitLab and their poll, the files of a repository. |
 | `board/` | The board engine and its Luau sandbox, and editing a column's script. |
 | `decide/` | Decision points, the tool-call check, the guard, the rules, the decision model. |
 | `harness/` | Pi-Bolt runs and chats, terminals, the harness configuration repository, MCP servers and the MCP gateway, skills, grilling. |

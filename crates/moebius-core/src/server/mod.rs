@@ -3,13 +3,15 @@
 //! to the data directory at start.
 //!
 //! This module wires every part from the configuration and serves them; `leftovers` ends what a server that stopped
-//! left going, `loops` holds the board's tick, the poll of GitHub and the refresh of the clones, and `schedule` what is
+//! left going, `loops` holds the board's tick, the polls of GitHub and GitLab and the refresh of the clones, and `schedule` what is
 //! looked at once a minute. `api` is the desktop API, `settings` edits `moebius.toml` while the server runs, and
 //! `setup` is what the Models, Plugins and Get started pages show. `plugins` starts the plugins in their own process.
 
 pub mod api;
 #[cfg(test)]
 mod fake_github;
+#[cfg(test)]
+mod fake_gitlab;
 mod leftovers;
 mod loops;
 mod plugins;
@@ -25,7 +27,7 @@ use tokio::net::TcpListener;
 
 use crate::app::App;
 use crate::board::{Engine, Limits, Workflow};
-use crate::config::Config;
+use crate::config::{Config, TokenSource};
 use crate::decide::check;
 use crate::decide::guard::{self, Guard, Teacher};
 use crate::decide::model::{self, DecisionModel, Routed};
@@ -33,8 +35,9 @@ use crate::harness::gateway::Gateway;
 use crate::harness::pibolt::PiBolt;
 use crate::harness::repo::HarnessRepo;
 use crate::harness::skill;
-use crate::repos::forge::GitHubForge;
+use crate::repos::forge::{GitHubForge, GitLabForge};
 use crate::repos::github::GitHub;
+use crate::repos::gitlab::GitLab;
 use crate::router::Router;
 use crate::server::api::ApiState;
 use crate::server::settings::{Live, Secrets};
@@ -67,6 +70,8 @@ pub struct Server {
     pub harness_repo: Option<Arc<HarnessRepo>>,
     /// The client for the GitHub App, if one is configured.
     pub github: Option<Arc<GitHub>>,
+    /// The client for the GitLab, if one is configured.
+    pub gitlab: Option<Arc<GitLab>>,
     pub token: Arc<str>,
 }
 
@@ -138,6 +143,28 @@ impl Server {
             }
             None => None,
         };
+        let gitlab = match &config.gitlab {
+            Some(g) => {
+                let token = match &g.token {
+                    TokenSource::File(file) => std::fs::read_to_string(file)
+                        .map_err(|e| format!("cannot read {}: {e}", file.display()))?,
+                    TokenSource::Secret(name) => {
+                        secrets.resolve(None, Some(name))?.unwrap_or_default()
+                    }
+                };
+                if token.trim().is_empty() {
+                    return Err("the GitLab access token is empty".into());
+                }
+                let gitlab = Arc::new(GitLab::new(&g.url, &token));
+                app.add_forge(Box::new(GitLabForge::new(
+                    gitlab.clone(),
+                    app.repos.clone(),
+                    tokio::runtime::Handle::current(),
+                )));
+                Some(gitlab)
+            }
+            None => None,
+        };
         let app = Arc::new(app);
         leftovers::end_runs_of_a_previous_server(&app)?;
         if let Some(model) = model {
@@ -190,11 +217,12 @@ impl Server {
             live,
             harness_repo,
             github,
+            gitlab,
             token: token.into(),
         })
     }
 
-    /// Serves the desktop API and the router, ticks the board and polls GitHub, until the future is dropped.
+    /// Serves the desktop API and the router, ticks the board and polls GitHub and GitLab, until the future is dropped.
     pub async fn serve(
         self: Arc<Self>,
         api_listener: TcpListener,
@@ -290,5 +318,35 @@ mod tests {
             .err()
             .unwrap();
         assert!(error.contains("missing.pem"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn the_server_needs_the_gitlab_token_from_its_file_or_its_secret() {
+        let dir = tempfile::tempdir().unwrap();
+        let start = |text: &str| {
+            let config = Config::parse(text, dir.path(), &dir.path().join("moebius.toml")).unwrap();
+            Server::new(config, "127.0.0.1:1".parse().unwrap())
+        };
+        let error = start("[gitlab]\ntoken_file = \"missing-token\"\n")
+            .err()
+            .unwrap();
+        assert!(error.contains("missing-token"), "{error}");
+        let error = start("[gitlab]\ntoken_secret = \"gitlab\"\n")
+            .err()
+            .unwrap();
+        assert!(error.contains("the secret gitlab is not stored"), "{error}");
+
+        Secrets::new(&dir.path().join(".moebius"))
+            .set("gitlab", "glpat-secret")
+            .unwrap();
+        let server = start("[gitlab]\ntoken_secret = \"gitlab\"\n").unwrap();
+        assert_eq!(server.gitlab.unwrap().token(), "glpat-secret");
+        std::fs::write(dir.path().join("gitlab-token"), "glpat-file\n").unwrap();
+        let server = start("[gitlab]\ntoken_file = \"gitlab-token\"\n").unwrap();
+        let gitlab = server.gitlab.unwrap();
+        assert_eq!(
+            (gitlab.url(), gitlab.token()),
+            ("https://gitlab.com", "glpat-file")
+        );
     }
 }

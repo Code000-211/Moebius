@@ -3,7 +3,7 @@
 The desktop API is how the desktop app, or any client such as `curl`, reads the boards and acts on them. This page is for
 anyone who writes a client or a script against a running server. The code is in `crates/moebius-core/src/server/api/`,
 anyone who writes a client or a script against a running server. The code is in `crates/moebius-core/src/server/api/`,
-one module per part; the events are published from `app/`, `harness/pibolt/`, `decide/check.rs`, `repos/poll.rs`,
+one module per part; the events are published from `app/`, `harness/pibolt/`, `decide/check.rs`, `repos/poll/`,
 `improve/retro.rs`, `improve/trial/`, `server/loops.rs` and `server/schedule.rs`.
 
 The API is HTTP with JSON bodies plus one WebSocket, served on `listen` (default `127.0.0.1:7171`). Keep it on a private
@@ -52,8 +52,9 @@ A request with a body must have `Content-Type: application/json` and a JSON obje
 
 These objects appear in the responses. All ids are numbers; times are Unix seconds.
 
-`Repository`: `id`, `name`, `path` (the clone on the server), `forge` (`none` or `github`), `default_branch`, `github`
-(`owner/repo` or null), `trusted` (array of GitHub logins).
+`Repository`: `id`, `name`, `path` (the clone on the server), `forge` (`none`, `github` or `gitlab`), `default_branch`,
+`github` (`owner/repo` or null), `trusted` (array of logins on the forge), `project` (the path on GitLab, such as
+`group/project`, or null).
 
 `Card`: `id`, `repository_id`, `number`, `title`, `body`, `author`, `column`, `created_at`, `note` (why the card was sent
 back to coding, or null), `retried_after` (the id of the card's latest run when a person last retried it, or null) and
@@ -83,9 +84,12 @@ included: what `POST /v1/chats/{id}/offer` would offer; 0 for an ended chat and 
 
 `Change`: `id`, `repository_id` (null for a change of the harness configuration repository), `harness_repository` (true
 for such a change), `card_id` (or null), `branch`, `state` (`open`, `merged` or `closed`), `pull_request`
-(the number on GitHub, or null), `checks` (`pending`, `success`, `failure` or null), `review` (the latest review's state in
-lower case, such as `approved`, or null), `head` (the published commit), `published_at`, `checks_head` (the commit
-`checks` are for), `failed_checks` (the failing checks of a pull request, one per line, or null) and `check_output` (the
+(the number of the pull request on GitHub or of the merge request on GitLab, or null), `checks` (`pending`, `success`,
+`failure` or null; on GitLab the latest pipeline of the head commit: `failed` and `canceled` are `failure`, `success`
+and `skipped` are `success`, anything else is `pending`), `review` (the latest review's state in lower case, such as
+`approved`; on GitLab `approved` once anyone approved, or null), `head` (the published commit), `published_at`, `checks_head` (the commit
+`checks` are for), `failed_checks` (the failing checks of a pull request, or the failed jobs of a pipeline, one per line,
+or null) and `check_output` (the
 end of the output of the repository's own checks, or null). A change's `branch` is `moebius/card-<number>`, `moebius/chat-<run id>` for the work of a chat, which has no card, or `research/<research id>-<name>` for a lever of a research, which has none either.
 
 `InboxItem`: `id`, `kind`, `card_id` (or null), `title`, `data` (an object that depends on the kind), `resolved_at` (null
@@ -163,14 +167,16 @@ Request:
 |---|---|---|
 | `name` | string | Required. Letters, digits, `-`, `_` and `.`, and not starting with a dot. Must be unique. |
 | `url` | string | Required. Anything `git clone` takes: a URL or a path on the server. Without a forge, an absolute path that does not exist, or an empty folder, is first made a new repository: branch `main` with one empty commit, "Start the repository". |
-| `forge` | string | `none` (the default) or `github`. |
+| `forge` | string | `none` (the default), `github` or `gitlab`. |
 | `github` | string | `owner/repo` on GitHub. Required with the forge `github`, not allowed otherwise. Both parts are made of letters, digits, `-`, `_` and `.`. |
-| `trusted` | array of strings | GitHub logins whose issues need no approval. Only with the forge `github`. |
+| `project` | string | The project's path on GitLab, groups first: `group/project` or `group/subgroup/project`. Required with the forge `gitlab`, not allowed otherwise. At least two parts, each made of letters, digits, `-`, `_` and `.` and not starting with a dot. |
+| `trusted` | array of strings | Logins on the forge (GitHub logins, GitLab usernames) whose issues need no approval. Only with a forge. |
 
 Response: the `Repository`. Errors: `422` for an invalid name, an absolute path to a folder with files that is not a git
-repository (nothing is created then), a `github` that is not `owner/repo`, or a combination other than "no forge, no
-`github`, no `trusted`" and "forge `github` with `github`"; `422` also when the name is taken (nothing is cloned or
-created then); `500` when the clone fails.
+repository (nothing is created then), a `github` that is not `owner/repo`, a `project` that is not a path as above, or
+a combination other than "no forge, no `github`, no `project`, no `trusted`", "forge `github` with `github`" and "forge
+`gitlab` with `project`"; `422` also when the name is taken (nothing is cloned or created then); `500` when the clone
+fails.
 
 ```sh
 curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
@@ -183,15 +189,22 @@ For GitHub, with the App set up, the clone authenticates as the App's installati
 {"name": "widgets", "url": "https://github.com/acme/widgets.git", "forge": "github", "github": "acme/widgets", "trusted": ["leon"]}
 ```
 
+For GitLab, with `[gitlab]` set up, the clone sends the access token when `url` is on that GitLab, so a private project
+works:
+
+```json
+{"name": "tools", "url": "https://gitlab.com/acme/platform/tools.git", "forge": "gitlab", "project": "acme/platform/tools", "trusted": ["leon"]}
+```
+
 ### `PUT /v1/repositories/{id}`
 
-A person, or the Moebius agent, replaces the GitHub logins whose issues on a GitHub repository need no approval.
+A person, or the Moebius agent, replaces the logins whose issues on a repository on GitHub or GitLab need no approval.
 Request: `{"trusted": [string], "reason": string}`; `reason` is optional and is kept with the decision. Each login is
 trimmed and kept once (in any case); a login must be made of letters, digits and `-_.[]`. The decision is recorded
 (kind `edit_repository`, decider `person` or `agent:Moebius`; its context has `repository`, `trusted` and
 `previous_trusted`, the logins joined with `, `) and the event `repository_updated` is sent. A list that changes nothing
 records nothing. The new list counts for cards checked from then on; a card already approved or waiting stays as it is.
-Response: the `Repository`. Errors: `404` no such repository; `422` the repository is not on GitHub, or a login is blank
+Response: the `Repository`. Errors: `404` no such repository; `422` the repository is on no forge, or a login is blank
 or has other characters.
 
 ### `POST /v1/repositories/{id}/issues`
@@ -279,7 +292,8 @@ line needs a name and no name may be given twice. Text that fails is refused wit
 A person, or the Moebius agent, changes a card's title and body, in any column. Request: `{"title": string, "body":
 string, "reason": string}`; `body` and `reason` are optional (`body` left out is empty), and `reason` is kept with the
 decision. The title is trimmed and must not be blank. On a repository with a forge the issue is changed there first
-(for GitHub, `PATCH /repos/{owner}/{repo}/issues/{number}` with the installation's token), and "blocked by #n" in the
+(for GitHub, `PATCH /repos/{owner}/{repo}/issues/{number}` with the installation's token; for GitLab,
+`PUT /projects/{path}/issues/{number}` with the access token), and "blocked by #n" in the
 new body becomes the card's blockers, as the poll reads them; without a forge the blockers stay as they are. Then the
 card is stored, the decision is recorded (kind `edit_card`, choice `edit_card`, decider `person` or `agent:Moebius`,
 the card's id; its context has `title`, `body`, `previous_title` and `previous_body`) and the event `card_updated` is
@@ -299,7 +313,7 @@ Response: the `Card`. Errors: `404` no such card; `422` the card is not in `Back
 
 A person merges an open change: the decision is recorded (kind `merge`, decider `person`), the forge merges it (a
 no-fast-forward merge into the default branch of the clone for a repository without a forge; the GitHub API for a pull
-request), the change becomes `merged`, its inbox items are resolved and its card, if it has one, moves to `Done`. A
+request; the GitLab API for a merge request, with the merge commit's message), the change becomes `merged`, its inbox items are resolved and its card, if it has one, moves to `Done`. A
 change from a chat has no card: its `ready_to_merge` item is resolved and the commit message is `Merge <branch>`.
 
 A change of the harness configuration repository (`harness_repository` true) is merged into the default branch of its
@@ -1442,22 +1456,22 @@ like `POST /v1/runs/{id}/stop` does. Experiments done stay, and so do the lever 
 | Kind | When | `data` |
 |---|---|---|
 | `repository_added` | A repository was added. | The `Repository`. |
-| `repository_updated` | The GitHub logins a repository trusts were changed through the API. | The `Repository`. |
+| `repository_updated` | The logins a repository on a forge trusts were changed through the API. | The `Repository`. |
 | `file_changed` | A file of a repository was saved through the API. | `{"repository": id, "path": string}` |
 | `script_changed` | A column's script was saved or removed for a repository, through the API. | `{"repository": id, "column": string, "path": string}` |
-| `card_added` | An issue became a card: created through the API or found on GitHub. | The `Card`. |
-| `card_updated` | The title or body of a card changed: edited through the API, or changed on GitHub. | The `Card`. |
+| `card_added` | An issue became a card: created through the API or found on GitHub or GitLab. | The `Card`. |
+| `card_updated` | The title or body of a card changed: edited through the API, or changed on GitHub or GitLab. | The `Card`. |
 | `card_moved` | A card moved to another column. | `{"card": id, "from": column, "to": column}` |
 | `card_waiting` | The reason a card waits changed: set, replaced, or cleared because the card moved or its script did not wait. Not sent when it stays the same. | `{"card": id, "reason": string or null}` |
 | `change_offered` | A card's change, the work of a chat or a kept lever of a research was offered to a person to merge. | The `Change` (`card_id` is null for a chat's or a lever's). |
 | `change_updated` | A change was published or published again, its checks started or ended, or the checks or review of its pull request changed. | The `Change`. |
-| `change_merged` | A change was merged, here or on GitHub. | `{"change": id, "commit": sha or null}` |
-| `change_closed` | A change's pull request was closed on GitHub without a merge. | `{"change": id}` |
+| `change_merged` | A change was merged, here or on its forge. | `{"change": id, "commit": sha or null}` |
+| `change_closed` | A change's pull or merge request was closed on its forge without a merge. | `{"change": id}` |
 | `run_started` | A harness process for a run started. | `{"run": id, "card": id or null}` (null for a chat) |
 | `run_event` | Something happened in a run. | `{"run": id, "seq": number, "kind": string, "data": object}` (below) |
 | `run_ended` | A run ended. | `{"run": id, "status": "succeeded" \| "failed" \| "stopped"}` |
 | `board_error` | A column script failed; the card stays where it is. | `{"card": id, "message": string}` |
-| `forge_error` | Polling a GitHub repository, or refreshing the clone of a repository without a forge, failed; it is tried again at the next poll or refresh (every 30 seconds without a forge). | `{"repository": "owner/repo" (GitHub) or the repository's name, "message": string}` |
+| `forge_error` | Polling a repository on GitHub or GitLab, or refreshing the clone of a repository without a forge, failed; it is tried again at the next poll or refresh (every 30 seconds without a forge). | `{"repository": "owner/repo" (GitHub), the project's path (GitLab) or the repository's name, "message": string}` |
 | `harness_error` | An agent's files in the harness configuration repository are broken (it is left out), or refreshing the repository failed (every 30 seconds). | `{"agent": name (left out when the refresh failed), "message": string}` |
 | `retro_done` | A Retro ended: it was `reported`, or the analyst's run ended and its proposals were stored (`proposed`), or it `failed`. | `{"date": "YYYY-MM-DD", "status": "reported" \| "proposed" \| "failed", "proposals": number}` |
 | `retro_error` | The schedule could not start the day's Retro, the trials of a proposal, a research or the replays, or the trials of a proposal broke off; it is tried again a minute later. | `{"message": string}` |

@@ -78,7 +78,7 @@ The bridge may add `tool_call_id`, `tool` and `is_error`; the server ignores the
 
 Response, status `200`: `{"content": [...]}` with the same blocks. In every block of `"type": "text"` each secret is
 replaced by `[redacted:<kind>]`; other blocks are unchanged. The kinds are `private-key`, `anthropic-key`, `openai-key`,
-`github-token` and `aws-access-key`. The patterns are the ones listed under `no-secrets-in-commands` in [rules](rules.md).
+`github-token`, `gitlab-token` and `aws-access-key`. The patterns are the ones listed under `no-secrets-in-commands` in [rules](rules.md).
 
 ```json
 {"content": [{"type": "text", "text": "token ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}]}

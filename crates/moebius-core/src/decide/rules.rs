@@ -342,6 +342,7 @@ mod tests {
             default_branch: "main".into(),
             github: None,
             trusted: vec![],
+            project: None,
         }
     }
 

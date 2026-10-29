@@ -7,7 +7,7 @@ use moebius_desktop::client;
 use moebius_desktop::screens::setup;
 use serde_json::json;
 
-use crate::fixtures::{draw, draw_sized, overview, pressed, shows, simulator, tall_click};
+use crate::fixtures::{clicked_sized, draw, draw_sized, overview, pressed, shows, simulator};
 
 /// The answer of `GET /v1/settings`: every key of the reference with its default, and `set` (keys of the file) on top.
 pub fn settings_answer(set: serde_json::Value, more: serde_json::Value) -> serde_json::Value {
@@ -46,6 +46,10 @@ pub fn settings_answer(set: serde_json::Value, more: serde_json::Value) -> serde
         ("github.private_key_file", json!(null)),
         ("github.api_url", json!("https://api.github.com")),
         ("github.poll_seconds", json!(30)),
+        ("gitlab.url", json!("https://gitlab.com")),
+        ("gitlab.token_file", json!(null)),
+        ("gitlab.token_secret", json!(null)),
+        ("gitlab.poll_seconds", json!(30)),
         ("agents", json!({})),
     ] {
         values.insert(key.into(), json!({"value": default, "default": true}));
@@ -264,17 +268,23 @@ fn the_settings_page_has_every_key_in_a_box_with_its_default_and_this_app_with_t
             "App id",
             "Private key file",
             "Poll every (s)",
+            "GitLab",
+            "Token file",
+            "Token secret",
             "This app",
             "http://127.0.0.1:7171",
             "••••oken",
             "Connect to another server",
             "Save",
         ],
-        Size::new(1440.0, 1500.0),
+        Size::new(1440.0, 1700.0),
     );
     assert!(simulator(&app).find("not-a-real-token").is_err());
     assert_eq!(
-        format!("{:?}", tall_click(&app, "Connect to another server")),
+        format!(
+            "{:?}",
+            clicked_sized(&app, "Connect to another server", Size::new(1440.0, 1700.0))
+        ),
         "[ChangeConnection]"
     );
     assert_eq!(
@@ -298,7 +308,7 @@ fn a_key_that_needs_a_restart_is_a_banner_with_a_restart_button_that_is_replaced
             "Restart the server to use: listen, teacher.model",
             "Restart",
         ],
-        Size::new(1440.0, 1500.0),
+        Size::new(1440.0, 1700.0),
     );
     assert_eq!(
         pressed(&app, "Restart").as_deref(),

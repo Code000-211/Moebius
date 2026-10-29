@@ -1,9 +1,10 @@
-//! The repositories: adding one, with or without a forge, editing whom a GitHub repository trusts, and the column
+//! The repositories: adding one, with or without a forge, editing whom a repository on a forge trusts, and the column
 //! scripts and files on a repository's default branch.
 //!
 //! - `POST /v1/repositories` `{name, url}`: clones a repository without a forge. With `forge: "github"`, `github:
-//!   "owner/repo"` and optionally `trusted: [logins]` it is a repository whose issues are polled from GitHub.
-//! - `PUT /v1/repositories/{id}` `{trusted}`: replaces the GitHub logins a GitHub repository trusts.
+//!   "owner/repo"` and optionally `trusted: [logins]` it is a repository whose issues are polled from GitHub; with
+//!   `forge: "gitlab"` and `project: "group/project"`, one whose issues are polled from GitLab.
+//! - `PUT /v1/repositories/{id}` `{trusted}`: replaces the logins a repository on GitHub or GitLab trusts.
 //! - `GET`, `PUT` and `DELETE /v1/repositories/{id}/scripts/{column}`: the script in force for a column, written or
 //!   removed as a commit (see [`crate::board::scripts`]).
 //! - `GET /v1/repositories/{id}/tree?path=` and `GET` and `PUT /v1/repositories/{id}/files/{path}`: the files on the
@@ -42,18 +43,21 @@ pub(super) fn routes() -> Router<ApiState> {
 pub struct NewRepository {
     pub name: String,
     pub url: String,
-    /// `none` (the default) or `github`.
+    /// `none` (the default), `github` or `gitlab`.
     #[serde(default)]
     pub forge: Option<String>,
     /// The repository on GitHub as `owner/repo`; needed for the forge `github`.
     #[serde(default)]
     pub github: Option<String>,
-    /// The GitHub logins whose issues need no approval.
+    /// The project's path on GitLab, such as `group/project`; needed for the forge `gitlab`.
+    #[serde(default)]
+    pub project: Option<String>,
+    /// The logins on the forge whose issues need no approval.
     #[serde(default)]
     pub trusted: Vec<String>,
 }
 
-/// The body of `PUT /v1/repositories/{id}`: the GitHub logins the repository trusts.
+/// The body of `PUT /v1/repositories/{id}`: the logins the repository trusts on its forge.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EditedRepository {
     pub trusted: Vec<String>,
@@ -66,15 +70,23 @@ async fn add_repository(
     axum::Json(new): axum::Json<NewRepository>,
 ) -> Result<axum::Json<Repository>, ApiError> {
     blocking(&state.app, move |app| {
-        match (new.forge.as_deref(), new.github.as_deref()) {
-            (None | Some("none"), None) if new.trusted.is_empty() => {
+        match (
+            new.forge.as_deref(),
+            new.github.as_deref(),
+            new.project.as_deref(),
+        ) {
+            (None | Some("none"), None, None) if new.trusted.is_empty() => {
                 app.add_repository(&new.name, &new.url)
             }
-            (Some("github"), Some(github)) => {
+            (Some("github"), Some(github), None) => {
                 app.add_github_repository(&new.name, &new.url, github, &new.trusted)
             }
+            (Some("gitlab"), None, Some(project)) => {
+                app.add_project_repository(&new.name, &new.url, "gitlab", project, &new.trusted)
+            }
             _ => Err(AppError::Invalid(
-                "a repository is either without a forge, or has forge \"github\" with github \"owner/repo\""
+                "a repository is either without a forge, or has forge \"github\" with github \"owner/repo\", \
+                 or forge \"gitlab\" with project \"group/project\""
                     .into(),
             )),
         }
@@ -225,6 +237,32 @@ mod tests {
             serde_json::json!({"name": "a", "url": url, "forge": "github"}),
             serde_json::json!({"name": "b", "url": url, "forge": "github", "github": "widgets"}),
             serde_json::json!({"name": "c", "url": url, "github": "acme/widgets"}),
+        ] {
+            assert_eq!(post(body).await.unwrap().status(), 422);
+        }
+
+        let added = post(serde_json::json!({
+            "name": "tools", "url": url, "forge": "gitlab",
+            "project": "acme/platform/tools", "trusted": ["leon"],
+        }))
+        .await
+        .unwrap();
+        assert_eq!(added.status(), 200);
+        let repo: Repository = added.json().await.unwrap();
+        assert_eq!(
+            (
+                repo.forge.as_str(),
+                repo.project.as_deref(),
+                repo.github.as_deref()
+            ),
+            ("gitlab", Some("acme/platform/tools"), None)
+        );
+        for body in [
+            serde_json::json!({"name": "d", "url": url, "forge": "gitlab"}),
+            serde_json::json!({"name": "e", "url": url, "forge": "gitlab", "project": "tools"}),
+            serde_json::json!({"name": "f", "url": url, "forge": "gitlab", "project": "acme/../tools"}),
+            serde_json::json!({"name": "g", "url": url, "forge": "gitlab", "github": "acme/tools"}),
+            serde_json::json!({"name": "h", "url": url, "project": "acme/tools"}),
         ] {
             assert_eq!(post(body).await.unwrap().status(), 422);
         }

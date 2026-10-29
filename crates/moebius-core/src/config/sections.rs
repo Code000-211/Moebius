@@ -8,7 +8,7 @@ use std::time::Duration;
 use serde::Deserialize;
 
 use super::ConfigError;
-use super::raw::{RawDecisionModel, RawTeacher};
+use super::raw::{RawDecisionModel, RawGitLab, RawTeacher};
 use crate::harness::mcp::{McpServer, valid_variable};
 use crate::router::{OAuthConfig, Protocol};
 
@@ -85,6 +85,44 @@ pub struct GitHubConfig {
     pub api_url: String,
     /// How often the issues of each GitHub repository are polled.
     pub poll: Duration,
+}
+
+/// The GitLab Moebius reaches with an access token: gitlab.com or one hosted elsewhere.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitLabConfig {
+    /// The GitLab's web address, such as `https://gitlab.com`, without a trailing `/`; its API is at `<url>/api/v4`.
+    pub url: String,
+    /// Where the access token is read from when the server starts.
+    pub token: TokenSource,
+    /// How often the issues and merge requests of each GitLab repository are polled.
+    pub poll: Duration,
+}
+
+/// Where a token is kept: a file (made absolute against the configuration's directory) or a secret (see `settings`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TokenSource {
+    File(PathBuf),
+    Secret(String),
+}
+
+/// The GitLab of `[gitlab]`, with its defaults: exactly one of `token_file` and `token_secret`.
+pub(super) fn gitlab(raw: RawGitLab, base: &std::path::Path) -> Result<GitLabConfig, ConfigError> {
+    let token = match (raw.token_file, raw.token_secret) {
+        (Some(file), None) => TokenSource::File(base.join(file)),
+        (None, Some(name)) if valid_agent_name(&name) => TokenSource::Secret(name),
+        (None, Some(name)) => return Err(ConfigError::GitLabSecret { name }),
+        _ => return Err(ConfigError::GitLabToken),
+    };
+    let url = raw.url.unwrap_or_else(|| "https://gitlab.com".to_string());
+    let url = url.trim().trim_end_matches('/').to_string();
+    if url.is_empty() {
+        return Err(ConfigError::GitLabUrl);
+    }
+    Ok(GitLabConfig {
+        url,
+        token,
+        poll: Duration::from_secs(raw.poll_seconds.unwrap_or(30).max(1)),
+    })
 }
 
 /// The teacher model, which judges the rules written in prose.

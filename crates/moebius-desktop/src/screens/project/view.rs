@@ -187,10 +187,7 @@ impl Project {
         let header = page::header(
             "Projects",
             &repository.name,
-            Some(match &repository.github {
-                Some(github) => format!("GitHub · {github}"),
-                None => "No forge".to_string(),
-            }),
+            Some(repository.forge_tag()),
             page::context(context),
             actions,
         );

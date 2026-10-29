@@ -26,10 +26,11 @@ Backlog -> Ready -> In progress -> In review -> Ready to merge -> Done
 | `Done` | `done.luau` | Records how every decision made for the card ended. |
 
 A card is trusted when its issue was made through the desktop API on a repository without a forge (its author is
-`person`), or when its author is one of the repository's `trusted` GitHub logins. On GitHub the poll creates the
-cards, and an issue that is closed there moves its card to `Done`. The board's header names the trusted logins, and its
-pencil edits them (`PUT /v1/repositories/{id}`); a card's page has a pencil next to its title that edits the title and
-body in place (`PUT /v1/cards/{id}`), on GitHub the issue too, where "blocked by #n" in the body sets its blockers.
+`person`), or when its author is one of the repository's `trusted` logins (GitHub logins, GitLab usernames). On
+GitHub and GitLab the poll creates the cards, and an issue that is closed there moves its card to `Done`. The board's
+header names the trusted logins, and its pencil edits them (`PUT /v1/repositories/{id}`); a card's page has a pencil
+next to its title that edits the title and body in place (`PUT /v1/cards/{id}`), on a forge the issue too, where
+"blocked by #n" in the body sets its blockers.
 
 The board engine runs the script of every card's column on every tick (`board.tick_ms`, two seconds by default). When a
 script moves the card, the script of the next column runs at once. [Column scripts](column-scripts.md) says how to
@@ -73,8 +74,9 @@ progress too.
 ### In review: checks, conflicts and the review loop
 
 1. The change is published on a branch `moebius/card-<number>`, the same for all rounds of the card. On GitHub the first
-   publish also opens a pull request that says `Closes #<number>`; later ones push to it.
-2. The checks run. On GitHub they are the check runs of the pull request, found by the poll; a repository with none
+   publish also opens a pull request that says `Closes #<number>`, on GitLab a merge request; later ones push to it.
+2. The checks run. On GitHub they are the check runs of the pull request, found by the poll, on GitLab the latest
+   pipeline of the merge request's head commit; a repository with none
    gets `none` two minutes after the publish. Without a forge they are the command in `.moebius/checks` on the default
    branch, run in a throwaway worktree of the change and stopped after `checks.timeout_seconds`; without that file
    there are none. While they are pending the card waits with `waiting for the checks`.

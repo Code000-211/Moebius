@@ -1,5 +1,5 @@
-//! Adding a repository, by cloning it from a path, a URL or GitHub, editing whom a GitHub repository trusts, and whether
-//! a card's issue is trusted to move on without a person's approval.
+//! Adding a repository, by cloning it from a path, a URL, GitHub or GitLab, editing whom a repository on a forge
+//! trusts, and whether a card's issue is trusted to move on without a person's approval.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -78,6 +78,45 @@ impl App {
         Ok(repository)
     }
 
+    /// Clones `url` and adds it as a repository whose issues are polled from `forge` (`gitlab`), where its path is
+    /// `project` (`group/project`, with any subgroups between). Issues by the logins in `trusted` need no approval.
+    /// With the forge set up, the clone authenticates with its token when `url` is on it, so private projects work too.
+    pub fn add_project_repository(
+        &self,
+        name: &str,
+        url: &str,
+        forge: &str,
+        project: &str,
+        trusted: &[String],
+    ) -> Result<Repository> {
+        if forge != "gitlab" {
+            return Err(AppError::Invalid(format!(
+                "{forge:?} is not a forge that names repositories by their path"
+            )));
+        }
+        let segments: Vec<&str> = project.split('/').collect();
+        if segments.len() < 2
+            || !segments
+                .iter()
+                .all(|s| is_plain_name(s) && !s.starts_with('.'))
+        {
+            return Err(AppError::Invalid(format!(
+                "{project:?} is not a project path as group/project"
+            )));
+        }
+        let auth = match self.forges.get(forge) {
+            Some(forge) => forge.auth(url, project)?,
+            None => None,
+        };
+        let (path, branch) = self.clone_repository(name, url, auth.as_deref())?;
+        let repository = self
+            .store
+            .add_project_repository(name, &path, &branch, forge, project, trusted)?;
+        self.bus
+            .publish(AppEvent::new("repository_added", json!(repository)));
+        Ok(repository)
+    }
+
     /// Clones `url` as the repository `name` and returns the clone's path and default branch.
     fn clone_repository(
         &self,
@@ -107,7 +146,7 @@ impl App {
     }
 
     /// Whether the issue behind `card` may move on without a person's approval: a person created it in the desktop
-    /// app, or its author is one of the repository's trusted GitHub logins. Anything unknown is not trusted.
+    /// app, or its author is one of the logins the repository trusts on its forge. Anything unknown is not trusted.
     pub fn is_trusted(&self, card: &Card) -> bool {
         let Ok(Some(repository)) = self.store.repository(card.repository_id) else {
             return false;
@@ -121,7 +160,7 @@ impl App {
             .any(|login| login.eq_ignore_ascii_case(&card.author))
     }
 
-    /// A person, or the Moebius agent, replaces the GitHub logins whose issues on a GitHub repository need no
+    /// A person, or the Moebius agent, replaces the logins whose issues on a repository on GitHub or GitLab need no
     /// approval. Each login is trimmed and kept once; the edit is recorded as an `edit_repository` decision and
     /// announced as `repository_updated`. A list that changes nothing does neither.
     pub fn edit_repository(
@@ -132,9 +171,9 @@ impl App {
         reason: &str,
     ) -> Result<Repository> {
         let repository = self.repository(id)?;
-        if repository.forge != "github" {
+        if repository.forge == "none" {
             return Err(AppError::Invalid(format!(
-                "{} is not on GitHub, so it trusts no GitHub logins",
+                "{} is on no forge, so it trusts no logins",
                 repository.name
             )));
         }
@@ -145,9 +184,7 @@ impl App {
                 .all(|c| c.is_ascii_alphanumeric() || "-_.[]".contains(c))
                 || login.is_empty()
             {
-                return Err(AppError::Invalid(format!(
-                    "{login:?} is not a GitHub login"
-                )));
+                return Err(AppError::Invalid(format!("{login:?} is not a login")));
             }
             if !logins.iter().any(|known| known.eq_ignore_ascii_case(login)) {
                 logins.push(login.to_string());

@@ -134,6 +134,14 @@ program = "pi-bolt"
 # api_url = "https://api.github.com"
 # poll_seconds = 30                       # how often each GitHub repository's issues are polled
 
+# Repositories on GitLab, gitlab.com or one hosted elsewhere, with a personal, project or group access token (scope
+# api). The token is read at start from token_file, or from the secret named by token_secret, never from this file.
+# [gitlab]
+# url = "https://gitlab.com"
+# token_file = "gitlab-token"
+# token_secret = "gitlab"                 # instead of token_file
+# poll_seconds = 30                       # how often each GitLab repository's issues and merge requests are polled
+
 # The harness configuration repository: a git repository with agents/<name>.toml, agents/<name>.md, skills/, rules.md
 # and mcp.toml, cloned to data_dir/harness. Agents and rules then come from it, edits through the API are commits to it,
 # and [agents.*] and rules_file are errors.

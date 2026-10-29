@@ -63,8 +63,8 @@ fn cards_of<'a>(board: &'a Board, column: &str) -> Vec<&'a Card> {
     cards
 }
 
-/// The page of a board: its header, the project's tabs and the columns. A GitHub repository's header names the logins
-/// it trusts, with the pencil that edits them in place.
+/// The page of a board: its header, the project's tabs and the columns. The header of a repository on GitHub or GitLab
+/// names the logins it trusts, with the pencil that edits them in place.
 pub fn view<'a>(
     board: &'a Board,
     inbox: &'a [InboxItem],
@@ -73,10 +73,7 @@ pub fn view<'a>(
     tabs: Element<'a, Message>,
 ) -> Element<'a, Message> {
     let repository = &board.repository;
-    let tag = match &repository.github {
-        Some(github) => format!("GitHub · {github}"),
-        None => "No forge".to_string(),
-    };
+    let tag = repository.forge_tag();
     let waiting_changes = inbox
         .iter()
         .filter(|item| item.kind == "ready_to_merge")
@@ -93,7 +90,7 @@ pub fn view<'a>(
     );
     let mut line = row![text(line).size(theme::CONTEXT).color(theme::TEXT_SECONDARY)]
         .align_y(Alignment::Center);
-    if repository.github.is_some() {
+    if repository.on_forge() {
         let trusted = match repository.trusted.as_slice() {
             [] => " · no trusted authors".to_string(),
             trusted => format!(" · trusts {}", trusted.join(", ")),

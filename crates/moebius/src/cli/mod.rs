@@ -454,6 +454,12 @@ pub(crate) mod tests {
                 json!({"name": "w", "url": "/srv/w", "forge": "github", "github": "acme/w", "trusted": ["leon"]})
             )
         );
+        assert_eq!(
+            route(&["repo", "add", "t", "/srv/t", "--gitlab", "acme/tools/t"]).2,
+            Some(
+                json!({"name": "t", "url": "/srv/t", "forge": "gitlab", "project": "acme/tools/t"})
+            )
+        );
         assert_eq!(route(&["usage", "--days", "7"]).1, "/v1/usage?days=7");
         assert_eq!(
             route(&["takeover", "release", "3", "--reason", "back"]),

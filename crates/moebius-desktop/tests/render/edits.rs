@@ -114,6 +114,16 @@ fn the_pencil_in_a_github_boards_header_edits_the_trusted_authors() {
         vec![],
     ));
     assert!(!shows(&app, " · no trusted authors"));
+
+    // One on GitLab names its project and trusts usernames there.
+    let mut tools = repository(3, "tools", None);
+    tools["forge"] = "gitlab".into();
+    tools["project"] = "acme/platform/tools".into();
+    tools["trusted"] = serde_json::json!(["leon"]);
+    let app = App::with_snapshot(snapshot(vec![board(tools, vec![])], vec![]));
+    assert!(shows(&app, "GitLab · acme/platform/tools"));
+    assert!(shows(&app, " · trusts leon"));
+    assert_eq!(clicked_id(&app, "edit-trusted").len(), 1);
 }
 
 #[test]

@@ -11,7 +11,7 @@ documentation; `CONTRIBUTING.md` says the same as this file for people.
   forges and decisions together; `config`, `store`, `blobs` (and `blobs::redact`), `bus` and `router` (the model
   provider). The rest is grouped by part, one folder each: `server/` (the wiring and nightly schedule, `api`,
   `settings` for editing `moebius.toml` while it runs, `setup` for the Models, Plugins and Get started pages), `repos/`
-  (git, `forge`, `github`, `poll`, `files`), `board/` (the engine and `scripts`), `decide/` (decision points, `check`
+  (git, `forge`, `github`, `gitlab`, `poll`, `files`), `board/` (the engine and `scripts`), `decide/` (decision points, `check`
   for the bridge's tool-call check, `guard`, `rules`, `model` for shadowing and takeovers), `harness/` (`pibolt`, `terminal`, `repo` for the harness
   configuration repository, `mcp`, `skill`, `grilling`) and `improve/` (`retro`, `trial`, `own` for the Retro's
   proposals to Moebius's own configuration, `replay`, `research`, `export`). `docs/architecture.md` lists every module. Column scripts are in `workflow/*.luau`.

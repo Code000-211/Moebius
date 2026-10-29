@@ -101,6 +101,29 @@ app (`moebius-desktop`); on another system, build from source. Every key named h
 
    To restore, stop the server, unpack the archive into the empty directory and start it again.
 
+7. Work on GitLab. For repositories on gitlab.com, or on a GitLab you host, create an access token with the `api` scope
+   (a personal one, or a project or group access token for one project or group). Give it to the server in a file only
+   you can read, or as a secret (`moebius secrets set gitlab` reads it from standard input; then write
+   `token_secret = "gitlab"` instead of `token_file`), so that it is never in `moebius.toml`:
+
+   ```sh
+   printf '%s' "$GITLAB_TOKEN" > ~/.config/moebius/gitlab-token
+   chmod 600 ~/.config/moebius/gitlab-token
+   cat >> ~/.config/moebius/moebius.toml <<'TOML'
+   [gitlab]
+   url = "https://gitlab.com"
+   token_file = "gitlab-token"
+   TOML
+   systemctl --user restart moebius
+   moebius repo add widgets https://gitlab.com/acme/platform/widgets.git --gitlab acme/platform/widgets --trusted leon
+   ```
+
+   In the app, the "+" of the sidebar does the same with the forge GitLab. The server polls the project's issues every
+   `gitlab.poll_seconds`: open issues become cards, issues by the trusted usernames move on without your approval, and
+   "blocked by #n" in an issue becomes a dependency. Changes are pushed with the token and opened as merge requests; the
+   latest pipeline of a merge request's head commit is its checks, an approval is its review, and a merge on GitLab, or
+   in the app, finishes its card. See [configuration](../reference/configuration.md#gitlab).
+
 ## How to try it
 
 Check that the service is up and answers with the token, from the machine that runs it and, once `listen` is changed,
@@ -125,6 +148,9 @@ run the `sha256sum` line of step 1 on it: it must print `FAILED`.
   configuration error is printed there, with the key at fault. The unit starts the server with `--config`, so a
   `moebius.toml` in another place is not read, and a missing file is not an error: the server then runs with the
   defaults, which have no upstream and no agent.
+- GitLab repositories report `forge_error` with `401` or `403`: the token expired, lacks the `api` scope, or (a project
+  or group token) does not reach the project. With `404`, the project's path is not the one GitLab shows under the
+  project's name, groups first.
 - Runs fail because `pi-bolt` is not found: the service's `PATH` is not yours. Set `pi_bolt.program` to the full path.
 - The app cannot connect from another machine: the server still listens on `127.0.0.1`, or a firewall blocks the port.
   `listen` takes an address of the machine, and a change of it needs a restart.

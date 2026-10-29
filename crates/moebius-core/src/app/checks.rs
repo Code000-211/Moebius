@@ -25,7 +25,7 @@ const CHECK_OUTPUT: usize = 4096;
 
 impl App {
     /// How the checks of the change stand for its current commit: `pending`, `success`, `failure` or `none`. Checks
-    /// recorded for an older commit do not count; on GitHub the change then waits for its checks for a while after
+    /// recorded for an older commit do not count; on a forge the change then waits for its checks for a while after
     /// it was published, so that a pushed commit is not taken for one without CI.
     pub fn checks_of(&self, change: &Change) -> Result<&'static str> {
         let recorded = change
@@ -37,7 +37,7 @@ impl App {
             Some("failure") => "failure",
             Some(_) => "pending",
             None if change.repository_id.is_some()
-                && self.repository_of(change)?.forge == "github"
+                && self.repository_of(change)?.forge != "none"
                 && now() - change.published_at.unwrap_or(0) < CHECKS_GRACE =>
             {
                 "pending"

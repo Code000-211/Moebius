@@ -17,8 +17,12 @@ pub struct Repository {
     pub default_branch: String,
     /// The repository's name on GitHub, as `owner/repo`; none for other forges.
     pub github: Option<String>,
-    /// The GitHub logins whose issues move on without a person's approval.
+    /// The logins on its forge whose issues move on without a person's approval.
     pub trusted: Vec<String>,
+    /// The repository's path on a forge other than GitHub, such as `group/subgroup/project` on GitLab; none for
+    /// GitHub and without a forge.
+    #[serde(default)]
+    pub project: Option<String>,
 }
 
 impl Repository {
@@ -28,6 +32,14 @@ impl Repository {
         match self.forge.as_str() {
             "none" => self.default_branch.clone(),
             _ => format!("origin/{}", self.default_branch),
+        }
+    }
+
+    /// The repository's name on its forge: `github` on GitHub, `project` on any other forge; none without one.
+    pub fn forge_name(&self) -> Option<&str> {
+        match self.forge.as_str() {
+            "github" => self.github.as_deref(),
+            _ => self.project.as_deref(),
         }
     }
 }
@@ -84,26 +96,46 @@ impl Store {
         self.insert_repository(name, path, "github", default_branch, Some(github), trusted)
     }
 
+    /// Adds a repository whose issues live on `forge` (such as `gitlab`) as `project`, its path there; `trusted` are
+    /// the logins whose issues need no approval.
+    pub fn add_project_repository(
+        &self,
+        name: &str,
+        path: &str,
+        default_branch: &str,
+        forge: &str,
+        project: &str,
+        trusted: &[String],
+    ) -> Result<Repository> {
+        self.insert_repository(name, path, forge, default_branch, Some(project), trusted)
+    }
+
     fn insert_repository(
         &self,
         name: &str,
         path: &str,
         forge: &str,
         default_branch: &str,
-        github: Option<&str>,
+        forge_name: Option<&str>,
         trusted: &[String],
     ) -> Result<Repository> {
+        // The name on GitHub has a column of its own; any other forge's is the project.
+        let (github, project) = match forge {
+            "github" => (forge_name, None),
+            _ => (None, forge_name),
+        };
         let conn = self.conn();
         conn.execute(
-            "INSERT INTO repositories (name, path, forge, default_branch, github, trusted)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO repositories (name, path, forge, default_branch, github, trusted, project)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 name,
                 path,
                 forge,
                 default_branch,
                 github,
-                serde_json::to_string(trusted)?
+                serde_json::to_string(trusted)?,
+                project
             ],
         )?;
         Ok(Repository {
@@ -114,11 +146,12 @@ impl Store {
             default_branch: default_branch.into(),
             github: github.map(Into::into),
             trusted: trusted.to_vec(),
+            project: project.map(Into::into),
         })
     }
 
     pub fn repositories(&self) -> Result<Vec<Repository>> {
-        self.rows("SELECT id, name, path, forge, default_branch, github, trusted FROM repositories ORDER BY id", [], |r| {
+        self.rows("SELECT id, name, path, forge, default_branch, github, trusted, project FROM repositories ORDER BY id", [], |r| {
             let trusted: String = r.get(6)?;
             Ok(Repository {
                 id: r.get(0)?,
@@ -134,11 +167,12 @@ impl Store {
                         e.into(),
                     )
                 })?,
+                project: r.get(7)?,
             })
         })
     }
 
-    /// Replaces the GitHub logins whose issues on the repository need no approval.
+    /// Replaces the logins whose issues on the repository's forge need no approval.
     pub fn set_repository_trusted(&self, id: i64, trusted: &[String]) -> Result<()> {
         self.conn().execute(
             "UPDATE repositories SET trusted = ?1 WHERE id = ?2",
@@ -379,6 +413,39 @@ impl Store {
 mod tests {
     use super::*;
     use crate::store::test_store as store;
+
+    #[test]
+    fn a_repository_on_another_forge_keeps_its_project_path() {
+        let (_dir, s) = store();
+        let trusted = vec!["leon".to_string()];
+        let repo = s
+            .add_project_repository(
+                "widgets",
+                "/srv/widgets",
+                "main",
+                "gitlab",
+                "acme/tools/widgets",
+                &trusted,
+            )
+            .unwrap();
+        assert_eq!(s.repository(repo.id).unwrap(), Some(repo.clone()));
+        assert_eq!(
+            (
+                repo.forge.as_str(),
+                repo.github.as_deref(),
+                repo.forge_name()
+            ),
+            ("gitlab", None, Some("acme/tools/widgets"))
+        );
+        assert_eq!(repo.base_ref(), "origin/main");
+        let github = s
+            .add_github_repository("gadgets", "/srv/gadgets", "main", "acme/gadgets", &[])
+            .unwrap();
+        assert_eq!(
+            (github.forge_name(), github.project.as_deref()),
+            (Some("acme/gadgets"), None)
+        );
+    }
 
     #[test]
     fn github_repositories_numbered_cards_and_dependencies_round_trip() {

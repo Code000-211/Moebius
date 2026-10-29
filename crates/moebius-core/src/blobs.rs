@@ -26,6 +26,7 @@ static SECRETS: LazyLock<Vec<(&'static str, Regex)>> = LazyLock::new(|| {
             "github-token",
             r"(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}",
         ),
+        ("gitlab-token", r"glpat-[A-Za-z0-9_\-]{20,}"),
         ("aws-access-key", r"AKIA[0-9A-Z]{16}"),
     ]
     .into_iter()
@@ -165,16 +166,17 @@ mod tests {
         let store = BlobStore::new(dir.path());
         let key = format!("sk-ant-api03-{}", "x".repeat(40));
         let token = format!("ghp_{}", "A".repeat(36));
+        let gitlab = format!("glpat-{}", "b".repeat(20));
         let pem = "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----";
         let id = store
             .put(&format!(
-                "key {key} token {token}\n{pem}\nAKIAABCDEFGHIJKLMNOP"
+                "key {key} token {token} {gitlab}\n{pem}\nAKIAABCDEFGHIJKLMNOP"
             ))
             .unwrap();
         let stored = store.get(&id).unwrap();
         assert_eq!(
             stored,
-            "key [redacted:anthropic-key] token [redacted:github-token]\n[redacted:private-key]\n[redacted:aws-access-key]"
+            "key [redacted:anthropic-key] token [redacted:github-token] [redacted:gitlab-token]\n[redacted:private-key]\n[redacted:aws-access-key]"
         );
     }
 

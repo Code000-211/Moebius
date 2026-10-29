@@ -143,7 +143,7 @@ fn the_add_page_asks_for_the_github_repository_and_the_trusted_authors_and_shows
         vec![
             add_repository::Message::NameEdited("widgets".into()),
             add_repository::Message::UrlEdited("https://github.com/acme/widgets.git".into()),
-            add_repository::Message::ForgeChosen(true),
+            add_repository::Message::ForgeChosen(add_repository::Forge::GitHub),
             add_repository::Message::GithubEdited("acme/widgets".into()),
             add_repository::Message::TrustedEdited("leon, mona".into()),
             add_repository::Message::Answered(Err(ClientError::Server {
@@ -179,7 +179,12 @@ fn adding_needs_a_name_and_a_url_and_with_github_the_repository_and_sends_what_t
         ],
     );
     assert!(add(&app));
-    typed(&mut app, vec![add_repository::Message::ForgeChosen(true)]);
+    typed(
+        &mut app,
+        vec![add_repository::Message::ForgeChosen(
+            add_repository::Forge::GitHub,
+        )],
+    );
     assert!(!add(&app), "GitHub needs owner/name");
     typed(
         &mut app,
@@ -202,7 +207,7 @@ fn adding_needs_a_name_and_a_url_and_with_github_the_repository_and_sends_what_t
         json!({"name": "demo", "url": "/srv/git/demo", "forge": "none"})
     );
     for message in [
-        add_repository::Message::ForgeChosen(true),
+        add_repository::Message::ForgeChosen(add_repository::Forge::GitHub),
         add_repository::Message::GithubEdited("acme/demo".into()),
         add_repository::Message::TrustedEdited(" leon, ,mona ".into()),
     ] {
@@ -212,6 +217,55 @@ fn adding_needs_a_name_and_a_url_and_with_github_the_repository_and_sends_what_t
         serde_json::to_value(form.request().unwrap()).unwrap(),
         json!({"name": "demo", "url": "/srv/git/demo", "forge": "github", "github": "acme/demo",
                "trusted": ["leon", "mona"]})
+    );
+
+    for message in [
+        add_repository::Message::ForgeChosen(add_repository::Forge::GitLab),
+        add_repository::Message::ProjectEdited(" acme/platform/demo ".into()),
+    ] {
+        let _ = form.update(message, None);
+    }
+    assert_eq!(
+        serde_json::to_value(form.request().unwrap()).unwrap(),
+        json!({"name": "demo", "url": "/srv/git/demo", "forge": "gitlab", "project": "acme/platform/demo",
+               "trusted": ["leon", "mona"]})
+    );
+}
+
+/// The page with the forge GitLab: compare `tests/snapshots/add-repository-gitlab-tiny-skia.png`.
+#[test]
+fn the_add_page_asks_for_the_gitlab_project_and_the_trusted_usernames() {
+    let mut app = add_repository_app();
+    typed(
+        &mut app,
+        vec![
+            add_repository::Message::NameEdited("widgets".into()),
+            add_repository::Message::UrlEdited(
+                "https://gitlab.com/acme/platform/widgets.git".into(),
+            ),
+            add_repository::Message::ForgeChosen(add_repository::Forge::GitLab),
+        ],
+    );
+    let add = |app: &App| pressed(app, "Add") == Some("[AddRepository(Add)]".into());
+    assert!(!add(&app), "GitLab needs the project's path");
+    typed(
+        &mut app,
+        vec![
+            add_repository::Message::ProjectEdited("acme/platform/widgets".into()),
+            add_repository::Message::TrustedEdited("leon".into()),
+        ],
+    );
+    assert!(add(&app));
+    assert!(!shows(&app, "GitHub repository"));
+    draw(
+        &app,
+        "add-repository-gitlab",
+        &[
+            "GitLab",
+            "GitLab project",
+            "Trusted authors",
+            "GitLab usernames, separated by commas. Their issues need no approval.",
+        ],
     );
 }
 

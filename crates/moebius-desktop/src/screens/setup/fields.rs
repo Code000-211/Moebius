@@ -75,6 +75,15 @@ pub(super) const GROUPS: &[(&str, &[Spec])] = &[
             ("github.poll_seconds", "Poll every (s)", Kind::Whole),
         ],
     ),
+    (
+        "GitLab",
+        &[
+            ("gitlab.url", "URL", Kind::Code),
+            ("gitlab.token_file", "Token file", Kind::Code),
+            ("gitlab.token_secret", "Token secret", Kind::Code),
+            ("gitlab.poll_seconds", "Poll every (s)", Kind::Whole),
+        ],
+    ),
 ];
 
 /// The tables of the file that are there or not: when every key of one is blank the table is removed.
@@ -86,6 +95,15 @@ pub(super) const TABLES: &[(&str, &[&str])] = &[
             "github.private_key_file",
             "github.api_url",
             "github.poll_seconds",
+        ],
+    ),
+    (
+        "gitlab",
+        &[
+            "gitlab.url",
+            "gitlab.token_file",
+            "gitlab.token_secret",
+            "gitlab.poll_seconds",
         ],
     ),
     ("harness", &["harness.url", "harness.mcp_env"]),

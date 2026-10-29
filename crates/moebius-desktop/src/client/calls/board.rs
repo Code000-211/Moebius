@@ -51,7 +51,7 @@ impl Client {
         self.post("/v1/repositories", body).await
     }
 
-    /// Replaces the GitHub logins whose issues on a repository need no approval.
+    /// Replaces the logins on its forge whose issues on a repository need no approval.
     pub async fn edit_repository(
         &self,
         repository: i64,

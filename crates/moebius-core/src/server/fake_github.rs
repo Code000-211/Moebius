@@ -172,7 +172,7 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
 }
 
 /// Starts a run that never does anything.
-struct IdleRuns;
+pub(super) struct IdleRuns;
 
 impl Runs for IdleRuns {
     fn start(

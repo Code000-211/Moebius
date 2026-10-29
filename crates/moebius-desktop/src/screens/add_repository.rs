@@ -1,5 +1,5 @@
-//! The "Add a repository" page the "+" of the sidebar opens: a name, where to clone from, the forge and the trusted
-//! authors. Add sends `POST /v1/repositories`; the new board opens when the server took it, and what it refused is
+//! The "Add a repository" page the "+" of the sidebar opens: a name, where to clone from, the forge (none, GitHub or
+//! GitLab) with the repository's name there, and the trusted authors. Add sends `POST /v1/repositories`; the new board opens when the server took it, and what it refused is
 //! shown under the form.
 
 use iced::font::Weight;
@@ -13,13 +13,34 @@ use crate::settings::Settings;
 use crate::theme;
 use crate::widgets::page;
 
+/// The forge a new repository is on.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Forge {
+    #[default]
+    None,
+    GitHub,
+    GitLab,
+}
+
+impl Forge {
+    /// The name the desktop API takes.
+    fn name(self) -> &'static str {
+        match self {
+            Forge::None => "none",
+            Forge::GitHub => "github",
+            Forge::GitLab => "gitlab",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Message {
     NameEdited(String),
     UrlEdited(String),
-    /// The forge was chosen: `true` for GitHub.
-    ForgeChosen(bool),
+    ForgeChosen(Forge),
     GithubEdited(String),
+    /// The project's path on GitLab was edited.
+    ProjectEdited(String),
     TrustedEdited(String),
     /// "Add" was pressed.
     Add,
@@ -31,8 +52,9 @@ pub enum Message {
 pub struct AddRepository {
     name: String,
     url: String,
-    github_forge: bool,
+    forge: Forge,
     github: String,
+    project: String,
     trusted: String,
     /// Why the server refused the repository.
     failed: Option<String>,
@@ -43,16 +65,23 @@ pub struct AddRepository {
 impl AddRepository {
     /// What the form asks the server for, if it is filled in.
     pub fn request(&self) -> Option<NewRepository> {
-        let (name, url, github) = (self.name.trim(), self.url.trim(), self.github.trim());
-        if name.is_empty() || url.is_empty() || (self.github_forge && github.is_empty()) {
+        let (name, url) = (self.name.trim(), self.url.trim());
+        let (github, project) = (self.github.trim(), self.project.trim());
+        let forge_name = match self.forge {
+            Forge::None => "-",
+            Forge::GitHub => github,
+            Forge::GitLab => project,
+        };
+        if name.is_empty() || url.is_empty() || forge_name.is_empty() {
             return None;
         }
         Some(NewRepository {
             name: name.to_string(),
             url: url.to_string(),
-            forge: if self.github_forge { "github" } else { "none" },
-            github: self.github_forge.then(|| github.to_string()),
-            trusted: if self.github_forge {
+            forge: self.forge.name(),
+            github: (self.forge == Forge::GitHub).then(|| github.to_string()),
+            project: (self.forge == Forge::GitLab).then(|| project.to_string()),
+            trusted: if self.forge != Forge::None {
                 self.trusted
                     .split(',')
                     .map(str::trim)
@@ -79,8 +108,9 @@ impl AddRepository {
         match message {
             Message::NameEdited(name) => self.name = name,
             Message::UrlEdited(url) => self.url = url,
-            Message::ForgeChosen(github) => self.github_forge = github,
+            Message::ForgeChosen(forge) => self.forge = forge,
             Message::GithubEdited(github) => self.github = github,
+            Message::ProjectEdited(project) => self.project = project,
             Message::TrustedEdited(trusted) => self.trusted = trusted,
             Message::Add => {
                 let (Some(settings), Some(request), false) =
@@ -135,32 +165,50 @@ impl AddRepository {
                  or an empty folder, becomes a new repository.",
             ),
             label("Forge"),
-            row![
-                page::chip(
-                    "None".to_string(),
-                    !self.github_forge,
-                    false,
-                    message(Message::ForgeChosen(false))
-                ),
-                page::chip(
-                    "GitHub".to_string(),
-                    self.github_forge,
-                    false,
-                    message(Message::ForgeChosen(true))
-                ),
+            row([
+                ("None", Forge::None),
+                ("GitHub", Forge::GitHub),
+                ("GitLab", Forge::GitLab)
             ]
+            .map(|(label, forge)| page::chip(
+                label.to_string(),
+                self.forge == forge,
+                false,
+                message(Message::ForgeChosen(forge))
+            )))
             .spacing(8),
         ]
         .spacing(10);
-        if self.github_forge {
-            content = content
-                .push(label("GitHub repository"))
-                .push(field("acme/radiance", &self.github, Message::GithubEdited))
-                .push(label("Trusted authors"))
-                .push(field("leon, mona", &self.trusted, Message::TrustedEdited))
-                .push(page::body(
-                    "GitHub logins, separated by commas. Their issues need no approval.",
-                ));
+        match self.forge {
+            Forge::None => {}
+            Forge::GitHub => {
+                content = content
+                    .push(label("GitHub repository"))
+                    .push(field("acme/radiance", &self.github, Message::GithubEdited))
+                    .push(label("Trusted authors"))
+                    .push(field("leon, mona", &self.trusted, Message::TrustedEdited))
+                    .push(page::body(
+                        "GitHub logins, separated by commas. Their issues need no approval.",
+                    ));
+            }
+            Forge::GitLab => {
+                content = content
+                    .push(label("GitLab project"))
+                    .push(field(
+                        "acme/platform/radiance",
+                        &self.project,
+                        Message::ProjectEdited,
+                    ))
+                    .push(page::body(
+                        "The project's path, groups first. The server reaches the GitLab of [gitlab] in its \
+                         settings with its access token.",
+                    ))
+                    .push(label("Trusted authors"))
+                    .push(field("leon, mona", &self.trusted, Message::TrustedEdited))
+                    .push(page::body(
+                        "GitLab usernames, separated by commas. Their issues need no approval.",
+                    ));
+            }
         }
         content = content.push(row![page::primary_button("Add", add)]);
         if let Some(failed) = &self.failed {

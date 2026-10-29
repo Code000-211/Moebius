@@ -29,7 +29,7 @@ You put issues on a board. Moebius picks them up and runs the workflow on its ow
 2. **Check.** Every tool call the agent makes is checked against built-in patterns and the rules you write in plain
    prose, before it runs. A call that breaks a rule is refused, with the rule's name.
 3. **Review.** The change is tested and reviewed by another agent, and goes back to coding while something is wrong.
-4. **Merge.** It waits in your inbox, as a branch or a GitHub pull request, until you merge it.
+4. **Merge.** It waits in your inbox, as a branch, a GitHub pull request or a GitLab merge request, until you merge it.
 5. **Improve.** Every night the Retro looks at what went wrong and tries out fixes. Those that worked wait in the inbox
    for you.
 
@@ -63,7 +63,7 @@ Moebius lets it decide alongside the teacher model until it agrees often enough 
 ## How it fits together
 
 ```
-desktop app ──(private network, token)──▶ moebius server ──▶ GitHub or plain git (polled)
+desktop app ──(private network, token)──▶ moebius server ──▶ GitHub, GitLab or plain git (polled)
                                               │
                                               ├──▶ Pi-Bolt runs, one worktree each
                                               │      └─ every tool call is checked before it runs

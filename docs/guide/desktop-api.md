@@ -32,8 +32,8 @@ The answer is `{"version": "<the server's version>"}`.
 
 `POST /v1/repositories` clones `url`, which is anything `git clone` takes (a path on the server will do), and makes the
 clone's checked-out branch the default branch. `POST /v1/repositories/{id}/issues` creates an issue in a repository
-without a forge, as the author `person`, which is trusted, so it starts at once. A repository on GitHub takes its
-issues from GitHub instead; see the reference for the `forge`, `github` and `trusted` fields.
+without a forge, as the author `person`, which is trusted, so it starts at once. A repository on GitHub or GitLab takes its
+issues from there instead; see the reference for the `forge`, `github`, `project` and `trusted` fields.
 
 ```sh
 REPO=$(curl -s -X POST -H "$AUTH" -H "$JSON" \

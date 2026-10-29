@@ -61,11 +61,20 @@ const KEYS: &[Key] = &[
     key("github.private_key_file", "", false),
     key("github.api_url", "\"https://api.github.com\"", false),
     key("github.poll_seconds", "30", false),
+    key("gitlab.url", "\"https://gitlab.com\"", false),
+    key("gitlab.token_file", "", false),
+    key("gitlab.token_secret", "", false),
+    key("gitlab.poll_seconds", "30", false),
     key("agents", "{}", true),
 ];
 
 /// The keys whose value is, or holds, a URL that may have a user name and password in it.
-const URLS: &[&str] = &["harness.url", "decision_model.url", "router.upstreams"];
+const URLS: &[&str] = &[
+    "harness.url",
+    "decision_model.url",
+    "router.upstreams",
+    "gitlab.url",
+];
 
 /// The value at the dotted `name` of the parsed file.
 fn lookup<'a>(raw: &'a toml::Table, name: &str) -> Option<&'a toml::Value> {
