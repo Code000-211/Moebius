@@ -503,17 +503,27 @@ At the top:
 | `screens/project/context.rs` | What the floating chat is told of a project's tab. |
 | `screens/board.rs` | The board of a repository: its columns in order with their cards. |
 | `screens/add_repository.rs` | The "Add a repository" page the "+" of the sidebar opens. |
-| `screens/live.rs` | The live view of a run: its conversation, steer and stop, and the run's panel. |
+| `screens/live/mod.rs`, `screens/live/update.rs` | The live view of a run: the run being watched, its loading and the shell's subscription, and how a message changes it. |
+| `screens/live/view.rs` | The header with status, shell and stop, the conversation and the steer field. |
+| `screens/live/panel.rs` | "This run": the card's rounds and tokens, the agent, the judgements and the branch. |
 | `screens/history.rs` | The page of a card that has no run to watch: its issue, runs and decisions. |
 | `screens/agents/mod.rs`, `screens/agents/update.rs`, `screens/agents/view.rs` | The Agents page (the agents and an editor for the one chosen; an edit is a commit), how a message changes it, and the list with the editor's head. |
 | `screens/agents/editor.rs` | The editor of one agent, what a save sends, and an agent of `moebius.toml`. |
 | `screens/agents/boxes.rs` | The boxes under the editor's head: model and settings, instructions, skills, MCP servers, extensions. |
 | `screens/skills.rs`, `screens/mcp_servers.rs` | The Skills and MCP servers pages, each a list with an editor; an edit is a commit. |
-| `screens/rules.rs` | The Rules page: the built-in patterns and what each refused, and the rules in prose, edited in place. |
+| `screens/rules/mod.rs`, `screens/rules/update.rs` | The Rules page (the built-in patterns and what each refused, and the rules in prose, edited in place): its state and the file a save sends, and how a message changes it. |
+| `screens/rules/file.rs` | A rules file as text: a rule's section put back, appended or dropped, and what a name may be. |
+| `screens/rules/view.rs`, `screens/rules/cards.rs` | The boxes of the page, and the rules in them as cards with the editor a card grows into. |
 | `screens/harness_setup.rs` | Setting up a harness configuration repository from the app. |
-| `screens/usage.rs` | The Usage page: what the model calls used, by window, with its heatmap. |
+| `screens/usage/mod.rs` | The Usage page's window, state and layout, and the tokens of today for the sidebar's meter. |
+| `screens/usage/figures.rs` | How the page tells its figures: tokens in three figures, counts, shares, times, and the dates of the heatmap. |
+| `screens/usage/heatmap.rs` | The heatmap of the last year, and the colour each model keeps on every chart. |
+| `screens/usage/boxes.rs` | The tiles of the totals and the boxes of tokens by model, model time, tool waits and agents. |
+| `screens/usage/table.rs` | The panel and the table the boxes are made of. |
 | `screens/retro.rs` | The Retro page: the Retros of the days, their errors by kind, and their proposals. |
-| `screens/experiments.rs` | The Experiments page: autoresearch, a new brief, and each research's baseline and experiments. |
+| `screens/experiments/mod.rs`, `screens/experiments/update.rs` | The Experiments page (autoresearch): its state and layout, and how a message changes it. |
+| `screens/experiments/brief.rs` | The form of a new brief and the editor of a draft's, with the inputs they share. |
+| `screens/experiments/research.rs` | A research's card, brief, baseline and experiments table, with its numbers and changes. |
 | `screens/decision_model.rs` | The Decision model page: what was recorded of each kind of decision, the exports, shadowing and takeovers. |
 | `screens/setup/mod.rs`, `screens/setup/update.rs`, `screens/setup/view.rs` | The Setup pages (Models, Plugins and Settings, which edit `moebius.toml` through the API), how a message changes them, and how they are drawn. |
 | `screens/setup/fields.rs`, `screens/setup/forms.rs`, `screens/setup/inputs.rs` | The keys of `moebius.toml` as inputs, the forms made of them with what a save sends, and how each input is drawn. |
