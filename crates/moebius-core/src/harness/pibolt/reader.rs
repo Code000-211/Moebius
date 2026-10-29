@@ -178,8 +178,9 @@ pub(in crate::harness) fn finish<L>(
             failed(&format!("cannot offer the chat's work as a change: {e}"));
         }
     }
-    let _ = app.store.set_run_status(run.id, status);
+    // Before the status is set, so that a run that reads as ended can no longer be steered or stopped.
     lock(lives).remove(&run.id);
+    let _ = app.store.set_run_status(run.id, status);
     app.bus.publish(AppEvent::new(
         "run_ended",
         json!({ "run": run.id, "status": status }),
