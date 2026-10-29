@@ -98,7 +98,8 @@ desktop app ──(private network, token, WebSocket + HTTP)──▶ moebius (s
   question the harness asks.
 - **The router** listens on localhost; each run gets the router as its only provider and a per-run token, so that every model
   request is attributed to a run, a card and an agent.
-- **The desktop app** connects only over the private network and authenticates with a token issued by the server.
+- **The desktop app** connects over the private network, or through an SSH tunnel to a server that listens only on
+  `127.0.0.1`, and authenticates with a token issued by the server.
 
 ## 3. The core
 
