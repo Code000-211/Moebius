@@ -99,9 +99,9 @@ async fn the_openai_preset_logs_in_with_a_form_and_the_codex_parameters_and_a_pa
     assert!(!provider.json_tokens());
     assert_eq!(provider.exchanged_state(), None);
     assert_eq!(provider.exchanged_codes()[0].0, "pasted");
-    // The login holds, but the upstream needs a protocol that is not spoken: that is said, not listed.
+    // The login holds when the upstream lists the subscription's models, which the router knows.
     assert!(
-        login.message.contains("Codex Responses protocol"),
+        login.message.contains("lists 8 models"),
         "{}",
         login.message
     );
@@ -112,12 +112,16 @@ async fn the_openai_preset_logs_in_with_a_form_and_the_codex_parameters_and_a_pa
 }
 
 #[tokio::test]
-async fn the_openai_upstream_fails_with_the_protocol_it_needs_without_asking_the_provider() {
+async fn the_openai_upstream_goes_to_the_codex_endpoint_with_the_account_of_the_login() {
     let provider = FakeProvider::start(3600).await;
-    let (router, _dir) = router_with_preset(&provider, "openai", Protocol::OpenAi);
+    let (router, dir) = router_with_preset(&provider, "openai", Protocol::OpenAi);
+    Secrets::new(dir.path())
+        .set("oauth-openai", "refresh-token-0")
+        .unwrap();
     let upstreams = router.upstreams_of(Protocol::OpenAi);
     let mut request = json!({"model": "gpt-fake", "messages": []});
-    let failed = router
+    // The fake provider has no Codex endpoint: the request is sent there, not refused for its protocol.
+    let answered = router
         .send_first(
             Protocol::OpenAi,
             "/v1/chat/completions",
@@ -127,26 +131,11 @@ async fn the_openai_upstream_fails_with_the_protocol_it_needs_without_asking_the
             (&["gpt-fake".to_string()], false),
         )
         .await
-        .err()
-        .expect("the request must fail");
-    assert_eq!(failed.status(), axum::http::StatusCode::BAD_GATEWAY);
-    let body = axum::body::to_bytes(failed.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let body: Value = serde_json::from_slice(&body).unwrap();
-    let message = body["error"]["message"].as_str().unwrap();
-    assert!(
-        message.contains("needs the Codex Responses protocol"),
-        "{message}"
-    );
-    assert!(message.contains("does not speak yet"), "{message}");
-    assert_eq!(provider.token_requests(), 0);
-    assert!(provider.upstream_auth().is_empty());
-    let listed = router.list_models(&upstreams[0]).await.unwrap_err();
-    assert!(
-        listed.starts_with("needs the Codex Responses protocol"),
-        "{listed}"
-    );
+        .unwrap_or_else(|_| panic!("the request was not sent"));
+    assert!(answered.codex);
+    assert_eq!(answered.response.status(), 404);
+    assert!(answered.response.url().path().ends_with("/codex/responses"));
+    assert_eq!(provider.token_requests(), 1);
 }
 
 #[tokio::test]
@@ -222,7 +211,8 @@ async fn a_table_names_its_preset_and_what_it_writes_wins() {
     assert_eq!(openai.client_id, "app_EMoamEEZ73f0CkXaXp7hrann");
     assert_eq!(openai.redirect_path.as_deref(), Some("/auth/callback"));
     assert_eq!((openai.secret.as_str(), openai.scopes.len()), ("mine", 1));
-    assert!(openai.needs().is_some() && anthropic.needs().is_none());
+    assert!(openai.codex() && !anthropic.codex());
+    assert!(openai.needs().is_none() && anthropic.needs().is_none());
     // Without a preset the fields of a table are all needed.
     let missing = table("flow = \"code\"\nclient_id = \"x\"")
         .unwrap_err()

@@ -261,7 +261,7 @@ impl Router {
 
     /// The access token of a login: the one kept, or a new one for the stored refresh token once the kept one is
     /// due. The message of a failure says nothing secret.
-    async fn access_token(&self, oauth: &OAuthConfig) -> Result<String, String> {
+    pub(super) async fn access_token(&self, oauth: &OAuthConfig) -> Result<String, String> {
         let mut access = self.oauth.access.lock().await;
         if let Some(kept) = access.get(&oauth.secret)
             && Instant::now() < kept.refresh_at

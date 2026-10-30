@@ -958,7 +958,7 @@ or its `state` is not the waiting login's (the login goes on waiting).
 
 The providers built in, which an upstream's `preset` names, in the order the Models page offers them: `[{"name":
 "anthropic", "title": "Anthropic (Claude Pro/Max)", "protocol": "anthropic", "base_url": "https://api.anthropic.com",
-"needs": null}]`. `needs`, when not `null`, is what the provider's upstream needs that the router does not speak yet. The
+"needs": null}]`. `needs`, when not `null`, is what the provider's upstream needs that the router does not speak yet (every built-in provider is served now, so it is `null`). The
 app adds an upstream for a provider with `PUT /v1/settings` (`router.upstreams.<n>`: `protocol`, `base_url` and
 `oauth.preset`), which takes effect without a restart.
 

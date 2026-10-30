@@ -419,7 +419,7 @@ mod tests {
             models.upstreams[1].oauth.as_ref().unwrap(),
         );
         assert_eq!(openai.preset.as_deref(), Some("openai"));
-        assert!(openai.needs.unwrap().contains("Codex Responses"));
+        assert!(openai.needs.is_none());
         assert!(openai.warning.contains("client id of the Codex CLI"));
         assert!(openai.warning.contains("OpenAI may block"));
         assert!(openai.warning.ends_with(TERMS_WARNING));

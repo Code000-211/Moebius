@@ -25,6 +25,7 @@
 //!
 //! This module holds the router, its upstreams and its routes; `proxy` forwards a request upstream, `usage` counts
 //! the tokens and tools of what comes back, `grants` are the runs' tokens and the budgets they are checked against,
+//! `responses` translates to and from the Codex Responses protocol of a ChatGPT subscription,
 //! `models` asks the upstreams which models they serve, `oauth` logs an upstream in with OAuth and keeps its tokens
 //! fresh, and `calls` checks the tool calls of answers to checked tokens.
 
@@ -34,6 +35,7 @@ mod grants;
 mod models;
 mod oauth;
 mod proxy;
+mod responses;
 mod usage;
 
 use std::collections::{BTreeMap, HashMap, HashSet};

@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 
 use super::calls::{self, Decider};
 use super::usage::{Counted, Meter, SseUsage, Tally};
-use super::{Protocol, Router, error};
+use super::{Protocol, Router, error, responses};
 
 impl Router {
     pub(super) async fn forward(
@@ -97,8 +97,9 @@ impl Router {
             Err(failure) => return *failure,
         };
         let (upstream_response, started) = (answered.response, answered.started);
+        let (codex, asked) = (answered.codex, answered.model.clone());
         let status = upstream_response.status();
-        let content_type = upstream_response
+        let mut content_type = upstream_response
             .headers()
             .get(header::CONTENT_TYPE)
             .cloned();
@@ -111,28 +112,18 @@ impl Router {
         };
 
         let mut response = if streaming && status.is_success() {
-            let mut tally = Tally {
+            let tally = Tally {
                 scanner: SseUsage::default(),
                 meter,
             };
-            let upstream = upstream_response.bytes_stream();
-            match checked {
-                Some(decider) => {
-                    let seen = move |bytes: &[u8]| tally.scanner.feed(bytes, protocol);
-                    calls::checked_stream(upstream, protocol, decider, seen).into_response()
-                }
-                None => {
-                    let stream = upstream.map(move |chunk| {
-                        if let Ok(bytes) = &chunk {
-                            tally.scanner.feed(bytes, protocol);
-                        }
-                        chunk
-                    });
-                    Body::from_stream(stream).into_response()
-                }
+            if codex {
+                let upstream = responses::answer::stream(upstream_response.bytes_stream(), &asked);
+                pass(upstream, protocol, tally, checked)
+            } else {
+                pass(upstream_response.bytes_stream(), protocol, tally, checked)
             }
         } else {
-            let bytes = match upstream_response.bytes().await {
+            let mut bytes = match upstream_response.bytes().await {
                 Ok(b) => b,
                 Err(e) => {
                     return error(
@@ -143,7 +134,28 @@ impl Router {
                     );
                 }
             };
-            let mut bytes = bytes;
+            if codex {
+                // The backend answers a request that is not streamed with events all the same.
+                content_type = Some(header::HeaderValue::from_static("application/json"));
+                if status.is_success() {
+                    let mut answer = responses::answer::Answer::new(&asked);
+                    answer.feed(&bytes);
+                    answer.finish();
+                    match answer.complete() {
+                        Ok(value) => bytes = Bytes::from(value.to_string()),
+                        Err(failure) => {
+                            return error(
+                                protocol,
+                                StatusCode::BAD_GATEWAY,
+                                "api_error",
+                                failure["message"].as_str().unwrap_or("the upstream failed"),
+                            );
+                        }
+                    }
+                } else {
+                    bytes = Bytes::from(responses::error_body(&bytes));
+                }
+            }
             if status.is_success()
                 && let Ok(mut value) = serde_json::from_slice::<Value>(&bytes)
             {
@@ -167,6 +179,35 @@ impl Router {
         response
     }
 }
+/// An answer that streams on to the harness, its usage counted and, for a checked token, its tool calls decided on the
+/// way.
+fn pass<S, E>(
+    upstream: S,
+    protocol: Protocol,
+    mut tally: Tally,
+    checked: Option<Decider>,
+) -> Response
+where
+    S: futures_util::Stream<Item = Result<Bytes, E>> + Send + 'static,
+    E: std::error::Error + Send + Sync + 'static,
+{
+    match checked {
+        Some(decider) => {
+            let seen = move |bytes: &[u8]| tally.scanner.feed(bytes, protocol);
+            calls::checked_stream(upstream, protocol, decider, seen).into_response()
+        }
+        None => {
+            let stream = upstream.map(move |chunk| {
+                if let Ok(bytes) = &chunk {
+                    tally.scanner.feed(bytes, protocol);
+                }
+                chunk
+            });
+            Body::from_stream(stream).into_response()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Mutex;

@@ -81,8 +81,8 @@ the server in WSL (see [On Windows](#on-windows)). Every key named here is in th
    page in your browser. When the browser ends on this machine's `localhost` address the login finishes by itself. When
    it cannot (the server runs elsewhere, over SSH, or the provider shows a code), copy the code or the address from the
    address bar into "Paste the code or the address you ended on" and press "Finish login". With `preset = "anthropic"`
-   or `"openai"` in the `oauth` table the same works from the file. A ChatGPT login works, but the router cannot send
-   requests with it yet; Anthropic works fully.
+   or `"openai"` in the `oauth` table the same works from the file. Both work fully; a ChatGPT login serves the
+   models of the subscription (`gpt-6-sol`, ...) through the router like any other upstream.
 
 3. Run it as a service, so that it starts with you and starts again after a failure. Stop the `moebius serve` of the
    step before first (Ctrl+C).

@@ -30,7 +30,7 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
   confirms a warning that using a subscription through a third-party tool may break the provider's terms. Two
   providers are built in as `preset`s, with the client ids Pi uses (Claude Code's and the Codex CLI's): Anthropic
   (Claude Pro/Max), whose requests carry the headers and system prefix its token needs, and OpenAI (ChatGPT), whose
-  login works but whose requests fail with a clear `502` until the router speaks the Codex Responses protocol. "Log in
+  requests the router translates from chat completions to the Codex Responses protocol of the ChatGPT backend and back (text, tool calls, finish reasons and usage, streamed or not), so that the tool-call check and the budgets apply as for any upstream. "Log in
   to a provider" on the Models page adds the upstream and logs in; a code login can be finished by pasting the code or
   the address the browser ended on.
 - The **MCP gateway**, skills and agents managed in the desktop app and kept in the harness configuration repository.

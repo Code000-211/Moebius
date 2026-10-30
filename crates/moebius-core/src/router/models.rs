@@ -130,6 +130,14 @@ impl Router {
         if let Some(needs) = upstream.oauth.as_ref().and_then(|oauth| oauth.needs()) {
             return Err(format!("needs {needs}"));
         }
+        if let Some(oauth) = upstream.oauth.as_ref().filter(|oauth| oauth.codex()) {
+            // The backend has no list to ask for: the models are the ones its subscription serves.
+            self.access_token(oauth).await?;
+            return Ok(super::responses::MODELS
+                .iter()
+                .map(|id| id.to_string())
+                .collect());
+        }
         let base = upstream.base_url.trim_end_matches('/');
         let request = match upstream.protocol {
             Protocol::OpenAi => self.client.get(format!("{base}/models")),

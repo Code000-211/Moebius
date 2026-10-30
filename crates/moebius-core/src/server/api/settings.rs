@@ -537,6 +537,6 @@ mod tests {
         assert_eq!(providers[0]["base_url"], "https://api.anthropic.com");
         assert_eq!(providers[0]["needs"], serde_json::Value::Null);
         assert_eq!(providers[1]["name"], "openai");
-        assert!(providers[1]["needs"].as_str().unwrap().contains("Codex"));
+        assert_eq!(providers[1]["needs"], serde_json::Value::Null);
     }
 }

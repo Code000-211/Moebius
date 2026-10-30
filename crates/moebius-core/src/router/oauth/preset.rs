@@ -5,8 +5,8 @@
 //! They are public values, not secrets.
 //!
 //! A preset also says what the provider needs of the requests sent with its token: the headers and the system prompt
-//! prefix that make an Anthropic subscription token accepted, or the protocol an upstream needs that the router does
-//! not speak.
+//! prefix that make an Anthropic subscription token accepted, or that the upstream speaks the Codex Responses protocol,
+//! which `responses` translates to and from chat completions.
 
 use reqwest::RequestBuilder;
 use serde::Serialize;
@@ -53,6 +53,9 @@ pub(in crate::router) struct Preset {
     pub system_prefix: Option<&'static str>,
     /// What the upstream needs that the router does not speak; its requests fail with it as the reason.
     pub needs: Option<&'static str>,
+    /// Whether the upstream takes requests only in the Codex Responses protocol of the ChatGPT backend, which the
+    /// router translates to and from chat completions (`responses`).
+    pub codex: bool,
 }
 
 /// The presets, in the order the Models page offers them.
@@ -91,6 +94,7 @@ pub(in crate::router) const PRESETS: &[Preset] = &[
         beta: &["claude-code-20250219", "oauth-2025-04-20"],
         system_prefix: Some(CLAUDE_CODE_PREFIX),
         needs: None,
+        codex: false,
     },
     Preset {
         name: "openai",
@@ -117,10 +121,8 @@ pub(in crate::router) const PRESETS: &[Preset] = &[
         headers: &[],
         beta: &[],
         system_prefix: None,
-        needs: Some(
-            "the Codex Responses protocol of the ChatGPT backend (POST /codex/responses with the \
-             chatgpt-account-id header)",
-        ),
+        needs: None,
+        codex: true,
     },
 ];
 
@@ -230,7 +232,8 @@ mod tests {
         let providers = providers();
         assert_eq!(providers[0].base_url, "https://api.anthropic.com");
         assert_eq!(providers[1].protocol, Protocol::OpenAi);
-        assert!(providers[0].needs.is_none() && providers[1].needs.is_some());
+        assert!(providers[0].needs.is_none() && providers[1].needs.is_none());
+        assert!(!PRESETS[0].codex && PRESETS[1].codex);
     }
 
     #[test]

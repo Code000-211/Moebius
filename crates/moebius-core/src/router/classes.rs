@@ -14,6 +14,7 @@ use axum::response::Response;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use super::oauth::Preset;
 use super::{Protocol, Router, Upstream, error};
 
 /// One model of a class, and the most tokens it may use in a day of the server's local time, if limited.
@@ -95,6 +96,8 @@ pub(super) struct Answered {
     pub(super) model: String,
     /// When the request went to the upstream that answered.
     pub(super) started: Instant,
+    /// Whether the answer is in the Codex Responses protocol (`responses`) and must be translated.
+    pub(super) codex: bool,
 }
 
 impl Router {
@@ -200,39 +203,16 @@ impl Router {
                 );
                 continue;
             }
-            let body = match preset {
-                Some(preset) => {
-                    let mut shaped = request.clone();
-                    preset.shape(&mut shaped);
-                    shaped.to_string()
+            let codex = upstream.oauth.as_ref().filter(|oauth| oauth.codex());
+            let prepared = match codex {
+                Some(oauth) => self.codex_request(upstream, oauth, request, headers).await,
+                None => {
+                    let outgoing =
+                        plain_request(&self.client, upstream, preset, request, headers, path);
+                    self.authenticate(upstream, outgoing).await
                 }
-                None => request.to_string(),
             };
-            let mut outgoing = self
-                .client
-                .post(format!(
-                    "{}{}",
-                    upstream.base_url.trim_end_matches('/'),
-                    path
-                ))
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(body);
-            for name in ["anthropic-version", "anthropic-beta"] {
-                // A preset adds its features to the harness's.
-                if name == "anthropic-beta" && preset.is_some() {
-                    continue;
-                }
-                if let Some(value) = headers.get(name) {
-                    outgoing = outgoing.header(name, value);
-                }
-            }
-            if let Some(preset) = preset {
-                let beta = headers
-                    .get("anthropic-beta")
-                    .and_then(|value| value.to_str().ok());
-                outgoing = preset.dress(outgoing, beta);
-            }
-            let outgoing = match self.authenticate(upstream, outgoing).await {
+            let outgoing = match prepared {
                 Ok(outgoing) => outgoing,
                 Err(message) => {
                     failure = error(
@@ -251,6 +231,7 @@ impl Router {
                         response,
                         model: (*model).clone(),
                         started,
+                        codex: codex.is_some(),
                     });
                 }
                 // The failed answer is dropped unread; nothing of it reached the harness.
@@ -267,6 +248,50 @@ impl Router {
         }
         Err(Box::new(failure))
     }
+}
+
+/// The request to `upstream` for `request` of a harness, with the preset's changes and headers, but not yet its
+/// credentials.
+fn plain_request(
+    client: &reqwest::Client,
+    upstream: &Upstream,
+    preset: Option<&Preset>,
+    request: &Value,
+    headers: &HeaderMap,
+    path: &str,
+) -> reqwest::RequestBuilder {
+    let body = match preset {
+        Some(preset) => {
+            let mut shaped = request.clone();
+            preset.shape(&mut shaped);
+            shaped.to_string()
+        }
+        None => request.to_string(),
+    };
+    let mut outgoing = client
+        .post(format!(
+            "{}{}",
+            upstream.base_url.trim_end_matches('/'),
+            path
+        ))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(body);
+    for name in ["anthropic-version", "anthropic-beta"] {
+        // A preset adds its features to the harness's.
+        if name == "anthropic-beta" && preset.is_some() {
+            continue;
+        }
+        if let Some(value) = headers.get(name) {
+            outgoing = outgoing.header(name, value);
+        }
+    }
+    if let Some(preset) = preset {
+        let beta = headers
+            .get("anthropic-beta")
+            .and_then(|value| value.to_str().ok());
+        outgoing = preset.dress(outgoing, beta);
+    }
+    outgoing
 }
 
 #[cfg(test)]

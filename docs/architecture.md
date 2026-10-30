@@ -404,6 +404,9 @@ At the top:
 | `router/mod.rs` | The router, its upstreams and its routes `POST /v1/chat/completions` and `POST /v1/messages`. |
 | `router/proxy.rs` | A run's request forwarded to the upstream with the provider's key or login, and the answer back, streamed or not. |
 | `router/classes.rs` | Model classes (`[router.classes]`): a class named as a model is served by the first of its models within its day's tokens, on the first upstream of the protocol that answers, falling back while an upstream fails before it answers. |
+| `router/responses/mod.rs` | The Codex Responses protocol of a ChatGPT subscription: the chat completions request turned into a Responses request with the headers the ChatGPT backend needs (the account read from the token), and the subscription's models. |
+| `router/responses/answer.rs` | The Responses events of the answer turned back into chat completions, streamed or whole: text, tool calls, finish reason, usage, errors. |
+| `router/responses/tests.rs` | Tests of the translation against a fake Codex endpoint. |
 | `router/usage.rs` | The tokens and tools of an answer, read from a body or from a stream as it passes, recorded against the run. |
 | `router/grants.rs` | The runs' tokens and what each allows: the card's, the run's and the day's token budgets, the MCP servers the gateway gives the run, and which tokens' answers are checked. |
 | `router/calls/mod.rs` | The check of the tool calls in the answers to a harness without a bridge (Claude Code): each call through `decide("tool_call")`, a refused one replaced by a text naming the rule; whole answers, and the secrets of tool results in requests. |
@@ -413,7 +416,7 @@ At the top:
 | `router/oauth/device.rs` | The device authorization grant: the code the person enters at the provider, and the token URL polled until it is confirmed. |
 | `router/oauth/code.rs` | An authorization code with PKCE, the browser sent back to a loopback listener. |
 | `router/oauth/config.rs` | The `oauth` table as configured, filled in from its `preset`, and the warning confirmed before a login. |
-| `router/oauth/preset.rs` | The built-in providers (Anthropic, OpenAI): client ids, URLs, and what their requests need (headers, system prefix, or a protocol the router lacks). |
+| `router/oauth/preset.rs` | The built-in providers (Anthropic, OpenAI): client ids, URLs, and what their requests need (headers, system prefix, or the Codex Responses protocol). |
 | `router/oauth/flows.rs` | Tests of the presets against a fake provider. |
 | `router/oauth/testing.rs` | The fake OAuth provider and upstream the tests of the logins share. |
 

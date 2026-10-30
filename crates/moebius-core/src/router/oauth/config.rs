@@ -133,6 +133,11 @@ impl OAuthConfig {
         self.preset().and_then(|p| p.needs)
     }
 
+    /// Whether the upstream takes requests in the Codex Responses protocol (`responses`).
+    pub(in crate::router) fn codex(&self) -> bool {
+        self.preset().is_some_and(|p| p.codex)
+    }
+
     /// What is wrong with the table, if anything.
     pub fn problem(&self) -> Option<String> {
         let url = |name: &str, value: Option<&String>| match value {

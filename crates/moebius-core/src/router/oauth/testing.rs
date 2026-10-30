@@ -49,8 +49,23 @@ pub(crate) struct FakeProvider {
 const DEVICE_PATH: &str = "/device/code";
 const TOKEN_PATH: &str = "/token";
 
+/// The ChatGPT account the access tokens name in their claims.
+pub(crate) const ACCOUNT: &str = "acct-of-the-test";
+
+/// A JWT, as the ChatGPT login gives, whose claims name the account of the test.
 fn access_token(n: u64) -> String {
-    format!("access-token-{n}")
+    jwt(ACCOUNT, n)
+}
+
+fn jwt(account: &str, n: u64) -> String {
+    use base64::Engine;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    let claims = json!({"https://api.openai.com/auth": {"chatgpt_account_id": account}, "n": n});
+    format!(
+        "{}.{}.signature",
+        URL_SAFE_NO_PAD.encode(r#"{"alg":"none"}"#),
+        URL_SAFE_NO_PAD.encode(claims.to_string()),
+    )
 }
 
 fn refresh_token(n: u64) -> String {
@@ -196,6 +211,11 @@ impl FakeProvider {
 
     fn with<T>(&self, f: impl FnOnce(&mut Provider) -> T) -> T {
         f(&mut self.state.lock().unwrap())
+    }
+
+    /// A token whose claims name `account`.
+    pub(crate) fn token_for_tests(account: &str) -> String {
+        jwt(account, 0)
     }
 
     pub(crate) fn access_token(&self, n: u64) -> String {

@@ -340,14 +340,15 @@ fn empty(chunk: &Value) -> bool {
 
 /// The answer `upstream` as a body, checked as it passes; `seen` is given every byte that came from upstream, so that
 /// its usage is counted, and dropped when the stream ends.
-pub(in crate::router) fn checked_stream<S, F>(
+pub(in crate::router) fn checked_stream<S, E, F>(
     upstream: S,
     protocol: Protocol,
     decider: Decider,
     mut seen: F,
 ) -> Body
 where
-    S: Stream<Item = reqwest::Result<Bytes>> + Send + 'static,
+    S: Stream<Item = Result<Bytes, E>> + Send + 'static,
+    E: std::error::Error + Send + Sync + 'static,
     F: FnMut(&[u8]) + Send + 'static,
 {
     let (sender, receiver) = tokio::sync::mpsc::channel::<std::io::Result<Bytes>>(16);

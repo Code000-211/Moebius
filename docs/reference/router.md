@@ -105,12 +105,41 @@ with the code), as Pi does.
   Anthropic's official CLI for Claude.` (a string or blocks already there follow it). Why: the subscription is granted
   to Claude Code, and the API refuses its token for a request that does not identify itself as Claude Code; Pi does the
   same. Pi also writes the names of the tools in Claude Code's casing; the router does not.
-- `openai`: the login and the refresh work (the refresh token is kept, the access token refreshed), but the ChatGPT
-  backend takes requests only in its own Codex Responses protocol (`POST /codex/responses` with the `chatgpt-account-id`
-  header taken from the token), which the router does not speak. A request to such an upstream is not sent: the router
-  tries the next upstream, and when this is the last it answers `502` with `api_error` and a message that says the
-  subscription needs that protocol; the model list of the upstream says the same, and the login ends `logged_in` with a
-  message that says so.
+- `openai`: a ChatGPT Plus/Pro subscription, whose backend takes requests only in its own Codex Responses protocol. The
+  router translates, following the `openai-codex` provider of Pi (commit `f09d01b85e0384647fcab6779d35ab9dabe04be3` of
+  `badlogic/pi-mono`, `packages/ai/src/api/openai-codex-responses.ts`). The request to `POST /v1/chat/completions` is
+  sent to `{base_url}/codex/responses` (a `base_url` that already ends in `/codex` or `/codex/responses` is not
+  extended twice) as a Responses request: `store: false`, `stream: true` (also when the harness did not stream),
+  `instructions` the system and developer messages before the first other message joined by a blank line (`You are a
+  helpful assistant.` without any), `input` the other messages (a user message's `text` and `image_url` parts as
+  `input_text` and `input_image`; an assistant message's text as a `message` item and its `tool_calls` as
+  `function_call` items; a `tool` message as a `function_call_output`; a later system message as a `developer`
+  message), `tools` as flat `function` tools with `strict: null`, `tool_choice` (`auto` when absent),
+  `parallel_tool_calls: true`, `text.verbosity: low`, `temperature` when set, `reasoning` (`effort` from
+  `reasoning_effort`, `summary: auto`) when `reasoning_effort` is set, and a `prompt_cache_key` that is a hash of the
+  run's token. Other fields (`max_tokens`, `stream_options`, ..) are not sent. The headers are `Authorization: Bearer`
+  with the access token, `chatgpt-account-id` read from the token's claims
+  (`https://api.openai.com/auth`, `chatgpt_account_id`), `originator: moebius`, `OpenAI-Beta: responses=experimental`,
+  `accept: text/event-stream`, and `session-id` and `x-client-request-id` with the cache key. A token that names no
+  account answers `502` with `authentication_error`, and the next upstream is tried.
+
+  The answer is read as Responses events and given back as chat completions, streamed (`chat.completion.chunk`
+  events, ending with a chunk of `usage` and `data: [DONE]`) or, when the harness did not stream, as one
+  `chat.completion`: text (`response.output_text.delta`, a refusal as text), tool calls (`function_call` items, with
+  their arguments from the argument events or whole from the finished item), the finish reason (`tool_calls` when the
+  answer asked for a tool, `length` for an incomplete answer cut by `max_output_tokens`, `content_filter`, otherwise
+  `stop`) and `usage` (`prompt_tokens`, `completion_tokens`, `total_tokens` and `cached_tokens`). The model's
+  reasoning is not given back. An `error` or `response.failed` event ends a stream with a chunk holding an `error`
+  object, and answers a request that is not streamed with `502` and `api_error`; so does an answer that ends before its
+  last event. An error status of the backend (`400`, `401`, `429` for the usage limit, ..) is passed on with its status
+  and, when its body has no `error` object, its `detail` or `message` in one.
+
+  Everything after the translation is the path of every other upstream: a checked token's tool calls are checked, a
+  refused one replaced by a text; the tokens are counted against the run, and the run's token, the card's budget and the
+  day's budget apply. The upstream lists the models its subscription serves, which are Pi's list for a ChatGPT account:
+  `gpt-6.1-sol`, `gpt-6.1-terra`, `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-luna`, `gpt-5.6-sol` and
+  `gpt-5.6-terra`; the list needs a login but asks the backend nothing. Pi's WebSocket transport, reasoning replay and
+  tool search are not used.
 
 ## Run tokens
 
