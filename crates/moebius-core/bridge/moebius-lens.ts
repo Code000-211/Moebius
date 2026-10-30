@@ -454,11 +454,6 @@ export default function (pi: ExtensionAPI) {
 			if (!file) return undefined;
 			const before = read(file);
 			pending.set(event.toolCallId, { file, before });
-			// The diagnostics before the edit are the baseline, taken once for a file; later ones come from the last edit.
-			if (before !== null && !baselines.has(file)) {
-				const base = await diagnose(file, before, Date.now() + plan.budget_ms);
-				baselines.set(file, base.complete);
-			}
 		} catch {}
 		return undefined;
 	});
@@ -476,7 +471,17 @@ export default function (pi: ExtensionAPI) {
 
 			const now = await diagnose(edit.file, after, Date.now() + plan.budget_ms);
 			for (const f of now.findings) f.touched = f.line >= change.first && f.line <= change.last;
-			const baseline = baselines.get(edit.file) ?? new Map<string, Finding[]>();
+			// The baseline is only needed when the edit left something behind; until then it can stay unread.
+			let baseline = baselines.get(edit.file);
+			if (baseline === undefined) {
+				const hasFindings = [...now.complete.values()].some((list) => list.length > 0);
+				if (hasFindings && edit.before !== null) {
+					const base = await diagnose(edit.file, edit.before, Date.now() + plan.budget_ms);
+					baseline = base.complete;
+				} else {
+					baseline = new Map<string, Finding[]>();
+				}
+			}
 			const fresh: Finding[] = [];
 			const present: string[] = [];
 			for (const [tool, list] of now.complete) {
