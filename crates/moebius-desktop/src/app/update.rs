@@ -15,6 +15,7 @@ use crate::screens::inbox;
 use crate::screens::live::{self, Live};
 use crate::screens::mcp_servers::{self, McpServers};
 use crate::screens::project::{self, Project, Tab};
+use crate::screens::repositories::{self, Repositories};
 use crate::screens::retro::Retros;
 use crate::screens::rules::{self, Rules};
 use crate::screens::setup::{self, Setup};
@@ -272,6 +273,19 @@ impl App {
                 let opening = first && std::mem::take(&mut self.open_on_start);
                 if opening && self.start.incomplete() && self.page.is_none() {
                     self.page = Some(Page::Start);
+                }
+                return task;
+            }
+            Message::Repositories(message) => {
+                // The list is read again once a repository is gone, without waiting for the event.
+                let removed = matches!(message, repositories::Message::Removed(_, Ok(_)));
+                let task = self.repositories.update(message, self.settings.as_ref());
+                if removed {
+                    let start = match &self.settings {
+                        Some(settings) => self.start.reload(settings),
+                        None => Task::none(),
+                    };
+                    return Task::batch([task, self.reload(), start]);
                 }
                 return task;
             }
@@ -690,6 +704,7 @@ fn refused(message: &Message) -> bool {
         Message::Setup(message) => Setup::refused(message),
         Message::Harness(message) => HarnessSetup::refused(message),
         Message::Start(message) => Start::refused(message),
+        Message::Repositories(message) => Repositories::refused(message),
         Message::AddRepository(message) => AddRepository::refused(message),
         Message::NewIssue(message) => NewIssue::refused(message),
         _ => false,

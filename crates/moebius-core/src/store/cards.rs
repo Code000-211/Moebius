@@ -185,6 +185,78 @@ impl Store {
         Ok(self.repositories()?.into_iter().find(|r| r.id == id))
     }
 
+    /// Removes a repository and everything stored for it: its cards with their changes, runs, decisions, inbox,
+    /// moves and dependencies; its chats and grillings; its lessons, research, automations and localize index. The
+    /// clone and worktrees on disk belong to the caller. Says whether such a repository was stored.
+    ///
+    /// The foreign keys decide the order: whatever points at a card, a run, a change or a judgement goes first.
+    pub fn delete_repository(&self, id: i64) -> Result<bool> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let stored = tx
+            .query_row("SELECT 1 FROM repositories WHERE id = ?1", [id], |_| Ok(()))
+            .optional()?
+            .is_some();
+        if !stored {
+            return Ok(false);
+        }
+        let cards = "SELECT id FROM cards WHERE repository_id = ?1";
+        let runs = format!("SELECT id FROM runs WHERE repository_id = ?1 OR card_id IN ({cards})");
+        let changes =
+            format!("SELECT id FROM changes WHERE repository_id = ?1 OR card_id IN ({cards})");
+        let judgements =
+            format!("SELECT id FROM judgements WHERE run_id IN ({runs}) OR card_id IN ({cards})");
+        let research = "SELECT id FROM research WHERE repository_id = ?1";
+        let proposals = "SELECT id FROM proposals WHERE repository_id = ?1";
+        let statements = [
+            format!("DELETE FROM lesson_uses WHERE card_id IN ({cards})"),
+            format!("DELETE FROM events WHERE run_id IN ({runs})"),
+            format!("DELETE FROM usage WHERE run_id IN ({runs})"),
+            format!(
+                "DELETE FROM replays WHERE judgement_id IN ({judgements}) OR run_id IN ({runs})"
+            ),
+            format!("DELETE FROM shadows WHERE judgement_id IN ({judgements})"),
+            format!("DELETE FROM judgements WHERE id IN ({judgements})"),
+            format!("DELETE FROM inbox_items WHERE card_id IN ({cards})"),
+            format!("DELETE FROM dependencies WHERE card_id IN ({cards})"),
+            format!("DELETE FROM card_moves WHERE card_id IN ({cards})"),
+            format!("DELETE FROM attempts WHERE run_id IN ({runs}) OR card_id IN ({cards})"),
+            format!(
+                "DELETE FROM trials WHERE proposal_id IN ({proposals}) OR run_id IN ({runs}) OR card_id IN ({cards})"
+            ),
+            format!(
+                "DELETE FROM research_runs WHERE research_id IN ({research}) OR run_id IN ({runs})"
+            ),
+            format!(
+                "DELETE FROM firings WHERE run_id IN ({runs}) OR automation_id IN (SELECT id FROM automations WHERE repository_id = ?1)"
+            ),
+            format!("UPDATE proposals SET change_id = NULL WHERE change_id IN ({changes})"),
+            format!("DELETE FROM proposals WHERE id IN ({proposals})"),
+            format!("UPDATE retros SET run_id = NULL WHERE run_id IN ({runs})"),
+            format!(
+                "DELETE FROM experiments WHERE research_id IN ({research}) OR change_id IN ({changes})"
+            ),
+            format!("DELETE FROM research WHERE id IN ({research})"),
+            format!("DELETE FROM grillings WHERE repository_id = ?1 OR run_id IN ({runs})"),
+            "DELETE FROM automations WHERE repository_id = ?1".to_string(),
+            "DELETE FROM localize_indexed WHERE repository_id = ?1".to_string(),
+            "DELETE FROM lessons WHERE repository_id = ?1".to_string(),
+            format!("DELETE FROM runs WHERE id IN ({runs})"),
+            format!("DELETE FROM changes WHERE id IN ({changes})"),
+            format!("DELETE FROM cards WHERE id IN ({cards})"),
+            "DELETE FROM repositories WHERE id = ?1".to_string(),
+        ];
+        for statement in &statements {
+            tx.execute(statement, [id])?;
+        }
+        tx.execute(
+            &format!("DROP TABLE IF EXISTS {}", super::localize::table(id)),
+            [],
+        )?;
+        tx.commit()?;
+        Ok(true)
+    }
+
     /// Adds a card with the next number in its repository.
     pub fn add_card(
         &self,
@@ -529,5 +601,48 @@ mod tests {
         assert_eq!(adopted.id, polled.id);
         assert!(adopted.confirmed);
         assert_eq!(s.dependencies(polled.id).unwrap(), [4]);
+    }
+
+    #[test]
+    fn deleting_a_repository_takes_its_cards_changes_and_index_with_it() {
+        let (_dir, s) = store();
+        let doomed = s
+            .add_github_repository("widgets", "/srv/widgets", "main", "acme/widgets", &[])
+            .unwrap();
+        let kept = s
+            .add_github_repository("gadgets", "/srv/gadgets", "main", "acme/gadgets", &[])
+            .unwrap();
+        let card = s
+            .add_numbered_card(doomed.id, 1, "Issue", "body", "leon", "Backlog")
+            .unwrap();
+        let change = s
+            .add_change(doomed.id, Some(card.id), "moebius/issue-1", None, "abc")
+            .unwrap();
+        let other = s
+            .add_numbered_card(kept.id, 2, "Other", "body", "leon", "Backlog")
+            .unwrap();
+        s.set_dependencies(other.id, &BTreeSet::from([1])).unwrap();
+        s.replace_localize_index(
+            doomed.id,
+            "abc",
+            &[crate::store::localize::IndexedFile {
+                path: "src/lib.rs".into(),
+                path_words: "src lib.rs".into(),
+                words: "fn main".into(),
+            }],
+        )
+        .unwrap();
+
+        assert!(s.delete_repository(doomed.id).unwrap());
+        assert!(!s.delete_repository(doomed.id).unwrap());
+        assert_eq!(s.repository(doomed.id).unwrap(), None);
+        assert_eq!(s.card(card.id).unwrap(), None);
+        assert_eq!(s.change(change.id).unwrap(), None);
+        assert_eq!(s.localize_index_commit(doomed.id).unwrap(), None);
+        assert_eq!(s.repositories().unwrap(), vec![kept]);
+        assert_eq!(
+            s.card(other.id).unwrap().map(|c| c.title),
+            Some("Other".into())
+        );
     }
 }

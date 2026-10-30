@@ -1,5 +1,6 @@
-//! A project against a real server: a repository added and an issue created, the script editor and the bubble's
-//! floating chat, and files listed, read and saved as commits.
+//! A project against a real server: a repository added and an issue created, a repository removed through the
+//! Projects overview with its clone, the script editor and the bubble's floating chat, and files listed, read and
+//! saved as commits.
 
 use std::sync::Arc;
 
@@ -7,6 +8,7 @@ use iced_test::Simulator;
 use moebius_core::repos::git;
 use moebius_desktop::app::{App, Message, Page};
 use moebius_desktop::client::{Client, ClientError, NewRepository, Snapshot};
+use moebius_desktop::screens::repositories;
 
 use crate::fixtures::{origin, settle, shown, start, start_with_fake_pi};
 
@@ -295,4 +297,54 @@ async fn the_project_lists_reads_and_saves_a_file_as_a_commit() {
     let read = client.file(id, "src/main.rs").await.unwrap();
     assert_eq!(read.text.as_deref(), Some("// hi\nfn main() {}\n"));
     assert!(client.file(id, "nowhere.rs").await.is_err());
+}
+
+/// The Projects overview removes a repository: the row asks first, the server takes it with its clone, and the list
+/// no longer shows it.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_projects_overview_removes_a_repository_with_its_clone() {
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, _) = start(dir.path()).await;
+    let client = Client::new(settings.clone());
+    let repository = client
+        .add_repository(&NewRepository {
+            name: "demo".into(),
+            url: origin(dir.path()).display().to_string(),
+            forge: "none",
+            github: None,
+            project: None,
+            trusted: Vec::new(),
+        })
+        .await
+        .unwrap();
+    let clone = std::path::PathBuf::from(&repository.path);
+    assert!(clone.exists());
+
+    let mut app = App::with_snapshot(client.snapshot().await.unwrap());
+    let _ = app.update(Message::Checked(Ok((
+        settings,
+        client.snapshot().await.unwrap(),
+    ))));
+    let _ = app.update(Message::Select(Page::Repositories));
+    assert!(shown(
+        &app,
+        "Every repository Moebius has; open one, or remove it with the work stored for it."
+    ));
+
+    // The question is asked before anything is removed.
+    let task = app.update(Message::Repositories(repositories::Message::Ask(
+        repository.id,
+    )));
+    settle(&mut app, task).await;
+    assert!(shown(&app, "Delete demo with its cards and chats?"));
+    assert!(clone.exists());
+
+    // The answer removes it on the server and from the list.
+    let task = app.update(Message::Repositories(repositories::Message::Remove(
+        repository.id,
+    )));
+    settle(&mut app, task).await;
+    assert!(!shown(&app, "demo"), "the repository is still listed");
+    assert!(!clone.exists(), "the clone is still there");
+    assert!(client.snapshot().await.unwrap().boards.is_empty());
 }

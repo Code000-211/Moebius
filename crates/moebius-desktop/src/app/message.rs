@@ -15,6 +15,7 @@ use crate::screens::live;
 use crate::screens::mcp_servers;
 use crate::screens::ports;
 use crate::screens::project;
+use crate::screens::repositories;
 use crate::screens::retro;
 use crate::screens::rules;
 use crate::screens::server_terminal;
@@ -43,6 +44,8 @@ pub enum Page {
     Automations,
     /// The project of the repository with this id: its board, files and editor, in tabs.
     Board(i64),
+    /// Every project: the overview that lists the repositories, opened by the "Projects" heading.
+    Repositories,
     /// The form that adds a repository, opened by the "+" of the sidebar.
     AddRepository,
     Agents,
@@ -72,6 +75,7 @@ impl Page {
             Page::Fleet => "Fleet",
             Page::Automations => "Automations",
             Page::Board(_) => "Board",
+            Page::Repositories => "Projects",
             Page::AddRepository => "Add a repository",
             Page::Agents => "Agents",
             Page::Skills => "Skills",
@@ -94,7 +98,7 @@ impl Page {
     pub fn group(self) -> &'static str {
         match self {
             Page::Inbox | Page::Chat | Page::Fleet | Page::Automations => "",
-            Page::Board(_) | Page::AddRepository => "Projects",
+            Page::Board(_) | Page::Repositories | Page::AddRepository => "Projects",
             Page::Agents | Page::Skills | Page::McpServers | Page::Rules => "Build",
             Page::Retro | Page::Experiments | Page::DecisionModel | Page::Usage => "Improve",
             Page::Start
@@ -160,6 +164,8 @@ pub enum Message {
     /// The ports of a run, chat or terminal are shown (or all of them, without a scope), as a page the way back returns from.
     OpenPorts(Option<ports::Scope>),
     Start(start::Message),
+    /// Something on the Projects overview.
+    Repositories(repositories::Message),
     AddRepository(add_repository::Message),
     NewIssue(new_issue::Message),
     /// Something on an editor in place of a card or a repository.

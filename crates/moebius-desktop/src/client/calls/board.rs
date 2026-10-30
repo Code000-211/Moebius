@@ -224,6 +224,12 @@ impl Client {
         self.put(&script_path(repository, column), body).await
     }
 
+    /// Removes a repository with everything stored for it: its cards, changes and chats, and its clone.
+    pub async fn remove_repository(&self, repository: i64) -> Result<Repository, ClientError> {
+        let path = format!("/v1/repositories/{repository}");
+        self.delete(&path).await
+    }
+
     /// Removes the repository's own script for a column, so that the built-in one runs.
     pub async fn delete_script(
         &self,
