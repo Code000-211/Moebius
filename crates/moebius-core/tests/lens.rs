@@ -252,9 +252,7 @@ async fn the_deep_check_that_names_a_package_runs_once_for_each_changed_package(
             .iter()
             .filter(|m| m["role"] == "assistant")
             .count();
-        let change = |path: &str, old: &str, new: &str| {
-            json!({ "path": path, "edits": [{ "oldText": old, "newText": new }] })
-        };
+        let change = |path: &str, old: &str, new: &str| json!({ "path": path, "edits": [{ "oldText": old, "newText": new }] });
         match turn {
             0 => tool_call_answer(
                 "call_1",
@@ -274,7 +272,9 @@ async fn the_deep_check_that_names_a_package_runs_once_for_each_changed_package(
     let requests = Arc::new(Mutex::new(Vec::new()));
     let upstream = recorded_upstream(requests.clone(), answer).await;
     let started = start(dir.path(), &pi_bolt, &upstream).await;
-    let (_, card) = started.add_issue(&origin, "Edit two crates", "Please.").await;
+    let (_, card) = started
+        .add_issue(&origin, "Edit two crates", "Please.")
+        .await;
     let card_id = card["id"].as_i64().unwrap();
     started.wait_for_column(card_id, "Ready to merge").await;
 
