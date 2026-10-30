@@ -116,13 +116,14 @@ function words(text: string): string[] {
 	return out;
 }
 
-// The command's arguments with `{file}` replaced by the file, and an argument that is exactly `{files}` or `{dirs}`
-// by one argument for each file or directory.
-function expand(command: string, vars: { file?: string; files?: string[]; dirs?: string[] }): string[] {
+// The command's arguments with `{file}` replaced by the file, an argument that is exactly `{files}` or `{dirs}` by one
+// argument for each file or directory, and `{manifest}` by the package's Cargo.toml.
+function expand(command: string, vars: { file?: string; files?: string[]; dirs?: string[]; manifest?: string }): string[] {
 	const out: string[] = [];
 	for (const word of words(command)) {
 		if (word === "{files}") out.push(...(vars.files ?? []));
 		else if (word === "{dirs}") out.push(...(vars.dirs ?? []));
+		else if (word === "{manifest}") out.push(vars.manifest ?? "");
 		else out.push(word.split("{file}").join(vars.file ?? ""));
 	}
 	return out;
@@ -175,6 +176,29 @@ function run(argv: string[], cwd: string, timeoutMs: number): Promise<Ran> {
 	});
 }
 
+// The deep check of one tool over the files it applies to. A command that names a package (`{manifest}`) runs once
+// for each package a changed file belongs to, so a workspace is not checked whole for a change in one of its parts.
+async function deepCheck(check: Check, mine: string[], cwd: string, timeoutMs: number): Promise<Ran & { ms: number }> {
+	const dirs = [...new Set(mine.map((f) => `./${path.dirname(f)}`))];
+	const manifests = check.deep!.includes("{manifest}")
+		? [...new Set(mine.map((f) => manifestOf(cwd, f)).filter((m): m is string => m !== null))]
+		: [undefined];
+	if (manifests.length === 0) return { output: "", missing: false, timedOut: false, ms: 0 };
+	const parts: string[] = [];
+	let ms = 0;
+	let missing = false;
+	let timedOut = false;
+	for (const manifest of manifests) {
+		const started = Date.now();
+		const ran = await run(expand(check.deep!, { files: mine, dirs, manifest }), cwd, timeoutMs);
+		ms += Date.now() - started;
+		if (ran.missing) missing = true;
+		else if (ran.timedOut) timedOut = true;
+		else parts.push(ran.output);
+	}
+	return { output: parts.join("\n"), missing, timedOut, ms };
+}
+
 const LINE = /^(?<file>[^\s:][^:]*?):(?<line>\d+)(?::(?<column>\d+))?:?\s*(?<message>.*)$/;
 
 // The rule a message names at its end or inside, if it does.
@@ -201,6 +225,18 @@ function relative(cwd: string, file: string): string {
 		if (!rel.startsWith("..")) name = rel;
 	}
 	return name.replace(/^\.\//, "");
+}
+
+// The nearest Cargo.toml above a changed file, as a path from the worktree, or null when there is none.
+function manifestOf(cwd: string, file: string): string | null {
+	let dir = path.dirname(file);
+	for (;;) {
+		if (fs.existsSync(path.join(cwd, dir, "Cargo.toml"))) return `./${path.join(dir, "Cargo.toml")}`;
+		if (dir === "." || dir === "") return null;
+		const up = path.dirname(dir);
+		if (up === dir) return null;
+		dir = up;
+	}
 }
 
 function finding(tool: string, file: string, line: number, column: number | undefined, severity: Severity, message: string, rule?: string): Finding {
@@ -561,10 +597,8 @@ export default function (pi: ExtensionAPI) {
 			await Promise.all(
 				checks.map(async (check) => {
 					const mine = files.filter((f) => applies(check, f.path)).map((f) => f.path);
-					const dirs = [...new Set(mine.map((f) => `./${path.dirname(f)}`))];
-					const started = Date.now();
-					const ran = await run(expand(check.deep!, { files: mine, dirs }), cwd, plan.deep_timeout_ms);
-					const ms = Date.now() - started;
+					const ran = await deepCheck(check, mine, cwd, plan.deep_timeout_ms);
+					const ms = ran.ms;
 					if (ran.missing) {
 						missing.add(`deep:${check.name}`);
 						timings.push({ phase: "deep", tool: check.name, ms, skipped: "not installed", findings: 0 });

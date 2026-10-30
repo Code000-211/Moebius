@@ -256,6 +256,23 @@ records nothing. The new list counts for cards checked from then on; a card alre
 Response: the `Repository`. Errors: `404` no such repository; `422` the repository is on no forge, or a login is blank
 or has other characters.
 
+### `DELETE /v1/repositories/{id}`
+
+A person, or the Moebius agent, removes a repository from Moebius: the repository with every card of its board and what
+belongs to them (their runs and their transcripts, usage, judgements, replay shadows, inbox and dependencies), its
+changes, its chats and grillings, its lessons, its research, its automations and its localize index; and its clone and
+worktrees under the server's data directory. The decision is recorded (kind `delete_repository`, decider `person` or
+`agent:Moebius`; its context has `repository`) and the event `repository_removed` is sent.
+
+Request: `{"reason": string}`; `reason` is optional and is kept with the decision. A body is not required.
+
+Response: the `Repository`, as it last was. Errors: `404` no such repository; `409` one of its runs is still going —
+stop that run first, nothing is removed then.
+
+```sh
+curl -s -X DELETE -H "Authorization: Bearer $TOKEN" http://127.0.0.1:7171/v1/repositories/2
+```
+
 ### `POST /v1/repositories/{id}/issues`
 
 Creates an issue from a person in the app. Its card starts in `Backlog`, with the author `person`.
@@ -1716,6 +1733,7 @@ like `POST /v1/runs/{id}/stop` does. Experiments done stay, and so do the lever 
 |---|---|---|
 | `repository_added` | A repository was added. | The `Repository`. |
 | `repository_updated` | The logins a repository on a forge trusts were changed through the API. | The `Repository`. |
+| `repository_removed` | A repository was removed through the API. | The `Repository`. |
 | `file_changed` | A file of a repository was saved through the API. | `{"repository": id, "path": string}` |
 | `script_changed` | A column's script was saved or removed for a repository, through the API. | `{"repository": id, "column": string, "path": string}` |
 | `card_added` | An issue became a card: created through the API or found on GitHub, GitLab or Forgejo. | The `Card`. |

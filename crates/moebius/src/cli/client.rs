@@ -160,6 +160,15 @@ impl Request {
             body: None,
         }
     }
+
+    /// A DELETE that carries a body, for the routes that record why a thing was removed.
+    pub fn delete_with(path: impl Into<String>, body: Option<Value>) -> Self {
+        Self {
+            method: Method::DELETE,
+            path: path.into(),
+            body,
+        }
+    }
 }
 
 /// The desktop API over HTTP.

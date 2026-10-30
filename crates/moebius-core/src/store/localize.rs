@@ -16,8 +16,9 @@ pub struct IndexedFile {
     pub words: String,
 }
 
-/// The name of the table that indexes `repository_id`; made of a number, so that it needs no quoting.
-fn table(repository_id: i64) -> String {
+/// The name of the table that indexes `repository_id`; made of a number, so that it needs no quoting. Visible to
+/// the rest of the store so that deleting a repository can drop its index.
+pub(super) fn table(repository_id: i64) -> String {
     format!("localize_files_{repository_id}")
 }
 

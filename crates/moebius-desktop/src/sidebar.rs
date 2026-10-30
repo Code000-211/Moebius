@@ -145,6 +145,7 @@ pub fn view<'a>(
     let listed = |name: &'a str, pages: &[(Page, Icon)]| {
         group(
             name,
+            page,
             pages
                 .iter()
                 .map(|(target, icon)| {
@@ -168,13 +169,15 @@ pub fn view<'a>(
         .chain(SETUP)
         .collect();
     let groups = column![
-        group(None, vec![inbox, chat, fleet, automations], collapsed),
+        group(None, page, vec![inbox, chat, fleet, automations], collapsed),
         divider(),
         group_with(
             Some("Projects"),
+            Some(Page::Repositories),
+            page,
             Some(add_board(page)),
             boards.collect(),
-            collapsed
+            collapsed,
         ),
         divider(),
         listed("Build", &BUILD),
@@ -543,10 +546,11 @@ fn server_button<'a>(
 /// A group of items under a bold name, which a collapsed sidebar does not show.
 fn group<'a>(
     name: impl Into<Option<&'a str>>,
+    current: &Page,
     items: Vec<Element<'a, Message>>,
     collapsed: bool,
 ) -> Element<'a, Message> {
-    group_with(name, None, items, collapsed)
+    group_with(name, None, current, None, items, collapsed)
 }
 
 /// The "+" at the right of the name of Projects, which opens the page that adds a repository.
@@ -576,23 +580,46 @@ fn add_board<'a>(current: &Page) -> Element<'a, Message> {
     .into()
 }
 
-/// A group with something at the right of its name.
+/// A group with something at the right of its name; a group whose name opens a page passes it as `target`.
 fn group_with<'a>(
     name: impl Into<Option<&'a str>>,
+    target: Option<Page>,
+    current: &Page,
     action: Option<Element<'a, Message>>,
     items: Vec<Element<'a, Message>>,
     collapsed: bool,
 ) -> Element<'a, Message> {
     let mut content = column![].spacing(theme::SPACE_1);
     if let (Some(name), false) = (name.into(), collapsed) {
-        let mut heading = row![
-            text(name)
+        let label: Element<'a, Message> = match target {
+            Some(target) => {
+                let selected = *current == target;
+                button(
+                    text(name)
+                        .size(theme::GROUP_LABEL)
+                        .font(theme::manrope(Weight::Bold)),
+                )
+                .padding(0.0)
+                .on_press(Message::Select(target))
+                .style(move |_, status| button::Style {
+                    background: None,
+                    text_color: if selected || status == button::Status::Hovered {
+                        theme::TEXT
+                    } else {
+                        theme::SIDEBAR_GROUP
+                    },
+                    border: Border::default(),
+                    ..button::Style::default()
+                })
+                .into()
+            }
+            None => text(name)
                 .size(theme::GROUP_LABEL)
                 .font(theme::manrope(Weight::Bold))
-                .color(theme::SIDEBAR_GROUP),
-            space::horizontal(),
-        ]
-        .align_y(Center);
+                .color(theme::SIDEBAR_GROUP)
+                .into(),
+        };
+        let mut heading = row![label, space::horizontal()].align_y(Center);
         if let Some(action) = action {
             heading = heading.push(action);
         }

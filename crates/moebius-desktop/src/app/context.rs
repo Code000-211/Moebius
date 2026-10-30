@@ -125,6 +125,19 @@ impl App {
                 )),
                 None => lines.push("No chat is open.".to_string()),
             },
+            Page::Repositories => {
+                let names = self
+                    .snapshot
+                    .boards
+                    .iter()
+                    .map(|board| board.repository.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                lines.push(match names.is_empty() {
+                    true => "No repository yet.".to_string(),
+                    false => format!("Repositories: {names}"),
+                });
+            }
             Page::Rules => lines.push(excerpt("The rules", &self.rules.context_text())),
             Page::Agents => match self.agents.editing() {
                 Some(name) => lines.push(format!("Editing the agent {name}")),

@@ -234,6 +234,7 @@ impl App {
                     }
                 })
             }
+            Page::Repositories => self.repositories.view(&self.snapshot.boards),
             Page::AddRepository => self.add_repository.view(),
             Page::Inbox => self.inbox.view(&self.snapshot),
             Page::Chat => self.chats.view(&self.snapshot, &self.inbox),
