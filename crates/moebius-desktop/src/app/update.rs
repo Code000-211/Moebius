@@ -78,6 +78,7 @@ impl App {
             Message::Submit => return self.submit(),
             Message::Checked(Ok((settings, snapshot))) => return self.adopt(settings, snapshot),
             Message::Checked(Err(e)) => self.show_connect_error(&e),
+            Message::Reported(_) => {}
             Message::Loaded(count, Ok(snapshot)) => {
                 if count > self.shown {
                     self.shown = count;
@@ -563,7 +564,9 @@ impl App {
         self.open_on_start = true;
         let ports = self.connect_ports();
         match &self.settings {
-            Some(settings) => Task::batch([self.start.reload(settings), ports]),
+            Some(settings) => {
+                Task::batch([self.start.reload(settings), ports, self.report_client()])
+            }
             None => Task::none(),
         }
     }

@@ -104,7 +104,7 @@ mcp = ["docs"]
 A skill as Pi-Bolt documents it: a directory with a `SKILL.md` and whatever else the skill uses. A directory without a
 `SKILL.md` is not a skill. An agent that names a skill that is missing is left out with an error. A run is given exactly
 its agent's skills, in the order of the `skills` key, and no skill Pi-Bolt would find on its own. The Moebius agent has
-its built-in skills first, the `moebius` skill and the task skills `moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions` and `moebius-plugins`, then those of
+its built-in skills first, the `moebius` skill and the task skills `moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions`, `moebius-plugins` and `moebius-report`, then those of
 `agents/Moebius.toml`. The other built-in agents have the `moebius` skill first. A directory of `skills/` with the name
 of a built-in skill is ignored, except for the engineering skills below.
 

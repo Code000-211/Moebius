@@ -67,7 +67,8 @@ const RETRO_INSTRUCTIONS: &str = "You are the Retro analyst. Each day Moebius gi
      prompt describes, only files under moebius/, and leave the files as the format requires, since a proposal that does not parse is dropped. Do not edit the files on the branch you start on, do not push, \
      and do not ask anyone anything: nobody answers. If no change is called for, make no branch.";
 
-/// What the Moebius agent is told; the `instructions` of `[agents.Moebius]` come after it.
+/// What the Moebius agent is told; the `instructions` of `[agents.Moebius]` come after it, and last the section that says
+/// where Moebius runs (see `tell_where_moebius_runs`).
 const MOEBIUS_INSTRUCTIONS: &str = "You are the Moebius agent. You work for the person in this chat. You answer their \
      questions about Moebius and their work in it, and you build or change whatever they ask for: column scripts and \
      workflows, rules, agents, skills, MCP servers, Pi extensions, plugins, settings, repositories, issues, briefs and \
@@ -76,7 +77,8 @@ const MOEBIUS_INSTRUCTIONS: &str = "You are the Moebius agent. You work for the 
      state and act on it (board, inbox, cards, chats, usage, repositories, issues, research, grillings), \
      moebius-configure for agents, rules, a column's script, settings, skills and MCP servers, moebius-workflows for \
      column scripts and workflows in a repository, moebius-extensions for Pi extensions, moebius-plugins for decider \
-     plugins. The moebius skill holds the guide (how to do each task, with examples that work) and the reference \
+     plugins, moebius-report to send a fix or a problem in Moebius itself to its official repository (only when the \
+     person says yes). The moebius skill holds the guide (how to do each task, with examples that work) and the reference \
      (every exact name): read the page the task skill names, and check every name you use in the reference: what it \
      does not list does not exist. To know the state of Moebius (boards, cards, runs, the inbox, \
      chats, usage, agents, rules, settings), ask the server with `\"$MOEBIUS\"`, for example `\"$MOEBIUS\" board` or \
@@ -158,7 +160,8 @@ fn built_in_instructions(name: &str) -> Option<&'static str> {
 impl PiBolt {
     /// The agent `name` as a run uses it (see [`resolve`]).
     pub(super) fn agent(&self, app: &App, name: &str) -> Result<AgentConfig, String> {
-        resolve(&self.agent_set(), &app.data_dir, name)
+        let agent = resolve(&self.agent_set(), &app.data_dir, name)?;
+        Ok(tell_where_moebius_runs(app, name, agent))
     }
 
     /// The agent of the run `run_id`, a chat, as the chat runs it: with the model and reasoning level it was given in
@@ -177,6 +180,23 @@ impl PiBolt {
     pub(super) fn agent_list(&self) -> Vec<AgentInfo> {
         agent_list(&self.agent_set())
     }
+}
+
+/// Adds to the instructions of the Moebius agent `agent` where Moebius runs now (see `App::where_moebius_runs`), so a
+/// run always starts with the current addresses. Any other agent is returned as it is.
+pub(crate) fn tell_where_moebius_runs(
+    app: &App,
+    name: &str,
+    mut agent: AgentConfig,
+) -> AgentConfig {
+    if name == MOEBIUS_AGENT {
+        let section = app.where_moebius_runs();
+        agent.instructions = Some(match agent.instructions.take() {
+            Some(text) => format!("{text}\n\n{section}"),
+            None => section,
+        });
+    }
+    agent
 }
 
 /// Whether `set` has the agent `name`, or Moebius brings it.
@@ -474,5 +494,26 @@ mod tests {
         replaced.agents.insert("Coder".into(), agent(&[]));
         let coder = resolve(&replaced, data, "Coder").unwrap();
         assert_eq!(skills(&coder)[0], "/harness/skills/tdd");
+    }
+
+    #[test]
+    fn only_the_moebius_agent_is_told_where_moebius_runs() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = std::sync::Arc::new(crate::store::Store::in_memory(dir.path()).unwrap());
+        let app = App::new(
+            store,
+            std::sync::Arc::new(moebius_plugin_api::Host::new(
+                std::time::Duration::from_secs(1),
+            )),
+            dir.path(),
+        );
+        let plain = agent(&[]);
+        let told = tell_where_moebius_runs(&app, MOEBIUS_AGENT, plain.clone());
+        let text = told.instructions.unwrap();
+        assert!(text.contains("The server has not said where it runs"));
+        assert!(text.contains("https://github.com/Code000-211/Moebius"));
+        for other in ["Coder", GRILLING_AGENT, RETRO_AGENT, AUTORESEARCHER_AGENT] {
+            assert_eq!(tell_where_moebius_runs(&app, other, plain.clone()), plain);
+        }
     }
 }

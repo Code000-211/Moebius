@@ -2,13 +2,23 @@
 //! restart.
 
 use crate::client::{
-    Available, Client, ClientError, Health, Login, Models, Plugins, Provider, SavedSettings,
-    ServerSettings, Start, Webhook,
+    Available, Client, ClientError, ClientReport, Health, Login, Models, Plugins, Provider,
+    SavedSettings, ServerSettings, Start, Webhook,
 };
 
 impl Client {
     pub async fn health(&self) -> Result<Health, ClientError> {
         self.get("/v1/health").await
+    }
+
+    /// Tells the server where this app runs; the server keeps the latest report for the Moebius agent.
+    pub async fn report_client(&self, report: &ClientReport) -> Result<ClientReport, ClientError> {
+        self.put("/v1/client", serde_json::json!(report)).await
+    }
+
+    /// What the server last heard from an app.
+    pub async fn reported_client(&self) -> Result<ClientReport, ClientError> {
+        self.get("/v1/client").await
     }
 
     /// The upstreams, agents, teacher and decision model of the server.

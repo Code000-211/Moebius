@@ -24,7 +24,7 @@ another run, such as a steer, the judgement keeps that run, and the agent's run 
 The run token of any other agent, and a revoked one, is answered with `401`. Two routes stay with a person and answer
 `403` with `only a person can do this` to a run token: `PUT /v1/secrets/{name}` (an agent must not set keys),
 `GET /v1/webhooks` and `POST /v1/webhooks/{forge}/secret` (they hold the webhook secrets),
-`POST /v1/harness/setup` (moving the agents is a person's choice) and `GET /v1/runs/{id}/terminal`, `GET /v1/chats/{id}/tui`, `GET /v1/terminal` and `GET /v1/repositories/{id}/terminal` (the shells) and `GET /v1/ports/{port}/tunnel`. Where a route below says "a person" and "decider
+`POST /v1/harness/setup` (moving the agents is a person's choice) and `GET /v1/runs/{id}/terminal`, `GET /v1/chats/{id}/tui`, `GET /v1/terminal` and `GET /v1/repositories/{id}/terminal` (the shells) and `GET /v1/ports/{port}/tunnel`, and `PUT /v1/client` (what the app says of itself). Where a route below says "a person" and "decider
 `person`", an agent that uses its token is the decider instead.
 
 ```sh
@@ -126,6 +126,31 @@ A column script can add other kinds with `moebius.ask`.
 ### `GET /v1/health`
 
 Response: `{"version": "0.1.0"}`, the server's version.
+
+### `GET /v1/server`
+
+Where the server runs, found when it started: `{"program": string, "version": string, "config_file": string,
+"data_dir": string, "source_dir": string, "api_address": string, "router_address": string, "host": string, "os": string,
+"arch": string}`. `program` is the running executable, `config_file` the `moebius.toml` it was started with,
+`source_dir` the source checkout the program lies in (`target/` of a cargo workspace; absent otherwise), `api_address`
+the base URL of this API and `router_address` the address of the router. No token or key is in it. The Moebius agent is
+given the same facts at the start of each of its runs (section "Where Moebius runs" of its instructions). Errors: `404`
+a core that was not started as a server.
+
+### `GET /v1/client`
+
+What the desktop app last reported about itself: the body of `PUT /v1/client` and `reported_at`, the time the server
+heard it (Unix seconds). Errors: `404` no app has reported since the server started.
+
+### `PUT /v1/client`
+
+The app tells the server where it runs, when it connects and whenever the event stream connects again. Request body:
+`{"program": string, "version": string, "os": string, "arch": string, "host": string, "server_address": string,
+"ssh_host": string or null}`. `program` is the app's executable, `host` the computer it runs on, `server_address` the
+address it reaches this server by (over SSH the local end of the tunnel) and `ssh_host` the host name it reaches it
+through over SSH, absent when it connects directly. The server keeps the latest report only, in memory, cuts every
+field to 500 characters and redacts it. Response: what `GET /v1/client` answers. The Moebius agent is told it at the
+start of each run. Errors: `403` to a run token.
 
 ### `GET /v1/snapshot`
 
@@ -721,7 +746,7 @@ are broken (the message says how), or the server has no `[harness]` and its agen
 A built-in agent (`Moebius`, `Grilling-partner`, `Retro-analyst`, `Autoresearcher`) also has `"built_in":
 {"instructions": string, "skills": [{"name": string, "description": string}], "engineering_skills": [...]}`: the instructions it is always given
 before its own, `engineering_skills` the skills of the same shape it is given besides unless its `engineering_skills` is `false` (the Grilling partner's `grilling`, `to-tickets` and `moebius-autonomous`; empty for the others), and the built-in skills it always has before its own, which nobody can change. The Moebius agent's are
-the `moebius` skill and the task skills `moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions` and `moebius-plugins`; the others have the `moebius` skill. A built-in agent is answered
+the `moebius` skill and the task skills `moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions`, `moebius-plugins` and `moebius-report`; the others have the `moebius` skill. A built-in agent is answered
 without files (then `settings` and `instructions` are left out) and without `[harness]`. `PUT` saves only the agent's
 files and answers without `built_in`.
 
@@ -790,7 +815,7 @@ commit (left out when the text changed nothing, and always for a `rules_file`). 
 ### `GET /v1/skills`
 
 The skills an agent's `skills` can name, for an editor to offer: an array of `{"name": string, "description": string,
-"built_in": boolean, "source": {"url": string, "commit": string}}`, the built-in skills first (`moebius`, then the task skills `moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions` and `moebius-plugins`, then `moebius-autonomous`), then the
+"built_in": boolean, "source": {"url": string, "commit": string}}`, the built-in skills first (`moebius`, then the task skills `moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions`, `moebius-plugins` and `moebius-report`, then `moebius-autonomous`), then the
 engineering skills (`tdd`, `diagnosing-bugs`, `code-review`, `grilling`, `to-tickets`) with `built_in` true and a `source`, the repository they were copied from and the commit, unless the harness configuration repository has a skill of that name, then the
 directories of `skills/` in the harness configuration repository by name; a directory with the name of a reserved built-in skill
 is left out (one with the name of an engineering skill replaces it). `description` is the `description` of the frontmatter of the skill's `SKILL.md`, empty when there is

@@ -46,6 +46,10 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
   points, judged with their outcomes and open to shadowing and takeover; the time of each check is a run event that Usage
   adds up. No language server is started; an on-demand language server tool is not part of it.
 - **Self-improvement** as a bundled plugin: the Retro, proposals, trials, autoresearch and shadowing.
+- **Where Moebius runs.** The server finds its program, files, addresses and host at start and the desktop app reports
+  its own when it connects (`PUT /v1/client`); the Moebius agent is told both at the start of each run, and that
+  Moebius's official repository is https://github.com/Code000-211/Moebius, where it offers (after a yes) a pull request
+  for a fix or an issue for a problem (the `moebius-report` skill).
 - **Chat** with any agent, and the **Moebius agent**, which knows Moebius from the guide (`docs/guide/`) and builds
   column scripts, rules, agents and extensions on request, offered as changes.
 - **Engineering skills** from Matt Pocock's skills (MIT) for the Coder (`tdd`, `diagnosing-bugs`), the Reviewer

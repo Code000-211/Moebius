@@ -416,7 +416,7 @@ bundled, so it needs no table, but it needs a model:
 
 Its instructions are built in (who it is, that it works for the person in the chat and builds what they ask for with the
 `moebius` skill); `agents.Moebius.instructions` is added after them. Its skills always begin with the `moebius` skill,
-which is the [guide](../guide/README.md) and this reference, and the task skills `moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions` and `moebius-plugins`, each with the steps of one
+which is the [guide](../guide/README.md) and this reference, and the task skills `moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions`, `moebius-plugins` and `moebius-report`, each with the steps of one
 kind of task, all written to `<data_dir>/skills/<name>/` when the server starts; `agents.Moebius.skills` adds more, and `agents.Moebius.extensions` adds extensions. The keys are the same as for
 any agent. What a chat with it leaves in its repository is offered as a change when the chat ends, see the
 [desktop API](desktop-api.md).

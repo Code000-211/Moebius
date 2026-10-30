@@ -327,7 +327,8 @@ mod tests {
                 "moebius-configure",
                 "moebius-workflows",
                 "moebius-extensions",
-                "moebius-plugins"
+                "moebius-plugins",
+                "moebius-report"
             ]
         );
         assert!(
@@ -369,7 +370,15 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn a_chat_without_an_agent_is_with_the_moebius_agent_on_the_coders_model() {
-        let (_dir, state, addr) = start().await;
+        let (dir, state, addr) = start().await;
+        // The server found where it runs at start, and the app reported itself when it connected.
+        let mut server = crate::app::ServerInfo::detect(
+            &dir.path().join("moebius.toml"),
+            &dir.path().join(".moebius"),
+            "127.0.0.1:4242".into(),
+        );
+        server.api_address = Some("http://127.0.0.1:4141".into());
+        state.app.set_server_info(server);
         let run = chat_without_agent(&state, &addr, None).await;
         assert_eq!(run.agent, "Moebius");
         let argv = argv(&state.app, run.id);
@@ -383,12 +392,54 @@ mod tests {
             .map(|w| w[1].as_str())
             .collect();
         assert_eq!(skills, built_in_skill_dirs(&state.app));
-        assert_eq!(skills.len(), 6);
+        assert_eq!(skills.len(), 7);
         let instructions = argv.windows(2).find(|w| w[0] == "--append-system-prompt");
         let instructions = &instructions.unwrap()[1];
         assert!(instructions.starts_with("You are the Moebius agent."));
         for task in &crate::harness::skill::TASKS {
             assert!(instructions.contains(task.name), "{}", task.name);
+        }
+        // Where Moebius runs: the server's real values, and that the app has not reported yet.
+        let moebius_toml = dir.path().join("moebius.toml").display().to_string();
+        assert!(instructions.contains("Where Moebius runs."));
+        assert!(instructions.contains(&moebius_toml), "{instructions}");
+        assert!(instructions.contains(&dir.path().join(".moebius").display().to_string()));
+        assert!(instructions.contains("http://127.0.0.1:4141"));
+        assert!(instructions.contains("127.0.0.1:4242"));
+        assert!(instructions.contains(&std::env::current_exe().unwrap().display().to_string()));
+        assert!(instructions.contains("has not reported where it runs yet"));
+        // The official repository and the offer, which needs a yes.
+        assert!(instructions.contains("https://github.com/Code000-211/Moebius"));
+        assert!(instructions.contains("send nothing without the person's yes"));
+        assert!(instructions.contains("moebius-report"));
+        assert!(!instructions.contains(&*state.token));
+
+        // After the app reports itself, the next run is told where it is.
+        let reported = reqwest::Client::new()
+            .put(format!("http://{addr}/v1/client"))
+            .bearer_auth(&*state.token)
+            .json(&serde_json::json!({
+                "program": "/opt/app/moebius-desktop", "version": "9.9.9", "os": "macos", "arch": "aarch64",
+                "host": "leons-laptop", "server_address": "http://127.0.0.1:50000", "ssh_host": "build-box"
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(reported.status(), 200);
+        let again = chat_without_agent(&state, &addr, None).await;
+        let again = self::argv(&state.app, again.id);
+        let again = &again
+            .windows(2)
+            .find(|w| w[0] == "--append-system-prompt")
+            .unwrap()[1];
+        for word in [
+            "/opt/app/moebius-desktop",
+            "9.9.9",
+            "leons-laptop",
+            "http://127.0.0.1:50000",
+            "over SSH through build-box",
+        ] {
+            assert!(again.contains(word), "{word}: {again}");
         }
 
         // Asking for the agent by name is the same.
@@ -489,7 +540,12 @@ mod tests {
         let instructions = argv.windows(2).find(|w| w[0] == "--append-system-prompt");
         let instructions = &instructions.unwrap()[1];
         assert!(instructions.starts_with("You are the Moebius agent."));
-        assert!(instructions.ends_with("\n\nPrefer small scripts."));
+        // Its own instructions come before where Moebius runs, which is built when the run starts.
+        let (own, section) = instructions
+            .split_once("\n\nWhere Moebius runs.\n")
+            .unwrap();
+        assert!(own.ends_with("\n\nPrefer small scripts."));
+        assert!(section.contains("https://github.com/Code000-211/Moebius"));
     }
 
     #[tokio::test]

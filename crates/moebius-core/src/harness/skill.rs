@@ -1,7 +1,7 @@
 //! The built-in skills, bundled into the binary and written to `<data_dir>/skills/<name>/` when the server starts, where
 //! the built-in agents find them. The `moebius` skill is the reference library: its pages are the files of `docs/guide/`
 //! and `docs/reference/`, so it cannot say anything the documentation does not, and every built-in agent has it. The
-//! task skills (`moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions`, `moebius-plugins`)
+//! task skills (`moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions`, `moebius-plugins`, `moebius-report`)
 //! are one `SKILL.md` each with the steps of one kind of task, and only the Moebius agent has them. The engineering
 //! skills are copied unchanged from Matt Pocock's skills (`skill/vendor/mattpocock/`) and given to the Coder, the
 //! Reviewer and the Grilling partner, with `moebius-autonomous`, which says what to do where they assume a person.
@@ -78,7 +78,7 @@ pub const MOEBIUS: BuiltIn = BuiltIn {
 };
 
 /// The task skills, which the Moebius agent has besides the reference library.
-pub const TASKS: [BuiltIn; 5] = [
+pub const TASKS: [BuiltIn; 6] = [
     BuiltIn {
         name: "moebius-operate",
         files: &[(
@@ -112,6 +112,13 @@ pub const TASKS: [BuiltIn; 5] = [
         files: &[(
             "SKILL.md",
             include_str!("../../skill/moebius-plugins/SKILL.md"),
+        )],
+    },
+    BuiltIn {
+        name: "moebius-report",
+        files: &[(
+            "SKILL.md",
+            include_str!("../../skill/moebius-report/SKILL.md"),
         )],
     },
 ];
@@ -477,7 +484,7 @@ mod tests {
             let page = std::fs::read_to_string(root.join("SKILL.md")).unwrap();
             assert!(page.starts_with(&format!("---\nname: {}\ndescription: ", built_in.name)));
         }
-        assert_eq!(all().count(), 7);
+        assert_eq!(all().count(), 8);
         for vendored in &VENDORED {
             let root = super::dir(dir.path(), vendored.name);
             for (path, text) in vendored.files {

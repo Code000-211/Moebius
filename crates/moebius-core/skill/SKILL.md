@@ -1,6 +1,6 @@
 ---
 name: moebius
-description: Operate and build on Moebius, the orchestration layer that drives coding agents from a repository's issues to changes ready to merge. This is the reference library - the guide and the exact references of every command, route, card field, script function and configuration key. Use it to check a name before you use it and whenever a question is about how Moebius behaves; the task skills moebius-operate, moebius-configure, moebius-workflows, moebius-extensions and moebius-plugins hold the steps of each task.
+description: Operate and build on Moebius, the orchestration layer that drives coding agents from a repository's issues to changes ready to merge. This is the reference library - the guide and the exact references of every command, route, card field, script function and configuration key. Use it to check a name before you use it and whenever a question is about how Moebius behaves; the task skills moebius-operate, moebius-configure, moebius-workflows, moebius-extensions, moebius-plugins and moebius-report hold the steps of each task.
 ---
 
 # Operating and building on Moebius
@@ -21,6 +21,7 @@ back here for the exact page it names:
 | Column scripts and whole workflows in a repository's `.moebius/` | `moebius-workflows` |
 | Pi extensions | `moebius-extensions` |
 | Decider plugins in Rust | `moebius-plugins` |
+| A fix or a problem in Moebius itself, sent to its official repository (only when the person says yes) | `moebius-report` |
 
 ## Find out before you act
 

@@ -44,6 +44,24 @@ try the result. Pi shows the agent each skill's description and the agent reads 
 | `moebius-workflows` | Column scripts and whole workflows in a repository's `.moebius/`. |
 | `moebius-extensions` | Pi extensions. |
 | `moebius-plugins` | Decider plugins in Rust. |
+| `moebius-report` | Sending a fix or a problem in Moebius itself to its official repository, after the person says yes. |
+
+## Where Moebius runs, and Moebius's own repository
+
+At the start of every run the Moebius agent (and only it) is given a section "Where Moebius runs" at the end of its
+instructions. It says where the server is: its program and version, the `moebius.toml` it runs with, its data
+directory, the source checkout it was built from when it lies in one, the addresses of the desktop API and the router,
+and its computer and system. The server found these when it started. It also says where the desktop app is: its
+program, version, computer and system, the address it reaches the server by and the SSH host if it connects over SSH.
+The app reports this to the server (`PUT /v1/client`) when it connects and again whenever the connection is made again,
+so a new address shows in the next run; before the app has reported, the section says so. No token or key is in it.
+`"$MOEBIUS" api GET /v1/server` and `"$MOEBIUS" api GET /v1/client` read the same facts while a chat goes on.
+
+The section also names https://github.com/Code000-211/Moebius as Moebius's own repository. When the person fixes
+something in Moebius itself, or the agent meets a problem in Moebius rather than in the person's project, it offers to
+send it there: a pull request for a fix, an issue for a problem. It asks first, shows what it would send and sends
+nothing without the person's yes (the `moebius-report` skill has the steps; it needs the `gh` command, else it hands the
+person the text to paste).
 
 They are built in and read only: the Skills page and `GET /v1/skills` list them as built in, and the Agents page shows
 them, with the built-in instructions, on the Moebius agent (`GET /v1/agents/Moebius` answers both).

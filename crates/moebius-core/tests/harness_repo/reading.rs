@@ -123,6 +123,7 @@ async fn the_skills_and_mcp_servers_an_agent_can_name_are_listed_without_secrets
             "moebius-workflows",
             "moebius-extensions",
             "moebius-plugins",
+            "moebius-report",
             "moebius-autonomous",
             "tdd",
             "diagnosing-bugs",
@@ -132,17 +133,17 @@ async fn the_skills_and_mcp_servers_an_agent_can_name_are_listed_without_secrets
             "house-style"
         ]
     );
-    for skill in &skills.as_array().unwrap()[..7] {
+    for skill in &skills.as_array().unwrap()[..8] {
         assert_eq!(skill["built_in"], true);
         assert!(skill["description"].as_str().unwrap().contains("Use it"));
     }
     // The engineering skills are built in too, and say where they came from.
-    for skill in &skills.as_array().unwrap()[7..12] {
+    for skill in &skills.as_array().unwrap()[8..13] {
         assert_eq!(skill["built_in"], true);
         assert!(skill["source"]["commit"].is_string(), "{skill}");
     }
     assert_eq!(
-        skills[12],
+        skills[13],
         json!({"name": "house-style", "description": "Write plainly.", "built_in": false})
     );
 
@@ -185,7 +186,7 @@ async fn a_built_in_agent_is_read_with_its_built_in_part_and_its_own_files() {
     assert_eq!(status, 200, "{body}");
     let read: Value = serde_json::from_str(&body).unwrap();
     assert!(read.get("settings").is_none(), "{read}");
-    assert_eq!(read["built_in"]["skills"].as_array().unwrap().len(), 6);
+    assert_eq!(read["built_in"]["skills"].as_array().unwrap().len(), 7);
 
     // With files, both; what the person saves is only the files.
     let edit = json!({"settings": {"model": "own-model"}, "instructions": "Prefer small scripts."});

@@ -10,6 +10,24 @@ pub struct Health {
     pub version: String,
 }
 
+/// Where the app runs, as `PUT /v1/client` takes it and `GET /v1/client` shows what the server last heard.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, Deserialize)]
+pub struct ClientReport {
+    pub program: String,
+    pub version: String,
+    pub os: String,
+    pub arch: String,
+    pub host: String,
+    /// The address the app reaches the server by.
+    pub server_address: String,
+    /// The host name it reaches the server by over SSH.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssh_host: Option<String>,
+    /// When the server heard it, in Unix seconds; the server sets it.
+    #[serde(default, skip_serializing)]
+    pub reported_at: i64,
+}
+
 /// An upstream of the router, as `GET /v1/models` lists it.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Upstream {

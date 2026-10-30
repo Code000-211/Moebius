@@ -203,6 +203,11 @@ impl Server {
             }
             None => None,
         };
+        app.set_server_info(crate::app::ServerInfo::detect(
+            &config.file,
+            &config.data_dir,
+            router_addr.to_string(),
+        ));
         let app = Arc::new(app);
         router.set_checker(check::Checker::new(app.clone(), config.rules_path()));
         leftovers::end_runs_of_a_previous_server(&app)?;
@@ -284,6 +289,7 @@ impl Server {
     ) -> std::io::Result<()> {
         if let Ok(address) = api_listener.local_addr() {
             self.harness.set_api_url(api_url(address));
+            self.app.set_api_address(api_url(address));
         }
         let state = self.api_state();
         let gateway = Arc::new(Gateway::new(
@@ -337,6 +343,7 @@ mod tests {
             "moebius-workflows",
             "moebius-extensions",
             "moebius-plugins",
+            "moebius-report",
         ] {
             let page = dir
                 .path()

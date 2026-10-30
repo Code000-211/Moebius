@@ -62,7 +62,7 @@ use tui::Follower;
 pub use agents::{
     AUTORESEARCHER_AGENT, BuiltInAgent, GRILLING_AGENT, MOEBIUS_AGENT, RETRO_AGENT, built_in_agent,
 };
-pub(crate) use agents::{agent_list, has_agent, resolve as resolve_agent};
+pub(crate) use agents::{agent_list, has_agent, resolve as resolve_agent, tell_where_moebius_runs};
 pub(in crate::harness) use chat::chat_run;
 pub(crate) use reader::final_answer;
 pub(in crate::harness) use reader::{finish, keep};

@@ -114,6 +114,8 @@ pub enum Message {
     Submit,
     /// The settings were tried against the server.
     Checked(Result<(Settings, Snapshot), ClientError>),
+    /// The server took the report of where this app runs, or did not; nothing depends on it.
+    Reported(Result<(), ClientError>),
     /// The snapshot was read again, the `u64`-th time asked.
     Loaded(u64, Result<Snapshot, ClientError>),
     Stream(StreamEvent),

@@ -8,6 +8,7 @@
 //! - A file that holds a secret is created readable by its owner only (mode `0600`) on Linux; on Windows it keeps the
 //!   permissions of its directory, which under the person's profile is readable by them and the administrators.
 //! - A skill is linked into a run's configuration on Linux and copied on Windows.
+//! - The name of the computer comes from the environment, `/etc/hostname` or the `hostname` program.
 //! - A person's terminal runs their shell (`$SHELL`) on Linux and PowerShell on Windows, both on a pseudo-terminal
 //!   (ConPTY on Windows, through `portable-pty`).
 //! - The repository's own checks, replays and research measurements run `sh` and `bash`; on Windows, where they are
@@ -132,6 +133,23 @@ pub fn shell() -> String {
         .ok()
         .filter(|shell| !shell.is_empty())
         .unwrap_or_else(|| "/bin/sh".to_string())
+}
+
+/// The name of this computer: `COMPUTERNAME` or `HOSTNAME`, else `/etc/hostname`, else what `hostname` prints; "unknown"
+/// when none of them tells.
+pub fn host_name() -> String {
+    let from_env = ["COMPUTERNAME", "HOSTNAME"]
+        .iter()
+        .find_map(|name| std::env::var(name).ok());
+    let found = from_env
+        .or_else(|| std::fs::read_to_string("/etc/hostname").ok())
+        .or_else(|| {
+            let out = Command::new("hostname").output().ok()?;
+            String::from_utf8(out.stdout).ok()
+        })
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty());
+    found.unwrap_or_else(|| "unknown".into())
 }
 
 #[cfg(test)]

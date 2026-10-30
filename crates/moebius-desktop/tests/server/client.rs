@@ -126,3 +126,52 @@ async fn a_server_that_is_not_there_cannot_be_reached() {
         ClientError::Unreachable(address)
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_app_reports_where_it_runs_when_it_connects_and_again_when_that_changes() {
+    use crate::fixtures::settle;
+    use moebius_desktop::app::{App, Message};
+    use moebius_desktop::client::Snapshot;
+
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, server) = start(dir.path()).await;
+    assert!(server.app.client_info().is_none());
+
+    let client = Client::new(settings.clone());
+    let mut app = App::with_snapshot(Snapshot::default());
+    let task = app.update(Message::Checked(Ok((
+        settings.clone(),
+        client.snapshot().await.unwrap(),
+    ))));
+    settle(&mut app, task).await;
+    let reported = server.app.client_info().expect("the app reported itself");
+    assert_eq!(reported.server_address, settings.address);
+    assert_eq!(reported.version, env!("CARGO_PKG_VERSION"));
+    assert_eq!(reported.os, std::env::consts::OS);
+    assert_eq!(reported.ssh_host, None);
+    assert!(!reported.program.is_empty());
+    assert!(!reported.host.is_empty());
+    // No token in what the server keeps or tells the agent.
+    assert!(!format!("{reported:?}").contains(&settings.token));
+    assert!(!server.app.where_moebius_runs().contains(&settings.token));
+    assert!(server.app.where_moebius_runs().contains(&reported.host));
+
+    // The same report, read back through the route; a later one replaces it.
+    assert_eq!(
+        client.reported_client().await.unwrap().server_address,
+        settings.address
+    );
+    let mut over_ssh =
+        moebius_desktop::app::report::this_app("http://127.0.0.1:50123", Some("build-box"));
+    over_ssh.host = "laptop".into();
+    client.report_client(&over_ssh).await.unwrap();
+    let latest = server.app.client_info().unwrap();
+    assert_eq!(latest.server_address, "http://127.0.0.1:50123");
+    assert_eq!(latest.ssh_host.as_deref(), Some("build-box"));
+    assert!(
+        server
+            .app
+            .where_moebius_runs()
+            .contains("over SSH through build-box")
+    );
+}

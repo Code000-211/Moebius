@@ -10,6 +10,7 @@ mod context;
 mod message;
 mod navigation;
 mod ports;
+pub mod report;
 mod stream;
 mod update;
 mod view;

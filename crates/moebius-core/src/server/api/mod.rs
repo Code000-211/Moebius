@@ -18,6 +18,7 @@
 //! - `uploads`: zip files for the Moebius agent to import from.
 //! - `terminals`: shells and Pi's terminal interface over a WebSocket.
 //! - `ports`: the ports that runs and terminals listen on, and a WebSocket that carries a connection to one.
+//! - `whereabouts`: where the server runs and what the desktop app reports about itself.
 //! - `events`: the WebSocket on which every event of the core arrives.
 //! - `webhooks`: the deliveries of the forges, which need no token but a signature, and the secrets to set on the forges.
 //!
@@ -40,6 +41,7 @@ mod settings;
 mod terminals;
 mod uploads;
 mod webhooks;
+mod whereabouts;
 
 #[cfg(test)]
 mod testing;
@@ -183,6 +185,7 @@ pub fn router(state: ApiState) -> Router {
         .merge(ports::routes())
         .merge(events::routes())
         .merge(webhooks::routes())
+        .merge(whereabouts::routes())
         .layer(middleware::from_fn_with_state(state.clone(), authenticate))
         .merge(webhooks::public_routes())
         .with_state(state)

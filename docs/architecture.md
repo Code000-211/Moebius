@@ -369,7 +369,7 @@ At the top:
 | `blobs.rs` | The content-addressed blob store and secret redaction. |
 | `bus.rs` | The event bus behind the event stream. |
 | `lib.rs` | The crate's parts, and `VERSION`. |
-| `platform.rs` | What differs between Linux and Windows: process groups and killing them, files only their owner reads, linking a skill, the shell of a terminal, and the error of a feature that needs a Unix shell. |
+| `platform.rs` | What differs between Linux and Windows: process groups and killing them, files only their owner reads, linking a skill, the shell of a terminal, the computer's name, and the error of a feature that needs a Unix shell. |
 
 `app/`, the core put together:
 
@@ -386,6 +386,7 @@ At the top:
 | `app/checks.rs` | How a change's checks stand, and a repository's own checks (`.moebius/checks`) run in a throwaway worktree with a time limit and a cleared environment. |
 | `app/attempts.rs` | Attempts: judging each attempt of a hard card by the repository's checks and its reproduction test on a thread of its own, settling a round (one picked, or none passed), and reading a selection run's pick. |
 | `app/localize.rs` | The hint of files a code run is given, whether a repository wants it, and the outcome recorded from the files the card's change touched at the end of a code run and on merge. |
+| `app/whereabouts.rs` | Where Moebius runs: what the server found about itself at start, what the desktop app reported about itself, and the "Where Moebius runs" section of the Moebius agent's instructions built from both (with the official repository). In memory only. |
 | `app/reproduce.rs` | Test first: a repository's opt-in (`.moebius/test-first`), what a change names in `.moebius/reproduce`, and the runs of that reproduction test on the change and on the commit it starts from with the test's files added. |
 
 `config/`, `moebius.toml`:
@@ -467,6 +468,7 @@ At the top:
 | `server/api/settings.rs` | `moebius.toml`, the API keys and the restart, and what the Models, Plugins and Get started pages show. |
 | `server/api/lessons.rs` | The lessons: list, read, edit and delete. |
 | `server/api/improve.rs` | Usage, judgements and replays, the Retro and its proposals, the decision model and its takeovers, research and exports. |
+| `server/api/whereabouts.rs` | `GET /v1/server`, and `GET` and `PUT /v1/client`: where the server runs and what the app reports; a person's token only for the report. |
 | `server/api/uploads.rs` | `POST /v1/uploads`: zip files for the Moebius agent to import from. |
 | `server/ports/mod.rs` | The ports that processes of runs, chats and terminals listen on: whose each is, and the watch that publishes `port_opened` and `port_closed` every 3 seconds. |
 | `server/ports/proc.rs` | Reading the listening sockets, their holders and the process tree from `/proc` (Linux; nothing elsewhere). |
@@ -574,7 +576,7 @@ At the top:
 | `harness/mcp.rs` | The MCP servers of `mcp.toml`, checked when read, their `${NAME}` values filled in, and the `mcp.json` that names the MCP gateway for a run of an agent that names them. |
 | `harness/gateway/mod.rs` | The MCP gateway, `POST /mcp` on the router's listener: a run's servers bundled as one MCP server, every tool call checked, its result cleaned of secrets and recorded as an `mcp_call` run event. |
 | `harness/gateway/upstream.rs` | One server of a run as the gateway reaches it: a stdio child process or a remote server over streamable HTTP, initialized and its tools listed. |
-| `harness/skill.rs` | The built-in skills, bundled with `include_str!` and written to `<data_dir>/skills/<name>/` at start: the `moebius` skill (the guide and the references) and the task skills of the Moebius agent (`moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions` and `moebius-plugins`, in `crates/moebius-core/skill/<name>/SKILL.md`), and the engineering skills copied unchanged from Matt Pocock's skills (`crates/moebius-core/skill/vendor/mattpocock/`, MIT, pinned to a commit) that the Coder, the Reviewer and the Grilling partner are given with `moebius-autonomous`, which says what to do where the skills ask a person. |
+| `harness/skill.rs` | The built-in skills, bundled with `include_str!` and written to `<data_dir>/skills/<name>/` at start: the `moebius` skill (the guide and the references) and the task skills of the Moebius agent (`moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions`, `moebius-plugins` and `moebius-report`, in `crates/moebius-core/skill/<name>/SKILL.md`), and the engineering skills copied unchanged from Matt Pocock's skills (`crates/moebius-core/skill/vendor/mattpocock/`, MIT, pinned to a commit) that the Coder, the Reviewer and the Grilling partner are given with `moebius-autonomous`, which says what to do where the skills ask a person. |
 | `harness/lens/mod.rs` | The lens, fast lint and type feedback after an agent's edits: what the folder holds, the extension it writes into each run (`bridge/moebius-lens.ts`) and the plan it hands to it. |
 | `harness/lens/plan.rs` | What the lens checks in a worktree: `.moebius/lint.toml` read and checked, or the common tools detected from the repository's files, as the JSON plan in `MOEBIUS_LENS`; globs turned into regular expressions. |
 | `harness/lens/decider.rs` | The `lens` decider, a compiled-in plugin that answers `lint_report` (errors always, warnings on touched lines up to a limit) and `deep_check` (run when code was touched), and what makes a file code, documentation or configuration. |
@@ -637,6 +639,7 @@ At the top:
 |---|---|
 | `app/mod.rs` | The state: the connection, the page chosen, what a click on a card opened, each screen's own state. |
 | `app/message.rs` | The pages the sidebar opens, and every `Message`. |
+| `app/report.rs` | The app's report of where it runs (program, version, system, computer, the address and SSH host it reaches the server by), sent when the connection is made and when the stream connects again. |
 | `app/connection.rs` | The app's side of SSH: the host list and setup on the connect screen, the tunnel held while connected, "Reconnecting…", and switching between remembered servers. |
 | `app/update.rs` | How a message changes the state: handed to its screen, a refused token back to the connect screen, connecting, reading the snapshot again, opening a card or a page. |
 | `app/stream.rs` | What the event stream changes: what to read again on an event, and a run's steps to the screens that show them. |

@@ -5,7 +5,7 @@
 //! what they act on: `repositories` adds and edits repositories, `cards` keeps cards in line with their issues and
 //! moves them, `runs` is a person's hand in a running run (steering, stopping, shells), `chats` starts and carries on
 //! chats, `changes` publishes, offers and merges changes, `checks` runs a repository's own checks on them,
-//! `localize` gives a code run the files its issue is likely to touch and records what came of it, `reproduce` runs a change's reproduction test for a repository that works test first, and `automations` keeps
+//! `localize` gives a code run the files its issue is likely to touch and records what came of it, `reproduce` runs a change's reproduction test for a repository that works test first, `whereabouts` knows where the server and the app run, and `automations` keeps
 //! the automations and starts their chats when their schedules come due.
 
 mod attempts;
@@ -18,6 +18,7 @@ mod localize;
 mod repositories;
 mod reproduce;
 mod runs;
+mod whereabouts;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -44,6 +45,7 @@ pub use cards::HistoryEntry;
 pub use chats::{ASSISTANT_ORIGIN, CHAT_ORIGIN, Chat, ChatSettings, THINKING_LEVELS};
 pub(crate) use checks::tail;
 pub use reproduce::{Reproduction, TestRun};
+pub use whereabouts::{ClientInfo, OFFICIAL_REPOSITORY, ServerInfo};
 
 /// The columns of the default workflow (spec 6).
 pub mod columns {
@@ -116,6 +118,8 @@ pub struct App {
     forges: BTreeMap<&'static str, Box<dyn Forge>>,
     /// The harness configuration repository's clone, once the server has opened it.
     harness_repo: OnceLock<Arc<HarnessRepo>>,
+    /// Where the server and the desktop app run (see `whereabouts`).
+    whereabouts: whereabouts::Whereabouts,
 }
 
 impl App {
@@ -142,6 +146,7 @@ impl App {
             waiting: Mutex::default(),
             forges,
             harness_repo: OnceLock::new(),
+            whereabouts: Default::default(),
         }
     }
 

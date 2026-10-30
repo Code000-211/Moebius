@@ -163,3 +163,27 @@ async fn keys_shells_and_the_harness_setup_stay_with_a_person() {
         .unwrap();
     assert_eq!(response.status().as_u16(), 403);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_apps_report_stays_with_a_person_and_the_agent_reads_it() {
+    let f = Fixture::start().await;
+    let (_, token) = f.run("Moebius");
+    let report = json!({
+        "program": "/opt/moebius-desktop", "version": "1.2.3", "os": "linux", "arch": "x86_64",
+        "host": "laptop", "server_address": "http://127.0.0.1:1"
+    });
+    assert_eq!(
+        f.send(Method::PUT, "/v1/client", &token, Some(report.clone()))
+            .await,
+        403
+    );
+    assert_eq!(f.send(Method::GET, "/v1/client", &token, None).await, 404);
+    let person = f.server.token.to_string();
+    assert_eq!(
+        f.send(Method::PUT, "/v1/client", &person, Some(report))
+            .await,
+        200
+    );
+    assert_eq!(f.send(Method::GET, "/v1/client", &token, None).await, 200);
+    assert_eq!(f.send(Method::GET, "/v1/server", &token, None).await, 200);
+}

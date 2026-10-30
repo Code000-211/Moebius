@@ -47,7 +47,7 @@ async fn editing_an_agent_is_a_commit_on_the_harness_repository_and_a_bad_edit_i
             .instructions
             .starts_with("You are the Moebius agent.")
     );
-    assert_eq!(built_in.skills.len(), 6);
+    assert_eq!(built_in.skills.len(), 7);
     assert_eq!(built_in.skills[1].name, "moebius-operate");
     let mut coder = coder.settings.expect("the Coder has files");
     coder.model = "better-model".into();

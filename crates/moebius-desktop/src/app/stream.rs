@@ -15,6 +15,8 @@ impl App {
         match event {
             StreamEvent::Connected => {
                 self.connection = Connection::Online;
+                // A server that restarted, or a tunnel made again, hears where this app runs.
+                let report = self.report_client();
                 // Events are not replayed: the run shown reads what it missed.
                 let tiles = match &self.settings {
                     Some(settings) => self.fleet.reload(settings),
@@ -74,6 +76,7 @@ impl App {
                     harness,
                     floating,
                     ports,
+                    report,
                 ])
             }
             StreamEvent::Disconnected(_) => {

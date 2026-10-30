@@ -35,7 +35,7 @@ use crate::board::{AgentInfo, Runs, Variant};
 use crate::config::{AgentConfig, AgentSet, HarnessKind};
 use crate::harness::pibolt::{
     AUTORESEARCHER_AGENT, RETRO_AGENT, RunningRun, agent_list, card_run, chat_run, detached_run,
-    fail, finish, has_agent, keep, prompt_for, resolve_agent, run_prompt,
+    fail, finish, has_agent, keep, prompt_for, resolve_agent, run_prompt, tell_where_moebius_runs,
 };
 use crate::harness::remote::Runners;
 use crate::router::Router;
@@ -118,7 +118,8 @@ impl ClaudeCode {
 
     /// The agent `name` as a run on Claude Code uses it, or why it cannot run on it.
     fn agent(&self, app: &App, name: &str) -> Result<AgentConfig, String> {
-        on_claude_code(resolve_agent(&self.agent_set(), &app.data_dir, name)?, name)
+        let agent = resolve_agent(&self.agent_set(), &app.data_dir, name)?;
+        on_claude_code(tell_where_moebius_runs(app, name, agent), name)
     }
 
     /// Starts the run `running` of `agent` and returns it; when Claude Code cannot be started, what was set up for the
