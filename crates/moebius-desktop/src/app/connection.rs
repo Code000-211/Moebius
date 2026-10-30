@@ -159,9 +159,7 @@ impl App {
                 return self.begin_ssh(host, Start::Install(how));
             }
             M::Cancel => {
-                self.ssh.session = None;
-                self.ssh.connect.phase = Phase::Idle;
-                self.ssh.connect.prompt = None;
+                self.end_ssh();
                 self.form.connecting = false;
             }
             M::ToggleLog => self.ssh.connect.show_log = !self.ssh.connect.show_log,
@@ -181,6 +179,13 @@ impl App {
             }
         }
         Task::none()
+    }
+
+    /// Ends the connection over SSH that was begun, with its tunnel and its setup.
+    pub(super) fn end_ssh(&mut self) {
+        self.ssh.session = None;
+        self.ssh.connect.phase = Phase::Idle;
+        self.ssh.connect.prompt = None;
     }
 
     fn list_hosts(&mut self) {

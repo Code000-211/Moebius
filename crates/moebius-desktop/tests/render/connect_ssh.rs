@@ -241,3 +241,34 @@ fn the_header_lists_the_servers_remembered_and_switches_between_them() {
     update_all(&mut app, sent);
     assert!(shows(&app, "Connecting to build"));
 }
+
+/// A connection over SSH that was begun and not finished does not take the place of the address the person then
+/// connects to: the address and its token are saved, and the app opens them again at its next start.
+#[test]
+fn connecting_by_address_after_an_unfinished_ssh_connection_saves_the_address() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("desktop.toml");
+    std::fs::write(
+        &path,
+        "last_ssh = \"build\"\n[[servers]]\nhost = \"build\"\n",
+    )
+    .unwrap();
+    let (mut app, _) = App::start(Some(path.clone()));
+    let _ = app.update(Message::SshAskpass(
+        "build".into(),
+        Start::Check,
+        Err("no askpass here".into()),
+    ));
+    let saved = Settings {
+        address: "http://10.0.0.5:7171".into(),
+        token: "0123456789abcdef0123456789abcdef".into(),
+    };
+    let _ = app.update(Message::AddressChanged(saved.address.clone()));
+    let _ = app.update(Message::TokenChanged(saved.token.clone()));
+    let _ = app.update(Message::Submit);
+    let _ = app.update(Message::Checked(Ok((saved.clone(), overview()))));
+
+    assert_eq!(moebius_desktop::settings::load(&path).unwrap(), Some(saved));
+    let stored = moebius_desktop::settings::load_all(&path).unwrap();
+    assert_eq!(stored.last_ssh, None);
+}

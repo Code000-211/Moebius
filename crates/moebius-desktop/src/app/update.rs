@@ -544,6 +544,8 @@ impl App {
         }
         self.form.error = None;
         self.form.connecting = true;
+        // A connection over SSH begun before is given up: it would be saved in place of the address.
+        self.end_ssh();
         Task::perform(check(Settings { address, token }), Message::Checked)
     }
 
