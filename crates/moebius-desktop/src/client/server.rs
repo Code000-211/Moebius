@@ -30,6 +30,26 @@ pub struct UpstreamOAuth {
     pub logged_in: bool,
     /// What the person confirms before a login starts.
     pub warning: String,
+    /// The built-in provider the login was filled in from, if any.
+    #[serde(default)]
+    pub preset: Option<String>,
+    /// What the upstream needs that the server does not speak yet: its requests fail.
+    #[serde(default)]
+    pub needs: Option<String>,
+}
+
+/// A provider the server has built in, as `GET /v1/models/providers` lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Provider {
+    /// The `preset` of the upstream's `oauth` table.
+    pub name: String,
+    pub title: String,
+    /// The protocol and base URL of the upstream that logs in.
+    pub protocol: String,
+    pub base_url: String,
+    /// What the upstream needs that the server does not speak yet, if anything.
+    #[serde(default)]
+    pub needs: Option<String>,
 }
 
 /// Where the OAuth login of an upstream stands, as `GET` and `POST /v1/models/upstreams/{place}/login` answer.

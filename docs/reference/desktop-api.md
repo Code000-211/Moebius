@@ -913,7 +913,9 @@ has one. Response:
   true when the upstream has an `api_key_env` or an `api_key_secret`; the server does not start when that variable is not
   set or no key is stored under that name. Neither the key nor the name of the variable or the secret is shown. The configuration names no models an upstream serves, so none are listed.
 - `oauth` is `null`, or for an upstream that logs in with OAuth (see [the router](router.md#oauth-logins))
-  `{"flow": "device" | "code", "logged_in": boolean, "warning": string}`: `logged_in` is true when a refresh token is
+  `{"flow": "device" | "code", "logged_in": boolean, "warning": string, "preset": string | null, "needs": string | null}`
+  (`preset` the built-in provider, `needs` what the upstream needs that the router does not speak yet, so that its
+  requests fail): `logged_in` is true when a refresh token is
   stored for it (whether it still holds, `GET /v1/models/upstreams/{place}/login` tells), and `warning` the text the
   person confirms before a login starts.
 - `agents` are the agents of [`GET /v1/agents`](#get-v1agents), with the same fields.
@@ -942,6 +944,23 @@ Response, a login:
 
 Errors: `403` an agent's token; `404` there is no upstream at `place`; `422` `accept_terms` is not `true`, or the
 upstream has no `oauth` table; `502` the provider's device URL refused or could not be reached.
+
+### `POST /v1/models/upstreams/{place}/login/code`
+
+A person finishes the waiting `code` login of the upstream at `place` with what the browser showed. Request:
+`{"pasted": string}`: the code, `code#state`, or the whole address the browser ended on (see
+[the router](router.md#oauth-logins)). Response: the login as it stands (`waiting`; the exchange of the code goes on in
+the background and `GET` below tells how it ended). Errors: `403` an agent's token; `404` no upstream; `409` the upstream
+has no login waiting for a code (none started, a `device` login, or one that ended); `422` nothing in `pasted` is a code,
+or its `state` is not the waiting login's (the login goes on waiting).
+
+### `GET /v1/models/providers`
+
+The providers built in, which an upstream's `preset` names, in the order the Models page offers them: `[{"name":
+"anthropic", "title": "Anthropic (Claude Pro/Max)", "protocol": "anthropic", "base_url": "https://api.anthropic.com",
+"needs": null}]`. `needs`, when not `null`, is what the provider's upstream needs that the router does not speak yet. The
+app adds an upstream for a provider with `PUT /v1/settings` (`router.upstreams.<n>`: `protocol`, `base_url` and
+`oauth.preset`), which takes effect without a restart.
 
 ### `GET /v1/models/upstreams/{place}/login`
 

@@ -32,6 +32,12 @@ struct Provider {
     /// The code, verifier and redirect URI of each code exchanged.
     exchanged: Vec<(String, String, String)>,
     upstream_auth: Vec<String>,
+    /// Whether the last token request had a JSON body (otherwise a form).
+    json_tokens: bool,
+    /// The state of the last code exchange, if the request had one.
+    exchanged_state: Option<String>,
+    /// The headers (lower case names) and body of each request to `/v1/messages`.
+    messages: Vec<(HashMap<String, String>, serde_json::Value)>,
 }
 
 pub(crate) struct FakeProvider {
@@ -85,11 +91,21 @@ async fn device(
     .into_response()
 }
 
-async fn token(
-    State(state): Shared,
-    axum::Form(form): axum::Form<HashMap<String, String>>,
-) -> Response {
+async fn token(State(state): Shared, headers: HeaderMap, body: axum::body::Bytes) -> Response {
     let mut provider = state.lock().unwrap();
+    let json = headers
+        .get("content-type")
+        .is_some_and(|v| v.to_str().unwrap().starts_with("application/json"));
+    let form: HashMap<String, String> = if json {
+        serde_json::from_slice(&body).unwrap()
+    } else {
+        reqwest::Url::parse(&format!("http://x/?{}", String::from_utf8_lossy(&body)))
+            .unwrap()
+            .query_pairs()
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect()
+    };
+    provider.json_tokens = json;
     assert_eq!(form["client_id"], "moebius-test");
     match form["grant_type"].as_str() {
         "refresh_token" => {
@@ -112,6 +128,7 @@ async fn token(
             tokens(&mut provider)
         }
         "authorization_code" => {
+            provider.exchanged_state = form.get("state").cloned();
             provider.exchanged.push((
                 form["code"].clone(),
                 form["code_verifier"].clone(),
@@ -136,6 +153,26 @@ async fn models(State(state): Shared, headers: HeaderMap) -> Response {
     axum::Json(json!({"data": [{"id": "subscribed-a"}, {"id": "subscribed-b"}]})).into_response()
 }
 
+/// An upstream of either protocol: answers a message, noting how it was asked.
+async fn message(
+    State(state): Shared,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<serde_json::Value>,
+) -> Response {
+    let mut provider = state.lock().unwrap();
+    let headers = headers
+        .iter()
+        .map(|(name, value)| (name.to_string(), value.to_str().unwrap().to_string()))
+        .collect();
+    provider.messages.push((headers, body));
+    axum::Json(json!({
+        "type": "message", "model": "subscribed-a", "role": "assistant",
+        "content": [{"type": "text", "text": "Hi"}],
+        "usage": {"input_tokens": 3, "output_tokens": 2},
+    }))
+    .into_response()
+}
+
 impl FakeProvider {
     /// A provider whose tokens live `lifetime` seconds.
     pub(crate) async fn start(lifetime: u64) -> Self {
@@ -150,6 +187,8 @@ impl FakeProvider {
             .route(DEVICE_PATH, post(device))
             .route(TOKEN_PATH, post(token))
             .route("/models", get(models))
+            .route("/v1/models", get(models))
+            .route("/v1/messages", post(message))
             .with_state(state.clone());
         tokio::spawn(async move { axum::serve(listener, app).await });
         Self { url, state }
@@ -208,6 +247,19 @@ impl FakeProvider {
         self.with(|p| p.exchanged.clone())
     }
 
+    pub(crate) fn json_tokens(&self) -> bool {
+        self.with(|p| p.json_tokens)
+    }
+
+    pub(crate) fn exchanged_state(&self) -> Option<String> {
+        self.with(|p| p.exchanged_state.clone())
+    }
+
+    /// The headers and body of each request to `/v1/messages`.
+    pub(crate) fn messages(&self) -> Vec<(HashMap<String, String>, serde_json::Value)> {
+        self.with(|p| p.messages.clone())
+    }
+
     pub(crate) fn upstream_auth(&self) -> Vec<String> {
         self.with(|p| p.upstream_auth.clone())
     }
@@ -216,6 +268,7 @@ impl FakeProvider {
 /// The `oauth` table of an upstream that logs in at `url` with `flow`.
 pub(crate) fn config(url: &str, flow: Flow) -> OAuthConfig {
     OAuthConfig {
+        preset: None,
         flow,
         client_id: "moebius-test".into(),
         token_url: format!("{url}{TOKEN_PATH}"),
@@ -226,6 +279,35 @@ pub(crate) fn config(url: &str, flow: Flow) -> OAuthConfig {
         redirect_path: None,
         secret: "provider-login".into(),
     }
+}
+
+/// The `oauth` table of an upstream that names `preset` and sends the logins to the fake provider, as a person who
+/// wrote `preset` and the URLs would have it; any free loopback port.
+pub(crate) fn preset_config(url: &str, preset: &str) -> OAuthConfig {
+    toml::from_str(&format!(
+        "preset = \"{preset}\"\nclient_id = \"moebius-test\"\ntoken_url = \"{url}{TOKEN_PATH}\"\n\
+         authorize_url = \"{url}/authorize\"\nredirect_port = 0\n"
+    ))
+    .unwrap()
+}
+
+/// A router with one upstream of `protocol` that logs in at `provider` with the preset `preset`; its secrets are kept
+/// in the directory returned.
+pub(crate) fn router_with_preset(
+    provider: &FakeProvider,
+    preset: &str,
+    protocol: Protocol,
+) -> (Arc<Router>, tempfile::TempDir) {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Arc::new(Store::in_memory(dir.path()).unwrap());
+    let upstreams = vec![Upstream {
+        protocol,
+        base_url: provider.url.clone(),
+        api_key: None,
+        oauth: Some(preset_config(&provider.url, preset)),
+    }];
+    let router = Router::new(store, upstreams).with_secrets(Secrets::new(dir.path()));
+    (Arc::new(router), dir)
 }
 
 /// A router whose first upstream logs in at `provider` with `flow`, and whose second has a key; its secrets are kept

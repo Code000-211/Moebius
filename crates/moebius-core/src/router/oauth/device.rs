@@ -84,7 +84,7 @@ async fn poll(
         }
         let asked = ask_tokens(
             client,
-            &oauth.token_url,
+            oauth,
             &[
                 ("grant_type", DEVICE_GRANT),
                 ("device_code", device_code),

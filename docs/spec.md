@@ -27,7 +27,12 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
 - The **router** as every harness's only model provider, with provider API keys and local OpenAI- or Anthropic-compatible
   servers (such as Radiance) upstream; budgets in tokens. An upstream may log in with OAuth instead of a key (a device
   code, or an authorization code with PKCE and a loopback redirect), started from the Models page after the person
-  confirms a warning that using a subscription through a third-party tool may break the provider's terms.
+  confirms a warning that using a subscription through a third-party tool may break the provider's terms. Two
+  providers are built in as `preset`s, with the client ids Pi uses (Claude Code's and the Codex CLI's): Anthropic
+  (Claude Pro/Max), whose requests carry the headers and system prefix its token needs, and OpenAI (ChatGPT), whose
+  login works but whose requests fail with a clear `502` until the router speaks the Codex Responses protocol. "Log in
+  to a provider" on the Models page adds the upstream and logs in; a code login can be finished by pasting the code or
+  the address the browser ended on.
 - The **MCP gateway**, skills and agents managed in the desktop app and kept in the harness configuration repository.
 - The **default workflow** (section 6), with Luau scripts behind the columns and repository overrides in `.moebius/`.
 - **Rules** checked on every tool call: fixed patterns and the teacher model; nothing waits for a person.

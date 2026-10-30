@@ -188,6 +188,26 @@ impl Router {
             if rename {
                 request["model"] = Value::String((*model).clone());
             }
+            let preset = upstream.oauth.as_ref().and_then(|oauth| oauth.preset());
+            if let Some(needs) = upstream.oauth.as_ref().and_then(|oauth| oauth.needs()) {
+                failure = error(
+                    protocol,
+                    StatusCode::BAD_GATEWAY,
+                    "api_error",
+                    &format!(
+                        "this upstream's subscription needs {needs}, which Moebius does not speak yet"
+                    ),
+                );
+                continue;
+            }
+            let body = match preset {
+                Some(preset) => {
+                    let mut shaped = request.clone();
+                    preset.shape(&mut shaped);
+                    shaped.to_string()
+                }
+                None => request.to_string(),
+            };
             let mut outgoing = self
                 .client
                 .post(format!(
@@ -196,11 +216,21 @@ impl Router {
                     path
                 ))
                 .header(header::CONTENT_TYPE, "application/json")
-                .body(request.to_string());
+                .body(body);
             for name in ["anthropic-version", "anthropic-beta"] {
+                // A preset adds its features to the harness's.
+                if name == "anthropic-beta" && preset.is_some() {
+                    continue;
+                }
                 if let Some(value) = headers.get(name) {
                     outgoing = outgoing.header(name, value);
                 }
+            }
+            if let Some(preset) = preset {
+                let beta = headers
+                    .get("anthropic-beta")
+                    .and_then(|value| value.to_str().ok());
+                outgoing = preset.dress(outgoing, beta);
             }
             let outgoing = match self.authenticate(upstream, outgoing).await {
                 Ok(outgoing) => outgoing,

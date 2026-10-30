@@ -288,3 +288,56 @@ async fn the_client_reads_and_makes_the_webhook_secrets_of_the_forges_a_real_ser
     );
     assert!(client.make_webhook_secret("github").await.is_err());
 }
+
+#[tokio::test]
+async fn choosing_a_provider_adds_its_upstream_live_and_a_pasted_address_of_another_login_is_refused()
+ {
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, server) = start_with(dir.path(), "").await;
+    let client = Client::new(settings.clone());
+    let mut app = App::with_snapshot(Snapshot::default());
+    let _ = app.update(Message::Checked(Ok((
+        settings.clone(),
+        client.snapshot().await.unwrap(),
+    ))));
+    let task = app.update(Message::Select(Page::Models));
+    settle(&mut app, task).await;
+    assert!(shown(
+        &app,
+        "No upstream is configured; every model request fails."
+    ));
+
+    let _ = app.update(Message::Setup(setup::Message::ChooseProvider));
+    assert!(shown(&app, "Anthropic (Claude Pro/Max)"));
+    let task = app.update(Message::Setup(setup::Message::PickProvider(
+        "anthropic".into(),
+    )));
+    settle(&mut app, task).await;
+    // The upstream is in the file and in the running router, and its row asks for the confirmation.
+    let text = std::fs::read_to_string(dir.path().join("moebius.toml")).unwrap();
+    assert!(text.contains("preset = \"anthropic\""), "{text}");
+    assert_eq!(server.live.get().upstreams.len(), 1);
+    assert!(shown(&app, "I understand, log in"));
+    assert!(shown(
+        &app,
+        "Logs in with OAuth: the provider's page in your browser. Not logged in."
+    ));
+    assert!(!shown(&app, "Anthropic (Claude Pro/Max)"));
+
+    // A login that waits refuses the answer of another login, with the server's words.
+    let login = client.start_login(0).await.unwrap();
+    assert_eq!(login.state, "waiting");
+    let _ = app.update(Message::Setup(setup::Message::LogIn(0)));
+    let _ = app.update(Message::Setup(setup::Message::LoginAnswer(0, Ok(login))));
+    let _ = app.update(Message::Setup(setup::Message::PasteEdit(
+        0,
+        "http://localhost:1/callback?code=c&state=other".into(),
+    )));
+    let task = app.update(Message::Setup(setup::Message::FinishLogIn(0)));
+    settle(&mut app, task).await;
+    assert!(shown(&app, "Finish login"));
+    assert!(shown(
+        &app,
+        "That is not the answer to this login: its state differs. Log in again, or paste the address of the login that is waiting."
+    ));
+}

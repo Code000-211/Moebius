@@ -175,8 +175,9 @@ without a match the router answers 502. Without any upstream, every model reques
 
 #### `[router.upstreams.oauth]`
 
-An upstream that logs in with OAuth 2.0 instead of a key, such as a provider's subscription. Nothing of any provider is
-built in: the client id and the URLs are the provider's, written here. Setting `oauth` together with `api_key_env` or
+An upstream that logs in with OAuth 2.0 instead of a key, such as a provider's subscription. `preset` names a provider
+that is built in and fills in every key that is not written; for any other provider the client id and the URLs are
+written here. Setting `oauth` together with `api_key_env` or
 `api_key_secret` refuses the file. The login is started from the Models page of the desktop app (or
 `POST /v1/models/upstreams/{place}/login`, see the [desktop API](desktop-api.md)) after the person confirms that using a
 subscription through a third-party tool may break the provider's terms; `moebius doctor` repeats the warning. A server
@@ -184,15 +185,34 @@ whose upstream is not logged in starts, and the router answers its requests with
 
 | Key | Type | Default | Meaning and validation |
 |---|---|---|---|
-| `router.upstreams.oauth.flow` | string | required | `device`: the device authorization grant (RFC 8628), a code the person enters at the provider. `code`: an authorization code with PKCE (RFC 7636), the provider's page opened in the browser and the browser sent back to `http://127.0.0.1:<port><path>`. |
-| `router.upstreams.oauth.client_id` | string | required | The OAuth client id; not empty. |
-| `router.upstreams.oauth.token_url` | string | required | The `http` or `https` URL where codes and refresh tokens are exchanged for tokens. |
+| `router.upstreams.oauth.preset` | string | none | A built-in provider: `anthropic` or `openai` (the table below). It fills in `flow`, `client_id`, `token_url`, `authorize_url`, `scopes`, `redirect_port`, `redirect_path` and `secret` (`oauth-<preset>`), and decides what the router sends with the token (see [router](router.md#oauth-requests-per-provider)). A key that is written wins. An unknown name refuses the file. Without a preset `flow`, `client_id`, `token_url` and `secret` are required. |
+| `router.upstreams.oauth.flow` | string | required without `preset` | `device`: the device authorization grant (RFC 8628), a code the person enters at the provider. `code`: an authorization code with PKCE (RFC 7636), the provider's page opened in the browser and the browser sent back to `http://127.0.0.1:<port><path>`. |
+| `router.upstreams.oauth.client_id` | string | required without `preset` | The OAuth client id; not empty. |
+| `router.upstreams.oauth.token_url` | string | required without `preset` | The `http` or `https` URL where codes and refresh tokens are exchanged for tokens. |
 | `router.upstreams.oauth.device_url` | string | none | The device authorization URL; required by `device`. |
 | `router.upstreams.oauth.authorize_url` | string | none | The provider's authorization page; required by `code`. |
 | `router.upstreams.oauth.scopes` | array of strings | `[]` | The scopes asked for, sent space-separated as `scope`; none is sent when empty. |
 | `router.upstreams.oauth.redirect_port` | integer | any free port | For `code`: the loopback port the browser is sent back to, for a provider that registers it. |
 | `router.upstreams.oauth.redirect_path` | string | `/callback` | For `code`: the path the browser is sent back to; it starts with `/`. |
-| `router.upstreams.oauth.secret` | string | required | The name the refresh token is kept under in `secrets.toml` (see [Secrets](#secrets)); letters, digits, `-` and `_`. |
+| `router.upstreams.oauth.secret` | string | required without `preset` | The name the refresh token is kept under in `secrets.toml` (see [Secrets](#secrets)); letters, digits, `-` and `_`. |
+
+The presets, as Pi (commit `f09d01b85e0384647fcab6779d35ab9dabe04be3` of `badlogic/pi-mono`) does. The client ids are
+those of Claude Code and of the Codex CLI, another app's: the provider may block an account that logs in with them, and
+the Models page says so before the login. They are public values, not secrets. Write `protocol` and `base_url` of the
+upstream as in the table (`GET /v1/models/providers` lists them).
+
+| `preset` | Subscription | `protocol` and `base_url` | Login |
+|---|---|---|---|
+| `anthropic` | Claude Pro/Max | `anthropic`, `https://api.anthropic.com` | `code` at `https://claude.ai/oauth/authorize`, tokens at `https://platform.claude.com/v1/oauth/token` (JSON body), client id `9d1c250a-e61b-44d9-88ed-5944d1962f5e`, redirect `http://localhost:53692/callback` (another free port when that one is taken), the scopes `org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload`, and `code=true` on the authorization URL. |
+| `openai` | ChatGPT Plus/Pro (Codex) | `openai`, `https://chatgpt.com/backend-api` | `code` at `https://auth.openai.com/oauth/authorize`, tokens at `https://auth.openai.com/oauth/token`, client id `app_EMoamEEZ73f0CkXaXp7hrann`, redirect `http://localhost:1455/auth/callback` (without a listener, so that only a pasted address finishes the login, when that port is taken), the scopes `openid profile email offline_access`, and `id_token_add_organizations=true`, `codex_cli_simplified_flow=true`, `originator=moebius`. Its requests are not served yet: see [router](router.md#oauth-requests-per-provider). |
+
+```toml
+[[router.upstreams]]
+protocol = "anthropic"
+base_url = "https://api.anthropic.com"
+[router.upstreams.oauth]
+preset = "anthropic"
+```
 
 ### `[router.classes]`
 

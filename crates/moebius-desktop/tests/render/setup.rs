@@ -811,3 +811,204 @@ fn saving_an_upstream_that_logs_in_with_oauth_keeps_its_oauth_table() {
             .is_none()
     );
 }
+
+/// The providers the server has built in, as `GET /v1/models/providers` lists them.
+fn providers() -> Vec<client::Provider> {
+    serde_json::from_value(json!([
+        {"name": "anthropic", "title": "Anthropic (Claude Pro/Max)", "protocol": "anthropic",
+         "base_url": "https://api.anthropic.com", "needs": null},
+        {"name": "openai", "title": "OpenAI (ChatGPT Plus/Pro)", "protocol": "openai",
+         "base_url": "https://chatgpt.com/backend-api",
+         "needs": "the Codex Responses protocol of the ChatGPT backend"},
+    ]))
+    .unwrap()
+}
+
+/// The models page with the providers read.
+fn provider_app() -> App {
+    let mut app = setup_app(Page::Models);
+    let _ = app.update(Message::Setup(setup::Message::Providers(Ok(providers()))));
+    app
+}
+
+#[test]
+fn log_in_to_a_provider_offers_the_built_in_providers_and_other() {
+    let mut app = provider_app();
+    assert!(!shows(&app, "Anthropic (Claude Pro/Max)"));
+    assert!(
+        pressed(&app, "Log in to a provider")
+            .unwrap()
+            .contains("ChooseProvider")
+    );
+    let _ = app.update(Message::Setup(setup::Message::ChooseProvider));
+    draw_sized(
+        &app,
+        "models-provider-choice",
+        &[
+            "Anthropic (Claude Pro/Max)",
+            "anthropic https://api.anthropic.com",
+            "OpenAI (ChatGPT Plus/Pro)",
+            "Other",
+            "Any OAuth provider: its client id and addresses.",
+        ],
+        Size::new(1440.0, 1500.0),
+    );
+    assert!(shows(
+        &app,
+        "Logs in, but its requests need the Codex Responses protocol of the ChatGPT backend, which is not served yet."
+    ));
+    // The first "Log in" is Anthropic's.
+    assert!(
+        pressed(&app, "Log in")
+            .unwrap()
+            .contains("PickProvider(\"anthropic\")")
+    );
+    let _ = app.update(Message::Setup(setup::Message::CancelProvider));
+    assert!(!shows(&app, "Anthropic (Claude Pro/Max)"));
+}
+
+#[test]
+fn other_is_the_form_of_an_oauth_table_and_says_what_is_missing() {
+    let mut app = provider_app();
+    let _ = app.update(Message::Setup(setup::Message::ChooseProvider));
+    let _ = app.update(Message::Setup(setup::Message::PickProvider("other".into())));
+    draw_sized(
+        &app,
+        "models-provider-other",
+        &[
+            "Protocol",
+            "Base URL",
+            "Flow",
+            "Client ID",
+            "Authorize URL",
+            "Token URL",
+            "Scopes, separated by spaces",
+            "Add and continue",
+        ],
+        Size::new(1440.0, 1500.0),
+    );
+    // Without settings nothing is sent; the form says what is empty.
+    let _ = app.update(Message::Setup(setup::Message::AddOther));
+    assert!(shows(&app, "Base URL is empty."));
+    for (field, text) in [
+        (setup::OtherField::BaseUrl, "https://api.example.com"),
+        (setup::OtherField::ClientId, "moebius"),
+        (
+            setup::OtherField::Url,
+            "https://login.example.com/authorize",
+        ),
+    ] {
+        let _ = app.update(Message::Setup(setup::Message::OtherEdit(
+            field,
+            text.into(),
+        )));
+    }
+    let _ = app.update(Message::Setup(setup::Message::AddOther));
+    assert!(shows(&app, "Token URL is empty."));
+    let _ = app.update(Message::Setup(setup::Message::OtherFlow("device".into())));
+    assert!(shows(&app, "Device URL"));
+}
+
+/// The answers of a server whose second upstream logs in with the OpenAI preset.
+fn preset_answers() -> (serde_json::Value, serde_json::Value) {
+    let mut models = models_answer();
+    models["upstreams"][1] = json!({
+        "protocol": "openai", "base_url": "https://chatgpt.com/backend-api", "api_key_set": false,
+        "oauth": {"flow": "code", "logged_in": false, "preset": "openai",
+                  "needs": "the Codex Responses protocol of the ChatGPT backend",
+                  "warning": "Moebius logs in with the client id of the Codex CLI, which is another app's, the way Pi does, and OpenAI may block an account that logs in like this. Using a subscription through a third-party tool may break the provider's terms of service."},
+    });
+    let server = settings_answer(
+        json!({"router.upstreams": [
+            {"protocol": "openai", "base_url": "http://127.0.0.1:8080"},
+            {"protocol": "openai", "base_url": "https://chatgpt.com/backend-api",
+             "oauth": {"preset": "openai", "flow": "code", "client_id": "app_x", "secret": "oauth-openai",
+                       "token_url": "https://auth.openai.com/oauth/token"}},
+        ]}),
+        json!({}),
+    );
+    (models, server)
+}
+
+fn code_login(state: &str, message: &str) -> client::Login {
+    serde_json::from_value(json!({
+        "state": state, "flow": "code", "user_code": null, "verification_uri": null,
+        "verification_uri_complete": null,
+        "authorize_url": "https://auth.openai.com/oauth/authorize?client_id=app_x", "message": message,
+    }))
+    .unwrap()
+}
+
+#[test]
+fn a_provider_that_was_added_asks_for_the_warning_then_waits_for_the_pasted_address() {
+    let (models, server) = preset_answers();
+    let mut app = setup_with(Page::Models, models, server);
+    // What the app does once the server has added the upstream: its row asks for the confirmation.
+    let saved =
+        serde_json::from_value(json!({"restart_needed": false, "restart_keys": []})).unwrap();
+    let _ = app.update(Message::Setup(setup::Message::ProviderAdded(1, Ok(saved))));
+    draw_sized(
+        &app,
+        "models-provider-warning",
+        &[
+            "Moebius logs in with the client id of the Codex CLI, which is another app's, the way Pi does, and OpenAI may block an account that logs in like this. Using a subscription through a third-party tool may break the provider's terms of service.",
+            "Requests to this upstream fail: they need the Codex Responses protocol of the ChatGPT backend, which is not served yet.",
+            "I understand, log in",
+        ],
+        Size::new(1440.0, 1500.0),
+    );
+    assert!(
+        pressed(&app, "I understand, log in")
+            .unwrap()
+            .contains("ConfirmLogIn(1)")
+    );
+
+    // The browser was opened by the start; here the server's answer is given directly.
+    let _ = app.update(Message::Setup(setup::Message::LoginAnswer(
+        1,
+        Ok(code_login(
+            "waiting",
+            "Log in at the provider's page in the browser.",
+        )),
+    )));
+    draw_sized(
+        &app,
+        "models-oauth-paste",
+        &[
+            "The provider's page opened in your browser. Log in there.",
+            "Paste the code or the address you ended on",
+            "Finish login",
+            "Waiting for the login…",
+        ],
+        Size::new(1440.0, 1500.0),
+    );
+    // Nothing is finished until something is pasted.
+    assert!(pressed(&app, "Finish login").unwrap().contains("[]"));
+    let _ = app.update(Message::Setup(setup::Message::PasteEdit(
+        1,
+        "http://localhost:1455/auth/callback?code=c&state=s".into(),
+    )));
+    assert!(
+        pressed(&app, "Finish login")
+            .unwrap()
+            .contains("FinishLogIn(1)")
+    );
+    // The server refuses what was pasted: the field stays and says why.
+    let refused = client::ClientError::Server {
+        status: 422,
+        message: "That is not the answer to this login: its state differs.".into(),
+    };
+    let _ = app.update(Message::Setup(setup::Message::LoginPasted(1, Err(refused))));
+    assert!(shows(
+        &app,
+        "That is not the answer to this login: its state differs."
+    ));
+    assert!(shows(&app, "Finish login"));
+    // Once it holds, the field is gone.
+    let _ = app.update(Message::Setup(setup::Message::LoginPasted(
+        1,
+        Ok(code_login("logged_in", "Logged in.")),
+    )));
+    assert!(shows(&app, "Logged in."));
+    assert!(!shows(&app, "Finish login"));
+}

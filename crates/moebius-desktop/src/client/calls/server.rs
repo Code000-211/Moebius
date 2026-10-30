@@ -2,8 +2,8 @@
 //! restart.
 
 use crate::client::{
-    Available, Client, ClientError, Health, Login, Models, Plugins, SavedSettings, ServerSettings,
-    Start, Webhook,
+    Available, Client, ClientError, Health, Login, Models, Plugins, Provider, SavedSettings,
+    ServerSettings, Start, Webhook,
 };
 
 impl Client {
@@ -31,6 +31,20 @@ impl Client {
         self.post(
             &format!("/v1/models/upstreams/{place}/login"),
             serde_json::json!({ "accept_terms": true }),
+        )
+        .await
+    }
+
+    /// The providers the server has built in, whose subscription an upstream can log in to.
+    pub async fn providers(&self) -> Result<Vec<Provider>, ClientError> {
+        self.get("/v1/models/providers").await
+    }
+
+    /// Finishes the waiting login of the upstream at `place` with the code, or the address the browser ended on.
+    pub async fn paste_login(&self, place: usize, pasted: &str) -> Result<Login, ClientError> {
+        self.post(
+            &format!("/v1/models/upstreams/{place}/login/code"),
+            serde_json::json!({ "pasted": pasted }),
         )
         .await
     }

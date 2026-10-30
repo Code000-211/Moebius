@@ -74,6 +74,16 @@ the server in WSL (see [On Windows](#on-windows)). Every key named here is in th
    provider's terms; the page asks you to confirm that you have read the warning before the login starts, and
    `moebius doctor` repeats it.
 
+   **Log in from the app.** The quickest way is "Log in to a provider" on the Models page: choose Anthropic (a Claude
+   Pro/Max subscription) or OpenAI (ChatGPT), or "Other" for a provider you give the client id and addresses of. The app
+   adds the upstream to `moebius.toml` (live, no restart), shows a warning (Moebius uses the client id of Claude Code or
+   of the Codex CLI, as Pi does, and the provider may block the account) and, once you confirm it, opens the provider's
+   page in your browser. When the browser ends on this machine's `localhost` address the login finishes by itself. When
+   it cannot (the server runs elsewhere, over SSH, or the provider shows a code), copy the code or the address from the
+   address bar into "Paste the code or the address you ended on" and press "Finish login". With `preset = "anthropic"`
+   or `"openai"` in the `oauth` table the same works from the file. A ChatGPT login works, but the router cannot send
+   requests with it yet; Anthropic works fully.
+
 3. Run it as a service, so that it starts with you and starts again after a failure. Stop the `moebius serve` of the
    step before first (Ctrl+C).
 

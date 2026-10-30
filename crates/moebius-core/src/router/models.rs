@@ -127,6 +127,9 @@ impl Router {
 
     /// The ids of the models one upstream lists, or a short message saying why not.
     pub(super) async fn list_models(&self, upstream: &Upstream) -> Result<Vec<String>, String> {
+        if let Some(needs) = upstream.oauth.as_ref().and_then(|oauth| oauth.needs()) {
+            return Err(format!("needs {needs}"));
+        }
         let base = upstream.base_url.trim_end_matches('/');
         let request = match upstream.protocol {
             Protocol::OpenAi => self.client.get(format!("{base}/models")),
@@ -138,6 +141,10 @@ impl Router {
         }
         .timeout(MODELS_TIMEOUT);
         let request = self.authenticate(upstream, request).await?;
+        let request = match upstream.oauth.as_ref().and_then(|oauth| oauth.preset()) {
+            Some(preset) => preset.dress(request, None),
+            None => request,
+        };
         // The messages are fixed words, so that neither the key nor the address can be in them.
         let response = request.send().await.map_err(|e| {
             if e.is_timeout() {

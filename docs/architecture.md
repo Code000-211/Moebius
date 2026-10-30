@@ -412,6 +412,9 @@ At the top:
 | `router/oauth/mod.rs` | The OAuth login of an upstream: its `oauth` table, the warning confirmed before a login, the access token refreshed before it expires and the refresh token kept in `secrets.toml`. |
 | `router/oauth/device.rs` | The device authorization grant: the code the person enters at the provider, and the token URL polled until it is confirmed. |
 | `router/oauth/code.rs` | An authorization code with PKCE, the browser sent back to a loopback listener. |
+| `router/oauth/config.rs` | The `oauth` table as configured, filled in from its `preset`, and the warning confirmed before a login. |
+| `router/oauth/preset.rs` | The built-in providers (Anthropic, OpenAI): client ids, URLs, and what their requests need (headers, system prefix, or a protocol the router lacks). |
+| `router/oauth/flows.rs` | Tests of the presets against a fake provider. |
 | `router/oauth/testing.rs` | The fake OAuth provider and upstream the tests of the logins share. |
 
 `store/`, the records:
@@ -704,6 +707,7 @@ At the top:
 | `screens/decision_model.rs` | The Decision model page: what was recorded of each kind of decision, the exports, shadowing and takeovers. |
 | `screens/setup/mod.rs`, `screens/setup/update.rs`, `screens/setup/view.rs` | The Setup pages (Models, Plugins and Settings, which edit `moebius.toml` through the API), how a message changes them, and how they are drawn. |
 | `screens/setup/login.rs` | The OAuth login of an upstream on the Models page: the warning to confirm, the code or the browser, and whether the login holds. |
+| `screens/setup/provider.rs` | "Log in to a provider" on the Models page: the built-in providers and the form of an `oauth` table, adding the upstream through the settings API. |
 | `screens/setup/fields.rs`, `screens/setup/forms.rs`, `screens/setup/inputs.rs` | The keys of `moebius.toml` as inputs, the forms made of them with what a save sends, and how each input is drawn. |
 | `screens/ports/mod.rs` | The Ports page's state: detected ports, forwards (made at once for a port that opens, by hand, local port changed), the offers, what is remembered. |
 | `screens/ports/update.rs` | How a message changes the Ports page: forms, stopping, opening the browser, copying an address. |

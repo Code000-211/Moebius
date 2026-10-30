@@ -17,6 +17,7 @@ use crate::widgets::page;
 
 use super::inputs::{class_row, field_view, optional_box, upstream_row};
 use super::login::login_view;
+use super::provider::panel_view;
 use super::{Message, Notice, Owner, Setup};
 
 /// The amber line that says the server has to restart for some keys to be used, with the button that restarts it.
@@ -181,7 +182,12 @@ impl Setup {
             column(forms.upstreams.iter().enumerate().map(|(place, upstream)| {
                 let oauth = upstream.origin.and_then(|origin| {
                     let oauth = models.upstreams.get(origin)?.oauth.as_ref()?;
-                    Some(login_view(origin, oauth, self.login(origin)))
+                    Some(login_view(
+                        origin,
+                        oauth,
+                        self.login(origin),
+                        self.pastes.get(&origin),
+                    ))
                 });
                 column![upstream_row(place, upstream, secrets)]
                     .push(oauth)
@@ -191,17 +197,27 @@ impl Setup {
             .spacing(theme::SPACE_12)
             .into()
         };
-        let upstreams = page::boxed(
-            "Upstreams",
-            column![
-                upstreams,
+        let mut upstreams = column![
+            upstreams,
+            row![
                 page::white_button(
                     "Add upstream",
                     Some(AppMessage::Setup(Message::AddUpstream))
                 ),
+                page::white_button(
+                    "Log in to a provider",
+                    Some(AppMessage::Setup(Message::ChooseProvider))
+                ),
             ]
             .spacing(theme::SPACE_12),
-        );
+        ]
+        .spacing(theme::SPACE_12);
+        if let Some(panel) = &self.provider {
+            upstreams = upstreams
+                .push(page::rule())
+                .push(panel_view(&self.providers, panel));
+        }
+        let upstreams = page::boxed("Upstreams", upstreams);
         let classes = page::boxed(
             "Model classes",
             column![

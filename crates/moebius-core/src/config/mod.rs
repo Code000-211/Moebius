@@ -541,6 +541,19 @@ mod tests {
     }
 
     #[test]
+    fn an_oauth_table_may_name_a_preset_that_fills_in_what_it_leaves_out() {
+        let text = "[[router.upstreams]]\nprotocol = \"anthropic\"\nbase_url = \"https://api.anthropic.com\"\n\
+                    [router.upstreams.oauth]\npreset = \"anthropic\"\n";
+        let c = parse(text).unwrap();
+        let login = c.upstreams[0].oauth.as_ref().unwrap();
+        assert_eq!(login.preset.as_deref(), Some("anthropic"));
+        assert_eq!(login.flow, crate::router::Flow::Code);
+        assert_eq!(login.secret, "oauth-anthropic");
+        let other = parse(&text.replace("\"anthropic\"\n", "\"nobody\"\n")).unwrap_err();
+        assert!(other.to_string().contains("not a provider"), "{other}");
+    }
+
+    #[test]
     fn model_classes_are_read_and_checked() {
         let c = parse(
             "[router.classes]\nfast = [\"qwen-local\", { model = \"haiku\", day_tokens = 9 }]\nstrong = [\"big\"]\n",

@@ -193,5 +193,8 @@ with a secret that only the processes it starts know, and keeps no password.
   the heading of the server's rules.
 - Setup pages (Models, Plugins, Settings) are white boxes of labelled inputs and tables under the header; a banner in
   the amber fill says that the server has to restart, with the restart as its primary button. A key is never shown,
-  only whether one is stored.
+  only whether one is stored. "Log in to a provider" sits beside "Add upstream": a panel in the box lists the built-in
+  providers (title, one line, a white "Log in" button) and "Other", whose form is the labelled inputs of an `oauth`
+  table; the new upstream's row then carries the amber warning, "I understand, log in", and while the login waits a
+  mono input "Paste the code or the address you ended on" with the primary "Finish login".
 - Budgets and usage are counted in tokens, never in money.

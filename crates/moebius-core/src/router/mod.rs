@@ -58,7 +58,9 @@ pub use grants::{Grant, token};
 pub use models::{AvailableClass, AvailableModel, AvailableModels, UpstreamError};
 #[cfg(test)]
 pub(crate) use oauth::testing as oauth_testing;
-pub use oauth::{Flow, Login, LoginError, LoginState, OAuthConfig, TERMS_WARNING};
+pub use oauth::{
+    Flow, Login, LoginError, LoginState, OAuthConfig, Provider, TERMS_WARNING, providers,
+};
 
 /// The protocol an endpoint or an upstream speaks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -11,7 +11,7 @@ use serde::Serialize;
 use crate::board::AgentInfo;
 use crate::config::Config;
 use crate::decide::Decisions;
-use crate::router::{AvailableModels, Flow, Protocol, TERMS_WARNING};
+use crate::router::{AvailableModels, Flow, Protocol};
 
 /// `url` without the user name and password in front of its host, if it has any.
 pub fn without_credentials(url: &str) -> String {
@@ -44,7 +44,11 @@ pub struct OAuthView {
     /// Whether a refresh token is stored; `GET /v1/models/upstreams/{place}/login` tells whether it holds.
     pub logged_in: bool,
     /// What the person confirms before a login starts.
-    pub warning: &'static str,
+    pub warning: String,
+    /// The built-in provider (`preset`) the login was filled in from, if any.
+    pub preset: Option<String>,
+    /// What the upstream needs that the router does not speak yet, if anything: its requests fail.
+    pub needs: Option<&'static str>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -84,7 +88,9 @@ pub fn models(config: &Config, agents: Vec<AgentInfo>, secrets: &[String]) -> Mo
                 oauth: upstream.oauth.as_ref().map(|oauth| OAuthView {
                     flow: oauth.flow,
                     logged_in: secrets.contains(&oauth.secret),
-                    warning: TERMS_WARNING,
+                    warning: oauth.warning(),
+                    preset: oauth.preset.clone(),
+                    needs: oauth.needs(),
                 }),
             })
             .collect(),
@@ -327,11 +333,12 @@ pub async fn start(
     let warnings = config
         .upstreams
         .iter()
-        .filter(|upstream| upstream.oauth.is_some())
-        .map(|upstream| {
+        .filter_map(|upstream| Some((upstream, upstream.oauth.as_ref()?)))
+        .map(|(upstream, oauth)| {
             format!(
-                "{} logs in with OAuth. {TERMS_WARNING}",
-                without_credentials(&upstream.base_url)
+                "{} logs in with OAuth. {}",
+                without_credentials(&upstream.base_url),
+                oauth.warning()
             )
         })
         .collect();
@@ -345,6 +352,7 @@ pub async fn start(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::router::TERMS_WARNING;
 
     #[test]
     fn credentials_in_a_url_are_removed() {
@@ -380,8 +388,8 @@ mod tests {
         let models = models(&config, vec![], &["example-login".to_string()]);
         let oauth = models.upstreams[0].oauth.as_ref().unwrap();
         assert_eq!(
-            (oauth.flow, oauth.logged_in, oauth.warning),
-            (Flow::Code, true, TERMS_WARNING)
+            (oauth.flow, oauth.logged_in, oauth.warning.clone()),
+            (Flow::Code, true, TERMS_WARNING.to_string())
         );
         assert!(!models.upstreams[0].api_key_set);
         let start = start(&config, AvailableModels::default(), &[], 0).await;
@@ -391,5 +399,32 @@ mod tests {
                 "https://api.example.com logs in with OAuth. {TERMS_WARNING}"
             )]
         );
+    }
+
+    #[test]
+    fn a_built_in_provider_says_whose_client_id_it_uses_and_what_it_needs() {
+        let config = Config::parse(
+            "[[router.upstreams]]\nprotocol = \"openai\"\nbase_url = \"https://chatgpt.com/backend-api\"\n\
+             [router.upstreams.oauth]\npreset = \"openai\"\n\
+             [[router.upstreams]]\nprotocol = \"anthropic\"\nbase_url = \"https://api.anthropic.com\"\n\
+             [router.upstreams.oauth]\npreset = \"anthropic\"\n\
+             [pi_bolt]\nprogram = \"/nonexistent/pi-bolt\"\n",
+            Path::new("/srv"),
+            Path::new("/srv/moebius.toml"),
+        )
+        .unwrap();
+        let models = models(&config, vec![], &["oauth-anthropic".to_string()]);
+        let (openai, anthropic) = (
+            models.upstreams[0].oauth.as_ref().unwrap(),
+            models.upstreams[1].oauth.as_ref().unwrap(),
+        );
+        assert_eq!(openai.preset.as_deref(), Some("openai"));
+        assert!(openai.needs.unwrap().contains("Codex Responses"));
+        assert!(openai.warning.contains("client id of the Codex CLI"));
+        assert!(openai.warning.contains("OpenAI may block"));
+        assert!(openai.warning.ends_with(TERMS_WARNING));
+        assert!(!openai.logged_in && anthropic.logged_in);
+        assert!(anthropic.needs.is_none());
+        assert!(anthropic.warning.contains("client id of Claude Code"));
     }
 }

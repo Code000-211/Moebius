@@ -9,10 +9,17 @@
 //! name; the access token is kept in memory and refreshed before it expires. Every token is remembered by
 //! [`crate::blobs::remember_secret`], so that it is redacted wherever it would appear, and none is ever answered.
 //!
+//! A login by `code` can also end by the person pasting the code, or the address the browser ended on, to
+//! `POST /v1/models/upstreams/{place}/login/code` ([`Router::paste_login`]), for a browser that cannot reach the
+//! loopback address. `preset` names the providers that are built in (their client ids and URLs, and what their
+//! requests need).
+//!
 //! This module holds the configuration, the tokens and the state of a login; `device` and `code` are the two flows.
 
 mod code;
+mod config;
 mod device;
+mod preset;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -21,9 +28,12 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub use config::{Flow, OAuthConfig};
+pub(super) use preset::Preset;
+pub use preset::{Provider, providers};
+
 use super::{Protocol, Router, Upstream};
 use crate::blobs::{redact, remember_secret};
-use crate::config::valid_agent_name;
 use crate::server::settings::Secrets;
 
 /// What a person confirms before a login starts, and what the Models page and `moebius doctor` say of an upstream
@@ -44,83 +54,6 @@ const REFRESH_AHEAD: Duration = Duration::from_secs(60);
 
 /// How long an access token whose answer did not say is taken to live.
 const DEFAULT_LIFETIME: Duration = Duration::from_secs(3600);
-
-/// How a login is made.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Flow {
-    /// The device authorization grant: a code the person types at the provider's page.
-    Device,
-    /// An authorization code with PKCE, the browser sent back to a loopback address.
-    Code,
-}
-
-/// The `oauth` table of an upstream: how it logs in. Not set together with a key.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct OAuthConfig {
-    pub flow: Flow,
-    pub client_id: String,
-    /// Where codes and refresh tokens are exchanged for tokens.
-    pub token_url: String,
-    /// Where a device login is started; needed by `device`.
-    pub device_url: Option<String>,
-    /// The provider's page a `code` login opens in the browser.
-    pub authorize_url: Option<String>,
-    #[serde(default)]
-    pub scopes: Vec<String>,
-    /// The loopback port the browser is sent back to; any free one when not set.
-    pub redirect_port: Option<u16>,
-    /// The path the browser is sent back to; `/callback` when not set.
-    pub redirect_path: Option<String>,
-    /// The name the refresh token is kept under in `secrets.toml`.
-    pub secret: String,
-}
-
-impl OAuthConfig {
-    /// What is wrong with the table, if anything.
-    pub fn problem(&self) -> Option<String> {
-        let url = |name: &str, value: Option<&String>| match value {
-            Some(url) if url.starts_with("http://") || url.starts_with("https://") => None,
-            Some(url) => Some(format!("{name} must be an http or https URL, not {url:?}")),
-            None => Some(format!("{name} is needed by the {} flow", self.flow_name())),
-        };
-        if self.client_id.trim().is_empty() {
-            return Some("client_id must not be empty".into());
-        }
-        if !valid_agent_name(&self.secret) {
-            return Some(format!(
-                "secret: {:?} is not a name (letters, digits, - and _)",
-                self.secret
-            ));
-        }
-        if let Some(problem) = url("token_url", Some(&self.token_url)) {
-            return Some(problem);
-        }
-        if self
-            .redirect_path
-            .as_ref()
-            .is_some_and(|path| !path.starts_with('/'))
-        {
-            return Some("redirect_path must start with /".into());
-        }
-        match self.flow {
-            Flow::Device => url("device_url", self.device_url.as_ref()),
-            Flow::Code => url("authorize_url", self.authorize_url.as_ref()),
-        }
-    }
-
-    fn flow_name(&self) -> &'static str {
-        match self.flow {
-            Flow::Device => "device",
-            Flow::Code => "code",
-        }
-    }
-
-    fn scope(&self) -> Option<String> {
-        (!self.scopes.is_empty()).then(|| self.scopes.join(" "))
-    }
-}
 
 /// Where a login stands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -177,6 +110,10 @@ pub enum LoginError {
     TermsNotAccepted,
     #[error("the provider: {0}")]
     Provider(String),
+    #[error("the upstream {0} has no login waiting for a code")]
+    NotWaiting(usize),
+    #[error("{0}")]
+    BadLink(String),
 }
 
 /// An access token and when to refresh it.
@@ -189,6 +126,8 @@ struct Access {
 struct Running {
     id: u64,
     login: Login,
+    /// For a `code` login that waits: where a pasted code goes.
+    paste: Option<code::Paste>,
 }
 
 /// The tokens of the upstreams that log in with OAuth, by the name their refresh token is kept under, and the logins
@@ -237,20 +176,32 @@ async fn post_form(
     url: &str,
     form: &[(&str, &str)],
 ) -> Result<Value, Refused> {
-    let response = client
+    post(client, url, form, false).await
+}
+
+/// Posts `fields` to a token or device URL, as a form or (`json`) as a JSON object, and reads the JSON it answers, or
+/// the OAuth error.
+async fn post(
+    client: &reqwest::Client,
+    url: &str,
+    fields: &[(&str, &str)],
+    json: bool,
+) -> Result<Value, Refused> {
+    let request = client
         .post(url)
-        .header(reqwest::header::ACCEPT, "application/json")
-        .form(form)
-        .timeout(TOKEN_TIMEOUT)
-        .send()
-        .await
-        .map_err(|e| {
-            Refused::Other(if e.is_timeout() {
-                "the provider did not answer in time".into()
-            } else {
-                "the provider could not be reached".into()
-            })
-        })?;
+        .header(reqwest::header::ACCEPT, "application/json");
+    let request = if json {
+        request.json(&fields.iter().copied().collect::<HashMap<_, _>>())
+    } else {
+        request.form(fields)
+    };
+    let response = request.timeout(TOKEN_TIMEOUT).send().await.map_err(|e| {
+        Refused::Other(if e.is_timeout() {
+            "the provider did not answer in time".into()
+        } else {
+            "the provider could not be reached".into()
+        })
+    })?;
     let status = response.status();
     let body: Value = response.json().await.unwrap_or(Value::Null);
     if let Some(code) = body.get("error").and_then(Value::as_str) {
@@ -272,10 +223,10 @@ async fn post_form(
 /// Asks a token URL for tokens.
 async fn ask_tokens(
     client: &reqwest::Client,
-    url: &str,
+    oauth: &OAuthConfig,
     form: &[(&str, &str)],
 ) -> Result<Tokens, Refused> {
-    let body = post_form(client, url, form).await?;
+    let body = post(client, &oauth.token_url, form, oauth.json_tokens()).await?;
     serde_json::from_value(body)
         .map_err(|_| Refused::Other("the provider's answer has no access_token".into()))
 }
@@ -325,7 +276,7 @@ impl Router {
         remember_secret(&refresh);
         let tokens = ask_tokens(
             &self.client,
-            &oauth.token_url,
+            oauth,
             &[
                 ("grant_type", "refresh_token"),
                 ("refresh_token", &refresh),
@@ -404,28 +355,64 @@ impl Router {
             .oauth
             .next
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let (login, waiting) = match oauth.flow {
-            Flow::Device => device::start(&self.client, &oauth).await?,
+        let (login, waiting, paste) = match oauth.flow {
+            Flow::Device => {
+                let (login, waiting) = device::start(&self.client, &oauth).await?;
+                (login, waiting, None)
+            }
             Flow::Code => code::start(&self.client, &oauth).await?,
         };
-        self.set_login(&oauth.secret, id, login.clone(), true);
+        self.set_login(&oauth.secret, id, login.clone(), paste);
         let router = self.clone();
         tokio::spawn(async move {
             let ended = match waiting.await {
                 Ok(tokens) => router.finish(&upstream, &oauth, tokens).await,
                 Err(message) => Login::new(oauth.flow, LoginState::Failed, message),
             };
-            router.set_login(&oauth.secret, id, ended, false);
+            router.end_login(&oauth.secret, id, ended);
         });
         Ok(login)
     }
 
-    /// Records `login` as the state of the login `id`; `started` replaces any other, an end only its own.
-    fn set_login(&self, secret: &str, id: u64, login: Login, started: bool) {
+    /// Records `login` as the state of the login `id` that has just started, replacing any other.
+    fn set_login(&self, secret: &str, id: u64, login: Login, paste: Option<code::Paste>) {
         let mut running = self.oauth.running.lock().unwrap_or_else(|p| p.into_inner());
-        if started || running.get(secret).is_some_and(|r| r.id == id) {
-            running.insert(secret.to_string(), Running { id, login });
+        running.insert(secret.to_string(), Running { id, login, paste });
+    }
+
+    /// Records `login` as how the login `id` ended, unless another has started since.
+    fn end_login(&self, secret: &str, id: u64, login: Login) {
+        let mut running = self.oauth.running.lock().unwrap_or_else(|p| p.into_inner());
+        if running.get(secret).is_some_and(|r| r.id == id) {
+            running.insert(
+                secret.to_string(),
+                Running {
+                    id,
+                    login,
+                    paste: None,
+                },
+            );
         }
+    }
+
+    /// Finishes the `code` login of the upstream at `place` that waits, with what the person pasted: the code, or the
+    /// address the browser ended on (its `code` and `state`). A `state` that is not this login's is refused. The
+    /// answer is how the login stands; the exchange of the code goes on in the background.
+    pub async fn paste_login(&self, place: usize, pasted: &str) -> Result<Login, LoginError> {
+        let (_, oauth) = self.oauth_upstream(place)?;
+        let (login, paste) = {
+            let running = self.oauth.running.lock().unwrap_or_else(|p| p.into_inner());
+            let waiting = running
+                .get(&oauth.secret)
+                .filter(|r| r.login.state == LoginState::Waiting);
+            let paste = waiting.and_then(|r| r.paste.clone());
+            (waiting.map(|r| r.login.clone()), paste)
+        };
+        let (Some(login), Some(paste)) = (login, paste) else {
+            return Err(LoginError::NotWaiting(place));
+        };
+        paste.send(code::parse_link(pasted)?)?;
+        Ok(login)
     }
 
     /// Keeps the tokens a login ended with and tells whether the upstream takes them.
@@ -444,6 +431,15 @@ impl Router {
     async fn holds(&self, upstream: &Upstream, oauth: &OAuthConfig) -> Login {
         if let Err(message) = self.access_token(oauth).await {
             return Login::new(oauth.flow, LoginState::LoggedOut, message);
+        }
+        if let Some(needs) = oauth.needs() {
+            return Login::new(
+                oauth.flow,
+                LoginState::LoggedIn,
+                format!(
+                    "Logged in. Requests to this upstream need {needs}, which Moebius does not speak yet; they fail."
+                ),
+            );
         }
         match self.list_models(upstream).await {
             Ok(ids) => Login::new(
@@ -483,6 +479,9 @@ impl Router {
 
 #[cfg(test)]
 pub(crate) mod testing;
+
+#[cfg(test)]
+mod flows;
 
 #[cfg(test)]
 mod tests {

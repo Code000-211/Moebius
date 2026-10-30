@@ -72,6 +72,15 @@ login runs on the server in the background:
   `grant_type=authorization_code`, `redirect_uri`, `client_id` and the `code_verifier`; an `error` ends the login. The
   browser has 10 minutes.
 
+A `code` login can also end by the person pasting what the browser showed: the code, `code#state` (as the code page of
+a provider shows it), or the whole address the browser ended on, which does not have to load (`POST
+/v1/models/upstreams/{place}/login/code`, see the [desktop API](desktop-api.md)). The `code` and `state` are read from
+it; a `state` that is not the login's is refused, one that is missing is taken to be it. This is for a provider whose
+page shows a code, a browser on another machine than the server (over SSH, say), and a loopback port that is taken (a
+login without a listener waits for a pasted code only). The listener stays for when it works. The redirect host is
+`localhost` for a preset (as the provider registered it) and `127.0.0.1` otherwise; the listener is always on
+`127.0.0.1`.
+
 The answer of `token_url` must carry `access_token`, and may carry `refresh_token` and `expires_in` (an hour when not
 given). The refresh token is kept in `secrets.toml` under `oauth.secret`; the access token only in memory. When the
 login has its tokens, the router asks the upstream for its models with the access token (as in [Listing
@@ -83,6 +92,25 @@ and a new `refresh_token` in the answer replaces the stored one. One refresh ser
 upstream with no stored refresh token, or whose refresh is refused, answers `502` with `authentication_error` and a
 message that says to log in again on the Models page; no token is ever in a message. Every token the router is given or
 reads is redacted wherever it would appear (in the store, a blob or a log) as `[redacted:secret]`.
+
+### OAuth requests per provider
+
+Codes and refresh tokens are posted as a form, except for the `anthropic` preset, which takes a JSON body (and `state`
+with the code), as Pi does.
+
+- `anthropic`: every request with the token (and the model list) is sent with `Authorization: Bearer`, no `x-api-key`,
+  and the headers `user-agent: claude-cli/2.1.280`, `x-app: cli`, `anthropic-dangerous-direct-browser-access: true` and
+  `accept: application/json`. The `anthropic-beta` header is the harness's features followed by `claude-code-20250219`
+  and `oauth-2025-04-20`, none twice. The system prompt of the request starts with the block `You are Claude Code,
+  Anthropic's official CLI for Claude.` (a string or blocks already there follow it). Why: the subscription is granted
+  to Claude Code, and the API refuses its token for a request that does not identify itself as Claude Code; Pi does the
+  same. Pi also writes the names of the tools in Claude Code's casing; the router does not.
+- `openai`: the login and the refresh work (the refresh token is kept, the access token refreshed), but the ChatGPT
+  backend takes requests only in its own Codex Responses protocol (`POST /codex/responses` with the `chatgpt-account-id`
+  header taken from the token), which the router does not speak. A request to such an upstream is not sent: the router
+  tries the next upstream, and when this is the last it answers `502` with `api_error` and a message that says the
+  subscription needs that protocol; the model list of the upstream says the same, and the login ends `logged_in` with a
+  message that says so.
 
 ## Run tokens
 

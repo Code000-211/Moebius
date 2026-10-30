@@ -3,8 +3,11 @@
 //!
 //! - `GET /v1/models` and `GET /v1/plugins`: the router's upstreams, the agents, the teacher, the decision model and
 //!   the plugins. `GET /v1/models/available?refresh=`: the models the upstreams list, asked once and kept.
+//! - `GET /v1/models/providers`: the providers built in, whose subscription an upstream logs in to with a `preset`.
 //! - `POST /v1/models/upstreams/{place}/login` `{accept_terms}`: a person starts the OAuth login of an upstream, having
 //!   confirmed the warning about the provider's terms; `GET` on the same route tells how it stands.
+//! - `POST /v1/models/upstreams/{place}/login/code` `{pasted}`: a person finishes a waiting `code` login with the code,
+//!   or the address the browser ended on, when the browser could not reach the server.
 //! - `GET /v1/start`: whether the upstreams, Pi-Bolt, the Coder's model and a repository are in place, step by step.
 //! - `GET /v1/settings`: every key of `moebius.toml` with its value or default. `PUT /v1/settings` `{set, remove}` changes
 //!   the file. `PUT` and `DELETE /v1/secrets/{name}` keep and remove an API key. `POST /v1/server/restart` restarts the
@@ -31,10 +34,12 @@ pub(super) fn routes() -> Router<ApiState> {
     Router::new()
         .route("/v1/models", get(models))
         .route("/v1/models/available", get(available_models))
+        .route("/v1/models/providers", get(providers))
         .route(
             "/v1/models/upstreams/{place}/login",
             get(login).post(start_login),
         )
+        .route("/v1/models/upstreams/{place}/login/code", post(paste_login))
         .route("/v1/start", get(start_steps))
         .route("/v1/plugins", get(plugins))
         .route("/v1/settings", get(settings).put(put_settings))
@@ -49,6 +54,10 @@ async fn models(State(state): State<ApiState>) -> Result<axum::Json<setup::Model
         state.runs.agents(),
         &secrets,
     )))
+}
+
+async fn providers() -> axum::Json<Vec<crate::router::Provider>> {
+    axum::Json(crate::router::providers())
 }
 
 /// What `GET /v1/models/available` takes.
@@ -76,7 +85,10 @@ struct StartLogin {
 fn login_error(e: LoginError) -> ApiError {
     let status = match e {
         LoginError::NoUpstream(_) => StatusCode::NOT_FOUND,
-        LoginError::NotOAuth(_) | LoginError::TermsNotAccepted => StatusCode::UNPROCESSABLE_ENTITY,
+        LoginError::NotOAuth(_) | LoginError::TermsNotAccepted | LoginError::BadLink(_) => {
+            StatusCode::UNPROCESSABLE_ENTITY
+        }
+        LoginError::NotWaiting(_) => StatusCode::CONFLICT,
         LoginError::Provider(_) => StatusCode::BAD_GATEWAY,
     };
     ApiError(status, e.to_string())
@@ -94,22 +106,44 @@ async fn start_login(
         .start_login(place, request.accept_terms)
         .await
         .map_err(login_error)?;
-    let upstream = state
-        .config
-        .get()
-        .upstreams
-        .get(place)
+    let config = state.config.get();
+    let upstream = config.upstreams.get(place);
+    let warning = upstream
+        .and_then(|u| u.oauth.as_ref())
+        .map_or_else(|| TERMS_WARNING.to_string(), |oauth| oauth.warning());
+    let upstream = upstream
         .map(|u| setup::without_credentials(&u.base_url))
         .unwrap_or_default();
     let _recorded = blocking(&state.app, move |app| {
         let context = BTreeMap::from([
             ("upstream".to_string(), upstream),
-            ("warning".to_string(), TERMS_WARNING.to_string()),
+            ("warning".to_string(), warning),
         ]);
         app.record_action(&by, "oauth_login", None, None, context, "")
     })
     .await?;
     Ok(axum::Json(login))
+}
+
+/// What `POST /v1/models/upstreams/{place}/login/code` takes. Not `Debug`, since the code is a secret.
+#[derive(Deserialize)]
+struct PastedCode {
+    pasted: String,
+}
+
+async fn paste_login(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(place): UrlPath<usize>,
+    axum::Json(request): axum::Json<PastedCode>,
+) -> Result<axum::Json<Login>, ApiError> {
+    person_only(&by)?;
+    state
+        .router
+        .paste_login(place, &request.pasted)
+        .await
+        .map(axum::Json)
+        .map_err(login_error)
 }
 
 async fn login(
@@ -404,5 +438,105 @@ mod tests {
         // The confirmation is recorded as the person's decision.
         let judgements = state.app.store.judgements("oauth_login").unwrap();
         assert_eq!(judgements.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_person_finishes_a_code_login_by_pasting_the_address_and_the_providers_are_listed() {
+        use crate::router::oauth_testing::{FakeProvider, config};
+        use crate::router::{Flow, Upstream};
+        let (_dir, state, addr) = start().await;
+        let provider = FakeProvider::start(3600).await;
+        state.router.set_upstreams(vec![Upstream {
+            protocol: Protocol::OpenAi,
+            base_url: provider.url.clone(),
+            api_key: None,
+            oauth: Some(config(&provider.url, Flow::Code)),
+        }]);
+        let client = reqwest::Client::new();
+        let call = |method: reqwest::Method, path: &str, body: serde_json::Value| {
+            client
+                .request(method, format!("http://{addr}{path}"))
+                .bearer_auth(state.token.as_ref())
+                .json(&body)
+                .send()
+        };
+        let post =
+            |path: &'static str, body: serde_json::Value| call(reqwest::Method::POST, path, body);
+        let paste = "/v1/models/upstreams/0/login/code";
+
+        let nothing = post(paste, serde_json::json!({"pasted": "code"}))
+            .await
+            .unwrap();
+        assert_eq!(nothing.status(), 409);
+        let login: serde_json::Value = post(
+            "/v1/models/upstreams/0/login",
+            serde_json::json!({"accept_terms": true}),
+        )
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+        assert_eq!(login["state"], "waiting");
+        let authorize = reqwest::Url::parse(login["authorize_url"].as_str().unwrap()).unwrap();
+        let state_param = authorize
+            .query_pairs()
+            .find(|(k, _)| k == "state")
+            .unwrap()
+            .1
+            .into_owned();
+
+        let wrong = post(
+            paste,
+            serde_json::json!({"pasted": "http://x/cb?code=c&state=other"}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(wrong.status(), 422);
+        assert!(wrong.text().await.unwrap().contains("state differs"));
+        let pasted = format!("http://localhost:1/callback?code=the-code&state={state_param}");
+        let waiting: serde_json::Value = post(paste, serde_json::json!({"pasted": pasted}))
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(waiting["state"], "waiting");
+        let mut answer = waiting;
+        for _ in 0..1000 {
+            answer = call(
+                reqwest::Method::GET,
+                "/v1/models/upstreams/0/login",
+                serde_json::Value::Null,
+            )
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+            if answer["state"] != "waiting" {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert_eq!(answer["state"], "logged_in");
+        assert_eq!(provider.exchanged_codes()[0].0, "the-code");
+
+        let providers: serde_json::Value = call(
+            reqwest::Method::GET,
+            "/v1/models/providers",
+            serde_json::Value::Null,
+        )
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+        assert_eq!(providers[0]["name"], "anthropic");
+        assert_eq!(providers[0]["protocol"], "anthropic");
+        assert_eq!(providers[0]["base_url"], "https://api.anthropic.com");
+        assert_eq!(providers[0]["needs"], serde_json::Value::Null);
+        assert_eq!(providers[1]["name"], "openai");
+        assert!(providers[1]["needs"].as_str().unwrap().contains("Codex"));
     }
 }

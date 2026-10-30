@@ -102,7 +102,19 @@ impl Setup {
             | Message::CancelLogIn(_)
             | Message::LoginStarted(..)
             | Message::LoginAnswer(..)
+            | Message::PasteEdit(..)
+            | Message::FinishLogIn(_)
+            | Message::LoginPasted(..)
             | Message::OpenPage(_) => return self.update_login(message, settings),
+            Message::Providers(_)
+            | Message::ChooseProvider
+            | Message::PickProvider(_)
+            | Message::CancelProvider
+            | Message::OtherEdit(..)
+            | Message::OtherProtocol(_)
+            | Message::OtherFlow(_)
+            | Message::AddOther
+            | Message::ProviderAdded(..) => return self.update_provider(message, settings),
             edit => self.edit(edit),
         }
         Task::none()
