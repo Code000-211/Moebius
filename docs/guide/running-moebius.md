@@ -285,6 +285,9 @@ run the `sha256sum` line of step 1 on it: it must print `FAILED`.
   `bin_dir` to its directory.
 - The app cannot connect from another machine: the server still listens on `127.0.0.1`, or a firewall blocks the port.
   `listen` takes an address of the machine, and a change of it needs a restart.
+- In a Wayland session on Linux the desktop app opens its window through XWayland, because through Wayland itself it
+  cannot reach the clipboard. Without XWayland (no `DISPLAY`) it opens on Wayland, and nothing can be copied or pasted
+  in it.
 - The app says the token is wrong after a restore or a move: the token is the content of `.moebius/token` of the server
   it talks to; copy it again.
 - On Windows, a change's checks say `` `sh` was not found: this needs Linux or WSL ``: the server runs on Windows itself.
