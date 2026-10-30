@@ -820,7 +820,11 @@ fn for_tool_calls_the_model_answers_the_rules_in_prose_and_the_patterns_stay() {
     assert_eq!((status, merged["status"].as_str()), (200, Some("merged")));
     assert_eq!(api.post(&format!("/v1/takeovers/{id}/merge")).0, 409);
     assert_eq!(api.post("/v1/takeovers/999/merge").0, 404);
-    assert_eq!(api.get("/v1/decision-model").1["kinds"][0]["routed"], true);
+    // Found by name: the merge is a decision of its own (`takeover`), whose shadow sorts before `tool_call`.
+    let view = api.get("/v1/decision-model").1;
+    let kinds = view["kinds"].as_array().unwrap();
+    let routed = kinds.iter().find(|k| k["kind"] == "tool_call").unwrap();
+    assert_eq!(routed["routed"], true);
 
     // The model, not the teacher, answers the rule in prose.
     let allowed = tool_call(&server, "echo hi", "allow", 1);
