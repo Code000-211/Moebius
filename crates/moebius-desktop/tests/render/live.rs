@@ -604,13 +604,15 @@ fn the_card_page_shows_the_attempts_and_their_history() {
     board["cards"][1]["attempts"] = attempts();
     let mut app = App::with_snapshot(snapshot(vec![board], vec![]));
     let _ = app.update(Message::OpenCard(50));
+    // The history says how long ago each entry was, by the clock: three days ago, whatever the day of the test.
+    let at = live::now() - 3 * 86_400;
     let entries = serde_json::from_value(json!([
-        {"at": 1_790_000_000, "kind": "attempt_judged",
+        {"at": at - 100, "kind": "attempt_judged",
          "data": {"run": 23, "model": "strong", "result": "failed",
                   "output": "Test first: the reproduction test `ctest -R tree_depth` does not hold.\nIt fails."}},
-        {"at": 1_790_000_050, "kind": "attempt_judged",
+        {"at": at - 50, "kind": "attempt_judged",
          "data": {"run": 21, "model": "strong", "result": "passed", "output": ""}},
-        {"at": 1_790_000_100, "kind": "attempts_settled",
+        {"at": at, "kind": "attempts_settled",
          "data": {"runs": [21, 22, 23], "picked": 21,
                   "reason": "It caps the depth where the tree is built."}}]))
     .unwrap();

@@ -410,11 +410,11 @@ mod tests {
         // What is said in the terminal is recorded as the chat's events, in the shapes of Pi's records.
         type_in(&mut tui, "notes\n").await;
         assert_eq!(read_until(&mut tui, "tui heard: (notes)").await, "notes");
+        // The turn's end is recorded after its answer.
         until("the answer is recorded", || {
-            app.store.events(run.id).unwrap().iter().any(|e| {
-                e.kind == "message_update"
-                    && e.data["assistantMessageEvent"]["delta"] == "You said: notes"
-            })
+            app.store.events(run.id).unwrap()[seen..]
+                .iter()
+                .any(|e| e.kind == "agent_end")
         })
         .await;
         let events = app.store.events(run.id).unwrap();
