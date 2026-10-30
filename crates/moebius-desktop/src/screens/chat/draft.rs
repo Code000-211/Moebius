@@ -178,6 +178,9 @@ impl Chats {
         };
         let note = match &draft.notice {
             Some(notice) => notice.as_str(),
+            None if draft.needs_model && draft.model.is_none() => {
+                "This agent has no model yet: choose one below, or give the Coder one on the Agents page."
+            }
             None if !draft.ready() => "A grilling needs a repository: choose one below.",
             None => "Write the first message to start the chat, or open it in the terminal.",
         };
@@ -204,10 +207,9 @@ impl Chats {
             PlaceChoice::Repository(id, _) => Message::RepositoryChosen(Some(id)),
             PlaceChoice::Harness => Message::HarnessChosen,
         };
-        let model = draft
-            .model
-            .as_deref()
-            .or(agent.map(|agent| agent.model.as_str()));
+        let model = draft.model.as_deref().or(agent
+            .map(|agent| agent.model.as_str())
+            .filter(|model| !model.is_empty()));
         let thinking = draft
             .thinking
             .as_deref()

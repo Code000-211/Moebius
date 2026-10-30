@@ -412,7 +412,9 @@ bundled, so it needs no table, but it needs a model:
 
 - With `[agents.Moebius]`, its `model`, `protocol`, `thinking` and `token_budget` come from there.
 - Without it, its model and protocol are the Coder's (`[agents.Coder]`); it has no thinking level or budget of its own.
-- With neither, starting a chat with it fails with status 422 and a message that names both tables.
+- With neither, a chat with it runs on the `model` it is started with (`POST /v1/chats`), in the protocol the router's
+  upstreams list that model under; a chat started without a model fails with status 422 and a message that names both
+  tables.
 
 Its instructions are built in (who it is, that it works for the person in the chat and builds what they ask for with the
 `moebius` skill); `agents.Moebius.instructions` is added after them. Its skills always begin with the `moebius` skill,

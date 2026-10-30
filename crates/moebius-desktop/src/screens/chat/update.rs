@@ -166,17 +166,21 @@ impl Chats {
                 return task;
             }
             Message::Agents(Ok(agents)) => {
-                // An agent whose files are broken is listed without a model and cannot be chosen.
+                // An agent whose files are broken is listed without a model and cannot be chosen; a built-in one
+                // without a model runs on the model the chat is given.
                 self.agents = agents
                     .into_iter()
-                    .filter(|agent| !agent.model.is_empty())
+                    .filter(|agent| {
+                        !agent.model.is_empty() || (agent.built_in && agent.error.is_none())
+                    })
                     .collect();
-                // The Moebius agent is the first, if the server can run it.
+                // The Moebius agent is the first.
                 if let (Some(draft), Some(first)) = (&mut self.draft, self.agents.first())
                     && !self.agents.iter().any(|agent| agent.name == draft.agent)
                 {
                     draft.agent = first.name.clone();
                 }
+                self.follow_agent();
             }
             Message::Agents(Err(e)) => {
                 if let Some(draft) = &mut self.draft {
@@ -197,6 +201,7 @@ impl Chats {
                     // The model and reasoning follow the agent unless the person chose others.
                     draft.agent = agent;
                 }
+                self.follow_agent();
             }
             Message::Skills(skills) => {
                 self.has_harness = skills.is_ok_and(|skills| !skills.is_empty());
@@ -313,6 +318,18 @@ impl Chats {
                     .await
             },
         )
+    }
+
+    /// Notes whether the draft's agent has a model of its own.
+    fn follow_agent(&mut self) {
+        let needs_model = self
+            .draft
+            .as_ref()
+            .and_then(|draft| self.agent(&draft.agent))
+            .is_some_and(|agent| agent.model.is_empty());
+        if let Some(draft) = &mut self.draft {
+            draft.needs_model = needs_model;
+        }
     }
 
     fn set_confirming(&mut self, confirming: bool) {

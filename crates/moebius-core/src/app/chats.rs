@@ -107,11 +107,11 @@ fn chat_protocol(agent: Option<Protocol>, served: &[Protocol]) -> Option<Protoco
     }
 }
 
-/// The protocol the agent `name` speaks, if `runs` knows it.
+/// The protocol the agent `name` speaks, if `runs` knows it and it has a model.
 fn agent_protocol(runs: &dyn Runs, name: &str) -> Option<Protocol> {
     runs.agents()
         .into_iter()
-        .find(|agent| agent.name == name)
+        .find(|agent| agent.name == name && !agent.model.is_empty())
         .map(|agent| agent.protocol)
 }
 

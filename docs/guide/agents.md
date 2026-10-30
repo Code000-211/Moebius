@@ -71,7 +71,8 @@ Its built-in instructions say this, name the task skills, and say that it does o
 anywhere, and ends each answer with what it did, how it tried it, and what the person has to do now.
 
 It is the default of a chat: `POST /v1/chats` without `agent` starts a chat with it. It needs a model. Without
-configuration it takes the Coder's model and protocol; with an `[agents.Moebius]` table it uses that table's:
+configuration it takes the Coder's model and protocol, and without a Coder the model chosen for the chat; with an
+`[agents.Moebius]` table it uses that table's:
 
 ```toml
 [agents.Moebius]

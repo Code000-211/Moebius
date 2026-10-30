@@ -107,7 +107,7 @@ impl PiBolt {
         origin: &str,
         settings: &ChatSettings,
     ) -> Result<Run, String> {
-        let config = settings.apply(&self.agent(app, agent)?);
+        let config = self.chat_agent(app, agent, settings)?;
         let running = chat_run(
             app,
             &self.router,

@@ -569,10 +569,47 @@ mod tests {
             ])
         );
 
-        // Without a model to give it, the Moebius agent cannot run and is not offered.
+        // Without a model to give them, the built-in agents are still offered, with none: a chat gives one.
         let (_dir, state, addr) = start_with(BTreeMap::new()).await;
         let listed: serde_json::Value = get(&state, &addr, "/v1/agents").await;
-        assert_eq!(listed, serde_json::json!([]));
+        assert_eq!(
+            listed,
+            serde_json::json!([
+                { "name": "Moebius", "model": "", "protocol": "openai", "harness": "pi-bolt", "built_in": true },
+                { "name": "Grilling-partner", "model": "", "protocol": "openai", "harness": "pi-bolt", "built_in": true },
+            ])
+        );
+    }
+
+    /// A server without any agent configured still chats with the Moebius agent, on the model the chat is given;
+    /// without one it says what is missing.
+    #[tokio::test]
+    async fn the_moebius_agent_without_a_model_runs_on_the_model_its_chat_is_given() {
+        let (_dir, state, addr) = start_with(BTreeMap::new()).await;
+        let refused = post(
+            &state,
+            &addr,
+            "/v1/chats".into(),
+            serde_json::json!({ "message": "Hello" }),
+        )
+        .await;
+        assert!(
+            refused.text().await.unwrap().contains("needs a model"),
+            "no model, no chat"
+        );
+        let body = serde_json::json!({ "message": "Hello", "model": "chosen" });
+        let started = post(&state, &addr, "/v1/chats".into(), body).await;
+        assert_eq!(started.status(), 200);
+        let run: Run = started.json().await.unwrap();
+        until("the agent has answered", || {
+            status(&state.app, run.id) == "waiting"
+        })
+        .await;
+        assert_eq!(run.agent, "Moebius");
+        let argv = argv(&state.app, run.id);
+        assert!(argv.windows(2).any(|w| w == ["--model", "chosen"]));
+        let instructions = argv.windows(2).find(|w| w[0] == "--append-system-prompt");
+        assert!(instructions.unwrap()[1].starts_with("You are the Moebius agent."));
     }
 
     #[tokio::test]

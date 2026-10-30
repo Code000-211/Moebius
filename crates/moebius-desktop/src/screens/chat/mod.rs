@@ -140,6 +140,8 @@ pub(super) struct Draft {
     sending: bool,
     /// The last thing that went wrong, as a short line.
     notice: Option<String>,
+    /// Whether the agent has no model of its own, so that the chat runs on the one chosen for it.
+    needs_model: bool,
 }
 
 impl Draft {
@@ -153,12 +155,14 @@ impl Draft {
             message: String::new(),
             sending: false,
             notice: None,
+            needs_model: false,
         }
     }
 
-    /// Whether the chat can start: a grilling needs a repository.
+    /// Whether the chat can start: a grilling needs a repository, and an agent without a model needs one chosen.
     pub(super) fn ready(&self) -> bool {
-        self.agent != GRILLING_AGENT || self.repository.is_some()
+        (self.agent != GRILLING_AGENT || self.repository.is_some())
+            && (!self.needs_model || self.model.is_some())
     }
 
     /// The chat to start, with `message` or without one.

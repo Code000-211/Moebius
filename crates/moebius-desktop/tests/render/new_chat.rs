@@ -421,3 +421,37 @@ fn the_moebius_agent_can_write_an_agents_instructions_in_a_chat() {
     assert_eq!(app.page(), Page::Agents);
     assert!(shows(&app, "Moebius agent"));
 }
+
+/// A server without any agent configured lists the built-in agents without a model: the Moebius agent is offered all
+/// the same, says that it needs a model, and starts once one is chosen for the chat.
+#[test]
+fn a_built_in_agent_without_a_model_is_offered_and_starts_on_the_model_chosen() {
+    let mut app = chatting("waiting", false);
+    click(&mut app, "New chat");
+    let agents = serde_json::from_value(json!([
+        {"name": "Moebius", "model": "", "protocol": "openai", "built_in": true},
+        {"name": "Grilling-partner", "model": "", "protocol": "openai", "built_in": true},
+    ]))
+    .unwrap();
+    let _ = app.update(Message::Chat(chat::Message::Agents(Ok(agents))));
+    let _ = app.update(Message::Chat(chat::Message::Models(
+        Ok(available_listing()),
+    )));
+    assert!(shows(&app, "Moebius, no repository"));
+    assert!(shows(
+        &app,
+        "This agent has no model yet: choose one below, or give the Coder one on the Agents page."
+    ));
+    let _ = app.update(Message::Chat(chat::Message::Edited("Hello".into())));
+    assert_eq!(
+        app.update(Message::Chat(chat::Message::Send)).units(),
+        0,
+        "no model, no chat"
+    );
+
+    let _ = app.update(Message::Chat(chat::Message::ModelChosen(
+        "qwen-fake".into(),
+    )));
+    assert!(!shows(&app, "This agent has no model yet"));
+    assert_eq!(app.update(Message::Chat(chat::Message::Send)).units(), 1);
+}

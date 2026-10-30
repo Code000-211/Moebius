@@ -743,8 +743,9 @@ integer}`; `busy` is how many runs go on the machine now. Nothing secret (the ke
 
 ### `GET /v1/agents`
 
-The agents the server can run, for choosing one to chat with: the Moebius agent first and the Grilling partner second (each
-when its own `[agents.<name>]` or `[agents.Coder]` gives it a model), then the others by name. Response: an array of `{"name": string, "model":
+The agents the server can run, for choosing one to chat with: the Moebius agent first and the Grilling partner second,
+then the others by name. A built-in agent takes its model from its own `[agents.<name>]` or from `[agents.Coder]`; with
+neither its `model` is empty, and a chat with it runs on the `model` it is started with. Response: an array of `{"name": string, "model":
 string, "protocol": "openai" or "anthropic", "thinking": string, "token_budget": integer, "harness": "pi-bolt" or
 "claude-code", "built_in": boolean, "error": string}`; `harness` is the harness the agent runs on;
 `thinking` and `token_budget` are the agent's, left out when its configuration does not set them; `built_in` is true for the Moebius
