@@ -1,0 +1,7 @@
+#!/bin/sh
+# A deep check that reports one problem in the changed file of the package whose manifest it is handed, standing in for
+# a per-package type check. Which manifest it got decides what it reports, so the lens's fan-out over packages is seen.
+case "$1" in
+  *crates/x/Cargo.toml) echo "crates/x/a.fake:1:1 error M001" ;;
+  *crates/y/Cargo.toml) echo "crates/y/b.fake:1:1 error M002" ;;
+esac

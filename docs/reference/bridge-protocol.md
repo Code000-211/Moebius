@@ -214,11 +214,12 @@ is told (through `decide`) and stores the time each check took. The server side 
 - **Before the run settles** (Pi's `agent_before_settle`): the files the run changed (the edit tools' and whatever
   `git diff --name-only HEAD` and untracked files add, so the shell's changes count) are put to the server, and if it
   says to run, the `deep` command of each check whose glob matches a changed file runs once with a timeout of
-  `deep_timeout_seconds` (default 120) each: `tsc --noEmit` incrementally, `pyright` on the files, `cargo check` in
-  the run's worktree (its `target` stays warm through the run), `go vet` for the packages. The findings that are in a
-  changed file and were not told before come as one follow-up message, `Moebius lens: the type check found <n> new
-  problems in files you changed:`, and the agent goes on. It asks at most three times per run, so a check that cannot
-  be satisfied does not loop.
+  `deep_timeout_seconds` (default 120) each: `tsc --noEmit` incrementally, `pyright` on the files, `cargo check` once
+  for each package a changed file belongs to (`--manifest-path {manifest}`, so a workspace is not checked whole for a
+  change in one of its parts, and its `target` stays warm through the run), `go vet` for the packages. The findings that
+  are in a changed file and were not told before come as one follow-up message, `Moebius lens: the type check found <n>
+  new problems in files you changed:`, and the agent goes on. It asks at most three times per run, so a check that
+  cannot be satisfied does not loop.
 - It never starts a language server.
 - It never stops a call or the run: when anything in the lens fails, the result is left as it is. When the server cannot
   be asked, it takes the safe side: it shows every new finding and runs the end-of-turn check.

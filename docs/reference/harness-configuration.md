@@ -236,7 +236,8 @@ the lens then does nothing in that run except to store a `lens_check` event that
 - **Commands** are split into words as a shell would (`'single'` and `"double"` quotes), and run without a shell, in the
   worktree, so there is no `|`, `&&` or `$VAR`; a program that is in `node_modules/.bin` is found there. In a command,
   `{file}` is the edited file; for `deep`, an argument that is exactly `{files}` becomes the changed files that match the
-  glob, and `{dirs}` their folders (`./pkg`), once each. The program's exit status is not read, only its output.
+  glob, `{dirs}` their folders (`./pkg`), and `{manifest}` the `Cargo.toml` of the package a changed file belongs to
+  (`./crates/x/Cargo.toml`), each with its own run. The program's exit status is not read, only its output.
 - **Output** is read by `format`: `lines` (the default) finds `<file>:<line>[:<column>]: <message>`, one finding per line,
   and ignores other lines; `files` takes each line that is only a file name as "not formatted" (`gofmt -l`) and also reads
   `lines`; `diff-in` reads `Diff in <file>:<line>:` (`rustfmt --check`); `github` reads `::error file=..,line=..,col=..,
@@ -246,9 +247,10 @@ the lens then does nothing in that run except to store a `lens_check` event that
   check's `severity` (default `warning`) otherwise. Two commands that print differently need two `[[check]]` entries.
 - **Without `[[check]]`** the lens uses what the files suggest: `ruff check` for Python when the repository has a
   `pyproject.toml`, `setup.py`, `requirements.txt` or `ruff.toml`, and `pyright` at the end when it is configured;
-  `rustfmt --check` and `cargo check --message-format short` with a `Cargo.toml` (the edition from it); `gofmt -l` and
-  `go vet` with a `go.mod`; `biome lint` with a `biome.json`, or `oxlint` with an `.oxlintrc.json`; `tsc --noEmit
-  --incremental` with a `tsconfig.json`; `shellcheck` for shell scripts. A tool that is not installed is skipped.
+  `rustfmt --check` and `cargo check --message-format short --manifest-path {manifest}` with a `Cargo.toml` (the edition
+  from it), so only the packages that changed are checked; `gofmt -l` and `go vet` with a `go.mod`; `biome lint` with a
+  `biome.json`, or `oxlint` with an `.oxlintrc.json`; `tsc --noEmit --incremental` with a `tsconfig.json`; `shellcheck`
+  for shell scripts. A tool that is not installed is skipped.
 
 ## A broken agent
 
