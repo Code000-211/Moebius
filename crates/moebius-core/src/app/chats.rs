@@ -40,6 +40,9 @@ pub struct Chat {
     /// `POST /v1/chats/{id}/offer` would offer. 0 for an ended chat or one without a repository.
     #[serde(default)]
     pub changed_files: usize,
+    /// Whether the chat waits for an answer to a question: it waits, and the agent's last answer ends in one.
+    #[serde(default)]
+    pub asks: bool,
     /// Where the chat was started: `chat`, `assistant` or `automation` (see `Run::origin`).
     #[serde(default = "chat_origin")]
     pub origin: String,
@@ -49,6 +52,19 @@ pub struct Chat {
     /// The reasoning level the chat was given in place of its agent's; none while it runs with its agent's.
     #[serde(default)]
     pub thinking: Option<String>,
+}
+
+/// Whether an answer ends in a question to the person: its last line, without the marks of emphasis or a closing
+/// bracket or quote, ends in `?`.
+fn asks(answer: &str) -> bool {
+    answer
+        .lines()
+        .map(str::trim)
+        .rfind(|line| !line.is_empty())
+        .is_some_and(|line| {
+            line.trim_end_matches(['*', '_', '`', ')', '"', '\'', '»', '“', '”'])
+                .ends_with(['?', '？'])
+        })
 }
 
 /// The reasoning levels a chat can be given, as Pi-Bolt takes them (`--thinking`, `set_thinking_level`).
@@ -417,6 +433,8 @@ impl App {
                     answered: self.store.answered_seq(run.id)?,
                     seen: self.store.seen_seq(run.id)?,
                     changed_files: self.changed_files(&run),
+                    asks: run.status == "waiting"
+                        && asks(run.summary.as_deref().unwrap_or_default()),
                     origin: run.origin,
                     model: settings.model,
                     thinking: settings.thinking,
@@ -479,5 +497,22 @@ impl App {
             files.extend(list.lines().map(str::to_string));
         }
         files.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::asks;
+
+    #[test]
+    fn an_answer_asks_when_its_last_line_ends_in_a_question() {
+        assert!(asks("I found two ways.\n\nShould I take the **first**?"));
+        assert!(asks("Which repository do you mean?\n\n"));
+        assert!(asks("Soll ich weitermachen (ja/nein)?"));
+        assert!(!asks(
+            "Done. Is that what you wanted? I also ran the tests."
+        ));
+        assert!(!asks("The tests pass."));
+        assert!(!asks(""));
     }
 }

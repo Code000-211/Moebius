@@ -279,20 +279,24 @@ impl Chats {
                 "This chat has ended. What you send starts a new chat with the same agent, which is told this one."
             }
         };
-        let mut compose = column![
-            row![
-                field,
-                if send_is_primary {
-                    page::primary_button("Send", send)
-                } else {
-                    page::white_button("Send", send)
-                }
-            ]
+        let send_button = if send_is_primary {
+            page::primary_button("Send", send)
+        } else {
+            page::white_button("Send", send)
+        };
+        let mut fields = row![field, send_button]
             .spacing(theme::SPACE_10)
-            .align_y(Alignment::Center),
-        ]
-        .spacing(theme::SPACE_8)
-        .padding([theme::SPACE_12, theme::BOX_PADDING]);
+            .align_y(Alignment::Center);
+        // As in a new chat, Terminal sits beside Send; it opens once the agent has answered, because while it works its
+        // process has the worktree.
+        if chat.is_open() {
+            let terminal =
+                (chat.status == "waiting").then_some(AppMessage::Chat(Message::ShowTerminal(true)));
+            fields = fields.push(page::white_button("Terminal", terminal));
+        }
+        let mut compose = column![fields]
+            .spacing(theme::SPACE_8)
+            .padding([theme::SPACE_12, theme::BOX_PADDING]);
         if chat.is_open() {
             let agent = self.agent(&chat.agent);
             let model = chat

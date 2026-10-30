@@ -245,10 +245,10 @@ impl Chats {
             .filter(move |chat| !chat.is_assistant() || Some(chat.id) == open)
     }
 
-    /// How many chats of the list wait for the person's next message.
-    pub fn waiting(&self) -> usize {
+    /// How many chats of the list wait for an answer to a question their agent asked.
+    pub fn asking(&self) -> usize {
         self.listed()
-            .filter(|chat| chat.status == "waiting")
+            .filter(|chat| chat.status == "waiting" && chat.asks)
             .count()
     }
 

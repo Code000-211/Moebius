@@ -122,7 +122,7 @@ fn a_chat_is_drawn_with_its_markdown_tool_calls_and_offered_change() {
         "chat",
         &[
             "Chat",
-            "1 chat waits for your next message.",
+            "Talk to an agent. What it builds in a repository is offered as a change.",
             "Write a ready.luau that starts a card only when nothing blocks it.",
             "Moebius in radiance",
             "Ended",
@@ -160,9 +160,12 @@ fn a_chat_with_changed_files_offers_them_and_has_no_end() {
     draw_sized(
         &app,
         "chat-offer",
-        &["Waiting", "Offer changes (3 files)", "Chat", "Terminal"],
+        &["Offer changes (3 files)", "Send", "Terminal"],
         Size::new(1440.0, 1100.0),
     );
+    // A chat whose agent has answered carries no mark while the answer asks nothing.
+    assert!(!shows(&app, "Waiting"));
+    assert!(!shows(&app, "Asks you"));
     assert!(!shows(&app, "End chat"));
     assert!(!shows(&app, "Stop"));
     assert!(matches!(
@@ -316,25 +319,20 @@ fn a_chat_in_its_terminal_is_drawn_with_pi_bolts_screen() {
     draw_sized(
         &chat_in_terminal(),
         "chat-terminal",
-        &[
-            "Chat",
-            "Terminal",
-            "Pi-Bolt in the chat's worktree",
-            "connected",
-        ],
+        &["Chat", "Pi-Bolt in the chat's worktree", "connected"],
         Size::new(1440.0, 1100.0),
     );
     assert!(!shows(&chat_in_terminal(), "Send"));
 }
 
-/// The switch is offered while the chat can take it: the terminal opens once the agent has answered, and an ended chat
+/// Terminal beside Send opens the chat's terminal once the agent has answered, and Chat under it goes back; an ended chat
 /// has none. Switching back shows the conversation again.
 #[test]
-fn the_switch_between_chat_and_terminal_follows_the_chat() {
+fn the_terminal_beside_send_opens_once_the_agent_has_answered() {
     let mut app = chatting("waiting", false);
     assert!(shows(&app, "Send"));
 
-    // While the agent works the switch offers no terminal yet (a muted "Terminal" says when it opens on hover).
+    // Terminal beside Send opens the terminal once the agent has answered; while it works the button does nothing.
     let working = chatting("running", false);
     assert!(!shows(&working, "Pi-Bolt in the chat's worktree"));
 
@@ -481,4 +479,16 @@ fn a_chat_names_who_decided_its_tool_calls() {
     }
     assert!(shows(&app, "Pattern · ran 3 ms"));
     assert!(shows(&app, "Teacher · ran 140 ms"));
+}
+
+/// A chat whose agent's answer asks the person a question is marked "Asks you" in the list and its head, and the page
+/// counts it; one that only answered is not.
+#[test]
+fn only_a_chat_whose_agent_asks_a_question_is_marked() {
+    let mut app = chatting("waiting", false);
+    let mut listing = chat_listing("waiting");
+    listing[0].asks = true;
+    let _ = app.update(Message::Chat(chat::Message::Listed(Ok(listing))));
+    assert!(shows(&app, "Asks you"));
+    assert!(shows(&app, "1 chat asks you something."));
 }

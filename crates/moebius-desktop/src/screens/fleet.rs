@@ -43,6 +43,8 @@ pub struct Work {
     /// `code`, `review`, ... or `chat`.
     pub kind: String,
     pub status: String,
+    /// Whether the run waits for an answer to a question its agent asked: only a chat can.
+    pub asks: bool,
     /// `#number title` of a card, the title of a chat.
     pub title: String,
     pub repository: String,
@@ -76,6 +78,7 @@ pub fn working(snapshot: &Snapshot, chats: &[Chat]) -> Vec<Work> {
                 agent: run.agent.clone(),
                 kind: run.purpose.clone(),
                 status: run.status.clone(),
+                asks: false,
                 title: format!("#{} {}", card.number, card.title),
                 repository: board.repository.name.clone(),
                 started_at: 0,
@@ -100,6 +103,7 @@ pub fn working(snapshot: &Snapshot, chats: &[Chat]) -> Vec<Work> {
             agent: chat.agent.clone(),
             kind: "chat".to_string(),
             status: chat.status.clone(),
+            asks: chat.asks,
             title: if chat.title.is_empty() {
                 "Chat".to_string()
             } else {
@@ -278,8 +282,9 @@ impl Fleet {
         ]
         .spacing(theme::SPACE_8)
         .align_y(Alignment::Center);
-        if work.status == "waiting" {
-            title = title.push(tag("waiting".to_string(), Tone::Amber));
+        // A run that has answered waits without a mark; only a question to the person is one.
+        if work.asks {
+            title = title.push(tag("asks you".to_string(), Tone::Amber));
         }
         let mut head = row![title, space::horizontal()].align_y(Alignment::Center);
         if started_at > 0 {

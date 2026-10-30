@@ -1,6 +1,6 @@
 //! A chat in Pi-Bolt's own terminal interface: the pane of the live view's shell, made as big as the chat's detail,
-//! connected to `GET /v1/chats/{id}/tui`. The pane is opened when the chat's switch is set to "Terminal" and closed when
-//! it is set back, another chat is chosen or the page is left, which closes the socket and ends Pi-Bolt there.
+//! connected to `GET /v1/chats/{id}/tui`. The pane is opened with the chat's Terminal button, beside Send, and closed when
+//! its Chat button goes back, another chat is chosen or the page is left, which closes the socket and ends Pi-Bolt there.
 
 use iced::{Element, Subscription, keyboard};
 
@@ -20,7 +20,7 @@ pub enum Message {
     Key(keyboard::Event),
 }
 
-/// The terminal of the open chat, if its switch is set to "Terminal".
+/// The terminal of the open chat, if its Terminal button opened it.
 #[derive(Default)]
 pub struct ChatTerminal {
     shell: Option<Shell>,

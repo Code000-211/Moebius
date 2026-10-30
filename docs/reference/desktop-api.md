@@ -79,7 +79,9 @@ other run) and `runner` (the name of the [runner](configuration.md#runners) the 
 first message, at most 80 characters; empty while a chat started without a message has none), `answered` (the `seq` of the chat's last `agent_settled` or `moebius_error`
 event, 0 without one), `seen` (how far a person has read it, see `POST /v1/chats/{id}/seen`) and `changed_files` (how
 many files the chat's worktree changes against the default branch of its repository, committed or not, new files
-included: what `POST /v1/chats/{id}/offer` would offer; 0 for an ended chat and one without a repository) and `origin`
+included: what `POST /v1/chats/{id}/offer` would offer; 0 for an ended chat and one without a repository), `asks`
+(true while the chat waits and the agent's last answer ends in a question to the person, so it needs an answer) and
+`origin`
 (`chat`, `assistant` for a chat of the desktop app's floating window, see `POST /v1/chats`, or `automation` for a chat an
 automation started, see `POST /v1/automations`), `model` and `thinking`
 (the model and reasoning level the chat was given in place of its agent's, see `POST /v1/chats` and

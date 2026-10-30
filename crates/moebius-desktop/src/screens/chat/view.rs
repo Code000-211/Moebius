@@ -31,18 +31,20 @@ fn place_name<'a>(snapshot: &'a Snapshot, chat: &Chat) -> Option<&'a str> {
 /// How the harness configuration repository is called where a chat's place is named.
 pub(super) const HARNESS_PLACE: &str = "harness configuration";
 
-/// What the chat's status says on its tag: the colour tells whether the agent works or waits for the person.
-fn status_tag<'a>(status: &str) -> Element<'a, AppMessage> {
-    let (label, tone) = match status {
+/// What the chat's status says on its tag: the colour tells whether the agent works or needs the person. A chat whose
+/// agent has answered has none, unless the answer asks the person a question.
+fn status_tag<'a>(chat: &Chat) -> Option<Element<'a, AppMessage>> {
+    let (label, tone) = match chat.status.as_str() {
         "starting" => ("Starting", Tone::Teal),
         "running" => ("Running", Tone::Teal),
-        "waiting" => ("Waiting", Tone::Amber),
+        "waiting" if chat.asks => ("Asks you", Tone::Amber),
+        "waiting" => return None,
         "succeeded" => ("Ended", Tone::Plain),
         "failed" => ("Failed", Tone::Red),
         "stopped" => ("Stopped", Tone::Plain),
         other => (other, Tone::Plain),
     };
-    tag(label.to_string(), tone)
+    Some(tag(label.to_string(), tone))
 }
 
 /// A chat of the list: its title, status, agent and repository, and when it started.
@@ -56,7 +58,7 @@ fn chat_row<'a>(
     meta.extend(repository);
     let content = column![
         row![
-            status_tag(&chat.status),
+            status_tag(chat).unwrap_or_else(|| space::horizontal().width(0).into()),
             space::horizontal(),
             text(page::ago(now, chat.started_at))
                 .size(theme::LABEL)
@@ -96,44 +98,6 @@ fn chat_row<'a>(
             }
         })
         .into()
-}
-
-/// The switch between a chat's conversation and its terminal, for a chat that is not over (the caller leaves it out
-/// for one that is). The terminal opens once the agent has answered: while it works its process has the worktree.
-fn switch<'a>(chat: &Chat, terminal: bool) -> Element<'a, AppMessage> {
-    let chip = |label: &str, selected: bool, shown: bool| {
-        page::chip(
-            label.to_string(),
-            selected,
-            false,
-            AppMessage::Chat(Message::ShowTerminal(shown)),
-        )
-    };
-    let mut switch = row![chip("Chat", !terminal, false)]
-        .spacing(theme::SPACE_6)
-        .align_y(Alignment::Center);
-    if terminal || chat.status == "waiting" {
-        switch = switch.push(chip("Terminal", terminal, true));
-    } else {
-        switch = switch.push(iced::widget::tooltip(
-            container(
-                text("Terminal")
-                    .size(theme::BREADCRUMB)
-                    .font(theme::manrope(Weight::Semibold))
-                    .color(theme::TEXT_MUTED),
-            )
-            .padding([theme::SPACE_4, theme::SPACE_10]),
-            container(
-                text("Opens when the agent has answered")
-                    .size(theme::LABEL)
-                    .font(theme::MONO),
-            )
-            .padding([theme::SPACE_4, theme::SPACE_8])
-            .style(|_| page::box_style()),
-            iced::widget::tooltip::Position::Bottom,
-        ));
-    }
-    switch.into()
 }
 
 /// The right of the chat's head, while it lasts: offering what its worktree changes, stopping its agent while it works
@@ -304,10 +268,10 @@ pub(super) fn message_field(value: &str, send: Option<AppMessage>) -> Element<'_
 impl Chats {
     /// The page: the header, the list of chats, and the form of a new chat or the chat chosen.
     pub fn view<'a>(&'a self, snapshot: &'a Snapshot, inbox: &'a Inbox) -> Element<'a, AppMessage> {
-        let line = match self.waiting() {
+        let line = match self.asking() {
             0 => "Talk to an agent. What it builds in a repository is offered as a change.".into(),
-            1 => "1 chat waits for your next message.".to_string(),
-            n => format!("{n} chats wait for your next message."),
+            1 => "1 chat asks you something.".to_string(),
+            n => format!("{n} chats ask you something."),
         };
         let header = page::header(
             "",
@@ -375,8 +339,8 @@ impl Chats {
                 .font(theme::manrope(Weight::Bold))
                 .wrapping(Wrapping::WordOrGlyph)
                 .width(Length::Fill),
-            status_tag(&chat.status),
         ]
+        .push(status_tag(chat))
         .spacing(theme::SPACE_10)
         .align_y(Alignment::Center);
         let who = match repository {
@@ -393,15 +357,23 @@ impl Chats {
         ]
         .spacing(theme::SPACE_10)
         .align_y(Alignment::Center);
-        if chat.is_open() {
-            head = head.push(switch(chat, self.terminal.is_shown()));
-        }
         head = head.push(actions(chat, open));
         if let Some(terminal) = self.terminal.view() {
+            // Under the terminal, where Send and Terminal are in the conversation, the way back to it.
+            let back = row![
+                page::white_button("Chat", Some(AppMessage::Chat(Message::ShowTerminal(false)))),
+                crate::widgets::form::aside(
+                    "Pi-Bolt's own interface for this chat; the conversation is the same."
+                ),
+            ]
+            .spacing(theme::SPACE_10)
+            .align_y(Alignment::Center);
             let content = column![
                 container(head).padding(theme::BOX_PADDING),
                 page::rule(),
-                terminal
+                terminal,
+                page::rule(),
+                container(back).padding([theme::SPACE_12, theme::BOX_PADDING]),
             ];
             return container(content)
                 .width(Length::Fill)

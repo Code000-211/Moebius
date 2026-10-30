@@ -112,7 +112,6 @@ fn the_fleet_shows_a_tile_for_every_working_card_and_chat() {
             "radiance · 412k tokens",
             "Reviewer",
             "review",
-            "waiting",
             "#47 sched: load adaptive draft profiles",
             "Moebius",
             "chat",

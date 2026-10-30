@@ -466,8 +466,8 @@ chat's own session, so the agent knows the whole conversation. The command line 
 
 ### A chat in Pi-Bolt's own terminal interface
 
-A person can also work with a waiting chat in Pi-Bolt's own terminal interface: in the desktop app, the switch
-"Chat | Terminal" in the chat's header; over the API, the WebSocket `GET /v1/chats/{id}/tui`. It is Pi-Bolt's
+A person can also work with a waiting chat in Pi-Bolt's own terminal interface: in the desktop app, the "Terminal"
+button beside "Send" (and "Chat" under the terminal to go back); over the API, the WebSocket `GET /v1/chats/{id}/tui`. It is Pi-Bolt's
 interactive mode in the chat's worktree with the chat's own model, provider, instructions, skills, MCP servers,
 extensions and bridge, so every tool call is still checked by the rules and recorded as a decision of the chat. It is
 the same conversation as the chat: the terminal continues the chat's Pi session, so the agent there knows what was said

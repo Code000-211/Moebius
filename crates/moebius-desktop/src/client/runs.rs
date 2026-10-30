@@ -135,6 +135,9 @@ pub struct Chat {
     /// How many files the chat's worktree changes, committed or not: what offering its changes would offer.
     #[serde(default)]
     pub changed_files: usize,
+    /// Whether the chat waits for an answer to a question its agent asked.
+    #[serde(default)]
+    pub asks: bool,
     /// Where the chat was started: `chat`, or `assistant` for a conversation in the floating window.
     #[serde(default)]
     pub origin: String,
