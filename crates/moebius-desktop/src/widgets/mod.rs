@@ -18,5 +18,6 @@ pub mod new_issue;
 pub mod page;
 pub mod script_editor;
 pub mod steps;
+pub mod tabs;
 pub mod terminal;
 pub mod transcript;

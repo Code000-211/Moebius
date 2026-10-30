@@ -209,6 +209,43 @@ async fn the_terminal_page_opens_a_shell_in_the_directory_of_the_configuration_f
     }
 }
 
+/// A project's terminal tab: the shell starts in the repository's clone on the server.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_projects_terminal_opens_a_shell_in_the_clone_of_the_repository() {
+    let dir = tempfile::tempdir().unwrap();
+    let (settings, _) = start(dir.path()).await;
+    let repository = add_demo(&settings, dir.path()).await;
+    let clone = std::fs::canonicalize(repository["path"].as_str().unwrap()).unwrap();
+    let mut shell = Shell::in_clone(1);
+    let mut stream = Box::pin(terminal(
+        settings,
+        format!("/v1/repositories/{}/terminal", repository["id"]),
+    ));
+    let wanted = format!("where-{}-end", clone.display());
+    let limit = Duration::from_secs(60);
+    let mut sent = false;
+    while !shell.lines().contains(&wanted) {
+        let event = tokio::time::timeout(limit, stream.next())
+            .await
+            .expect("nothing was printed in a minute")
+            .expect("the shell's stream ended");
+        assert!(!matches!(event, TerminalEvent::Closed(_)), "{event:?}");
+        shell.on_event(event);
+        if shell.is_open() && !sent {
+            sent = true;
+            for c in "echo where-$(pwd -P)-end".chars() {
+                let text = c.to_string();
+                shell.key(
+                    &Key::Character(text.as_str().into()),
+                    Modifiers::empty(),
+                    Some(&text),
+                );
+            }
+            shell.key(&Key::Named(Named::Enter), Modifiers::empty(), Some("\r"));
+        }
+    }
+}
+
 /// Opening the Fleet reads the events of every working run, and a run that is stopped leaves it.
 #[tokio::test(flavor = "multi_thread")]
 async fn opening_the_fleet_reads_the_events_of_the_working_runs_and_a_stopped_run_leaves_it() {

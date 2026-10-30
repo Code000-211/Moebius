@@ -1,4 +1,5 @@
-//! How a project's page is drawn: the tabs over it, and the Files tab's tree of the default branch.
+//! How a project's page is drawn: the header, the tabs (`strip`), the tab shown and the Files sidebar on its right
+//! with the tree of the default branch.
 
 use iced::font::Weight;
 use iced::widget::{button, column, container, row, scrollable, space, text};
@@ -108,72 +109,19 @@ pub(crate) fn size(bytes: u64) -> String {
     }
 }
 
-/// The tabs Board, Files and Editor at the top of a project's page; the Editor's says how many files are open.
-pub fn tabs<'a>(repository: i64, project: Option<&Project>) -> Element<'a, AppMessage> {
-    let shown = project.map_or(Tab::Board, Project::tab);
-    let open = project.map_or(0, |project| project.files.len());
-    let tab = |tab: Tab| -> Element<'a, AppMessage> {
-        let selected = tab == shown;
-        let label = match (tab, open) {
-            (Tab::Editor, n) if n > 0 => format!("Editor · {n}"),
-            (tab, _) => tab.title().to_string(),
-        };
-        let underline = container(space())
-            .width(Length::Fill)
-            .height(theme::SPACE_2)
-            .style(move |_| container::Style {
-                background: selected.then(|| theme::TEXT.into()),
-                ..container::Style::default()
-            });
-        container(
-            button(
-                column![
-                    text(label)
-                        .size(theme::CONTEXT)
-                        .font(theme::manrope(if selected {
-                            Weight::Bold
-                        } else {
-                            Weight::Semibold
-                        }))
-                        .color(if selected {
-                            theme::TEXT
-                        } else {
-                            theme::TEXT_SECONDARY
-                        }),
-                    underline,
-                ]
-                .spacing(theme::SPACE_6)
-                .width(Length::Shrink),
-            )
-            .padding(Padding {
-                top: theme::SPACE_2,
-                bottom: 0.0,
-                left: theme::SPACE_2,
-                right: theme::SPACE_2,
-            })
-            .on_press(AppMessage::Project(repository, Message::Tab(tab)))
-            .style(|_, _| button::Style::default()),
-        )
-        .id(format!("project-tab-{}", tab.title()))
-        .into()
-    };
-    column![
-        row![tab(Tab::Board), tab(Tab::Files), tab(Tab::Editor)].spacing(theme::SPACE_20),
-        page::rule(),
-    ]
-    .into()
-}
-
 impl Project {
-    /// The Files or Editor tab of `repository`'s page, under the header and the tabs the app gives.
+    /// The page of `repository` for a tab other than Board, under the header and the tabs the app gives. `files` is
+    /// the Files sidebar, `chat` the chat of a chat tab as the Chat page draws it.
     pub fn view<'a>(
         &'a self,
         repository: &'a Repository,
         tabs: Element<'a, AppMessage>,
+        files: Option<Element<'a, AppMessage>>,
+        chat: Option<Element<'a, AppMessage>>,
     ) -> Element<'a, AppMessage> {
         let id = repository.id;
-        let (context, actions): (&str, Element<'a, AppMessage>) = match self.tab {
-            Tab::Editor => {
+        let (context, actions): (&str, Element<'a, AppMessage>) = match &self.tab {
+            Tab::Editor(_) => {
                 let can_save = self
                     .shown()
                     .is_some_and(|file| file.unsaved() && !file.saving);
@@ -185,7 +133,15 @@ impl Project {
                     ),
                 )
             }
-            _ => ("Default branch. Click a file to edit it.", space().into()),
+            Tab::Terminal(_) => (
+                "Shell on the server, in the clone of the repository.",
+                space().into(),
+            ),
+            Tab::Chat(_) => (
+                "A chat with an agent working in this project.",
+                space().into(),
+            ),
+            Tab::Board => ("Default branch. Click a file to edit it.", space().into()),
         };
         let header = page::header(
             "Projects",
@@ -194,21 +150,32 @@ impl Project {
             page::context(context),
             actions,
         );
-        let body = match self.tab {
-            Tab::Editor => self.editor_view(id),
-            _ => self.files_view(id),
+        let body: Element<'a, AppMessage> = match &self.tab {
+            Tab::Editor(_) => self.editor_view(id),
+            Tab::Terminal(n) => self.terminal_view(id, *n),
+            Tab::Chat(_) => chat.unwrap_or_else(|| {
+                container(page::body("Reading the chat…"))
+                    .padding(theme::BOX_PADDING)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .style(|_| page::box_style())
+                    .into()
+            }),
+            Tab::Board => space().into(),
         };
-        let mut page = column![header, tabs]
-            .spacing(theme::PAGE_GAP)
-            .width(Length::Fill);
-        if let Some(panel) = self.find_view(id) {
-            page = page.push(panel);
+        let mut main = row![body].spacing(theme::PAGE_GAP).height(Length::Fill);
+        if let Some(files) = files {
+            main = main.push(files);
         }
-        page.push(body).into()
+        column![header, tabs, main]
+            .spacing(theme::PAGE_GAP)
+            .width(Length::Fill)
+            .into()
     }
 
-    fn files_view(&self, repository: i64) -> Element<'_, AppMessage> {
-        let rows: Vec<Element<'_, AppMessage>> = match self.dirs.get("") {
+    /// The tree of the default branch, as the rows of its root.
+    fn tree_rows(&self, repository: i64) -> Vec<Element<'_, AppMessage>> {
+        match self.dirs.get("") {
             None | Some(Listing::Reading) => {
                 vec![note_row(
                     0,
@@ -221,13 +188,7 @@ impl Project {
                 vec![note_row(0, "No files.", theme::TEXT_MUTED)]
             }
             Some(Listing::Read(entries)) => self.interleave(repository, entries, 0),
-        };
-        container(scrollable(column(rows).spacing(theme::SPACE_1)).height(Length::Fill))
-            .padding(theme::SPACE_10)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(|_| page::box_style())
-            .into()
+        }
     }
 
     /// The rows of `entries` at `depth`, each open directory followed by its own rows.
@@ -261,6 +222,44 @@ impl Project {
         }
         rows
     }
+}
+
+/// The Files sidebar on the right of a project's page: the default branch as a tree in a white box, none while it is
+/// folded away. A project the person has not opened yet shows the tree as it is being read.
+pub fn sidebar<'a>(
+    repository: i64,
+    project: Option<&'a Project>,
+) -> Option<Element<'a, AppMessage>> {
+    if project.is_some_and(|project| project.files_folded) {
+        return None;
+    }
+    let rows = match project {
+        Some(project) => project.tree_rows(repository),
+        None => vec![note_row(
+            0,
+            "Reading the default branch.",
+            theme::TEXT_MUTED,
+        )],
+    };
+    let head = text("Files · default branch")
+        .size(theme::LABEL)
+        .font(theme::MONO)
+        .color(theme::TEXT_MUTED);
+    Some(
+        container(
+            column![
+                container(head).padding([0.0, theme::SPACE_10]),
+                scrollable(column(rows).spacing(theme::SPACE_1)).height(Length::Fill),
+            ]
+            .spacing(theme::SPACE_8),
+        )
+        .id("files-sidebar")
+        .padding(theme::SPACE_10)
+        .width(theme::FILES_WIDTH)
+        .height(Length::Fill)
+        .style(|_| page::box_style())
+        .into(),
+    )
 }
 
 #[cfg(test)]

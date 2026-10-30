@@ -1,5 +1,6 @@
-//! What the floating chat tells the Moebius agent of a project's tab: the directory listed, or the file open in the
-//! Editor with the lines around the cursor and what is selected, cut to a sensible size.
+//! What the floating chat tells the Moebius agent of a project's tab: the file open in the editor shown with the lines
+//! around the cursor and what is selected, cut to a sensible size, or the terminal or chat shown, and the directories
+//! the Files sidebar has open.
 
 use super::{Body, Project, TEXT_LIMIT, Tab};
 
@@ -30,25 +31,33 @@ impl Project {
     }
 
     fn tab_context(&self) -> Vec<String> {
-        match self.tab {
+        let mut lines = match &self.tab {
             Tab::Board => Vec::new(),
-            Tab::Files => {
-                let open: Vec<&str> = self.open_dirs.iter().map(String::as_str).collect();
-                vec![match open.is_empty() {
-                    true => "Browsing the files of the default branch, at the root.".to_string(),
-                    false => format!(
-                        "Browsing the files of the default branch; open directories: {}",
-                        open.join(", ")
-                    ),
-                }]
+            Tab::Editor(_) => self.editor_context(),
+            Tab::Terminal(_) => {
+                vec!["A terminal in the project's clone on the server is shown.".to_string()]
             }
-            Tab::Editor => self.editor_context(),
+            Tab::Chat(_) => vec!["A chat with an agent in this project is shown.".to_string()],
+        };
+        lines.extend(self.sidebar_context());
+        lines
+    }
+
+    /// What the Files sidebar shows, when it is shown and has directories open.
+    pub fn sidebar_context(&self) -> Option<String> {
+        if self.files_folded || self.open_dirs.is_empty() {
+            return None;
         }
+        let open: Vec<&str> = self.open_dirs.iter().map(String::as_str).collect();
+        Some(format!(
+            "The Files sidebar shows the default branch; open directories: {}",
+            open.join(", ")
+        ))
     }
 
     fn editor_context(&self) -> Vec<String> {
         let Some(file) = self.shown() else {
-            return vec!["The Editor has no file open.".to_string()];
+            return vec!["The editor has no file open.".to_string()];
         };
         let mut lines = vec![format!(
             "Open file: {}{}",

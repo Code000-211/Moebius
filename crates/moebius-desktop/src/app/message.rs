@@ -130,10 +130,12 @@ pub enum Message {
     /// The pencil of a column of the board with this repository id: the editor of the column's script opens.
     EditScript(i64, String),
     Script(script_editor::Message),
-    /// Something on the Files or Editor tab of the project of the repository with this id.
+    /// Something on the tabs or the Files sidebar of the project of the repository with this id.
     Project(i64, project::Message),
-    /// Ctrl+S: the Editor saves the file it shows.
+    /// Ctrl+S: the editor saves the file it shows.
     SaveFile,
+    /// A key for the terminal tab of the project page shown.
+    ProjectKey(iced::keyboard::Event),
     /// A key of "Go to file" or "Search in files" in the project page shown.
     Find(project::find::Message),
     Live(live::Message),

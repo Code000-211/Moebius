@@ -1,13 +1,13 @@
 //! A project's Files and Editor tabs: the tree of the default branch, files open as tabs, saving with Ctrl+S, and
 //! what the agent is told of the file and the cursor.
 
-use moebius_desktop::app::{App, Message};
+use moebius_desktop::app::{App, Message, Page};
 use moebius_desktop::client::{self, ClientError};
-use moebius_desktop::screens::project;
+use moebius_desktop::screens::{chat, project};
 use serde_json::json;
 
 use crate::board::HOLD;
-use crate::fixtures::{clicked, draw, radiance_app, shows, simulator};
+use crate::fixtures::{clicked, clicked_id, draw, radiance_app, shows, simulator};
 
 /// A directory of the radiance repository as the server lists it.
 fn tree(path: &str, entries: &[(&str, &str, u64)]) -> client::Tree {
@@ -34,10 +34,9 @@ pub fn project(message: project::Message) -> Message {
     Message::Project(1, message)
 }
 
-/// The Files tab of the radiance project with `src` open.
+/// The radiance project's page with the Files sidebar read and `src` open.
 fn files_app() -> App {
     let mut app = radiance_app();
-    let _ = app.update(project(project::Message::Tab(project::Tab::Files)));
     let _ = app.update(project(project::Message::Listed(
         String::new(),
         Ok(tree(
@@ -66,7 +65,7 @@ fn files_app() -> App {
     app
 }
 
-/// The Editor of the radiance project with `main.rs` (changed, unsaved) and the Ready column's script open.
+/// The radiance project with the Ready column's script and `main.rs` (changed, unsaved) open as editor tabs.
 fn editor_app() -> App {
     use iced::widget::text_editor::{Action, Edit};
     let mut app = files_app();
@@ -83,32 +82,57 @@ fn editor_app() -> App {
     app
 }
 
-#[test]
-fn a_projects_tabs_lead_from_its_board_to_its_files() {
-    let app = radiance_app();
-    assert!(shows(&app, "Board"));
-    let mut ui = simulator(&app);
-    ui.click(iced::widget::Id::from("project-tab-Files"))
-        .unwrap();
-    let messages: Vec<_> = ui.into_messages().collect();
-    assert!(
-        matches!(
-            &messages[..],
-            [Message::Project(
-                1,
-                project::Message::Tab(project::Tab::Files)
-            )]
+/// A key press of a character, as the terminal tab is told it.
+fn typed(text: &str) -> iced::keyboard::Event {
+    let key = iced::keyboard::Key::Character(text.into());
+    iced::keyboard::Event::KeyPressed {
+        key: key.clone(),
+        modified_key: key,
+        physical_key: iced::keyboard::key::Physical::Unidentified(
+            iced::keyboard::key::NativeCode::Unidentified,
         ),
-        "{messages:?}"
-    );
-    let mut app = app;
-    let _ = app.update(messages.into_iter().next().unwrap());
-    assert!(shows(&app, "Reading the default branch."));
-    assert!(!shows(&app, "New issue"));
+        location: iced::keyboard::Location::Standard,
+        modifiers: iced::keyboard::Modifiers::empty(),
+        text: Some(text.into()),
+        repeat: false,
+    }
+}
+
+fn editor(path: &str) -> project::Tab {
+    project::Tab::Editor(path.to_string())
+}
+
+/// What a click on the element named `id` sends, applied to `app`.
+fn click_id(app: &mut App, id: &str) {
+    for message in clicked_id(app, id) {
+        let _ = app.update(message);
+    }
 }
 
 #[test]
-fn the_files_tab_shows_the_tree_with_an_open_directory() {
+fn a_projects_page_has_its_board_and_the_files_on_the_right() {
+    let mut app = radiance_app();
+    assert!(shows(&app, "Board"));
+    assert!(shows(&app, "Files \u{b7} default branch"));
+    assert!(shows(&app, "Reading the default branch."));
+    // The tabs of the old page are gone: there are only Board and what is opened.
+    assert!(!shows(&app, "Editor"));
+    assert!(shows(&app, "Retry model downloads on HTTP 5xx"));
+
+    // The button at the right of the tabs folds the sidebar away and brings it back.
+    assert!(matches!(
+        &clicked_id(&app, "toggle-files")[..],
+        [Message::Project(1, project::Message::ToggleFiles)]
+    ));
+    click_id(&mut app, "toggle-files");
+    assert!(!shows(&app, "Files \u{b7} default branch"));
+    assert!(shows(&app, "Retry model downloads on HTTP 5xx"));
+    click_id(&mut app, "toggle-files");
+    assert!(shows(&app, "Files \u{b7} default branch"));
+}
+
+#[test]
+fn the_sidebar_shows_the_tree_with_an_open_directory() {
     let app = files_app();
     draw(
         &app,
@@ -117,8 +141,6 @@ fn the_files_tab_shows_the_tree_with_an_open_directory() {
             "Projects",
             "radiance",
             "Board",
-            "Files",
-            "Editor",
             ".moebius",
             "src",
             "draft",
@@ -128,14 +150,6 @@ fn the_files_tab_shows_the_tree_with_an_open_directory() {
             "README.md",
             "48.2 KB",
         ],
-    );
-    let mut ui = simulator(&app);
-    ui.click(iced::widget::Id::from("tree-src/main.rs"))
-        .unwrap();
-    let messages: Vec<_> = ui.into_messages().collect();
-    assert!(
-        matches!(&messages[..], [Message::Project(1, project::Message::Open(path))] if path == "src/main.rs"),
-        "{messages:?}"
     );
     let mut ui = simulator(&app);
     ui.click(iced::widget::Id::from("tree-.moebius")).unwrap();
@@ -151,23 +165,66 @@ fn the_files_tab_shows_the_tree_with_an_open_directory() {
     assert!(shows(&app, "Reading."));
     let _ = app.update(project(project::Message::Listed(
         ".moebius".into(),
-        Ok(tree(".moebius", &[("ready.luau", "file", 180)])),
+        Ok(tree(".moebius", &[("notes.md", "file", 180)])),
     )));
-    assert!(shows(&app, "ready.luau"));
+    assert!(shows(&app, "notes.md"));
     let _ = app.update(project(project::Message::Toggle(".moebius".into())));
-    assert!(!shows(&app, "ready.luau"));
+    assert!(!shows(&app, "notes.md"));
     let _ = app.update(project(project::Message::Toggle("src".into())));
     assert!(!shows(&app, "sched.rs"));
 }
 
+/// A click on a file opens an editor tab at once; a second click on it shows the tab instead of opening another.
 #[test]
-fn the_editor_shows_open_files_as_tabs_highlighted_with_the_unsaved_one_marked() {
+fn a_click_on_a_file_opens_its_editor_tab_or_shows_the_one_it_is_open_in() {
+    let mut app = files_app();
+    let messages = clicked_id(&app, "tree-src/main.rs");
+    assert!(
+        matches!(&messages[..], [Message::Project(1, project::Message::Open(path))] if path == "src/main.rs"),
+        "{messages:?}"
+    );
+    for message in messages {
+        let _ = app.update(message);
+    }
+    assert!(shows(&app, "Reading the file\u{2026}"));
+    assert!(shows(&app, "Save"));
+    let _ = app.update(project(project::Message::Read(
+        "src/main.rs".into(),
+        Ok(text_file("src/main.rs", MAIN_RS)),
+    )));
+    assert!(shows(&app, "src/main.rs"));
+    assert!(shows(&app, "Rust"));
+    // The tree stays beside the editor.
+    assert!(shows(&app, "sched.rs"));
+
+    click_id(&mut app, "tree-src/sched.rs");
+    let _ = app.update(project(project::Message::Read(
+        "src/sched.rs".into(),
+        Ok(text_file("src/sched.rs", "//! The scheduler.\n")),
+    )));
+    assert!(app.page_context().contains("Open file: src/sched.rs"));
+    assert!(app.page_context().contains("Also open: src/main.rs"));
+    click_id(&mut app, "tree-src/main.rs");
+    let context = app.page_context();
+    assert!(context.contains("Open file: src/main.rs"), "{context}");
+    assert!(context.contains("Also open: src/sched.rs"), "{context}");
+    // Two tabs, not three.
+    assert!(!context.contains("src/sched.rs, src/main.rs"), "{context}");
+    // The tab of a file is named by the file, and Board stays.
+    click_id(&mut app, "project-tab-Board");
+    assert!(shows(&app, "Retry model downloads on HTTP 5xx"));
+    click_id(&mut app, "project-tab-src/sched.rs");
+    assert!(app.page_context().contains("Open file: src/sched.rs"));
+}
+
+#[test]
+fn the_page_shows_several_tabs_with_the_unsaved_one_marked() {
     let app = editor_app();
     draw(
         &app,
         "project-editor",
         &[
-            "Editor · 2",
+            "Board",
             "ready.luau",
             "main.rs",
             "src/main.rs",
@@ -175,12 +232,226 @@ fn the_editor_shows_open_files_as_tabs_highlighted_with_the_unsaved_one_marked()
             "Ln 2, Col 1",
             "Unsaved changes.",
             "Save",
+            "sched.rs",
         ],
     );
     assert!(matches!(
         &clicked(&app, "Save")[..],
         [Message::Project(1, project::Message::Save)]
     ));
+    // Every tab but Board has a cross.
+    assert!(clicked_id(&app, "close-src/main.rs").len() == 1);
+    assert!(simulator(&app).find("close-Board").is_err());
+}
+
+/// The `+` opens a menu of editor, terminal and agent chat; the browser is drawn but not built.
+#[test]
+fn the_plus_offers_an_editor_a_terminal_and_an_agent_chat() {
+    let mut app = files_app();
+    assert!(!shows(&app, "Agent chat"));
+    assert!(matches!(
+        &clicked_id(&app, "project-new")[..],
+        [Message::Project(1, project::Message::Menu)]
+    ));
+    click_id(&mut app, "project-new");
+    draw(
+        &app,
+        "project-new-tab",
+        &[
+            "Board",
+            "Editor",
+            "Terminal",
+            "Agent chat",
+            "Browser",
+            "later",
+        ],
+    );
+    assert!(matches!(
+        &clicked_id(&app, "new-terminal")[..],
+        [Message::Project(1, project::Message::NewTerminal)]
+    ));
+    assert!(matches!(
+        &clicked_id(&app, "new-chat")[..],
+        [Message::Project(1, project::Message::NewChat)]
+    ));
+    // The browser comes later: it does nothing.
+    assert!(clicked(&app, "Browser").is_empty());
+
+    // Editor opens "Go to file", and the menu closes.
+    click_id(&mut app, "new-editor");
+    assert!(shows(&app, "Go to file"));
+    assert!(!shows(&app, "Agent chat"));
+    // A second click on the plus closes the menu.
+    let mut app = files_app();
+    click_id(&mut app, "project-new");
+    click_id(&mut app, "project-new");
+    assert!(!shows(&app, "Agent chat"));
+}
+
+#[test]
+fn closing_a_tab_shows_the_one_before_it_and_board_has_no_cross() {
+    let mut app = editor_app();
+    // An unsaved file asks first; Keep calls it off, and discarding closes it.
+    let messages = clicked_id(&app, "close-src/main.rs");
+    assert!(
+        matches!(&messages[..], [Message::Project(1, project::Message::Close(project::Tab::Editor(path)))] if path == "src/main.rs"),
+        "{messages:?}"
+    );
+    for message in messages {
+        let _ = app.update(message);
+    }
+    assert!(shows(&app, "Close main.rs without saving?"));
+    let _ = app.update(project(project::Message::Keep));
+    assert!(!shows(&app, "Close main.rs without saving?"));
+    click_id(&mut app, "close-src/main.rs");
+    let _ = app.update(project(project::Message::Discard("src/main.rs".into())));
+    assert!(!shows(&app, "Close main.rs without saving?"));
+    assert!(!shows(&app, "src/main.rs"));
+    // The tab before it, the script, is shown now.
+    assert!(
+        app.page_context()
+            .contains("Open file: .moebius/ready.luau")
+    );
+    // The script has no changes and closes at once, leaving the board.
+    click_id(&mut app, "close-.moebius/ready.luau");
+    assert!(shows(&app, "Retry model downloads on HTTP 5xx"));
+    assert!(!shows(&app, "Save"));
+}
+
+#[test]
+fn the_open_tabs_are_kept_while_the_app_runs() {
+    let mut app = editor_app();
+    let _ = app.update(project(project::Message::NewTerminal));
+    let _ = app.update(Message::Select(Page::Inbox));
+    let _ = app.update(Message::Select(Page::Board(1)));
+    assert!(shows(&app, "ready.luau"));
+    assert!(shows(&app, "main.rs"));
+    assert!(shows(&app, "Shell in the clone"));
+}
+
+/// The server's shell in the repository's clone fills a tab; the connection lives while the page is shown, and what is
+/// typed goes to the shell shown.
+#[test]
+fn a_terminal_tab_is_a_shell_in_the_clone() {
+    use iced::Size;
+    use moebius_desktop::client::TerminalEvent;
+    use moebius_desktop::widgets::terminal::PaneEvent;
+
+    let mut app = files_app();
+    let before = app.subscription().units();
+    let _ = app.update(project(project::Message::NewTerminal));
+    assert!(
+        app.subscription().units() > before,
+        "a terminal needs a connection"
+    );
+    let (input, mut sent) = iced::futures::channel::mpsc::channel(16);
+    let tab = |message| project(message);
+    // The first terminal opened is number 1 (its connection number comes after it).
+    let _ = app.update(tab(project::Message::Shell(
+        1,
+        TerminalEvent::Connected(input),
+    )));
+    let _ = app.update(tab(project::Message::Pane(
+        1,
+        PaneEvent::Resized(Size::new(1000.0, 600.0)),
+    )));
+    let printed = "\x1b[1;32mleon@server\x1b[0m:\x1b[1;34m~/radiance\x1b[0m$ git status --short\r\n\
+         \x1b[31m M\x1b[0m src/main.rs\r\n\
+         \x1b[1;32mleon@server\x1b[0m:\x1b[1;34m~/radiance\x1b[0m$ ";
+    let _ = app.update(tab(project::Message::Shell(
+        1,
+        TerminalEvent::Output(printed.as_bytes().to_vec()),
+    )));
+    draw(
+        &app,
+        "project-terminal",
+        &[
+            "Board",
+            "Terminal",
+            "Shell in the clone",
+            "connected",
+            "Files \u{b7} default branch",
+        ],
+    );
+
+    // A key goes to the shell while the tab is shown, and not while a panel with a field is open.
+    while sent.try_recv().is_ok() {}
+    let _ = app.update(Message::ProjectKey(typed("a")));
+    assert!(matches!(
+        sent.try_recv(),
+        Ok(client::TerminalInput::Bytes(bytes)) if bytes == b"a"
+    ));
+    let _ = app.update(Message::Find(project::find::Message::Go));
+    let _ = app.update(Message::ProjectKey(typed("b")));
+    assert!(sent.try_recv().is_err());
+    let _ = app.update(Message::Find(project::find::Message::Close));
+    // A tab of another kind does not take keys.
+    let _ = app.update(project(project::Message::Tab(project::Tab::Board)));
+    let _ = app.update(Message::ProjectKey(typed("c")));
+    assert!(sent.try_recv().is_err());
+
+    // Several terminals are numbered; a closed one ends its connection.
+    let _ = app.update(project(project::Message::NewTerminal));
+    assert!(shows(&app, "Terminal 1"));
+    assert!(shows(&app, "Terminal 2"));
+    let two = app.subscription().units();
+    click_id(&mut app, "close-terminal-3");
+    assert!(app.subscription().units() < two);
+    assert!(shows(&app, "Terminal"));
+    assert!(!shows(&app, "Terminal 2"));
+}
+
+/// An agent chat tab is a new chat of this project; once it starts it is a chat of the Chat page, shown inside the tab.
+#[test]
+fn an_agent_chat_tab_holds_a_chat_of_the_project() {
+    use crate::chat::{chat_events, chat_listing};
+    let mut app = files_app();
+    let _ = app.update(Message::Chat(chat::Message::Tick(1_790_000_000)));
+    let _ = app.update(Message::Chat(chat::Message::Listed(Ok(chat_listing(
+        "waiting",
+    )))));
+    let _ = app.update(project(project::Message::NewChat));
+    // What the tab asks the chat state for.
+    let _ = app.update(Message::Chat(chat::Message::NewChatIn(1)));
+    assert!(shows(&app, "Chat"));
+    assert!(shows(&app, "Works in radiance") || shows(&app, "Moebius"));
+    draw(
+        &app,
+        "project-chat-new",
+        &["Board", "Chat", "Moebius", "Files \u{b7} default branch"],
+    );
+
+    // The first message starts the chat; the tab follows it.
+    let run: client::Run = serde_json::from_value(
+        json!({"id": 7, "agent": "Moebius", "purpose": "chat", "status": "waiting"}),
+    )
+    .unwrap();
+    let _ = app.update(Message::Chat(chat::Message::Started(Ok(run))));
+    let _ = app.update(Message::Chat(chat::Message::Select(7)));
+    let _ = app.update(Message::Chat(chat::Message::Loaded(7, Ok(chat_events()))));
+    assert!(shows(
+        &app,
+        "Write a ready.luau that starts a card only when nothing blocks it."
+    ));
+    draw(
+        &app,
+        "project-chat",
+        &[
+            "Board",
+            "Chat",
+            "Moebius in radiance",
+            "Send",
+            "Files \u{b7} default branch",
+        ],
+    );
+
+    // The same chat is the Chat page's: it lists it and shows it.
+    let _ = app.update(Message::Select(Page::Chat));
+    assert!(app.page_context().contains("Open chat 7"));
+    // Coming back to the project reads the tab's chat again.
+    let task = app.update(Message::Select(Page::Board(1)));
+    drop(task);
+    assert!(shows(&app, "Chat"));
 }
 
 #[test]
@@ -255,35 +526,8 @@ fn ctrl_s_saves_the_file_the_editor_shows() {
     let mut board = editor_app();
     let _ = board.update(project(project::Message::Tab(project::Tab::Board)));
     let _ = board.update(Message::SaveFile);
-    let _ = board.update(project(project::Message::Tab(project::Tab::Editor)));
+    let _ = board.update(project(project::Message::Tab(editor("src/main.rs"))));
     assert!(shows(&board, "Unsaved changes."));
-}
-
-#[test]
-fn closing_an_unsaved_file_asks_and_a_saved_one_closes_at_once() {
-    let app = editor_app();
-    let mut ui = simulator(&app);
-    ui.click(iced::widget::Id::from("close-src/main.rs"))
-        .unwrap();
-    let messages: Vec<_> = ui.into_messages().collect();
-    assert!(
-        matches!(&messages[..], [Message::Project(1, project::Message::Close(path))] if path == "src/main.rs"),
-        "{messages:?}"
-    );
-    let mut app = app;
-    let _ = app.update(project(project::Message::Close("src/main.rs".into())));
-    assert!(shows(&app, "Close main.rs without saving?"));
-    let _ = app.update(project(project::Message::Keep));
-    assert!(!shows(&app, "Close main.rs without saving?"));
-    let _ = app.update(project(project::Message::Close("src/main.rs".into())));
-    let _ = app.update(project(project::Message::Discard("src/main.rs".into())));
-    assert!(!shows(&app, "main.rs"));
-    assert!(shows(&app, "ready.luau"));
-    // The script has no changes and closes at once, leaving no file open.
-    let _ = app.update(project(project::Message::Close(
-        ".moebius/ready.luau".into(),
-    )));
-    assert!(shows(&app, "No file open."));
 }
 
 #[test]
@@ -309,7 +553,7 @@ fn a_binary_or_too_large_file_is_said_to_be_so_and_not_edited() {
         &app,
         "data.bin is over 1 MB (2000000 bytes), not editable here."
     ));
-    let _ = app.update(project(project::Message::Show("logo.png".into())));
+    let _ = app.update(project(project::Message::Tab(editor("logo.png"))));
     assert!(shows(
         &app,
         "logo.png is binary (48211 bytes), not editable here."
@@ -323,7 +567,7 @@ fn a_binary_or_too_large_file_is_said_to_be_so_and_not_edited() {
 fn the_page_context_names_the_file_the_cursor_and_the_selection() {
     use iced::widget::text_editor::{Action, Motion};
     let files = files_app().page_context();
-    assert!(files.starts_with("Page: Projects > Files"), "{files}");
+    assert!(files.starts_with("Page: Projects > Board"), "{files}");
     assert!(files.contains("Repository: radiance (id 1)"), "{files}");
     assert!(files.contains("open directories: src"), "{files}");
 
@@ -618,11 +862,11 @@ fn ctrl_p_and_ctrl_shift_f_open_the_panels() {
     assert!(key(press("f", Modifiers::COMMAND)).is_none());
     assert!(key(press("p", Modifiers::empty())).is_none());
 
-    // On the board the keys show the Files tab with the panel.
+    // On the board the panel opens under the tabs, over the columns.
     let mut app = radiance_app();
     let _ = app.update(Message::Find(project::find::Message::Search));
     assert!(shows(&app, "Search in files"));
-    assert!(shows(&app, "Cargo.toml") || shows(&app, "Reading the default branch."));
+    assert!(shows(&app, "Retry model downloads on HTTP 5xx"));
     let _ = app.update(Message::Find(project::find::Message::Close));
     assert!(!shows(&app, "Search in files"));
 }

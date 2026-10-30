@@ -85,7 +85,11 @@ impl App {
                 Some(Opened::Run(live)) => Place::Card(live.card),
                 Some(Opened::History { card, .. }) => Place::Card(*card),
                 Some(Opened::Script(editor)) => Place::Script(editor.column().to_string()),
-                None => Place::Tab(self.projects.get(&id).map_or(Tab::Board, Project::tab)),
+                None => Place::Tab(
+                    self.projects
+                        .get(&id)
+                        .map_or(Tab::Board, |project| project.tab().clone()),
+                ),
             },
             Page::Chat => self.chats.opened().map_or(Place::Whole, Place::Chat),
             Page::Agents => self
@@ -168,7 +172,7 @@ impl App {
             (Page::Board(id), None) => self
                 .projects
                 .get(&id)
-                .filter(|project| project.tab() == Tab::Editor)
+                .filter(|project| matches!(project.tab(), Tab::Editor(_)))
                 .map(Project::unsaved),
             (Page::Rules, _) => Some(self.rules.unsaved()),
             (Page::Agents, _) => self.agents.unsaved(),

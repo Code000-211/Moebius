@@ -19,7 +19,7 @@ use serde_json::json;
 
 use crate::app::App;
 use crate::bus::AppEvent;
-use crate::harness::terminal::SERVER;
+use crate::harness::terminal::{SERVER, is_repository_key};
 
 /// How often [`watch`] looks for ports.
 pub const PERIOD: Duration = Duration::from_secs(3);
@@ -103,9 +103,9 @@ impl Roots {
 }
 
 /// The run a terminal opened under `key` belongs to: the key of a run's shell is the run, of a chat's terminal
-/// interface the run negated, and of the server's own shell [`SERVER`].
+/// interface the run negated, and of the server's own shell [`SERVER`]; a shell in a repository's clone has no run.
 fn terminal_run(key: i64) -> Option<i64> {
-    (key != SERVER).then(|| key.abs())
+    (key != SERVER && !is_repository_key(key)).then(|| key.abs())
 }
 
 /// The ports that processes of runs, chats and terminals listen on now, by port. Blocks: it reads `/proc`.
@@ -210,6 +210,8 @@ mod tests {
         assert_eq!(terminal_run(7), Some(7));
         assert_eq!(terminal_run(-7), Some(7), "a chat's terminal interface");
         assert_eq!(terminal_run(SERVER), None);
+        let clone = crate::harness::terminal::repository_key(7);
+        assert_eq!(terminal_run(clone), None, "a repository's clone has no run");
     }
 
     #[test]

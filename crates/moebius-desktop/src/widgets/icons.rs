@@ -49,6 +49,10 @@ pub enum Icon {
     File,
     /// A cross: a tab closes.
     Close,
+    /// A plus: a new tab.
+    Plus,
+    /// The sidebar on the right of a page, which folds away.
+    PanelRight,
 }
 
 impl Icon {
@@ -108,6 +112,10 @@ impl Icon {
             }
             Icon::File => r#"<path d="M4 2h5l3 3v9H4z"/><path d="M9 2v3h3"/>"#,
             Icon::Close => r#"<path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/>"#,
+            Icon::PanelRight => {
+                r#"<rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M10 2.5v11"/>"#
+            }
+            Icon::Plus => r#"<path d="M8 3.5v9M3.5 8h9"/>"#,
             Icon::Panel => {
                 r#"<rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M6 2.5v11"/>"#
             }

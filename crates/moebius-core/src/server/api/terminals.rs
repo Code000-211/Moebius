@@ -4,6 +4,7 @@
 //! - `GET /v1/chats/{id}/tui`: Pi-Bolt's own terminal interface in a waiting chat's worktree, continuing the chat's
 //!   conversation (see [`crate::harness::pibolt`]).
 //! - `GET /v1/terminal`: a shell in the directory of `moebius.toml`, recorded as an `open_terminal` decision.
+//! - `GET /v1/repositories/{id}/terminal`: a shell in the repository's clone, recorded the same way.
 
 use std::path::PathBuf;
 
@@ -23,6 +24,7 @@ pub(super) fn routes() -> Router<ApiState> {
         .route("/v1/runs/{id}/terminal", get(run_terminal))
         .route("/v1/chats/{id}/tui", get(chat_tui))
         .route("/v1/terminal", get(server_terminal))
+        .route("/v1/repositories/{id}/terminal", get(repository_terminal))
 }
 
 async fn run_terminal(
@@ -70,6 +72,20 @@ async fn server_terminal(
     };
     let work = dir.clone();
     let axum::Json(slot) = blocking(&state.app, move |app| app.open_server_shell(&work)).await?;
+    Ok(upgrade.on_upgrade(move |socket| async move {
+        crate::harness::terminal::serve(socket, &dir, slot).await
+    }))
+}
+
+async fn repository_terminal(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    upgrade: WebSocketUpgrade,
+) -> Result<Response, ApiError> {
+    person_only(&by)?;
+    let axum::Json((dir, slot)) =
+        blocking(&state.app, move |app| app.open_repository_shell(id)).await?;
     Ok(upgrade.on_upgrade(move |socket| async move {
         crate::harness::terminal::serve(socket, &dir, slot).await
     }))
@@ -696,5 +712,68 @@ mod tests {
                 .is_some()
         })
         .await;
+    }
+
+    #[tokio::test]
+    async fn a_person_opens_a_shell_in_the_clone_of_a_repository() {
+        let (dir, state, addr) = start().await;
+        let clone = dir.path().join("clone");
+        std::fs::create_dir_all(&clone).unwrap();
+        let repo = state
+            .app
+            .store
+            .add_repository("widgets", &clone.to_string_lossy(), "none", "main")
+            .unwrap();
+        let path = format!("/v1/repositories/{}/terminal", repo.id);
+
+        let mut terminal = open_at(&addr, &state.token, &path).await.unwrap();
+        type_in(&mut terminal, "echo where-$(pwd -P)-end\n").await;
+        let printed = read_until(&mut terminal, "where-(/[^\\s]*)-end").await;
+        assert_eq!(
+            std::path::Path::new(&printed),
+            std::fs::canonicalize(&clone).unwrap()
+        );
+        assert_eq!(
+            state.app.store.judgements("open_terminal").unwrap().len(),
+            1
+        );
+
+        // Nobody gets in with the wrong token, into a repository that is not there, or with an agent's run token.
+        assert_eq!(
+            status_of(open_at(&addr, "nope", &path).await.unwrap_err()),
+            401
+        );
+        assert_eq!(
+            status_of(
+                open_at(&addr, &state.token, "/v1/repositories/999/terminal")
+                    .await
+                    .unwrap_err()
+            ),
+            404
+        );
+        let run = state
+            .app
+            .store
+            .add_run(Some(1), "Moebius", "test", "chat")
+            .unwrap();
+        let agent_token = state.router.issue_token(crate::router::Grant {
+            run_id: run.id,
+            card_id: None,
+            budget: None,
+        });
+        assert_eq!(
+            status_of(open_at(&addr, &agent_token, &path).await.unwrap_err()),
+            403
+        );
+
+        // At most a few at once per repository, and another repository has its own.
+        let mut open = vec![terminal];
+        for _ in 1..crate::harness::terminal::MAX_PER_RUN {
+            open.push(open_at(&addr, &state.token, &path).await.unwrap());
+        }
+        let refused = open_at(&addr, &state.token, &path).await;
+        assert_eq!(status_of(refused.unwrap_err()), 422);
+        let other = open_at(&addr, &state.token, "/v1/repositories/1/terminal").await;
+        assert_eq!(status_of(other.unwrap_err()), 422, "its clone is not there");
     }
 }

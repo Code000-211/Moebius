@@ -280,14 +280,7 @@ impl Chats {
             page::context(line),
             page::white_button("New chat", Some(AppMessage::Chat(Message::NewChat))),
         );
-        let detail: Element<_> = match (&self.draft, &self.open) {
-            (Some(draft), _) => self.draft_view(draft, snapshot),
-            (None, Some(open)) => match self.chat(open.thread.id) {
-                Some(chat) => self.chat_view(chat, open, snapshot, inbox),
-                None => empty_view("Reading the chat…"),
-            },
-            (None, None) => empty_view("Choose a chat, or start a new one."),
-        };
+        let detail = self.detail_view(snapshot, inbox);
         column![
             header,
             row![self.list_view(snapshot), detail]
@@ -297,6 +290,37 @@ impl Chats {
         .spacing(theme::PAGE_GAP)
         .width(Length::Fill)
         .into()
+    }
+
+    /// The form of a new chat or the chat chosen, as the right of the page shows it.
+    fn detail_view<'a>(
+        &'a self,
+        snapshot: &'a Snapshot,
+        inbox: &'a Inbox,
+    ) -> Element<'a, AppMessage> {
+        match (&self.draft, &self.open) {
+            (Some(draft), _) => self.draft_view(draft, snapshot),
+            (None, Some(open)) => match self.chat(open.thread.id) {
+                Some(chat) => self.chat_view(chat, open, snapshot, inbox),
+                None => empty_view("Reading the chat…"),
+            },
+            (None, None) => empty_view("Choose a chat, or start a new one."),
+        }
+    }
+
+    /// One chat inside a project's chat tab: its new chat form while it has no chat (`chat` is none), else the chat
+    /// with this id once it is the one open, which is what the Chat page shows too.
+    pub fn embedded<'a>(
+        &'a self,
+        snapshot: &'a Snapshot,
+        inbox: &'a Inbox,
+        chat: Option<i64>,
+    ) -> Element<'a, AppMessage> {
+        match (chat, &self.draft) {
+            (None, Some(_)) => self.detail_view(snapshot, inbox),
+            (Some(id), None) if self.opened() == Some(id) => self.detail_view(snapshot, inbox),
+            _ => empty_view("Reading the chat…"),
+        }
     }
 
     /// The chats, newest first, the chosen one marked.

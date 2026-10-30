@@ -60,6 +60,8 @@ pub enum Message {
     Offered(Result<Change, ClientError>),
     /// Open an empty chat, a draft that is nothing on the server until its first message or its terminal starts it.
     NewChat,
+    /// Open an empty chat in the repository with this id, as a project's chat tab does.
+    NewChatIn(i64),
     /// The agents a chat can be with were read.
     Agents(Result<Vec<Agent>, ClientError>),
     /// The models the upstreams serve were read, for the model picker.

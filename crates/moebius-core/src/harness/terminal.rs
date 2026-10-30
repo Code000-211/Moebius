@@ -20,6 +20,19 @@ pub const MAX_PER_RUN: usize = 4;
 /// The key of the terminals opened on the server rather than on a run; run ids start at 1.
 pub const SERVER: i64 = 0;
 
+/// Where the keys of the shells opened in a repository's clone start, far from the runs' ids and their negations.
+const REPOSITORY_KEYS: i64 = -(1 << 40);
+
+/// The key of the shells opened in the clone of repository `id`, at most [`MAX_PER_RUN`] at a time.
+pub fn repository_key(id: i64) -> i64 {
+    REPOSITORY_KEYS - id
+}
+
+/// Whether `key` is one of [`repository_key`], which belongs to no run.
+pub fn is_repository_key(key: i64) -> bool {
+    key <= REPOSITORY_KEYS
+}
+
 /// The key under which the terminal interface of a chat is kept, apart from the shells of its run: at most one is open.
 pub fn tui_key(run: i64) -> i64 {
     -run

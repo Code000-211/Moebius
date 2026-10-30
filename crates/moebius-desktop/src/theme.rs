@@ -244,6 +244,8 @@ pub const TERMINAL_HEIGHT: f32 = 250.0;
 
 /// How far each level of a file tree is indented.
 pub const TREE_INDENT: f32 = 16.0;
+/// The width of the Files sidebar on the right of a project's page.
+pub const FILES_WIDTH: f32 = 260.0;
 
 /// The width of the list that opens over the page when searching.
 pub const SEARCH_WIDTH: f32 = 380.0;

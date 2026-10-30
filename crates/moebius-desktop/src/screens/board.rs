@@ -63,7 +63,7 @@ fn cards_of<'a>(board: &'a Board, column: &str) -> Vec<&'a Card> {
     cards
 }
 
-/// The page of a board: its header, the project's tabs and the columns. The header of a repository on a forge
+/// The page of a board: its header, the project's tabs, the columns and the project's Files sidebar beside them. The header of a repository on a forge
 /// names the logins it trusts, with the pencil that edits them in place.
 pub fn view<'a>(
     board: &'a Board,
@@ -71,6 +71,7 @@ pub fn view<'a>(
     new_issue: &'a NewIssue,
     edits: &'a Edits,
     tabs: Element<'a, Message>,
+    files: Option<Element<'a, Message>>,
 ) -> Element<'a, Message> {
     let repository = &board.repository;
     let tag = repository.forge_tag();
@@ -139,16 +140,19 @@ pub fn view<'a>(
     if new_issue.is_open_on(repository.id) {
         page = page.push(new_issue.view());
     }
-    page.push(
-        scrollable(
-            row(columns)
-                .spacing(theme::SPACE_10)
-                .align_y(Alignment::Start)
-                .width(Length::Fill),
-        )
-        .height(Length::Fill),
+    let columns = scrollable(
+        row(columns)
+            .spacing(theme::SPACE_10)
+            .align_y(Alignment::Start)
+            .width(Length::Fill),
     )
-    .into()
+    .height(Length::Fill);
+    // The Files sidebar of the project stands on the right of the columns.
+    let mut body = row![columns].spacing(theme::PAGE_GAP).height(Length::Fill);
+    if let Some(files) = files {
+        body = body.push(files);
+    }
+    page.push(body).into()
 }
 
 fn column_view<'a>(

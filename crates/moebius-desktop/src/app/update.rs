@@ -150,11 +150,22 @@ impl App {
             Message::SaveFile => {
                 if let (Page::Board(repository), None) = (self.page(), &self.opened)
                     && let Some(project) = self.projects.get_mut(&repository)
-                    && project.tab() == Tab::Editor
+                    && matches!(project.tab(), Tab::Editor(_))
                 {
                     return project.update(
                         repository,
                         project::Message::Save,
+                        self.settings.as_ref(),
+                    );
+                }
+            }
+            Message::ProjectKey(event) => {
+                if let (Page::Board(repository), None) = (self.page(), &self.opened)
+                    && let Some(project) = self.projects.get_mut(&repository)
+                {
+                    return project.update(
+                        repository,
+                        project::Message::Key(event),
                         self.settings.as_ref(),
                     );
                 }
@@ -297,7 +308,21 @@ impl App {
                 }
                 return task;
             }
-            Message::Chat(message) => return self.chats.update(message, self.settings.as_ref()),
+            Message::Chat(message) => {
+                // A chat the project's chat tab started, or went on in a new one, is the tab's.
+                let started = match &message {
+                    chat::Message::Started(Ok(run)) | chat::Message::Continued(Ok(run)) => {
+                        Some(run.id)
+                    }
+                    _ => None,
+                };
+                if let (Some(chat), Page::Board(repository)) = (started, self.page())
+                    && let Some(project) = self.projects.get_mut(&repository)
+                {
+                    project.follow_chat(chat);
+                }
+                return self.chats.update(message, self.settings.as_ref());
+            }
             Message::Float(message) => return self.on_float(message),
             Message::Fleet(message) => self.fleet.update(message),
             Message::Automations(message) => {
@@ -611,6 +636,9 @@ impl App {
             self.terminal.open();
         }
         match (page, &self.settings) {
+            (Page::Board(id), Some(settings)) => {
+                self.projects.entry(id).or_default().enter(id, settings)
+            }
             (Page::Chat | Page::Fleet, Some(settings)) => self.chats.reload(settings),
             (Page::Automations, Some(settings)) => self.automations.reload(settings),
             (Page::Agents, Some(settings)) => self.agents.reload(settings),

@@ -1,7 +1,7 @@
 //! Finding in a project: "Go to file" (Ctrl+P), a fuzzy match over the paths of the default branch whose best match
-//! opens in the Editor, and "Search in files" (Ctrl+Shift+F), a full-text search of the default branch run by the
+//! opens in an editor tab, and "Search in files" (Ctrl+Shift+F), a full-text search of the default branch run by the
 //! server (`GET /v1/repositories/{id}/search`) whose hits are listed per file and open the file at their line. The
-//! panel shows over the Files and Editor tabs. `fuzzy` ranks the paths; this module holds the state, how a message
+//! panel shows under the tabs, over every tab. `fuzzy` ranks the paths; this module holds the state, how a message
 //! changes it, what the floating chat is told of it and how it is drawn.
 
 use iced::widget::{button, column, container, row, scrollable, space, text, text_input};
@@ -83,7 +83,7 @@ pub(super) enum Find {
     },
 }
 
-/// Where the file in the Editor was opened from, which the floating chat is told.
+/// Where the file in the editor was opened from, which the floating chat is told.
 #[derive(Debug)]
 pub(super) struct Origin {
     pub path: String,
@@ -145,7 +145,7 @@ impl Project {
             &self.known_paths,
             PATHS_SHOWN,
             &self.recent,
-            self.current.as_deref(),
+            self.current_path(),
         )
     }
 
@@ -173,13 +173,7 @@ impl Project {
         match message {
             Message::Go | Message::Search => {
                 let go = matches!(message, Message::Go);
-                // Over the board there are no files to find; the Files tab shows.
-                let listing = if self.tab == super::Tab::Board {
-                    self.tab = super::Tab::Files;
-                    self.list(repository, "", settings)
-                } else {
-                    Task::none()
-                };
+                self.menu = false;
                 // The text typed before stays, so that Ctrl+P again selects it.
                 let query = match self.find.take() {
                     Some(Find::Go { query, .. } | Find::Search { query, .. }) => query,
@@ -198,7 +192,7 @@ impl Project {
                             )
                         },
                     );
-                    return Task::batch([listing, focus, read]);
+                    return Task::batch([focus, read]);
                 }
                 self.find = Some(Find::Search {
                     query,
@@ -208,7 +202,7 @@ impl Project {
                     number: 0,
                     hits: Hits::Idle,
                 });
-                return Task::batch([listing, focus]);
+                return focus;
             }
             Message::Close => self.find = None,
             Message::Paths(Ok(list)) => self.known_paths = list.paths,
@@ -355,7 +349,7 @@ impl Project {
         }
     }
 
-    /// What the floating chat is told of finding: the panel that is open and, in the Editor, where the file came from.
+    /// What the floating chat is told of finding: the panel that is open and, in an editor, where the file came from.
     pub(super) fn find_context(&self) -> Vec<String> {
         let mut lines = Vec::new();
         match &self.find {
@@ -408,16 +402,16 @@ impl Project {
             }
             None => {}
         }
-        if self.tab == super::Tab::Editor
+        if let super::Tab::Editor(path) = &self.tab
             && let Some(origin) = &self.origin
-            && self.current.as_deref() == Some(origin.path.as_str())
+            && *path == origin.path
         {
             lines.push(format!("The open file came from: {}", origin.text));
         }
         lines
     }
 
-    /// The panel over the Files or Editor tab, when one is open.
+    /// The panel under the tabs, when one is open.
     pub(super) fn find_view(&self, repository: i64) -> Option<Element<'_, AppMessage>> {
         let message = move |message| AppMessage::Project(repository, super::Message::Find(message));
         let (title, hint) = match self.find.as_ref()? {

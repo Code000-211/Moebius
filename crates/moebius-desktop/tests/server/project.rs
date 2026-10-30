@@ -216,7 +216,7 @@ async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_ask
     );
 }
 
-/// The Files and Editor tabs against a real server: the tree of the default branch, a file read into the Editor, and
+/// The Files sidebar and an editor tab against a real server: the tree of the default branch, a file read into the editor, and
 /// a save that is a commit in the server's clone, after which the file is no longer marked unsaved.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_project_lists_reads_and_saves_a_file_as_a_commit() {
@@ -261,10 +261,7 @@ async fn the_project_lists_reads_and_saves_a_file_as_a_commit() {
         settings.clone(),
         client.snapshot().await.unwrap(),
     ))));
-    let task = app.update(Message::Project(
-        id,
-        project::Message::Tab(project::Tab::Files),
-    ));
+    let task = app.update(Message::Select(moebius_desktop::app::Page::Board(id)));
     settle(&mut app, task).await;
     assert!(shown(&app, "README.md"));
     let task = app.update(Message::Project(id, project::Message::Toggle("src".into())));

@@ -490,7 +490,7 @@ At the top:
 | `repos/poll/github.rs` | What GitHub answers, read for the poll: issues, a pull request with its check runs and latest review. |
 | `repos/poll/gitlab.rs` | What GitLab answers, read for the poll: issues, a merge request with its latest pipeline, failed jobs and approvals. |
 | `repos/poll/forgejo.rs` | What Forgejo answers, read for the poll: issues, a pull request with the statuses of its head commit and its latest review. |
-| `repos/files.rs` | A repository's files on its default branch, read and committed (the Files and Editor tabs of a project). |
+| `repos/files.rs` | A repository's files on its default branch, read and committed (the Files sidebar and editor tabs of a project). |
 | `repos/search.rs` | A repository's default branch searched for the project page: the list of its paths for "Go to file", and a full-text search with `git grep`. |
 
 `board/`, the workflow:
@@ -556,7 +556,7 @@ At the top:
 | `harness/remote/mod.rs` | The runners (`[[runners]]`): which machines there are and how many runs go on each (`Runners`, a `Slot` per run, the list `GET /v1/runners` answers). |
 | `harness/remote/session.rs` | One run on a runner over SSH (`RemoteRun`): the reverse tunnel to the router, the run's branch pushed to the machine's clone and checked out, the harness's command line turned into an `ssh` command with the files it names copied over, and the commits fetched back. |
 | `harness/pick.rs` | `Harnesses`, the server's `Runs`: Pi-Bolt and Claude Code side by side, each run on the harness its agent names. |
-| `harness/terminal.rs` | A person's shell in a run's worktree on a pseudo-terminal (`portable-pty`), served over the WebSocket `GET /v1/runs/{id}/terminal` (and `GET /v1/terminal`, in the directory of `moebius.toml`); at most 4 per run or on the server, not checked by the guard. The same serving carries Pi-Bolt's interactive mode for a waiting chat (`GET /v1/chats/{id}/tui`, one per chat), whose tool calls the bridge still checks; `harness/pibolt/tui.rs` ends the chat's own Pi for it, continues the chat's Pi session in it, records what it adds to the session file as the chat's events, and starts the chat's Pi again on the same session when it closes. |
+| `harness/terminal.rs` | A person's shell in a run's worktree on a pseudo-terminal (`portable-pty`), served over the WebSocket `GET /v1/runs/{id}/terminal` (and `GET /v1/terminal`, in the directory of `moebius.toml`, and `GET /v1/repositories/{id}/terminal`, in a repository's clone); at most 4 per run or on the server, not checked by the guard. The same serving carries Pi-Bolt's interactive mode for a waiting chat (`GET /v1/chats/{id}/tui`, one per chat), whose tool calls the bridge still checks; `harness/pibolt/tui.rs` ends the chat's own Pi for it, continues the chat's Pi session in it, records what it adds to the session file as the chat's events, and starts the chat's Pi again on the same session when it closes. |
 | `harness/repo/mod.rs` | The harness configuration repository's clone: opened, refreshed, and its agents read again when it changes. |
 | `harness/repo/read.rs` | Reading the agents, skills and MCP servers from it, each agent checked as a run uses it. |
 | `harness/repo/edits.rs` | A person's edits of agents, skills, MCP servers and rules, as commits pushed to its origin. |
@@ -670,8 +670,10 @@ At the top:
 | `screens/chat/thread.rs` | A chat's conversation wherever it is shown, here and in the floating chat. |
 | `screens/chat/draft.rs` | A chat not yet started, and the pickers of agent, place, model and reasoning level under the field. |
 | `screens/fleet.rs` | Every working run at a glance, one tile per card. |
-| `screens/project/mod.rs`, `screens/project/update.rs` | A project: the page of one repository with the tabs Board, Files and Editor, and how a message changes them. |
-| `screens/project/view.rs`, `screens/project/editor.rs` | The tabs and the Files tab's tree, and the Editor tab with the open files. |
+| `screens/project/mod.rs`, `screens/project/update.rs` | A project: the page of one repository with the tab Board and the tabs the person opened (editors, terminals, agent chats), the Files sidebar on the right, and how a message changes the files. |
+| `screens/project/tabs.rs`, `screens/project/strip.rs` | How tabs are opened, shown and closed (kept per project while the app runs), and the strip with the `+` menu and the sidebar's fold button. |
+| `screens/project/view.rs`, `screens/project/editor.rs` | The page and the Files sidebar's tree, and an editor tab. |
+| `screens/project/shell.rs` | The terminal tabs: a shell in the repository's clone (`GET /v1/repositories/{id}/terminal`), their connections and keys. |
 | `screens/project/context.rs` | What the floating chat is told of a project's tab. |
 | `screens/project/find.rs`, `screens/project/fuzzy.rs` | "Go to file" (Ctrl+P) and "Search in files" (Ctrl+Shift+F) over a project's default branch, and the fuzzy ranking of paths. |
 | `screens/board.rs` | The board of a repository: its columns in order with their cards. |
@@ -725,6 +727,7 @@ At the top:
 | `widgets/conversation.rs` | Folds a run's events into a conversation (text, tool calls with their checks, steers, errors); pure, takes events in any order and drops repeats. |
 | `widgets/transcript.rs`, `widgets/steps.rs` | How a conversation is drawn (Markdown, tool calls, highlighted code), and the steps between two answers. |
 | `widgets/terminal.rs` | The shell pane: bytes from the server parsed by `alacritty_terminal` into a grid and drawn in JetBrains Mono, keys turned into bytes, the pane's size in cells sent as a resize (`client::terminal`). |
+| `widgets/tabs.rs` | A tab with a label, a line under it when shown, an optional cross and a mark for unsaved changes. |
 | `widgets/chat_terminal.rs` | A chat's terminal: the same pane on `GET /v1/chats/{id}/tui`, opened by the chat's "Chat \| Terminal" switch. |
 | `widgets/float_chat.rs` | The floating chat with the Moebius agent on every screen, given the context of the page. |
 | `widgets/inline_edit.rs`, `widgets/edits.rs` | Editing in place: the pencil and its editor, and the editors that belong to no screen (a card's title and body). |

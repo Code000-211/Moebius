@@ -32,11 +32,11 @@ fn the_script_editor_goes_back_to_the_board_it_was_opened_from() {
 #[test]
 fn going_back_from_a_card_restores_the_tab_or_page_it_was_opened_from() {
     let mut app = radiance_app();
-    let _ = app.update(project(project::Message::Tab(project::Tab::Editor)));
+    let _ = app.update(project(project::Message::Open("src/main.rs".into())));
     let _ = app.update(Message::OpenCard(48));
-    assert!(shows(&app, "\u{2190} Back to Editor of radiance"));
+    assert!(shows(&app, "\u{2190} Back to main.rs of radiance"));
     let _ = app.update(Message::Back);
-    assert!(shows(&app, "No file open."));
+    assert!(shows(&app, "Reading the file\u{2026}"));
 
     let _ = app.update(Message::Select(Page::Inbox));
     let _ = app.update(Message::OpenCard(48));

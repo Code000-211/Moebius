@@ -38,12 +38,15 @@ impl App {
             Page::Board(id) if self.opened.is_none() => self
                 .projects
                 .get(&id)
-                .filter(|project| project.tab() != Tab::Board),
+                .filter(|project| *project.tab() != Tab::Board),
             _ => None,
         };
         let title = match (page, project) {
-            (Page::Board(_), Some(project)) => project.tab().title(),
-            _ => page.title(),
+            (Page::Board(_), Some(project)) => match project.tab() {
+                Tab::Editor(_) => "Editor".to_string(),
+                tab => tab.title(),
+            },
+            _ => page.title().to_string(),
         };
         let mut lines = vec![match page.group() {
             "" => format!("Page: {title}"),
@@ -103,11 +106,16 @@ impl App {
                             &editor.request(),
                         ));
                     }
-                    None => lines.push(format!(
-                        "The board: {} cards, {} changes",
-                        board.cards.len(),
-                        board.changes.len()
-                    )),
+                    None => {
+                        lines.push(format!(
+                            "The board: {} cards, {} changes",
+                            board.cards.len(),
+                            board.changes.len()
+                        ));
+                        if let Some(project) = self.projects.get(&id) {
+                            lines.extend(project.context());
+                        }
+                    }
                 }
             }
             Page::Chat => match self.chats.open_chat() {

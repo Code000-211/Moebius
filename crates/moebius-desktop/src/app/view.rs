@@ -70,6 +70,18 @@ impl App {
                     Page::Chat => self.chats.terminal_subscription(settings),
                     _ => Subscription::none(),
                 };
+                let project = match self.page() {
+                    Page::Board(id) => {
+                        self.projects.get(&id).map_or_else(Subscription::none, |p| {
+                            let keys = match p.shows_terminal() {
+                                true => iced::event::listen_with(project::terminal_key),
+                                false => Subscription::none(),
+                            };
+                            Subscription::batch([p.subscription(id, settings), keys])
+                        })
+                    }
+                    _ => Subscription::none(),
+                };
                 let ports = self.ports.subscription(settings);
                 let floating = if self.float.working() {
                     iced::time::every(Duration::from_secs(30))
@@ -91,6 +103,7 @@ impl App {
                     shell,
                     terminal,
                     chat_terminal,
+                    project,
                     ports,
                     floating,
                     keys,
@@ -202,9 +215,13 @@ impl App {
                 .unwrap_or_else(|| {
                     let project = self.projects.get(&id);
                     let tabs = project::tabs(id, project);
+                    let files = project::sidebar(id, project);
                     match project {
-                        Some(project) if project.tab() != Tab::Board => {
-                            project.view(&board.repository, tabs)
+                        Some(project) if *project.tab() != Tab::Board => {
+                            let chat = project.chat_of(project.tab());
+                            let chat = matches!(project.tab(), Tab::Chat(_))
+                                .then(|| self.chats.embedded(&self.snapshot, &self.inbox, chat));
+                            project.view(&board.repository, tabs, files, chat)
                         }
                         _ => board::view(
                             board,
@@ -212,6 +229,7 @@ impl App {
                             &self.new_issue,
                             &self.edits,
                             tabs,
+                            files,
                         ),
                     }
                 })

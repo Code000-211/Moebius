@@ -1,5 +1,5 @@
 //! A person's hand in a running run: steering it, stopping it, and opening a shell in its worktree, Pi-Bolt's terminal
-//! interface in a chat, or a shell on the server.
+//! interface in a chat, a shell on the server, or a shell in a repository's clone.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -11,7 +11,7 @@ use super::{App, AppError, PERSON, Result};
 use crate::blobs::redact;
 use crate::board::{Runs, Tui};
 use crate::decide::Actor;
-use crate::harness::terminal::{MAX_PER_RUN, SERVER, Slot, tui_key};
+use crate::harness::terminal::{MAX_PER_RUN, SERVER, Slot, repository_key, tui_key};
 use crate::store::Run;
 
 impl App {
@@ -125,5 +125,35 @@ impl App {
         let context = BTreeMap::from([("directory".to_string(), dir.display().to_string())]);
         self.record_action(&Actor::Person, "open_terminal", None, None, context, "")?;
         Ok(slot)
+    }
+
+    /// A person opens a shell in the clone of repository `id`, at most [`MAX_PER_RUN`] at a time per repository.
+    /// Returns the clone's directory and the shell's place. Like the server's shell it is recorded as an
+    /// `open_terminal` decision, with the repository in its context.
+    pub fn open_repository_shell(&self, id: i64) -> Result<(PathBuf, Slot)> {
+        let repository = self.repository(id)?;
+        let dir = PathBuf::from(&repository.path);
+        if !dir.is_dir() {
+            return Err(AppError::Invalid(format!(
+                "the clone of {} is gone: {} is not a directory",
+                repository.name,
+                dir.display()
+            )));
+        }
+        let slot = self
+            .terminals
+            .take_up_to(repository_key(id), MAX_PER_RUN)
+            .ok_or_else(|| {
+                AppError::Invalid(format!(
+                    "{} has {MAX_PER_RUN} terminals open already",
+                    repository.name
+                ))
+            })?;
+        let context = BTreeMap::from([
+            ("directory".to_string(), dir.display().to_string()),
+            ("repository".to_string(), repository.name.clone()),
+        ]);
+        self.record_action(&Actor::Person, "open_terminal", None, None, context, "")?;
+        Ok((dir, slot))
     }
 }

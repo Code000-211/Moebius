@@ -272,6 +272,11 @@ impl Shell {
         Self::pane("Shell on the server", true, generation)
     }
 
+    /// A shell in a repository's clone on the server, in a pane as big as a project's tab.
+    pub fn in_clone(generation: u32) -> Self {
+        Self::pane("Shell in the clone", true, generation)
+    }
+
     /// Pi-Bolt in a chat's worktree, in a pane as big as the chat's detail.
     pub fn in_chat(generation: u32) -> Self {
         Self::pane("Pi-Bolt in the chat's worktree", true, generation)

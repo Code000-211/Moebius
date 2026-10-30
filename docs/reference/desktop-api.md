@@ -24,7 +24,7 @@ another run, such as a steer, the judgement keeps that run, and the agent's run 
 The run token of any other agent, and a revoked one, is answered with `401`. Two routes stay with a person and answer
 `403` with `only a person can do this` to a run token: `PUT /v1/secrets/{name}` (an agent must not set keys),
 `GET /v1/webhooks` and `POST /v1/webhooks/{forge}/secret` (they hold the webhook secrets),
-`POST /v1/harness/setup` (moving the agents is a person's choice) and `GET /v1/runs/{id}/terminal`, `GET /v1/chats/{id}/tui` and `GET /v1/terminal` (the shells) and `GET /v1/ports/{port}/tunnel`. Where a route below says "a person" and "decider
+`POST /v1/harness/setup` (moving the agents is a person's choice) and `GET /v1/runs/{id}/terminal`, `GET /v1/chats/{id}/tui`, `GET /v1/terminal` and `GET /v1/repositories/{id}/terminal` (the shells) and `GET /v1/ports/{port}/tunnel`. Where a route below says "a person" and "decider
 `person`", an agent that uses its token is the decider instead.
 
 ```sh
@@ -657,6 +657,20 @@ configuration file (`moebius.toml`), not in a worktree.
 
 Errors, answered before the upgrade: `403` for the run token of an agent (the shell stays with a person); `422` when 4
 terminals are open already or the directory is gone.
+
+### `GET /v1/repositories/{id}/terminal`
+
+A shell in a repository's clone on the server, for the person to run commands in the project (the project page's
+Terminal tabs). It works like [the shell of a run](#get-v1runsidterminal), with the same messages, but starts in the
+clone of repository `id`, not in a worktree.
+
+- At most 4 terminals are open on one repository at a time.
+- A run has no part in it, so opening one is stored as a judgement of kind `open_terminal` (decider `person`, context
+  `directory`: the clone, and `repository`: its name), never what is typed or seen.
+- The ports its programs listen on are listed by `GET /v1/ports` as a terminal's, with no run.
+
+Errors, answered before the upgrade: `401`; `403` for the run token of an agent (the shell stays with a person); `404`
+no such repository; `422` when 4 terminals are open on it already or its clone is gone.
 
 ### `GET /v1/ports`
 

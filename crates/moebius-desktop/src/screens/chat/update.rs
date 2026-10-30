@@ -153,6 +153,13 @@ impl Chats {
                 return self.reload(settings);
             }
             Message::NewChat => return self.open_draft(settings),
+            Message::NewChatIn(repository) => {
+                let task = self.open_draft(settings);
+                if let Some(draft) = &mut self.draft {
+                    draft.repository = Some(repository);
+                }
+                return task;
+            }
             Message::Agents(Ok(agents)) => {
                 // An agent whose files are broken is listed without a model and cannot be chosen.
                 self.agents = agents

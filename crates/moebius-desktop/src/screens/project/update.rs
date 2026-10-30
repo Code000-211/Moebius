@@ -1,5 +1,5 @@
-//! How a message changes a project's Files and Editor tabs: a directory listed, a file read, opened, edited, saved
-//! or closed.
+//! How a message changes a project's files: a directory listed, a file read, opened, edited or saved; the messages
+//! about tabs go to `tabs` and `shell`.
 
 use iced::Task;
 use iced::widget::text_editor;
@@ -44,12 +44,16 @@ impl Project {
             return Task::none();
         };
         match message {
-            Message::Tab(tab) => {
-                self.tab = tab;
-                if tab == Tab::Files {
-                    return self.list(repository, "", settings);
-                }
-            }
+            Message::Tab(_)
+            | Message::Close(_)
+            | Message::Discard(_)
+            | Message::Keep
+            | Message::ToggleFiles
+            | Message::Menu
+            | Message::NewEditor
+            | Message::NewTerminal
+            | Message::NewChat => return self.tabs_update(repository, message, settings),
+            Message::Shell(..) | Message::Pane(..) | Message::Key(_) => self.shell_update(message),
             Message::Toggle(dir) => {
                 if !self.open_dirs.remove(&dir) {
                     self.open_dirs.insert(dir.clone());
@@ -98,24 +102,11 @@ impl Project {
                 file.goto = goto;
                 file.go_to_line();
             }
-            Message::Show(path) => {
-                self.current = Some(path);
-                self.closing = None;
-            }
-            Message::Close(path) => {
-                if self.file(&path).is_some_and(OpenFile::unsaved) {
-                    self.current = Some(path.clone());
-                    self.closing = Some(path);
-                } else {
-                    self.close(&path);
-                }
-            }
-            Message::Discard(path) => self.close(&path),
-            Message::Keep => self.closing = None,
             Message::Edit(action) => {
                 let editing = action.is_edit();
-                let current = self.current.clone().unwrap_or_default();
-                if let Some(file) = self.file_mut(&current)
+                let current = self.tab.clone();
+                if let Tab::Editor(path) = current
+                    && let Some(file) = self.file_mut(&path)
                     && let Body::Text { content, .. } = &mut file.body
                 {
                     content.perform(action);
@@ -126,7 +117,9 @@ impl Project {
                 }
             }
             Message::Save => {
-                let current = self.current.clone().unwrap_or_default();
+                let Tab::Editor(current) = self.tab.clone() else {
+                    return Task::none();
+                };
                 let Some(file) = self.file_mut(&current) else {
                     return Task::none();
                 };
@@ -173,8 +166,8 @@ impl Project {
         Task::none()
     }
 
-    /// Opens `path` in the Editor, with the cursor on `line` (from 1) when it is given, reading the file if it is not
-    /// open yet.
+    /// Opens `path` in an editor tab, with the cursor on `line` (from 1) when it is given, reading the file if it is
+    /// not open yet.
     pub(super) fn open(
         &mut self,
         repository: i64,
@@ -182,9 +175,7 @@ impl Project {
         line: Option<usize>,
         settings: &Settings,
     ) -> Task<AppMessage> {
-        self.tab = Tab::Editor;
-        self.current = Some(path.to_string());
-        self.closing = None;
+        self.push_tab(Tab::Editor(path.to_string()));
         self.origin = None;
         self.recent.retain(|other| other != path);
         self.recent.insert(0, path.to_string());
@@ -204,19 +195,5 @@ impl Project {
             goto: line,
         });
         Self::read(repository, path, settings)
-    }
-
-    pub(super) fn close(&mut self, path: &str) {
-        let Some(index) = self.files.iter().position(|file| file.path == path) else {
-            return;
-        };
-        self.files.remove(index);
-        if self.closing.as_deref() == Some(path) {
-            self.closing = None;
-        }
-        if self.current.as_deref() == Some(path) {
-            let next = index.min(self.files.len().saturating_sub(1));
-            self.current = self.files.get(next).map(|file| file.path.clone());
-        }
     }
 }

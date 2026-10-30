@@ -117,22 +117,31 @@ with a secret that only the processes it starts know, and keeps no password.
   "Open in Chat", a tile of the Fleet, an item of the inbox, a search result, a link to another page) keeps the place
   left: its page, the tab of its project, and the card, script, chat or agent open on it. The place reached shows
   "← Back to <the place left>" above its header, in secondary grey semibold at the breadcrumb's size (the repository's
-  name for a board, "Files of radiance" for a tab, "#48" for a card, "the Ready script" for a column's script,
+  name for a board, "main.rs of radiance" for a tab, "#48" for a card, "the Ready script" for a column's script,
   otherwise the page's title); a click restores the place left as it was. Alt+Left (where no text field takes it) and
-  the mouse's back button go back too, and so does Escape in an editor (a column's script, the project's Editor, the
+  the mouse's back button go back too, and so does Escape in an editor (a column's script, a project's editor tab, the
   rules, an agent) when nothing in it is unsaved; with unsaved text Escape does nothing, so nothing typed is lost. A
   click that leads to the place kept last (the breadcrumb of a card back to its board) is a step back, not a new one. A
   pick of the sidebar starts again: what was kept is forgotten, and the page it opens has no link back.
-- A project's page has three tabs under its header, the chosen one bold with a dark line under it: Board (the columns
-  and cards; a card's page, a column's script and a new issue open from it), Files and Editor. Files is the
-  repository's default branch as a tree in a white box: directories first, each with a chevron that opens it (read the
-  first time it opens), files with their size; a click on a file opens it in the Editor. The Editor keeps the open
-  files as tabs, each with the file's name in the code font, an amber dot while it has unsaved changes and a cross that
-  closes it (an unsaved file asks first); under them the path, the language, the file in the code font highlighted by
-  its extension, and a status line with the cursor's line and column and what the last save did ("Unsaved changes.",
-  "Saved as a commit on the default branch." or the server's refusal in red). Save, the page's primary button, and
-  Ctrl+S (Cmd+S) commit the file on the default branch. A binary file or one larger than 1 MB is named with its size
-  and not edited.
+- A project's page has tabs under its header, the chosen one bold with a dark line under it: Board (the columns and
+  cards; a card's page, a column's script and a new issue open from it) and any number of tabs the person opened, each
+  with a cross that closes it (Board has none): an editor per file (the file's name in the code font, its path on
+  hover, an amber dot while it has unsaved changes; closing an unsaved file asks first), terminals and agent chats
+  (numbered when there are several). Beside the tabs stands a small `+`; it opens a short menu of white buttons in the
+  strip: Editor (opens "Go to file"), Terminal, Agent chat, and Browser, drawn muted with "later" beside it because it
+  is not built. At the right end of the strip a panel button folds the Files sidebar away and brings it back.
+- The Files sidebar stands on the right of every tab of a project, `FILES_WIDTH` (260) wide, in a white box with the
+  line "Files · default branch" in the code font: the repository's default branch as a tree, directories first, each
+  with a chevron that opens it (read the first time it opens), files with their size. A click on a file opens it in an
+  editor tab at once, or shows the tab it is open in. The editor shows the path, the language, the file in the code
+  font highlighted by its extension, and a status line with the cursor's line and column and what the last save did
+  ("Unsaved changes.", "Committed to the default branch." or the server's refusal in red). Save, the page's primary
+  button, and Ctrl+S (Cmd+S) commit the file on the default branch. A binary file or one larger than 1 MB is named with
+  its size and not edited. "Go to file" (Ctrl+P) and "Search in files" (Ctrl+Shift+F) open under the tabs, over every
+  tab, and open editor tabs. A terminal tab is the Terminal page's pane (a dark shell as big as the tab) in the
+  repository's clone on the server; its shell lives while the project's page is shown. An agent chat tab is a chat of
+  the Chat page drawn inside the project, a new one in this project (the Place picker starts at the project); the same
+  chat is in the Chat page's list. The open tabs are kept for each project while the app runs.
 - Fleet shows every run that is working at a glance: a grid of two or three tiles by width, one for each card whose
   latest run is starting, running or waiting and each chat that is. A tile has the agent, a tag for what it does
   (`code`, `review`, `chat`), the card (`#number title`) or the chat title, the repository, how long the run has run,
@@ -155,8 +164,8 @@ with a secret that only the processes it starts know, and keeps no password.
   minimise button that turns it back into the button, and, once a chat is going, "New conversation" and "Open in
   Chat"; under it the conversation, drawn as on the Chat page with the steps box, and the field with Send. The chat
   stays across pages. Each message carries a few lines on where the person is (the page, the repository, the open card,
-  run or chat, the script, rules or agent being edited with its text cut to 2 500 characters; in a project's Files the
-  open directories, in its Editor the file, the cursor's line and column, the selected text and the 40 lines around
+  run or chat, the script, rules or agent being edited with its text cut to 2 500 characters; in a project the open directories of the Files
+  sidebar, in an editor tab the file, the cursor's line and column, the selected text and the 40 lines around
   the cursor, cut to about 3 000 characters), which only the agent is told; the chat shows what the person wrote. The
   chats the window shows (those it starts, and those a page's "Ask the agent" hands it) are the window's: the person
   reads them there, so the Chat page does not list them and the sidebar does not count them unread, unless "Open in

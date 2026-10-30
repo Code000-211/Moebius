@@ -250,6 +250,9 @@ failure anywhere starts the run without a hint (Agentless, AutoCodeRover).
 Native, GPU-rendered, written in Rust with iced (ADR 0003, ADR 0011), built to [`docs/design.md`](design.md). Screens:
 
 - **Board** per repository: columns with their scripts, cards with round, tokens and state; red for blocked and broken rules.
+  The project's page works in tabs beside the board: an editor per file (a click on a file of the Files sidebar on the
+  right opens it; save is a commit on the default branch), terminals in the repository's clone and agent chats in the
+  project, opened from a `+` (a browser tab is not built yet).
 - **Live view** of a run: the stream of text and tool calls with each check's decision, code with highlighting, a shell in
   the worktree, steering and stopping.
 - **Terminal** (Setup): a shell on the server, in the directory of `moebius.toml`.
