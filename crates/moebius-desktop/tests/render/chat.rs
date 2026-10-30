@@ -537,3 +537,25 @@ fn an_answer_is_marked_read_once() {
         assert_eq!(task.units(), 0, "a piece of the answer is not marked read");
     }
 }
+
+/// What cannot be selected is copied with a button: an answer as its Markdown, and a code block as its code.
+#[test]
+fn an_answer_and_a_code_block_are_copied_with_their_buttons() {
+    let app = chatting("waiting", false);
+    let mut ui = simulator(&app);
+    ui.click("Copy").unwrap();
+    let sent: Vec<Message> = ui.into_messages().collect();
+    let Some(Message::Copy(code)) = sent.first() else {
+        panic!("{sent:?}");
+    };
+    assert_eq!(
+        code,
+        "if card.blocked_by_count == 0 then\n  moebius.start_run(\"Coder\")\nend\n"
+    );
+    let mut app = app;
+    assert_eq!(
+        app.update(Message::Copy(code.clone())).units(),
+        1,
+        "the text goes to the clipboard"
+    );
+}

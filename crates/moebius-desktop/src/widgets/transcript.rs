@@ -4,7 +4,7 @@
 use iced::font::Weight;
 use iced::highlighter::{self, Stream};
 use iced::widget::text::Wrapping;
-use iced::widget::{column, container, rich_text, row, scrollable, space, span, text};
+use iced::widget::{button, column, container, rich_text, row, scrollable, space, span, text};
 use iced::{Alignment, Border, Color, Element, Font, Length};
 
 use crate::app::Message as AppMessage;
@@ -15,7 +15,29 @@ use crate::widgets::page::{Tone, tag};
 /// The most lines of a tool's output, or of a diff or a file, drawn; the rest is said to be left out.
 const MAX_LINES: usize = 200;
 
-/// A message in a box with a small label above it.
+/// A small "Copy" button that puts `text` on the clipboard, for what cannot be selected with the mouse.
+pub fn copy_button<'a>(text: impl Into<String>, color: Color) -> Element<'a, AppMessage> {
+    button(
+        iced::widget::text("Copy")
+            .size(theme::CODE_SMALL)
+            .font(theme::MONO)
+            .color(color),
+    )
+    .padding([0.0, theme::SPACE_4])
+    .on_press(AppMessage::Copy(text.into()))
+    .style(move |_, status| button::Style {
+        background: (status == button::Status::Hovered).then(|| theme::HEAD_PILL.into()),
+        text_color: color,
+        border: Border {
+            radius: theme::RADIUS_SMALL.into(),
+            ..Border::default()
+        },
+        ..button::Style::default()
+    })
+    .into()
+}
+
+/// A message in a box with a small label above it, and a button that copies the message.
 pub fn note<'a>(
     label: &str,
     message: &'a str,
@@ -25,10 +47,15 @@ pub fn note<'a>(
 ) -> Element<'a, AppMessage> {
     container(
         column![
-            text(label.to_string())
-                .size(theme::LABEL)
-                .font(theme::manrope(Weight::Bold))
-                .color(ink),
+            row![
+                text(label.to_string())
+                    .size(theme::LABEL)
+                    .font(theme::manrope(Weight::Bold))
+                    .color(ink),
+                space::horizontal(),
+                copy_button(message, theme::TEXT_SECONDARY),
+            ]
+            .align_y(Alignment::Center),
             text(message).size(theme::CONTEXT).color(theme::TEXT),
         ]
         .spacing(theme::SPACE_4),
@@ -358,14 +385,19 @@ fn tail<'a>(lines: &[&'a str]) -> (usize, Vec<&'a str>) {
 pub(crate) fn output_view(output: &str) -> Element<'_, AppMessage> {
     let (skipped, lines) = tail(&lines_of(output));
     let mut block = column![].spacing(0);
-    if skipped > 0 {
-        block = block.push(
-            text(format!("{skipped} earlier lines left out"))
-                .font(theme::MONO)
-                .size(theme::CODE_SMALL)
-                .color(theme::TERMINAL_DIM),
-        );
-    }
+    let left_out = match skipped {
+        0 => String::new(),
+        skipped => format!("{skipped} earlier lines left out"),
+    };
+    // The button copies all of the output, the lines left out too.
+    block = block.push(row![
+        text(left_out)
+            .font(theme::MONO)
+            .size(theme::CODE_SMALL)
+            .color(theme::TERMINAL_DIM),
+        space::horizontal(),
+        copy_button(output, theme::TERMINAL_DIM),
+    ]);
     block = block.push(
         text(lines.join("\n"))
             .font(theme::MONO)
@@ -491,11 +523,13 @@ fn code_row<'a>(
     .into()
 }
 
-/// Code in a white frame under a header line with the path on the left and `note` on the right. The rows are
-/// scrollable, and `left_out` lines that were not drawn are said so at the end.
+/// Code in a white frame under a header line with the path on the left and `note` on the right, and a button that
+/// copies `copy` when there is something to copy. The rows are scrollable, and `left_out` lines that were not drawn are
+/// said so at the end.
 fn code_frame<'a>(
     path: &'a str,
     note: Option<String>,
+    copy: Option<String>,
     rows: Vec<Element<'a, AppMessage>>,
     left_out: usize,
 ) -> Element<'a, AppMessage> {
@@ -514,6 +548,10 @@ fn code_frame<'a>(
                 .color(theme::TEXT_SECONDARY),
         );
     }
+    if let Some(copy) = copy {
+        title = title.push(copy_button(copy, theme::TEXT_SECONDARY));
+    }
+    let title = title.spacing(theme::SPACE_8).align_y(Alignment::Center);
     let mut body = column(rows);
     if left_out > 0 {
         body = body.push(
@@ -557,7 +595,13 @@ pub(crate) fn file_view<'a>(path: &'a str, file: &str) -> Element<'a, AppMessage
         .into_iter()
         .map(|spans| code_row(' ', spans, None))
         .collect();
-    code_frame(path, None, rows, lines.len().saturating_sub(MAX_LINES))
+    code_frame(
+        path,
+        None,
+        Some(file.to_string()),
+        rows,
+        lines.len().saturating_sub(MAX_LINES),
+    )
 }
 
 /// A command in the frame of a file, highlighted as shell.
@@ -572,7 +616,13 @@ pub fn code_block<'a>(language: &'a str, code: &str) -> Element<'a, AppMessage> 
         .into_iter()
         .map(|spans| code_row(' ', spans, None))
         .collect();
-    code_frame(language, None, rows, lines.len().saturating_sub(MAX_LINES))
+    code_frame(
+        language,
+        None,
+        Some(code.to_string()),
+        rows,
+        lines.len().saturating_sub(MAX_LINES),
+    )
 }
 
 /// An edit's changes as removed and added lines, each side highlighted for the file's language.
@@ -597,5 +647,11 @@ pub(crate) fn diff_view<'a>(
         }
     }
     let left_out = removed + added - rows.len();
-    code_frame(path, Some(format!("-{removed} +{added}")), rows, left_out)
+    code_frame(
+        path,
+        Some(format!("-{removed} +{added}")),
+        None,
+        rows,
+        left_out,
+    )
 }

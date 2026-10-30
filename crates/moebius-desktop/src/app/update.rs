@@ -92,6 +92,7 @@ impl App {
             }
             Message::Loaded(_, Err(_)) => self.connection = Connection::Offline,
             Message::Stream(event) => return self.on_stream(event),
+            Message::Copy(text) => return iced::clipboard::write(text),
             Message::Select(page) => {
                 self.history.clear();
                 return self.show_page(page);

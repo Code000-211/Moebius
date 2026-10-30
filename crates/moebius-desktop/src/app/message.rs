@@ -116,6 +116,8 @@ pub enum Message {
     AddressChanged(String),
     TokenChanged(String),
     Submit,
+    /// A "Copy" button was pressed: its text goes to the clipboard.
+    Copy(String),
     /// The settings were tried against the server.
     Checked(Result<(Settings, Snapshot), ClientError>),
     /// The server took the report of where this app runs, or did not; nothing depends on it.

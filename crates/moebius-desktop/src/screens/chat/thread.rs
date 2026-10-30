@@ -239,11 +239,14 @@ fn markdown_settings() -> markdown::Settings {
 /// A text of the agent, as Markdown once it is parsed.
 fn agent_text<P: Place>(parsed: Option<&(String, Vec<markdown::Item>)>) -> Element<'_, AppMessage> {
     let items = parsed.map_or(&[][..], |(_, items)| items.as_slice());
-    container(markdown::view_with(
-        items,
-        markdown_settings(),
-        &Markdown::<P>(PhantomData),
-    ))
+    let source = parsed.map_or("", |(source, _)| source.as_str());
+    container(
+        column![
+            markdown::view_with(items, markdown_settings(), &Markdown::<P>(PhantomData)),
+            transcript::copy_button(source, theme::TEXT_MUTED),
+        ]
+        .spacing(theme::SPACE_4),
+    )
     .max_width(theme::PROSE_WIDTH)
     .into()
 }
