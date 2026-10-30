@@ -6,7 +6,7 @@ use iced::{Task, keyboard};
 use crate::app::Message as AppMessage;
 use crate::client::Client;
 use crate::settings::Settings;
-use crate::widgets::terminal::{PaneEvent, Shell};
+use crate::widgets::terminal::Shell;
 
 use super::{Live, Message, say};
 
@@ -74,10 +74,7 @@ impl Live {
             }
             Message::ShellPane(event) => {
                 if let Some(shell) = &mut self.shell {
-                    match event {
-                        PaneEvent::Resized(size) => shell.resized(size),
-                        PaneEvent::Focus(focused) => shell.set_focus(focused),
-                    }
+                    shell.on_pane(event);
                 }
             }
             Message::Key(keyboard::Event::KeyPressed {

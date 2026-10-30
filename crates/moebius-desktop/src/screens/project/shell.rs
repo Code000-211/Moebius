@@ -10,7 +10,7 @@ use crate::app::Message as AppMessage;
 use crate::client::{self, TerminalEvent};
 use crate::settings::Settings;
 use crate::widgets::page;
-use crate::widgets::terminal::{PaneEvent, Shell};
+use crate::widgets::terminal::Shell;
 
 use super::{Message, Project, Tab};
 
@@ -67,14 +67,9 @@ impl Project {
                     shell.on_event(event);
                 }
             }
-            Message::Pane(n, PaneEvent::Resized(size)) => {
+            Message::Pane(n, event) => {
                 if let Some(shell) = self.terminal_mut(n) {
-                    shell.resized(size);
-                }
-            }
-            Message::Pane(n, PaneEvent::Focus(focused)) => {
-                if let Some(shell) = self.terminal_mut(n) {
-                    shell.set_focus(focused);
+                    shell.on_pane(event);
                 }
             }
             Message::Key(keyboard::Event::KeyPressed {

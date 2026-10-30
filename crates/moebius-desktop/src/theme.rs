@@ -89,6 +89,11 @@ pub const STEPS_INK: Color = hex(0x18181B);
 pub const TERMINAL: Color = hex(0x09090B);
 pub const TERMINAL_TEXT: Color = hex(0xE4E4E7);
 pub const TERMINAL_DIM: Color = hex(0x71717A);
+/// The wash over what is selected in a terminal.
+pub const TERMINAL_SELECTION: Color = Color {
+    a: 0.25,
+    ..TERMINAL_TEXT
+};
 
 /// The sixteen colours of a shell: black to white, then the bright ones.
 pub const TERMINAL_ANSI: [Color; 16] = [

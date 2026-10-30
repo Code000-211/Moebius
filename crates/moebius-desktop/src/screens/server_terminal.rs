@@ -43,8 +43,7 @@ impl ServerTerminal {
         };
         match message {
             Message::Shell(event) => shell.on_event(event),
-            Message::Pane(PaneEvent::Resized(size)) => shell.resized(size),
-            Message::Pane(PaneEvent::Focus(focused)) => shell.set_focus(focused),
+            Message::Pane(event) => shell.on_pane(event),
             Message::Key(keyboard::Event::KeyPressed {
                 key,
                 modifiers,

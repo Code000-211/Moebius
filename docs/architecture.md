@@ -738,7 +738,9 @@ At the top:
 | `widgets/list_editor.rs` | A list with an editor beside it: its layout, its cards, and the head with Save and Delete. |
 | `widgets/conversation.rs` | Folds a run's events into a conversation (text, tool calls with their checks, steers, errors); pure, takes events in any order and drops repeats. |
 | `widgets/transcript.rs`, `widgets/steps.rs` | How a conversation is drawn (Markdown, tool calls, highlighted code), and the steps between two answers. |
-| `widgets/terminal.rs` | The shell pane: bytes from the server parsed by `alacritty_terminal` into a grid and drawn in JetBrains Mono, keys turned into bytes, the pane's size in cells sent as a resize (`client::terminal`). |
+| `widgets/terminal/mod.rs` | The shell pane: bytes from the server parsed by `alacritty_terminal` into a grid and drawn in JetBrains Mono, the pane's size in cells sent as a resize (`client::terminal`), pasted text sent as typed. |
+| `widgets/terminal/keys.rs` | The bytes a shell expects for each key pressed in the pane. |
+| `widgets/terminal/pane.rs` | The pane around the screen: its size and focus, and selecting with the mouse, copying (on release and with Ctrl+Shift+C) and pasting (Ctrl+Shift+V, a right click). |
 | `widgets/tabs.rs` | A tab with a label, a line under it when shown, an optional cross and a mark for unsaved changes. |
 | `widgets/chat_terminal.rs` | A chat's terminal: the same pane on `GET /v1/chats/{id}/tui`, opened by the chat's "Chat \| Terminal" switch. |
 | `widgets/float_chat.rs` | The floating chat with the Moebius agent on every screen, given the context of the page. |

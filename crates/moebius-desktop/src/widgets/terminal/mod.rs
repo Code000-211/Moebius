@@ -2,10 +2,19 @@
 //! pane as big as the Terminal page. The bytes
 //! the server sends are parsed by `alacritty_terminal` into a grid of coloured cells, which is drawn here as rows of
 //! JetBrains Mono on the dark background of the code blocks; what is typed goes back as bytes (`key_bytes`), and the
-//! pane's size in cells goes back as a resize. Selecting, copying and pasting are not built, and nor is scrolling
-//! back through what has gone off the top of the screen.
+//! pane's size in cells goes back as a resize. Scrolling back through what has gone off the top of the screen is not
+//! built.
+//!
+//! `keys` holds the bytes of the keys, `pane` the pane around the screen, which selects, copies and pastes.
 
 use std::sync::{Arc, Mutex};
+
+mod keys;
+mod pane;
+
+pub use keys::key_bytes;
+use pane::Pane;
+pub use pane::PaneEvent;
 
 use alacritty_terminal::event::{Event as TermEvent, EventListener};
 use alacritty_terminal::grid::Dimensions;
@@ -13,14 +22,11 @@ use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::{Config, Term, TermMode};
 use alacritty_terminal::vte::ansi::{Color as Ansi, Processor};
-use iced::advanced::widget::{Operation, Tree, tree};
-use iced::advanced::{Clipboard, Layout, Widget, layout, mouse, overlay, renderer};
 use iced::futures::channel::mpsc;
-use iced::keyboard::key::Named;
 use iced::keyboard::{Key, Modifiers};
 use iced::widget::text::Wrapping;
 use iced::widget::{column, container, rich_text, row, span, text};
-use iced::{Border, Color, Element, Event, Length, Padding, Rectangle, Size, Vector, window};
+use iced::{Border, Color, Element, Length, Padding, Size};
 
 use crate::client::{TerminalEvent, TerminalInput};
 use crate::theme;
@@ -192,59 +198,6 @@ fn colour(color: Ansi) -> Color {
     }
 }
 
-/// The bytes a shell expects for a key press, or none when the key means nothing to it. `text` is what the key
-/// produced as text; `app_cursor` is whether the program has asked for the arrow keys in application mode.
-pub fn key_bytes(
-    key: &Key,
-    modifiers: Modifiers,
-    text: Option<&str>,
-    app_cursor: bool,
-) -> Option<Vec<u8>> {
-    let arrow = |letter: char| match app_cursor {
-        true => format!("\x1bO{letter}"),
-        false => format!("\x1b[{letter}"),
-    };
-    let named = match key {
-        Key::Named(Named::Enter) => Some("\r".to_string()),
-        Key::Named(Named::Backspace) => Some("\x7f".to_string()),
-        Key::Named(Named::Tab) => Some(if modifiers.shift() { "\x1b[Z" } else { "\t" }.to_string()),
-        Key::Named(Named::Escape) => Some("\x1b".to_string()),
-        Key::Named(Named::Space) if !modifiers.control() => Some(" ".to_string()),
-        Key::Named(Named::ArrowUp) => Some(arrow('A')),
-        Key::Named(Named::ArrowDown) => Some(arrow('B')),
-        Key::Named(Named::ArrowRight) => Some(arrow('C')),
-        Key::Named(Named::ArrowLeft) => Some(arrow('D')),
-        Key::Named(Named::Home) => Some(arrow('H')),
-        Key::Named(Named::End) => Some(arrow('F')),
-        Key::Named(Named::Delete) => Some("\x1b[3~".to_string()),
-        Key::Named(Named::PageUp) => Some("\x1b[5~".to_string()),
-        Key::Named(Named::PageDown) => Some("\x1b[6~".to_string()),
-        _ => None,
-    };
-    if let Some(named) = named {
-        return Some(named.into_bytes());
-    }
-    // Ctrl and a letter is the control character: Ctrl+C is 3, Ctrl+D is 4.
-    if modifiers.control()
-        && let Key::Character(c) = key
-        && let Some(letter) = c.chars().next().filter(char::is_ascii_alphabetic)
-    {
-        return Some(vec![letter.to_ascii_lowercase() as u8 - b'a' + 1]);
-    }
-    if modifiers.control() || modifiers.logo() {
-        return None;
-    }
-    let text = text.filter(|text| !text.is_empty() && !text.chars().any(char::is_control))?;
-    // Alt sends the key with Escape before it.
-    Some(
-        match modifiers.alt() {
-            true => format!("\x1b{text}"),
-            false => text.to_string(),
-        }
-        .into_bytes(),
-    )
-}
-
 /// The shell of a live view: the screen, the way to the server, and how it ended.
 pub struct Shell {
     /// Tells this shell's connection from the one of an earlier shell, so that a new one reconnects.
@@ -341,6 +294,31 @@ impl Shell {
         }
     }
 
+    /// What the pane told: its size, a click that gave or took its focus, or text to paste.
+    pub fn on_pane(&mut self, event: PaneEvent) {
+        match event {
+            PaneEvent::Resized(size) => self.resized(size),
+            PaneEvent::Focus(focused) => self.set_focus(focused),
+            PaneEvent::Paste(text) => self.paste(&text),
+        }
+    }
+
+    /// Sends `text` to the shell as if typed, between the marks of a paste when the program asked for them, so that
+    /// a pasted line ending does not run it.
+    pub fn paste(&mut self, text: &str) {
+        let text = text.replace("\r\n", "\r").replace('\n', "\r");
+        let bytes = match self
+            .terminal
+            .term
+            .mode()
+            .contains(TermMode::BRACKETED_PASTE)
+        {
+            true => format!("\x1b[200~{text}\x1b[201~"),
+            false => text,
+        };
+        self.send(TerminalInput::Bytes(bytes.into_bytes()));
+    }
+
     /// The pane is `size` big: the shell gets as many columns and rows as fit.
     pub fn resized(&mut self, size: Size) {
         self.pane = size;
@@ -403,6 +381,7 @@ impl Shell {
             column![header, screen],
             self.pane,
             self.focused,
+            self.terminal.lines(),
             on_event,
         ))
         .height(if self.fills {
@@ -429,163 +408,9 @@ impl Shell {
     }
 }
 
-/// What the pane tells the page: its size when that changes, which is how it learns how many columns and rows fit
-/// (a view cannot know), and whether a click was on it or elsewhere, which is how it gains and loses focus.
-#[derive(Debug, Clone)]
-pub enum PaneEvent {
-    Resized(Size),
-    Focus(bool),
-}
-
-/// Reports a [`PaneEvent`] for its content whenever the size differs from `known` or a click lands on the other side
-/// of the pane's edge than `focused` says.
-struct Pane<'a, M> {
-    content: Element<'a, M>,
-    known: Size,
-    focused: bool,
-    on_event: Box<dyn Fn(PaneEvent) -> M + 'a>,
-}
-
-impl<'a, M> Pane<'a, M> {
-    fn new(
-        content: impl Into<Element<'a, M>>,
-        known: Size,
-        focused: bool,
-        on_event: impl Fn(PaneEvent) -> M + 'a,
-    ) -> Self {
-        Pane {
-            content: content.into(),
-            known,
-            focused,
-            on_event: Box::new(on_event),
-        }
-    }
-}
-
-impl<M> Widget<M, iced::Theme, iced::Renderer> for Pane<'_, M> {
-    fn tag(&self) -> tree::Tag {
-        self.content.as_widget().tag()
-    }
-
-    fn state(&self) -> tree::State {
-        self.content.as_widget().state()
-    }
-
-    fn children(&self) -> Vec<Tree> {
-        self.content.as_widget().children()
-    }
-
-    fn diff(&self, tree: &mut Tree) {
-        self.content.as_widget().diff(tree);
-    }
-
-    fn size(&self) -> Size<Length> {
-        self.content.as_widget().size()
-    }
-
-    fn layout(
-        &mut self,
-        tree: &mut Tree,
-        renderer: &iced::Renderer,
-        limits: &layout::Limits,
-    ) -> layout::Node {
-        self.content.as_widget_mut().layout(tree, renderer, limits)
-    }
-
-    fn operate(
-        &mut self,
-        tree: &mut Tree,
-        layout: Layout<'_>,
-        renderer: &iced::Renderer,
-        operation: &mut dyn Operation,
-    ) {
-        self.content
-            .as_widget_mut()
-            .operate(tree, layout, renderer, operation);
-    }
-
-    fn update(
-        &mut self,
-        tree: &mut Tree,
-        event: &Event,
-        layout: Layout<'_>,
-        cursor: mouse::Cursor,
-        renderer: &iced::Renderer,
-        clipboard: &mut dyn Clipboard,
-        shell: &mut iced::advanced::Shell<'_, M>,
-        viewport: &Rectangle,
-    ) {
-        if matches!(event, Event::Window(window::Event::RedrawRequested(_)))
-            && layout.bounds().size() != self.known
-        {
-            shell.publish((self.on_event)(PaneEvent::Resized(layout.bounds().size())));
-        }
-        if let Event::Mouse(mouse::Event::ButtonPressed(_)) = event {
-            let on_pane = cursor.is_over(layout.bounds());
-            if on_pane != self.focused {
-                shell.publish((self.on_event)(PaneEvent::Focus(on_pane)));
-            }
-        }
-        self.content.as_widget_mut().update(
-            tree, event, layout, cursor, renderer, clipboard, shell, viewport,
-        );
-    }
-
-    fn mouse_interaction(
-        &self,
-        tree: &Tree,
-        layout: Layout<'_>,
-        cursor: mouse::Cursor,
-        viewport: &Rectangle,
-        renderer: &iced::Renderer,
-    ) -> mouse::Interaction {
-        self.content
-            .as_widget()
-            .mouse_interaction(tree, layout, cursor, viewport, renderer)
-    }
-
-    fn draw(
-        &self,
-        tree: &Tree,
-        renderer: &mut iced::Renderer,
-        theme: &iced::Theme,
-        style: &renderer::Style,
-        layout: Layout<'_>,
-        cursor: mouse::Cursor,
-        viewport: &Rectangle,
-    ) {
-        self.content
-            .as_widget()
-            .draw(tree, renderer, theme, style, layout, cursor, viewport);
-    }
-
-    fn overlay<'b>(
-        &'b mut self,
-        tree: &'b mut Tree,
-        layout: Layout<'b>,
-        renderer: &iced::Renderer,
-        viewport: &Rectangle,
-        translation: Vector,
-    ) -> Option<overlay::Element<'b, M, iced::Theme, iced::Renderer>> {
-        self.content
-            .as_widget_mut()
-            .overlay(tree, layout, renderer, viewport, translation)
-    }
-}
-
-impl<'a, M: 'a> From<Pane<'a, M>> for Element<'a, M> {
-    fn from(pane: Pane<'a, M>) -> Self {
-        Element::new(pane)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn pressed(key: Key, modifiers: Modifiers, text: Option<&str>) -> Option<Vec<u8>> {
-        key_bytes(&key, modifiers, text, false)
-    }
 
     fn character(c: &str) -> Key {
         Key::Character(c.into())
@@ -627,62 +452,6 @@ mod tests {
     }
 
     #[test]
-    fn key_presses_are_the_bytes_a_shell_expects() {
-        let none = Modifiers::empty();
-        assert_eq!(pressed(character("a"), none, Some("a")).unwrap(), b"a");
-        assert_eq!(
-            pressed(character("A"), Modifiers::SHIFT, Some("A")).unwrap(),
-            b"A"
-        );
-        assert_eq!(
-            pressed(Key::Named(Named::Enter), none, Some("\r")).unwrap(),
-            b"\r"
-        );
-        assert_eq!(
-            pressed(Key::Named(Named::Backspace), none, None).unwrap(),
-            b"\x7f"
-        );
-        assert_eq!(pressed(Key::Named(Named::Tab), none, None).unwrap(), b"\t");
-        assert_eq!(
-            pressed(Key::Named(Named::Escape), none, None).unwrap(),
-            b"\x1b"
-        );
-        assert_eq!(
-            pressed(Key::Named(Named::Space), none, Some(" ")).unwrap(),
-            b" "
-        );
-        assert_eq!(
-            pressed(Key::Named(Named::ArrowUp), none, None).unwrap(),
-            b"\x1b[A"
-        );
-        assert_eq!(
-            pressed(Key::Named(Named::ArrowLeft), none, None).unwrap(),
-            b"\x1b[D"
-        );
-        assert_eq!(
-            pressed(character("c"), Modifiers::CTRL, Some("c")).unwrap(),
-            [3]
-        );
-        assert_eq!(pressed(character("d"), Modifiers::CTRL, None).unwrap(), [4]);
-        assert_eq!(
-            pressed(character("x"), Modifiers::ALT, Some("x")).unwrap(),
-            b"\x1bx"
-        );
-        assert_eq!(
-            pressed(character("é"), none, Some("é")).unwrap(),
-            "é".as_bytes()
-        );
-        assert_eq!(
-            pressed(Key::Named(Named::Shift), Modifiers::SHIFT, None),
-            None
-        );
-        assert_eq!(pressed(character("c"), Modifiers::LOGO, Some("c")), None);
-        // A program that asked for application mode gets the arrows that way.
-        let up = key_bytes(&Key::Named(Named::ArrowUp), none, None, true);
-        assert_eq!(up.unwrap(), b"\x1bOA");
-    }
-
-    #[test]
     fn the_shell_sends_what_is_typed_and_the_size_that_fits_the_pane() {
         let (input, mut sent) = mpsc::channel(8);
         let mut shell = Shell::new(1);
@@ -716,6 +485,19 @@ mod tests {
         assert_eq!(
             sent.try_recv().unwrap(),
             TerminalInput::Bytes(b"\x1b[1;3R".to_vec())
+        );
+
+        // A paste is typed as it is, its line endings as Enter, between the marks of a paste once the program asks.
+        shell.on_pane(PaneEvent::Paste("ls\nmake".into()));
+        assert_eq!(
+            sent.try_recv().unwrap(),
+            TerminalInput::Bytes(b"ls\rmake".to_vec())
+        );
+        shell.on_event(TerminalEvent::Output(b"\x1b[?2004h".to_vec()));
+        shell.on_pane(PaneEvent::Paste("rm -rf build\n".into()));
+        assert_eq!(
+            sent.try_recv().unwrap(),
+            TerminalInput::Bytes(b"\x1b[200~rm -rf build\r\x1b[201~".to_vec())
         );
 
         shell.on_event(TerminalEvent::Closed("the shell ended".into()));

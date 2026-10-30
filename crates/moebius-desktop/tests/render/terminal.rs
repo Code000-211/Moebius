@@ -99,3 +99,87 @@ fn the_terminal_page_connects_when_opened_and_types_into_the_shell() {
     let mut ui = simulator(&app);
     assert!(ui.find("the shell ended").is_ok());
 }
+
+/// A clipboard of the test, which the pane reads and writes.
+struct Clipboard(Option<String>);
+
+impl iced::advanced::Clipboard for Clipboard {
+    fn read(&self, _: iced::advanced::clipboard::Kind) -> Option<String> {
+        self.0.clone()
+    }
+
+    fn write(&mut self, _: iced::advanced::clipboard::Kind, contents: String) {
+        self.0 = Some(contents);
+    }
+}
+
+/// Text dragged over with the mouse is copied when the button is released; a right click pastes what the clipboard
+/// holds into the shell.
+#[test]
+fn the_terminal_copies_what_is_dragged_over_and_pastes_on_a_right_click() {
+    use iced::advanced::renderer::Headless;
+    use iced::{Event, Point, mouse};
+    use iced_runtime::user_interface::{Cache, UserInterface};
+
+    let (mut app, mut sent) = terminal_page();
+    let _ = app.update(Message::Terminal(server_terminal::Message::Shell(
+        TerminalEvent::Output(b"hello world\r\n$ ".to_vec()),
+    )));
+    while sent.try_recv().is_ok() {}
+    let header = simulator(&app).find("Shell on the server").unwrap();
+    let header = iced_test::selector::Bounded::bounds(&header);
+    let mut renderer = futures_util::FutureExt::now_or_never(<iced::Renderer as Headless>::new(
+        moebius_desktop::theme::MANROPE,
+        16.into(),
+        None,
+    ))
+    .unwrap()
+    .unwrap();
+    let mut ui = UserInterface::build(
+        app.view(),
+        Size::new(1440.0, 900.0),
+        Cache::default(),
+        &mut renderer,
+    );
+    // The first row of the screen is below the header and the screen's padding.
+    let [width, height] = moebius_desktop::theme::SHELL_CELL;
+    let row = header.y + header.height + 2.0 * moebius_desktop::theme::SPACE_10 + height / 2.0;
+    let left = header.x + width / 2.0;
+    let (start, end) = (Point::new(left, row), Point::new(left + 4.0 * width, row));
+    let mut clipboard = Clipboard(None);
+    let mut messages = Vec::new();
+    for (at, event) in [
+        (start, mouse::Event::CursorMoved { position: start }),
+        (start, mouse::Event::ButtonPressed(mouse::Button::Left)),
+        (end, mouse::Event::CursorMoved { position: end }),
+        (end, mouse::Event::ButtonReleased(mouse::Button::Left)),
+    ] {
+        let _ = ui.update(
+            &[Event::Mouse(event)],
+            mouse::Cursor::Available(at),
+            &mut renderer,
+            &mut clipboard,
+            &mut messages,
+        );
+    }
+    assert_eq!(clipboard.0.as_deref(), Some("hello"));
+
+    clipboard.0 = Some("ls -la".into());
+    let _ = ui.update(
+        &[Event::Mouse(mouse::Event::ButtonPressed(
+            mouse::Button::Right,
+        ))],
+        mouse::Cursor::Available(end),
+        &mut renderer,
+        &mut clipboard,
+        &mut messages,
+    );
+    drop(ui);
+    for message in messages {
+        let _ = app.update(message);
+    }
+    assert_eq!(
+        sent.try_recv().unwrap(),
+        client::TerminalInput::Bytes(b"ls -la".to_vec())
+    );
+}
