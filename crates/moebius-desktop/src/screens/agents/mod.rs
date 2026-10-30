@@ -191,7 +191,7 @@ impl Agents {
     fn ask_available(&self, settings: &Settings, refresh: bool) -> Task<AppMessage> {
         let client = Client::new(settings.clone());
         Task::perform(
-            async move { client.available_models(refresh).await },
+            async move { client.available_models(refresh, false).await },
             |result| AppMessage::Agents(Message::Available(result)),
         )
     }

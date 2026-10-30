@@ -25,7 +25,7 @@ pub(super) fn load_choices(settings: &Settings) -> Task<AppMessage> {
             AppMessage::Chat(Message::Agents(agents))
         }),
         Task::perform(
-            async move { models.available_models(false).await },
+            async move { models.available_models(false, false).await },
             |models| AppMessage::Chat(Message::Models(models)),
         ),
     ])

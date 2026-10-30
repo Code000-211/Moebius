@@ -143,14 +143,17 @@ pub struct AvailableClass {
     pub protocols: Vec<String>,
 }
 
-/// What `GET /v1/models/available` says: the models of all upstreams, the upstreams that could not be asked, and the
-/// model classes.
+/// What `GET /v1/models/available` says: the models of all upstreams, the upstreams that could not be asked, the
+/// model classes, and the models of the decision model's endpoint.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct Available {
     pub models: Vec<AvailableModel>,
     pub errors: Vec<UpstreamError>,
     #[serde(default)]
     pub classes: Vec<AvailableClass>,
+    /// The models the decision model's endpoint lists, when they were asked for.
+    #[serde(default)]
+    pub decision_models: Vec<String>,
 }
 
 impl Available {
@@ -169,6 +172,23 @@ impl Available {
                 class: true,
             })
             .chain(self.models.iter().cloned())
+            .collect()
+    }
+
+    /// What the decision model's Model field offers: the models its endpoint at `url` lists, or, before it lists any,
+    /// the upstreams' models.
+    pub fn decision_choices(&self, url: &str) -> Vec<AvailableModel> {
+        if self.decision_models.is_empty() {
+            return self.models.clone();
+        }
+        self.decision_models
+            .iter()
+            .map(|id| AvailableModel {
+                id: id.clone(),
+                protocol: "openai".into(),
+                upstream: url.to_string(),
+                class: false,
+            })
             .collect()
     }
 }

@@ -26,14 +26,17 @@ impl Client {
         self.get("/v1/models").await
     }
 
-    /// The models the upstreams serve; `refresh` asks them again instead of using what the server kept.
-    pub async fn available_models(&self, refresh: bool) -> Result<Available, ClientError> {
-        let path = if refresh {
-            "/v1/models/available?refresh=true"
-        } else {
-            "/v1/models/available"
-        };
-        self.get(path).await
+    /// The models the upstreams serve; `refresh` asks them again instead of using what the server kept, `decision`
+    /// asks the decision model's endpoint too.
+    pub async fn available_models(
+        &self,
+        refresh: bool,
+        decision: bool,
+    ) -> Result<Available, ClientError> {
+        self.get(&format!(
+            "/v1/models/available?refresh={refresh}&decision={decision}"
+        ))
+        .await
     }
 
     /// Starts the OAuth login of the upstream at `place`; the person has confirmed the warning of its terms.

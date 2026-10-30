@@ -153,10 +153,14 @@ impl Setup {
         if waiting {
             return ask(settings, place, POLL);
         }
+        // An upstream that logged in lists its models now, not when the kept list runs out.
         let client = Client::new(settings.clone());
-        Task::perform(async move { client.models().await }, |result| {
-            AppMessage::Setup(Message::Models(result))
-        })
+        Task::batch([
+            Task::perform(async move { client.models().await }, |result| {
+                AppMessage::Setup(Message::Models(result))
+            }),
+            self.ask_available(settings, true),
+        ])
     }
 }
 

@@ -2,7 +2,8 @@
 //! [`crate::server::setup`]); never with a secret in what is answered.
 //!
 //! - `GET /v1/models` and `GET /v1/plugins`: the router's upstreams, the agents, the teacher, the decision model and
-//!   the plugins. `GET /v1/models/available?refresh=`: the models the upstreams list, asked once and kept.
+//!   the plugins. `GET /v1/models/available?refresh=&decision=`: the models the upstreams list, asked once and kept,
+//!   and those the decision model's endpoint lists.
 //! - `GET /v1/models/providers`: the providers built in, whose subscription an upstream logs in to with a `preset`.
 //! - `POST /v1/models/upstreams/{place}/login` `{accept_terms}`: a person starts the OAuth login of an upstream, having
 //!   confirmed the warning about the provider's terms; `GET` on the same route tells how it stands.
@@ -65,13 +66,36 @@ async fn providers() -> axum::Json<Vec<crate::router::Provider>> {
 struct AvailableQuery {
     #[serde(default)]
     refresh: bool,
+    /// Whether the decision model's endpoint is asked too.
+    #[serde(default)]
+    decision: bool,
 }
 
 async fn available_models(
     State(state): State<ApiState>,
     axum::extract::Query(query): axum::extract::Query<AvailableQuery>,
 ) -> axum::Json<crate::router::AvailableModels> {
-    axum::Json(state.router.available_models(query.refresh).await)
+    let mut answer = state.router.available_models(query.refresh).await;
+    if query.decision
+        && let Some(model) = state.config.get().decision_model.clone()
+    {
+        let key = state.config.secrets().resolve(
+            model.api_key_env.as_deref(),
+            model.api_key_secret.as_deref(),
+        );
+        let listed = match key {
+            Ok(key) => state.router.endpoint_models(&model.url, key).await,
+            Err(message) => Err(message),
+        };
+        match listed {
+            Ok(models) => answer.decision_models = models,
+            Err(message) => answer.errors.push(crate::router::UpstreamError {
+                upstream: setup::without_credentials(&model.url),
+                message,
+            }),
+        }
+    }
+    axum::Json(answer)
 }
 
 /// What `POST /v1/models/upstreams/{place}/login` takes.
@@ -373,6 +397,56 @@ mod tests {
         assert_eq!(asked.load(Ordering::SeqCst), 3);
         assert_eq!(fetch("/v1/models/available?refresh=true").await, text);
         assert_eq!(asked.load(Ordering::SeqCst), 6);
+    }
+
+    #[tokio::test]
+    async fn the_decision_models_endpoint_is_asked_for_its_models_with_its_key() {
+        let (dir, state, _addr) = start().await;
+        let endpoint = axum::Router::new().route(
+            "/v1/models",
+            get(|headers: axum::http::HeaderMap| async move {
+                if headers.get("authorization").map(|v| v.as_bytes()) != Some(b"Bearer sk-decide") {
+                    return StatusCode::UNAUTHORIZED.into_response();
+                }
+                axum::Json(serde_json::json!({"data": [{"id": "judge-7b"}, {"id": "judge-1b"}]}))
+                    .into_response()
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/v1", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, endpoint).await });
+        let config = crate::config::Config::parse(
+            &format!("[decision_model]\nurl = \"{url}\"\nmodel = \"judge-7b\"\napi_key_secret = \"decide\"\n"),
+            dir.path(),
+            &dir.path().join("moebius.toml"),
+        )
+        .unwrap();
+        let state = ApiState {
+            config: Arc::new(crate::server::settings::Live::new(config)),
+            ..state
+        };
+        let ask = |decision| {
+            available_models(
+                State(state.clone()),
+                axum::extract::Query(AvailableQuery {
+                    refresh: true,
+                    decision,
+                }),
+            )
+        };
+
+        // Without its key the endpoint refuses, which is said without failing the answer.
+        let answer = ask(true).await.0;
+        assert!(answer.decision_models.is_empty());
+        assert_eq!(answer.errors[0].upstream, url);
+        assert_eq!(answer.errors[0].message, "the secret decide is not stored");
+
+        state.config.secrets().set("decide", "sk-decide").unwrap();
+        let answer = ask(true).await.0;
+        assert_eq!(answer.decision_models, ["judge-7b", "judge-1b"]);
+        assert!(answer.errors.is_empty());
+        // The pickers of agents and chats do not ask it.
+        assert!(ask(false).await.0.decision_models.is_empty());
     }
 
     #[tokio::test]

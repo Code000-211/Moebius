@@ -208,11 +208,12 @@ impl Setup {
         ])
     }
 
-    /// Asks the upstreams which models they serve; `refresh` makes the server ask them again.
+    /// Asks the upstreams, and the decision model's endpoint, which models they serve; `refresh` makes the server ask
+    /// the upstreams again.
     fn ask_available(&self, settings: &Settings, refresh: bool) -> Task<AppMessage> {
         let client = Client::new(settings.clone());
         Task::perform(
-            async move { client.available_models(refresh).await },
+            async move { client.available_models(refresh, true).await },
             |result| AppMessage::Setup(Message::Available(result)),
         )
     }

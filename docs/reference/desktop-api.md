@@ -1017,13 +1017,15 @@ waits. Errors: `404` and `422` as above.
 The models the router's upstreams serve, for the pickers of the Models and Agents screens. The server asks every
 upstream at the same time, each with a limit of 10 seconds, with the key it sends in the router (see
 [the router](router.md#listing-models)). Query: `refresh=true` asks the upstreams again; without it the last answer is
-returned if it is less than 5 minutes old. Response:
+returned if it is less than 5 minutes old. `decision=true` also asks the endpoint of `[decision_model]`, never kept, for
+the Models screen's decision model. Response:
 
 ```json
 {
   "models": [{"id": "claude-sonnet-4-5", "protocol": "anthropic", "upstream": "https://api.anthropic.com"}],
   "errors": [{"upstream": "https://api.example.com", "message": "401"}],
-  "classes": [{"name": "strong", "models": ["claude-sonnet-4-5", "qwen-local"], "protocols": ["anthropic"]}]
+  "classes": [{"name": "strong", "models": ["claude-sonnet-4-5", "qwen-local"], "protocols": ["anthropic"]}],
+  "decision_models": ["moebius-decider"]
 }
 ```
 
@@ -1031,6 +1033,9 @@ returned if it is less than 5 minutes old. Response:
 - `classes` are the model classes of `[router.classes]` by name (see [the router](router.md#model-classes)), which may be
   named wherever a model is: each with its models, first tried first, and the protocols `models` lists any of them
   under (empty when none is listed). They are the router's as the request is answered, never kept.
+- `decision_models` are the ids the decision model's endpoint lists at `<url>/models`, with its key; empty without
+  `decision=true` or without a decision model. An endpoint that cannot be asked, or whose key is not set, is in
+  `errors` under its `url`.
 - An upstream that cannot be asked is in `errors` with a short `message`: an HTTP status such as `401`, `timed out`,
   `could not connect`, `the answer is not JSON` or `the answer has no model list`. It does not fail the request.
 - No key is in the answer. A user name and password in an upstream's URL are removed.

@@ -48,6 +48,9 @@ pub struct AvailableModels {
     pub errors: Vec<UpstreamError>,
     #[serde(default)]
     pub classes: Vec<AvailableClass>,
+    /// The models the decision model's endpoint lists, when they were asked for.
+    #[serde(default)]
+    pub decision_models: Vec<String>,
 }
 
 impl Router {
@@ -123,6 +126,22 @@ impl Router {
         *self.available.lock().unwrap_or_else(|p| p.into_inner()) =
             Some((Instant::now(), answer.clone()));
         answer
+    }
+
+    /// The ids of the models an OpenAI-compatible endpoint outside the router lists, such as the decision model's,
+    /// asked with `key` and never kept.
+    pub async fn endpoint_models(
+        &self,
+        base_url: &str,
+        key: Option<String>,
+    ) -> Result<Vec<String>, String> {
+        self.list_models(&Upstream {
+            protocol: Protocol::OpenAi,
+            base_url: base_url.to_string(),
+            api_key: key,
+            oauth: None,
+        })
+        .await
     }
 
     /// The ids of the models one upstream lists, or a short message saying why not.

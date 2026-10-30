@@ -1004,11 +1004,41 @@ fn a_provider_that_was_added_asks_for_the_warning_then_waits_for_the_pasted_addr
         "That is not the answer to this login: its state differs."
     ));
     assert!(shows(&app, "Finish login"));
-    // Once it holds, the field is gone.
-    let _ = app.update(Message::Setup(setup::Message::LoginPasted(
+    // Once it holds, the field is gone, and the models are read again with what the upstream now lists.
+    let read = app.update(Message::Setup(setup::Message::LoginPasted(
         1,
         Ok(code_login("logged_in", "Logged in.")),
     )));
+    assert_eq!(read.units(), 2, "the models and the models available");
     assert!(shows(&app, "Logged in."));
     assert!(!shows(&app, "Finish login"));
+}
+
+/// The decision model is not asked through the router: its Model field offers what its own endpoint lists, and the
+/// upstreams' models only before it lists any.
+#[test]
+fn the_decision_models_field_offers_the_models_of_its_endpoint() {
+    let mut available = available_models();
+    let ids = |choices: Vec<client::AvailableModel>| -> Vec<String> {
+        choices.into_iter().map(|c| c.id).collect()
+    };
+    assert_eq!(
+        ids(available.decision_choices("http://127.0.0.1:8081/v1")),
+        ["claude-opus-fake", "qwen3.8-flash-next"]
+    );
+    available.decision_models = vec!["moebius-decider".into(), "judge-1b".into()];
+    let choices = available.decision_choices("http://127.0.0.1:8081/v1");
+    assert_eq!(choices[1].upstream, "http://127.0.0.1:8081/v1");
+    assert_eq!(ids(choices), ["moebius-decider", "judge-1b"]);
+
+    // Picked, it is saved as the decision model's model.
+    let mut state = setup_state(configured());
+    let _ = state.update(setup::Message::Available(Ok(available.clone())), None);
+    let judge = available.decision_choices("")[1].clone();
+    let _ = state.update(
+        setup::Message::PickModel("decision_model.model", judge),
+        None,
+    );
+    let plan = state.save_request(true).unwrap();
+    assert_eq!(plan.set["decision_model.model"], "judge-1b");
 }

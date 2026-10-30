@@ -123,9 +123,18 @@ impl Setup {
     /// Gives the Model fields the models that were listed.
     fn offer_models(&mut self) {
         if let Some(forms) = &mut self.forms {
-            // The teacher is asked through the router, which serves the classes; the decision model is not.
+            // The teacher is asked through the router, which serves the classes; the decision model is not, and is
+            // offered what its own endpoint lists, or before it has one the upstreams' models.
             let teacher = self.available.as_ref().map_or(vec![], |a| a.choices());
-            let decision_model = self.available.as_ref().map_or(vec![], |a| a.models.clone());
+            let url = self
+                .models
+                .as_ref()
+                .and_then(|m| m.decision_model.as_ref())
+                .map_or("", |m| m.url.as_str());
+            let decision_model = self
+                .available
+                .as_ref()
+                .map_or(vec![], |a| a.decision_choices(url));
             for (optional, models) in [
                 (forms.teacher.as_mut(), teacher),
                 (forms.decision_model.as_mut(), decision_model),

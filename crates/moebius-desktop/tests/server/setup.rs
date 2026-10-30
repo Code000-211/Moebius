@@ -217,13 +217,31 @@ async fn the_client_reads_the_models_the_upstreams_serve_from_a_real_server() {
     .await;
     let client = Client::new(settings);
     for refresh in [false, true] {
-        let available = client.available_models(refresh).await.unwrap();
+        let available = client.available_models(refresh, false).await.unwrap();
         let ids: Vec<&str> = available.models.iter().map(|m| m.id.as_str()).collect();
         assert_eq!(ids, ["fake-large", "fake-small"]);
         assert_eq!(available.models[0].protocol, "openai");
         assert_eq!(available.models[0].upstream, upstream);
         assert!(available.errors.is_empty());
+        assert!(available.decision_models.is_empty());
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_client_reads_the_models_of_the_decision_models_endpoint_from_a_real_server() {
+    let dir = tempfile::tempdir().unwrap();
+    let endpoint = fake_upstream().await;
+    let (settings, _server) = start_with(
+        dir.path(),
+        &format!("[decision_model]\nurl = \"{endpoint}\"\nmodel = \"fake-small\"\n"),
+    )
+    .await;
+    let available = Client::new(settings)
+        .available_models(false, true)
+        .await
+        .unwrap();
+    assert_eq!(available.decision_models, ["fake-small", "fake-large"]);
+    assert!(available.models.is_empty());
 }
 
 #[tokio::test]
