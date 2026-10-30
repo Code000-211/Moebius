@@ -147,7 +147,8 @@ pub(super) async fn start(
     let host = oauth.preset().map_or("127.0.0.1", |p| p.redirect_host);
     let redirect_uri = format!("http://{host}:{port}{path}");
     let verifier = random(32)?;
-    let state = random(16)?;
+    // Anthropic's page refuses a shorter state as "Invalid request format"; Claude Code sends 32 bytes too.
+    let state = random(32)?;
     let mut params = vec![
         ("response_type", "code".to_string()),
         ("client_id", oauth.client_id.clone()),
@@ -289,6 +290,8 @@ mod tests {
         assert_eq!(asked["client_id"], "moebius-test");
         assert_eq!(asked["code_challenge_method"], "S256");
         assert_eq!(asked["scope"], "models offline");
+        // 32 random bytes, as Claude Code sends: Anthropic refuses a state of 16.
+        assert_eq!(asked["state"].len(), 43);
         let redirect = asked["redirect_uri"].clone();
         assert!(redirect.starts_with("http://127.0.0.1:"), "{redirect}");
         assert!(redirect.ends_with("/callback"), "{redirect}");
