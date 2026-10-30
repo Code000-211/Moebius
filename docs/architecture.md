@@ -684,6 +684,7 @@ At the top:
 | `screens/project/find.rs`, `screens/project/fuzzy.rs` | "Go to file" (Ctrl+P) and "Search in files" (Ctrl+Shift+F) over a project's default branch, and the fuzzy ranking of paths. |
 | `screens/board.rs` | The board of a repository: its columns in order with their cards. |
 | `screens/add_repository.rs` | The "Add a repository" page the "+" of the sidebar opens. |
+| `screens/repositories.rs` | The Projects page the "Projects" heading of the sidebar opens: every repository, the board it opens, and its removal after asking. |
 | `screens/live/mod.rs`, `screens/live/update.rs` | The live view of a run: the run being watched, its loading and the shell's subscription, and how a message changes it. |
 | `screens/live/view.rs` | The header with status, shell and stop, the conversation and the steer field. |
 | `screens/live/panel.rs` | "This run": the card's rounds and tokens, the agent, the judgements and the branch. |

@@ -1,11 +1,13 @@
-//! The repositories: adding one, with or without a forge, editing whom a repository on a forge trusts, and the column
-//! scripts and files on a repository's default branch.
+//! The repositories: adding one, with or without a forge, editing whom a repository on a forge trusts, removing
+//! one, and the column scripts and files on a repository's default branch.
 //!
 //! - `POST /v1/repositories` `{name, url}`: clones a repository without a forge. With `forge: "github"`, `github:
 //!   "owner/repo"` and optionally `trusted: [logins]` it is a repository whose issues are polled from GitHub; with
 //!   `forge: "gitlab"` and `project: "group/project"`, one whose issues are polled from GitLab; with `forge: "forgejo"`
 //!   and `project: "owner/repo"`, one on Forgejo, such as Codeberg.
 //! - `PUT /v1/repositories/{id}` `{trusted}`: replaces the logins a repository on a forge trusts.
+//! - `DELETE /v1/repositories/{id}`: removes the repository with its cards, changes, chats and the rest, and deletes
+//!   its clone. Refused with `409` while one of its runs is still going.
 //! - `GET`, `PUT` and `DELETE /v1/repositories/{id}/scripts/{column}`: the script in force for a column, written or
 //!   removed as a commit (see [`crate::board::scripts`]).
 //! - `GET /v1/repositories/{id}/tree?path=` and `GET` and `PUT /v1/repositories/{id}/files/{path}`: the files on the
@@ -19,7 +21,7 @@ use axum::extract::{Path as UrlPath, Query, State};
 use axum::routing::{get, post, put};
 use serde::{Deserialize, Serialize};
 
-use super::{ApiError, ApiState, blocking};
+use super::{ApiError, ApiState, Reason, blocking};
 use crate::app::AppError;
 use crate::board::scripts::{self, NewScript, ScriptView};
 use crate::decide::Actor;
@@ -31,7 +33,10 @@ use crate::store::Repository;
 pub(super) fn routes() -> Router<ApiState> {
     Router::new()
         .route("/v1/repositories", post(add_repository))
-        .route("/v1/repositories/{id}", put(edit_repository))
+        .route(
+            "/v1/repositories/{id}",
+            put(edit_repository).delete(delete_repository),
+        )
         .route(
             "/v1/repositories/{id}/scripts/{column}",
             get(get_script).put(put_script).delete(delete_script),
@@ -110,6 +115,19 @@ async fn edit_repository(
 ) -> Result<axum::Json<Repository>, ApiError> {
     blocking(&state.app, move |app| {
         app.edit_repository(&by, id, &edited.trusted, &edited.reason)
+    })
+    .await
+}
+
+async fn delete_repository(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    body: Option<axum::Json<Reason>>,
+) -> Result<axum::Json<Repository>, ApiError> {
+    let reason = body.map(|body| body.0.reason).unwrap_or_default();
+    blocking(&state.app, move |app| {
+        app.remove_repository(&by, id, &reason)
     })
     .await
 }
@@ -328,5 +346,34 @@ mod tests {
         ] {
             assert_eq!(post(body).await.unwrap().status(), 422);
         }
+    }
+
+    #[tokio::test]
+    async fn a_removed_repository_is_gone_with_its_cards_and_its_clone() {
+        let (_dir, state, addr) = start().await;
+        state
+            .app
+            .store
+            .add_card(1, "Card", "", "leon", "Backlog")
+            .unwrap();
+        let client = reqwest::Client::new();
+        let response = client
+            .delete(format!("http://{addr}/v1/repositories/1"))
+            .bearer_auth(&*state.token)
+            .json(&serde_json::json!({"reason": "not wanted"}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        assert!(state.app.store.repository(1).unwrap().is_none());
+        assert!(state.app.store.cards(1).unwrap().is_empty());
+
+        let again = client
+            .delete(format!("http://{addr}/v1/repositories/1"))
+            .bearer_auth(&*state.token)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(again.status(), 404);
     }
 }

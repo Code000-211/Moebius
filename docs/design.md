@@ -101,8 +101,9 @@ with a secret that only the processes it starts know, and keeps no password.
 
 ## Layout
 
-- A sidebar on every screen, in groups divided by lines: Inbox, Chat, Fleet and Automations; Projects (one per
-  repository); Build (agents, skills, MCP servers, rules); Improve (Retro, experiments, decision model, usage); Setup
+- A sidebar on every screen, in groups divided by lines: Inbox, Chat, Fleet and Automations; Projects (the heading opens
+  the Projects page, every repository with its board and its removal after asking, one entry per repository and a "+" to
+  add one); Build (agents, skills, MCP servers, rules); Improve (Retro, experiments, decision model, usage); Setup
   (models, plugins, terminal, ports, settings); tokens used today at the foot. It collapses to a rail of icons. An entry with
   something new (the inbox, an unread chat) has its icon in amber and its count in amber text beside it, without a pill.
 - The Ports page (Setup) is one white box of rows: the port on the server in the code font with the process and what it

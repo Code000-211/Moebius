@@ -33,6 +33,7 @@ use crate::screens::live::{self, Live};
 use crate::screens::mcp_servers::McpServers;
 use crate::screens::ports::Ports;
 use crate::screens::project::Project;
+use crate::screens::repositories::Repositories;
 use crate::screens::retro::Retros;
 use crate::screens::rules::Rules;
 use crate::screens::server_terminal::ServerTerminal;
@@ -126,6 +127,8 @@ pub struct App {
     /// opens on Get started if the person has not chosen a page by then.
     open_on_start: bool,
     add_repository: AddRepository,
+    /// The Projects overview: every repository, and the way to remove one.
+    repositories: Repositories,
     new_issue: NewIssue,
     /// The editor in place of a card's title and body, or of a repository's trusted logins.
     edits: Edits,
@@ -188,6 +191,7 @@ impl App {
             start: Start::default(),
             open_on_start: false,
             add_repository: AddRepository::default(),
+            repositories: Repositories::default(),
             new_issue: NewIssue::default(),
             edits: Edits::default(),
             projects: BTreeMap::new(),

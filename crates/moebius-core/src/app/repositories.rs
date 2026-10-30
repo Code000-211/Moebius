@@ -214,6 +214,35 @@ impl App {
         ));
         Ok(repository)
     }
+
+    /// Removes a repository and everything stored for it, and deletes its clone and worktrees. Refuses while a run
+    /// of the repository is still going, so that nothing is taken from under it. The removal is recorded as a
+    /// `delete_repository` decision and announced as `repository_removed`.
+    pub fn remove_repository(&self, by: &Actor, id: i64, reason: &str) -> Result<Repository> {
+        let repository = self.repository(id)?;
+        if self
+            .store
+            .active_runs()?
+            .iter()
+            .any(|run| run.repository_id == Some(id))
+        {
+            return Err(AppError::Conflict(format!(
+                "{} has a run in progress; stop it before removing the repository",
+                repository.name
+            )));
+        }
+        if !self.store.delete_repository(id)? {
+            return Err(AppError::NotFound(format!("repository {id}")));
+        }
+        self.repos.remove(&repository.name)?;
+        let context = BTreeMap::from([("repository".into(), repository.name.clone())]);
+        self.record_action(by, "delete_repository", None, None, context, reason)?;
+        self.bus.publish(AppEvent::new(
+            "repository_removed",
+            json!(repository.clone()),
+        ));
+        Ok(repository)
+    }
 }
 
 #[cfg(test)]
@@ -293,6 +322,77 @@ mod tests {
         assert!(
             !app.is_trusted(&card(&remote, PERSON)),
             "a GitHub user named like the desktop's person is an outsider"
+        );
+    }
+
+    #[test]
+    fn removing_a_repository_takes_its_clone_and_its_cards_with_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(Store::in_memory(&dir.path().join("blobs")).unwrap());
+        let data = dir.path().join("data");
+        let app = App::new(
+            store.clone(),
+            Arc::new(Host::new(std::time::Duration::from_secs(1))),
+            &data,
+        );
+        let path = |name: &str| dir.path().join(name).to_string_lossy().into_owned();
+        let gone = app.add_repository("mine", &path("mine")).unwrap();
+        let kept = app.add_repository("other", &path("other")).unwrap();
+        store
+            .add_card(gone.id, "Card", "", PERSON, columns::BACKLOG)
+            .unwrap();
+
+        let removed = app
+            .remove_repository(&Actor::Person, gone.id, "not wanted")
+            .unwrap();
+
+        assert_eq!(removed.name, "mine");
+        assert!(store.repository(gone.id).unwrap().is_none());
+        assert!(store.cards(gone.id).unwrap().is_empty());
+        assert!(!app.repos.clone_path("mine").exists());
+        assert!(app.repos.clone_path("other").exists());
+        assert_eq!(
+            store.repositories().unwrap(),
+            vec![kept],
+            "the other repository stays"
+        );
+        assert!(
+            app.remove_repository(&Actor::Person, gone.id, "again")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn removing_a_repository_is_refused_while_one_of_its_runs_is_going() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(Store::in_memory(&dir.path().join("blobs")).unwrap());
+        let data = dir.path().join("data");
+        let app = App::new(
+            store.clone(),
+            Arc::new(Host::new(std::time::Duration::from_secs(1))),
+            &data,
+        );
+        let path = |name: &str| dir.path().join(name).to_string_lossy().into_owned();
+        let repository = app.add_repository("mine", &path("mine")).unwrap();
+        let run = store.add_run(None, "Moebius", "pi-bolt", "chat").unwrap();
+        store.set_run_repository(run.id, repository.id).unwrap();
+
+        let refused = app
+            .remove_repository(&Actor::Person, repository.id, "not wanted")
+            .unwrap_err();
+
+        assert!(
+            matches!(refused, AppError::Conflict(_)),
+            "a repository with a run going is refused, not removed: {refused}"
+        );
+        assert!(store.repository(repository.id).unwrap().is_some());
+        assert!(app.repos.clone_path("mine").exists());
+
+        // Once the run has ended, the repository goes.
+        store.set_run_status(run.id, "succeeded").unwrap();
+        assert!(
+            app.remove_repository(&Actor::Person, repository.id, "not wanted")
+                .is_ok()
         );
     }
 }

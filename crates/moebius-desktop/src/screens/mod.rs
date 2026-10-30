@@ -17,6 +17,7 @@ pub mod live;
 pub mod mcp_servers;
 pub mod ports;
 pub mod project;
+pub mod repositories;
 pub mod retro;
 pub mod rules;
 pub mod server_terminal;

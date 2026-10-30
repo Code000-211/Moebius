@@ -173,6 +173,18 @@ impl Repos {
         self.clones.join(name)
     }
 
+    /// Deletes the clone of the repository `name` and every worktree under it, so that a removed repository leaves
+    /// nothing on disk behind.
+    pub fn remove(&self, name: &str) -> Result<()> {
+        let _held = self.hold_worktrees();
+        for dir in [self.worktrees.join(name), self.clone_path(name)] {
+            if dir.exists() {
+                std::fs::remove_dir_all(&dir)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Clones `url` as `name`, or fetches if the clone already exists. Returns the clone's path.
     pub fn clone_or_fetch(&self, name: &str, url: &str, auth: Option<&str>) -> Result<PathBuf> {
         let path = self.clone_path(name);
