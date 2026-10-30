@@ -28,6 +28,7 @@ impl Chats {
                         open.thread.push(event);
                     }
                 }
+                return self.follow(id);
             }
             Message::Loaded(id, Err(e)) => {
                 if let Some(open) = self.open.as_mut().filter(|open| open.thread.id == id) {
@@ -72,6 +73,10 @@ impl Chats {
                     return request(settings, Message::Started, move |client| async move {
                         client.start_chat(&chat).await
                     });
+                }
+                // What the person sends is followed to the end, wherever they had scrolled.
+                if let Some(open) = self.open.as_mut() {
+                    open.follow = true;
                 }
                 if let Some(open) = &self.open
                     && !open.message.trim().is_empty()
@@ -250,6 +255,11 @@ impl Chats {
             }
             Message::Tick(now) => self.now = now,
             Message::MarkedRead => {}
+            Message::Scrolled(end) => {
+                if let Some(open) = self.open.as_mut() {
+                    open.follow = end;
+                }
+            }
             Message::Fold(step) => {
                 if let Some(open) = &mut self.open {
                     open.thread.fold(step);

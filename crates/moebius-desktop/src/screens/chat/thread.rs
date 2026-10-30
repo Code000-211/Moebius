@@ -81,9 +81,19 @@ impl Thread {
     }
 
     pub fn push(&mut self, event: RunEvent) {
+        // An event in order changes at most the last entry and adds new ones; one out of order rebuilds them all.
+        let from = if event.seq > self.conversation.last_seq() {
+            self.conversation.entries().len().saturating_sub(1)
+        } else {
+            0
+        };
+        // A streamed piece of text changes no tool call, so the deciders stay as they are named.
+        let names = event.kind != "message_update";
         self.conversation.push(event);
-        self.conversation.name_deciders(&self.judgements);
-        for (index, entry) in self.conversation.entries().iter().enumerate() {
+        if names {
+            self.conversation.name_deciders(&self.judgements);
+        }
+        for (index, entry) in self.conversation.entries().iter().enumerate().skip(from) {
             if let Entry::Text(text) = entry
                 && self
                     .markdown

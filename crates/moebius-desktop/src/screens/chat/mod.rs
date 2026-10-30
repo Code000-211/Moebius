@@ -20,6 +20,7 @@ use crate::client::{
     Agent, Available, Change, Chat, Client, ClientError, Judgement, NewChat, Run, RunEvent, Skill,
 };
 use crate::settings::Settings;
+use crate::theme;
 use crate::widgets::chat_terminal::{self, ChatTerminal};
 
 use draft::load_choices;
@@ -90,6 +91,8 @@ pub enum Message {
     Fold(usize),
     /// The server was told how far the open chat is read; nothing waits on the answer.
     MarkedRead,
+    /// The conversation was scrolled: whether it is at its end now, so that it follows what comes.
+    Scrolled(bool),
     /// Show the open chat's terminal (Pi-Bolt's own interface) instead of its conversation, or the conversation again.
     ShowTerminal(bool),
     /// Something the terminal did.
@@ -104,6 +107,9 @@ struct Open {
     confirming: bool,
     /// The last thing that went wrong, as a short line.
     notice: Option<String>,
+    /// Whether the conversation is at its end, so that what the agent writes scrolls it on; not after the person
+    /// scrolled up.
+    follow: bool,
 }
 
 impl Open {
@@ -113,6 +119,7 @@ impl Open {
             message: String::new(),
             confirming: false,
             notice: None,
+            follow: true,
         }
     }
 }
@@ -169,6 +176,13 @@ impl Draft {
 
 /// The id of the field to write in, which the chat's draft focuses.
 const MESSAGE_FIELD: &str = "chat-message";
+/// The id of the open chat's conversation, which is scrolled to its end as it grows.
+const CONVERSATION: &str = "chat-conversation";
+
+/// Whether a scrolled conversation shows its end, give or take a line.
+pub fn at_end(viewport: iced::widget::scrollable::Viewport) -> bool {
+    viewport.absolute_offset_reversed().y <= theme::SPACE_24
+}
 
 pub struct Chats {
     /// The chats, newest first.
@@ -267,11 +281,13 @@ impl Chats {
         let Some(open) = &self.open else {
             return Task::none();
         };
-        let (id, seq) = (open.thread.id, open.thread.last_seq());
+        let id = open.thread.id;
         let Some(chat) = self.list.iter_mut().find(|chat| chat.id == id) else {
             return Task::none();
         };
-        if seq <= chat.seen {
+        // Told once an answer is there, not at every streamed piece of it.
+        let seq = open.thread.last_seq();
+        if chat.answered <= chat.seen || seq <= chat.seen {
             return Task::none();
         }
         chat.seen = seq;
@@ -351,6 +367,16 @@ impl Chats {
         };
         open.thread.push(event.clone());
         event.kind == "tool_check"
+    }
+
+    /// Scrolls the open chat `run` to its end, if it is open and followed.
+    pub fn follow(&self, run: i64) -> Task<AppMessage> {
+        match &self.open {
+            Some(open) if open.thread.id == run && open.follow => {
+                iced::widget::operation::snap_to_end(CONVERSATION)
+            }
+            _ => Task::none(),
+        }
     }
 
     /// Reads the chats again.

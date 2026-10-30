@@ -185,6 +185,9 @@ impl App {
         let chat_checked = data["run"]
             .as_i64()
             .is_some_and(|run| self.chats.on_event(run, &event));
+        let followed = data["run"].as_i64().map_or_else(Task::none, |run| {
+            Task::batch([self.chats.follow(run), self.float.follow(run)])
+        });
         let float_checked = data["run"]
             .as_i64()
             .is_some_and(|run| self.float.on_event(run, &event));
@@ -199,9 +202,9 @@ impl App {
         };
         let live = self.on_live_event(data, event);
         let Some(settings) = &self.settings else {
-            return Task::batch([live, listed]);
+            return Task::batch([live, listed, followed]);
         };
-        let mut tasks = vec![live, listed];
+        let mut tasks = vec![live, listed, followed];
         if chat_checked {
             tasks.push(self.chats.reload_judgements(settings));
         }

@@ -410,7 +410,8 @@ impl Chats {
                 .padding(theme::SPACE_16)
                 .width(Length::Fill),
         )
-        .anchor_bottom()
+        .id(super::CONVERSATION)
+        .on_scroll(|viewport| AppMessage::Chat(Message::Scrolled(super::at_end(viewport))))
         .height(Length::Fill);
         let mut content = column![
             container(head).padding(theme::BOX_PADDING),

@@ -42,7 +42,12 @@ pub enum Message {
     OpenInChat,
     /// The clock, for how long the agent's steps take.
     Tick(i64),
+    /// The conversation was scrolled: whether it is at its end now, so that it follows what comes.
+    Scrolled(bool),
 }
+
+/// The id of the window's conversation, which is scrolled to its end as it grows.
+const CONVERSATION: &str = "float-conversation";
 
 /// The floating window.
 pub struct Floating;
@@ -88,6 +93,9 @@ pub struct FloatChat {
     notice: Option<String>,
     /// The time of the last tick, Unix seconds.
     now: i64,
+    /// Whether the conversation is at its end, so that what the agent writes scrolls it on; not after the person
+    /// scrolled up.
+    follow: bool,
 }
 
 impl FloatChat {
@@ -101,6 +109,7 @@ impl FloatChat {
             sending: false,
             notice: None,
             now,
+            follow: true,
         }
     }
 
@@ -202,6 +211,15 @@ impl FloatChat {
         event.kind == "tool_check"
     }
 
+    /// Scrolls the window's chat `run` to its end, if it is the window's and followed.
+    pub fn follow(&self, run: i64) -> Task<AppMessage> {
+        if self.follow && self.chat() == Some(run) {
+            iced::widget::operation::snap_to_end(CONVERSATION)
+        } else {
+            Task::none()
+        }
+    }
+
     /// A run ended, as the stream says.
     pub fn on_ended(&mut self, run: i64, status: &str) {
         if self.chat() == Some(run) {
@@ -238,6 +256,7 @@ impl FloatChat {
             Message::Send | Message::OpenInChat => {}
             Message::Started(Ok(run)) => {
                 self.message.clear();
+                self.follow = true;
                 return match settings {
                     Some(settings) => self.adopt(&run, self.repository, settings),
                     None => Task::none(),
@@ -246,6 +265,8 @@ impl FloatChat {
             Message::Sent(Ok(_)) => {
                 self.sending = false;
                 self.message.clear();
+                // What the person sends is followed to the end, wherever they had scrolled.
+                self.follow = true;
             }
             Message::Started(Err(e)) | Message::Sent(Err(e)) => {
                 self.sending = false;
@@ -257,7 +278,9 @@ impl FloatChat {
                         thread.push(event);
                     }
                 }
+                return self.follow(id);
             }
+            Message::Scrolled(end) => self.follow = end,
             Message::Loaded(_, Err(e)) => self.notice = Some(say(&e)),
             Message::Judged(id, Ok(judgements)) => {
                 if let Some(thread) = self.thread.as_mut().filter(|thread| thread.id == id) {
@@ -390,7 +413,8 @@ impl FloatChat {
                     .padding(theme::BOX_PADDING)
                     .width(Length::Fill)
             )
-            .anchor_bottom()
+            .id(CONVERSATION)
+            .on_scroll(|viewport| AppMessage::Float(Message::Scrolled(chat::at_end(viewport))))
             .height(Length::Fill),
             page::rule(),
             compose,

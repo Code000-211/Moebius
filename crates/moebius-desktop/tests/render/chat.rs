@@ -492,3 +492,48 @@ fn only_a_chat_whose_agent_asks_a_question_is_marked() {
     assert!(shows(&app, "Asks you"));
     assert!(shows(&app, "1 chat asks you something."));
 }
+
+/// The open chat follows what the agent writes to its end, unless the person scrolled up; what they send is followed
+/// again.
+#[test]
+fn a_chat_follows_new_answers_unless_scrolled_up() {
+    let mut app = chatting("working", false);
+    let more = || Message::Chat(chat::Message::Loaded(7, Ok(vec![])));
+    let followed = app.update(more()).units();
+    assert!(followed > 0, "new events scroll a followed chat to its end");
+
+    let _ = app.update(Message::Chat(chat::Message::Scrolled(false)));
+    assert_eq!(
+        app.update(more()).units(),
+        0,
+        "a chat scrolled up stays put"
+    );
+
+    let _ = app.update(Message::Chat(chat::Message::Send));
+    assert_eq!(
+        app.update(more()).units(),
+        followed,
+        "sending follows again"
+    );
+}
+
+/// An answer is marked read once, not at every streamed piece of it, which made a long answer slow to show.
+#[test]
+fn an_answer_is_marked_read_once() {
+    let mut app = chatting("working", false);
+    let mut listing = chat_listing("working");
+    listing[0].answered = 4;
+    let _ = app.update(Message::Chat(chat::Message::Listed(Ok(listing))));
+    // Scrolled up, so that a piece of the answer has nothing to follow either.
+    let _ = app.update(Message::Chat(chat::Message::Scrolled(false)));
+    for seq in 30..33 {
+        let piece = client::ServerEvent {
+            kind: "run_event".into(),
+            data: json!({"run": 7, "seq": seq, "kind": "message_update", "at": 1_790_000_000,
+                         "data": {"type": "message_update", "assistantMessageEvent":
+                                  {"type": "text_delta", "contentIndex": 0, "delta": "more "}}}),
+        };
+        let task = app.update(Message::Stream(client::StreamEvent::Event(piece)));
+        assert_eq!(task.units(), 0, "a piece of the answer is not marked read");
+    }
+}
