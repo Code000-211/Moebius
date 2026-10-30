@@ -1,5 +1,5 @@
-//! The tabs at the top of a project's page: Board, the tabs the person opened, the `+` with its menu of new tabs, and
-//! at the right the button that folds the Files sidebar. The panel of "Go to file" or "Search in files" stands under
+//! The tabs at the top of a project's page: Board, the tabs the person opened, the `+` with the menu of new tabs it
+//! drops down, and at the right the button that folds the Files sidebar. The panel of "Go to file" or "Search in files" stands under
 //! them while it is open.
 
 use iced::widget::{button, column, container, row, space, text};
@@ -7,6 +7,7 @@ use iced::{Alignment, Border, Element, Length};
 
 use crate::app::Message as AppMessage;
 use crate::theme;
+use crate::widgets::dropdown::Dropdown;
 use crate::widgets::icons::Icon;
 use crate::widgets::page;
 use crate::widgets::tabs::{self, Tab as Cell};
@@ -101,35 +102,67 @@ fn square<'a>(
     .into()
 }
 
-/// The items of the `+` menu, in the strip after the `+`: Editor, Terminal, Agent chat, and the browser, which comes
-/// later.
-fn menu<'a>(repository: i64) -> Element<'a, AppMessage> {
-    let item = |id: &'static str, label: &'static str, message: Message| {
-        container(page::white_button(
-            label,
-            Some(AppMessage::Project(repository, message)),
-        ))
-        .id(id)
+/// One row of the `+` menu: the whole width is the button; without a message it is drawn muted, with an aside.
+fn menu_item<'a>(
+    id: &'static str,
+    label: &'static str,
+    aside: Option<&'static str>,
+    message: Option<AppMessage>,
+) -> Element<'a, AppMessage> {
+    let color = if message.is_some() {
+        theme::TEXT
+    } else {
+        theme::TEXT_MUTED
     };
-    row![
-        item("new-editor", "Editor", Message::NewEditor),
-        item("new-terminal", "Terminal", Message::NewTerminal),
-        item("new-chat", "Agent chat", Message::NewChat),
-        container(
-            row![
-                page::white_button("Browser", None::<AppMessage>),
-                text("later")
-                    .size(theme::LABEL)
-                    .font(theme::MONO)
-                    .color(theme::TEXT_MUTED),
-            ]
-            .spacing(theme::SPACE_6)
-            .align_y(Alignment::Center),
-        )
-        .id("new-browser"),
+    let mut line = row![
+        text(label).size(theme::BODY).color(color),
+        space::horizontal()
     ]
-    .spacing(theme::SPACE_6)
-    .align_y(Alignment::Center)
+    .align_y(Alignment::Center);
+    if let Some(aside) = aside {
+        line = line.push(
+            text(aside)
+                .size(theme::LABEL)
+                .font(theme::MONO)
+                .color(theme::TEXT_MUTED),
+        );
+    }
+    container(
+        button(line)
+            .width(Length::Fill)
+            .padding(theme::CONTROL_PADDING)
+            .on_press_maybe(message)
+            .style(|_, status| button::Style {
+                background: (status == button::Status::Hovered).then(|| theme::HEAD_PILL.into()),
+                border: Border {
+                    radius: theme::RADIUS_SMALL.into(),
+                    ..Border::default()
+                },
+                ..button::Style::default()
+            }),
+    )
+    .id(id)
+    .into()
+}
+
+/// The menu that drops down from the `+`: Editor, Terminal, Agent chat, and the browser, which comes later.
+fn menu<'a>(repository: i64) -> Element<'a, AppMessage> {
+    let send = |message| Some(AppMessage::Project(repository, message));
+    container(
+        column![
+            menu_item("new-editor", "Editor", None, send(Message::NewEditor)),
+            menu_item("new-terminal", "Terminal", None, send(Message::NewTerminal)),
+            menu_item("new-chat", "Agent chat", None, send(Message::NewChat)),
+            menu_item("new-browser", "Browser", Some("later"), None),
+        ]
+        .spacing(theme::SPACE_2),
+    )
+    .width(theme::DROPDOWN_WIDTH)
+    .padding(theme::SPACE_4)
+    .style(|_| container::Style {
+        shadow: theme::shadow(),
+        ..page::box_style()
+    })
     .into()
 }
 
@@ -144,17 +177,13 @@ pub fn tabs<'a>(repository: i64, project: Option<&'a Project>) -> Element<'a, Ap
     for tab in project.map_or(&[][..], |project| project.opened()) {
         strip = strip.push(cell(repository, project, tab));
     }
-    let mut plus = row![square(
-        Icon::Plus,
-        "project-new",
+    // The menu closes again with a click beside it, as the `+` toggles it.
+    let plus = Dropdown::new(
+        square(Icon::Plus, "project-new", menu_open, send(Message::Menu)),
+        menu(repository),
         menu_open,
-        send(Message::Menu)
-    )]
-    .spacing(theme::SPACE_10)
-    .align_y(Alignment::Center);
-    if menu_open {
-        plus = plus.push(menu(repository));
-    }
+        send(Message::Menu),
+    );
     let bar = row![
         strip,
         plus,

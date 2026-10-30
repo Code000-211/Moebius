@@ -712,6 +712,7 @@ At the top:
 | `client/ports.rs` | The ports of the server and the forwarder: a local listener whose connections go over the tunnel WebSocket. |
 | `client/calls/ports.rs` | `Client::ports`. |
 | `app/ports.rs` | The app's part of ports: events, what is watched, forwards remembered in the settings file and restored. |
+| `widgets/dropdown.rs` | A button whose menu drops down over the page, closed by a click beside it. |
 | `widgets/browser.rs` | Opening an address in the person's browser. |
 | `screens/server_terminal.rs` | The Terminal page: a shell on the server (`GET /v1/terminal`). |
 

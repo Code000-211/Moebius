@@ -6,6 +6,7 @@ pub mod attempts;
 pub mod browser;
 pub mod chat_terminal;
 pub mod conversation;
+pub mod dropdown;
 pub mod edits;
 pub mod float_chat;
 pub mod form;

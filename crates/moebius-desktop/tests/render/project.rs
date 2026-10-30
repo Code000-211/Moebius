@@ -275,7 +275,8 @@ fn the_plus_offers_an_editor_a_terminal_and_an_agent_chat() {
         [Message::Project(1, project::Message::NewChat)]
     ));
     // The browser comes later: it does nothing.
-    assert!(clicked(&app, "Browser").is_empty());
+    let browser = clicked(&app, "Browser");
+    assert!(browser.is_empty(), "{browser:?}");
 
     // Editor opens "Go to file", and the menu closes.
     click_id(&mut app, "new-editor");

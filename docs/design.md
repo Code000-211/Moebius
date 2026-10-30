@@ -127,9 +127,9 @@ with a secret that only the processes it starts know, and keeps no password.
   cards; a card's page, a column's script and a new issue open from it) and any number of tabs the person opened, each
   with a cross that closes it (Board has none): an editor per file (the file's name in the code font, its path on
   hover, an amber dot while it has unsaved changes; closing an unsaved file asks first), terminals and agent chats
-  (numbered when there are several). Beside the tabs stands a small `+`; it opens a short menu of white buttons in the
-  strip: Editor (opens "Go to file"), Terminal, Agent chat, and Browser, drawn muted with "later" beside it because it
-  is not built. At the right end of the strip a panel button folds the Files sidebar away and brings it back.
+  (numbered when there are several). Beside the tabs stands a small `+`; it drops down a menu over the page (`DROPDOWN_WIDTH`
+  wide, a white box with the floating shadow, one row per item, closed by a click beside it): Editor (opens "Go to
+  file"), Terminal, Agent chat, and Browser, drawn muted with "later" beside it because it is not built. At the right end of the strip a panel button folds the Files sidebar away and brings it back.
 - The Files sidebar stands on the right of every tab of a project, `FILES_WIDTH` (260) wide, in a white box with the
   line "Files · default branch" in the code font: the repository's default branch as a tree, directories first, each
   with a chevron that opens it (read the first time it opens), files with their size. A click on a file opens it in an
