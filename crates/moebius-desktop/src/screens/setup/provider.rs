@@ -226,16 +226,23 @@ impl Setup {
         iced::Task::none()
     }
 
-    /// Adds `upstream` at the end of the upstreams of the file, as the server has them.
+    /// Where a new upstream goes: after the upstreams of the file. The file is counted, not the upstreams the server
+    /// runs with, which differ when the file was changed by other means since the server started.
+    fn next_upstream(&self) -> Option<usize> {
+        self.forms
+            .as_ref()
+            .map(|forms| forms.original_upstreams.len())
+    }
+
+    /// Adds `upstream` at the end of the upstreams of the file.
     fn add_upstream(
         &mut self,
         upstream: Value,
         settings: Option<&Settings>,
     ) -> iced::Task<AppMessage> {
-        let (Some(settings), Some(models)) = (settings, &self.models) else {
+        let (Some(settings), Some(place)) = (settings, self.next_upstream()) else {
             return iced::Task::none();
         };
-        let place = models.upstreams.len();
         if let Some(panel) = &mut self.provider {
             panel.step = Step::Adding;
             panel.problem = None;
@@ -425,4 +432,34 @@ pub(super) fn panel_view<'a>(
         content = content.push(notice_line(problem, true));
     }
     content.into()
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::super::{Message, Setup};
+
+    /// A file changed since the server started has fewer upstreams than the server runs with: the new one goes after
+    /// the file's, where the server can put it.
+    #[test]
+    fn a_provider_is_added_after_the_upstreams_of_the_file() {
+        let upstream =
+            |url: &str| json!({"protocol": "openai", "base_url": url, "api_key_set": false});
+        let models = json!({"upstreams": [upstream("http://a"), upstream("http://b"), upstream("http://c")],
+                            "agents": [], "teacher": null, "decision_model": null});
+        let server = json!({"file": "/srv/moebius.toml", "secrets": [], "restart_needed": false, "restart_keys": [],
+                            "values": {"router.upstreams": {"value": [{"protocol": "openai", "base_url": "http://a"}],
+                                                            "default": false}}});
+        let mut setup = Setup::default();
+        let _ = setup.update(
+            Message::Models(Ok(serde_json::from_value(models).unwrap())),
+            None,
+        );
+        let _ = setup.update(
+            Message::Server(Ok(serde_json::from_value(server).unwrap())),
+            None,
+        );
+        assert_eq!(setup.next_upstream(), Some(1));
+    }
 }
