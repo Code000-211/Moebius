@@ -351,7 +351,7 @@ fn detect(root: &Path) -> Vec<Check> {
         checks.push(check(
             "*.rs",
             None,
-            Some("cargo check --quiet --message-format short"),
+            Some("cargo check --quiet --message-format short --manifest-path {manifest}"),
         ));
     }
     if has(root, &["go.mod"]) {
@@ -517,6 +517,11 @@ mod tests {
             Some("rustfmt --check --edition 2024 {file}")
         );
         assert_eq!(rustfmt.format, Format::DiffIn);
+        let cargo = plan.checks.iter().find(|c| c.name == "cargo").unwrap();
+        assert_eq!(
+            cargo.deep.as_deref(),
+            Some("cargo check --quiet --message-format short --manifest-path {manifest}")
+        );
         // Every pattern of the detection is a regular expression.
         for check in &plan.checks {
             Regex::new(&check.files).unwrap();

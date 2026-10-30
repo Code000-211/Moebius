@@ -212,3 +212,80 @@ async fn the_agent_is_told_new_problems_at_once_and_the_slow_check_once_at_the_e
     );
     assert_eq!(checks.iter().filter(|c| c["phase"] == "deep").count(), 2);
 }
+
+/// The deep check of a command that names a package runs once for each package a changed file belongs to: a change
+/// in two crates gets both checked, not the workspace as a whole. The fake check reports a problem in each package's
+/// file, so the follow-up message naming both shows a run for each manifest.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_deep_check_that_names_a_package_runs_once_for_each_changed_package() {
+    let Some(pi_bolt) = std::env::var_os("MOEBIUS_PI_BOLT") else {
+        eprintln!("skipped: set MOEBIUS_PI_BOLT to the pi-bolt executable to run this test");
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let origin = common::origin(dir.path());
+    let testdata = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata");
+    std::fs::create_dir_all(origin.join(".moebius")).unwrap();
+    std::fs::write(
+        origin.join(".moebius/lint.toml"),
+        format!(
+            "budget_ms = 700\nmax_lines = 5\n[[check]]\nglob = \"*.fake\"\n\
+             deep = \"{0}/fake-manifests {{manifest}}\"\n",
+            testdata.display()
+        ),
+    )
+    .unwrap();
+    for manifest in ["Cargo.toml", "crates/x/Cargo.toml", "crates/y/Cargo.toml"] {
+        let path = origin.join(manifest);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, "[workspace]\n").unwrap();
+    }
+    std::fs::write(origin.join("crates/x/a.fake"), "x one\n").unwrap();
+    std::fs::write(origin.join("crates/y/b.fake"), "y one\n").unwrap();
+    git(&origin, &["add", "."]).unwrap();
+    git(&origin, &["commit", "--quiet", "-m", "lint"]).unwrap();
+
+    let answer = |body: &Value| {
+        let turn = body["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|m| m["role"] == "assistant")
+            .count();
+        let change = |path: &str, old: &str, new: &str| {
+            json!({ "path": path, "edits": [{ "oldText": old, "newText": new }] })
+        };
+        match turn {
+            0 => tool_call_answer(
+                "call_1",
+                "edit",
+                &change("crates/x/a.fake", "x one", "x two"),
+                200,
+            ),
+            1 => tool_call_answer(
+                "call_2",
+                "edit",
+                &change("crates/y/b.fake", "y one", "y two"),
+                200,
+            ),
+            _ => text_answer("Done.", 200),
+        }
+    };
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let upstream = recorded_upstream(requests.clone(), answer).await;
+    let started = start(dir.path(), &pi_bolt, &upstream).await;
+    let (_, card) = started.add_issue(&origin, "Edit two crates", "Please.").await;
+    let card_id = card["id"].as_i64().unwrap();
+    started.wait_for_column(card_id, "Ready to merge").await;
+
+    let requests = requests.lock().unwrap();
+    let followup = requests[3]["messages"].as_array().unwrap().last().unwrap();
+    assert_eq!(followup["role"], "user");
+    let message = followup["content"].to_string();
+    assert!(
+        message.contains("the type check found 2 new problems")
+            && message.contains("crates/x/a.fake:1:1 error M001")
+            && message.contains("crates/y/b.fake:1:1 error M002"),
+        "{message}"
+    );
+}
