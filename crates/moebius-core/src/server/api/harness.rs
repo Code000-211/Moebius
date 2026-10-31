@@ -581,22 +581,13 @@ mod tests {
         );
     }
 
-    /// A server without any agent configured still chats with the Moebius agent, on the model the chat is given;
-    /// without one it says what is missing.
+    /// A server without any agent configured still chats with the Moebius agent, on the model the chat is given
+    /// (without one it says what is missing, see the next test).
+    // Unix only: the fake Pi is a Python script started by its `#!` line.
+    #[cfg(unix)]
     #[tokio::test]
     async fn the_moebius_agent_without_a_model_runs_on_the_model_its_chat_is_given() {
         let (_dir, state, addr) = start_with(BTreeMap::new()).await;
-        let refused = post(
-            &state,
-            &addr,
-            "/v1/chats".into(),
-            serde_json::json!({ "message": "Hello" }),
-        )
-        .await;
-        assert!(
-            refused.text().await.unwrap().contains("needs a model"),
-            "no model, no chat"
-        );
         let body = serde_json::json!({ "message": "Hello", "model": "chosen" });
         let started = post(&state, &addr, "/v1/chats".into(), body).await;
         assert_eq!(started.status(), 200);
