@@ -1,7 +1,7 @@
 # Desktop app design
 
-The desktop app is a dense, neutral developer tool: a zinc base, small radii, a compact type scale, and colour only
-where it says something about a run. Every value below is a named constant in
+The desktop app is a dense developer tool in a dark theme, Deep Velvet: a violet-black ground with islands of surface,
+soft radii, a compact type scale, and colour only where it says something about a run or is the one thing to press. Every value below is a named constant in
 [`crates/moebius-desktop/src/theme.rs`](../crates/moebius-desktop/src/theme.rs), which is the single source of truth;
 this page says what the constants are for.
 
@@ -21,26 +21,33 @@ for headers, boxes, buttons, tags, chips, labelled inputs and list-and-editor pa
 
 ## Colour
 
-A neutral zinc base carries the whole app. Teal, amber and red are status colours and nothing else.
+A dark violet base carries the whole app. Coral is the accent; lavender, mint, amber and red are status colours and
+nothing else.
 
 | Role | Constant | Value | Used for |
 |---|---|---|---|
-| Ground | `GROUND` | `#F4F4F5` | Behind everything |
-| Surface | `SURFACE` | `#FFFFFF` | Boxes, cards, inputs |
-| Lane | `LANE` | `#FAFAFA` | Board columns, recessed editors, tool calls |
-| Line | `LINE` | `#D4D4D8` | Borders |
-| Text | `TEXT` / `TEXT_SECONDARY` / `TEXT_MUTED` | `#09090B` / `#3F3F46` / `#71717A` | Primary / secondary / muted |
-| Chosen | `HEAD_PILL` | `#F4F4F5` | The fill of the chosen item, tags, the selection of an input |
-| Runs on its own | `TEAL` (fill `TEAL_FILL`) | `#0D9488` | Live runs, passing checks, progress |
-| Needs you | `AMBER` (fill `AMBER_FILL`) | `#D97706` | Ready to merge, the inbox count, a restart banner |
-| Blocked | `RED` / `RED_TEXT` (fill `RED_FILL`) | `#DC2626` / `#991B1B` | A broken rule, a stuck or blocked card, a refusal; only these |
+| Ground | `GROUND` | `#0F0D14` | Behind everything |
+| Surface | `SURFACE` | `#181520` | Islands: boxes, the sidebar, inputs |
+| Lane | `LANE` | `#120F18` | Board columns, recessed editors, tool calls |
+| Card | `CARD` (hover `CARD_HOVER`) | `#211C2B` | Cards on the board and in lists |
+| Recessed | `RECESSED` | `#0B0910` | Wells: tags, rows of the board's dock |
+| Line | `LINE` / `LINE_STRONG` | `#2A2438` / `#3B334D` | Borders |
+| Text | `TEXT` / `TEXT_SECONDARY` / `TEXT_MUTED` | `#F7F4FC` / `#AAA0BA` / `#685E78` | Primary / secondary / muted |
+| Accent | `ACCENT` (fill `ACCENT_FILL`, line `ACCENT_BORDER`) | `#F27663` | The primary button, the chosen item, links back |
+| Live | `LIVE` (fill `LIVE_FILL`, line `LIVE_BORDER`) | `#C084FC` | Runs working now, their progress |
+| Runs on its own | `TEAL` (fill `TEAL_FILL`) | `#6EE7B7` | Passing checks, online, done by itself |
+| Needs you | `AMBER` (fill `AMBER_FILL`) | `#FBBF24` | Ready to merge, the inbox count, a restart banner |
+| Blocked | `RED` / `RED_TEXT` (fill `RED_FILL`) | `#FB7185` | A broken rule, a stuck or blocked card, a refusal; only these |
 
-- The primary button is near-black (`TEXT` with `ON_FILL` text), one to a view. Every other button is white with a line.
-- Focus and the chosen item are a dark line (`TEXT`) and the neutral fill `HEAD_PILL`, never teal. A card grown into
-  its editor has a 2 px dark line (`BORDER_FOCUS`).
-- Tags have a border, a fill and a text colour per role (`Tone`: plain, teal, amber, red); a red one has a red dot.
-- Charts use the validated categorical order in `CHART`. A model keeps its colour on every chart.
-- The sidebar is a shade darker than the page (`SIDEBAR` and its text, group, current and hover colours).
+- The primary button is coral (`ACCENT` with `ON_FILL` text), one to a view. Every other button is a surface with a line.
+- The chosen item is coral (`ACCENT`, fill `ACCENT_FILL`); a card grown into its editor has a 1.5 px line
+  (`BORDER_FOCUS`).
+- Tags are pills with a border, a fill and a text colour per role (`Tone`: plain, live, teal, amber, red); a live or red
+  one has a dot.
+- Charts use the validated categorical order in `CHART` (coral, mint, lavender, amber). A model keeps its colour on every
+  chart.
+- Code is highlighted with the dark `HIGHLIGHT` theme.
+- The sidebar is an island of the surface colour (`SIDEBAR` and its text, group, current and hover colours).
 
 ## Type
 
@@ -63,9 +70,9 @@ Sentence case for every label, button, tag and heading. Names and code keep thei
 
 ## Shape and spacing
 
-- Radii are small and never pills or bubbles: boxes 6 px (`RADIUS_BOX`), cards 5, controls and items 4, tags and small
-  buttons 3. Shadows are tight and faint (`FLOAT_SHADOW`) and only under what floats.
-- A page has a padding of 16 and 20 (`PAGE_PADDING`) and a gap of 12 between its parts (`PAGE_GAP`). A box has a padding
+- Radii are soft: islands 14 px (`RADIUS_BOX`), cards 10, controls and items 8, small buttons 6; tags are pills
+  (`RADIUS_ROUND`). Shadows are soft and deep (`FLOAT_SHADOW`) and only under what floats.
+- A page has a padding of 14 and 18 (`PAGE_PADDING`) and a gap of 12 between its parts (`PAGE_GAP`). A box has a padding
   of 14 (`BOX_PADDING`) and a heading, and its content is 8 apart.
 - Controls are compact: an input, a dropdown or a button has a padding of 6 and 12 (`CONTROL_PADDING`). Smaller gaps
   come from `GAP_XS`, `GAP_S`, `GAP_M` and `GAP_L` (4, 6, 8, 12). A text editor pads 10 (`EDITOR_PADDING`) and is short,
@@ -82,9 +89,9 @@ is red, a note is secondary grey.
 
 ## Connecting over SSH
 
-The connect screen has a white "Connect over SSH" button under Connect. It turns the card into a list of hosts (the hosts of
+The connect screen has a "Connect over SSH" button under Connect. It turns the card into a list of hosts (the hosts of
 `~/.ssh/config`, of the file named in the settings, and the servers connected to before), each row the name in semibold
-and `user@host:port` in the code font; under the list a white "Add new SSH host" (a field for `user@host` or an `ssh`
+and `user@host:port` in the code font; under the list a "Add new SSH host" (a field for `user@host` or an `ssh`
 command and an "Add host" button) and "Connect by address". A pick opens the steps: a tag column (`done` teal, `running`
 plain, `failed` red) and the step's name, the question of `ssh` in the code font with a hidden field and Answer and
 Cancel, a "Show log" button that opens the log in a recessed box, and Cancel (Try again and Back after a failure). A host
@@ -101,15 +108,21 @@ with a secret that only the processes it starts know, and keeps no password.
 
 ## Layout
 
+- A board's columns name their column and count on the first line and their script with its pencil on the second. Under
+  the columns the inspector dock (`DOCK_HEIGHT` high, never scrolling) shows one card: the first working one, else the
+  first that waits for you, highlighted in coral on the board. Its left part (`DOCK_META_WIDTH`) holds the card's number,
+  title and "Open live view"; its right part one row each for the run, the guard and the card's state.
+- An agent's editor puts its settings on top and, under them, two columns: the instructions and the Retro's proposals on
+  the left, and skills, MCP servers and extensions on the right.
 - A sidebar on every screen, in groups divided by lines: Inbox, Chat, Fleet and Automations; Projects (the heading opens
   the Projects page, every repository with its board and its removal after asking, one entry per repository and a "+" to
   add one); Build (agents, skills, MCP servers, rules); Improve (Retro, experiments, decision model, usage); Setup
   (models, plugins, terminal, ports, settings); tokens used today at the foot. It collapses to a rail of icons. An entry with
   something new (the inbox, an unread chat) has its icon in amber and its count in amber text beside it, without a pill.
-- The Ports page (Setup) is one white box of rows: the port on the server in the code font with the process and what it
-  belongs to under it, the local address with a teal "forwarded" tag (red "failed" with the reason under it), and four white
+- The Ports page (Setup) is one box of rows: the port on the server in the code font with the process and what it
+  belongs to under it, the local address with a teal "forwarded" tag (red "failed" with the reason under it), and four
   buttons (Open in browser, Copy address, Change local port, Stop forwarding); a port that is not forwarded has "Forward".
-  "Forward a port…" in the header opens a field above the box. A white "Ports" button in the header of the live view, a chat
+  "Forward a port…" in the header opens a field above the box. A "Ports" button in the header of the live view, a chat
   and the Terminal page opens the page on that run's ports, under a "Back" link. A port that opens in what is watched is
   offered in a box over the page's top: "Open in browser", "Show ports", "Dismiss".
 - Every page opens with the same header (`page::header`): an optional breadcrumb in the code font, the title with an
@@ -129,9 +142,9 @@ with a secret that only the processes it starts know, and keeps no password.
   with a cross that closes it (Board has none): an editor per file (the file's name in the code font, its path on
   hover, an amber dot while it has unsaved changes; closing an unsaved file asks first), terminals and agent chats
   (numbered when there are several). Beside the tabs stands a small `+`; it drops down a menu over the page (`DROPDOWN_WIDTH`
-  wide, a white box with the floating shadow, one row per item, closed by a click beside it): Editor (opens "Go to
+  wide, a box with the floating shadow, one row per item, closed by a click beside it): Editor (opens "Go to
   file"), Terminal, Agent chat, and Browser, drawn muted with "later" beside it because it is not built. At the right end of the strip a panel button folds the Files sidebar away and brings it back.
-- The Files sidebar stands on the right of every tab of a project, `FILES_WIDTH` (260) wide, in a white box with the
+- The Files sidebar stands on the right of every tab of a project, `FILES_WIDTH` (260) wide, in a box with the
   line "Files · default branch" in the code font: the repository's default branch as a tree, directories first, each
   with a chevron that opens it (read the first time it opens), files with their size. A click on a file opens it in an
   editor tab at once, or shows the tab it is open in. The editor shows the path, the language, the file in the code
@@ -154,13 +167,13 @@ with a secret that only the processes it starts know, and keeps no password.
   no form: the header "New chat" and who it is with and where, a hint where the conversation will be, and under the
   field the pickers Agent, Place (No repository, each project, and the harness configuration when the server has
   one), Model (the models the upstreams serve, a model they do not list shown as it is) and Reasoning (the levels
-  Pi-Bolt takes), the agent's model and reasoning until others are chosen. A white "Terminal" button next to Send
+  Pi-Bolt takes), the agent's model and reasoning until others are chosen. A "Terminal" button next to Send
   starts the chat without a message and shows it in its terminal as soon as it waits. In a started chat the Model and
   Reasoning pickers stay under the field and change the chat while it waits; while its agent works they only show what
   it runs with, muted, in a thin outline.
 - The floating chat: a small dark "Agent" button (the chat icon and the word, in the code font) stands in the bottom
   right corner of every screen but the Chat page (whose Send stands there), `FLOAT_MARGIN` (16) from the edges, over the
-  page. A click grows it into a window of 400 by at most 560 px anchored there, white with the box radius and a tight
+  page. A click grows it into a window of 400 by at most 560 px anchored there, with the box radius and a tight
   shadow: a head with "Moebius agent", a line saying where the chat works ("Works in radiance" or "No repository"), a
   minimise button that turns it back into the button, and, once a chat is going, "New conversation" and "Open in
   Chat"; under it the conversation, drawn as on the Chat page with the steps box, and the field with Send. The chat
@@ -177,7 +190,7 @@ with a secret that only the processes it starts know, and keeps no password.
   chat and the terminal mode.
 - Lists with an editor (Agents, Skills, MCP servers): the cards of the list on the left, each with its name, tags and a
   subtitle in the code font (red when something is wrong), the chosen card with a dark line and the `HEAD_PILL` fill;
-  on the right the editor's head with the name and its Delete and Save, then white boxes. A delete asks first, in
+  on the right the editor's head with the name and its Delete and Save, then boxes. A delete asks first, in
   place, with Keep and the delete button. A save to the harness configuration repository ends in "Committed: <commit>"
   or "No changes to commit."
 - Editing in place: whatever a person or the Moebius agent wrote and the app shows can be changed where it is shown. A
@@ -186,16 +199,16 @@ with a secret that only the processes it starts know, and keeps no password.
   lane's grey for more), then Save, the primary button, and Cancel, and under them the server's refusal in red, which
   stays until the next save. A save that went through closes the editor and the page shows the text as the server has
   it. Every editor in place is drawn with `inline_edit.rs`.
-- Rules are cards: each `## name` section of a rules file is a white card with its name in the code font, its text and
+- Rules are cards: each `## name` section of a rules file is a card with its name in the code font, its text and
   its refusals this week, and a pencil next to the name. The pencil grows that card in place, its line turning dark and
   2 px wide, into the editor of the name and the text with Save, Cancel and, at the right, "Delete rule", which asks
   "Delete this rule?" first. Under the last rule an "Add a rule" card on the lane's grey grows into the same editor. The
-  server's rules and each repository's have their cards; "Let the Moebius agent write them" is a white button next to
+  server's rules and each repository's have their cards; "Let the Moebius agent write them" is a button next to
   the heading of the server's rules.
-- Setup pages (Models, Plugins, Settings) are white boxes of labelled inputs and tables under the header; a banner in
+- Setup pages (Models, Plugins, Settings) are boxes of labelled inputs and tables under the header; a banner in
   the amber fill says that the server has to restart, with the restart as its primary button. A key is never shown,
   only whether one is stored. "Log in to a provider" sits beside "Add upstream": a panel in the box lists the built-in
-  providers (title, one line, a white "Log in" button) and "Other", whose form is the labelled inputs of an `oauth`
+  providers (title, one line, a "Log in" button) and "Other", whose form is the labelled inputs of an `oauth`
   table; the new upstream's row then carries the amber warning, "I understand, log in", and while the login waits a
   mono input "Paste the code or the address you ended on" with the primary "Finish login".
 - Budgets and usage are counted in tokens, never in money.

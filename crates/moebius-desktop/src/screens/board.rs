@@ -1,5 +1,5 @@
-//! The board of a repository, the first tab of its project's page (`project` has the others): its columns of the default workflow, in order, with their cards, and the page that a
-//! click on a card opens. Everything a card shows comes from the snapshot; `docs/design/board.png` is the picture.
+//! The board of a repository, the first tab of its project's page (`project` has the others): its columns of the default workflow, in order, with their cards,
+//! and the zero-scroll `ZS-1` run inspector dock below them. Everything comes from the snapshot.
 //!
 //! Cards are ordered by number. Done lists the ten highest numbers, highest first, because it keeps growing.
 
@@ -63,8 +63,18 @@ fn cards_of<'a>(board: &'a Board, column: &str) -> Vec<&'a Card> {
     cards
 }
 
-/// The page of a board: its header, the project's tabs, the columns and the project's Files sidebar beside them. The header of a repository on a forge
-/// names the logins it trusts, with the pencil that edits them in place.
+/// The card highlighted in the zero-scroll bottom inspector dock: the first live card, else the first waiting one.
+fn inspected_card<'a>(board: &'a Board, inbox: &[InboxItem]) -> Option<&'a Card> {
+    board
+        .cards
+        .iter()
+        .find(|c| c.is_live())
+        .or_else(|| board.cards.iter().find(|c| inbox_of(inbox, c).is_some()))
+        .or_else(|| board.cards.iter().find(|c| c.column != "Done"))
+}
+
+/// The page of a board: its header, the project's tabs, the L2B columns with the ZS-1 zero-scroll dock underneath,
+/// and the project's Files sidebar on the right.
 pub fn view<'a>(
     board: &'a Board,
     inbox: &'a [InboxItem],
@@ -116,16 +126,18 @@ pub fn view<'a>(
             )),
         ));
     }
+    let inspected = inspected_card(board, inbox);
+    let inspected_id = inspected.map(|c| c.id);
     let columns = COLUMNS
         .iter()
         .filter(|(name, _)| *name != "Backlog" || board.cards.iter().any(|c| c.column == *name))
-        .map(|(name, script)| column_view(board, inbox, name, script));
+        .map(|(name, script)| column_view(board, inbox, name, script, inspected_id));
     let mut page = column![page::header(
         "Projects",
         &repository.name,
         Some(tag),
         line.into(),
-        page::white_button(
+        page::primary_button(
             "New issue",
             (!new_issue.is_open_on(repository.id))
                 .then_some(Message::NewIssue(new_issue::Message::Open(repository.id))),
@@ -147,12 +159,209 @@ pub fn view<'a>(
             .width(Length::Fill),
     )
     .height(Length::Fill);
-    // The Files sidebar of the project stands on the right of the columns.
-    let mut body = row![columns].spacing(theme::PAGE_GAP).height(Length::Fill);
+
+    let mut workspace = column![columns]
+        .spacing(theme::SPACE_10)
+        .width(Length::Fill)
+        .height(Length::Fill);
+    if let Some(card) = inspected {
+        workspace = workspace.push(zs1_inspector_dock(board, card, inbox_of(inbox, card)));
+    }
+
+    // The Files sidebar of the project stands on the right of the workspace column.
+    let mut body = row![workspace]
+        .spacing(theme::PAGE_GAP)
+        .height(Length::Fill);
     if let Some(files) = files {
         body = body.push(files);
     }
     page.push(body).into()
+}
+
+/// The ZS-1 zero-scroll 2-column inspector dock at the bottom of the board (fixed height, never scrolls).
+fn zs1_inspector_dock<'a>(
+    board: &'a Board,
+    card: &'a Card,
+    inbox_kind: Option<&str>,
+) -> Element<'a, Message> {
+    let status_text = if card.is_live() {
+        "● Live"
+    } else if inbox_kind.is_some() {
+        "● Needs you"
+    } else {
+        card.column.as_str()
+    };
+    let status_color = if card.is_live() {
+        theme::LIVE
+    } else if inbox_kind.is_some() {
+        theme::AMBER
+    } else {
+        theme::TEXT_SECONDARY
+    };
+
+    let left = container(
+        column![
+            row![
+                text(format!("Card #{}", card.number))
+                    .size(theme::SMALL)
+                    .font(theme::MONO)
+                    .color(theme::ACCENT),
+                space::horizontal(),
+                text(status_text)
+                    .size(theme::SMALL)
+                    .font(theme::MONO)
+                    .color(status_color),
+            ]
+            .align_y(Alignment::Center),
+            text(card.title.as_str())
+                .size(theme::BODY)
+                .font(theme::manrope(Weight::Bold))
+                .color(theme::TEXT)
+                .wrapping(Wrapping::None),
+            text(card_line(card, board.round_limit))
+                .size(theme::SMALL)
+                .font(theme::MONO)
+                .color(theme::TEXT_MUTED)
+                .wrapping(Wrapping::None),
+            space::vertical(),
+            row![page::white_button(
+                "Open live view",
+                Some(Message::OpenCard(card.id)),
+            )]
+            .spacing(theme::SPACE_6),
+        ]
+        .spacing(theme::SPACE_4)
+        .height(Length::Fill),
+    )
+    .width(Length::Fixed(theme::DOCK_META_WIDTH))
+    .height(Length::Fill)
+    .padding([theme::SPACE_10, theme::SPACE_14]);
+
+    let wait_reason = board
+        .waiting
+        .get(&card.id)
+        .map(String::as_str)
+        .unwrap_or("Ready in column");
+    let run_line = match &card.run {
+        Some(run) => format!("{} · {} ({})", run.agent, run.purpose, run.status),
+        None => "no run started yet".to_string(),
+    };
+    let check_line = match &card.change {
+        Some(change) => format!("checks: {}", change.checks),
+        None if !card.blocked_by.is_empty() => {
+            let nums: Vec<_> = card.blocked_by.iter().map(|n| format!("#{n}")).collect();
+            format!("blocked by {}", nums.join(", "))
+        }
+        None => format!("tokens: {}", tokens(card.tokens)),
+    };
+
+    let slot = |label: &'static str,
+                detail: String,
+                tone: Tone,
+                tag_text: String|
+     -> Element<'a, Message> {
+        container(
+            row![
+                text(label)
+                    .size(theme::CODE_SMALL)
+                    .font(theme::MONO)
+                    .color(theme::TEXT),
+                text(detail)
+                    .size(theme::CODE_SMALL)
+                    .font(theme::MONO)
+                    .color(theme::TEXT_SECONDARY)
+                    .width(Length::Fill)
+                    .wrapping(Wrapping::None),
+                tag(tag_text, tone),
+            ]
+            .spacing(theme::SPACE_8)
+            .align_y(Alignment::Center),
+        )
+        .padding([theme::SPACE_4, theme::SPACE_10])
+        .width(Length::Fill)
+        .style(|_| container::Style {
+            background: Some(theme::RECESSED.into()),
+            border: Border {
+                color: theme::LINE,
+                width: 1.0,
+                radius: theme::RADIUS_SMALL.into(),
+            },
+            ..container::Style::default()
+        })
+        .into()
+    };
+
+    let guard_tone = if card.refusals > 0 {
+        Tone::Red
+    } else {
+        Tone::Teal
+    };
+    let guard_tag = if card.refusals > 0 {
+        count(card.refusals as usize, "rule broken", "rules broken")
+    } else {
+        "Guard ok".to_string()
+    };
+
+    let right = container(
+        column![
+            row![
+                text("LIVE CARD STATUS & GUARD SUMMARY")
+                    .size(theme::SMALL)
+                    .font(theme::MONO)
+                    .color(theme::ACCENT),
+                space::horizontal(),
+                text(format!("{} · {}", board.repository.name, card.column))
+                    .size(theme::SMALL)
+                    .font(theme::MONO)
+                    .color(theme::TEXT_MUTED),
+            ]
+            .align_y(Alignment::Center),
+            slot(
+                "run   ",
+                run_line,
+                if card.is_live() {
+                    Tone::Live
+                } else {
+                    Tone::Plain
+                },
+                if card.is_live() {
+                    "Live".into()
+                } else {
+                    card.column.clone()
+                },
+            ),
+            slot("guard ", wait_reason.to_string(), guard_tone, guard_tag),
+            slot("state ", check_line, Tone::Plain, tokens(card.tokens)),
+        ]
+        .spacing(theme::SPACE_6)
+        .height(Length::Fill),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .padding([theme::SPACE_10, theme::SPACE_14]);
+
+    let v_rule = container(space().width(0))
+        .width(theme::HAIRLINE)
+        .height(Length::Fill)
+        .style(|_| container::Style {
+            background: Some(theme::LINE.into()),
+            ..container::Style::default()
+        });
+
+    container(row![left, v_rule, right].height(Length::Fill))
+        .width(Length::Fill)
+        .height(Length::Fixed(theme::DOCK_HEIGHT))
+        .style(|_| container::Style {
+            background: Some(theme::SURFACE.into()),
+            border: Border {
+                color: theme::ACCENT_BORDER,
+                width: 1.0,
+                radius: theme::RADIUS_BOX.into(),
+            },
+            shadow: theme::shadow(),
+            ..container::Style::default()
+        })
+        .into()
 }
 
 fn column_view<'a>(
@@ -160,27 +369,39 @@ fn column_view<'a>(
     inbox: &'a [InboxItem],
     name: &'a str,
     script: &'a str,
+    inspected_id: Option<i64>,
 ) -> Element<'a, Message> {
     let cards = cards_of(board, name);
     let total = cards.len();
     let waits = cards.iter().any(|card| waits_for_you(inbox, card));
+    let has_live = cards.iter().any(|card| card.is_live());
     // The first card of Ready that nothing blocks is the one the board starts next.
     let next = (name == "Ready")
         .then(|| cards.iter().find(|card| card.blocked_by.is_empty()))
         .flatten()
         .map(|card| card.id);
+    let head = row![
+        text(name)
+            .size(theme::COLUMN_NAME)
+            .font(theme::manrope(Weight::Bold))
+            .color(if has_live {
+                theme::LIVE
+            } else if waits {
+                theme::AMBER
+            } else {
+                theme::TEXT
+            }),
+        space::horizontal(),
+        text(total.to_string())
+            .size(theme::SMALL)
+            .font(theme::MONO)
+            .color(theme::TEXT_MUTED),
+    ]
+    .align_y(Alignment::Center)
+    .width(Length::Fill);
+    // The script on its own line, so that a narrow column's name never runs into it.
     let head = column![
-        row![
-            text(name)
-                .size(theme::COLUMN_NAME)
-                .font(theme::manrope(Weight::Bold)),
-            space::horizontal(),
-            text(total.to_string())
-                .size(theme::SMALL)
-                .font(theme::MONO)
-                .color(theme::TEXT_MUTED),
-        ]
-        .align_y(Alignment::Center),
+        head,
         row![
             text(script)
                 .size(theme::SMALL)
@@ -194,11 +415,11 @@ fn column_view<'a>(
         ]
         .align_y(Alignment::Center),
     ]
-    .spacing(theme::SPACE_2)
-    .width(Length::Fill);
+    .spacing(theme::SPACE_2);
+
     let head = column![
         container(head).padding(Padding {
-            top: theme::SPACE_4,
+            top: theme::SPACE_6,
             right: theme::SPACE_4,
             bottom: theme::SPACE_8,
             left: theme::SPACE_4,
@@ -216,10 +437,13 @@ fn column_view<'a>(
             board.round_limit,
             inbox_of(inbox, card),
             next == Some(card.id),
+            inspected_id == Some(card.id),
         )
     });
     let border = if waits {
         theme::AMBER_BORDER
+    } else if has_live {
+        theme::LIVE_BORDER
     } else {
         theme::LINE
     };
@@ -287,13 +511,12 @@ pub fn tokens(n: i64) -> String {
 fn tags<'a>(card: &Card, inbox_kind: Option<&str>, next: bool) -> Vec<Element<'a, Message>> {
     let mut tags = Vec::new();
     if card.is_live() {
-        tags.push(tag("Live".into(), Tone::Teal));
+        tags.push(tag("Live".into(), Tone::Live));
     }
     if card.tokens > 0 && matches!(card.column.as_str(), "In progress" | "In review") {
         tags.push(tag(tokens(card.tokens), Tone::Plain));
     }
     if !card.blocked_by.is_empty() {
-        // A tag does not wrap, so a long list is cut short.
         let numbers: Vec<_> = card.blocked_by.iter().map(|n| format!("#{n}")).collect();
         let label = match numbers.len() {
             1..=2 => format!("Blocked by {}", numbers.join(", ")),
@@ -306,7 +529,7 @@ fn tags<'a>(card: &Card, inbox_kind: Option<&str>, next: bool) -> Vec<Element<'a
         tags.push(tag(label, Tone::Red));
     }
     match card.change.as_ref().map(|change| change.checks.as_str()) {
-        Some("pending") => tags.push(tag("CI running".into(), Tone::Plain)),
+        Some("pending") => tags.push(tag("CI running".into(), Tone::Live)),
         Some("success") => tags.push(tag("Green".into(), Tone::Teal)),
         Some("failure") => tags.push(tag("CI failed".into(), Tone::Red)),
         _ => {}
@@ -323,10 +546,11 @@ fn tags<'a>(card: &Card, inbox_kind: Option<&str>, next: bool) -> Vec<Element<'a
 }
 
 /// The segments of the round bar: one per round the card gets, the rounds so far filled.
-fn round_bar<'a>(rounds: i64, limit: i64) -> Element<'a, Message> {
+fn round_bar<'a>(rounds: i64, limit: i64, selected: bool) -> Element<'a, Message> {
+    let active_color = if selected { theme::ACCENT } else { theme::LIVE };
     row((0..limit).map(|round| {
         let fill = if round < rounds {
-            theme::TEAL
+            active_color
         } else {
             theme::TRACK
         };
@@ -353,10 +577,13 @@ fn card_view<'a>(
     round_limit: i64,
     inbox_kind: Option<&str>,
     next: bool,
+    selected: bool,
 ) -> Element<'a, Message> {
     let done = card.column == "Done";
     let (line_color, title_color, weight) = if done {
         (theme::TEXT_MUTED, theme::TEXT_MUTED, Weight::Medium)
+    } else if selected {
+        (theme::ACCENT, theme::TEXT, Weight::Semibold)
     } else {
         (theme::TEXT_MUTED, theme::TEXT, Weight::Semibold)
     };
@@ -378,7 +605,7 @@ fn card_view<'a>(
         && card.rounds > 0
         && matches!(card.column.as_str(), "In progress" | "In review")
     {
-        content = content.push(round_bar(card.rounds, round_limit));
+        content = content.push(round_bar(card.rounds, round_limit, selected));
     }
     let tags = tags(card, inbox_kind, next);
     if !tags.is_empty() {
@@ -389,8 +616,10 @@ fn card_view<'a>(
                 .vertical_spacing(theme::SPACE_6),
         );
     }
-    let border = if card.is_live() {
-        theme::TEAL
+    let border = if selected {
+        theme::ACCENT
+    } else if card.is_live() {
+        theme::LIVE_BORDER
     } else {
         theme::LINE
     };
@@ -399,10 +628,10 @@ fn card_view<'a>(
             .padding([theme::SPACE_10, theme::SPACE_12])
             .width(Length::Fill)
             .style(move |_| container::Style {
-                background: Some(theme::SURFACE.into()),
+                background: Some(theme::CARD.into()),
                 border: Border {
                     color: border,
-                    width: 1.0,
+                    width: if selected { 1.5 } else { 1.0 },
                     radius: theme::RADIUS_CARD.into(),
                 },
                 ..container::Style::default()

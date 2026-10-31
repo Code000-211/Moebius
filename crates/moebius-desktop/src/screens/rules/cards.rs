@@ -1,5 +1,5 @@
-//! The rules of a file as cards: each with its name, text, refusals and a pencil, the "New rule" card under them, and
-//! the card being edited grown into the editor of its name and text, with Save, Cancel and Delete.
+//! The rules of a file as compact R4 shield rows: each with its scope tag, name, text, refusals and a pencil,
+//! the "Add a rule" row under them, and the row being edited grown into the editor of its name and text.
 
 use iced::widget::text::Wrapping;
 use iced::widget::{column, container, row, text, text_editor, text_input};
@@ -8,7 +8,7 @@ use iced::{Alignment, Border, Element, Length};
 use crate::app::Message as AppMessage;
 use crate::client::{Rule, RulesView};
 use crate::widgets::inline_edit::{self, editor_style};
-use crate::widgets::page;
+use crate::widgets::page::{self, Tone};
 use crate::{screens::connect, theme};
 
 use super::file::valid_name;
@@ -16,8 +16,7 @@ use super::view::refusals_tag;
 use super::{Message, Place, Rules};
 
 impl Rules {
-    /// The rules of a file as cards, each with a pencil when the file of `place` can be edited, and then the "New
-    /// rule" card; the card being edited is its editor.
+    /// The rules of a file as compact R4 shield rows, each with a pencil when the file of `place` can be edited.
     pub(super) fn rule_cards<'a>(
         &'a self,
         place: Option<Place>,
@@ -25,19 +24,28 @@ impl Rules {
         view: &'a RulesView,
         empty: &'a str,
     ) -> Element<'a, AppMessage> {
-        let mut cards = column![].spacing(theme::SPACE_12);
+        let mut cards = column![].spacing(theme::SPACE_6);
         if rules.is_empty() && place.is_none() {
             return page::body(empty);
         }
+        let scope_tag = match place {
+            Some(Place::Server) | None => ("Server", Tone::Amber),
+            Some(Place::Repository(_)) => ("Repo", Tone::Live),
+        };
         for rule in rules {
             if let Some(editor) = place.and_then(|place| self.editor_card(place, Some(&rule.name)))
             {
                 cards = cards.push(editor);
                 continue;
             }
-            let mut name = row![text(rule.name.as_str()).size(theme::BODY).font(theme::MONO)]
-                .spacing(theme::SPACE_6)
-                .align_y(Alignment::Center);
+            let mut name = row![
+                text(rule.name.as_str())
+                    .size(theme::BODY)
+                    .font(theme::MONO)
+                    .color(theme::TEXT)
+            ]
+            .spacing(theme::SPACE_6)
+            .align_y(Alignment::Center);
             if let Some(place) = place {
                 name = name.push(inline_edit::pencil(
                     pencil_id(place, &rule.name),
@@ -45,15 +53,13 @@ impl Rules {
                 ));
             }
             let content = row![
-                column![
-                    name,
-                    text(rule.text.as_str())
-                        .size(theme::CONTEXT)
-                        .color(theme::TEXT_SECONDARY)
-                        .wrapping(Wrapping::Word),
-                ]
-                .spacing(theme::SPACE_4)
-                .width(Length::Fill),
+                page::tag(scope_tag.0.to_string(), scope_tag.1),
+                container(name).width(Length::Fixed(210.0)),
+                text(rule.text.as_str())
+                    .size(theme::CONTEXT)
+                    .color(theme::TEXT_SECONDARY)
+                    .wrapping(Wrapping::Word)
+                    .width(Length::Fill),
                 refusals_tag(view, &rule.name),
             ]
             .spacing(theme::SPACE_12)
@@ -85,8 +91,7 @@ impl Rules {
         cards.push(card(new.into(), CardLine::Muted)).into()
     }
 
-    /// The card of the rule `rule` (a new rule without one) of `place` grown into its editor, if that is the one
-    /// being edited.
+    /// The card of the rule `rule` (a new rule without one) of `place` grown into its editor.
     fn editor_card(&self, place: Place, rule: Option<&str>) -> Option<Element<'_, AppMessage>> {
         let editing = self
             .editing
@@ -149,7 +154,7 @@ fn pencil_id(place: Place, rule: &str) -> String {
     }
 }
 
-/// The line around a rule's card: a rule, the empty "New rule" card, or a card grown into its editor.
+/// The line around a rule's row: a rule, the empty "New rule" row, or a row grown into its editor.
 enum CardLine {
     Plain,
     Muted,
@@ -158,19 +163,19 @@ enum CardLine {
 
 fn card(content: Element<'_, AppMessage>, line: CardLine) -> Element<'_, AppMessage> {
     let (color, width, fill) = match line {
-        CardLine::Plain => (theme::LINE, theme::HAIRLINE, theme::SURFACE),
-        CardLine::Muted => (theme::LINE, theme::HAIRLINE, theme::LANE),
-        CardLine::Editing => (theme::TEXT, theme::BORDER_FOCUS, theme::SURFACE),
+        CardLine::Plain => (theme::LINE, theme::HAIRLINE, theme::RECESSED),
+        CardLine::Muted => (theme::LINE_STRONG, theme::HAIRLINE, theme::LANE),
+        CardLine::Editing => (theme::ACCENT, theme::BORDER_FOCUS, theme::CARD),
     };
     container(content)
-        .padding([theme::SPACE_12, theme::BOX_PADDING])
+        .padding([theme::SPACE_8, theme::SPACE_12])
         .width(Length::Fill)
         .style(move |_| container::Style {
             background: Some(fill.into()),
             border: Border {
                 color,
                 width,
-                radius: theme::RADIUS_CARD.into(),
+                radius: theme::RADIUS_CONTROL.into(),
             },
             ..container::Style::default()
         })

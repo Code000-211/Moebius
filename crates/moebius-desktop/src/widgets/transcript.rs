@@ -456,7 +456,7 @@ fn highlighted_as<'a>(
 ) -> Vec<Vec<iced::widget::text::Span<'a, (), Font>>> {
     let token = language(token).to_string();
     let mut stream = Stream::new(&highlighter::Settings {
-        theme: highlighter::Theme::InspiredGitHub,
+        theme: crate::theme::HIGHLIGHT,
         token,
     });
     lines

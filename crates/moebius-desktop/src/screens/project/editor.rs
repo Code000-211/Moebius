@@ -51,7 +51,7 @@ fn code_editor<'a>(
         .height(Length::Fill)
         .highlight_with::<highlighter::Highlighter>(
             highlighter::Settings {
-                theme: highlighter::Theme::InspiredGitHub,
+                theme: crate::theme::HIGHLIGHT,
                 token: token(path),
             },
             |highlight, _| Format {

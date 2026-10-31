@@ -439,7 +439,7 @@ fn shadow() -> Shadow {
     }
 }
 
-/// The button at the bottom right that opens the floating chat: a small dark "Agent" button.
+/// The button at the bottom right that opens the floating chat: a small "Agent" button in the accent colour.
 fn round_button<'a>() -> Element<'a, AppMessage> {
     let button = button(
         row![
@@ -457,15 +457,15 @@ fn round_button<'a>() -> Element<'a, AppMessage> {
     .style(|_, status| button::Style {
         background: Some(
             if status == button::Status::Hovered {
-                theme::TEXT_SECONDARY
-            } else {
                 theme::TEXT
+            } else {
+                theme::ACCENT
             }
             .into(),
         ),
         text_color: theme::ON_FILL,
         border: Border {
-            color: theme::LINE,
+            color: theme::ACCENT_BORDER,
             width: 1.0,
             radius: theme::RADIUS_CONTROL.into(),
         },

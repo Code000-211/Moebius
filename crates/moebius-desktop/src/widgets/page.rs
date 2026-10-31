@@ -1,4 +1,4 @@
-//! The parts every page is made of: the header that opens it and the white box that holds its content.
+//! The parts every page is made of: the header that opens it and the island box that holds its content.
 
 use iced::font::Weight;
 use iced::widget::text::Wrapping;
@@ -30,13 +30,13 @@ pub fn header<'a, Message: 'a>(
                 .font(theme::MONO)
                 .color(theme::TEXT_SECONDARY),
         )
-        .padding(Padding::from([2.0, 6.0]))
+        .padding(Padding::from([2.0, 8.0]))
         .style(|_| container::Style {
-            background: Some(theme::HEAD_PILL.into()),
+            background: Some(theme::RECESSED.into()),
             border: Border {
-                color: theme::LINE,
+                color: theme::LINE_STRONG,
                 width: 1.0,
-                radius: theme::RADIUS_SMALL.into(),
+                radius: theme::RADIUS_ROUND.into(),
             },
             ..container::Style::default()
         })
@@ -83,7 +83,7 @@ pub fn card_breadcrumb<'a, Message: Clone + 'a>(
             text(repository)
                 .size(theme::BREADCRUMB)
                 .font(theme::MONO)
-                .color(theme::TEXT_SECONDARY)
+                .color(theme::ACCENT)
         )
         .padding(0)
         .on_press(back)
@@ -102,7 +102,7 @@ pub fn back<'a, Message: Clone + 'a>(previous: String, on_press: Message) -> Ele
         text(format!("\u{2190} Back to {previous}"))
             .size(theme::BREADCRUMB)
             .font(theme::manrope(Weight::Semibold))
-            .color(theme::TEXT_SECONDARY),
+            .color(theme::ACCENT),
     )
     .padding(0)
     .on_press(on_press)
@@ -118,7 +118,7 @@ pub fn context<'a, Message: 'a>(line: impl text::IntoFragment<'a>) -> Element<'a
         .into()
 }
 
-/// A white box with a bold heading and its content.
+/// An island box with a bold heading and its content.
 pub fn boxed<'a, Message: 'a>(
     heading: &'a str,
     content: impl Into<Element<'a, Message>>,
@@ -150,6 +150,7 @@ pub fn body<'a, Message: 'a>(line: impl text::IntoFragment<'a>) -> Element<'a, M
 pub enum Tone {
     Plain,
     Teal,
+    Live,
     Amber,
     Red,
 }
@@ -157,15 +158,16 @@ pub enum Tone {
 impl Tone {
     fn colors(self) -> (Color, Color, Color) {
         match self {
-            Tone::Plain => (theme::LINE, theme::HEAD_PILL, theme::TEXT_SECONDARY),
+            Tone::Plain => (theme::LINE_STRONG, theme::RECESSED, theme::TEXT_SECONDARY),
             Tone::Teal => (theme::TEAL_BORDER, theme::TEAL_FILL, theme::ONLINE_TEXT),
+            Tone::Live => (theme::LIVE_BORDER, theme::LIVE_FILL, theme::LIVE),
             Tone::Amber => (theme::AMBER_BORDER, theme::AMBER_FILL, theme::AMBER_TEXT),
             Tone::Red => (theme::RED_BORDER, theme::RED_TAG_FILL, theme::RED_TEXT),
         }
     }
 }
 
-/// A tag; a red one has a red dot.
+/// A pill tag; a red or live one has a status dot.
 pub fn tag<'a, Message: 'a>(label: String, tone: Tone) -> Element<'a, Message> {
     let (border, fill, color) = tone.colors();
     let label = text(label)
@@ -173,32 +175,38 @@ pub fn tag<'a, Message: 'a>(label: String, tone: Tone) -> Element<'a, Message> {
         .font(theme::MONO)
         .wrapping(Wrapping::None)
         .color(color);
-    let content: Element<'a, Message> = if matches!(tone, Tone::Red) {
-        row![
-            container(space().width(6).height(6)).style(|_| container::Style {
-                background: Some(theme::RED.into()),
-                border: Border {
-                    radius: 3.0.into(),
-                    ..Border::default()
-                },
-                ..container::Style::default()
-            }),
-            label,
-        ]
-        .spacing(5)
-        .align_y(Alignment::Center)
-        .into()
-    } else {
-        label.into()
+    let content: Element<'a, Message> = match tone {
+        Tone::Red | Tone::Live => {
+            let dot_color = if matches!(tone, Tone::Red) {
+                theme::RED
+            } else {
+                theme::LIVE
+            };
+            row![
+                container(space().width(6).height(6)).style(move |_| container::Style {
+                    background: Some(dot_color.into()),
+                    border: Border {
+                        radius: 3.0.into(),
+                        ..Border::default()
+                    },
+                    ..container::Style::default()
+                }),
+                label,
+            ]
+            .spacing(5)
+            .align_y(Alignment::Center)
+            .into()
+        }
+        _ => label.into(),
     };
     container(content)
-        .padding([2, 6])
+        .padding([2, 8])
         .style(move |_| container::Style {
             background: Some(fill.into()),
             border: Border {
                 color: border,
                 width: 1.0,
-                radius: theme::RADIUS_SMALL.into(),
+                radius: theme::RADIUS_ROUND.into(),
             },
             ..container::Style::default()
         })
@@ -215,7 +223,7 @@ pub fn ago(now: i64, at: i64) -> String {
     }
 }
 
-/// The primary button: the one in the "needs you" colour. Without a message it is drawn grey and does nothing.
+/// The primary button: Coral (`theme::ACCENT`) with a pill radius. Without a message it is drawn muted and does nothing.
 pub fn primary_button<'a, Message: Clone + 'a>(
     label: &'a str,
     message: Option<Message>,
@@ -223,16 +231,16 @@ pub fn primary_button<'a, Message: Clone + 'a>(
     button(
         text(label)
             .size(theme::CONTEXT)
-            .font(theme::manrope(Weight::Semibold)),
+            .font(theme::manrope(Weight::Bold)),
     )
-    .padding([6, 12])
+    .padding([6, 14])
     .on_press_maybe(message)
     .style(|_, status| button::Style {
         background: Some(
             if status == button::Status::Disabled {
-                theme::LINE
+                theme::CARD
             } else {
-                theme::TEXT
+                theme::ACCENT
             }
             .into(),
         ),
@@ -242,7 +250,7 @@ pub fn primary_button<'a, Message: Clone + 'a>(
             theme::ON_FILL
         },
         border: Border {
-            radius: theme::RADIUS_CONTROL.into(),
+            radius: theme::RADIUS_ROUND.into(),
             ..Border::default()
         },
         ..button::Style::default()
@@ -250,8 +258,7 @@ pub fn primary_button<'a, Message: Clone + 'a>(
     .into()
 }
 
-/// A white button with a line, for everything that is not the one primary button. Without a message it is drawn
-/// muted and does nothing.
+/// A secondary card-coloured button with a subtle line, for everything that is not the one primary button.
 pub fn white_button<'a, Message: Clone + 'a>(
     label: impl text::IntoFragment<'a>,
     message: Option<Message>,
@@ -264,14 +271,21 @@ pub fn white_button<'a, Message: Clone + 'a>(
     .padding([6, 12])
     .on_press_maybe(message)
     .style(|_, status| button::Style {
-        background: Some(theme::SURFACE.into()),
+        background: Some(
+            if status == button::Status::Hovered {
+                theme::CARD_HOVER
+            } else {
+                theme::CARD
+            }
+            .into(),
+        ),
         text_color: if status == button::Status::Disabled {
             theme::TEXT_MUTED
         } else {
             theme::TEXT
         },
         border: Border {
-            color: theme::LINE,
+            color: theme::LINE_STRONG,
             width: 1.0,
             radius: theme::RADIUS_CONTROL.into(),
         },
@@ -280,7 +294,7 @@ pub fn white_button<'a, Message: Clone + 'a>(
     .into()
 }
 
-/// The style of a box: white, with a line and round corners.
+/// The style of an island box (`#181520`, 14px radius, subtle border and shadow).
 pub fn box_style() -> container::Style {
     container::Style {
         background: Some(theme::SURFACE.into()),
@@ -289,6 +303,7 @@ pub fn box_style() -> container::Style {
             width: 1.0,
             radius: theme::RADIUS_BOX.into(),
         },
+        shadow: theme::shadow(),
         ..container::Style::default()
     }
 }
@@ -299,13 +314,13 @@ pub fn rule<'a, Message: 'a>() -> Element<'a, Message> {
         .width(Length::Fill)
         .height(1)
         .style(|_| container::Style {
-            background: Some(theme::TRACK.into()),
+            background: Some(theme::LINE.into()),
             ..container::Style::default()
         })
         .into()
 }
 
-/// A filter chip: dark when chosen; the blocked kind has a red line.
+/// A filter or capability chip: Coral when chosen; the blocked kind has a red line.
 pub fn chip<'a, Message: Clone + 'a>(
     label: String,
     selected: bool,
@@ -321,9 +336,9 @@ pub fn chip<'a, Message: Clone + 'a>(
     .on_press(message)
     .style(move |_, _| {
         let (fill, ink, line) = match (selected, red) {
-            (true, _) => (theme::TEXT, theme::ON_FILL, theme::TEXT),
+            (true, _) => (theme::ACCENT, theme::ON_FILL, theme::ACCENT),
             (false, true) => (theme::RED_FILL, theme::RED_TEXT, theme::RED_BORDER),
-            (false, false) => (theme::HEAD_PILL, theme::TEXT_SECONDARY, theme::LINE),
+            (false, false) => (theme::CARD, theme::TEXT_SECONDARY, theme::LINE_STRONG),
         };
         button::Style {
             background: Some(fill.into()),

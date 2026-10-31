@@ -1,9 +1,9 @@
-//! How the Rules page is drawn: the built-in patterns with their refusals, the server's rules in prose with the
-//! request to the Moebius agent, and the rules of each repository, each box with what came of its last save.
+//! How the Rules page is drawn (`R4` compact shield rows): the built-in patterns with their refusals, the server's
+//! rules in prose with the request to the Moebius agent, and the rules of each repository.
 
 use iced::widget::text::Wrapping;
-use iced::widget::{Column, column, row, space, text, text_editor};
-use iced::{Alignment, Element, Length};
+use iced::widget::{Column, column, container, row, space, text, text_editor};
+use iced::{Alignment, Border, Element, Length};
 
 use crate::app::Message as AppMessage;
 use crate::client::{RepositoryRules, RulesView};
@@ -48,28 +48,41 @@ impl Rules {
 
     fn patterns_box<'a>(&'a self, view: &'a RulesView) -> Element<'a, AppMessage> {
         let rows = view.patterns.iter().map(|pattern| {
-            row![
-                column![
+            container(
+                row![
+                    page::tag("Pattern".to_string(), Tone::Plain),
                     text(pattern.name.as_str())
                         .size(theme::BODY)
-                        .font(theme::MONO),
+                        .font(theme::MONO)
+                        .color(theme::TEXT)
+                        .width(Length::Fixed(210.0)),
                     text(pattern.description.as_str())
                         .size(theme::CONTEXT)
                         .color(theme::TEXT_SECONDARY)
-                        .wrapping(Wrapping::Word),
+                        .wrapping(Wrapping::Word)
+                        .width(Length::Fill),
+                    refusals_tag(view, &pattern.name),
                 ]
-                .spacing(theme::SPACE_4)
-                .width(Length::Fill),
-                refusals_tag(view, &pattern.name),
-            ]
-            .spacing(theme::SPACE_12)
-            .align_y(Alignment::Center)
+                .spacing(theme::SPACE_12)
+                .align_y(Alignment::Center),
+            )
+            .padding([theme::SPACE_8, theme::SPACE_12])
+            .width(Length::Fill)
+            .style(|_| container::Style {
+                background: Some(theme::RECESSED.into()),
+                border: Border {
+                    color: theme::LINE,
+                    width: theme::HAIRLINE,
+                    radius: theme::RADIUS_CONTROL.into(),
+                },
+                ..container::Style::default()
+            })
             .into()
         });
         boxed(
             "Built-in patterns",
             aside("Always on · checked first, no model asked"),
-            column(rows).spacing(theme::SPACE_12).into(),
+            column(rows).spacing(theme::SPACE_6).into(),
         )
     }
 
@@ -89,7 +102,7 @@ impl Rules {
                 Some(AppMessage::Rules(Message::ByAgent(true))),
             ));
         }
-        let mut content = column![].spacing(theme::SPACE_12);
+        let mut content = column![].spacing(theme::SPACE_8);
         if prose.editable && self.by_agent {
             content = content.push(self.wish_view());
         }
@@ -116,7 +129,7 @@ impl Rules {
         view: &'a RulesView,
     ) -> Element<'a, AppMessage> {
         let place = Place::Repository(repository.repository_id);
-        let mut content = column![].spacing(theme::SPACE_12);
+        let mut content = column![].spacing(theme::SPACE_8);
         if let Some(error) = &repository.error {
             content = content.push(notice_line(error, true));
         }

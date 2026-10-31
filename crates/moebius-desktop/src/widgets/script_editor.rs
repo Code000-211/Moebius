@@ -316,7 +316,7 @@ fn code_editor(content: &text_editor::Content) -> Element<'_, AppMessage> {
         .height(Length::Fill)
         .highlight_with::<highlighter::Highlighter>(
             highlighter::Settings {
-                theme: highlighter::Theme::InspiredGitHub,
+                theme: crate::theme::HIGHLIGHT,
                 token: "lua".to_string(),
             },
             |highlight, _| Format {

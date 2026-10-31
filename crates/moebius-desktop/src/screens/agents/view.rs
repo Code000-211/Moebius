@@ -1,5 +1,5 @@
-//! How the Agents page is drawn: the list, the editor's head with its Save and Delete, and the Retro's proposals that
-//! change the agent open.
+//! How the Agents page is drawn: the list, the editor's head with its Save and Delete, and the A1 Bento Workbench
+//! (Instructions on the left, Capabilities & Retro on the right).
 
 use std::borrow::Cow;
 
@@ -53,8 +53,7 @@ fn agent_card(agent: &Agent, chosen: bool, editable: bool) -> Element<'_, AppMes
 }
 
 impl Agents {
-    /// The Agents page: the list, and the editor of the agent chosen. A server that keeps its agents in `moebius.toml`
-    /// has the box that sets up a harness configuration repository at the top.
+    /// The Agents page: the list, and the A1 Bento editor of the agent chosen.
     pub fn view<'a>(&'a self, harness: &'a HarnessSetup) -> Element<'a, AppMessage> {
         let editable = self.editable();
         let new_agent = editable.then_some(AppMessage::Agents(Message::NewAgent));
@@ -72,8 +71,9 @@ impl Agents {
         let mut detail = column![].spacing(theme::PAGE_GAP).width(Length::Fill);
         if let Some(editor) = &self.editor {
             detail = detail.push(self.editor_view(editor));
+        } else {
+            detail = detail.push(self.proposals_box());
         }
-        detail = detail.push(self.proposals_box());
         list_editor::layout(
             header,
             self.in_file().then(|| harness.view()),
@@ -82,8 +82,7 @@ impl Agents {
         )
     }
 
-    /// The Retro's proposals still to be decided (open, trying, positive or untried) whose branch changes the files of
-    /// the agent in the editor.
+    /// The Retro's proposals still to be decided whose branch changes the files of the agent in the editor.
     pub(super) fn proposals_box(&self) -> Element<'_, AppMessage> {
         let name = self.editor.as_ref().map(|editor| editor.name.as_str());
         let open: Vec<&Proposal> = self
@@ -179,7 +178,7 @@ impl Agents {
         self.with_boxes(editor, content, ready)
     }
 
-    /// The editor's first box and, when `ready`, the boxes under it.
+    /// A1 Bento layout: Top settings box, and below it a 2-column Bento grid (Left: Instructions, Right: Capabilities & Retro).
     fn with_boxes<'a>(
         &'a self,
         editor: &'a Editor,
@@ -188,24 +187,35 @@ impl Agents {
     ) -> Element<'a, AppMessage> {
         let mut boxes = column![boxed(head)].spacing(theme::PAGE_GAP);
         if ready {
-            let paths = if self.in_file() {
-                // The agents of `moebius.toml` name their skills by path, and have no MCP servers.
-                row![skill_paths_box(editor), extensions_box(editor)]
-            } else {
-                row![
-                    self.skills_box(editor),
-                    self.mcp_box(editor),
-                    extensions_box(editor)
-                ]
-            };
+            let mut left_col = column![]
+                .spacing(theme::PAGE_GAP)
+                .width(Length::FillPortion(3));
             if let Some(built_in) = &editor.built_in {
-                boxes = boxes
+                left_col = left_col
                     .push(built_in_instructions_box(built_in))
                     .push(built_in_skills_box(built_in));
             }
-            boxes = boxes
+            left_col = left_col
                 .push(instructions_box(editor))
-                .push(paths.spacing(theme::SPACE_12));
+                .push(self.proposals_box());
+
+            let right_col = if self.in_file() {
+                column![skill_paths_box(editor), extensions_box(editor)]
+                    .spacing(theme::PAGE_GAP)
+                    .width(Length::FillPortion(2))
+            } else {
+                column![
+                    self.skills_box(editor),
+                    self.mcp_box(editor),
+                    extensions_box(editor),
+                ]
+                .spacing(theme::PAGE_GAP)
+                .width(Length::FillPortion(2))
+            };
+
+            boxes = boxes.push(row![left_col, right_col].spacing(theme::PAGE_GAP));
+        } else {
+            boxes = boxes.push(self.proposals_box());
         }
         boxes.into()
     }
