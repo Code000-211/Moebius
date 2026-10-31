@@ -8,7 +8,7 @@ links to the other.
 - [`README.md`](../README.md): what Moebius is, and a quick start.
 - [Running Moebius](guide/running-moebius.md): installing, configuring and running the server and the app.
 - [`GLOSSARY.md`](../GLOSSARY.md): the words Moebius uses, such as card, run, change and decision point.
-- [The release notes](releases/): what each release holds, such as [0.1.0](releases/v0.1.0.md), [0.1.1](releases/v0.1.1.md), [0.1.2](releases/v0.1.2.md), [0.1.3](releases/v0.1.3.md), [0.1.4](releases/v0.1.4.md), [0.1.5](releases/v0.1.5.md), [0.1.6](releases/v0.1.6.md), [0.1.7](releases/v0.1.7.md) and [0.1.8](releases/v0.1.8.md).
+- [The release notes](releases/): what each release holds, such as [0.1.0](releases/v0.1.0.md), [0.1.1](releases/v0.1.1.md), [0.1.2](releases/v0.1.2.md), [0.1.3](releases/v0.1.3.md), [0.1.4](releases/v0.1.4.md), [0.1.5](releases/v0.1.5.md), [0.1.6](releases/v0.1.6.md), [0.1.7](releases/v0.1.7.md), [0.1.8](releases/v0.1.8.md) and [0.1.9](releases/v0.1.9.md).
 
 ## To build on Moebius
 
