@@ -155,6 +155,8 @@ async fn a_chat_of_the_floating_window_is_kept_out_of_the_chat_list() {
     let mut app = App::with_snapshot(Snapshot::default());
     let _ = app.update(Message::Chat(chat::Message::Listed(Ok(chats))));
     let _ = app.update(Message::Select(Page::Chat));
+    // The list drops down from the top bar.
+    let _ = app.update(Message::Chat(chat::Message::ShowList(true)));
     let mut ui = Simulator::with_size(
         iced::Settings {
             fonts: moebius_desktop::theme::fonts(),
@@ -305,7 +307,7 @@ async fn a_harness_chat_offers_its_change_in_the_snapshot_and_the_client_merges_
     let _ = app.update(Message::Select(Page::Chat));
     let _ = app.update(Message::Chat(chat::Message::Listed(client.chats().await)));
     let _ = app.update(Message::OpenChat(run.id));
-    assert!(shown(&app, "Coder in the harness configuration"));
+    assert!(shown(&app, "Coder · harness configuration"));
     assert!(shown(&app, "Change offered"));
 
     client.merge(change.id).await.unwrap();

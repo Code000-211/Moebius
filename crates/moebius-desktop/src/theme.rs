@@ -222,6 +222,7 @@ pub const SPACE_10: f32 = 10.0;
 pub const SPACE_12: f32 = 12.0;
 pub const SPACE_14: f32 = 14.0;
 pub const SPACE_16: f32 = 16.0;
+pub const SPACE_18: f32 = 18.0;
 pub const SPACE_20: f32 = 20.0;
 pub const SPACE_24: f32 = 24.0;
 /// The padding of a text field, of a compact button and of a box.
@@ -311,6 +312,13 @@ pub const FLOAT_MARGIN: f32 = 16.0;
 /// Zero-Scroll bottom inspector dock height (`ZS-1`) on the board.
 pub const DOCK_HEIGHT: f32 = 148.0;
 pub const DOCK_META_WIDTH: f32 = 270.0;
+
+/// The chat's open canvas (`CH3-D`): the column its top bar, turn cards and composer share, the radius of the composer
+/// island, and the width of the list of chats that drops down from the top bar.
+pub const CHAT_COLUMN: f32 = 780.0;
+pub const RADIUS_COMPOSER: f32 = 18.0;
+pub const CHAT_LIST_WIDTH: f32 = 320.0;
+pub const CHAT_LIST_HEIGHT: f32 = 440.0;
 
 /// Manrope in one of the weights that are bundled.
 pub fn manrope(weight: Weight) -> Font {

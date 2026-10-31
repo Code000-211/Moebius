@@ -125,6 +125,25 @@ pub fn pick_style(_: &iced::Theme, status: pick_list::Status) -> pick_list::Styl
     }
 }
 
+/// A pick list as a small pill, as the chat's composer has them.
+pub fn pill_pick_style(_: &iced::Theme, status: pick_list::Status) -> pick_list::Style {
+    let line = match status {
+        pick_list::Status::Opened { .. } | pick_list::Status::Hovered => theme::ACCENT,
+        _ => theme::LINE_STRONG,
+    };
+    pick_list::Style {
+        text_color: theme::TEXT_SECONDARY,
+        placeholder_color: theme::TEXT_MUTED,
+        handle_color: theme::TEXT_MUTED,
+        background: theme::RECESSED.into(),
+        border: Border {
+            color: line,
+            width: 1.0,
+            radius: theme::RADIUS_ROUND.into(),
+        },
+    }
+}
+
 pub fn menu_style(_: &iced::Theme) -> iced::overlay::menu::Style {
     iced::overlay::menu::Style {
         background: theme::SURFACE.into(),

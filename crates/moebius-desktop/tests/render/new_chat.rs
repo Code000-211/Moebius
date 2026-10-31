@@ -38,7 +38,7 @@ fn available_listing() -> moebius_desktop::client::Available {
 #[test]
 fn a_new_chat_opens_the_empty_chat_with_its_pickers() {
     let mut app = chatting("waiting", false);
-    click(&mut app, "New chat");
+    click(&mut app, "+ New");
     let agents = serde_json::from_value(json!([
         {"name": "Moebius", "model": "claude-fake", "protocol": "anthropic", "thinking": "medium", "built_in": true},
         {"name": "Coder", "model": "qwen-fake", "protocol": "openai", "built_in": false}
@@ -52,16 +52,7 @@ fn a_new_chat_opens_the_empty_chat_with_its_pickers() {
     draw(
         &app,
         "chat-new",
-        &[
-            "New chat",
-            "Moebius, no repository",
-            "Send",
-            "Terminal",
-            "Agent",
-            "Place",
-            "Model",
-            "Reasoning",
-        ],
+        &["New chat", "Moebius, no repository", "Send", "Terminal"],
     );
     let _ = app.update(Message::Chat(chat::Message::AgentChosen("Coder".into())));
     assert!(shows(&app, "Coder, no repository"));
@@ -141,7 +132,7 @@ fn a_started_chat_shows_its_model_and_reasoning_and_changes_them_while_it_waits(
     draw_sized(
         &app,
         "chat-settings",
-        &["Model", "Reasoning", "Send"],
+        &["Send", "Terminal"],
         Size::new(1440.0, 1100.0),
     );
     // A change while it waits asks the server; a refusal shows.
@@ -206,7 +197,7 @@ fn a_harness_chat_is_drawn_with_its_offered_change_and_merged_from_there() {
         &app,
         "chat-harness",
         &[
-            "Moebius in the harness configuration",
+            "Moebius · harness configuration",
             "Add a skill for testing habits",
             "Change offered",
             "moebius/chat-7",
@@ -227,7 +218,7 @@ fn a_harness_chat_is_drawn_with_its_offered_change_and_merged_from_there() {
 #[test]
 fn a_new_chat_offers_the_harness_configuration_only_when_the_server_has_one() {
     let mut app = chatting("waiting", false);
-    click(&mut app, "New chat");
+    click(&mut app, "+ New");
     let _ = app.update(Message::Chat(chat::Message::HarnessChosen));
     assert!(!shows(&app, "Moebius in the harness configuration"));
     let skills = serde_json::from_value(json!([
@@ -242,7 +233,7 @@ fn a_new_chat_offers_the_harness_configuration_only_when_the_server_has_one() {
     ));
     assert!(shows(&app, "Moebius in the harness configuration"));
     // New chat again drops the draft; the harness is offered only while the server has one.
-    click(&mut app, "New chat");
+    click(&mut app, "+ New");
     // A server without a harness configuration repository lists no skill.
     let _ = app.update(Message::Chat(chat::Message::Skills(Ok(vec![]))));
     let _ = app.update(Message::Chat(chat::Message::HarnessChosen));
@@ -288,7 +279,7 @@ fn sending_needs_a_message_and_goes_to_the_open_chat() {
 #[test]
 fn a_new_chat_opens_an_empty_draft_that_the_first_message_starts() {
     let mut app = chatting("waiting", false);
-    click(&mut app, "New chat");
+    click(&mut app, "+ New");
     assert!(shows(&app, "Moebius, no repository"));
     let _ = app.update(Message::Chat(chat::Message::RepositoryChosen(Some(1))));
     // The draft is empty and not in the list; the first message is what sends.
@@ -427,7 +418,7 @@ fn the_moebius_agent_can_write_an_agents_instructions_in_a_chat() {
 #[test]
 fn a_built_in_agent_without_a_model_is_offered_and_starts_on_the_model_chosen() {
     let mut app = chatting("waiting", false);
-    click(&mut app, "New chat");
+    click(&mut app, "+ New");
     let agents = serde_json::from_value(json!([
         {"name": "Moebius", "model": "", "protocol": "openai", "built_in": true},
         {"name": "Grilling-partner", "model": "", "protocol": "openai", "built_in": true},

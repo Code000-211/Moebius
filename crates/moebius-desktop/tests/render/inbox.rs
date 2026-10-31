@@ -487,7 +487,7 @@ fn confirming_or_dismissing_a_grilling_names_it_and_removing_an_issue_takes_it_o
 #[test]
 fn a_grilling_chat_needs_a_repository_before_it_starts() {
     let mut app = chatting("waiting", false);
-    click(&mut app, "New chat");
+    click(&mut app, "+ New");
     let agents = serde_json::from_value(json!([
         {"name": "Moebius", "model": "claude-fake", "protocol": "anthropic", "built_in": true},
         {"name": "Grilling-partner", "model": "claude-fake", "protocol": "anthropic", "built_in": true}

@@ -41,7 +41,11 @@ impl Chats {
                 }
             }
             Message::Judged(_, Err(_)) => {}
-            Message::Select(id) => return self.open(id, settings),
+            Message::Select(id) => {
+                self.list_open = false;
+                return self.open(id, settings);
+            }
+            Message::ShowList(open) => self.list_open = open,
             Message::ShowTerminal(true) => self.terminal.open(),
             Message::ShowTerminal(false) => {
                 self.terminal.close();
@@ -157,7 +161,10 @@ impl Chats {
                 }
                 return self.reload(settings);
             }
-            Message::NewChat => return self.open_draft(settings),
+            Message::NewChat => {
+                self.list_open = false;
+                return self.open_draft(settings);
+            }
             Message::NewChatIn(repository) => {
                 let task = self.open_draft(settings);
                 if let Some(draft) = &mut self.draft {

@@ -42,6 +42,8 @@ pub enum Message {
     /// The judgements of the tool calls of the chat with this id were read.
     Judged(i64, Result<Vec<Judgement>, ClientError>),
     Select(i64),
+    /// The list of chats that drops down from the top bar opens or closes.
+    ShowList(bool),
     Edited(String),
     Send,
     /// The server took the message, or said why not.
@@ -207,6 +209,8 @@ pub struct Chats {
     starting_terminal: bool,
     /// The time of the last tick, Unix seconds.
     now: i64,
+    /// Whether the list of chats is dropped down from the top bar.
+    list_open: bool,
 }
 
 /// Sends a request about a chat and tells `then` how it went.
@@ -236,6 +240,7 @@ impl Chats {
             terminal_next: None,
             starting_terminal: false,
             now,
+            list_open: false,
         }
     }
 

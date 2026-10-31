@@ -162,15 +162,21 @@ with a secret that only the processes it starts know, and keeps no password.
   the card's tokens when known, and the last four steps of the run in the compact steps box. A click opens the card's
   live view or the chat. Without a working run the page says "Nothing is working. Runs and chats appear here while
   they work." The sidebar entry says how many are working.
-- The Chat page's input row: under the field to write in, with Send (the primary button) beside it, stands a row of
-  small pickers in the app's dropdown style (a muted label before each). "New chat" opens the empty chat at once, with
-  no form: the header "New chat" and who it is with and where, a hint where the conversation will be, and under the
-  field the pickers Agent, Place (No repository, each project, and the harness configuration when the server has
-  one), Model (the models the upstreams serve, a model they do not list shown as it is) and Reasoning (the levels
-  Pi-Bolt takes), the agent's model and reasoning until others are chosen. A "Terminal" button next to Send
-  starts the chat without a message and shows it in its terminal as soon as it waits. In a started chat the Model and
-  Reasoning pickers stay under the field and change the chat while it waits; while its agent works they only show what
-  it runs with, muted, in a thin outline.
+- The Chat page is one column on the canvas (`CH3-D`), `CHAT_COLUMN` (780) wide and centred. On top a floating pill
+  bar: "Chats (n) ▾", which drops down the list of chats (newest first, the chosen one marked, `CHAT_LIST_WIDTH` wide),
+  an amber tag when chats ask the person something, the chat's title with a pill of its agent and place and its status
+  tag, its actions (Ports, Offer changes, End, Stop) and "+ New". Under it the conversation as turn cards: each message
+  of the person heads an island on the card colour, and what the agent did and answered until the next one is its
+  body. At the foot the change the chat offered, then the composer island (`RADIUS_COMPOSER`, a coral line): the field
+  to write in without a frame of its own, and under it the chat's pills on the left and Terminal and Send (the primary
+  button) on the right, with a line under the island that says what Send does. "+ New" opens the empty chat at once,
+  with no form: the bar with "New chat" and a pill of who it is with and where, a card with a hint, and the composer
+  whose pills are Agent, Place (No repository, each project, and the harness configuration when the server has one),
+  Model (the models the upstreams serve, a model they do not list shown as it is) and Reasoning (the levels Pi-Bolt
+  takes), the agent's model and reasoning until others are chosen; a pill names what it chooses while the pointer is
+  on it. Terminal starts the chat without a message and shows it in its terminal as soon as it waits. In a started chat
+  the Model and Reasoning pills change the chat while it waits; while its agent works they only show what it runs with,
+  muted.
 - The floating chat: a small dark "Agent" button (the chat icon and the word, in the code font) stands in the bottom
   right corner of every screen but the Chat page (whose Send stands there), `FLOAT_MARGIN` (16) from the edges, over the
   page. A click grows it into a window of 400 by at most 560 px anchored there, with the box radius and a tight

@@ -440,7 +440,7 @@ fn an_agent_chat_tab_holds_a_chat_of_the_project() {
         &[
             "Board",
             "Chat",
-            "Moebius in radiance",
+            "Moebius · radiance",
             "Send",
             "Files \u{b7} default branch",
         ],

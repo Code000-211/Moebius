@@ -1,5 +1,6 @@
-//! How the chat screen is drawn: the list of chats, and the chat chosen with its actions, the change it offered and
-//! the field to write in.
+//! How the chat screen is drawn (`CH3-D`): one column on the open canvas, with the top bar that drops down the list
+//! of chats and holds the chat's actions, the turn cards of the conversation, the change it offered and the composer
+//! island to write in.
 
 use iced::font::Weight;
 use iced::widget::text::Wrapping;
@@ -10,6 +11,7 @@ use crate::app::Message as AppMessage;
 use crate::client::{Change, Chat, InboxItem, Snapshot};
 use crate::screens::inbox::{self, Action, Inbox};
 use crate::screens::ports::Scope;
+use crate::widgets::dropdown::Dropdown;
 use crate::widgets::page::{self, Tone, tag};
 use crate::{screens::connect, theme};
 
@@ -169,16 +171,6 @@ fn offer_button<'a>(chat: &Chat) -> Element<'a, AppMessage> {
     .into()
 }
 
-/// What stands in the right pane when no chat is chosen.
-fn empty_view(line: &str) -> Element<'_, AppMessage> {
-    container(page::body(line))
-        .padding(theme::BOX_PADDING)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .style(|_| page::box_style())
-        .into()
-}
-
 /// The change the chat offered, found by its branch among the board's changes, and the inbox item that waits for it
 /// to be merged; none while the chat has offered nothing.
 fn offered_change<'a>(
@@ -253,59 +245,80 @@ fn change_view<'a>(
         .into()
 }
 
-/// The field to write a message in; Enter sends when `send` is a message.
+/// The field to write a message in, without a frame of its own in the composer island; Enter sends when `send` is a
+/// message.
 pub(super) fn message_field(value: &str, send: Option<AppMessage>) -> Element<'_, AppMessage> {
     text_input("Write to the agent", value)
         .id(MESSAGE_FIELD)
         .on_input(|text| AppMessage::Chat(Message::Edited(text)))
         .on_submit_maybe(send)
         .size(theme::BODY)
-        .padding(theme::FIELD_PADDING)
-        .style(connect::input_style)
+        .padding([theme::SPACE_6, 0.0])
+        .style(|theme, status| text_input::Style {
+            background: iced::Color::TRANSPARENT.into(),
+            border: Border::default(),
+            ..connect::input_style(theme, status)
+        })
         .into()
 }
 
-impl Chats {
-    /// The page: the header, the list of chats, and the form of a new chat or the chat chosen.
-    pub fn view<'a>(&'a self, snapshot: &'a Snapshot, inbox: &'a Inbox) -> Element<'a, AppMessage> {
-        let line = match self.asking() {
-            0 => "Talk to an agent. What it builds in a repository is offered as a change.".into(),
-            1 => "1 chat asks you something.".to_string(),
-            n => format!("{n} chats ask you something."),
-        };
-        let header = page::header(
-            "",
-            "Chat",
-            None,
-            page::context(line),
-            page::white_button("New chat", Some(AppMessage::Chat(Message::NewChat))),
-        );
-        let detail = self.detail_view(snapshot, inbox);
+/// The composer island (`CH3-D`): the field to write in on top, and under it the chat's pills on the left and its
+/// buttons on the right, in one box with the accent's line.
+pub(super) fn composer<'a>(
+    field: Element<'a, AppMessage>,
+    pills: Element<'a, AppMessage>,
+    buttons: Element<'a, AppMessage>,
+) -> Element<'a, AppMessage> {
+    container(
         column![
-            header,
-            row![self.list_view(snapshot), detail]
-                .spacing(theme::PAGE_GAP)
-                .height(Length::Fill),
+            field,
+            row![pills, space::horizontal(), buttons]
+                .spacing(theme::SPACE_8)
+                .align_y(Alignment::Center),
         ]
-        .spacing(theme::PAGE_GAP)
-        .width(Length::Fill)
-        .into()
+        .spacing(theme::SPACE_8),
+    )
+    .padding([theme::SPACE_10, theme::SPACE_14])
+    .width(Length::Fill)
+    .style(|_| container::Style {
+        background: Some(theme::SURFACE.into()),
+        border: Border {
+            color: theme::ACCENT_BORDER,
+            width: 1.0,
+            radius: theme::RADIUS_COMPOSER.into(),
+        },
+        shadow: theme::shadow(),
+        ..container::Style::default()
+    })
+    .into()
+}
+
+impl Chats {
+    /// The page (`CH3-D`): one column on the open canvas, with the top bar that drops down the list of chats, and under
+    /// it the form of a new chat or the chat chosen.
+    pub fn view<'a>(&'a self, snapshot: &'a Snapshot, inbox: &'a Inbox) -> Element<'a, AppMessage> {
+        self.detail_view(snapshot, inbox)
     }
 
-    /// The form of a new chat or the chat chosen, as the right of the page shows it.
+    /// The form of a new chat or the chat chosen, in the column of the canvas.
     fn detail_view<'a>(
         &'a self,
         snapshot: &'a Snapshot,
         inbox: &'a Inbox,
     ) -> Element<'a, AppMessage> {
-        match (&self.draft, &self.open) {
+        let content = match (&self.draft, &self.open) {
             (Some(draft), _) => self.draft_view(draft, snapshot),
             (None, Some(open)) => match self.chat(open.thread.id) {
                 Some(chat) => self.chat_view(chat, open, snapshot, inbox),
-                None => empty_view("Reading the chat…"),
+                None => self.empty_view(snapshot, "Reading the chat…"),
             },
-            (None, None) => empty_view("Choose a chat, or start a new one."),
-        }
+            (None, None) => self.empty_view(snapshot, "Choose a chat, or start a new one."),
+        };
+        container(content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .into()
     }
 
     /// One chat inside a project's chat tab: its new chat form while it has no chat (`chat` is none), else the chat
@@ -319,12 +332,86 @@ impl Chats {
         match (chat, &self.draft) {
             (None, Some(_)) => self.detail_view(snapshot, inbox),
             (Some(id), None) if self.opened() == Some(id) => self.detail_view(snapshot, inbox),
-            _ => empty_view("Reading the chat…"),
+            _ => self.empty_view(snapshot, "Reading the chat…"),
         }
     }
 
-    /// The chats, newest first, the chosen one marked.
-    pub(super) fn list_view<'a>(&'a self, snapshot: &'a Snapshot) -> Element<'a, AppMessage> {
+    /// The column with the top bar alone and a line where the conversation would be.
+    fn empty_view<'a>(&'a self, snapshot: &'a Snapshot, line: &'a str) -> Element<'a, AppMessage> {
+        column![
+            self.top_bar(
+                snapshot,
+                page::context(line),
+                space::horizontal().width(0).into()
+            ),
+            space::vertical(),
+        ]
+        .spacing(theme::PAGE_GAP)
+        .max_width(theme::CHAT_COLUMN)
+        .height(Length::Fill)
+        .into()
+    }
+
+    /// The bar on top of the column: "Chats (n)", which drops down the list of chats, then `title`, then `actions` on
+    /// the right, in a floating pill.
+    pub(super) fn top_bar<'a>(
+        &'a self,
+        snapshot: &'a Snapshot,
+        title: Element<'a, AppMessage>,
+        actions: Element<'a, AppMessage>,
+    ) -> Element<'a, AppMessage> {
+        let count = self.listed().count();
+        let label = text(format!("Chats ({count}) ▾"))
+            .size(theme::CONTEXT)
+            .font(theme::manrope(Weight::Semibold));
+        let toggle = button(label)
+            .padding([theme::SPACE_4, theme::SPACE_12])
+            .on_press(AppMessage::Chat(Message::ShowList(!self.list_open)))
+            .style(pill_button);
+        let chats = Dropdown::new(
+            toggle,
+            self.list_menu(snapshot),
+            self.list_open,
+            AppMessage::Chat(Message::ShowList(false)),
+        );
+        let mut start = row![chats]
+            .spacing(theme::SPACE_10)
+            .align_y(Alignment::Center);
+        match self.asking() {
+            0 => {}
+            1 => start = start.push(tag("1 asks you".to_string(), Tone::Amber)),
+            n => start = start.push(tag(format!("{n} ask you"), Tone::Amber)),
+        }
+        let new = button(
+            text("+ New")
+                .size(theme::CONTEXT)
+                .font(theme::manrope(Weight::Semibold)),
+        )
+        .padding([theme::SPACE_4, theme::SPACE_12])
+        .on_press(AppMessage::Chat(Message::NewChat))
+        .style(pill_button);
+        container(
+            row![start, container(title).width(Length::Fill), actions, new,]
+                .spacing(theme::SPACE_10)
+                .align_y(Alignment::Center),
+        )
+        .padding([theme::SPACE_6, theme::SPACE_8])
+        .width(Length::Fill)
+        .style(|_| container::Style {
+            background: Some(theme::SURFACE.into()),
+            border: Border {
+                color: theme::LINE_STRONG,
+                width: 1.0,
+                radius: theme::RADIUS_ROUND.into(),
+            },
+            shadow: theme::shadow(),
+            ..container::Style::default()
+        })
+        .into()
+    }
+
+    /// The list of chats that drops down from the top bar, newest first, the chosen one marked.
+    fn list_menu<'a>(&'a self, snapshot: &'a Snapshot) -> Element<'a, AppMessage> {
         let chosen = self
             .open
             .as_ref()
@@ -337,15 +424,33 @@ impl Chats {
                 let repository = place_name(snapshot, chat);
                 chat_row(chat, repository, self.now, chosen == Some(chat.id))
             }))
-            .spacing(theme::SPACE_8)
+            .spacing(theme::SPACE_6)
             .into()
         };
-        container(scrollable(list).height(Length::Fill))
-            .padding(theme::SPACE_12)
-            .width(theme::LIST_WIDTH)
-            .height(Length::Fill)
-            .style(|_| page::box_style())
-            .into()
+        container(
+            column![
+                text("Recent conversations")
+                    .size(theme::LABEL)
+                    .font(theme::MONO)
+                    .color(theme::TEXT_MUTED),
+                scrollable(list).height(Length::Shrink),
+            ]
+            .spacing(theme::SPACE_8),
+        )
+        .padding(theme::SPACE_8)
+        .width(theme::CHAT_LIST_WIDTH)
+        .max_height(theme::CHAT_LIST_HEIGHT)
+        .style(|_| container::Style {
+            background: Some(theme::SURFACE.into()),
+            border: Border {
+                color: theme::LINE_STRONG,
+                width: 1.0,
+                radius: theme::RADIUS_BOX.into(),
+            },
+            shadow: theme::shadow(),
+            ..container::Style::default()
+        })
+        .into()
     }
 
     fn chat_view<'a>(
@@ -356,32 +461,27 @@ impl Chats {
         inbox: &'a Inbox,
     ) -> Element<'a, AppMessage> {
         let repository = place_name(snapshot, chat);
-        // The title takes what the tag leaves, so a long one wraps instead of squeezing the tag.
+        let who = match repository {
+            Some(_) if chat.harness_repository => format!("{} · harness configuration", chat.agent),
+            Some(name) => format!("{} · {name}", chat.agent),
+            None => format!("{} · no repository", chat.agent),
+        };
+        // The title takes what the pill and the tag leave, so a long one is cut instead of squeezing them.
         let title = row![
-            text(chat.title.as_str())
-                .size(theme::BOX_HEADING)
-                .font(theme::manrope(Weight::Bold))
-                .wrapping(Wrapping::WordOrGlyph)
-                .width(Length::Fill),
+            container(
+                text(chat.title.as_str())
+                    .size(theme::BODY)
+                    .font(theme::manrope(Weight::Bold))
+                    .wrapping(Wrapping::None),
+            )
+            .clip(true)
+            .width(Length::Fill),
+            tag(who, Tone::Plain),
         ]
         .push(status_tag(chat))
-        .spacing(theme::SPACE_10)
+        .spacing(theme::SPACE_8)
         .align_y(Alignment::Center);
-        let who = match repository {
-            Some(_) if chat.harness_repository => {
-                format!("{} in the harness configuration", chat.agent)
-            }
-            Some(name) => format!("{} in {name}", chat.agent),
-            None => format!("{}, no repository", chat.agent),
-        };
-        let mut head = row![
-            column![title, page::context(who)]
-                .spacing(theme::SPACE_2)
-                .width(Length::Fill),
-        ]
-        .spacing(theme::SPACE_10)
-        .align_y(Alignment::Center);
-        head = head.push(actions(chat, open));
+        let bar = self.top_bar(snapshot, title.into(), actions(chat, open));
         if let Some(terminal) = self.terminal.view() {
             // Under the terminal, where Send and Terminal are in the conversation, the way back to it.
             let back = row![
@@ -392,47 +492,51 @@ impl Chats {
             ]
             .spacing(theme::SPACE_10)
             .align_y(Alignment::Center);
-            let content = column![
-                container(head).padding(theme::BOX_PADDING),
-                page::rule(),
-                terminal,
-                page::rule(),
-                container(back).padding([theme::SPACE_12, theme::BOX_PADDING]),
-            ];
-            return container(content)
-                .width(Length::Fill)
+            return column![bar, terminal, back]
+                .spacing(theme::PAGE_GAP)
+                .max_width(theme::CHAT_COLUMN)
                 .height(Length::Fill)
-                .style(|_| page::box_style())
                 .into();
         }
         let conversation = scrollable(
             container(open.thread.view::<OnPage>(&chat.status, self.now))
-                .padding(theme::SPACE_16)
+                .padding([theme::SPACE_8, 0.0])
                 .width(Length::Fill),
         )
         .id(super::CONVERSATION)
         .on_scroll(|viewport| AppMessage::Chat(Message::Scrolled(super::at_end(viewport))))
         .height(Length::Fill);
-        let mut content = column![
-            container(head).padding(theme::BOX_PADDING),
-            page::rule(),
-            conversation
-        ];
+        let mut content = column![bar, conversation].spacing(theme::PAGE_GAP);
         let offered = offered_change(chat, snapshot);
         // Merge is what an ended chat with a change to merge is for, so it takes the primary place from Send.
         let merge_is_primary = !chat.is_open() && offered.is_some_and(|(_, item)| item.is_some());
         if let Some((change, item)) = offered {
-            let offer = change_view(change, item, inbox, merge_is_primary);
-            content = content.push(container(offer).padding([theme::SPACE_8, theme::BOX_PADDING]));
+            content = content.push(change_view(change, item, inbox, merge_is_primary));
         }
-        container(
-            content
-                .push(page::rule())
-                .push(self.compose_view(chat, open, !merge_is_primary)),
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .style(|_| page::box_style())
-        .into()
+        content
+            .push(self.compose_view(chat, open, !merge_is_primary))
+            .max_width(theme::CHAT_COLUMN)
+            .height(Length::Fill)
+            .into()
+    }
+}
+
+/// A small button as a pill, as the top bar has them.
+pub(super) fn pill_button(_: &iced::Theme, status: button::Status) -> button::Style {
+    button::Style {
+        background: Some(
+            match status {
+                button::Status::Hovered | button::Status::Pressed => theme::CARD_HOVER,
+                _ => theme::CARD,
+            }
+            .into(),
+        ),
+        text_color: theme::TEXT,
+        border: Border {
+            color: theme::LINE_STRONG,
+            width: 1.0,
+            radius: theme::RADIUS_ROUND.into(),
+        },
+        ..button::Style::default()
     }
 }

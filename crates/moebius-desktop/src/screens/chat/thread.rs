@@ -119,8 +119,9 @@ impl Thread {
         }
     }
 
-    /// The conversation: the agent's texts as Markdown, the person's messages on the right, and the steps that follow
-    /// one another as one box, the last one working while the chat's `status` says the agent works.
+    /// The conversation as turn cards (`CH3-D`): each message of the person heads a card, and what the agent did and
+    /// answered until the next one is its body, the agent's texts as Markdown and the steps that follow one another as
+    /// one box, the last one working while the chat's `status` says the agent works.
     pub fn view<P: Place>(&self, status: &str, now: i64) -> Element<'_, AppMessage> {
         let conversation = &self.conversation;
         let entries = conversation.entries();
@@ -128,12 +129,19 @@ impl Thread {
             return page::body("Nothing has been said in this chat yet.");
         }
         let working = matches!(status, "starting" | "running");
+        let mut cards: Vec<Element<'_, AppMessage>> = Vec::new();
+        let mut head: Option<Element<'_, AppMessage>> = None;
         let mut views: Vec<Element<'_, AppMessage>> = Vec::new();
         let mut index = 0;
         while index < entries.len() {
             match &entries[index] {
                 Entry::Text(_) => views.push(agent_text::<P>(self.markdown.get(&index))),
-                Entry::Person(said, message) => views.push(person_view(*said, message)),
+                Entry::Person(said, message) => {
+                    if head.is_some() || !views.is_empty() {
+                        cards.push(turn_card(head.take(), std::mem::take(&mut views)));
+                    }
+                    head = Some(turn_head(*said, message));
+                }
                 Entry::Error(message) => views.push(transcript::error(message)),
                 Entry::McpError { server, message } => {
                     views.push(transcript::mcp_error(server, message))
@@ -165,8 +173,11 @@ impl Thread {
             }
             index += 1;
         }
-        column(views)
-            .spacing(theme::SPACE_12)
+        if head.is_some() || !views.is_empty() {
+            cards.push(turn_card(head, views));
+        }
+        column(cards)
+            .spacing(theme::SPACE_18)
             .width(Length::Fill)
             .into()
     }
@@ -251,8 +262,8 @@ fn agent_text<P: Place>(parsed: Option<&(String, Vec<markdown::Item>)>) -> Eleme
     .into()
 }
 
-/// A message of the person: a box on the right.
-fn person_view(said: Said, message: &str) -> Element<'_, AppMessage> {
+/// The head of a turn card: what the person said, on the band of the card's colour.
+fn turn_head(said: Said, message: &str) -> Element<'_, AppMessage> {
     let mut content = column![].spacing(theme::SPACE_4);
     if said == Said::Steered {
         content = content.push(
@@ -262,24 +273,56 @@ fn person_view(said: Said, message: &str) -> Element<'_, AppMessage> {
                 .color(theme::TEXT_SECONDARY),
         );
     }
-    let bubble = container(
+    container(
         content.push(
             text(message)
                 .size(theme::BODY)
+                .font(theme::manrope(iced::font::Weight::Semibold))
                 .color(theme::TEXT)
                 .wrapping(Wrapping::WordOrGlyph),
         ),
     )
-    .padding([theme::SPACE_8, theme::SPACE_12])
-    .max_width(theme::MESSAGE_WIDTH)
+    .padding([theme::SPACE_12, theme::SPACE_18])
+    .width(Length::Fill)
     .style(|_| container::Style {
-        background: Some(theme::LANE.into()),
-        border: Border {
-            color: theme::LINE,
-            width: 1.0,
-            radius: theme::RADIUS_CARD.into(),
-        },
+        background: Some(theme::CARD.into()),
         ..container::Style::default()
-    });
-    container(bubble).align_right(Length::Fill).into()
+    })
+    .into()
+}
+
+/// One turn (`CH3-D`): the person's message as its head, when the turn has one, and what the agent did and answered as
+/// its body, in one island.
+fn turn_card<'a>(
+    head: Option<Element<'a, AppMessage>>,
+    body: Vec<Element<'a, AppMessage>>,
+) -> Element<'a, AppMessage> {
+    let mut card = column![];
+    if let Some(head) = head {
+        card = card.push(head);
+        if !body.is_empty() {
+            card = card.push(page::rule());
+        }
+    }
+    if !body.is_empty() {
+        card = card.push(
+            container(column(body).spacing(theme::SPACE_12))
+                .padding([theme::SPACE_16, theme::SPACE_18])
+                .width(Length::Fill),
+        );
+    }
+    container(card)
+        .width(Length::Fill)
+        .clip(true)
+        .style(|_| container::Style {
+            background: Some(theme::SURFACE.into()),
+            border: Border {
+                color: theme::LINE,
+                width: 1.0,
+                radius: theme::RADIUS_BOX.into(),
+            },
+            shadow: theme::shadow(),
+            ..container::Style::default()
+        })
+        .into()
 }

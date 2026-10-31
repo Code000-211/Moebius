@@ -4,17 +4,17 @@
 use std::fmt;
 
 use iced::font::Weight;
-use iced::widget::{column, container, pick_list, row, text};
+use iced::widget::{column, container, pick_list, row, space, text};
 use iced::{Alignment, Border, Element, Length, Task};
 
 use crate::app::Message as AppMessage;
 use crate::client::{Agent, Chat, Client, Snapshot};
 use crate::settings::Settings;
 use crate::theme;
-use crate::widgets::form::{LEVELS, menu_style, pick_style};
+use crate::widgets::form::{LEVELS, menu_style, pill_pick_style};
 use crate::widgets::page;
 
-use super::view::{HARNESS_PLACE, message_field};
+use super::view::{HARNESS_PLACE, composer, message_field};
 use super::{Chats, Draft, GRILLING_AGENT, Message, Open};
 
 /// Reads the agents and the models a chat's pickers offer.
@@ -61,41 +61,42 @@ fn picker<'a, T>(
 where
     T: fmt::Display + Clone + PartialEq + 'a,
 {
-    let label = text(label)
-        .size(theme::LABEL)
-        .font(theme::MONO)
-        .color(theme::TEXT_MUTED);
+    // The label says what the pill chooses while the pointer is on it.
     let field: Element<'a, AppMessage> = match on_pick {
         Some(on_pick) => pick_list(choices, chosen, move |choice| {
             AppMessage::Chat(on_pick(choice))
         })
         .placeholder(placeholder)
         .text_size(theme::LABEL)
-        .padding([theme::SPACE_4, theme::SPACE_8])
-        .style(pick_style)
+        .padding([theme::SPACE_4, theme::SPACE_10])
+        .style(pill_pick_style)
         .menu_style(menu_style)
         .into(),
         None => container(
             text(chosen.map_or(placeholder.to_string(), |chosen| chosen.to_string()))
                 .size(theme::LABEL)
-                .font(theme::MONO)
                 .color(theme::TEXT_MUTED),
         )
-        .padding([theme::SPACE_4, theme::SPACE_8])
+        .padding([theme::SPACE_4, theme::SPACE_10])
         .style(|_| container::Style {
+            background: Some(theme::RECESSED.into()),
             border: Border {
                 color: theme::LINE,
                 width: 1.0,
-                radius: theme::RADIUS_CONTROL.into(),
+                radius: theme::RADIUS_ROUND.into(),
             },
             ..container::Style::default()
         })
         .into(),
     };
-    row![label, field]
-        .spacing(theme::SPACE_6)
-        .align_y(Alignment::Center)
-        .into()
+    iced::widget::tooltip(
+        field,
+        container(text(label).size(theme::LABEL).font(theme::MONO))
+            .padding([theme::SPACE_4, theme::SPACE_8])
+            .style(|_| page::box_style()),
+        iced::widget::tooltip::Position::Top,
+    )
+    .into()
 }
 
 impl Chats {
@@ -158,13 +159,14 @@ impl Chats {
             Some(name) => format!("{} in {name}", draft.agent),
             None => format!("{}, no repository", draft.agent),
         };
-        let head = column![
+        let title = row![
             text("New chat")
-                .size(theme::BOX_HEADING)
+                .size(theme::BODY)
                 .font(theme::manrope(Weight::Bold)),
-            page::context(who),
+            page::tag(who, page::Tone::Plain),
         ]
-        .spacing(theme::SPACE_2);
+        .spacing(theme::SPACE_8)
+        .align_y(Alignment::Center);
         let ready = draft.ready() && !draft.sending;
         let can_send = ready && !draft.message.trim().is_empty();
         let send = can_send.then_some(AppMessage::Chat(Message::Send));
@@ -214,7 +216,7 @@ impl Chats {
             .thinking
             .as_deref()
             .or(agent.and_then(|agent| agent.thinking.as_deref()));
-        let pickers = row![
+        let pills = row![
             picker(
                 "Agent",
                 names,
@@ -226,37 +228,35 @@ impl Chats {
             self.model_picker(model, true),
             self.reasoning_picker(thinking, true),
         ]
-        .spacing(theme::SPACE_12)
+        .spacing(theme::SPACE_6)
         .align_y(Alignment::Center);
-        let compose = column![
-            row![
-                message_field(&draft.message, send.clone()),
-                page::primary_button("Send", send),
-                page::white_button("Terminal", terminal),
-            ]
-            .spacing(theme::SPACE_10)
-            .align_y(Alignment::Center),
-            pickers.wrap().vertical_spacing(theme::SPACE_8),
+        let buttons = row![
+            page::white_button("Terminal", terminal),
+            page::primary_button("Send", send.clone()),
+        ]
+        .spacing(theme::SPACE_6)
+        .align_y(Alignment::Center);
+        let hint = container(page::body(hint))
+            .padding([theme::SPACE_16, theme::SPACE_18])
+            .width(Length::Fill)
+            .style(|_| page::box_style());
+        column![
+            self.top_bar(snapshot, title.into(), space::horizontal().width(0).into()),
+            hint,
+            space::vertical(),
+            composer(
+                message_field(&draft.message, send),
+                pills.wrap().vertical_spacing(theme::SPACE_6).into(),
+                buttons.into(),
+            ),
             text(note)
                 .size(theme::LABEL)
                 .font(theme::MONO)
                 .color(theme::TEXT_MUTED),
         ]
-        .spacing(theme::SPACE_8)
-        .padding([theme::SPACE_12, theme::BOX_PADDING]);
-        container(column![
-            container(head).padding(theme::BOX_PADDING),
-            page::rule(),
-            container(page::body(hint))
-                .padding(theme::BOX_PADDING)
-                .width(Length::Fill)
-                .height(Length::Fill),
-            page::rule(),
-            compose,
-        ])
-        .width(Length::Fill)
+        .spacing(theme::PAGE_GAP)
+        .max_width(theme::CHAT_COLUMN)
         .height(Length::Fill)
-        .style(|_| page::box_style())
         .into()
     }
 
@@ -286,19 +286,16 @@ impl Chats {
         } else {
             page::white_button("Send", send)
         };
-        let mut fields = row![field, send_button]
-            .spacing(theme::SPACE_10)
-            .align_y(Alignment::Center);
+        let mut buttons = row![].spacing(theme::SPACE_6).align_y(Alignment::Center);
         // As in a new chat, Terminal sits beside Send; it opens once the agent has answered, because while it works its
         // process has the worktree.
         if chat.is_open() {
             let terminal =
                 (chat.status == "waiting").then_some(AppMessage::Chat(Message::ShowTerminal(true)));
-            fields = fields.push(page::white_button("Terminal", terminal));
+            buttons = buttons.push(page::white_button("Terminal", terminal));
         }
-        let mut compose = column![fields]
-            .spacing(theme::SPACE_8)
-            .padding([theme::SPACE_12, theme::BOX_PADDING]);
+        buttons = buttons.push(send_button);
+        let mut pills = row![].spacing(theme::SPACE_6).align_y(Alignment::Center);
         if chat.is_open() {
             let agent = self.agent(&chat.agent);
             let model = chat
@@ -310,22 +307,18 @@ impl Chats {
                 .as_deref()
                 .or(agent.and_then(|agent| agent.thinking.as_deref()));
             let waiting = chat.status == "waiting";
-            compose = compose.push(
-                row![
-                    self.model_picker(model, waiting),
-                    self.reasoning_picker(thinking, waiting),
-                ]
-                .spacing(theme::SPACE_12)
-                .align_y(Alignment::Center),
-            );
+            pills = pills
+                .push(self.model_picker(model, waiting))
+                .push(self.reasoning_picker(thinking, waiting));
         }
-        compose
-            .push(
-                text(hint)
-                    .size(theme::LABEL)
-                    .font(theme::MONO)
-                    .color(theme::TEXT_MUTED),
-            )
-            .into()
+        column![
+            composer(field, pills.into(), buttons.into()),
+            text(hint)
+                .size(theme::LABEL)
+                .font(theme::MONO)
+                .color(theme::TEXT_MUTED),
+        ]
+        .spacing(theme::SPACE_6)
+        .into()
     }
 }

@@ -10,7 +10,7 @@ use moebius_desktop::widgets::terminal::PaneEvent;
 use serde_json::json;
 
 use crate::fixtures::{
-    click, clicked, draw, draw_sized, pressed, radiance, shows, simulator, snapshot,
+    click, clicked, draw, draw_sized, pressed, radiance, shows, simulator, snapshot, update_all,
 };
 use crate::live::judgement;
 
@@ -121,15 +121,11 @@ fn a_chat_is_drawn_with_its_markdown_tool_calls_and_offered_change() {
         &chatting("succeeded", true),
         "chat",
         &[
-            "Chat",
-            "Talk to an agent. What it builds in a repository is offered as a change.",
+            "Chats (3) ▾",
             "Write a ready.luau that starts a card only when nothing blocks it.",
-            "Moebius in radiance",
+            "Moebius · radiance",
             "Ended",
-            "Explain how the router chooses an upstream.",
-            "Coder",
-            "Add a rule against vendor edits",
-            "New chat",
+            "+ New",
             "Write a ready.luau that starts a card only when nothing blocks it.",
             "3 tool calls",
             "Write",
@@ -490,7 +486,7 @@ fn only_a_chat_whose_agent_asks_a_question_is_marked() {
     listing[0].asks = true;
     let _ = app.update(Message::Chat(chat::Message::Listed(Ok(listing))));
     assert!(shows(&app, "Asks you"));
-    assert!(shows(&app, "1 chat asks you something."));
+    assert!(shows(&app, "1 asks you"));
 }
 
 /// The open chat follows what the agent writes to its end, unless the person scrolled up; what they send is followed
@@ -558,4 +554,23 @@ fn an_answer_and_a_code_block_are_copied_with_their_buttons() {
         1,
         "the text goes to the clipboard"
     );
+}
+
+/// The list of chats drops down from the top bar (`CH3-D`): the chats, newest first, and a pick opens one and closes
+/// the list.
+#[test]
+fn the_list_of_chats_drops_down_from_the_top_bar() {
+    let mut app = chatting("waiting", false);
+    assert!(!shows(&app, "Explain how the router chooses an upstream."));
+    click(&mut app, "Chats (3) ▾");
+    assert!(shows(&app, "Recent conversations"));
+    assert!(shows(&app, "Explain how the router chooses an upstream."));
+    assert!(shows(&app, "Add a rule against vendor edits"));
+    let picked = clicked(&app, "Explain how the router chooses an upstream.");
+    assert!(matches!(
+        &picked[..],
+        [Message::Chat(chat::Message::Select(6))]
+    ));
+    update_all(&mut app, picked);
+    assert!(!shows(&app, "Recent conversations"));
 }
