@@ -311,3 +311,25 @@ fn the_speech_bubble_opens_the_floating_chat_with_a_message_about_the_script() {
         "About the Ready column's script (.moebius/ready.luau): "
     ));
 }
+
+/// A long title of the card in the inspector dock wraps inside the dock's left part instead of running over the rows of
+/// its run, guard and state: compare `tests/snapshots/board-dock-long-title-tiny-skia.png`.
+#[test]
+fn a_long_title_in_the_dock_stays_in_its_left_part() {
+    let title =
+        "Desktop app: typing is slow — find where the time goes and remove the app's share of it";
+    let snapshot = snapshot(
+        vec![board(
+            repository(1, "radiance", None),
+            vec![working(
+                2,
+                1,
+                "In progress",
+                title,
+                json!({"rounds": 5, "run": run(1, "Coder", "code", "running")}),
+            )],
+        )],
+        vec![],
+    );
+    draw(&App::with_snapshot(snapshot), "board-dock-long-title", &[]);
+}

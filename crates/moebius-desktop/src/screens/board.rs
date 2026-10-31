@@ -213,11 +213,12 @@ fn zs1_inspector_dock<'a>(
                     .color(status_color),
             ]
             .align_y(Alignment::Center),
+            // A long title wraps inside the dock's left part; what does not fit its height is cut.
             text(card.title.as_str())
                 .size(theme::BODY)
                 .font(theme::manrope(Weight::Bold))
                 .color(theme::TEXT)
-                .wrapping(Wrapping::None),
+                .wrapping(Wrapping::WordOrGlyph),
             text(card_line(card, board.round_limit))
                 .size(theme::SMALL)
                 .font(theme::MONO)
@@ -235,7 +236,8 @@ fn zs1_inspector_dock<'a>(
     )
     .width(Length::Fixed(theme::DOCK_META_WIDTH))
     .height(Length::Fill)
-    .padding([theme::SPACE_10, theme::SPACE_14]);
+    .padding([theme::SPACE_10, theme::SPACE_14])
+    .clip(true);
 
     let wait_reason = board
         .waiting
