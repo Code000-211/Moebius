@@ -1,4 +1,4 @@
-//! The coding-agent harnesses and what they are given: Pi-Bolt runs and chats (`pibolt`), Claude Code runs and chats
+//! The coding-agent harnesses and what they are given: the run lifecycle every harness shares (`run`), Pi-Bolt runs and chats (`pibolt`), Claude Code runs and chats
 //! (`claude`), the harness of each agent picked by its `harness` (`pick`), shells in a worktree and on the server
 //! (`terminal`), the harness configuration repository with the agents, skills, MCP servers and rules (`repo`, `skill`,
 //! `mcp`), the MCP gateway through which a run reaches its MCP servers (`gateway`), the chats that end in issues
@@ -14,5 +14,6 @@ pub mod pibolt;
 pub mod pick;
 pub mod remote;
 pub mod repo;
+pub mod run;
 pub mod skill;
 pub mod terminal;

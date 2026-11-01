@@ -12,15 +12,15 @@ use std::time::Instant;
 use serde_json::{Value, json};
 
 use super::reader::Reader;
-use super::runs::{RunningRun, fail};
 use super::{BRIDGE, LENS, Live, MOEBIUS_AGENT, PiBolt, lock, run_dir, send};
 use crate::app::App;
 use crate::bus::AppEvent;
 use crate::config::AgentConfig;
 use crate::harness::mcp;
 use crate::harness::remote::Local;
+use crate::harness::run::RunningRun;
 use crate::router::Protocol;
-use crate::store::{Card, Run};
+use crate::store::Card;
 
 /// Where a Pi starts and what it is given: the worktree it works in, its agent directory and sessions, whether it
 /// continues the latest session there, the lens and bridge extensions, the token of the router and whether it operates Moebius
@@ -261,29 +261,6 @@ impl PiBolt {
             .map(drop)
             .map_err(|e| e.to_string())
     }
-
-    /// Launches a run that has its worktree and token and returns it; when Pi cannot be started, what was set up for
-    /// the run is undone and the run has failed.
-    pub(super) fn launch_or_undo(
-        &self,
-        app: &Arc<App>,
-        card: Option<&Card>,
-        config: &AgentConfig,
-        running: RunningRun,
-        prompt: Option<&str>,
-    ) -> Result<Run, String> {
-        if let Err(e) = self.launch(app, card, config, running.clone(), prompt) {
-            // Nothing reads this run: undo what was set up for it.
-            self.router.revoke_token(&running.token);
-            running.remove_worktree(app);
-            return Err(fail(app, running.id, e));
-        }
-        Ok(app
-            .store
-            .run(running.id)
-            .map_err(|e| e.to_string())?
-            .expect("the run exists"))
-    }
 }
 
 /// Whether `agent` reasons: it has a reasoning level other than `off`.
@@ -312,7 +289,7 @@ fn write_private(file: &Path, value: &Value) -> Result<(), String> {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
-    use crate::board::Runs;
+    use crate::board::{CardRuns, Variant};
     use crate::harness::mcp::McpServer;
     use crate::harness::pibolt::testing::{setup, wait_until_ended};
     use crate::repos::git;
@@ -323,7 +300,9 @@ mod tests {
         let card = app
             .create_issue(repo, "Write done.txt", "", "person")
             .unwrap();
-        let run = pi.start(&app, &card, "Coder", "code", None).unwrap();
+        let run = pi
+            .start(&app, &card, "Coder", ("code", None), Variant::default())
+            .unwrap();
         assert_eq!(run.status, "running");
         let run = wait_until_ended(&app, run.id);
         assert_eq!(run.status, "succeeded");
@@ -456,7 +435,9 @@ mod tests {
             let card = app
                 .create_issue(repo, "Write done.txt", "", "person")
                 .unwrap();
-            let run = pi.start(&app, &card, name, "code", None).unwrap();
+            let run = pi
+                .start(&app, &card, name, ("code", None), Variant::default())
+                .unwrap();
             let run = wait_until_ended(&app, run.id);
             let agent_dir = app
                 .data_dir

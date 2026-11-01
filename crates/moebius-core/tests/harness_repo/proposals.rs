@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use moebius_core::app::PERSON;
-use moebius_core::board::Runs;
+use moebius_core::board::{CardRuns, Variant};
 use moebius_core::config::Config;
 use moebius_core::repos::git;
 use moebius_core::server::Server;
@@ -178,7 +178,13 @@ async fn a_chat_in_the_harness_configuration_offers_a_change_whose_merge_lands_o
         .unwrap();
     let run = server
         .harness
-        .start(&server.app, &card, "Coder", "code", None)
+        .start(
+            &server.app,
+            &card,
+            "Coder",
+            ("code", None),
+            Variant::default(),
+        )
         .unwrap();
     wait_for(&server, run.id, |run| run.ended_at.is_some()).await;
     let argv = argv(dir.path(), run.id);

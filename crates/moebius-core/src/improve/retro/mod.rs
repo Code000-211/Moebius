@@ -238,7 +238,9 @@ fn launch(
     let own = own::brief(app, live, report).map_err(|e| e.to_string())?;
     let files = traces::files(app, report);
     let prompt = prompt(report, &own, &traces::brief(report, &files));
-    let run = runs.start_retro(app, repo.path(), &base, &prompt, &files)?;
+    let run = runs
+        .start_retro(app, repo.path(), &base, &prompt, &files)
+        .map_err(|e| e.to_string())?;
     app.store
         .set_retro_run(&report.date, run.id)
         .map_err(|e| e.to_string())?;

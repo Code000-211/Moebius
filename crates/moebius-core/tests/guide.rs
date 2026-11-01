@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use moebius_core::app::{App, PERSON};
-use moebius_core::board::{Engine, Limits, Runs, Step, Variant, Workflow};
+use moebius_core::board::{CardRuns, Engine, Limits, StartError, Step, Variant, Workflow};
 use moebius_core::config::Config;
 use moebius_core::decide::rules;
 use moebius_core::harness::repo::AgentSettings;
@@ -390,26 +390,15 @@ struct Harness {
     budget: Mutex<Option<i64>>,
 }
 
-impl Runs for Harness {
+impl CardRuns for Harness {
     fn start(
-        &self,
-        app: &Arc<App>,
-        card: &Card,
-        agent: &str,
-        purpose: &str,
-        note: Option<&str>,
-    ) -> Result<Run, String> {
-        self.start_with(app, card, agent, (purpose, note), Variant::default())
-    }
-
-    fn start_with(
         &self,
         app: &Arc<App>,
         card: &Card,
         agent: &str,
         (purpose, note): (&str, Option<&str>),
         variant: Variant,
-    ) -> Result<Run, String> {
+    ) -> Result<Run, StartError> {
         self.started.lock().unwrap().push(Started {
             agent: agent.into(),
             purpose: purpose.into(),
@@ -418,7 +407,7 @@ impl Runs for Harness {
         });
         app.store
             .add_run(Some(card.id), agent, "idle", purpose)
-            .map_err(|e| e.to_string())
+            .map_err(|e| StartError::Store(e.to_string()))
     }
 
     fn token_budget(&self, _agent: &str) -> Option<i64> {
@@ -427,6 +416,14 @@ impl Runs for Harness {
 
     fn has_agent(&self, name: &str) -> bool {
         self.agents.iter().any(|agent| agent == name)
+    }
+
+    fn runners(&self) -> Vec<moebius_core::harness::remote::RunnerInfo> {
+        Vec::new()
+    }
+
+    fn agents(&self) -> Vec<moebius_core::board::AgentInfo> {
+        Vec::new()
     }
 
     fn steer(&self, _: i64, _: &str) -> bool {

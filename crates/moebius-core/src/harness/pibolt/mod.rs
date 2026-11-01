@@ -24,20 +24,18 @@
 //! waiting chat given another reasoning level is told it with `set_thinking_level`, and one given another model gets a
 //! new Pi on the same session, since Pi knows only the models of its `models.json`.
 //!
-//! `agents` holds the built-in agents and makes a run's agent of its configuration; `process` writes Pi's agent
-//! directory (`models.json`, `mcp.json`), builds its command line and starts it; `runs` starts the runs of a card, of
-//! the Retro analyst and of the Autoresearcher; `reader` reads Pi's records and ends the run; `chat` keeps a chat's Pi
-//! going between messages, with its settings, and pauses an idle one; `tui` hands a waiting chat to Pi's interactive
-//! mode and records what its session file gains.
+//! `process` writes Pi's agent directory (`models.json`, `mcp.json`), builds its command line and starts it; `reader`
+//! reads Pi's records and ends the run; `chat` keeps a chat's Pi going between messages, with its settings, and pauses
+//! an idle one; `tui` hands a waiting chat to Pi's interactive mode and records what its session file gains. Making the
+//! run, its worktree and its token, its prompts, the built-in agents and ending the run are the same for every
+//! harness and live in `run`.
 
-mod agents;
 mod chat;
 mod process;
 mod reader;
 // Unix only: the fake `ssh` and the fake Pi are Python scripts started by their `#!` lines.
 #[cfg(all(test, unix))]
 mod remote_tests;
-mod runs;
 #[cfg(all(test, unix))]
 mod testing;
 mod tui;
@@ -52,22 +50,19 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 
 use crate::app::{App, ChatSettings};
-use crate::board::{AgentInfo, Runs, Variant};
+use crate::board::{AgentInfo, CardRuns, ChatRuns, ImproveRuns, StartError, Variant};
 use crate::config::{AgentConfig, AgentSet};
 use crate::harness::remote::Runners;
 use crate::router::Router;
 use crate::store::{Card, Repository, Run};
 use tui::Follower;
 
-pub use agents::{
+pub use crate::harness::run::{
     AUTORESEARCHER_AGENT, BuiltInAgent, GRILLING_AGENT, MOEBIUS_AGENT, RETRO_AGENT, built_in_agent,
 };
-pub(crate) use agents::{agent_list, has_agent, resolve as resolve_agent, tell_where_moebius_runs};
-pub(in crate::harness) use chat::chat_run;
-pub(crate) use reader::final_answer;
-pub(in crate::harness) use reader::{finish, keep};
-pub(in crate::harness) use runs::{
-    RunningRun, card_run, detached_run, fail, prompt_for, run_prompt,
+use crate::harness::run::{Launching, RunningRun, start_card, start_detached, start_trial};
+pub(crate) use crate::harness::run::{
+    agent_list, chat_agent, final_answer, has_agent, resolve_agent, tell_where_moebius_runs,
 };
 
 /// How long Pi may take to exit after it was asked to stop.
@@ -193,137 +188,54 @@ impl PiBolt {
     }
 }
 
-impl Runs for PiBolt {
+impl PiBolt {
+    /// The agent `name` as a run uses it (see [`resolve_agent`]).
+    fn agent(&self, app: &App, name: &str) -> Result<AgentConfig, StartError> {
+        let agent = resolve_agent(&self.agent_set(), &app.data_dir, name)
+            .map_err(StartError::UnknownAgent)?;
+        Ok(tell_where_moebius_runs(app, name, agent))
+    }
+
+    /// The agent of the run `run_id`, a chat, as the chat runs it: with the model and reasoning level it was given in
+    /// place of the agent's (see `ChatSettings`).
+    fn chat_config(&self, app: &App, run_id: i64, agent: &str) -> Result<AgentConfig, String> {
+        let settings = app.chat_settings(run_id).map_err(|e| e.to_string())?;
+        chat_agent(&self.agent_set(), app, agent, &settings)
+    }
+
+    /// Starts Pi for what `launching` holds.
+    fn launch_for(&self, app: &Arc<App>, launching: Launching) -> Result<(), String> {
+        let Launching {
+            config,
+            run,
+            card,
+            prompt,
+        } = launching;
+        self.launch(app, card, config, run, prompt)
+    }
+}
+
+impl CardRuns for PiBolt {
     fn start(
         &self,
         app: &Arc<App>,
         card: &Card,
         agent: &str,
-        purpose: &str,
-        note: Option<&str>,
-    ) -> Result<Run, String> {
-        self.start_on(app, card, agent, purpose, note, None)
-    }
-
-    fn start_on(
-        &self,
-        app: &Arc<App>,
-        card: &Card,
-        agent: &str,
-        purpose: &str,
-        note: Option<&str>,
-        runner: Option<&str>,
-    ) -> Result<Run, String> {
-        let variant = Variant {
-            model: None,
-            runner,
-        };
-        self.start_with(app, card, agent, (purpose, note), variant)
-    }
-
-    fn start_with(
-        &self,
-        app: &Arc<App>,
-        card: &Card,
-        agent: &str,
-        (purpose, note): (&str, Option<&str>),
+        purpose: (&str, Option<&str>),
         variant: Variant,
-    ) -> Result<Run, String> {
-        let mut config = self.agent(app, agent)?;
-        if variant.runner.is_some() {
-            config.runner = variant.runner.map(String::from);
-        }
-        if let Some(model) = variant.model {
-            config.model = model.into();
-        }
-        let prompt = run_prompt(app, card, purpose, note);
-        let code_branch = app.store.code_branch(card.id).map_err(|e| e.to_string())?;
-        let worktree = |repository: &Repository, clone: &Path, run_id: i64| {
-            let base = code_branch.unwrap_or_else(|| repository.base_ref());
-            app.repos
-                .add_worktree(&repository.name, clone, run_id, &base)
-        };
-        self.start_card_run(app, card, agent, &config, (purpose, &prompt), worktree)
-    }
-
-    fn start_trial(
-        &self,
-        app: &Arc<App>,
-        card: &Card,
-        agent: &str,
-        definition: AgentConfig,
-        proposal: i64,
-        base: &str,
-    ) -> Result<Run, String> {
-        let prompt = prompt_for(app, card, "code", None);
-        let worktree = |repository: &Repository, clone: &Path, _run_id: i64| {
-            let name = &repository.name;
-            app.repos
-                .add_trial_worktree(name, clone, proposal, card.id, base)
-        };
-        self.start_card_run(app, card, agent, &definition, ("trial", &prompt), worktree)
-    }
-
-    fn start_chat(
-        &self,
-        app: &Arc<App>,
-        agent: &str,
-        place: (Option<&Repository>, bool),
-        message: Option<&str>,
-        prompt: Option<&str>,
-        origin: &str,
-        settings: &ChatSettings,
-    ) -> Result<Run, String> {
-        self.open_chat(app, agent, place, (message, prompt), origin, settings)
-    }
-
-    fn change_chat(&self, app: &Arc<App>, run_id: i64) -> Result<(), String> {
-        self.apply_chat_settings(app, run_id)
-    }
-
-    fn tui(&self, app: &Arc<App>, run_id: i64) -> Result<std::process::Command, String> {
-        self.hand_to_tui(app, run_id)
-    }
-
-    fn close_tui(&self, app: &Arc<App>, run_id: i64) {
-        self.take_back_from_tui(app, run_id)
-    }
-
-    fn start_retro(
-        &self,
-        app: &Arc<App>,
-        clone: &Path,
-        base: &str,
-        prompt: &str,
-        files: &BTreeMap<String, String>,
-    ) -> Result<Run, String> {
-        let place = ("harness", clone, None);
-        self.start_detached(app, (RETRO_AGENT, "retro"), place, base, (prompt, files))
-    }
-
-    fn start_research(
-        &self,
-        app: &Arc<App>,
-        repository: &Repository,
-        base: &str,
-        prompt: &str,
-    ) -> Result<Run, String> {
-        let clone = PathBuf::from(&repository.path);
-        let place = (
-            repository.name.as_str(),
-            clone.as_path(),
-            Some(repository.id),
-        );
-        let start = (prompt, &BTreeMap::new());
-        self.start_detached(app, (AUTORESEARCHER_AGENT, "research"), place, base, start)
-    }
-
-    fn say(&self, run_id: i64, message: &str) -> bool {
-        self.tell_chat(run_id, message)
-    }
-
-    fn end(&self, run_id: i64) -> bool {
-        self.end_chat(run_id)
+    ) -> Result<Run, StartError> {
+        let config = self.agent(app, agent)?;
+        let launch = |launching: Launching| self.launch_for(app, launching);
+        let routing = (self.router.as_ref(), &self.runners);
+        start_card(
+            app,
+            routing,
+            card,
+            (agent, config),
+            purpose,
+            variant,
+            &launch,
+        )
     }
 
     fn runners(&self) -> Vec<crate::harness::remote::RunnerInfo> {
@@ -331,11 +243,11 @@ impl Runs for PiBolt {
     }
 
     fn has_agent(&self, name: &str) -> bool {
-        agents::has_agent(&self.agent_set(), name)
+        has_agent(&self.agent_set(), name)
     }
 
     fn agents(&self) -> Vec<AgentInfo> {
-        self.agent_list()
+        agent_list(&self.agent_set())
     }
 
     fn token_budget(&self, agent: &str) -> Option<i64> {
@@ -378,6 +290,94 @@ impl Runs for PiBolt {
             }
         });
         true
+    }
+}
+
+impl ImproveRuns for PiBolt {
+    fn start_trial(
+        &self,
+        app: &Arc<App>,
+        card: &Card,
+        agent: &str,
+        definition: AgentConfig,
+        proposal: i64,
+        base: &str,
+    ) -> Result<Run, StartError> {
+        let launch = |launching: Launching| self.launch_for(app, launching);
+        let routing = (self.router.as_ref(), &self.runners);
+        let place = (proposal, base);
+        start_trial(app, routing, card, (agent, &definition), place, &launch)
+    }
+
+    fn start_retro(
+        &self,
+        app: &Arc<App>,
+        clone: &Path,
+        base: &str,
+        prompt: &str,
+        files: &BTreeMap<String, String>,
+    ) -> Result<Run, StartError> {
+        let config = self.agent(app, RETRO_AGENT)?;
+        let launch = |launching: Launching| self.launch_for(app, launching);
+        let place = ("harness", clone, None);
+        let purpose = (RETRO_AGENT, "retro");
+        let start = (base, prompt, files);
+        start_detached(app, &self.router, purpose, place, start, &config, &launch)
+    }
+
+    fn start_research(
+        &self,
+        app: &Arc<App>,
+        repository: &Repository,
+        base: &str,
+        prompt: &str,
+    ) -> Result<Run, StartError> {
+        let config = self.agent(app, AUTORESEARCHER_AGENT)?;
+        let launch = |launching: Launching| self.launch_for(app, launching);
+        let clone = PathBuf::from(&repository.path);
+        let place = (
+            repository.name.as_str(),
+            clone.as_path(),
+            Some(repository.id),
+        );
+        let purpose = (AUTORESEARCHER_AGENT, "research");
+        let start = (base, prompt, &BTreeMap::new());
+        start_detached(app, &self.router, purpose, place, start, &config, &launch)
+    }
+}
+
+impl ChatRuns for PiBolt {
+    fn start_chat(
+        &self,
+        app: &Arc<App>,
+        agent: &str,
+        place: (Option<&Repository>, bool),
+        message: Option<&str>,
+        prompt: Option<&str>,
+        origin: &str,
+        settings: &ChatSettings,
+    ) -> Result<Run, StartError> {
+        self.open_chat(app, agent, place, (message, prompt), origin, settings)
+    }
+
+    fn change_chat(&self, app: &Arc<App>, run_id: i64) -> Result<(), String> {
+        self.apply_chat_settings(app, run_id)
+    }
+
+    fn tui(&self, app: &Arc<App>, run_id: i64) -> Result<std::process::Command, String> {
+        self.hand_to_tui(app, run_id)
+    }
+
+    fn close_tui(&self, app: &Arc<App>, run_id: i64) {
+        self.take_back_from_tui(app, run_id)
+    }
+
+    fn say(&self, run_id: i64, message: &str) -> bool {
+        self.tell_chat(run_id, message)
+    }
+
+    fn end(&self, run_id: i64) -> bool {
+        self.end_chat(run_id)
     }
 }
 

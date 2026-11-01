@@ -12,9 +12,9 @@ use std::time::Duration;
 use serde_json::{Value, json};
 
 use super::process::Place;
-use super::reader::{finish, keep};
 use super::{Closing, MOEBIUS_AGENT, Paused, PiBolt, lock, run_dir};
 use crate::app::App;
+use crate::harness::run::{finish, keep};
 
 impl PiBolt {
     /// Ends the chat's idle Pi and returns Pi's interactive mode on the chat's own agent directory, run token and
@@ -268,7 +268,7 @@ mod tests {
     use std::io::Write;
 
     use super::*;
-    use crate::harness::pibolt::final_answer;
+    use crate::harness::run::final_answer;
 
     #[test]
     fn only_complete_lines_added_to_the_newest_session_file_are_read() {

@@ -3,20 +3,16 @@
 //! A chat that waited [`IDLE`] loses its Pi, and the next message starts it again on the same session.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
 use serde_json::json;
 
 use super::process::reasons;
-use super::reader::finish;
-use super::runs::{RunningRun, fail, head, issue_token};
 use super::{Closing, IDLE, Live, Paused, PiBolt, lock, send, shut_down};
 use crate::app::{App, ChatSettings};
-use crate::blobs::redact;
-use crate::config::AgentConfig;
-use crate::router::{Grant, Router};
+use crate::board::StartError;
+use crate::harness::run::{RunningRun, chat_agent, chat_run, finish, launch_or_undo};
 use crate::store::{Repository, Run};
 
 impl PiBolt {
@@ -106,8 +102,9 @@ impl PiBolt {
         (message, prompt): (Option<&str>, Option<&str>),
         origin: &str,
         settings: &ChatSettings,
-    ) -> Result<Run, String> {
-        let config = self.chat_agent(app, agent, settings)?;
+    ) -> Result<Run, StartError> {
+        let config = chat_agent(&self.agent_set(), app, agent, settings)
+            .map_err(StartError::UnknownAgent)?;
         let running = chat_run(
             app,
             &self.router,
@@ -117,7 +114,9 @@ impl PiBolt {
             origin,
             settings,
         )?;
-        self.launch_or_undo(app, None, &config, running, prompt)
+        launch_or_undo(app, &self.router, running, |run| {
+            self.launch(app, None, &config, run, prompt)
+        })
     }
 
     /// Tells the chat's Pi the reasoning level it was given with `set_thinking_level`; a chat given another model, or a
@@ -203,84 +202,6 @@ impl PiBolt {
     }
 }
 
-/// Records a chat with `agent`, as `config` has it (on the harness it names), with `origin`, and makes its place: a
-/// worktree on `moebius/chat-<id>` of `repository`, of the harness configuration repository when `harness` is set, or
-/// an empty directory, and its token. The chat shows `message`, what the person said, and keeps the `settings` it was
-/// given in place of its agent's. The chat fails when that cannot be done.
-pub(in crate::harness) fn chat_run(
-    app: &App,
-    router: &Router,
-    (agent, config): (&str, &AgentConfig),
-    (repository, harness): (Option<&Repository>, bool),
-    message: Option<&str>,
-    origin: &str,
-    settings: &ChatSettings,
-) -> Result<RunningRun, String> {
-    let run = app
-        .store
-        .add_run(None, agent, config.harness.name(), "chat")
-        .map_err(|e| e.to_string())?;
-    app.store
-        .set_run_origin(run.id, origin)
-        .map_err(|e| fail(app, run.id, e.to_string()))?;
-    let (clone, worktree, start) = match repository {
-        None if harness => {
-            let (made, clone) = app
-                .start_harness_chat(run.id)
-                .map_err(|e| fail(app, run.id, e.to_string()))?;
-            let start = head(app, run.id, &made.path)?;
-            (Some(clone), made.path, start)
-        }
-        Some(repository) => {
-            let clone = PathBuf::from(&repository.path);
-            let made = app
-                .store
-                .set_run_repository(run.id, repository.id)
-                .map_err(|e| e.to_string())
-                .and_then(|()| {
-                    let base = repository.base_ref();
-                    let name = &repository.name;
-                    let worktree = app.repos.add_chat_worktree(name, &clone, run.id, &base);
-                    worktree.map_err(|e| e.to_string())
-                })
-                .map_err(|e| fail(app, run.id, e))?;
-            let start = head(app, run.id, &made.path)?;
-            (Some(clone), made.path, start)
-        }
-        None => {
-            let empty = app.data_dir.join("chats").join(run.id.to_string());
-            std::fs::create_dir_all(&empty).map_err(|e| fail(app, run.id, e.to_string()))?;
-            (None, empty, String::new())
-        }
-    };
-    let grant = Grant {
-        run_id: run.id,
-        card_id: None,
-        budget: config.token_budget,
-    };
-    let running = RunningRun {
-        id: run.id,
-        clone,
-        start,
-        worktree,
-        token: issue_token(router, config, grant),
-        purpose: "chat".into(),
-        commit_message: format!(
-            "Chat {}\n\nCommitted by Moebius when the chat ended.",
-            run.id
-        ),
-        remote: None,
-    };
-    if let Some(message) = message {
-        let said = json!({ "message": redact(message) });
-        let _ = app.record_run_event(run.id, "said", &said);
-    }
-    if settings != &ChatSettings::default() {
-        let _ = app.record_run_event(run.id, "settings_changed", &json!(settings));
-    }
-    Ok(running)
-}
-
 // Unix only: the fake Pi is a Python script started by its `#!` line.
 #[cfg(all(test, unix))]
 mod tests {
@@ -289,7 +210,7 @@ mod tests {
 
     use super::*;
     use crate::app::AppError;
-    use crate::board::Runs;
+    use crate::board::ChatRuns;
     use crate::decide::Actor;
     use crate::harness::pibolt::testing::{
         argv_and_stdin, flag, setup, wait_for, wait_for_run, wait_until_ended,

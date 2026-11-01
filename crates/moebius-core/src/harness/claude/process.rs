@@ -16,8 +16,8 @@ use crate::app::App;
 use crate::bus::AppEvent;
 use crate::config::AgentConfig;
 use crate::harness::mcp;
-use crate::harness::pibolt::{MOEBIUS_AGENT, RunningRun, keep};
 use crate::harness::remote::Local;
+use crate::harness::run::{MOEBIUS_AGENT, RunningRun, keep};
 use crate::store::Card;
 
 /// A new session id for Claude Code's `--session-id`: a random UUID.

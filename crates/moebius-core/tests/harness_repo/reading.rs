@@ -2,7 +2,7 @@
 //! only there, the skills and MCP servers listed without secrets, a built-in agent with its own files, and a commit
 //! someone else pushes arriving at the next refresh.
 
-use moebius_core::board::Runs;
+use moebius_core::board::{CardRuns, Variant};
 use moebius_core::decide::rules;
 use moebius_core::repos::git;
 use moebius_core::router::Protocol;
@@ -82,10 +82,16 @@ fn an_agent_defined_only_in_the_repository_runs_with_its_model_and_instructions(
     // An agent that is left out is refused with its error.
     let error = server
         .harness
-        .start(&server.app, &card, "Typo", "code", None)
+        .start(
+            &server.app,
+            &card,
+            "Typo",
+            ("code", None),
+            Variant::default(),
+        )
         .unwrap_err();
     assert!(
-        error.contains("cannot be used") && error.contains("modle"),
+        error.to_string().contains("cannot be used") && error.to_string().contains("modle"),
         "{error}"
     );
 }

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moebius_core::app::{App, PERSON};
-use moebius_core::board::{Engine, Limits, Runs, Workflow};
+use moebius_core::board::{CardRuns, Engine, Limits, StartError, Variant, Workflow};
 use moebius_core::decide::rules;
 use moebius_core::repos::git;
 use moebius_core::store::{Card, Run, Store};
@@ -21,22 +21,34 @@ fn example(path: &str) -> String {
 /// Starts runs that never end.
 struct IdleRuns;
 
-impl Runs for IdleRuns {
+impl CardRuns for IdleRuns {
     fn start(
         &self,
         app: &Arc<App>,
         card: &Card,
         agent: &str,
-        purpose: &str,
-        _: Option<&str>,
-    ) -> Result<Run, String> {
+        purpose: (&str, Option<&str>),
+        _: Variant,
+    ) -> Result<Run, StartError> {
         app.store
-            .add_run(Some(card.id), agent, "idle", purpose)
-            .map_err(|e| e.to_string())
+            .add_run(Some(card.id), agent, "idle", purpose.0)
+            .map_err(|e| StartError::Store(e.to_string()))
     }
 
     fn has_agent(&self, _: &str) -> bool {
         false
+    }
+
+    fn runners(&self) -> Vec<moebius_core::harness::remote::RunnerInfo> {
+        Vec::new()
+    }
+
+    fn agents(&self) -> Vec<moebius_core::board::AgentInfo> {
+        Vec::new()
+    }
+
+    fn token_budget(&self, _: &str) -> Option<i64> {
+        None
     }
 
     fn steer(&self, _: i64, _: &str) -> bool {

@@ -165,7 +165,7 @@ fn a_code_run_on_claude_code_is_given_the_agent_and_the_router_and_commits_its_w
         .unwrap();
     let run = s
         .claude
-        .start(&s.app, &card, "Coder", "code", None)
+        .start(&s.app, &card, "Coder", ("code", None), Variant::default())
         .unwrap();
     assert_eq!(run.harness, "claude-code");
     let argv: Vec<String> = serde_json::from_str(&written(&s.app, run.id, "argv.json")).unwrap();
@@ -229,7 +229,7 @@ fn a_run_ends_as_claude_code_says() {
         .unwrap();
     let run = s
         .claude
-        .start(&s.app, &card, "Coder", "code", None)
+        .start(&s.app, &card, "Coder", ("code", None), Variant::default())
         .unwrap();
     let run = wait_until_ended(&s.app, run.id);
     assert_eq!(run.status, "failed");
@@ -239,7 +239,7 @@ fn a_run_ends_as_claude_code_says() {
     // A review changes nothing, and that is no failure.
     let review = s
         .claude
-        .start(&s.app, &card, "Coder", "review", None)
+        .start(&s.app, &card, "Coder", ("review", None), Variant::default())
         .unwrap();
     let review = wait_until_ended(&s.app, review.id);
     assert_eq!(review.status, "succeeded");
@@ -255,7 +255,7 @@ fn a_run_ends_as_claude_code_says() {
         .unwrap();
     let run = s
         .claude
-        .start(&s.app, &card, "Coder", "code", None)
+        .start(&s.app, &card, "Coder", ("code", None), Variant::default())
         .unwrap();
     let run = wait_until_ended(&s.app, run.id);
     assert_eq!(run.status, "failed");
@@ -277,7 +277,7 @@ fn a_run_is_steered_with_a_message_and_stopped_by_killing_it() {
         .unwrap();
     let run = s
         .claude
-        .start(&s.app, &card, "Coder", "code", None)
+        .start(&s.app, &card, "Coder", ("code", None), Variant::default())
         .unwrap();
     written(&s.app, run.id, "prompt.txt");
     // The steer is the next user message, which the fake does not answer either.
@@ -319,9 +319,12 @@ fn an_agent_that_does_not_speak_anthropic_cannot_run_on_claude_code() {
         .unwrap();
     let error = s
         .claude
-        .start(&s.app, &card, "Coder", "code", None)
+        .start(&s.app, &card, "Coder", ("code", None), Variant::default())
         .unwrap_err();
-    assert!(error.contains("anthropic"), "{error}");
+    assert!(
+        matches!(error, StartError::UnknownAgent(ref why) if why.contains("anthropic")),
+        "{error}"
+    );
     assert!(s.app.store.runs_for_card(card.id).unwrap().is_empty());
 }
 
@@ -442,7 +445,7 @@ async fn the_router_refuses_a_tool_call_of_claude_code_before_it_sees_it() {
             .unwrap();
         let run = s
             .claude
-            .start(&s.app, &card, "Coder", "review", None)
+            .start(&s.app, &card, "Coder", ("review", None), Variant::default())
             .unwrap();
         let run = wait_until_ended(&s.app, run.id);
         (s, run)

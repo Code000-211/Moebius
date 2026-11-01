@@ -5,7 +5,6 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use super::PiBolt;
 use crate::app::{App, ChatSettings};
 use crate::board::AgentInfo;
 use crate::config::{AgentConfig, AgentSet, HarnessKind};
@@ -157,45 +156,20 @@ fn built_in_instructions(name: &str) -> Option<&'static str> {
     }
 }
 
-impl PiBolt {
-    /// The agent `name` as a run uses it (see [`resolve`]).
-    pub(super) fn agent(&self, app: &App, name: &str) -> Result<AgentConfig, String> {
-        let agent = resolve(&self.agent_set(), &app.data_dir, name)?;
-        Ok(tell_where_moebius_runs(app, name, agent))
-    }
-
-    /// The agent of the run `run_id`, a chat, as the chat runs it: with the model and reasoning level it was given in
-    /// place of the agent's (see `ChatSettings`).
-    pub(super) fn chat_config(
-        &self,
-        app: &App,
-        run_id: i64,
-        agent: &str,
-    ) -> Result<AgentConfig, String> {
-        let settings = app.chat_settings(run_id).map_err(|e| e.to_string())?;
-        self.chat_agent(app, agent, &settings)
-    }
-
-    /// The agent `name` as a chat with `settings` runs it. A built-in agent without a model of its own or of the
-    /// Coder runs on the model the chat was given.
-    pub(super) fn chat_agent(
-        &self,
-        app: &App,
-        name: &str,
-        settings: &ChatSettings,
-    ) -> Result<AgentConfig, String> {
-        let fallback = settings
-            .model
-            .as_ref()
-            .map(|model| model_only(model, settings.protocol));
-        let agent = resolve_with(&self.agent_set(), &app.data_dir, name, fallback)?;
-        Ok(settings.apply(&tell_where_moebius_runs(app, name, agent)))
-    }
-
-    /// The agents Pi-Bolt can run (see [`agent_list`]).
-    pub(super) fn agent_list(&self) -> Vec<AgentInfo> {
-        agent_list(&self.agent_set())
-    }
+/// The agent `name` as a chat with `settings` runs it. A built-in agent without a model of its own or of the Coder
+/// runs on the model the chat was given.
+pub(crate) fn chat_agent(
+    set: &AgentSet,
+    app: &App,
+    name: &str,
+    settings: &ChatSettings,
+) -> Result<AgentConfig, String> {
+    let fallback = settings
+        .model
+        .as_ref()
+        .map(|model| model_only(model, settings.protocol));
+    let agent = resolve_with(set, &app.data_dir, name, fallback)?;
+    Ok(settings.apply(&tell_where_moebius_runs(app, name, agent)))
 }
 
 /// Adds to the instructions of the Moebius agent `agent` where Moebius runs now (see `App::where_moebius_runs`), so a

@@ -7,8 +7,9 @@ use std::time::Duration;
 
 use moebius_plugin_api::Host;
 
-use super::{Engine, Limits, Runs, Workflow};
+use super::{AgentInfo, CardRuns, Engine, Limits, StartError, Variant, Workflow};
 use crate::app::App;
+use crate::harness::remote::RunnerInfo;
 use crate::repos::git;
 use crate::store::{Card, Run, Store};
 
@@ -24,7 +25,7 @@ pub(super) struct FakeHarness {
     pub(super) files: Vec<(&'static str, &'static str)>,
     /// Other agents that exist besides the Coder and the Reviewer.
     pub(super) agents: Vec<&'static str>,
-    /// The model each run started with `start_with` was given.
+    /// The model each run was started with.
     pub(super) models: Mutex<Vec<Option<String>>>,
 }
 
@@ -38,30 +39,37 @@ impl FakeHarness {
     }
 }
 
-impl Runs for FakeHarness {
+impl CardRuns for FakeHarness {
     fn start(
         &self,
         app: &Arc<App>,
         card: &Card,
         agent: &str,
-        purpose: &str,
-        note: Option<&str>,
-    ) -> Result<Run, String> {
+        (purpose, note): (&str, Option<&str>),
+        variant: Variant,
+    ) -> Result<Run, StartError> {
         self.notes.lock().unwrap().push(note.map(String::from));
+        self.models
+            .lock()
+            .unwrap()
+            .push(variant.model.map(String::from));
         let store = &app.store;
         let run = store
             .add_run(Some(card.id), agent, "fake", purpose)
-            .map_err(|e| e.to_string())?;
-        let repo = store.repository(card.repository_id).unwrap().unwrap();
+            .map_err(|e| StartError::Store(e.to_string()))?;
+        let repo = store
+            .repository(card.repository_id)
+            .map_err(|e| StartError::Store(e.to_string()))?
+            .ok_or(StartError::RepositoryGone)?;
         let clone = Path::new(&repo.path);
         let base = store
             .code_branch(card.id)
-            .unwrap()
+            .map_err(|e| StartError::Store(e.to_string()))?
             .unwrap_or_else(|| repo.base_ref());
         let wt = app
             .repos
             .add_worktree(&repo.name, clone, run.id, &base)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| StartError::WorktreeFailed(e.to_string()))?;
         if matches!(purpose, "code" | "attempt") {
             std::fs::write(wt.path.join(format!("run-{}.txt", run.id)), &card.title).unwrap();
             for (path, text) in &self.files {
@@ -82,23 +90,20 @@ impl Runs for FakeHarness {
         Ok(store.run(run.id).unwrap().unwrap())
     }
 
-    fn start_with(
-        &self,
-        app: &Arc<App>,
-        card: &Card,
-        agent: &str,
-        (purpose, note): (&str, Option<&str>),
-        variant: super::Variant,
-    ) -> Result<Run, String> {
-        self.models
-            .lock()
-            .unwrap()
-            .push(variant.model.map(String::from));
-        self.start(app, card, agent, purpose, note)
-    }
-
     fn has_agent(&self, name: &str) -> bool {
         name == "Coder" || (self.reviewer && name == "Reviewer") || self.agents.contains(&name)
+    }
+
+    fn runners(&self) -> Vec<RunnerInfo> {
+        Vec::new()
+    }
+
+    fn agents(&self) -> Vec<AgentInfo> {
+        Vec::new()
+    }
+
+    fn token_budget(&self, _: &str) -> Option<i64> {
+        None
     }
 
     fn steer(&self, _: i64, _: &str) -> bool {

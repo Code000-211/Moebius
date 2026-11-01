@@ -7,7 +7,7 @@ use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 
 use super::sandbox::run_sandboxed;
-use super::{Column, Limits, Runs, Workflow, built_in_script, repository_script};
+use super::{CardRuns, Column, Limits, Workflow, built_in_script, repository_script};
 use crate::app::{App, AppError, columns};
 use crate::store::Card;
 
@@ -34,7 +34,7 @@ pub enum BoardError {
 /// Runs the scripts of the workflow's columns, with the harness they start runs on and the limits they see.
 pub struct Engine {
     pub(super) app: Arc<App>,
-    pub(super) runs: Arc<dyn Runs>,
+    pub(super) runs: Arc<dyn CardRuns>,
     pub(super) workflow: Workflow,
     /// Replaced when the limits are edited while the server runs (see `set_limits`).
     limits: RwLock<Limits>,
@@ -51,7 +51,7 @@ pub(super) struct Effects {
 }
 
 impl Engine {
-    pub fn new(app: Arc<App>, runs: Arc<dyn Runs>, workflow: Workflow, limits: Limits) -> Self {
+    pub fn new(app: Arc<App>, runs: Arc<dyn CardRuns>, workflow: Workflow, limits: Limits) -> Self {
         Self {
             app,
             runs,

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use moebius_core::app::PERSON;
-use moebius_core::board::Runs;
+use moebius_core::board::{CardRuns, Variant};
 use moebius_core::config::Config;
 use moebius_core::repos::git;
 use moebius_core::server::Server;
@@ -190,7 +190,7 @@ pub fn argv(dir: &Path, id: i64) -> Vec<String> {
 pub fn argv_of_a_run(server: &Server, dir: &Path, card: &Card, agent: &str) -> Vec<String> {
     let run = server
         .harness
-        .start(&server.app, card, agent, "code", None)
+        .start(&server.app, card, agent, ("code", None), Variant::default())
         .unwrap();
     let deadline = Instant::now() + Duration::from_secs(20);
     while server
