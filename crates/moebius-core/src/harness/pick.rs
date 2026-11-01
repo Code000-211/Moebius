@@ -1,7 +1,7 @@
 //! The harness the server drives (`Harnesses`): Pi-Bolt and Claude Code side by side, sharing the agents, with each run
 //! started on the harness its agent's `harness` names. A built-in agent without its own configuration runs on the
-//! Coder's harness. What is done to a running run (steering, stopping, a chat's messages) goes to the harness that runs
-//! it.
+//! Coder's harness. `Harnesses` only looks the harness up, by agent when a run starts and by the stored run when
+//! something is done to a running one; the lifecycle itself is shared (see `run`).
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -9,7 +9,7 @@ use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
 use crate::app::{App, ChatSettings};
-use crate::board::{AgentInfo, Runs, Variant};
+use crate::board::{AgentInfo, CardRuns, ChatRuns, ImproveRuns, Runs, StartError, Variant};
 use crate::config::{AgentConfig, AgentSet, HarnessKind};
 use crate::harness::claude::ClaudeCode;
 use crate::harness::pibolt::{
@@ -89,50 +89,25 @@ impl Harnesses {
     }
 }
 
-impl Runs for Harnesses {
+impl CardRuns for Harnesses {
     fn start(
         &self,
         app: &Arc<App>,
         card: &Card,
         agent: &str,
-        purpose: &str,
-        note: Option<&str>,
-    ) -> Result<Run, String> {
-        self.of_agent(app, agent)
-            .start(app, card, agent, purpose, note)
-    }
-
-    fn start_on(
-        &self,
-        app: &Arc<App>,
-        card: &Card,
-        agent: &str,
-        purpose: &str,
-        note: Option<&str>,
-        runner: Option<&str>,
-    ) -> Result<Run, String> {
-        self.of_agent(app, agent)
-            .start_on(app, card, agent, purpose, note, runner)
-    }
-
-    fn start_with(
-        &self,
-        app: &Arc<App>,
-        card: &Card,
-        agent: &str,
-        (purpose, note): (&str, Option<&str>),
+        purpose: (&str, Option<&str>),
         variant: Variant,
-    ) -> Result<Run, String> {
+    ) -> Result<Run, StartError> {
         self.of_agent(app, agent)
-            .start_with(app, card, agent, (purpose, note), variant)
-    }
-
-    fn runners(&self) -> Vec<crate::harness::remote::RunnerInfo> {
-        self.pi_bolt.runners.list()
+            .start(app, card, agent, purpose, variant)
     }
 
     fn has_agent(&self, name: &str) -> bool {
         has_agent(&self.agent_set(), name)
+    }
+
+    fn runners(&self) -> Vec<crate::harness::remote::RunnerInfo> {
+        self.pi_bolt.runners.list()
     }
 
     fn agents(&self) -> Vec<AgentInfo> {
@@ -143,6 +118,7 @@ impl Runs for Harnesses {
         self.agent_set().agents.get(agent)?.token_budget
     }
 
+    // A run belongs to exactly one harness; the other does not know the run and says no.
     fn steer(&self, run_id: i64, message: &str) -> bool {
         self.claude_code.steer(run_id, message) || self.pi_bolt.steer(run_id, message)
     }
@@ -150,7 +126,9 @@ impl Runs for Harnesses {
     fn stop(&self, run_id: i64) -> bool {
         self.claude_code.stop(run_id) || self.pi_bolt.stop(run_id)
     }
+}
 
+impl ChatRuns for Harnesses {
     fn tui(&self, app: &Arc<App>, run_id: i64) -> Result<std::process::Command, String> {
         self.of_run(app, run_id).tui(app, run_id)
     }
@@ -168,7 +146,7 @@ impl Runs for Harnesses {
         prompt: Option<&str>,
         origin: &str,
         settings: &ChatSettings,
-    ) -> Result<Run, String> {
+    ) -> Result<Run, StartError> {
         self.of_agent(app, agent)
             .start_chat(app, agent, place, message, prompt, origin, settings)
     }
@@ -177,6 +155,17 @@ impl Runs for Harnesses {
         self.of_run(app, run_id).change_chat(app, run_id)
     }
 
+    // A run belongs to exactly one harness; the other does not know the chat and says no.
+    fn say(&self, run_id: i64, message: &str) -> bool {
+        self.claude_code.say(run_id, message) || self.pi_bolt.say(run_id, message)
+    }
+
+    fn end(&self, run_id: i64) -> bool {
+        self.claude_code.end(run_id) || self.pi_bolt.end(run_id)
+    }
+}
+
+impl ImproveRuns for Harnesses {
     fn start_retro(
         &self,
         app: &Arc<App>,
@@ -184,7 +173,7 @@ impl Runs for Harnesses {
         base: &str,
         prompt: &str,
         files: &BTreeMap<String, String>,
-    ) -> Result<Run, String> {
+    ) -> Result<Run, StartError> {
         self.of_agent(app, RETRO_AGENT)
             .start_retro(app, clone, base, prompt, files)
     }
@@ -195,7 +184,7 @@ impl Runs for Harnesses {
         repository: &Repository,
         base: &str,
         prompt: &str,
-    ) -> Result<Run, String> {
+    ) -> Result<Run, StartError> {
         self.of_agent(app, AUTORESEARCHER_AGENT)
             .start_research(app, repository, base, prompt)
     }
@@ -208,17 +197,9 @@ impl Runs for Harnesses {
         definition: AgentConfig,
         proposal: i64,
         base: &str,
-    ) -> Result<Run, String> {
+    ) -> Result<Run, StartError> {
         self.of(definition.harness)
             .start_trial(app, card, agent, definition, proposal, base)
-    }
-
-    fn say(&self, run_id: i64, message: &str) -> bool {
-        self.claude_code.say(run_id, message) || self.pi_bolt.say(run_id, message)
-    }
-
-    fn end(&self, run_id: i64) -> bool {
-        self.claude_code.end(run_id) || self.pi_bolt.end(run_id)
     }
 }
 
@@ -300,14 +281,16 @@ mod tests {
             .unwrap();
 
         let run = harnesses
-            .start(&app, &card, "Claude", "code", None)
+            .start(&app, &card, "Claude", ("code", None), Variant::default())
             .unwrap();
         assert_eq!(run.harness, "claude-code");
         assert_eq!(wait_until_ended(&app, run.id).status, "succeeded");
         let card = app
             .create_issue(repo.id, "Write it again", "", "person")
             .unwrap();
-        let run = harnesses.start(&app, &card, "Coder", "code", None).unwrap();
+        let run = harnesses
+            .start(&app, &card, "Coder", ("code", None), Variant::default())
+            .unwrap();
         assert_eq!(run.harness, "pi-bolt");
         assert_eq!(wait_until_ended(&app, run.id).status, "succeeded");
 
@@ -316,7 +299,7 @@ mod tests {
             .create_issue(repo.id, "Please [hang]", "", "person")
             .unwrap();
         let run = harnesses
-            .start(&app, &card, "Claude", "code", None)
+            .start(&app, &card, "Claude", ("code", None), Variant::default())
             .unwrap();
         assert!(harnesses.stop(run.id));
         assert_eq!(wait_until_ended(&app, run.id).status, "stopped");

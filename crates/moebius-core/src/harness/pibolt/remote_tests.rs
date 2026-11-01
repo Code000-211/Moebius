@@ -10,7 +10,7 @@ use serde_json::Value;
 use super::PiBolt;
 use super::testing::{setup, wait_for, wait_for_run, wait_until_ended};
 use crate::app::App;
-use crate::board::Runs;
+use crate::board::{CardRuns, Variant};
 use crate::config::RunnerConfig;
 use crate::harness::remote::Runners;
 use crate::repos::git;
@@ -62,7 +62,9 @@ fn a_run_on_a_runner_works_there_and_its_commits_come_back() {
     let card = app
         .create_issue(repo, "Write done.txt", "", "person")
         .unwrap();
-    let run = pi.start(&app, &card, "Coder", "code", None).unwrap();
+    let run = pi
+        .start(&app, &card, "Coder", ("code", None), Variant::default())
+        .unwrap();
     assert_eq!(run.runner.as_deref(), Some("box"));
     let run = wait_until_ended(&app, run.id);
     assert_eq!(
@@ -120,7 +122,9 @@ fn a_run_on_a_runner_reaches_the_router_through_the_tunnel() {
     let card = app
         .create_issue(repo, "Please [hang]", "", "person")
         .unwrap();
-    let run = pi.start(&app, &card, "Coder", "code", None).unwrap();
+    let run = pi
+        .start(&app, &card, "Coder", ("code", None), Variant::default())
+        .unwrap();
 
     // The runner holds the run's files, with the tunnel's address where the router's was.
     let files = remote.join(format!("runs/{}/files", run.id)).join(
@@ -182,17 +186,33 @@ fn a_full_or_unknown_runner_starts_no_run() {
     let card = app
         .create_issue(repo, "Please [hang]", "", "person")
         .unwrap();
-    let first = pi.start(&app, &card, "Coder", "code", None).unwrap();
+    let first = pi
+        .start(&app, &card, "Coder", ("code", None), Variant::default())
+        .unwrap();
     wait_for_run(&app, first.id, "the first run is going", |run| {
         run.status == "running"
     });
 
-    let busy = pi.start(&app, &card, "Coder", "code", None).unwrap_err();
-    assert!(busy.contains("busy"), "{busy}");
-    let unknown = pi
-        .start_on(&app, &card, "Coder", "code", None, Some("elsewhere"))
+    let busy = pi
+        .start(&app, &card, "Coder", ("code", None), Variant::default())
         .unwrap_err();
-    assert!(unknown.contains("no runner named elsewhere"), "{unknown}");
+    assert!(busy.to_string().contains("busy"), "{busy}");
+    let unknown = pi
+        .start(
+            &app,
+            &card,
+            "Coder",
+            ("code", None),
+            Variant {
+                model: None,
+                runner: Some("elsewhere"),
+            },
+        )
+        .unwrap_err();
+    assert!(
+        unknown.to_string().contains("no runner named elsewhere"),
+        "{unknown}"
+    );
     // Neither made a run.
     assert_eq!(app.store.runs_for_card(card.id).unwrap().len(), 1);
 
@@ -210,11 +230,22 @@ fn a_full_or_unknown_runner_starts_no_run() {
     let card = app
         .create_issue(repo, "Write done.txt", "", "person")
         .unwrap();
-    let local = pi.start(&app, &card, "Coder", "code", None).unwrap();
+    let local = pi
+        .start(&app, &card, "Coder", ("code", None), Variant::default())
+        .unwrap();
     let local = wait_until_ended(&app, local.id);
     assert_eq!(local.runner, None);
     let elsewhere = pi
-        .start_on(&app, &card, "Coder", "code", None, Some("box"))
+        .start(
+            &app,
+            &card,
+            "Coder",
+            ("code", None),
+            Variant {
+                model: None,
+                runner: Some("box"),
+            },
+        )
         .unwrap();
     let elsewhere = wait_until_ended(&app, elsewhere.id);
     assert_eq!(elsewhere.runner.as_deref(), Some("box"));
@@ -228,8 +259,13 @@ fn a_runner_that_cannot_be_reached_fails_the_run_and_leaves_nothing() {
     config.ssh = PathBuf::from("/nonexistent/ssh");
     pi.runners = Arc::new(Runners::new(vec![config]));
     let card = app.create_issue(repo, "Anything", "", "person").unwrap();
-    let error = pi.start(&app, &card, "Coder", "code", None).unwrap_err();
-    assert!(error.contains("cannot start /nonexistent/ssh"), "{error}");
+    let error = pi
+        .start(&app, &card, "Coder", ("code", None), Variant::default())
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("cannot start /nonexistent/ssh"),
+        "{error}"
+    );
     let run = app.store.runs_for_card(card.id).unwrap().pop().unwrap();
     assert_eq!(run.status, "failed");
     assert!(!PathBuf::from(run.worktree.unwrap()).exists());

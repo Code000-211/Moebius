@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use moebius_core::board::Runs;
+use moebius_core::board::CardRuns;
 use moebius_core::repos::git;
 use serde_json::{Value, json};
 

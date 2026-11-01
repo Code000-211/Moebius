@@ -272,7 +272,7 @@ impl App {
             origin,
             &settings,
         )
-        .map_err(AppError::Invalid)
+        .map_err(|e| AppError::Invalid(e.to_string()))
     }
 
     /// What the chat `run_id` runs with in place of its agent's: what its latest `settings_changed` event holds.

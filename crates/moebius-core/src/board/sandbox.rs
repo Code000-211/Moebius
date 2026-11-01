@@ -73,27 +73,39 @@ mod tests {
     use crate::app::{App, PERSON};
     use crate::board::engine::Effects;
     use crate::board::testing::{FakeHarness, engine_with, setup, setup_with};
-    use crate::board::{Engine, Limits, Runs, Step, Workflow};
+    use crate::board::{CardRuns, Engine, Limits, StartError, Step, Variant, Workflow};
     use crate::store::{Card, Run};
 
     /// A harness that takes longer to start a run than a script may run.
     struct SlowHarness;
 
-    impl Runs for SlowHarness {
+    impl CardRuns for SlowHarness {
         fn start(
             &self,
             app: &Arc<App>,
             card: &Card,
             agent: &str,
-            purpose: &str,
-            note: Option<&str>,
-        ) -> Result<Run, String> {
+            purpose: (&str, Option<&str>),
+            variant: Variant,
+        ) -> Result<Run, StartError> {
             std::thread::sleep(Duration::from_millis(600));
-            FakeHarness::default().start(app, card, agent, purpose, note)
+            FakeHarness::default().start(app, card, agent, purpose, variant)
         }
 
         fn has_agent(&self, name: &str) -> bool {
             FakeHarness::default().has_agent(name)
+        }
+
+        fn runners(&self) -> Vec<crate::harness::remote::RunnerInfo> {
+            Vec::new()
+        }
+
+        fn agents(&self) -> Vec<crate::board::AgentInfo> {
+            Vec::new()
+        }
+
+        fn token_budget(&self, _: &str) -> Option<i64> {
+            None
         }
 
         fn steer(&self, _: i64, _: &str) -> bool {

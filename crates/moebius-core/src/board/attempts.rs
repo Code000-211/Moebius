@@ -69,13 +69,15 @@ impl Engine {
                                 .then(|| models[index % models.len()].as_str()),
                             runner: runner.as_deref(),
                         };
-                        let run = runs.start_with(
-                            &app,
-                            &card_copy,
-                            &agent,
-                            ("attempt", note.as_deref()),
-                            variant,
-                        );
+                        let run = runs
+                            .start(
+                                &app,
+                                &card_copy,
+                                &agent,
+                                ("attempt", note.as_deref()),
+                                variant,
+                            )
+                            .map_err(|e| e.to_string());
                         let recorded = run.and_then(|run| {
                             let group = started.first().copied().unwrap_or(run.id);
                             app.store

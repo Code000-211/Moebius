@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 
 use super::Server;
 use crate::app::App;
-use crate::board::{Engine, Runs, Step};
+use crate::board::{CardRuns, Engine, StartError, Step, Variant};
 use crate::config::Config;
 use crate::repos::git;
 use crate::store::{Card, Change, Repository, Run};
@@ -174,22 +174,34 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
 /// Starts a run that never does anything.
 pub(super) struct IdleRuns;
 
-impl Runs for IdleRuns {
+impl CardRuns for IdleRuns {
     fn start(
         &self,
         app: &Arc<App>,
         card: &Card,
         agent: &str,
-        purpose: &str,
-        _: Option<&str>,
-    ) -> Result<Run, String> {
+        purpose: (&str, Option<&str>),
+        _: Variant,
+    ) -> Result<Run, StartError> {
         app.store
-            .add_run(Some(card.id), agent, "idle", purpose)
-            .map_err(|e| e.to_string())
+            .add_run(Some(card.id), agent, "idle", purpose.0)
+            .map_err(|e| StartError::Store(e.to_string()))
     }
 
     fn has_agent(&self, _: &str) -> bool {
         false
+    }
+
+    fn runners(&self) -> Vec<crate::harness::remote::RunnerInfo> {
+        Vec::new()
+    }
+
+    fn agents(&self) -> Vec<crate::board::AgentInfo> {
+        Vec::new()
+    }
+
+    fn token_budget(&self, _: &str) -> Option<i64> {
+        None
     }
 
     fn steer(&self, _: i64, _: &str) -> bool {

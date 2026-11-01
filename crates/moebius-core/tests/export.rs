@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use moebius_core::app::PERSON;
-use moebius_core::board::Runs;
+use moebius_core::board::{CardRuns, Variant};
 use moebius_core::config::Config;
 use moebius_core::decide::Question;
 use moebius_core::improve::export::held_out;
@@ -86,7 +86,13 @@ fn waiting_run(server: &Server, dir: &Path) -> Run {
         .unwrap();
     let run = server
         .harness
-        .start(&server.app, &card, "Coder", "code", None)
+        .start(
+            &server.app,
+            &card,
+            "Coder",
+            ("code", None),
+            Variant::default(),
+        )
         .unwrap();
     let deadline = Instant::now() + Duration::from_secs(60);
     loop {

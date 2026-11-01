@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use moebius_core::app::PERSON;
-use moebius_core::board::Runs;
+use moebius_core::board::{CardRuns, Runs, Variant};
 use moebius_core::bus::AppEvent;
 use moebius_core::config::{Config, TimeOfDay};
 use moebius_core::repos::git;
@@ -158,7 +158,13 @@ fn a_card_that_failed(server: &Server, dir: &Path) -> i64 {
     let before = server.app.store.today().unwrap();
     let run = server
         .harness
-        .start(&server.app, &card, "Coder", "code", None)
+        .start(
+            &server.app,
+            &card,
+            "Coder",
+            ("code", None),
+            Variant::default(),
+        )
         .unwrap();
     wait_until_ended(server, run.id);
     assert_eq!(
@@ -672,7 +678,7 @@ fn a_merged_card(server: &Server, repo: i64, title: &str, reproduce: bool) -> i6
     let card = app.create_issue(repo, title, "", PERSON).unwrap();
     let run = server
         .harness
-        .start(app, &card, "Coder", "code", None)
+        .start(app, &card, "Coder", ("code", None), Variant::default())
         .unwrap();
     wait_until_ended(server, run.id);
     let run = app.store.run(run.id).unwrap().unwrap();

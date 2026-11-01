@@ -9,24 +9,10 @@ use std::time::Instant;
 
 use serde_json::{Value, json};
 
-use super::runs::RunningRun;
-use super::{Closing, GRILLING_AGENT, Live, lock, shut_down};
+use super::{Closing, Live, lock, shut_down};
 use crate::app::App;
-use crate::bus::AppEvent;
+use crate::harness::run::{RunningRun, finish, keep};
 use crate::router::Router;
-
-/// The text of the last assistant message in an `agent_end` record, if it has any.
-pub(crate) fn final_answer(agent_end: &Value) -> Option<String> {
-    let messages = agent_end["messages"].as_array()?;
-    let last = messages.iter().rev().find(|m| m["role"] == "assistant")?;
-    let text: String = last["content"]
-        .as_array()?
-        .iter()
-        .filter(|block| block["type"] == "text")
-        .filter_map(|block| block["text"].as_str())
-        .collect();
-    Some(text)
-}
 
 /// Reads one run's records and ends the run.
 pub(super) struct Reader {
@@ -102,93 +88,4 @@ impl Reader {
         shut_down(&self.live);
         finish(&self.app, self.run, &self.router, &self.lives, ending);
     }
-}
-
-/// Stores what a record of Pi says about the run (the final answer as its summary; for a chat, whether the agent works
-/// or waits for the person), then the record as a run event. The run is updated before the event is published, so
-/// that a client acting on the event reads the run as it is now.
-pub(in crate::harness) fn keep(app: &App, run_id: i64, chat: bool, kind: &str, value: &Value) {
-    if kind == "agent_end"
-        && let Some(answer) = final_answer(value)
-    {
-        let _ = app.store.set_run_summary(run_id, &answer);
-    }
-    if chat && kind == "agent_start" {
-        let _ = app.store.set_run_status(run_id, "running");
-    }
-    // A chat waits for the person's next message; only an abort ends it.
-    if chat && kind == "agent_settled" && value["aborted"] != true {
-        let _ = app.store.set_run_status(run_id, "waiting");
-    }
-    let _ = app.record_run_event(run_id, kind, value);
-}
-
-/// Ends a run whose Pi is gone: `Ok(aborted)` when it settled, `Err(why)` when it failed. What the agent left is
-/// committed (and a chat's work offered as a change), the worktree removed, the token revoked and the end published.
-pub(in crate::harness) fn finish<L>(
-    app: &Arc<App>,
-    run: RunningRun,
-    router: &Router,
-    lives: &Mutex<HashMap<i64, L>>,
-    ending: Result<bool, String>,
-) {
-    router.revoke_token(&run.token);
-    // The findings the lens showed and the agent left are ignored.
-    crate::harness::lens::close_run(app, run.id);
-    // What the agent did on a runner is brought into the worktree first, so that all that follows sees it.
-    let ending = ending.and_then(|aborted| run.bring_back().map(|()| aborted));
-    let failed = |why: &str| {
-        let _ = app.record_run_event(run.id, "moebius_error", &json!({ "message": why }));
-        "failed"
-    };
-    // A grilling leaves its result for Moebius to read, not a change to offer.
-    let grilling =
-        run.purpose == "chat" && app.run(run.id).is_ok_and(|run| run.agent == GRILLING_AGENT);
-    let status = match ending {
-        Ok(aborted) if grilling => {
-            if aborted {
-                "stopped"
-            } else {
-                "succeeded"
-            }
-        }
-        Ok(aborted) if run.purpose == "chat" => match run.commit() {
-            // A chat that changed nothing has still succeeded.
-            Ok(_) if aborted => "stopped",
-            Ok(_) => "succeeded",
-            Err(e) => failed(&e.to_string()),
-        },
-        Ok(true) => "stopped",
-        Ok(false) if !matches!(run.purpose.as_str(), "code" | "trial" | "attempt") => "succeeded",
-        Ok(false) => match run.commit() {
-            Ok(true) => "succeeded",
-            Ok(false) => failed("the agent changed nothing"),
-            Err(e) => failed(&e.to_string()),
-        },
-        Err(why) => failed(&why),
-    };
-    if grilling && status != "failed" {
-        // Before the worktree is removed, with the result in it.
-        if let Err(e) = crate::harness::grilling::conclude(app, run.id, &run.worktree) {
-            failed(&format!("cannot read the result of the grilling: {e}"));
-        }
-    }
-    if run.purpose == "code" && status == "succeeded" {
-        // Before the worktree is removed, with the change in it.
-        app.localize_run_ended(run.id, &run.worktree);
-    }
-    run.remove_worktree(app);
-    if run.purpose == "chat" && !grilling && status != "failed" {
-        // Before the status is set, so that an ended chat has offered what it made.
-        if let Err(e) = app.offer_chat_change(run.id) {
-            failed(&format!("cannot offer the chat's work as a change: {e}"));
-        }
-    }
-    // Before the status is set, so that a run that reads as ended can no longer be steered or stopped.
-    lock(lives).remove(&run.id);
-    let _ = app.store.set_run_status(run.id, status);
-    app.bus.publish(AppEvent::new(
-        "run_ended",
-        json!({ "run": run.id, "status": status }),
-    ));
 }

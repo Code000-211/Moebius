@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 
 use super::{Closing, Live, lock};
 use crate::app::App;
-use crate::harness::pibolt::{finish, keep};
+use crate::harness::run::{finish, keep};
 use crate::router::Router;
 
 /// Reads one run's records and ends the run.
@@ -166,7 +166,7 @@ fn events_of(record: &Value, tools: &mut HashMap<String, String>) -> Vec<(String
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::harness::pibolt::final_answer;
+    use crate::harness::run::final_answer;
 
     #[test]
     fn claude_codes_records_become_the_events_of_a_run() {

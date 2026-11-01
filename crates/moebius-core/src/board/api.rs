@@ -102,16 +102,18 @@ impl Engine {
                     Option<String>,
                 )| {
                     let run = outside_script(&clock, || {
-                        runs.start_on(
+                        runs.start(
                             &app,
                             &card_copy,
                             &agent,
-                            &purpose,
-                            note.as_deref(),
-                            runner.as_deref(),
+                            (&purpose, note.as_deref()),
+                            crate::board::Variant {
+                                model: None,
+                                runner: runner.as_deref(),
+                            },
                         )
                     })
-                    .map_err(mlua::Error::runtime)?;
+                    .map_err(|e| mlua::Error::runtime(e.to_string()))?;
                     fx.borrow_mut().started_run = Some(run.id);
                     Ok(run.id)
                 },

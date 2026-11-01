@@ -80,13 +80,13 @@ like the iced app and does not know anything the API does not say.
    card's latest successful `code` run (`Store::code_branch`), or from the default branch when it has none
    (`Repos::add_worktree`), issues the run's token (`Router::issue_token`, carrying the agent's budget), writes the run's
    agent directory and the bridge to `<data_dir>/runs/<id>/`, spawns Pi-Bolt (`PiBolt::launch`), sets the run `running`,
-   publishes `run_started` and sends the prompt (`prompt_for`: the issue, the instructions for the run's purpose, and
+   publishes `run_started` and sends the prompt (`prompt_for`, `harness/run/prompts.rs`: the issue, the instructions for the run's purpose, and
    the note if there is one). The server's `Runs` is `Harnesses` (`harness/pick.rs`), which hands the run to the harness
    the agent's `harness` names: an agent on `claude-code` is started by `ClaudeCode::start` the same way (`card_run`
    makes the run, worktree and token for both), with a checked token (`Router::issue_checked_token`), so that the router
    checks the tool calls of its answers (`router/calls/`), since Claude Code has no bridge.
    When the agent names a runner (`agents.<name>.runner`, or the fourth argument of `moebius.start_run`, which reaches the
-   harness as `Runs::start_on`), `card_run` takes one of the runner's runs first (`Runners::claim`; a full runner makes
+   harness as the run's `Variant`), `card_run` takes one of the runner's runs first (`Runners::claim`; a full runner makes
    no run) and the run carries a `RemoteRun` (`harness/remote/`). Its launch opens the reverse tunnel to the router
    (`RemoteRun::connect`), pushes the worktree's commit to the runner's clone (`prepare`), writes the agent directory with
    the tunnel's URL in place of the router's, and starts the harness through `RemoteRun::command`, which turns the local
@@ -148,7 +148,7 @@ like the iced app and does not know anything the API does not say.
     `judgements` the rest. Blocking findings send the card back as the note; `offer_change` stores the judgements in
     the inbox item.
 11a. **A hard card is tried several times.** A repository's own `code.luau` (the workflows guide has one) may call
-    `moebius.start_runs`, which starts n runs with purpose `attempt` through `Runs::start_with` (each in a worktree and
+    `moebius.start_runs`, which starts n runs with purpose `attempt` through `CardRuns::start` (each in a worktree and
     on a branch of its own, from the same commit, with a model or class from a list in turn) and stores them with
     `Store::add_attempt`. Each succeeded attempt is judged by `moebius.check_attempt` (`App::check_attempt`: the
     repository's checks and, test first, the reproduction test, on a thread of its own, the result kept in `attempts`).
@@ -170,7 +170,7 @@ like the iced app and does not know anything the API does not say.
     run, so `card.rounds`, `card.reviews` and `card.tokens` (and the router's budget) count only later runs;
     `POST /v1/changes/{id}/reject` (`App::reject_change`) resolves the `ready_to_merge` item and moves the card back to
     `In progress` with the reason as its note, the change staying open; `POST /v1/runs/{id}/steer` and
-    `POST /v1/runs/{id}/stop` (`App::steer_run`, `App::stop_run`) go through the harness (`Runs::steer`, `Runs::stop`,
+    `POST /v1/runs/{id}/stop` (`App::steer_run`, `App::stop_run`) go through the harness (`CardRuns::steer`, `CardRuns::stop`,
     which `ApiState` holds), a steer also leaving a `steered` run event. A stopped run ends `stopped` and
     `card.stopped` makes the scripts mark the card stuck instead of starting another run.
 12b. **A person chats.** A chat is a run without a card and with purpose `chat`. `POST /v1/chats` (`App::start_chat`)
@@ -180,10 +180,10 @@ like the iced app and does not know anything the API does not say.
     alone. The first message is stored as a `said` run event and sent to Pi as the prompt, without an issue prompt around
     it. The same `Reader` reads a chat, with one difference: at `agent_settled` the chat does not end but becomes
     `waiting` (`running` again at the next `agent_start`). `POST /v1/chats/{id}/messages` (`App::say_in_chat`) stores a
-    `said` event and sends a `prompt` with `streamingBehavior: "followUp"` (`Runs::say`), which Pi starts or queues
+    `said` event and sends a `prompt` with `streamingBehavior: "followUp"` (`ChatRuns::say`), which Pi starts or queues
     depending on whether the agent is working. Steer and stop are the run's own routes; a stop of a chat also closes Pi's
     standard input, since a waiting chat has no turn to abort. `POST /v1/chats/{id}/end` (`App::end_chat`,
-    `Runs::end`) closes Pi's standard input. When Pi has exited the chat is committed on its branch (nothing changed is
+    `ChatRuns::end`) closes Pi's standard input. When Pi has exited the chat is committed on its branch (nothing changed is
     no failure), the worktree or directory is removed, and the run is `succeeded` (`stopped` after a stop). Before the status
     is set, a chat in a repository whose branch has commits beyond the default branch is offered as a change without a card
     (`App::offer_chat_change`: the forge publishes the branch, a change with a null card and a `ready_to_merge` inbox
@@ -199,7 +199,7 @@ like the iced app and does not know anything the API does not say.
     (`Store::latest_change_on_branch`, `set_change_head`) instead of making another. Once a minute `server/schedule.rs` calls
     `PiBolt::pause_idle_chats`, which ends the Pi of each chat that has waited `pibolt::IDLE` (30 minutes, from its
     last `agent_settled`) the way the terminal interface does, keeping the chat `waiting` among the paused ones;
-    `Runs::say` starts its Pi again with `--continue` before the message, and an end or stop finishes it at once.
+    `ChatRuns::say` starts its Pi again with `--continue` before the message, and an end or stop finishes it at once.
     A chat can work in the harness configuration repository (`harness: true`; the run's `harness_repository`): its worktree
     is a chat worktree of the harness clone (`HarnessRepo::add_chat_worktree`), and what it leaves is checked as a Retro
     proposal is (`HarnessRepo::check_chat_branch`, which shares `check_branch` with `proposed`) before `App::offer_chat_change`
@@ -207,7 +207,7 @@ like the iced app and does not know anything the API does not say.
     check is not offered and the chat gets a `moebius_error`. `App::merge_change` merges such a change with
     `HarnessRepo::merge_branch`, which `merge_proposal` uses too.
 12c0. **Lessons.** `retro::conclude` stores the `lessons` block of the analyst's answer (`lessons::store_written`). `prompt_with`
-    (`harness/pibolt/runs.rs`) puts the best matches for the issue's text under "Lessons from earlier cards" in a code or
+    (`harness/run/prompts.rs`) puts the best matches for the issue's text under "Lessons from earlier cards" in a code or
     review prompt (`lessons::for_prompt`, FTS5 BM25 in `store/lessons.rs`); the bridge's tool `lessons` asks
     `/moebius/lessons` (`lessons::tool`). `server/schedule.rs` retires the lessons not retrieved for 60 days, and
     `trial::card::run_trial` those given to a negative trial run.
@@ -215,7 +215,7 @@ like the iced app and does not know anything the API does not say.
     and the `retros` table has no row for the day (`retro::due`); `POST /v1/retros` calls `retro::start` too. `retro::report`
     reads the day's errors from the store, one `Store` function per source (failed and refused tool calls, failed and stopped
     runs, steering, cards sent back from review), into the stored report. With errors and a harness repository,
-    `Runs::start_retro` (`PiBolt::start_retro`) starts a `retro` run of the built-in `Retro-analyst` in a detached worktree of
+    `ImproveRuns::start_retro` (`PiBolt::start_retro`) starts a `retro` run of the built-in `Retro-analyst` in a detached worktree of
     the harness clone, with the raw traces of the report's runs (`retro::traces`: each run's events and the diff of what it
     made, redacted, at most 20 runs) written under `.retro/` of the worktree and left out of git through the clone's
     `info/exclude`; a thread waits for the run, then `HarnessRepo::proposed` checks, pushes and returns the
@@ -231,7 +231,7 @@ like the iced app and does not know anything the API does not say.
 12d. **The trials.** The same minute, `server/schedule.rs` asks `trial::on_schedule`, which inside `[trial_window]` (`trial::in_window`)
     starts the oldest `open` proposal when no other is `trying` and the board has a run to spare; `POST
     /v1/proposals/{id}/trial` calls `trial::start` at any hour. A thread tries the proposal on each card: the agent is read
-    from the proposal's branch in a throwaway worktree (`HarnessRepo::agent_on_branch`), `Runs::start_trial`
+    from the proposal's branch in a throwaway worktree (`HarnessRepo::agent_on_branch`), `ImproveRuns::start_trial`
     (`PiBolt::start_trial`) starts a `trial` run of it on the card's task on a branch of its own, `App::local_checks` runs the
     repository's checks on the result, and `trial::compare` sets the measurements against the card's first code run. The
     trial is stored in `trials`, its branch and worktrees are removed (`trial_done`), and the proposal becomes `positive`,
@@ -254,7 +254,7 @@ like the iced app and does not know anything the API does not say.
     `POST /v1/research/{id}/start` calls `research::start` at any hour. A thread measures the baseline (`research::measure`:
     the research's command through `replay::run_apart` in a detached worktree, the last number on standard output), then
     loops: if `research::spent` says the tokens of the research's runs have reached the budget it ends `spent`;
-    otherwise `Runs::start_research` (`PiBolt::start_research`) starts a `research` run of the built-in `Autoresearcher`
+    otherwise `ImproveRuns::start_research` (`PiBolt::start_research`) starts a `research` run of the built-in `Autoresearcher`
     in a detached worktree of the repository, which leaves `research/<id>-<name>` branches. Each new branch with a commit is
     measured, checked by `App::local_checks`, judged by `research::judge` (better than the baseline by more than 1 %, checks
     passing or none), stored in `experiments` (`experiment_done`) and, when kept, offered by `App::offer_branch_change`, the
@@ -272,7 +272,7 @@ like the iced app and does not know anything the API does not say.
     `confirmed` together with its dependencies. `backlog.luau` moves such a card to Ready (`card.confirmed`); a
     `confirm_grilling` judgement by `person` is recorded and the inbox item resolved.
 12h. **Automations.** `POST /v1/automations` (`App::save_automation`) checks the schedule (`cron::parse`), the agent
-    (`Runs::has_agent`) and the place, and stores the automation (`automations` table) with `checked_at`, the local
+    (`CardRuns::has_agent`) and the place, and stores the automation (`automations` table) with `checked_at`, the local
     minute it was made. Once a minute `server/schedule.rs` reads the server's local minute (`Store::local_minute`, SQLite's
     `localtime`) and asks `automations::on_schedule`, which first ends each automation's chat that has answered and waits
     (`Store::waiting_automation_chats`, `App::end_chat`, so its work is offered as for any chat), then fires each
@@ -332,7 +332,7 @@ The server runs on a multi-threaded tokio runtime.
   reads its standard output and one its standard error. A call writes its line and waits for the reply that thread hands
   it by id.
 - A repository's own checks run on a thread of their own per change (`App::run_checks`), so the board is not blocked.
-- Each Pi run has one reader thread (`harness/pibolt/reader.rs`), and `Runs::stop` (`PiBolt`) starts a short thread that kills Pi when it does not
+- Each Pi run has one reader thread (`harness/pibolt/reader.rs`), and `CardRuns::stop` (`PiBolt`) starts a short thread that kills Pi when it does not
   settle in time.
 - The store is one SQLite connection behind a mutex. Calls are short and take it one at a time.
 - The event bus is a tokio broadcast channel of 1024 events; a slow listener loses the oldest and is told with `lagged`.
@@ -572,22 +572,28 @@ At the top:
 | Module | What it is for |
 |---|---|
 | `harness/mod.rs` | What the harness folder holds. |
-| `harness/pibolt/mod.rs` | The Pi-Bolt harness: what it holds of every run's Pi, and `Runs` for it, steering and stopping runs. |
-| `harness/pibolt/agents.rs` | The built-in agents with their instructions and skills, and the agent a run uses, on either harness. |
+| `harness/pibolt/mod.rs` | The Pi-Bolt harness: what it holds of every run's Pi, and `CardRuns`, `ChatRuns` and `ImproveRuns` for it, steering and stopping runs. |
 | `harness/pibolt/process.rs` | Starting Pi: its agent directory (`models.json`, `mcp.json`), its command line and its process. |
-| `harness/pibolt/runs.rs` | The runs of a card, of the Retro analyst and of the Autoresearcher, and committing what a run left. |
 | `harness/pibolt/reader.rs` | Reading Pi's records as run events, and ending the run. |
 | `harness/pibolt/chat.rs` | Chats: their Pi between messages, their settings, and pausing one that waited long. |
 | `harness/pibolt/tui.rs` | A waiting chat in Pi's interactive mode, and following its session file. |
 | `harness/pibolt/testing.rs` | For the tests only: the fake Pi, a server set up for it, and reading what Pi was started with. |
-| `harness/claude/mod.rs` | The Claude Code harness: what it holds of every run's process, and `Runs` for it: card runs, trials, the Retro analyst, the Autoresearcher and chats, steered with a user message and stopped by killing it. |
+| `harness/run/mod.rs` | The life of a run, the same for every harness: what the folder holds and re-exports. |
+| `harness/run/agents.rs` | The built-in agents with their instructions and skills, and the agent a run uses, on either harness. |
+| `harness/run/prompts.rs` | What a run of a card is told: the issue, the instructions of its purpose, the files likely to matter, the lessons of earlier cards and the notes of the last round. |
+| `harness/run/lifecycle.rs` | Making a run, its worktree and its token (`card_run`, `detached_run`, `chat_run`), undoing them when its process cannot be started (`launch_or_undo`), and `RunningRun`, which commits what the agent left and removes the worktree. |
+| `harness/run/start.rs` | Starting a run: the harness is asked only to start its process (`Launching`, `Launch`) in the run `lifecycle` made. |
+| `harness/run/end.rs` | Ending a run: its records kept as its events and summary (`keep`), and its end (`finish`). |
+| `harness/run/testing.rs` | For the tests only: a server with one repository and both harnesses on the fake of each process, and ways to wait for a run. |
+| `harness/run/tests.rs` | For the tests only: the run lifecycle tests, the same against Pi-Bolt and Claude Code. |
+| `harness/claude/mod.rs` | The Claude Code harness: what it holds of every run's process, and `CardRuns`, `ChatRuns` and `ImproveRuns` for it: card runs, trials, the Retro analyst, the Autoresearcher and chats, steered with a user message and stopped by killing it. |
 | `harness/claude/process.rs` | Starting Claude Code: its own configuration directory with the agent's skills, `mcp.json`, its command line and environment (the router and the run's token) and its process. |
 | `harness/claude/reader.rs` | Reading Claude Code's `stream-json` records as the run events a Pi-Bolt run has, and ending the run. |
 | `harness/claude/tests.rs` | For the tests only: Claude Code runs and chats against the fake `claude`, and the router's check of its calls. |
 | `harness/pibolt/remote_tests.rs` | For the tests only: runs on a runner over the fake `ssh` of `testdata/`. |
 | `harness/remote/mod.rs` | The runners (`[[runners]]`): which machines there are and how many runs go on each (`Runners`, a `Slot` per run, the list `GET /v1/runners` answers). |
 | `harness/remote/session.rs` | One run on a runner over SSH (`RemoteRun`): the reverse tunnel to the router, the run's branch pushed to the machine's clone and checked out, the harness's command line turned into an `ssh` command with the files it names copied over, and the commits fetched back. |
-| `harness/pick.rs` | `Harnesses`, the server's `Runs`: Pi-Bolt and Claude Code side by side, each run on the harness its agent names. |
+| `harness/pick.rs` | `Harnesses`, the server's `Runs`: Pi-Bolt and Claude Code side by side, a lookup from an agent to the harness it runs on. |
 | `harness/terminal.rs` | A person's shell in a run's worktree on a pseudo-terminal (`portable-pty`), served over the WebSocket `GET /v1/runs/{id}/terminal` (and `GET /v1/terminal`, in the directory of `moebius.toml`, and `GET /v1/repositories/{id}/terminal`, in a repository's clone); at most 4 per run or on the server, not checked by the guard. The same serving carries Pi-Bolt's interactive mode for a waiting chat (`GET /v1/chats/{id}/tui`, one per chat), whose tool calls the bridge still checks; `harness/pibolt/tui.rs` ends the chat's own Pi for it, continues the chat's Pi session in it, records what it adds to the session file as the chat's events, and starts the chat's Pi again on the same session when it closes. |
 | `harness/repo/mod.rs` | The harness configuration repository's clone: opened, refreshed, and its agents read again when it changes. |
 | `harness/repo/read.rs` | Reading the agents, skills and MCP servers from it, each agent checked as a run uses it. |

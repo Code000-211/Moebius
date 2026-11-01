@@ -31,13 +31,14 @@ use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use serde_json::{Value, json};
 
 use crate::app::{App, ChatSettings};
-use crate::board::{AgentInfo, Runs, Variant};
+use crate::board::{AgentInfo, CardRuns, ChatRuns, ImproveRuns, StartError, Variant};
 use crate::config::{AgentConfig, AgentSet, HarnessKind};
-use crate::harness::pibolt::{
-    AUTORESEARCHER_AGENT, RETRO_AGENT, RunningRun, agent_list, card_run, chat_run, detached_run,
-    fail, finish, has_agent, keep, prompt_for, resolve_agent, run_prompt, tell_where_moebius_runs,
-};
 use crate::harness::remote::Runners;
+use crate::harness::run::{
+    AUTORESEARCHER_AGENT, Launching, RETRO_AGENT, RunningRun, agent_list, chat_run, finish,
+    has_agent, keep, launch_or_undo, resolve_agent, start_card, start_detached, start_trial,
+    tell_where_moebius_runs,
+};
 use crate::router::Router;
 use crate::store::{Card, Repository, Run};
 
@@ -117,32 +118,28 @@ impl ClaudeCode {
     }
 
     /// The agent `name` as a run on Claude Code uses it, or why it cannot run on it.
-    fn agent(&self, app: &App, name: &str) -> Result<AgentConfig, String> {
-        let agent = resolve_agent(&self.agent_set(), &app.data_dir, name)?;
+    fn agent(&self, app: &App, name: &str) -> Result<AgentConfig, StartError> {
+        let agent = resolve_agent(&self.agent_set(), &app.data_dir, name)
+            .map_err(StartError::UnknownAgent)?;
         on_claude_code(tell_where_moebius_runs(app, name, agent), name)
     }
 
-    /// Starts the run `running` of `agent` and returns it; when Claude Code cannot be started, what was set up for the
-    /// run is undone and the run has failed.
-    fn launch_or_undo(
-        &self,
-        app: &Arc<App>,
-        card: Option<&Card>,
-        agent: &AgentConfig,
-        running: RunningRun,
-        prompt: Option<&str>,
-    ) -> Result<Run, String> {
-        let session = process::new_session();
-        if let Err(e) = self.launch(app, card, agent, running.clone(), (&session, false), prompt) {
-            self.router.revoke_token(&running.token);
-            running.remove_worktree(app);
-            return Err(fail(app, running.id, e));
-        }
-        Ok(app
-            .store
-            .run(running.id)
-            .map_err(|e| e.to_string())?
-            .expect("the run exists"))
+    /// Starts Claude Code for what `launching` holds, in a new session.
+    fn launch_for(&self, app: &Arc<App>, launching: Launching) -> Result<(), String> {
+        let Launching {
+            config,
+            run,
+            card,
+            prompt,
+        } = launching;
+        self.launch(
+            app,
+            card,
+            config,
+            run,
+            (&process::new_session(), false),
+            prompt,
+        )
     }
 
     /// The chat `run_id`, if its Claude Code is going.
@@ -156,229 +153,44 @@ impl ClaudeCode {
 
 /// `agent` as Claude Code runs it, or why it cannot: Claude Code speaks only the anthropic protocol and loads no Pi
 /// extensions.
-fn on_claude_code(mut agent: AgentConfig, name: &str) -> Result<AgentConfig, String> {
+fn on_claude_code(mut agent: AgentConfig, name: &str) -> Result<AgentConfig, StartError> {
     agent.harness = HarnessKind::ClaudeCode;
     match agent
         .harness
         .refuses(agent.protocol, !agent.extensions.is_empty())
     {
-        Some(why) => Err(format!("the agent {name} cannot run: {why}")),
+        Some(why) => Err(StartError::UnknownAgent(format!(
+            "the agent {name} cannot run: {why}"
+        ))),
         None => Ok(agent),
     }
 }
 
-impl Runs for ClaudeCode {
+impl CardRuns for ClaudeCode {
     fn start(
         &self,
         app: &Arc<App>,
         card: &Card,
         agent: &str,
-        purpose: &str,
-        note: Option<&str>,
-    ) -> Result<Run, String> {
-        self.start_on(app, card, agent, purpose, note, None)
-    }
-
-    fn start_on(
-        &self,
-        app: &Arc<App>,
-        card: &Card,
-        agent: &str,
-        purpose: &str,
-        note: Option<&str>,
-        runner: Option<&str>,
-    ) -> Result<Run, String> {
-        let variant = Variant {
-            model: None,
-            runner,
-        };
-        self.start_with(app, card, agent, (purpose, note), variant)
-    }
-
-    fn start_with(
-        &self,
-        app: &Arc<App>,
-        card: &Card,
-        agent: &str,
-        (purpose, note): (&str, Option<&str>),
+        purpose: (&str, Option<&str>),
         variant: Variant,
-    ) -> Result<Run, String> {
-        let mut config = self.agent(app, agent)?;
-        if variant.runner.is_some() {
-            config.runner = variant.runner.map(String::from);
-        }
-        if let Some(model) = variant.model {
-            config.model = model.into();
-        }
-        let prompt = run_prompt(app, card, purpose, note);
-        let code_branch = app.store.code_branch(card.id).map_err(|e| e.to_string())?;
-        let worktree = |repository: &Repository, clone: &Path, run_id: i64| {
-            let base = code_branch.unwrap_or_else(|| repository.base_ref());
-            app.repos
-                .add_worktree(&repository.name, clone, run_id, &base)
-        };
-        let running = card_run(
+    ) -> Result<Run, StartError> {
+        let config = self.agent(app, agent)?;
+        let launch = |launching: Launching| self.launch_for(app, launching);
+        let routing = (self.router.as_ref(), &self.runners);
+        start_card(
             app,
-            (&self.router, &self.runners),
+            routing,
             card,
-            (agent, &config),
+            (agent, config),
             purpose,
-            worktree,
-        )?;
-        self.launch_or_undo(app, Some(card), &config, running, Some(&prompt))
+            variant,
+            &launch,
+        )
     }
 
-    fn start_trial(
-        &self,
-        app: &Arc<App>,
-        card: &Card,
-        agent: &str,
-        definition: AgentConfig,
-        proposal: i64,
-        base: &str,
-    ) -> Result<Run, String> {
-        let config = on_claude_code(definition, agent)?;
-        let prompt = prompt_for(app, card, "code", None);
-        let worktree = |repository: &Repository, clone: &Path, _run_id: i64| {
-            let name = &repository.name;
-            app.repos
-                .add_trial_worktree(name, clone, proposal, card.id, base)
-        };
-        let running = card_run(
-            app,
-            (&self.router, &self.runners),
-            card,
-            (agent, &config),
-            "trial",
-            worktree,
-        )?;
-        self.launch_or_undo(app, Some(card), &config, running, Some(&prompt))
-    }
-
-    fn start_chat(
-        &self,
-        app: &Arc<App>,
-        agent: &str,
-        place: (Option<&Repository>, bool),
-        message: Option<&str>,
-        prompt: Option<&str>,
-        origin: &str,
-        settings: &ChatSettings,
-    ) -> Result<Run, String> {
-        let config = on_claude_code(settings.apply(&self.agent(app, agent)?), agent)?;
-        let running = chat_run(
-            app,
-            &self.router,
-            (agent, &config),
-            place,
-            message,
-            origin,
-            settings,
-        )?;
-        self.launch_or_undo(app, None, &config, running, prompt)
-    }
-
-    /// A chat given another model gets a new Claude Code on the same session; another reasoning level changes nothing.
-    fn change_chat(&self, app: &Arc<App>, run_id: i64) -> Result<(), String> {
-        let Some(live) = self.live_chat(run_id) else {
-            return Err(format!("chat {run_id} has ended"));
-        };
-        let stored = app.run(run_id).map_err(|e| e.to_string())?;
-        let settings = app.chat_settings(run_id).map_err(|e| e.to_string())?;
-        let config = on_claude_code(
-            settings.apply(&self.agent(app, &stored.agent)?),
-            &stored.agent,
-        )?;
-        if config.model == live.agent.model && config.protocol == live.agent.protocol {
-            return Ok(());
-        }
-        {
-            let mut closing = lock(&live.closing);
-            if closing.is_some() {
-                return Err(format!("chat {run_id} has ended"));
-            }
-            *closing = Some(Closing::Restarting);
-        }
-        lock(&live.stdin).take();
-        let _ = lock(&live.child).kill();
-        let _ = lock(&live.child).wait();
-        let resumed = self.launch(
-            app,
-            None,
-            &config,
-            live.run.clone(),
-            (&live.session, true),
-            None,
-        );
-        if let Err(e) = resumed {
-            let why = format!("cannot start the chat's claude again with its new model: {e}");
-            finish(app, live.run, &self.router, &self.live, Err(why.clone()));
-            return Err(why);
-        }
-        Ok(())
-    }
-
-    fn start_retro(
-        &self,
-        app: &Arc<App>,
-        clone: &Path,
-        base: &str,
-        prompt: &str,
-        files: &BTreeMap<String, String>,
-    ) -> Result<Run, String> {
-        let config = self.agent(app, RETRO_AGENT)?;
-        let place = ("harness", clone, None);
-        let running = detached_run(
-            app,
-            &self.router,
-            (RETRO_AGENT, "retro"),
-            place,
-            (base, files),
-            &config,
-        )?;
-        self.launch_or_undo(app, None, &config, running, Some(prompt))
-    }
-
-    fn start_research(
-        &self,
-        app: &Arc<App>,
-        repository: &Repository,
-        base: &str,
-        prompt: &str,
-    ) -> Result<Run, String> {
-        let config = self.agent(app, AUTORESEARCHER_AGENT)?;
-        let clone = PathBuf::from(&repository.path);
-        let place = (
-            repository.name.as_str(),
-            clone.as_path(),
-            Some(repository.id),
-        );
-        let purpose = (AUTORESEARCHER_AGENT, "research");
-        let start = (base, &BTreeMap::new());
-        let running = detached_run(app, &self.router, purpose, place, start, &config)?;
-        self.launch_or_undo(app, None, &config, running, Some(prompt))
-    }
-
-    fn say(&self, run_id: i64, message: &str) -> bool {
-        let Some(live) = self.live_chat(run_id) else {
-            return false;
-        };
-        tell(&live, message)
-    }
-
-    /// Ends a chat: its stdin is closed, so Claude Code exits once it has answered, and the chat ends then.
-    fn end(&self, run_id: i64) -> bool {
-        let Some(live) = self.live_chat(run_id) else {
-            return false;
-        };
-        {
-            let mut closing = lock(&live.closing);
-            if closing.is_some() {
-                return false;
-            }
-            *closing = Some(Closing::Ended);
-        }
-        lock(&live.stdin).take().is_some()
+    fn runners(&self) -> Vec<crate::harness::remote::RunnerInfo> {
+        self.runners.list()
     }
 
     fn has_agent(&self, name: &str) -> bool {
@@ -410,6 +222,166 @@ impl Runs for ClaudeCode {
         lock(&live.stdin).take();
         let _ = lock(&live.child).kill();
         true
+    }
+}
+
+impl ImproveRuns for ClaudeCode {
+    fn start_trial(
+        &self,
+        app: &Arc<App>,
+        card: &Card,
+        agent: &str,
+        definition: AgentConfig,
+        proposal: i64,
+        base: &str,
+    ) -> Result<Run, StartError> {
+        let config = on_claude_code(definition, agent)?;
+        let launch = |launching: Launching| self.launch_for(app, launching);
+        let routing = (self.router.as_ref(), &self.runners);
+        let place = (proposal, base);
+        start_trial(app, routing, card, (agent, &config), place, &launch)
+    }
+
+    fn start_retro(
+        &self,
+        app: &Arc<App>,
+        clone: &Path,
+        base: &str,
+        prompt: &str,
+        files: &BTreeMap<String, String>,
+    ) -> Result<Run, StartError> {
+        let config = self.agent(app, RETRO_AGENT)?;
+        let launch = |launching: Launching| self.launch_for(app, launching);
+        let place = ("harness", clone, None);
+        let purpose = (RETRO_AGENT, "retro");
+        let start = (base, prompt, files);
+        start_detached(app, &self.router, purpose, place, start, &config, &launch)
+    }
+
+    fn start_research(
+        &self,
+        app: &Arc<App>,
+        repository: &Repository,
+        base: &str,
+        prompt: &str,
+    ) -> Result<Run, StartError> {
+        let config = self.agent(app, AUTORESEARCHER_AGENT)?;
+        let launch = |launching: Launching| self.launch_for(app, launching);
+        let clone = PathBuf::from(&repository.path);
+        let place = (
+            repository.name.as_str(),
+            clone.as_path(),
+            Some(repository.id),
+        );
+        let purpose = (AUTORESEARCHER_AGENT, "research");
+        let start = (base, prompt, &BTreeMap::new());
+        start_detached(app, &self.router, purpose, place, start, &config, &launch)
+    }
+}
+
+impl ChatRuns for ClaudeCode {
+    /// Claude Code has no interactive mode, so a chat of Claude Code has no terminal interface.
+    fn tui(&self, _app: &Arc<App>, _run_id: i64) -> Result<std::process::Command, String> {
+        Err("this harness has no terminal interface".into())
+    }
+
+    /// Nothing to take back: no terminal interface of Claude Code is open.
+    fn close_tui(&self, _app: &Arc<App>, _run_id: i64) {}
+
+    fn start_chat(
+        &self,
+        app: &Arc<App>,
+        agent: &str,
+        place: (Option<&Repository>, bool),
+        message: Option<&str>,
+        prompt: Option<&str>,
+        origin: &str,
+        settings: &ChatSettings,
+    ) -> Result<Run, StartError> {
+        let config = on_claude_code(settings.apply(&self.agent(app, agent)?), agent)?;
+        let running = chat_run(
+            app,
+            &self.router,
+            (agent, &config),
+            place,
+            message,
+            origin,
+            settings,
+        )?;
+        launch_or_undo(app, &self.router, running, |run| {
+            self.launch_for(
+                app,
+                Launching {
+                    config: &config,
+                    run,
+                    card: None,
+                    prompt,
+                },
+            )
+        })
+    }
+
+    /// A chat given another model gets a new Claude Code on the same session; another reasoning level changes nothing.
+    fn change_chat(&self, app: &Arc<App>, run_id: i64) -> Result<(), String> {
+        let Some(live) = self.live_chat(run_id) else {
+            return Err(format!("chat {run_id} has ended"));
+        };
+        let stored = app.run(run_id).map_err(|e| e.to_string())?;
+        let settings = app.chat_settings(run_id).map_err(|e| e.to_string())?;
+        let config = on_claude_code(
+            settings.apply(&self.agent(app, &stored.agent).map_err(|e| e.to_string())?),
+            &stored.agent,
+        )
+        .map_err(|e| e.to_string())?;
+        if config.model == live.agent.model && config.protocol == live.agent.protocol {
+            return Ok(());
+        }
+        {
+            let mut closing = lock(&live.closing);
+            if closing.is_some() {
+                return Err(format!("chat {run_id} has ended"));
+            }
+            *closing = Some(Closing::Restarting);
+        }
+        lock(&live.stdin).take();
+        let _ = lock(&live.child).kill();
+        let _ = lock(&live.child).wait();
+        let resumed = self.launch(
+            app,
+            None,
+            &config,
+            live.run.clone(),
+            (&live.session, true),
+            None,
+        );
+        if let Err(e) = resumed {
+            let why = format!("cannot start the chat's claude again with its new model: {e}");
+            finish(app, live.run, &self.router, &self.live, Err(why.clone()));
+            return Err(why);
+        }
+        Ok(())
+    }
+
+    fn say(&self, run_id: i64, message: &str) -> bool {
+        let Some(live) = self.live_chat(run_id) else {
+            return false;
+        };
+        tell(&live, message)
+    }
+
+    /// Ends a chat: its stdin is closed, so Claude Code exits once it has answered, and the chat ends then.
+    fn end(&self, run_id: i64) -> bool {
+        let Some(live) = self.live_chat(run_id) else {
+            return false;
+        };
+        {
+            let mut closing = lock(&live.closing);
+            if closing.is_some() {
+                return false;
+            }
+            *closing = Some(Closing::Ended);
+        }
+        lock(&live.stdin).take().is_some()
     }
 }
 
