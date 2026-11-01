@@ -41,6 +41,25 @@ impl Run {
     }
 }
 
+fn run_from_row(r: &rusqlite::Row) -> rusqlite::Result<Run> {
+    Ok(Run {
+        id: r.get(0)?,
+        card_id: r.get(1)?,
+        agent: r.get(2)?,
+        harness: r.get(3)?,
+        purpose: r.get(4)?,
+        status: r.get(5)?,
+        worktree: r.get(6)?,
+        started_at: r.get(7)?,
+        ended_at: r.get(8)?,
+        summary: r.get(9)?,
+        repository_id: r.get(10)?,
+        harness_repository: r.get(11)?,
+        origin: r.get(12)?,
+        runner: r.get(13)?,
+    })
+}
+
 impl Store {
     pub fn add_run(
         &self,
@@ -82,24 +101,7 @@ impl Store {
             "SELECT id, card_id, agent, harness, purpose, status, worktree, started_at, ended_at, summary, repository_id,
                 harness_repository, origin, runner
              FROM runs WHERE {clause} ORDER BY id"
-        ), [param], |r| {
-            Ok(Run {
-                id: r.get(0)?,
-                card_id: r.get(1)?,
-                agent: r.get(2)?,
-                harness: r.get(3)?,
-                purpose: r.get(4)?,
-                status: r.get(5)?,
-                worktree: r.get(6)?,
-                started_at: r.get(7)?,
-                ended_at: r.get(8)?,
-                summary: r.get(9)?,
-                repository_id: r.get(10)?,
-                harness_repository: r.get(11)?,
-                origin: r.get(12)?,
-                runner: r.get(13)?,
-            })
-        })
+        ), [param], run_from_row)
     }
 
     /// Records the runner the run's harness goes on.
@@ -118,6 +120,67 @@ impl Store {
     /// The runs of a card, oldest first. Its trials are not among them: they are no part of the card's work.
     pub fn runs_for_card(&self, card_id: i64) -> Result<Vec<Run>> {
         self.runs_where("card_id = ?1 AND purpose <> 'trial'", card_id.into())
+    }
+
+    /// The runs of the cards of a repository that are not in `except_column`, with their ids' cards: one read for a
+    /// whole board, oldest first. Trials are not among them.
+    pub fn runs_for_board(&self, repository_id: i64, except_column: &str) -> Result<Vec<Run>> {
+        self.rows(
+            "SELECT r.id, r.card_id, r.agent, r.harness, r.purpose, r.status, r.worktree, r.started_at, r.ended_at,
+                    r.summary, r.repository_id, r.harness_repository, r.origin, r.runner
+             FROM runs r JOIN cards c ON c.id = r.card_id
+             WHERE c.repository_id = ?1 AND c.column_name <> ?2 AND r.purpose <> 'trial' ORDER BY r.id",
+            params![repository_id, except_column],
+            run_from_row,
+        )
+    }
+
+    /// `tokens_for_card` for every card of a repository that is not in `except_column`, by card id; a card that used
+    /// none is missing.
+    pub fn tokens_for_board(
+        &self,
+        repository_id: i64,
+        except_column: &str,
+    ) -> Result<std::collections::HashMap<i64, i64>> {
+        Ok(self
+            .rows(
+                "SELECT r.card_id, SUM(u.input_tokens + u.output_tokens)
+                 FROM usage u JOIN runs r ON r.id = u.run_id JOIN cards c ON c.id = r.card_id
+                 WHERE c.repository_id = ?1 AND c.column_name <> ?2 AND r.purpose <> 'trial'
+                   AND r.id > COALESCE(c.retried_after, 0)
+                 GROUP BY r.card_id",
+                params![repository_id, except_column],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?
+            .into_iter()
+            .collect())
+    }
+
+    /// `refused_tool_calls` for each of `run_ids`, by run id; a run with none refused is missing.
+    pub fn refused_tool_calls_of(
+        &self,
+        run_ids: &[i64],
+    ) -> Result<std::collections::HashMap<i64, i64>> {
+        if run_ids.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+        let ids = run_ids
+            .iter()
+            .map(i64::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        Ok(self
+            .rows(
+                &format!(
+                    "SELECT run_id, COUNT(*) FROM events
+                     WHERE run_id IN ({ids}) AND kind IN ('tool_check', 'mcp_call')
+                       AND json_extract(data, '$.decision') = 'refuse' GROUP BY run_id"
+                ),
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?
+            .into_iter()
+            .collect())
     }
 
     /// The runs that have not ended.

@@ -10,6 +10,7 @@
 
 mod attempts;
 mod automations;
+mod board;
 mod cards;
 mod changes;
 mod chats;
@@ -42,6 +43,7 @@ pub use attempts::{AttemptCheck, read_pick};
 pub use automations::{
     AUTOMATION_ORIGIN, AutomationView, cron, on_schedule as on_automation_schedule,
 };
+pub use board::{BoardFacts, CardFacts};
 pub use cards::HistoryEntry;
 pub use chats::{ASSISTANT_ORIGIN, CHAT_ORIGIN, Chat, ChatSettings, THINKING_LEVELS};
 pub(crate) use checks::tail;
