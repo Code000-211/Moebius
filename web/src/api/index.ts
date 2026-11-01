@@ -5,5 +5,6 @@ export * from "./calls/session";
 export { ApiError, isApiError, UNREACHABLE } from "./http";
 export { keys } from "./keys";
 export * from "./types/board";
+export * from "./types/cards";
 export * from "./types/events";
 export * from "./types/server";

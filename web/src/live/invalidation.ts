@@ -1,7 +1,8 @@
 /**
  * What the server's events do to the TanStack Query cache. The reference says the snapshot is read again on every
  * event, so an event that changes what the snapshot shows invalidates it; `card_waiting` is also patched in place,
- * which shows the reason at once. A new page that reads something the events change adds its key to `keys.ts` and a
+ * which shows the reason at once. What is read about one card (history, runs) goes stale with the snapshot, and the
+ * column scripts with `script_changed`. A new page that reads something the events change adds its key to `keys.ts` and a
  * line to `invalidates` below. Events are not replayed, so when the socket connects all that is shown is read again.
  */
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
@@ -37,7 +38,8 @@ const SNAPSHOT_KINDS = new Set([
 export function invalidates(event: ServerEvent): QueryKey[] {
   if (event.kind === "lagged") return [[]];
   const stale: QueryKey[] = [];
-  if (SNAPSHOT_KINDS.has(event.kind)) stale.push(keys.snapshot);
+  if (SNAPSHOT_KINDS.has(event.kind)) stale.push(keys.snapshot, keys.cards);
+  if (event.kind === "script_changed") stale.push(keys.scripts);
   if (event.kind === "repository_added" || event.kind === "repository_removed") {
     stale.push(keys.start);
   }

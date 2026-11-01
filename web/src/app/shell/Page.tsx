@@ -1,9 +1,5 @@
 /** A page of the sidebar: its header (the group as breadcrumb in the code font, then the title) and its body. */
 
-import { useQuery } from "@tanstack/react-query";
-import { useParams } from "react-router";
-import { snapshot } from "../../api/calls/board";
-import { keys } from "../../api/keys";
 import type { PageDef } from "../pages";
 import { Placeholder } from "./Placeholder";
 
@@ -22,20 +18,6 @@ export function PlaceholderPage({ page }: { page: PageDef }) {
     <>
       <Header breadcrumb={page.group || undefined} title={page.title} />
       <Placeholder title={page.title} />
-    </>
-  );
-}
-
-/** The board of a repository, named from the snapshot; the board itself is not built yet. */
-export function BoardPage() {
-  const { id } = useParams();
-  const data = useQuery({ queryKey: keys.snapshot, queryFn: () => snapshot() });
-  const board = data.data?.boards.find((b) => String(b.repository.id) === id);
-  const title = board?.repository.name ?? "Board";
-  return (
-    <>
-      <Header breadcrumb="Projects" title={title} />
-      <Placeholder title={`The board of ${title}`} />
     </>
   );
 }

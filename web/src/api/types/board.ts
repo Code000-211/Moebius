@@ -47,6 +47,20 @@ export interface Card {
   blocked_by: number[];
   refusals: number;
   change: CardChange | null;
+  /** True for a card made from a confirmed grilling, which needs no approval. */
+  confirmed?: boolean;
+  /** The latest group of attempts of a card that was tried several times at once; absent without one. */
+  attempts?: CardAttempt[];
+}
+
+export interface CardAttempt {
+  run: number;
+  model: string | null;
+  status: RunStatus;
+  result: "passed" | "failed" | null;
+  output: string;
+  picked: boolean;
+  reason: string | null;
 }
 
 export interface Change {
@@ -61,6 +75,9 @@ export interface Change {
   review: string | null;
   head: string | null;
   published_at: number | null;
+  checks_head?: string | null;
+  failed_checks?: string | null;
+  check_output?: string | null;
 }
 
 export interface Board {

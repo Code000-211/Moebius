@@ -12,12 +12,13 @@ by one in later issues.
 |---|---|
 | `src/main.tsx` | The entry: takes `?login=` out of the address, then starts the router and the query cache. |
 | `src/app/` | `App.tsx` (the gate: sign-in, unreachable, shell), `routes.tsx`, `pages.ts` (the sidebar's entries), `SignIn.tsx` and `shell/` (sidebar, command bar, banner, page frame). |
+| `src/app/board/` | The board page: `BoardPage.tsx` (columns, drag and drop, notices), `model.ts` (the logic: columns, filters, status, what a drop means, card words; tested in `model.test.ts`), `Dock.tsx` (the inspector), `decisions.ts` (approve, merge, send back, retry), `FilterBar.tsx`, `NewIssueDialog.tsx`, and the read-only `ScriptPage.tsx` and the `RunPage.tsx` placeholder it links to. |
 | `src/api/` | The client of the desktop API: `http.ts` (requests and `ApiError`), `calls/` (one module per part of the API, as `crates/moebius-desktop/src/client/calls/`), `types/` (written by hand from the reference), `events.ts` (the WebSocket), `keys.ts` (query keys). |
 | `src/live/` | The event stream feeding the query cache (`invalidation.ts`) and the connection state for the pages (`LiveProvider.tsx`). |
 | `src/auth/login.ts` | The `?login=<code>` link the server prints. |
 | `src/ui/` | Components copied from Vibe Kanban's `@vibe/ui`, each with a header comment saying where from and what changed. |
 | `src/styles/` | `theme.css` (Deep Velvet as CSS variables), `tailwind.css` (the Tailwind theme), `fonts.css`. |
-| `e2e/` | The Playwright tests and the server they run against. |
+| `e2e/` | The Playwright tests and the server they run against; `e2e/fake/` has the data and routes of a page in the fake server (`board.ts` for the board). |
 | `public/fonts/` | Manrope and JetBrains Mono, the files of the desktop app. |
 
 ## Scripts
@@ -29,7 +30,7 @@ Install with `pnpm install` (pnpm 10, Node 22). From this folder:
 | `pnpm dev` | Vite's dev server with hot reload. It proxies `/v1`, the event WebSocket included, to `MOEBIUS_URL` (default `http://127.0.0.1:7171`). |
 | `pnpm build` | Type-checks and builds into `dist/`, which the server embeds. |
 | `pnpm check` | `tsc --noEmit` and Biome (lint, format and import order). `pnpm format` fixes what Biome can. |
-| `pnpm test` | Vitest: the client's errors, the events-to-cache logic, the `?login` handling, the sign-in page, and a test that `theme.css` matches `theme.rs`. |
+| `pnpm test` | Vitest: the client's errors, the events-to-cache logic, the `?login` handling, the sign-in page, the board's logic (filters, grouping, drop rules), and a test that `theme.css` matches `theme.rs`. |
 | `pnpm e2e` | Playwright in Chromium, driven by Vitest. Needs `pnpm build` first. |
 
 ## Run it against a server
@@ -77,16 +78,22 @@ The components of `src/ui/` were written for React 18 and Tailwind 3. Here: `for
 Velvet colours in `tailwind.css` instead of Vibe Kanban's HSL tokens; `react-i18next`, Tauri helpers and `lucide-react` are
 gone (the icons are Phosphor's, the text plain English); `cn` merges Tailwind classes itself. Nothing that reports to
 a service (PostHog, Sentry) is copied. Vibe Kanban's `CommandBar` is not copied: it is made of issues, branches and priorities
-that Moebius does not have, so `app/shell/CommandBar.tsx` builds the page switcher from its `Command` primitives. Later issues
-copy more components (board, chat, terminal) the same way.
+that Moebius does not have, so `app/shell/CommandBar.tsx` builds the page switcher from its `Command` primitives. The board copies `KanbanBoard`, `KanbanCardContent`, `KanbanIssuePanel`, `KanbanBadge`,
+`PrBadge` and `RunningDots`. `KanbanBoard` keeps `@hello-pangea/dnd` for dragging (with the keyboard too); it loses its
+Gantt types, its "add task" button and i18n. `KanbanCardContent` shows what a Moebius card has (number as a link to the issue, agent and
+round, round bar, state badges, pull request) in place of priority, assignees, tags and relationships. `KanbanIssuePanel`
+is a read-only inspector that keeps the panel's frame (header, close, Escape, bordered sections) and takes its sections as
+children; Vibe Kanban's one is the form for editing an issue. Vibe Kanban's `KanbanFilterBar` is not copied (its
+filters are priorities, assignees and tags): `app/board/FilterBar.tsx` is native selects. Later issues copy more
+components (chat, terminal) the same way.
 
 ## Licenses
 
 The app is Apache-2.0 like the rest of Moebius. `NOTICE` and `LICENSE-APACHE-2.0` are for the Vibe Kanban components. The
 fonts are under the SIL Open Font License 1.1 (`public/fonts/*/OFL.txt`).
 
-Direct dependencies, all checked with `pnpm licenses list`; what goes into `dist/` is MIT, except `class-variance-authority`
-(Apache-2.0) and `tslib` (0BSD, through Radix):
+Direct dependencies, all checked with `pnpm licenses list`; what goes into `dist/` is MIT, except `class-variance-authority` and
+`@hello-pangea/dnd` (Apache-2.0) and `tslib` (0BSD, through Radix):
 
 | Package | License | Used for |
 |---|---|---|
@@ -94,6 +101,7 @@ Direct dependencies, all checked with `pnpm licenses list`; what goes into `dist
 | `react-router` | MIT | Routing (lighter than TanStack Router's generated route tree for this many flat routes) |
 | `@tanstack/react-query` | MIT | Server data and the cache the events feed |
 | `@radix-ui/react-dialog`, `-dropdown-menu`, `-tooltip`, `-slot` | MIT | Behaviour of the copied components |
+| `@hello-pangea/dnd` | Apache-2.0 | Dragging cards on the board; it brings `redux`, `react-redux`, `css-box-model`, `raf-schd`, `use-sync-external-store` and `@babel/runtime`, all MIT |
 | `cmdk` | MIT | The command bar |
 | `@phosphor-icons/react` | MIT | Icons |
 | `class-variance-authority` | Apache-2.0 | Button variants |
@@ -112,4 +120,7 @@ Other transitive licenses in the tree: ISC, BSD-2/3-Clause, MIT-0, BlueOak-1.0.0
 
 - The API types in `src/api/types/` are written by hand from `docs/reference/desktop-api.md`. Generating them from the Rust
   types would remove the chance of drift; that is out of scope for the scaffold.
-- The sidebar's token meter and the search over cards wait for the Usage page and the board.
+- The sidebar's token meter waits for the Usage page, and the search over cards for a search of the whole app.
+- The board has no route to move a card to a column: a person decides what waits in the inbox, so a drop means approve
+  (Backlog to Ready), merge (to Done), send back (to In progress, with a reason) or retry (a stuck card, to In progress), and
+  any other drop is refused with the reason. The desktop app's "let the Moebius agent write the issue" waits for the chat page.

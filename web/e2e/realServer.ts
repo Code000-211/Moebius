@@ -28,6 +28,7 @@ export type RunningServer = Pick<FakeServer, "url" | "loginUrl" | "token"> & {
   /** A real server is not restarted by the tests. */
   restart?: undefined;
   broadcast?: undefined;
+  board?: undefined;
   guardLog?: undefined;
 };
 

@@ -1,11 +1,14 @@
 /**
- * The routes: every page of `pages.ts` under the shell, the board of a repository, and the redirect from `/` to the
+ * The routes: every page of `pages.ts` under the shell, the board of a repository with the read-only script of a column and the run a card links to, and the redirect from `/` to the
  * first page. The server answers `index.html` for these paths, so a page can be opened and reloaded by its address.
  */
 import { createBrowserRouter, Navigate } from "react-router";
 import { App } from "./App";
+import { BoardPage } from "./board/BoardPage";
+import { RunPage } from "./board/RunPage";
+import { ScriptPage } from "./board/ScriptPage";
 import { DEFAULT_PAGE, PAGES } from "./pages";
-import { BoardPage, NotFoundPage, PlaceholderPage } from "./shell/Page";
+import { NotFoundPage, PlaceholderPage } from "./shell/Page";
 
 export const routes = [
   {
@@ -15,6 +18,8 @@ export const routes = [
       { index: true, element: <Navigate to={`/${DEFAULT_PAGE}`} replace /> },
       ...PAGES.map((page) => ({ path: page.path, element: <PlaceholderPage page={page} /> })),
       { path: "board/:id", element: <BoardPage /> },
+      { path: "board/:id/scripts/:column", element: <ScriptPage /> },
+      { path: "runs/:id", element: <RunPage /> },
       { path: "*", element: <NotFoundPage /> },
     ],
   },

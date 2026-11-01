@@ -72,6 +72,23 @@
   --spacing-plusfifty: 12px;
   --spacing-double: 16px;
   --spacing-icon-sm: 16px;
+  --spacing-icon-xs: 12px;
+  --spacing-icon-2xs: 10px;
+  --spacing-dot: 6px;
+
+  /* The three dots of a card whose run is working (RunningDots). */
+  --animate-running-dot-1: running-dot 1.4s ease-in-out infinite;
+  --animate-running-dot-2: running-dot 1.4s ease-in-out 0.2s infinite;
+  --animate-running-dot-3: running-dot 1.4s ease-in-out 0.4s infinite;
+  @keyframes running-dot {
+    0%,
+    100% {
+      opacity: 0.3;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
 
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);

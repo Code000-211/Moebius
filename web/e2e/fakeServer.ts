@@ -10,6 +10,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net";
 import { extname, join, normalize, resolve } from "node:path";
 import { type WebSocket, WebSocketServer } from "ws";
+import { type BoardFake, createBoardFake } from "./fake/board";
 
 export const TOKEN = "fake-server-token";
 export const AGENT_TOKEN = "fake-run-token";
@@ -25,57 +26,6 @@ const TYPES: Record<string, string> = {
   ".txt": "text/plain",
 };
 
-const SNAPSHOT = {
-  boards: [
-    {
-      repository: {
-        id: 1,
-        name: "demo",
-        path: "/srv/.moebius/repos/demo",
-        forge: "none",
-        default_branch: "main",
-        github: null,
-        trusted: [],
-      },
-      cards: [
-        {
-          id: 1,
-          repository_id: 1,
-          number: 1,
-          title: "Add a feature",
-          body: "",
-          author: "person",
-          column: "Coding",
-          created_at: 1790000000,
-          note: null,
-          retried_after: null,
-          rounds: 1,
-          tokens: 10,
-          run: { id: 1, agent: "Coder", purpose: "code", status: "running" },
-          blocked_by: [],
-          refusals: 0,
-          change: null,
-        },
-      ],
-      round_limit: 5,
-      waiting: {},
-      changes: [],
-    },
-  ],
-  harness_changes: [],
-  inbox: [
-    {
-      id: 1,
-      kind: "stuck",
-      card_id: 1,
-      title: "Stuck",
-      data: {},
-      resolved_at: null,
-      at: 1790000001,
-    },
-  ],
-};
-
 export interface FakeServer {
   /** `http://127.0.0.1:<port>`. */
   url: string;
@@ -88,6 +38,8 @@ export interface FakeServer {
   restart(): Promise<void>;
   /** Sends an event to every connected event stream. */
   broadcast(event: { kind: string; data: unknown }): void;
+  /** The board of the repository `demo` (`fake/board.ts`): move cards, make a route fail, read the requests. */
+  board: BoardFake;
   /** The `X-Moebius` header of each non-GET request that carried the cookie, as received. */
   guardLog: Array<string | undefined>;
 }
@@ -122,6 +74,10 @@ export async function startFakeServer(): Promise<FakeServer> {
   const sockets = new Set<WebSocket>();
   const guardLog: Array<string | undefined> = [];
   const events = new WebSocketServer({ noServer: true });
+  const broadcast = (event: { kind: string; data: unknown }) => {
+    for (const ws of sockets) ws.send(JSON.stringify(event));
+  };
+  const board = createBoardFake(broadcast);
   let port = 0;
 
   const signedIn = (request: IncomingMessage) => {
@@ -159,8 +115,15 @@ export async function startFakeServer(): Promise<FakeServer> {
       return response.end();
     }
     if (path === "/v1/health") return json(response, { version: "0.0.0-fake" });
-    if (path === "/v1/snapshot") return json(response, SNAPSHOT);
+    if (path === "/v1/snapshot") return json(response, board.snapshot());
     if (path === "/v1/start") return json(response, { done: true, steps: [], warnings: [] });
+    const body = method === "GET" ? undefined : JSON.parse((await readBody(request)) || "{}");
+    const answer = board.handle(method, path, body);
+    if (answer) {
+      return typeof answer.body === "string"
+        ? text(response, answer.status, answer.body)
+        : json(response, answer.body);
+    }
     return text(response, 404, "no such route");
   }
 
@@ -210,9 +173,8 @@ export async function startFakeServer(): Promise<FakeServer> {
     loginUrl: `${url}/?login=${LOGIN_CODE}`,
     token: TOKEN,
     guardLog,
-    broadcast(event) {
-      for (const ws of sockets) ws.send(JSON.stringify(event));
-    },
+    board,
+    broadcast,
     async stop() {
       for (const ws of sockets) ws.terminate();
       server.closeAllConnections();

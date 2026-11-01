@@ -8,4 +8,11 @@ export const keys = {
   server: ["server"] as const,
   start: ["start"] as const,
   snapshot: ["snapshot"] as const,
+  /** Everything read about one card (its history and its runs) starts with this, so an event can make it all stale. */
+  cards: ["card"] as const,
+  history: (card: number) => ["card", card, "history"] as const,
+  cardRuns: (card: number) => ["card", card, "runs"] as const,
+  /** The script of a column; `script_changed` makes all of them stale. */
+  scripts: ["script"] as const,
+  script: (repository: number, column: string) => ["script", repository, column] as const,
 };

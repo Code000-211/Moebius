@@ -63,6 +63,21 @@ describe("invalidates", () => {
     }
   });
 
+  it("makes what is read about a card stale with the snapshot, and the scripts with their own event", () => {
+    expect(invalidates({ kind: "card_moved", data: {} })).toContainEqual(keys.cards);
+    expect(invalidates({ kind: "script_changed", data: {} })).toEqual([keys.scripts]);
+    const queryClient = client();
+    queryClient.setQueryData(keys.history(7), []);
+    queryClient.setQueryData(keys.cardRuns(7), []);
+    queryClient.setQueryData(keys.script(1, "Ready"), {});
+    applyEvent(queryClient, { kind: "run_ended", data: {} });
+    expect(stale(queryClient, keys.history(7))).toBe(true);
+    expect(stale(queryClient, keys.cardRuns(7))).toBe(true);
+    expect(stale(queryClient, keys.script(1, "Ready"))).toBe(false);
+    applyEvent(queryClient, { kind: "script_changed", data: {} });
+    expect(stale(queryClient, keys.script(1, "Ready"))).toBe(true);
+  });
+
   it("leaves the snapshot alone for kinds it does not show", () => {
     for (const kind of [
       "run_event",
