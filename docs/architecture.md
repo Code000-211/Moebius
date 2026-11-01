@@ -94,10 +94,10 @@ like the iced app and does not know anything the API does not say.
    as for a local run, the reader included. When the run ends `finish` first has the runner commit what the agent left and
    fetches it into the worktree (`RunningRun::bring_back`), so that the commit, the checks and the change are done here.
 6. **Pi works.** A thread per run (`Reader::read`) reads Pi's records: each is stored and published as `run_event` with
-   its `seq` (`App::record_run_event`, which `check::ask` and `App::steer_run` use too). Pi asks the model through the router (`Router::forward`), which counts the tokens and may
+   its `seq` (`App::record_run_event`, which `check::call::ask` and `App::steer_run` use too). Pi asks the model through the router (`Router::forward`), which counts the tokens and may
    refuse with 429.
-7. **Every tool call is checked.** The bridge posts to `/moebius/check` (`check::check`). On a blocking thread,
-   `check::ask` builds the `tool_call` question (`tool_call_question`, with the applicable rules from
+7. **Every tool call is checked.** The bridge posts to `/moebius/check` (`check::check`). On a blocking thread the
+   entry `check::call::ask` builds the `tool_call` question (`call::tool_call_question`, with the applicable rules from
    `rules::applicable`, or the `rules_error` when the server's rules file cannot be read), and `Decisions::decide` asks the `guard` plugin through the `Host` on a thread of its own with
    a time limit. `Guard::call` tests the built-in patterns, then the prose rules with the teacher model (`Teacher::judge`,
    which calls the router with a token for this run; once a takeover of `tool_call` is merged, `DecisionModel::ask` answers the prose rules instead). The answer is stored as one judgement, as a `tool_check` run
@@ -548,7 +548,8 @@ At the top:
 | Module | What it is for |
 |---|---|
 | `decide/mod.rs` | Decision points: routing a question to a decider, failing closed, recording the judgement. |
-| `decide/check/mod.rs` | The tool-call check: the endpoints `/moebius/check` and `/moebius/result` the bridge calls on the router's listener, every call asked before it runs and every result reported; the MCP gateway decides its calls with the same question. |
+| `decide/check/mod.rs` | The tool-call check's endpoints `/moebius/check` and `/moebius/result` the bridge calls on the router's listener: the token, the parse, every result reported; the MCP gateway decides its calls with the same question. |
+| `decide/check/call.rs` | The one entry that decides a tool call (`decide_call`): the `tool_call` question with the applicable rules, `Decisions::decide` for the order (fixed rules, guard, decision model, shadowing and takeover), the recorded decider, and the `tool_check` run event. |
 | `decide/check/result.rs` | `/moebius/result`: each text of a tool's result cleaned of secrets and, with the agent's `tool_output`, made smaller by `harness/output/`, recorded as a `tool_output` run event. |
 | `decide/guard/mod.rs` | The `guard` decider: built-in rules first, then the rules in prose for the teacher or the decision model. |
 | `decide/guard/shell.rs` | How the guard reads a tool call: simple commands, redirects, nested shells, `cd`, and paths. |
