@@ -242,32 +242,6 @@
 }
 
 /*
- * A control that takes what is on screen somewhere else — Copy — waits until the block it belongs to is being looked
- * at. The words are the content; the button is a way of carrying them off, and it is noise beside every message at
- * once. Keyboard focus reveals it as surely as a pointer, and a screen with nothing to hover keeps it where it is.
- * `reveal-copy` marks the block (`ui/chat/*`), `copy-quiet` is the button (`ui/chat/CopyButton.tsx`).
- */
-@utility copy-quiet {
-  opacity: 0;
-  transition: opacity var(--motion-routine) ease-out;
-
-  &:focus-visible {
-    opacity: 1;
-  }
-
-  @media (hover: none) {
-    opacity: 1;
-  }
-}
-
-@utility reveal-copy {
-  &:hover .copy-quiet,
-  &:focus-within .copy-quiet {
-    opacity: 1;
-  }
-}
-
-/*
  * A scroller with no scrollbar of its own, for a column too narrow to spare one: the sidebar's rail is 64 wide and a
  * bar would take 8 of them and pull every icon off the middle. What is still below is said by a fade instead
  * (`app/board/ScrollFades.tsx`), and the wheel and the arrow keys still work.

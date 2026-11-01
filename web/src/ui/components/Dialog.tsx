@@ -12,10 +12,6 @@ import { cn } from "../lib/cn";
 
 const Dialog = DialogPrimitive.Root;
 
-const DialogTrigger = DialogPrimitive.Trigger;
-
-const DialogClose = DialogPrimitive.Close;
-
 function DialogPortal({ children, ...props }: DialogPrimitive.DialogPortalProps) {
   return <DialogPrimitive.Portal {...props}>{children}</DialogPrimitive.Portal>;
 }
@@ -110,15 +106,4 @@ const DialogDescription = React.forwardRef<
 ));
 DialogDescription.displayName = DialogPrimitive.Description.displayName;
 
-export {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogOverlay,
-  DialogPortal,
-  DialogTitle,
-  DialogTrigger,
-};
+export { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle };

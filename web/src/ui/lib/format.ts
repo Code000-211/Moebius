@@ -4,7 +4,6 @@
  * digits. Every page counts something and lists some days; none of them should write it again.
  */
 
-/** A count with its noun: `plural(1, "run", "runs")` is "1 run", `plural(3, "run", "runs")` is "3 runs". */
 /**
  * The name a file or a folder is looked for by: the last part of a path, whichever way the server's system points.
  * The whole path stays available as a tooltip, because the folder a file is in is asked about far less than it is named.
@@ -14,6 +13,7 @@ export function fileName(path: string): string {
   return parts.at(-1) ?? path;
 }
 
+/** A count with its noun: `plural(1, "run", "runs")` is "1 run", `plural(3, "run", "runs")` is "3 runs". */
 export function plural(n: number, one: string, many: string): string {
   return `${n} ${noun(n, one, many)}`;
 }

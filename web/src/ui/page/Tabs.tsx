@@ -21,7 +21,7 @@ export function Tabs<T extends string>({
   className,
 }: {
   /** What may be shown, in the order they sit. */
-  tabs: Array<{ value: T; label: string; count?: number }>;
+  tabs: Array<{ value: T; label: string }>;
   value: T;
   onChange: (value: T) => void;
   /** What the row of tabs is for, for the person hearing the page read aloud. */
@@ -72,7 +72,6 @@ export function Tabs<T extends string>({
             )}
           >
             {each.label}
-            {each.count !== undefined && <span className="text-sm tabular-nums">{each.count}</span>}
           </button>
         );
       })}

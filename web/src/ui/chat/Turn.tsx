@@ -23,7 +23,6 @@ import { ChatAssistantMessage } from "./ChatAssistantMessage";
 import { ChatCollapsedThinking } from "./ChatCollapsedThinking";
 import { ChatErrorMessage } from "./ChatErrorMessage";
 import { ChatFileEntry } from "./ChatFileEntry";
-import { ChatMarkdown } from "./ChatMarkdown";
 import { ChatTodoList } from "./ChatTodoList";
 import { ChatToolSummary } from "./ChatToolSummary";
 import { ChatUserMessage } from "./ChatUserMessage";
@@ -207,12 +206,11 @@ function BlockView({
         <ChatAssistantMessage
           content={block.text}
           renderMarkdown={({ content }) => (
-            <ChatMarkdown
-              content={content}
-              renderContent={({ content, className }) => (
-                <Markdown content={content} className={className} keepNewlines />
-              )}
-            />
+            // The answer keeps the measure of the standard and takes every line the agent wrote; the wrapper the
+            // component copied is one box that says the same.
+            <div className="max-w-prose">
+              <Markdown content={content} className="break-words" keepNewlines />
+            </div>
           )}
           actions={<CopyButton text={block.text} label="Copy message" />}
         />
