@@ -1,5 +1,8 @@
 # Desktop app design
 
+The web app is the front end from now on ([ADR 0013](adr/0013-the-web-app-is-the-front-end.md)); the desktop app is kept
+working until it is removed, and this page and `theme.rs` stay the source of the look both share.
+
 The desktop app is a dense developer tool in a dark theme, Deep Velvet: a violet-black ground with islands of surface,
 soft radii, a compact type scale, and colour only where it says something about a run or is the one thing to press. Every value below is a named constant in
 [`crates/moebius-desktop/src/theme.rs`](../crates/moebius-desktop/src/theme.rs), which is the single source of truth;

@@ -37,13 +37,39 @@ A run of the Moebius agent has `MOEBIUS_URL` and `MOEBIUS_TOKEN` set by the serv
 protocol](bridge-protocol.md#the-environment-of-the-harness)); what it does is recorded as the agent's (see
 [the desktop API](desktop-api.md#authentication)).
 
-### `connect <host>`
+### `connect <host> [--port <n>] [--no-window] [--browser <path>]`
 
 Opens the same tunnel as `--ssh` and keeps it open until Ctrl+C. It writes the tunnel's address and token to
 `connected.toml` next to `desktop.toml` (mode 0600) and prints `Connected to <host>: http://127.0.0.1:<port>.` The
 `moebius` commands run meanwhile, without `--server`, use it; a file whose port no longer answers is removed and
 ignored. The server must have been set up on the host once, by the desktop app. `desktop.toml` may name another client
 with `ssh_program`.
+
+`--port` is the port the server listens on at the host (default 7171). Once `GET /v1/health` answers through the
+forwarded port, `connect` asks the server for a one-time login code through the tunnel and opens the web app in a
+window, as `open` does, on the local address of the tunnel (`http://127.0.0.1:<local port>/?login=<code>`). The code
+is made here with the token read over the same login, so nothing has to run on the host but the server. `--no-window`
+holds the tunnel only; `--browser` (or `MOEBIUS_BROWSER`) names the browser, as for `open`. Neither the token nor the
+code is printed.
+
+### `open [--browser <path>]`
+
+Opens the web app of the server in a window of its own. It asks the server for a one-time login code (`POST
+/v1/session/codes`, as `web` does, so the server found as for every other command, or by `--ssh`) and starts a
+Chromium-based browser in app mode (no tabs, no address bar):
+
+```
+<browser> --app=<server>/?login=<code> --user-data-dir=<config dir>/moebius/window --no-first-run --no-default-browser-check
+```
+
+The profile folder is the window's own, so it keeps its own session cookie and never joins a browser that is already
+running. The browser is, in this order: `--browser <path>` (or `MOEBIUS_BROWSER`; a name is looked up on `PATH`, and a
+browser that does not exist is an error), the first of `chromium`, `chromium-browser`, `google-chrome`,
+`google-chrome-stable`, `microsoft-edge`, `msedge` and `brave-browser` on `PATH`, then Edge or Chrome at their usual
+places on Windows (`Program Files`, `Program Files (x86)`, `%LocalAppData%`) and the application bundles in
+`/Applications` on macOS. When none is found the address is opened in the default browser (`xdg-open`, `open`, `cmd /c
+start`), in a tab, and the command says so. The command ends as soon as the browser is started. It writes a sentence
+that names the browser, never the address, because the code in it is a credential.
 
 ## Output and exit codes
 
@@ -128,7 +154,7 @@ takes a repository's name.
 | `grilling dismiss <id>` | `POST /v1/grillings/{id}/dismiss` | The grilling. |
 | `usage [--days <n>]` | `GET /v1/usage?days=<n>` | The window's totals, then the agents and the models. |
 | `doctor` | `GET /v1/start` | One line for each step of [the first start](desktop-api.md#get-v1start), `ok` or `missing` with what is missing, such as `missing  upstream: Add an upstream on the Models page.` After the steps, a line `warning  <text>` for each of the answer's `warnings`, such as an upstream that logs in with OAuth. The exit status is 1 while a step is missing (a warning does not change it), so that a script can wait for a ready server. |
-| `web` | `POST /v1/session/codes` | The line `Open the web app: <url>`, where the address signs a browser in once with a one-time code that lasts 10 minutes. The server prints the same kind of line when it starts. |
+| `web` | `POST /v1/session/codes` | The line `Open the web app: <url>`, where the address signs a browser in once with a one-time code that lasts 10 minutes. The server prints the same kind of line when it starts. To get a window instead of a line, use [`open`](#open---browser-path). |
 | `decision-model` | `GET /v1/decision-model` | The model, its agreement per kind and its takeovers. |
 | `takeovers` | `GET /v1/takeovers` | Table `id kind status agreement count`. |
 | `takeover merge\|dismiss\|release <id> [--reason <text>]` | `POST /v1/takeovers/{id}/merge`, `/dismiss`, `/release` | The takeover. |

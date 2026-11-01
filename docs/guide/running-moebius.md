@@ -30,8 +30,8 @@ the server in WSL (see [On Windows](#on-windows)). Every key named here is in th
    where there is one, else detached), reads the token and opens `ssh -N -L` to the server. The steps and the log are on
    the screen. The server listens on `127.0.0.1` only and nothing else on the host needs to be reachable; if the tunnel
    drops, the sidebar says "Reconnecting…" and it is made again. Hosts connected to before are in the sidebar header's
-   menu. On the command line, `moebius connect <host>` or `--ssh <host>` does the same tunnel (see
-   [the command line](../reference/cli.md#connect-host)). The rest of the steps below are for installing by hand and for a
+   menu. On the command line, `moebius connect <host>` or `--ssh <host>` does the same tunnel and `connect` also opens
+   the web app in a window (see [the command line](../reference/cli.md#connect-host---port-n---no-window---browser-path)). The rest of the steps below are for installing by hand and for a
    server that listens on a private network.
 
 1. Install from a release. Download the archive for your machine and `SHA256SUMS` from the

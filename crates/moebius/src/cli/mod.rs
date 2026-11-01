@@ -10,7 +10,7 @@
 //! for reading input and writing answers. `client` finds the server and sends the requests; each other module is one
 //! group of commands, with its requests and how its answers are written: `api` (any route), `board` (the board,
 //! cards, the inbox and issues), `chats` (chats and grillings), `automations`, `agents`, `rules`, `repos`
-//! (repositories), `ssh` (a server reached through an SSH tunnel), `setup` (`doctor`, settings, API keys, usage and the server itself) and `improve` (Retros,
+//! (repositories), `ssh` (a server reached through an SSH tunnel), `window` (the web app as a window of its own), `setup` (`doctor`, settings, API keys, usage and the server itself) and `improve` (Retros,
 //! proposals, research, the decision model and its takeovers).
 
 mod agents;
@@ -24,6 +24,7 @@ mod repos;
 mod rules;
 mod setup;
 pub mod ssh;
+pub mod window;
 
 use std::io::Read;
 
@@ -35,7 +36,7 @@ use automations::AutomationCommand;
 use board::{InboxCommand, IssueCommand};
 use chats::{ChatCommand, GrillingCommand};
 use client::Request;
-pub use client::{Client, connect, desktop_settings_path};
+pub use client::{Client, Connection, connect, desktop_settings_path};
 use improve::{ProposalCommand, ResearchCommand, RetroCommand, TakeoverCommand};
 use repos::RepoCommand;
 use rules::RulesCommand;

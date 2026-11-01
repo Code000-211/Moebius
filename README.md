@@ -82,7 +82,8 @@ desktop app ──(private network, token)──▶ moebius server ──▶ Git
 ```
 
 One headless server holds the boards, runs the column scripts, starts the agents and keeps everything in SQLite. The
-desktop app (Rust, [iced](https://iced.rs)) talks to it over a documented API, and so does the `moebius` command line.
+web app it serves (`moebius open` shows it in a window of its own, `moebius connect <host>` over SSH) and the desktop app (Rust,
+[iced](https://iced.rs), kept until the web app has been used for a release: [ADR 0013](docs/adr/0013-the-web-app-is-the-front-end.md)) talk to it over a documented API, and so does the `moebius` command line.
 [`docs/architecture.md`](docs/architecture.md) follows a card through the system.
 
 ## Quick start
@@ -129,7 +130,9 @@ program = "/usr/local/bin/pi-bolt"
 moebius serve     # creates .moebius/ next to the file, with the API token in .moebius/token
 ```
 
-**4. Connect the app.** Start the desktop app (from a release for Linux or Windows, or `cargo run -p moebius-desktop`;
+**4. Open the app.** `moebius open` shows the web app in a window of its own (a Chromium-based browser in app mode,
+signed in once with a code; the default browser if there is none). For a server on another machine, `moebius connect
+<host>` forwards its port over SSH and opens the window on it. Or start the desktop app instead (from a release for Linux or Windows, or `cargo run -p moebius-desktop`;
 on Windows it reaches a server in WSL at the same address), and give it the
 address `http://127.0.0.1:7171` and the content of `.moebius/token`. The **Get started** page lists what is still
 missing.

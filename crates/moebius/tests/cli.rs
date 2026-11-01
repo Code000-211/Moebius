@@ -559,3 +559,69 @@ async fn connect_holds_a_tunnel_that_the_following_commands_use() {
     let _ = connect.kill();
     let _ = connect.wait();
 }
+
+// The fake browser is a shell script started by its `#!` line, which Windows does not run.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn open_starts_the_browser_in_app_mode_on_an_address_that_signs_in_once() {
+    use std::os::unix::fs::PermissionsExt;
+    let running = start().await;
+    let fake = running.dir.path().join("fake-browser");
+    let record = running.dir.path().join("recorded");
+    std::fs::write(
+        &fake,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\n",
+            record.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let output = running
+        .run(&["open", "--browser", fake.to_str().unwrap()])
+        .await;
+    let said = out(&output);
+    assert!(said.contains("Opened the web app in a window of"), "{said}");
+    assert!(!said.contains("login="), "the code is a credential: {said}");
+
+    let started = std::time::Instant::now();
+    let args = loop {
+        if let Ok(text) = std::fs::read_to_string(&record)
+            && text.lines().count() >= 4
+        {
+            break text;
+        }
+        assert!(
+            started.elapsed().as_secs() < 60,
+            "the fake browser never ran"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    };
+    let args: Vec<&str> = args.lines().collect();
+    let prefix = format!("--app={}/?login=", running.url);
+    let url = args[0];
+    assert!(url.starts_with(&prefix), "{url}");
+    let profile = args[1].strip_prefix("--user-data-dir=").unwrap();
+    assert!(
+        profile.starts_with(running.dir.path().join("home").to_str().unwrap()),
+        "{profile}"
+    );
+
+    let code = url.strip_prefix(&prefix).unwrap().to_string();
+    let http = reqwest::Client::new();
+    let sign_in = |code: String| {
+        let http = http.clone();
+        let address = format!("{}/v1/session", running.url);
+        async move {
+            http.post(address)
+                .json(&json!({ "code": code }))
+                .send()
+                .await
+                .unwrap()
+                .status()
+                .as_u16()
+        }
+    };
+    assert_eq!(sign_in(code.clone()).await, 204);
+    assert_eq!(sign_in(code).await, 401);
+}

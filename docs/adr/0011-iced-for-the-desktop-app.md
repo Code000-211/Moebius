@@ -1,5 +1,7 @@
 # The desktop app is built with iced, and its terminal on alacritty_terminal
 
+Status: superseded by [0013](0013-the-web-app-is-the-front-end.md). The text below is kept as it was.
+
 The desktop app is written with iced, the Rust UI framework that COSMIC is built on, rendered on the GPU through wgpu. Its
 terminal (the shell into a run's worktree in the live view) uses `alacritty_terminal` for the emulation, through the
 `iced_term` widget, so that Moebius neither writes a terminal emulator of its own nor takes code from COSMIC Terminal.

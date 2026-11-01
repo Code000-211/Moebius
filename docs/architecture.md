@@ -360,7 +360,8 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | `main.rs` | The `moebius` binary: `init` writes the example configuration (with the `pi-bolt` found on `PATH`) and the harness configuration repository next to it (`harness::repo::create`), `serve` starts the server, `check-script` runs a column script once against a made-up card (`board::check_script`), `export` writes the training set (`improve::export`). |
 | `cli/mod.rs` | The commands that operate a running server through the desktop API (`api` for any route, and `doctor`, `board`, `issue`, `agent`, `repo` and the others for what is done often): the commands as clap sees them, the dispatch to their groups, and writing answers as plain text. |
 | `cli/client.rs` | Where the server is (`--server` and `--token`, the desktop app's saved settings, `moebius.toml`), the one request a command makes, and sending it with the token. |
-| `cli/ssh.rs` | A server reached over SSH: one `ssh -L` that also reads the token, for `--ssh <host>` and `connect <host>`, and the `connected.toml` that `connect` leaves for the commands that follow. |
+| `cli/ssh.rs` | A server reached over SSH: one `ssh -L` that also reads the token, for `--ssh <host>` and `connect <host>`, waiting until the forwarded port answers, and the `connected.toml` that `connect` leaves for the commands that follow. |
+| `cli/window.rs` | The web app as a window of its own: finds a Chromium-based browser, builds its app-mode arguments with a profile folder of its own and starts it, or the default browser; for `open` and `connect`. |
 | `cli/api.rs` | `api`: any route, with a method and a JSON body. |
 | `cli/board.rs` | `board`, `card`, `inbox` (and `inbox act`, as the app's buttons) and `issue create`. |
 | `cli/chats.rs` | `chats`, `chat` (start, say, offer, end), `grillings` and `grilling`. |

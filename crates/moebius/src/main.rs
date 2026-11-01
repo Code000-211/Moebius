@@ -69,11 +69,28 @@ enum Command {
         #[arg(long, default_value = "person")]
         author: String,
     },
-    /// Open an SSH tunnel to the server of a host and keep it open, for the commands that follow in other terminals.
-    /// Stops with Ctrl+C.
+    /// Open an SSH tunnel to the server of a host and keep it open, for the commands that follow in other terminals,
+    /// and the web app in a window. Stops with Ctrl+C.
+    /// With the web app in a window of its own, unless `--no-window`.
     Connect {
         /// A host of `~/.ssh/config`, or `user@host`.
         host: String,
+        /// The port the server listens on at the host.
+        #[arg(long, default_value_t = cli::ssh::REMOTE_PORT)]
+        port: u16,
+        /// Open no window; only hold the tunnel.
+        #[arg(long)]
+        no_window: bool,
+        /// The Chromium-based browser that shows the window.
+        #[arg(long, env = "MOEBIUS_BROWSER")]
+        browser: Option<PathBuf>,
+    },
+    /// Open the web app of the server in a window of its own, signed in with a one-time code.
+    Open {
+        /// The Chromium-based browser that shows the window (Chromium, Chrome, Edge or Brave). Without it one is
+        /// looked for; without any, the default browser opens the address in a tab.
+        #[arg(long, env = "MOEBIUS_BROWSER")]
+        browser: Option<PathBuf>,
     },
     #[command(flatten)]
     Operate(cli::Operate),
@@ -91,6 +108,12 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> Result<(), String> {
+    let where_to = Where {
+        ssh: cli.ssh.clone(),
+        server: cli.server.clone(),
+        token: cli.token.clone(),
+        config: cli.config.clone(),
+    };
     match cli.command {
         None => {
             println!("moebius {}: see `moebius --help`", moebius_core::VERSION);
@@ -166,9 +189,15 @@ fn run(cli: Cli) -> Result<(), String> {
             }
             Ok(())
         }
-        Some(Command::Connect { host }) => {
+        Some(Command::Connect {
+            host,
+            port,
+            no_window,
+            browser,
+        }) => {
             let desktop = cli::desktop_settings_path();
-            let mut tunnel = cli::ssh::Tunnel::open(&cli::ssh::program(desktop.as_deref()), &host)?;
+            let mut tunnel =
+                cli::ssh::Tunnel::open(&cli::ssh::program(desktop.as_deref()), &host, port)?;
             let file = cli::ssh::connected_path(desktop.as_deref())
                 .ok_or("there is no config directory to write the connection to")?;
             cli::ssh::write_connected(&file, &tunnel)?;
@@ -176,33 +205,32 @@ fn run(cli: Cli) -> Result<(), String> {
                 "Connected to {host}: {}. The other moebius commands use it until this one ends (Ctrl+C).",
                 tunnel.connection.url
             );
+            if !no_window {
+                cli::ssh::wait_until_healthy(
+                    &tunnel.connection.url,
+                    std::time::Duration::from_secs(60),
+                )?;
+                let client = cli::Client::new(tunnel.connection.clone())?;
+                let opened =
+                    cli::window::open(&cli::window::login_url(&client)?, browser.as_deref())?;
+                println!("{}", cli::window::describe(&opened));
+            }
             let ended = tunnel.wait();
             let _ = std::fs::remove_file(&file);
             ended?;
             Err(format!("the connection to {host} ended"))
         }
+        Some(Command::Open { browser }) => {
+            let desktop = cli::desktop_settings_path();
+            let (connection, _tunnel) = connection(&where_to, desktop.as_deref())?;
+            let client = cli::Client::new(connection)?;
+            let opened = cli::window::open(&cli::window::login_url(&client)?, browser.as_deref())?;
+            println!("{}", cli::window::describe(&opened));
+            Ok(())
+        }
         Some(Command::Operate(command)) => {
             let desktop = cli::desktop_settings_path();
-            // Kept until the command is done: dropping it closes the tunnel.
-            let _tunnel;
-            let connection = if let Some(host) = &cli.ssh {
-                let tunnel = cli::ssh::Tunnel::open(&cli::ssh::program(desktop.as_deref()), host)?;
-                let connection = tunnel.connection.clone();
-                _tunnel = Some(tunnel);
-                connection
-            } else if let (None, Some(open)) = (
-                &cli.server,
-                cli::ssh::connected(cli::ssh::connected_path(desktop.as_deref()).as_deref()),
-            ) {
-                open
-            } else {
-                cli::connect(
-                    cli.server.as_deref(),
-                    cli.token.as_deref(),
-                    desktop.as_deref(),
-                    &cli.config,
-                )?
-            };
+            let (connection, _tunnel) = connection(&where_to, desktop.as_deref())?;
             let client = cli::Client::new(connection)?;
             let (text, ready) = cli::operate(&client, &command, cli.json)?;
             println!("{text}");
@@ -250,9 +278,42 @@ fn run(cli: Cli) -> Result<(), String> {
     }
 }
 
+/// What the global options say about the server a command talks to.
+struct Where {
+    ssh: Option<String>,
+    server: Option<String>,
+    token: Option<String>,
+    config: PathBuf,
+}
+
+/// The server a command talks to, and the tunnel that reaches it when `--ssh` named a host: the tunnel closes when it
+/// is dropped, so the caller keeps it until the command is done.
+fn connection(
+    cli: &Where,
+    desktop: Option<&std::path::Path>,
+) -> Result<(cli::Connection, Option<cli::ssh::Tunnel>), String> {
+    if let Some(host) = &cli.ssh {
+        let tunnel =
+            cli::ssh::Tunnel::open(&cli::ssh::program(desktop), host, cli::ssh::REMOTE_PORT)?;
+        return Ok((tunnel.connection.clone(), Some(tunnel)));
+    }
+    if cli.server.is_none()
+        && let Some(open) = cli::ssh::connected(cli::ssh::connected_path(desktop).as_deref())
+    {
+        return Ok((open, None));
+    }
+    let connection = cli::connect(
+        cli.server.as_deref(),
+        cli.token.as_deref(),
+        desktop,
+        &cli.config,
+    )?;
+    Ok((connection, None))
+}
+
 /// The executable file `name` in the first directory of `path` (a list in the format of `PATH`) that has one. On
 /// Windows, `name` with `.exe`, `.cmd` or `.bat` is looked for too, before `name` itself.
-fn find_in_path(name: &str, path: &std::ffi::OsStr) -> Option<PathBuf> {
+pub(crate) fn find_in_path(name: &str, path: &std::ffi::OsStr) -> Option<PathBuf> {
     let names: Vec<String> = if cfg!(windows) {
         [".exe", ".cmd", ".bat", ""]
             .iter()
