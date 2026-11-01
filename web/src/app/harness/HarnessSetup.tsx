@@ -7,6 +7,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { setUpHarness } from "../../api/calls/harness";
 import { restartServer } from "../../api/calls/models";
+import { sayError } from "../../api/errorText";
 import { Button } from "../../ui/components/Button";
 import { Box } from "../../ui/page/Box";
 import { Notice } from "../../ui/page/Notice";
@@ -39,7 +40,9 @@ export function HarnessSetup() {
             Set up. The server restarts and the app reconnects by itself.
           </p>
         )}
-        {setUp.isError && <Notice tone="error">{setUp.error.message}</Notice>}
+        {setUp.isError && (
+          <Notice tone="error">{sayError(setUp.error, "The setup could not be run.")}</Notice>
+        )}
       </div>
       <Button
         size="sm"

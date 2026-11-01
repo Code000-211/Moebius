@@ -5,7 +5,7 @@
  * (`file.ts`) and hands the whole file to `onSave`, which the server checks; a refusal stays in the card, beside the
  * rule it refuses.
  */
-import { PencilSimpleIcon } from "@phosphor-icons/react";
+import { PencilSimpleIcon, PlusIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 import { sayError } from "../../api/errorText";
 import type { Rule } from "../../api/types/rules";
@@ -122,7 +122,7 @@ export function RuleList({
           />
         ) : (
           <Button size="sm" variant="secondary" onClick={() => edit(null)}>
-            <PencilSimpleIcon className="size-4" aria-hidden="true" />
+            <PlusIcon className="size-4" aria-hidden="true" />
             Add a rule
           </Button>
         ))}

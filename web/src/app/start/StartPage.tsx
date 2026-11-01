@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { start } from "../../api/calls/server";
 import { restartServer, setUpHarness } from "../../api/calls/settings";
+import { sayError } from "../../api/errorText";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import { Button } from "../../ui/components/Button";
@@ -58,7 +59,11 @@ export function StartPage() {
         }
       />
       <div className="flex flex-col gap-4">
-        {answer.isError && <Notice tone="error">{answer.error.message}</Notice>}
+        {answer.isError && (
+          <Notice tone="error">
+            {sayError(answer.error, "The steps could not be read. Try again.")}
+          </Notice>
+        )}
         {setUp.isSuccess && (
           <Notice tone="ok">Set up. The server restarts and the page reconnects by itself.</Notice>
         )}

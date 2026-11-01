@@ -7,12 +7,10 @@
  * is working.
  */
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { snapshot as readSnapshot } from "../../api/calls/board";
 import { chats as readChats } from "../../api/calls/chat";
 import { run as readRun } from "../../api/calls/fleet";
-import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import { inputPath, inputSummary, toolTitle } from "../../chat/conversation";
 import { useThread } from "../../chat/useThread";
@@ -22,9 +20,10 @@ import { toolStatus } from "../../ui/chat/Turn";
 import { Button } from "../../ui/components/Button";
 import { Loader } from "../../ui/components/Loader";
 import { cn } from "../../ui/lib/cn";
+import { useNow } from "../../ui/lib/useNow";
 import { Empty } from "../../ui/page/Empty";
-import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
+import { ReadFailed } from "../../ui/page/ReadFailed";
 import { Status } from "../../ui/page/Status";
 import {
   afterSteps,
@@ -39,20 +38,11 @@ import {
   working,
 } from "./model";
 
-/** The time now in Unix seconds, kept current every 5 seconds for how long the runs have run. */
-function useNow(): number {
-  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 5_000);
-    return () => clearInterval(timer);
-  }, []);
-  return now;
-}
-
 export function FleetPage() {
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => readSnapshot() });
   const chats = useQuery({ queryKey: keys.chats, queryFn: readChats });
-  const now = useNow();
+  // How long a run has been going is said in seconds, so this page's clock ticks faster than the rest.
+  const now = useNow(5_000);
   if (data.isPending || chats.isPending) {
     return <Loader message="Reading the fleet" className="py-8" />;
   }
@@ -62,27 +52,15 @@ export function FleetPage() {
     return (
       <>
         <PageHeader title="Fleet" />
-        <Notice
-          tone="error"
-          action={
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={data.isFetching || chats.isFetching}
-              onClick={() => {
-                void data.refetch();
-                void chats.refetch();
-              }}
-            >
-              Try again
-            </Button>
-          }
-        >
-          {sayError(
-            data.isError ? data.error : chats.error,
-            "Could not read what the agents are doing. Try again.",
-          )}
-        </Notice>
+        <ReadFailed
+          error={data.isError ? data.error : chats.error}
+          fallback="Could not read what the agents are doing. Try again."
+          busy={data.isFetching || chats.isFetching}
+          onRetry={() => {
+            void data.refetch();
+            void chats.refetch();
+          }}
+        />
       </>
     );
   }

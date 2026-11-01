@@ -8,6 +8,7 @@
 import { Children, Fragment, isValidElement, type ReactElement, type ReactNode } from "react";
 import { Tag, type TagTone } from "../chat/Tag";
 import { cn } from "../lib/cn";
+import { Empty } from "./Empty";
 
 /** A card of a list on the left of a page: a title, tags, a line, and whether it is the chosen one. */
 export function ListCard({
@@ -87,6 +88,8 @@ function childrenOf(node: ReactNode): ReactNode[] {
 const isCard = (child: ReactNode): child is ReactElement =>
   isValidElement(child) && child.type === ListCard;
 
+const isEmpty = (child: ReactNode): boolean => isValidElement(child) && child.type === Empty;
+
 /**
  * The rows of the left column as a real list: every `ListCard` sits in an `<li>` of one `<ul role="list">`, so the
  * person hearing the page read learns how many rows there are instead of running through buttons. `role="list"` is
@@ -121,12 +124,13 @@ function Rows({ children }: { children: ReactNode }) {
 /**
  * A list with the detail of the chosen item beside it; on a narrow screen they stack.
  *
- * A list with nothing in it is not worth a column of its own: `list` as an empty array — what `rows.map(...)` gives
- * when there are no rows — leaves the column out, and the detail, which is then the empty state with the first row in
- * it, takes the width the page has.
+ * A list with nothing in it is not worth a column of its own: an empty array — what `rows.map(...)` gives when there
+ * are no rows — and an empty state handed over instead of rows both leave the column out, so the detail, which is then
+ * the empty state with the first row in it, takes the width the page has. A loader is not nothing: the rows are on
+ * their way, and the column keeps its place until they arrive.
  */
 export function ListDetail({ list, detail }: { list: ReactNode; detail: ReactNode }) {
-  const nothingToList = Array.isArray(list) && list.length === 0;
+  const nothingToList = childrenOf(list).every((child) => !isCard(child) && isEmpty(child));
   return (
     <div className={cn("flex flex-col gap-6", !nothingToList && "lg:flex-row lg:items-start")}>
       {!nothingToList && (

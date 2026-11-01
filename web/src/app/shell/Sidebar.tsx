@@ -287,7 +287,11 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
                   }}
                   label={board.repository.name}
                   collapsed={collapsed}
-                  current={at === boardPath(board.repository.id)}
+                  // The script of a column is a page of the same project, so it keeps its row marked.
+                  current={
+                    at.startsWith(`${boardPath(board.repository.id)}/`) ||
+                    at === boardPath(board.repository.id)
+                  }
                 />
               );
             })}

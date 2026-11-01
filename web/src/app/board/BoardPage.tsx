@@ -10,7 +10,7 @@
  */
 import { PlusIcon, TerminalWindowIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { snapshot } from "../../api/calls/board";
 import { keys } from "../../api/keys";
@@ -30,6 +30,7 @@ import { Loader } from "../../ui/components/Loader";
 import { Empty } from "../../ui/page/Empty";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
+import { ReadFailed } from "../../ui/page/ReadFailed";
 import { Status } from "../../ui/page/Status";
 import { boardPath } from "../pages";
 import { ColumnMark } from "./ColumnMark";
@@ -97,10 +98,43 @@ export function BoardPage() {
   const { decide, pending, notice, setNotice } = useDecisions();
   const [creating, setCreating] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
-  const [rejectAsk, setRejectAsk] = useState(0);
+  // The card a send-back needs a reason for, not a count: a count stays raised once it is raised, so every card
+  // opened afterwards found the reason form waiting for it.
+  const [rejectFor, setRejectFor] = useState<number | null>(null);
+
+  const board = data.data?.boards.find((b) => String(b.repository.id) === id);
+  const inbox = data.data?.inbox ?? [];
+  const filters = useMemo<Filters>(
+    () => ({
+      column: params.get("column") ?? "",
+      agent: params.get("agent") ?? "",
+      status: params.get("status") ?? "",
+    }),
+    [params],
+  );
+  // The cards are grouped once per read of the board and once per change of the filter, not once per render of the
+  // dock or of a decision coming back.
+  const groups = useMemo(
+    () => (board ? groupByColumn(board, inbox, filters) : []),
+    [board, inbox, filters],
+  );
 
   if (data.isPending) return <Loader message="Reading the board" className="py-8" />;
-  const board = data.data?.boards.find((b) => String(b.repository.id) === id);
+  // A read that failed is not a board that does not exist, and the page that says so would send the person off to
+  // choose a project that is already chosen.
+  if (data.isError) {
+    return (
+      <>
+        <PageHeader title="Board" />
+        <ReadFailed
+          error={data.error}
+          fallback="The board could not be read. Try again."
+          busy={data.isFetching}
+          onRetry={() => void data.refetch()}
+        />
+      </>
+    );
+  }
   if (!data.data || !board) {
     return (
       <>
@@ -112,12 +146,6 @@ export function BoardPage() {
       </>
     );
   }
-  const inbox = data.data.inbox;
-  const filters: Filters = {
-    column: params.get("column") ?? "",
-    agent: params.get("agent") ?? "",
-    status: params.get("status") ?? "",
-  };
   const setQuery = (changes: Record<string, string>) =>
     setParams(
       (current) => {
@@ -131,8 +159,9 @@ export function BoardPage() {
       { replace: true },
     );
   const inspected = inspectedCard(board, inbox, params.get("card"));
-  const groups = groupByColumn(board, inbox, filters);
   function onDragEnd(result: DropResult) {
+    // A decision is on its way: the buttons are disabled for the same moment, and a drag is another way to ask for one.
+    if (pending) return;
     if (!result.column) return;
     const card = board?.cards.find((c) => String(c.id) === result.cardId);
     if (!card) return;
@@ -147,9 +176,9 @@ export function BoardPage() {
       setQuery({ card: String(card.id) });
       decide(decision);
     } else if (drop.kind === "reject") {
-      // Sending a change back needs a reason: the dock asks for it.
+      // Sending a change back needs a reason: the dock asks for it, and only for this card.
       setQuery({ card: String(card.id) });
-      setRejectAsk((n) => n + 1);
+      setRejectFor(card.id);
     } else if (drop.kind === "refused") {
       setNotice({ tone: "error", text: `Cannot move #${number} to ${to}: ${drop.reason}` });
     }
@@ -221,6 +250,7 @@ export function BoardPage() {
                 name={column}
                 cards={cards}
                 total={total}
+                busy={pending}
                 inspectedId={inspected?.id}
                 onSelect={(card) => setQuery({ card: String(card.id) })}
               />
@@ -235,9 +265,13 @@ export function BoardPage() {
               card={inspected}
               item={inboxOf(inbox, inspected)}
               busy={pending}
-              rejectAsk={rejectAsk}
+              askFor={rejectFor}
+              onAskAnswered={() => setRejectFor(null)}
               onDecide={decide}
-              onClose={() => setQuery({ card: "none" })}
+              onClose={() => {
+                setQuery({ card: "none" });
+                setRejectFor(null);
+              }}
             />
           </div>
         )}
@@ -266,6 +300,7 @@ function BoardColumn({
   name,
   cards,
   total,
+  busy,
   inspectedId,
   onSelect,
 }: {
@@ -274,6 +309,8 @@ function BoardColumn({
   name: string;
   cards: Card[];
   total: number;
+  /** While a decision is on its way, when no card can be moved. */
+  busy: boolean;
   inspectedId: number | undefined;
   onSelect: (card: Card) => void;
 }) {
@@ -305,6 +342,7 @@ function BoardColumn({
               name={`#${card.number} ${card.title}`}
               testId={`card-${card.number}`}
               column={name}
+              dragDisabled={busy}
               isSelected={inspectedId === card.id}
               isLive={status === "live"}
               onOpen={() => onSelect(card)}

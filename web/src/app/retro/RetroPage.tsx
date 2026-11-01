@@ -23,6 +23,7 @@ import { Empty } from "../../ui/page/Empty";
 import { ListCard, ListDetail } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
 import { Body, PageHeader } from "../../ui/page/PageHeader";
+import { ReadFailed } from "../../ui/page/ReadFailed";
 import { Lessons } from "./Lessons";
 import {
   cardsLine,
@@ -69,6 +70,14 @@ export function RetroPage() {
       />
       {list.isPending ? (
         <Loader message="Reading the Retros" className="py-8" />
+      ) : list.isError ? (
+        // A read that failed is not a server that has run no Retro yet.
+        <ReadFailed
+          error={list.error}
+          fallback="The Retros could not be read. Try again."
+          busy={list.isFetching}
+          onRetry={() => void list.refetch()}
+        />
       ) : (
         <ListDetail
           list={

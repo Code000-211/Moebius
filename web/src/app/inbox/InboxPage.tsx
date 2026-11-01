@@ -6,31 +6,22 @@
  */
 import { CheckCircleIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { useSearchParams } from "react-router";
 import { snapshot as readSnapshot } from "../../api/calls/board";
 import { keys } from "../../api/keys";
 import { Button } from "../../ui/components/Button";
 import { Loader } from "../../ui/components/Loader";
+import { useNow } from "../../ui/lib/useNow";
 import { Chip } from "../../ui/page/Chip";
 import { Empty } from "../../ui/page/Empty";
-import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
+import { ReadFailed } from "../../ui/page/ReadFailed";
 import { ItemCard } from "./ItemCard";
 import { chipName, count, type Filters, kindsOf, STUCK, shown, summary } from "./model";
 
-/** The time now in Unix seconds, kept current every 30 seconds for "5m ago". */
-function useNow(): number {
-  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 30_000);
-    return () => clearInterval(timer);
-  }, []);
-  return now;
-}
-
 /** A row of filter chips, with the word for what they filter by. */
-function FilterRow({ label, children }: { label: string; children: React.ReactNode }) {
+function FilterRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
       <legend className="mb-2 p-0 text-sm font-semibold text-secondary">{label}</legend>
@@ -44,15 +35,20 @@ export function InboxPage() {
   const [params, setParams] = useSearchParams();
   const now = useNow();
   if (data.isPending) return <Loader message="Reading the inbox" className="py-8" />;
-  const snapshot = data.data;
-  if (!snapshot) {
+  if (data.isError) {
     return (
       <>
         <PageHeader title="Inbox" />
-        <Notice tone="error">The inbox could not be read. Try again.</Notice>
+        <ReadFailed
+          error={data.error}
+          fallback="The inbox could not be read. Try again."
+          busy={data.isFetching}
+          onRetry={() => void data.refetch()}
+        />
       </>
     );
   }
+  const snapshot = data.data;
   const repository = params.get("repository");
   const filters: Filters = {
     kind: params.get("kind"),

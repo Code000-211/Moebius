@@ -55,8 +55,10 @@ export interface EditorProps {
   /** Why the agent's files cannot be read; the agent can then only be deleted. */
   broken?: string;
   inFile: boolean;
-  skills: SkillListed[];
-  mcp: McpServer[];
+  /** The skills `skills/` of the repository offers, or null when the page could not read them. */
+  skills: SkillListed[] | null;
+  /** The servers `mcp.toml` of the repository holds, or null when the page could not read them. */
+  mcp: McpServer[] | null;
   runners: Runner[];
   available: AvailableModels | undefined;
   saved: Saved | null;
@@ -230,7 +232,7 @@ export function AgentEditor(props: EditorProps) {
 
   const choices = modelChoices(available);
   const builtIn = form.builtIn;
-  const skillsOffered = skills.filter((skill) => !skill.built_in);
+  const skillsOffered = (skills ?? []).filter((skill) => !skill.built_in);
   const levels = [NOT_SET, ...LEVELS];
   if (form.thinking !== null && !levels.includes(form.thinking)) levels.push(form.thinking);
   const places = [THIS_SERVER, ...runners.map((runner) => runner.name)];
@@ -536,10 +538,20 @@ export function AgentEditor(props: EditorProps) {
             <>
               <Box
                 title="Skills"
-                aside={`${form.skills.length} of ${skillsOffered.length}`}
+                aside={
+                  skills === null
+                    ? `${form.skills.length} chosen`
+                    : `${form.skills.length} of ${skillsOffered.length}`
+                }
                 className="flex flex-col gap-3"
               >
-                {skillsOffered.length === 0 && form.skills.length === 0 && (
+                {/* A read that failed is not a repository with nothing in it, and the two say opposite things. */}
+                {skills === null && (
+                  <p className="m-0 text-base text-secondary">
+                    The skills of skills/ could not be read.
+                  </p>
+                )}
+                {skills !== null && skillsOffered.length === 0 && form.skills.length === 0 && (
                   <p className="m-0 text-base text-secondary">
                     No skill in skills/ of the repository.
                   </p>
@@ -566,20 +578,32 @@ export function AgentEditor(props: EditorProps) {
               </Box>
               <Box
                 title="MCP servers"
-                aside={`${form.mcp.length} of ${mcp.length}`}
+                aside={
+                  mcp === null ? `${form.mcp.length} chosen` : `${form.mcp.length} of ${mcp.length}`
+                }
                 className="flex flex-col gap-3"
               >
-                {mcp.length === 0 && form.mcp.length === 0 && (
+                {mcp === null && (
+                  <p className="m-0 text-base text-secondary">
+                    The servers of mcp.toml could not be read.
+                  </p>
+                )}
+                {mcp !== null && mcp.length === 0 && form.mcp.length === 0 && (
                   <p className="m-0 text-base text-secondary">
                     No server in mcp.toml of the repository.
                   </p>
                 )}
                 {withChosen(
-                  mcp.map((server) => server.name),
+                  (mcp ?? []).map((server) => server.name),
                   form.mcp,
                 ).map((name) => {
-                  const server = mcp.find((each) => each.name === name);
-                  const broken = server === undefined || server.error !== undefined;
+                  const server = mcp?.find((each) => each.name === name);
+                  // A name the page cannot check against the file is not a name missing from it.
+                  const broken =
+                    mcp !== null && (server === undefined || server.error !== undefined);
+                  let line: string | undefined;
+                  if (server === undefined) line = mcp === null ? undefined : "Not in mcp.toml";
+                  else line = server.error ?? server.kind;
                   return (
                     <Item
                       key={name}
@@ -594,9 +618,7 @@ export function AgentEditor(props: EditorProps) {
                           </Chip>
                         </div>
                       }
-                      line={
-                        server === undefined ? "Not in mcp.toml" : (server.error ?? server.kind)
-                      }
+                      line={line}
                       red={broken}
                     />
                   );

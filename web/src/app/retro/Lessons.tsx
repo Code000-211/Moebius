@@ -21,6 +21,7 @@ import { Box } from "../../ui/page/Box";
 import { Empty } from "../../ui/page/Empty";
 import { Field, TextArea } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
+import { ReadFailed } from "../../ui/page/ReadFailed";
 import { lessonMeta, lessonTag } from "./model";
 
 export function Lessons() {
@@ -35,6 +36,17 @@ export function Lessons() {
     onError: (e) => setError(sayError(e, "Could not delete the lesson. Try again.")),
   });
 
+  // A read that failed is not a Retro that has learned nothing: the empty state would say there is nothing to read.
+  if (list.isError) {
+    return (
+      <ReadFailed
+        error={list.error}
+        fallback="The lessons could not be read. Try again."
+        busy={list.isFetching}
+        onRetry={() => void list.refetch()}
+      />
+    );
+  }
   if (!list.data || list.data.length === 0) {
     return (
       <Empty

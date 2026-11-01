@@ -313,6 +313,8 @@ describe("the Automations page", () => {
       await open("/automations", "Automations");
       await page.getByRole("button", { name: /Morning triage/ }).click();
       fake().refuseNext("PUT", "/v1/automations/1", 422, "the agent Ghost does not exist");
+      // Save waits for something to save, so the refusal is asked for by changing the form first.
+      await page.getByLabel("Name of the automation").fill("Morning triage, once more");
       await page.getByRole("button", { name: "Save", exact: true }).click();
       await alert("the agent Ghost does not exist").waitFor();
       fake().refuseNext("POST", "/v1/automations/1/run", 404, "no such automation");

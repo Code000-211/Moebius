@@ -21,6 +21,7 @@ import { Empty } from "../../ui/page/Empty";
 import { Field } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
+import { ReadFailed } from "../../ui/page/ReadFailed";
 import { boardPath } from "../pages";
 import { FilesPanel } from "./FilesPanel";
 import { forgeTag, logins, onForge } from "./model";
@@ -30,6 +31,20 @@ export function ProjectPage() {
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => readSnapshot() });
   if (data.isPending) return <Loader message="Reading the project" className="py-8" />;
   const board = data.data?.boards.find((each) => String(each.repository.id) === id);
+  // A read that failed is not a repository that has gone: saying so comes before the page that says it is not here.
+  if (data.isError) {
+    return (
+      <>
+        <PageHeader title="Project" />
+        <ReadFailed
+          error={data.error}
+          fallback="The project could not be read. Try again."
+          busy={data.isFetching}
+          onRetry={() => void data.refetch()}
+        />
+      </>
+    );
+  }
   if (!board) {
     return (
       <>

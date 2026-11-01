@@ -8,7 +8,7 @@
  */
 import { PlusIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router";
 import {
   automations,
@@ -28,6 +28,7 @@ import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
 import { Loader } from "../../ui/components/Loader";
 import { ago } from "../../ui/lib/format";
+import { useNow } from "../../ui/lib/useNow";
 import { Box } from "../../ui/page/Box";
 import { Empty } from "../../ui/page/Empty";
 import { Field, Select, TextArea } from "../../ui/page/Field";
@@ -48,16 +49,6 @@ import {
 } from "./model";
 
 const NEW = "new";
-
-/** Unix seconds, kept current once a minute so "in 3 h" does not go stale. */
-function useNow(): number {
-  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 30_000);
-    return () => clearInterval(timer);
-  }, []);
-  return now;
-}
 
 /** Whether it will fire. Only a firing that went wrong or was passed over takes a hue of its own. */
 function statusWord(automation: Automation): { label: string; tone: TagTone } {
@@ -281,6 +272,9 @@ function Editor({
   const names = new Set(agentList.data?.map((agent) => agent.name) ?? []);
   names.add(form.agent);
   const preset = PRESETS.find(([, cron]) => cron === form.schedule.trim());
+  // An automation that exists has nothing to save until a field of it changes; a new one can be saved as it was
+  // offered, because there is no stored form to compare it with.
+  const dirty = saved === undefined || JSON.stringify(form) !== JSON.stringify(formOf(saved));
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -303,7 +297,7 @@ function Editor({
                   Delete automation
                 </Button>
               )}
-              <Button size="sm" disabled={save.isPending} onClick={submit}>
+              <Button size="sm" disabled={save.isPending || !dirty} onClick={submit}>
                 {save.isPending ? "Saving" : "Save"}
               </Button>
             </>

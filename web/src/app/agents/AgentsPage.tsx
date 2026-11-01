@@ -196,8 +196,8 @@ export function AgentsPage() {
               stored={newForm}
               drafts={newDraft}
               inFile={inFile}
-              skills={skills.data ?? []}
-              mcp={mcp.data ?? []}
+              skills={skills.isError ? null : (skills.data ?? [])}
+              mcp={mcp.isError ? null : (mcp.data ?? [])}
               runners={runners.data ?? []}
               available={available.data}
               saved={saved}
@@ -221,8 +221,8 @@ export function AgentsPage() {
                 agents.data?.some((agent) => agent.name === picked && agent.built_in) ?? false
               }
               inFile={inFile}
-              skills={skills.data ?? []}
-              mcp={mcp.data ?? []}
+              skills={skills.isError ? null : (skills.data ?? [])}
+              mcp={mcp.isError ? null : (mcp.data ?? [])}
               runners={runners.data ?? []}
               available={available.data}
               saved={saved}

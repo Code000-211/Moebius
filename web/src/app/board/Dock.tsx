@@ -18,6 +18,7 @@ import { Input } from "../../ui/components/Input";
 import { KanbanIssuePanel, KanbanIssueSection } from "../../ui/components/KanbanIssuePanel";
 import { RunningDots } from "../../ui/components/RunningDots";
 import { ago } from "../../ui/lib/format";
+import { useNow } from "../../ui/lib/useNow";
 import { Field } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 import { Status, type Tone } from "../../ui/page/Status";
@@ -64,20 +65,25 @@ function Actions({
   card,
   item,
   busy,
-  rejectAsk,
+  askFor,
+  onAskAnswered,
   onDecide,
 }: {
   card: Card;
   item: InboxItem;
   busy: boolean;
-  rejectAsk: number;
+  /** The card a send-back is waiting on a reason for; this one, or none. */
+  askFor: number | null;
+  /** Says that the reason was sent or dropped, so the next send-back asks again. */
+  onAskAnswered: () => void;
   onDecide: (decision: Decision) => void;
 }) {
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
+  // The ask names the card it is about, so opening another card does not find this one's question waiting for it.
   useEffect(() => {
-    if (rejectAsk > 0) setRejecting(true);
-  }, [rejectAsk]);
+    if (askFor === card.id) setRejecting(true);
+  }, [askFor, card.id]);
   const change = typeof item.data.change === "number" ? item.data.change : null;
   const number = card.number;
 
@@ -88,6 +94,7 @@ function Actions({
       onDecide({ kind: "reject", change, number, reason: reason.trim() });
       setRejecting(false);
       setReason("");
+      onAskAnswered();
     };
     return (
       <form
@@ -106,7 +113,15 @@ function Actions({
           <Button type="submit" size="sm" disabled={!ready || busy}>
             Send back
           </Button>
-          <Button type="button" size="sm" variant="ghost" onClick={() => setRejecting(false)}>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setRejecting(false);
+              onAskAnswered();
+            }}
+          >
             Cancel
           </Button>
         </div>
@@ -175,7 +190,8 @@ export function Dock({
   card,
   item,
   busy,
-  rejectAsk,
+  askFor,
+  onAskAnswered,
   onDecide,
   onClose,
 }: {
@@ -183,8 +199,9 @@ export function Dock({
   card: Card;
   item: InboxItem | undefined;
   busy: boolean;
-  /** Bumped when a drop asks to send the change back; the reason form opens. */
-  rejectAsk: number;
+  /** The card a drop asked to send back; the reason form opens for that card alone. */
+  askFor: number | null;
+  onAskAnswered: () => void;
   onDecide: (decision: Decision) => void;
   onClose: () => void;
 }) {
@@ -196,7 +213,9 @@ export function Dock({
     queryKey: keys.script(repository.id, card.column),
     queryFn: () => script(repository.id, card.column),
   });
-  const now = Math.floor(Date.now() / 1000);
+  // The history of a card is read once and stays open, so the age of the last thing it did only moves with a clock of
+  // its own.
+  const now = useNow();
   const wait = board.waiting[String(card.id)];
 
   return (
@@ -214,7 +233,14 @@ export function Dock({
       {item && (
         <KanbanIssueSection title="Your turn">
           <p className="m-0 mb-4 text-base text-text [overflow-wrap:anywhere]">{item.title}</p>
-          <Actions card={card} item={item} busy={busy} rejectAsk={rejectAsk} onDecide={onDecide} />
+          <Actions
+            card={card}
+            item={item}
+            busy={busy}
+            askFor={askFor}
+            onAskAnswered={onAskAnswered}
+            onDecide={onDecide}
+          />
         </KanbanIssueSection>
       )}
 

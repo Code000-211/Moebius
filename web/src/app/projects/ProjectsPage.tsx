@@ -16,6 +16,7 @@ import { Loader } from "../../ui/components/Loader";
 import { Empty } from "../../ui/page/Empty";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
+import { ReadFailed } from "../../ui/page/ReadFailed";
 import { boardPath } from "../pages";
 import { cardsText, forgeTag } from "./model";
 
@@ -40,6 +41,20 @@ export function ProjectsPage() {
   });
 
   if (data.isPending) return <Loader message="Reading the projects" className="py-8" />;
+  // A read that failed is not a server with no repository: the empty state below would say there is nothing to open.
+  if (data.isError) {
+    return (
+      <>
+        <PageHeader title="Projects" />
+        <ReadFailed
+          error={data.error}
+          fallback="The projects could not be read. Try again."
+          busy={data.isFetching}
+          onRetry={() => void data.refetch()}
+        />
+      </>
+    );
+  }
   const boards = data.data?.boards ?? [];
 
   return (

@@ -268,7 +268,6 @@ export const KanbanProvider = ({
   const coordinates: KeyboardCoordinateGetter = useCallback(
     (event, { context, currentCoordinates }) => {
       if (event.code !== "ArrowRight" && event.code !== "ArrowLeft") return undefined;
-      event.preventDefault();
       const columns = [...context.droppableContainers.getEnabled()]
         .filter((container) => container.node.current)
         .sort(
@@ -283,6 +282,9 @@ export const KanbanProvider = ({
         ];
       const node = next?.node.current;
       if (!next || !node) return undefined;
+      // Taken only now that there is a column to move to: a key that is eaten without moving anything stops the page
+      // scrolling as well.
+      event.preventDefault();
       target.current = String(next.id);
       node.scrollIntoView({ behavior: "instant", inline: "center", block: "nearest" });
       // The overlay is fixed on the screen, so it is moved by what lies between its middle and the column's.

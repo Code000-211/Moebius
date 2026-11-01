@@ -20,6 +20,7 @@ import {
   serverSettings,
   storeSecret,
 } from "../../api/calls/models";
+import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { AvailableModels } from "../../api/types/chat";
 import type { UpstreamOAuth } from "../../api/types/models";
@@ -35,7 +36,6 @@ import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { Status } from "../../ui/page/Status";
 import { decisionChoices, modelChoices } from "../agents/model";
-
 import { Answered, couldNotAsk, ModelField } from "../harness/ModelField";
 import { LoginRow, type LoginStep } from "./LoginRow";
 import {
@@ -104,8 +104,10 @@ export function ModelsPage() {
     setForm((held) => (held === null || !modelsDirty(held) ? readForm(read) : held));
   }, [read]);
 
-  if (models.isError) return <Failed message={models.error.message} />;
-  if (server.isError) return <Failed message={server.error.message} />;
+  if (models.isError)
+    return <Failed message={sayError(models.error, "The models could not be read.")} />;
+  if (server.isError)
+    return <Failed message={sayError(server.error, "The server's own setup could not be read.")} />;
   if (models.isPending || server.isPending || form === null) {
     return (
       <>
