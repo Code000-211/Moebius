@@ -12,6 +12,7 @@ import { extname, join, normalize, resolve } from "node:path";
 import { type WebSocket, WebSocketServer } from "ws";
 import { type BoardFake, createBoardFake } from "./fake/board";
 import { createFakeChat, type FakeChat } from "./fake/chat";
+import { createFakeRuns, type FakeRuns } from "./fake/runs";
 
 export const TOKEN = "fake-server-token";
 export const AGENT_TOKEN = "fake-run-token";
@@ -45,6 +46,8 @@ export interface FakeServer {
   guardLog: Array<string | undefined>;
   /** The chats and the agent that answers in them (e2e/fake/chat.ts). */
   chat: FakeChat;
+  /** The runs, their terminals, diffs and the ports (e2e/fake/runs.ts). */
+  runs: FakeRuns;
 }
 
 function cookieOf(request: IncomingMessage): string | undefined {
@@ -82,6 +85,7 @@ export async function startFakeServer(): Promise<FakeServer> {
   };
   const board = createBoardFake(broadcast);
   const chat = createFakeChat(broadcast);
+  const runs = createFakeRuns(broadcast);
   let port = 0;
 
   const signedIn = (request: IncomingMessage) => {
@@ -121,7 +125,8 @@ export async function startFakeServer(): Promise<FakeServer> {
     if (path === "/v1/health") return json(response, { version: "0.0.0-fake" });
     if (path === "/v1/snapshot") return json(response, board.snapshot());
     if (path === "/v1/start") return json(response, { done: true, steps: [], warnings: [] });
-    // The chat reads its own request bodies, so it answers before the board reads this one.
+    // The runs and the chat read their own request bodies, so they answer before the board reads this one.
+    if (await runs.handle(request, response, path)) return;
     if (await chat.handle(request, response, path)) return;
     const body = method === "GET" ? undefined : JSON.parse((await readBody(request)) || "{}");
     const answer = board.handle(method, path, body);
@@ -153,6 +158,7 @@ export async function startFakeServer(): Promise<FakeServer> {
   });
   server.on("upgrade", (request, socket, head) => {
     const path = new URL(request.url ?? "/", "http://x").pathname;
+    if (signedIn(request) && runs.upgrade(request, socket, head, path)) return;
     if (path !== "/v1/events" || !signedIn(request)) {
       socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
       socket.destroy();
@@ -181,9 +187,11 @@ export async function startFakeServer(): Promise<FakeServer> {
     guardLog,
     board,
     chat,
+    runs,
     broadcast,
     async stop() {
       for (const ws of sockets) ws.terminate();
+      runs.stop();
       server.closeAllConnections();
       await new Promise<void>((done) => server.close(() => done()));
     },

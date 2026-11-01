@@ -7,6 +7,7 @@
 //! - `POST /v1/cards/{id}/approve` `{reason}`: a person approves an outside issue; its card moves to ready.
 //! - `POST /v1/changes/{id}/merge` `{reason}`: a person merges a change; its card moves to done.
 //! - `POST /v1/changes/{id}/reject` `{reason}`: a person sends a change waiting to be merged back to coding.
+//! - `GET /v1/changes/{id}/diff`: what a change changes, as a unified diff.
 //! - `POST /v1/cards/{id}/retry` `{reason}`: a person retries a stuck card or one whose pull request was closed, which
 //!   gets a fresh start.
 //! - `GET /v1/cards/{id}/runs`: the runs of a card. `GET /v1/cards/{id}/history`: its timeline.
@@ -35,6 +36,7 @@ pub(super) fn routes() -> Router<ApiState> {
         .route("/v1/cards/{id}/retry", post(retry_card))
         .route("/v1/changes/{id}/merge", post(merge_change))
         .route("/v1/changes/{id}/reject", post(reject_change))
+        .route("/v1/changes/{id}/diff", get(change_diff))
         .route("/v1/cards/{id}/runs", get(card_runs))
         .route("/v1/cards/{id}/history", get(card_history))
 }
@@ -305,6 +307,13 @@ async fn card_runs(
         Ok(app.store.runs_for_card(id)?)
     })
     .await
+}
+
+async fn change_diff(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+) -> Result<axum::Json<crate::app::Diff>, ApiError> {
+    blocking(&state.app, move |app| app.change_diff(id)).await
 }
 
 async fn card_history(
@@ -592,6 +601,69 @@ mod tests {
             )
         );
         assert_eq!(retry("again").await.status(), 422);
+    }
+
+    #[tokio::test]
+    async fn a_change_and_a_run_give_their_diff() {
+        use crate::app::Diff;
+        let (dir, state, addr) = start().await;
+        let app = &state.app;
+        let repo = app
+            .add_repository("demo", origin(dir.path()).to_str().unwrap())
+            .unwrap();
+        let card = app
+            .create_issue(repo.id, "Add a feature", "", PERSON)
+            .unwrap();
+        let change = code_and_offer(app, &repo, &card);
+
+        let diff: Diff = get(&state, &addr, &format!("/v1/changes/{}/diff", change.id)).await;
+        assert!(!diff.truncated);
+        assert!(diff.diff.contains("+++ b/feature.txt"), "{}", diff.diff);
+        assert!(diff.diff.contains("+done"));
+        assert!(!diff.diff.contains("README"));
+
+        // The run's branch is the one `code_and_offer` committed on.
+        let run = app.store.runs_for_card(card.id).unwrap().remove(0);
+        let diff: Diff = get(&state, &addr, &format!("/v1/runs/{}/diff", run.id)).await;
+        assert!(diff.diff.contains("+done"), "{}", diff.diff);
+
+        // A run that is going on shows what its worktree holds, uncommitted work included.
+        let live = app
+            .store
+            .add_run(Some(card.id), "Coder", "test", "code")
+            .unwrap();
+        let clone = std::path::PathBuf::from(&repo.path);
+        let wt = app
+            .repos
+            .add_worktree(&repo.name, &clone, live.id, "main")
+            .unwrap();
+        std::fs::write(wt.path.join("README.md"), "hello\nmore\n").unwrap();
+        app.store
+            .set_run_worktree(live.id, &wt.path.to_string_lossy())
+            .unwrap();
+        app.store.set_run_status(live.id, "running").unwrap();
+        let diff: Diff = get(&state, &addr, &format!("/v1/runs/{}/diff", live.id)).await;
+        assert!(diff.diff.contains("+more"), "{}", diff.diff);
+
+        // A run with nothing to compare, and runs and changes that do not exist.
+        let bare = app.store.add_run(None, "Moebius", "test", "chat").unwrap();
+        let diff: Diff = get(&state, &addr, &format!("/v1/runs/{}/diff", bare.id)).await;
+        assert_eq!(diff, Diff::default());
+        let missing = |path: &str| {
+            let url = format!("http://{addr}{path}");
+            let token = state.token.clone();
+            async move {
+                reqwest::Client::new()
+                    .get(url)
+                    .bearer_auth(&*token)
+                    .send()
+                    .await
+                    .unwrap()
+                    .status()
+            }
+        };
+        assert_eq!(missing("/v1/changes/999/diff").await, 404);
+        assert_eq!(missing("/v1/runs/999/diff").await, 404);
     }
 
     #[tokio::test]

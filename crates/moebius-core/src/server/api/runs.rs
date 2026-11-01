@@ -1,6 +1,7 @@
 //! The runs: one run and its stored events, and what a person does to a run that is going on.
 //!
 //! - `GET /v1/runs/{id}`: a run. `GET /v1/runs/{id}/events?after=&limit=`: its stored events, in pages.
+//! - `GET /v1/runs/{id}/diff`: what the run changed, as a unified diff.
 //! - `POST /v1/runs/{id}/steer` `{message}`: a person sends a message to a running run.
 //! - `POST /v1/runs/{id}/stop` `{reason}`: a person stops a running run; a chat ends as stopped.
 
@@ -19,6 +20,7 @@ pub(super) fn routes() -> Router<ApiState> {
     Router::new()
         .route("/v1/runs/{id}", get(get_run))
         .route("/v1/runs/{id}/events", get(run_events))
+        .route("/v1/runs/{id}/diff", get(run_diff))
         .route("/v1/runs/{id}/steer", post(steer_run))
         .route("/v1/runs/{id}/stop", post(stop_run))
 }
@@ -40,6 +42,13 @@ struct EventsQuery {
     #[serde(default)]
     after: i64,
     limit: Option<i64>,
+}
+
+async fn run_diff(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+) -> Result<axum::Json<crate::app::Diff>, ApiError> {
+    blocking(&state.app, move |app| app.run_diff(id)).await
 }
 
 async fn steer_run(

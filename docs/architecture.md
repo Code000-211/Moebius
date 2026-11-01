@@ -402,6 +402,7 @@ At the top:
 | `app/automations/mod.rs` | Automations: saving and listing them with their next firing, firing one (a chat with origin `automation`, or a skipped or failed firing), and the check once a minute that ends their answered chats and fires those that came due. |
 | `app/automations/cron.rs` | A schedule: a cron expression of five fields in the server's local time, parsed, and the next minute it comes due. |
 | `app/chats.rs` | Chats: starting one, continuing an ended one, writing to it, its model and reasoning, ending it, and the list of chats. |
+| `app/diffs.rs` | What a change or a run changed, as a unified diff (secrets removed, cut at 2 MB) for a client to draw. |
 | `app/changes.rs` | Changes: a card's work published through the forge, offered with a chat's work in the inbox, rejected or merged, and what the forge says became of them. |
 | `app/checks.rs` | How a change's checks stand, and a repository's own checks (`.moebius/checks`) run in a throwaway worktree with a time limit and a cleared environment. |
 | `app/attempts.rs` | Attempts: judging each attempt of a hard card by the repository's checks and its reproduction test on a thread of its own, settling a round (one picked, or none passed), and reading a selection run's pick. |

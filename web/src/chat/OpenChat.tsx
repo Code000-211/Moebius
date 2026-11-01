@@ -1,12 +1,12 @@
 /**
- * One chat, open: its conversation (virtualised, following the answer), the change it offered, and the composer with
+ * One chat, open: its conversation (virtualised, following the answer; or Pi-Bolt's terminal interface in its place), the change it offered, and the composer with
  * the pills of its agent, place, model and reasoning. The model and the reasoning level change while the chat waits.
  * Writing to a chat that ended goes on in a new chat that is told this one. Once an answer is held its events are
  * marked read, once per answer.
  */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import {
   changeChatSettings,
   continueChat,
@@ -20,6 +20,7 @@ import {
 import { keys } from "../api/keys";
 import type { Snapshot } from "../api/types/board";
 import { type Chat, THINKING_LEVELS } from "../api/types/chat";
+import { Terminal } from "../terminal/Terminal";
 import { type PillOption, PillSelect } from "../ui/chat/PillSelect";
 import { Tag } from "../ui/chat/Tag";
 import { Button } from "../ui/components/Button";
@@ -60,7 +61,19 @@ export function ChatActions({
 }) {
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
+  const [params, setParams] = useSearchParams();
   if (!isOpen(chat.status)) return null;
+  const inTerminal = params.get("terminal") === "1";
+  const toggleTerminal = () =>
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        if (inTerminal) next.delete("terminal");
+        else next.set("terminal", "1");
+        return next;
+      },
+      { replace: true },
+    );
   const working = isWorking(chat.status);
 
   async function offer() {
@@ -99,6 +112,23 @@ export function ChatActions({
   const label = `Offer changes (${chat.changed_files} ${chat.changed_files === 1 ? "file" : "files"})`;
   return (
     <div className="flex items-center gap-base">
+      {inTerminal ? (
+        <Button variant="outline" size="xs" onClick={toggleTerminal}>
+          Conversation
+        </Button>
+      ) : chat.status === "waiting" ? (
+        <Button variant="outline" size="xs" onClick={toggleTerminal}>
+          Terminal
+        </Button>
+      ) : (
+        <Tooltip content="The terminal opens once the agent has answered">
+          <span>
+            <Button variant="outline" size="xs" disabled>
+              Terminal
+            </Button>
+          </span>
+        </Tooltip>
+      )}
       {chat.changed_files > 0 &&
         (working ? (
           <Tooltip content="Offer once the agent has answered">
@@ -170,6 +200,7 @@ export function OpenChat({
   onNotice: (notice: string | null) => void;
 }) {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const queryClient = useQueryClient();
   const chats = useQuery({ queryKey: keys.chats, queryFn: readChats });
   const chat = chats.data?.find((each) => each.id === id);
@@ -204,6 +235,19 @@ export function OpenChat({
 
   const open = isOpen(chat.status);
   const working = isWorking(chat.status);
+
+  // Pi-Bolt's own terminal interface takes the place of the conversation; the top bar's button brings it back.
+  if (open && params.get("terminal") === "1") {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col gap-half" data-testid="chat-terminal">
+        <Terminal path={`/v1/chats/${id}/tui`} autoFocus className="min-h-0 flex-1" />
+        <p className="shrink-0 font-mono text-xs text-low">
+          Pi-Bolt's terminal interface continues this chat. Closing it, or Conversation above, goes
+          back.
+        </p>
+      </div>
+    );
+  }
 
   async function send() {
     const text = message.trim();

@@ -79,15 +79,27 @@ describe("invalidates", () => {
   });
 
   it("leaves the snapshot alone for kinds it does not show", () => {
-    for (const kind of [
-      "run_event",
-      "port_opened",
-      "file_changed",
-      "board_error",
-      "unknown_kind",
-    ]) {
+    for (const kind of ["run_event", "file_changed", "board_error", "unknown_kind"]) {
       expect(invalidates({ kind, data: {} })).toEqual([]);
     }
+  });
+
+  it("makes the ports stale when one opens or closes, and the runs and diffs when a run or change moves", () => {
+    for (const kind of ["port_opened", "port_closed"]) {
+      expect(invalidates({ kind, data: {} })).toEqual([keys.ports]);
+    }
+    expect(invalidates({ kind: "run_ended", data: {} })).toEqual(
+      expect.arrayContaining([keys.runs, keys.diffs]),
+    );
+    expect(invalidates({ kind: "change_updated", data: {} })).toContainEqual(keys.diffs);
+    const queryClient = client();
+    queryClient.setQueryData(keys.run(3), {});
+    queryClient.setQueryData(keys.runDiff(3), {});
+    queryClient.setQueryData(keys.changeDiff(1), {});
+    applyEvent(queryClient, { kind: "run_ended", data: { run: 3 } });
+    expect(stale(queryClient, keys.run(3))).toBe(true);
+    expect(stale(queryClient, keys.runDiff(3))).toBe(true);
+    expect(stale(queryClient, keys.changeDiff(1))).toBe(true);
   });
 
   it("reads the first-start steps again when a repository comes or goes", () => {

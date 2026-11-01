@@ -19,4 +19,12 @@ export const keys = {
   agents: ["agents"] as const,
   models: ["models"] as const,
   skills: ["skills"] as const,
+  /** Everything read about runs starts with this: `run_started` and `run_ended` make it stale. */
+  runs: ["run"] as const,
+  run: (id: number) => ["run", id] as const,
+  /** What a run or a change changed; an event that moves a change or ends a run makes all of them stale. */
+  diffs: ["diff"] as const,
+  runDiff: (id: number) => ["diff", "run", id] as const,
+  changeDiff: (id: number) => ["diff", "change", id] as const,
+  ports: ["ports"] as const,
 };

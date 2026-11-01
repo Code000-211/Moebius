@@ -36,6 +36,15 @@ const SNAPSHOT_KINDS = new Set([
   "retro_done",
 ]);
 
+/** The kinds after which what a change or a run changed may have moved. */
+const DIFF_KINDS = new Set([
+  "change_offered",
+  "change_updated",
+  "change_merged",
+  "change_closed",
+  "run_ended",
+]);
+
 /** The keys of the cache that `event` makes stale. `lagged` means events were lost, so everything is. */
 export function invalidates(event: ServerEvent): QueryKey[] {
   if (event.kind === "lagged") return [[]];
@@ -45,6 +54,9 @@ export function invalidates(event: ServerEvent): QueryKey[] {
   if (event.kind === "repository_added" || event.kind === "repository_removed") {
     stale.push(keys.start);
   }
+  if (event.kind === "run_started" || event.kind === "run_ended") stale.push(keys.runs);
+  if (DIFF_KINDS.has(event.kind)) stale.push(keys.diffs);
+  if (event.kind === "port_opened" || event.kind === "port_closed") stale.push(keys.ports);
   if (listChanged(event)) stale.push(keys.chats);
   return stale;
 }

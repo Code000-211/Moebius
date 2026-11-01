@@ -14,6 +14,7 @@ mod cards;
 mod changes;
 mod chats;
 mod checks;
+mod diffs;
 mod localize;
 mod repositories;
 mod reproduce;
@@ -44,6 +45,7 @@ pub use automations::{
 pub use cards::HistoryEntry;
 pub use chats::{ASSISTANT_ORIGIN, CHAT_ORIGIN, Chat, ChatSettings, THINKING_LEVELS};
 pub(crate) use checks::tail;
+pub use diffs::Diff;
 pub use reproduce::{Reproduction, TestRun};
 pub use whereabouts::{ClientInfo, OFFICIAL_REPOSITORY, ServerInfo};
 

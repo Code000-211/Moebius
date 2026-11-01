@@ -1,6 +1,6 @@
 /**
  * The inspector dock of the board: the card chosen, with what a person can do about it (approve, merge, send back,
- * retry), where it stands (run, guard, state), its runs, its history and the script of its column, read-only. It is
+ * retry), where it stands (run, guard, state), its runs, the diff of its change, its history and the script of its column, read-only. It is
  * the web counterpart of the desktop board's dock plus the history screen; the script's editor comes with its page.
  */
 import { useQuery } from "@tanstack/react-query";
@@ -10,6 +10,7 @@ import { cardRuns, history, script } from "../../api/calls/board";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Board, Card, InboxItem } from "../../api/types/board";
+import { Changes } from "../../diff/Changes";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
 import { KanbanBadge } from "../../ui/components/KanbanBadge";
@@ -258,6 +259,12 @@ export function Dock({
           ))}
         </ul>
       </KanbanIssueSection>
+
+      {card.change && (
+        <KanbanIssueSection title="Changes">
+          <Changes of={{ change: card.change.id }} />
+        </KanbanIssueSection>
+      )}
 
       <KanbanIssueSection title="History">
         <QueryText

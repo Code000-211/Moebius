@@ -12,7 +12,11 @@ by one in later issues.
 |---|---|
 | `src/main.tsx` | The entry: takes `?login=` out of the address, then starts the router and the query cache. |
 | `src/app/` | `App.tsx` (the gate: sign-in, unreachable, shell), `routes.tsx`, `pages.ts` (the sidebar's entries), `SignIn.tsx` and `shell/` (sidebar, command bar, banner, page frame). |
-| `src/app/board/` | The board page: `BoardPage.tsx` (columns, drag and drop, notices), `model.ts` (the logic: columns, filters, status, what a drop means, card words; tested in `model.test.ts`), `Dock.tsx` (the inspector), `decisions.ts` (approve, merge, send back, retry), `FilterBar.tsx`, `NewIssueDialog.tsx`, and the read-only `ScriptPage.tsx` and the `RunPage.tsx` placeholder it links to. |
+| `src/app/board/` | The board page: `BoardPage.tsx` (columns, drag and drop, notices), `model.ts` (the logic: columns, filters, status, what a drop means, card words; tested in `model.test.ts`), `Dock.tsx` (the inspector), `decisions.ts` (approve, merge, send back, retry), `FilterBar.tsx`, `NewIssueDialog.tsx`, and the read-only `ScriptPage.tsx` it links to; the dock shows the diff of a card's change, and a Terminal button opens a shell in the repository's clone. |
+| `src/app/runs/` | The run view (`/runs/:id`): status, agent, the card it links back to, the run's events drawn with the chat's entries and steering (`POST /v1/runs/{id}/steer`), a terminal in its worktree, and its changes. |
+| `src/app/terminal/`, `src/app/ports/` | The Terminal page (a shell on the server) and the Ports page (`ports.ts` is the logic, tested in `ports.test.ts`). |
+| `src/terminal/` | `Terminal.tsx`, xterm.js on the server's terminal WebSockets (copy on release and Ctrl+Shift+C, Ctrl+Shift+V and right click paste, resize on fit), and `protocol.ts`, the messages (tested). Written for Moebius: Vibe Kanban's `TerminalPanel` only lays out tabs. |
+| `src/diff/` | `parse.ts` reads a unified diff (files, hunks, numbered lines, side-by-side rows; tested), `DiffView.tsx` draws it with a file list and a Unified / Side by side toggle, `Changes.tsx` reads a run's or a change's diff and loads the view lazily. |
 | `src/api/` | The client of the desktop API: `http.ts` (requests and `ApiError`), `calls/` (one module per part of the API, as `crates/moebius-desktop/src/client/calls/`), `types/` (written by hand from the reference), `events.ts` (the WebSocket), `keys.ts` (query keys). |
 | `src/live/` | The event stream feeding the query cache (`invalidation.ts`) and the connection state for the pages (`LiveProvider.tsx`). |
 | `src/auth/login.ts` | The `?login=<code>` link the server prints. |
@@ -128,3 +132,16 @@ Other transitive licenses in the tree: ISC, BSD-2/3-Clause, MIT-0, BlueOak-1.0.0
 - The board has no route to move a card to a column: a person decides what waits in the inbox, so a drop means approve
   (Backlog to Ready), merge (to Done), send back (to In progress, with a reason) or retry (a stuck card, to In progress), and
   any other drop is refused with the reason. The desktop app's "let the Moebius agent write the issue" waits for the chat page.
+
+## Terminals, diffs and ports
+
+The terminals are xterm.js over the WebSockets of `GET /v1/runs/{id}/terminal`, `/v1/chats/{id}/tui` (the Terminal button
+of the chat's top bar, while the chat waits), `/v1/terminal` (the Terminal page) and `/v1/repositories/{id}/terminal` (the
+board's Terminal button). A browser is not told why a WebSocket was refused, so a shell that does not open says that only a
+person can open one and what else may be the matter. The diffs come from `GET /v1/runs/{id}/diff` and
+`GET /v1/changes/{id}/diff`, routes added with this page. The diff view is an own renderer on the unified diff: a
+full-text merge view needs the whole old and new file, and the server gives the hunks. Ports: the tunnel
+(`GET /v1/ports/{port}/tunnel`) is a WebSocket of raw bytes that only the desktop app can turn into a local port, so a
+browser tab cannot open it; the Ports page lists the ports with their owner and the `ssh -L` command that forwards one.
+
+New dependencies, all MIT: `@xterm/xterm` 6.0.0, `@xterm/addon-fit` 0.11.0, `@xterm/addon-web-links` 0.12.0.

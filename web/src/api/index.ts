@@ -1,6 +1,7 @@
 /** The client of the desktop API (docs/reference/desktop-api.md): the calls, their types and the event stream. */
 export * from "./calls/board";
 export * from "./calls/chat";
+export * from "./calls/runs";
 export * from "./calls/server";
 export * from "./calls/session";
 export { ApiError, isApiError, UNREACHABLE } from "./http";
@@ -9,4 +10,5 @@ export * from "./types/board";
 export * from "./types/cards";
 export * from "./types/chat";
 export * from "./types/events";
+export * from "./types/runs";
 export * from "./types/server";

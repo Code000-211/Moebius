@@ -1,17 +1,18 @@
 /**
  * The board of a repository: its columns of the default workflow with their cards (dragged only where a person may
- * move them), the filters, the inspector dock and the form of a new issue. Everything comes from the snapshot, which
+ * move them), the filters, the inspector dock, the form of a new issue and a shell in the repository's clone. Everything comes from the snapshot, which
  * the event stream keeps current (`live/invalidation.ts`), so a card moves on this page when the server moves it. The
  * chosen card and the filters are in the address (`?card=`, `?column=`, `?agent=`, `?status=`), so a reload and a link
  * keep them.
  */
-import { PlusIcon, XIcon } from "@phosphor-icons/react";
+import { PlusIcon, TerminalWindowIcon, XIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { snapshot } from "../../api/calls/board";
 import { keys } from "../../api/keys";
 import type { Board, Card, InboxItem } from "../../api/types/board";
+import { Terminal } from "../../terminal/Terminal";
 import { Button } from "../../ui/components/Button";
 import {
   type DropResult,
@@ -58,6 +59,7 @@ export function BoardPage() {
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => snapshot() });
   const { decide, pending, notice, setNotice } = useDecisions();
   const [creating, setCreating] = useState(false);
+  const [terminalOpen, setTerminalOpen] = useState(false);
   const [rejectAsk, setRejectAsk] = useState(0);
 
   if (data.isPending) return <Loader message="Reading the board…" className="py-double" />;
@@ -123,10 +125,21 @@ export function BoardPage() {
     <>
       <div className="flex items-start justify-between gap-base">
         <Header breadcrumb="Projects" title={board.repository.name} />
-        <Button size="sm" onClick={() => setCreating(true)}>
-          <PlusIcon className="size-icon-sm" weight="bold" />
-          New issue
-        </Button>
+        <div className="flex items-center gap-base">
+          <Button
+            size="sm"
+            variant="outline"
+            aria-pressed={terminalOpen}
+            onClick={() => setTerminalOpen((open) => !open)}
+          >
+            <TerminalWindowIcon className="size-icon-sm" />
+            Terminal
+          </Button>
+          <Button size="sm" onClick={() => setCreating(true)}>
+            <PlusIcon className="size-icon-sm" weight="bold" />
+            New issue
+          </Button>
+        </div>
       </div>
       <p className="m-0 mb-[12px] font-mono text-[12.5px] text-normal">
         {plural(working, "run", "runs")} working ·{" "}
@@ -194,6 +207,28 @@ export function BoardPage() {
           </div>
         )}
       </div>
+      {terminalOpen && (
+        <section
+          aria-label="Terminal of the repository"
+          className="mt-[12px] flex h-[22rem] flex-col gap-half"
+          data-testid="board-terminal"
+        >
+          <div className="flex items-center justify-between gap-base">
+            <span className="font-mono text-xs text-normal">
+              A shell in the clone of {board.repository.name}
+            </span>
+            <Button size="xs" variant="ghost" onClick={() => setTerminalOpen(false)}>
+              Close terminal
+            </Button>
+          </div>
+          <Terminal
+            key={board.repository.id}
+            path={`/v1/repositories/${board.repository.id}/terminal`}
+            autoFocus
+            className="min-h-0 flex-1"
+          />
+        </section>
+      )}
       <NewIssueDialog
         repository={board.repository.id}
         name={board.repository.name}

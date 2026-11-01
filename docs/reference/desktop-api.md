@@ -469,6 +469,14 @@ Request: `{"reason": "..."}`; `reason` is optional, but send `{}` without one.
 
 Response: the `Card`. Errors: `404` no such change; `422` the change is not `open` or its card is not in `Ready to merge`.
 
+### `GET /v1/changes/{id}/diff`
+
+What a change changes: `git diff <default branch>...<branch>` in the repository's clone (the harness configuration
+repository's for a change of that), as a unified diff.
+
+Response: `{"diff": string, "truncated": boolean}`. `diff` has secrets removed and is empty when nothing changed or the
+branch is gone; a diff over 2 000 000 bytes is cut and `truncated` is true. Errors: `404` no such change.
+
 ### `POST /v1/cards/{id}/retry`
 
 A person retries a card that waits in the inbox as stuck or whose pull request was closed (it reached its round limit or its token budget, or a person
@@ -645,6 +653,13 @@ Response:
   most time first. It is the sum of the `lens_check` run events.
 
 Errors: `422` `days` is not from 1 to 365.
+
+### `GET /v1/runs/{id}/diff`
+
+What a run changed, as a unified diff: while the run has a worktree, everything in it since the run started, uncommitted
+work included; afterwards the run's branch (`moebius/run-<id>`, `moebius/chat-<id>` for a chat) against the commit the
+run started from. Response: `{"diff": string, "truncated": boolean}`, as for [a change](#get-v1changesiddiff); the diff
+is empty for a chat that has no repository. Errors: `404` no such run.
 
 ### `POST /v1/runs/{id}/steer`
 
