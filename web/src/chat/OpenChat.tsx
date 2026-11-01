@@ -24,7 +24,7 @@ import { sayError } from "../api/errorText";
 import { keys } from "../api/keys";
 import type { Snapshot } from "../api/types/board";
 import { type Chat, THINKING_LEVELS } from "../api/types/chat";
-import { Terminal } from "../terminal/Terminal";
+import { Terminal } from "../terminal/LazyTerminal";
 import { type PillOption, PillSelect } from "../ui/chat/PillSelect";
 import { Tag } from "../ui/chat/Tag";
 import { Button } from "../ui/components/Button";
@@ -293,15 +293,21 @@ export function OpenChat({
   const [sent, setSent] = useState(0);
   const [sending, setSending] = useState(false);
   const marked = useRef(0);
+  // What the composer holds right now, which the closure of a send cannot see: an answer takes seconds, and what is
+  // typed in those seconds is the next question, not something to throw away with the one that was sent.
+  const held = useRef(message);
 
   // The message is the draft of this chat: leaving for another page and coming back finds it where it was left,
   // and sending it leaves nothing behind.
   const key = draftKey(id);
   function write(value: string) {
+    held.current = value;
     setMessage(value);
     saveDraft(key, value);
   }
-  function clear() {
+  function clear(text: string) {
+    if (held.current.trim() !== text) return;
+    held.current = "";
     setMessage("");
     saveDraft(key, "");
   }
@@ -367,11 +373,11 @@ export function OpenChat({
     try {
       if (open) {
         await say(chat.id, text);
-        clear();
+        clear(text);
       } else {
         // Writing to an ended chat goes on in a new chat that is told this one.
         const run = await continueChat(chat.id, text);
-        clear();
+        clear(text);
         await queryClient.invalidateQueries({ queryKey: keys.chats });
         void navigate(`/chat/${run.id}`);
       }
@@ -425,7 +431,13 @@ export function OpenChat({
             sent={sent}
             empty={thread.loaded ? "Start with one of these, or write your own." : undefined}
             emptyTitle={thread.loaded ? "Nothing said yet" : "Reading the chat"}
-            emptyAction={open && thread.loaded ? <Starters onPick={write} /> : undefined}
+            // The starters are for the moment before anything is written; once a message is on its way they are in
+            // the way, and picking one would replace what was typed.
+            emptyAction={
+              open && thread.loaded && message.trim() === "" ? (
+                <Starters onPick={write} />
+              ) : undefined
+            }
           />
         )}
       </div>

@@ -20,7 +20,7 @@ import { ThreadView } from "../../chat/ThreadView";
 import { useThread } from "../../chat/useThread";
 import { Changes } from "../../diff/Changes";
 import { useServerEvents } from "../../live/LiveProvider";
-import { Terminal } from "../../terminal/Terminal";
+import { Terminal } from "../../terminal/LazyTerminal";
 import { Button } from "../../ui/components/Button";
 import { Loader } from "../../ui/components/Loader";
 import { cn } from "../../ui/lib/cn";

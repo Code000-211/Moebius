@@ -3,7 +3,7 @@
  * (`GET /v1/terminal`), for a person to look at the configuration and the machine Moebius runs on. Opening one is
  * recorded by the server as a judgement of kind `open_terminal`; what is typed or seen is not.
  */
-import { Terminal } from "../../terminal/Terminal";
+import { Terminal } from "../../terminal/LazyTerminal";
 import { PageHeader } from "../../ui/page/PageHeader";
 
 export function TerminalPage() {

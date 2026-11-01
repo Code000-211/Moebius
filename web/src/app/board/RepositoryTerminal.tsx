@@ -11,7 +11,7 @@
  */
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Terminal } from "../../terminal/Terminal";
+import { Terminal } from "../../terminal/LazyTerminal";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../ui/components/Dialog";
 
 export function RepositoryTerminal({
