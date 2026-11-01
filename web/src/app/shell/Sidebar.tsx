@@ -1,8 +1,8 @@
 /**
  * The sidebar on every page, with the entries of the desktop app's: the app name with the connection, the search
  * (the command bar), Inbox, Chat, Fleet and Automations, then the groups Projects (one entry per board), Build,
- * Improve and Setup. It collapses to a rail of icons. The counts come from the snapshot. The token meter of the
- * desktop sidebar waits for the Usage page.
+ * Improve and Setup. It collapses to a rail of icons. The counts come from the snapshot; the meter at the foot
+ * (tokens used today against the day's budget) from the usage of today.
  */
 
 import {
@@ -16,10 +16,12 @@ import { useQuery } from "@tanstack/react-query";
 import { NavLink } from "react-router";
 import { snapshot } from "../../api/calls/board";
 import { chats as readChats } from "../../api/calls/chat";
-import { health } from "../../api/calls/server";
+import { health, start } from "../../api/calls/server";
+import { usage } from "../../api/calls/usage";
 import type { ConnectionState } from "../../api/events";
 import { keys } from "../../api/keys";
 import { liveRuns } from "../../api/types/board";
+import type { UsageReport } from "../../api/types/usage";
 import { unreadCount } from "../../chat/readMarkers";
 import {
   DropdownMenu,
@@ -35,6 +37,8 @@ import { Tooltip } from "../../ui/components/Tooltip";
 import { cn } from "../../ui/lib/cn";
 import { getModifierKey } from "../../ui/lib/platform";
 import { boardPath, type Group, PAGES } from "../pages";
+import { short } from "../usage/figures";
+import { todayOf } from "../usage/model";
 
 const STATE: Record<ConnectionState, { label: string; color: string }> = {
   online: { label: "Online", color: "var(--teal)" },
@@ -54,6 +58,8 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch, onSignOut }
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => snapshot() });
   const info = useQuery({ queryKey: keys.health, queryFn: () => health() });
   const chatList = useQuery({ queryKey: keys.chats, queryFn: readChats });
+  const steps = useQuery({ queryKey: keys.start, queryFn: () => start() });
+  const today = useQuery({ queryKey: keys.usageDays(1), queryFn: () => usage(1) });
   const unread = unreadCount(chatList.data ?? []);
   const boards = data.data?.boards ?? [];
   const inbox = data.data?.inbox.length ?? 0;
@@ -61,7 +67,11 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch, onSignOut }
   const state = STATE[connection];
   const modifier = getModifierKey();
 
-  const pagesOf = (group: Group) => PAGES.filter((page) => page.group === group);
+  // "Get started" is listed only while the server says a step is missing.
+  const pagesOf = (group: Group) =>
+    PAGES.filter(
+      (page) => page.group === group && (page.path !== "start" || (steps.data && !steps.data.done)),
+    );
   const trailingOf = (path: string) => {
     if (path === "inbox" && inbox > 0) return <span className="text-amber">{inbox}</span>;
     if (path === "chat" && unread > 0) return <span className="text-amber">{unread} new</span>;
@@ -167,6 +177,7 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch, onSignOut }
         ))}
       </div>
 
+      {today.data && <TokensMeter report={today.data} collapsed={collapsed} />}
       <div
         className={cn("border-t border-sidebar-line p-base", collapsed && "flex justify-center")}
       >
@@ -195,6 +206,36 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch, onSignOut }
         </DropdownMenu>
       </div>
     </nav>
+  );
+}
+
+/** The tokens used today at the foot: with the day's budget a number of both and a thin bar, without one the tokens alone. */
+function TokensMeter({ report, collapsed }: { report: UsageReport; collapsed: boolean }) {
+  const { tokens, budget } = todayOf(report);
+  const shown = budget !== null ? `${short(tokens)} / ${short(budget)}` : short(tokens);
+  const used =
+    budget !== null && budget > 0 ? Math.min(100, (Math.max(0, tokens) * 100) / budget) : null;
+  return (
+    <div
+      data-testid="tokens-meter"
+      title={`Tokens today: ${shown}`}
+      className={cn(
+        "flex flex-col gap-[6px] border-t border-sidebar-line px-double py-[12px]",
+        collapsed && "px-base",
+      )}
+    >
+      {!collapsed && (
+        <div className="flex items-center justify-between text-[13px] text-sidebar-text">
+          <span>Tokens today</span>
+          <span className="font-mono text-[11px]">{shown}</span>
+        </div>
+      )}
+      {used !== null && (
+        <div className="h-[4px] w-full overflow-hidden rounded-[2px] bg-track" aria-hidden="true">
+          <div className="h-full bg-teal" style={{ width: `${used}%` }} />
+        </div>
+      )}
+    </div>
   );
 }
 

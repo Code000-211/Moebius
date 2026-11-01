@@ -17,13 +17,19 @@ by one in later issues.
 | `src/app/terminal/`, `src/app/ports/` | The Terminal page (a shell on the server) and the Ports page (`ports.ts` is the logic, tested in `ports.test.ts`). |
 | `src/terminal/` | `Terminal.tsx`, xterm.js on the server's terminal WebSockets (copy on release and Ctrl+Shift+C, Ctrl+Shift+V and right click paste, resize on fit), and `protocol.ts`, the messages (tested). Written for Moebius: Vibe Kanban's `TerminalPanel` only lays out tabs. |
 | `src/diff/` | `parse.ts` reads a unified diff (files, hunks, numbered lines, side-by-side rows; tested), `DiffView.tsx` draws it with a file list and a Unified / Side by side toggle, `Changes.tsx` reads a run's or a change's diff and loads the view lazily. |
+| `src/app/inbox/` | The Inbox page: `InboxPage.tsx` (filters by kind and repository), `ItemCard.tsx` (one item: tag, facts, trials, diff, the issues of a grilling to edit, the buttons), `actions.ts` (the request each button sends) and `model.ts` (what an item is about, its sentence, the filters, editing a grilling's issues; tested in `model.test.ts`). |
+| `src/app/projects/` | The Projects pages: `ProjectsPage.tsx` (the list, with the question before a delete), `AddRepositoryPage.tsx`, `ProjectPage.tsx` (`/projects/:id`: the trusted logins of a repository on a forge and its files) with `FilesPanel.tsx`, `FileTree.tsx`, `FileEditor.tsx` (a field, saved as a commit; Ctrl+S) and `FindPanels.tsx` ("Go to file", Ctrl+P, and "Search in files", Ctrl+Shift+F); `model.ts` and `fuzzy.ts` are the logic. |
+| `src/app/fleet/` | The Fleet page: a tile for each working run (`FleetPage.tsx`) that follows its events with `chat/useThread`; `model.ts` says which runs are working. |
+| `src/app/usage/` | The Usage page: `UsagePage.tsx`, `Heatmap.tsx` of the last year, `Boxes.tsx` (models, time, waits, lens, agents), `figures.ts` (numbers in three figures, dates) and `model.ts`. The tokens of today also feed the meter in the sidebar. |
+| `src/app/start/`, `src/app/settings/` | Get started (`StartPage.tsx`, the sidebar lists it only while a step is missing) and Settings (`SettingsPage.tsx`: the keys of `moebius.toml` in boxes, `fields.ts` has the keys and what a save sends; `RestartBanner.tsx`, which the Models page can show too; `Webhooks.tsx`). |
+| `src/ui/page/` | `Box`, `Chip`, `Field`, `Notice`: the pieces the pages above share, written for Moebius. |
 | `src/api/` | The client of the desktop API: `http.ts` (requests and `ApiError`), `calls/` (one module per part of the API, as `crates/moebius-desktop/src/client/calls/`), `types/` (written by hand from the reference), `events.ts` (the WebSocket), `keys.ts` (query keys). |
 | `src/live/` | The event stream feeding the query cache (`invalidation.ts`) and the connection state for the pages (`LiveProvider.tsx`). |
 | `src/auth/login.ts` | The `?login=<code>` link the server prints. |
 | `src/chat/` | The Chat page (`/chat`, `/chat/:id`) and the floating chat of the shell: `conversation.ts` folds a run's events into entries (the logic of the desktop app's `Conversation`, with the provider's errors added), `turns.ts` groups them, `follow.ts` decides when the list follows an answer, `readMarkers.ts` and `chatList.ts` keep the unread markers and the list current, `useThread.ts` follows one chat over the event stream. |
 | `src/ui/` | Components copied from Vibe Kanban's `@vibe/ui`, each with a header comment saying where from and what changed. `ui/chat/` holds the chat entries (messages, tool pills, thinking, todos, files with diffs, errors, the composer box); they are presentational, so the runs page can draw a run's conversation with them. `Markdown`, `CodeBlock`, `CopyButton`, `DiffBody`, `PillSelect` and `Tag` there are written for Moebius, not copied. |
 | `src/styles/` | `theme.css` (Deep Velvet as CSS variables), `tailwind.css` (the Tailwind theme), `fonts.css`. |
-| `e2e/` | The Playwright tests and the server they run against; `e2e/fake/` has the data and routes of a page in the fake server (`board.ts` for the board, `chat.ts` for the chats and what an agent does in them). |
+| `e2e/` | The Playwright tests and the server they run against; `e2e/fake/` has the data and routes of a page in the fake server (`board.ts` for the board, `chat.ts` for the chats and what an agent does in them, `pages-a.ts` for the Inbox, Projects, Fleet, Usage, Get started and Settings pages). |
 | `public/fonts/` | Manrope and JetBrains Mono, the files of the desktop app. |
 
 ## Scripts
@@ -128,7 +134,7 @@ Other transitive licenses in the tree: ISC, BSD-2/3-Clause, MIT-0, BlueOak-1.0.0
 
 - The API types in `src/api/types/` are written by hand from `docs/reference/desktop-api.md`. Generating them from the Rust
   types would remove the chance of drift; that is out of scope for the scaffold.
-- The sidebar's token meter waits for the Usage page, and the search over cards for a search of the whole app.
+- The search over cards waits for a search of the whole app.
 - The board has no route to move a card to a column: a person decides what waits in the inbox, so a drop means approve
   (Backlog to Ready), merge (to Done), send back (to In progress, with a reason) or retry (a stuck card, to In progress), and
   any other drop is refused with the reason. The desktop app's "let the Moebius agent write the issue" waits for the chat page.

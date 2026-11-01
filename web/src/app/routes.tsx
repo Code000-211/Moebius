@@ -7,14 +7,32 @@ import { ChatPage } from "../chat/ChatPage";
 import { App } from "./App";
 import { BoardPage } from "./board/BoardPage";
 import { ScriptPage } from "./board/ScriptPage";
+import { FleetPage } from "./fleet/FleetPage";
+import { InboxPage } from "./inbox/InboxPage";
 import { DEFAULT_PAGE, PAGES } from "./pages";
 import { PortsPage } from "./ports/PortsPage";
+import { AddRepositoryPage } from "./projects/AddRepositoryPage";
+import { ProjectPage } from "./projects/ProjectPage";
+import { ProjectsPage } from "./projects/ProjectsPage";
 import { RunPage } from "./runs/RunPage";
+import { SettingsPage } from "./settings/SettingsPage";
 import { NotFoundPage, PlaceholderPage } from "./shell/Page";
+import { StartPage } from "./start/StartPage";
 import { TerminalPage } from "./terminal/TerminalPage";
+import { UsagePage } from "./usage/UsagePage";
 
-/** The pages that have a route of their own below; the others show a placeholder. */
-const BUILT = new Set(["chat", "terminal", "ports"]);
+/** The pages that have their own route below; the others show a placeholder. */
+const PAGES_BUILT = new Set([
+  "chat",
+  "terminal",
+  "ports",
+  "inbox",
+  "fleet",
+  "projects",
+  "usage",
+  "start",
+  "settings",
+]);
 
 export const routes = [
   {
@@ -22,10 +40,18 @@ export const routes = [
     element: <App />,
     children: [
       { index: true, element: <Navigate to={`/${DEFAULT_PAGE}`} replace /> },
-      ...PAGES.filter((page) => !BUILT.has(page.path)).map((page) => ({
+      ...PAGES.filter((page) => !PAGES_BUILT.has(page.path)).map((page) => ({
         path: page.path,
         element: <PlaceholderPage page={page} />,
       })),
+      { path: "inbox", element: <InboxPage /> },
+      { path: "fleet", element: <FleetPage /> },
+      { path: "projects", element: <ProjectsPage /> },
+      { path: "projects/new", element: <AddRepositoryPage /> },
+      { path: "projects/:id", element: <ProjectPage /> },
+      { path: "usage", element: <UsagePage /> },
+      { path: "start", element: <StartPage /> },
+      { path: "settings", element: <SettingsPage /> },
       { path: "chat", element: <ChatPage /> },
       { path: "terminal", element: <TerminalPage /> },
       { path: "ports", element: <PortsPage /> },

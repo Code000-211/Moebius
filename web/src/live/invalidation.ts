@@ -57,6 +57,10 @@ export function invalidates(event: ServerEvent): QueryKey[] {
   if (event.kind === "run_started" || event.kind === "run_ended") stale.push(keys.runs);
   if (DIFF_KINDS.has(event.kind)) stale.push(keys.diffs);
   if (event.kind === "port_opened" || event.kind === "port_closed") stale.push(keys.ports);
+  if (event.kind === "run_ended") stale.push(keys.usage);
+  if (event.kind === "file_changed" && typeof event.data.repository === "number") {
+    stale.push(keys.files(event.data.repository));
+  }
   if (listChanged(event)) stale.push(keys.chats);
   return stale;
 }

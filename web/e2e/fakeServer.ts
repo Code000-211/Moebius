@@ -12,6 +12,7 @@ import { extname, join, normalize, resolve } from "node:path";
 import { type WebSocket, WebSocketServer } from "ws";
 import { type BoardFake, createBoardFake } from "./fake/board";
 import { createFakeChat, type FakeChat } from "./fake/chat";
+import { createPagesAFake, type PagesAFake } from "./fake/pages-a";
 import { createFakeRuns, type FakeRuns } from "./fake/runs";
 
 export const TOKEN = "fake-server-token";
@@ -48,6 +49,8 @@ export interface FakeServer {
   chat: FakeChat;
   /** The runs, their terminals, diffs and the ports (e2e/fake/runs.ts). */
   runs: FakeRuns;
+  /** The Inbox, Projects, Fleet, Usage, Get started and Settings routes (e2e/fake/pages-a.ts). */
+  pagesA: PagesAFake;
 }
 
 function cookieOf(request: IncomingMessage): string | undefined {
@@ -86,6 +89,7 @@ export async function startFakeServer(): Promise<FakeServer> {
   const board = createBoardFake(broadcast);
   const chat = createFakeChat(broadcast);
   const runs = createFakeRuns(broadcast);
+  const pagesA = createPagesAFake(broadcast, board);
   let port = 0;
 
   const signedIn = (request: IncomingMessage) => {
@@ -122,6 +126,7 @@ export async function startFakeServer(): Promise<FakeServer> {
       response.writeHead(204, { "set-cookie": "moebius_session=; HttpOnly; Path=/; Max-Age=0" });
       return response.end();
     }
+    if (await pagesA.handle(request, response, path)) return;
     if (path === "/v1/health") return json(response, { version: "0.0.0-fake" });
     if (path === "/v1/snapshot") return json(response, board.snapshot());
     if (path === "/v1/start") return json(response, { done: true, steps: [], warnings: [] });
@@ -188,6 +193,7 @@ export async function startFakeServer(): Promise<FakeServer> {
     board,
     chat,
     runs,
+    pagesA,
     broadcast,
     async stop() {
       for (const ws of sockets) ws.terminate();

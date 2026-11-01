@@ -79,7 +79,7 @@ describe("invalidates", () => {
   });
 
   it("leaves the snapshot alone for kinds it does not show", () => {
-    for (const kind of ["run_event", "file_changed", "board_error", "unknown_kind"]) {
+    for (const kind of ["run_event", "board_error", "unknown_kind"]) {
       expect(invalidates({ kind, data: {} })).toEqual([]);
     }
   });
@@ -104,6 +104,15 @@ describe("invalidates", () => {
 
   it("reads the first-start steps again when a repository comes or goes", () => {
     expect(invalidates({ kind: "repository_added", data: {} })).toContainEqual(keys.start);
+  });
+
+  it("reads the usage again when a run ends and the files of the repository whose file was saved", () => {
+    expect(invalidates({ kind: "run_ended", data: {} })).toContainEqual(keys.usage);
+    expect(invalidates({ kind: "run_event", data: {} })).not.toContainEqual(keys.usage);
+    expect(invalidates({ kind: "file_changed", data: { repository: 3, path: "a" } })).toEqual([
+      keys.files(3),
+    ]);
+    expect(invalidates({ kind: "file_changed", data: {} })).toEqual([]);
   });
 
   it("makes everything stale when events were lost", () => {

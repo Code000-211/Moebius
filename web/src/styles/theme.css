@@ -59,6 +59,14 @@
   --online-text: #6ee7b7;
   --on-fill: #0f0d14;
 
+  /* The colours of the models on the Usage page (MODEL_COLOURS), in the order they appear. */
+  --model-1: #f27663;
+  --model-2: #6ee7b7;
+  --model-3: #c084fc;
+  --model-4: #fbbf24;
+  --model-5: #38bdf8;
+  --model-6: #f472b6;
+
   /* Radii (RADIUS_*). */
   --radius-box: 14px;
   --radius-card: 10px;

@@ -37,6 +37,17 @@ describe("theme.css", () => {
     }
   });
 
+  it("has the colours of the models of the Usage page", () => {
+    const list = /const MODEL_COLOURS: \[Color; \d+\] = \[([^\]]+)\]/.exec(rust)?.[1] ?? "";
+    const hexes = [...list.matchAll(/hex\(0x([0-9A-Fa-f]{6})\)/g)].map((m) =>
+      (m[1] as string).toLowerCase(),
+    );
+    expect(hexes).toHaveLength(6);
+    hexes.forEach((hex, at) => {
+      expect(vars.get(`model-${at + 1}`), `--model-${at + 1}`).toBe(`#${hex}`);
+    });
+  });
+
   it("has the radii of theme.rs", () => {
     const radii = [...rust.matchAll(/pub const RADIUS_([A-Z]+): f32 = ([0-9.]+);/g)];
     expect(radii.length).toBeGreaterThan(5);

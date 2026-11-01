@@ -7,6 +7,17 @@ export const keys = {
   health: ["health"] as const,
   server: ["server"] as const,
   start: ["start"] as const,
+  /** The usage of a window of days; a finished run makes all of them stale. */
+  usage: ["usage"] as const,
+  usageDays: (days: number) => ["usage", days] as const,
+  settings: ["settings"] as const,
+  webhooks: ["webhooks"] as const,
+  /** What a repository's files page has read: directories, one file, the paths for "Go to file". */
+  files: (repository: number) => ["files", repository] as const,
+  tree: (repository: number, directory: string) =>
+    ["files", repository, "tree", directory] as const,
+  file: (repository: number, path: string) => ["files", repository, "file", path] as const,
+  filePaths: (repository: number) => ["files", repository, "paths"] as const,
   snapshot: ["snapshot"] as const,
   /** Everything read about one card (its history and its runs) starts with this, so an event can make it all stale. */
   cards: ["card"] as const,
