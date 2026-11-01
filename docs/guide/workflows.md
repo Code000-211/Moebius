@@ -13,7 +13,7 @@ page describes what they do. The exact functions they call are in the
 A card is an issue on the board of one repository. It moves through six columns, each with a script:
 
 ```
-Backlog -> Ready -> In progress -> In review -> Ready to merge -> Done
+Backlog -> Not started -> In progress -> In review -> Ready to merge -> Done
 ```
 
 | Column | Script | What it does |

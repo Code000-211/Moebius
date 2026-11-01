@@ -24,6 +24,8 @@ export interface Run {
   harness_repository: boolean;
   origin: string;
   runner: string | null;
+  /** The name a person gave this chat; null while it is untitled. Only a chat is ever named. */
+  title: string | null;
 }
 
 /** `GET /v1/repositories/{id}/scripts/{column}`. */

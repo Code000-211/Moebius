@@ -79,7 +79,9 @@ the person's next message), `worktree`, `started_at`, `ended_at`, `summary`, `re
 works in, or null) and `harness_repository` (true for a chat that works in the [harness configuration
 repository](harness-configuration.md#changing-it-in-a-chat); `harness` is the name of the harness that runs the agent)
 and `origin` (where a chat was started: `chat`, or `assistant` for the desktop app's floating window; `chat` for every
-other run) and `runner` (the name of the [runner](configuration.md#runners) the run's harness goes on, or null for a run on the server).
+other run) and `runner` (the name of the [runner](configuration.md#runners) the run's harness goes on, or null for a run on the server) and
+`title` (the name a person gave this chat, or null while it is untitled and its `Chat` title comes from its first
+message; see `POST /v1/chats/{id}/title`. Only a chat is ever named, so it is null for every other run).
 
 `Grilling`: `id`, `run_id` (the chat), `repository_id`, `issues` (array of `{"title", "body", "blocked_by"}`, where
 `blocked_by` is an array of indexes into `issues`; empty for a report and for an empty grilling), `report` (text or null),

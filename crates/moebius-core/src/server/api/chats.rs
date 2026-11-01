@@ -626,6 +626,8 @@ mod tests {
         .await;
     }
 
+    // Unix only: the fake Pi is a Python script started by its `#!` line.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_chat_takes_a_name_and_gives_it_back() {
         let (_dir, state, addr) = start().await;

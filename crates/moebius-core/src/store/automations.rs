@@ -12,6 +12,11 @@ const HOUR: i64 = 3600;
 /// Which instant the local minute `minute` comes to. SQLite answers with `first`; that is the minute meant while it
 /// has not gone by. Once it has, the only way it can come again is the clock having gone back over it, so the answer
 /// is `first` an hour on — but only when the clock really does read `minute` then, which `later` says.
+///
+/// A season change is that same hour going back, so a schedule written for the hour that repeats fires once in it and
+/// not twice, and one written for the hour that is skipped on the way up waits until the season changes back. The
+/// server's schedule is a plain cron of five fields, which says nothing about seasons; the hour lost or gained is left
+/// to the clock rather than being worked out here.
 fn occurrence(first: i64, later: Option<&str>, minute: &str, now: i64) -> i64 {
     if first < now && later == Some(minute) {
         first + HOUR
