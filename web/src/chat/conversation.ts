@@ -240,27 +240,71 @@ export class Conversation {
     return this.list.slice();
   }
 
-  /** Adds an event. One seen before is ignored; one older than the newest seen is put in its place. */
+  /**
+   * Adds one event as it arrives on the stream. One seen before is ignored; one older than the newest seen sits
+   * between entries already drawn, so the fold is done again and it takes its place. That is the only time a single
+   * event costs more than itself, and it is rare: what arrives while a chat is open is nearly always the next one.
+   */
   push(event: RunEvent): void {
     if (this.events.has(event.seq)) return;
-    if (event.seq > this.newest) {
-      this.apply(event);
-      this.events.set(event.seq, event);
-      this.newest = event.seq;
+    this.events.set(event.seq, event);
+    if (event.seq <= this.newest) {
+      this.rebuild();
       return;
     }
-    this.events.set(event.seq, event);
+    this.apply(event);
+    this.newest = event.seq;
+  }
+
+  /**
+   * Adds the events read from the server, which come as a page of them at a time. Reading what was missed and being
+   * sent what happens now are two different paths that meet in one conversation, so a page often arrives holding
+   * events older than the newest one the stream already brought. Each of those is put in its place once, for the
+   * whole page: folding the log again per event would cost the log again per event, which is seconds on a long chat
+   * that is still answering.
+   *
+   * The page also carries the server's time on events the stream already brought with this browser's clock on them,
+   * and a duration is worked out between two `at`s, so the stored time is the one kept.
+   */
+  backfill(events: readonly RunEvent[]): void {
+    const fresh: RunEvent[] = [];
+    let again = false;
+    for (const event of events) {
+      const held = this.events.get(event.seq);
+      if (held) {
+        if (held.at !== event.at) {
+          this.events.set(event.seq, event);
+          again = true;
+        }
+        continue;
+      }
+      this.events.set(event.seq, event);
+      fresh.push(event);
+      if (event.seq <= this.newest) again = true;
+    }
+    if (again) {
+      this.rebuild();
+      return;
+    }
+    // Nothing landed out of order and no time needed correcting, so the page is simply more of the chat: its events
+    // follow the last one drawn and are applied in their own order.
+    for (const event of fresh.sort((a, b) => a.seq - b.seq)) {
+      this.apply(event);
+      this.newest = event.seq;
+    }
+  }
+
+  /** Draws every event held again, in the order their `seq`s give them. */
+  private rebuild(): void {
     const sorted = [...this.events.values()].sort((a, b) => a.seq - b.seq);
-    this.events = new Map();
     this.list = [];
     this.calls = new Map();
     this.textOpen = this.thinkingOpen = false;
     this.modelError = null;
     this.newest = 0;
-    for (const each of sorted) {
-      this.apply(each);
-      this.events.set(each.seq, each);
-      this.newest = each.seq;
+    for (const event of sorted) {
+      this.apply(event);
+      this.newest = event.seq;
     }
   }
 

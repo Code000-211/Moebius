@@ -54,8 +54,25 @@ export function useThread(id: number | null): Thread {
     });
   };
 
+  // Reads what the conversation does not hold yet. Reads are ordinary requests that need no socket, so a chat is read
+  // even while the stream is trying to connect again: a laptop waking from sleep used to leave the page on "Reading
+  // the chat" until the socket opened, and never mark the chat as read at all.
+  function refill(current: { id: number; value: Conversation; loaded: boolean }): void {
+    runEvents(current.id, current.value.lastSeq)
+      .then((events) => {
+        if (conversation.current !== current) return;
+        current.value.backfill(events);
+        current.loaded = true;
+        publish(null);
+      })
+      .catch((e: unknown) => {
+        if (conversation.current !== current) return;
+        publish(e instanceof Error ? e.message : "cannot read the chat");
+      });
+  }
+
   // Reads the chat when it is opened, and what it missed whenever the socket is (again) online.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `publish` only reads refs and sets state
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `publish` and `refill` only read refs and set state
   useEffect(() => {
     if (id === null) {
       conversation.current = null;
@@ -66,28 +83,20 @@ export function useThread(id: number | null): Thread {
       conversation.current = { id, value: new Conversation(), loaded: false };
       setThread(EMPTY);
     }
-    if (connection === "reconnecting") return;
     const current = conversation.current;
-    let cancelled = false;
-    runEvents(id, current.value.lastSeq)
-      .then((events) => {
-        if (cancelled || conversation.current !== current) return;
-        for (const event of events) current.value.push(event);
-        current.loaded = true;
-        publish(null);
-      })
-      .catch((e: unknown) => {
-        if (cancelled || conversation.current !== current) return;
-        publish(e instanceof Error ? e.message : "cannot read the chat");
-      });
-    return () => {
-      cancelled = true;
-    };
+    refill(current);
   }, [id, connection]);
 
   useServerEvents((event) => {
     const current = conversation.current;
     if (!current) return;
+    if (event.kind === "lagged") {
+      // The server dropped this client's events rather than queue them, so the conversation has a hole in its `seq`s
+      // that nothing else fills: the unread marker would never be satisfied and part of the answer would be simply
+      // missing. What was missed is still stored, so it is read again.
+      refill(current);
+      return;
+    }
     const stored = runEventOf(current.id, event);
     if (!stored) return;
     current.value.push(stored);
@@ -100,7 +109,9 @@ export function useThread(id: number | null): Thread {
 
   useEffect(
     () => () => {
+      // The cancelled frame is no longer coming, so the flag has to go with it or nothing would ever schedule another.
       if (frame.current !== null) cancelAnimationFrame(frame.current);
+      frame.current = null;
     },
     [],
   );

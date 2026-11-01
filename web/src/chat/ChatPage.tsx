@@ -9,21 +9,12 @@ import { useParams } from "react-router";
 import { snapshot as readSnapshot } from "../api/calls/board";
 import { chats as readChats } from "../api/calls/chat";
 import { keys } from "../api/keys";
+import { useNow } from "../ui/lib/useNow";
 import { ChatTopBar } from "./ChatTopBar";
 import { NewChat } from "./NewChat";
 import { ChatActions, ChatTitle, OpenChat } from "./OpenChat";
 import { placeName } from "./places";
 import { askingCount, listedChats } from "./readMarkers";
-
-/** The time now in Unix seconds, kept current every 30 seconds for "5 min ago". */
-function useNow(): number {
-  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 30_000);
-    return () => clearInterval(timer);
-  }, []);
-  return now;
-}
 
 export function ChatPage() {
   const params = useParams();

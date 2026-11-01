@@ -35,12 +35,23 @@ export function FloatingChat() {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const thread = useThread(shown ? chatId : null);
+  // The thread is read for as long as the chat it belongs to is remembered, not only while the sheet is shown:
+  // minimising it and opening it again finds the conversation where it was, not an empty box refilled from the server.
+  const thread = useThread(chatId);
   const opener = useRef<HTMLButtonElement>(null);
   const openedOnce = useRef(false);
+  // What the composer holds right now, which the closure of a send cannot see: what is typed while an answer is on its
+  // way is the next question, not something to clear away with the one that was sent.
+  const held = useRef(message);
+  const write = (value: string) => {
+    held.current = value;
+    setMessage(value);
+  };
 
   const chat = chats.data?.find((each) => each.id === chatId);
-  const going = chat !== undefined && isOpen(chat.status);
+  // A chat that was just started is not in the list yet, so while its record is on the way the message still goes to
+  // it rather than opening a second chat.
+  const going = chat ? isOpen(chat.status) : chatId !== null;
   // Where the person is now: sent with every message, and said under the sheet's own name, because the page behind it
   // is partly covered and is the thing being asked about.
   const where = pageContext(location.pathname, snapshot.data);
@@ -51,7 +62,8 @@ export function FloatingChat() {
   useEffect(() => {
     if (!shown) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setShown(false);
+      // A control that took the key itself — a menu or a dialog over this sheet — closes first, and the sheet stays.
+      if (event.key === "Escape" && !event.defaultPrevented) setShown(false);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -85,7 +97,7 @@ export function FloatingChat() {
         setChatId(run.id);
         await queryClient.invalidateQueries({ queryKey: keys.chats });
       }
-      setMessage("");
+      if (held.current.trim() === text) write("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't send the message. Try again.");
     }
@@ -166,12 +178,13 @@ export function FloatingChat() {
           working={working}
           sent={sent}
           empty="Ask the agent about this page, or start from one of these. It is told where you are."
-          emptyAction={<Starters onPick={setMessage} />}
+          // The starters are for the moment before anything is written; once a message is on its way they are in the way.
+          emptyAction={message.trim() === "" ? <Starters onPick={write} /> : undefined}
         />
       </div>
       <Composer
         value={message}
-        onChange={setMessage}
+        onChange={write}
         onSend={() => void send()}
         canSend={message.trim() !== "" && !sending}
         error={error}

@@ -1,7 +1,8 @@
 /**
  * The chat page and the floating chat in a real browser: an answer that streams in is followed unless the person
  * scrolled up, tool calls are pills, a provider's error is an entry of the chat, Copy puts text on the clipboard,
- * a new chat with the Moebius agent starts without a model, and the floating window opens over another page. The
+ * a new chat with the Moebius agent starts without a model, a chat is named and keeps the name, and the floating window
+opens over another page. The
  * agent is played by the fake server (e2e/fake/chat.ts), which sends the events exactly as the real one does; against
  * a real server only the page itself is looked at, as it has no model to answer with. Every wait is on something the
  * page shows, never on time.
@@ -57,6 +58,11 @@ async function say(text: string) {
   await field().press("Enter");
 }
 
+/** The words a locator holds, trimmed. */
+async function words(where: Locator): Promise<string> {
+  return ((await where.textContent()) ?? "").trim();
+}
+
 /** How far the conversation's list is from its end, in pixels. */
 function distanceFromEnd(list: Locator): Promise<number> {
   return list.evaluate(
@@ -97,6 +103,37 @@ describe("the chat page", () => {
       await page.waitForURL(`**/chat/${first}`);
       await page.getByTestId("person-message").filter({ hasText: "Older chat" }).waitFor();
       expect(second).toBeGreaterThan(first);
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "names a chat, and the name is what the page and the list both say",
+    async () => {
+      await open("/chat");
+      const id = fake().seed({
+        title: "First line of the chat",
+        events: [["said", { message: "First line of the chat" }]],
+      });
+      await page.goto(`${server.url}/chat/${id}`);
+      const title = page.getByTestId("chat-title");
+      await title.waitFor();
+      await page.getByRole("button", { name: /^Name the chat/ }).click();
+      const field = page.getByTestId("chat-title-field");
+      await field.fill("Where the login screen went wrong");
+      await field.press("Enter");
+      const named = "Where the login screen went wrong";
+      // The field closes as soon as it is told to save, so the answer is the name itself appearing in the row.
+      await page.getByText(named).first().waitFor();
+      expect.soft(await words(title), "the page says the new name").toContain(named);
+      // The name belongs to the server now: a reload says the same, and so does the list.
+      await page.reload();
+      const again = page.getByTestId("chat-title");
+      await again.waitFor();
+      expect.soft(await words(again), "a reload still says it").toContain(named);
+      await page.getByRole("button", { name: "Chats (1)" }).click();
+      const rows = page.getByTestId("chat-row");
+      await rows.first().waitFor();
+      expect.soft(await words(rows.first()), "and the list of chats says it too").toContain(named);
     },
   );
 
