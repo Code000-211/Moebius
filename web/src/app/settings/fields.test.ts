@@ -50,6 +50,18 @@ const field = (forms: Form[], key: string) =>
   forms.flatMap((form) => form.fields).find((each) => each.key === key);
 
 describe("reading the settings", () => {
+  it("says what an empty field means where the key has no default", () => {
+    const forms = readForms(answer({}));
+    // A budget with no figure is no budget at all, and a forge token comes from a file or from a secret.
+    expect(field(forms, "budgets.day_tokens")?.whenEmpty).toBe("No limit");
+    expect(field(forms, "gitlab.token_file")?.whenEmpty).toBe("This one or the secret");
+    expect(field(forms, "gitlab.token_secret")?.whenEmpty).toBe("This one or the file");
+    expect(field(forms, "github.app_id")?.whenEmpty).toBe("Set both, or neither");
+    // A key with a default has the default to say instead, so it needs no words of its own.
+    expect(field(forms, "run_limit")?.whenEmpty).toBeNull();
+    expect(field(forms, "run_limit")?.default).toBe("3");
+  });
+
   it("holds what the file sets, and shows the default of a key it does not set", () => {
     const forms = configured();
     expect(forms.map((form) => form.title)).toEqual([

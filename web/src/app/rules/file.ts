@@ -4,6 +4,8 @@
  * whole file, so the page works on its text and the server checks it.
  */
 
+import { plural } from "../../ui/lib/format";
+
 /** The name of the rule a line starts, if it is a `## name` heading. */
 function heading(line: string): string | undefined {
   return line.startsWith("## ") ? line.slice(3).trim() : undefined;
@@ -57,5 +59,5 @@ export function agentRequest(wanted: string): string {
 export function refusalsLabel(refusals: Record<string, number>, name: string): string {
   const n = refusals[name] ?? 0;
   if (n === 0) return "No refusals this week";
-  return n === 1 ? "1 refusal this week" : `${n} refusals this week`;
+  return plural(n, "refusal this week", "refusals this week");
 }

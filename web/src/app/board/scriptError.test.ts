@@ -23,10 +23,10 @@ describe("the check of a refused script", () => {
   });
 
   it("has no line when the message names none", () => {
-    expect(scriptProblem('no column "Nope"; the columns are Backlog, Ready')).toEqual({
+    expect(scriptProblem('no column "Nope"; the columns are Backlog, Not started')).toEqual({
       line: null,
-      message: 'no column "Nope"; the columns are Backlog, Ready',
-      full: 'no column "Nope"; the columns are Backlog, Ready',
+      message: 'no column "Nope"; the columns are Backlog, Not started',
+      full: 'no column "Nope"; the columns are Backlog, Not started',
     });
   });
 });

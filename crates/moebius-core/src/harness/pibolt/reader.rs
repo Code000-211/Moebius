@@ -89,7 +89,7 @@ impl Reader {
                 ending = Err(format!("pi-bolt refused the prompt: {}", value["error"]));
                 break;
             }
-            if kind == "agent_settled" && !(chat && !aborted) {
+            if kind == "agent_settled" && (!chat || aborted) {
                 ending = Ok(aborted);
                 break;
             }

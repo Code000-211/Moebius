@@ -1,18 +1,20 @@
 /**
  * The board of a repository: its columns of the default workflow with their cards (dragged only where a person may
- * move them), the filters, the inspector dock, the form of a new issue and a shell in the repository's clone. Everything comes from the snapshot, which
- * the event stream keeps current (`live/invalidation.ts`), so a card moves on this page when the server moves it. The
- * chosen card and the filters are in the address (`?card=`, `?column=`, `?agent=`, `?status=`), so a reload and a link
- * keep them.
+ * move them), the filters, the inspector dock, the form of a new issue and a shell in the repository's clone, in a sheet over the
+ * board. The
+ * column of work in progress is the point of the page, so everything else is quiet: the header counts in one sentence,
+ * the filters are a row of labelled fields, a column says what its cards are doing in a word, and an empty column says
+ * what will arrive there. Everything comes from the snapshot, which the event stream keeps current
+ * (`live/invalidation.ts`), so a card moves on this page when the server moves it. The chosen card and the filters are
+ * in the address (`?card=`, `?column=`, `?agent=`, `?status=`), so a reload and a link keep them.
  */
-import { PlusIcon, TerminalWindowIcon, XIcon } from "@phosphor-icons/react";
+import { PlusIcon, TerminalWindowIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { snapshot } from "../../api/calls/board";
 import { keys } from "../../api/keys";
 import type { Board, Card, InboxItem } from "../../api/types/board";
-import { Terminal } from "../../terminal/Terminal";
 import { Button } from "../../ui/components/Button";
 import {
   type DropResult,
@@ -25,8 +27,12 @@ import {
 } from "../../ui/components/KanbanBoard";
 import { KanbanCardContent } from "../../ui/components/KanbanCardContent";
 import { Loader } from "../../ui/components/Loader";
+import { Empty } from "../../ui/page/Empty";
+import { Notice } from "../../ui/page/Notice";
+import { PageHeader } from "../../ui/page/PageHeader";
+import { Status } from "../../ui/page/Status";
 import { boardPath } from "../pages";
-import { Header } from "../shell/Page";
+import { ColumnMark } from "./ColumnMark";
 import { Dock } from "./Dock";
 import { type Decision, useDecisions } from "./decisions";
 import { FilterBar } from "./FilterBar";
@@ -42,16 +48,46 @@ import {
   groupByColumn,
   inboxOf,
   inspectedCard,
-  isLive,
   issueUrl,
   nextCard,
   pullUrl,
 } from "./model";
 import { NewIssueDialog } from "./NewIssueDialog";
+import { RepositoryTerminal } from "./RepositoryTerminal";
+import { ScrollFades } from "./ScrollFades";
 
-function plural(n: number, one: string, many: string): string {
-  return n === 0 ? `no ${many}` : n === 1 ? `1 ${one}` : `${n} ${many}`;
-}
+/** What a column holds when it is empty: the word for what is not there, and how a card comes to it. */
+const COLUMN_EMPTY: Record<string, { title: string; body: string }> = {
+  Backlog: {
+    title: "Nothing waiting",
+    body: "Issues you create wait here until they are approved.",
+  },
+  "Not started": {
+    title: "Nothing approved yet",
+    body: "Approved issues wait here until an agent takes one.",
+  },
+  "In progress": {
+    title: "Nothing is being written",
+    body: "A card arrives here when an agent starts a run on it.",
+  },
+  "In review": {
+    title: "Nothing to review",
+    body: "A card arrives here when an agent has a change to review.",
+  },
+  "Ready to merge": {
+    title: "Nothing ready to merge",
+    body: "A card arrives here when its change passes its checks.",
+  },
+  Done: {
+    title: "Nothing merged yet",
+    body: "A card arrives here once its change is merged.",
+  },
+};
+
+const ANY_COLUMN = {
+  title: "Nothing here",
+  body: "A card arrives when the column's script moves one in.",
+};
 
 export function BoardPage() {
   const { id } = useParams();
@@ -63,13 +99,16 @@ export function BoardPage() {
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [rejectAsk, setRejectAsk] = useState(0);
 
-  if (data.isPending) return <Loader message="Reading the board…" className="py-double" />;
+  if (data.isPending) return <Loader message="Reading the board" className="py-8" />;
   const board = data.data?.boards.find((b) => String(b.repository.id) === id);
   if (!data.data || !board) {
     return (
       <>
-        <Header breadcrumb="Projects" title="Board" />
-        <p className="text-sm text-normal">There is no such board. Pick one from the sidebar.</p>
+        <PageHeader title="Board" />
+        <Empty
+          title="There is no such board"
+          body="Pick a project in the sidebar to open its board."
+        />
       </>
     );
   }
@@ -93,12 +132,6 @@ export function BoardPage() {
     );
   const inspected = inspectedCard(board, inbox, params.get("card"));
   const groups = groupByColumn(board, inbox, filters);
-  const waitingChanges = inbox.filter(
-    (item) =>
-      item.kind === "ready_to_merge" && board.cards.some((card) => card.id === item.card_id),
-  ).length;
-  const working = board.cards.filter(isLive).length;
-
   function onDragEnd(result: DropResult) {
     if (!result.column) return;
     const card = board?.cards.find((c) => String(c.id) === result.cardId);
@@ -140,28 +173,21 @@ export function BoardPage() {
 
   return (
     <>
-      <div className="flex items-start justify-between gap-base">
-        <Header breadcrumb="Projects" title={board.repository.name} />
-        <div className="flex items-center gap-base">
-          <Button
-            size="sm"
-            variant="outline"
-            aria-pressed={terminalOpen}
-            onClick={() => setTerminalOpen((open) => !open)}
-          >
-            <TerminalWindowIcon className="size-icon-sm" />
-            Terminal
-          </Button>
-          <Button size="sm" onClick={() => setCreating(true)}>
-            <PlusIcon className="size-icon-sm" weight="bold" />
-            New issue
-          </Button>
-        </div>
-      </div>
-      <p className="m-0 mb-[12px] font-mono text-[12.5px] text-normal">
-        {plural(working, "run", "runs")} working ·{" "}
-        {plural(waitingChanges, "change waits for you", "changes wait for you")} · default workflow
-      </p>
+      <PageHeader
+        title={board.repository.name}
+        actions={
+          <>
+            <Button variant="secondary" onClick={() => setTerminalOpen(true)}>
+              <TerminalWindowIcon className="size-4" aria-hidden="true" />
+              Terminal
+            </Button>
+            <Button onClick={() => setCreating(true)}>
+              <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
+              New issue
+            </Button>
+          </>
+        }
+      />
       <FilterBar
         repositories={data.data.boards.map((b) => b.repository)}
         repository={board.repository.id}
@@ -172,35 +198,27 @@ export function BoardPage() {
         onChange={(next) => setQuery({ ...next })}
       />
       {notice && (
-        <div
-          role={notice.tone === "error" ? "alert" : "status"}
-          className={`mb-[12px] flex items-start justify-between gap-base rounded-lg border px-base py-base text-sm ${
-            notice.tone === "error"
-              ? "border-red-border bg-red-fill text-error"
-              : "border-teal-border bg-teal-fill text-success"
-          }`}
+        <Notice
+          tone={notice.tone}
+          className="mb-4"
+          action={
+            <Button variant="ghost" size="sm" onClick={() => setNotice(null)}>
+              Dismiss
+            </Button>
+          }
         >
-          <span className="[overflow-wrap:anywhere]">{notice.text}</span>
-          <button
-            type="button"
-            onClick={() => setNotice(null)}
-            aria-label="Dismiss"
-            className="shrink-0 rounded-sm p-half hover:bg-card"
-          >
-            <XIcon className="size-icon-xs" weight="bold" />
-          </button>
-        </div>
+          {notice.text}
+        </Notice>
       )}
-      <div className="flex min-w-0 flex-col gap-[12px] xl:flex-row xl:items-start">
-        <div className="min-w-0 flex-1 overflow-x-auto pb-base">
+      <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-start">
+        <ScrollFades className="flex-1 pb-3">
           <KanbanProvider onDragEnd={onDragEnd} renderOverlay={renderOverlay}>
             {groups.map(({ column, cards, total }) => (
               <BoardColumn
-                key={column.name}
+                key={column}
                 board={board}
                 inbox={inbox}
-                name={column.name}
-                script={column.script}
+                name={column}
                 cards={cards}
                 total={total}
                 inspectedId={inspected?.id}
@@ -208,9 +226,9 @@ export function BoardPage() {
               />
             ))}
           </KanbanProvider>
-        </div>
+        </ScrollFades>
         {inspected && (
-          <div className="w-full shrink-0 xl:sticky xl:top-0 xl:w-[400px]">
+          <div className="w-full shrink-0 xl:sticky xl:top-0 xl:w-96">
             <Dock
               key={inspected.id}
               board={board}
@@ -224,28 +242,11 @@ export function BoardPage() {
           </div>
         )}
       </div>
-      {terminalOpen && (
-        <section
-          aria-label="Terminal of the repository"
-          className="mt-[12px] flex h-[22rem] flex-col gap-half"
-          data-testid="board-terminal"
-        >
-          <div className="flex items-center justify-between gap-base">
-            <span className="font-mono text-xs text-normal">
-              A shell in the clone of {board.repository.name}
-            </span>
-            <Button size="xs" variant="ghost" onClick={() => setTerminalOpen(false)}>
-              Close terminal
-            </Button>
-          </div>
-          <Terminal
-            key={board.repository.id}
-            path={`/v1/repositories/${board.repository.id}/terminal`}
-            autoFocus
-            className="min-h-0 flex-1"
-          />
-        </section>
-      )}
+      <RepositoryTerminal
+        repository={board.repository.id}
+        open={terminalOpen}
+        onOpenChange={setTerminalOpen}
+      />
       <NewIssueDialog
         repository={board.repository.id}
         name={board.repository.name}
@@ -263,7 +264,6 @@ function BoardColumn({
   board,
   inbox,
   name,
-  script,
   cards,
   total,
   inspectedId,
@@ -272,27 +272,28 @@ function BoardColumn({
   board: Board;
   inbox: InboxItem[];
   name: string;
-  script: string | null;
   cards: Card[];
   total: number;
   inspectedId: number | undefined;
   onSelect: (card: Card) => void;
 }) {
-  const live = cards.some(isLive);
-  const waits = cards.some((card) => {
-    const item = inboxOf(inbox, card);
-    return item !== undefined && item.kind !== "stuck";
-  });
+  const statuses = cards.map((card) => cardStatus(card, inboxOf(inbox, card), board));
+  // The column's one word for what its cards are doing: the loudest state among them.
+  const doing = statuses.includes("live")
+    ? { name: "Working", tone: "progress" as const }
+    : statuses.includes("stuck")
+      ? { name: "Stuck", tone: "error" as const }
+      : statuses.includes("needs-you")
+        ? { name: "Your turn", tone: "attention" as const }
+        : null;
   return (
-    <KanbanBoard
-      name={name}
-      className={waits ? "border-amber-border" : live ? "border-live-border" : undefined}
-    >
+    <KanbanBoard name={name}>
       <KanbanHeader
         name={name}
-        count={total}
-        detail={script ?? undefined}
-        color={waits ? "var(--amber)" : live ? "var(--live)" : "var(--text)"}
+        count={cards.length}
+        total={total}
+        mark={<ColumnMark name={name} />}
+        status={doing && <Status tone={doing.tone}>{doing.name}</Status>}
       />
       <KanbanCards className="min-h-12">
         {cards.map((card) => {
@@ -306,15 +307,19 @@ function BoardColumn({
               column={name}
               isSelected={inspectedId === card.id}
               isLive={status === "live"}
-              onClick={() => onSelect(card)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") onSelect(card);
-              }}
+              onOpen={() => onSelect(card)}
             >
-              <CardContent board={board} inbox={inbox} card={card} cards={cards} />
+              <CardContent
+                board={board}
+                inbox={inbox}
+                card={card}
+                cards={cards}
+                onOpen={() => onSelect(card)}
+              />
             </KanbanCard>
           );
         })}
+        {cards.length === 0 && <Empty {...(COLUMN_EMPTY[name] ?? ANY_COLUMN)} />}
       </KanbanCards>
     </KanbanBoard>
   );
@@ -326,16 +331,19 @@ function CardContent({
   inbox,
   card,
   cards,
+  onOpen,
 }: {
   board: Board;
   inbox: InboxItem[];
   card: Card;
   cards: Card[];
+  /** Opens the card; left out on the drag overlay, where the card is only a picture of itself. */
+  onOpen?: () => void;
 }) {
   const status = cardStatus(card, inboxOf(inbox, card), board);
   const change = changeOf(board, card);
   const coding = card.column === "In progress" || card.column === "In review";
-  const next = card.column === "Ready" ? nextCard(cards) : undefined;
+  const next = card.column === "Not started" ? nextCard(cards) : undefined;
   return (
     <KanbanCardContent
       displayId={`#${card.number}`}
@@ -355,6 +363,7 @@ function CardContent({
       rounds={coding ? { done: card.rounds, limit: board.round_limit } : null}
       isLoading={status === "live"}
       muted={card.column === "Done"}
+      onOpen={onOpen}
     />
   );
 }

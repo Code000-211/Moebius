@@ -6,7 +6,9 @@ import { useQuery } from "@tanstack/react-query";
 import { lazy, Suspense } from "react";
 import { changeDiff, runDiff } from "../api/calls/runs";
 import { keys } from "../api/keys";
+import { Button } from "../ui/components/Button";
 import { Loader } from "../ui/components/Loader";
+import { Notice } from "../ui/page/Notice";
 
 // The diff view is loaded when a diff is first shown.
 const DiffView = lazy(() => import("./DiffView").then((m) => ({ default: m.DiffView })));
@@ -18,16 +20,31 @@ export function Changes({ of }: { of: { run: number } | { change: number } }) {
     queryKey: isRun ? keys.runDiff(id) : keys.changeDiff(id),
     queryFn: () => (isRun ? runDiff(id) : changeDiff(id)),
   });
-  if (query.isPending) return <Loader message="Reading the changes…" />;
+  if (query.isPending) return <Loader message="Reading the changes" />;
   if (query.isError) {
     return (
-      <p role="alert" className="m-0 text-xs text-error">
-        {query.error instanceof Error ? query.error.message : "cannot read the changes"}
-      </p>
+      <Notice
+        tone="error"
+        action={
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={query.isFetching}
+            onClick={() => void query.refetch()}
+          >
+            Try again
+          </Button>
+        }
+      >
+        <span className="font-semibold">Couldn't read the changes. </span>
+        {query.error instanceof Error
+          ? query.error.message
+          : "The server did not answer for this diff."}
+      </Notice>
     );
   }
   return (
-    <Suspense fallback={<Loader message="Reading the changes…" />}>
+    <Suspense fallback={<Loader message="Reading the changes" />}>
       <DiffView diff={query.data.diff} truncated={query.data.truncated} />
     </Suspense>
   );

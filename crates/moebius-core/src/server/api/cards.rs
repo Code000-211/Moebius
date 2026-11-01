@@ -339,7 +339,7 @@ mod tests {
             .unwrap();
         let store = &app.store;
         let blocker = store
-            .add_card(repo.id, "Blocker", "", "person", "Ready")
+            .add_card(repo.id, "Blocker", "", "person", "Not started")
             .unwrap();
         let card = store
             .add_card(repo.id, "Work", "", "person", "In progress")
@@ -723,7 +723,7 @@ mod tests {
         let first = item.at;
         until("the next second", || crate::store::now() > first).await;
         app.store.set_card_note(1, "Add a test.").unwrap();
-        app.move_card(1, "Ready").unwrap();
+        app.move_card(1, "Not started").unwrap();
         app.move_card(1, "In progress").unwrap();
         let run = app.store.add_run(Some(1), "Coder", "test", "code").unwrap();
         app.store.set_run_status(run.id, "failed").unwrap();
@@ -758,7 +758,7 @@ mod tests {
         assert!(history.windows(2).all(|w| w[0].at <= w[1].at));
         assert_eq!(
             history[2].data,
-            serde_json::json!({ "from": "Ready", "to": "In progress", "note": "Add a test." })
+            serde_json::json!({ "from": "Not started", "to": "In progress", "note": "Add a test." })
         );
         assert_eq!(
             history[4].data,

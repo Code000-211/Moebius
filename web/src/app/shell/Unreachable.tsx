@@ -4,16 +4,18 @@ import { Loader } from "../../ui/components/Loader";
 
 export function Unreachable({ retrying, onRetry }: { retrying: boolean; onRetry: () => void }) {
   return (
-    <main className="flex min-h-full items-center justify-center bg-ground p-double">
+    <main className="flex min-h-full items-center justify-center bg-background p-6">
       <div
         role="alert"
-        className="flex w-full max-w-[440px] flex-col items-start gap-double rounded-xl border border-line bg-surface p-7"
+        className="flex w-full max-w-(--connect-width) flex-col gap-4 rounded-card bg-surface p-8 shadow-card"
       >
-        <h1 className="text-[19px] font-bold text-high">Cannot reach the server</h1>
-        <p className="text-sm text-normal">
+        <h1 className="m-0 text-xl font-semibold tracking-tight text-text">
+          Cannot reach the server
+        </h1>
+        <p className="m-0 text-base leading-relaxed text-secondary">
           The server did not answer. Is it running? This page tries again by itself.
         </p>
-        <div className="flex items-center gap-base">
+        <div className="flex items-center gap-3">
           <Button onClick={onRetry} disabled={retrying}>
             Retry now
           </Button>

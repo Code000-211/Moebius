@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { Experiment } from "../../api/types/improve";
-import { actions, briefOf, budgetOf, change, emptyForm, number, result, statusTag } from "./model";
+import {
+  actions,
+  briefOf,
+  budgetOf,
+  change,
+  emptyForm,
+  number,
+  result,
+  SUGGESTED_BRIEFS,
+  statusTag,
+} from "./model";
 
 describe("the numbers", () => {
   it("are shown without trailing zeros", () => {
@@ -31,7 +41,7 @@ describe("an experiment", () => {
   it("is kept, not kept or failed", () => {
     expect(result(experiment({ kept: true })).label).toBe("Kept");
     expect(result(experiment({})).label).toBe("Not kept");
-    expect(result(experiment({ value: null }))).toEqual({ label: "Failed", tone: "red" });
+    expect(result(experiment({ value: null }))).toEqual({ label: "Failed", tone: "error" });
   });
 });
 
@@ -51,6 +61,18 @@ describe("a brief", () => {
     });
     expect(budgetOf(emptyForm())).toBe(200_000);
   });
+
+  it("starts from any of the points the empty page offers", () => {
+    expect(SUGGESTED_BRIEFS.length).toBeGreaterThan(1);
+    for (const suggested of SUGGESTED_BRIEFS) {
+      const brief = briefOf({ ...emptyForm(1), ...suggested });
+      expect(brief).not.toBeNull();
+      expect(brief?.goal).toBe(suggested.goal);
+      expect(brief?.better).toBe(suggested.better);
+    }
+    const goals = SUGGESTED_BRIEFS.map((each) => each.goal);
+    expect(new Set(goals).size).toBe(goals.length);
+  });
 });
 
 describe("what a status allows", () => {
@@ -61,6 +83,6 @@ describe("what a status allows", () => {
     for (const status of ["done", "spent", "stopped", "failed"] as const) {
       expect(actions(status)).toEqual([]);
     }
-    expect(statusTag("running")).toEqual({ label: "Running", tone: "teal" });
+    expect(statusTag("running")).toEqual({ label: "Running", tone: "progress" });
   });
 });

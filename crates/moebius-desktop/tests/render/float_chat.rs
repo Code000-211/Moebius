@@ -192,7 +192,7 @@ fn the_page_context_names_the_script_being_edited_and_its_text() {
     assert!(context.contains("Page: Projects > Board"), "{context}");
     assert!(context.contains("Repository: radiance (id 1)"), "{context}");
     assert!(
-        context.contains("Editing the script of the Ready column (.moebius/ready.luau)"),
+        context.contains("Editing the script of the Not started column (.moebius/ready.luau)"),
         "{context}"
     );
     assert!(context.contains(HOLD.trim_end()), "{context}");

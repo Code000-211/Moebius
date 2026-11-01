@@ -320,7 +320,7 @@ mod tests {
             end
         "#;
         assert_eq!(
-            dry(source, "Ready", "leon").unwrap(),
+            dry(source, "Not started", "leon").unwrap(),
             [
                 "decided start: nobody decides in a dry run, so the fail-closed option \"wait\" was taken",
                 "started a run of Coder for code (note: Be careful.)",
@@ -332,7 +332,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            dry("function on_card(card) end", "Ready", "leon").unwrap(),
+            dry("function on_card(card) end", "Not started", "leon").unwrap(),
             [] as [String; 0]
         );
     }
@@ -348,7 +348,7 @@ mod tests {
         };
         assert_eq!(
             dry(script("backlog.luau"), "Backlog", PERSON).unwrap(),
-            ["moved the card to Ready"]
+            ["moved the card to Not started"]
         );
         assert_eq!(
             dry(script("backlog.luau"), "Backlog", "mallory").unwrap(),
@@ -357,7 +357,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            dry(script("ready.luau"), "Ready", PERSON).unwrap(),
+            dry(script("ready.luau"), "Not started", PERSON).unwrap(),
             ["moved the card to In progress"]
         );
         let coding = dry(script("code.luau"), "In progress", PERSON).unwrap();
@@ -384,7 +384,7 @@ mod tests {
             ),
             ("function on_card(card) local f = io.open end", "index nil"),
         ] {
-            let error = dry(source, "Ready", PERSON).unwrap_err();
+            let error = dry(source, "Not started", PERSON).unwrap_err();
             assert!(error.contains(expected), "{source}: {error}");
         }
         let error = dry("function on_card(card) end", "In Progress", PERSON).unwrap_err();

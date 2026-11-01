@@ -1,8 +1,13 @@
 /*
- * Tailwind 4 setup: the Deep Velvet variables of theme.css become Tailwind's colours, radii and spacing. The names
- * `high`, `normal`, `low`, `primary`, `secondary`, `panel`, `brand`, `error`, `success`, `border` and the spacing
- * `half`, `base` are the ones the components copied from Vibe Kanban (src/ui) use; here they are aliases of the
- * Deep Velvet colours, so those components need no colours of their own.
+ * Tailwind 4 setup: the tokens of theme.css become Tailwind's colours, radii, sizes, spacing and shadows, so a
+ * component asks for `bg-surface` or `rounded-card` and never for a value. Tailwind's own palette is cleared first, so
+ * the only colours a page can name are the tokens; the components copied from Vibe Kanban were rebuilt on these names
+ * rather than given aliases of the desktop app's.
+ *
+ * The type utilities are the scale of the standard, not Tailwind's defaults: `text-xs` is the 12 of a caption,
+ * `text-sm` the 13 of metadata, `text-base` the 15 of body, `text-lg` the 17 of emphasis, `text-xl` the 22 of a
+ * section title and `text-2xl` the 28 of a page title. A size outside that scale is a mistake, and the design audit
+ * says so.
  */
 @import "tailwindcss";
 @import "tw-animate-css";
@@ -14,69 +19,104 @@
   --color-*: initial;
   --color-transparent: transparent;
   --color-current: currentColor;
-  --color-black: #000;
 
-  /* Deep Velvet, by the name of theme.rs. */
-  --color-ground: var(--ground);
+  /* The tokens, by their own name. */
+  --color-background: var(--background);
   --color-surface: var(--surface);
+  --color-raised: var(--surface-raised);
+  --color-sunken: var(--surface-sunken);
+  --color-field: var(--field);
   --color-lane: var(--lane);
-  --color-card: var(--card);
-  --color-card-hover: var(--card-hover);
-  --color-recessed: var(--recessed);
-  --color-line: var(--line);
-  --color-line-strong: var(--line-strong);
-  --color-text: var(--text);
-  --color-text-secondary: var(--text-secondary);
-  --color-text-muted: var(--text-muted);
-  --color-accent: var(--accent);
-  --color-accent-fill: var(--accent-fill);
-  --color-accent-border: var(--accent-border);
-  --color-live: var(--live);
-  --color-live-fill: var(--live-fill);
-  --color-live-border: var(--live-border);
-  --color-teal: var(--teal);
-  --color-teal-fill: var(--teal-fill);
-  --color-amber: var(--amber);
-  --color-amber-fill: var(--amber-fill);
-  --color-red: var(--red);
-  --color-red-fill: var(--red-fill);
-  --color-on-fill: var(--on-fill);
+  --color-hover: var(--hover);
+  --color-selected: var(--selected);
   --color-track: var(--track);
+  --color-heat: var(--heat-empty);
+  --color-scrim: var(--scrim);
+  --color-text: var(--text);
+  --color-secondary: var(--text-secondary);
+  --color-muted: var(--text-muted);
+  --color-hairline: var(--hairline);
+  --color-hairline-strong: var(--hairline-strong);
+  --color-progress: var(--progress);
+  --color-progress-text: var(--progress-text);
+  --color-progress-fill: var(--progress-fill);
+  --color-progress-border: var(--progress-border);
+  --color-attention: var(--attention);
+  --color-attention-text: var(--attention-text);
+  --color-attention-fill: var(--attention-fill);
+  --color-attention-border: var(--attention-border);
+  --color-complete: var(--complete);
+  --color-complete-text: var(--complete-text);
+  --color-complete-fill: var(--complete-fill);
+  --color-complete-border: var(--complete-border);
+  --color-error: var(--error);
+  --color-error-text: var(--error-text);
+  --color-error-fill: var(--error-fill);
+  --color-error-border: var(--error-border);
+  --color-on-ink: var(--on-ink);
+  --color-cat-1: var(--cat-1);
+  --color-cat-2: var(--cat-2);
+  --color-cat-3: var(--cat-3);
+  --color-cat-4: var(--cat-4);
+  --color-cat-5: var(--cat-5);
+  --color-cat-6: var(--cat-6);
+  --color-code: var(--code-background);
+  --color-code-keyword: var(--code-keyword);
+  --color-code-string: var(--code-string);
+  --color-code-number: var(--code-number);
+  --color-terminal: var(--terminal);
+  --color-terminal-text: var(--terminal-text);
+  --color-terminal-dim: var(--terminal-dim);
+  --color-terminal-cursor: var(--terminal-cursor);
+  --color-terminal-selection: var(--terminal-selection);
   --color-sidebar: var(--sidebar);
-  --color-sidebar-line: var(--sidebar-line);
   --color-sidebar-text: var(--sidebar-text);
   --color-sidebar-group: var(--sidebar-group);
   --color-sidebar-current: var(--sidebar-current);
   --color-sidebar-hover: var(--sidebar-hover);
+  --color-scrollbar-thumb: var(--scrollbar-thumb);
 
-  /* The names of the components copied from Vibe Kanban. */
-  --color-high: var(--text);
-  --color-normal: var(--text-secondary);
-  --color-low: var(--text-muted);
-  --color-primary: var(--ground);
-  --color-secondary: var(--card);
-  --color-panel: var(--surface);
-  --color-brand: var(--accent);
-  --color-on-brand: var(--on-fill);
-  --color-error: var(--red);
-  --color-success: var(--teal);
-  --color-border: var(--line);
+  /* The rest of the palette by the other names it is asked for: the text roles by their token name, and the parts of
+   * a step or a diff, which are named for the thing they colour rather than for a role. */
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-steps-fill: var(--steps-fill);
+  --color-steps-border: var(--steps-border);
+  --color-steps-ink: var(--steps-ink);
+  --color-online-text: var(--online-text);
+  --color-diff-removed: var(--diff-removed);
+  --color-diff-added: var(--diff-added);
+  --color-diff-removed-mark: var(--diff-removed-mark);
+  --color-diff-added-mark: var(--diff-added-mark);
 
+  /* Radii: 16 for cards and sheets, 12 for controls, 8 for small pieces, full for pills. */
+  --radius-none: 0;
   --radius-sm: var(--radius-small);
   --radius-md: var(--radius-control);
-  --radius-lg: var(--radius-card);
-  --radius-xl: var(--radius-box);
+  --radius-lg: var(--radius-control);
+  --radius-xl: var(--radius-card);
+  --radius-2xl: var(--radius-card);
+  --radius-3xl: var(--radius-card);
   --radius-full: var(--radius-round);
+  --radius-card: var(--radius-card);
+  --radius-sheet: var(--radius-sheet);
+  --radius-control: var(--radius-control);
+  --radius-composer: var(--radius-composer);
 
+  /* Shadows mark a layer now that borders are quiet. */
+  --shadow-card: var(--shadow-card);
+  --shadow-raised: var(--shadow-raised);
+
+  /* Spacing the copied components ask for, on the grid. */
   --spacing-half: 4px;
   --spacing-base: 8px;
   --spacing-plusfifty: 12px;
   --spacing-double: 16px;
+  --spacing-icon-xs: 12px;
   --spacing-icon-sm: 16px;
   --spacing-icon-base: 16px;
-  --spacing-icon-xs: 12px;
-  --spacing-icon-2xs: 10px;
-  --spacing-dot: 6px;
+  --spacing-icon-2xs: 8px;
+  --spacing-dot: 8px;
 
   /* The three dots of a card whose run is working (RunningDots). */
   --animate-running-dot-1: running-dot 1.4s ease-in-out infinite;
@@ -92,8 +132,152 @@
     }
   }
 
+  /* Type: the scale, with a line height that fits it. */
+  --text-xs: 12px;
+  --text-xs--line-height: 1.5;
+  --text-sm: 13px;
+  --text-sm--line-height: 1.5;
+  --text-base: 15px;
+  --text-base--line-height: 1.5;
+  --text-lg: 17px;
+  --text-lg--line-height: 1.4;
+  --text-xl: 22px;
+  --text-xl--line-height: 1.25;
+  --text-2xl: 28px;
+  --text-2xl--line-height: 1.15;
+  --text-3xl: 28px;
+  --text-3xl--line-height: 1.15;
+
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
+}
+
+/* The layers of theme.css as utilities, so nothing reaches for an arbitrary z-index. */
+/*
+ * The edge of a control. A field is a rounded box, and the standard lifts a rounded box with a shadow rather than a
+ * line round it, so the hairline that keeps a white field readable on a white card is drawn inside the box instead.
+ */
+@utility field-edge {
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+
+@utility z-scrim {
+  z-index: var(--z-scrim);
+}
+
+@utility z-sheet {
+  z-index: var(--z-sheet);
+}
+
+@utility z-menu {
+  z-index: var(--z-menu);
+}
+
+@utility z-tip {
+  z-index: var(--z-tip);
+}
+
+/*
+ * Four lines of text, the last one fading out: enough of a description to tell one row from the next, without a card
+ * growing to the length of the longest. The mask is of `currentColor` because a mask reads alpha, not colour.
+ */
+@utility fade-clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, currentColor 0 68%, transparent 100%);
+  mask-image: linear-gradient(to bottom, currentColor 0 68%, transparent 100%);
+}
+
+/*
+ * One line that says where it ran out by fading out there, instead of being cut mid-word: what is on the screen still
+ * reads as words, and the fade is the sign that the line goes on. `FadedLine` puts one of these on a line only when its
+ * words are wider than its box, so a line that fits is never dimmed for nothing.
+ *
+ * `fade-end` keeps the beginning, which is what the name of a thing wants. `fade-tail` keeps the end, which is what a
+ * command and a path want, because the last part is the one that says which command or which file it was.
+ */
+@utility fade-end {
+  overflow: hidden;
+  white-space: nowrap;
+  -webkit-mask-image: linear-gradient(to left, transparent 0, currentColor var(--space-24));
+  mask-image: linear-gradient(to left, transparent 0, currentColor var(--space-24));
+}
+
+@utility fade-tail {
+  display: flex;
+  justify-content: flex-end;
+  overflow: hidden;
+  white-space: nowrap;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, currentColor var(--space-24));
+  mask-image: linear-gradient(to right, transparent 0, currentColor var(--space-24));
+}
+
+/*
+ * A control that takes what is on screen somewhere else — Copy — waits until the block it belongs to is being looked
+ * at. The words are the content; the button is a way of carrying them off, and it is noise beside every message at
+ * once. Keyboard focus reveals it as surely as a pointer, and a screen with nothing to hover keeps it where it is.
+ * `reveal-copy` marks the block (`ui/chat/*`), `copy-quiet` is the button (`ui/chat/CopyButton.tsx`).
+ */
+@utility copy-quiet {
+  opacity: 0;
+  transition: opacity var(--motion-routine) ease-out;
+
+  &:focus-visible {
+    opacity: 1;
+  }
+
+  @media (hover: none) {
+    opacity: 1;
+  }
+}
+
+@utility reveal-copy {
+  &:hover .copy-quiet,
+  &:focus-within .copy-quiet {
+    opacity: 1;
+  }
+}
+
+/*
+ * A control that takes what is on screen somewhere else — Copy — waits until the block it belongs to is being looked
+ * at. The words are the content; the button is a way of carrying them off, and it is noise beside every message at
+ * once. Keyboard focus reveals it as surely as a pointer, and a screen with nothing to hover keeps it where it is.
+ * `reveal-copy` marks the block (`ui/chat/*`), `copy-quiet` is the button (`ui/chat/CopyButton.tsx`).
+ */
+@utility copy-quiet {
+  opacity: 0;
+  transition: opacity var(--motion-routine) ease-out;
+
+  &:focus-visible {
+    opacity: 1;
+  }
+
+  @media (hover: none) {
+    opacity: 1;
+  }
+}
+
+@utility reveal-copy {
+  &:hover .copy-quiet,
+  &:focus-within .copy-quiet {
+    opacity: 1;
+  }
+}
+
+/*
+ * A scroller with no scrollbar of its own, for a column too narrow to spare one: the sidebar's rail is 64 wide and a
+ * bar would take 8 of them and pull every icon off the middle. What is still below is said by a fade instead
+ * (`app/board/ScrollFades.tsx`), and the wheel and the arrow keys still work.
+ */
+@utility scroll-none {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 @layer base {
@@ -103,23 +287,97 @@
     height: 100%;
   }
 
+  html {
+    /* The theme of `src/theme.ts`; without it the system theme would still be right, since the tokens are dark first. */
+    color-scheme: dark;
+  }
+
+  html[data-theme="light"] {
+    color-scheme: light;
+  }
+
   body {
-    background: var(--ground);
-    color: var(--text-secondary);
+    background: var(--background);
+    color: var(--text);
     font-family: var(--font-sans);
     font-size: var(--size-body);
     line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
-  /* Tailwind 4 draws borders in currentColor; the app's are the line colour. */
+  h1,
+  h2,
+  h3 {
+    color: var(--text);
+    letter-spacing: -0.01em;
+  }
+
+  /* Tailwind 4 draws borders in currentColor; the app's are the hairline. */
   *,
   ::before,
   ::after {
-    border-color: var(--line);
+    border-color: var(--hairline);
   }
 
   button:not(:disabled),
   [role="button"]:not(:disabled) {
     cursor: pointer;
+  }
+
+  /* Every control shows where it is, without a component having to ask. */
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--selected);
+    color: var(--text);
+  }
+
+  /* A scrollbar is a hint about how much is off screen, not a piece of furniture: thin, no arrows, no track of its own
+     colour, and a thumb only a little stronger than a hairline. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: var(--scrollbar-width);
+    height: var(--scrollbar-width);
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border-radius: var(--radius-round);
+    background: var(--scrollbar-thumb);
+  }
+
+  ::-webkit-scrollbar-button,
+  ::-webkit-scrollbar-button:vertical,
+  ::-webkit-scrollbar-button:horizontal {
+    display: none;
+  }
+
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  /* Motion marks meaningful change, and stands aside when a person asks it to. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 1ms;
+      animation-iteration-count: 1;
+      transition-duration: 1ms;
+      scroll-behavior: auto;
+    }
   }
 }

@@ -268,7 +268,7 @@ fn same_site(request: &Request) -> bool {
     if !safe && headers.get("x-moebius").and_then(|v| v.to_str().ok()) != Some("1") {
         return false;
     }
-    if !(upgrade || !safe) {
+    if safe && !upgrade {
         return true;
     }
     match headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) {

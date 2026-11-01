@@ -1,8 +1,9 @@
 /**
- * One item of the inbox: its kind as a tag, where it comes from, why it is here, what it shows (the facts of a change,
- * the trials or the diff of a proposal, the issues of a grilling to edit, a report) and the buttons that act on it.
- * While a request is on its way the buttons give way to what it does; a refusal of the server stays under the item in
- * the server's own words. The item leaves when the snapshot is read again, which the answer and the event cause.
+ * One item of the inbox: why it is here in a word and a sentence, what it shows (the facts of a change, the trials or
+ * the diff of a proposal, the issues of a grilling to edit, a report) and the buttons that act on it. The card is the
+ * only layer on this page, so the kind's colour sits on the word alone and the parts are apart by space. While a
+ * request is on its way the buttons give way to what it does; a refusal of the server stays under the item in the
+ * server's own words. The item leaves when the snapshot is read again, which the answer and the event cause.
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -11,12 +12,14 @@ import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { InboxItem, Snapshot } from "../../api/types/board";
 import { CodeBlock } from "../../ui/chat/CodeBlock";
-import { Tag, type TagTone } from "../../ui/chat/Tag";
+import { Tag } from "../../ui/chat/Tag";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
 import { cn } from "../../ui/lib/cn";
-import { CONTROL } from "../../ui/page/Field";
-import { ago } from "../board/model";
+import { ago } from "../../ui/lib/format";
+import { Field, TextArea } from "../../ui/page/Field";
+import { Notice } from "../../ui/page/Notice";
+import { Status } from "../../ui/page/Status";
 import { type Action, perform, working } from "./actions";
 import {
   APPROVE_ISSUE,
@@ -45,12 +48,6 @@ import {
   why,
 } from "./model";
 
-const TONES: Record<string, string> = {
-  red: "border-[var(--red-border)] bg-red-fill",
-  amber: "border-[var(--amber-border)] bg-surface",
-  plain: "border-line bg-surface",
-};
-
 export function ItemCard({
   item,
   snapshot,
@@ -76,7 +73,7 @@ export function ItemCard({
       setRejecting(null);
     },
     onError: (error) =>
-      setNotice(isApiError(error) ? error.message : "The request could not be made."),
+      setNotice(isApiError(error) ? error.message : "The request could not be made. Try again."),
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: keys.snapshot });
       void queryClient.invalidateQueries({ queryKey: keys.cards });
@@ -97,25 +94,27 @@ export function ItemCard({
 
   const footer = () => {
     if (mutation.isPending && mutation.variables) {
-      return <p className="m-0 text-[12.5px] text-normal">{working(mutation.variables)}</p>;
+      return <p className="m-0 text-sm text-secondary">{working(mutation.variables)}</p>;
     }
     if (rejecting !== null && change !== null) {
       const send = () => act({ kind: "reject", change, reason: rejecting.trim() });
       return (
-        <div className="flex flex-wrap items-center gap-base">
-          <Input
-            aria-label="Why? The next round is told"
-            placeholder="Why? The next round is told"
-            value={rejecting}
-            onChange={(e) => setRejecting(e.target.value)}
-            onCommandEnter={() => reasonReady && send()}
-            className="min-w-[240px] flex-1"
-            autoFocus
-          />
+        <div className="flex flex-wrap items-end gap-3">
+          <Field label="Why? The next round is told" className="min-w-60 flex-1">
+            {(id) => (
+              <Input
+                id={id}
+                value={rejecting}
+                onChange={(e) => setRejecting(e.target.value)}
+                onCommandEnter={() => reasonReady && send()}
+                autoFocus
+              />
+            )}
+          </Field>
           <Button size="sm" disabled={!reasonReady} onClick={send}>
             Send back
           </Button>
-          <Button size="sm" variant="outline" onClick={() => setRejecting(null)}>
+          <Button size="sm" variant="secondary" onClick={() => setRejecting(null)}>
             Cancel
           </Button>
         </div>
@@ -136,7 +135,7 @@ export function ItemCard({
       <Button
         key={name}
         size="sm"
-        variant="outline"
+        variant="secondary"
         disabled={onClick === null}
         onClick={() => onClick?.()}
       >
@@ -180,27 +179,33 @@ export function ItemCard({
     } else if (item.kind === GRILLING_REPORT && grilling !== null) {
       buttons.push(primary("Dismiss", { kind: "dismissGrilling", grilling }));
     }
-    return <div className="flex flex-wrap gap-base">{buttons}</div>;
+    return <div className="flex flex-wrap gap-2">{buttons}</div>;
   };
 
   return (
     <article
       data-testid="inbox-item"
       data-kind={item.kind}
-      className={cn("flex flex-col gap-base rounded-xl border p-double", TONES[tone])}
+      className="flex flex-col gap-4 rounded-card bg-surface p-4 shadow-card"
     >
-      <div className="flex items-center gap-base">
-        <Tag tone={tone as TagTone}>{label}</Tag>
-        <span
-          className={cn("font-mono text-[11px]", item.kind === STUCK ? "text-error" : "text-low")}
-        >
-          {meta(item, about)}
-        </span>
+      <div className="flex flex-wrap items-center gap-3">
+        <Status tone={tone}>{label}</Status>
+        <span className="min-w-0 break-words text-sm text-secondary">{meta(item, about)}</span>
         <span className="flex-1" />
-        <span className="font-mono text-[11px] text-low">{ago(now, item.at)}</span>
+        <span className="text-sm text-secondary tabular-nums">{ago(now, item.at)}</span>
       </div>
-      <h2 className="m-0 break-words text-[14px] font-bold text-high">{item.title}</h2>
-      {sentence && <p className="m-0 text-[13px] text-normal">{sentence}</p>}
+
+      <div className="flex flex-col gap-2">
+        <h2 className="m-0 break-words text-lg font-semibold tracking-tight text-text">
+          {item.title}
+        </h2>
+        {sentence && (
+          <p className="m-0 max-w-prose text-base text-secondary [overflow-wrap:anywhere]">
+            {sentence}
+          </p>
+        )}
+      </div>
+
       {item.kind === READY_TO_MERGE && <Facts item={item} snapshot={snapshot} />}
       {item.kind === PROPOSAL && typeof item.data.diff === "string" ? (
         <OwnChange item={item} />
@@ -209,31 +214,27 @@ export function ItemCard({
       )}
       {item.kind === GRILLING_ISSUES && <Issues drafts={drafts} onChange={setDrafts} />}
       {item.kind === GRILLING_REPORT && (
-        <div className="whitespace-pre-wrap break-words rounded-md border bg-lane p-base text-[13px] text-high">
+        <div className="whitespace-pre-wrap break-words rounded-control bg-sunken p-4 text-base text-text">
           {typeof item.data.report === "string" ? item.data.report : ""}
         </div>
       )}
       {footer()}
-      {notice && (
-        <p role="alert" className="m-0 font-mono text-[12px] text-amber">
-          {notice}
-        </p>
-      )}
+      {notice && <Notice tone="error">{notice}</Notice>}
     </article>
   );
 }
 
 function Facts({ item, snapshot }: { item: InboxItem; snapshot: Snapshot }) {
   return (
-    <dl className="m-0 flex flex-wrap gap-base">
+    <dl className="m-0 flex flex-wrap gap-2">
       {facts(item, found(snapshot, item)).map((fact) => (
-        <div key={fact.label} className="min-w-[110px] flex-1 rounded-md border bg-lane p-[10px]">
-          <dt className="font-mono text-[11px] text-low">{fact.label}</dt>
+        <div key={fact.label} className="min-w-40 flex-1 rounded-control bg-sunken p-3">
+          <dt className="text-sm font-semibold text-secondary">{fact.label}</dt>
           <dd
             className={cn(
-              "m-0 break-all text-[13px]",
-              fact.good ? "text-teal" : "text-high",
-              fact.mono && "font-mono text-[12px]",
+              "m-0 mt-1 break-all text-base tabular-nums",
+              fact.good ? "text-complete-text" : "text-text",
+              fact.mono && "font-mono text-sm",
             )}
           >
             {fact.value}
@@ -249,8 +250,12 @@ function OwnChange({ item }: { item: InboxItem }) {
   const reason = typeof item.data.reason === "string" ? item.data.reason : "";
   const diff = typeof item.data.diff === "string" ? item.data.diff : "";
   return (
-    <div className="flex flex-col gap-base">
-      {reason && <p className="m-0 text-[13px] text-normal">{reason}</p>}
+    <div className="flex flex-col gap-3">
+      {reason && (
+        <p className="m-0 max-w-prose text-base text-secondary [overflow-wrap:anywhere]">
+          {reason}
+        </p>
+      )}
       <CodeBlock language="diff" code={diff}>
         {diff}
       </CodeBlock>
@@ -261,24 +266,30 @@ function OwnChange({ item }: { item: InboxItem }) {
 /** What the trials of a proposal found, one line each; then, under a label, the same for the regression set. */
 function Trials({ item }: { item: InboxItem }) {
   const line = (trial: ReturnType<typeof trialsOf>[number], index: number) => (
-    <li key={`${trial.card}-${index}`} className="flex items-center gap-base">
+    <li key={`${trial.card}-${index}`} className="flex flex-wrap items-center gap-3">
       <Tag>{trial.card}</Tag>
-      <Tag tone={trial.positive ? "teal" : "plain"}>{trial.outcome}</Tag>
-      <span className="min-w-0 flex-1 break-words text-[13px] text-normal">{trial.reason}</span>
+      <Status tone={trial.positive ? "complete" : "neutral"}>{trial.outcome}</Status>
+      <span className="min-w-0 flex-1 break-words text-base text-secondary">{trial.reason}</span>
     </li>
   );
   const regression = trialsOf(item, "regression");
   return (
-    <div className="flex flex-col gap-base">
-      <ul className="m-0 flex list-none flex-col gap-[6px] p-0">
+    <div className="flex flex-col gap-3">
+      {/* biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with
+          no marker from the accessibility tree entirely */}
+      <ul role="list" className="m-0 flex list-none flex-col gap-2 p-0">
         {trialsOf(item, "trials").map(line)}
       </ul>
       {regression.length > 0 && (
         <>
-          <p className="m-0 font-mono text-[11px] text-low">
+          <p className="m-0 text-sm text-secondary">
             Regression set: past merged cards it must not break
           </p>
-          <ul className="m-0 flex list-none flex-col gap-[6px] p-0">{regression.map(line)}</ul>
+          {/* biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list
+              with no marker from the accessibility tree entirely */}
+          <ul role="list" className="m-0 flex list-none flex-col gap-2 p-0">
+            {regression.map(line)}
+          </ul>
         </>
       )}
     </div>
@@ -289,7 +300,7 @@ function Trials({ item }: { item: InboxItem }) {
 function Issues({ drafts, onChange }: { drafts: Draft[]; onChange: (drafts: Draft[]) => void }) {
   if (drafts.length === 0) {
     return (
-      <p className="m-0 text-[13px] text-normal">
+      <p className="m-0 text-base text-secondary">
         No issue is left. Dismiss the item, or ask the agent again.
       </p>
     );
@@ -297,44 +308,56 @@ function Issues({ drafts, onChange }: { drafts: Draft[]; onChange: (drafts: Draf
   const edit = (index: number, change: Partial<Draft>) =>
     onChange(drafts.map((draft, at) => (at === index ? { ...draft, ...change } : draft)));
   return (
-    <ol className="m-0 flex list-none flex-col gap-base p-0">
-      {drafts.map((draft, index) => (
-        // The list is edited in place and issues are removed by position, so the position is the key.
-        // biome-ignore lint/suspicious/noArrayIndexKey: see above
-        <li key={index} className="flex flex-col gap-base rounded-lg border bg-panel p-[12px]">
-          <div className="flex items-center gap-base">
-            <Tag>{`Issue ${index + 1}`}</Tag>
-            {draft.blockedBy.length > 0 && (
-              <span className="font-mono text-[11px] text-low">
-                Blocked by issue {draft.blockedBy.map((blocker) => blocker + 1).join(", ")}
-              </span>
-            )}
-            <span className="flex-1" />
-            <Button
-              size="xs"
-              variant="outline"
-              aria-label={`Remove issue ${index + 1}`}
-              onClick={() => onChange(removeIssue(drafts, index))}
+    <>
+      {/* biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with
+          no marker from the accessibility tree entirely */}
+      <ol role="list" className="m-0 flex list-none flex-col gap-3 p-0">
+        {drafts.map((draft, index) => (
+          // The list is edited in place and issues are removed by position, so the position is the key.
+          // biome-ignore lint/suspicious/noArrayIndexKey: see above
+          <li key={index} className="flex flex-col gap-3 rounded-control bg-sunken p-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-3">
+              {draft.blockedBy.length > 0 && (
+                <span className="text-sm text-secondary">
+                  Blocked by issue {draft.blockedBy.map((blocker) => blocker + 1).join(", ")}
+                </span>
+              )}
+              <Button
+                size="sm"
+                variant="danger"
+                className="ml-auto"
+                aria-label={`Remove issue ${index + 1}`}
+                onClick={() => onChange(removeIssue(drafts, index))}
+              >
+                Remove
+              </Button>
+            </div>
+            <Field
+              label={`Title of issue ${index + 1}`}
+              // The empty title is what greys out "Confirm", so the reason sits on the field it belongs to.
+              error={draft.title.trim() === "" ? "Write a title to confirm this issue." : undefined}
             >
-              Remove
-            </Button>
-          </div>
-          <Input
-            aria-label={`Title of issue ${index + 1}`}
-            placeholder="Title"
-            value={draft.title}
-            onChange={(e) => edit(index, { title: e.target.value })}
-          />
-          <textarea
-            aria-label={`Description of issue ${index + 1}`}
-            placeholder="What the issue asks for."
-            value={draft.body}
-            rows={3}
-            onChange={(e) => edit(index, { body: e.target.value })}
-            className={CONTROL}
-          />
-        </li>
-      ))}
-    </ol>
+              {(id) => (
+                <Input
+                  id={id}
+                  value={draft.title}
+                  onChange={(e) => edit(index, { title: e.target.value })}
+                />
+              )}
+            </Field>
+            <Field label={`Description of issue ${index + 1}`} hint="What the issue asks for.">
+              {(id) => (
+                <TextArea
+                  id={id}
+                  value={draft.body}
+                  rows={3}
+                  onChange={(e) => edit(index, { body: e.target.value })}
+                />
+              )}
+            </Field>
+          </li>
+        ))}
+      </ol>
+    </>
   );
 }

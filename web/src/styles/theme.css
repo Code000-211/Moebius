@@ -1,111 +1,240 @@
 /*
- * The Deep Velvet tokens of the web app as CSS variables. The colours, radii and spacing here are the constants of
- * `crates/moebius-desktop/src/theme.rs` under the same names in kebab case (`TEXT_SECONDARY` is `--text-secondary`);
- * `src/styles/theme.test.ts` reads theme.rs and fails when a value differs or a colour is missing. Change theme.rs
- * first, then this file. Components never carry a colour literal: they use these variables, through the Tailwind
- * names in `tailwind.css`.
+ * The tokens of the web app as CSS variables: colour, radius, spacing, widths and type. Every value comes from the
+ * app's design standard (`docs/design-web.md`): a neutral foundation with strong colour only where attention is
+ * warranted,
+ * a type scale of 12, 13, 15, 17, 22 and 28, radii of 16 for cards and sheets and 12 for controls, and spacing on the
+ * 8pt grid — 4 where a row is tight, 2 for a nudge, which is all the audit lets through.
+ *
+ * Both themes define every name. The dark values are the default and `:root[data-theme="light"]` carries the light
+ * ones; `src/theme.ts` sets that attribute from the system theme unless a person picked one. Components never carry a
+ * colour literal, a radius or a size of their own: they use these variables through the Tailwind names in
+ * `tailwind.css`, and `tokens.test.ts` fails when a token of one theme is missing from the other, when a radius, a
+ * size or a step of the scale leaves the standard, or when a pair of tokens is unreadable in either theme.
+ *
+ * Nothing here is shared with the desktop app, whose palette stays in `crates/moebius-desktop/src/theme.rs`: the web
+ * app is the front end now (ADR 0013) and follows this standard instead of Deep Velvet, so the components copied from
+ * Vibe Kanban were rebuilt on these names rather than given aliases of the desktop's.
  */
+
+/* Dark, the default. */
 :root {
   color-scheme: dark;
 
-  --ground: #0f0d14;
-  --surface: #181520;
-  --lane: #120f18;
-  --card: #211c2b;
-  --card-hover: #2a2437;
-  --recessed: #0b0910;
-  --line: #2a2438;
-  --line-strong: #3b334d;
-  --text: #f7f4fc;
-  --text-secondary: #aaa0ba;
-  --text-muted: #685e78;
-  --accent: #f27663;
-  --accent-fill: #2b1a20;
-  --accent-border: #7a3b36;
-  --live: #c084fc;
-  --live-fill: #241934;
-  --live-border: #5b3e7a;
-  --teal: #6ee7b7;
-  --teal-fill: #132624;
-  --amber: #fbbf24;
-  --amber-fill: #292014;
-  --red: #fb7185;
-  --red-text: #fb7185;
-  --red-fill: #2a1520;
-  --teal-border: #2b594b;
-  --amber-border: #664d14;
-  --amber-text: #fbbf24;
-  --red-border: #6e2837;
-  --red-tag-fill: #2a1520;
-  --track: #262033;
-  --heat-empty: #211c2b;
-  --head-pill: #262033;
-  --diff-removed: #2a1520;
-  --diff-added: #132624;
-  --diff-removed-mark: #fb7185;
-  --diff-added-mark: #6ee7b7;
-  --steps-fill: #120f18;
-  --steps-border: #2a2438;
-  --steps-ink: #f7f4fc;
-  --terminal: #07060a;
-  --terminal-text: #eae4f2;
-  --terminal-dim: #685e78;
-  --sidebar: #181520;
-  --sidebar-line: #2a2438;
-  --sidebar-text: #aaa0ba;
-  --sidebar-group: #685e78;
-  --sidebar-current: #2b1a20;
-  --sidebar-hover: #211c2b;
-  --online-text: #6ee7b7;
-  --on-fill: #0f0d14;
+  /* The canvas, the layers on it, and the lines between them. */
+  --background: #121212;
+  --surface: #1b1b1c;
+  --surface-raised: #232324;
+  --surface-sunken: #0e0e0f;
+  /* The ground a control is typed into: the lowest layer inside a card. */
+  --field: #0e0e0f;
+  --lane: #171718;
+  --hover: #242426;
+  --selected: #2c2c2e;
+  --track: #26262a;
+  --heat-empty: #232325;
+  /* The ground a sheet or a dialog sits on, dark enough to push the page back without hiding it. */
+  --scrim: rgb(0 0 0 / 60%);
 
-  /* The colours of the models on the Usage page (MODEL_COLOURS), in the order they appear. */
-  --model-1: #f27663;
-  --model-2: #6ee7b7;
-  --model-3: #c084fc;
-  --model-4: #fbbf24;
-  --model-5: #38bdf8;
-  --model-6: #f472b6;
+  /*
+   * Text. Muted is for detail that is decorative or inactive, never for what a person has to read; everything a
+   * person does have to read — including the group labels of the sidebar — sits at 4.5 to 1 or better, which
+   * `tokens.test.ts` checks in both themes.
+   */
+  --text: #f4f3f1;
+  --text-secondary: #a3a29e;
+  --text-muted: #6b6a67;
+  --hairline: rgb(244 243 241 / 10%);
+  --hairline-strong: rgb(244 243 241 / 20%);
 
-  /* Radii (RADIUS_*). */
-  --radius-box: 14px;
-  --radius-card: 10px;
-  --radius-control: 8px;
-  --radius-item: 8px;
-  --radius-small: 6px;
-  --radius-segment: 2px;
+  /* Status. Each hue has a text value that stays readable on its own fill, in this theme and in light. */
+  --progress: #5c8bff;
+  --progress-text: #8fabff;
+  --progress-fill: #242b3c;
+  --progress-border: #314169;
+  --attention: #f7b84b;
+  --attention-text: #f7b84b;
+  --attention-fill: #3a3123;
+  --attention-border: #66502c;
+  --complete: #34c58a;
+  --complete-text: #34c58a;
+  --complete-fill: #1e332b;
+  --complete-border: #245541;
+  --error: #ff6369;
+  --error-text: #ff6369;
+  --error-fill: #3b2527;
+  --error-border: #693336;
+
+  /* The label of a control filled with the ink colour, and the ring of a focused one. */
+  --on-ink: #121212;
+  --focus: #f4f3f1;
+
+  /* Categories: the models of the Usage page, avatars and diagrams. Away from the four status hues on purpose. */
+  --cat-1: #a78bfa;
+  --cat-2: #45b8c9;
+  --cat-3: #f07ac0;
+  --cat-4: #93c552;
+  --cat-5: #cf7f4e;
+  --cat-6: #93a0b8;
+
+  /* Code, diffs and terminals. */
+  --code-background: #161617;
+  /* Syntax colours that hold 4.5 to 1 on the code ground; the category hues are for swatches, not for text. */
+  --code-keyword: #a78bfa;
+  --code-string: #45b8c9;
+  --code-number: #cf7f4e;
+  --diff-removed: #3b2527;
+  --diff-added: #1e332b;
+  --diff-removed-mark: #ff6369;
+  --diff-added-mark: #34c58a;
+  --terminal: #0e0e0f;
+  --terminal-text: #e6e4e0;
+  --terminal-dim: #8b8a86;
+  --terminal-cursor: #f4f3f1;
+  --terminal-selection: #2c2c2e;
+
+  /* Layers, in the names the shell uses. */
+  --sidebar: #171718;
+  --sidebar-text: #a3a29e;
+  --sidebar-group: #8d8c88;
+  --sidebar-current: #2c2c2e;
+  --sidebar-hover: #242426;
+  --steps-fill: #171718;
+  --steps-border: rgb(244 243 241 / 10%);
+  --steps-ink: #f4f3f1;
+  --online-text: #34c58a;
+  --scrollbar-thumb: #4a4a4e;
+
+  /* Shadows mark the layers now that borders are quiet. */
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 24%), 0 8px 24px rgb(0 0 0 / 22%);
+  --shadow-raised: 0 2px 8px rgb(0 0 0 / 32%), 0 16px 48px rgb(0 0 0 / 40%);
+
+  /* Radii: 16 for cards and sheets, 12 for inputs and buttons, full for pills. */
+  --radius-card: 16px;
+  --radius-sheet: 16px;
+  --radius-control: 12px;
+  --radius-small: 8px;
+  --radius-composer: 16px;
   --radius-round: 999px;
-  --radius-composer: 18px;
 
-  /* The spacing scale (SPACE_*), in pixels. */
-  --space-1: 1px;
+  /* The layers a screen is stacked from, so a component never invents a number of its own. */
+  --z-scrim: 40;
+  --z-sheet: 50;
+  --z-menu: 60;
+  --z-tip: 70;
+
+  /* The 8pt grid, with 2 left for hairlines and optical nudges. */
+  --space-0: 0;
   --space-2: 2px;
   --space-4: 4px;
-  --space-6: 6px;
   --space-8: 8px;
-  --space-10: 10px;
   --space-12: 12px;
-  --space-14: 14px;
   --space-16: 16px;
-  --space-18: 18px;
-  --space-20: 20px;
   --space-24: 24px;
+  --space-32: 32px;
+  --space-40: 40px;
+  --space-48: 48px;
 
-  /* Fixed widths (SIDEBAR_WIDTH, RAIL_WIDTH, CONNECT_WIDTH). */
-  --sidebar-width: 220px;
+  /* Widths. */
+  --sidebar-width: 240px;
   --rail-width: 56px;
-  --connect-width: 440px;
+  --connect-width: 448px;
+  --scrollbar-width: 8px;
 
-  /* The type scale (PAGE_TITLE ... LABEL), in pixels. */
-  --size-page-title: 19px;
-  --size-box-heading: 14px;
-  --size-body: 13px;
-  --size-context: 12.5px;
-  --size-breadcrumb: 12px;
-  --size-label: 11px;
-  --size-code: 12px;
-  --size-app-name: 15px;
+  /* The type scale. */
+  --size-page-title: 28px;
+  --size-section-title: 22px;
+  --size-emphasized: 17px;
+  --size-body: 15px;
+  --size-metadata: 13px;
+  --size-caption: 12px;
+  --size-box-heading: 17px;
+  --size-context: 13px;
+  --size-label: 12px;
+  --size-code: 13px;
 
-  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  /* Motion: one routine transition, ease-out. */
+  --motion-fast: 120ms;
+  --motion-routine: 180ms;
+  --motion-ease: cubic-bezier(0.16, 0.84, 0.44, 1);
+
+  --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* Light. Every name above appears here with a value of its own. */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --background: #fbfaf8;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f3f1ee;
+  --field: #ffffff;
+  --lane: #f4f2ef;
+  --hover: #f1efec;
+  --selected: #eceae6;
+  --track: #e9e6e1;
+  --heat-empty: #efece8;
+  --scrim: rgb(17 17 17 / 45%);
+
+  --text: #111111;
+  --text-secondary: #5e5e5b;
+  --text-muted: #9b9a96;
+  --hairline: rgb(17 17 17 / 8%);
+  --hairline-strong: rgb(17 17 17 / 16%);
+
+  --progress: #2f6bff;
+  --progress-text: #2456c8;
+  --progress-fill: #e2eaff;
+  --progress-border: #b8cdff;
+  --attention: #f5a524;
+  --attention-text: #8a5a06;
+  --attention-fill: #f4ecdd;
+  --attention-border: #e6d1ad;
+  --complete: #1fa971;
+  --complete-text: #0b6f46;
+  --complete-fill: #ddede7;
+  --complete-border: #add3c4;
+  --error: #e5484d;
+  --error-text: #bd282d;
+  --error-fill: #f9e3e4;
+  --error-border: #f1bcbe;
+
+  --on-ink: #fbfaf8;
+  --focus: #111111;
+
+  --cat-1: #7c5cd6;
+  --cat-2: #1e8b9c;
+  --cat-3: #c74f96;
+  --cat-4: #5d8f22;
+  --cat-5: #a75f2e;
+  --cat-6: #5b6a83;
+
+  --code-background: #f7f5f2;
+  --code-keyword: #6b3fd4;
+  --code-string: #0b6e85;
+  --code-number: #9a4f1c;
+  --diff-removed: #f9e3e4;
+  --diff-added: #ddede7;
+  --diff-removed-mark: #e5484d;
+  --diff-added-mark: #1fa971;
+  --terminal: #141414;
+  --terminal-text: #e6e4e0;
+  --terminal-dim: #8b8a86;
+  --terminal-cursor: #f4f3f1;
+  --terminal-selection: #3a3a3c;
+
+  --sidebar: #f4f2ef;
+  --sidebar-text: #5e5e5b;
+  --sidebar-group: #6d6c66;
+  --sidebar-current: #eceae6;
+  --sidebar-hover: #f1efec;
+  --steps-fill: #f4f2ef;
+  --steps-border: rgb(17 17 17 / 8%);
+  --steps-ink: #111111;
+  --online-text: #0b6f46;
+  --scrollbar-thumb: #b5b4af;
+
+  --shadow-card: 0 1px 2px rgb(17 17 17 / 6%), 0 8px 24px rgb(17 17 17 / 8%);
+  --shadow-raised: 0 2px 8px rgb(17 17 17 / 10%), 0 16px 48px rgb(17 17 17 / 14%);
 }

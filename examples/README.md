@@ -3,7 +3,7 @@
 Each example is small, runs in CI and is meant to be copied. The contracts they use are in
 [`docs/reference/`](../docs/reference/).
 
-- [`scripts/ready-large-cards-alone.luau`](scripts/ready-large-cards-alone.luau): a column script. A Ready script that
+- [`scripts/ready-large-cards-alone.luau`](scripts/ready-large-cards-alone.luau): a column script. A Not started script that
   starts a card whose title contains `[large]` only when no run is going. Copy it to `.moebius/ready.luau` on the
   repository's default branch. Tested as a repository override by `crates/moebius-core/tests/examples.rs`. See
   [column scripts](../docs/reference/column-scripts.md).

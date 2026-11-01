@@ -1,22 +1,26 @@
 /**
  * One chat, open: its conversation (virtualised, following the answer; or Pi-Bolt's terminal interface in its place), the change it offered, and the composer with
- * the pills of its agent, place, model and reasoning. The model and the reasoning level change while the chat waits.
- * Writing to a chat that ended goes on in a new chat that is told this one. Once an answer is held its events are
- * marked read, once per answer.
+ * the pills of its place, model and reasoning; the agent it is written to is named by the field itself. The model and
+ * the reasoning level change while the chat waits. Writing to a chat that ended goes on in a new chat that is told
+ * this one. Once an answer is held its events are marked read, once per answer.
  */
+
+import { PencilSimpleIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import {
   changeChatSettings,
   continueChat,
   markSeen,
   mergeChange,
+  nameChat,
   offerChat,
   chats as readChats,
   say,
   stopRun,
 } from "../api/calls/chat";
+import { sayError } from "../api/errorText";
 import { keys } from "../api/keys";
 import type { Snapshot } from "../api/types/board";
 import { type Chat, THINKING_LEVELS } from "../api/types/chat";
@@ -25,27 +29,102 @@ import { type PillOption, PillSelect } from "../ui/chat/PillSelect";
 import { Tag } from "../ui/chat/Tag";
 import { Button } from "../ui/components/Button";
 import { Tooltip } from "../ui/components/Tooltip";
+import { cn } from "../ui/lib/cn";
+import { CONTROL } from "../ui/lib/field";
+import { plural } from "../ui/lib/format";
+import { Empty } from "../ui/page/Empty";
+import { FadedLine } from "../ui/page/FadedLine";
+import { Notice } from "../ui/page/Notice";
 import { Composer } from "./Composer";
-import { isOpen, isWorking, statusTag } from "./format";
+import { draftKey, readDraft, saveDraft } from "./drafts";
+import { endedHint, isOpen, isWorking, statusTag } from "./format";
 import { offeredChange, placeName } from "./places";
 import { seqToMark } from "./readMarkers";
+import { Starters } from "./Starters";
 import { ThreadView } from "./ThreadView";
 import { useChoices } from "./useChoices";
 import { useThread } from "./useThread";
 
-/** The title row of the top bar for a chat: its title, who it is with, and where its status stands. */
-export function ChatTitle({ chat, snapshot }: { chat: Chat; snapshot: Snapshot | undefined }) {
-  const place = placeName(snapshot, chat);
+/**
+ * The title row of the top bar for a chat: its name, which the person may change, and where its status stands. Who
+ * the chat is with is not said here: the pills under the field say it, and they are where that choice lives. The way
+ * to name it is a pencil that comes out of the quiet only while the row is hovered or the field has focus, so the
+ * row reads as a title until it is needed.
+ */
+export function ChatTitle({ chat, onNotice }: { chat: Chat; onNotice: (notice: string) => void }) {
+  const queryClient = useQueryClient();
+  const [naming, setNaming] = useState(false);
+  const [draft, setDraft] = useState(chat.title);
   const tag = statusTag(chat.status, chat.asks);
+  const name = chat.title || "New chat";
+
+  const field = useRef<HTMLInputElement>(null);
+  // The name is there to be changed, so the field opens focused with the old name selected.
+  useEffect(() => {
+    if (naming) field.current?.select();
+  }, [naming]);
+
+  function start() {
+    setDraft(chat.title);
+    setNaming(true);
+  }
+
+  /** Writes the name, unless nothing was changed; Enter and leaving the field both save, Escape leaves. */
+  async function save() {
+    if (!naming) return;
+    setNaming(false);
+    const title = draft.trim();
+    if (title === chat.title) return;
+    try {
+      const named = await nameChat(chat.id, title);
+      queryClient.setQueryData<Chat[]>(keys.chats, (chats) =>
+        chats?.map((each) => (each.id === named.id ? named : each)),
+      );
+    } catch (error) {
+      onNotice(sayError(error, "Could not name the chat. Try again."));
+    }
+  }
+
   return (
     <>
-      <span
-        className="min-w-0 flex-1 truncate text-sm font-bold text-high"
-        data-testid="chat-title"
-      >
-        {chat.title || "New chat"}
-      </span>
-      <Tag>{place ? `${chat.agent} · ${place}` : `${chat.agent} · no repository`}</Tag>
+      {naming ? (
+        <input
+          ref={field}
+          aria-label="Name of the chat"
+          value={draft}
+          maxLength={80}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={() => void save()}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") void save();
+            if (event.key === "Escape") setNaming(false);
+          }}
+          className={cn(CONTROL, "min-w-0 flex-1")}
+          data-testid="chat-title-field"
+        />
+      ) : (
+        <span className="group flex min-w-0 flex-1 items-center gap-1" data-testid="chat-title">
+          <FadedLine
+            text={name}
+            keep="head"
+            title={name}
+            className="text-base font-semibold text-text"
+          />
+          <button
+            type="button"
+            onClick={start}
+            aria-label={`Name the chat${chat.title ? "" : " (it has none yet)"}`}
+            className={cn(
+              "inline-flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-control",
+              "text-secondary opacity-0 transition-opacity duration-(--motion-routine) ease-out",
+              "hover:bg-hover hover:text-text focus-visible:opacity-100",
+              "group-hover:opacity-100 motion-reduce:transition-none",
+            )}
+          >
+            <PencilSimpleIcon className="size-4" aria-hidden="true" />
+          </button>
+        </span>
+      )}
       {tag && <Tag tone={tag.tone}>{tag.label}</Tag>}
     </>
   );
@@ -81,7 +160,7 @@ export function ChatActions({
       const change = await offerChat(chat.id);
       onNotice(`Offered as a change on ${change.branch}: it waits in the Inbox, ready to merge.`);
     } catch (e) {
-      onNotice(e instanceof Error ? e.message : "cannot offer the change");
+      onNotice(e instanceof Error ? e.message : "Couldn't offer the change. Try again.");
     }
     await queryClient.invalidateQueries({ queryKey: keys.chats });
     await queryClient.invalidateQueries({ queryKey: keys.snapshot });
@@ -92,38 +171,36 @@ export function ChatActions({
     try {
       await stopRun(chat.id);
     } catch (e) {
-      onNotice(e instanceof Error ? e.message : "cannot stop the chat");
+      onNotice(e instanceof Error ? e.message : "Couldn't stop the chat. Try again.");
     }
   }
 
   if (confirming) {
     return (
-      <div className="flex items-center gap-base">
-        <span className="font-mono text-xs text-normal">Stop this chat?</span>
-        <Button variant="outline" size="xs" onClick={() => setConfirming(false)}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-base text-text">Stop this chat?</span>
+        <Button variant="secondary" onClick={() => setConfirming(false)}>
           Keep going
         </Button>
-        <Button variant="outline" size="xs" onClick={() => void stop()}>
-          Stop chat
-        </Button>
+        <Button onClick={() => void stop()}>Stop chat</Button>
       </div>
     );
   }
-  const label = `Offer changes (${chat.changed_files} ${chat.changed_files === 1 ? "file" : "files"})`;
+  const label = `Offer changes (${plural(chat.changed_files, "file", "files")})`;
   return (
-    <div className="flex items-center gap-base">
+    <div className="flex flex-wrap items-center gap-2">
       {inTerminal ? (
-        <Button variant="outline" size="xs" onClick={toggleTerminal}>
+        <Button variant="secondary" onClick={toggleTerminal}>
           Conversation
         </Button>
       ) : chat.status === "waiting" ? (
-        <Button variant="outline" size="xs" onClick={toggleTerminal}>
+        <Button variant="secondary" onClick={toggleTerminal}>
           Terminal
         </Button>
       ) : (
         <Tooltip content="The terminal opens once the agent has answered">
           <span>
-            <Button variant="outline" size="xs" disabled>
+            <Button variant="secondary" disabled>
               Terminal
             </Button>
           </span>
@@ -133,18 +210,18 @@ export function ChatActions({
         (working ? (
           <Tooltip content="Offer once the agent has answered">
             <span>
-              <Button variant="outline" size="xs" disabled>
+              <Button variant="secondary" disabled>
                 {label}
               </Button>
             </span>
           </Tooltip>
         ) : (
-          <Button variant="outline" size="xs" onClick={() => void offer()}>
+          <Button variant="secondary" className="tabular-nums" onClick={() => void offer()}>
             {label}
           </Button>
         ))}
       {working && (
-        <Button variant="outline" size="xs" onClick={() => setConfirming(true)}>
+        <Button variant="secondary" onClick={() => setConfirming(true)}>
           Stop
         </Button>
       )}
@@ -165,22 +242,28 @@ function OfferedChange({ chat, snapshot }: { chat: Chat; snapshot: Snapshot | un
       await mergeChange(change.id);
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "cannot merge the change");
+      setError(e instanceof Error ? e.message : "Couldn't merge the change. Try again.");
     }
     await queryClient.invalidateQueries({ queryKey: keys.snapshot });
   }
   return (
     <div
-      className="flex shrink-0 items-center gap-base rounded-md border border-track bg-lane px-plusfifty py-base"
+      className="flex shrink-0 flex-wrap items-center gap-3 rounded-card bg-surface p-4 shadow-card"
       data-testid="offered-change"
     >
-      <Tag tone={change.state === "open" ? "amber" : change.state === "merged" ? "teal" : "plain"}>
+      <Tag
+        tone={
+          change.state === "open" ? "attention" : change.state === "merged" ? "complete" : "plain"
+        }
+      >
         {label}
       </Tag>
-      <span className="min-w-0 flex-1 truncate font-mono text-xs text-high">{change.branch}</span>
-      {error && <span className="text-xs text-error">{error}</span>}
+      <span className="min-w-0 flex-1 break-all font-mono text-sm text-secondary">
+        {change.branch}
+      </span>
+      {error && <span className="break-words text-sm text-error-text">{error}</span>}
       {change.state === "open" && (
-        <Button size="xs" onClick={() => void merge()}>
+        <Button size="sm" onClick={() => void merge()}>
           Merge
         </Button>
       )}
@@ -206,10 +289,22 @@ export function OpenChat({
   const chat = chats.data?.find((each) => each.id === id);
   const thread = useThread(id);
   const choices = useChoices();
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(() => readDraft(draftKey(id)));
   const [sent, setSent] = useState(0);
   const [sending, setSending] = useState(false);
   const marked = useRef(0);
+
+  // The message is the draft of this chat: leaving for another page and coming back finds it where it was left,
+  // and sending it leaves nothing behind.
+  const key = draftKey(id);
+  function write(value: string) {
+    setMessage(value);
+    saveDraft(key, value);
+  }
+  function clear() {
+    setMessage("");
+    saveDraft(key, "");
+  }
 
   // Marks the chat read once an answer is held, not at every streamed piece of it.
   // biome-ignore lint/correctness/useExhaustiveDependencies: it runs when the answer, the marker or the events move
@@ -227,9 +322,23 @@ export function OpenChat({
 
   if (!chat) {
     return (
-      <p className="py-double text-center text-sm text-low">
-        {chats.isSuccess ? "There is no such chat." : "Reading the chat…"}
-      </p>
+      <div className="p-4">
+        {chats.isSuccess ? (
+          <Empty
+            title="There is no such chat"
+            body="It may have been deleted. Pick another chat from the list at the top, or start a new one."
+            action={
+              <Button asChild size="sm" variant="secondary">
+                <Link to="/chat">Start a new chat</Link>
+              </Button>
+            }
+          />
+        ) : (
+          <p role="status" className="m-0 text-base text-secondary">
+            Reading the chat
+          </p>
+        )}
+      </div>
     );
   }
 
@@ -239,9 +348,9 @@ export function OpenChat({
   // Pi-Bolt's own terminal interface takes the place of the conversation; the top bar's button brings it back.
   if (open && params.get("terminal") === "1") {
     return (
-      <div className="flex min-h-0 flex-1 flex-col gap-half" data-testid="chat-terminal">
+      <div className="flex min-h-0 flex-1 flex-col gap-3" data-testid="chat-terminal">
         <Terminal path={`/v1/chats/${id}/tui`} autoFocus className="min-h-0 flex-1" />
-        <p className="shrink-0 font-mono text-xs text-low">
+        <p className="shrink-0 text-sm leading-relaxed text-secondary">
           Pi-Bolt's terminal interface continues this chat. Closing it, or Conversation above, goes
           back.
         </p>
@@ -258,16 +367,16 @@ export function OpenChat({
     try {
       if (open) {
         await say(chat.id, text);
-        setMessage("");
+        clear();
       } else {
         // Writing to an ended chat goes on in a new chat that is told this one.
         const run = await continueChat(chat.id, text);
-        setMessage("");
+        clear();
         await queryClient.invalidateQueries({ queryKey: keys.chats });
         void navigate(`/chat/${run.id}`);
       }
     } catch (e) {
-      onNotice(e instanceof Error ? e.message : "cannot send the message");
+      onNotice(e instanceof Error ? e.message : "Couldn't send the message. Try again.");
     }
     setSending(false);
   }
@@ -278,7 +387,7 @@ export function OpenChat({
       await changeChatSettings(chat.id, settings);
       onNotice(null);
     } catch (e) {
-      onNotice(e instanceof Error ? e.message : "cannot change the chat");
+      onNotice(e instanceof Error ? e.message : "Couldn't change the chat. Try again.");
     }
     await queryClient.invalidateQueries({ queryKey: keys.chats });
   }
@@ -296,45 +405,52 @@ export function OpenChat({
     value: level,
     label: level,
   }));
+  // Nothing is said under the composer for a chat that has ended: its own tag in the header already says so, and
+  // writing to it is the ordinary thing the composer does.
   const hint = notice
     ? notice
     : working
-      ? "The agent is working. Your message is queued and sent when it is done with this turn."
-      : open
-        ? "The agent answers at once."
-        : "This chat has ended. What you send starts a new chat with the same agent, which is told this one.";
+      ? "The agent is working. Your message goes when it finishes this turn."
+      : null;
 
   return (
     <>
       <div className="min-h-0 flex-1" data-testid="conversation">
         {thread.error ? (
-          <p role="alert" className="py-double text-center text-sm text-error">
-            {thread.error}
-          </p>
+          <Notice tone="error">{thread.error}</Notice>
         ) : (
           <ThreadView
             entries={thread.entries}
             working={working}
             sent={sent}
-            empty={thread.loaded ? "Nothing has been said in this chat yet." : "Reading the chat…"}
+            empty={thread.loaded ? "Start with one of these, or write your own." : undefined}
+            emptyTitle={thread.loaded ? "Nothing said yet" : "Reading the chat"}
+            emptyAction={open && thread.loaded ? <Starters onPick={write} /> : undefined}
           />
         )}
       </div>
       <OfferedChange chat={chat} snapshot={snapshot} />
       <Composer
         value={message}
-        onChange={setMessage}
+        onChange={write}
         onSend={() => void send()}
         canSend={message.trim() !== "" && !sending}
-        running={working}
+        // An ended chat takes no message, so the button says what pressing it really does: it starts a chat that
+        // carries this one on. The tag in the title row is still the only place the state itself is said.
+        sendLabel={open ? "Send" : "Continue"}
+        sendTitle={open ? undefined : "Starts a new chat, told what was said in this one"}
+        // The field names who the message goes to, which is what the agent pill used to say and is the one thing
+        // worth reading there. An ended chat has nothing to write to, so the field says why, and what the button does
+        // about it.
+        placeholder={open ? `Write to ${chat.agent}` : endedHint(chat.status, chat.agent)}
         pills={
           <>
-            <Tag>{chat.agent}</Tag>
             <Tag>{place ?? "no repository"}</Tag>
             {open && (
               <>
                 <PillSelect
                   label="Model"
+                  valueOnly
                   value={model}
                   placeholder="Server default"
                   options={modelOptions}
@@ -344,6 +460,7 @@ export function OpenChat({
                 />
                 <PillSelect
                   label="Reasoning"
+                  valueOnly
                   value={thinking}
                   placeholder="Not set"
                   options={levelOptions}
@@ -355,9 +472,17 @@ export function OpenChat({
           </>
         }
       />
-      <p className="shrink-0 font-mono text-xs text-low" data-testid="chat-hint">
-        {hint}
-      </p>
+      {hint && (
+        <p
+          className={cn(
+            "shrink-0 break-words text-sm leading-relaxed",
+            notice ? "text-text" : "text-secondary",
+          )}
+          data-testid="chat-hint"
+        >
+          {hint}
+        </p>
+      )}
     </>
   );
 }

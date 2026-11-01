@@ -413,7 +413,7 @@ mod tests {
         let (_dir, s) = store();
         let repository = s.add_repository("demo", "/demo", "none", "main").unwrap();
         let card = s
-            .add_card(repository.id, "Task", "", "person", "Ready")
+            .add_card(repository.id, "Task", "", "person", "Not started")
             .unwrap();
         let code = s.add_run(Some(card.id), "Coder", "pi", "code").unwrap();
         let trial = s.add_run(Some(card.id), "Coder", "pi", "trial").unwrap();

@@ -269,9 +269,8 @@ export function createFakeChat(
     async handle(request, response, path) {
       const method = request.method ?? "GET";
       const url = new URL(request.url ?? "/", "http://x");
-      const one = /^\/v1\/(?:chats|runs)\/(\d+)(\/(?:events|messages|seen|settings|stop))?$/.exec(
-        path,
-      );
+      const one =
+        /^\/v1\/(?:chats|runs)\/(\d+)(\/(?:events|messages|seen|settings|stop|title))?$/.exec(path);
 
       if (path === "/v1/agents" && method === "GET") return reply(response, 200, AGENTS);
       if (path === "/v1/models/available" && method === "GET") {
@@ -362,6 +361,11 @@ export function createFakeChat(
             if (typeof body.model === "string") chat.model = body.model;
             if (typeof body.thinking === "string") chat.thinking = body.thinking;
             return reply(response, 200, run(chat));
+          case "/title": {
+            const named = (typeof body.title === "string" ? body.title : "").trim().slice(0, 80);
+            chat.title = named === "" ? firstLine(id) : named;
+            return reply(response, 200, chat);
+          }
           case "/stop": {
             const answered = run(chat);
             chat.status = "stopped";
@@ -376,6 +380,13 @@ export function createFakeChat(
       return false;
     },
   };
+
+  /** The title a chat is given by its first message, which an empty `POST /v1/chats/{id}/title` gives back. */
+  function firstLine(id: number): string {
+    const first = (events.get(id) ?? []).find((event) => event.kind === "said");
+    const message = first?.data.message;
+    return typeof message === "string" ? (message.split("\n")[0] ?? "").slice(0, 80) : "";
+  }
 
   /** The fake's own answer to a message: one sentence, then the chat waits. */
   function answer(id: number, message: string): void {

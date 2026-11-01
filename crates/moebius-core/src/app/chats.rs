@@ -418,29 +418,40 @@ impl App {
             .chats()?
             .into_iter()
             .filter(|run| all || run.origin != ASSISTANT_ORIGIN)
-            .map(|run| {
-                let title = self.chat_title(run.id)?;
-                let settings = self.chat_settings(run.id)?;
-                Ok(Chat {
-                    id: run.id,
-                    agent: run.agent.clone(),
-                    status: run.status.clone(),
-                    repository_id: run.repository_id,
-                    harness_repository: run.harness_repository,
-                    started_at: run.started_at,
-                    ended_at: run.ended_at,
-                    title,
-                    answered: self.store.answered_seq(run.id)?,
-                    seen: self.store.seen_seq(run.id)?,
-                    changed_files: self.changed_files(&run),
-                    asks: run.status == "waiting"
-                        && asks(run.summary.as_deref().unwrap_or_default()),
-                    origin: run.origin,
-                    model: settings.model,
-                    thinking: settings.thinking,
-                })
-            })
+            .map(|run| self.chat_view(&run))
             .collect()
+    }
+
+    /// The chat `run` as the list of chats shows it.
+    fn chat_view(&self, run: &Run) -> Result<Chat> {
+        let settings = self.chat_settings(run.id)?;
+        Ok(Chat {
+            id: run.id,
+            agent: run.agent.clone(),
+            status: run.status.clone(),
+            repository_id: run.repository_id,
+            harness_repository: run.harness_repository,
+            started_at: run.started_at,
+            ended_at: run.ended_at,
+            title: self.chat_title(run)?,
+            answered: self.store.answered_seq(run.id)?,
+            seen: self.store.seen_seq(run.id)?,
+            changed_files: self.changed_files(run),
+            asks: run.status == "waiting" && asks(run.summary.as_deref().unwrap_or_default()),
+            origin: run.origin.clone(),
+            model: settings.model,
+            thinking: settings.thinking,
+        })
+    }
+
+    /// Names the chat `run_id` `title`, in place of the title taken from its first message, and returns it as the list
+    /// of chats shows it. An empty name gives that title back.
+    pub fn rename_chat(&self, run_id: i64, title: &str) -> Result<Chat> {
+        let run = self.chat(run_id)?;
+        let named: String = title.trim().chars().take(TITLE_LENGTH).collect();
+        let title = if named.is_empty() { None } else { Some(named) };
+        self.store.set_run_title(run_id, title.as_deref())?;
+        self.chat_view(&Run { title, ..run })
     }
 
     /// A person has read the chat `run_id` up to the event `seq`.
@@ -449,8 +460,12 @@ impl App {
         Ok(self.store.set_seen_seq(run_id, seq)?)
     }
 
-    /// The title of a chat: the first line of its first message.
-    pub(super) fn chat_title(&self, run_id: i64) -> Result<String> {
+    /// The title of a chat: the name a person gave it, or the first line of its first message.
+    pub(super) fn chat_title(&self, run: &Run) -> Result<String> {
+        if let Some(title) = run.title.as_deref() {
+            return Ok(title.to_owned());
+        }
+        let run_id = run.id;
         let first = self.store.event_of_kind(run_id, "said", false)?;
         Ok(first
             .as_ref()

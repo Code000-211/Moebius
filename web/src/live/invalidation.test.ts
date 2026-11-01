@@ -69,13 +69,13 @@ describe("invalidates", () => {
     const queryClient = client();
     queryClient.setQueryData(keys.history(7), []);
     queryClient.setQueryData(keys.cardRuns(7), []);
-    queryClient.setQueryData(keys.script(1, "Ready"), {});
+    queryClient.setQueryData(keys.script(1, "Not started"), {});
     applyEvent(queryClient, { kind: "run_ended", data: {} });
     expect(stale(queryClient, keys.history(7))).toBe(true);
     expect(stale(queryClient, keys.cardRuns(7))).toBe(true);
-    expect(stale(queryClient, keys.script(1, "Ready"))).toBe(false);
+    expect(stale(queryClient, keys.script(1, "Not started"))).toBe(false);
     applyEvent(queryClient, { kind: "script_changed", data: {} });
-    expect(stale(queryClient, keys.script(1, "Ready"))).toBe(true);
+    expect(stale(queryClient, keys.script(1, "Not started"))).toBe(true);
   });
 
   it("leaves the snapshot alone for kinds it does not show", () => {
@@ -125,7 +125,7 @@ describe("applyEvent", () => {
     const queryClient = client();
     applyEvent(queryClient, {
       kind: "card_moved",
-      data: { card: 7, from: "Backlog", to: "Ready" },
+      data: { card: 7, from: "Backlog", to: "Not started" },
     });
     expect(stale(queryClient, keys.snapshot)).toBe(true);
     expect(stale(queryClient, keys.health)).toBe(false);

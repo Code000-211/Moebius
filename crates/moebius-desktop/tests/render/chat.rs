@@ -29,7 +29,7 @@ pub fn chat_events() -> Vec<moebius_desktop::client::RunEvent> {
     let output = "ok: .moebius/ready.luau is a valid column script\n";
     let records = vec![
         json!({"type": "said", "message": "Write a ready.luau that starts a card only when nothing blocks it."}),
-        delta("A **ready script** runs when a card enters `Ready`. "),
+        delta("A **ready script** runs when a card enters `Not started`. "),
         delta("This one starts the Coder only when no issue blocks the card:\n\n```lua\n"),
         delta("if card.blocked_by_count == 0 then\n  moebius.start_run(\"Coder\")\nend\n```\n\n"),
         delta("I will write it to the repository and check it.\n"),
@@ -93,7 +93,7 @@ fn chatting_with(
     offered: bool,
     events: Vec<moebius_desktop::client::RunEvent>,
 ) -> App {
-    let mut board = radiance("Ready");
+    let mut board = radiance("Not started");
     let mut inbox = vec![];
     if offered {
         board["changes"] = json!([{"id": 3, "repository_id": 1, "card_id": null,

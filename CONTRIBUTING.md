@@ -42,8 +42,9 @@ The workspace has four crates, and the web app lives next to them in `web/`:
 The web app, [`web/`](web/README.md), is not a crate: a Vite + React + TypeScript project built with pnpm into `web/dist`,
 which the server serves at `/`. It talks to the server only through the desktop API, as the desktop app does. Its API client
 is in `src/api/` (one module per part of the API), the shell and the pages in `src/app/`, the components copied from Vibe
-Kanban in `src/ui/` (each file says where from and what changed), and the Deep Velvet tokens in `src/styles/`, which stay in
-step with `theme.rs`.
+Kanban in `src/ui/` (each file says where from and what changed), and the tokens of its own design standard in
+`src/styles/`. The web app follows [`docs/design-web.md`](docs/design-web.md); `docs/design.md` and `theme.rs` are the
+desktop app's look and are not kept in step with it.
 
 Inside a crate's `src/`, the modules that tie it together are at the top, and the rest is grouped by part, one folder
 each. In the server those folders are `server/`, `repos/`, `board/`, `decide/`, `harness/` and `improve/`. In the app

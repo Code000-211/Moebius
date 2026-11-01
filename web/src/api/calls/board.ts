@@ -25,7 +25,7 @@ export function createIssue(repository: number, title: string, body: string): Pr
   return post<Card>(`/v1/repositories/${repository}/issues`, { title, body });
 }
 
-/** Approves an issue that waits in the backlog: the card moves to Ready. */
+/** Approves an issue that waits in the backlog: the card moves to Not started. */
 export function approve(card: number): Promise<Card> {
   return post<Card>(`/v1/cards/${card}/approve`, {});
 }

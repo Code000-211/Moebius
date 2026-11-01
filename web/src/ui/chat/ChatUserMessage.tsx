@@ -1,4 +1,6 @@
-// From BloopAI/vibe-kanban packages/ui/src/components/ChatUserMessage.tsx (Apache-2.0), changed: no i18n and no edit or reset (the server keeps no way to rewrite a message); the title says "You" or "You steered"; `headerRight` takes the Copy button; no `workspaceId`.
+// From BloopAI/vibe-kanban packages/ui/src/components/ChatUserMessage.tsx (Apache-2.0), changed: no i18n and no edit or
+// reset (the server keeps no way to rewrite a message); the title says "You" or "You steered"; `headerRight` takes the
+// Copy button; no `workspaceId`.
 import type { ReactNode } from "react";
 import { ChatEntryContainer } from "./ChatEntryContainer";
 
@@ -8,6 +10,7 @@ export interface ChatUserMessageRenderProps {
 
 interface ChatUserMessageProps {
   content: string;
+  /** Who wrote it. The default is what a message of the person is called. */
   title?: string;
   expanded?: boolean;
   onToggle?: () => void;

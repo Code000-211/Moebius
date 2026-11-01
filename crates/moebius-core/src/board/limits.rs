@@ -171,7 +171,7 @@ mod tests {
 
         let first = app.create_issue(repo, "First", "", PERSON).unwrap();
         let second = app.create_issue(repo, "Second", "", PERSON).unwrap();
-        app.move_card(second.id, "Ready").unwrap();
+        app.move_card(second.id, "Not started").unwrap();
 
         // A card's run uses the one run the limit allows; the chat does not.
         let coding = app
@@ -197,17 +197,17 @@ mod tests {
         let (busy, run) = card_after_a_run(&app, repo, "succeeded");
         use_tokens(&app, run.id, 499);
         let ready = app.create_issue(repo, "Waiting", "", PERSON).unwrap();
-        app.move_card(ready.id, "Ready").unwrap();
+        app.move_card(ready.id, "Not started").unwrap();
         let (second_round, failed) = card_after_a_run(&app, repo, "failed");
 
         // 499 of 500 tokens are used: cards go on.
         engine.tick(ready.id).unwrap();
         assert_eq!(column(&app, &ready), "In progress");
-        app.move_card(ready.id, "Ready").unwrap();
+        app.move_card(ready.id, "Not started").unwrap();
 
         use_tokens(&app, failed.id, 1);
         let step = engine.settle(ready.id).unwrap();
-        assert_eq!(column(&app, &ready), "Ready");
+        assert_eq!(column(&app, &ready), "Not started");
         assert_eq!(
             step.waiting.as_deref(),
             Some("the daily token budget is spent")

@@ -8,6 +8,8 @@ import { isApiError } from "../api/http";
 import { lastLoginOutcome } from "../auth/login";
 import { Button } from "../ui/components/Button";
 import { Input } from "../ui/components/Input";
+import { Field } from "../ui/page/Field";
+import { Notice } from "../ui/page/Notice";
 
 /** The sentence for a refused or failed sign-in. */
 export function signInMessage(error: unknown): string {
@@ -45,41 +47,42 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
   }
 
   return (
-    <main className="flex min-h-full items-center justify-center bg-ground p-double">
+    <main className="flex min-h-full items-center justify-center bg-background p-6">
       <form
-        className="flex w-full max-w-[440px] flex-col gap-double rounded-xl border border-line bg-surface p-7"
+        className="flex w-full max-w-(--connect-width) flex-col gap-4 rounded-card bg-surface p-8 shadow-card"
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
         }}
       >
-        <div>
-          <h1 className="text-[19px] font-bold text-high">Moebius</h1>
-          <p className="mt-half text-sm text-normal">
-            Sign in with the token of this server. It is the content of its token file, by default{" "}
-            <code className="font-mono text-xs">.moebius/token</code>, or open the link the server
-            printed when it started.
+        <div className="flex flex-col gap-2">
+          <h1 className="m-0 text-xl font-semibold tracking-tight text-text">Moebius</h1>
+          <p className="m-0 text-base leading-relaxed text-secondary">
+            Sign in with the token of this server, or open the link the server printed when it
+            started. The token is the content of{" "}
+            <code className="rounded-small bg-sunken px-2 py-0.5 font-mono text-sm text-text">
+              .moebius/token
+            </code>
+            .
           </p>
         </div>
-        <label className="flex flex-col gap-half text-sm text-normal" htmlFor="token">
-          Token
-          <Input
-            id="token"
-            type="password"
-            autoComplete="off"
-            spellCheck={false}
-            autoFocus
-            value={token}
-            onChange={(event) => setToken(event.target.value)}
-          />
-        </label>
-        {error && (
-          <p role="alert" className="text-sm text-error">
-            {error}
-          </p>
-        )}
-        <Button type="submit" disabled={busy || token.trim() === ""}>
-          Sign in
+        <Field label="Token">
+          {(id) => (
+            <Input
+              id={id}
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              autoFocus
+              aria-invalid={error !== null}
+              value={token}
+              onChange={(event) => setToken(event.target.value)}
+            />
+          )}
+        </Field>
+        {error && <Notice tone="error">{error}</Notice>}
+        <Button type="submit" size="md" disabled={busy || token.trim() === ""}>
+          {busy ? "Signing in" : "Sign in"}
         </Button>
       </form>
     </main>

@@ -52,8 +52,8 @@ export function App() {
     return <Unreachable retrying={session.isFetching} onRetry={() => void session.refetch()} />;
   }
   return (
-    <main className="flex min-h-full items-center justify-center bg-ground">
-      <Loader message="Connecting…" />
+    <main className="flex min-h-full items-center justify-center bg-background p-6">
+      <Loader message="Connecting to the server" />
     </main>
   );
 }

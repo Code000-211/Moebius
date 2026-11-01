@@ -54,9 +54,11 @@ pub fn repository_script(repository: &Repository, file: &str) -> Option<String> 
 
 impl Default for Workflow {
     fn default() -> Self {
+        // The script file of a column keeps the name it was first given, so a repository that wrote
+        // `.moebius/ready.luau` still overrides the column now called "Not started".
         let columns = [
             (columns::BACKLOG, "backlog.luau"),
-            (columns::READY, "ready.luau"),
+            (columns::NOT_STARTED, "ready.luau"),
             (columns::IN_PROGRESS, "code.luau"),
             (columns::IN_REVIEW, "review.luau"),
             (columns::READY_TO_MERGE, "merge.luau"),

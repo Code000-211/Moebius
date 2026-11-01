@@ -14,7 +14,7 @@ The exact contract is in [`docs/reference/column-scripts.md`](../reference/colum
 1. Pick the column. The scripts are `backlog.luau`, `ready.luau`, `code.luau` (the column `In progress`),
    `review.luau`, `merge.luau` and `done.luau`. [Workflows](workflows.md) says what each does.
 2. Start from the default script, which is in `crates/moebius-core/workflow/<script>`. An override replaces the whole
-   script and cannot call the built-in one, so what you do not copy is gone: a Ready override that forgets the
+   script and cannot call the built-in one, so what you do not copy is gone: a Not started override that forgets the
    blockers starts blocked cards. Every example below is a copy of the default with a change.
 3. Write the file and keep the function `on_card(card)`. A script reads the `card` and acts through the `moebius`
    table: `moebius.move`, `moebius.wait`, `moebius.ask`, `moebius.stuck`, `moebius.start_run` and the rest. Each run of
@@ -105,7 +105,7 @@ end
 themselves. `moebius.runs_active()` counts runs of cards on every board, not chats.
 
 Try it: create two issues, one titled `[large] Rewrite the parser`. While the other has a run going, the large card
-stays in `Ready` and the snapshot's `waiting` holds its reason. It moves on once no run is going. A large card can wait
+stays in `Not started` and the snapshot's `waiting` holds its reason. It moves on once no run is going. A large card can wait
 a long time on a busy server, because ordinary cards keep taking the free slots.
 
 ### Ask a person before starting cards from an author
@@ -121,7 +121,7 @@ function on_card(card)
   if read_first[card.author] then
     moebius.ask("approve_issue", "a person reads the issues of " .. card.author .. " first")
   elseif card.trusted then
-    moebius.move("Ready")
+    moebius.move("Not started")
   else
     moebius.ask("approve_issue", "waiting for a person to approve the issue")
   end
@@ -129,7 +129,7 @@ end
 ```
 
 `moebius.ask(kind, reason)` adds one inbox item for the card, once, and makes the card wait with the reason. A person
-approves with `POST /v1/cards/{id}/approve`, which resolves all the card's inbox items and moves the card to `Ready`,
+approves with `POST /v1/cards/{id}/approve`, which resolves all the card's inbox items and moves the card to `Not started`,
 but works only on a card in `Backlog`. So an ask that a person answers belongs in the Backlog script. In other columns
 use `moebius.wait`, or `moebius.stuck` when `POST /v1/cards/{id}/retry` is the answer.
 
@@ -208,7 +208,7 @@ function on_card(card)
 end
 ```
 
-Try it on GitHub: open an issue whose body says `blocked by #12` while #12 is open. Its card waits in `Ready` with
+Try it on GitHub: open an issue whose body says `blocked by #12` while #12 is open. Its card waits in `Not started` with
 `waiting for #12`. Add `[urgent]` to the title and the next poll moves it on.
 
 ## How to try a script
@@ -218,8 +218,8 @@ or the error. It needs no server, no configuration and no repository, and it sto
 first thing to do after every change:
 
 ```sh
-moebius check-script .moebius/ready.luau --column Ready
-moebius check-script .moebius/ready.luau --column Ready --title "[large] Rewrite the parser" --author leon
+moebius check-script .moebius/ready.luau --column "Not started"
+moebius check-script .moebius/ready.luau --column "Not started" --title "[large] Rewrite the parser" --author leon
 ```
 
 The first prints, for the default `ready.luau`, `moved the card to In progress`. Pass `--column` with the column the

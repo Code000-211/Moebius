@@ -1,7 +1,8 @@
 /**
- * The command bar, opened with Ctrl+K (Cmd+K on a Mac) or the sidebar's search: it lists the pages and the boards in
- * the groups of the sidebar and opens the one chosen. Built from the Command primitives copied from Vibe Kanban
- * (`ui/components/Command.tsx`); its `CommandBar` carries issues, branches and priorities that Moebius does not have.
+ * Search, opened with Ctrl+K (Cmd+K on a Mac) or the sidebar's entry of the same name: it lists the pages and
+ * the boards in the groups of the sidebar and opens the one chosen. Built from the Command primitives copied from
+ * Vibe Kanban (`ui/components/Command.tsx`); its `CommandBar` carries issues, branches and priorities that Moebius
+ * does not have. The three places the feature is named — the button, the dialog, the field — use the same words.
  */
 
 import { FolderIcon } from "@phosphor-icons/react";
@@ -39,9 +40,9 @@ export function CommandBar({
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <Command className="[&_[cmdk-group-heading]]:px-base">
-        <CommandInput placeholder="Go to a page…" />
-        <CommandList>
+      <Command label="Search">
+        <CommandInput placeholder="Search…" />
+        <CommandList label="Pages">
           <CommandEmpty>No page matches.</CommandEmpty>
           {GROUPS.map((group) => {
             const pages = PAGES.filter((page) => page.group === group);
@@ -54,7 +55,7 @@ export function CommandBar({
                     value={page.title}
                     onSelect={() => go(`/${page.path}`)}
                   >
-                    <page.icon className="size-icon-sm" weight="regular" />
+                    <page.icon className="size-5" weight="regular" />
                     <span>{page.title}</span>
                   </CommandItem>
                 ))}
@@ -64,7 +65,7 @@ export function CommandBar({
                     value={`Board ${board.repository.name}`}
                     onSelect={() => go(boardPath(board.repository.id))}
                   >
-                    <FolderIcon className="size-icon-sm" weight="regular" />
+                    <FolderIcon className="size-5" weight="regular" />
                     <span>{board.repository.name}</span>
                   </CommandItem>
                 ))}

@@ -1,5 +1,5 @@
 /**
- * The logic of the Experiments page, as `screens/experiments/` of the desktop app has it: the tag of a research's
+ * The logic of the Experiments page, as `screens/experiments/` of the desktop app has it: the word for a research's
  * status, the numbers and changes of the table, the brief being written (what makes it ready to store) and what a
  * research's status allows a person to do.
  */
@@ -11,20 +11,24 @@ import type { TagTone } from "../../ui/chat/Tag";
 /** The tokens a new brief starts with. */
 export const DEFAULT_BUDGET = "200000";
 
+/**
+ * The word for a research's status and the hue that echoes it. A hue is only for what it means: a brief that waits
+ * for a decision, work under way, work that came to an end, work that stopped for a reason.
+ */
 export function statusTag(status: ResearchStatus): { label: string; tone: TagTone } {
   switch (status) {
     case "confirmed":
-      return { label: "Confirmed", tone: "amber" };
+      return { label: "Confirmed", tone: "attention" };
     case "running":
-      return { label: "Running", tone: "teal" };
+      return { label: "Running", tone: "progress" };
     case "done":
-      return { label: "Done", tone: "teal" };
+      return { label: "Done", tone: "complete" };
     case "spent":
-      return { label: "Spent", tone: "plain" };
+      return { label: "Spent", tone: "attention" };
     case "stopped":
       return { label: "Stopped", tone: "plain" };
     case "failed":
-      return { label: "Failed", tone: "red" };
+      return { label: "Failed", tone: "error" };
     default:
       return { label: "Draft", tone: "plain" };
   }
@@ -45,9 +49,9 @@ export function change(baseline: number, value: number): string | null {
 
 /** What an experiment came to: kept, not kept, or failed when the measurement gave no number. */
 export function result(experiment: Experiment): { label: string; tone: TagTone } {
-  if (experiment.kept) return { label: "Kept", tone: "teal" };
+  if (experiment.kept) return { label: "Kept", tone: "complete" };
   return experiment.value === null
-    ? { label: "Failed", tone: "red" }
+    ? { label: "Failed", tone: "error" }
     : { label: "Not kept", tone: "plain" };
 }
 
@@ -79,6 +83,28 @@ export function budgetOf(form: Form): number | null {
   const budget = Number(form.budget.trim());
   return form.budget.trim() !== "" && Number.isInteger(budget) && budget > 0 ? budget : null;
 }
+
+/**
+ * The starting points offered on a page with no research yet: a number worth improving and a command that prints it,
+ * which the person edits into their own brief.
+ */
+export const SUGGESTED_BRIEFS: Array<Pick<Form, "goal" | "measure" | "better">> = [
+  {
+    goal: "Cut the clean build time",
+    measure: "/usr/bin/time -f %e cargo build --release --quiet 2>&1 | tail -1",
+    better: "lower",
+  },
+  {
+    goal: "Cut the test run time",
+    measure: "/usr/bin/time -f %e cargo test --quiet 2>&1 | tail -1",
+    better: "lower",
+  },
+  {
+    goal: "Cut the lint warnings",
+    measure: "cargo clippy --message-format=json 2>&1 | grep -c warning",
+    better: "lower",
+  },
+];
 
 /** The brief to send, when the form has a repository, a goal, a measure and a budget. */
 export function briefOf(form: Form): Brief | null {

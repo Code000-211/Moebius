@@ -1,10 +1,29 @@
-// From BloopAI/vibe-kanban packages/ui/src/components/DropdownMenu.tsx (Apache-2.0), changed: lucide's icons are Phosphor's; the colour classes (popover, accent) use Deep Velvet names; React 19 ComponentRef in place of ElementRef.
+// From BloopAI/vibe-kanban packages/ui/src/components/DropdownMenu.tsx (Apache-2.0), changed to this app's design
+// standard: the menu is a surface at the card radius with the raised shadow and no border, every item is at least 40px
+// tall with a 20px icon and a label that wraps, the hover is the hover fill rather than an accent, the chosen one of a
+// radio group is set semibold on the selected fill rather than marked with a dot, and the layer comes from the tokens.
+// React 19 ComponentRef in place of ElementRef.
 
-import { CaretRightIcon, CheckIcon, CircleIcon } from "@phosphor-icons/react";
+import { CaretRightIcon, CheckIcon } from "@phosphor-icons/react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import * as React from "react";
 
 import { cn } from "../lib/cn";
+
+/** The floating layer of a menu: a surface at the card radius, the raised shadow, no border. */
+const SHEET =
+  "z-menu min-w-48 rounded-card bg-surface p-2 text-text shadow-raised duration-(--motion-routine) " +
+  "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 " +
+  "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 " +
+  "data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 " +
+  "data-[side=top]:slide-in-from-bottom-2 origin-(--radix-dropdown-menu-content-transform-origin)";
+
+/** One choice: at least 40px tall, a 20px icon, the label wrapping rather than truncating. */
+const ITEM =
+  "flex min-h-10 cursor-pointer select-none items-center gap-3 rounded-control px-3 text-base text-text outline-none " +
+  "transition-colors duration-(--motion-routine) ease-out focus:bg-hover focus:text-text " +
+  "data-[disabled]:pointer-events-none data-[disabled]:opacity-45 " +
+  "[&_svg]:pointer-events-none [&_svg]:size-5 [&_svg]:shrink-0";
 
 const DropdownMenu = DropdownMenuPrimitive.Root;
 
@@ -26,15 +45,11 @@ const DropdownMenuSubTrigger = React.forwardRef<
 >(({ className, inset, children, ...props }, ref) => (
   <DropdownMenuPrimitive.SubTrigger
     ref={ref}
-    className={cn(
-      "flex cursor-pointer select-none items-center gap-2 px-2 py-1.5 text-sm outline-none focus:bg-accent data-[state=open]:bg-card-hover [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
-      inset && "pl-8",
-      className,
-    )}
+    className={cn(ITEM, "data-[state=open]:bg-hover", inset && "pl-10", className)}
     {...props}
   >
     {children}
-    <CaretRightIcon className="ml-auto" />
+    <CaretRightIcon aria-hidden="true" className="ml-auto size-4" />
   </DropdownMenuPrimitive.SubTrigger>
 ));
 DropdownMenuSubTrigger.displayName = DropdownMenuPrimitive.SubTrigger.displayName;
@@ -46,10 +61,7 @@ const DropdownMenuSubContent = React.forwardRef<
   <DropdownMenuPrimitive.Portal>
     <DropdownMenuPrimitive.SubContent
       ref={ref}
-      className={cn(
-        "bg-panel z-[10000] rounded-md min-w-[8rem] overflow-hidden border p-1 text-high shadow-lg data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 origin-[--radix-dropdown-menu-content-transform-origin]",
-        className,
-      )}
+      className={cn(SHEET, "overflow-hidden", className)}
       {...props}
     />
   </DropdownMenuPrimitive.Portal>
@@ -65,7 +77,8 @@ const DropdownMenuContent = React.forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        "bg-panel z-[10000] rounded-md max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-[8rem] overflow-y-auto overflow-x-hidden border p-1 text-high shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 origin-[--radix-dropdown-menu-content-transform-origin]",
+        SHEET,
+        "max-h-(--radix-dropdown-menu-content-available-height) overflow-y-auto overflow-x-hidden",
         className,
       )}
       {...props}
@@ -82,11 +95,7 @@ const DropdownMenuItem = React.forwardRef<
 >(({ className, inset, ...props }, ref) => (
   <DropdownMenuPrimitive.Item
     ref={ref}
-    className={cn(
-      "relative flex cursor-pointer select-none items-center gap-2 px-2 py-1.5 text-sm outline-none transition-colors focus:bg-card-hover focus:text-high data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
-      inset && "pl-8",
-      className,
-    )}
+    className={cn(ITEM, "relative break-words", inset && "pl-10", className)}
     {...props}
   />
 ));
@@ -98,16 +107,13 @@ const DropdownMenuCheckboxItem = React.forwardRef<
 >(({ className, children, checked, ...props }, ref) => (
   <DropdownMenuPrimitive.CheckboxItem
     ref={ref}
-    className={cn(
-      "relative flex cursor-pointer select-none items-center py-1.5 pl-8 pr-2 text-sm outline-none transition-colors focus:bg-card-hover focus:text-high data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-      className,
-    )}
+    className={cn(ITEM, "relative pl-10", className)}
     checked={checked}
     {...props}
   >
-    <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
+    <span className="absolute left-3 flex size-5 items-center justify-center text-secondary">
       <DropdownMenuPrimitive.ItemIndicator>
-        <CheckIcon className="h-4 w-4" />
+        <CheckIcon aria-hidden="true" className="size-5" />
       </DropdownMenuPrimitive.ItemIndicator>
     </span>
     {children}
@@ -122,16 +128,14 @@ const DropdownMenuRadioItem = React.forwardRef<
   <DropdownMenuPrimitive.RadioItem
     ref={ref}
     className={cn(
-      "relative flex cursor-pointer select-none items-center py-1.5 pl-8 pr-2 text-sm outline-none transition-colors focus:bg-card-hover focus:text-high data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      // The chosen one is the chosen one because it reads as heavier and sits on the selected fill, not because a dot
+      // is drawn beside it; `aria-checked` still carries it for a screen reader.
+      ITEM,
+      "break-words data-[state=checked]:bg-selected data-[state=checked]:font-semibold",
       className,
     )}
     {...props}
   >
-    <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
-      <DropdownMenuPrimitive.ItemIndicator>
-        <CircleIcon className="h-2 w-2 fill-current" />
-      </DropdownMenuPrimitive.ItemIndicator>
-    </span>
     {children}
   </DropdownMenuPrimitive.RadioItem>
 ));
@@ -145,7 +149,11 @@ const DropdownMenuLabel = React.forwardRef<
 >(({ className, inset, ...props }, ref) => (
   <DropdownMenuPrimitive.Label
     ref={ref}
-    className={cn("px-2 py-1.5 text-sm font-semibold", inset && "pl-8", className)}
+    className={cn(
+      "px-3 pt-2 pb-1 text-xs font-semibold text-secondary",
+      inset && "pl-10",
+      className,
+    )}
     {...props}
   />
 ));
@@ -157,16 +165,14 @@ const DropdownMenuSeparator = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DropdownMenuPrimitive.Separator
     ref={ref}
-    className={cn("-mx-1 my-1 h-px bg-border", className)}
+    className={cn("-mx-2 my-2 h-px bg-hairline", className)}
     {...props}
   />
 ));
 DropdownMenuSeparator.displayName = DropdownMenuPrimitive.Separator.displayName;
 
 const DropdownMenuShortcut = ({ className, ...props }: React.HTMLAttributes<HTMLSpanElement>) => {
-  return (
-    <span className={cn("ml-auto text-xs tracking-widest opacity-60", className)} {...props} />
-  );
+  return <span className={cn("ml-auto text-sm tabular-nums text-muted", className)} {...props} />;
 };
 DropdownMenuShortcut.displayName = "DropdownMenuShortcut";
 

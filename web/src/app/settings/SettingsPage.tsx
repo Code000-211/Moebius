@@ -2,24 +2,35 @@
  * The Settings page (the desktop app's Settings in `screens/setup`): every key of `moebius.toml` as an input in a box,
  * as `GET /v1/settings` tells them, whose Save sends only the keys that were changed through `PUT /v1/settings`. The
  * server checks the file as `moebius serve` would read it and answers 422 with the message when it does not hold
- * together; that message is shown as it came. A key the running server uses only after a restart makes a banner with a
- * Restart button. The page also shows the webhooks of the forges and where this server runs.
+ * together; that message is shown as it came, and a key whose own input cannot be typed right says so under the input
+ * before anything is sent. A key the running server uses only after a restart makes a banner with a Restart button.
+ * The page also shows the webhooks of the forges and where this server runs.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { serverInfo } from "../../api/calls/server";
 import { saveSettings, settings } from "../../api/calls/settings";
-import { isApiError } from "../../api/http";
+import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { ServerSettings } from "../../api/types/settings";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
 import { Loader } from "../../ui/components/Loader";
 import { Box } from "../../ui/page/Box";
-import { CONTROL, Field as Labelled } from "../../ui/page/Field";
+import { Field, Select } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
-import { Header } from "../shell/Page";
-import { changes, type Field, type Form, nothingToSave, readForms } from "./fields";
+import { Body, PageHeader } from "../../ui/page/PageHeader";
+import { Appearance } from "./Appearance";
+import type { Form } from "./fields";
+import {
+  changed,
+  changes,
+  fieldValue,
+  nothingToSave,
+  readForms,
+  type Field as Setting,
+} from "./fields";
+import { Code, KeyValue, KeyValueGrid } from "./parts";
 import { RestartBanner } from "./RestartBanner";
 import { WebhooksBox } from "./Webhooks";
 
@@ -27,12 +38,23 @@ type Outcome = { tone: "ok" | "error"; text: string } | null;
 
 export function SettingsPage() {
   const data = useQuery({ queryKey: keys.settings, queryFn: () => settings() });
-  if (data.isPending) return <Loader message="Reading the settings…" className="py-double" />;
+  const header = <PageHeader title="Settings" />;
+  // The heading stays while the file is read, so the page does not move under a person who is already looking at it.
+  if (data.isPending) {
+    return (
+      <>
+        {header}
+        <Loader message="Reading the settings" className="py-8" />
+      </>
+    );
+  }
   if (data.isError || !data.data) {
     return (
       <>
-        <Header breadcrumb="Setup" title="Settings" />
-        <Notice tone="error">{data.error?.message ?? "The settings could not be read."}</Notice>
+        {header}
+        <Notice tone="error">
+          {sayError(data.error, "Could not read the settings. Try again.")}
+        </Notice>
       </>
     );
   }
@@ -41,7 +63,6 @@ export function SettingsPage() {
 
 function SettingsForm({ initial }: { initial: ServerSettings }) {
   const queryClient = useQueryClient();
-  const [file, setFile] = useState(initial.file);
   const [forms, setForms] = useState<Form[]>(() => readForms(initial));
   const [outcome, setOutcome] = useState<Outcome>(null);
   const info = useQuery({ queryKey: keys.server, queryFn: () => serverInfo() });
@@ -54,7 +75,6 @@ function SettingsForm({ initial }: { initial: ServerSettings }) {
       // The forms are made again from what the file says now.
       const fresh = await settings();
       queryClient.setQueryData(keys.settings, fresh);
-      setFile(fresh.file);
       setForms(readForms(fresh));
       return { saved: true };
     },
@@ -66,7 +86,7 @@ function SettingsForm({ initial }: { initial: ServerSettings }) {
     onError: (error) =>
       setOutcome({
         tone: "error",
-        text: isApiError(error) ? error.message : "The settings could not be saved.",
+        text: sayError(error, "Could not save the settings. Try again."),
       }),
   });
   const edit = (key: string, text: string) =>
@@ -76,89 +96,133 @@ function SettingsForm({ initial }: { initial: ServerSettings }) {
         fields: form.fields.map((each) => (each.key === key ? { ...each, text } : each)),
       })),
     );
+  // Save is quiet until a key is different from what the file holds; the reason is the disabled button itself.
+  const dirty = forms.some((form) => form.fields.some(changed));
 
   return (
     <div>
-      <div className="flex items-start justify-between gap-base">
-        <Header breadcrumb="Setup" title="Settings" />
-        <Button
-          size="sm"
-          disabled={save.isPending}
-          onClick={() => {
-            setOutcome(null);
-            save.mutate();
-          }}
-        >
-          {save.isPending ? "Saving…" : "Save"}
-        </Button>
-      </div>
-      <p className="m-0 mb-[12px] text-[12.5px] text-normal">
-        {`The keys of ${file}. Save writes only what you changed.`}
-      </p>
-      <div className="flex flex-col gap-[12px]">
+      <PageHeader
+        title="Settings"
+        actions={
+          <Button
+            size="sm"
+            disabled={save.isPending || !dirty}
+            onClick={() => {
+              setOutcome(null);
+              save.mutate();
+            }}
+          >
+            {save.isPending ? "Saving" : "Save"}
+          </Button>
+        }
+      />
+      <div className="flex flex-col gap-6">
         <RestartBanner />
         {outcome && <Notice tone={outcome.tone}>{outcome.text}</Notice>}
-        <div className="grid gap-[12px] lg:grid-cols-2">
+        <div className="grid items-start gap-6 xl:grid-cols-2">
           {forms.map((form) => (
-            <Box key={form.title} title={form.title} className="self-start">
-              <div className="flex flex-col gap-[12px]">
+            <Box key={form.title} title={form.title} className="min-w-0">
+              <div className="flex flex-col gap-4">
                 {form.fields.map((each) => (
-                  <FieldInput
-                    key={each.key}
-                    field={each}
-                    onChange={(text) => edit(each.key, text)}
-                  />
+                  <KeyInput key={each.key} field={each} onChange={(text) => edit(each.key, text)} />
                 ))}
               </div>
             </Box>
           ))}
         </div>
         <WebhooksBox />
-        <Box title="This server">
-          {info.data ? (
-            <dl className="m-0 grid gap-x-[16px] gap-y-half [grid-template-columns:auto_1fr]">
-              {[
-                ["Program", info.data.program],
-                ["Version", info.data.version],
-                ["Address", info.data.api_address],
-                ["Data directory", info.data.data_dir],
-                ["Host", `${info.data.host} (${info.data.os}, ${info.data.arch})`],
-              ].map(([label, value]) => (
-                <div key={label} className="contents">
-                  <dt className="font-mono text-[11px] text-low">{label}</dt>
-                  <dd className="m-0 break-all font-mono text-[12px] text-high">{value}</dd>
-                </div>
-              ))}
-            </dl>
-          ) : (
-            <p className="m-0 text-[13px] text-normal">
-              {info.isError ? info.error.message : "Reading where the server runs…"}
-            </p>
-          )}
-        </Box>
+        <div className="grid items-start gap-6 xl:grid-cols-2">
+          <Appearance />
+          <ThisServer
+            info={info.data}
+            pending={info.isPending}
+            error={
+              info.error ? sayError(info.error, "Could not read where the server runs.") : null
+            }
+          />
+        </div>
       </div>
     </div>
   );
 }
 
-/** One key as an input, with the default the server uses when the file does not set it. */
-function FieldInput({ field, onChange }: { field: Field; onChange: (text: string) => void }) {
+/** One key of the file: its input, the default the server uses when the file does not set it, and what is wrong with
+ * what was typed while it was being typed. */
+function KeyInput({ field, onChange }: { field: Setting; onChange: (text: string) => void }) {
   const showsDefault = field.default !== null && field.text.trim() === "";
+  const typed = fieldValue(field);
+  const problem = "error" in typed ? typed.error : undefined;
   return (
-    <Labelled label={field.label} hint={showsDefault ? `Default ${field.default}` : undefined}>
+    <Field
+      label={field.label}
+      error={problem}
+      hint={showsDefault ? `Default ${field.default}` : undefined}
+    >
       {field.kind === "yesno" ? (
-        <select value={field.text} onChange={(e) => onChange(e.target.value)} className={CONTROL}>
-          <option value="true">true</option>
-          <option value="false">false</option>
-        </select>
+        <Select
+          options={["true", "false"]}
+          value={field.text}
+          onChange={(picked) => onChange(picked)}
+          className="tabular-nums"
+        />
       ) : (
         <Input
           value={field.text}
-          placeholder={field.default ?? ""}
+          placeholder={field.default ?? field.whenEmpty ?? ""}
+          inputMode={field.kind === "whole" || field.kind === "decimal" ? "numeric" : undefined}
           onChange={(e) => onChange(e.target.value)}
-          className={field.kind === "code" ? "font-mono text-[12px]" : undefined}
+          className={
+            field.kind === "code"
+              ? "font-mono text-sm"
+              : field.kind === "whole" || field.kind === "decimal"
+                ? "tabular-nums"
+                : undefined
+          }
         />
       )}
-    </Labelled>
+    </Field>
+  );
+}
+
+/** What the server says about itself, as the label and the value the page shows. */
+function rows(info: NonNullable<Awaited<ReturnType<typeof serverInfo>>>): Array<[string, string]> {
+  return [
+    ["Program", info.program],
+    ["Version", info.version],
+    ["Address", info.api_address],
+    ["Data directory", info.data_dir],
+    ["Host", `${info.host} (${info.os}, ${info.arch})`],
+  ];
+}
+
+/** Where this server runs, as the server says it. */
+function ThisServer({
+  info,
+  pending,
+  error,
+}: {
+  info: Awaited<ReturnType<typeof serverInfo>> | undefined;
+  pending: boolean;
+  error: string | null;
+}) {
+  if (error) {
+    return (
+      <Box title="This server">
+        <Notice tone="error">{error}</Notice>
+      </Box>
+    );
+  }
+  return (
+    <Box title="This server" aside={pending ? "Reading" : undefined}>
+      {info ? (
+        <KeyValueGrid>
+          {rows(info).map(([label, value]) => (
+            <KeyValue key={label} label={label} value={<Code>{value}</Code>} />
+          ))}
+        </KeyValueGrid>
+      ) : (
+        <Body>Reading where the server runs</Body>
+      )}
+    </Box>
   );
 }

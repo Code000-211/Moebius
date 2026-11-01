@@ -32,32 +32,41 @@ export interface CodeProblem {
   message: string;
 }
 
-/** The colours of the tokens: the same Deep Velvet ones the chat's code blocks use. */
+/**
+ * The colours of the tokens: the ones `styles/highlight.css` gives the chat's code blocks, so a keyword, a string, a
+ * number and a comment look the same here as they do in an answer. Each holds 4.5 to 1 on the code ground in both
+ * themes, which is why the code tokens exist rather than the category hues.
+ */
 const highlight = HighlightStyle.define([
-  { tag: [tags.keyword, tags.operatorKeyword, tags.controlKeyword], color: "var(--accent)" },
-  { tag: [tags.string, tags.special(tags.string)], color: "var(--teal)" },
-  { tag: [tags.number, tags.bool, tags.null, tags.atom], color: "var(--amber)" },
+  { tag: [tags.keyword, tags.operatorKeyword, tags.controlKeyword], color: "var(--code-keyword)" },
+  { tag: [tags.string, tags.special(tags.string)], color: "var(--code-string)" },
+  { tag: [tags.number, tags.bool, tags.null, tags.atom], color: "var(--code-number)" },
   {
     tag: [tags.comment, tags.lineComment, tags.blockComment],
-    color: "var(--text-muted)",
+    color: "var(--text-secondary)",
     fontStyle: "italic",
   },
+  // What the chat draws with `.hljs-title`: the ink of the page, semibold, so a call stands out without a hue.
   {
     tag: [tags.function(tags.variableName), tags.standard(tags.variableName)],
-    color: "var(--live)",
+    color: "var(--text)",
+    fontWeight: 600,
   },
 ]);
 
 const theme = EditorView.theme(
   {
     "&": {
-      backgroundColor: "var(--recessed)",
+      backgroundColor: "var(--code-background)",
       color: "var(--text)",
-      fontSize: "12px",
-      border: "1px solid var(--line)",
-      borderRadius: "12px",
+      fontSize: "var(--size-code)",
+      border: "1px solid var(--hairline)",
+      borderRadius: "var(--radius-control)",
     },
-    "&.cm-focused": { outline: "none", borderColor: "var(--accent)" },
+    // The ring of a field, on the whole editor so the gutters are inside it. The app-wide `:focus-visible` rule would
+    // otherwise draw a second one around the text alone, which is clipped when the script is longer than the window.
+    "&.cm-focused": { outline: "2px solid var(--focus)", outlineOffset: "2px" },
+    ".cm-content:focus-visible": { outline: "none" },
     ".cm-scroller": {
       fontFamily: "var(--font-mono)",
       lineHeight: "1.6",
@@ -67,21 +76,27 @@ const theme = EditorView.theme(
     ".cm-content": { caretColor: "var(--text)" },
     ".cm-cursor": { borderLeftColor: "var(--text)" },
     ".cm-gutters": {
-      backgroundColor: "var(--recessed)",
-      color: "var(--text-muted)",
+      backgroundColor: "var(--surface-sunken)",
+      color: "var(--text-secondary)",
       border: "none",
-      borderRadius: "12px 0 0 12px",
+      borderRadius: "var(--radius-control) 0 0 var(--radius-control)",
     },
-    ".cm-activeLine": { backgroundColor: "var(--card)" },
-    ".cm-activeLineGutter": { backgroundColor: "var(--card)" },
-    "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
-      backgroundColor: "var(--accent-fill)",
+    ".cm-activeLine": { backgroundColor: "var(--hover)" },
+    ".cm-activeLineGutter": { backgroundColor: "var(--hover)" },
+    // The selected text: a tint of the ink, so it shows on the code ground in either theme, where `--selected` is too
+    // close to the ground to see in the light one.
+    ".cm-selectionBackground": { backgroundColor: "var(--hairline-strong)" },
+    "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
+      backgroundColor: "var(--hairline-strong)",
     },
-    ".cm-lintRange-error": { backgroundImage: "none", textDecoration: "underline wavy var(--red)" },
+    ".cm-lintRange-error": {
+      backgroundImage: "none",
+      textDecoration: "underline wavy var(--error)",
+    },
     ".cm-tooltip": {
       backgroundColor: "var(--surface)",
       color: "var(--text)",
-      border: "1px solid var(--line-strong)",
+      border: "1px solid var(--hairline-strong)",
     },
   },
   { dark: true },

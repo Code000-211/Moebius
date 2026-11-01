@@ -85,7 +85,7 @@ describe("the form of the Models page", () => {
       protocol: "anthropic",
     });
     row(form.upstreams, 3).key.mode = "typed";
-    expect(plan(form)).toBe("Type the key of the upstream 4.");
+    expect(plan(form)).toBe("Type the key of the provider 4.");
     row(form.upstreams, 3).key.typed = "sk-typed-secret";
     expect(plan(form)).toEqual({
       store: [["upstream-1", "sk-typed-secret"]],
@@ -176,7 +176,7 @@ describe("the form of the Models page", () => {
   it("refuses an upstream without a base URL", () => {
     const form = readForm(configured());
     form.upstreams.push(blankUpstream());
-    expect(plan(form)).toBe("Enter the base URL of each upstream.");
+    expect(plan(form)).toBe("Enter the base URL of each provider.");
   });
 
   it("writes the classes whole and keeps a model's tokens for the day while it stays", () => {

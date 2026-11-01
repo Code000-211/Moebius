@@ -1,17 +1,21 @@
 /**
  * The Inbox (the desktop app's `screens/inbox`): everything that needs the person in one list, newest first, filtered
- * by kind and by repository, each item with the buttons that act on it. It reads the snapshot, which the event stream
+ * by kind and by repository, each item with the buttons that act on it. The list is the whole page, so the filters sit
+ * above it under a word each and an empty list says what belongs here. It reads the snapshot, which the event stream
  * keeps current, so an item arrives and leaves on its own. The filters are in the address (`?kind=`, `?repository=`).
  */
+import { CheckCircleIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import { snapshot as readSnapshot } from "../../api/calls/board";
 import { keys } from "../../api/keys";
+import { Button } from "../../ui/components/Button";
 import { Loader } from "../../ui/components/Loader";
-import { Box } from "../../ui/page/Box";
 import { Chip } from "../../ui/page/Chip";
-import { Header } from "../shell/Page";
+import { Empty } from "../../ui/page/Empty";
+import { Notice } from "../../ui/page/Notice";
+import { PageHeader } from "../../ui/page/PageHeader";
 import { ItemCard } from "./ItemCard";
 import { chipName, count, type Filters, kindsOf, STUCK, shown, summary } from "./model";
 
@@ -25,19 +29,27 @@ function useNow(): number {
   return now;
 }
 
+/** A row of filter chips, with the word for what they filter by. */
+function FilterRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
+      <legend className="mb-2 p-0 text-sm font-semibold text-secondary">{label}</legend>
+      <div className="flex flex-wrap gap-2">{children}</div>
+    </fieldset>
+  );
+}
+
 export function InboxPage() {
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => readSnapshot() });
   const [params, setParams] = useSearchParams();
   const now = useNow();
-  if (data.isPending) return <Loader message="Reading the inbox…" className="py-double" />;
+  if (data.isPending) return <Loader message="Reading the inbox" className="py-8" />;
   const snapshot = data.data;
   if (!snapshot) {
     return (
       <>
-        <Header title="Inbox" />
-        <p role="alert" className="text-sm text-error">
-          The inbox could not be read.
-        </p>
+        <PageHeader title="Inbox" />
+        <Notice tone="error">The inbox could not be read. Try again.</Notice>
       </>
     );
   }
@@ -63,28 +75,33 @@ export function InboxPage() {
 
   return (
     <>
-      <Header title="Inbox" />
-      <p className="m-0 mb-[12px] font-mono text-[12.5px] text-normal">
-        {summary(total, items.length)}
-      </p>
-      <search className="mb-[12px] flex flex-col gap-base" aria-label="Filter the inbox">
-        <div className="flex flex-wrap gap-base">
+      <PageHeader
+        title="Inbox"
+        context={
+          total === 0 ? undefined : (
+            <span className="tabular-nums">{summary(total, items.length)}</span>
+          )
+        }
+      />
+      <search aria-label="Filter the inbox" className="mb-6 flex flex-col gap-4">
+        <FilterRow label="Kind">
           <Chip selected={filters.kind === null} onClick={() => setFilter({ kind: null })}>
-            {`All ${count(snapshot, null, filters.repository)}`}
+            All <span className="tabular-nums">{count(snapshot, null, filters.repository)}</span>
           </Chip>
           {kindsOf(snapshot).map((kind) => (
             <Chip
               key={kind}
               selected={filters.kind === kind}
-              red={kind === STUCK}
+              tone={kind === STUCK ? "error" : "neutral"}
               onClick={() => setFilter({ kind })}
             >
-              {`${chipName(kind)} ${count(snapshot, kind, filters.repository)}`}
+              {chipName(kind)}{" "}
+              <span className="tabular-nums">{count(snapshot, kind, filters.repository)}</span>
             </Chip>
           ))}
-        </div>
+        </FilterRow>
         {snapshot.boards.length > 1 && (
-          <div className="flex flex-wrap gap-base">
+          <FilterRow label="Repository">
             <Chip
               selected={filters.repository === null}
               onClick={() => setFilter({ repository: null })}
@@ -97,20 +114,39 @@ export function InboxPage() {
                 selected={filters.repository === board.repository.id}
                 onClick={() => setFilter({ repository: String(board.repository.id) })}
               >
-                {`${board.repository.name} ${count(snapshot, filters.kind, board.repository.id)}`}
+                {board.repository.name}{" "}
+                <span className="tabular-nums">
+                  {count(snapshot, filters.kind, board.repository.id)}
+                </span>
               </Chip>
             ))}
-          </div>
+          </FilterRow>
         )}
       </search>
       {items.length === 0 ? (
-        <Box title="Inbox">
-          <p className="m-0 text-[13px] text-normal">
-            {total === 0 ? "Everything runs on its own." : "No item matches the filter."}
-          </p>
-        </Box>
+        total === 0 ? (
+          <Empty
+            title="All caught up"
+            icon={<CheckCircleIcon className="size-6 text-complete-text" weight="fill" />}
+            body="Nothing is waiting on you. A stuck run, a change ready to merge or a proposal from the Retro will turn up here."
+          />
+        ) : (
+          <Empty
+            title="Nothing here with those filters"
+            body="No item matches the filter. Show everything to see the rest."
+            action={
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setFilter({ kind: null, repository: null })}
+              >
+                Show everything
+              </Button>
+            }
+          />
+        )
       ) : (
-        <div className="flex flex-col gap-[12px]">
+        <div className="flex flex-col gap-4">
           {items.map((item) => (
             <ItemCard key={item.id} item={item} snapshot={snapshot} now={now} />
           ))}

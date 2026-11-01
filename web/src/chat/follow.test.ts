@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   afterScroll,
   afterSend,
+  afterToggle,
   atEnd,
   byPerson,
   END_SLACK,
@@ -75,6 +76,14 @@ describe("shouldRepin", () => {
     expect(shouldRepin({ follow: true, top: 0 }, { ...view, top: 0 })).toBe(true);
     expect(shouldRepin({ follow: true, top: 0 }, { ...view, top: 600 })).toBe(false);
     expect(shouldRepin({ follow: false, top: 0 }, { ...view, top: 0 })).toBe(false);
+  });
+});
+
+describe("afterToggle", () => {
+  it("lets go of the end, so what was opened stays on the screen", () => {
+    expect(afterToggle({ follow: true, top: 600 })).toEqual({ follow: false, top: 600 });
+    // The end is only taken again by the person, not by the list measuring what it has to draw.
+    expect(shouldRepin(afterToggle({ follow: true, top: 600 }), { ...view, top: 600 })).toBe(false);
   });
 });
 

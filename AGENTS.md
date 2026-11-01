@@ -37,8 +37,9 @@ documentation; `CONTRIBUTING.md` says the same as this file for people.
   server serves at `/`. Like the desktop app it talks to the server only through the desktop API: `src/api/` the client
   (one module per part of the API) and the event stream, `src/live/` the events feeding the TanStack Query cache,
   `src/app/` the shell and the pages, `src/ui/` components copied from Vibe Kanban (Apache-2.0, each file says where from
-  and what changed; `web/NOTICE`), `src/styles/` the Deep Velvet tokens, which must stay in step with `theme.rs` (a test
-  checks), `e2e/` the Playwright tests against a fake server. See `web/README.md`.
+  and what changed; `web/NOTICE`), `src/styles/` the tokens of the web app's own design standard (both themes, with a
+  test on their values, radii and contrast, and a design audit in `e2e/design/`), `e2e/` the Playwright tests against a
+  fake server. See `web/README.md`. The web app follows that standard, not `docs/design.md`, which the desktop app keeps.
 - `docs/guide/`: how to build on Moebius, one how-to per page (column scripts, workflows, rules, agents, plugins,
   extensions, the desktop API). Every `luau` block in it is a complete column script that `tests/guide.rs` runs; read it
   before you build anything for a user, and keep it in step with the code.

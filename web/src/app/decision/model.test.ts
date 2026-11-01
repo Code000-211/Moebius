@@ -33,10 +33,12 @@ describe("a share", () => {
 });
 
 describe("a time", () => {
-  it("is a date in UTC", () => {
-    expect(when(0)).toBe("1970-01-01 00:00 UTC");
-    expect(when(951_782_400 + 86_399)).toBe("2000-02-29 23:59 UTC");
-    expect(when(1_793_182_500)).toBe("2026-10-28 10:15 UTC");
+  it("names the day and keeps the UTC clock", () => {
+    expect(when(1_793_182_500, "2026-10-28")).toBe("Today 10:15 UTC");
+    expect(when(1_793_182_500, "2026-10-29")).toBe("Yesterday 10:15 UTC");
+    expect(when(1_793_182_500, "2026-10-31")).toBe("28 Oct 10:15 UTC");
+    expect(when(1_793_182_500, "2027-01-01")).toBe("28 Oct 2026 10:15 UTC");
+    expect(when(951_782_400 + 86_399, "2001-05-01")).toBe("29 Feb 2000 23:59 UTC");
   });
 });
 

@@ -1,9 +1,10 @@
 /**
  * The Get started page (the desktop app's `screens/start`): what a server still needs before the first card can run
  * (an upstream with models, Pi-Bolt, a harness configuration repository, the Coder's model, a repository), read from
- * `GET /v1/start`, with a button to the page that fixes each step, or for the repository the "Set up" that makes it.
- * It is read again when the page opens, by its Refresh button, and when a repository comes or goes. The sidebar lists
- * the page only while a step is missing.
+ * `GET /v1/start`. The step to take next is the one the page is built around, with the page that fixes it beside it;
+ * the steps already taken are named but quiet. Finishing a step moves it as soon as the page is read again: by its
+ * Refresh button, when the page opens, and when a repository comes or goes. The sidebar lists the page only while a
+ * step is missing.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router";
@@ -11,12 +12,13 @@ import { start } from "../../api/calls/server";
 import { restartServer, setUpHarness } from "../../api/calls/settings";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
-import { Tag } from "../../ui/chat/Tag";
 import { Button } from "../../ui/components/Button";
 import { Loader } from "../../ui/components/Loader";
+import { cn } from "../../ui/lib/cn";
 import { Box } from "../../ui/page/Box";
 import { Notice } from "../../ui/page/Notice";
-import { Header } from "../shell/Page";
+import { PageHeader } from "../../ui/page/PageHeader";
+import { Status } from "../../ui/page/Status";
 import { context, fix } from "./model";
 
 export function StartPage() {
@@ -36,83 +38,95 @@ export function StartPage() {
     },
     onSettled: () => void queryClient.invalidateQueries({ queryKey: keys.start }),
   });
+  const steps = answer.data?.steps ?? [];
+  const next = steps.find((step) => !step.done);
 
   return (
     <>
-      <div className="flex items-start justify-between gap-base">
-        <Header breadcrumb="Setup" title="Get started" />
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={answer.isFetching}
-          onClick={() => void answer.refetch()}
-        >
-          Refresh
-        </Button>
-      </div>
-      <p className="m-0 mb-[12px] text-[12.5px] text-normal">{context(answer.data)}</p>
-      <div className="flex flex-col gap-[12px]">
+      <PageHeader
+        title="Get started"
+        context={context(answer.data)}
+        actions={
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={answer.isFetching}
+            onClick={() => void answer.refetch()}
+          >
+            Refresh
+          </Button>
+        }
+      />
+      <div className="flex flex-col gap-4">
         {answer.isError && <Notice tone="error">{answer.error.message}</Notice>}
         {setUp.isSuccess && (
-          <p role="status" className="m-0 text-[12.5px] text-normal">
-            Set up. The server restarts and the page reconnects by itself.
-          </p>
+          <Notice tone="ok">Set up. The server restarts and the page reconnects by itself.</Notice>
         )}
-        {answer.isPending && <Loader message="Reading the steps…" className="py-double" />}
+        {answer.isPending && <Loader message="Reading the steps" className="py-8" />}
         {answer.data && (
           <>
             {answer.data.warnings.map((warning) => (
               <p
                 key={warning}
-                className="m-0 rounded-md border border-[var(--amber-border)] bg-amber-fill p-base text-[13px] text-amber"
+                role="status"
+                className="m-0 break-words rounded-control bg-attention-fill px-3 py-3 text-base text-attention-text"
               >
                 {warning}
               </p>
             ))}
-            <Box title="Before the first card">
-              <ol className="m-0 flex list-none flex-col p-0">
-                {answer.data.steps.map((step) => {
+            <Box title="Before the first card" aside={next ? `Next: ${next.title}` : undefined}>
+              <ol className="m-0 flex list-none flex-col gap-2 p-0">
+                {steps.map((step) => {
                   const fixing = step.done ? null : fix(step.key);
                   const harness = step.key === "harness" && !step.done;
+                  // The step to take next is the page's focal point; the ones already taken stay quiet.
+                  const lead = step.key === next?.key;
                   return (
                     <li
                       key={step.key}
                       data-testid="start-step"
-                      className="flex flex-wrap items-center gap-[16px] border-b py-[12px] first:pt-0 last:border-b-0 last:pb-0"
+                      className={cn(
+                        "flex min-h-10 flex-wrap items-center gap-4 rounded-control p-3",
+                        lead && "bg-sunken",
+                      )}
                     >
-                      <span className="w-[64px] shrink-0">
-                        <Tag tone={step.done ? "teal" : "amber"}>
-                          {step.done ? "Done" : "To do"}
-                        </Tag>
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-[13px] font-semibold text-high">{step.title}</div>
-                        <div className="text-[12.5px] text-normal">{step.detail}</div>
+                      <Status tone={step.done ? "complete" : "attention"} className="shrink-0">
+                        {step.done ? "Done" : "To do"}
+                      </Status>
+                      <span className="flex min-w-0 flex-1 flex-col gap-1">
+                        <span
+                          className={cn(
+                            "break-words font-semibold text-text",
+                            lead ? "text-lg" : "text-base",
+                          )}
+                        >
+                          {step.title}
+                        </span>
+                        <span className="break-words text-base text-secondary">{step.detail}</span>
                         {harness && setUp.isError && (
-                          <div className="mt-half">
-                            <Notice tone="error">
-                              {isApiError(setUp.error)
-                                ? setUp.error.message
-                                : "The repository could not be set up."}
-                            </Notice>
-                          </div>
+                          <Notice tone="error">
+                            {isApiError(setUp.error)
+                              ? setUp.error.message
+                              : "The repository could not be set up."}
+                          </Notice>
                         )}
-                      </div>
+                      </span>
                       {harness && (
                         <Button
                           size="sm"
+                          variant={lead ? "primary" : "secondary"}
                           disabled={setUp.isPending || setUp.isSuccess}
                           onClick={() => setUp.mutate()}
                         >
                           {setUp.isPending
-                            ? "Setting up…"
+                            ? "Setting up"
                             : setUp.isSuccess
-                              ? "Restarting…"
+                              ? "Restarting"
                               : "Set up"}
                         </Button>
                       )}
                       {fixing && (
-                        <Button asChild size="sm" variant="outline">
+                        <Button asChild variant={lead ? "primary" : "secondary"}>
                           <Link to={fixing.to}>{fixing.label}</Link>
                         </Button>
                       )}

@@ -166,7 +166,7 @@ fn a_started_chat_shows_its_model_and_reasoning_and_changes_them_while_it_waits(
 /// `moebius/chat-7` as a change of that repository.
 fn harness_chatting() -> App {
     let snapshot: Snapshot = serde_json::from_value(json!({
-        "boards": [radiance("Ready")],
+        "boards": [radiance("Not started")],
         "harness_changes": [{"id": 3, "repository_id": null, "harness_repository": true, "card_id": null,
                              "branch": "moebius/chat-7", "state": "open"}],
         "inbox": [{"id": 9, "kind": "ready_to_merge", "card_id": null,

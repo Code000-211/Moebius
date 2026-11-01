@@ -160,7 +160,7 @@ card on only when the plugin says `start`.
 function on_card(card)
   local choice, reason = moebius.decide("start_card", { title = card.title }, { "start", "hold" }, "hold")
   if choice == "start" then
-    moebius.move("Ready")
+    moebius.move("Not started")
   else
     moebius.wait(reason)
   end

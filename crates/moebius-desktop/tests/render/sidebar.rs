@@ -322,10 +322,10 @@ fn searching(text: &str) -> App {
         repository(2, "moebius", None),
         vec![
             card(60, 2, "Backlog", "Retry the usage report"),
-            card(61, 2, "Ready", "Write the retro page"),
+            card(61, 2, "Not started", "Write the retro page"),
         ],
     );
-    let mut app = App::with_snapshot(snapshot(vec![radiance("Ready"), moebius], vec![]));
+    let mut app = App::with_snapshot(snapshot(vec![radiance("Not started"), moebius], vec![]));
     let _ = app.update(Message::Chat(chat::Message::Listed(Ok(chat_listing(
         "waiting",
     )))));

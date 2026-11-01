@@ -1,14 +1,17 @@
 /**
  * The Files box of a repository: the tree of its default branch on the left and, on the right, the files that were
- * opened as tabs, the one shown in an editor. A tab with unsaved changes is marked and asks before it closes. "Go to
- * file" (Ctrl+P) and "Search in files" (Ctrl+Shift+F) open over the editor and open a file, at a line when a hit was
- * chosen. The open files and their unsaved text are kept while the page is shown.
+ * opened as tabs, the one shown in an editor. The two columns are inset panels inside the card and are separated by
+ * space alone. A tab with unsaved changes is marked and asks before it closes. "Go to file" (Ctrl+P) and "Search in
+ * files" (Ctrl+Shift+F) open over the editor and open a file, at a line when a hit was chosen. The open files and their
+ * unsaved text are kept while the page is shown.
  */
 import { MagnifyingGlassIcon, XIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { Button } from "../../ui/components/Button";
+import { IconButton } from "../../ui/components/IconButton";
 import { cn } from "../../ui/lib/cn";
 import { Box } from "../../ui/page/Box";
+import { Empty } from "../../ui/page/Empty";
 import { FileEditor } from "./FileEditor";
 import { FileTree } from "./FileTree";
 import { GoToFile, SearchInFiles } from "./FindPanels";
@@ -74,39 +77,42 @@ export function FilesPanel({ repository }: { repository: number }) {
   const unsaved = (path: string) => drafts[path] !== undefined;
 
   return (
-    <Box title="Files" aside="the default branch" className="flex flex-col gap-base">
-      <div className="mb-base flex flex-wrap gap-base">
-        <Button size="sm" variant="outline" onClick={() => setPanel(panel === "go" ? null : "go")}>
-          <MagnifyingGlassIcon className="size-icon-sm" /> Go to file
+    <Box title="Files" aside="Default branch" className="flex flex-col gap-4">
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => setPanel(panel === "go" ? null : "go")}
+        >
+          <MagnifyingGlassIcon className="size-4" aria-hidden="true" />
+          Go to file
         </Button>
         <Button
           size="sm"
-          variant="outline"
+          variant="secondary"
           onClick={() => setPanel(panel === "search" ? null : "search")}
         >
           Search in files
         </Button>
       </div>
       {panel === "go" && (
-        <div className="mb-base">
-          <GoToFile
-            repository={repository}
-            onOpen={(path) => show(path)}
-            onClose={() => setPanel(null)}
-          />
-        </div>
+        <GoToFile
+          repository={repository}
+          onOpen={(path) => show(path)}
+          onClose={() => setPanel(null)}
+        />
       )}
       {panel === "search" && (
-        <div className="mb-base">
-          <SearchInFiles
-            repository={repository}
-            onOpen={(path, at) => show(path, at)}
-            onClose={() => setPanel(null)}
-          />
-        </div>
+        <SearchInFiles
+          repository={repository}
+          onOpen={(path, at) => show(path, at)}
+          onClose={() => setPanel(null)}
+        />
       )}
-      <div className="flex min-h-[200px] flex-col gap-base md:flex-row">
-        <div className="max-h-[480px] w-full shrink-0 overflow-y-auto rounded-md border bg-lane p-half md:w-[240px]">
+      {/* The tree stops where its last row stops: a box held to the height of the column beside it leaves a band of
+          nothing under the files, which reads as a box that failed to fill. */}
+      <div className="flex flex-col gap-4 md:flex-row md:items-start">
+        <div className="max-h-96 w-full shrink-0 overflow-y-auto rounded-card bg-sunken p-2 md:w-64">
           <FileTree
             repository={repository}
             open={open}
@@ -115,48 +121,57 @@ export function FilesPanel({ repository }: { repository: number }) {
             onOpen={(path) => show(path)}
           />
         </div>
-        <div className="flex min-w-0 flex-1 flex-col gap-base">
+        <div className="flex min-w-0 flex-1 flex-col gap-4">
           {tabs.length === 0 ? (
-            <p className="m-0 text-[13px] text-low">Pick a file to read or edit it.</p>
+            <Empty
+              plain
+              title="No file open"
+              body="Pick a file on the left to read or edit it. Go to file finds one by what you type, and Search in files finds the text inside them."
+            />
           ) : (
-            <div role="tablist" aria-label="Open files" className="flex flex-wrap gap-half">
+            <div role="tablist" aria-label="Open files" className="flex flex-wrap gap-2">
               {tabs.map((path) => (
                 <div
                   key={path}
                   className={cn(
-                    "flex items-center rounded-md border",
-                    path === current ? "border-accent-border bg-accent-fill" : "bg-surface",
+                    "flex min-h-10 items-center rounded-control",
+                    path === current ? "bg-selected" : "bg-sunken hover:bg-hover",
                   )}
                 >
                   <button
                     type="button"
                     role="tab"
                     aria-selected={path === current}
+                    title={path}
                     onClick={() => setCurrent(path)}
-                    className="max-w-[200px] truncate px-base py-half font-mono text-[12px] text-high"
+                    className="min-h-10 min-w-0 max-w-64 break-words px-3 text-sm text-text"
                   >
                     {path.split("/").pop()}
-                    {unsaved(path) && <span title="Unsaved changes"> ●</span>}
+                    {unsaved(path) && (
+                      <span className="ml-2 text-xs font-semibold text-attention-text">
+                        Unsaved
+                      </span>
+                    )}
                   </button>
-                  <button
-                    type="button"
+                  <IconButton
+                    icon={XIcon}
+                    variant="ghost"
                     aria-label={`Close ${path}`}
                     onClick={() => (unsaved(path) ? setClosing(path) : close(path))}
-                    className="px-half text-low hover:text-high"
-                  >
-                    <XIcon className="size-icon-xs" />
-                  </button>
+                  />
                 </div>
               ))}
             </div>
           )}
           {closing !== null && (
-            <div className="flex flex-wrap items-center gap-base text-[12.5px] text-normal">
-              <span>{`${closing} has unsaved changes.`}</span>
-              <Button size="xs" variant="outline" onClick={() => setClosing(null)}>
+            <div className="flex flex-wrap items-center gap-4 rounded-control bg-attention-fill p-3 text-attention-text">
+              <p className="m-0 min-w-0 flex-1 break-words text-sm">
+                {`${closing} has unsaved changes.`}
+              </p>
+              <Button size="sm" variant="secondary" onClick={() => setClosing(null)}>
                 Keep
               </Button>
-              <Button size="xs" variant="destructive" onClick={() => close(closing)}>
+              <Button size="sm" variant="danger" onClick={() => close(closing)}>
                 Discard
               </Button>
             </div>

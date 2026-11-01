@@ -66,9 +66,19 @@ export function parseRules(
   return { rules: rules.map((rule) => ({ name: rule.name, text: rule.lines.join("\n").trim() })) };
 }
 
+/** The path as a person writes it: a segment with a space arrives from the browser as `%20`. */
+function decoded(path: string): string {
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
+}
+
 const SCRIPT_FILES: Record<string, string> = {
   backlog: "backlog",
-  ready: "ready",
+  // The column is "Not started"; its file in a repository keeps the name it has always had.
+  "not started": "ready",
   "in progress": "code",
   "in review": "review",
   "ready to merge": "merge",
@@ -488,9 +498,12 @@ export function createPagesCFake(
     const raw = method === "GET" ? "" : await readBody(request);
     const body = (raw === "" ? {} : JSON.parse(raw)) as Json;
     if (method !== "GET") requests.push({ method, path, body });
-    const refusal = refusals.get(`${method} ${path}`);
+    // A segment a person wrote reaches the server encoded ("scripts/Not%20started"); a test names it as it reads it.
+    const plain = `${method} ${decoded(path)}`;
+    const refusal = refusals.get(`${method} ${path}`) ?? refusals.get(plain);
     if (refusal) {
       refusals.delete(`${method} ${path}`);
+      refusals.delete(plain);
       return reply(response, refusal.status, refusal.message);
     }
 

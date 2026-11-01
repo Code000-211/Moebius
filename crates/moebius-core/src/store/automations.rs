@@ -6,6 +6,20 @@ use serde::{Deserialize, Serialize};
 
 use super::{Result, Store, now};
 
+/// The hour, in seconds.
+const HOUR: i64 = 3600;
+
+/// Which instant the local minute `minute` comes to. SQLite answers with `first`; that is the minute meant while it
+/// has not gone by. Once it has, the only way it can come again is the clock having gone back over it, so the answer
+/// is `first` an hour on — but only when the clock really does read `minute` then, which `later` says.
+fn occurrence(first: i64, later: Option<&str>, minute: &str, now: i64) -> i64 {
+    if first < now && later == Some(minute) {
+        first + HOUR
+    } else {
+        first
+    }
+}
+
 /// An automation as stored: when it fires, with which agent and prompt, where its chat works and whether it is on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Automation {
@@ -253,11 +267,37 @@ impl Store {
         )?)
     }
 
-    /// The local minute `minute` (`YYYY-MM-DD HH:MM`) as Unix seconds; none when it is no time.
+    /// The local minute `minute` (`YYYY-MM-DD HH:MM`) as the Unix second it begins; none when it is no time.
+    ///
+    /// A minute that has already gone by is read as the minute still to come when the clock goes back over it: on a
+    /// fall-back day the clock reads one hour twice, and SQLite answers with the first time round, which by the second
+    /// has gone by. Schedules are read as minutes coming due, so the answer moves to the second occurrence.
     pub fn local_minute_to_unix(&self, minute: &str) -> Result<Option<i64>> {
+        let Some(first) = self.unix_of_minute(minute)? else {
+            return Ok(None);
+        };
+        let now = now();
+        if first >= now {
+            return Ok(Some(first));
+        }
+        let later = self.local_minute_of(first + HOUR)?;
+        Ok(Some(occurrence(first, later.as_deref(), minute, now)))
+    }
+
+    /// The Unix second SQLite reads the local minute `minute` as; none when it is no time.
+    fn unix_of_minute(&self, minute: &str) -> Result<Option<i64>> {
         Ok(self.conn().query_row(
             "SELECT CAST(strftime('%s', ?1, 'utc') AS INTEGER)",
             [minute],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// The local minute (`YYYY-MM-DD HH:MM`) the Unix second `unix` falls in; none when it falls in no minute.
+    fn local_minute_of(&self, unix: i64) -> Result<Option<String>> {
+        Ok(self.conn().query_row(
+            "SELECT strftime('%Y-%m-%d %H:%M', ?1, 'unixepoch', 'localtime')",
+            [unix],
             |r| r.get(0),
         )?)
     }
@@ -334,5 +374,30 @@ mod tests {
         let minute = s.local_minute().unwrap();
         let unix = s.local_minute_to_unix(&minute).unwrap().unwrap();
         assert!((now() - unix).abs() < 120, "{minute} is {unix}");
+    }
+
+    /// The three minutes around the clock going back an hour in Los Angeles, as SQLite reads them: 01:30 is answered
+    /// with the first time round, an hour before the second.
+    const REPEATED: i64 = 1_793_521_800;
+
+    #[test]
+    fn the_minute_a_fall_back_day_repeats_is_the_one_still_to_come() {
+        let minute = "2026-11-01 01:30";
+        // The clock is on the first time round: SQLite's answer is the minute it is on.
+        assert_eq!(
+            occurrence(REPEATED, Some(minute), minute, REPEATED),
+            REPEATED
+        );
+        // The second time round it has gone by, and the same minute an hour on is the one meant.
+        assert_eq!(
+            occurrence(REPEATED, Some(minute), minute, REPEATED + 45 * 60),
+            REPEATED + HOUR
+        );
+        // A minute that has simply gone by has no second occurrence to move to: 02:30 is read once.
+        let once = 1_793_529_000;
+        assert_eq!(
+            occurrence(once, Some("2026-11-01 02:30"), minute, once + 2 * 60),
+            once
+        );
     }
 }

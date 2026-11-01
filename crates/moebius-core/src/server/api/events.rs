@@ -65,7 +65,10 @@ mod tests {
         );
         let (mut ws, _) = tokio_tungstenite::connect_async(request).await.unwrap();
         // The subscription exists once the upgrade is done; publish until the first event arrives.
-        let event = AppEvent::new("card_moved", serde_json::json!({"card": 1, "to": "Ready"}));
+        let event = AppEvent::new(
+            "card_moved",
+            serde_json::json!({"card": 1, "to": "Not started"}),
+        );
         let received = loop {
             state.app.bus.publish(event.clone());
             if let Ok(Some(message)) =

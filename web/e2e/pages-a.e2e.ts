@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Browser, type BrowserContext, chromium, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { pickOption, showing } from "./controls";
 import type { PagesAFake } from "./fake/pages-a";
 import { startServer, type TestServer, usesRealServer } from "./server";
 
@@ -364,8 +365,7 @@ describe("projects", () => {
 
     await page
       .getByRole("navigation", { name: "Pages" })
-      .getByRole("link", { name: "Projects" })
-      .first()
+      .getByRole("link", { name: "All projects" })
       .click();
     await page.waitForURL("**/projects");
     const row = page.getByTestId("repository").filter({ hasText: "fresh" });
@@ -759,14 +759,15 @@ describe("usage", () => {
     async () => {
       await open("/usage");
       await page.getByText("1.84M", { exact: true }).first().waitFor();
-      await page.getByText("23% of the 8M daily budget").waitFor();
+      // The figure and the budget it is measured against are read together, in that order.
+      await page.getByText("of the 8M token budget, 23% used").waitFor();
       await page.getByText("1,284", { exact: true }).waitFor();
       await page.getByText("61%", { exact: true }).first().waitFor();
       await page.getByText("3 h 12 m", { exact: true }).first().waitFor();
       // The heatmap: a cell for each day of 53 weeks, and the busiest day.
       expect(await page.getByTestId("heatmap").locator("span[title]").count()).toBeGreaterThan(300);
       await page.getByText(/busiest day Sat 24 Oct with 2\.52M/).waitFor();
-      await page.getByText("Lighter means fewer tokens, darker more").waitFor();
+      await page.getByText(/The stronger the colour, the more tokens that day used/).waitFor();
       await page.getByRole("heading", { name: "Tokens by model" }).waitFor();
       const models = page.getByRole("table").first();
       await models.getByText("qwen-flash").waitFor();
@@ -779,21 +780,17 @@ describe("usage", () => {
       await page.getByRole("heading", { name: "Lint and type checks" }).waitFor();
       await page.getByText("Before the run ends").waitFor();
       await page.getByRole("cell", { name: "Coder" }).waitFor();
-      // The meter at the foot of the sidebar.
-      await page.getByTestId("tokens-meter").getByText("1.84M / 8M").waitFor();
     },
   );
 
   it.skipIf(usesRealServer)("reads another window when it is chosen", async () => {
     await open("/usage");
-    await page.getByText("23% of the 8M daily budget").waitFor();
+    await page.getByText("of the 8M token budget, 23% used").waitFor();
     await page.getByRole("button", { name: "7 days" }).click();
     await page.getByText("12.9M in the last 7 days across 2 models").waitFor();
-    await page.getByText("1.84M tokens a day on average").waitFor();
+    await page.getByText("1.84M a day on average").waitFor();
     await page.getByRole("button", { name: "30 days" }).click();
     await page.getByText(/in the last 30 days across 2 models/).waitFor();
-    // The meter is of today whatever the window.
-    await page.getByTestId("tokens-meter").getByText("1.84M / 8M").waitFor();
   });
 });
 
@@ -896,10 +893,16 @@ describe("settings", () => {
       "GitLab",
       "Forgejo",
     ]) {
-      await page.getByRole("heading", { name: box, exact: true }).waitFor();
+      // The level keeps the box of a key apart from a webhook of the same forge further down the page.
+      await page.getByRole("heading", { name: box, exact: true, level: 2 }).waitFor();
     }
     await page.getByRole("button", { name: "Save" }).waitFor();
     await page.getByRole("heading", { name: "This server" }).waitFor();
+    // How the app looks is chosen here rather than in the sidebar, and takes effect at once.
+    await page.getByRole("heading", { name: "Appearance", exact: true, level: 2 }).waitFor();
+    await page.getByRole("radio", { name: "Light" }).check();
+    await expect(page.locator("html").getAttribute("data-theme")).resolves.toBe("light");
+    await page.getByRole("radio", { name: "Follow the system" }).check();
   });
 
   it("saves a key to the file of a real server and reads it back", async () => {
@@ -920,16 +923,14 @@ describe("settings", () => {
     "shows every key with its value or its default and the file",
     async () => {
       await open("/settings");
-      await page
-        .getByText("The keys of /srv/moebius/moebius.toml. Save writes only what you changed.")
-        .waitFor();
+      await page.getByRole("heading", { name: "Settings", exact: true }).waitFor();
       expect(await page.getByLabel("Coding rounds a card").inputValue()).toBe("7");
       expect(await page.getByLabel("Tokens a day").inputValue()).toBe("8000000");
       // A key the file does not set shows the default.
       expect(await page.getByLabel("Runs at a time").inputValue()).toBe("");
       await page.getByText("Default 3", { exact: true }).waitFor();
       await page.getByText("Default 127.0.0.1:7171").waitFor();
-      expect(await page.getByLabel("Regression gate").inputValue()).toBe("true");
+      expect(await showing(page.getByLabel("Regression gate"))).toBe("true");
       await page.getByText("http://127.0.0.1:7171", { exact: true }).waitFor();
     },
   );
@@ -937,9 +938,8 @@ describe("settings", () => {
   it.skipIf(usesRealServer)("sends exactly the keys that were changed", async () => {
     await open("/settings");
     await page.getByLabel("Coding rounds a card").waitFor();
-    // Nothing changed: nothing is sent.
-    await page.getByRole("button", { name: "Save" }).click();
-    await page.getByText("No changes to save.").waitFor();
+    // Nothing changed: Save waits for a change, so nothing can be sent.
+    expect(await page.getByRole("button", { name: "Save" }).isDisabled()).toBe(true);
     expect(fake().requests.filter((r) => r.path === "/v1/settings")).toHaveLength(0);
 
     // A key put back to what the file says is not sent.
@@ -947,7 +947,7 @@ describe("settings", () => {
     await page.getByLabel("Retro at (HH:MM)").fill("");
     await page.getByLabel("Coding rounds a card").fill("9");
     await page.getByLabel("Tokens a day").fill("");
-    await page.getByLabel("Regression gate").selectOption("false");
+    await pickOption(page, page.getByLabel("Regression gate"), "false");
     await page.getByLabel("MCP variables").fill("DOCS_TOKEN, OTHER");
     await page.getByRole("button", { name: "Save" }).click();
     await page.getByText("Saved.").waitFor();

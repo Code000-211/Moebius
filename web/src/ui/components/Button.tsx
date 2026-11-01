@@ -1,35 +1,49 @@
-// From BloopAI/vibe-kanban packages/ui/src/components/Button.tsx (Apache-2.0), changed: colour classes use the Deep Velvet names (accent for the primary button, surface for the others); cn now merges, so the twMerge call is gone; React 19 ref prop in place of forwardRef.
+// From BloopAI/vibe-kanban packages/ui/src/components/Button.tsx (Apache-2.0), changed to this app's design standard:
+// the variants are primary, secondary, ghost and danger; the primary fills with the ink colour and labels it with the
+// canvas colour; nothing carries a border, a size under 40px, or a colour of its own; the focus ring comes from the
+// global `:focus-visible` rule in `styles/tailwind.css`; a disabled button says why in its tooltip and in words no
+// one sees rather than in a line beside it, and since November in the words a screen reader is told rather than in
+// the browser's own tooltip box; Deep Velvet's coral accent is gone.
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import type * as React from "react";
+import { useId } from "react";
 
 import { cn } from "../lib/cn";
 
+/**
+ * One implementation of a button, for every page.
+ *
+ * `primary` is the one clear action of a screen and fills with the ink colour; `secondary` and `ghost` are quieter
+ * alternatives beside it; `danger` is the destructive one, which says what it does in its label. Every size is at
+ * least 40px tall, which is the smallest touch target the standard allows.
+ */
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-base whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 disabled:pointer-events-none disabled:opacity-50 disabled:cursor-not-allowed",
+  "inline-flex w-fit shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-control font-semibold text-text transition-colors duration-(--motion-routine) ease-out disabled:cursor-not-allowed disabled:opacity-45 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: "bg-accent text-on-fill border border-accent hover:bg-accent/90",
-        destructive: "border border-error text-error hover:bg-error/10",
-        outline: "border border-line-strong bg-panel text-high hover:bg-card-hover",
-        secondary: "bg-card text-high border border-line hover:bg-card-hover",
-        ghost: "text-normal hover:text-high hover:bg-card",
-        link: "text-accent hover:underline",
-        icon: "bg-transparent rounded-sm text-low hover:text-high",
+        primary: "bg-text text-on-ink hover:bg-text/85",
+        secondary: "bg-sunken text-text hover:bg-hover",
+        ghost: "bg-transparent text-secondary hover:bg-hover hover:text-text",
+        danger: "bg-error-fill text-error-text hover:bg-error-border/60",
+        icon: "bg-transparent text-secondary hover:bg-hover hover:text-text",
       },
       size: {
-        default: "h-9 px-4 py-2",
-        xs: "h-7 px-2 text-xs",
-        sm: "h-8 px-3",
-        lg: "h-11 px-8",
-        icon: "h-9 w-9",
+        sm: "min-h-10 px-3 text-sm",
+        md: "min-h-11 px-4 text-base",
+        lg: "min-h-12 px-6 text-base",
+        icon: "size-10",
       },
     },
-    compoundVariants: [{ variant: "icon", class: "p-0 h-4" }],
+    compoundVariants: [
+      { variant: "icon", size: "sm", class: "size-10" },
+      { variant: "icon", size: "md", class: "size-11" },
+      { variant: "icon", size: "lg", class: "size-12" },
+    ],
     defaultVariants: {
-      variant: "default",
-      size: "default",
+      variant: "primary",
+      size: "md",
     },
   },
 );
@@ -40,9 +54,46 @@ export interface ButtonProps
   asChild?: boolean;
 }
 
-function Button({ className, variant, size, asChild = false, ...props }: ButtonProps) {
+/**
+ * A button that cannot be pressed says why in words nobody sees, not in a line beside it and not in the browser's own
+ * tooltip: the reason printed next to a control that cannot be clicked is the same words twice and reads as
+ * furniture, and the box the browser draws for a `title` is a strip of another design system over the page it sits
+ * on. The words are kept — a disabled button stays in the accessibility tree, so `aria-describedby` carries the
+ * reason — and are simply not drawn by us or by the browser.
+ */
+function Button({
+  className,
+  variant,
+  size,
+  asChild = false,
+  disabled,
+  title,
+  "aria-describedby": describedBy,
+  ...props
+}: ButtonProps) {
   const Comp = asChild ? Slot : "button";
-  return <Comp className={cn(buttonVariants({ variant, size, className }))} {...props} />;
+  const classes = cn(buttonVariants({ variant, size, className }));
+  const reason = useId();
+  const quiet = !asChild && disabled === true && title !== undefined;
+  // Anything else the caller pointed at is kept: a field's hint and the reason a button cannot be pressed are both
+  // worth hearing, in the order a person meets them.
+  const described = [describedBy, quiet ? reason : null].filter(Boolean).join(" ");
+  return (
+    <>
+      <Comp
+        className={classes}
+        disabled={disabled}
+        title={quiet ? undefined : title}
+        aria-describedby={described === "" ? undefined : described}
+        {...props}
+      />
+      {quiet && (
+        <span id={reason} className="sr-only">
+          {title}
+        </span>
+      )}
+    </>
+  );
 }
 
 export { Button, buttonVariants };

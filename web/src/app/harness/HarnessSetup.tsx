@@ -8,14 +8,15 @@ import { useMutation } from "@tanstack/react-query";
 import { setUpHarness } from "../../api/calls/harness";
 import { restartServer } from "../../api/calls/models";
 import { Button } from "../../ui/components/Button";
-import { Notice } from "./form";
+import { Box } from "../../ui/page/Box";
+import { Notice } from "../../ui/page/Notice";
 
-/** What the box says, and why the buttons that need a repository are muted. */
+/** What the box says, and why the buttons that need a repository are quiet. */
 export const NEEDED =
   "Skills, MCP servers and imports need a harness configuration repository. Set it up here; your agents and rules move into it.";
 
-/** The tooltip of a button that needs a repository. */
-export const WHY_MUTED = "Needs a harness configuration repository: set it up above.";
+/** The reason a button that needs the repository is disabled, for its title and for the line under it. */
+export const WHY_MUTED = "Needs a harness configuration repository: set it up below.";
 
 export function HarnessSetup() {
   const setUp = useMutation({
@@ -24,24 +25,21 @@ export function HarnessSetup() {
       await restartServer();
     },
   });
-  const label = setUp.isPending ? "Setting up…" : setUp.isSuccess ? "Restarting…" : "Set up";
+  const label = setUp.isPending ? "Setting up" : setUp.isSuccess ? "Restarting" : "Set up";
   return (
-    <div
-      data-testid="harness-setup"
-      className="flex flex-wrap items-center justify-between gap-plusfifty rounded-xl border border-line bg-surface p-double"
+    <Box
+      testId="harness-setup"
+      className="flex flex-wrap items-center justify-between gap-4"
+      padded
     >
-      <div className="min-w-0 flex-1">
-        <p className="m-0 text-sm font-semibold text-high">{NEEDED}</p>
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <p className="m-0 max-w-prose text-base text-text">{NEEDED}</p>
         {setUp.isSuccess && (
-          <p className="m-0 mt-half text-xs text-normal">
+          <p className="m-0 text-sm text-secondary">
             Set up. The server restarts and the app reconnects by itself.
           </p>
         )}
-        {setUp.isError && (
-          <div className="mt-half">
-            <Notice tone="error">{setUp.error.message}</Notice>
-          </div>
-        )}
+        {setUp.isError && <Notice tone="error">{setUp.error.message}</Notice>}
       </div>
       <Button
         size="sm"
@@ -50,6 +48,6 @@ export function HarnessSetup() {
       >
         {label}
       </Button>
-    </div>
+    </Box>
   );
 }

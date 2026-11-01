@@ -33,7 +33,7 @@ async function send(decision: Decision): Promise<string> {
   switch (decision.kind) {
     case "approve":
       await approve(decision.card);
-      return `Approved ${n}. It moves to Ready.`;
+      return `Approved ${n}. It moves to Not started.`;
     case "retry":
       await retry(decision.card);
       return `Retrying ${n}.`;

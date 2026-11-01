@@ -1,25 +1,43 @@
 /**
- * The Fleet page (the desktop app's `screens/fleet`): every run that is working, at a glance. One tile for each card
- * whose latest run is starting, running or waiting and for each chat that is, with who runs it, what for, how long,
- * and the last steps of the run. The tiles read their events when the page opens and follow the stream's `run_event`s
- * while it is open; a click on a tile opens the card's board or the chat.
+ * The Fleet page (the desktop app's `screens/fleet`): which runners are up and what they are running. One row for each
+ * card whose latest run is starting, running or waiting and for each chat that is, led by the status word and the hue
+ * that goes with it, then who runs it, what for, how long it has run, and the last steps of the run. The rows read
+ * their events when the page opens and follow the stream's `run_event`s while it is open; a row opens the card's board
+ * or the chat. A read that fails says what could not be read and offers to try again, rather than saying that nothing
+ * is working.
  */
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { snapshot as readSnapshot } from "../../api/calls/board";
 import { chats as readChats } from "../../api/calls/chat";
 import { run as readRun } from "../../api/calls/fleet";
+import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
-import { inputSummary, toolTitle } from "../../chat/conversation";
+import { inputPath, inputSummary, toolTitle } from "../../chat/conversation";
 import { useThread } from "../../chat/useThread";
-import { Tag } from "../../ui/chat/Tag";
+import { thinkingLabel } from "../../ui/chat/ChatCollapsedThinking";
 import { ToolStatusDot } from "../../ui/chat/ToolStatusDot";
 import { toolStatus } from "../../ui/chat/Turn";
+import { Button } from "../../ui/components/Button";
 import { Loader } from "../../ui/components/Loader";
-import { Box } from "../../ui/page/Box";
-import { Header } from "../shell/Page";
-import { context, elapsed, latestSteps, tokensText, type Work, working } from "./model";
+import { cn } from "../../ui/lib/cn";
+import { Empty } from "../../ui/page/Empty";
+import { Notice } from "../../ui/page/Notice";
+import { PageHeader } from "../../ui/page/PageHeader";
+import { Status } from "../../ui/page/Status";
+import {
+  afterSteps,
+  context,
+  elapsed,
+  latestSteps,
+  statusWord,
+  thinkingNow,
+  thoughtSeconds,
+  tokensText,
+  type Work,
+  working,
+} from "./model";
 
 /** The time now in Unix seconds, kept current every 5 seconds for how long the runs have run. */
 function useNow(): number {
@@ -36,29 +54,67 @@ export function FleetPage() {
   const chats = useQuery({ queryKey: keys.chats, queryFn: readChats });
   const now = useNow();
   if (data.isPending || chats.isPending) {
-    return <Loader message="Reading the fleet…" className="py-double" />;
+    return <Loader message="Reading the fleet" className="py-8" />;
+  }
+  // A page that could not be read says so. Falling through to the empty state would claim that no agent is working,
+  // which is the opposite of what happened, so the failure comes first and carries the way back.
+  if (data.isError || chats.isError) {
+    return (
+      <>
+        <PageHeader title="Fleet" />
+        <Notice
+          tone="error"
+          action={
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={data.isFetching || chats.isFetching}
+              onClick={() => {
+                void data.refetch();
+                void chats.refetch();
+              }}
+            >
+              Try again
+            </Button>
+          }
+        >
+          {sayError(
+            data.isError ? data.error : chats.error,
+            "Could not read what the agents are doing. Try again.",
+          )}
+        </Notice>
+      </>
+    );
   }
   const list = data.data ? working(data.data, chats.data ?? []) : [];
   return (
     <>
-      <Header title="Fleet" />
-      <p className="m-0 mb-[12px] font-mono text-[12.5px] text-normal">{context(list.length)}</p>
+      <PageHeader title="Fleet" context={context(list.length)} />
       {list.length === 0 ? (
-        <Box>
-          <p className="m-0 text-[13px] text-normal">Nothing is working.</p>
-        </Box>
+        <Empty
+          title="No agent is working"
+          body="A row appears here while a card's run or a chat has its agent at work, with what each is doing and how long it has been."
+          action={
+            <Button asChild variant="secondary">
+              <Link to="/chat">Start a chat</Link>
+            </Button>
+          }
+        />
       ) : (
-        <div className="grid gap-[12px] [grid-template-columns:repeat(auto-fill,minmax(min(340px,100%),1fr))]">
+        // biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with no marker from the accessibility tree entirely
+        <ul role="list" className="m-0 flex list-none flex-col gap-3 p-0">
           {list.map((work) => (
-            <Tile key={work.run} work={work} now={now} />
+            <li key={work.run}>
+              <Row work={work} now={now} />
+            </li>
           ))}
-        </div>
+        </ul>
       )}
     </>
   );
 }
 
-function Tile({ work, now }: { work: Work; now: number }) {
+function Row({ work, now }: { work: Work; now: number }) {
   const navigate = useNavigate();
   const thread = useThread(work.run);
   // A card's run says when it started; a chat's start is in the list of chats.
@@ -68,7 +124,14 @@ function Tile({ work, now }: { work: Work; now: number }) {
     enabled: work.startedAt === 0,
   });
   const startedAt = work.startedAt || run.data?.started_at || 0;
-  const steps = latestSteps(thread.entries).slice(-4);
+  // A thought says how long it went on, which only the step after it can say. The lines drawn are the last few of the
+  // run, so each is measured against the whole of them.
+  const recent = latestSteps(thread.entries);
+  const steps = recent.slice(-4);
+  const atWork = thinkingNow(work.status);
+  // What came after the last step — the answer, usually — is what says the last of them stopped.
+  const ended = afterSteps(thread.entries);
+  const status = statusWord(work.status, work.asks);
   const open = () =>
     navigate(
       work.open.kind === "card"
@@ -87,44 +150,58 @@ function Tile({ work, now }: { work: Work; now: number }) {
       type="button"
       data-testid="fleet-tile"
       onClick={open}
-      className="flex flex-col gap-[6px] rounded-xl border bg-surface p-[14px] text-left transition-colors hover:border-low"
+      className="flex w-full flex-col gap-3 rounded-card bg-surface p-4 text-left shadow-card transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
     >
-      <div className="flex items-center gap-base">
-        <span className="text-[12.5px] font-bold text-high">{work.agent}</span>
-        <Tag>{work.kind}</Tag>
-        {work.asks && <Tag tone="amber">asks you</Tag>}
-        <span className="flex-1" />
+      <span className="flex flex-wrap items-center gap-3">
+        <Status tone={status.tone}>{status.word}</Status>
+        <span className="text-base font-semibold text-text">{work.agent}</span>
+        <span className="text-sm text-secondary">{work.kind}</span>
         {startedAt > 0 && (
-          <span className="font-mono text-[11px] text-normal">{elapsed(now - startedAt)}</span>
+          <span className="ml-auto text-sm tabular-nums text-secondary">
+            {elapsed(now - startedAt)}
+          </span>
         )}
-      </div>
-      <span className="break-words text-[13.5px] font-semibold text-high">{work.title}</span>
-      {about && <span className="truncate font-mono text-[11px] text-low">{about}</span>}
+      </span>
+      <span className="break-words text-lg font-semibold text-text">{work.title}</span>
+      {about && <span className="break-words text-sm text-secondary">{about}</span>}
       {steps.length === 0 ? (
-        <span className="font-mono text-[11px] text-low">No steps yet.</span>
+        <span className="text-sm text-secondary">The agent has not made a step yet.</span>
       ) : (
-        <div className="flex flex-col gap-half rounded-md border bg-lane p-base">
-          <span className="text-[12px] text-normal">
+        <span className="flex flex-col gap-2 border-t border-hairline pt-3">
+          <span className="text-sm font-semibold text-secondary">
             {work.status === "waiting" ? `Worked for ${worked ?? "a moment"}` : "Agent is working"}
           </span>
-          {steps.map((entry, index) => (
-            <span
-              // biome-ignore lint/suspicious/noArrayIndexKey: the lines are drawn once, in order
-              key={index}
-              className="flex items-center gap-base truncate text-[12px] text-low"
-            >
-              {entry.kind === "tool" ? (
-                <>
-                  <ToolStatusDot status={toolStatus(entry.call)} />
-                  <span className="font-mono text-normal">{toolTitle(entry.call)}</span>
-                  <span className="truncate">{inputSummary(entry.call.input)}</span>
-                </>
-              ) : (
-                <span>Thinking</span>
-              )}
-            </span>
-          ))}
-        </div>
+          {steps.map((entry, shown) => {
+            const index = recent.length - steps.length + shown;
+            // Only the last line of a run that is at work is still arriving; every thought before it has stopped.
+            const ongoing = atWork && index === recent.length - 1;
+            return (
+              // The lines are drawn once, in order, and `index` counts them from the start of the run.
+              <span key={index} className="flex items-center gap-2 text-sm text-secondary">
+                {entry.kind === "tool" ? (
+                  <>
+                    <ToolStatusDot status={toolStatus(entry.call)} className="shrink-0" />
+                    <span className="shrink-0 font-mono text-text">{toolTitle(entry.call)}</span>
+                    <span className="break-words" title={inputPath(entry.call.input) ?? undefined}>
+                      {inputSummary(entry.call.input)}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        "size-2 shrink-0 rounded-full",
+                        ongoing ? "bg-progress" : "bg-track",
+                      )}
+                    />
+                    <span>{thinkingLabel(thoughtSeconds(recent, index, ended), ongoing)}</span>
+                  </>
+                )}
+              </span>
+            );
+          })}
+        </span>
       )}
     </button>
   );

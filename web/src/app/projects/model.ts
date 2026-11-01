@@ -1,9 +1,11 @@
 /**
  * The logic of the Projects pages, apart from React: how a repository is told in a list, what the form of a new one
- * sends, the logins a person types, and what the editor says of a file it cannot edit.
+ * sends, the logins a person types, what the editor says of a file it cannot edit, and what the server's answer to a
+ * refused repository means to the person who asked for it.
  */
 import type { Forge, Repository } from "../../api/types/board";
 import type { FileDetail, NewRepository } from "../../api/types/projects";
+import { plural } from "../../ui/lib/format";
 
 /** The forge and the repository's name there, as a page shows it: `GitHub · acme/radiance`. */
 export function forgeTag(repository: Repository): string {
@@ -20,7 +22,138 @@ export function onForge(repository: Repository): boolean {
 }
 
 export function cardsText(count: number): string {
-  return count === 1 ? "1 card" : `${count} cards`;
+  return plural(count, "card", "cards");
+}
+
+/** The field an answer about a new repository belongs to. */
+export type FailureField = "name" | "url";
+
+/**
+ * What the server said about a repository it refused, told to the person who asked for it. The headline is what
+ * happened, `next` is what to do about it when there is something to do, and `detail` is the exact sentence the server
+ * gave, kept for someone who wants it rather than shown as the headline.
+ */
+export interface Failure {
+  headline: string;
+  next: string;
+  /** Null when the whole form is the problem rather than one field of it. */
+  field: FailureField | null;
+  detail: string | null;
+}
+
+/** What git printed inside `git … failed: …`, or null when the sentence is not the failure of a run. */
+function gitSaid(message: string): string | null {
+  if (!message.startsWith("git ")) return null;
+  const at = message.indexOf(" failed: ");
+  return at === -1 ? null : message.slice(at + " failed: ".length).trim();
+}
+
+/**
+ * The service the address or the error names — `GitHub`, `GitLab`, `Forgejo` — or null when it names none. A refused
+ * clone and a refused issue are both about a forge the server was never told how to reach.
+ */
+export function forgeNamed(message: string): string | null {
+  const text = message.toLowerCase();
+  if (text.includes("github")) return "GitHub";
+  if (text.includes("gitlab")) return "GitLab";
+  if (text.includes("codeberg") || text.includes("forgejo") || text.includes("gitea"))
+    return "Forgejo";
+  return null;
+}
+
+/** Whether the address asks for a sign-in over HTTPS, which is where a token belongs. */
+function overHttps(message: string): boolean {
+  return message.toLowerCase().includes("https://");
+}
+
+const SIGN_IN = [
+  "could not read username",
+  "could not read password",
+  "terminal prompts disabled",
+  "authentication failed",
+  "access denied",
+  "invalid credentials",
+  "bad credentials",
+  "permission denied (publickey)",
+  "could not read from remote repository",
+];
+
+const MISSING = ["not found", "does not exist", "404"];
+
+const UNREACHABLE = [
+  "could not resolve host",
+  "name or service not known",
+  "connection refused",
+  "connection reset",
+  "timed out",
+  "unable to access",
+  "network is unreachable",
+  "certificate",
+];
+
+/**
+ * Where the credential for the service named in `message` is set. Those keys are written to the configuration and only
+ * read when the server starts, so the way to take one says that the server has to restart.
+ */
+function credentialPlace(name: string): string {
+  if (name === "GitHub") return "Set up the GitHub App under Settings";
+  return `Set the ${name} token under Settings`;
+}
+
+/**
+ * The sentence a refused `POST /v1/repositories` carries, told in words a person can act on. The server quotes git
+ * whole, so a private repository over HTTPS comes back as a `git clone --quiet -- …` command line: what happened and
+ * what to do next come first here, and the exact sentence is kept in `detail`. A sentence that is already plain — a
+ * name that is taken, a folder that is not a repository — is passed through as it came.
+ */
+export function addFailure(message: string): Failure {
+  const said = gitSaid(message);
+  if (said === null) {
+    if (message.startsWith("cannot run git:")) {
+      return {
+        headline: "The server cannot run git.",
+        next: "Install git where the server runs, then try again.",
+        field: null,
+        detail: message,
+      };
+    }
+    const field: FailureField = /name|exists/i.test(message) ? "name" : "url";
+    return { headline: message, next: "", field, detail: null };
+  }
+
+  const saidText = said.toLowerCase();
+  const name = forgeNamed(message);
+  const base = { field: "url" as const, detail: message };
+  if (SIGN_IN.some((sign) => saidText.includes(sign))) {
+    return {
+      headline: name ? `The server cannot sign in to ${name}.` : "The server cannot sign in here.",
+      next: name
+        ? `${credentialPlace(name)} and restart the server, then try again.`
+        : "A private repository needs credentials on the server: give it a token, or use an address that needs none.",
+      ...base,
+    };
+  }
+  if (MISSING.some((sign) => saidText.includes(sign))) {
+    return {
+      headline: "No repository at that address.",
+      next: overHttps(message)
+        ? "Check the address. A private repository also reads as missing when the server cannot sign in to it."
+        : "Check the address, or the path on the server.",
+      ...base,
+    };
+  }
+  if (UNREACHABLE.some((sign) => saidText.includes(sign))) {
+    return {
+      headline: "The server could not reach that address.",
+      next: "Check the address and the network where the server runs.",
+      ...base,
+    };
+  }
+  return {
+    headline: "The server could not clone this repository.",
+    next: "Check the address and try again.",
+    ...base,
+  };
 }
 
 /** The logins typed, separated by commas, spaces or lines. */

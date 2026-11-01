@@ -180,7 +180,7 @@ steer, stop) go through the same record.
 | Column | Script | Behaviour |
 |---|---|---|
 | Backlog | `backlog.luau` | Outside issues wait here until a person approves them; trusted authors' issues and confirmed grilling issues move on. |
-| Ready | `ready.luau` | Starts a Coder run when the card's dependencies are merged and the run limit allows. |
+| Not started | `ready.luau` | Starts a Coder run when the card's dependencies are merged and the run limit allows. |
 | In progress | `code.luau` | One Coder run per round; when it ends, the change is pushed and the card moves to review. |
 | In review | `review.luau` | Waits for CI and runs the Reviewer along two axes; on failures, blocking findings or a merge conflict, back to In progress for the next round. |
 | Ready to merge | `merge.luau` | Puts the change in the inbox; a person merges it in the app or on the forge. |

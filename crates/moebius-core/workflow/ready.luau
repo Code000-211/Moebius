@@ -1,4 +1,4 @@
--- Ready: starts work when nothing blocks the card, the daily token budget is not spent and the run limit allows.
+-- Not started: starts work when nothing blocks the card, the daily token budget is not spent and the run limit allows.
 function on_card(card)
   if #card.blocked_by > 0 then
     local numbers = {}

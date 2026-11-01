@@ -9,11 +9,11 @@ export function ConnectionBanner({ onRetry }: { onRetry: () => void }) {
   return (
     <div
       role="alert"
-      className="flex items-center gap-base border-b border-amber/40 bg-amber-fill px-double py-base text-sm text-amber"
+      className="flex min-h-12 items-center gap-3 bg-attention-fill px-6 py-3 text-base text-attention-text"
     >
-      <WarningIcon className="size-icon-sm shrink-0" weight="bold" />
-      <span className="flex-1">Cannot reach the server. Trying again…</span>
-      <Button variant="outline" size="xs" onClick={onRetry}>
+      <WarningIcon className="size-5 shrink-0" weight="bold" aria-hidden="true" />
+      <span className="flex-1">Cannot reach the server. It is trying again.</span>
+      <Button variant="secondary" size="sm" onClick={onRetry}>
         Retry now
       </Button>
     </div>

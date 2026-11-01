@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { Board, Card, Change, InboxItem } from "../../api/types/board";
 import {
   agentsOf,
-  ago,
   boardColumns,
   cardBadges,
   cardDetail,
@@ -19,6 +18,7 @@ import {
   nextCard,
   pullUrl,
   tokens,
+  waitingLine,
 } from "./model";
 
 function card(id: number, extra: Partial<Card> = {}): Card {
@@ -29,7 +29,7 @@ function card(id: number, extra: Partial<Card> = {}): Card {
     title: `Card ${id}`,
     body: "",
     author: "person",
-    column: "Ready",
+    column: "Not started",
     created_at: 0,
     note: null,
     retried_after: null,
@@ -70,19 +70,19 @@ const running = { id: 1, agent: "Coder", purpose: "code", status: "running" as c
 
 describe("boardColumns", () => {
   it("lists the default workflow, with Backlog only while it holds a card", () => {
-    expect(boardColumns(board([card(1)])).map((c) => c.name)).toEqual([
-      "Ready",
+    expect(boardColumns(board([card(1)]))).toEqual([
+      "Not started",
       "In progress",
       "In review",
       "Ready to merge",
       "Done",
     ]);
-    expect(boardColumns(board([card(1, { column: "Backlog" })]))[0]?.name).toBe("Backlog");
+    expect(boardColumns(board([card(1, { column: "Backlog" })]))[0]).toBe("Backlog");
   });
 
   it("adds a column of the cards that the workflow does not have, last", () => {
     const columns = boardColumns(board([card(1, { column: "QA" })]));
-    expect(columns.at(-1)).toEqual({ name: "QA", script: null });
+    expect(columns.at(-1)).toBe("QA");
   });
 });
 
@@ -90,10 +90,10 @@ describe("groupByColumn", () => {
   it("orders cards by number and Done newest first, cut to ten", () => {
     const done = Array.from({ length: 12 }, (_, i) => card(100 + i, { column: "Done" }));
     const groups = groupByColumn(board([card(3), card(2), ...done]), [], NO_FILTERS);
-    expect(groups.find((g) => g.column.name === "Ready")?.cards.map((c) => c.number)).toEqual([
+    expect(groups.find((g) => g.column === "Not started")?.cards.map((c) => c.number)).toEqual([
       2, 3,
     ]);
-    const shown = groups.find((g) => g.column.name === "Done");
+    const shown = groups.find((g) => g.column === "Done");
     expect(shown?.cards).toHaveLength(DONE_SHOWN);
     expect(shown?.cards[0]?.number).toBe(111);
     expect(shown?.total).toBe(12);
@@ -106,7 +106,7 @@ describe("groupByColumn", () => {
         column: "In progress",
         run: { ...running, agent: "Reviewer", status: "succeeded" },
       }),
-      card(3, { column: "Ready", blocked_by: [1] }),
+      card(3, { column: "Not started", blocked_by: [1] }),
     ];
     const b = board(cards);
     const numbers = (filters: Partial<typeof NO_FILTERS>) =>
@@ -114,7 +114,7 @@ describe("groupByColumn", () => {
         g.cards.map((c) => c.number),
       );
     expect(numbers({ column: "In progress" })).toEqual([1, 2]);
-    expect(groupByColumn(b, [], { ...NO_FILTERS, column: "Ready" })).toHaveLength(1);
+    expect(groupByColumn(b, [], { ...NO_FILTERS, column: "Not started" })).toHaveLength(1);
     expect(numbers({ agent: "Reviewer" })).toEqual([2]);
     expect(numbers({ status: "live" })).toEqual([1]);
     expect(numbers({ status: "blocked" })).toEqual([3]);
@@ -195,7 +195,7 @@ describe("dropRule", () => {
 
   it("refuses a change dropped anywhere else, and says what is possible", () => {
     const c = card(1, { column: "Ready to merge" });
-    const drop = dropRule(c, "Ready", item("ready_to_merge", 1, { change: 9 }));
+    const drop = dropRule(c, "Not started", item("ready_to_merge", 1, { change: 9 }));
     expect(drop).toMatchObject({ kind: "refused" });
     expect(drop.kind === "refused" && drop.reason).toContain("drop it on Done");
   });
@@ -205,9 +205,9 @@ describe("dropRule", () => {
     expect(drop).toMatchObject({ kind: "refused" });
   });
 
-  it("approves an issue dropped on Ready", () => {
+  it("approves an issue dropped on Not started", () => {
     const c = card(1, { column: "Backlog" });
-    expect(dropRule(c, "Ready", item("approve_issue", 1))).toEqual({ kind: "approve" });
+    expect(dropRule(c, "Not started", item("approve_issue", 1))).toEqual({ kind: "approve" });
     expect(dropRule(c, "Done", item("approve_issue", 1))).toMatchObject({ kind: "refused" });
   });
 
@@ -231,10 +231,10 @@ describe("dropRule", () => {
   });
 
   it("refuses any other move with the reason that the board moves it, and ignores a drop on its own column", () => {
-    const c = card(1, { column: "Ready" });
+    const c = card(1, { column: "Not started" });
     const drop = dropRule(c, "Done", undefined);
     expect(drop.kind === "refused" && drop.reason).toContain("script");
-    expect(dropRule(c, "Ready", undefined)).toEqual({ kind: "none" });
+    expect(dropRule(c, "Not started", undefined)).toEqual({ kind: "none" });
   });
 });
 
@@ -273,18 +273,22 @@ describe("the words and links of a card", () => {
       refusals: 1,
       change: { id: 1, state: "open", checks: "failure", review_verdict: null },
     });
-    expect(cardBadges(c, "needs-you", true).map((b) => b.name)).toEqual([
-      "4k tok",
-      "Blocked by #2 and 2 more",
-      "1 rule broken",
-      "CI failed",
-      "Waits for you",
-      "Next",
+    // The word and the state that colours it, in the order the desktop board draws them; the tones are the shared
+    // pill's (`ui/page/Status`), where a fact that is not a state is `neutral`.
+    expect(cardBadges(c, "needs-you", true)).toEqual([
+      { name: "4k tok", tone: "neutral" },
+      { name: "Blocked by #2 and 2 more", tone: "error" },
+      { name: "1 rule broken", tone: "error" },
+      { name: "CI failed", tone: "error" },
+      { name: "Your turn", tone: "attention" },
+      { name: "Next", tone: "neutral" },
     ]);
-    expect(cardBadges(card(1, { run }), "live", false)).toEqual([{ name: "Live", tone: "live" }]);
+    expect(cardBadges(card(1, { run }), "live", false)).toEqual([
+      { name: "Live", tone: "progress" },
+    ]);
   });
 
-  it("starts with the first card of Ready that nothing blocks", () => {
+  it("starts with the first card of Not started that nothing blocks", () => {
     expect(nextCard([card(1, { blocked_by: [9] }), card(2), card(3)])).toBe(2);
     expect(nextCard([card(1, { blocked_by: [9] })])).toBeUndefined();
   });
@@ -316,18 +320,19 @@ describe("the words and links of a card", () => {
     expect(changeOf(b, card(5))).toBeUndefined();
   });
 
-  it("says how long ago", () => {
-    expect(ago(100, 90)).toBe("just now");
-    expect(ago(1000, 700)).toBe("5m ago");
-    expect(ago(10_000, 0)).toBe("2h ago");
-    expect(ago(200_000, 0)).toBe("2d ago");
+  it("says what a card waits for", () => {
+    expect(waitingLine("held by the repository", 0)).toBe("held by the repository");
+    expect(waitingLine(undefined, 1)).toBe("1 rule broken");
+    expect(waitingLine("waiting for #99", 2)).toBe("waiting for #99 · 2 rules broken");
+    expect(waitingLine(undefined, 0)).toBe("Nothing");
+    expect(waitingLine("", 0)).toBe("Nothing");
   });
 
   it("describes each kind of history entry", () => {
     const d = (kind: string, data: Record<string, unknown>) =>
       describeHistory({ at: 0, kind, data });
-    expect(d("moved", { from: "Ready", to: "In progress", note: null })).toBe(
-      "Moved from Ready to In progress",
+    expect(d("moved", { from: "Not started", to: "In progress", note: null })).toBe(
+      "Moved from Not started to In progress",
     );
     expect(d("moved", { from: "A", to: "B", note: "why" })).toBe("Moved from A to B: why");
     expect(d("run_started", { run: 3, agent: "Coder", purpose: "code" })).toBe(

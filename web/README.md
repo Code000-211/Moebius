@@ -2,17 +2,17 @@
 
 The web app is the desktop app's counterpart in the browser: React, TypeScript and Tailwind, built into `dist/` and served
 by the Moebius server at `/`. It talks to the server only through the [desktop API](../docs/reference/desktop-api.md),
-as the iced app does, and signs in with a cookie (`POST /v1/session`). This folder is the scaffold: the shell (sign-in,
-sidebar, command bar, connection banner, live data) with the pages of the desktop app as placeholders. The pages come one
-by one in later issues.
+as the iced app does, and signs in with a cookie (`POST /v1/session`). The shell is sign-in, sidebar, command bar,
+connection banner and live data; every page the sidebar lists has one, and `app/shell/Placeholder.tsx` is left for an
+entry of `app/pages.ts` that has no route of its own yet.
 
 ## Layout
 
 | Path | What it holds |
 |---|---|
-| `src/main.tsx` | The entry: takes `?login=` out of the address, then starts the router and the query cache. |
-| `src/app/` | `App.tsx` (the gate: sign-in, unreachable, shell), `routes.tsx`, `pages.ts` (the sidebar's entries), `SignIn.tsx` and `shell/` (sidebar, command bar, banner, page frame). |
-| `src/app/board/` | The board page: `BoardPage.tsx` (columns, drag and drop, notices), `model.ts` (the logic: columns, filters, status, what a drop means, card words; tested in `model.test.ts`), `Dock.tsx` (the inspector), `decisions.ts` (approve, merge, send back, retry), `FilterBar.tsx`, `NewIssueDialog.tsx`, and the read-only `ScriptPage.tsx` it links to; the dock shows the diff of a card's change, and a Terminal button opens a shell in the repository's clone. |
+| `src/main.tsx` | The entry: takes `?login=` out of the address, sets the colour theme, then starts the router and the query cache. |
+| `src/app/` | `App.tsx` (the gate: sign-in, unreachable, shell), `routes.tsx`, `pages.ts` (the sidebar's entries, and `SETTINGS_PAGES`, the pages the sidebar shows once Settings is chosen), `SignIn.tsx` and `shell/` (sidebar, command bar, banner, page frame). |
+| `src/app/board/` | The board page: `BoardPage.tsx` (columns, drag and drop, notices), `model.ts` (the logic: columns, filters, status, what a drop means, card words; tested in `model.test.ts`), `Dock.tsx` (the inspector), `decisions.ts` (approve, merge, send back, retry), `FilterBar.tsx`, `NewIssueDialog.tsx`, `ScrollFades.tsx` (the mask that fades a column edge where the board still has cards to scroll to) and `ScriptPage.tsx`, which edits a column's script and saves it as a commit; `ColumnMark.tsx` gives each column its status mark; the dock shows the diff of a card's change, and a Terminal button opens a shell in the repository's clone. |
 | `src/app/runs/` | The run view (`/runs/:id`): status, agent, the card it links back to, the run's events drawn with the chat's entries and steering (`POST /v1/runs/{id}/steer`), a terminal in its worktree, and its changes. |
 | `src/app/terminal/`, `src/app/ports/` | The Terminal page (a shell on the server) and the Ports page (`ports.ts` is the logic, tested in `ports.test.ts`). |
 | `src/terminal/` | `Terminal.tsx`, xterm.js on the server's terminal WebSockets (copy on release and Ctrl+Shift+C, Ctrl+Shift+V and right click paste, resize on fit), and `protocol.ts`, the messages (tested). Written for Moebius: Vibe Kanban's `TerminalPanel` only lays out tabs. |
@@ -20,20 +20,19 @@ by one in later issues.
 | `src/app/inbox/` | The Inbox page: `InboxPage.tsx` (filters by kind and repository), `ItemCard.tsx` (one item: tag, facts, trials, diff, the issues of a grilling to edit, the buttons), `actions.ts` (the request each button sends) and `model.ts` (what an item is about, its sentence, the filters, editing a grilling's issues; tested in `model.test.ts`). |
 | `src/app/projects/` | The Projects pages: `ProjectsPage.tsx` (the list, with the question before a delete), `AddRepositoryPage.tsx`, `ProjectPage.tsx` (`/projects/:id`: the trusted logins of a repository on a forge and its files) with `FilesPanel.tsx`, `FileTree.tsx`, `FileEditor.tsx` (a field, saved as a commit; Ctrl+S) and `FindPanels.tsx` ("Go to file", Ctrl+P, and "Search in files", Ctrl+Shift+F); `model.ts` and `fuzzy.ts` are the logic. |
 | `src/app/fleet/` | The Fleet page: a tile for each working run (`FleetPage.tsx`) that follows its events with `chat/useThread`; `model.ts` says which runs are working. |
-| `src/app/usage/` | The Usage page: `UsagePage.tsx`, `Heatmap.tsx` of the last year, `Boxes.tsx` (models, time, waits, lens, agents), `figures.ts` (numbers in three figures, dates) and `model.ts`. The tokens of today also feed the meter in the sidebar. |
-| `src/app/start/`, `src/app/settings/` | Get started (`StartPage.tsx`, the sidebar lists it only while a step is missing) and Settings (`SettingsPage.tsx`: the keys of `moebius.toml` in boxes, `fields.ts` has the keys and what a save sends; `RestartBanner.tsx`, which the Models page can show too; `Webhooks.tsx`). |
-| `src/ui/page/` | `Box`, `Chip`, `Field`, `Notice`: the pieces the pages above share, written for Moebius. |
+| `src/app/usage/` | The Usage page: `UsagePage.tsx`, `Heatmap.tsx` of the last year, `Boxes.tsx` (models, time, waits, lens, agents), `figures.ts` (numbers in three figures, dates) and `model.ts`. |
+| `src/app/start/`, `src/app/settings/` | Get started (`StartPage.tsx`, the sidebar lists it only while a step is missing) and Settings (`SettingsPage.tsx`: the keys of `moebius.toml` in boxes, `fields.ts` has the keys and what a save sends; `RestartBanner.tsx`, which the Models page can show too; `Webhooks.tsx`; and `Appearance.tsx`, where a person chooses the colour theme for this browser). |
 | `src/app/agents/`, `skills/`, `mcp/`, `models/`, `plugins/` | The Agents, Skills, MCP servers, Models and Plugins pages (routes in `src/app/routesB.tsx`). Each has its logic in a `model.ts` with a test (what a save sends, or what is wrong with the fields; for Models the form made from `GET /v1/settings` and the plan of a save: keys to store, keys to set and remove). `src/app/harness/` holds what they share: `form.tsx` (box, field, select, chip, list beside editor), `HarnessSetup` (set up the harness repository, then restart), `ImportPanel` and `importRequest.ts` (the text the Moebius agent is asked to import skills or MCP servers; zip upload), `ModelField`. An API key typed on the Models page is a password field, sent once to `PUT /v1/secrets/{name}` and never shown back; the OAuth login opens the provider's page in a new tab and takes the pasted code or address. |
-| `src/app/rules/`, `automations/`, `retro/`, `experiments/`, `decision/` | The pages of Rules (`RulesPage`, the rule cards of `RuleList`, `file.ts` puts a rule back into its file's text), Automations (the schedule, chat and firings of the one chosen), Retro (the days, errors, proposals and `Lessons`), Experiments (briefs, baseline and levers) and Decision model (kinds, exports, shadowing and takeovers). Each has the logic in `model.ts`, tested in `model.test.ts`. |
-| `src/app/kit/` | `Kit.tsx`: the header with actions, the box, field, notice, chip, list card and table those pages share. |
-| `src/api/` | The client of the desktop API: `http.ts` (requests and `ApiError`), `calls/` (one module per part of the API, as `crates/moebius-desktop/src/client/calls/`), `types/` (written by hand from the reference), `events.ts` (the WebSocket), `keys.ts` (query keys). |
+| `src/app/rules/`, `automations/`, `retro/`, `experiments/`, `decision/` | The pages of Rules (`RulesPage`, the rule cards of `RuleList`, `file.ts` puts a rule back into its file's text), Automations (the schedule, chat and firings of the one chosen), Retro (the days, errors, proposals and `Lessons`), Experiments (briefs, baseline and levers) and Decisions (kinds, exports, shadowing and takeovers). Each has the logic in `model.ts`, tested in `model.test.ts`. |
+| `src/api/` | The client of the desktop API: `http.ts` (requests and `ApiError`), `calls/` (one module per part of the API, as `crates/moebius-desktop/src/client/calls/`), `types/` (written by hand from the reference), `events.ts` (the WebSocket), `keys.ts` (query keys) and `errorText.ts` (what a failed request says). |
 | `src/live/` | The event stream feeding the query cache (`invalidation.ts`) and the connection state for the pages (`LiveProvider.tsx`). |
 | `src/auth/login.ts` | The `?login=<code>` link the server prints. |
-| `src/chat/` | The Chat page (`/chat`, `/chat/:id`) and the floating chat of the shell: `conversation.ts` folds a run's events into entries (the logic of the desktop app's `Conversation`, with the provider's errors added), `turns.ts` groups them, `follow.ts` decides when the list follows an answer, `readMarkers.ts` and `chatList.ts` keep the unread markers and the list current, `useThread.ts` follows one chat over the event stream. |
-| `src/ui/` | `CodeEditor.tsx` (CodeMirror with Lua highlighting, loaded lazily by the script editor; written for Moebius). Components copied from Vibe Kanban's `@vibe/ui`, each with a header comment saying where from and what changed. `ui/chat/` holds the chat entries (messages, tool pills, thinking, todos, files with diffs, errors, the composer box); they are presentational, so the runs page can draw a run's conversation with them. `Markdown`, `CodeBlock`, `CopyButton`, `DiffBody`, `PillSelect` and `Tag` there are written for Moebius, not copied. |
-| `src/styles/` | `theme.css` (Deep Velvet as CSS variables), `tailwind.css` (the Tailwind theme), `fonts.css`. |
-| `e2e/` | The Playwright tests and the server they run against; `e2e/fake/` has the data and routes of a page in the fake server (`board.ts` for the board, `chat.ts` for the chats and what an agent does in them, `pages-a.ts` for the Inbox, Projects, Fleet, Usage, Get started and Settings pages, `pages-b.ts` for the harness configuration, models and plugins, `pages-c.ts` for Rules, Automations, Retro, Experiments, Decision model and the column scripts). |
-| `public/fonts/` | Manrope and JetBrains Mono, the files of the desktop app. |
+| `src/chat/` | The Chat page (`/chat`, `/chat/:id`) and the floating chat of the shell: `conversation.ts` folds a run's events into entries (the logic of the desktop app's `Conversation`, with the provider's errors added), `turns.ts` groups them, `follow.ts` decides when the list follows an answer, `readMarkers.ts` and `chatList.ts` keep the unread markers and the list current, `useThread.ts` follows one chat over the event stream, `drafts.ts` keeps a half-written message where it was left, `Starters.tsx` offers the first message in a chat that has none. |
+| `src/ui/` | `CodeEditor.tsx` (CodeMirror with Lua highlighting, loaded lazily by the script editor; written for Moebius). Components copied from Vibe Kanban's `@vibe/ui`, each with a header comment saying where from and what changed. `ui/lib/format.ts` is where a count, a day ("Today", then "Yesterday", then `27 Oct`) and a gap ("5 min ago") are put into words once, so two lists never say the same thing two ways. `ui/chat/` holds the chat entries (messages, tool pills, thinking, todos, files with diffs, errors, the composer box); they are presentational, so the runs page can draw a run's conversation with them. `Markdown`, `CodeBlock`, `CopyButton`, `DiffBody`, `PillSelect`, `Turn` and `Tag` there are written for Moebius, not copied. `components/Mark.tsx` is the Moebius strip, drawn in the current colour, the same path the tab icon carries. |
+| `src/ui/page/` | The pieces every page shares, written for Moebius: `PageHeader.tsx` (where the page is, its title, one sentence of what belongs here, its actions; `Body` is the same sentence inside a box), `List.tsx` (`ListCard`, `ListDetail`, `Table` and `CELL`; the rows of a `ListDetail` are a real `<ul role="list">`, so a person hearing the page learns how many there are), `Empty.tsx` (the empty state), `Status.tsx` (a state in a word, carried by its colour), `Tabs.tsx` (`Tabs` and `TabPanel`: the switch between the views of one thing, the panel named by the tab that shows it), `Box.tsx` (a card that names its region from its own heading), `Chip.tsx` (a filter), `Switch.tsx` (one thing on or off, with the word it stands on beside it), `Field.tsx` (`Field`, `TextArea` and `Select`) and `Notice.tsx`. The classes a control is built from and the ids of a field's label and hint are in `ui/lib/field.ts`, where a control that names itself is left alone; `Field.tsx` re-exports them as `CONTROL` so `components/Input.tsx` does not reach up into the page pieces. |
+| `src/styles/` | `theme.css` (the tokens of both themes as CSS variables — the colours, radii, the 8pt spacing grid, the type scale, motion and the layers), `tailwind.css` (the same tokens as Tailwind colours, radii, sizes and shadows, plus the type utilities, the `fade-clamp` that stops a list line at four lines and the quiet scrollbar every pane shares), `fonts.css`, `highlight.css` (the CodeMirror theme from the same tokens). |
+| `e2e/` | The Playwright tests and the server they run against; `e2e/fake/` has the data and routes of a page in the fake server (`board.ts` for the board, `chat.ts` for the chats and what an agent does in them, `pages-a.ts` for the Inbox, Projects, Fleet, Usage, Get started and Settings pages, `pages-b.ts` for the harness configuration, models and plugins, `pages-c.ts` for Rules, Automations, Retro, Experiments, Decisions and the column scripts). `e2e/design/audit.test.ts` is the design audit that `pnpm audit:design` runs. |
+| `public/fonts/` | Inter Variable (latin and latin-ext subsets) and JetBrains Mono, both under the SIL Open Font License 1.1. |
 
 ## Scripts
 
@@ -44,7 +43,8 @@ Install with `pnpm install` (pnpm 10, Node 22). From this folder:
 | `pnpm dev` | Vite's dev server with hot reload. It proxies `/v1`, the event WebSocket included, to `MOEBIUS_URL` (default `http://127.0.0.1:7171`). |
 | `pnpm build` | Type-checks and builds into `dist/`, which the server embeds. |
 | `pnpm check` | `tsc --noEmit` and Biome (lint, format and import order). `pnpm format` fixes what Biome can. |
-| `pnpm test` | Vitest: the client's errors, the events-to-cache logic, the `?login` handling, the sign-in page, the board's logic (filters, grouping, drop rules), and a test that `theme.css` matches `theme.rs`. |
+| `pnpm test` | Vitest on `src/**/*.test.ts(x)` in jsdom: the client's errors, the events-to-cache logic, the `?login` handling, the sign-in page, the board's logic (filters, grouping, drop rules), the `model.ts` of each page, the chat's folding of a run's events, the diff parser, the terminal's protocol, and `styles/tokens.test.ts`, which keeps `theme.css` and `tailwind.css` inside the standard: the names of both themes, their values, radii, spacing, type and contrast, no colour literal outside `theme.css`, and a Tailwind name for every colour token. |
+| `pnpm audit:design` | Renders every page in a headless Chromium against the fake server, in each theme at each of two widths (1440 and 900), and reports what breaks the standard: content wider than its box, clipped text, a radius, size or weight off the scale, spacing off the 4px grid, a card or control that still draws a line around itself, a control under 40px, text under contrast, a row not aligned with its siblings. It writes a `report.md`, a `report.json` and a screenshot per page under the folder named by `MOEBIUS_DESIGN_OUT`; `MOEBIUS_DESIGN_STRICT=1` makes the run fail on any finding. |
 | `pnpm e2e` | Playwright in Chromium, driven by Vitest. Needs `pnpm build` first. |
 
 ## Run it against a server
@@ -78,22 +78,39 @@ Chromium comes from Playwright: `pnpm exec playwright install chromium` (add `--
 
 ## Theme
 
-The tokens are the constants of `crates/moebius-desktop/src/theme.rs`, which stays the source of truth (see
-[`docs/design.md`](../docs/design.md)). `src/styles/theme.css` has them as CSS variables under the same names in kebab
-case, and `src/styles/tailwind.css` makes them Tailwind colours, radii and spacing. `src/styles/theme.test.ts` reads
-`theme.rs` and fails when a colour is missing or differs, or a radius or a step of the spacing scale changes. Change
-`theme.rs` first, then `theme.css`. Dark only.
+The web app follows [`docs/design-web.md`](../docs/design-web.md), which is not [`docs/design.md`](../docs/design.md):
+that one is the brief
+the iced desktop app is built to, and `crates/moebius-desktop/src/theme.rs` is still the source of truth for it. Here the
+standard is a light and dark pair of palettes on a warm near-black and near-white canvas, borderless surfaces raised by
+a shadow rather than outlined by a line, generous radii (16 for a card, 12 for a control, full for a pill), one readable
+sans at 400 for prose and 600 for labels, and spacing on an 8pt grid, where 4 is the half-step a tight row needs and
+2 a nudge. The numbers are what count: `tokens.test.ts` and the design audit below enforce them, so read those for
+anything this paragraph leaves out.
+
+`src/styles/theme.css` holds every token twice, once for dark (the default, on `:root`) and once for light (under
+`:root[data-theme="light"]`); `src/styles/tailwind.css` makes them Tailwind colours, radii, sizes, shadows and type
+utilities; `src/theme.ts` is the `system` / `light` / `dark` choice, saved under `moebius.theme`, applied before the
+first paint by the script in `index.html`, and offered by the Appearance box on the Settings page. The names of the desktop
+palette (`text-high`, `bg-panel`, `border-line`, `text-accent` and the rest) are gone, aliases and all: every component,
+copied from Vibe Kanban or written here, names a token, and a colour name that is not one builds to nothing, because
+`tailwind.css` clears Tailwind's own palette first. `src/styles/tokens.test.ts` fails when the two themes do not define
+the same names, when a token leaves the values of the standard, when any text colour falls under 4.5:1 in either theme,
+when a component writes a colour as a literal instead of naming a token, or when a token has no Tailwind name. Change
+the tokens there, never in a component.
 
 ## What changed from Vibe Kanban's components
 
 The components of `src/ui/` were written for React 18 and Tailwind 3. Here: `forwardRef` is gone in `Button` and `Input`
 (React 19 passes `ref` as a prop) and `React.ElementRef` is `React.ComponentRef`; Tailwind's `tailwindcss-animate` is
-`tw-animate-css`; the colour names the components use (`text-high`, `bg-panel`, `text-brand`, ...) are aliases of the Deep
-Velvet colours in `tailwind.css` instead of Vibe Kanban's HSL tokens; `react-i18next`, Tauri helpers and `lucide-react` are
+`tw-animate-css`; the colour names the components used (`text-high`, `bg-panel`, `text-brand`, ...) are gone, and every
+copied component was rebuilt on the tokens of `theme.css`, borderless at the radii of the standard, carrying the shadow
+of its layer instead of an outline; `react-i18next`, Tauri helpers and `lucide-react` are
 gone (the icons are Phosphor's, the text plain English); `cn` merges Tailwind classes itself. Nothing that reports to
 a service (PostHog, Sentry) is copied. Vibe Kanban's `CommandBar` is not copied: it is made of issues, branches and priorities
-that Moebius does not have, so `app/shell/CommandBar.tsx` builds the page switcher from its `Command` primitives. The board copies `KanbanBoard`, `KanbanCardContent`, `KanbanIssuePanel`, `KanbanBadge`,
-`PrBadge` and `RunningDots`. `KanbanBoard` drags with `@dnd-kit/core` instead of `@hello-pangea/dnd` (pointer and keyboard; the keyboard moves to the next column even when it is scrolled out of view, a drag overlay shows the card, announcements name card and column); it loses its
+that Moebius does not have, so `app/shell/CommandBar.tsx` builds the page switcher from its `Command` primitives. The
+board copies `KanbanBoard`, `KanbanCardContent`, `KanbanIssuePanel`, `PrBadge` and `RunningDots`; its `KanbanBadge` is
+gone, because a state in a word is the shared `ui/page/Status` pill on every page. `KanbanBoard` drags with
+`@dnd-kit/core` instead of `@hello-pangea/dnd` (pointer and keyboard; the keyboard moves to the next column even when it is scrolled out of view, a drag overlay shows the card, announcements name card and column); it loses its
 Gantt types, its "add task" button and i18n. `KanbanCardContent` shows what a Moebius card has (number as a link to the issue, agent and
 round, round bar, state badges, pull request) in place of priority, assignees, tags and relationships. `KanbanIssuePanel`
 is a read-only inspector that keeps the panel's frame (header, close, Escape, bordered sections) and takes its sections as
@@ -137,7 +154,7 @@ Other transitive licenses in the tree: ISC, BSD-2/3-Clause, MIT-0, BlueOak-1.0.0
 ## Later improvements
 
 - The API types in `src/api/types/` are written by hand from `docs/reference/desktop-api.md`. Generating them from the Rust
-  types would remove the chance of drift; that is out of scope for the scaffold.
+  types would remove the chance of drift; that is out of scope here.
 - The search over cards waits for a search of the whole app.
 - The board has no route to move a card to a column: a person decides what waits in the inbox, so a drop means approve
   (Backlog to Ready), merge (to Done), send back (to In progress, with a reason) or retry (a stuck card, to In progress), and

@@ -6,35 +6,29 @@
  */
 import type { Board, Card, Change, InboxItem, Repository } from "../../api/types/board";
 import type { HistoryEntry } from "../../api/types/cards";
+import { plural } from "../../ui/lib/format";
+import type { Tone } from "../../ui/page/Status";
 
-/** The columns of the default workflow, left to right, each with the script behind it. */
-export const COLUMNS: readonly { name: string; script: string }[] = [
-  { name: "Backlog", script: "backlog.luau" },
-  { name: "Ready", script: "ready.luau" },
-  { name: "In progress", script: "code.luau" },
-  { name: "In review", script: "review.luau" },
-  { name: "Ready to merge", script: "merge.luau" },
-  { name: "Done", script: "done.luau" },
-];
+/** The columns of the default workflow, left to right. */
+export const COLUMNS = [
+  "Backlog",
+  "Not started",
+  "In progress",
+  "In review",
+  "Ready to merge",
+  "Done",
+] as const;
 
 /** How many cards Done lists, the highest numbers first, because it keeps growing. */
 export const DONE_SHOWN = 10;
 
-export interface ColumnDef {
-  name: string;
-  /** The file of the column's script, or null for a column the default workflow does not have. */
-  script: string | null;
-}
-
-/** The columns a board shows: Backlog only while it holds a card, and any other column a card is in, last. */
-export function boardColumns(board: Board): ColumnDef[] {
-  const columns: ColumnDef[] = COLUMNS.filter(
-    (column) => column.name !== "Backlog" || board.cards.some((card) => card.column === "Backlog"),
-  ).map((column) => ({ ...column }));
+/** The names of the columns a board shows: Backlog only while it holds a card, and any other column a card is in, last. */
+export function boardColumns(board: Board): string[] {
+  const columns: string[] = COLUMNS.filter(
+    (name) => name !== "Backlog" || board.cards.some((card) => card.column === "Backlog"),
+  );
   for (const card of board.cards) {
-    if (!columns.some((column) => column.name === card.column)) {
-      columns.push({ name: card.column, script: null });
-    }
+    if (!columns.includes(card.column)) columns.push(card.column);
   }
   return columns;
 }
@@ -59,7 +53,7 @@ export type CardStatus = "live" | "needs-you" | "stuck" | "blocked" | "waiting" 
 
 export const STATUS_LABELS: Record<CardStatus, string> = {
   live: "Live",
-  "needs-you": "Needs you",
+  "needs-you": "Your turn",
   stuck: "Stuck",
   blocked: "Blocked",
   waiting: "Waiting",
@@ -106,7 +100,8 @@ function matches(card: Card, filters: Filters, inbox: readonly InboxItem[], boar
 }
 
 export interface ColumnCards {
-  column: ColumnDef;
+  /** The name of the column. */
+  column: string;
   /** The cards shown, in order. */
   cards: Card[];
   /** How many cards the column has after the filters (Done shows only some of them). */
@@ -121,15 +116,15 @@ export function groupByColumn(
 ): ColumnCards[] {
   const kept = board.cards.filter((card) => matches(card, filters, inbox, board));
   return boardColumns(board)
-    .filter((column) => filters.column === "" || column.name === filters.column)
+    .filter((column) => filters.column === "" || column === filters.column)
     .map((column) => {
       const cards = kept
-        .filter((card) => card.column === column.name)
+        .filter((card) => card.column === column)
         .sort((a, b) => a.number - b.number);
-      if (column.name === "Done") cards.reverse();
+      if (column === "Done") cards.reverse();
       return {
         column,
-        cards: column.name === "Done" ? cards.slice(0, DONE_SHOWN) : cards,
+        cards: column === "Done" ? cards.slice(0, DONE_SHOWN) : cards,
         total: cards.length,
       };
     });
@@ -173,7 +168,7 @@ function changeOfItem(item: InboxItem): number | null {
 
 /**
  * What dropping `card` on the column `to` does. A person decides only what waits in the inbox: an issue to approve
- * goes to Ready, a change to merge goes to Done or back to In progress (rejected), and a stuck card, or one whose pull
+ * goes to Not started, a change to merge goes to Done or back to In progress (rejected), and a stuck card, or one whose pull
  * request was closed, goes to In progress (retried). Any other drop is refused with the reason, since the board moves
  * every other card itself when its column's script says so.
  */
@@ -188,7 +183,7 @@ export function dropRule(card: Card, to: string, item: InboxItem | undefined): D
       return to === "Done" ? { kind: "merge", change } : { kind: "reject", change };
     }
   }
-  if (kind === APPROVE_ISSUE && to === "Ready") return { kind: "approve" };
+  if (kind === APPROVE_ISSUE && to === "Not started") return { kind: "approve" };
   if ((kind === STUCK || kind === CHANGE_CLOSED) && to === "In progress") return { kind: "retry" };
   if (card.column === to) return { kind: "none" };
   if (isLive(card)) {
@@ -207,7 +202,7 @@ export function dropRule(card: Card, to: string, item: InboxItem | undefined): D
     case APPROVE_ISSUE:
       return {
         kind: "refused",
-        reason: "This issue waits for your approval: drop it on Ready to approve it.",
+        reason: "This issue waits for your approval: drop it on Not started to approve it.",
       };
     case STUCK:
     case CHANGE_CLOSED:
@@ -241,7 +236,7 @@ export function cardDetail(card: Card, roundLimit: number): string | null {
     return parts.length > 0 ? parts.join(" · ") : null;
   }
   if (card.column === "Ready to merge") {
-    return `${card.rounds === 1 ? "1 round" : `${card.rounds} rounds`} · ${tokens(card.tokens)}`;
+    return `${plural(card.rounds, "round", "rounds")} · ${tokens(card.tokens)}`;
   }
   return null;
 }
@@ -273,13 +268,15 @@ export function changeOf(board: Board, card: Card): Change | undefined {
     .sort((a, b) => b.id - a.id)[0];
 }
 
-/** How long ago `at` is, as `5m ago`; `now` and `at` are Unix seconds. */
-export function ago(now: number, at: number): string {
-  const seconds = Math.max(0, now - at);
-  if (seconds < 60) return "just now";
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86_400) return `${Math.floor(seconds / 3600)}h ago`;
-  return `${Math.floor(seconds / 86_400)}d ago`;
+/**
+ * What a card waits for, as one line: the reason its column script gave, the rules that refused it, both, or
+ * "Nothing". A card with nothing to say is not stuck, and an empty row read as a missing fact is worse than the word.
+ */
+export function waitingLine(reason: string | undefined, refusals: number): string {
+  const parts = [reason];
+  if (refusals > 0) parts.push(`${plural(refusals, "rule", "rules")} broken`);
+  const line = parts.filter((part) => part !== undefined && part !== "").join(" · ");
+  return line === "" ? "Nothing" : line;
 }
 
 /** What a person reads of one entry of a card's history. */
@@ -321,19 +318,16 @@ export function describeHistory(entry: HistoryEntry): string {
 
 export interface CardBadge {
   name: string;
-  tone: "plain" | "live" | "teal" | "amber" | "red";
-}
-
-function count(n: number, one: string, many: string): string {
-  return n === 1 ? `1 ${one}` : `${n} ${many}`;
+  /** The state the pill's colour stands for, in the names of the shared pill (`ui/page/Status`). */
+  tone: Tone;
 }
 
 /** The badges of a card: what runs, what it costs, what stops it, how its change stands, who it waits for. */
 export function cardBadges(card: Card, status: CardStatus, next: boolean): CardBadge[] {
   const badges: CardBadge[] = [];
-  if (status === "live") badges.push({ name: "Live", tone: "live" });
+  if (status === "live") badges.push({ name: "Live", tone: "progress" });
   if (card.tokens > 0 && (card.column === "In progress" || card.column === "In review")) {
-    badges.push({ name: tokens(card.tokens), tone: "plain" });
+    badges.push({ name: tokens(card.tokens), tone: "neutral" });
   }
   if (card.blocked_by.length > 0) {
     const numbers = card.blocked_by.map((n) => `#${n}`);
@@ -341,29 +335,32 @@ export function cardBadges(card: Card, status: CardStatus, next: boolean): CardB
       numbers.length <= 2
         ? `Blocked by ${numbers.join(", ")}`
         : `Blocked by ${numbers[0]} and ${numbers.length - 1} more`;
-    badges.push({ name, tone: "red" });
+    badges.push({ name, tone: "error" });
   }
   if (card.refusals > 0) {
-    badges.push({ name: count(card.refusals, "rule broken", "rules broken"), tone: "red" });
+    badges.push({
+      name: plural(card.refusals, "rule broken", "rules broken"),
+      tone: "error",
+    });
   }
   switch (card.change?.checks) {
     case "pending":
-      badges.push({ name: "CI running", tone: "live" });
+      badges.push({ name: "CI running", tone: "progress" });
       break;
     case "success":
-      badges.push({ name: "Green", tone: "teal" });
+      badges.push({ name: "Green", tone: "complete" });
       break;
     case "failure":
-      badges.push({ name: "CI failed", tone: "red" });
+      badges.push({ name: "CI failed", tone: "error" });
       break;
   }
-  if (status === "stuck") badges.push({ name: "Stuck", tone: "red" });
-  if (status === "needs-you") badges.push({ name: "Waits for you", tone: "amber" });
-  if (next) badges.push({ name: "Next", tone: "plain" });
+  if (status === "stuck") badges.push({ name: "Stuck", tone: "error" });
+  if (status === "needs-you") badges.push({ name: "Your turn", tone: "attention" });
+  if (next) badges.push({ name: "Next", tone: "neutral" });
   return badges;
 }
 
-/** The card of Ready that the board starts next: the first that nothing blocks. */
+/** The card the board starts next: the first in Not started that nothing blocks. */
 export function nextCard(cards: readonly Card[]): number | undefined {
   return cards.find((card) => card.blocked_by.length === 0)?.id;
 }

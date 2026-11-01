@@ -60,7 +60,7 @@ pub fn radiance(column_of_50: &str) -> serde_json::Value {
             working(
                 54,
                 1,
-                "Ready",
+                "Not started",
                 "docs: explain the coupled MTP mode",
                 json!({"blocked_by": [48]}),
             ),
@@ -131,7 +131,7 @@ pub fn overview() -> Snapshot {
 
 /// The app on the board of the mockup, with nothing in the inbox.
 pub fn radiance_app() -> App {
-    App::with_snapshot(snapshot(vec![radiance("Ready")], vec![]))
+    App::with_snapshot(snapshot(vec![radiance("Not started")], vec![]))
 }
 
 pub fn simulator(app: &App) -> Simulator<'_, Message> {

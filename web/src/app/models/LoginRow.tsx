@@ -16,7 +16,10 @@ import { pasteLogin, login as readLogin, startLogin } from "../../api/calls/mode
 import { keys } from "../../api/keys";
 import type { Login, UpstreamOAuth } from "../../api/types/models";
 import { Button } from "../../ui/components/Button";
-import { Field, Notice, TextInput } from "../harness/form";
+import { Input } from "../../ui/components/Input";
+import { Field } from "../../ui/page/Field";
+import { Notice } from "../../ui/page/Notice";
+import { Status } from "../../ui/page/Status";
 
 /** Where the login of an upstream is on the page. */
 export type LoginStep =
@@ -113,45 +116,53 @@ export function LoginRow({
 
   const busy = step?.kind === "confirming" || step?.kind === "starting";
   return (
-    <div className="flex flex-col gap-plusfifty rounded-lg border border-line bg-lane p-plusfifty">
-      <div className="flex flex-wrap items-center justify-between gap-plusfifty">
-        <span className="text-sm text-normal">
-          {oauth.flow === "device"
-            ? "Logs in with OAuth: a code you enter at the provider."
-            : "Logs in with OAuth: the provider's page in your browser."}{" "}
-          {oauth.logged_in ? "A login is kept." : "Not logged in."}
-        </span>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <Status tone={oauth.logged_in ? "complete" : "attention"}>
+            {oauth.logged_in ? "A login is kept." : "Not logged in."}
+          </Status>
+          <span className="min-w-0 break-words text-sm text-secondary">
+            Logs in with OAuth:{" "}
+            {oauth.flow === "device"
+              ? "a code you enter at the provider."
+              : "the provider's page in your browser."}
+          </span>
+        </div>
         <Button
-          variant="outline"
+          variant="secondary"
           size="sm"
           disabled={busy}
+          title={busy ? "The login is already starting" : undefined}
           onClick={() => onStep({ kind: "confirming" })}
         >
           {oauth.logged_in ? "Log in again" : "Log in"}
         </Button>
       </div>
-      <div
+      <p
         data-testid="oauth-warning"
-        className="rounded-lg border border-amber-border bg-amber-fill px-plusfifty py-base text-sm text-amber"
+        className="m-0 max-w-prose break-words rounded-control bg-attention-fill px-3 py-2 text-sm text-attention-text"
       >
         {oauth.warning}
-      </div>
+      </p>
       {oauth.needs && (
         <Notice tone="error">
-          Requests to this upstream fail: they need {oauth.needs}, which is not served yet.
+          Requests to this provider fail: they need {oauth.needs}, which is not served yet.
         </Notice>
       )}
       {step?.kind === "confirming" && (
-        <div className="flex gap-plusfifty">
+        <div className="flex flex-wrap gap-3">
           <Button size="sm" onClick={confirm}>
             I understand, log in
           </Button>
-          <Button variant="outline" size="sm" onClick={() => onStep(undefined)}>
+          <Button variant="secondary" size="sm" onClick={() => onStep(undefined)}>
             Cancel
           </Button>
         </div>
       )}
-      {step?.kind === "starting" && <p className="m-0 text-sm text-normal">Starting the login…</p>}
+      {step?.kind === "starting" && (
+        <p className="m-0 text-sm text-secondary">Starting the login</p>
+      )}
       {step?.kind === "failed" && <Notice tone="error">{step.message}</Notice>}
       {step?.kind === "answered" && (
         <Answer
@@ -193,24 +204,27 @@ function Answer({
   if (login.state !== "waiting") return <Notice tone="error">{login.message}</Notice>;
   const page = login.verification_uri_complete ?? login.verification_uri ?? login.authorize_url;
   return (
-    <div className="flex flex-col gap-base">
+    <div className="flex flex-col gap-3">
       {login.user_code ? (
-        <div className="flex flex-wrap items-center gap-plusfifty">
-          <span data-testid="user-code" className="font-mono text-[19px] font-bold text-high">
+        <div className="flex flex-wrap items-center gap-3">
+          <span
+            data-testid="user-code"
+            className="rounded-control bg-code px-3 py-2 font-mono text-sm font-semibold tracking-widest text-text"
+          >
             {login.user_code}
           </span>
-          <span className="min-w-0 flex-1 text-sm text-normal [overflow-wrap:anywhere]">
+          <span className="min-w-0 flex-1 break-words text-sm text-secondary">
             Enter this code at {login.verification_uri}
           </span>
         </div>
       ) : (
-        <p className="m-0 text-sm text-normal">
+        <p className="m-0 text-base text-text">
           The provider's page opened in a new tab. Log in there.
         </p>
       )}
       {page && (
         <div>
-          <Button asChild variant="outline" size="sm">
+          <Button asChild variant="secondary" size="sm">
             <a href={page} target="_blank" rel="noopener noreferrer">
               {login.user_code ? "Open the page" : "Open the page again"}
             </a>
@@ -218,34 +232,38 @@ function Answer({
         </div>
       )}
       {!login.user_code && login.authorize_url && (
-        <div className="flex flex-col gap-base">
-          <Field label="Paste the code or the address you ended on">
+        <div className="flex flex-col gap-3">
+          <Field
+            label="Paste the code or the address you ended on"
+            hint="If the browser cannot reach this machine, copy the address from its address bar after you log in."
+          >
             {(id) => (
-              <TextInput
+              <Input
                 id={id}
                 mono
                 value={pasted}
-                placeholder="Code, or http://localhost…/callback?code=…"
+                placeholder="Code, or http://localhost:1455/auth/callback?code=abc"
                 onChange={(event) => onPasted(event.target.value)}
                 onCommandEnter={onFinish}
               />
             )}
           </Field>
-          <p className="m-0 text-xs text-low">
-            If the browser cannot reach this machine, copy the address from its address bar after
-            you log in.
-          </p>
-          <div>
-            <Button size="sm" disabled={pasted.trim() === ""} onClick={onFinish}>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              size="sm"
+              disabled={pasted.trim() === ""}
+              title={pasted.trim() === "" ? "Paste the code or the address first" : undefined}
+              onClick={onFinish}
+            >
               Finish login
             </Button>
+            {problem && <Notice tone="error">{problem}</Notice>}
           </div>
-          {problem && <Notice tone="error">{problem}</Notice>}
         </div>
       )}
-      <span className="text-xs font-semibold text-low">Waiting for the login…</span>
-      <div>
-        <Button variant="outline" size="sm" onClick={onCancel}>
+      <div className="flex flex-wrap items-center gap-3">
+        <Status tone="progress">Waiting for the login</Status>
+        <Button variant="secondary" size="sm" onClick={onCancel}>
           Cancel
         </Button>
       </div>

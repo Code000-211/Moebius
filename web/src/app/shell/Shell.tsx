@@ -1,12 +1,9 @@
 /**
  * The frame of a signed-in person's page: the sidebar, the banner while the server cannot be reached, and the page.
- * It owns the command bar and its shortcut, the sidebar's collapsed state (kept per browser) and signing out.
+ * It owns the command bar and its shortcut and the sidebar's collapsed state (kept per browser).
  */
-import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Outlet } from "react-router";
-import { signOut } from "../../api/calls/session";
-import { keys } from "../../api/keys";
 import { FloatingChat } from "../../chat/FloatingChat";
 import { useConnection, useReconnect } from "../../live/LiveProvider";
 import { readFlag, writeFlag } from "../storage";
@@ -17,7 +14,6 @@ import { Sidebar } from "./Sidebar";
 const COLLAPSED_KEY = "moebius.sidebar.collapsed";
 
 export function Shell({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => void }) {
-  const queryClient = useQueryClient();
   const connection = useConnection();
   const reconnect = useReconnect();
   const [collapsed, setCollapsed] = useState(() => readFlag(COLLAPSED_KEY));
@@ -34,19 +30,10 @@ export function Shell({ unreachable, onRetry }: { unreachable: boolean; onRetry:
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  async function leave() {
-    try {
-      await signOut();
-    } finally {
-      queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== keys.session[0] });
-      await queryClient.invalidateQueries({ queryKey: keys.session });
-    }
-  }
-
   const offline = unreachable || connection === "reconnecting";
 
   return (
-    <div className="flex h-full bg-ground">
+    <div className="flex h-full bg-background">
       <Sidebar
         connection={connection}
         collapsed={collapsed}
@@ -55,7 +42,6 @@ export function Shell({ unreachable, onRetry }: { unreachable: boolean; onRetry:
           setCollapsed(!collapsed);
         }}
         onSearch={() => setCommandOpen(true)}
-        onSignOut={() => void leave()}
       />
       <div className="flex min-w-0 flex-1 flex-col">
         {offline && (
@@ -66,7 +52,7 @@ export function Shell({ unreachable, onRetry }: { unreachable: boolean; onRetry:
             }}
           />
         )}
-        <main className="min-h-0 flex-1 overflow-y-auto px-[18px] py-[14px]">
+        <main className="min-h-0 flex-1 overflow-y-auto p-6">
           <Outlet />
         </main>
       </div>

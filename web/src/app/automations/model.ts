@@ -30,6 +30,29 @@ export function until(now: number, at: number): string {
   return `in ${Math.floor(seconds / 86_400)} d`;
 }
 
+/**
+ * The automations offered on a page with none yet: a name, a preset schedule and a prompt, which the person edits into
+ * their own.
+ */
+export const SUGGESTED_AUTOMATIONS: Array<Pick<Form, "name" | "schedule" | "prompt">> = [
+  {
+    name: "Triage the overnight issues",
+    schedule: "0 8 * * *",
+    prompt:
+      "Go through the issues opened since yesterday. Say which are clear enough to start and what the rest are missing.",
+  },
+  {
+    name: "Summarise the week",
+    schedule: "0 9 * * 5",
+    prompt: "List the changes merged this week and what each one did, in a few lines.",
+  },
+  {
+    name: "Find the cards that are stuck",
+    schedule: "0 8 * * 1-5",
+    prompt: "Find the cards that have not moved for two days and say what each one is waiting for.",
+  },
+];
+
 /** Where an automation's chats work: an empty directory, a repository (its id) or the harness repository. */
 export type Place = "nowhere" | "harness" | `repository:${number}`;
 

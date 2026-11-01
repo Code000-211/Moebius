@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../api/types/chat";
-import { Conversation, inputSummary, refused, toolInput, toolTitle, verdict } from "./conversation";
+import {
+  Conversation,
+  inputPath,
+  inputSummary,
+  refused,
+  toolInput,
+  toolTitle,
+  verdict,
+} from "./conversation";
 
 const clock = 1_790_000_000;
 const event = (seq: number, kind: string, data: Record<string, unknown>): RunEvent => ({
@@ -260,7 +268,12 @@ describe("toolInput", () => {
 
   it("summarises an input in one line", () => {
     expect(inputSummary(toolInput("bash", { command: "ls\nwc" }))).toBe("ls");
-    expect(inputSummary(toolInput("read", { path: "src/a.rs" }))).toBe("src/a.rs");
+    // A file is named by its name: the directory it sits in is in the tooltip, not in the row.
+    expect(inputSummary(toolInput("read", { path: "/home/meow/docs/a.md" }))).toBe("a.md");
+    expect(inputPath(toolInput("read", { path: "/home/meow/docs/a.md" }))).toBe(
+      "/home/meow/docs/a.md",
+    );
+    expect(inputPath(toolInput("bash", { command: "ls" }))).toBeNull();
     expect(inputSummary(toolInput("grep", { pattern: "x" }))).toBe('{"pattern":"x"}');
     expect(inputSummary(toolInput("grep", null))).toBe("");
   });

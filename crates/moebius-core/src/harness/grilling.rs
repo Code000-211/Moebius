@@ -14,7 +14,7 @@
 //!
 //! The person reads the proposal, may edit, drop and reorder the issues, and [`confirm`]s the final list: one card per
 //! issue in the repository's Backlog (on GitHub, an issue is opened first), which needs no approval and moves on to
-//! Ready (`card.confirmed`). [`dismiss`] ends a proposal or a report without cards.
+//! Not started (`card.confirmed`). [`dismiss`] ends a proposal or a report without cards.
 
 use std::collections::BTreeSet;
 use std::path::Path;

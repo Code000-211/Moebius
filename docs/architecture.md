@@ -50,8 +50,9 @@ like the iced app and does not know anything the API does not say.
   answer shows a banner over what is on screen.
 - **Serving.** The server embeds `web/dist` and serves it at `/`, with `index.html` for the paths of the pages. In
   development `pnpm dev` proxies `/v1` to a running server.
-- **Components.** `web/src/ui/` holds components copied from Vibe Kanban's `@vibe/ui` (Apache-2.0), changed to the Deep
-  Velvet theme, which has the same tokens as the desktop app's `theme.rs`.
+- **Components.** `web/src/ui/` holds components copied from Vibe Kanban's `@vibe/ui` (Apache-2.0), rebuilt on the web
+  app's own tokens (`web/src/styles/theme.css`), which are its own: the desktop app keeps the Deep Velvet theme of
+  `theme.rs` and `docs/design.md`.
 
 ## The life of a card
 
@@ -71,10 +72,10 @@ like the iced app and does not know anything the API does not say.
    `Engine::tick` finds the script for the card's column: the repository's `.moebius/<script>` read with
    `git show` on its default branch, else the built-in one from `workflow/` (`Engine::script`). `Engine::run_script`
    runs it in a fresh sandboxed Luau state with `card_table` and the `moebius` table, and applies the effects.
-3. **Backlog to Ready.** `backlog.luau` moves a trusted card on (`App::is_trusted`), and one made from a confirmed grilling (`card.confirmed`). Others get an `approve_issue` inbox
+3. **Backlog to Not started.** `backlog.luau` moves a trusted card on (`App::is_trusted`), and one made from a confirmed grilling (`card.confirmed`). Others get an `approve_issue` inbox
    item (`moebius.ask`) until a person calls `POST /v1/cards/{id}/approve` (`App::approve_issue`), which records a
-   judgement by `person` and moves the card to `Ready`.
-4. **Ready to In progress.** `ready.luau` waits for blockers and for a free run slot, then moves the card.
+   judgement by `person` and moves the card to `Not started`.
+4. **Not started to In progress.** `ready.luau` waits for blockers and for a free run slot, then moves the card.
 5. **A run starts.** `code.luau` calls `moebius.start_run("Coder", "code", note)`, which calls `PiBolt::start` (the
    `Runs` trait). It stores the run (`Store::add_run`), makes a worktree on branch `moebius/run-<id>` from the branch of the
    card's latest successful `code` run (`Store::code_branch`), or from the default branch when it has none
@@ -269,7 +270,7 @@ like the iced app and does not know anything the API does not say.
     `POST /v1/grillings/{id}/confirm` calls `grilling::confirm`: `grilling::creation_order` puts blockers first, and
     `App::create_confirmed_issue` makes each card (on GitHub after `Forge::create_issue`, which opens the issue with a
     `Blocked by` line, through `GitHub::create_issue`) with `Store::add_confirmed_card`, which stores the card as
-    `confirmed` together with its dependencies. `backlog.luau` moves such a card to Ready (`card.confirmed`); a
+    `confirmed` together with its dependencies. `backlog.luau` moves such a card to Not started (`card.confirmed`); a
     `confirm_grilling` judgement by `person` is recorded and the inbox item resolved.
 12h. **Automations.** `POST /v1/automations` (`App::save_automation`) checks the schedule (`cron::parse`), the agent
     (`Runs::has_agent`) and the place, and stores the automation (`automations` table) with `checked_at`, the local

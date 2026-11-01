@@ -101,7 +101,7 @@ mod tests {
     #[test]
     fn an_event_keeps_its_kind_and_data() {
         let event: ServerEvent = serde_json::from_str(
-            r#"{"kind":"card_moved","data":{"card":1,"from":"Ready","to":"In progress"}}"#,
+            r#"{"kind":"card_moved","data":{"card":1,"from":"Not started","to":"In progress"}}"#,
         )
         .unwrap();
         assert_eq!(event.kind, "card_moved");

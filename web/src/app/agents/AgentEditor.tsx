@@ -6,7 +6,7 @@
  * `agents.<name>` with `PUT /v1/settings` and has paths in place of the repository's skills and MCP servers.
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "react-router";
 import { startChat } from "../../api/calls/chat";
 import { deleteAgent, saveAgent } from "../../api/calls/harness";
@@ -15,18 +15,12 @@ import { keys } from "../../api/keys";
 import type { AvailableModels } from "../../api/types/chat";
 import type { AgentDetail, McpServer, Runner, SkillListed } from "../../api/types/harness";
 import { Button } from "../../ui/components/Button";
-import {
-  ActionRow,
-  Box,
-  Chip,
-  Committed,
-  EditorHead,
-  Field,
-  Notice,
-  Select,
-  TextArea,
-  TextInput,
-} from "../harness/form";
+import { Input } from "../../ui/components/Input";
+import { Box } from "../../ui/page/Box";
+import { Chip } from "../../ui/page/Chip";
+import { Field, Select, TextArea } from "../../ui/page/Field";
+import { Notice } from "../../ui/page/Notice";
+import { ActionRow, Committed, EditorHead, useDraft } from "../harness/form";
 import { instructionsRequest } from "../harness/importRequest";
 import { ModelField, ModelNote } from "../harness/ModelField";
 import {
@@ -53,6 +47,11 @@ export type Saved = { name: string; commit: string | null } | { name: string; wr
 
 export interface EditorProps {
   initial: AgentForm;
+  /** What the server has for this agent, so Save can say whether anything waits for it even when the editor
+   * reopened on a draft, which is not what the file holds. */
+  stored: AgentForm;
+  /** Where the page keeps what is typed here, so choosing another row does not lose it. */
+  drafts?: { hold: (form: AgentForm) => void; drop: () => void };
   /** Why the agent's files cannot be read; the agent can then only be deleted. */
   broken?: string;
   inFile: boolean;
@@ -70,10 +69,14 @@ export interface EditorProps {
 /** A row of a list: what names it, and a line under it that is red when something is wrong. */
 function Item({ name, line, red }: { name: React.ReactNode; line?: string; red?: boolean }) {
   return (
-    <div className="flex flex-col gap-half">
+    <div className="flex min-w-0 flex-col gap-1">
       {name}
       {line && (
-        <span className={`font-mono text-[11.5px] ${red ? "text-error" : "text-low"}`}>{line}</span>
+        <span
+          className={`min-w-0 break-words text-sm ${red ? "text-error-text" : "text-secondary"}`}
+        >
+          {line}
+        </span>
       )}
     </div>
   );
@@ -102,16 +105,14 @@ function Paths({
     setTyped("");
   };
   return (
-    <Box title={heading} aside={aside}>
-      {paths.length === 0 && <p className="m-0 text-sm text-normal">{empty}</p>}
+    <Box title={heading} aside={aside} className="flex flex-col gap-4">
+      {paths.length === 0 && <p className="m-0 text-base text-secondary">{empty}</p>}
       {paths.map((path) => (
-        <div key={path} className="flex items-center gap-base">
-          <span className="min-w-0 flex-1 font-mono text-xs text-high [overflow-wrap:anywhere]">
-            {path}
-          </span>
+        <div key={path} className="flex min-h-10 flex-wrap items-center justify-between gap-3">
+          <span className="min-w-0 flex-1 break-all font-mono text-sm text-text">{path}</span>
           <Button
-            variant="outline"
-            size="xs"
+            variant="danger"
+            size="sm"
             aria-label={`Remove ${path}`}
             onClick={() => onChange(paths.filter((held) => held !== path))}
           >
@@ -119,17 +120,26 @@ function Paths({
           </Button>
         </div>
       ))}
-      <TextInput
-        mono
-        aria-label={`${addLabel.replace("Add ", "")} path`}
-        value={typed}
-        placeholder={placeholder}
-        onChange={(event) => setTyped(event.target.value)}
-        onCommandEnter={add}
-      />
-      <Button variant="outline" size="sm" disabled={typed.trim() === ""} onClick={add}>
-        {addLabel}
-      </Button>
+      <div className="flex flex-wrap items-end gap-3">
+        <Input
+          mono
+          className="min-w-60 flex-1"
+          aria-label={`${addLabel.replace("Add ", "")} path`}
+          value={typed}
+          placeholder={placeholder}
+          onChange={(event) => setTyped(event.target.value)}
+          onCommandEnter={add}
+        />
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={typed.trim() === ""}
+          title={typed.trim() === "" ? "Type the path first" : undefined}
+          onClick={add}
+        >
+          {addLabel}
+        </Button>
+      </div>
     </Box>
   );
 }
@@ -138,10 +148,19 @@ export function AgentEditor(props: EditorProps) {
   const { inFile, skills, mcp, runners, available, saved, onSaved } = props;
   const queryClient = useQueryClient();
   const [form, setForm] = useState<AgentForm>(props.initial);
+  // What the server has, so that Save says whether it has anything to send even when the editor reopened on a draft.
+  const [baseline, setBaseline] = useState<AgentForm>(props.stored);
   const [problem, setProblem] = useState<string | null>(null);
   const [byAgent, setByAgent] = useState(false);
   const [wish, setWish] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  // Whether the last ask of the upstreams answered with nothing wrong; it says nothing before the button is pressed.
+  const [answered, setAnswered] = useState(false);
+  const now = useRef(form);
+  now.current = form;
+  const dirty = JSON.stringify(form) !== JSON.stringify(baseline);
+  // What is typed here stays with the page, so moving along the list and back does not lose it.
+  useDraft(form, dirty, props.drafts);
   const change = (patch: Partial<AgentForm>) => {
     setForm((held) => ({ ...held, ...patch }));
     setProblem(null);
@@ -150,8 +169,11 @@ export function AgentEditor(props: EditorProps) {
 
   const refresh = async () => {
     setRefreshing(true);
+    setAnswered(false);
     try {
-      queryClient.setQueryData(keys.models, await availableModels(true, false));
+      const fresh = await availableModels(true, false);
+      queryClient.setQueryData(keys.models, fresh);
+      setAnswered(fresh.errors.length === 0);
     } finally {
       setRefreshing(false);
     }
@@ -170,7 +192,9 @@ export function AgentEditor(props: EditorProps) {
       return { name, commit: detail.commit ?? null };
     },
     onSuccess: async (result) => {
-      setForm((held) => ({ ...held, name: result.name, naming: false, exists: true }));
+      const next = { ...now.current, name: result.name, naming: false, exists: true };
+      setForm(next);
+      setBaseline(next);
       setProblem(null);
       onSaved(result);
       await Promise.all([
@@ -189,6 +213,7 @@ export function AgentEditor(props: EditorProps) {
       else await deleteAgent(form.name);
     },
     onSuccess: async () => {
+      props.drafts?.drop();
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: keys.agents }),
         queryClient.invalidateQueries({ queryKey: keys.settings }),
@@ -213,7 +238,7 @@ export function AgentEditor(props: EditorProps) {
   const showSaved = saved && saved.name === form.name;
 
   const head = (
-    <Box>
+    <Box className="flex flex-col gap-4">
       <EditorHead
         name={form.name}
         naming={form.naming}
@@ -223,6 +248,8 @@ export function AgentEditor(props: EditorProps) {
         onName={(name) => change({ name })}
         saving={save.isPending}
         canSave={props.broken === undefined}
+        dirty={dirty}
+        saveHint={props.broken === undefined ? undefined : "Its files cannot be read"}
         onSave={() => save.mutate()}
         onDelete={() => remove.mutate()}
         deleting={remove.isPending}
@@ -234,6 +261,7 @@ export function AgentEditor(props: EditorProps) {
               name={form.name}
               saving={false}
               canSave={false}
+              saveHint="Its files cannot be read"
               onSave={() => {}}
               onDelete={() => remove.mutate()}
               deleting={remove.isPending}
@@ -244,14 +272,14 @@ export function AgentEditor(props: EditorProps) {
       {props.broken !== undefined ? (
         <>
           <Notice tone="error">{props.broken}</Notice>
-          <p className="m-0 text-sm text-normal">
+          <p className="m-0 max-w-prose text-base text-secondary">
             Its files cannot be read, so it cannot run. Fix them in the repository or delete the
             agent.
           </p>
         </>
       ) : (
         <>
-          <div className="grid gap-plusfifty sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-3">
             <Field label="Model">
               {(id) => (
                 <ModelField
@@ -317,10 +345,11 @@ export function AgentEditor(props: EditorProps) {
             </Field>
             <Field label="Token budget per card">
               {(id) => (
-                <TextInput
+                <Input
                   id={id}
                   value={form.budget}
                   placeholder="No limit"
+                  className="tabular-nums"
                   onChange={(event) => change({ budget: event.target.value })}
                 />
               )}
@@ -329,27 +358,29 @@ export function AgentEditor(props: EditorProps) {
               <>
                 <Field label="Hide tool outputs after turns">
                   {(id) => (
-                    <TextInput
+                    <Input
                       id={id}
                       value={form.hideAfter}
                       placeholder="0 keeps them"
+                      className="tabular-nums"
                       onChange={(event) => change({ hideAfter: event.target.value })}
                     />
                   )}
                 </Field>
                 <Field label="Lines per tool result">
                   {(id) => (
-                    <TextInput
+                    <Input
                       id={id}
                       value={form.maxLines}
                       placeholder="0 is no limit"
+                      className="tabular-nums"
                       onChange={(event) => change({ maxLines: event.target.value })}
                     />
                   )}
                 </Field>
                 <Field label="Bytes per tool result">
                   {(id) => (
-                    <TextInput
+                    <Input
                       id={id}
                       value={form.maxBytes}
                       placeholder="0 is no limit"
@@ -386,6 +417,7 @@ export function AgentEditor(props: EditorProps) {
             available={available}
             onRefresh={() => void refresh()}
             refreshing={refreshing}
+            answered={answered}
           />
         </>
       )}
@@ -398,24 +430,17 @@ export function AgentEditor(props: EditorProps) {
         ))}
     </Box>
   );
-  if (props.broken !== undefined) return <div className="flex flex-col gap-double">{head}</div>;
+  if (props.broken !== undefined) return <div className="flex flex-col gap-8">{head}</div>;
 
   const instructions = (
-    <Box
-      title="Instructions"
-      aside={
-        builtIn
-          ? "Markdown · added after the built-in instructions"
-          : "Markdown · added to the harness's system prompt"
-      }
-    >
+    <Box title="Instructions" className="flex flex-col gap-4">
       {!form.naming && (
-        <div className="flex gap-base">
-          <Chip chosen={!byAgent} onClick={() => setByAgent(false)}>
-            Write them
+        <div className="flex flex-wrap gap-3">
+          <Chip selected={!byAgent} onClick={() => setByAgent(false)}>
+            Write manually
           </Chip>
-          <Chip chosen={byAgent} onClick={() => setByAgent(true)}>
-            Let the Moebius agent write them
+          <Chip selected={byAgent} onClick={() => setByAgent(true)}>
+            Write with agent
           </Chip>
         </div>
       )}
@@ -430,20 +455,25 @@ export function AgentEditor(props: EditorProps) {
             onChange={(event) => setWish(event.target.value)}
           />
           {ask.isSuccess ? (
-            <div className="flex items-center gap-base">
+            <div className="flex flex-wrap items-center gap-3">
               <Notice tone="ok">The Moebius agent has the request.</Notice>
-              <Button asChild variant="outline" size="sm">
+              <Button asChild variant="secondary" size="sm">
                 <Link to={`/chat/${ask.data.id}`}>Open the chat</Link>
               </Button>
             </div>
           ) : (
-            <div>
+            <div className="flex flex-wrap items-center gap-3">
+              {wish.trim() === "" && !ask.isPending && (
+                <span className="text-sm text-secondary">
+                  Say what the agent should do, then ask
+                </span>
+              )}
               <Button
                 size="sm"
                 disabled={wish.trim() === "" || ask.isPending}
                 onClick={() => ask.mutate()}
               >
-                {ask.isPending ? "Asking…" : "Ask the agent"}
+                {ask.isPending ? "Sending" : "Submit"}
               </Button>
             </div>
           )}
@@ -461,31 +491,28 @@ export function AgentEditor(props: EditorProps) {
   );
 
   return (
-    <div className="flex flex-col gap-double">
+    <div className="flex flex-col gap-8">
       {head}
-      <div className="grid items-start gap-double xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <div className="flex min-w-0 flex-col gap-double">
+      <div className="grid items-start gap-8 xl:grid-cols-2">
+        <div className="flex min-w-0 flex-col gap-8">
           {builtIn && (
             <>
-              <Box title="Built-in instructions" aside="Read only · Moebius brings them">
+              <Box title="Built-in instructions" aside="Read only" className="flex flex-col gap-4">
                 <pre
                   data-testid="built-in-instructions"
-                  className="m-0 whitespace-pre-wrap rounded-lg border border-line bg-lane p-plusfifty font-mono text-xs text-normal [overflow-wrap:anywhere]"
+                  className="m-0 overflow-x-auto whitespace-pre-wrap rounded-control bg-code p-4 font-mono text-sm text-text"
                 >
                   {builtIn.instructions}
                 </pre>
               </Box>
-              <Box
-                title="Built-in skills"
-                aside={`Read only · ${builtIn.skills.length} ${builtIn.skills.length === 1 ? "skill" : "skills"}`}
-              >
+              <Box title="Built-in skills" aside="Read only" className="flex flex-col gap-3">
                 {builtIn.skills.length === 0 && (
-                  <p className="m-0 text-sm text-normal">No built-in skill.</p>
+                  <p className="m-0 text-base text-secondary">No built-in skill.</p>
                 )}
                 {builtIn.skills.map((skill) => (
                   <Item
                     key={skill.name}
-                    name={<span className="font-mono text-[12.5px] text-high">{skill.name}</span>}
+                    name={<span className="font-mono text-sm text-text">{skill.name}</span>}
                     line={skill.description}
                   />
                 ))}
@@ -494,7 +521,7 @@ export function AgentEditor(props: EditorProps) {
           )}
           {instructions}
         </div>
-        <div className="flex min-w-0 flex-col gap-double">
+        <div className="flex min-w-0 flex-col gap-8">
           {inFile ? (
             <Paths
               heading="Skills"
@@ -507,9 +534,15 @@ export function AgentEditor(props: EditorProps) {
             />
           ) : (
             <>
-              <Box title="Skills" aside={`${form.skills.length} of ${skillsOffered.length}`}>
+              <Box
+                title="Skills"
+                aside={`${form.skills.length} of ${skillsOffered.length}`}
+                className="flex flex-col gap-3"
+              >
                 {skillsOffered.length === 0 && form.skills.length === 0 && (
-                  <p className="m-0 text-sm text-normal">No skill in skills/ of the repository.</p>
+                  <p className="m-0 text-base text-secondary">
+                    No skill in skills/ of the repository.
+                  </p>
                 )}
                 {withChosen(
                   skillsOffered.map((skill) => skill.name),
@@ -520,7 +553,7 @@ export function AgentEditor(props: EditorProps) {
                     name={
                       <div>
                         <Chip
-                          chosen={form.skills.includes(name)}
+                          selected={form.skills.includes(name)}
                           onClick={() => change({ skills: toggle(form.skills, name) })}
                         >
                           {name}
@@ -531,9 +564,13 @@ export function AgentEditor(props: EditorProps) {
                   />
                 ))}
               </Box>
-              <Box title="MCP servers" aside={`${form.mcp.length} of ${mcp.length}`}>
+              <Box
+                title="MCP servers"
+                aside={`${form.mcp.length} of ${mcp.length}`}
+                className="flex flex-col gap-3"
+              >
                 {mcp.length === 0 && form.mcp.length === 0 && (
-                  <p className="m-0 text-sm text-normal">
+                  <p className="m-0 text-base text-secondary">
                     No server in mcp.toml of the repository.
                   </p>
                 )}
@@ -549,8 +586,8 @@ export function AgentEditor(props: EditorProps) {
                       name={
                         <div>
                           <Chip
-                            chosen={form.mcp.includes(name)}
-                            broken={broken}
+                            selected={form.mcp.includes(name)}
+                            tone={broken ? "error" : "neutral"}
                             onClick={() => change({ mcp: toggle(form.mcp, name) })}
                           >
                             {name}

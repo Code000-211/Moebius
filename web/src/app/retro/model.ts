@@ -27,25 +27,25 @@ export const KINDS: ReadonlyArray<readonly [kind: string, label: string]> = [
 
 export interface TagSpec {
   label: string;
+  /** The hue the word is shown in: what the state means, not how loud it is. */
   tone: TagTone;
 }
 
 export function retroTag(status: RetroStatus): TagSpec {
   switch (status) {
     case "analysing":
-      return { label: "Analysing", tone: "amber" };
+      return { label: "Analysing", tone: "progress" };
     case "proposed":
-      return { label: "Proposed", tone: "teal" };
+      return { label: "Proposed", tone: "complete" };
     case "failed":
-      return { label: "Failed", tone: "red" };
+      return { label: "Failed", tone: "error" };
     default:
       return { label: "Reported", tone: "plain" };
   }
 }
 
-export function plural(n: number, one: string, many: string): string {
-  return `${n} ${n === 1 ? one : many}`;
-}
+/** A count with its noun lives in `ui/lib/format.ts`, where every page that counts can reach it. */
+export { plural } from "../../ui/lib/format";
 
 /** Where an error happened: its card, run and agent. */
 export function origin(error: ReportError): string {
@@ -71,19 +71,19 @@ export function groupErrors(
 export function proposalTag(status: ProposalStatus): TagSpec {
   switch (status) {
     case "trying":
-      return { label: "Trying", tone: "amber" };
+      return { label: "Trying", tone: "progress" };
     case "positive":
-      return { label: "Positive", tone: "teal" };
+      return { label: "Positive", tone: "complete" };
     case "negative":
-      return { label: "Negative", tone: "red" };
+      return { label: "Negative", tone: "error" };
     case "untried":
-      return { label: "Untried", tone: "amber" };
+      return { label: "Untried", tone: "attention" };
     case "merged":
-      return { label: "Merged", tone: "teal" };
+      return { label: "Merged", tone: "complete" };
     case "dismissed":
       return { label: "Dismissed", tone: "plain" };
     default:
-      return { label: "Open", tone: "plain" };
+      return { label: "Open", tone: "attention" };
   }
 }
 
@@ -102,7 +102,7 @@ export function cardsLine(cards: number[]): string {
 /** One trial: its outcome with its tone, and the card it was tried on. */
 export function trialLine(trial: Trial): { outcome: TagSpec; card: string } {
   const tone: TagTone =
-    trial.outcome === "positive" ? "teal" : trial.outcome === "negative" ? "red" : "plain";
+    trial.outcome === "positive" ? "complete" : trial.outcome === "negative" ? "error" : "plain";
   const card =
     trial.card_id === null
       ? "No card"
@@ -117,12 +117,12 @@ export function trialLine(trial: Trial): { outcome: TagSpec; card: string } {
 
 /** A lesson's kind as a tag. */
 export function lessonTag(kind: Lesson["kind"]): TagSpec {
-  if (kind === "success") return { label: "Worked", tone: "teal" };
-  if (kind === "rejection") return { label: "Rejected", tone: "amber" };
-  return { label: "Failed", tone: "red" };
+  if (kind === "success") return { label: "Worked", tone: "complete" };
+  if (kind === "rejection") return { label: "Rejected", tone: "attention" };
+  return { label: "Failed", tone: "error" };
 }
 
-/** The mono line under a lesson: its cards, how often it was given, and why it was retired. */
+/** The line under a lesson: its cards, how often it was given, and why it was retired. */
 export function lessonMeta(lesson: Lesson): string {
   let meta = "";
   if (lesson.cards && lesson.cards.length > 0) meta = `Cards ${lesson.cards.join(", ")} · `;

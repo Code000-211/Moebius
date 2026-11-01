@@ -10,8 +10,9 @@
  * entries that kept theirs.
  */
 import type { RunEvent } from "../api/types/chat";
+import { fileName } from "../ui/lib/format";
 
-/** What a tool call works on, shown compactly. */
+/** What a tool call works on, shown as one line — a file by its name, with `inputPath` for the whole path. */
 export type ToolInput =
   | { type: "unknown" }
   | { type: "read"; path: string }
@@ -120,13 +121,28 @@ export function inputSummary(input: ToolInput): string {
     case "read":
     case "edit":
     case "write":
-      return input.path;
+      return fileName(input.path);
     case "command":
       return input.command.split("\n")[0] ?? "";
     case "todos":
       return `${input.todos.length} items`;
     case "other":
       return input.json;
+  }
+}
+
+/**
+ * The whole path a file call names, for the tooltip of a row that shows only the file's name; null for the calls
+ * that are not about one file.
+ */
+export function inputPath(input: ToolInput): string | null {
+  switch (input.type) {
+    case "read":
+    case "edit":
+    case "write":
+      return input.path;
+    default:
+      return null;
   }
 }
 
@@ -168,6 +184,27 @@ function endText(data: Json): string {
 }
 
 const MODEL_ERROR = "The model returned an error.";
+
+/**
+ * What a model's error says, as a person reads it. A gateway wraps its own sentence in JSON — `404: {"message":"no
+ * route for POST …","type":"not_found_error",…}` — and the only part worth reading is the sentence, so it comes out
+ * with whatever stood in front of the braces. Anything that is not that shape is left exactly as it came.
+ */
+export function readableError(text: string): string {
+  const start = text.indexOf("{");
+  if (start === -1 || !text.trimEnd().endsWith("}")) return text;
+  let body: unknown;
+  try {
+    body = JSON.parse(text.slice(start));
+  } catch {
+    return text;
+  }
+  const inner = object(object(body).error).message;
+  const sentence = string(object(body).message) || string(inner);
+  if (sentence === "") return text;
+  const lead = text.slice(0, start).trim();
+  return lead === "" ? sentence : `${lead} ${sentence}`;
+}
 
 /** The error of an assistant message that the provider ended with an error; null for any other message. */
 function modelErrorOf(message: Json): string | null {
@@ -227,7 +264,8 @@ export class Conversation {
     }
   }
 
-  private addModelError(message: string): void {
+  private addModelError(raw: string): void {
+    const message = readableError(raw);
     if (this.modelError === message) return;
     this.modelError = message;
     this.add({ at: this.now, kind: "error", source: "model", message });

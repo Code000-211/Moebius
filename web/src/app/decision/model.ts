@@ -1,8 +1,9 @@
 /**
  * The words and numbers of the Decision model page, as `screens/decision_model.rs` of the desktop app has them: a share
- * as a percentage, a time as a date in UTC, the route that downloads a kind's file, and how the shadowing of a kind is told.
+ * as a percentage, a time as a named day and a UTC clock, the route that downloads a kind's file, and how the shadowing of a kind is told.
  */
 import type { Export, KindCounts, ShadowedKind } from "../../api/types/improve";
+import { dayName, today } from "../../ui/lib/format";
 
 /** A share between 0 and 1 as a percentage, such as `97%` or `96.5%`. */
 export function percent(share: number): string {
@@ -10,10 +11,13 @@ export function percent(share: number): string {
   return Number.isInteger(rounded) ? `${rounded.toFixed(0)}%` : `${rounded.toFixed(1)}%`;
 }
 
-/** `at` (Unix seconds) as a date and time in UTC, such as `2026-10-28 10:15 UTC`. */
-export function when(at: number): string {
+/**
+ * `at` (Unix seconds) as a day in words and a time in UTC, such as `Today 10:15 UTC` or `26 Oct 07:33 UTC`. The
+ * clock stays UTC because the server wrote the file by it; only the day is named, as every other day in the app is.
+ */
+export function when(at: number, now = today()): string {
   const iso = new Date(at * 1000).toISOString();
-  return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
+  return `${dayName(iso.slice(0, 10), now)} ${iso.slice(11, 16)} UTC`;
 }
 
 /** The route that downloads the file of `kind` in the newest export that has one. */

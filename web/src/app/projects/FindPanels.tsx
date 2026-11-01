@@ -1,7 +1,8 @@
 /**
  * "Go to file" and "Search in files" of the Files panel. Go to file ranks the paths of the default branch by what is
- * typed and opens the one chosen (Enter opens the best, the arrows move); Search in files runs `git grep` on the
- * server and lists the hits per file, and a click opens the file at the line.
+ * typed and opens the one chosen (Enter opens the best, the arrows move); Search in files runs `git grep` on the server
+ * and lists the hits per file, and a click opens the file at the line. Both are sheets over the editor: they float on a
+ * raised layer, their rows are 40px, and a search that finds nothing says so and what to try next.
  */
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -12,11 +13,26 @@ import type { Search } from "../../api/types/projects";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
 import { cn } from "../../ui/lib/cn";
+import { plural } from "../../ui/lib/format";
+import { Empty } from "../../ui/page/Empty";
 import { Notice } from "../../ui/page/Notice";
 import { rank } from "./fuzzy";
 
 /** How many paths "Go to file" lists. */
 const SHOWN = 12;
+
+/** The layer a find panel sits on: raised above the card it opens over, and borderless. */
+const SHEET = "flex flex-col gap-4 rounded-card bg-surface p-4 shadow-raised";
+
+/** The line a find panel gives when there is nothing to list yet. */
+function Nothing({ title, hint }: { title: string; hint: string }) {
+  return (
+    <div className="rounded-control bg-sunken p-3">
+      <p className="m-0 text-sm font-semibold text-text">{title}</p>
+      <p className="m-0 mt-1 text-sm text-secondary">{hint}</p>
+    </div>
+  );
+}
 
 export function GoToFile({
   repository,
@@ -38,17 +54,15 @@ export function GoToFile({
     if (path !== undefined) onOpen(path);
   };
   return (
-    <div
-      role="dialog"
-      aria-label="Go to file"
-      className="flex flex-col gap-base rounded-lg border bg-panel p-base"
-    >
-      <div className="flex items-center gap-base">
+    <div role="dialog" aria-label="Go to file" className={SHEET}>
+      <div className="flex flex-wrap items-center gap-2">
         <Input
           aria-label="Go to file"
           placeholder="Go to file"
           value={query}
           autoFocus
+          mono
+          className="min-w-48 flex-1"
           onChange={(e) => {
             setQuery(e.target.value);
             setSelected(0);
@@ -66,25 +80,40 @@ export function GoToFile({
             }
           }}
         />
-        <Button size="sm" variant="outline" onClick={onClose}>
+        <Button size="sm" variant="secondary" onClick={onClose}>
           Close
         </Button>
       </div>
-      {paths.isPending && <p className="m-0 text-[12.5px] text-low">Reading the files…</p>}
-      {paths.isError && <Notice tone="error">{paths.error.message}</Notice>}
-      {paths.data && matches.length === 0 && (
-        <p className="m-0 text-[12.5px] text-low">No file matches.</p>
+      {paths.isPending && (
+        <p className="m-0 text-sm text-secondary" role="status">
+          Reading the file names
+        </p>
       )}
-      <ul className="m-0 flex list-none flex-col p-0">
+      {paths.isError && (
+        <Notice tone="error">
+          <span className="font-semibold">Couldn't read the file names. </span>
+          {isApiError(paths.error)
+            ? paths.error.message
+            : "The server did not answer for this repository."}
+        </Notice>
+      )}
+      {paths.data && matches.length === 0 && (
+        <Nothing
+          title="No file matches"
+          hint="Type a few letters of the name or the folder, in order."
+        />
+      )}
+      <ul className="m-0 flex max-h-80 list-none flex-col gap-1 p-0">
         {matches.map((path, at) => (
           <li key={path}>
             <button
               type="button"
-              data-selected={at === selected}
+              aria-current={at === selected ? "true" : undefined}
               onClick={() => open(path)}
+              title={path}
               className={cn(
-                "w-full truncate rounded-sm px-base py-half text-left font-mono text-[12.5px] hover:bg-card",
-                at === selected ? "bg-card text-accent" : "text-normal",
+                "min-h-10 w-full break-all rounded-control px-3 py-2 text-left font-mono text-sm transition-colors duration-(--motion-routine) ease-out hover:bg-hover",
+                at === selected ? "bg-selected text-text" : "text-secondary",
               )}
             >
               {path}
@@ -98,8 +127,8 @@ export function GoToFile({
 
 /** "3 hits in 2 files". */
 export function hitsText(result: Search): string {
-  const hits = result.total === 1 ? "1 hit" : `${result.total} hits`;
-  const files = result.files.length === 1 ? "1 file" : `${result.files.length} files`;
+  const hits = plural(result.total, "hit", "hits");
+  const files = plural(result.files.length, "file", "files");
   return `${hits} in ${files}${result.truncated ? " (more than shown)" : ""}`;
 }
 
@@ -121,63 +150,91 @@ export function SearchInFiles({
     if (query.trim() !== "" && !search.isPending) search.mutate();
   };
   return (
-    <div
-      role="dialog"
-      aria-label="Search in files"
-      className="flex flex-col gap-base rounded-lg border bg-panel p-base"
-    >
-      <div className="flex flex-wrap items-center gap-base">
+    <div role="dialog" aria-label="Search in files" className={SHEET}>
+      <div className="flex flex-wrap items-center gap-2">
         <Input
           aria-label="Search in files"
           placeholder="Search in files"
           value={query}
           autoFocus
+          className="min-w-48 flex-1"
           onChange={(e) => setQuery(e.target.value)}
           onCommandEnter={run}
           onKeyDown={(e) => e.key === "Escape" && onClose()}
-          className="min-w-[200px] flex-1"
         />
-        <label className="flex items-center gap-half text-xs text-normal">
-          <input type="checkbox" checked={regex} onChange={(e) => setRegex(e.target.checked)} />
+        <label className="flex min-h-10 cursor-pointer items-center gap-2 rounded-control px-3 text-sm text-secondary hover:bg-hover">
+          <input
+            type="checkbox"
+            className="size-4 accent-current"
+            checked={regex}
+            onChange={(e) => setRegex(e.target.checked)}
+          />
           Regex
         </label>
         <Button size="sm" disabled={query.trim() === "" || search.isPending} onClick={run}>
           Search
         </Button>
-        <Button size="sm" variant="outline" onClick={onClose}>
+        <Button size="sm" variant="secondary" onClick={onClose}>
           Close
         </Button>
       </div>
-      {search.isPending && <p className="m-0 text-[12.5px] text-low">Searching.</p>}
+      {search.isPending && (
+        <p className="m-0 text-sm text-secondary" role="status">
+          Reading the matches
+        </p>
+      )}
       {search.isError && (
         <Notice tone="error">
-          {isApiError(search.error) ? search.error.message : "The search failed."}
+          <span className="font-semibold">Couldn't search the files. </span>
+          <span className="break-words">
+            {isApiError(search.error)
+              ? search.error.message
+              : "The server did not answer for this search."}
+            {regex && " Check the regular expression, or search without Regex."}
+          </span>
         </Notice>
       )}
       {search.data && (
         <>
-          <p className="m-0 font-mono text-[12px] text-low">{hitsText(search.data)}</p>
-          <ul className="m-0 flex max-h-[320px] list-none flex-col gap-base overflow-y-auto p-0">
-            {search.data.files.map((file) => (
-              <li key={file.path}>
-                <div className="font-mono text-[12px] font-bold text-high">{file.path}</div>
-                <ul className="m-0 list-none p-0">
-                  {file.hits.map((hit) => (
-                    <li key={hit.line}>
-                      <button
-                        type="button"
-                        onClick={() => onOpen(file.path, hit.line)}
-                        className="flex w-full gap-base rounded-sm px-base py-half text-left font-mono text-[12px] text-normal hover:bg-card"
-                      >
-                        <span className="w-10 shrink-0 text-right text-low">{hit.line}</span>
-                        <span className="min-w-0 truncate">{hit.text}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </li>
-            ))}
-          </ul>
+          <p className="m-0 text-sm text-secondary tabular-nums">{hitsText(search.data)}</p>
+          {search.data.files.length === 0 ? (
+            <Empty
+              plain
+              title="No match"
+              body={`Nothing on the default branch contains ${query.trim()}. Try fewer letters, or search without Regex.`}
+            />
+          ) : (
+            <ul className="m-0 flex max-h-80 list-none flex-col gap-4 overflow-y-auto p-0">
+              {search.data.files.map((file) => (
+                <li key={file.path} className="flex flex-col gap-1">
+                  <p
+                    className="m-0 break-all font-mono text-sm font-semibold text-text"
+                    title={file.path}
+                  >
+                    {file.path}
+                  </p>
+                  <ul className="m-0 list-none p-0">
+                    {file.hits.map((hit) => (
+                      <li key={hit.line}>
+                        <button
+                          type="button"
+                          onClick={() => onOpen(file.path, hit.line)}
+                          className="flex min-h-10 w-full items-start gap-2 rounded-control px-3 py-2 text-left font-mono text-sm text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
+                        >
+                          <span className="w-10 shrink-0 text-right text-secondary tabular-nums">
+                            {hit.line}
+                          </span>
+                          <span className="min-w-0 break-words whitespace-pre-wrap text-text">
+                            {hit.text}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          )}
         </>
       )}
     </div>

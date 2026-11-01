@@ -5,6 +5,7 @@
  */
 import type { Board, Card, Change, InboxItem, Snapshot } from "../../api/types/board";
 import type { GrillingIssue } from "../../api/types/inbox";
+import type { Tone } from "../../ui/page/Status";
 import { tokens } from "../board/model";
 
 export const READY_TO_MERGE = "ready_to_merge";
@@ -123,31 +124,33 @@ export function chipName(kind: string): string {
   }
 }
 
-export type Tone = "red" | "amber" | "plain";
-
-/** What the item is, and how loud: red for what is blocked, amber for what waits for the person's move. */
+/**
+ * What the item is, and how loud: the colour of an error for what is blocked, of attention for what waits for the
+ * person's move. The tones are the shared pill's (`ui/page/Status`), so the word and its hue mean the same thing here
+ * as they do on a card and on a run.
+ */
 export function kindTag(item: InboxItem): { label: string; tone: Tone } {
   switch (item.kind) {
     case STUCK:
-      return { label: "Stuck", tone: "red" };
+      return { label: "Stuck", tone: "error" };
     case READY_TO_MERGE:
       return item.card_id === null
-        ? { label: "Change from a chat", tone: "amber" }
-        : { label: "Ready to merge", tone: "amber" };
+        ? { label: "Change from a chat", tone: "attention" }
+        : { label: "Ready to merge", tone: "attention" };
     case APPROVE_ISSUE:
-      return { label: "Outside issue", tone: "amber" };
+      return { label: "Outside issue", tone: "attention" };
     case CHANGE_CLOSED:
-      return { label: "Closed without a merge", tone: "amber" };
+      return { label: "Closed without a merge", tone: "attention" };
     case PROPOSAL:
-      return { label: "Retro proposal", tone: "amber" };
+      return { label: "Retro proposal", tone: "attention" };
     case TAKEOVER:
-      return { label: "Decision model", tone: "amber" };
+      return { label: "Decision model", tone: "attention" };
     case GRILLING_ISSUES:
-      return { label: "Issues from a grilling", tone: "amber" };
+      return { label: "Issues from a grilling", tone: "attention" };
     case GRILLING_REPORT:
-      return { label: "Report from a grilling", tone: "amber" };
+      return { label: "Report from a grilling", tone: "attention" };
     default:
-      return { label: sentence(item.kind), tone: "plain" };
+      return { label: sentence(item.kind), tone: "neutral" };
   }
 }
 
@@ -310,7 +313,8 @@ export function kindsOf(snapshot: Snapshot): string[] {
 
 /** What the page says under its title. */
 export function summary(total: number, shownCount: number): string {
-  if (total === 0) return "Nothing needs you.";
+  // An empty inbox is said by the empty state below it, which says it better.
+  if (total === 0) return "";
   if (total === 1) return "1 thing needs you.";
   if (total === shownCount) return `${total} things need you.`;
   return `${total} things need you; ${shownCount} shown.`;

@@ -19,7 +19,7 @@ use crate::widgets::page::{self, Tone, tag};
 /// The columns of the default workflow, left to right, each with the script behind it.
 const COLUMNS: [(&str, &str); 6] = [
     ("Backlog", "backlog.luau"),
-    ("Ready", "ready.luau"),
+    ("Not started", "ready.luau"),
     ("In progress", "code.luau"),
     ("In review", "review.luau"),
     ("Ready to merge", "merge.luau"),
@@ -243,7 +243,7 @@ fn zs1_inspector_dock<'a>(
         .waiting
         .get(&card.id)
         .map(String::as_str)
-        .unwrap_or("Ready in column");
+        .unwrap_or("Nothing");
     let run_line = match &card.run {
         Some(run) => format!("{} · {} ({})", run.agent, run.purpose, run.status),
         None => "no run started yet".to_string(),
@@ -377,8 +377,8 @@ fn column_view<'a>(
     let total = cards.len();
     let waits = cards.iter().any(|card| waits_for_you(inbox, card));
     let has_live = cards.iter().any(|card| card.is_live());
-    // The first card of Ready that nothing blocks is the one the board starts next.
-    let next = (name == "Ready")
+    // The first card of Not started that nothing blocks is the one the board starts next.
+    let next = (name == "Not started")
         .then(|| cards.iter().find(|card| card.blocked_by.is_empty()))
         .flatten()
         .map(|card| card.id);
@@ -538,7 +538,7 @@ fn tags<'a>(card: &Card, inbox_kind: Option<&str>, next: bool) -> Vec<Element<'a
     }
     match inbox_kind {
         Some(STUCK) => tags.push(tag("Stuck".into(), Tone::Red)),
-        Some(_) => tags.push(tag("Waits for you".into(), Tone::Amber)),
+        Some(_) => tags.push(tag("Your turn".into(), Tone::Amber)),
         None => {}
     }
     if next {

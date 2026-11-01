@@ -71,10 +71,10 @@ fn engine_with_ready_script(script: &str) -> (tempfile::TempDir, Arc<App>, Engin
     (dir, app, engine, repository.id)
 }
 
-/// A new card, moved to Ready by hand.
+/// A new card, moved to Not started by hand.
 fn ready_card(app: &App, repository: i64, title: &str) -> Card {
     let card = app.create_issue(repository, title, "", PERSON).unwrap();
-    app.move_card(card.id, "Ready").unwrap()
+    app.move_card(card.id, "Not started").unwrap()
 }
 
 #[test]
@@ -96,7 +96,7 @@ fn the_large_cards_script_gives_a_large_card_the_machine_to_itself() {
     // A large card waits while any run is going, and says why.
     let large = ready_card(&app, repository, "[large] Rewrite the parser");
     let step = engine.tick(large.id).unwrap();
-    assert_eq!(column(&large), "Ready");
+    assert_eq!(column(&large), "Not started");
     assert_eq!(
         step.waiting.as_deref(),
         Some("waiting for a free slot (limit 1)")
@@ -126,7 +126,7 @@ fn the_large_cards_script_still_waits_for_blockers() {
         step.waiting,
         Some(format!("waiting for #{}", blocker.number))
     );
-    assert_eq!(app.card(card.id).unwrap().column, "Ready");
+    assert_eq!(app.card(card.id).unwrap().column, "Not started");
 }
 
 #[test]

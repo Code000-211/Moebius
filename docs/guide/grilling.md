@@ -42,7 +42,7 @@ can be built, in a research report. The exact routes and fields are in
    ```
 
    Each issue becomes a card in the repository's Backlog. They do not wait for an approval: `backlog.luau` moves a card
-   with `card.confirmed` to Ready, where `ready.luau` holds the second one until the first is done. On a GitHub
+   with `card.confirmed` to Not started, where `ready.luau` holds the second one until the first is done. On a GitHub
    repository each issue is first opened there, with a line `Blocked by #12` for its blockers, and the card has the
    issue's number.
 5. To drop a proposal or a report instead: `POST /v1/grillings/{id}/dismiss`.

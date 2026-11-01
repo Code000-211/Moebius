@@ -52,7 +52,7 @@ pub use whereabouts::{ClientInfo, OFFICIAL_REPOSITORY, ServerInfo};
 /// The columns of the default workflow (spec 6).
 pub mod columns {
     pub const BACKLOG: &str = "Backlog";
-    pub const READY: &str = "Ready";
+    pub const NOT_STARTED: &str = "Not started";
     pub const IN_PROGRESS: &str = "In progress";
     pub const IN_REVIEW: &str = "In review";
     pub const READY_TO_MERGE: &str = "Ready to merge";

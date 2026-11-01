@@ -68,7 +68,7 @@ describe("the chat page", () => {
   it("loads, lists the chats and offers a new one", async () => {
     await open("/chat");
     await page.getByRole("button", { name: /^Chats \(\d+\)/ }).waitFor();
-    await page.getByRole("link", { name: "+ New" }).waitFor();
+    await page.getByRole("link", { name: "New" }).waitFor();
     await page.getByRole("button", { name: /^Agent: / }).waitFor();
     await field().waitFor();
   });
@@ -100,13 +100,73 @@ describe("the chat page", () => {
     },
   );
 
+  it.skipIf(usesRealServer)(
+    "scrolls a long list of chats once, and keeps every row's words inside its row",
+    async () => {
+      await open("/chat");
+      for (let index = 0; index < 14; index += 1) {
+        fake().seed({
+          title: `Chat ${index}: a title long enough to want more than one line in the list`,
+          events: [["said", { message: `Chat ${index}` }]],
+        });
+      }
+      await page.reload();
+      await page.getByRole("button", { name: "Chats (14)" }).click();
+      const menu = page.getByRole("menu");
+      await menu.waitFor();
+      expect
+        .soft(
+          await menu.evaluate((element) => element.scrollHeight > element.clientHeight),
+          "the menu itself scrolls",
+        )
+        .toBe(true);
+
+      // Nothing in the menu scrolls as well: a second scroller caps the height of the list, and a column of a
+      // fixed height shrinks the rows it holds, leaving their words outside the row's own fill.
+      const nested = await menu.evaluate(
+        (element) =>
+          [...element.querySelectorAll("*")].filter(
+            (child) =>
+              child.scrollHeight > child.clientHeight + 1 ||
+              child.scrollWidth > child.clientWidth + 1,
+          ).length,
+      );
+      expect.soft(nested, "nothing inside the menu scrolls as well").toBe(0);
+      const spilled = await page
+        .getByTestId("chat-row")
+        .evaluateAll(
+          (rows) =>
+            rows.filter((row) =>
+              [...row.children].some(
+                (child) =>
+                  child.getBoundingClientRect().bottom > row.getBoundingClientRect().bottom + 1,
+              ),
+            ).length,
+        );
+      expect.soft(spilled, "no row's words fall outside its own box").toBe(0);
+
+      // And the last row is read in full: the menu's own padding is below it, not cut off by an inner box.
+      await menu.evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+      });
+      const gap = await Promise.all([
+        menu.evaluate((element) => element.getBoundingClientRect().bottom),
+        page
+          .getByTestId("chat-row")
+          .last()
+          .evaluate((element) => element.getBoundingClientRect().bottom),
+      ]);
+      expect(gap[0] - gap[1]).toBeGreaterThanOrEqual(7);
+    },
+  );
+
   it.skipIf(usesRealServer)("shows the sidebar's count of unread chats", async () => {
     await open("/chat");
     fake().seed({ title: "Done", answered: 5, seen: 0, events: [["said", { message: "Done" }]] });
     await page.reload();
     await page
       .getByRole("navigation", { name: "Pages" })
-      .getByRole("link", { name: /^Chat 1 new/ })
+      .getByRole("link", { name: "Chat 1" })
       .waitFor();
   });
 });
@@ -236,15 +296,26 @@ describe("what the agent does", () => {
       await steps.getByText("cargo test --quiet").waitFor();
       // The thinking is folded until it is opened.
       expect(await page.getByText("I should read first.").count()).toBe(0);
-      await steps.getByRole("button", { name: "Thinking" }).click();
+      // A thought that has stopped is named for its length as well as what it was.
+      await steps.getByRole("button", { name: /^Thought/ }).click();
       await page.getByText("I should read first.").waitFor();
 
-      // A pill opens to show what the tool printed.
-      await steps.getByRole("button", { name: /cargo test --quiet/ }).click();
+      // A pill opens to show what the tool printed, and what it printed is a box of the row's own width: an inset
+      // panel under a full-width row reads as a mistake rather than as the row opened up.
+      const command = steps.getByRole("button", { name: /cargo test --quiet/ });
+      await command.click();
       await page.getByText("test result: ok. 3 passed").waitFor();
+      const row = await command.boundingBox();
+      const panel = await page.getByTestId("tool-details").boundingBox();
+      expect(row).not.toBeNull();
+      expect(panel).not.toBeNull();
+      expect(Math.round(panel?.x ?? -1)).toBe(Math.round(row?.x ?? -2));
+      expect(Math.round((panel?.x ?? 0) + (panel?.width ?? 0))).toBe(
+        Math.round((row?.x ?? 0) + (row?.width ?? 0)),
+      );
 
-      // The edit is a file with its added and removed lines.
-      const file = steps.getByRole("button", { name: /src\/a\.rs/ });
+      // The edit is a file with its added and removed lines, named by its name alone.
+      const file = steps.getByRole("button", { name: /^\s*a\.rs/ });
       await file.waitFor();
       await file.click();
       await page.getByText("+fn a() -> u8 { 1 }").waitFor();
@@ -335,6 +406,38 @@ describe("copying", () => {
     await page.getByRole("button", { name: "Copy your message" }).getByText("Copied").waitFor();
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("Copy me");
   });
+
+  it.skipIf(usesRealServer)(
+    "keeps an agent's line breaks in what a mouse selection takes",
+    async () => {
+      // The buttons above copy the text the server stored, which has always had its lines. This is the other way a
+      // person gets text out of a chat — a selection — and a selection copies what is drawn, so an answer written in
+      // three lines has to be drawn in three lines or the lines are gone before the clipboard is ever asked.
+      await open("/chat");
+      fake().autoAnswer = false;
+      await say("Three lines");
+      await page.waitForURL(/\/chat\/\d+$/);
+      const run = fake().chats[0]?.id as number;
+      fake().agentStart(run);
+      fake().delta(run, "first line\nsecond line\nthird line");
+      fake().settle(run);
+      const answer = page.locator("p").filter({ hasText: "first line" }).first();
+      await answer.waitFor();
+
+      const lines = await answer.evaluate((node) => {
+        const selection = window.getSelection();
+        if (!selection) return -1;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        const copied = selection.toString();
+        selection.removeAllRanges();
+        return copied.split("\n").length;
+      });
+      expect(lines).toBe(3);
+    },
+  );
 });
 
 describe("a new chat", () => {
@@ -415,6 +518,15 @@ describe("an open chat", () => {
     await page.getByRole("menuitemradio", { name: "fake-small" }).click();
     await page.getByRole("button", { name: "Model: fake-small" }).waitFor();
     expect(fake().chats[0]?.model).toBe("fake-small");
+    // The field says who the message goes to, which is why no pill repeats the agent's name, and the two choices
+    // show their value alone: a model's name and a reasoning level say what they are.
+    expect(await page.getByRole("textbox", { name: "Message" }).getAttribute("placeholder")).toBe(
+      "Write to Moebius",
+    );
+    expect(await page.getByRole("button", { name: "Moebius", exact: true }).count()).toBe(0);
+    expect(await page.getByRole("button", { name: "Model: fake-small" }).textContent()).toBe(
+      "fake-small",
+    );
   });
 
   it.skipIf(usesRealServer)(
@@ -432,7 +544,15 @@ describe("an open chat", () => {
       await page.getByRole("button", { name: "Stop" }).click();
       await page.getByRole("button", { name: "Stop chat" }).click();
       await page.getByTestId("chat-title").waitFor();
-      await page.getByText("This chat has ended").waitFor();
+      // The tag carries the state in words and the empty field carries the way on; nothing is added under it.
+      await page.getByText("Agent disconnected", { exact: true }).first().waitFor();
+      expect(await page.getByText("This chat has ended").count()).toBe(0);
+      const field = page.getByRole("textbox", { name: "Message" });
+      expect(await field.getAttribute("placeholder")).toBe(
+        "Moebius disconnected. Start a new chat to continue.",
+      );
+      // The button beside the field is where the way on is offered: an ended chat's message starts a new chat.
+      expect(await page.getByRole("button", { name: "Continue" }).count()).toBe(1);
       expect(fake().chats[0]?.status).toBe("stopped");
     },
   );
@@ -446,6 +566,10 @@ describe("the floating chat", () => {
       await page.getByRole("button", { name: "Open the floating chat" }).click();
       const window = page.getByRole("dialog", { name: "Floating chat" });
       await window.waitFor();
+      // The sheet says which page it is looking at, and offers nothing to leave when this is already a new
+      // conversation.
+      await window.getByText("viewing Inbox").waitFor();
+      expect(await window.getByRole("button", { name: "New conversation" }).count()).toBe(0);
       await window.getByRole("textbox", { name: "Message" }).fill("What is this page?");
       await window.getByRole("textbox", { name: "Message" }).press("Enter");
       await window.getByText("You said: What is this page?").first().waitFor();
@@ -466,6 +590,9 @@ describe("the floating chat", () => {
       await page.waitForURL("**/retro");
       // The address changes before the page is drawn; a person writes once the Retro is on the screen.
       await page.getByRole("heading", { name: "Retro", level: 1 }).waitFor();
+      // What it is looking at follows the person, and once a conversation exists there is a way out of it.
+      await window.getByText("viewing Retro").waitFor();
+      expect(await window.getByRole("button", { name: "New conversation" }).count()).toBe(1);
       await window.getByText("You said: What is this page?").first().waitFor();
       await window.getByRole("textbox", { name: "Message" }).fill("And this one?");
       await window.getByRole("textbox", { name: "Message" }).press("Enter");
@@ -499,6 +626,23 @@ describe("the floating chat", () => {
     await open("/inbox");
     await page.getByRole("button", { name: "Open the floating chat" }).click();
     await page.getByRole("dialog", { name: "Floating chat" }).waitFor();
-    await page.getByText("Ask the agent about this page.").waitFor();
+    await page.getByText("Ask the agent about this page").waitFor();
+  });
+
+  /**
+   * An empty window used to say what a window is. The asks the new-chat page already offers are offered here too,
+   * and pressing one fills the field rather than sending: the ask is a beginning the person can still change.
+   */
+  it("offers a way to begin, and the ask lands in the field", async () => {
+    await open("/inbox");
+    await page.getByRole("button", { name: "Open the floating chat" }).click();
+    const window = page.getByRole("dialog", { name: "Floating chat" });
+    const starters = window.getByTestId("chat-starters");
+    await starters.getByRole("button", { name: "What is on the board right now?" }).click();
+    expect(await window.getByRole("textbox", { name: "Message" }).inputValue()).toBe(
+      "What is on the board right now?",
+    );
+    // Nothing was sent, and no chat was started by pressing a suggestion.
+    expect(await window.getByText(/You said:/).count()).toBe(0);
   });
 });

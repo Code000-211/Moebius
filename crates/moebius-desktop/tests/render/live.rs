@@ -94,7 +94,7 @@ fn watching(status: &str) -> App {
 
 /// As `watching`, with the run's harness on the runner `runner`, if any.
 fn watching_on(status: &str, runner: Option<&str>) -> App {
-    watching_board(status, runner, radiance("Ready"))
+    watching_board(status, runner, radiance("Not started"))
 }
 
 /// As `watching_on`, on `board`, which has the card 48.
@@ -273,7 +273,7 @@ fn a_replayed_refusal_shows_what_came_of_it() {
 /// that could not be reached. Compare `tests/snapshots/live-view-mcp-tiny-skia.png`.
 #[test]
 fn mcp_calls_and_errors_are_drawn_in_the_conversation() {
-    let mut board = radiance("Ready");
+    let mut board = radiance("Not started");
     board["changes"] = json!([{"id": 1, "repository_id": 1, "card_id": 48,
                                "branch": "moebius/card-48", "state": "open"}]);
     let mut app = App::with_snapshot(snapshot(vec![board], vec![]));
@@ -513,7 +513,7 @@ fn a_card_without_a_run_shows_its_history() {
     let _ = app.update(Message::OpenCard(50));
     let entries = serde_json::from_value(json!([
         {"at": 1_790_000_000, "kind": "moved",
-         "data": {"from": "Backlog", "to": "Ready", "note": null}},
+         "data": {"from": "Backlog", "to": "Not started", "note": null}},
         {"at": 1_790_000_100, "kind": "decided",
          "data": {"judgement": 1, "kind": "approve_issue", "choice": "approve", "decider": "person",
                   "reason": "known author"}}]))
@@ -522,7 +522,7 @@ fn a_card_without_a_run_shows_its_history() {
     let mut ui = simulator(&app);
     for text in [
         "Retry model downloads on HTTP 5xx",
-        "Moved from Backlog to Ready",
+        "Moved from Backlog to Not started",
         "person decided approve: known author",
     ] {
         assert!(ui.find(text).is_ok(), "{text:?} is not on the screen");
@@ -575,7 +575,7 @@ fn attempts() -> serde_json::Value {
 /// `tests/snapshots/live-view-attempts-tiny-skia.png`.
 #[test]
 fn the_panel_lists_the_attempts_and_which_was_picked() {
-    let mut board = radiance("Ready");
+    let mut board = radiance("Not started");
     board["cards"][2]["attempts"] = attempts();
     let app = watching_board("running", None, board);
     draw(
@@ -600,7 +600,7 @@ fn the_panel_lists_the_attempts_and_which_was_picked() {
 /// compare `tests/snapshots/card-attempts-tiny-skia.png`.
 #[test]
 fn the_card_page_shows_the_attempts_and_their_history() {
-    let mut board = radiance("Ready");
+    let mut board = radiance("Not started");
     board["cards"][1]["attempts"] = attempts();
     let mut app = App::with_snapshot(snapshot(vec![board], vec![]));
     let _ = app.update(Message::OpenCard(50));

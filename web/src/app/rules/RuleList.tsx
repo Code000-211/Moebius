@@ -1,17 +1,21 @@
 /**
- * The rules of one rules file as cards: each with its scope tag, name, text, what it refused and a pencil that grows
- * the card in place into an editor of the rule's name and text with Save, Cancel and Delete (which asks first). Under
- * the last rule an empty "Add a rule" card adds one. A save puts the rule's section back into the file's text
- * (`file.ts`) and hands the whole file to `onSave`, which the server checks; a refusal stays in the card.
+ * The rules of one rules file as cards: each with its name, its text, what it refused this week and a control that
+ * grows the card in place into an editor of the rule's name and text with Save, Cancel and Delete (which asks first).
+ * Under the last rule an "Add a rule" control adds one. A save puts the rule's section back into the file's text
+ * (`file.ts`) and hands the whole file to `onSave`, which the server checks; a refusal stays in the card, beside the
+ * rule it refuses.
  */
 import { PencilSimpleIcon } from "@phosphor-icons/react";
 import { useState } from "react";
+import { sayError } from "../../api/errorText";
 import type { Rule } from "../../api/types/rules";
-import { Tag } from "../../ui/chat/Tag";
+import { Tag, type TagTone } from "../../ui/chat/Tag";
 import { Button } from "../../ui/components/Button";
+import { IconButton } from "../../ui/components/IconButton";
 import { Input } from "../../ui/components/Input";
-import { cn } from "../../ui/lib/cn";
-import { Notice, sayError, TextArea } from "../kit/Kit";
+import { Field, TextArea } from "../../ui/page/Field";
+import { Notice } from "../../ui/page/Notice";
+import { Body } from "../../ui/page/PageHeader";
 import { appendRule, refusalsLabel, replaceRule, section, validName } from "./file";
 
 /** A rule being edited: the one called `rule` of the file, or a new one. */
@@ -24,8 +28,12 @@ interface Editing {
   error: string | null;
 }
 
+/** The hue of a rule's refusals: a rule that refused is worth a look, one that did not is not. */
+function refusalTone(refusals: Record<string, number>, name: string): TagTone {
+  return (refusals[name] ?? 0) > 0 ? "attention" : "plain";
+}
+
 export function RuleList({
-  scope,
   rules,
   file,
   refusals,
@@ -33,8 +41,6 @@ export function RuleList({
   empty,
   onSave,
 }: {
-  /** The tag of every rule: "Server" or "Repo". */
-  scope: "Server" | "Repo";
   rules: Rule[];
   /** The text of the file the rules are in. */
   file: string;
@@ -79,134 +85,162 @@ export function RuleList({
         ...current,
         saving: false,
         deleting: false,
-        error: sayError(error, "Could not save the rules."),
+        error: sayError(error, "Could not save the rules. Try again."),
       });
     }
   }
 
-  const card = (children: React.ReactNode, line: "plain" | "muted" | "editing", key: string) => (
-    <div
-      key={key}
-      className={cn(
-        "rounded-md border px-plusfifty py-base",
-        line === "plain" && "bg-recessed",
-        line === "muted" && "border-line-strong bg-lane",
-        line === "editing" && "border-accent bg-card",
-      )}
-    >
-      {children}
-    </div>
-  );
-
-  const editor = (current: Editing) => (
-    <div className="flex flex-col gap-plusfifty">
-      <Input
-        aria-label="Rule name"
-        placeholder="name-without-spaces"
-        value={current.name}
-        className="font-mono"
-        onChange={(event) => setEditing({ ...current, name: event.target.value })}
-      />
-      <TextArea
-        aria-label="Rule text"
-        placeholder="What a run must not do."
-        rows={4}
-        value={current.text}
-        onChange={(event) => setEditing({ ...current, text: event.target.value })}
-      />
-      {current.error && <Notice tone="error">{current.error}</Notice>}
-      <div className="flex flex-wrap items-center gap-base">
-        <Button
-          size="sm"
-          disabled={current.saving || !validName(current.name)}
-          onClick={() => void save(current, false)}
-        >
-          Save
-        </Button>
-        <Button size="sm" variant="outline" onClick={() => setEditing(null)}>
-          Cancel
-        </Button>
-        {current.rule !== null &&
-          (current.deleting ? (
-            <span className="flex items-center gap-base text-sm text-normal">
-              Delete this rule?
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setEditing({ ...current, deleting: false })}
-              >
-                Keep it
-              </Button>
-              <Button
-                size="sm"
-                variant="destructive"
-                disabled={current.saving}
-                onClick={() => void save(current, true)}
-              >
-                Delete
-              </Button>
-            </span>
-          ) : (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setEditing({ ...current, deleting: true })}
-            >
-              Delete rule
-            </Button>
-          ))}
-      </div>
-    </div>
-  );
-
-  const pencil = (label: string, onClick: () => void) => (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className="rounded-sm p-half text-low hover:bg-card hover:text-high"
-    >
-      <PencilSimpleIcon className="size-icon-sm" />
-    </button>
-  );
-
   return (
-    <div className="flex flex-col gap-base">
-      {rules.length === 0 && !editable && <p className="text-sm text-normal">{empty}</p>}
+    <div className="flex flex-col gap-4">
+      {rules.length === 0 && <Body>{empty}</Body>}
       {rules.map((rule) =>
-        editing?.rule === rule.name
-          ? card(editor(editing), "editing", rule.name)
-          : card(
-              <div className="flex flex-wrap items-center gap-plusfifty">
-                <Tag tone={scope === "Server" ? "amber" : "plain"}>{scope}</Tag>
-                <span className="flex w-[210px] items-center gap-half font-mono text-sm text-high">
-                  {rule.name}
-                  {editable && pencil(`Edit rule ${rule.name}`, () => edit(rule))}
-                </span>
-                <span className="min-w-[200px] flex-1 break-words text-xs text-normal">
-                  {rule.text}
-                </span>
-                <Tag tone={(refusals[rule.name] ?? 0) > 0 ? "red" : "plain"}>
-                  {refusalsLabel(refusals, rule.name)}
-                </Tag>
-              </div>,
-              "plain",
-              rule.name,
-            ),
+        editing?.rule === rule.name ? (
+          <RuleEditor
+            key={rule.name}
+            current={editing}
+            onChange={setEditing}
+            onSave={(drop) => void save(editing, drop)}
+            onCancel={() => setEditing(null)}
+          />
+        ) : (
+          <RuleCard
+            key={rule.name}
+            rule={rule}
+            refusals={refusals}
+            editable={editable}
+            onEdit={() => edit(rule)}
+          />
+        ),
       )}
       {editable &&
         (editing && editing.rule === null ? (
-          card(editor(editing), "editing", "new")
+          <RuleEditor
+            current={editing}
+            onChange={setEditing}
+            onSave={(drop) => void save(editing, drop)}
+            onCancel={() => setEditing(null)}
+          />
         ) : (
-          <div className="rounded-md border border-line-strong bg-lane px-plusfifty py-base">
-            <span className="flex items-center gap-half text-sm text-low">
-              {rules.length === 0 ? `${empty} Add a rule` : "Add a rule"}
-              {pencil("Add a rule", () => edit(null))}
-            </span>
-          </div>
+          <Button size="sm" variant="secondary" onClick={() => edit(null)}>
+            <PencilSimpleIcon className="size-4" aria-hidden="true" />
+            Add a rule
+          </Button>
         ))}
       {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
+    </div>
+  );
+}
+
+/** One rule as it stands: its name, what it says, how often it refused, and the control that opens it. */
+function RuleCard({
+  rule,
+  refusals,
+  editable,
+  onEdit,
+}: {
+  rule: Rule;
+  refusals: Record<string, number>;
+  editable: boolean;
+  onEdit: () => void;
+}) {
+  return (
+    <article className="flex flex-col gap-4 rounded-card bg-sunken p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="m-0 min-w-0 flex-1 break-words font-mono text-sm font-semibold text-text">
+          {rule.name}
+        </h3>
+        <Tag tone={refusalTone(refusals, rule.name)} className="tabular-nums">
+          {refusalsLabel(refusals, rule.name)}
+        </Tag>
+        {editable && (
+          <IconButton
+            icon={PencilSimpleIcon}
+            aria-label={`Edit rule ${rule.name}`}
+            onClick={onEdit}
+          />
+        )}
+      </div>
+      <p className="m-0 min-w-0 break-words text-base leading-normal text-text">{rule.text}</p>
+    </article>
+  );
+}
+
+/** A rule grown into its editor: its name and text, and what a save or a delete would do. */
+function RuleEditor({
+  current,
+  onChange,
+  onSave,
+  onCancel,
+}: {
+  current: Editing;
+  onChange: (next: Editing) => void;
+  onSave: (drop: boolean) => void;
+  onCancel: () => void;
+}) {
+  const busy = current.saving;
+  return (
+    <div className="flex flex-col gap-4 rounded-card bg-sunken p-4">
+      <Field
+        label="Rule name"
+        hint="The name a refusal says. It cannot hold spaces."
+        error={
+          current.name.trim() !== "" && !validName(current.name)
+            ? "Remove the spaces from the name."
+            : undefined
+        }
+      >
+        <Input
+          placeholder="name-without-spaces"
+          value={current.name}
+          onChange={(event) => onChange({ ...current, name: event.target.value })}
+          className="font-mono text-sm"
+        />
+      </Field>
+      <Field label="Rule text">
+        <TextArea
+          placeholder="What a run must not do."
+          rows={4}
+          value={current.text}
+          onChange={(event) => onChange({ ...current, text: event.target.value })}
+        />
+      </Field>
+      {current.error && <Notice tone="error">{current.error}</Notice>}
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" disabled={busy || !validName(current.name)} onClick={() => onSave(false)}>
+          {busy ? "Saving" : "Save"}
+        </Button>
+        <Button size="sm" variant="secondary" onClick={onCancel}>
+          Cancel
+        </Button>
+        {current.rule !== null && !current.deleting && (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => onChange({ ...current, deleting: true })}
+          >
+            Delete rule
+          </Button>
+        )}
+      </div>
+      {current.deleting && (
+        <div className="flex flex-col gap-4 rounded-control bg-surface p-4 sm:flex-row sm:items-center">
+          <p className="m-0 flex min-h-10 min-w-0 flex-1 items-center break-words text-base text-text">
+            Delete this rule?
+          </p>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => onChange({ ...current, deleting: false })}
+            >
+              Keep it
+            </Button>
+            <Button size="sm" variant="danger" disabled={busy} onClick={() => onSave(true)}>
+              Delete
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

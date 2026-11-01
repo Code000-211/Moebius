@@ -167,7 +167,7 @@ fn inbox_request(item: &Value, verb: Verb, reason: &str) -> Result<Request, Stri
 /// The columns in the order of the board, then any other.
 const COLUMNS: [&str; 6] = [
     "Backlog",
-    "Ready",
+    "Not started",
     "In progress",
     "In review",
     "Ready to merge",
@@ -408,11 +408,11 @@ mod tests {
         let snapshot = json!({"boards": [{
             "repository": {"id": 1, "name": "demo"},
             "cards": [
-                {"id": 11, "number": 1, "title": "First", "column": "Ready", "run": null},
+                {"id": 11, "number": 1, "title": "First", "column": "Not started", "run": null},
                 {"id": 12,
                     "repository_id": 1, "number": 2, "title": "Second", "column": "In progress",
                  "run": {"id": 3, "agent": "Coder", "purpose": "code", "status": "running"}},
-                {"id": 13, "number": 3, "title": "Third", "column": "Ready"},
+                {"id": 13, "number": 3, "title": "Third", "column": "Not started"},
             ],
             "waiting": {"13": "blocked by #2"},
         }]});
@@ -420,7 +420,7 @@ mod tests {
         let all = render(&Show::Board(None), &text).unwrap();
         assert_eq!(
             all,
-            "demo (repository 1)\n  Backlog (0)\n  Ready (2)\n    11  #1  First\n    13  #3  Third (waiting: blocked by #2)\n  \
+            "demo (repository 1)\n  Backlog (0)\n  Not started (2)\n    11  #1  First\n    13  #3  Third (waiting: blocked by #2)\n  \
              In progress (1)\n    12  #2  Second [Coder running]\n  In review (0)\n  Ready to merge (0)\n  Done (0)"
         );
         assert_eq!(render(&Show::Board(Some("1".into())), &text).unwrap(), all);

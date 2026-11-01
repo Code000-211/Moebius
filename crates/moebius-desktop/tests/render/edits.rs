@@ -86,7 +86,7 @@ fn a_card_saved_in_place_closes_its_editor_and_the_board_is_read_again() {
         clicked(&app, "Save").is_empty(),
         "a blank title cannot be saved"
     );
-    let card: client::Card = serde_json::from_value(card(50, 1, "Ready", "Retry")).unwrap();
+    let card: client::Card = serde_json::from_value(card(50, 1, "Not started", "Retry")).unwrap();
     let task = app.update(Message::Edit(edits::Message::CardSaved(Ok(Box::new(card)))));
     assert_eq!(task.units(), 1, "the snapshot is read again");
     assert!(!shows(&app, "Edit the issue"));

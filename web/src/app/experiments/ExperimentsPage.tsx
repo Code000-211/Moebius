@@ -1,34 +1,31 @@
 /**
  * The Experiments page: the research the server has, a form for a new brief, and for the one chosen its baseline and
- * the experiments, one for each lever the Autoresearcher proposed. A brief is stored as a draft (`POST /v1/research`),
- * then a person confirms it, which lets it run in the trial window, or starts it now; a running research can be
- * stopped. The brief of a draft has a pencil that edits it in place (`PUT /v1/research/{id}`). The server says when
- * something changed with `research_status` and `experiment_done`, which `live/invalidation.ts` answers by reading again.
+ * the levers tried, one row each. A brief is stored as a draft (`POST /v1/research`), then a person confirms it,
+ * which lets it run in the trial window, or starts it now; a running research can be stopped, and the brief of a
+ * draft is edited in place (`PUT /v1/research/{id}`). The server says when something changed with `research_status`
+ * and `experiment_done`, which `live/invalidation.ts` answers by reading again.
  */
-import { PencilSimpleIcon } from "@phosphor-icons/react";
+import { PencilSimpleIcon, PlusIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { snapshot } from "../../api/calls/board";
 import { actOnResearch, createResearch, editResearch, researches } from "../../api/calls/improve";
+import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { Research } from "../../api/types/improve";
 import { Tag } from "../../ui/chat/Tag";
 import { Button } from "../../ui/components/Button";
+import { IconButton } from "../../ui/components/IconButton";
 import { Input } from "../../ui/components/Input";
 import { Loader } from "../../ui/components/Loader";
-import {
-  Body,
-  Box,
-  CELL,
-  Chip,
-  Field,
-  ListCard,
-  ListDetail,
-  Notice,
-  PageHeader,
-  sayError,
-  Table,
-} from "../kit/Kit";
+import { plural } from "../../ui/lib/format";
+import { Box } from "../../ui/page/Box";
+import { Chip } from "../../ui/page/Chip";
+import { Empty } from "../../ui/page/Empty";
+import { Field } from "../../ui/page/Field";
+import { CELL, ListCard, ListDetail, Table } from "../../ui/page/List";
+import { Notice } from "../../ui/page/Notice";
+import { Body, PageHeader } from "../../ui/page/PageHeader";
 import {
   actions,
   briefOf,
@@ -39,8 +36,10 @@ import {
   formOf,
   number,
   result,
+  SUGGESTED_BRIEFS,
   statusTag,
 } from "./model";
+import { Region } from "./parts";
 
 export function ExperimentsPage() {
   const queryClient = useQueryClient();
@@ -48,6 +47,8 @@ export function ExperimentsPage() {
   const boards = useQuery({ queryKey: keys.snapshot, queryFn: () => snapshot() });
   const [picked, setPicked] = useState<number | null>(null);
   const [composing, setComposing] = useState(false);
+  /** The brief the form starts from, when the page offered one. */
+  const [starting, setStarting] = useState<Form | null>(null);
   const [editing, setEditing] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   const repositories = boards.data?.boards.map((board) => board.repository) ?? [];
@@ -61,6 +62,7 @@ export function ExperimentsPage() {
     onSuccess: async (research) => {
       setFailed(null);
       setComposing(false);
+      setStarting(null);
       setEditing(false);
       setPicked(research.id);
       await refresh();
@@ -70,18 +72,20 @@ export function ExperimentsPage() {
 
   const header = (
     <PageHeader
-      breadcrumb="Improve"
       title="Experiments"
-      context="A number to improve, a command that measures it, and the levers tried."
+      context="Try one change at a time against one number."
       actions={
         <Button
           size="sm"
           disabled={composing}
           onClick={() => {
             setComposing(true);
+            setStarting(null);
+            setEditing(false);
             setFailed(null);
           }}
         >
+          <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
           New brief
         </Button>
       }
@@ -91,7 +95,7 @@ export function ExperimentsPage() {
     return (
       <>
         {header}
-        <Loader message="Reading the research…" className="py-double" />
+        <Loader message="Reading the research" className="py-8" />
       </>
     );
   }
@@ -104,51 +108,94 @@ export function ExperimentsPage() {
     );
   }
 
+  const startWith = (brief: Pick<Form, "goal" | "measure" | "better">) => {
+    setStarting({ ...emptyForm(), ...brief });
+    setComposing(true);
+    setEditing(false);
+    setFailed(null);
+  };
+
+  // With no research there is nothing to list beside the page, so the page is one card that says how to begin.
+  if (list.data.length === 0) {
+    return (
+      <>
+        {header}
+        {composing ? (
+          <NewBrief
+            repositories={repositories}
+            busy={answered.isPending}
+            starting={starting}
+            onStore={(repository, brief) =>
+              answered.mutate(() => createResearch(repository, brief))
+            }
+            onCancel={() => {
+              setComposing(false);
+              setStarting(null);
+            }}
+          />
+        ) : (
+          <Empty
+            title="No research yet"
+            body="A brief names one number and the command that prints it. Moebius then tries one lever at a time and keeps what moves the number."
+            action={
+              <div className="flex flex-wrap gap-2">
+                {SUGGESTED_BRIEFS.map((brief) => (
+                  <Button
+                    key={brief.goal}
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => startWith(brief)}
+                  >
+                    {brief.goal}
+                  </Button>
+                ))}
+              </div>
+            }
+          />
+        )}
+      </>
+    );
+  }
+
   return (
     <>
       {header}
       <ListDetail
-        list={
-          list.data.length === 0 ? (
-            <Box title="Research">
-              <Body>None yet.</Body>
-            </Box>
-          ) : (
-            list.data.map((research) => {
-              const kept = (research.experiments ?? []).filter((e) => e.kept).length;
-              const count = research.experiments?.length ?? 0;
-              return (
-                <ListCard
-                  key={research.id}
-                  title={research.goal}
-                  tags={[statusTag(research.status)]}
-                  line={`${repositoryName(research)} · ${count} ${count === 1 ? "experiment" : "experiments"} · ${kept} kept`}
-                  chosen={!composing && chosen?.id === research.id}
-                  onClick={() => {
-                    setPicked(research.id);
-                    setComposing(false);
-                    setEditing(false);
-                    setFailed(null);
-                  }}
-                />
-              );
-            })
-          )
-        }
+        list={list.data.map((research) => {
+          const kept = (research.experiments ?? []).filter((each) => each.kept).length;
+          const count = research.experiments?.length ?? 0;
+          return (
+            <ListCard
+              key={research.id}
+              title={research.goal}
+              tags={[statusTag(research.status)]}
+              line={`${repositoryName(research)} · ${plural(count, "experiment", "experiments")} · ${kept} kept`}
+              selected={!composing && chosen?.id === research.id}
+              onClick={() => {
+                setPicked(research.id);
+                setComposing(false);
+                setEditing(false);
+                setFailed(null);
+              }}
+            />
+          );
+        })}
         detail={
           <>
             {failed && !editing && (
-              <Box title="The request was refused">
+              <Region label="The request was refused">
                 <Notice tone="error">{failed}</Notice>
-              </Box>
+              </Region>
             )}
             {composing ? (
               <NewBrief
                 repositories={repositories}
                 busy={answered.isPending}
+                starting={starting}
                 onStore={(repository, brief) =>
                   answered.mutate(() => createResearch(repository, brief))
                 }
+                onCancel={() => setComposing(false)}
               />
             ) : chosen ? (
               <>
@@ -169,22 +216,10 @@ export function ExperimentsPage() {
                     onAct={(action) => answered.mutate(() => actOnResearch(chosen.id, action))}
                   />
                 )}
-                <Box title="Baseline">
-                  {chosen.baseline === null ? (
-                    <Body>Not measured yet.</Body>
-                  ) : (
-                    <span className="text-[24px] font-bold text-high">
-                      {number(chosen.baseline)}
-                    </span>
-                  )}
-                </Box>
+                <Baseline research={chosen} />
                 <Levers research={chosen} />
               </>
-            ) : (
-              <Box title="No research yet">
-                <Body>Press "New brief" to say what to improve and how to measure it.</Body>
-              </Box>
-            )}
+            ) : null}
           </>
         }
       />
@@ -192,56 +227,71 @@ export function ExperimentsPage() {
   );
 }
 
-/** The fields every brief has: goal, measure, direction and token budget. */
+/** The fields every brief has: its goal, the command that measures the number, which way is better, and the budget. */
 function BriefFields({ form, onChange }: { form: Form; onChange: (form: Form) => void }) {
   return (
     <>
-      <Field label="Goal">
+      <Field label="Goal" hint="What should get better, said once.">
         {(id) => (
           <Input
             id={id}
-            placeholder="What should get better?"
+            placeholder="Cut the clean build time of the host"
             value={form.goal}
             onChange={(event) => onChange({ ...form, goal: event.target.value })}
           />
         )}
       </Field>
-      <Field label="Measure">
+      <Field
+        label="Measure"
+        hint="A shell command run in a worktree. Its result is the last number it prints."
+      >
         {(id) => (
           <Input
             id={id}
-            className="font-mono"
+            className="font-mono text-sm"
             placeholder="cargo bench | tail -1"
             value={form.measure}
             onChange={(event) => onChange({ ...form, measure: event.target.value })}
           />
         )}
       </Field>
-      <fieldset className="flex gap-base border-0 p-0" aria-label="Direction">
-        <Chip
-          active={form.better === "lower"}
-          onClick={() => onChange({ ...form, better: "lower" })}
+      <div className="grid gap-4 md:grid-cols-2">
+        <fieldset className="m-0 min-w-0 border-0 p-0">
+          <legend className="m-0 mb-2 p-0 text-sm font-semibold text-secondary">
+            Which way is better
+          </legend>
+          <div className="flex flex-wrap gap-2">
+            <Chip
+              selected={form.better === "lower"}
+              onClick={() => onChange({ ...form, better: "lower" })}
+            >
+              Lower is better
+            </Chip>
+            <Chip
+              selected={form.better === "higher"}
+              onClick={() => onChange({ ...form, better: "higher" })}
+            >
+              Higher is better
+            </Chip>
+          </div>
+        </fieldset>
+        <Field
+          label="Token budget"
+          hint="What the research may spend before it stops."
+          className="min-w-0"
         >
-          Lower is better
-        </Chip>
-        <Chip
-          active={form.better === "higher"}
-          onClick={() => onChange({ ...form, better: "higher" })}
-        >
-          Higher is better
-        </Chip>
-      </fieldset>
-      <Field label="Token budget" className="max-w-[240px] flex-none">
-        {(id) => (
-          <Input
-            id={id}
-            inputMode="numeric"
-            placeholder={DEFAULT_BUDGET}
-            value={form.budget}
-            onChange={(event) => onChange({ ...form, budget: event.target.value })}
-          />
-        )}
-      </Field>
+          {(id) => (
+            <Input
+              id={id}
+              inputMode="numeric"
+              className="tabular-nums"
+              placeholder={DEFAULT_BUDGET}
+              value={form.budget}
+              onChange={(event) => onChange({ ...form, budget: event.target.value })}
+            />
+          )}
+        </Field>
+      </div>
     </>
   );
 }
@@ -251,45 +301,57 @@ function NewBrief({
   repositories,
   busy,
   onStore,
+  onCancel,
+  starting,
 }: {
   repositories: Array<{ id: number; name: string }>;
   busy: boolean;
   onStore: (repository: number, brief: NonNullable<ReturnType<typeof briefOf>>) => void;
+  onCancel: () => void;
+  /** A brief to open the form with, when the empty page offered one. */
+  starting?: Form | null;
 }) {
-  const [form, setForm] = useState<Form>(emptyForm);
+  const [form, setForm] = useState<Form>(starting ?? emptyForm);
   // The first repository until one is chosen, as the snapshot may arrive after the form opens.
   const repository = form.repository ?? repositories[0]?.id ?? null;
   const brief = briefOf({ ...form, repository });
   return (
     <Box title="New brief">
-      <div className="flex flex-col gap-half">
-        <span className="text-xs font-semibold text-low">Repository</span>
-        <fieldset className="flex flex-wrap gap-base border-0 p-0" aria-label="Repository">
-          {repositories.map((each) => (
-            <Chip
-              key={each.id}
-              active={repository === each.id}
-              onClick={() => setForm({ ...form, repository: each.id })}
-            >
-              {each.name}
-            </Chip>
-          ))}
+      <div className="flex flex-col gap-4">
+        <fieldset className="m-0 min-w-0 border-0 p-0">
+          <legend className="m-0 mb-2 p-0 text-sm font-semibold text-secondary">Repository</legend>
+          {repositories.length === 0 ? (
+            <p className="m-0 break-words text-sm text-secondary">
+              No repository yet. Add one under Projects first.
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {repositories.map((each) => (
+                <Chip
+                  key={each.id}
+                  selected={repository === each.id}
+                  onClick={() => setForm({ ...form, repository: each.id })}
+                >
+                  {each.name}
+                </Chip>
+              ))}
+            </div>
+          )}
         </fieldset>
-      </div>
-      <BriefFields form={form} onChange={setForm} />
-      <Body>
-        A shell command run in a worktree. Its result is the last number it prints; no number is a
-        failed measurement.
-      </Body>
-      <div>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={brief === null || busy}
-          onClick={() => brief && repository !== null && onStore(repository, brief)}
-        >
-          Store the brief
-        </Button>
+        <BriefFields form={form} onChange={setForm} />
+        <Body>The brief is stored as a draft. Nothing runs until it is confirmed and started.</Body>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            disabled={brief === null || busy}
+            onClick={() => brief && repository !== null && onStore(repository, brief)}
+          >
+            {busy ? "Saving" : "Store the brief"}
+          </Button>
+          <Button size="sm" variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+        </div>
       </div>
     </Box>
   );
@@ -313,21 +375,27 @@ function EditBrief({
   const brief = briefOf(form);
   return (
     <Box title="Brief">
-      <BriefFields form={form} onChange={setForm} />
-      {error && <Notice tone="error">{error}</Notice>}
-      <div className="flex gap-base">
-        <Button size="sm" disabled={brief === null || busy} onClick={() => brief && onSave(brief)}>
-          Save
-        </Button>
-        <Button size="sm" variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
+      <div className="flex flex-col gap-4">
+        <BriefFields form={form} onChange={setForm} />
+        {error && <Notice tone="error">{error}</Notice>}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            disabled={brief === null || busy}
+            onClick={() => brief && onSave(brief)}
+          >
+            {busy ? "Saving" : "Save"}
+          </Button>
+          <Button size="sm" variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+        </div>
       </div>
     </Box>
   );
 }
 
-/** The brief of the research chosen, with the buttons its status allows. */
+/** The brief of the research chosen: what it is after, how far it has got, and what a person can do with it now. */
 function BriefBox({
   research,
   repository,
@@ -343,58 +411,92 @@ function BriefBox({
 }) {
   const status = statusTag(research.status);
   const direction = research.better === "higher" ? "Higher is better" : "Lower is better";
+  const possible = actions(research.status);
   return (
-    <Box title="Brief">
-      <div className="flex flex-wrap items-center gap-base">
-        <h3 className="mr-auto break-words text-sm font-semibold text-high">{research.goal}</h3>
-        {research.status === "draft" && (
-          <button
-            type="button"
+    <Box
+      title="Brief"
+      actions={
+        research.status === "draft" ? (
+          <IconButton
+            icon={PencilSimpleIcon}
             aria-label="Edit the brief"
             title="Edit the brief"
             onClick={onEdit}
-            className="rounded-sm p-half text-low hover:bg-card hover:text-high"
-          >
-            <PencilSimpleIcon className="size-icon-sm" />
-          </button>
+          />
+        ) : undefined
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <h3 className="m-0 min-w-0 break-words text-lg font-semibold text-text">{research.goal}</h3>
+        <div className="flex flex-wrap items-center gap-2">
+          <Tag tone={status.tone}>{status.label}</Tag>
+          <span className="text-sm text-secondary tabular-nums">
+            {repository} · {direction} · {research.tokens ?? 0} of {research.token_budget} tokens
+            used
+          </span>
+        </div>
+        <span className="min-w-0 break-words rounded-control bg-sunken px-3 py-2 font-mono text-sm text-text">
+          {research.measure}
+        </span>
+        {research.reason && <Body>{research.reason}</Body>}
+        {possible.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {possible.map(({ label, action, primary }) => (
+              <Button
+                key={label}
+                size="sm"
+                variant={primary ? "primary" : "secondary"}
+                disabled={busy}
+                onClick={() => onAct(action)}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
         )}
-        <Tag tone={status.tone}>{status.label}</Tag>
-      </div>
-      <code className="break-words font-mono text-xs text-high">{research.measure}</code>
-      <span className="font-mono text-xs text-low">
-        {repository} · {direction} · {research.tokens ?? 0} of {research.token_budget} tokens used
-      </span>
-      {research.reason && <Body>{research.reason}</Body>}
-      <div className="flex gap-base">
-        {actions(research.status).map(({ label, action, primary }) => (
-          <Button
-            key={label}
-            size="sm"
-            variant={primary ? "default" : "outline"}
-            disabled={busy}
-            onClick={() => onAct(action)}
-          >
-            {label}
-          </Button>
-        ))}
       </div>
     </Box>
   );
 }
 
-/** The table of the levers tried. */
+/** The number the levers are compared with. */
+function Baseline({ research }: { research: Research }) {
+  return (
+    <Box title="Baseline">
+      {research.baseline === null ? (
+        <Body>Not measured yet. The first number the measure gives becomes it.</Body>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <span className="text-2xl font-semibold text-text tabular-nums">
+            {number(research.baseline)}
+          </span>
+          <p className="m-0 max-w-prose text-sm text-secondary">
+            The number the measure gave with nothing changed. Each lever is judged against it.
+          </p>
+        </div>
+      )}
+    </Box>
+  );
+}
+
+/** The table of the levers tried: what was changed, what it measured, and what came of it. */
 function Levers({ research }: { research: Research }) {
   const experiments = research.experiments ?? [];
   if (experiments.length === 0) {
     return (
-      <Box title="Experiments">
+      <Box title="Experiments" aside="One lever each">
         <Body>No lever has been tried yet.</Body>
       </Box>
     );
   }
   return (
-    <Box title="Experiments">
-      <Table head={["Lever", "Branch", "Value", "Change", "Result", "Reason"]}>
+    <Box
+      title="Experiments"
+      aside={
+        <span className="tabular-nums">{plural(experiments.length, "lever", "levers")} tried</span>
+      }
+    >
+      <Table head={["Lever", "Value", "Change", "Result"]}>
         {experiments.map((experiment) => {
           const shown = result(experiment);
           const moved =
@@ -403,16 +505,30 @@ function Levers({ research }: { research: Research }) {
               : null;
           return (
             <tr key={experiment.id}>
-              <td className={`${CELL} font-semibold text-high`}>{experiment.title}</td>
-              <td className={`${CELL} break-all font-mono text-xs text-low`}>
-                {experiment.branch}
-              </td>
-              <td className={CELL}>{experiment.value === null ? "—" : number(experiment.value)}</td>
-              <td className={CELL}>{moved ?? "—"}</td>
               <td className={CELL}>
-                <Tag tone={shown.tone}>{shown.label}</Tag>
+                <div className="flex min-w-0 flex-col gap-2">
+                  <span className="min-w-0 break-words font-semibold text-text">
+                    {experiment.title}
+                  </span>
+                  <code className="min-w-0 break-words font-mono text-sm text-secondary">
+                    {experiment.branch}
+                  </code>
+                </div>
               </td>
-              <td className={`${CELL} break-words`}>{experiment.reason ?? ""}</td>
+              <td className={`${CELL} whitespace-nowrap tabular-nums`}>
+                {experiment.value === null ? "—" : number(experiment.value)}
+              </td>
+              <td className={`${CELL} whitespace-nowrap tabular-nums`}>{moved ?? "—"}</td>
+              <td className={CELL}>
+                <div className="flex min-w-0 flex-col gap-2">
+                  <Tag tone={shown.tone}>{shown.label}</Tag>
+                  {experiment.reason && (
+                    <span className="min-w-0 break-words text-sm text-secondary">
+                      {experiment.reason}
+                    </span>
+                  )}
+                </div>
+              </td>
             </tr>
           );
         })}

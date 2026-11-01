@@ -1,4 +1,4 @@
-// From BloopAI/vibe-kanban packages/ui/src/components/KanbanBoard.tsx (Apache-2.0), changed: no i18n and no "add task" button (a card comes from an issue); a column is a lane box with a border colour that says what its cards do; the header takes a CSS colour and a count and shows the column's script; the drag context is a flex row of columns, not a divided grid; the Feature and Status types of the Gantt chart are gone; Card is a plain div (React 19 ref prop); the card takes a selected/live look from Deep Velvet and is dragged by its whole body, with the keyboard too (the original had a grip for phones, which the app does not need); dragging uses dnd-kit (a pointer sensor, a keyboard sensor that moves to the next column even when it is scrolled out of view, a drag overlay and spoken announcements) instead of @hello-pangea/dnd, and a column as a whole takes a drop.
+// From BloopAI/vibe-kanban packages/ui/src/components/KanbanBoard.tsx (Apache-2.0), changed: no i18n and no "add task" button (a card comes from an issue); a column is a lane of the canvas with no border, and its header says what the cards in it are doing in a word; the drag context is a flex row of columns, not a divided grid; the Feature and Status types of the Gantt chart are gone; Card is a plain div (React 19 ref prop); a card is a borderless sheet whose state is a word, and it is dragged by its whole body, with the keyboard too (the original had a grip for phones, which the app does not need); the card is a group and not a named button, and its title is the button that opens it, so the issue link and the pull-request badge inside it stay in the accessibility tree; dragging uses dnd-kit (a pointer sensor, a keyboard sensor that moves to the next column even when it is scrolled out of view, a drag overlay and spoken announcements) instead of @hello-pangea/dnd, and a column as a whole takes a drop.
 import {
   type Announcements,
   type CollisionDetection,
@@ -14,17 +14,9 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import {
-  type KeyboardEvent,
-  type MouseEvent,
-  type ReactNode,
-  type Ref,
-  type RefObject,
-  useCallback,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode, type Ref, type RefObject, useCallback, useRef, useState } from "react";
 import { cn } from "../lib/cn";
+import { noun } from "../lib/format";
 
 /** What a drag ends with: the card (its id) and the column it was let go over, none when it was let go elsewhere or cancelled. */
 export type DropResult = { cardId: string; column: string | null };
@@ -48,8 +40,8 @@ export const KanbanBoard = ({ children, name, className }: KanbanBoardProps) => 
       ref={setNodeRef}
       aria-label={name}
       className={cn(
-        "flex min-h-40 min-w-[220px] flex-1 flex-col rounded-xl border bg-lane p-[10px]",
-        isOver && "ring-2 ring-accent ring-inset",
+        "flex min-h-40 min-w-72 flex-1 flex-col rounded-card bg-lane p-3",
+        isOver && "ring-2 ring-text ring-inset",
         className,
       )}
     >
@@ -70,25 +62,28 @@ export type KanbanCardFaceProps = {
   className?: string;
   isSelected?: boolean;
   isOpen?: boolean;
-  /** The card is being worked on: its border is the live colour. */
+  /** The card's run is working: a hairline of the colour of work in progress. */
   isLive?: boolean;
 };
 
 const faceClass = ({ isLive, isSelected, isOpen, className }: KanbanCardFaceProps) =>
   cn(
-    "mb-[8px] rounded-lg border bg-card p-[10px] outline-none",
-    "focus-visible:ring-2 focus-visible:ring-accent",
-    isLive && "border-live-border",
-    isSelected
-      ? "border-accent ring-1 ring-accent ring-inset"
-      : isOpen && "ring-2 ring-secondary-foreground ring-inset",
+    "rounded-card bg-surface p-4 shadow-card",
+    "transition-shadow duration-(--motion-routine) ease-out hover:shadow-raised",
+    isLive && "ring-1 ring-progress-border ring-inset",
+    isSelected ? "ring-2 ring-text ring-inset" : isOpen && "ring-2 ring-hairline-strong ring-inset",
     className,
   );
 
 /** The look of a card without its dragging: what the drag overlay shows under the pointer. */
 export const KanbanCardFace = (props: KanbanCardFaceProps) => (
-  <div aria-hidden className={faceClass({ ...props, className: cn("shadow-lg", props.className) })}>
-    {props.children ?? <p className="m-0 font-medium text-sm">{props.name}</p>}
+  <div
+    aria-hidden
+    // A picture of a card, so nothing in it is a target: the links it shows belong to the card being dragged.
+    inert
+    className={faceClass({ ...props, className: cn("shadow-raised", props.className) })}
+  >
+    {props.children ?? <p className="m-0 text-base font-semibold">{props.name}</p>}
   </div>
 );
 
@@ -96,10 +91,13 @@ export type KanbanCardProps = KanbanCardFaceProps & {
   id: string;
   /** The name of the column the card is in. */
   column: string;
-  onClick?: (e: MouseEvent<HTMLDivElement>) => void;
+  /**
+   * Opens the card. Its title is the control that does this, so a keyboard and a screen reader have a real one; the
+   * rest of the card answers a plain click too, which is what a pointer expects of a card.
+   */
+  onOpen?: () => void;
   tabIndex?: number;
   forwardedRef?: Ref<HTMLDivElement>;
-  onKeyDown?: (e: KeyboardEvent) => void;
   dragDisabled?: boolean;
   testId?: string;
 };
@@ -110,10 +108,9 @@ export const KanbanCard = ({
   name,
   children,
   className,
-  onClick,
+  onOpen,
   tabIndex,
   forwardedRef,
-  onKeyDown,
   isOpen,
   isSelected,
   dragDisabled = false,
@@ -136,11 +133,15 @@ export const KanbanCard = ({
   };
 
   return (
-    // biome-ignore lint/a11y/useSemanticElements: the drag library needs this element as its handle (it supplies the role and the description through attributes); a card holds links, which a <button> cannot
+    // The drag library needs this box as its handle and describes it through `attributes`. It is a group, not a
+    // button: a card holds links, which a <button> may not, and naming a button makes what is inside it
+    // presentational, so the state word and the issue link would leave the accessibility tree.
+    // biome-ignore lint/a11y/useSemanticElements: a <fieldset> groups the controls of a form, which a card is not
     <div
       {...attributes}
       {...listeners}
-      role="button"
+      role="group"
+      aria-roledescription="card"
       tabIndex={tabIndex ?? 0}
       data-testid={testId}
       aria-label={name}
@@ -152,13 +153,14 @@ export const KanbanCard = ({
         className: cn(isDragging && "opacity-40", className),
       })}
       ref={setRefs}
-      onClick={onClick}
+      onClick={onOpen}
       onKeyDown={(e) => {
         listeners?.onKeyDown?.(e);
-        onKeyDown?.(e);
+        // Enter opens the card where it lands, Space picks it up for a drag; Enter that ended a drag is taken.
+        if (e.key === "Enter" && !e.defaultPrevented) onOpen?.();
       }}
     >
-      {children ?? <p className="m-0 font-medium text-sm">{name}</p>}
+      {children ?? <p className="m-0 text-base font-semibold">{name}</p>}
     </div>
   );
 };
@@ -171,7 +173,7 @@ export type KanbanCardsProps = {
 };
 
 export const KanbanCards = ({ children, className }: KanbanCardsProps) => (
-  <div className={cn("flex flex-1 flex-col", className)}>{children}</div>
+  <div className={cn("flex flex-1 flex-col gap-3", className)}>{children}</div>
 );
 
 // =============================================================================
@@ -180,26 +182,43 @@ export const KanbanCards = ({ children, className }: KanbanCardsProps) => (
 
 export type KanbanHeaderProps = {
   name: string;
-  /** Any CSS colour, such as `var(--live)`: the colour of the name. */
-  color: string;
+  /** How many cards the column shows. */
   count: number;
-  /** The line under the name, such as the column's script. */
-  detail?: string;
+  /** How many cards the column holds, when it shows fewer than that. */
+  total?: number;
+  /** What the cards of the column are doing, in a word: a `Status` saying `Working`, `Your turn`. */
+  status?: ReactNode;
+  /**
+   * The mark beside the column's name: the shape and colour of the state it holds. It never carries the meaning on its
+   * own — the name is beside it — and says nothing to the person hearing the page, so it is hidden from them.
+   */
+  mark?: ReactNode;
   className?: string;
 };
 
-export const KanbanHeader = ({ name, color, count, detail, className }: KanbanHeaderProps) => (
-  <div className={cn("shrink-0 border-b px-half pb-base pt-[6px] mb-base", className)}>
-    <div className="flex items-baseline justify-between gap-base">
-      <h2 className="m-0 text-[14px] font-bold" style={{ color }}>
-        {name}
-      </h2>
-      <span className="font-mono text-[11px] text-low" title={`${count} cards`}>
-        {count}
+export const KanbanHeader = ({
+  name,
+  count,
+  total,
+  status,
+  mark,
+  className,
+}: KanbanHeaderProps) => (
+  <header
+    className={cn("mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2", className)}
+  >
+    <h2 className="m-0 flex min-w-0 items-center gap-2 text-lg font-semibold tracking-tight text-text">
+      {mark}
+      {name}
+    </h2>
+    <div className="flex min-w-0 items-center gap-2">
+      {status}
+      <span className="text-sm text-secondary tabular-nums">
+        {total !== undefined && total > count ? `${count} of ${total}` : count}{" "}
+        {noun(count, "card", "cards")}
       </span>
     </div>
-    {detail && <div className="mt-[2px] font-mono text-[11px] text-low">{detail}</div>}
-  </div>
+  </header>
 );
 
 // =============================================================================
@@ -331,7 +350,7 @@ export const KanbanProvider = ({
       }}
       onDragCancel={() => setActiveId(null)}
     >
-      <div className={cn("flex items-stretch gap-[10px] min-h-full", className)}>{children}</div>
+      <div className={cn("flex min-h-full items-stretch gap-4", className)}>{children}</div>
       <DragOverlay dropAnimation={null}>
         {activeId ? <div {...{ [OVERLAY_ATTRIBUTE]: "" }}>{renderOverlay(activeId)}</div> : null}
       </DragOverlay>

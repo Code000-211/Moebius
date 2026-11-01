@@ -83,14 +83,14 @@ async fn carry(socket: WebSocket, stream: TcpStream) {
     let (mut send, mut receive) = socket.split();
     let up = async {
         while let Some(Ok(message)) = receive.next().await {
-            match message {
-                Message::Binary(bytes) => {
-                    if write.write_all(&bytes).await.is_err() {
-                        break;
-                    }
-                }
-                Message::Close(_) => break,
-                _ => {}
+            if matches!(message, Message::Close(_)) {
+                break;
+            }
+            let Message::Binary(bytes) = message else {
+                continue;
+            };
+            if write.write_all(&bytes).await.is_err() {
+                break;
             }
         }
     };

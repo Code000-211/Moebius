@@ -125,12 +125,12 @@ describe("what an item is about", () => {
 
 describe("how an item tells itself", () => {
   it("tags the kinds, red for stuck and amber for what waits for a move", () => {
-    expect(kindTag(item(1, "stuck", 1, {}))).toEqual({ label: "Stuck", tone: "red" });
+    expect(kindTag(item(1, "stuck", 1, {}))).toEqual({ label: "Stuck", tone: "error" });
     expect(kindTag(item(1, "ready_to_merge", null, {})).label).toBe("Change from a chat");
     expect(kindTag(item(1, "ready_to_merge", 4, {})).label).toBe("Ready to merge");
     expect(kindTag(item(1, "needs_design", 4, {}))).toEqual({
       label: "Needs design",
-      tone: "plain",
+      tone: "neutral",
     });
     expect(chipName("approve_issue")).toBe("Approvals");
     expect(chipName("needs_design")).toBe("Needs design");
@@ -239,7 +239,8 @@ describe("the filters", () => {
   });
 
   it("tells how many things need the person", () => {
-    expect(summary(0, 0)).toBe("Nothing needs you.");
+    // An empty inbox is said by the empty state of the page, and not twice over.
+    expect(summary(0, 0)).toBe("");
     expect(summary(1, 1)).toBe("1 thing needs you.");
     expect(summary(5, 5)).toBe("5 things need you.");
     expect(summary(5, 2)).toBe("5 things need you; 2 shown.");

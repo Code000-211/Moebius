@@ -386,6 +386,10 @@ CREATE TABLE localize_indexed (
 "#,
     lessons::SCHEMA,
     attempts::SCHEMA,
+    "ALTER TABLE runs ADD COLUMN title TEXT;",
+    r#"
+UPDATE cards SET column_name = 'Not started' WHERE column_name = 'Ready';
+"#,
 ];
 
 pub fn now() -> i64 {
@@ -571,6 +575,33 @@ mod tests {
         assert!(old.trusted.is_empty());
     }
 
+    /// The first column was called "Ready" until the board was named for the work rather than the tool; the cards
+    /// already in it are the cards of the column now, so no approved card is left in a lane the workflow lacks.
+    #[test]
+    fn the_cards_of_the_old_ready_column_become_the_cards_of_not_started() {
+        let dir = tempfile::tempdir().unwrap();
+        {
+            let conn = Connection::open(dir.path().join("moebius.sqlite")).unwrap();
+            for sql in &MIGRATIONS[..MIGRATIONS.len() - 1] {
+                conn.execute_batch(sql).unwrap();
+            }
+            conn.pragma_update(None, "user_version", (MIGRATIONS.len() - 1) as i64)
+                .unwrap();
+            conn.execute(
+                "INSERT INTO repositories (name, path, forge, default_branch) VALUES ('old', '/srv/old', 'none', 'main')",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO cards (repository_id, number, title, body, author, column_name, created_at) VALUES (1, 1, 'Ship it', '', 'person', 'Ready', 1)",
+                [],
+            )
+            .unwrap();
+        }
+        let s = Store::open(dir.path()).unwrap();
+        assert_eq!(s.cards(1).unwrap()[0].column, "Not started");
+    }
+
     #[test]
     fn records_round_trip() {
         let (_dir, s) = store();
@@ -586,15 +617,15 @@ mod tests {
             .add_card(repo.id, "Second", "", "leon", "Backlog")
             .unwrap();
         assert_eq!((a.number, b.number), (1, 2));
-        s.move_card(a.id, "Ready").unwrap();
-        assert_eq!(s.card(a.id).unwrap().unwrap().column, "Ready");
+        s.move_card(a.id, "Not started").unwrap();
+        assert_eq!(s.card(a.id).unwrap().unwrap().column, "Not started");
         let moves = s.moves_for_card(a.id).unwrap();
         assert_eq!(
             moves
                 .iter()
                 .map(|m| (m.from.as_str(), m.to.as_str()))
                 .collect::<Vec<_>>(),
-            [("Backlog", "Ready")]
+            [("Backlog", "Not started")]
         );
         assert!(s.moves_for_card(b.id).unwrap().is_empty());
         assert_eq!(s.cards(repo.id).unwrap().len(), 2);

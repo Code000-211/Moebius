@@ -66,7 +66,7 @@ async function typed(what: string) {
 describe("the run view", () => {
   it("says there is no such run", async () => {
     await open("/runs/999999");
-    await page.getByText("There is no such run.").waitFor();
+    await page.getByRole("heading", { name: "There is no such run" }).waitFor();
   });
 
   it.skipIf(usesRealServer)("shows the run, its card, and the events as they arrive", async () => {
@@ -277,17 +277,40 @@ describe("the terminals", () => {
     },
   );
 
-  it.skipIf(usesRealServer)(
-    "opens a shell in the clone of a repository from the board",
-    async () => {
-      await open("/board/1");
-      await page.getByRole("button", { name: "Terminal" }).click();
-      await connected().waitFor();
-      expect(fake().terminals.at(-1)?.path).toBe("/v1/repositories/1/terminal");
-      await page.getByRole("button", { name: "Close terminal" }).click();
-      await expect.poll(() => fake().terminals.at(-1)?.closed).toBe(true);
-    },
-  );
+  it.skipIf(usesRealServer)("keeps the board's shell alive while its sheet is closed", async () => {
+    await open("/board/1");
+    await page.getByRole("button", { name: "Terminal" }).click();
+    await connected().waitFor();
+    const sheet = page.getByRole("dialog");
+    await sheet.waitFor();
+    expect(fake().terminals.at(-1)?.path).toBe("/v1/repositories/1/terminal");
+    // A sheet too small to read is the reason this one is not a band under the cards.
+    const box = await sheet.boundingBox();
+    expect(box?.height ?? 0).toBeGreaterThan(300);
+    expect(box?.width ?? 0).toBeGreaterThan(600);
+    await focusTerminal();
+    await page.keyboard.type("keepme");
+    await screen().filter({ hasText: "keepme" }).waitFor();
+
+    // Closing the sheet hides the shell rather than ending it: the scrollback, the working directory and
+    // whatever is running in it are what a person wants back when they look at a card and come back.
+    await sheet.getByRole("button", { name: "Close" }).click();
+    await expect.poll(() => page.getByRole("dialog").count()).toBe(0);
+    expect(fake().terminals.length).toBe(1);
+    expect(fake().terminals.at(-1)?.closed).not.toBe(true);
+
+    // Opening it again is the same shell, and it takes the keyboard without being clicked.
+    await page.getByRole("button", { name: "Terminal" }).click();
+    await sheet.waitFor();
+    expect(fake().terminals.length).toBe(1);
+    await screen().filter({ hasText: "keepme" }).waitFor();
+    await page.keyboard.type("andagain");
+    await typed("andagain");
+
+    // Leaving the board leaves nothing to show the shell, so the socket closes and the server ends it.
+    await page.goto(`${server.url}/inbox`);
+    await expect.poll(() => fake().terminals.at(-1)?.closed).toBe(true);
+  });
 
   it.skipIf(usesRealServer)(
     "opens Pi-Bolt's terminal interface from a chat that waits",
@@ -331,12 +354,11 @@ describe("the terminals", () => {
 });
 
 describe("the Ports page", () => {
-  it("opens from the sidebar", async () => {
+  it("opens from the sidebar, behind Settings", async () => {
     await open("/inbox");
-    await page
-      .getByRole("navigation", { name: "Pages" })
-      .getByRole("link", { name: "Ports" })
-      .click();
+    const nav = page.getByRole("navigation", { name: "Pages" });
+    await nav.getByRole("link", { name: "Settings" }).click();
+    await nav.getByRole("link", { name: "Ports" }).click();
     await page.waitForURL("**/ports");
     await page.getByRole("heading", { name: "Ports", level: 1 }).waitFor();
   });

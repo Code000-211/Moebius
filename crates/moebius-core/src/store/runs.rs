@@ -27,6 +27,9 @@ pub struct Run {
     pub origin: String,
     /// The runner (`[[runners]]`) the run's harness went on; none for a run on the server.
     pub runner: Option<String>,
+    /// A chat's name as a person wrote it (`POST /v1/chats/{id}/title`); none while its title is its first message.
+    #[serde(default)]
+    pub title: Option<String>,
 }
 
 impl Run {
@@ -70,6 +73,7 @@ impl Store {
             harness_repository: false,
             origin: "chat".into(),
             runner: None,
+            title: None,
         })
     }
 
@@ -80,7 +84,7 @@ impl Store {
     ) -> Result<Vec<Run>> {
         self.rows(&format!(
             "SELECT id, card_id, agent, harness, purpose, status, worktree, started_at, ended_at, summary, repository_id,
-                harness_repository, origin, runner
+                harness_repository, origin, runner, title
              FROM runs WHERE {clause} ORDER BY id"
         ), [param], |r| {
             Ok(Run {
@@ -98,6 +102,7 @@ impl Store {
                 harness_repository: r.get(11)?,
                 origin: r.get(12)?,
                 runner: r.get(13)?,
+                title: r.get(14)?,
             })
         })
     }
@@ -107,6 +112,15 @@ impl Store {
         self.conn().execute(
             "UPDATE runs SET runner = ?1 WHERE id = ?2",
             params![runner, id],
+        )?;
+        Ok(())
+    }
+
+    /// Names a chat `title`, in place of the title taken from its first message; `None` gives that title back.
+    pub fn set_run_title(&self, id: i64, title: Option<&str>) -> Result<()> {
+        self.conn().execute(
+            "UPDATE runs SET title = ?1 WHERE id = ?2",
+            params![title, id],
         )?;
         Ok(())
     }
@@ -125,17 +139,23 @@ impl Store {
         self.runs_where("ended_at IS NULL AND ?1", 1.into())
     }
 
-    /// Ends every run that has not ended as failed, with an event saying why; returns them. For a server that
-    /// starts again, since no run outlives the server that drove it.
+    /// Ends every run that has not ended, with an event saying why; returns them. For a server that starts again,
+    /// since no run outlives the server that drove it. A chat that had answered and was waiting for the next message
+    /// is the one run that did not fail with the server: nothing was going in it, so it ends as `stopped` and says
+    /// nothing, the way a chat ends when a person closes it.
     pub fn fail_unended_runs(&self, why: &str) -> Result<Vec<Run>> {
         let runs = self.active_runs()?;
         for run in &runs {
-            self.append_event(
-                run.id,
-                "moebius_error",
-                &serde_json::json!({ "message": why }),
-            )?;
-            self.set_run_status(run.id, "failed")?;
+            let idle_chat =
+                run.purpose == "chat" && run.status == "waiting" && self.answered_seq(run.id)? > 0;
+            if !idle_chat {
+                self.append_event(
+                    run.id,
+                    "moebius_error",
+                    &serde_json::json!({ "message": why }),
+                )?;
+            }
+            self.set_run_status(run.id, if idle_chat { "stopped" } else { "failed" })?;
         }
         Ok(runs)
     }

@@ -1,0 +1,149 @@
+# Web app design standard
+
+The standard the web app (`web/`) is built to. It supersedes [`design.md`](design.md) here: that one is the brief the
+iced desktop app is built to, and the two themes are not kept in step (ADR 0013). Every value below is a token in
+[`web/src/styles/theme.css`](../web/src/styles/theme.css), which holds the light and dark pair of every name;
+`web/src/styles/tokens.test.ts` holds the tokens to it, and `web/e2e/design/audit.test.ts` (`pnpm audit:design`)
+measures every page against it in both themes at both widths.
+
+This page is the author's own standard, brought into the repository so that the code, the tests and the documentation
+can cite one thing; `web/README.md` maps the modules it is built from.
+
+Aim for the clarity, warmth, and polish of a well-designed consumer app: thoughtful spacing, plain words, precise status, care with small details. A first-time user starts the primary task within 10 seconds. One glance answers what is happening, what matters, and whether anything needs attention.
+
+
+## Principles
+- One focal point per screen.
+- Show outcomes, not machinery.
+- Keep the person in control: preserve input, allow cancellation, keep unrelated actions usable during background work.
+- Color carries meaning. Neutral foundation; strong color only where attention is warranted.
+- Motion and notifications mark meaningful change only.
+- Nothing should make someone feel slow, behind, or overwhelmed.
+
+## Voice
+One voice for labels, messages, errors, and generated text.
+
+- Lead with the answer or what changed. Purpose before mechanism; cause and effect when explaining why.
+- Sentence case throughout, buttons and headings included. Digits for counts: 3 items.
+- Present tense for ongoing work, past tense for completed. Specific verbs: Reading, Comparing, Saving.
+- A day is said as "Today", then "Yesterday", then the date itself — `27 Oct`, with the year once it leaves this one. A raw `2026-10-27` in a heading makes the reader do arithmetic to find out how recent it was.
+- A gap is said one way — `just now`, `5 min ago`, `2 h ago`, `2 d ago` — from the one helper (`ui/lib/format.ts`), never as `5m ago` on one page and `5 min ago` on the next. A time of day keeps the clock that wrote it (`07:33 UTC`) beside the named day.
+- A count agrees with its noun from one helper — `plural` and `noun` in `ui/lib/format.ts`. A page does not write `n === 1 ? "card" : "cards"` for a word; `noun` is for the case where the number is already on screen and only the word has to agree.
+- A count of what waits for you is said even when it is nothing: Inbox 0 answers the question the page was opened to ask. A count of what the machines are doing speaks only when there is something to report — "2 live", never "0 live".
+- A step that has finished says how long it took — `Thought 12s`, from `elapsed` in `ui/lib/format.ts` — because a step without a length looks like it is still going.
+- A title already says what a page or a box is. The line under it carries the state of the thing — a count, a warning, what is missing — or is not written at all. A category is not a second heading above a title: the navigation already says where a page lives.
+- On failure, say what happened and what to do next. End with an action only when there is one.
+- Labels: short verbs for actions (Save, Try again), nouns for destinations (Settings, History). Prefer 2-4 words. Icon-only controls get accessible names; helper text states a consequence or constraint.
+- One term per concept. Keep a glossary so names match across navigation, controls, messages, and docs.
+- The same state has the same words wherever it is said: "Your turn" on a card's badge, in the dock, on a run and on the Fleet tile; "Built in" for anything Moebius brings itself — an agent, a skill, a script, a plugin. A second name for one state ("Waits for you", "In the server") makes a person learn a synonym.
+
+Never: decorative punctuation and exclamation marks, throat clearing ("Let me", "It's worth noting"), filler praise ("Great question"), narration of internal steps ("I've gone ahead and"), hype ("seamless", "powerful", "smart"), jargon where plain words work.
+
+| Instead of | Write |
+| --- | --- |
+| Your document has been successfully saved! | Saved. |
+| Processing… | Uploading 3 files |
+| An unexpected error has occurred. | Couldn't save your changes. Try again. |
+| No entities found. | No projects yet. Create your first project. |
+| Are you sure you want to remove this item? | Item removed. Undo |
+
+### Generated text
+- Sentences of 20 words or fewer. Short replies of 1-3 sentences, under 60 words. Longer explanations go in a structured view.
+- Active voice, one topic per sentence, a clear referent for every "this", "that", and "it".
+- State only what was observed, checked, or provided, and name real gaps. Recommend an option, with reasons, when a decision is needed.
+- Ask only for what the system cannot obtain itself. Replace a confusing explanation with a concrete example.
+- Explain through the person, their action, the condition, the result: "Today, changing the filter clears your selection. Saving it separately would keep it."
+- Every message stands alone, without earlier messages or outside references.
+
+## Write to fit
+- Keep titles, reasons, and action labels visible; wrap rather than truncate. Truncate only compact navigation lists whose full content is easy to open.
+- A line that must stay on one line — a command, a path, a name in a bar — fades out at the end that runs short and keeps the end that identifies it: the beginning of a name, the end of a path. An ellipsis mid-word, or a hard cut, reads as broken; a fade reads as "there is more". A line that fits shows no fade, and asks for no tooltip either: the tooltip holds the whole of a line that ran out, and repeating a line that is already whole on the screen is noise in a box nobody asked for.
+- Put the meaningful part of a long path or identifier in view. Size layouts for realistic content, including longer translations.
+- Keep live status under 40 characters. Set length expectations wherever content is created.
+
+- A description in a compact list stops at four lines, the last one fading out; the whole of it is one click away in the detail beside the list.
+
+## Type, color, shape
+System font, or an equally readable alternative; monospace only where character precision matters. Scale: 12 caption, 13 metadata, 15 body, 17 emphasized, 22 section title, 28 page title. Body line height about 1.5. Regular and semibold for most content; heavier weights for a few headings. Tabular numbers for changing counts and timers.
+
+| Token | Light | Dark | Purpose |
+| --- | --- | --- | --- |
+| Background | #FBFAF8 | #121212 | Main canvas |
+| Surface | #FFFFFF | #1B1B1C | Cards and overlays |
+| Field | #FFFFFF | #0E0E0F | What is typed into, inside a card |
+| Primary text | #111111 | #F4F3F1 | Main content |
+| Secondary text | #5E5E5B | #A3A29E | Supporting content |
+| Muted | #9B9A96 | #6B6A67 | Decorative or inactive detail |
+| Hairline | Primary text at 8% | Primary text at 10% | Dividers and borders |
+| In progress | #2F6BFF | #5C8BFF | Active work |
+| Needs attention | #F5A524 | #F7B84B | Input or decisions needed |
+| Complete | #1FA971 | #34C58A | Successful completion |
+| Error | #E5484D | #FF6369 | Failure or blocked work |
+
+- Fill primary buttons with primary text color and a contrasting label. Keep category colors distinct from status colors, and use restrained tints for categories, avatars, and diagrams.
+- Pair color with text, icons, or shapes. Check contrast in both themes; muted must never make required information unreadable.
+- A state that almost every row is in is a quiet mark, not a pill: a finished tool call is a gray check, so the eye lands on the rare row that failed, is blocked or waits. The same holds for an action whose usual outcome is success — asking the upstreams again ends in a gray check beside the button, because the answer that went wrong is already said in words, in red, above it. The word stays for a screen reader, and in a tooltip only where the mark stands for a state a person is weighing. The same reasoning empties a list of a repeated word: rows that are nearly all waiting print "Idle" as many times as there are rows, and the word that repeats is the one nobody reads — so the mark moves to the end of the row, the word goes, and the name of the row keeps it for whoever cannot take the colour in (`app/shell/Sidebar.tsx`).
+- Follow the system theme, with an explicit override when useful.
+- 8pt spacing grid. Interactive rows at least 40px tall, at the same height whether a sidebar is open or a rail, so nothing moves when the width changes. Radii: 16 for cards and sheets, 12 for inputs and buttons, full for pills and avatars. Leave generous space between unrelated groups. Resolve crowding by cutting content or rearranging, not shrinking.
+- A shadow marks a floating layer, and marks it once: a card inside a card, a reply inside a card, sits flat on the surface it is read against. Two elevations stacked read as two sheets of plastic, and say nothing about which one is on top. Cards are borderless; a hairline is for rules, dividers and an unfocused field. A grouped navigation list is held apart by its labels and the space around them, not by a rule under every group — a rail shows no labels, so the line would divide nothing and be the one thing that moves when the width changes. A group's label names it and goes nowhere; the way into everything the group holds is a row of the group, at the height of the rows beside it — the Projects list opens on an "All projects" row, not on the word over it.
+
+## Components
+- Buttons: one clear primary action, quieter alternatives, consistent sizing. A button is as wide as its label, never the width of the row it happens to sit in. An action that starts a new thing says it with a plus, on the page header and in an empty place alike, so the same verb is drawn the same way wherever a person meets it. A destructive action is the `danger` variant wherever it appears, including the button that opens the question.
+- One thing that is on or off is one switch (`ui/page/Switch.tsx`) with the word it stands on beside it, never two buttons offering "On" and "Off": the pair reads as two actions rather than one state, says nothing at all while neither is pressed, and is twice the surface to hit. A switch says its state by the end the knob is on, then by the word beside it, then by `aria-checked` — never by the colour of its track alone.
+- Inputs: clear label, visible focus, preserved content, errors beside the field. Let them grow when content needs it. A field is the lightest surface in the card — white on a white card, with its edge drawn inside the box — never the same colour as the card behind it, or the thing to type into cannot be seen.
+- Tooltips supplement and never carry essential information. Toasts appear only when the current screen does not already show the result. Dialogs interrupt only for decisions that genuinely need it, and never trap. Sheets keep the underlying screen recognizable.
+- A sheet ends where the last thing in it ends: nothing sits in a band of empty space under the content, and a list that scrolls reaches the sheet's own padding. So does a box beside a column that grows: a file tree held to the height of the column next to it leaves a band under its last row, which reads as a box that failed to fill, so it stops where its last row stops (`app/projects/FilesPanel.tsx`).
+- Work that wants the height of the page — a shell in the clone of a repository — is a sheet over the page rather than a band under its content. The screen behind stays recognizable, and the work gets the height it needs instead of a strip that has to be scrolled inside a strip.
+- An empty place names the next action and offers it ready-made — two or three starting points that fill the field or start the thing — rather than explaining what an empty place means.
+- A navigation entry leads where a person wants to be, not to an empty field: Chat opens the most recent conversation when there is one. The entry stays standing across everything it leads to, including an address of its own.
+- A path shows the part that names the file (`SKILL.md`), with the whole of it kept where it can be read — the tooltip, the title, the detail beside it.
+- A file that is read as often as it is edited — a skill, a page of the reference — is offered drawn as well as raw (`ui/page/MarkdownBody.tsx`), and opens as the text: the text is what a person went there to look at, whether or not they can change it, and the drawing is one tab away. How it is read is held above the file, so moving along a list of them never asks for the choice again.
+- A field is never blank. What stands now is written in words, including the answer that comes from the agent or the server rather than from a pick: "Server default", not an empty box that leaves the person guessing whether the page loaded. Where a field is empty because what it writes to is gone, it says so and names the way on — "Moebius disconnected. Start a new chat to continue."
+- An action that leaves nothing to look at is an item of the list it belongs to rather than a page of its own — Sign out is a row of the Settings list, not a screen. The same holds for a row that only goes somewhere: the way back out of the Settings list is a Back row under Search, at the height of every other row, not an icon parked in the header.
+- A control that changes the shape of the navigation sits in the navigation's head, beside the mark, in both shapes: that is where a hand goes looking for it. It was moved to the foot of the list once — to give the mark the head to itself — and a person asked for it back the same day, because at the foot it sat out of sight of the thing it changes and under a list that scrolls. The head is the same 96px open or collapsed so the rows under it keep their place; in a 56px rail the mark and the control stack inside it, and the height is what gives the mark room above it — 14px of the head is nobody's but the mark's — since a pair that fills its box reads as one thing crammed against the top edge. The connection's dot rides the mark's top corner, because a dot at the bottom of the mark lands on the control beneath.
+- A field that can be left blank says what blank means — "No limit", "This one or the secret", "Set both, or neither" — in the place a blank would otherwise sit. A key with a default is said the same way ("Default 3"), so an empty field is never a guess.
+- A list with nothing in it takes no column of its own: the empty state that answers it — the one holding the button that makes the first row — uses the whole width (`ui/page/List.tsx`).
+- A collapsible row opens its own panel at the row's width: the box of what a tool printed starts and ends where the row it belongs to does. A list of separate items under a heading may still step in, because those are children rather than one box opening.
+- A mark and the line of text beside it share that line's middle. A pill nudged down to meet the first line of a row reads as a mistake as soon as there is a second row.
+- Skip unnecessary nesting, repeated containers, crowded toolbars, and long undifferentiated settings pages.
+
+## Shared components
+One implementation of each control, in one place: ``web/src/ui/``.
+
+- Use a shared component before building a new one. When none fits, extend it with a variant rather than copying it into a feature.
+- Components read color, spacing, radius, and type from named tokens (Surface, Primary text, In progress), never raw hex or one-off values.
+- Consistent names across the set. Variants: primary, secondary, ghost, danger. Sizes: sm, md, lg. States: default, hover, pressed, focus-visible, disabled, loading.
+- Every interactive component ships with an accessible name, visible focus, keyboard operation, reduced-motion behavior, and both themes. Features do not reimplement these locally.
+- A scrollbar stays quiet: thin, no arrows, no track of its own colour, and a thumb only a little stronger than a hairline.
+- Dropdowns, selects, and menus: the trigger shows the current selection, Escape closes, arrows and typing work, short lists stay inline and long ones become searchable, and the list aligns to the trigger without leaving the viewport. The chosen item is semibold on the selected fill, not marked with a circle or a tick that leaves the row looking unanswered. The caret sits inside the trigger's own box, and one control (`ui/page/Field.tsx`) serves every choice in the app — a page does not reach for the browser's `<select>`. A menu scrolls once, in its own surface: a list inside it that caps its own height makes a second scroller beside the first, and a column of a fixed height shrinks the rows it holds down to their minimum height, so their words fall outside the row's own fill. A choice whose value already says what it is — a model's name, a reasoning level — shows the value alone, with its label kept as the accessible name and as the head of the list it opens; a label is for a value that could be anything.
+- A control is given its state by the caller, not worked out inside a tooltip: a tooltip's trigger folds a function `className` into text, which leaves the row it wraps with its link and no shape.
+- Keep components presentational. Data and feature logic live outside; components take values in and report intent out.
+- Feature-local components stay in the feature directory and move into ``web/src/ui/`` only after a second real use. Add each shared component to the inventory with a link to its docs and one example of correct usage.
+- Changing a shared component updates every call site in the same change, or adds a variant and deprecates the old one instead of breaking consumers.
+
+## Interaction
+- Respond immediately. Use optimistic updates when failure can be handled safely.
+- Prefer Undo, and only when the action is actually reversible. Confirm only significant, irreversible actions.
+- Reveal gradually: a glance, a closer look, a detailed view.
+- A control that carries what is on screen somewhere else — Copy — waits for the block it belongs to be hovered or focused (`copy-quiet` and `reveal-copy` in `web/src/styles/tailwind.css`). The words are the content; a quiet button beside every message, tool call and code block at once is noise. A screen with nothing to hover keeps the control in place.
+- A state is said once, by the thing that owns it: a chat that ended carries the word in its own tag, so the line under the composer adds nothing — and the button that goes on from it is labelled for what it now does (Continue), because the state and the action are two different things a person asks where they are; a count is not repeated by a sentence under the heading that counts it, the day a report was read on is said by the list that chose it rather than again in the title of every card on it, and the number at the end of a row that already names what it counts is a number — "Chat 2", not "Chat 2 new".
+- An agent's message keeps the newlines it was written with, because a selection copies what is drawn: a break drawn as a space is gone from anything pasted out of the screen, and a transcript pasted into a field arrives as one line. A Markdown file is the other kind of writing — hard-wrapped by whoever wrote it — so there a newline stays soft and only a blank line makes a paragraph.
+- The field that writes to an agent names the agent — "Write to Moebius" — which is why no pill beside it repeats the name; a sheet floating over another page says which page it is looking at, in a line under its own name, because the page being asked about is the one half-covered behind it.
+- A disabled control carries its reason in the words a screen reader is told alongside its name, never as a line of text beside it and never in the browser's own tooltip box. A `title` draws a strip of somebody else's design system over the page it sits on, in colours and a font and a delay nobody chose, and reaches only a mouse: the same reason given through `aria-describedby` reaches a keyboard and a screen reader too, which is what `ui/components/Button.tsx` does with it. A control that simply has nothing to do is disabled and says nothing — Save with nothing waiting is that control. Where it would change nothing whatever it did, it is not offered at all: a chat window already showing a conversation nobody has started offers no way out of one. Keep errors beside the affected content, with a useful next step.
+- Empty states say what belongs there and how to begin, unless the next step is already obvious.
+- Loading placeholders match the expected layout; keep existing content during refreshes.
+- Preserve navigation, drafts, selections, and reading position.
+- Interrupt only for failures, blockers, decisions, and meaningful completion. Say what happened, what the system did, and whether action is needed; open the relevant place when a notification is selected; never repeat what is already on screen.
+- Keyboard: visible focus, logical order, predictable shortcuts. Escape closes overlays. Background updates never move, remove, or replace what someone is using.
+
+## Motion and imagery
+- Update content in place. Never scroll someone away from what they are reading; follow newly arriving content only when they are already at the end. A step someone opens is read where it is: unfolding one lets go of the end, even when the list was sitting on it. Do not animate the same content twice.
+- About 180ms ease-out for routine transitions. Springs sparingly. One restrained moment at completion.
+- Activity indicators stay subtle and carry real status text. Respect reduced-motion preferences.
+- One icon family, consistent stroke weight, 16px inline and 20px in controls. Service logos only to identify that service. No decorative symbols that imply intelligence without explaining it.
+- Meaningful images get useful alternative text and room enough to inspect.
+- Skip decorative gradients and glows, progress without context, unsupported time estimates, unnecessary celebration, and redundant success messages.
+
+## Docs
+Shared principles, voice, visual language, interaction patterns, and the shared component contract live in this page. Feature behavior goes in separate `<feature>.design.md` files, listed in a feature index that links here instead of repeating these rules.
+

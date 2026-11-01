@@ -141,4 +141,39 @@ mod tests {
             "failed"
         );
     }
+
+    /// A chat that answered and waits for the next message is open, not working. The server stopping ends it; it does
+    /// not fail it, and nothing new is said in it.
+    #[test]
+    fn a_chat_that_waits_for_a_message_ends_rather_than_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config::parse("", dir.path(), &dir.path().join("moebius.toml")).unwrap();
+        let first = Server::new(config.clone(), "127.0.0.1:1".parse().unwrap()).unwrap();
+        let chat = first
+            .app
+            .store
+            .add_run(None, "Moebius", "pi-bolt", "chat")
+            .unwrap();
+        first
+            .app
+            .store
+            .append_event(chat.id, "agent_settled", &serde_json::json!({}))
+            .unwrap();
+        first.app.store.set_run_status(chat.id, "waiting").unwrap();
+        drop(first);
+
+        let second = Server::new(config, "127.0.0.1:1".parse().unwrap()).unwrap();
+        let ended = second.app.store.run(chat.id).unwrap().unwrap();
+        assert_eq!(ended.status, "stopped");
+        assert!(ended.ended_at.is_some());
+        let kinds: Vec<String> = second
+            .app
+            .store
+            .events(chat.id)
+            .unwrap()
+            .into_iter()
+            .map(|event| event.kind)
+            .collect();
+        assert_eq!(kinds, vec!["agent_settled".to_string()]);
+    }
 }

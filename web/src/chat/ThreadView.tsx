@@ -3,11 +3,19 @@
  * to its end as it grows, unless the person scrolled up (see `follow.ts`); reaching the end again, or sending a message
  * (`sent` counts them), follows again.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { Turn } from "../ui/chat/Turn";
+import { Empty } from "../ui/page/Empty";
 import type { Entry } from "./conversation";
-import { afterScroll, afterSend, byPerson, type ScrollState, shouldRepin } from "./follow";
+import {
+  afterScroll,
+  afterSend,
+  afterToggle,
+  byPerson,
+  type ScrollState,
+  shouldRepin,
+} from "./follow";
 import { groupTurns } from "./turns";
 
 interface ThreadViewProps {
@@ -16,11 +24,22 @@ interface ThreadViewProps {
   working: boolean;
   /** How many messages the person has sent from this page; a new one follows the conversation again. */
   sent: number;
-  /** Shown when there is nothing to show yet. */
-  empty: string;
+  /** What belongs here while it is empty, said in a sentence. Leave it out while the page is still loading. */
+  empty?: string;
+  /** What the empty place is called; "Nothing said yet" unless the page says otherwise. */
+  emptyTitle?: string;
+  /** What a person can press to start, while the place is empty: an empty chat that offers nothing asks to be read rather than used. */
+  emptyAction?: ReactNode;
 }
 
-export function ThreadView({ entries, working, sent, empty }: ThreadViewProps) {
+export function ThreadView({
+  entries,
+  working,
+  sent,
+  empty,
+  emptyTitle = "Nothing said yet",
+  emptyAction,
+}: ThreadViewProps) {
   const turns = useMemo(() => groupTurns(entries, working), [entries, working]);
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
   const list = useRef<VirtuosoHandle>(null);
@@ -30,6 +49,8 @@ export function ThreadView({ entries, working, sent, empty }: ThreadViewProps) {
   const repins = useRef(0);
 
   const toggle = useCallback((key: string) => {
+    // What is opened is read where it is, so the list lets go of its end rather than scrolling the new text away.
+    state.current = afterToggle(state.current);
     setUnfolded((held) => {
       const next = new Set(held);
       if (!next.delete(key)) next.add(key);
@@ -112,9 +133,9 @@ export function ThreadView({ entries, working, sent, empty }: ThreadViewProps) {
 
   if (turns.length === 0) {
     return (
-      <p className="py-double text-center text-sm text-low" data-testid="empty-thread">
-        {empty}
-      </p>
+      <div className="p-4" data-testid="empty-thread">
+        <Empty title={emptyTitle} body={empty} action={emptyAction} />
+      </div>
     );
   }
   return (
@@ -129,7 +150,7 @@ export function ThreadView({ entries, working, sent, empty }: ThreadViewProps) {
       data-testid="thread"
       style={{ height: "100%" }}
       itemContent={(_, turn) => (
-        <div className="pb-[18px]">
+        <div className="pb-6">
           <Turn turn={turn} unfolded={unfolded} onToggle={toggle} />
         </div>
       )}

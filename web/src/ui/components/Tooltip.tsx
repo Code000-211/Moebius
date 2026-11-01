@@ -1,21 +1,19 @@
-// From BloopAI/vibe-kanban packages/ui/src/components/Tooltip.tsx (Apache-2.0), changed: kbd uses the code font of the app (font-mono) in place of IBM Plex Mono.
+// From BloopAI/vibe-kanban packages/ui/src/components/Tooltip.tsx (Apache-2.0), changed to this app's design
+// standard: the bubble is a raised surface at the sheet radius with the raised shadow, a tooltip supplements and never
+// carries anything essential.
 
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import type { ReactNode } from "react";
 import { cn } from "../lib/cn";
-import { getModifierKey } from "../lib/platform";
 
 interface TooltipProps {
   children: ReactNode;
   content: string;
-  shortcut?: string;
   side?: "top" | "bottom" | "left" | "right";
   className?: string;
 }
 
-export function Tooltip({ children, content, shortcut, side = "bottom", className }: TooltipProps) {
-  const formattedShortcut = shortcut?.replace("{mod}", getModifierKey());
-
+export function Tooltip({ children, content, side = "bottom", className }: TooltipProps) {
   return (
     <TooltipPrimitive.Provider delayDuration={300}>
       <TooltipPrimitive.Root>
@@ -25,23 +23,12 @@ export function Tooltip({ children, content, shortcut, side = "bottom", classNam
             side={side}
             sideOffset={4}
             className={cn(
-              "z-[10000] flex items-center rounded-sm bg-panel px-base py-half text-xs text-normal shadow-md",
-              "animate-in fade-in-0 zoom-in-95",
+              "z-tip flex items-center gap-2 rounded-control bg-raised px-3 py-2 text-sm text-text shadow-raised",
+              "animate-in fade-in-0 zoom-in-95 duration-(--motion-routine)",
               className,
             )}
           >
             <span>{content}</span>
-            {formattedShortcut && (
-              <kbd
-                className={cn(
-                  "ml-2 inline-flex items-center gap-0.5 px-2 py-0.5",
-                  "rounded-sm border border-border bg-secondary",
-                  "font-mono text-xs text-high",
-                )}
-              >
-                {formattedShortcut}
-              </kbd>
-            )}
           </TooltipPrimitive.Content>
         </TooltipPrimitive.Portal>
       </TooltipPrimitive.Root>

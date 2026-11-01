@@ -65,7 +65,7 @@ fn files_app() -> App {
     app
 }
 
-/// The radiance project with the Ready column's script and `main.rs` (changed, unsaved) open as editor tabs.
+/// The radiance project with the Not started column's script and `main.rs` (changed, unsaved) open as editor tabs.
 fn editor_app() -> App {
     use iced::widget::text_editor::{Action, Edit};
     let mut app = files_app();
