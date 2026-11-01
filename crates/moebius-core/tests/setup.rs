@@ -98,6 +98,7 @@ protocol = "anthropic"
     )
     .unwrap();
     let state = ApiState {
+        sessions: Default::default(),
         app: server.app.clone(),
         runs: server.harness.clone(),
         harness_repo: None,
@@ -232,6 +233,7 @@ async fn a_server_without_a_teacher_a_decision_model_or_github_says_so() {
     let config = Config::parse("", dir.path(), &dir.path().join("moebius.toml")).unwrap();
     let server = Server::new(config, "127.0.0.1:1".parse().unwrap()).unwrap();
     let state = ApiState {
+        sessions: Default::default(),
         app: server.app.clone(),
         runs: server.harness.clone(),
         harness_repo: None,

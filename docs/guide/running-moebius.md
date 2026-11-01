@@ -64,7 +64,12 @@ the server in WSL (see [On Windows](#on-windows)). Every key named here is in th
    moebius serve
    ```
 
-   Open the desktop app and give it the address (`http://127.0.0.1:7171`) and the content of `.moebius/token`. On the
+   `moebius serve` prints a line `Open the web app: http://127.0.0.1:7171/?login=<code>`: open that address in a browser
+   to use the web app from the same address as the API. The code signs in once and lasts 10 minutes; `moebius web`
+   prints a new address (or sign in with the token of `.moebius/token` on the page). The browser keeps a session
+   until you sign out or the server restarts.
+
+   Or open the desktop app and give it the address (`http://127.0.0.1:7171`) and the content of `.moebius/token`. On the
    machine that runs the server the `moebius` commands find both by themselves when you run them in the directory of
    `moebius.toml`, or with `--config`.
 

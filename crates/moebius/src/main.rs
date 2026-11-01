@@ -231,6 +231,9 @@ fn run(cli: Cli) -> Result<(), String> {
                     server.config.data_dir.display(),
                     server.config.listen,
                 );
+                // On standard output only: the code signs a browser in, so it stays out of the log.
+                let api_addr = api.local_addr().map_err(|e| e.to_string())?;
+                println!("Open the web app: {}", server.web_login_url(api_addr)?);
                 let served = tokio::select! {
                     served = server.clone().serve(api, router) => served.map_err(|e| e.to_string()),
                     _ = tokio::signal::ctrl_c() => Ok(()),

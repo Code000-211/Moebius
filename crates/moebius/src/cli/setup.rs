@@ -1,6 +1,6 @@
 //! Setting the server up and keeping it running: `doctor` checks the steps to a first card (`GET /v1/start`) and
 //! writes its warnings, `settings` shows and changes `moebius.toml`, `secrets set` stores an API key read from standard
-//! input, `usage` writes the tokens and calls of the last days, and `server restart` restarts the server.
+//! input, `web` makes the address that opens the web app, `usage` writes the tokens and calls of the last days, and `server restart` restarts the server.
 
 use clap::Subcommand;
 use serde_json::{Map, Value, json};
@@ -47,6 +47,22 @@ pub enum ServerCommand {
 /// `doctor`.
 pub fn doctor() -> Plan {
     Ok((Request::get("/v1/start"), Show::Doctor))
+}
+
+/// `web`: a one-time code for the web app, as the address that opens it.
+pub fn web() -> Plan {
+    Ok((Request::post("/v1/session/codes", json!({})), Show::Web))
+}
+
+/// The address of `POST /v1/session/codes` and how long it lasts.
+pub fn show_web(view: &Value) -> Result<String, String> {
+    let url = view["url"]
+        .as_str()
+        .ok_or("the answer has no url".to_string())?;
+    Ok(format!(
+        "Open the web app: {url}\nThe address signs in once and works for {} minutes.",
+        moebius_core::server::api::CODE_LIFETIME / 60
+    ))
 }
 
 /// `settings` and `settings set`.
@@ -177,6 +193,19 @@ pub fn show_usage(view: &Value) -> String {
 mod tests {
     use crate::cli::tests::plan;
     use serde_json::json;
+
+    #[test]
+    fn web_asks_for_a_login_code_and_writes_the_address() {
+        let (request, show) = plan(&["web"]).unwrap();
+        assert_eq!(request.path, "/v1/session/codes");
+        assert_eq!(request.body, Some(json!({})));
+        let text = crate::cli::render(
+            &show,
+            r#"{"url": "http://127.0.0.1:7171/?login=abc", "expires_at": 1}"#,
+        )
+        .unwrap();
+        assert!(text.starts_with("Open the web app: http://127.0.0.1:7171/?login=abc\n"));
+    }
 
     #[test]
     fn settings_values_are_json_when_they_parse_as_json() {

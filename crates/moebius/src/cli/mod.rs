@@ -169,6 +169,8 @@ pub enum Operate {
         #[command(subcommand)]
         command: TakeoverCommand,
     },
+    /// A new address that opens the web app in a browser, signed in once with a one-time code.
+    Web,
     /// Operate the server itself.
     Server {
         #[command(subcommand)]
@@ -209,6 +211,7 @@ impl Operate {
             Secrets { command } => setup::secrets(command),
             Usage { days } => setup::usage(*days),
             Doctor => setup::doctor(),
+            Web => setup::web(),
             Server { command } => setup::server(command),
             Retro { date, command } => improve::retro(date.as_deref(), command.as_ref()),
             Proposals => improve::proposals(),
@@ -241,6 +244,8 @@ pub enum Show {
     Usage,
     DecisionModel,
     Doctor,
+    /// The address that opens the web app.
+    Web,
     /// A short sentence, for an answer with nothing in it to show.
     Done(String),
 }
@@ -290,6 +295,7 @@ pub fn render(show: &Show, text: &str) -> Result<String, String> {
         Show::Usage => setup::show_usage(&value),
         Show::DecisionModel => improve::show_decision_model(&value),
         Show::Doctor => setup::show_doctor(&value),
+        Show::Web => setup::show_web(&value)?,
     })
 }
 

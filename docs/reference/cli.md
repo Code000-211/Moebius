@@ -128,6 +128,7 @@ takes a repository's name.
 | `grilling dismiss <id>` | `POST /v1/grillings/{id}/dismiss` | The grilling. |
 | `usage [--days <n>]` | `GET /v1/usage?days=<n>` | The window's totals, then the agents and the models. |
 | `doctor` | `GET /v1/start` | One line for each step of [the first start](desktop-api.md#get-v1start), `ok` or `missing` with what is missing, such as `missing  upstream: Add an upstream on the Models page.` After the steps, a line `warning  <text>` for each of the answer's `warnings`, such as an upstream that logs in with OAuth. The exit status is 1 while a step is missing (a warning does not change it), so that a script can wait for a ready server. |
+| `web` | `POST /v1/session/codes` | The line `Open the web app: <url>`, where the address signs a browser in once with a one-time code that lasts 10 minutes. The server prints the same kind of line when it starts. |
 | `decision-model` | `GET /v1/decision-model` | The model, its agreement per kind and its takeovers. |
 | `takeovers` | `GET /v1/takeovers` | Table `id kind status agreement count`. |
 | `takeover merge\|dismiss\|release <id> [--reason <text>]` | `POST /v1/takeovers/{id}/merge`, `/dismiss`, `/release` | The takeover. |

@@ -11,10 +11,12 @@ network.
 
 ## Authentication
 
-Every request, the WebSocket upgrade included, carries `Authorization: Bearer <token>`. The token is the content of
+Every request to `/v1/`, the WebSocket upgrade included, carries `Authorization: Bearer <token>` (or, in a browser, the
+cookie of a [session](#post-v1session)). The token is the content of
 `token_file` (by default `<data_dir>/token`, created when the server first starts). A missing or wrong token is answered
-with `401` and the plain text `a valid token is needed`. The one exception is `POST /v1/webhooks/{forge}`, which a forge
-sends and which carries the forge's signature instead.
+with `401` and the plain text `a valid token is needed`. The exceptions are `POST /v1/webhooks/{forge}`, which a forge
+sends and which carries the forge's signature instead, and `/v1/session`, which signs a browser in. The paths outside
+`/v1/` need no token: they are the [web app](#the-web-app).
 
 The run token of a run of the Moebius agent (`MOEBIUS_TOKEN` in its environment, see the [bridge
 protocol](bridge-protocol.md#the-environment-of-the-harness)) is accepted as well, while the run lasts: it is how the
@@ -24,8 +26,18 @@ another run, such as a steer, the judgement keeps that run, and the agent's run 
 The run token of any other agent, and a revoked one, is answered with `401`. Two routes stay with a person and answer
 `403` with `only a person can do this` to a run token: `PUT /v1/secrets/{name}` (an agent must not set keys),
 `GET /v1/webhooks` and `POST /v1/webhooks/{forge}/secret` (they hold the webhook secrets),
-`POST /v1/harness/setup` (moving the agents is a person's choice) and `GET /v1/runs/{id}/terminal`, `GET /v1/chats/{id}/tui`, `GET /v1/terminal` and `GET /v1/repositories/{id}/terminal` (the shells) and `GET /v1/ports/{port}/tunnel`, and `PUT /v1/client` (what the app says of itself). Where a route below says "a person" and "decider
+`POST /v1/session` and `POST /v1/session/codes` (a run token never signs in or makes a login code), `POST /v1/harness/setup` (moving the agents is a person's choice) and `GET /v1/runs/{id}/terminal`, `GET /v1/chats/{id}/tui`, `GET /v1/terminal` and `GET /v1/repositories/{id}/terminal` (the shells) and `GET /v1/ports/{port}/tunnel`, and `PUT /v1/client` (what the app says of itself). Where a route below says "a person" and "decider
 `person`", an agent that uses its token is the decider instead.
+
+A browser signs in once and then carries the cookie `moebius_session` (`HttpOnly; SameSite=Strict; Path=/`, and `Secure` when
+a proxy in front of the server says with `X-Forwarded-Proto: https` that the browser used TLS). Every route, the
+WebSocket upgrades included, accepts a valid cookie as the person's token, as a person: a person's route is open to it
+and the decider of a decision is `person`. A bearer token that is not valid is refused even when the request also has a
+valid cookie. Because a browser sends a cookie by itself, a request that only a cookie vouches for has to prove that
+it comes from the web app: a method other than `GET`, `HEAD` and `OPTIONS` needs the header `X-Moebius: 1`, and an
+`Origin` header, which browsers send on changes and on WebSocket upgrades, must name the host of the `Host` header
+(scheme left out). Otherwise the answer is `403` with `cross-site request refused`. A request with the bearer token
+needs neither.
 
 ```sh
 TOKEN=$(cat .moebius/token)
@@ -126,6 +138,41 @@ A column script can add other kinds with `moebius.ask`.
 ### `GET /v1/health`
 
 Response: `{"version": "0.1.0"}`, the server's version.
+
+### The web app
+
+The server serves the web app, built from `web/` into `web/dist` and embedded in the binary when it is built, at `/` on
+the address of this API. Every `GET` of a path outside `/v1/` that is no file of the app answers `index.html`, since the
+app routes in the browser; the files get their media type, `index.html` has `Cache-Control: no-cache` and the files
+under `assets/` are cached for a year. A binary built without `web/dist` answers a short page that says to run `pnpm -C
+web build` and build the server again. Nothing under `/v1/` is a file: an unknown `/v1/` path is answered `401` without
+a valid token and `404` with one.
+
+At start, `moebius serve` prints the line `Open the web app: http://<listen address>/?login=<code>` on standard output
+(not in the log). The page signs in with the code and takes it out of the address.
+
+### `POST /v1/session`
+
+Signs a browser in. No `Authorization` is needed. Request body: `{"token": string}` with the person's token, or
+`{"code": string}` with a one-time code of `POST /v1/session/codes`. Response: `204` and the cookie `moebius_session=<id>`
+(see Authentication). The sessions live in memory, so a restart of the server signs everybody out. Errors: `401` with
+`a valid token is needed` for a wrong token, a wrong, used or expired code, or a body with neither; `403` with `only a
+person can do this` for a run token.
+
+### `GET /v1/session`
+
+`200` with `{"signed_in": true}` for a request with a valid cookie or bearer token, else `401`.
+
+### `DELETE /v1/session`
+
+Signs out: forgets the session of the cookie and clears the cookie. Response: `204`.
+
+### `POST /v1/session/codes`
+
+A new one-time code that signs a browser in without the token: it works once and for 10 minutes. Request body: `{}`.
+Response: `{"url": string, "expires_at": number}`, where `url` is `http://<Host of the request>/?login=<code>` (`https` when
+the request says with `X-Forwarded-Proto` that it came over TLS) and `expires_at` is Unix seconds. The code is only in
+memory, never stored or logged. [`moebius web`](cli.md) prints the address. Errors: `403` to a run token.
 
 ### `GET /v1/server`
 

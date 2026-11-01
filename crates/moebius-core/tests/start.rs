@@ -14,6 +14,7 @@ async fn serve(dir: &Path, toml: &str) -> (Server, String, String) {
     let config = Config::parse(toml, dir, &file).unwrap();
     let server = Server::new(config, "127.0.0.1:1".parse().unwrap()).unwrap();
     let state = ApiState {
+        sessions: Default::default(),
         app: server.app.clone(),
         runs: server.harness.clone(),
         harness_repo: None,

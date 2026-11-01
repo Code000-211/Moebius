@@ -106,6 +106,7 @@ async fn both_kinds_are_recorded_shadowed_proposed_and_taken_over() {
     tokio::spawn(api::serve(
         api_listener,
         ApiState {
+            sessions: Default::default(),
             app: app.clone(),
             runs: server.harness.clone(),
             harness_repo: None,

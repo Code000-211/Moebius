@@ -20,11 +20,14 @@
 //! - `ports`: the ports that runs and terminals listen on, and a WebSocket that carries a connection to one.
 //! - `whereabouts`: where the server runs and what the desktop app reports about itself.
 //! - `events`: the WebSocket on which every event of the core arrives.
+//! - `session`: signing in from a browser with a cookie, and the one-time codes that open the web app signed in.
+//! - `web`: the web app itself, served at `/` without a token.
 //! - `webhooks`: the deliveries of the forges, which need no token but a signature, and the secrets to set on the forges.
 //!
-//! Every request but a forge's webhook delivery carries `Authorization: Bearer <token>`: the server's token, or the run
-//! token of a run of the Moebius agent, which acts as that agent (`PUT /v1/secrets/{name}` and the terminal stay with a person); anything else is
-//! answered with 401.
+//! Every request to `/v1/` but a forge's webhook delivery and the sign-in of a browser carries
+//! `Authorization: Bearer <token>`: the server's token, or the run token of a run of the Moebius agent, which acts as
+//! that agent (`PUT /v1/secrets/{name}` and the terminal stay with a person); or the `moebius_session` cookie of a
+//! browser that signed in, which acts as a person. Anything else is answered with 401.
 
 mod automations;
 mod cards;
@@ -37,9 +40,11 @@ mod ports;
 mod repositories;
 mod rules;
 mod runs;
+mod session;
 mod settings;
 mod terminals;
 mod uploads;
+mod web;
 mod webhooks;
 mod whereabouts;
 
@@ -53,6 +58,7 @@ pub use chats::{ChatMessage, ConfirmedIssues, NewChat, NewChatSettings};
 pub use improve::{DayUsage, UsageAnswer, UsageTotals};
 pub use repositories::{EditedRepository, NewRepository};
 pub use runs::Steer;
+pub use session::{CODE_LIFETIME, LoginCode, Sessions, login_url};
 pub use uploads::{UPLOAD_LIMIT, Upload};
 
 use std::path::Path;
@@ -89,6 +95,8 @@ pub struct ApiState {
     /// What the server runs with, which the Models and Settings screens show and edit. The rounds a card gets and the
     /// day's token budget, which boards and the usage screen show, are read from it.
     pub config: Arc<Live>,
+    /// The browsers that signed in, and the one-time codes that sign one in.
+    pub sessions: Sessions,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -186,8 +194,11 @@ pub fn router(state: ApiState) -> Router {
         .merge(events::routes())
         .merge(webhooks::routes())
         .merge(whereabouts::routes())
+        .merge(session::routes())
+        .fallback(web::fallback)
         .layer(middleware::from_fn_with_state(state.clone(), authenticate))
         .merge(webhooks::public_routes())
+        .merge(session::public_routes())
         .with_state(state)
 }
 
@@ -196,25 +207,76 @@ pub async fn serve(listener: tokio::net::TcpListener, state: ApiState) -> std::i
     axum::serve(listener, router(state)).await
 }
 
-/// Lets a request through as the actor its token names: a person with the server's token, or the run of the Moebius agent
-/// whose unrevoked run token it is. Any other token is refused.
-async fn authenticate(State(state): State<ApiState>, mut request: Request, next: Next) -> Response {
-    let given = request
-        .headers()
+/// How a request proved who it is.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Via {
+    Bearer,
+    Cookie,
+}
+
+/// Who the request is and how it proved it: a person with the server's token or with the cookie of a session, or the
+/// run of the Moebius agent whose unrevoked run token it is. A bearer token that is not valid is refused even with a
+/// valid cookie.
+fn identify(state: &ApiState, headers: &axum::http::HeaderMap) -> Option<(Actor, Via)> {
+    let given = headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "));
-    let actor = match given {
-        Some(token) if same(token.as_bytes(), state.token.as_bytes()) => Some(Actor::Person),
-        Some(_) => agent_of(&state, request.headers()),
-        None => None,
-    };
-    match actor {
-        Some(actor) => {
+    match given {
+        Some(token) if same(token.as_bytes(), state.token.as_bytes()) => {
+            Some((Actor::Person, Via::Bearer))
+        }
+        Some(_) => agent_of(state, headers).map(|actor| (actor, Via::Bearer)),
+        None => session::cookie_of(headers)
+            .filter(|id| state.sessions.has(id))
+            .map(|_| (Actor::Person, Via::Cookie)),
+    }
+}
+
+/// Lets a request through as the actor it names (see [`identify`]). Anything else under `/v1/` is refused; the web app
+/// outside it needs nothing. A request that only a cookie vouches for has to be one a foreign page cannot make: a
+/// change carries `X-Moebius: 1`, and an `Origin` must be this server's own.
+async fn authenticate(State(state): State<ApiState>, mut request: Request, next: Next) -> Response {
+    let path = request.uri().path();
+    if path != "/v1" && !path.starts_with("/v1/") {
+        return next.run(request).await;
+    }
+    match identify(&state, request.headers()) {
+        Some((actor, via)) => {
+            if via == Via::Cookie && !same_site(&request) {
+                return (StatusCode::FORBIDDEN, "cross-site request refused").into_response();
+            }
             request.extensions_mut().insert(actor);
             next.run(request).await
         }
         None => (StatusCode::UNAUTHORIZED, "a valid token is needed").into_response(),
+    }
+}
+
+/// Whether a request that a cookie vouches for came from the web app: a change has the header `X-Moebius: 1`, and an
+/// upgrade to a WebSocket or a change that has an `Origin` has the server's own host in it.
+fn same_site(request: &Request) -> bool {
+    let headers = request.headers();
+    let upgrade = headers
+        .get(header::UPGRADE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.eq_ignore_ascii_case("websocket"));
+    let safe = matches!(
+        *request.method(),
+        axum::http::Method::GET | axum::http::Method::HEAD | axum::http::Method::OPTIONS
+    );
+    if !safe && headers.get("x-moebius").and_then(|v| v.to_str().ok()) != Some("1") {
+        return false;
+    }
+    if !(upgrade || !safe) {
+        return true;
+    }
+    match headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) {
+        None => true,
+        Some(origin) => {
+            let origin = origin.split_once("://").map_or(origin, |(_, rest)| rest);
+            session::host_of(headers).is_some_and(|host| host.eq_ignore_ascii_case(origin))
+        }
     }
 }
 

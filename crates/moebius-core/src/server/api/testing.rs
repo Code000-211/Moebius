@@ -78,6 +78,7 @@ pub(super) async fn start_with(
         },
     ]));
     let state = ApiState {
+        sessions: Default::default(),
         app: Arc::new(App::new(store, host, &dir.path().join("data"))),
         runs: Arc::new(pi),
         harness_repo: None,
