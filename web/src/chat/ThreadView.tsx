@@ -3,7 +3,15 @@
  * to its end as it grows, unless the person scrolled up (see `follow.ts`); reaching the end again, or sending a message
  * (`sent` counts them), follows again.
  */
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { Turn } from "../ui/chat/Turn";
 import { Empty } from "../ui/page/Empty";
@@ -40,10 +48,15 @@ export function ThreadView({
   emptyTitle = "Nothing said yet",
   emptyAction,
 }: ThreadViewProps) {
-  const turns = useMemo(() => groupTurns(entries, working), [entries, working]);
+  // An answer arrives piece by piece, and the person may be typing while it does: the words shown trail the events by
+  // a render rather than cutting the keystroke off, and a long conversation groups once per batch instead of per piece.
+  const shown = useDeferredValue(entries);
+  const turns = useMemo(() => groupTurns(shown, working), [shown, working]);
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
   const list = useRef<VirtuosoHandle>(null);
   const scroller = useRef<HTMLElement | null>(null);
+  /** Takes the listeners of the scroller currently held, so attaching a new one leaves nothing behind. */
+  const leave = useRef<(() => void) | null>(null);
   const state = useRef<ScrollState>({ follow: true, top: 0 });
   const lastGesture = useRef<number | null>(null);
   const repins = useRef(0);
@@ -90,14 +103,8 @@ export function ThreadView({
 
   const attach = useCallback(
     (element: HTMLElement | Window | null) => {
-      const previous = scroller.current;
-      if (previous) {
-        previous.onscroll = null;
-        previous.onwheel = null;
-        previous.ontouchmove = null;
-        previous.onkeydown = null;
-        previous.onpointerdown = null;
-      }
+      leave.current?.();
+      leave.current = null;
       scroller.current = element instanceof HTMLElement ? element : null;
       const current = scroller.current;
       if (!current) return;
@@ -105,12 +112,21 @@ export function ThreadView({
         lastGesture.current = performance.now();
       };
       current.onscroll = () => onScroll(current);
-      current.onwheel = gesture;
-      current.ontouchmove = gesture;
       current.onkeydown = gesture;
       // A press on the scroller itself is the scrollbar's; a press on a turn is not a scroll.
       current.onpointerdown = (event) => {
         if (event.target === current) gesture();
+      };
+      // Wheel and touch are listened to passively: a listener that could cancel them makes the browser wait for it
+      // before the page moves, and this one only notes that a hand moved.
+      current.addEventListener("wheel", gesture, { passive: true });
+      current.addEventListener("touchmove", gesture, { passive: true });
+      leave.current = () => {
+        current.onscroll = null;
+        current.onkeydown = null;
+        current.onpointerdown = null;
+        current.removeEventListener("wheel", gesture);
+        current.removeEventListener("touchmove", gesture);
       };
     },
     [onScroll],

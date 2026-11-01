@@ -5,7 +5,7 @@
  * raised layer, their rows are 40px, and a search that finds nothing says so and what to try next.
  */
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { filePaths, searchFiles } from "../../api/calls/projects";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
@@ -48,8 +48,11 @@ export function GoToFile({
     queryFn: () => filePaths(repository),
   });
   const [query, setQuery] = useState("");
+  // The field answers to the keystroke and the list to what is typed behind it: ranking ten thousand paths is not
+  // something to do between two letters.
+  const typed = useDeferredValue(query);
   const [selected, setSelected] = useState(0);
-  const matches = useMemo(() => rank(query, paths.data ?? [], SHOWN), [query, paths.data]);
+  const matches = useMemo(() => rank(typed, paths.data ?? [], SHOWN), [typed, paths.data]);
   const open = (path: string | undefined) => {
     if (path !== undefined) onOpen(path);
   };

@@ -156,6 +156,9 @@ export function thoughtSeconds(
 export function latestSteps(entries: readonly Entry[]): Entry[] {
   const end = entries.findLastIndex(isStep) + 1;
   if (end === 0) return [];
-  const before = entries.slice(0, end).findLastIndex((entry) => !isStep(entry));
+  // Walked back over the steps themselves to the thing that came before them. Copying the log to look for it cost
+  // more than the walk: a row of the Fleet does this for every tick of its clock.
+  let before = end - 1;
+  while (before >= 0 && isStep(entries[before] as Entry)) before -= 1;
   return entries.slice(before + 1, end);
 }

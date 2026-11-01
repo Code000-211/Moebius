@@ -39,9 +39,23 @@ const CHANGE_CLOSED = "change_closed";
 const READY_TO_MERGE = "ready_to_merge";
 const APPROVE_ISSUE = "approve_issue";
 
+/**
+ * The open item of every card of one read of the inbox, kept so that a board asks for a hundred cards without walking
+ * the inbox a hundred times. It is held against the array itself, which the query hands out unchanged until the inbox
+ * is read again.
+ */
+const openItems = new WeakMap<readonly InboxItem[], Map<number, InboxItem>>();
+
 /** The open inbox item of a card, if it has one. */
 export function inboxOf(inbox: readonly InboxItem[], card: Card): InboxItem | undefined {
-  return inbox.find((item) => item.card_id === card.id && item.resolved_at === null);
+  let byCard = openItems.get(inbox);
+  if (byCard === undefined) {
+    byCard = new Map();
+    for (const item of inbox)
+      if (item.resolved_at === null && item.card_id !== null) byCard.set(item.card_id, item);
+    openItems.set(inbox, byCard);
+  }
+  return byCard.get(card.id);
 }
 
 /** Whether a card is being worked on: its latest run starts or runs. */
