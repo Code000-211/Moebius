@@ -17,12 +17,16 @@
 //!   as a `tool_output` run event.
 //!
 //! The MCP gateway (`harness::gateway`) decides each call of an MCP tool with the same question (`decide_call`).
+//! The decision itself, and the order of the deciders behind it, is `call`; this module is the HTTP adapter.
 //! `result` is the second endpoint.
 
+mod call;
 mod result;
 
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use call::ask;
+pub(crate) use call::{CheckRequest, decide_call};
+
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::Json;
@@ -34,12 +38,9 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::app::App;
-use crate::decide::Question;
-use crate::decide::rules;
 use crate::router::{Grant, Router};
 
 #[derive(Clone)]
@@ -97,21 +98,6 @@ impl Checker {
     }
 }
 
-/// A tool call to check: what the bridge sends, and what the MCP gateway asks for each call of an MCP tool.
-#[derive(Debug, Deserialize)]
-pub(crate) struct CheckRequest {
-    pub(crate) tool: String,
-    pub(crate) input: Value,
-    pub(crate) tool_call_id: String,
-}
-
-/// The answer to a tool call: `allow` or `refuse`, and why.
-#[derive(Debug, Serialize)]
-pub(crate) struct CheckReply {
-    pub(crate) decision: String,
-    pub(crate) reason: String,
-}
-
 pub(crate) fn unauthorized() -> Response {
     (
         StatusCode::UNAUTHORIZED,
@@ -148,97 +134,12 @@ async fn check(State(state): State<Check>, headers: HeaderMap, body: Bytes) -> R
     }
 }
 
-/// Decides one tool call and stores and publishes the `tool_check` run event. None when the store fails.
-fn ask(
-    app: &App,
-    rules_file: Option<&Path>,
-    grant: &Grant,
-    request: &CheckRequest,
-) -> Option<CheckReply> {
-    let reply = decide_call(app, rules_file, grant, request)?;
-    let event = json!({
-        "tool": request.tool,
-        "tool_call_id": request.tool_call_id,
-        "decision": reply.decision,
-        "reason": reply.reason,
-    });
-    let _ = app.record_run_event(grant.run_id, "tool_check", &event);
-    Some(reply)
-}
-
-/// Decides one tool call of the run `grant` names through `decide("tool_call")`, which leaves one judgement. None when
-/// the store fails, which the caller must take as a refusal.
-pub(crate) fn decide_call(
-    app: &App,
-    rules_file: Option<&Path>,
-    grant: &Grant,
-    request: &CheckRequest,
-) -> Option<CheckReply> {
-    let question = tool_call_question(app, rules_file, grant, request)?;
-    let decision = app.decisions.decide(&question).ok()?;
-    Some(CheckReply {
-        decision: decision.choice,
-        reason: decision.reason,
-    })
-}
-
-/// The `tool_call` question for one call. Its context is what a decider can read, all as text:
-///
-/// - `tool`: the tool's name, such as `bash`.
-/// - `input`: the call's arguments as JSON text.
-/// - `tool_call_id`: the harness's id of the call.
-/// - `run_id`, `card_id`: the run being checked and its card (when it has one), as numbers in text. The teacher model's
-///   tokens are counted against them.
-/// - `worktree`: the run's worktree path, when it has one.
-/// - `card_title`, `card_body`: the card the run works on, when it has one.
-/// - `rules`: the rules that apply, as Markdown (`## <name>` and the rule's text), the server's first (see `rules`).
-/// - `rules_error`: instead of `rules`, why the server's rules file cannot be read. The guard refuses every call
-///   then.
-fn tool_call_question(
-    app: &App,
-    rules_file: Option<&Path>,
-    grant: &Grant,
-    request: &CheckRequest,
-) -> Option<Question> {
-    let mut context = BTreeMap::from([
-        ("tool".to_string(), request.tool.clone()),
-        ("input".to_string(), request.input.to_string()),
-        ("tool_call_id".to_string(), request.tool_call_id.clone()),
-        ("run_id".to_string(), grant.run_id.to_string()),
-    ]);
-    if let Some(card_id) = grant.card_id {
-        context.insert("card_id".into(), card_id.to_string());
-    }
-    if let Some(worktree) = app.store.run(grant.run_id).ok()?.and_then(|r| r.worktree) {
-        context.insert("worktree".into(), worktree);
-    }
-    let mut repository = None;
-    if let Some(card_id) = grant.card_id
-        && let Some(card) = app.store.card(card_id).ok()?
-    {
-        repository = app.store.repository(card.repository_id).ok()?;
-        context.insert("card_title".into(), card.title);
-        context.insert("card_body".into(), card.body);
-    }
-    match rules::applicable(rules_file, repository.as_ref()) {
-        Ok(rules) => context.insert("rules".into(), rules::to_markdown(&rules)),
-        Err(error) => context.insert("rules_error".into(), error.to_string()),
-    };
-    Some(Question {
-        kind: "tool_call".into(),
-        context,
-        options: vec!["allow".into(), "refuse".into()],
-        fail_closed: "refuse".into(),
-        run_id: Some(grant.run_id),
-        card_id: grant.card_id,
-    })
-}
-
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
     use crate::config::Config;
     use moebius_plugin_api::{Call, DecideRequest, Host, Kind, Manifest, Plugin, PluginError};
+    use std::collections::BTreeMap;
     use std::time::Duration;
 
     /// Allows `ls`, refuses everything else naming a rule.
