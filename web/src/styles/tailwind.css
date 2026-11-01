@@ -8,6 +8,7 @@
 @import "tw-animate-css";
 @import "./fonts.css";
 @import "./theme.css";
+@import "./highlight.css";
 
 @theme inline {
   --color-*: initial;
@@ -72,6 +73,7 @@
   --spacing-plusfifty: 12px;
   --spacing-double: 16px;
   --spacing-icon-sm: 16px;
+  --spacing-icon-base: 16px;
   --spacing-icon-xs: 12px;
   --spacing-icon-2xs: 10px;
   --spacing-dot: 6px;

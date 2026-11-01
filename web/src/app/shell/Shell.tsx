@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { Outlet } from "react-router";
 import { signOut } from "../../api/calls/session";
 import { keys } from "../../api/keys";
+import { FloatingChat } from "../../chat/FloatingChat";
 import { useConnection, useReconnect } from "../../live/LiveProvider";
 import { readFlag, writeFlag } from "../storage";
 import { CommandBar } from "./CommandBar";
@@ -70,6 +71,7 @@ export function Shell({ unreachable, onRetry }: { unreachable: boolean; onRetry:
         </main>
       </div>
       <CommandBar open={commandOpen} onOpenChange={setCommandOpen} />
+      <FloatingChat />
     </div>
   );
 }

@@ -30,6 +30,7 @@ export type RunningServer = Pick<FakeServer, "url" | "loginUrl" | "token"> & {
   broadcast?: undefined;
   board?: undefined;
   guardLog?: undefined;
+  chat?: undefined;
 };
 
 export async function startRealServer(binary: string): Promise<RunningServer> {

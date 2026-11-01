@@ -1,0 +1,62 @@
+/**
+ * What a `run_event` or `run_ended` does to the list of chats in the cache, so that a chat's status and unread marker
+ * follow the stream at once, without reading the list again (the desktop app's `Chats::on_event`).
+ */
+import type { Chat } from "../api/types/chat";
+import type { ServerEvent } from "../api/types/events";
+
+/** The chats after `event`; the same array when it changes none. */
+export function applyChatEvent(chats: Chat[], event: ServerEvent): Chat[] {
+  const data = event.data;
+  const run = data.run;
+  if (typeof run !== "number") return chats;
+  if (event.kind === "run_ended" && typeof data.status === "string") {
+    return replace(chats, run, (chat) => ({ ...chat, status: data.status as Chat["status"] }));
+  }
+  if (event.kind !== "run_event") return chats;
+  const kind = data.kind;
+  const seq = typeof data.seq === "number" ? data.seq : 0;
+  const inner =
+    typeof data.data === "object" && data.data !== null
+      ? (data.data as Record<string, unknown>)
+      : {};
+  if (kind === "agent_settled" || kind === "moebius_error") {
+    return replace(chats, run, (chat) => {
+      const open = ["starting", "running", "waiting"].includes(chat.status);
+      const status =
+        kind === "agent_settled" && inner.aborted !== true && open ? "waiting" : chat.status;
+      return { ...chat, answered: Math.max(chat.answered, seq), status };
+    });
+  }
+  if (kind === "agent_start") {
+    return replace(chats, run, (chat) =>
+      ["starting", "running", "waiting"].includes(chat.status)
+        ? { ...chat, status: "running" }
+        : chat,
+    );
+  }
+  return chats;
+}
+
+function replace(chats: Chat[], id: number, change: (chat: Chat) => Chat): Chat[] {
+  const index = chats.findIndex((chat) => chat.id === id);
+  const chat = chats[index];
+  if (!chat) return chats;
+  const changed = change(chat);
+  if (changed === chat || (changed.status === chat.status && changed.answered === chat.answered)) {
+    return chats;
+  }
+  const next = chats.slice();
+  next[index] = changed;
+  return next;
+}
+
+/** Whether an event is one of a chat's runs worth reading the list again for: a chat started, ended or offered. */
+export function listChanged(event: ServerEvent): boolean {
+  return (
+    event.kind === "run_started" ||
+    event.kind === "run_ended" ||
+    event.kind === "change_offered" ||
+    event.kind === "change_updated"
+  );
+}

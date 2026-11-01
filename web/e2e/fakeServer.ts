@@ -11,6 +11,7 @@ import type { AddressInfo } from "node:net";
 import { extname, join, normalize, resolve } from "node:path";
 import { type WebSocket, WebSocketServer } from "ws";
 import { type BoardFake, createBoardFake } from "./fake/board";
+import { createFakeChat, type FakeChat } from "./fake/chat";
 
 export const TOKEN = "fake-server-token";
 export const AGENT_TOKEN = "fake-run-token";
@@ -42,6 +43,8 @@ export interface FakeServer {
   board: BoardFake;
   /** The `X-Moebius` header of each non-GET request that carried the cookie, as received. */
   guardLog: Array<string | undefined>;
+  /** The chats and the agent that answers in them (e2e/fake/chat.ts). */
+  chat: FakeChat;
 }
 
 function cookieOf(request: IncomingMessage): string | undefined {
@@ -78,6 +81,7 @@ export async function startFakeServer(): Promise<FakeServer> {
     for (const ws of sockets) ws.send(JSON.stringify(event));
   };
   const board = createBoardFake(broadcast);
+  const chat = createFakeChat(broadcast);
   let port = 0;
 
   const signedIn = (request: IncomingMessage) => {
@@ -117,6 +121,8 @@ export async function startFakeServer(): Promise<FakeServer> {
     if (path === "/v1/health") return json(response, { version: "0.0.0-fake" });
     if (path === "/v1/snapshot") return json(response, board.snapshot());
     if (path === "/v1/start") return json(response, { done: true, steps: [], warnings: [] });
+    // The chat reads its own request bodies, so it answers before the board reads this one.
+    if (await chat.handle(request, response, path)) return;
     const body = method === "GET" ? undefined : JSON.parse((await readBody(request)) || "{}");
     const answer = board.handle(method, path, body);
     if (answer) {
@@ -174,6 +180,7 @@ export async function startFakeServer(): Promise<FakeServer> {
     token: TOKEN,
     guardLog,
     board,
+    chat,
     broadcast,
     async stop() {
       for (const ws of sockets) ws.terminate();

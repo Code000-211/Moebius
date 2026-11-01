@@ -1,0 +1,56 @@
+/*
+ * The colours of highlighted code in the chat: the classes highlight.js puts on tokens (through rehype-highlight),
+ * in Deep Velvet colours. Keywords take the accent, strings the teal, numbers and literals the amber, comments the
+ * muted text, and a diff's additions and deletions the teal and red.
+ */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-type {
+  color: var(--accent);
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-symbol,
+.hljs-bullet {
+  color: var(--teal);
+}
+
+.hljs-number,
+.hljs-literal,
+.hljs-attr,
+.hljs-attribute,
+.hljs-variable,
+.hljs-template-variable {
+  color: var(--amber);
+}
+
+.hljs-comment,
+.hljs-quote,
+.hljs-meta {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.hljs-title,
+.hljs-section,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.hljs-deletion {
+  color: var(--red);
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: 700;
+}

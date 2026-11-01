@@ -16,9 +16,10 @@ by one in later issues.
 | `src/api/` | The client of the desktop API: `http.ts` (requests and `ApiError`), `calls/` (one module per part of the API, as `crates/moebius-desktop/src/client/calls/`), `types/` (written by hand from the reference), `events.ts` (the WebSocket), `keys.ts` (query keys). |
 | `src/live/` | The event stream feeding the query cache (`invalidation.ts`) and the connection state for the pages (`LiveProvider.tsx`). |
 | `src/auth/login.ts` | The `?login=<code>` link the server prints. |
-| `src/ui/` | Components copied from Vibe Kanban's `@vibe/ui`, each with a header comment saying where from and what changed. |
+| `src/chat/` | The Chat page (`/chat`, `/chat/:id`) and the floating chat of the shell: `conversation.ts` folds a run's events into entries (the logic of the desktop app's `Conversation`, with the provider's errors added), `turns.ts` groups them, `follow.ts` decides when the list follows an answer, `readMarkers.ts` and `chatList.ts` keep the unread markers and the list current, `useThread.ts` follows one chat over the event stream. |
+| `src/ui/` | Components copied from Vibe Kanban's `@vibe/ui`, each with a header comment saying where from and what changed. `ui/chat/` holds the chat entries (messages, tool pills, thinking, todos, files with diffs, errors, the composer box); they are presentational, so the runs page can draw a run's conversation with them. `Markdown`, `CodeBlock`, `CopyButton`, `DiffBody`, `PillSelect` and `Tag` there are written for Moebius, not copied. |
 | `src/styles/` | `theme.css` (Deep Velvet as CSS variables), `tailwind.css` (the Tailwind theme), `fonts.css`. |
-| `e2e/` | The Playwright tests and the server they run against; `e2e/fake/` has the data and routes of a page in the fake server (`board.ts` for the board). |
+| `e2e/` | The Playwright tests and the server they run against; `e2e/fake/` has the data and routes of a page in the fake server (`board.ts` for the board, `chat.ts` for the chats and what an agent does in them). |
 | `public/fonts/` | Manrope and JetBrains Mono, the files of the desktop app. |
 
 ## Scripts
@@ -84,16 +85,15 @@ Gantt types, its "add task" button and i18n. `KanbanCardContent` shows what a Mo
 round, round bar, state badges, pull request) in place of priority, assignees, tags and relationships. `KanbanIssuePanel`
 is a read-only inspector that keeps the panel's frame (header, close, Escape, bordered sections) and takes its sections as
 children; Vibe Kanban's one is the form for editing an issue. Vibe Kanban's `KanbanFilterBar` is not copied (its
-filters are priorities, assignees and tags): `app/board/FilterBar.tsx` is native selects. Later issues copy more
-components (chat, terminal) the same way.
+filters are priorities, assignees and tags): `app/board/FilterBar.tsx` is native selects. The chat components (`src/ui/chat/`) are copied the same way: `ChatToolSummary`, `ChatAggregatedToolEntries`, `ChatCollapsedThinking`, `ChatTodoList`, `ChatFileEntry`, `ChatErrorMessage`, `ChatEntryContainer`, `ChatUserMessage`, `ChatAssistantMessage`, `ChatMarkdown`, `ChatBoxBase` and `ToolStatusDot`, without i18n and the Lexical editor (the composer is a plain auto-growing textarea). `ModelSelectorPopover` is not copied: it is made of providers and accordions, and the models of Moebius are one list, so `PillSelect` is a small menu with a filter. Later issues copy more components (terminal) the same way.
 
 ## Licenses
 
 The app is Apache-2.0 like the rest of Moebius. `NOTICE` and `LICENSE-APACHE-2.0` are for the Vibe Kanban components. The
 fonts are under the SIL Open Font License 1.1 (`public/fonts/*/OFL.txt`).
 
-Direct dependencies, all checked with `pnpm licenses list`; what goes into `dist/` is MIT, except `class-variance-authority` and
-`@hello-pangea/dnd` (Apache-2.0) and `tslib` (0BSD, through Radix):
+Direct dependencies, all checked with `pnpm licenses list`; what goes into `dist/` is MIT, except `class-variance-authority`
+and `@hello-pangea/dnd` (Apache-2.0), `highlight.js` (BSD-3-Clause), a few ISC packages of the Markdown tree and `tslib` (0BSD, through Radix):
 
 | Package | License | Used for |
 |---|---|---|
@@ -104,6 +104,10 @@ Direct dependencies, all checked with `pnpm licenses list`; what goes into `dist
 | `@hello-pangea/dnd` | Apache-2.0 | Dragging cards on the board; it brings `redux`, `react-redux`, `css-box-model`, `raf-schd`, `use-sync-external-store` and `@babel/runtime`, all MIT |
 | `cmdk` | MIT | The command bar |
 | `@phosphor-icons/react` | MIT | Icons |
+| `react-markdown`, `remark-gfm` | MIT | The agent's text as GitHub flavoured Markdown (the unified/remark/rehype packages under them are MIT, with a few ISC) |
+| `rehype-highlight` | MIT | Highlights code blocks with `lowlight` (MIT) and `highlight.js` (BSD-3-Clause), its common languages |
+| `react-virtuoso` | MIT | The virtualised list of a long conversation |
+| `@types/hast` | MIT | Types of the Markdown syntax tree (development) |
 | `class-variance-authority` | Apache-2.0 | Button variants |
 | `clsx`, `tailwind-merge`, `tw-animate-css` | MIT | Class names and animation utilities |
 | `vite`, `@vitejs/plugin-react` | MIT | Build |

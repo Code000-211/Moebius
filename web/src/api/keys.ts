@@ -15,4 +15,8 @@ export const keys = {
   /** The script of a column; `script_changed` makes all of them stale. */
   scripts: ["script"] as const,
   script: (repository: number, column: string) => ["script", repository, column] as const,
+  chats: ["chats"] as const,
+  agents: ["agents"] as const,
+  models: ["models"] as const,
+  skills: ["skills"] as const,
 };

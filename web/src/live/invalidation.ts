@@ -8,7 +8,9 @@
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import { keys } from "../api/keys";
 import type { Snapshot } from "../api/types/board";
+import type { Chat } from "../api/types/chat";
 import type { ServerEvent } from "../api/types/events";
+import { applyChatEvent, listChanged } from "../chat/chatList";
 
 /** The kinds that change what the snapshot holds: repositories, cards, changes, runs of cards and the inbox. */
 const SNAPSHOT_KINDS = new Set([
@@ -43,6 +45,7 @@ export function invalidates(event: ServerEvent): QueryKey[] {
   if (event.kind === "repository_added" || event.kind === "repository_removed") {
     stale.push(keys.start);
   }
+  if (listChanged(event)) stale.push(keys.chats);
   return stale;
 }
 
@@ -67,9 +70,17 @@ export function patchSnapshot(queryClient: QueryClient, event: ServerEvent): voi
   });
 }
 
+/** Puts what a chat's run event says (its status, its answer) into the list of chats in the cache, if one is there. */
+export function patchChats(queryClient: QueryClient, event: ServerEvent): void {
+  queryClient.setQueryData<Chat[]>(keys.chats, (chats) =>
+    chats ? applyChatEvent(chats, event) : chats,
+  );
+}
+
 /** Applies one event to the cache. */
 export function applyEvent(queryClient: QueryClient, event: ServerEvent): void {
   patchSnapshot(queryClient, event);
+  patchChats(queryClient, event);
   for (const queryKey of invalidates(event)) {
     void queryClient.invalidateQueries({ queryKey });
   }

@@ -15,10 +15,12 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { NavLink } from "react-router";
 import { snapshot } from "../../api/calls/board";
+import { chats as readChats } from "../../api/calls/chat";
 import { health } from "../../api/calls/server";
 import type { ConnectionState } from "../../api/events";
 import { keys } from "../../api/keys";
 import { liveRuns } from "../../api/types/board";
+import { unreadCount } from "../../chat/readMarkers";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -51,6 +53,8 @@ interface SidebarProps {
 export function Sidebar({ connection, collapsed, onToggle, onSearch, onSignOut }: SidebarProps) {
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => snapshot() });
   const info = useQuery({ queryKey: keys.health, queryFn: () => health() });
+  const chatList = useQuery({ queryKey: keys.chats, queryFn: readChats });
+  const unread = unreadCount(chatList.data ?? []);
   const boards = data.data?.boards ?? [];
   const inbox = data.data?.inbox.length ?? 0;
   const working = boards.reduce((sum, board) => sum + liveRuns(board), 0);
@@ -60,6 +64,7 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch, onSignOut }
   const pagesOf = (group: Group) => PAGES.filter((page) => page.group === group);
   const trailingOf = (path: string) => {
     if (path === "inbox" && inbox > 0) return <span className="text-amber">{inbox}</span>;
+    if (path === "chat" && unread > 0) return <span className="text-amber">{unread} new</span>;
     if (path === "fleet" && working > 0) return <span className="text-live">{working} live</span>;
     return null;
   };

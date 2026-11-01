@@ -1846,6 +1846,12 @@ A `run_event`'s source is told by its inner `kind`:
   kept whole as `claude_<type>` (such as `claude_system`), and a line that is not JSON as `claude_unparsed` with
   `{"text"}`.
 
+A provider that refuses the key, has no quota left or answers an HTTP error does not end the run: Pi-Bolt ends its assistant
+message with `"stopReason": "error"` and an `"errorMessage"`, in the `message` of a `message_end` record and in the
+`messages` of the `agent_end` that follows (a terminal's record has only the `agent_end`); a Claude Code run ends with an
+`agent_end` that has `"is_error": true`. A client shows that as the model's error in the conversation. A run that
+Moebius ends in failure has a `moebius_error` event instead.
+
 `seq` is the number the event is stored under, the same as in `GET /v1/runs/{id}/events`. Events of a run are published in
 the order of their `seq`. Every event of a run is published and stored: Pi's records, `tool_check`, `mcp_call` and `mcp_error` events, `steered` events
 (`{"message"}`, a person's steer, with secrets removed), `said` events (`{"message"}`, a person's message to a chat, the first
