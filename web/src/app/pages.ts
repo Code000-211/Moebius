@@ -1,0 +1,70 @@
+/**
+ * The pages of the app: the entries of the sidebar, in its groups, as the desktop app lists them
+ * (`crates/moebius-desktop/src/sidebar.rs` and `Page::title` in `app/message.rs`). Pages that are not built in the web
+ * app yet show a placeholder; a page that is built replaces its entry's element in `routes.tsx`.
+ */
+import {
+  ArrowsClockwiseIcon,
+  ChatCircleIcon,
+  ClockIcon,
+  CpuIcon,
+  FlaskIcon,
+  FolderIcon,
+  GaugeIcon,
+  GearIcon,
+  GraphIcon,
+  type Icon,
+  PlugIcon,
+  PlugsConnectedIcon,
+  RobotIcon,
+  RocketLaunchIcon,
+  ScalesIcon,
+  SparkleIcon,
+  TerminalWindowIcon,
+  TrayIcon,
+  UsersThreeIcon,
+} from "@phosphor-icons/react";
+
+/** The sidebar group a page is in; the first group has no name. */
+export type Group = "" | "Projects" | "Build" | "Improve" | "Setup";
+
+export interface PageDef {
+  /** The path, without the leading slash. */
+  path: string;
+  title: string;
+  group: Group;
+  icon: Icon;
+}
+
+export const PAGES: readonly PageDef[] = [
+  { path: "inbox", title: "Inbox", group: "", icon: TrayIcon },
+  { path: "chat", title: "Chat", group: "", icon: ChatCircleIcon },
+  { path: "fleet", title: "Fleet", group: "", icon: UsersThreeIcon },
+  { path: "automations", title: "Automations", group: "", icon: ClockIcon },
+  { path: "projects", title: "Projects", group: "Projects", icon: FolderIcon },
+  { path: "agents", title: "Agents", group: "Build", icon: RobotIcon },
+  { path: "skills", title: "Skills", group: "Build", icon: SparkleIcon },
+  { path: "mcp-servers", title: "MCP servers", group: "Build", icon: PlugsConnectedIcon },
+  { path: "rules", title: "Rules", group: "Build", icon: ScalesIcon },
+  { path: "retro", title: "Retro", group: "Improve", icon: ArrowsClockwiseIcon },
+  { path: "experiments", title: "Experiments", group: "Improve", icon: FlaskIcon },
+  { path: "decision-model", title: "Decision model", group: "Improve", icon: GraphIcon },
+  { path: "usage", title: "Usage", group: "Improve", icon: GaugeIcon },
+  { path: "start", title: "Get started", group: "Setup", icon: RocketLaunchIcon },
+  { path: "models", title: "Models", group: "Setup", icon: CpuIcon },
+  { path: "plugins", title: "Plugins", group: "Setup", icon: PlugIcon },
+  { path: "terminal", title: "Terminal", group: "Setup", icon: TerminalWindowIcon },
+  { path: "ports", title: "Ports", group: "Setup", icon: PlugsConnectedIcon },
+  { path: "settings", title: "Settings", group: "Setup", icon: GearIcon },
+];
+
+export const DEFAULT_PAGE = "inbox";
+
+export function pageByPath(path: string): PageDef | undefined {
+  return PAGES.find((page) => page.path === path);
+}
+
+/** The path of the board of a repository. */
+export function boardPath(repositoryId: number): string {
+  return `/board/${repositoryId}`;
+}

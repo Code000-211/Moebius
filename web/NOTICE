@@ -1,0 +1,17 @@
+Moebius web app
+Copyright 2026 The Moebius authors
+
+This folder is licensed under the Apache License, Version 2.0 (see ../LICENSE).
+
+The files in src/ui/ are taken from Vibe Kanban, https://github.com/BloopAI/vibe-kanban (packages/ui/src), by BloopAI
+and its contributors, used under the Apache License, Version 2.0 (LICENSE-APACHE-2.0 here is the license text of that
+repository). Vibe Kanban's LICENSE file is the unmodified Apache text with its copyright line left as the template
+(`Copyright [yyyy] [name of copyright owner]`), so the repository names no other holder than BloopAI and its
+contributors. The copy was made from commit 7c3807084daad0d9d315064f60fa869de254f027.
+
+Every copied file starts with a comment that names the file it comes from and says what was changed, as the license
+asks. The changes are the same everywhere: the text is plain English instead of react-i18next keys, the colour names
+resolve to the Deep Velvet theme of the desktop app, and the components use React 19 and Tailwind 4.
+
+The fonts in public/fonts/ are Manrope and JetBrains Mono under the SIL Open Font License 1.1 (OFL.txt next to each);
+they are the files of crates/moebius-desktop/fonts/.

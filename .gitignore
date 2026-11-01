@@ -3,3 +3,7 @@
 # What a server started in this directory keeps: its store, keys and token.
 /.moebius
 /target-main
+
+# The web app's dependencies and build.
+/web/node_modules
+/web/dist

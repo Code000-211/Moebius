@@ -7,3 +7,7 @@ This product includes skills from https://github.com/mattpocock/skills (tdd, dia
 to-tickets), copyright (c) 2026 Matt Pocock, used under the MIT License. They are in
 crates/moebius-core/skill/vendor/mattpocock/ unchanged, with the license text (LICENSE there), and are written to the
 data directory with it.
+
+The web app in web/ includes components from Vibe Kanban, https://github.com/BloopAI/vibe-kanban, by BloopAI and its
+contributors, used under the Apache License, Version 2.0, with the changes noted in each file; see web/NOTICE and
+web/LICENSE-APACHE-2.0.

@@ -32,6 +32,26 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
   router forwards requests to the upstreams in the configuration and counts the tokens.
 - The desktop app (`crates/moebius-desktop`) is an iced app that talks to the server only through the desktop API
   (HTTP and the event WebSocket) and does not depend on `moebius-core`. Any HTTP client can stand in for it.
+- The web app (`web/`) is the same client in a browser; see [The web app](#the-web-app).
+
+## The web app
+
+`web/` is a React app (Vite, TypeScript, Tailwind 4, TanStack Query, React Router) built with pnpm into `web/dist`. It is
+not a crate, so it has no rows in the module map below; `web/README.md` has its layout. It is a client of the desktop API
+like the iced app and does not know anything the API does not say.
+
+- **Sign-in.** The browser signs in with `POST /v1/session` (the server's token, or the one-time code of the
+  `?login=<code>` link the server prints) and then carries an HttpOnly cookie. Every request is same origin and sends
+  `X-Moebius: 1`. `GET /v1/session` tells the app whether it is signed in (a 401 shows the sign-in page).
+- **Live data.** One WebSocket to `/v1/events` feeds the query cache: an event that changes what the snapshot shows
+  invalidates it (the reference says the snapshot is read on every event), `card_waiting` is patched in place, and a
+  socket that connects again, after a wait that grows from 1 to 30 seconds, makes every read stale, because events are
+  not replayed. A socket that cannot connect asks `GET /v1/session` again: 401 sends the person to the sign-in page, no
+  answer shows a banner over what is on screen.
+- **Serving.** The server embeds `web/dist` and serves it at `/`, with `index.html` for the paths of the pages. In
+  development `pnpm dev` proxies `/v1` to a running server.
+- **Components.** `web/src/ui/` holds components copied from Vibe Kanban's `@vibe/ui` (Apache-2.0), changed to the Deep
+  Velvet theme, which has the same tokens as the desktop app's `theme.rs`.
 
 ## The life of a card
 

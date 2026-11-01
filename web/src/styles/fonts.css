@@ -1,0 +1,41 @@
+/*
+ * The fonts of the desktop app: Manrope for prose and headings, JetBrains Mono for code and metadata. The files are
+ * the ones in `crates/moebius-desktop/fonts/`, both under the SIL Open Font License 1.1 (see the OFL.txt next to
+ * each in `public/fonts/`).
+ */
+@font-face {
+  font-family: "Manrope";
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/manrope/Manrope-400.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Manrope";
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/manrope/Manrope-500.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Manrope";
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/manrope/Manrope-600.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Manrope";
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/manrope/Manrope-700.ttf") format("truetype");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono/JetBrainsMono-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono/JetBrainsMono-Medium.ttf") format("truetype");
+}

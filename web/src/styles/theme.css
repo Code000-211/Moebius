@@ -1,0 +1,103 @@
+/*
+ * The Deep Velvet tokens of the web app as CSS variables. The colours, radii and spacing here are the constants of
+ * `crates/moebius-desktop/src/theme.rs` under the same names in kebab case (`TEXT_SECONDARY` is `--text-secondary`);
+ * `src/styles/theme.test.ts` reads theme.rs and fails when a value differs or a colour is missing. Change theme.rs
+ * first, then this file. Components never carry a colour literal: they use these variables, through the Tailwind
+ * names in `tailwind.css`.
+ */
+:root {
+  color-scheme: dark;
+
+  --ground: #0f0d14;
+  --surface: #181520;
+  --lane: #120f18;
+  --card: #211c2b;
+  --card-hover: #2a2437;
+  --recessed: #0b0910;
+  --line: #2a2438;
+  --line-strong: #3b334d;
+  --text: #f7f4fc;
+  --text-secondary: #aaa0ba;
+  --text-muted: #685e78;
+  --accent: #f27663;
+  --accent-fill: #2b1a20;
+  --accent-border: #7a3b36;
+  --live: #c084fc;
+  --live-fill: #241934;
+  --live-border: #5b3e7a;
+  --teal: #6ee7b7;
+  --teal-fill: #132624;
+  --amber: #fbbf24;
+  --amber-fill: #292014;
+  --red: #fb7185;
+  --red-text: #fb7185;
+  --red-fill: #2a1520;
+  --teal-border: #2b594b;
+  --amber-border: #664d14;
+  --amber-text: #fbbf24;
+  --red-border: #6e2837;
+  --red-tag-fill: #2a1520;
+  --track: #262033;
+  --heat-empty: #211c2b;
+  --head-pill: #262033;
+  --diff-removed: #2a1520;
+  --diff-added: #132624;
+  --diff-removed-mark: #fb7185;
+  --diff-added-mark: #6ee7b7;
+  --steps-fill: #120f18;
+  --steps-border: #2a2438;
+  --steps-ink: #f7f4fc;
+  --terminal: #07060a;
+  --terminal-text: #eae4f2;
+  --terminal-dim: #685e78;
+  --sidebar: #181520;
+  --sidebar-line: #2a2438;
+  --sidebar-text: #aaa0ba;
+  --sidebar-group: #685e78;
+  --sidebar-current: #2b1a20;
+  --sidebar-hover: #211c2b;
+  --online-text: #6ee7b7;
+  --on-fill: #0f0d14;
+
+  /* Radii (RADIUS_*). */
+  --radius-box: 14px;
+  --radius-card: 10px;
+  --radius-control: 8px;
+  --radius-item: 8px;
+  --radius-small: 6px;
+  --radius-segment: 2px;
+  --radius-round: 999px;
+  --radius-composer: 18px;
+
+  /* The spacing scale (SPACE_*), in pixels. */
+  --space-1: 1px;
+  --space-2: 2px;
+  --space-4: 4px;
+  --space-6: 6px;
+  --space-8: 8px;
+  --space-10: 10px;
+  --space-12: 12px;
+  --space-14: 14px;
+  --space-16: 16px;
+  --space-18: 18px;
+  --space-20: 20px;
+  --space-24: 24px;
+
+  /* Fixed widths (SIDEBAR_WIDTH, RAIL_WIDTH, CONNECT_WIDTH). */
+  --sidebar-width: 220px;
+  --rail-width: 56px;
+  --connect-width: 440px;
+
+  /* The type scale (PAGE_TITLE ... LABEL), in pixels. */
+  --size-page-title: 19px;
+  --size-box-heading: 14px;
+  --size-body: 13px;
+  --size-context: 12.5px;
+  --size-breadcrumb: 12px;
+  --size-label: 11px;
+  --size-code: 12px;
+  --size-app-name: 15px;
+
+  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}

@@ -52,6 +52,17 @@ jobs:
             version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)-dev
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
+      # The server embeds the web app from web/dist, so it is built first.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Build the web app
+        run: pnpm -C web install --frozen-lockfile && pnpm -C web build
       - name: Build
         run: cargo build --release --locked --target ${{ matrix.target }} ${{ matrix.packages }}
       - name: Package

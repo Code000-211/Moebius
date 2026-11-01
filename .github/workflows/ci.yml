@@ -78,3 +78,49 @@ jobs:
           toolchain: ${{ env.MSRV }}
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --workspace --all-targets
+
+  # The web app (`web/`): type check, lint, unit tests and the build on Linux and Windows. The end-to-end tests run on
+  # Linux only: Playwright's Chromium is installed there with its system libraries in one step.
+  web:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      # The tests read theme.rs and the formatter checks line ends: LF, as committed.
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm test
+      - run: pnpm build
+      - if: runner.os == 'Linux'
+        run: pnpm exec playwright install --with-deps chromium
+      - if: runner.os == 'Linux'
+        run: pnpm e2e
+      # Once more against a real server that embeds the build, so the two cannot drift apart.
+      - if: runner.os == 'Linux'
+        uses: dtolnay/rust-toolchain@stable
+      - if: runner.os == 'Linux'
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: web-e2e
+      - if: runner.os == 'Linux'
+        run: cargo build -p moebius
+        working-directory: .
+      - if: runner.os == 'Linux'
+        run: pnpm e2e
+        env:
+          MOEBIUS_E2E_SERVER: ${{ github.workspace }}/target/debug/moebius

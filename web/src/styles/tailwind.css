@@ -1,0 +1,106 @@
+/*
+ * Tailwind 4 setup: the Deep Velvet variables of theme.css become Tailwind's colours, radii and spacing. The names
+ * `high`, `normal`, `low`, `primary`, `secondary`, `panel`, `brand`, `error`, `success`, `border` and the spacing
+ * `half`, `base` are the ones the components copied from Vibe Kanban (src/ui) use; here they are aliases of the
+ * Deep Velvet colours, so those components need no colours of their own.
+ */
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "./fonts.css";
+@import "./theme.css";
+
+@theme inline {
+  --color-*: initial;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+  --color-black: #000;
+
+  /* Deep Velvet, by the name of theme.rs. */
+  --color-ground: var(--ground);
+  --color-surface: var(--surface);
+  --color-lane: var(--lane);
+  --color-card: var(--card);
+  --color-card-hover: var(--card-hover);
+  --color-recessed: var(--recessed);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-text: var(--text);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-accent-fill: var(--accent-fill);
+  --color-accent-border: var(--accent-border);
+  --color-live: var(--live);
+  --color-live-fill: var(--live-fill);
+  --color-live-border: var(--live-border);
+  --color-teal: var(--teal);
+  --color-teal-fill: var(--teal-fill);
+  --color-amber: var(--amber);
+  --color-amber-fill: var(--amber-fill);
+  --color-red: var(--red);
+  --color-red-fill: var(--red-fill);
+  --color-on-fill: var(--on-fill);
+  --color-track: var(--track);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-line: var(--sidebar-line);
+  --color-sidebar-text: var(--sidebar-text);
+  --color-sidebar-group: var(--sidebar-group);
+  --color-sidebar-current: var(--sidebar-current);
+  --color-sidebar-hover: var(--sidebar-hover);
+
+  /* The names of the components copied from Vibe Kanban. */
+  --color-high: var(--text);
+  --color-normal: var(--text-secondary);
+  --color-low: var(--text-muted);
+  --color-primary: var(--ground);
+  --color-secondary: var(--card);
+  --color-panel: var(--surface);
+  --color-brand: var(--accent);
+  --color-on-brand: var(--on-fill);
+  --color-error: var(--red);
+  --color-success: var(--teal);
+  --color-border: var(--line);
+
+  --radius-sm: var(--radius-small);
+  --radius-md: var(--radius-control);
+  --radius-lg: var(--radius-card);
+  --radius-xl: var(--radius-box);
+  --radius-full: var(--radius-round);
+
+  --spacing-half: 4px;
+  --spacing-base: 8px;
+  --spacing-plusfifty: 12px;
+  --spacing-double: 16px;
+  --spacing-icon-sm: 16px;
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--text-secondary);
+    font-family: var(--font-sans);
+    font-size: var(--size-body);
+    line-height: 1.5;
+  }
+
+  /* Tailwind 4 draws borders in currentColor; the app's are the line colour. */
+  *,
+  ::before,
+  ::after {
+    border-color: var(--line);
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}

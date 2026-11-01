@@ -5,6 +5,12 @@ soft radii, a compact type scale, and colour only where it says something about 
 [`crates/moebius-desktop/src/theme.rs`](../crates/moebius-desktop/src/theme.rs), which is the single source of truth;
 this page says what the constants are for.
 
+The web app (`web/`) wears the same theme. Its tokens live in [`web/src/styles/`](../web/src/styles/) (`theme.css` has every
+colour, radius and step of the spacing scale as a CSS variable under the name of the constant in kebab case, and
+`tailwind.css` makes them Tailwind names). `theme.rs` stays the single source of truth and the two must stay in step: a
+change to a constant is made in `theme.rs` first and then in `theme.css`, and `web/src/styles/theme.test.ts` fails when a
+colour is missing or differs.
+
 The mockups in [`docs/design/`](design/) (HTML and PNG: [board](design/board.png), [live view](design/live-view.png),
 [inbox](design/inbox.png), [agents](design/agents.png) and [usage](design/usage.png)) are the old look. They are kept
 for layout only: where the screens sit on the page, what each one holds and in which order. Their colours, sizes,

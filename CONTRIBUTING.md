@@ -30,7 +30,7 @@ started by its `#!` line) is `#[cfg(unix)]`, with a comment that says why.
 
 ## Where the code goes
 
-The workspace has four crates:
+The workspace has four crates, and the web app lives next to them in `web/`:
 
 | Crate | What it is |
 |---|---|
@@ -38,6 +38,12 @@ The workspace has four crates:
 | [`crates/moebius-desktop`](crates/moebius-desktop/README.md) | The desktop app. It talks to the server only through the desktop API. |
 | [`crates/moebius`](crates/moebius/README.md) | The `moebius` binary and its command line. |
 | [`crates/moebius-plugin-api`](crates/moebius-plugin-api/README.md) | The plugin trait and its host. |
+
+The web app, [`web/`](web/README.md), is not a crate: a Vite + React + TypeScript project built with pnpm into `web/dist`,
+which the server serves at `/`. It talks to the server only through the desktop API, as the desktop app does. Its API client
+is in `src/api/` (one module per part of the API), the shell and the pages in `src/app/`, the components copied from Vibe
+Kanban in `src/ui/` (each file says where from and what changed), and the Deep Velvet tokens in `src/styles/`, which stay in
+step with `theme.rs`.
 
 Inside a crate's `src/`, the modules that tie it together are at the top, and the rest is grouped by part, one folder
 each. In the server those folders are `server/`, `repos/`, `board/`, `decide/`, `harness/` and `improve/`. In the app
@@ -90,6 +96,15 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo run -p moebius-plugin-api --example allow_reads
 cargo run -p moebius-plugin-api --example allow_reads_process
+```
+
+When you change `web/`, also run its checks from that folder (after `pnpm install`); CI runs them on Linux and Windows:
+
+```sh
+pnpm check   # tsc --noEmit and Biome
+pnpm test    # Vitest
+pnpm build   # into web/dist
+pnpm e2e     # Playwright; needs the build, and Chromium (pnpm exec playwright install chromium)
 ```
 
 ## Commits

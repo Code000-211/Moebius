@@ -1,0 +1,223 @@
+/**
+ * A small stand-in for the Moebius server, for the end-to-end tests: it keeps to the session contract of the web
+ * sign-in (docs/reference/desktop-api.md, "Authentication"), answers the few routes the shell reads, accepts the event
+ * WebSocket with the session cookie and serves `dist/` the way the real server serves the embedded app. It listens
+ * on port 0. Swap it for a real `moebius serve` with MOEBIUS_E2E_SERVER (see e2e/server.ts).
+ */
+import { randomBytes } from "node:crypto";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import type { AddressInfo } from "node:net";
+import { extname, join, normalize, resolve } from "node:path";
+import { type WebSocket, WebSocketServer } from "ws";
+
+export const TOKEN = "fake-server-token";
+export const AGENT_TOKEN = "fake-run-token";
+export const LOGIN_CODE = "fake-login-code";
+
+const DIST = resolve(import.meta.dirname, "../dist");
+const TYPES: Record<string, string> = {
+  ".html": "text/html",
+  ".js": "text/javascript",
+  ".css": "text/css",
+  ".svg": "image/svg+xml",
+  ".ttf": "font/ttf",
+  ".txt": "text/plain",
+};
+
+const SNAPSHOT = {
+  boards: [
+    {
+      repository: {
+        id: 1,
+        name: "demo",
+        path: "/srv/.moebius/repos/demo",
+        forge: "none",
+        default_branch: "main",
+        github: null,
+        trusted: [],
+      },
+      cards: [
+        {
+          id: 1,
+          repository_id: 1,
+          number: 1,
+          title: "Add a feature",
+          body: "",
+          author: "person",
+          column: "Coding",
+          created_at: 1790000000,
+          note: null,
+          retried_after: null,
+          rounds: 1,
+          tokens: 10,
+          run: { id: 1, agent: "Coder", purpose: "code", status: "running" },
+          blocked_by: [],
+          refusals: 0,
+          change: null,
+        },
+      ],
+      round_limit: 5,
+      waiting: {},
+      changes: [],
+    },
+  ],
+  harness_changes: [],
+  inbox: [
+    {
+      id: 1,
+      kind: "stuck",
+      card_id: 1,
+      title: "Stuck",
+      data: {},
+      resolved_at: null,
+      at: 1790000001,
+    },
+  ],
+};
+
+export interface FakeServer {
+  /** `http://127.0.0.1:<port>`. */
+  url: string;
+  /** What the server printed for a person to open: the login link. */
+  loginUrl: string;
+  token: string;
+  /** Stops listening and cuts every connection: the server is "down". */
+  stop(): Promise<void>;
+  /** Listens again on the same port after `stop`. */
+  restart(): Promise<void>;
+  /** Sends an event to every connected event stream. */
+  broadcast(event: { kind: string; data: unknown }): void;
+  /** The `X-Moebius` header of each non-GET request that carried the cookie, as received. */
+  guardLog: Array<string | undefined>;
+}
+
+function cookieOf(request: IncomingMessage): string | undefined {
+  const header = request.headers.cookie ?? "";
+  const match = /(?:^|;\s*)moebius_session=([^;]+)/.exec(header);
+  return match?.[1];
+}
+
+function readBody(request: IncomingMessage): Promise<string> {
+  return new Promise((done) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => done(Buffer.concat(chunks).toString("utf8")));
+  });
+}
+
+function text(response: ServerResponse, status: number, body: string): void {
+  response.writeHead(status, { "content-type": "text/plain" });
+  response.end(body);
+}
+
+function json(response: ServerResponse, value: unknown): void {
+  response.writeHead(200, { "content-type": "application/json" });
+  response.end(JSON.stringify(value));
+}
+
+export async function startFakeServer(): Promise<FakeServer> {
+  const sessions = new Set<string>();
+  const codes = new Set<string>([LOGIN_CODE]);
+  const sockets = new Set<WebSocket>();
+  const guardLog: Array<string | undefined> = [];
+  const events = new WebSocketServer({ noServer: true });
+  let port = 0;
+
+  const signedIn = (request: IncomingMessage) => {
+    const cookie = cookieOf(request);
+    return cookie !== undefined && sessions.has(cookie);
+  };
+
+  async function api(request: IncomingMessage, response: ServerResponse, path: string) {
+    const method = request.method ?? "GET";
+    if (method !== "GET" && cookieOf(request) !== undefined) {
+      guardLog.push(request.headers["x-moebius"] as string | undefined);
+      if (request.headers["x-moebius"] !== "1")
+        return text(response, 403, "X-Moebius: 1 is needed");
+    }
+    if (path === "/v1/session" && method === "POST") {
+      const body = JSON.parse((await readBody(request)) || "{}") as {
+        token?: string;
+        code?: string;
+      };
+      if (body.token === AGENT_TOKEN) return text(response, 403, "only a person can do this");
+      const ok = body.token === TOKEN || (body.code !== undefined && codes.delete(body.code));
+      if (!ok) return text(response, 401, "a valid token is needed");
+      const session = randomBytes(16).toString("hex");
+      sessions.add(session);
+      response.writeHead(204, {
+        "set-cookie": `moebius_session=${session}; HttpOnly; Path=/; SameSite=Strict`,
+      });
+      return response.end();
+    }
+    if (!signedIn(request)) return text(response, 401, "a valid token is needed");
+    if (path === "/v1/session" && method === "GET") return json(response, { signed_in: true });
+    if (path === "/v1/session" && method === "DELETE") {
+      sessions.delete(cookieOf(request) as string);
+      response.writeHead(204, { "set-cookie": "moebius_session=; HttpOnly; Path=/; Max-Age=0" });
+      return response.end();
+    }
+    if (path === "/v1/health") return json(response, { version: "0.0.0-fake" });
+    if (path === "/v1/snapshot") return json(response, SNAPSHOT);
+    if (path === "/v1/start") return json(response, { done: true, steps: [], warnings: [] });
+    return text(response, 404, "no such route");
+  }
+
+  function asset(response: ServerResponse, path: string) {
+    const relative = normalize(path).replace(/^([/\\])+/, "");
+    let file = join(DIST, relative);
+    if (!file.startsWith(DIST) || !existsSync(file) || !statSync(file).isFile()) {
+      file = join(DIST, "index.html");
+    }
+    response.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream" });
+    response.end(readFileSync(file));
+  }
+
+  const server: Server = createServer((request, response) => {
+    const path = new URL(request.url ?? "/", "http://x").pathname;
+    if (path.startsWith("/v1/")) {
+      void api(request, response, path);
+    } else {
+      asset(response, path);
+    }
+  });
+  server.on("upgrade", (request, socket, head) => {
+    const path = new URL(request.url ?? "/", "http://x").pathname;
+    if (path !== "/v1/events" || !signedIn(request)) {
+      socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+    events.handleUpgrade(request, socket, head, (ws) => {
+      sockets.add(ws);
+      ws.on("close", () => sockets.delete(ws));
+    });
+  });
+
+  const listen = () =>
+    new Promise<void>((done) => {
+      server.listen(port, "127.0.0.1", () => {
+        port = (server.address() as AddressInfo).port;
+        done();
+      });
+    });
+  await listen();
+  const url = `http://127.0.0.1:${port}`;
+
+  return {
+    url,
+    loginUrl: `${url}/?login=${LOGIN_CODE}`,
+    token: TOKEN,
+    guardLog,
+    broadcast(event) {
+      for (const ws of sockets) ws.send(JSON.stringify(event));
+    },
+    async stop() {
+      for (const ws of sockets) ws.terminate();
+      server.closeAllConnections();
+      await new Promise<void>((done) => server.close(() => done()));
+    },
+    restart: listen,
+  };
+}

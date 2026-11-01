@@ -270,7 +270,8 @@ fn every_link_in_the_documentation_leads_somewhere() {
         for entry in std::fs::read_dir(&next).unwrap() {
             let path = entry.unwrap().path();
             let name = path.file_name().unwrap().to_string_lossy().into_owned();
-            if path.is_dir() && !name.starts_with('.') && name != "target" {
+            if path.is_dir() && !name.starts_with('.') && name != "target" && name != "node_modules"
+            {
                 pending.push(path);
             } else if name.ends_with(".md") {
                 pages.push(path);

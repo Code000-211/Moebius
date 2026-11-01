@@ -32,6 +32,12 @@ documentation; `CONTRIBUTING.md` says the same as this file for people.
   askpass, remote setup, tunnel), `settings.rs` the saved address and token, `theme.rs` every colour and size, `sidebar.rs` and `search.rs`. `screens/` has one module per page,
   `widgets/` the pieces screens share. `tests/snapshots/` holds the pictures its render tests compare against (delete
   one to store a new picture).
+- `web/`: the web app, a Vite + React + TypeScript (strict) + Tailwind 4 app built with pnpm into `web/dist`, which the
+  server serves at `/`. Like the desktop app it talks to the server only through the desktop API: `src/api/` the client
+  (one module per part of the API) and the event stream, `src/live/` the events feeding the TanStack Query cache,
+  `src/app/` the shell and the pages, `src/ui/` components copied from Vibe Kanban (Apache-2.0, each file says where from
+  and what changed; `web/NOTICE`), `src/styles/` the Deep Velvet tokens, which must stay in step with `theme.rs` (a test
+  checks), `e2e/` the Playwright tests against a fake server. See `web/README.md`.
 - `docs/guide/`: how to build on Moebius, one how-to per page (column scripts, workflows, rules, agents, plugins,
   extensions, the desktop API). Every `luau` block in it is a complete column script that `tests/guide.rs` runs; read it
   before you build anything for a user, and keep it in step with the code.
@@ -63,6 +69,15 @@ Run all three before every commit; CI runs the same:
 cargo fmt --all
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+```
+
+When you change `web/`, run its checks too (from `web/`, after `pnpm install`); CI runs them on Linux and Windows:
+
+```sh
+pnpm check   # tsc --noEmit and Biome
+pnpm test    # Vitest
+pnpm build   # into web/dist
+pnpm e2e     # Playwright; needs the build, and Chromium (pnpm exec playwright install chromium)
 ```
 
 The end-to-end test (`crates/moebius-core/tests/first_card.rs`) runs only when `MOEBIUS_PI_BOLT` names a `pi-bolt`
