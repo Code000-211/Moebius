@@ -464,6 +464,8 @@ describe("the floating chat", () => {
         .getByRole("link", { name: "Retro" })
         .click();
       await page.waitForURL("**/retro");
+      // The address changes before the page is drawn; a person writes once the Retro is on the screen.
+      await page.getByRole("heading", { name: "Retro", level: 1 }).waitFor();
       await window.getByText("You said: What is this page?").first().waitFor();
       await window.getByRole("textbox", { name: "Message" }).fill("And this one?");
       await window.getByRole("textbox", { name: "Message" }).press("Enter");
