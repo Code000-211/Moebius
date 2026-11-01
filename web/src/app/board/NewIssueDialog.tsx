@@ -52,6 +52,11 @@ export function NewIssueDialog({
     },
   });
   const ready = title.trim() !== "" && !create.isPending;
+  const close = () => {
+    // Leaving by the door of the dialog itself, so the next time it opens does not still hold the refusal.
+    create.reset();
+    onOpenChange(false);
+  };
   const submit = () => {
     if (ready) create.mutate();
   };
@@ -107,7 +112,7 @@ export function NewIssueDialog({
               tone="error"
               action={
                 setup ? (
-                  <Button asChild variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+                  <Button asChild variant="ghost" size="sm" onClick={close}>
                     <Link to="/settings">Set up {setup}</Link>
                   </Button>
                 ) : undefined
@@ -117,7 +122,7 @@ export function NewIssueDialog({
             </Notice>
           )}
           <DialogFooter>
-            <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            <Button variant="ghost" onClick={close}>
               Cancel
             </Button>
             <Button type="submit" disabled={!ready}>

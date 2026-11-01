@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { Button } from "../../ui/components/Button";
 import { IconButton } from "../../ui/components/IconButton";
 import { cn } from "../../ui/lib/cn";
+import { isShortcut, modalIsOpen } from "../../ui/lib/shortcuts";
 import { Box } from "../../ui/page/Box";
 import { Empty } from "../../ui/page/Empty";
 import { FileEditor } from "./FileEditor";
@@ -29,15 +30,15 @@ export function FilesPanel({ repository }: { repository: number }) {
   /** The tab whose closing waits for the answer to "drop its changes?". */
   const [closing, setClosing] = useState<string | null>(null);
 
-  // Ctrl+P and Ctrl+Shift+F, as in an editor; the browser's own print and find give way while this page is shown.
+  // Ctrl+P and Ctrl+Shift+F, as in an editor; the browser's own print and find give way while this page is shown. The
+  // panels are not sheet-raised, so while a dialog is over the page they would open where nobody can see them.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey)) return;
-      const key = e.key.toLowerCase();
-      if (key === "p" && !e.shiftKey) {
+      if (modalIsOpen()) return;
+      if (isShortcut(e, "p")) {
         e.preventDefault();
         setPanel("go");
-      } else if (key === "f" && e.shiftKey) {
+      } else if (isShortcut(e, "f", { shift: true })) {
         e.preventDefault();
         setPanel("search");
       }

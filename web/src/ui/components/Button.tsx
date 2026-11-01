@@ -60,6 +60,10 @@ export interface ButtonProps
  * furniture, and the box the browser draws for a `title` is a strip of another design system over the page it sits
  * on. The words are kept — a disabled button stays in the accessibility tree, so `aria-describedby` carries the
  * reason — and are simply not drawn by us or by the browser.
+ *
+ * A button of none given is a plain one. Inside a `<form>` a `<button>` submits it whether or not that was meant,
+ * which turns the Cancel of a dialog into the thing the dialog was asked not to do, so the default is the quiet one
+ * and a form's own submit button says so.
  */
 function Button({
   className,
@@ -68,6 +72,7 @@ function Button({
   asChild = false,
   disabled,
   title,
+  type,
   "aria-describedby": describedBy,
   ...props
 }: ButtonProps) {
@@ -84,6 +89,7 @@ function Button({
         className={classes}
         disabled={disabled}
         title={quiet ? undefined : title}
+        type={asChild ? type : (type ?? "button")}
         aria-describedby={described === "" ? undefined : described}
         {...props}
       />

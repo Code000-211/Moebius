@@ -82,3 +82,39 @@ describe("a button that can be pressed", () => {
     expect(document.querySelectorAll(".sr-only")).toHaveLength(1);
   });
 });
+
+describe("a button inside a form", () => {
+  // A `<button>` with no `type` is a submit button, which is the wrong default for the one control whose whole job
+  // is not doing the thing the form does: cancelling an issue used to create it, and the dialog closed as if it had
+  // worked. Only a button that says it submits may submit.
+  const submits = () => {
+    render(
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          submitted.push("submitted");
+        }}
+      >
+        <Button variant="ghost">Cancel</Button>
+        <Button type="submit">Create</Button>
+      </form>,
+    );
+  };
+  let submitted: string[] = [];
+
+  afterEach(() => {
+    submitted = [];
+  });
+
+  it("does not submit the form when it is a plain button", () => {
+    submits();
+    screen.getByRole("button", { name: "Cancel" }).click();
+    expect(submitted).toEqual([]);
+  });
+
+  it("submits the form only when it was told to", () => {
+    submits();
+    screen.getByRole("button", { name: "Create" }).click();
+    expect(submitted).toEqual(["submitted"]);
+  });
+});
