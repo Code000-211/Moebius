@@ -13,7 +13,8 @@ use rust_embed::RustEmbed;
 
 /// What `pnpm -C web build` wrote to `web/dist`; empty when the web app was not built before the binary was.
 #[derive(RustEmbed)]
-#[folder = "$CARGO_MANIFEST_DIR/../../web/dist"]
+// Relative to this crate's Cargo.toml (rust-embed does not expand `$CARGO_MANIFEST_DIR` without a feature).
+#[folder = "../../web/dist"]
 #[allow_missing = true]
 struct Dist;
 
