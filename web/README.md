@@ -84,7 +84,7 @@ Velvet colours in `tailwind.css` instead of Vibe Kanban's HSL tokens; `react-i18
 gone (the icons are Phosphor's, the text plain English); `cn` merges Tailwind classes itself. Nothing that reports to
 a service (PostHog, Sentry) is copied. Vibe Kanban's `CommandBar` is not copied: it is made of issues, branches and priorities
 that Moebius does not have, so `app/shell/CommandBar.tsx` builds the page switcher from its `Command` primitives. The board copies `KanbanBoard`, `KanbanCardContent`, `KanbanIssuePanel`, `KanbanBadge`,
-`PrBadge` and `RunningDots`. `KanbanBoard` keeps `@hello-pangea/dnd` for dragging (with the keyboard too); it loses its
+`PrBadge` and `RunningDots`. `KanbanBoard` drags with `@dnd-kit/core` instead of `@hello-pangea/dnd` (pointer and keyboard; the keyboard moves to the next column even when it is scrolled out of view, a drag overlay shows the card, announcements name card and column); it loses its
 Gantt types, its "add task" button and i18n. `KanbanCardContent` shows what a Moebius card has (number as a link to the issue, agent and
 round, round bar, state badges, pull request) in place of priority, assignees, tags and relationships. `KanbanIssuePanel`
 is a read-only inspector that keeps the panel's frame (header, close, Escape, bordered sections) and takes its sections as
@@ -97,7 +97,7 @@ The app is Apache-2.0 like the rest of Moebius. `NOTICE` and `LICENSE-APACHE-2.0
 fonts are under the SIL Open Font License 1.1 (`public/fonts/*/OFL.txt`).
 
 Direct dependencies, all checked with `pnpm licenses list`; what goes into `dist/` is MIT, except `class-variance-authority`
-and `@hello-pangea/dnd` (Apache-2.0), `highlight.js` (BSD-3-Clause), a few ISC packages of the Markdown tree and `tslib` (0BSD, through Radix):
+(Apache-2.0), `highlight.js` (BSD-3-Clause), a few ISC packages of the Markdown tree and `tslib` (0BSD, through Radix):
 
 | Package | License | Used for |
 |---|---|---|
@@ -105,7 +105,7 @@ and `@hello-pangea/dnd` (Apache-2.0), `highlight.js` (BSD-3-Clause), a few ISC p
 | `react-router` | MIT | Routing (lighter than TanStack Router's generated route tree for this many flat routes) |
 | `@tanstack/react-query` | MIT | Server data and the cache the events feed |
 | `@radix-ui/react-dialog`, `-dropdown-menu`, `-tooltip`, `-slot` | MIT | Behaviour of the copied components |
-| `@hello-pangea/dnd` | Apache-2.0 | Dragging cards on the board; it brings `redux`, `react-redux`, `css-box-model`, `raf-schd`, `use-sync-external-store` and `@babel/runtime`, all MIT |
+| `@dnd-kit/core` | MIT | Dragging cards on the board, with pointer and keyboard (it brings `@dnd-kit/utilities`, `@dnd-kit/accessibility` and `tslib`, MIT and 0BSD) |
 | `cmdk` | MIT | The command bar |
 | `@phosphor-icons/react` | MIT | Icons |
 | `react-markdown`, `remark-gfm` | MIT | The agent's text as GitHub flavoured Markdown (the unified/remark/rehype packages under them are MIT, with a few ISC) |

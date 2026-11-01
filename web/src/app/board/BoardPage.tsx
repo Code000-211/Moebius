@@ -18,6 +18,7 @@ import {
   type DropResult,
   KanbanBoard,
   KanbanCard,
+  KanbanCardFace,
   KanbanCards,
   KanbanHeader,
   KanbanProvider,
@@ -99,10 +100,10 @@ export function BoardPage() {
   const working = board.cards.filter(isLive).length;
 
   function onDragEnd(result: DropResult) {
-    if (!result.destination) return;
-    const card = board?.cards.find((c) => String(c.id) === result.draggableId);
+    if (!result.column) return;
+    const card = board?.cards.find((c) => String(c.id) === result.cardId);
     if (!card) return;
-    const to = result.destination.droppableId;
+    const to = result.column;
     const drop = dropRule(card, to, inboxOf(inbox, card));
     const number = card.number;
     let decision: Decision | null = null;
@@ -119,6 +120,22 @@ export function BoardPage() {
     } else if (drop.kind === "refused") {
       setNotice({ tone: "error", text: `Cannot move #${number} to ${to}: ${drop.reason}` });
     }
+  }
+
+  /** The card under the pointer while it is dragged. */
+  function renderOverlay(cardId: string) {
+    const card = board?.cards.find((c) => String(c.id) === cardId);
+    if (!board || !card) return null;
+    const status = cardStatus(card, inboxOf(inbox, card), board);
+    return (
+      <KanbanCardFace
+        name={`#${card.number} ${card.title}`}
+        isLive={status === "live"}
+        className="cursor-grabbing"
+      >
+        <CardContent board={board} inbox={inbox} card={card} cards={board.cards} />
+      </KanbanCardFace>
+    );
   }
 
   return (
@@ -176,7 +193,7 @@ export function BoardPage() {
       )}
       <div className="flex min-w-0 flex-col gap-[12px] xl:flex-row xl:items-start">
         <div className="min-w-0 flex-1 overflow-x-auto pb-base">
-          <KanbanProvider onDragEnd={onDragEnd}>
+          <KanbanProvider onDragEnd={onDragEnd} renderOverlay={renderOverlay}>
             {groups.map(({ column, cards, total }) => (
               <BoardColumn
                 key={column.name}
@@ -266,7 +283,6 @@ function BoardColumn({
     const item = inboxOf(inbox, card);
     return item !== undefined && item.kind !== "stuck";
   });
-  const next = name === "Ready" ? nextCard(cards) : undefined;
   return (
     <KanbanBoard
       name={name}
@@ -278,18 +294,16 @@ function BoardColumn({
         detail={script ?? undefined}
         color={waits ? "var(--amber)" : live ? "var(--live)" : "var(--text)"}
       />
-      <KanbanCards id={name} className="min-h-12">
-        {cards.map((card, index) => {
+      <KanbanCards className="min-h-12">
+        {cards.map((card) => {
           const status = cardStatus(card, inboxOf(inbox, card), board);
-          const change = changeOf(board, card);
-          const coding = card.column === "In progress" || card.column === "In review";
           return (
             <KanbanCard
               key={card.id}
               id={String(card.id)}
               name={`#${card.number} ${card.title}`}
               testId={`card-${card.number}`}
-              index={index}
+              column={name}
               isSelected={inspectedId === card.id}
               isLive={status === "live"}
               onClick={() => onSelect(card)}
@@ -297,29 +311,50 @@ function BoardColumn({
                 if (e.key === "Enter") onSelect(card);
               }}
             >
-              <KanbanCardContent
-                displayId={`#${card.number}`}
-                issueUrl={issueUrl(board.repository, card)}
-                title={card.title}
-                detail={cardDetail(card, board.round_limit)}
-                badges={cardBadges(card, status, next === card.id)}
-                pullRequest={
-                  change?.pull_request != null
-                    ? {
-                        number: change.pull_request,
-                        url: pullUrl(board.repository, change.pull_request),
-                        status: change.state,
-                      }
-                    : null
-                }
-                rounds={coding ? { done: card.rounds, limit: board.round_limit } : null}
-                isLoading={status === "live"}
-                muted={card.column === "Done"}
-              />
+              <CardContent board={board} inbox={inbox} card={card} cards={cards} />
             </KanbanCard>
           );
         })}
       </KanbanCards>
     </KanbanBoard>
+  );
+}
+
+/** What a card shows, on the board and on the drag overlay. */
+function CardContent({
+  board,
+  inbox,
+  card,
+  cards,
+}: {
+  board: Board;
+  inbox: InboxItem[];
+  card: Card;
+  cards: Card[];
+}) {
+  const status = cardStatus(card, inboxOf(inbox, card), board);
+  const change = changeOf(board, card);
+  const coding = card.column === "In progress" || card.column === "In review";
+  const next = card.column === "Ready" ? nextCard(cards) : undefined;
+  return (
+    <KanbanCardContent
+      displayId={`#${card.number}`}
+      issueUrl={issueUrl(board.repository, card)}
+      title={card.title}
+      detail={cardDetail(card, board.round_limit)}
+      badges={cardBadges(card, status, next === card.id)}
+      pullRequest={
+        change?.pull_request != null
+          ? {
+              number: change.pull_request,
+              url: pullUrl(board.repository, change.pull_request),
+              status: change.state,
+            }
+          : null
+      }
+      rounds={coding ? { done: card.rounds, limit: board.round_limit } : null}
+      isLoading={status === "live"}
+      muted={card.column === "Done"}
+    />
   );
 }

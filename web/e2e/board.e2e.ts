@@ -29,10 +29,10 @@ afterAll(async () => {
   await browser.close();
 });
 
-/** A new server and a browser wide enough for all the columns and the dock (a card is dragged to a column only while it is in view), signed in. */
+/** A new server and a normal browser (the columns are wider than it, so some start out of view), signed in. */
 async function fresh() {
   server = await startServer();
-  context = await browser.newContext({ viewport: { width: 2400, height: 1000 } });
+  context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   page = await context.newPage();
   await page.goto(server.loginUrl);
   await page.getByRole("navigation", { name: "Pages" }).waitFor();
@@ -78,12 +78,22 @@ const dock = () => page.getByRole("region", { name: "Card inspector" });
 const alert = (text: string | RegExp) => page.getByRole("alert").filter({ hasText: text });
 const status = (text: string | RegExp) => page.getByRole("status").filter({ hasText: text });
 
-/** Lifts a card with the keyboard, moves it `steps` columns to the right (negative: left) and drops it. */
+/** What the screen reader is told last (the live region of the drag library). */
+const spoken = async () => (await page.locator("[id^=DndLiveRegion]").textContent()) ?? "";
+
+/** Lifts a card with the keyboard, moves it `steps` columns to the right (negative: left) and drops it. Every key waits for the page to have taken the one before, as a person's keys do. */
 async function drag(target: Locator, steps: number) {
   await target.focus();
   await page.keyboard.press("Space");
+  await expect.poll(spoken).toContain("is over the column");
+  // The library listens for the arrow keys one task after the lift: let that task run (not a wait for time).
+  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 0)));
   const key = steps > 0 ? "ArrowRight" : "ArrowLeft";
-  for (let i = 0; i < Math.abs(steps); i++) await page.keyboard.press(key);
+  for (let i = 0; i < Math.abs(steps); i++) {
+    const before = await spoken();
+    await page.keyboard.press(key);
+    await expect.poll(spoken).not.toBe(before);
+  }
   await page.keyboard.press("Space");
 }
 
@@ -305,6 +315,43 @@ describe("dragging cards", () => {
     await status("Approved #2").waitFor();
     await column("Ready").getByTestId("card-2").waitFor();
     expect(fake().requests.at(-1)).toMatchObject({ method: "POST", path: "/v1/cards/2/approve" });
+  });
+
+  it.skipIf(usesRealServer)(
+    "keyboard-drags a card to a column that starts out of view and scrolls it into view",
+    async () => {
+      await fresh();
+      await openBoard();
+      const last = column("Done");
+      const inView = () =>
+        last.evaluate((node) => {
+          const box = node.getBoundingClientRect();
+          const scroller = node.parentElement?.parentElement?.getBoundingClientRect();
+          return !!scroller && box.right <= scroller.right + 1 && box.left >= scroller.left - 1;
+        });
+      expect(await inView()).toBe(false);
+      await drag(card(5), 1);
+      await status("Merged #5").waitFor();
+      expect(await inView()).toBe(true);
+    },
+  );
+
+  it.skipIf(usesRealServer)("announces a keyboard drag in words", async () => {
+    await fresh();
+    await openBoard();
+    await card(2).focus();
+    await page.keyboard.press("Space");
+    // The announcement of the lift is replaced at once by the one of the column under the card.
+    const live = page.locator("[id^=DndLiveRegion]");
+    await live
+      .filter({ hasText: "#2 Fix the login redirect is over the column Backlog" })
+      .waitFor({ state: "attached" });
+    await page.keyboard.press("ArrowRight");
+    await page
+      .getByText("is over the column Ready", { exact: false })
+      .waitFor({ state: "attached" });
+    await page.keyboard.press("Escape");
+    await live.filter({ hasText: "Cancelled. #2" }).waitFor({ state: "attached" });
   });
 
   it.skipIf(usesRealServer)("drags a card with the mouse", async () => {
