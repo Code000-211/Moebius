@@ -346,10 +346,10 @@ describe("dragging cards", () => {
     await live
       .filter({ hasText: "#2 Fix the login redirect is over the column Backlog" })
       .waitFor({ state: "attached" });
+    // The library listens for the arrow keys one task after the lift (as in drag() above).
+    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 0)));
     await page.keyboard.press("ArrowRight");
-    await page
-      .getByText("is over the column Ready", { exact: false })
-      .waitFor({ state: "attached" });
+    await expect.poll(spoken).toContain("is over the column Ready");
     await page.keyboard.press("Escape");
     await live.filter({ hasText: "Cancelled. #2" }).waitFor({ state: "attached" });
   });
@@ -442,7 +442,7 @@ describe("the dock", () => {
       await dock().getByRole("link", { name: "Open the script" }).click();
       await page.waitForURL("**/board/1/scripts/In%20progress");
       await page.getByRole("heading", { name: "Script of In progress" }).waitFor();
-      await page.getByText("read-only").waitFor();
+      await page.getByText("built in").waitFor();
       await page.getByText("-- The In progress column").waitFor();
     },
   );
