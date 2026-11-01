@@ -14,6 +14,7 @@ import { PortsPage } from "./ports/PortsPage";
 import { AddRepositoryPage } from "./projects/AddRepositoryPage";
 import { ProjectPage } from "./projects/ProjectPage";
 import { ProjectsPage } from "./projects/ProjectsPage";
+import { harnessRoutes } from "./routesB";
 import { RunPage } from "./runs/RunPage";
 import { SettingsPage } from "./settings/SettingsPage";
 import { NotFoundPage, PlaceholderPage } from "./shell/Page";
@@ -24,6 +25,11 @@ import { UsagePage } from "./usage/UsagePage";
 /** The pages that have their own route below; the others show a placeholder. */
 const PAGES_BUILT = new Set([
   "chat",
+  "agents",
+  "skills",
+  "mcp-servers",
+  "models",
+  "plugins",
   "terminal",
   "ports",
   "inbox",
@@ -40,6 +46,7 @@ export const routes = [
     element: <App />,
     children: [
       { index: true, element: <Navigate to={`/${DEFAULT_PAGE}`} replace /> },
+      ...harnessRoutes,
       ...PAGES.filter((page) => !PAGES_BUILT.has(page.path)).map((page) => ({
         path: page.path,
         element: <PlaceholderPage page={page} />,

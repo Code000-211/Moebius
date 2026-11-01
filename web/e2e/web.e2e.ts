@@ -104,14 +104,13 @@ describe("signing in", () => {
 });
 
 describe("the shell", () => {
-  it("opens a page from the sidebar, with a placeholder for what is not built", async () => {
+  it("opens a page from the sidebar and marks it as the current one", async () => {
     await fresh();
     await page.goto(server.loginUrl);
     await pages().waitFor();
     await pages().getByRole("link", { name: "Agents" }).click();
     await page.waitForURL("**/agents");
     await page.getByRole("heading", { name: "Agents" }).waitFor();
-    await page.getByText("coming in the web app soon").waitFor();
     expect(await pages().getByRole("link", { name: "Agents" }).getAttribute("aria-current")).toBe(
       "page",
     );

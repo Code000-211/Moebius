@@ -38,4 +38,16 @@ export const keys = {
   runDiff: (id: number) => ["diff", "run", id] as const,
   changeDiff: (id: number) => ["diff", "change", id] as const,
   ports: ["ports"] as const,
+  /** The pages of the harness configuration and of the setup: lists, and the item being edited. */
+  runners: ["runners"] as const,
+  agent: (name: string) => ["agent", name] as const,
+  skill: (name: string) => ["skill", name] as const,
+  skillFile: (name: string, path: string) => ["skill", name, "file", path] as const,
+  mcpServers: ["mcp-servers"] as const,
+  mcpServer: (name: string) => ["mcp-server", name] as const,
+  /** What the server uses (`GET /v1/models`), what its upstreams serve, the providers built in and the plugins. */
+  modelsInUse: ["models-in-use"] as const,
+  availableDecision: ["models", "decision"] as const,
+  providers: ["providers"] as const,
+  plugins: ["plugins"] as const,
 };
