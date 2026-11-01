@@ -227,9 +227,9 @@ gets. Each entry of `cards` is a `Card` with what a board shows of it, so that a
 | Field | Meaning |
 |---|---|
 | `rounds`, `tokens` | The card's `code` runs (and rounds of attempts of which none passed) and the tokens of all its runs since it was last retried, as `card.rounds` and `card.tokens` in [column scripts](column-scripts.md). |
-| `run` | The card's latest run, `{"id", "agent", "purpose", "status"}`, or null when it has none. A board counts the runs working on it from the cards whose `run.status` is `starting` or `running`. |
+| `run` | The card's latest run that is not an attempt, `{"id", "agent", "purpose", "status"}`, or null when it has none: an attempt that was not picked is shown by `attempts`, not here. A board counts the runs working on it from the cards whose `run.status` is `starting` or `running`. |
 | `blocked_by` | The numbers of the issues that block the card and are not done yet, as `card.blocked_by`. |
-| `refusals` | How many tool calls of the latest run were refused (its `tool_check` and `mcp_call` run events with the decision `refuse`). |
+| `refusals` | How many tool calls of that latest run were refused (its `tool_check` and `mcp_call` run events with the decision `refuse`). |
 | `attempts` | The latest group of attempts of a card that was tried several times at once (see [column scripts](column-scripts.md#attempts)), oldest first, each `{"run", "model", "status", "result", "output", "picked", "reason"}`: `model` the model or class the attempt was started with, or null; `status` its run's status; `result` `passed`, `failed` or null before it was judged; `output` why it failed; `picked` whether it was the one kept, and `reason` why. Absent when the card has no attempts. |
 | `change` | The card's open change, `{"id", "state", "checks", "review_verdict"}`, or null. `checks` is `pending`, `success`, `failure` or `none`, as `card.change.checks`; `review_verdict` is `approve` or `changes` once a review ended since the latest `code` run, else null. Whether the change conflicts is not in the snapshot. |
 

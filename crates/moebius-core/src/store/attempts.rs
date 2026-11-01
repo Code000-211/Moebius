@@ -103,6 +103,40 @@ impl Store {
         )
     }
 
+    /// The attempts of every card of a repository that is not in `except_column`, oldest first: one read for a board.
+    pub fn attempts_for_board(
+        &self,
+        repository_id: i64,
+        except_column: &str,
+    ) -> Result<Vec<Attempt>> {
+        self.rows(
+            &format!(
+                "SELECT {COLUMNS} FROM attempts a JOIN cards c ON c.id = a.card_id
+                 WHERE c.repository_id = ?1 AND c.column_name <> ?2 ORDER BY a.run_id"
+            ),
+            params![repository_id, except_column],
+            attempt,
+        )
+    }
+
+    /// `failed_attempt_rounds` for every card of a repository that has some, by card id.
+    pub fn failed_attempt_rounds_for_board(
+        &self,
+        repository_id: i64,
+    ) -> Result<std::collections::HashMap<i64, i64>> {
+        Ok(self
+            .rows(
+                "SELECT a.card_id, COUNT(DISTINCT a.group_id) FROM attempts a JOIN cards c ON c.id = a.card_id
+                 WHERE c.repository_id = ?1 AND a.settled = 1 AND a.group_id > COALESCE(c.retried_after, 0)
+                   AND a.group_id NOT IN (SELECT group_id FROM attempts WHERE card_id = a.card_id AND picked = 1)
+                 GROUP BY a.card_id",
+                [repository_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?
+            .into_iter()
+            .collect())
+    }
+
     /// The attempts of the card that have not been settled, oldest first.
     pub fn open_attempts(&self, card_id: i64) -> Result<Vec<Attempt>> {
         self.rows(

@@ -21,7 +21,7 @@ use axum::routing::{get, post, put};
 use serde::{Deserialize, Serialize};
 
 use super::{ApiError, ApiState, Reason, blocking};
-use crate::app::{App, HistoryEntry, PERSON, columns, runs_since_retry};
+use crate::app::{App, BoardFacts, HistoryEntry, PERSON};
 use crate::board::latest_review;
 use crate::decide::Actor;
 use crate::store::{Card, Change, InboxItem, Repository, Run};
@@ -138,9 +138,9 @@ pub struct Merged {
     pub commit: String,
 }
 
-/// What a board shows of a card. A card in Done carries none of it, which keeps the snapshot cheap to read on every
-/// event.
-fn card_view(app: &App, card: Card) -> crate::app::Result<CardView> {
+/// What a board shows of a card, from the facts read for its whole board (`App::board_facts`). A card in Done carries
+/// none of it, which keeps the snapshot cheap to read on every event.
+fn card_view(app: &App, facts: &BoardFacts, card: Card) -> crate::app::Result<CardView> {
     let mut view = CardView {
         card,
         rounds: 0,
@@ -151,20 +151,21 @@ fn card_view(app: &App, card: Card) -> crate::app::Result<CardView> {
         change: None,
         attempts: Vec::new(),
     };
-    if view.card.column == columns::DONE {
+    let Some(card_facts) = facts.cards.get(&view.card.id) else {
         return Ok(view);
-    }
-    let runs = app.store.runs_for_card(view.card.id)?;
-    view.rounds = runs_since_retry(&runs, &view.card)
-        .filter(|r| r.purpose == "code")
-        .count() as i64
-        + app.store.failed_attempt_rounds(view.card.id)?;
-    view.tokens = app.store.tokens_for_card(view.card.id)?;
-    let attempts = app.store.attempts_for_card(view.card.id)?;
+    };
+    let runs = &card_facts.runs;
+    view.rounds = card_facts.rounds;
+    view.tokens = facts.tokens.get(&view.card.id).copied().unwrap_or(0);
+    let attempts = facts
+        .attempts
+        .get(&view.card.id)
+        .map_or(&[][..], Vec::as_slice);
     let latest = attempts.iter().map(|a| a.group_id).max();
     view.attempts = attempts
-        .into_iter()
+        .iter()
         .filter(|a| Some(a.group_id) == latest)
+        .cloned()
         .map(|a| AttemptView {
             run: a.run_id,
             model: a.model,
@@ -179,8 +180,8 @@ fn card_view(app: &App, card: Card) -> crate::app::Result<CardView> {
         })
         .collect();
     view.blocked_by = app.blocked_by(&view.card)?;
-    if let Some(run) = runs.last() {
-        view.refusals = app.store.refused_tool_calls(run.id)?;
+    if let Some(run) = &card_facts.run {
+        view.refusals = facts.refusals.get(&run.id).copied().unwrap_or(0);
         view.run = Some(RunView {
             id: run.id,
             agent: run.agent.clone(),
@@ -193,7 +194,7 @@ fn card_view(app: &App, card: Card) -> crate::app::Result<CardView> {
             id: change.id,
             state: change.state.clone(),
             checks: app.checks_of(&change)?.to_string(),
-            review_verdict: latest_review(&runs).map(|r| r.verdict.to_string()),
+            review_verdict: latest_review(runs).map(|r| r.verdict.to_string()),
         });
     }
     Ok(view)
@@ -206,11 +207,12 @@ async fn snapshot(State(state): State<ApiState>) -> Result<axum::Json<Snapshot>,
         for repository in app.store.repositories()? {
             let cards = app.store.cards(repository.id)?;
             let waiting = app.waiting(&cards);
+            let facts = app.board_facts(repository.id, &cards)?;
             boards.push(Board {
                 waiting,
                 cards: cards
                     .into_iter()
-                    .map(|card| card_view(app, card))
+                    .map(|card| card_view(app, &facts, card))
                     .collect::<Result<_, _>>()?,
                 round_limit,
                 changes: app.store.changes(repository.id)?,
@@ -329,6 +331,60 @@ mod tests {
     use crate::repos::git;
     use crate::server::api::testing::{code_and_offer, get, origin, post, start, until};
     use crate::store::Usage;
+
+    #[tokio::test]
+    async fn a_card_view_shows_the_latest_run_that_is_not_an_unpicked_attempt() {
+        let (_dir, state, _addr) = start().await;
+        let app = &state.app;
+        let store = &app.store;
+        let repo = store.repositories().unwrap().pop().unwrap();
+        let card = store
+            .add_card(repo.id, "Hard", "", "person", "In progress")
+            .unwrap();
+        let code = store
+            .add_run(Some(card.id), "Coder", "test", "code")
+            .unwrap();
+        store.set_run_status(code.id, "succeeded").unwrap();
+        let attempt = store
+            .add_run(Some(card.id), "Coder", "test", "attempt")
+            .unwrap();
+        store
+            .add_attempt(attempt.id, card.id, attempt.id, None)
+            .unwrap();
+        for (run, decision) in [(code.id, "refuse"), (attempt.id, "refuse")] {
+            let event = serde_json::json!({"tool": "bash", "decision": decision});
+            app.record_run_event(run, "tool_check", &event).unwrap();
+        }
+        app.record_run_event(
+            attempt.id,
+            "tool_check",
+            &serde_json::json!({"tool": "bash", "decision": "refuse"}),
+        )
+        .unwrap();
+        let cards = store.cards(repo.id).unwrap();
+        let facts = app.board_facts(repo.id, &cards).unwrap();
+        let view = card_view(app, &facts, card.clone()).unwrap();
+        assert_eq!(view.run.unwrap().id, code.id);
+        assert_eq!(view.refusals, 1);
+        assert_eq!(view.attempts.len(), 1);
+        // The batched facts say what the facts of the one card say.
+        assert_eq!(facts.cards[&card.id], app.card_facts(&card).unwrap());
+    }
+
+    #[tokio::test]
+    async fn a_board_whose_cards_have_no_run_has_no_refusals() {
+        let (_dir, state, _addr) = start().await;
+        let app = &state.app;
+        let repo = app.store.repositories().unwrap().pop().unwrap();
+        let cards = app.store.cards(repo.id).unwrap();
+        assert!(
+            cards
+                .iter()
+                .all(|c| app.card_facts(c).unwrap().run.is_none())
+        );
+        let facts = app.board_facts(repo.id, &cards).unwrap();
+        assert!(facts.refusals.is_empty());
+    }
 
     #[tokio::test]
     async fn the_snapshot_holds_what_a_board_shows_of_each_card() {

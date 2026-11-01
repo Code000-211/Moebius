@@ -17,7 +17,7 @@ use mlua::{Lua, Table};
 
 use super::Engine;
 use super::review::{AxisReview, two_axes};
-use crate::app::{App, runs_since_retry};
+use crate::app::{App, CardFacts, runs_since_retry};
 use crate::store::{Card, Run};
 
 /// What a review run concluded: `verdict` is `approve` or `changes`, and `findings` is what it found.
@@ -86,11 +86,8 @@ pub fn latest_review(runs: &[Run]) -> Option<Review> {
 impl Engine {
     /// The `card` table of `card`, as its script sees it.
     pub(super) fn card_table(&self, lua: &Lua, card: &Card) -> mlua::Result<Table> {
-        let runs = self
-            .app
-            .store
-            .runs_for_card(card.id)
-            .map_err(mlua::Error::external)?;
+        let CardFacts { runs, rounds, run } =
+            self.app.card_facts(card).map_err(mlua::Error::external)?;
         let t = lua.create_table()?;
         t.set("id", card.id)?;
         t.set("number", card.number)?;
@@ -115,12 +112,7 @@ impl Engine {
         t.set("blocked_by", blocked_by)?;
         let since_retry = || runs_since_retry(&runs, card);
         let count = |purpose: &str| since_retry().filter(|r| r.purpose == purpose).count();
-        let failed_attempt_rounds = self
-            .app
-            .store
-            .failed_attempt_rounds(card.id)
-            .map_err(mlua::Error::external)?;
-        t.set("rounds", count("code") as i64 + failed_attempt_rounds)?;
+        t.set("rounds", rounds)?;
         t.set("reviews", count("review") + count("review-standards"))?;
         t.set(
             "tokens",
@@ -136,7 +128,7 @@ impl Engine {
         )?;
         self.attempts_table(lua, &t, card, &runs)?;
         // An attempt that was not picked is no run of the card's own: `card.attempts` shows it.
-        if let Some(run) = runs.iter().rev().find(|r| r.purpose != "attempt") {
+        if let Some(run) = &run {
             let r = lua.create_table()?;
             r.set("id", run.id)?;
             r.set("agent", run.agent.as_str())?;
