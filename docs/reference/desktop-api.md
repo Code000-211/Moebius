@@ -1276,14 +1276,18 @@ servers and a `README.md`; the agents are read back as the server reads them fir
 server](harness-configuration.md#a-repository-on-the-server)). It then writes `moebius.toml` in one step with `[harness]
 url` set to the repository's absolute path and without `[agents.*]` and `rules_file`, its other keys and comments kept,
 and records the decision (kind `setup_harness`, decider `person`, the file, the repository, the agents and where each
-skill and extension was copied in its context). The running server is not changed: it uses the repository once it
-restarts (`POST /v1/server/restart`, which the desktop app sends next).
+skill and extension was copied in its context). The file is saved as `PUT /v1/settings` saves a change, so the result
+must read as `moebius serve` reads it and the keys that are live take effect at once; the running server is not
+otherwise changed: it uses the repository once it restarts (`POST /v1/server/restart`, which the desktop app sends
+next).
 
 Response: `{"restart_needed": true, "restart_keys": ["harness.url"]}`, as `PUT /v1/settings` answers. Errors: `403` a
 run token; `409` the file has `[harness]` already, or `harness/` exists and is not empty; `422` an agent cannot be moved
 (a skill or extension path that is not there, a skill named like a built-in one, two skills or extensions with the same
-name), or the file does not parse; `500` a file cannot be read or written. Whatever fails, `moebius.toml` and `harness/`
-are as they were.
+name), or the file cannot be used as `moebius serve` reads it (it does not parse, an environment variable of an upstream
+is not set, a secret is not stored); `500` a file cannot be read or written. Whatever fails before the file is written
+leaves `moebius.toml` and `harness/` as they were; a write that fails leaves the repository the server made in
+`harness/`.
 
 ### `POST /v1/chats`
 

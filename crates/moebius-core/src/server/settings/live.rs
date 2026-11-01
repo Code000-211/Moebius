@@ -124,6 +124,30 @@ impl Live {
     /// is recorded and the live keys are applied.
     pub fn save(&self, app: &App, by: &Actor, changes: &Changes) -> Result<Saved> {
         let _writing = self.writing.lock().unwrap_or_else(|e| e.into_inner());
+        self.write_changes(app, by, changes, "edit_settings", || {
+            Ok(BTreeMap::from([
+                (
+                    "set".to_string(),
+                    without_passwords(&serde_json::to_value(&changes.set).unwrap_or_default())
+                        .to_string(),
+                ),
+                ("remove".to_string(), changes.remove.join(", ")),
+            ]))
+        })
+    }
+
+    /// The one path every edit of the file takes, with `writing` held: `changes` are applied to the text and the
+    /// result validated, `prepare` runs (it may refuse, and then nothing is written; what it returns is added to the
+    /// context of the recorded action), the file is replaced in one step, `action` is recorded and the live keys are
+    /// applied.
+    fn write_changes(
+        &self,
+        app: &App,
+        by: &Actor,
+        changes: &Changes,
+        action: &str,
+        prepare: impl FnOnce() -> Result<BTreeMap<String, String>>,
+    ) -> Result<Saved> {
         let (text, _) = read_raw(&self.started.file)?;
         let edited = edit(&text, changes)?;
         let base = self.started.file.parent().unwrap_or(Path::new("."));
@@ -138,17 +162,10 @@ impl Live {
                 )
                 .map_err(invalid)?;
         }
+        let mut context = prepare()?;
         write_atomically(&self.started.file, edited.as_bytes(), false)?;
-        let context = BTreeMap::from([
-            ("file".to_string(), self.started.file.display().to_string()),
-            (
-                "set".to_string(),
-                without_passwords(&serde_json::to_value(&changes.set).unwrap_or_default())
-                    .to_string(),
-            ),
-            ("remove".to_string(), changes.remove.join(", ")),
-        ]);
-        app.record_action(by, "edit_settings", None, None, context, "")?;
+        context.insert("file".to_string(), self.started.file.display().to_string());
+        app.record_action(by, action, None, None, context, "")?;
         self.apply(config, upstreams);
         let raw = toml::from_str(&edited).unwrap_or_default();
         let restart_keys = restart_keys(&self.started_raw, &raw);
@@ -162,8 +179,8 @@ impl Live {
     /// next to the file (see `repo::create`). The file then gets `[harness] url` naming it and loses
     /// `[agents.*]` and `rules_file`, with its other keys and comments kept; the result must parse. Refused with a
     /// conflict when the file has `[harness]` already, or the directory is there and not empty. Whatever fails before
-    /// the file is written leaves the file and the directory as they were. The running server is not changed: it uses
-    /// the repository after it restarts.
+    /// the file is written leaves the file and the directory as they were. It is saved as `save` saves, so the live keys
+    /// are applied; the server uses the repository after it restarts.
     pub fn set_up_harness(&self, app: &App, by: &Actor) -> Result<Saved> {
         let _writing = self.writing.lock().unwrap_or_else(|e| e.into_inner());
         let file = &self.started.file;
@@ -182,35 +199,20 @@ impl Live {
             set: BTreeMap::from([("harness.url".to_string(), Value::String(url.clone()))]),
             remove: vec!["agents".into(), "rules_file".into()],
         };
-        let edited = edit(&text, &changes)?;
-        Config::parse(&edited, base, file).map_err(|e| invalid(redact(&e.to_string())))?;
-        let existed = dir.exists();
-        let moved = repo::create(&dir, &config.agents, config.rules_file.as_deref())?;
-        if let Err(e) = write_atomically(file, edited.as_bytes(), false) {
-            let _ = std::fs::remove_dir_all(&dir);
-            if existed {
-                let _ = std::fs::create_dir(&dir);
-            }
-            return Err(e.into());
-        }
-        let moved = moved
-            .iter()
-            .map(|(from, to)| format!("{} -> {to}", from.display()))
-            .collect::<Vec<_>>();
-        let context = BTreeMap::from([
-            ("file".to_string(), file.display().to_string()),
-            ("repository".to_string(), url),
-            (
-                "agents".to_string(),
-                config.agents.keys().cloned().collect::<Vec<_>>().join(", "),
-            ),
-            ("copied".to_string(), moved.join("\n")),
-        ]);
-        app.record_action(by, "setup_harness", None, None, context, "")?;
-        let raw = toml::from_str(&edited).unwrap_or_default();
-        Ok(Saved {
-            restart_needed: true,
-            restart_keys: restart_keys(&self.started_raw, &raw),
+        self.write_changes(app, by, &changes, "setup_harness", || {
+            let moved = repo::create(&dir, &config.agents, config.rules_file.as_deref())?;
+            let moved = moved
+                .iter()
+                .map(|(from, to)| format!("{} -> {to}", from.display()))
+                .collect::<Vec<_>>();
+            Ok(BTreeMap::from([
+                ("repository".to_string(), url.clone()),
+                (
+                    "agents".to_string(),
+                    config.agents.keys().cloned().collect::<Vec<_>>().join(", "),
+                ),
+                ("copied".to_string(), moved.join("\n")),
+            ]))
         })
     }
 
@@ -286,4 +288,78 @@ pub struct SettingsView {
     /// Whether the file has keys the running server uses only after it restarts, and which.
     pub restart_needed: bool,
     pub restart_keys: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+    use crate::server::Server;
+
+    fn actor() -> Actor {
+        Actor::Person
+    }
+
+    /// A change to the live key `name`, and what the running server shows of it.
+    fn sample(name: &str) -> (Value, fn(&Server) -> String) {
+        fn config(server: &Server, f: fn(&Config) -> String) -> String {
+            f(&server.live.get())
+        }
+        macro_rules! field {
+            ($($field:tt)+) => {
+                |s| config(s, |c| format!("{:?}", c.$($field)+))
+            };
+        }
+        match name {
+            "run_limit" => (json!(7), field!(run_limit)),
+            "retro_at" => (json!("04:15"), field!(retro_at)),
+            "trial_window.start" => (json!("01:10"), field!(trial_window.0)),
+            "trial_window.end" => (json!("05:20"), field!(trial_window.1)),
+            "regression.size" => (json!(11), field!(regression_size)),
+            "regression.gate" => (json!(false), field!(regression_gate)),
+            "board.tick_ms" => (json!(123), field!(board_tick)),
+            "board.round_limit" => (json!(8), field!(round_limit)),
+            "budgets.day_tokens" => (json!(4321), field!(day_tokens)),
+            "router.upstreams" => (
+                json!([{"protocol": "openai", "base_url": "http://127.0.0.1:1"}]),
+                field!(upstreams),
+            ),
+            "router.classes" => (json!({"fast": ["a", "b"]}), |s| {
+                format!("{:?} {:?}", s.live.get().classes, s.router.classes())
+            }),
+            "agents" => (json!({"Coder": {"model": "live-model"}}), |s| {
+                format!("{:?}", s.harness.agents.read().unwrap().agents)
+            }),
+            other => panic!(
+                "the live key {other} has no sample: add one, and make `Live::apply` apply it"
+            ),
+        }
+    }
+
+    #[test]
+    fn every_live_key_is_applied_to_the_running_server_by_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("moebius.toml");
+        std::fs::write(&file, "[router]\nlisten = \"127.0.0.1:0\"\n").unwrap();
+        let server =
+            Server::new(Config::load(&file).unwrap(), "127.0.0.1:1".parse().unwrap()).unwrap();
+        let live_keys = super::super::keys::live_keys();
+        assert!(live_keys.len() > 10);
+        for name in live_keys {
+            let (value, seen) = sample(name);
+            let before = seen(&server);
+            let changes = Changes {
+                set: BTreeMap::from([(name.to_string(), value)]),
+                remove: vec![],
+            };
+            let saved = server.live.save(&server.app, &actor(), &changes).unwrap();
+            assert!(!saved.restart_needed, "{name} needs a restart");
+            assert_ne!(
+                before,
+                seen(&server),
+                "{name} is marked live but not applied"
+            );
+        }
+    }
 }

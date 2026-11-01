@@ -113,6 +113,15 @@ fn effective(raw: &toml::Table, key: &Key) -> Value {
     }
 }
 
+/// The keys a change of which applies to the running server.
+#[cfg(test)]
+pub(super) fn live_keys() -> Vec<&'static str> {
+    KEYS.iter()
+        .filter(|key| key.live)
+        .map(|key| key.name)
+        .collect()
+}
+
 /// The keys the running server uses only after a restart whose value in `raw` is not the one it started with.
 pub(super) fn restart_keys(started: &toml::Table, raw: &toml::Table) -> Vec<String> {
     KEYS.iter()
