@@ -189,6 +189,26 @@ describe("the shell", () => {
     await page.goto(server.loginUrl);
     await page.getByTestId("connection").getByText("Online").waitFor();
   });
+
+  it("keeps the shell standing when a page's file cannot be fetched", async () => {
+    await fresh();
+    await page.goto(server.loginUrl);
+    await pages().waitFor();
+    // The file of the Fleet page never arrives, as when the server stops answering between the click and the fetch,
+    // or a newer version replaced the file this tab was told about.
+    let blocked = 0;
+    await page.route("**/assets/FleetPage-*.js", (route) => {
+      blocked += 1;
+      void route.abort("connectionrefused");
+    });
+    await pages().getByRole("link", { name: "Fleet" }).click();
+    const line = page.getByRole("alert").filter({ hasText: "The page could not be loaded" });
+    await line.getByRole("button", { name: "Reload" }).waitFor();
+    // What is not missing is still there to reload from: the sidebar and the connection, not a stack trace.
+    await pages().getByRole("link", { name: "Inbox" }).waitFor();
+    await page.getByTestId("connection").waitFor();
+    expect(blocked).toBeGreaterThan(0);
+  });
 });
 
 describe("the command bar", () => {
@@ -241,11 +261,13 @@ describe("a server that does not answer", () => {
       await pages().waitFor();
       await pages().getByRole("link", { name: "Fleet" }).click();
       await page.waitForURL("**/fleet");
+      // A page is fetched when it opens, so it has to be on the screen before the server goes away: stopping the
+      // server mid-fetch loses the page itself, which is not the thing this test is about.
+      await page.getByRole("heading", { name: "Fleet" }).waitFor();
 
       await server.stop();
       const banner = page.getByRole("alert").filter({ hasText: "Cannot reach the server" });
       await banner.waitFor();
-      await page.getByRole("heading", { name: "Fleet" }).waitFor();
       await page.getByTestId("connection").getByText("Reconnecting").waitFor();
 
       await server.restart();

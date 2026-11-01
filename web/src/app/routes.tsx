@@ -1,31 +1,71 @@
 /**
  * The routes: every page of `pages.ts` under the shell, the board of a repository with the script editor of a column, the run a card links to, the Terminal and Ports pages, and the redirect from `/` to the
  * first page. The server answers `index.html` for these paths, so a page can be opened and reloaded by its address.
+ *
+ * Every page is fetched when its route opens rather than with the first byte of the app, which is what lets the shell
+ * stay small: a person who opens the Inbox pays nothing for xterm, the diff viewer, or the editor of a column script.
+ * The shell waits for a page with the loader of [`Shell`](./shell/Shell.tsx).
  */
+import { lazy } from "react";
 import { createBrowserRouter, Navigate } from "react-router";
-import { ChatPage } from "../chat/ChatPage";
 import { App } from "./App";
-import { AutomationsPage } from "./automations/AutomationsPage";
-import { BoardPage } from "./board/BoardPage";
-import { ScriptPage } from "./board/ScriptPage";
-import { DecisionModelPage } from "./decision/DecisionModelPage";
-import { ExperimentsPage } from "./experiments/ExperimentsPage";
-import { FleetPage } from "./fleet/FleetPage";
-import { InboxPage } from "./inbox/InboxPage";
 import { DEFAULT_PAGE, PAGES } from "./pages";
-import { PortsPage } from "./ports/PortsPage";
-import { AddRepositoryPage } from "./projects/AddRepositoryPage";
-import { ProjectPage } from "./projects/ProjectPage";
-import { ProjectsPage } from "./projects/ProjectsPage";
-import { RetroPage } from "./retro/RetroPage";
 import { harnessRoutes } from "./routesB";
-import { RulesPage } from "./rules/RulesPage";
-import { RunPage } from "./runs/RunPage";
-import { SettingsPage } from "./settings/SettingsPage";
 import { NotFoundPage, PlaceholderPage } from "./shell/Page";
-import { StartPage } from "./start/StartPage";
-import { TerminalPage } from "./terminal/TerminalPage";
-import { UsagePage } from "./usage/UsagePage";
+
+const AutomationsPage = lazy(() =>
+  import("./automations/AutomationsPage").then((all) => ({ default: all.AutomationsPage })),
+);
+const BoardPage = lazy(() =>
+  import("./board/BoardPage").then((all) => ({ default: all.BoardPage })),
+);
+const ScriptPage = lazy(() =>
+  import("./board/ScriptPage").then((all) => ({ default: all.ScriptPage })),
+);
+const DecisionModelPage = lazy(() =>
+  import("./decision/DecisionModelPage").then((all) => ({ default: all.DecisionModelPage })),
+);
+const ExperimentsPage = lazy(() =>
+  import("./experiments/ExperimentsPage").then((all) => ({ default: all.ExperimentsPage })),
+);
+const FleetPage = lazy(() =>
+  import("./fleet/FleetPage").then((all) => ({ default: all.FleetPage })),
+);
+const InboxPage = lazy(() =>
+  import("./inbox/InboxPage").then((all) => ({ default: all.InboxPage })),
+);
+const PortsPage = lazy(() =>
+  import("./ports/PortsPage").then((all) => ({ default: all.PortsPage })),
+);
+const AddRepositoryPage = lazy(() =>
+  import("./projects/AddRepositoryPage").then((all) => ({ default: all.AddRepositoryPage })),
+);
+const ProjectPage = lazy(() =>
+  import("./projects/ProjectPage").then((all) => ({ default: all.ProjectPage })),
+);
+const ProjectsPage = lazy(() =>
+  import("./projects/ProjectsPage").then((all) => ({ default: all.ProjectsPage })),
+);
+const RetroPage = lazy(() =>
+  import("./retro/RetroPage").then((all) => ({ default: all.RetroPage })),
+);
+const RulesPage = lazy(() =>
+  import("./rules/RulesPage").then((all) => ({ default: all.RulesPage })),
+);
+const RunPage = lazy(() => import("./runs/RunPage").then((all) => ({ default: all.RunPage })));
+const SettingsPage = lazy(() =>
+  import("./settings/SettingsPage").then((all) => ({ default: all.SettingsPage })),
+);
+const StartPage = lazy(() =>
+  import("./start/StartPage").then((all) => ({ default: all.StartPage })),
+);
+const TerminalPage = lazy(() =>
+  import("./terminal/TerminalPage").then((all) => ({ default: all.TerminalPage })),
+);
+const UsagePage = lazy(() =>
+  import("./usage/UsagePage").then((all) => ({ default: all.UsagePage })),
+);
+const ChatPage = lazy(() => import("../chat/ChatPage").then((all) => ({ default: all.ChatPage })));
 
 /** The pages that have their own route below; the others show a placeholder. */
 const PAGES_BUILT = new Set([

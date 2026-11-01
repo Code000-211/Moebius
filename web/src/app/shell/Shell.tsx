@@ -2,10 +2,13 @@
  * The frame of a signed-in person's page: the sidebar, the banner while the server cannot be reached, and the page.
  * It owns the command bar and its shortcut and the sidebar's collapsed state (kept per browser).
  */
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { Outlet } from "react-router";
 import { FloatingChat } from "../../chat/FloatingChat";
 import { useConnection, useReconnect } from "../../live/LiveProvider";
+import { Loader } from "../../ui/components/Loader";
+import { isShortcut } from "../../ui/lib/shortcuts";
+import { PageBoundary } from "../../ui/page/PageBoundary";
 import { readFlag, writeFlag } from "../storage";
 import { CommandBar } from "./CommandBar";
 import { ConnectionBanner } from "./ConnectionBanner";
@@ -21,10 +24,11 @@ export function Shell({ unreachable, onRetry }: { unreachable: boolean; onRetry:
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        setCommandOpen((open) => !open);
-      }
+      // The bar is the only thing the shortcut opens, so it closes it too, which is why the bar's own scrim is not a
+      // reason to ignore the key. `⌘⇧K` and a key a control already took belong to something else.
+      if (!isShortcut(event, "k")) return;
+      event.preventDefault();
+      setCommandOpen((open) => !open);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -53,7 +57,13 @@ export function Shell({ unreachable, onRetry }: { unreachable: boolean; onRetry:
           />
         )}
         <main className="min-h-0 flex-1 overflow-y-auto p-6">
-          <Outlet />
+          {/* A page is fetched when it opens, so the shell holds the space it needs while it arrives, and says so
+              when it does not: the page is the thing that is missing, not the app around it. */}
+          <PageBoundary>
+            <Suspense fallback={<Loader message="Opening the page" className="py-8" />}>
+              <Outlet />
+            </Suspense>
+          </PageBoundary>
         </main>
       </div>
       <CommandBar open={commandOpen} onOpenChange={setCommandOpen} />
