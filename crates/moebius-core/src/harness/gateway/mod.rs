@@ -376,7 +376,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::bus::AppEvent;
+    use crate::bus::Event;
     use crate::harness::mcp::parse_file;
 
     /// Allows a call whose input says hello, and refuses every other naming a rule.
@@ -667,10 +667,10 @@ mod tests {
         s.rpc("tools/list", json!({})).await;
         assert_eq!(s.gateway.running(), 1);
         s.router.revoke_token(&s.token);
-        s.app.bus.publish(AppEvent::new(
-            "run_ended",
-            json!({ "run": s.run, "status": "succeeded" }),
-        ));
+        s.app.bus.publish(Event::RunEnded {
+            run: s.run,
+            status: "succeeded".into(),
+        });
         while s.gateway.running() > 0 {
             tokio::task::yield_now().await;
         }

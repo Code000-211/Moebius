@@ -6,21 +6,13 @@ use tokio::sync::broadcast;
 use crate::server::ports::Port;
 use crate::store::{Card, Change, Repository};
 
-/// One thing that happened, as the desktop app receives it.
+/// One thing that happened, as the desktop app receives it. It is built from an [`Event`] and deserializes from the
+/// `{kind, data}` a client is sent, so nothing outside [`Event`] can name a kind.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppEvent {
     /// What happened, such as `card_moved` or `run_event`.
     pub kind: String,
     pub data: serde_json::Value,
-}
-
-impl AppEvent {
-    pub fn new(kind: impl Into<String>, data: serde_json::Value) -> Self {
-        Self {
-            kind: kind.into(),
-            data,
-        }
-    }
 }
 
 impl From<Event> for AppEvent {
@@ -38,9 +30,9 @@ impl From<Event> for AppEvent {
     }
 }
 
-/// Every event the core sends to a client outside the harness, with the payload of its kind: what it publishes, and
-/// the `lagged` notice the stream answers a slow client with. It serializes to the `{kind, data}` of [`AppEvent`], so
-/// the wire format is the one `docs/reference/desktop-api.md` lists.
+/// Every event the core sends to a client, with the payload of its kind: what it publishes, and the `lagged` notice
+/// the stream answers a slow client with. It serializes to the `{kind, data}` of [`AppEvent`], so the wire format is
+/// the one `docs/reference/desktop-api.md` lists.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "kind", content = "data", rename_all = "snake_case")]
 pub enum Event {
@@ -83,11 +75,19 @@ pub enum Event {
     RepositoryAdded(Repository),
     RepositoryUpdated(Repository),
     RepositoryRemoved(Repository),
+    RunStarted {
+        run: i64,
+        card: Option<i64>,
+    },
     RunEvent {
         run: i64,
         seq: i64,
         kind: String,
         data: serde_json::Value,
+    },
+    RunEnded {
+        run: i64,
+        status: String,
     },
     ScriptChanged {
         repository: i64,
@@ -140,6 +140,10 @@ pub enum Event {
         outcome: String,
         regression: bool,
     },
+    GrillingEnded {
+        grilling: i64,
+        status: String,
+    },
     ForgeError {
         repository: String,
         message: String,
@@ -149,6 +153,9 @@ pub enum Event {
         message: String,
     },
     HarnessError {
+        /// The agent whose files are broken; left out when the harness configuration repository failed to refresh.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        agent: Option<String>,
         message: String,
     },
     PortOpened(Port),
@@ -172,7 +179,7 @@ impl Bus {
     }
 
     /// Publishes an event; with nobody listening it is dropped.
-    pub fn publish(&self, event: impl Into<AppEvent>) {
+    pub fn publish(&self, event: Event) {
         let _ = self.tx.send(event.into());
     }
 
@@ -337,6 +344,17 @@ mod tests {
                 json!({"kind": "repository_removed", "data": repository.clone()}),
             ),
             (
+                Event::RunStarted {
+                    run: 9,
+                    card: Some(7),
+                },
+                json!({"kind": "run_started", "data": {"run": 9, "card": 7}}),
+            ),
+            (
+                Event::RunStarted { run: 9, card: None },
+                json!({"kind": "run_started", "data": {"run": 9, "card": null}}),
+            ),
+            (
                 Event::RunEvent {
                     run: 9,
                     seq: 1,
@@ -344,6 +362,13 @@ mod tests {
                     data: json!({"message": "hello"}),
                 },
                 json!({"kind": "run_event", "data": {"run": 9, "seq": 1, "kind": "said", "data": {"message": "hello"}}}),
+            ),
+            (
+                Event::RunEnded {
+                    run: 9,
+                    status: "succeeded".into(),
+                },
+                json!({"kind": "run_ended", "data": {"run": 9, "status": "succeeded"}}),
             ),
             (
                 Event::ScriptChanged {
@@ -430,6 +455,13 @@ mod tests {
                 json!({"kind": "trial_done", "data": {"proposal": 3, "card": 7, "outcome": "positive", "regression": false}}),
             ),
             (
+                Event::GrillingEnded {
+                    grilling: 1,
+                    status: "proposed".into(),
+                },
+                json!({"kind": "grilling_ended", "data": {"grilling": 1, "status": "proposed"}}),
+            ),
+            (
                 Event::ForgeError {
                     repository: "owner/repo".into(),
                     message: "boom".into(),
@@ -445,6 +477,14 @@ mod tests {
             ),
             (
                 Event::HarnessError {
+                    agent: Some("Coder".into()),
+                    message: "boom".into(),
+                },
+                json!({"kind": "harness_error", "data": {"agent": "Coder", "message": "boom"}}),
+            ),
+            (
+                Event::HarnessError {
+                    agent: None,
                     message: "boom".into(),
                 },
                 json!({"kind": "harness_error", "data": {"message": "boom"}}),

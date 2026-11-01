@@ -165,12 +165,8 @@ fn every_configuration_key_is_in_the_reference() {
 
 #[test]
 fn every_event_kind_is_in_the_reference() {
-    // The bus's `Event` enum is the closed set outside the harness; the harness still builds its own `AppEvent`s.
+    // Every kind the core publishes is a variant of the bus's `Event` enum.
     let mut kinds = event_kinds();
-    kinds.extend(quoted_after(
-        &source("crates/moebius-core/src"),
-        "AppEvent::new(",
-    ));
     kinds.sort();
     kinds.dedup();
     assert!(kinds.len() >= 14, "{kinds:?}");

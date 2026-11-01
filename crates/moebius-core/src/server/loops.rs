@@ -109,6 +109,7 @@ impl Server {
             && let Err(e) = harness_repo.refresh(&self.app)
         {
             self.app.bus.publish(Event::HarnessError {
+                agent: None,
                 message: e.to_string(),
             });
         }

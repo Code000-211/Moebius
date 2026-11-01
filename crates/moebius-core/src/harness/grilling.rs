@@ -23,7 +23,7 @@ use serde_json::json;
 
 use crate::app::{App, AppError, PERSON, Result};
 use crate::blobs::redact;
-use crate::bus::AppEvent;
+use crate::bus::Event;
 use crate::decide::{Actor, Question};
 use crate::store::{Grilling, GrillingIssue};
 
@@ -160,10 +160,10 @@ fn redacted(issue: GrillingIssue) -> GrillingIssue {
 }
 
 fn publish_ended(app: &App, grilling: &Grilling) {
-    app.bus.publish(AppEvent::new(
-        "grilling_ended",
-        json!({ "grilling": grilling.id, "status": grilling.status }),
-    ));
+    app.bus.publish(Event::GrillingEnded {
+        grilling: grilling.id,
+        status: grilling.status.clone(),
+    });
 }
 
 /// The grilling `id`.

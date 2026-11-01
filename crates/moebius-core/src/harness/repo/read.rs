@@ -5,11 +5,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 use super::HarnessRepo;
 use crate::app::{App, AppError, Result};
-use crate::bus::AppEvent;
+use crate::bus::Event;
 use crate::config::{
     AgentConfig, AgentSet, HarnessKind, ToolOutput, default_protocol, default_true,
     valid_agent_name,
@@ -272,10 +271,10 @@ impl HarnessRepo {
                         .insert(name, agent_config(&self.path, &definition, mcp));
                 }
                 Err(error) => {
-                    app.bus.publish(AppEvent::new(
-                        "harness_error",
-                        json!({ "agent": name, "message": error }),
-                    ));
+                    app.bus.publish(Event::HarnessError {
+                        agent: Some(name.clone()),
+                        message: error.clone(),
+                    });
                     set.errors.insert(name, error);
                 }
             }

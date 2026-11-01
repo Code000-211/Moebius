@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use super::reader::Reader;
 use super::{BRIDGE, LENS, Live, MOEBIUS_AGENT, PiBolt, lock, run_dir, send};
 use crate::app::App;
-use crate::bus::AppEvent;
+use crate::bus::Event;
 use crate::config::AgentConfig;
 use crate::harness::mcp;
 use crate::harness::remote::Local;
@@ -233,10 +233,10 @@ impl PiBolt {
                 app.store
                     .set_run_status(run.id, "running")
                     .map_err(|e| e.to_string())?;
-                app.bus.publish(AppEvent::new(
-                    "run_started",
-                    json!({ "run": run.id, "card": card.map(|card| card.id) }),
-                ));
+                app.bus.publish(Event::RunStarted {
+                    run: run.id,
+                    card: card.map(|card| card.id),
+                });
                 send(
                     &live.stdin,
                     &json!({ "id": "moebius-prompt", "type": "prompt", "message": prompt }),

@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use super::GRILLING_AGENT;
 use super::lifecycle::RunningRun;
 use crate::app::App;
-use crate::bus::AppEvent;
+use crate::bus::Event;
 use crate::router::Router;
 
 /// The text of the last assistant message in an `agent_end` record, if it has any.
@@ -112,8 +112,8 @@ pub(in crate::harness) fn finish<L>(
         .unwrap_or_else(|p| p.into_inner())
         .remove(&run.id);
     let _ = app.store.set_run_status(run.id, status);
-    app.bus.publish(AppEvent::new(
-        "run_ended",
-        json!({ "run": run.id, "status": status }),
-    ));
+    app.bus.publish(Event::RunEnded {
+        run: run.id,
+        status: status.into(),
+    });
 }
