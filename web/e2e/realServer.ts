@@ -34,6 +34,7 @@ export type RunningServer = Pick<FakeServer, "url" | "loginUrl" | "token"> & {
   runs?: undefined;
   pagesA?: undefined;
   pagesB?: undefined;
+  pagesC?: undefined;
 };
 
 export async function startRealServer(binary: string): Promise<RunningServer> {

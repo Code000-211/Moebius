@@ -1,8 +1,8 @@
 /**
  * The calls about the boards: the snapshot of everything the shell shows, a card's history and runs, what a person
- * decides about a card or its change, a new issue, and the script behind a column.
+ * decides about a card or its change, a new issue, and the script behind a column (read, saved and given up).
  */
-import { get, post } from "../http";
+import { del, get, post, put } from "../http";
 import type { Card, Snapshot } from "../types/board";
 import type { HistoryEntry, Run, ScriptDetail } from "../types/cards";
 
@@ -48,4 +48,25 @@ export function retry(card: number): Promise<Card> {
 /** The script a column runs for a repository. The column's name may have spaces. */
 export function script(repository: number, column: string): Promise<ScriptDetail> {
   return get<ScriptDetail>(`/v1/repositories/${repository}/scripts/${encodeURIComponent(column)}`);
+}
+
+/**
+ * Replaces the column's script for the repository. The server checks it as `moebius check-script` does and answers
+ * 422 with the check's message when it fails.
+ */
+export function saveScript(
+  repository: number,
+  column: string,
+  text: string,
+  reason = "",
+): Promise<ScriptDetail> {
+  return put<ScriptDetail>(`/v1/repositories/${repository}/scripts/${encodeURIComponent(column)}`, {
+    text,
+    reason,
+  });
+}
+
+/** Removes the repository's own script for the column, so the column runs the built-in one again. */
+export function deleteScript(repository: number, column: string): Promise<ScriptDetail> {
+  return del<ScriptDetail>(`/v1/repositories/${repository}/scripts/${encodeURIComponent(column)}`);
 }

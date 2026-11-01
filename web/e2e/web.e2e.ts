@@ -177,7 +177,7 @@ describe("the command bar", () => {
     await page.keyboard.press("Enter");
     await page.waitForURL("**/retro");
     await input.waitFor({ state: "detached" });
-    await page.getByRole("heading", { name: "Retro" }).waitFor();
+    await page.getByRole("heading", { name: "Retro", level: 1 }).waitFor();
   });
 
   it("opens from the sidebar's search and closes with Escape", async () => {

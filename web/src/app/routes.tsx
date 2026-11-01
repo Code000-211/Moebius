@@ -1,12 +1,15 @@
 /**
- * The routes: every page of `pages.ts` under the shell, the board of a repository with the read-only script of a column, the run a card links to, the Terminal and Ports pages, and the redirect from `/` to the
+ * The routes: every page of `pages.ts` under the shell, the board of a repository with the script editor of a column, the run a card links to, the Terminal and Ports pages, and the redirect from `/` to the
  * first page. The server answers `index.html` for these paths, so a page can be opened and reloaded by its address.
  */
 import { createBrowserRouter, Navigate } from "react-router";
 import { ChatPage } from "../chat/ChatPage";
 import { App } from "./App";
+import { AutomationsPage } from "./automations/AutomationsPage";
 import { BoardPage } from "./board/BoardPage";
 import { ScriptPage } from "./board/ScriptPage";
+import { DecisionModelPage } from "./decision/DecisionModelPage";
+import { ExperimentsPage } from "./experiments/ExperimentsPage";
 import { FleetPage } from "./fleet/FleetPage";
 import { InboxPage } from "./inbox/InboxPage";
 import { DEFAULT_PAGE, PAGES } from "./pages";
@@ -14,7 +17,9 @@ import { PortsPage } from "./ports/PortsPage";
 import { AddRepositoryPage } from "./projects/AddRepositoryPage";
 import { ProjectPage } from "./projects/ProjectPage";
 import { ProjectsPage } from "./projects/ProjectsPage";
+import { RetroPage } from "./retro/RetroPage";
 import { harnessRoutes } from "./routesB";
+import { RulesPage } from "./rules/RulesPage";
 import { RunPage } from "./runs/RunPage";
 import { SettingsPage } from "./settings/SettingsPage";
 import { NotFoundPage, PlaceholderPage } from "./shell/Page";
@@ -38,6 +43,11 @@ const PAGES_BUILT = new Set([
   "usage",
   "start",
   "settings",
+  "automations",
+  "rules",
+  "retro",
+  "experiments",
+  "decision-model",
 ]);
 
 export const routes = [
@@ -62,6 +72,11 @@ export const routes = [
       { path: "chat", element: <ChatPage /> },
       { path: "terminal", element: <TerminalPage /> },
       { path: "ports", element: <PortsPage /> },
+      { path: "automations", element: <AutomationsPage /> },
+      { path: "rules", element: <RulesPage /> },
+      { path: "retro", element: <RetroPage /> },
+      { path: "experiments", element: <ExperimentsPage /> },
+      { path: "decision-model", element: <DecisionModelPage /> },
       { path: "chat/:id", element: <ChatPage /> },
       { path: "board/:id", element: <BoardPage /> },
       { path: "board/:id/scripts/:column", element: <ScriptPage /> },

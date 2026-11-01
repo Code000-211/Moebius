@@ -3,7 +3,7 @@
  * event, so an event that changes what the snapshot shows invalidates it; `card_waiting` is also patched in place,
  * which shows the reason at once. What is read about one card (history, runs) goes stale with the snapshot, and the
  * column scripts with `script_changed`. A new page that reads something the events change adds its key to `keys.ts` and a
- * line to `invalidates` below. Events are not replayed, so when the socket connects all that is shown is read again.
+ * line to `invalidates` below (the pages of Rules, Automations, Retro, Experiments and Decision model are in `improvePages`). Events are not replayed, so when the socket connects all that is shown is read again.
  */
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import { keys } from "../api/keys";
@@ -62,7 +62,33 @@ export function invalidates(event: ServerEvent): QueryKey[] {
     stale.push(keys.files(event.data.repository));
   }
   if (listChanged(event)) stale.push(keys.chats);
+  stale.push(...improvePages(event));
   return stale;
+}
+
+/** What the pages of Rules, Automations, Retro, Experiments and Decision model read, by the events that change it. */
+function improvePages(event: ServerEvent): QueryKey[] {
+  switch (event.kind) {
+    case "retro_done":
+    case "trial_done":
+      return [keys.retros, keys.lessons];
+    case "proposal_status":
+      return [keys.retros, keys.lessons, keys.rules];
+    case "research_status":
+    case "experiment_done":
+      return [keys.research];
+    case "takeover_proposed":
+    case "takeover_status":
+      return [["decision-model"]];
+    case "automation_fired":
+    case "run_ended":
+      return [keys.automations];
+    case "file_changed":
+      // Only the rules file of a repository is read by these pages.
+      return String(event.data.path) === ".moebius/rules.md" ? [keys.rules] : [];
+    default:
+      return [];
+  }
 }
 
 /** Puts the reason of `card_waiting` into the snapshot in the cache, if one is there. */

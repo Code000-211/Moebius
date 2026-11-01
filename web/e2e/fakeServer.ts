@@ -14,6 +14,7 @@ import { type BoardFake, createBoardFake } from "./fake/board";
 import { createFakeChat, type FakeChat } from "./fake/chat";
 import { createPagesAFake, type PagesAFake } from "./fake/pages-a";
 import { createPagesBFake, type PagesBFake } from "./fake/pages-b";
+import { createPagesCFake, type PagesCFake } from "./fake/pages-c";
 import { createFakeRuns, type FakeRuns } from "./fake/runs";
 
 export const TOKEN = "fake-server-token";
@@ -54,6 +55,8 @@ export interface FakeServer {
   pagesA: PagesAFake;
   /** The harness configuration, models and plugins routes (e2e/fake/pages-b.ts). */
   pagesB: PagesBFake;
+  /** Rules, automations, Retro, research, the decision model and the column scripts (e2e/fake/pages-c.ts). */
+  pagesC: PagesCFake;
 }
 
 function cookieOf(request: IncomingMessage): string | undefined {
@@ -94,6 +97,7 @@ export async function startFakeServer(): Promise<FakeServer> {
   const runs = createFakeRuns(broadcast);
   const pagesA = createPagesAFake(broadcast, board);
   const pagesB = createPagesBFake();
+  const pagesC = createPagesCFake(broadcast);
   let port = 0;
 
   const signedIn = (request: IncomingMessage) => {
@@ -132,6 +136,8 @@ export async function startFakeServer(): Promise<FakeServer> {
     }
     // Answers only once a test of its pages has called use(), so the Settings page's fake keeps /v1/settings otherwise.
     if (await pagesB.handle(request, response, path)) return;
+    // Rules, automations, Retro, research, the decision model and the column scripts: one rules file is a file of a repository, which pages A would answer.
+    if (await pagesC.handle(request, response, path)) return;
     if (await pagesA.handle(request, response, path)) return;
     if (path === "/v1/health") return json(response, { version: "0.0.0-fake" });
     if (path === "/v1/snapshot") return json(response, board.snapshot());
@@ -201,6 +207,7 @@ export async function startFakeServer(): Promise<FakeServer> {
     runs,
     pagesA,
     pagesB,
+    pagesC,
     broadcast,
     async stop() {
       for (const ws of sockets) ws.terminate();
