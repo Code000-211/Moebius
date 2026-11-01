@@ -92,7 +92,9 @@ jobs:
         working-directory: web
     steps:
       # The tests read theme.rs and the formatter checks line ends: LF, as committed.
+      # Before the checkout web/ does not exist yet, so this step runs in the workspace.
       - run: git config --global core.autocrlf false
+        working-directory: .
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
