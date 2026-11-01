@@ -8,7 +8,7 @@ use regex::Regex;
 use serde_json::json;
 
 use super::{App, AppError, PERSON, Result, columns};
-use crate::bus::AppEvent;
+use crate::bus::Event;
 use crate::decide::{Actor, Question};
 use crate::repos::forge::Issue;
 use crate::store::{Card, Repository};
@@ -58,8 +58,7 @@ impl App {
                 Some(card) => {
                     if card.title != issue.title || card.body != body {
                         self.store.set_card_text(card.id, &issue.title, body)?;
-                        self.bus
-                            .publish(AppEvent::new("card_updated", json!(self.card(card.id)?)));
+                        self.bus.publish(Event::CardUpdated(self.card(card.id)?));
                     }
                     card
                 }
@@ -72,7 +71,7 @@ impl App {
                         &issue.author,
                         columns::BACKLOG,
                     )?;
-                    self.bus.publish(AppEvent::new("card_added", json!(card)));
+                    self.bus.publish(Event::CardAdded(card.clone()));
                     card
                 }
                 None => continue,
@@ -107,7 +106,7 @@ impl App {
         let card = self
             .store
             .add_card(repository_id, title, body, author, columns::BACKLOG)?;
-        self.bus.publish(AppEvent::new("card_added", json!(card)));
+        self.bus.publish(Event::CardAdded(card.clone()));
         Ok(card)
     }
 
@@ -153,7 +152,7 @@ impl App {
                 blocked_by,
             )?
         };
-        self.bus.publish(AppEvent::new("card_added", json!(card)));
+        self.bus.publish(Event::CardAdded(card.clone()));
         Ok(card)
     }
 
@@ -195,8 +194,7 @@ impl App {
         ]);
         self.record_action(by, "edit_card", Some(card_id), None, context, reason)?;
         let card = self.card(card_id)?;
-        self.bus
-            .publish(AppEvent::new("card_updated", json!(card.clone())));
+        self.bus.publish(Event::CardUpdated(card.clone()));
         Ok(card)
     }
 
@@ -317,10 +315,11 @@ impl App {
     pub fn move_card(&self, card_id: i64, column: &str) -> Result<Card> {
         let from = self.card(card_id)?.column;
         self.store.move_card(card_id, column)?;
-        self.bus.publish(AppEvent::new(
-            "card_moved",
-            json!({ "card": card_id, "from": from, "to": column }),
-        ));
+        self.bus.publish(Event::CardMoved {
+            card: card_id,
+            from: from.to_string(),
+            to: column.to_string(),
+        });
         self.set_waiting(card_id, None);
         self.card(card_id)
     }
@@ -333,10 +332,10 @@ impl App {
             None => waiting.remove(&card_id),
         };
         if before != reason {
-            self.bus.publish(AppEvent::new(
-                "card_waiting",
-                json!({ "card": card_id, "reason": reason }),
-            ));
+            self.bus.publish(Event::CardWaiting {
+                card: card_id,
+                reason,
+            });
         }
     }
 

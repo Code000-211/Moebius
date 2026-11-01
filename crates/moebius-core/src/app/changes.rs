@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use serde_json::json;
 
 use super::{App, AppError, Result, columns};
-use crate::bus::AppEvent;
+use crate::bus::Event;
 use crate::decide::{Actor, Question};
 use crate::repos::git;
 use crate::store::{Card, Change, Repository, Run, now};
@@ -95,8 +95,7 @@ impl App {
                 &head,
             )?,
         };
-        self.bus
-            .publish(AppEvent::new("change_updated", json!(change)));
+        self.bus.publish(Event::ChangeUpdated(change.clone()));
         Ok(change)
     }
 
@@ -274,8 +273,7 @@ impl App {
         }
         self.store
             .add_inbox_item("ready_to_merge", change.card_id, title, &data)?;
-        self.bus
-            .publish(AppEvent::new("change_offered", json!(change)));
+        self.bus.publish(Event::ChangeOffered(change.clone()));
         Ok(change)
     }
 
@@ -358,10 +356,10 @@ impl App {
     /// A change is merged, here or on the forge: its inbox items are resolved and its card, if it has one, is done.
     pub fn change_merged(&self, change: &Change, commit: Option<&str>) -> Result<()> {
         self.store.set_change_state(change.id, "merged")?;
-        self.bus.publish(AppEvent::new(
-            "change_merged",
-            json!({ "change": change.id, "commit": commit }),
-        ));
+        self.bus.publish(Event::ChangeMerged {
+            change: change.id,
+            commit: commit.map(str::to_string),
+        });
         self.localize_change_merged(change, commit);
         match change.card_id {
             Some(card_id) => {
@@ -377,10 +375,7 @@ impl App {
     /// card, the person is told.
     pub fn change_closed(&self, change: &Change) -> Result<()> {
         self.store.set_change_state(change.id, "closed")?;
-        self.bus.publish(AppEvent::new(
-            "change_closed",
-            json!({ "change": change.id }),
-        ));
+        self.bus.publish(Event::ChangeClosed { change: change.id });
         match change.card_id {
             Some(card_id) => {
                 let card = self.card(card_id)?;
@@ -416,10 +411,8 @@ impl App {
         }
         self.store
             .set_change_status(change.id, checks, checks_head, failed_checks, review)?;
-        self.bus.publish(AppEvent::new(
-            "change_updated",
-            json!(self.change(change.id)?),
-        ));
+        self.bus
+            .publish(Event::ChangeUpdated(self.change(change.id)?));
         Ok(())
     }
 }

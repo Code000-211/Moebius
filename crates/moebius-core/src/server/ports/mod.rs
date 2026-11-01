@@ -15,10 +15,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 use crate::app::App;
-use crate::bus::AppEvent;
+use crate::bus::Event;
 use crate::harness::terminal::{SERVER, is_repository_key};
 
 /// How often [`watch`] looks for ports.
@@ -143,10 +142,7 @@ pub fn detect(app: &App) -> Vec<Port> {
 
 /// The events that turn the ports `before` into the ports `after`: `port_closed` for those gone, `port_opened` for
 /// those new.
-fn changes(before: &[Port], after: &[Port]) -> Vec<AppEvent> {
-    let event = |kind: &str, port: &Port| {
-        AppEvent::new(kind, serde_json::to_value(port).unwrap_or(json!({})))
-    };
+fn changes(before: &[Port], after: &[Port]) -> Vec<Event> {
     let closed = before
         .iter()
         .filter(|b| !after.iter().any(|a| a.port == b.port));
@@ -154,8 +150,8 @@ fn changes(before: &[Port], after: &[Port]) -> Vec<AppEvent> {
         .iter()
         .filter(|a| !before.iter().any(|b| b.port == a.port));
     closed
-        .map(|port| event("port_closed", port))
-        .chain(opened.map(|port| event("port_opened", port)))
+        .map(|port| Event::PortClosed(port.clone()))
+        .chain(opened.map(|port| Event::PortOpened(port.clone())))
         .collect()
 }
 
@@ -181,6 +177,7 @@ pub async fn watch(app: Arc<App>, period: Duration) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bus::AppEvent;
 
     fn port(port: u16, pid: u32) -> Port {
         Port {
@@ -197,7 +194,10 @@ mod tests {
         let a = port(3000, 10);
         let b = port(4000, 11);
         assert!(changes(std::slice::from_ref(&a), std::slice::from_ref(&a)).is_empty());
-        let events = changes(std::slice::from_ref(&a), std::slice::from_ref(&b));
+        let events: Vec<AppEvent> = changes(std::slice::from_ref(&a), std::slice::from_ref(&b))
+            .into_iter()
+            .map(AppEvent::from)
+            .collect();
         let kinds: Vec<_> = events.iter().map(|e| e.kind.as_str()).collect();
         assert_eq!(kinds, ["port_closed", "port_opened"]);
         assert_eq!(events[1].data["port"], 4000);

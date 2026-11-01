@@ -15,13 +15,12 @@ pub mod cron;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use time::{Duration, PrimitiveDateTime};
 
 use super::{App, AppError, Result};
 use crate::blobs::redact;
 use crate::board::Runs;
-use crate::bus::AppEvent;
+use crate::bus::Event;
 use crate::store::{Automation, Firing, NewAutomation, Run};
 
 /// The origin of a chat an automation started (see `Run::origin`).
@@ -217,15 +216,12 @@ fn fire(app: &Arc<App>, runs: &dyn Runs, automation: &Automation, manual: bool) 
             }
         }
     };
-    app.bus.publish(AppEvent::new(
-        "automation_fired",
-        json!({
-            "automation": automation.id,
-            "firing": firing.id,
-            "status": firing.status,
-            "run": firing.run_id,
-        }),
-    ));
+    app.bus.publish(Event::AutomationFired {
+        automation: automation.id,
+        firing: firing.id,
+        status: firing.status.clone(),
+        run: firing.run_id,
+    });
     Ok(firing)
 }
 

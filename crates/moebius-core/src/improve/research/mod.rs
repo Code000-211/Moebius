@@ -34,10 +34,9 @@ mod measure;
 mod rounds;
 
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 use crate::app::{App, AppError, Result};
-use crate::bus::AppEvent;
+use crate::bus::Event;
 use crate::store::{Experiment, Repository, Research};
 
 pub use brief::{Brief, NewResearch, confirm, create, edit, stop};
@@ -92,8 +91,8 @@ pub fn views(app: &App) -> Result<Vec<ResearchView>> {
 }
 
 fn publish_status(app: &App, research: i64, status: &str) {
-    app.bus.publish(AppEvent::new(
-        "research_status",
-        json!({ "research": research, "status": status }),
-    ));
+    app.bus.publish(Event::ResearchStatus {
+        research,
+        status: status.to_string(),
+    });
 }

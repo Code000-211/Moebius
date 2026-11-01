@@ -8,11 +8,9 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use serde_json::json;
-
 use super::reproduce::{Reproduction, add_files, reproduction_at};
 use super::{App, AppError, Result};
-use crate::bus::AppEvent;
+use crate::bus::Event;
 use crate::repos::git;
 use crate::store::Repository;
 
@@ -114,10 +112,11 @@ impl App {
         output: &str,
     ) -> Result<()> {
         self.store.set_attempt_result(run_id, result, output)?;
-        self.bus.publish(AppEvent::new(
-            "attempt_judged",
-            json!({ "card": card_id, "run": run_id, "result": result }),
-        ));
+        self.bus.publish(Event::AttemptJudged {
+            card: card_id,
+            run: run_id,
+            result: result.to_string(),
+        });
         Ok(())
     }
 
@@ -232,10 +231,11 @@ impl App {
             (_, text) => text,
         };
         let runs = self.store.settle_attempts(card_id, pick, text)?;
-        self.bus.publish(AppEvent::new(
-            "attempts_settled",
-            json!({ "card": card_id, "picked": pick, "runs": runs }),
-        ));
+        self.bus.publish(Event::AttemptsSettled {
+            card: card_id,
+            picked: pick,
+            runs,
+        });
         Ok(())
     }
 }

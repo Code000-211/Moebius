@@ -3,13 +3,11 @@
 
 use std::time::Duration;
 
-use serde_json::json;
-
 use super::call::{Call, call_of};
 use super::copy::{Changes, compare, fill, listing};
 use super::process::run_in_copy;
 use crate::app::{App, Result, tail};
-use crate::bus::AppEvent;
+use crate::bus::Event;
 use crate::store::{Judgement, Replay};
 
 /// `1 file`, `3 files`.
@@ -118,10 +116,11 @@ pub(super) fn replay_judgement(
     });
     let replay = app.store.add_replay(replay)?;
     app.store.set_outcome(judgement.id, &outcome)?;
-    app.bus.publish(AppEvent::new(
-        "replayed",
-        json!({ "judgement": judgement.id, "run": replay.run, "outcome": outcome }),
-    ));
+    app.bus.publish(Event::Replayed {
+        judgement: judgement.id,
+        run: replay.run,
+        outcome,
+    });
     Ok(replay)
 }
 

@@ -9,11 +9,10 @@ use std::path::{Component, Path};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 use crate::app::{App, AppError, Result};
 use crate::blobs::redact;
-use crate::bus::AppEvent;
+use crate::bus::Event;
 use crate::decide::{Actor, Question};
 use crate::repos::{GitError, git, git_bytes};
 use crate::store::Repository;
@@ -231,10 +230,10 @@ pub fn save_file(app: &App, by: &Actor, id: i64, path: &str, new: &NewFile) -> R
             message: &message,
             reason: &new.reason,
             context,
-            event: AppEvent::new(
-                "file_changed",
-                json!({ "repository": repository.id, "path": path }),
-            ),
+            event: Event::FileChanged {
+                repository: repository.id,
+                path: path.clone(),
+            },
         },
         write,
     )?;
@@ -254,7 +253,7 @@ pub(crate) struct Change<'a> {
     /// More for the decision's context; the repository, path and message are added.
     pub context: BTreeMap<String, String>,
     /// Published once the change is through.
-    pub event: AppEvent,
+    pub event: Event,
 }
 
 /// Makes the change `write` does to `change.path` a commit on the default branch of the clone, pushes it for a

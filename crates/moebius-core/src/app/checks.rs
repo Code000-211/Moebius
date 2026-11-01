@@ -8,11 +8,9 @@ use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use serde_json::json;
-
 use super::{App, AppError, Result};
 use crate::blobs::redact;
-use crate::bus::AppEvent;
+use crate::bus::Event;
 use crate::repos::git;
 use crate::store::{Change, Repository, now};
 
@@ -93,8 +91,7 @@ impl App {
             return Err(AppError::Invalid(format!("cannot start the checks: {e}")));
         }
         let change = self.change(change.id)?;
-        self.bus
-            .publish(AppEvent::new("change_updated", json!(change)));
+        self.bus.publish(Event::ChangeUpdated(change.clone()));
         Ok(change)
     }
 
@@ -167,8 +164,7 @@ impl App {
                 .store
                 .set_local_checks(change.id, checks, head, Some(&output));
             if let Ok(change) = self.change(change.id) {
-                self.bus
-                    .publish(AppEvent::new("change_updated", json!(change)));
+                self.bus.publish(Event::ChangeUpdated(change.clone()));
             }
         }
     }

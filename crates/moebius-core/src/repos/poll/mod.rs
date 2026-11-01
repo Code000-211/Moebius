@@ -14,10 +14,8 @@ mod gitlab;
 use std::future::Future;
 use std::sync::Arc;
 
-use serde_json::json;
-
 use crate::app::App;
-use crate::bus::AppEvent;
+use crate::bus::Event;
 use crate::repos::forge::{ForgeError, Issue};
 use crate::store::Repository;
 
@@ -85,10 +83,10 @@ pub async fn poll_only<F: Polled>(app: &Arc<App>, client: &F, only: Option<&[Str
             continue;
         }
         if let Err(message) = poll_repository(app, client, repository, &name).await {
-            app.bus.publish(AppEvent::new(
-                "forge_error",
-                json!({ "repository": name, "message": message }),
-            ));
+            app.bus.publish(Event::ForgeError {
+                repository: name.to_string(),
+                message,
+            });
         }
     }
 }

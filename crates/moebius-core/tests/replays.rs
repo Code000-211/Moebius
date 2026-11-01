@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use moebius_core::app::PERSON;
 use moebius_core::board::Runs;
-use moebius_core::bus::AppEvent;
+use moebius_core::bus::{AppEvent, Event};
 use moebius_core::config::Config;
 use moebius_core::decide::Question;
 use moebius_core::repos::git;
@@ -255,10 +255,11 @@ async fn a_replayed_refusal_gets_an_outcome_and_the_worktree_is_untouched() {
     .expect("no replayed event");
     assert_eq!(
         event,
-        AppEvent::new(
-            "replayed",
-            json!({"judgement": rm, "run": run.id, "outcome": outcome})
-        )
+        AppEvent::from(Event::Replayed {
+            judgement: rm,
+            run: run.id,
+            outcome: outcome.to_string(),
+        })
     );
 
     // The original worktree has everything it had, and git sees no change; the copy is gone.

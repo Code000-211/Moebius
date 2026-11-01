@@ -11,7 +11,7 @@ use axum::routing::get;
 use tokio::sync::broadcast::error::RecvError;
 
 use super::ApiState;
-use crate::bus::AppEvent;
+use crate::bus::{AppEvent, Event};
 
 /// The route of the event stream.
 pub(super) fn routes() -> Router<ApiState> {
@@ -29,7 +29,7 @@ async fn stream(mut socket: WebSocket, mut rx: tokio::sync::broadcast::Receiver<
             event = rx.recv() => {
                 let event = match event {
                     Ok(event) => event,
-                    Err(RecvError::Lagged(missed)) => AppEvent::new("lagged", serde_json::json!({ "missed": missed })),
+                    Err(RecvError::Lagged(missed)) => AppEvent::from(Event::Lagged { missed }),
                     Err(RecvError::Closed) => return,
                 };
                 let Ok(text) = serde_json::to_string(&event) else { continue };
@@ -65,7 +65,11 @@ mod tests {
         );
         let (mut ws, _) = tokio_tungstenite::connect_async(request).await.unwrap();
         // The subscription exists once the upgrade is done; publish until the first event arrives.
-        let event = AppEvent::new("card_moved", serde_json::json!({"card": 1, "to": "Ready"}));
+        let event = Event::CardMoved {
+            card: 1,
+            from: "Backlog".into(),
+            to: "Ready".into(),
+        };
         let received = loop {
             state.app.bus.publish(event.clone());
             if let Ok(Some(message)) =
@@ -75,7 +79,7 @@ mod tests {
             }
         };
         let back: AppEvent = serde_json::from_str(received.to_text().unwrap()).unwrap();
-        assert_eq!(back, event);
+        assert_eq!(back, AppEvent::from(event));
 
         let mut wrong = format!("ws://{addr}/v1/events")
             .into_client_request()

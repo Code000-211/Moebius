@@ -165,7 +165,8 @@ fn every_configuration_key_is_in_the_reference() {
 
 #[test]
 fn every_event_kind_is_in_the_reference() {
-    let mut kinds = Vec::new();
+    // The bus's `Event` enum is the closed set outside the harness; the harness still builds its own `AppEvent`s.
+    let mut kinds = event_kinds();
     kinds.extend(quoted_after(
         &source("crates/moebius-core/src"),
         "AppEvent::new(",
@@ -175,6 +176,39 @@ fn every_event_kind_is_in_the_reference() {
     assert!(kinds.len() >= 14, "{kinds:?}");
     let kinds: Vec<String> = kinds.iter().map(|kind| format!("`{kind}`")).collect();
     assert_documented("docs/reference/desktop-api.md", &kinds);
+}
+
+/// The `kind` each variant of the bus's `Event` enum serializes to, as serde's `rename_all = "snake_case"` makes it.
+fn event_kinds() -> Vec<String> {
+    let code = source("crates/moebius-core/src/bus.rs");
+    let body = code
+        .split_once("pub enum Event {")
+        .expect("an Event enum in bus.rs")
+        .1
+        .split_once("\n}")
+        .expect("the end of the Event enum")
+        .0;
+    body.lines()
+        .map(str::trim)
+        .filter(|line| line.chars().next().is_some_and(|c| c.is_ascii_uppercase()))
+        .map(|line| snake_case(line.split(['{', '(', ' ']).next().unwrap_or_default()))
+        .collect()
+}
+
+/// `CardAdded` as `card_added`.
+fn snake_case(name: &str) -> String {
+    let mut out = String::new();
+    for (i, c) in name.chars().enumerate() {
+        if c.is_ascii_uppercase() {
+            if i > 0 {
+                out.push('_');
+            }
+            out.push(c.to_ascii_lowercase());
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 #[test]

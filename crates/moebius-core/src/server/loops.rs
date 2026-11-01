@@ -7,13 +7,12 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use serde_json::json;
 use tokio::time::{Interval, MissedTickBehavior};
 
 use super::Server;
 use super::webhooks::{Wake, Webhooks};
 use crate::app::columns;
-use crate::bus::AppEvent;
+use crate::bus::Event;
 use crate::repos::poll;
 
 /// How often the clones of repositories without a forge are brought up to date with where they were cloned from.
@@ -43,10 +42,10 @@ impl Server {
                     // Kept as the card's waiting reason until a script runs cleanly again.
                     let reason = format!("script error: {e}");
                     self.app.set_waiting(card.id, Some(reason));
-                    self.app.bus.publish(AppEvent::new(
-                        "board_error",
-                        json!({ "card": card.id, "message": e.to_string() }),
-                    ));
+                    self.app.bus.publish(Event::BoardError {
+                        card: card.id,
+                        message: e.to_string(),
+                    });
                 }
             }
         }
@@ -96,10 +95,10 @@ impl Server {
         };
         for repository in repositories.iter().filter(|r| r.forge == "none") {
             if let Err(e) = self.app.refresh(repository) {
-                self.app.bus.publish(AppEvent::new(
-                    "forge_error",
-                    json!({ "repository": repository.name, "message": e.to_string() }),
-                ));
+                self.app.bus.publish(Event::ForgeError {
+                    repository: repository.name.clone(),
+                    message: e.to_string(),
+                });
             }
         }
     }
@@ -109,10 +108,9 @@ impl Server {
         if let Some(harness_repo) = &self.harness_repo
             && let Err(e) = harness_repo.refresh(&self.app)
         {
-            self.app.bus.publish(AppEvent::new(
-                "harness_error",
-                json!({ "message": e.to_string() }),
-            ));
+            self.app.bus.publish(Event::HarnessError {
+                message: e.to_string(),
+            });
         }
     }
 }

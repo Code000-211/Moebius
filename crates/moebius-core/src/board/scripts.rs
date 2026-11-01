@@ -8,11 +8,10 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 use crate::app::{App, AppError, PERSON, Result};
 use crate::board::{self, Column};
-use crate::bus::AppEvent;
+use crate::bus::Event;
 use crate::decide::Actor;
 use crate::repos::files::{self, Change};
 use crate::store::Repository;
@@ -168,10 +167,11 @@ fn edit(
         message,
         reason,
         context,
-        event: AppEvent::new(
-            "script_changed",
-            json!({ "repository": repository.id, "column": column.name, "path": path }),
-        ),
+        event: Event::ScriptChanged {
+            repository: repository.id,
+            column: column.name.clone(),
+            path: path.to_string(),
+        },
     };
     files::commit(app, by, repository, &change, write)
 }

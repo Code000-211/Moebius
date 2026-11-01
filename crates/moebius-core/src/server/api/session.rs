@@ -560,7 +560,11 @@ mod tests {
         let (mut ws, _) = open(Some(format!("http://{addr}")), cookie.clone())
             .await
             .unwrap();
-        let event = crate::bus::AppEvent::new("card_moved", serde_json::json!({"card": 1}));
+        let event = crate::bus::Event::CardMoved {
+            card: 1,
+            from: "Backlog".into(),
+            to: "Ready".into(),
+        };
         let received = loop {
             state.app.bus.publish(event.clone());
             if let Ok(Some(message)) =
@@ -570,7 +574,7 @@ mod tests {
             }
         };
         let back: crate::bus::AppEvent = serde_json::from_str(received.to_text().unwrap()).unwrap();
-        assert_eq!(back, event);
+        assert_eq!(back, crate::bus::AppEvent::from(event));
 
         assert!(
             open(Some("http://evil.example".into()), cookie)

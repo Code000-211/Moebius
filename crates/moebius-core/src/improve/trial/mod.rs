@@ -25,10 +25,8 @@ mod regression;
 mod schedule;
 mod verdict;
 
-use serde_json::json;
-
 use crate::app::{App, AppError, Result};
-use crate::bus::AppEvent;
+use crate::bus::Event;
 use crate::config::TimeOfDay;
 use crate::store::Proposal;
 
@@ -54,10 +52,10 @@ fn find(app: &App, id: i64) -> Result<Proposal> {
 }
 
 fn publish_status(app: &App, proposal: i64, status: &str) {
-    app.bus.publish(AppEvent::new(
-        "proposal_status",
-        json!({ "proposal": proposal, "status": status }),
-    ));
+    app.bus.publish(Event::ProposalStatus {
+        proposal,
+        status: status.to_string(),
+    });
 }
 
 #[cfg(test)]

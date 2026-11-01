@@ -13,11 +13,10 @@ mod traces;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 use crate::app::{App, AppError, Result};
 use crate::board::Runs;
-use crate::bus::AppEvent;
+use crate::bus::{AppEvent, Event};
 use crate::config::TimeOfDay;
 use crate::harness::repo::HarnessRepo;
 use crate::improve::{lessons, own};
@@ -332,10 +331,11 @@ fn conclude(
 
 fn publish_done(app: &App, day: &str) -> Result<()> {
     let retro = view(&app.store, day)?;
-    app.bus.publish(AppEvent::new(
-        "retro_done",
-        json!({ "date": day, "status": retro.status, "proposals": retro.proposals.len() }),
-    ));
+    app.bus.publish(Event::RetroDone {
+        date: day.to_string(),
+        status: retro.status.clone(),
+        proposals: retro.proposals.len(),
+    });
     Ok(())
 }
 

@@ -4,10 +4,8 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use serde_json::json;
-
 use super::{App, AppError, PERSON, Result};
-use crate::bus::AppEvent;
+use crate::bus::Event;
 use crate::decide::Actor;
 use crate::store::{Card, Repository};
 
@@ -42,8 +40,7 @@ impl App {
         }
         let (path, branch) = self.clone_repository(name, url, None)?;
         let repository = self.store.add_repository(name, &path, "none", &branch)?;
-        self.bus
-            .publish(AppEvent::new("repository_added", json!(repository)));
+        self.bus.publish(Event::RepositoryAdded(repository.clone()));
         Ok(repository)
     }
 
@@ -73,8 +70,7 @@ impl App {
         let repository = self
             .store
             .add_github_repository(name, &path, &branch, github, trusted)?;
-        self.bus
-            .publish(AppEvent::new("repository_added", json!(repository)));
+        self.bus.publish(Event::RepositoryAdded(repository.clone()));
         Ok(repository)
     }
 
@@ -119,8 +115,7 @@ impl App {
         let repository = self
             .store
             .add_project_repository(name, &path, &branch, forge, project, trusted)?;
-        self.bus
-            .publish(AppEvent::new("repository_added", json!(repository)));
+        self.bus.publish(Event::RepositoryAdded(repository.clone()));
         Ok(repository)
     }
 
@@ -208,10 +203,8 @@ impl App {
         self.record_action(by, "edit_repository", None, None, context, reason)?;
         self.store.set_repository_trusted(id, &logins)?;
         let repository = self.repository(id)?;
-        self.bus.publish(AppEvent::new(
-            "repository_updated",
-            json!(repository.clone()),
-        ));
+        self.bus
+            .publish(Event::RepositoryUpdated(repository.clone()));
         Ok(repository)
     }
 
@@ -237,10 +230,8 @@ impl App {
         self.repos.remove(&repository.name)?;
         let context = BTreeMap::from([("repository".into(), repository.name.clone())]);
         self.record_action(by, "delete_repository", None, None, context, reason)?;
-        self.bus.publish(AppEvent::new(
-            "repository_removed",
-            json!(repository.clone()),
-        ));
+        self.bus
+            .publish(Event::RepositoryRemoved(repository.clone()));
         Ok(repository)
     }
 }

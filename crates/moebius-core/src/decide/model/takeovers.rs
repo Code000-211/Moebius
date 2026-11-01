@@ -3,18 +3,16 @@
 
 use std::collections::BTreeMap;
 
-use serde_json::json;
-
 use crate::app::{App, AppError, Result};
-use crate::bus::AppEvent;
+use crate::bus::Event;
 use crate::decide::{Actor, Question};
 use crate::store::Takeover;
 
 fn publish_status(app: &App, takeover: i64, status: &str) {
-    app.bus.publish(AppEvent::new(
-        "takeover_status",
-        json!({ "takeover": takeover, "status": status }),
-    ));
+    app.bus.publish(Event::TakeoverStatus {
+        takeover,
+        status: status.to_string(),
+    });
 }
 
 /// Records the person's decision about a takeover, then moves it from `from` to `to`.

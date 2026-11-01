@@ -6,13 +6,11 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde_json::json;
-
 use super::measure::{judge, measure, spent};
 use super::{MARGIN, ResearchView, find, publish_status, repository_of, view};
 use crate::app::{App, AppError, Result};
 use crate::board::Runs;
-use crate::bus::AppEvent;
+use crate::bus::Event;
 use crate::config::TimeOfDay;
 use crate::improve::retro::wait_for_end;
 use crate::improve::trial::in_window;
@@ -122,10 +120,12 @@ fn try_lever(
         change_id,
         at: 0,
     })?;
-    app.bus.publish(AppEvent::new(
-        "experiment_done",
-        json!({ "research": research.id, "lever": branch, "value": value, "kept": kept }),
-    ));
+    app.bus.publish(Event::ExperimentDone {
+        research: research.id,
+        lever: branch.to_string(),
+        value,
+        kept,
+    });
     Ok(())
 }
 

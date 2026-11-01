@@ -12,7 +12,7 @@ use super::localize as localize_takeover;
 use super::{DecisionModel, KEPT_BY_ITS_DECIDER, NAME, TEACHER};
 use crate::app::{App, AppError, Result};
 use crate::blobs::redact;
-use crate::bus::AppEvent;
+use crate::bus::Event;
 use crate::config::DecisionModelConfig;
 use crate::decide::localize;
 use crate::improve::export::held_out;
@@ -181,10 +181,11 @@ pub(super) fn open_takeover(app: &App, kind: &str, agreement: f64, count: i64) -
             "count": count,
         }),
     )?;
-    app.bus.publish(AppEvent::new(
-        "takeover_proposed",
-        json!({ "takeover": takeover.id, "kind": kind, "agreement": agreement }),
-    ));
+    app.bus.publish(Event::TakeoverProposed {
+        takeover: takeover.id,
+        kind: kind.to_string(),
+        agreement,
+    });
     Ok(takeover)
 }
 

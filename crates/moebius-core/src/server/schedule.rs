@@ -6,12 +6,10 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use serde_json::json;
-
 use super::Server;
 use super::loops::every;
 use crate::board::Runs;
-use crate::bus::AppEvent;
+use crate::bus::Event;
 use crate::improve::{lessons, replay, research, retro, trial};
 
 /// How often the schedule looks at the clock to see whether the Retro is due, trials may start or chats wait idle.
@@ -29,10 +27,9 @@ impl Server {
         let repo = self.harness_repo.as_ref();
         let report = |result: crate::app::Result<()>| {
             if let Err(e) = result {
-                self.app.bus.publish(AppEvent::new(
-                    "retro_error",
-                    json!({ "message": e.to_string() }),
-                ));
+                self.app.bus.publish(Event::RetroError {
+                    message: e.to_string(),
+                });
             }
         };
         let config = self.live.get();

@@ -27,9 +27,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use moebius_plugin_api::Host;
-use serde_json::json;
 
-use crate::bus::{AppEvent, Bus};
+use crate::bus::{Bus, Event};
 use crate::config::LocalizeConfig;
 use crate::decide::{Actor, Decisions, Question};
 use crate::harness::repo::HarnessRepo;
@@ -270,10 +269,12 @@ impl App {
         // Pi's records can carry what a tool printed; nothing unredacted is stored or streamed.
         let data = &crate::blobs::redact_json(data);
         let seq = self.store.append_event(run_id, kind, data)?;
-        self.bus.publish(AppEvent::new(
-            "run_event",
-            json!({ "run": run_id, "seq": seq, "kind": kind, "data": data }),
-        ));
+        self.bus.publish(Event::RunEvent {
+            run: run_id,
+            seq,
+            kind: kind.to_string(),
+            data: data.clone(),
+        });
         Ok(())
     }
 }

@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use super::{KEYS, REPOSITORY, SETTINGS, files, unified};
 use crate::app::{App, PERSON, Result};
 use crate::board::{Workflow, check_script};
-use crate::bus::AppEvent;
+use crate::bus::Event;
 use crate::harness::repo::OwnBranch;
 use crate::repos::git_bytes;
 use crate::server::settings::{Changes, Live};
@@ -52,10 +52,10 @@ pub fn store(app: &App, live: &Live, day: &str, branches: &[OwnBranch]) -> Resul
                 "diff": own.diff,
             }),
         )?;
-        app.bus.publish(AppEvent::new(
-            "proposal_status",
-            json!({ "proposal": id, "status": "untried" }),
-        ));
+        app.bus.publish(Event::ProposalStatus {
+            proposal: id,
+            status: "untried".into(),
+        });
     }
     Ok(warnings)
 }

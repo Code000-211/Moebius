@@ -11,7 +11,7 @@ use super::verdict::status_of;
 use super::{find, in_window, publish_status, regression};
 use crate::app::{App, AppError, Result};
 use crate::board::Runs;
-use crate::bus::AppEvent;
+use crate::bus::Event;
 use crate::config::TimeOfDay;
 use crate::harness::repo::HarnessRepo;
 use crate::store::{Proposal, Trial};
@@ -37,10 +37,12 @@ fn record(
             .store
             .add_trial(proposal, card, run, outcome, reason, &tried.measurements)?,
     }
-    app.bus.publish(AppEvent::new(
-        "trial_done",
-        json!({ "proposal": proposal, "card": card, "outcome": outcome, "regression": regression }),
-    ));
+    app.bus.publish(Event::TrialDone {
+        proposal,
+        card,
+        outcome: outcome.to_string(),
+        regression,
+    });
     Ok(())
 }
 
@@ -131,8 +133,7 @@ pub fn start(
                     let _ = app.store.set_proposal_status(proposal.id, "untried");
                     publish_status(&app, proposal.id, "untried");
                     let message = format!("the trial of proposal {} failed: {e}", proposal.id);
-                    app.bus
-                        .publish(AppEvent::new("retro_error", json!({ "message": message })));
+                    app.bus.publish(Event::RetroError { message });
                 }
             }
         });
