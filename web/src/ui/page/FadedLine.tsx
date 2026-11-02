@@ -7,7 +7,7 @@
  * text. A line that shows all of itself is given no tooltip, because it would only repeat what is already read.
  *
  * It masks its own edge rather than laying a gradient over the top, so the words fade into whatever the line is drawn
- * on, the same way [`ScrollFades`](../../app/board/ScrollFades.tsx) fades a scroller.
+ * on, the same way [`ScrollFades`](./ScrollFades.tsx) fades a scroller.
  */
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "../lib/cn";

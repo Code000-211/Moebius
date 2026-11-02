@@ -39,7 +39,7 @@ import { StatusDot } from "../../ui/components/StatusDot";
 import { Tooltip } from "../../ui/components/Tooltip";
 import { cn } from "../../ui/lib/cn";
 import { getModifierKey } from "../../ui/lib/platform";
-import { ScrollFades } from "../board/ScrollFades";
+import { ScrollFades } from "../../ui/page/ScrollFades";
 import {
   boardPath,
   DEFAULT_PAGE,

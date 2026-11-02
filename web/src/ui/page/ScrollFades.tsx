@@ -3,7 +3,9 @@
  * everything does not, because a fade that lies about hidden content is worse than none.
  *
  * It masks the scroller rather than laying a gradient over the top, so whatever the content is drawn on — a lane, a
- * card, the canvas — fades into what is behind the scroller instead of into a colour of its own.
+ * card, the canvas — fades into what is behind the scroller instead of into a colour of its own. `ScrollFades` is the
+ * box that scrolls, for the pages that own their scroller; `useScrollFades` is the same mask for a scroller something
+ * else draws, such as the virtualised list of a conversation.
  */
 import {
   type CSSProperties,
@@ -13,7 +15,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { cn } from "../../ui/lib/cn";
+import { cn } from "../lib/cn";
 
 /** How far the ramp of a faded edge reaches into the content. */
 const RAMP = "var(--space-24)";
@@ -46,8 +48,14 @@ function edgesOf(box: HTMLElement) {
   };
 }
 
-export function ScrollFades({ children, className }: { children: ReactNode; className?: string }) {
-  const box = useRef<HTMLDivElement>(null);
+const edgesNone = { left: false, right: false, top: false, bottom: false };
+
+/**
+ * The fades of a scroller: the `style` to mask its cut edges with, and `measure`, which keeps it true — call it from
+ * the scroller's `onScroll` and hand it the element as `box`.
+ */
+export function useScrollFades<T extends HTMLElement>() {
+  const box = useRef<T | null>(null);
   const [cut, setCut] = useState(edgesNone);
   // The edges only replace what is held when they differ. A box measured again would otherwise ask to render again,
   // and that render would measure again, without end — and a page that never settles never shows what a click asked
@@ -92,17 +100,23 @@ export function ScrollFades({ children, className }: { children: ReactNode; clas
     [],
   );
 
+  const layers = `${axis(cut.left, cut.right, "to left", "to right")}, ${axis(cut.top, cut.bottom, "to top", "to bottom")}`;
   const style: CSSProperties = {
-    maskImage: `${axis(cut.left, cut.right, "to left", "to right")}, ${axis(cut.top, cut.bottom, "to top", "to bottom")}`,
-    WebkitMaskImage: `${axis(cut.left, cut.right, "to left", "to right")}, ${axis(cut.top, cut.bottom, "to top", "to bottom")}`,
+    maskImage: layers,
+    WebkitMaskImage: layers,
     maskComposite: "intersect",
     WebkitMaskComposite: "source-in",
   };
+  return { box, measure, style };
+}
+
+export function ScrollFades({ children, className }: { children: ReactNode; className?: string }) {
+  const fades = useScrollFades<HTMLDivElement>();
   return (
     <div
-      ref={box}
-      onScroll={measure}
-      style={style}
+      ref={fades.box}
+      onScroll={fades.measure}
+      style={fades.style}
       className={cn("min-w-0 overflow-auto", className)}
       data-testid="scroll-fades"
     >
@@ -110,5 +124,3 @@ export function ScrollFades({ children, className }: { children: ReactNode; clas
     </div>
   );
 }
-
-const edgesNone = { left: false, right: false, top: false, bottom: false };

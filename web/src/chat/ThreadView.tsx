@@ -12,9 +12,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
+import { type ScrollerProps, Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { Turn } from "../ui/chat/Turn";
 import { Empty } from "../ui/page/Empty";
+import { useScrollFades } from "../ui/page/ScrollFades";
 import type { Entry } from "./conversation";
 import {
   afterScroll,
@@ -25,6 +26,32 @@ import {
   shouldRepin,
 } from "./follow";
 import { groupTurns } from "./turns";
+
+/**
+ * The scroller of the list, with the edges that have more behind them faded out. A conversation is read from its end,
+ * so the text cut off at the top is always the part just left behind; fading it lets the turns blend into the heading
+ * above rather than ending mid-word. The object that names it is made once, below, because a new one each render would
+ * make the list build its scroller again.
+ */
+function FadedScroller({ children, style, ref, ...rest }: ScrollerProps) {
+  const fades = useScrollFades<HTMLDivElement>();
+  return (
+    <div
+      {...rest}
+      ref={(element) => {
+        fades.box.current = element;
+        if (typeof ref === "function") ref(element);
+        else if (ref) ref.current = element;
+      }}
+      onScroll={fades.measure}
+      style={{ ...style, ...fades.style }}
+    >
+      {children}
+    </div>
+  );
+}
+
+const COMPONENTS = { Scroller: FadedScroller };
 
 interface ThreadViewProps {
   entries: Entry[];
@@ -163,6 +190,7 @@ export function ThreadView({
       totalListHeightChanged={toEnd}
       computeItemKey={(_, turn) => turn.key}
       increaseViewportBy={400}
+      components={COMPONENTS}
       data-testid="thread"
       style={{ height: "100%" }}
       itemContent={(_, turn) => (

@@ -31,6 +31,7 @@ import { Empty } from "../../ui/page/Empty";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
+import { ScrollFades } from "../../ui/page/ScrollFades";
 import { Status } from "../../ui/page/Status";
 import { boardPath } from "../pages";
 import { ColumnMark } from "./ColumnMark";
@@ -55,7 +56,6 @@ import {
 } from "./model";
 import { NewIssueDialog } from "./NewIssueDialog";
 import { RepositoryTerminal } from "./RepositoryTerminal";
-import { ScrollFades } from "./ScrollFades";
 
 /** What a column holds when it is empty: the word for what is not there, and how a card comes to it. */
 const COLUMN_EMPTY: Record<string, { title: string; body: string }> = {
