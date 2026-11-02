@@ -7,6 +7,8 @@
 # command runs. When the key given with `-i` is a file, each call is appended to the file of the same name with `.log`
 # added: the target, then the options and the command, one JSON line.
 #
+# As ssh does, it says "Allocated port" only at a log level of INFO or below (the first `-o LogLevel=` wins).
+#
 # Two variables stand for what a real ssh asks and suffers. With FAKE_SSH_ASK set, it runs $SSH_ASKPASS with that text
 # as the prompt first and fails like a refused login unless the answer is FAKE_SSH_PASSWORD. With FAKE_SSH_DROP naming a
 # file, a tunnel that finds the file deletes it and ends, as a dropped connection does.
@@ -74,6 +76,13 @@ def pump(source, sink):
             pass
 
 
+def log_level():
+    for flag, value in options:
+        if flag == "o" and value.upper().startswith("LOGLEVEL="):
+            return value.split("=", 1)[1].upper()
+    return "INFO"
+
+
 def listen(spec):
     parts = spec.split(":")
     bind = parts.pop(0) if len(parts) == 4 else "127.0.0.1"
@@ -82,8 +91,9 @@ def listen(spec):
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server.bind((bind, int(port)))
     server.listen()
-    sys.stderr.write("Allocated port %d for remote forward to %s:%s\n" % (server.getsockname()[1], host, host_port))
-    sys.stderr.flush()
+    if log_level() in ("INFO", "VERBOSE", "DEBUG", "DEBUG1", "DEBUG2", "DEBUG3"):
+        sys.stderr.write("Allocated port %d for remote forward to %s:%s\n" % (server.getsockname()[1], host, host_port))
+        sys.stderr.flush()
     return server, host, int(host_port)
 
 

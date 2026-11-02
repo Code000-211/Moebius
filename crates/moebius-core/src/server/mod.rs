@@ -212,7 +212,8 @@ impl Server {
         ));
         let app = Arc::new(app);
         router.set_checker(check::Checker::new(app.clone(), config.rules_path()));
-        leftovers::end_runs_of_a_previous_server(&app)?;
+        let runners = Arc::new(Runners::new(config.runners.clone()));
+        leftovers::end_runs_of_a_previous_server(&app, &runners)?;
         if let Some(model) = model {
             model::start(&app, model)
                 .map_err(|e| format!("cannot start the decision model: {e}"))?;
@@ -225,7 +226,7 @@ impl Server {
             router.clone(),
             config.agents.clone(),
         );
-        pi_bolt.runners = Arc::new(Runners::new(config.runners.clone()));
+        pi_bolt.runners = runners;
         let harness = Arc::new(Harnesses::new(pi_bolt, &config.claude_code));
         let harness_repo = match &config.harness_url {
             Some(url) => Some(Arc::new(HarnessRepo::open(

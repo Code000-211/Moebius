@@ -306,7 +306,7 @@ environment is the one a local run has, with the router's URL the tunnel's, and 
 `MOEBIUS_TOKEN`: the desktop API is not tunnelled, so the Moebius agent's own commands do not work there. When the run
 ends what the agent left is committed there, fetched into the run's worktree on the server, and committed from there as
 for any run; the run's directory on the machine and its branch in the clone are removed, and the tunnel is closed. A
-connection to the machine that breaks ends the run as failed. Only the runs of a card (`code`, `review` and the other
+connection to the machine that breaks ends the run as failed. A run that a stopped server left going is failed when the server starts again, and its directory and branch are removed from the machine then (if the machine is still configured and answers). Only the runs of a card (`code`, `review` and the other
 purposes of column scripts, and trials) go to a runner; chats, the Retro, the Autoresearcher and the Grilling partner
 always run on the server. `ssh` is started without a terminal and asks no question (`BatchMode`), so the machine's host
 key must be in the server user's `known_hosts`.

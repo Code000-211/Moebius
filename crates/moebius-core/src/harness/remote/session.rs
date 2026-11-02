@@ -8,7 +8,7 @@
 //! into the run's worktree, which is committed as for a local run.
 
 use std::collections::BTreeSet;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Mutex, OnceLock, mpsc};
@@ -42,7 +42,7 @@ pub(in crate::harness) struct RemoteRun {
     tunnel_url: OnceLock<String>,
     /// The bare clone the run's branch was pushed to, once it was.
     repo: OnceLock<String>,
-    _slot: Slot,
+    _slot: Option<Slot>,
 }
 
 impl RemoteRun {
@@ -60,8 +60,25 @@ impl RemoteRun {
             tunnel: Mutex::new(None),
             tunnel_url: OnceLock::new(),
             repo: OnceLock::new(),
-            _slot: slot,
+            _slot: Some(slot),
         }
+    }
+
+    /// What a run that a stopped server left on `config`'s runner is cleaned up through: no slot is held and no
+    /// tunnel is open, and the run's branch is in the bare clone of `repository`.
+    fn leftover(config: RunnerConfig, run_id: i64, repository: &str) -> Self {
+        let root = config.working_dir.trim_end_matches('/').to_string();
+        let run = Self {
+            dir: format!("{root}/runs/{run_id}"),
+            config,
+            run_id,
+            tunnel: Mutex::new(None),
+            tunnel_url: OnceLock::new(),
+            repo: OnceLock::new(),
+            _slot: None,
+        };
+        let _ = run.repo.set(format!("{root}/repos/{repository}.git"));
+        run
     }
 
     /// The runner's name.
@@ -80,8 +97,9 @@ impl RemoteRun {
             .split_once("://")
             .ok_or_else(|| format!("{router_url} is not a URL"))?;
         let local = rest.split('/').next().unwrap_or(rest);
+        // OpenSSH reports the port it was given at INFO level, which the usual `LogLevel=ERROR` would hide.
         let mut child = self
-            .ssh(&["-N", "-o", "ExitOnForwardFailure=yes", "-R"])
+            .ssh_logging("INFO", &["-N", "-o", "ExitOnForwardFailure=yes", "-R"])
             .arg(format!("0:{local}"))
             .arg(self.target())
             .stdin(Stdio::null())
@@ -186,7 +204,9 @@ impl RemoteRun {
             }
             text
         };
-        let mut script = format!("cd {}/work && exec env", quote(&self.dir));
+        // The environment goes to the runner as a file the shell sources, never as part of a command line, where
+        // other users could read the run's token.
+        let mut environment = String::new();
         for (name, value) in command.get_envs() {
             let name = name.to_string_lossy();
             // The local PATH, HOME and the like mean nothing on the runner.
@@ -197,10 +217,18 @@ impl RemoteRun {
                 continue;
             }
             match value {
-                Some(value) => script.push_str(&format!(" {name}={}", quote(&translate(value)))),
-                None => script.push_str(&format!(" -u {name}")),
+                Some(value) => {
+                    environment.push_str(&format!("export {name}={}\n", quote(&translate(value))))
+                }
+                None => environment.push_str(&format!("unset {name}\n")),
             }
         }
+        let env_file = format!("{}/env", self.dir);
+        let mut script = format!(
+            "cd {}/work && . {env} && rm -f {env} && exec",
+            quote(&self.dir),
+            env = quote(&env_file)
+        );
         let program = Path::new(command.get_program())
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
@@ -216,6 +244,10 @@ impl RemoteRun {
             script.push_str(&quote(&translate(arg)));
         }
         self.ship(&shipped, &files)?;
+        self.script_with_input(
+            &format!("umask 077 && cat > {}", quote(&env_file)),
+            environment.as_bytes(),
+        )?;
         let mut ssh = self.ssh(&[]);
         ssh.arg(self.target()).arg(script);
         Ok(ssh)
@@ -244,6 +276,11 @@ impl RemoteRun {
         if self.router_url().is_none() {
             return;
         }
+        self.remove_from_runner();
+    }
+
+    /// Removes the run's directory and branch on the runner, as far as the runner answers.
+    fn remove_from_runner(&self) {
         let mut script = format!("rm -rf {}", quote(&self.dir));
         if let Some(repo) = self.repo.get() {
             script.push_str(&format!(
@@ -317,6 +354,33 @@ impl RemoteRun {
         ))
     }
 
+    /// Runs `script` in the runner's shell with `input` as its standard input.
+    fn script_with_input(&self, script: &str, input: &[u8]) -> Result<(), String> {
+        let mut child = self
+            .ssh(&[])
+            .arg(self.target())
+            .arg(script)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("cannot start {}: {e}", self.config.ssh.display()))?;
+        let mut stdin = child.stdin.take().expect("stdin is piped");
+        let input = input.to_vec();
+        // Written from a thread, so that a script that says a lot first cannot block both ends.
+        let writer = std::thread::spawn(move || stdin.write_all(&input));
+        let output = child.wait_with_output().map_err(|e| e.to_string())?;
+        let _ = writer.join();
+        if output.status.success() {
+            return Ok(());
+        }
+        Err(format!(
+            "{} failed: {}",
+            self.config.host,
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
+    }
+
     /// Runs git in `dir` on the server, with `ssh` as the runner's.
     fn git(&self, dir: &Path, args: &[&str]) -> Result<(), String> {
         let output = Command::new("git")
@@ -341,8 +405,13 @@ impl RemoteRun {
     /// The `ssh` command for the runner up to the target: its options, the port, and `extra`. The target and the
     /// remote command, if any, come after it.
     fn ssh(&self, extra: &[&str]) -> Command {
+        self.ssh_logging("ERROR", extra)
+    }
+
+    /// [`Self::ssh`] with the log level `level`.
+    fn ssh_logging(&self, level: &str, extra: &[&str]) -> Command {
         let mut command = Command::new(&self.config.ssh);
-        command.args(self.options());
+        command.args(self.options(level));
         if let Some(port) = self.config.port {
             command.arg("-p").arg(port.to_string());
         }
@@ -360,7 +429,7 @@ impl RemoteRun {
 
     /// The options every `ssh` to the runner gets: no questions asked, the key if there is one, and a connection that
     /// notices when the runner is gone.
-    fn options(&self) -> Vec<String> {
+    fn options(&self, level: &str) -> Vec<String> {
         let mut options: Vec<String> = [
             "-o",
             "BatchMode=yes",
@@ -369,10 +438,10 @@ impl RemoteRun {
             "-o",
             "ServerAliveInterval=30",
             "-o",
-            "LogLevel=ERROR",
         ]
         .map(String::from)
         .to_vec();
+        options.push(format!("LogLevel={level}"));
         if let Some(key) = &self.config.key_file {
             options.extend(["-i".into(), key.to_string_lossy().into_owned()]);
             options.extend(["-o".into(), "IdentitiesOnly=yes".into()]);
@@ -383,7 +452,7 @@ impl RemoteRun {
     /// What git is given as `GIT_SSH_COMMAND`: the program and the options, but not the port, which the URL carries.
     fn git_ssh_command(&self) -> String {
         std::iter::once(self.config.ssh.to_string_lossy().into_owned())
-            .chain(self.options())
+            .chain(self.options("ERROR"))
             .map(|word| quote(&word))
             .collect::<Vec<_>>()
             .join(" ")
@@ -413,6 +482,12 @@ impl Drop for RemoteRun {
             let _ = tunnel.wait();
         }
     }
+}
+
+/// Clears what a run that a stopped server left going has on its runner: its directory, which holds the run's
+/// token, and its branch in the bare clone of `repository`.
+pub(in crate::harness) fn clean_leftover(config: &RunnerConfig, run_id: i64, repository: &str) {
+    RemoteRun::leftover(config.clone(), run_id, repository).remove_from_runner();
 }
 
 /// `text` as one word of a POSIX shell.
@@ -454,5 +529,73 @@ mod tests {
         let line = "Allocated port 40211 for remote forward to 127.0.0.1:7172";
         assert_eq!(allocated_port(line), Some(40211));
         assert_eq!(allocated_port("Permission denied"), None);
+    }
+
+    /// The variables of a command, whichever way round `env` would need them, reach the program from a file the runner
+    /// sources and not from the command line.
+    #[cfg(unix)] // The fake `ssh` runs the command in `sh`.
+    #[test]
+    fn the_environment_is_set_and_unset_from_a_private_file() {
+        use std::os::unix::fs::PermissionsExt;
+        use std::sync::Arc;
+        let dir = tempfile::tempdir().unwrap();
+        let testdata = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata");
+        let bin = dir.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let program = bin.join("show");
+        std::fs::write(
+            &program,
+            "#!/bin/sh\necho \"key=$ANTHROPIC_API_KEY token=${ANTHROPIC_AUTH_TOKEN-unset}\"\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let config = RunnerConfig {
+            name: "box".into(),
+            host: "gpu.test".into(),
+            user: None,
+            port: None,
+            key_file: None,
+            working_dir: dir.path().join("remote").to_string_lossy().into_owned(),
+            max_runs: 1,
+            bin_dir: Some(bin.to_string_lossy().into_owned()),
+            ssh: testdata.join("fake-ssh"),
+        };
+        let runners = Arc::new(crate::harness::remote::Runners::new(vec![config]));
+        let run = RemoteRun::new(runners.claim("box").unwrap(), 7);
+        std::fs::create_dir_all(format!("{}/work", run.dir)).unwrap();
+        run.tunnel_url.set("http://127.0.0.1:1".into()).unwrap();
+
+        let mut command = Command::new("/server/show");
+        command
+            .env("ANTHROPIC_API_KEY", "secret-key")
+            .env_remove("ANTHROPIC_AUTH_TOKEN");
+        let local = Local {
+            worktree: Path::new("/server/work"),
+            run_dir: Path::new("/server/run"),
+            router_url: "http://127.0.0.1:2",
+        };
+        let mut ssh = run.command(&command, &local).unwrap();
+        // Until the harness starts, the file holds the key and nobody else can read it.
+        let env_file = format!("{}/env", run.dir);
+        let mode = std::fs::metadata(&env_file).unwrap().permissions().mode();
+        assert_eq!(mode & 0o077, 0, "{mode:o}");
+        assert!(
+            std::fs::read_to_string(&env_file)
+                .unwrap()
+                .contains("secret-key")
+        );
+        let args: Vec<String> = ssh
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert!(args.iter().all(|a| !a.contains("secret-key")), "{args:?}");
+        let output = ssh.env("ANTHROPIC_AUTH_TOKEN", "leaked").output().unwrap();
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout).trim(),
+            "key=secret-key token=unset"
+        );
+        // The file is gone once the program has it.
+        assert!(!Path::new(&format!("{}/env", run.dir)).exists());
     }
 }

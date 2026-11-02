@@ -4,11 +4,12 @@
 use std::path::Path;
 
 use crate::app::App;
+use crate::harness::remote::Runners;
 use crate::repos::git;
 
 /// Runs the last server left unended died with it: they are failed, so the board starts them again, and their
-/// worktrees removed.
-pub(super) fn end_runs_of_a_previous_server(app: &App) -> Result<(), String> {
+/// worktrees removed. What a run on a runner left there (its directory and branch) is removed too.
+pub(super) fn end_runs_of_a_previous_server(app: &App, runners: &Runners) -> Result<(), String> {
     let runs = app
         .store
         .fail_unended_runs("the server stopped while the run was going")
@@ -22,6 +23,13 @@ pub(super) fn end_runs_of_a_previous_server(app: &App) -> Result<(), String> {
     app.store
         .reopen_trying_proposals()
         .map_err(|e| format!("cannot reopen the proposals of the last start: {e}"))?;
+    for run in &runs {
+        if let (Some(runner), Some(card_id)) = (&run.runner, run.card_id)
+            && let Ok(card) = app.card(card_id)
+        {
+            runners.clean_leftover(runner, run.id, card.repository_id);
+        }
+    }
     for run in runs {
         let Some(worktree) = run.worktree else {
             continue;
@@ -140,5 +148,77 @@ mod tests {
             second.app.store.run(chat.id).unwrap().unwrap().status,
             "failed"
         );
+    }
+
+    /// A run that went on a runner leaves its directory and branch there when the server stops without cleaning up.
+    #[cfg(unix)] // The fake `ssh` runs the command in `sh`.
+    #[test]
+    fn the_directory_and_branch_a_run_left_on_a_runner_are_removed() {
+        let dir = tempfile::tempdir().unwrap();
+        let remote = dir.path().join("remote");
+        let fake_ssh = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/fake-ssh");
+        let config = Config::parse(
+            &format!(
+                "[[runners]]\nname = \"box\"\nhost = \"gpu.test\"\nworking_dir = \"{}\"\nssh = \"{}\"\n",
+                remote.display(),
+                fake_ssh.display()
+            ),
+            dir.path(),
+            &dir.path().join("moebius.toml"),
+        )
+        .unwrap();
+        let origin = dir.path().join("origin");
+        std::fs::create_dir_all(&origin).unwrap();
+        git(&origin, &["init", "--quiet", "-b", "main"]).unwrap();
+        git(
+            &origin,
+            &["commit", "--quiet", "--allow-empty", "-m", "first"],
+        )
+        .unwrap();
+
+        let first = Server::new(config.clone(), "127.0.0.1:1".parse().unwrap()).unwrap();
+        let repo = first
+            .app
+            .add_repository("demo", origin.to_str().unwrap())
+            .unwrap();
+        let card = first
+            .app
+            .create_issue(repo.id, "Card", "", crate::app::PERSON)
+            .unwrap();
+        let run = first
+            .app
+            .store
+            .add_run(Some(card.id), "Coder", "pi-bolt", "code")
+            .unwrap();
+        first.app.store.set_run_runner(run.id, "box").unwrap();
+        first.app.store.set_run_status(run.id, "running").unwrap();
+        // What the run left on the runner: its directory with a secret in it, and its branch in the bare clone.
+        let run_dir = remote.join(format!("runs/{}", run.id));
+        std::fs::create_dir_all(run_dir.join("work")).unwrap();
+        std::fs::write(run_dir.join("env"), "export MOEBIUS_RUN_TOKEN=x\n").unwrap();
+        let bare = remote.join(format!("repos/repo-{}.git", repo.id));
+        std::fs::create_dir_all(&bare).unwrap();
+        git(&bare, &["init", "--bare", "--quiet"]).unwrap();
+        let branch = format!("refs/heads/moebius/run-{}", run.id);
+        git(
+            &origin,
+            &[
+                "push",
+                "--quiet",
+                bare.to_str().unwrap(),
+                &format!("HEAD:{branch}"),
+            ],
+        )
+        .unwrap();
+        assert!(git(&bare, &["rev-parse", "--verify", &branch]).is_ok());
+        drop(first);
+
+        let second = Server::new(config, "127.0.0.1:1".parse().unwrap()).unwrap();
+        assert_eq!(
+            second.app.store.run(run.id).unwrap().unwrap().status,
+            "failed"
+        );
+        assert!(!run_dir.exists());
+        assert!(git(&bare, &["rev-parse", "--verify", &branch]).is_err());
     }
 }

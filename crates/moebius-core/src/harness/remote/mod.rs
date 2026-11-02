@@ -13,7 +13,7 @@ use serde::Serialize;
 
 use crate::config::RunnerConfig;
 
-pub(in crate::harness) use session::{Local, RemoteRun};
+pub(in crate::harness) use session::{Local, RemoteRun, clean_leftover};
 
 /// The runners of the configuration, and how many runs go on each.
 #[derive(Default)]
@@ -62,6 +62,14 @@ impl Runners {
     /// Whether a runner of this name is configured.
     pub fn has(&self, name: &str) -> bool {
         self.configs.contains_key(name)
+    }
+
+    /// Clears what a run that a stopped server left on the runner `name` has there, if that runner is still
+    /// configured: its directory and its branch in the clone of the repository `repository_id`.
+    pub fn clean_leftover(&self, name: &str, run_id: i64, repository_id: i64) {
+        if let Some(config) = self.configs.get(name) {
+            clean_leftover(config, run_id, &format!("repo-{repository_id}"));
+        }
     }
 
     /// Takes one of the runs `name` may have going, or says why it cannot: there is no such runner, or it is full.

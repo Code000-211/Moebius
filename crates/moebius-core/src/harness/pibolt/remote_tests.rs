@@ -99,7 +99,12 @@ fn a_run_on_a_runner_works_there_and_its_commits_come_back() {
     assert!(
         commands
             .iter()
-            .any(|c| c.contains("exec env") && c.contains("fake-pi")),
+            .any(|c| c.contains("exec") && c.contains("fake-pi")),
+        "{commands:?}"
+    );
+    // The run's token is not on any command line, where other users could read it.
+    assert!(
+        commands.iter().all(|c| !c.contains("MOEBIUS_RUN_TOKEN")),
         "{commands:?}"
     );
     assert!(lines.iter().any(|l| l["tunnel"] == true));
@@ -178,6 +183,43 @@ fn a_run_on_a_runner_reaches_the_router_through_the_tunnel() {
     assert_eq!(run.status, "stopped");
     wait_for("the runner is free", || pi.runners.list()[0].busy == 0);
     assert!(!remote.join(format!("runs/{}", run.id)).exists());
+}
+
+#[test]
+fn killing_all_runs_closes_their_tunnels_and_clears_the_runner() {
+    let (_dir, app, pi, repo, remote, _key) = with_runner();
+    let card = app
+        .create_issue(repo, "Please [hang]", "", "person")
+        .unwrap();
+    let run = pi
+        .start(&app, &card, "Coder", ("code", None), Variant::default())
+        .unwrap();
+    let env_file = remote
+        .join(format!("runs/{}/files", run.id))
+        .join(
+            app.data_dir
+                .join(format!("runs/{}", run.id))
+                .strip_prefix("/")
+                .unwrap(),
+        )
+        .join("agent/env.json");
+    wait_for("the fake Pi writes its environment", || env_file.is_file());
+    let env: Value = serde_json::from_slice(&std::fs::read(&env_file).unwrap()).unwrap();
+    let port: u16 = env["MOEBIUS_CHECK_URL"]
+        .as_str()
+        .unwrap()
+        .rsplit(':')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(TcpStream::connect(("127.0.0.1", port)).is_ok());
+
+    pi.kill_all();
+    assert!(!remote.join(format!("runs/{}", run.id)).exists());
+    wait_for("the tunnel is closed", || {
+        TcpStream::connect(("127.0.0.1", port)).is_err()
+    });
 }
 
 #[test]

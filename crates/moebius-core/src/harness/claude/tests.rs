@@ -467,3 +467,105 @@ async fn the_router_refuses_a_tool_call_of_claude_code_before_it_sees_it() {
     assert_eq!(check.data["decision"], "refuse");
     assert_eq!(check.data["tool_call_id"], "toolu_9");
 }
+
+/// A server whose Coder goes to the runner `box`, whose "machine" is the directory `remote` and whose `ssh` is the
+/// fake one of `testdata`.
+#[cfg(unix)] // The fake `ssh` runs the command in `sh`.
+fn with_runner() -> (Setup, PathBuf) {
+    let mut s = setup();
+    let testdata = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata");
+    let remote = s._dir.path().join("remote");
+    let config = crate::config::RunnerConfig {
+        name: "box".into(),
+        host: "gpu.test".into(),
+        user: None,
+        port: None,
+        key_file: None,
+        working_dir: remote.to_string_lossy().into_owned(),
+        max_runs: 1,
+        bin_dir: Some(testdata.to_string_lossy().into_owned()),
+        ssh: testdata.join("fake-ssh"),
+    };
+    s.claude.runners = Arc::new(crate::harness::remote::Runners::new(vec![config]));
+    {
+        let mut agents = s.claude.agents.write().unwrap();
+        let coder = agents.agents.get_mut("Coder").unwrap();
+        coder.runner = Some("box".into());
+        // The built-in skills are not written to the data directory by this test, and `tar` cannot ship a dangling link.
+        coder.engineering_skills = false;
+    }
+    (s, remote)
+}
+
+/// The file the fake Claude of a run on the runner wrote into its configuration directory there.
+#[cfg(unix)] // See `with_runner`.
+fn remote_file(s: &Setup, remote: &Path, run_id: i64, name: &str) -> PathBuf {
+    let config = s.app.data_dir.join(format!("runs/{run_id}/claude"));
+    remote
+        .join(format!("runs/{run_id}/files"))
+        .join(config.strip_prefix("/").unwrap())
+        .join(name)
+}
+
+#[cfg(unix)] // See `with_runner`.
+#[test]
+fn a_code_run_on_claude_code_works_on_a_runner_and_its_commits_come_back() {
+    let (s, remote) = with_runner();
+    let card = s
+        .app
+        .create_issue(s.repo, "Write done.txt", "", "person")
+        .unwrap();
+    let run = s
+        .claude
+        .start(&s.app, &card, "Coder", ("code", None), Variant::default())
+        .unwrap();
+    assert_eq!(run.runner.as_deref(), Some("box"));
+    let run = wait_until_ended(&s.app, run.id);
+    assert_eq!(run.status, "succeeded", "{:?}", kinds(&s.app, run.id));
+    let clone = PathBuf::from(&s.app.store.repository(s.repo).unwrap().unwrap().path);
+    let shown = git(&clone, &["show", &format!("{}:done.txt", run.branch())]).unwrap();
+    assert_eq!(shown, "done");
+    assert!(!remote.join(format!("runs/{}", run.id)).exists());
+}
+
+#[cfg(unix)] // See `with_runner`.
+#[test]
+fn killing_all_claude_code_runs_closes_their_tunnels_and_clears_the_runner() {
+    use std::net::TcpStream;
+    let (s, remote) = with_runner();
+    let card = s
+        .app
+        .create_issue(s.repo, "Please [hang]", "", "person")
+        .unwrap();
+    let run = s
+        .claude
+        .start(&s.app, &card, "Coder", ("code", None), Variant::default())
+        .unwrap();
+    let env_file = remote_file(&s, &remote, run.id, "env.json");
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !env_file.is_file() {
+        assert!(
+            Instant::now() < deadline,
+            "the fake Claude writes its environment"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let env: Value = serde_json::from_slice(&std::fs::read(&env_file).unwrap()).unwrap();
+    let port: u16 = env["ANTHROPIC_BASE_URL"]
+        .as_str()
+        .unwrap()
+        .rsplit(':')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(TcpStream::connect(("127.0.0.1", port)).is_ok());
+
+    s.claude.kill_all();
+    assert!(!remote.join(format!("runs/{}", run.id)).exists());
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while TcpStream::connect(("127.0.0.1", port)).is_ok() {
+        assert!(Instant::now() < deadline, "the tunnel is closed");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}

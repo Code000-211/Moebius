@@ -171,6 +171,10 @@ impl PiBolt {
         let all: Vec<Live> = lock(&self.live).values().cloned().collect();
         for live in all {
             let _ = lock(&live.child).kill();
+            // Nothing runs `Drop` across the restart: close the tunnel and clear the runner's directory now.
+            if let Some(remote) = &live.run.remote {
+                remote.cleanup();
+            }
         }
     }
 
