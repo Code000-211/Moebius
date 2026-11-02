@@ -195,12 +195,21 @@ describe("the board page", () => {
       // same sentence, and one that reads as a card which has lost its words.
       const face = await words.evaluate((el) => {
         const box = el.closest("section");
-        if (!box) throw new Error("the empty state is not drawn in a box");
+        const column = el.closest("section[aria-label]");
+        if (!box || !column) throw new Error("the empty state is not drawn in a column");
         const style = getComputedStyle(box);
+        const sentence = el.getBoundingClientRect();
+        const space = box.getBoundingClientRect();
+        const lane = column.getBoundingClientRect();
         return {
           background: style.backgroundColor,
           shadow: style.boxShadow,
           heading: box.querySelector("h2") !== null,
+          // Centred in the column, and in the room under its header rather than at the top of it. The second one only
+          // reads when the state took the room: a state that only hugged its own line is the same height as its words.
+          centreX: Math.abs((sentence.left + sentence.right) / 2 - (lane.left + lane.right) / 2),
+          centreY: Math.abs((sentence.top + sentence.bottom) / 2 - (space.top + space.bottom) / 2),
+          room: space.height - sentence.height,
         };
       });
       expect(face.background, "the empty state draws a surface of its own").toBe(
@@ -209,6 +218,18 @@ describe("the board page", () => {
       expect(face.heading, "a heading repeats the name the column's header already gives").toBe(
         false,
       );
+      expect(
+        face.centreX,
+        "the sentence sits in the middle of the column's width",
+      ).toBeLessThanOrEqual(2);
+      expect(
+        face.room,
+        "the sentence sits at the top of the column instead of in its space",
+      ).toBeGreaterThan(24);
+      expect(
+        face.centreY,
+        "the sentence is not in the middle of the room it was given",
+      ).toBeLessThanOrEqual(2);
       expect(face.shadow, "the empty state lifts itself off the column").toBe("none");
       // The column keeps its own fill, which is what the sentence rests on.
       const lane = await column("In review").evaluate((el) => getComputedStyle(el).backgroundColor);

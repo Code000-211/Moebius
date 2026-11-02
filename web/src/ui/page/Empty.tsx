@@ -13,6 +13,7 @@ export function Empty({
   icon,
   action,
   plain = false,
+  centered = false,
   className,
 }: {
   /**
@@ -31,13 +32,19 @@ export function Empty({
   action?: ReactNode;
   /** Flat, for the empty state that sits inside a card: the card is already the surface under it. */
   plain?: boolean;
+  /**
+   * The words in the middle of the place, which the state takes the whole of. For a place whose emptiness is all there
+   * is to read — a column with no cards in it — where words left at the top would sit in the corner of the space.
+   */
+  centered?: boolean;
   /** For a card that sits inside another card, where the padding of a full one is too much. */
   className?: string;
 }) {
   return (
     <section
       className={cn(
-        "flex flex-col items-start gap-3",
+        "flex flex-col gap-3",
+        centered ? "flex-1 items-center justify-center text-center" : "items-start",
         !plain && "rounded-card bg-surface p-6 shadow-card",
         className,
       )}
