@@ -15,8 +15,11 @@ export function Empty({
   plain = false,
   className,
 }: {
-  /** What belongs here, said plainly: "No agent yet". */
-  title: string;
+  /**
+   * What belongs here, said plainly: "No agent yet". Only where the place has no name on the screen already — a column
+   * whose header says what it is needs the sentence alone.
+   */
+  title?: string;
   /** How to begin, or what the absence means. */
   body?: ReactNode;
   /**
@@ -39,14 +42,16 @@ export function Empty({
         className,
       )}
     >
-      <div className="flex items-center gap-3">
-        {icon && (
-          <span aria-hidden="true" className="flex shrink-0">
-            {icon}
-          </span>
-        )}
-        <h2 className="m-0 text-lg font-semibold tracking-tight text-text">{title}</h2>
-      </div>
+      {(title || icon) && (
+        <div className="flex items-center gap-3">
+          {icon && (
+            <span aria-hidden="true" className="flex shrink-0">
+              {icon}
+            </span>
+          )}
+          {title && <h2 className="m-0 text-lg font-semibold tracking-tight text-text">{title}</h2>}
+        </div>
+      )}
       {body && <p className="m-0 max-w-prose text-base text-secondary">{body}</p>}
       {action}
     </section>

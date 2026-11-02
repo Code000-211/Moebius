@@ -186,18 +186,28 @@ describe("the board page", () => {
     async () => {
       await fresh();
       await openBoard();
-      const title = column("In review").getByText("Nothing to review", { exact: true });
-      await title.waitFor();
+      const words = column("In review").getByText(
+        "A card arrives here when an agent has a change to review.",
+        { exact: true },
+      );
+      await words.waitFor();
       // The column is the surface these words sit on. A card of its own inside a column is a second surface under the
       // same sentence, and one that reads as a card which has lost its words.
-      const face = await title.evaluate((el) => {
+      const face = await words.evaluate((el) => {
         const box = el.closest("section");
         if (!box) throw new Error("the empty state is not drawn in a box");
         const style = getComputedStyle(box);
-        return { background: style.backgroundColor, shadow: style.boxShadow };
+        return {
+          background: style.backgroundColor,
+          shadow: style.boxShadow,
+          heading: box.querySelector("h2") !== null,
+        };
       });
       expect(face.background, "the empty state draws a surface of its own").toBe(
         "rgba(0, 0, 0, 0)",
+      );
+      expect(face.heading, "a heading repeats the name the column's header already gives").toBe(
+        false,
       );
       expect(face.shadow, "the empty state lifts itself off the column").toBe("none");
       // The column keeps its own fill, which is what the sentence rests on.

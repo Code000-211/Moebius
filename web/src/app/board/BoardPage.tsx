@@ -56,38 +56,20 @@ import {
 import { NewIssueDialog } from "./NewIssueDialog";
 import { RepositoryTerminal } from "./RepositoryTerminal";
 
-/** What a column holds when it is empty: the word for what is not there, and how a card comes to it. */
-const COLUMN_EMPTY: Record<string, { title: string; body: string }> = {
-  Backlog: {
-    title: "Nothing waiting",
-    body: "Issues you create wait here until they are approved.",
-  },
-  "Not started": {
-    title: "Nothing approved yet",
-    body: "Approved issues wait here until an agent takes one.",
-  },
-  "In progress": {
-    title: "Nothing is being written",
-    body: "A card arrives here when an agent starts a run on it.",
-  },
-  "In review": {
-    title: "Nothing to review",
-    body: "A card arrives here when an agent has a change to review.",
-  },
-  "Ready to merge": {
-    title: "Nothing ready to merge",
-    body: "A card arrives here when its change passes its checks.",
-  },
-  Done: {
-    title: "Nothing merged yet",
-    body: "A card arrives here once its change is merged.",
-  },
+/**
+ * What a column holds when it is empty: one sentence for how a card comes to it. There is no title, because the
+ * column's header is already the name of the place, and a heading repeating it is a second label on the same thing.
+ */
+const COLUMN_EMPTY: Record<string, string> = {
+  Backlog: "Issues you create wait here until they are approved.",
+  "Not started": "Approved issues wait here until an agent takes one.",
+  "In progress": "A card arrives here when an agent starts a run on it.",
+  "In review": "A card arrives here when an agent has a change to review.",
+  "Ready to merge": "A card arrives here when its change passes its checks.",
+  Done: "A card arrives here once its change is merged.",
 };
 
-const ANY_COLUMN = {
-  title: "Nothing here",
-  body: "A card arrives when the column's script moves one in.",
-};
+const ANY_COLUMN = "A card arrives when the column's script moves one in.";
 
 export function BoardPage() {
   const { id } = useParams();
@@ -359,7 +341,7 @@ function BoardColumn({
         })}
         {/* The column is already the surface under these words; a card of its own inside it is a second one, and one
             that reads as a card which has lost its words. */}
-        {cards.length === 0 && <Empty plain {...(COLUMN_EMPTY[name] ?? ANY_COLUMN)} />}
+        {cards.length === 0 && <Empty plain body={COLUMN_EMPTY[name] ?? ANY_COLUMN} />}
       </KanbanCards>
     </KanbanBoard>
   );
