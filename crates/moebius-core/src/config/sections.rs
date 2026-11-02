@@ -182,6 +182,21 @@ impl Default for LocalizeConfig {
     }
 }
 
+/// Where Pi packages are found and fetched from (see `harness::packages`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackagesConfig {
+    /// The npm registry that `moebius ext` searches and installs npm packages from, without a trailing `/`.
+    pub npm_registry: String,
+}
+
+impl Default for PackagesConfig {
+    fn default() -> Self {
+        Self {
+            npm_registry: "https://registry.npmjs.org".into(),
+        }
+    }
+}
+
 /// The teacher model, which judges the rules written in prose.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TeacherConfig {

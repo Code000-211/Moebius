@@ -151,10 +151,21 @@ impl Api {
         path: &str,
         body: Option<Value>,
     ) -> (u16, String) {
+        self.call_with(&self.token, method, path, body).await
+    }
+
+    /// Sends a request with the bearer token `token`, such as a run's.
+    pub async fn call_with(
+        &self,
+        token: &str,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<Value>,
+    ) -> (u16, String) {
         let mut request = self
             .client
             .request(method, format!("{}{path}", self.base))
-            .bearer_auth(&self.token);
+            .bearer_auth(token);
         if let Some(body) = body {
             request = request.json(&body);
         }

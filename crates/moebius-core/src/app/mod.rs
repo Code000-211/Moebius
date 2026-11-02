@@ -5,7 +5,7 @@
 //! what they act on: `repositories` adds and edits repositories, `cards` keeps cards in line with their issues and
 //! moves them, `runs` is a person's hand in a running run (steering, stopping, shells), `chats` starts and carries on
 //! chats, `changes` publishes, offers and merges changes, `checks` runs a repository's own checks on them,
-//! `localize` gives a code run the files its issue is likely to touch and records what came of it, `reproduce` runs a change's reproduction test for a repository that works test first, `whereabouts` knows where the server and the app run, and `automations` keeps
+//! `packages` proposes installing, updating and removing Pi packages as changes of the harness configuration repository, `localize` gives a code run the files its issue is likely to touch and records what came of it, `reproduce` runs a change's reproduction test for a repository that works test first, `whereabouts` knows where the server and the app run, and `automations` keeps
 //! the automations and starts their chats when their schedules come due.
 
 mod attempts;
@@ -17,10 +17,15 @@ mod chats;
 mod checks;
 mod diffs;
 mod localize;
+mod packages;
 mod repositories;
 mod reproduce;
 mod runs;
 mod whereabouts;
+
+pub use packages::{
+    Available, Offered, PackageInfo, PackageView, UPDATE_ITEM, UpdateFailure, Updates,
+};
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -31,7 +36,7 @@ use std::time::Duration;
 use moebius_plugin_api::Host;
 
 use crate::bus::{Bus, Event};
-use crate::config::LocalizeConfig;
+use crate::config::{LocalizeConfig, PackagesConfig};
 use crate::decide::{Actor, Decisions, Question};
 use crate::harness::repo::HarnessRepo;
 use crate::harness::terminal::Slots;
@@ -89,6 +94,8 @@ pub enum AppError {
     Exists(String),
     #[error("{0}")]
     Conflict(String),
+    #[error("{0}")]
+    Forbidden(String),
 }
 
 pub type Result<T> = std::result::Result<T, AppError>;
@@ -103,6 +110,8 @@ pub struct App {
     pub checks_timeout: Duration,
     /// Whether code runs are given a hint of the files that are likely relevant, and how many (see `localize`).
     pub localize: LocalizeConfig,
+    /// Where Pi packages are found and fetched from (see `packages`).
+    pub packages: PackagesConfig,
     /// The checks going now, as change and commit.
     checking: Mutex<BTreeSet<(i64, String)>>,
     /// The attempts being judged now (see `attempts`).
@@ -143,6 +152,7 @@ impl App {
             data_dir: data_dir.to_path_buf(),
             checks_timeout: Duration::from_secs(1800),
             localize: LocalizeConfig::default(),
+            packages: PackagesConfig::default(),
             checking: Mutex::default(),
             judging: Mutex::default(),
             tests: Mutex::default(),

@@ -225,6 +225,7 @@ async fn merge_proposal(
     UrlPath(id): UrlPath<i64>,
     axum::Json(decision): axum::Json<Reason>,
 ) -> Result<axum::Json<Proposal>, ApiError> {
+    super::extensions::refuse_agent_proposal(&state, &by, id).await?;
     let (repo, live, reason) = (
         state.harness_repo.clone(),
         state.config.clone(),

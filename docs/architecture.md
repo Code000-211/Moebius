@@ -376,6 +376,7 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | `cli/agents.rs` | `agents` and `agent` (show, save, delete). |
 | `cli/rules.rs` | `rules` and `rules save`. |
 | `cli/packages.rs` | `pkg search`, `info`, `install`, `update`, `remove` and `list`, and how their answers are written. |
+| `cli/ext.rs` | `ext search`, `info`, `add`, `update`, `remove` and `list`: Pi packages, and how a proposed change is written. |
 | `cli/repos.rs` | `repos` and `repo add`. |
 | `cli/setup.rs` | `doctor`, `settings`, `secrets set`, `usage` and `server restart`. |
 | `cli/improve.rs` | `retro`, `proposals` and `proposal`, `research`, `decision-model`, `takeovers` and `takeover`. |
@@ -418,6 +419,8 @@ At the top:
 | `app/board.rs` | What a board shows of a card, worked out once for the snapshot and the scripts: rounds, latest run, and the batched reads of a whole board. |
 | `app/attempts.rs` | Attempts: judging each attempt of a hard card by the repository's checks and its reproduction test on a thread of its own, settling a round (one picked, or none passed), and reading a selection run's pick. |
 | `app/localize.rs` | The hint of files a code run is given, whether a repository wants it, and the outcome recorded from the files the card's change touched at the end of a code run and on merge. |
+| `app/packages/mod.rs` | Pi packages as the API offers them: the catalog search, a package's info, the installed packages, and the branches that install, update and remove one offered as changes. |
+| `app/packages/updates.rs` | The nightly check of the installed packages for newer versions, and the `extension_update` inbox items. |
 | `app/whereabouts.rs` | Where Moebius runs: what the server found about itself at start, what the desktop app reported about itself, and the "Where Moebius runs" section of the Moebius agent's instructions built from both (with the official repository). In memory only. |
 | `app/reproduce.rs` | Test first: a repository's opt-in (`.moebius/test-first`), what a change names in `.moebius/reproduce`, and the runs of that reproduction test on the change and on the commit it starts from with the test's files added. |
 
@@ -509,6 +512,7 @@ At the top:
 | `server/api/rules.rs` | The rules page and the rules in prose. |
 | `server/api/settings.rs` | `moebius.toml`, the API keys and the restart, and what the Models, Plugins and Get started pages show. |
 | `server/api/lessons.rs` | The lessons: list, read, edit and delete. |
+| `server/api/extensions.rs` | `/v1/extensions/...`: search, info, the installed packages, and proposals to install, update and remove; and the refusal of an agent's merge of a change that touches a package. |
 | `server/api/improve.rs` | Usage, judgements and replays, the Retro and its proposals, the decision model and its takeovers, research and exports. |
 | `server/api/whereabouts.rs` | `GET /v1/server`, and `GET` and `PUT /v1/client`: where the server runs and what the app reports; a person's token only for the report. |
 | `server/api/uploads.rs` | `POST /v1/uploads`: zip files for the Moebius agent to import from. |
@@ -624,6 +628,15 @@ At the top:
 | `harness/repo/offer.rs` | Files written on a branch of the default branch and offered as a change in the inbox; the package manager proposes skills with it. |
 | `harness/repo/edits.rs` | A person's edits of agents, skills, MCP servers and rules, as commits pushed to its origin. |
 | `harness/repo/skill_files.rs` | A skill's other files, beside its `SKILL.md`: read, and written or deleted as commits like any edit. |
+| `harness/repo/packages.rs` | The Pi packages in the clone: the lock of the default branch, the agents that name a package, the branch that installs, updates or removes one (made in a throwaway worktree), and its file diff. |
+| `harness/packages/mod.rs` | Pi packages vendored into the harness configuration repository (`packages/<name>/`, `packages.lock`): the folder's parts and `PackagesError`. |
+| `harness/packages/source.rs` | The `npm:` and `git:` sources as `pi install` takes them, and the versions an npm source may ask for. |
+| `harness/packages/lock.rs` | `packages.lock`: read, written by name. |
+| `harness/packages/manifest.rs` | A package's resources, from its `pi` manifest or the convention directories, with the glob patterns and exclusions of the manifest. |
+| `harness/packages/registry.rs` | The npm registry (`[packages] npm_registry`): the catalog search, a version's metadata and the tarball. |
+| `harness/packages/fetch.rs` | A package's files from a source into a directory, the integrity check, `npm install --ignore-scripts` for the dependencies, and whether a newer version exists. |
+| `harness/packages/changelog.rs` | The sections of a package's changelog between two versions. |
+| `harness/packages/resolve.rs` | The `pkg:` names of an agent's `extensions` and `skills`, resolved from `packages.lock` to files. |
 | `harness/repo/branches.rs` | Its branches: the Retro's proposals and chats' branches checked, pushed, merged or dismissed, the Retro's branches for Moebius's own configuration read and deleted, and a trial's worktree of a branch. |
 | `harness/repo/create.rs` | `create`: a new repository from the agents and rules of `moebius.toml` (`POST /v1/harness/setup`, `moebius init`). |
 | `harness/output/mod.rs` | Keeping a tool's output small where it is made: compressed, cut to the agent's budget (head and tail), and the whole saved to `.moebius/out/<n>.txt` of the worktree, which git ignores. |

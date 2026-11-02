@@ -9,7 +9,7 @@
 //! This module holds the commands as clap sees them, the dispatch to the command groups and the helpers they share
 //! for reading input and writing answers. `client` finds the server and sends the requests; each other module is one
 //! group of commands, with its requests and how its answers are written: `api` (any route), `board` (the board,
-//! cards, the inbox and issues), `chats` (chats and grillings), `automations`, `agents`, `rules`, `packages`, `repos`
+//! cards, the inbox and issues), `chats` (chats and grillings), `automations`, `agents`, `rules`, `packages`, `ext` (Pi packages), `repos`
 //! (repositories), `ssh` (a server reached through an SSH tunnel), `window` (the web app as a window of its own), `setup` (`doctor`, settings, API keys, usage and the server itself) and `improve` (Retros,
 //! proposals, research, the decision model and its takeovers).
 
@@ -19,6 +19,7 @@ mod automations;
 mod board;
 mod chats;
 mod client;
+mod ext;
 mod improve;
 mod packages;
 mod repos;
@@ -38,6 +39,7 @@ use board::{InboxCommand, IssueCommand};
 use chats::{ChatCommand, GrillingCommand};
 use client::Request;
 pub use client::{Client, Connection, connect, desktop_settings_path};
+use ext::ExtCommand;
 use improve::{ProposalCommand, ResearchCommand, RetroCommand, TakeoverCommand};
 use packages::PkgCommand;
 use repos::RepoCommand;
@@ -170,6 +172,11 @@ pub enum Operate {
     /// Check that the server is ready for a first card: one line for each step, and exit status 1 while a step is
     /// missing.
     Doctor,
+    /// Pi packages: find one in the catalog, and propose installing, updating and removing it.
+    Ext {
+        #[command(subcommand)]
+        command: ExtCommand,
+    },
     /// The takeovers the decision model earned.
     Takeovers,
     /// Merge, dismiss or release a takeover.
@@ -214,6 +221,7 @@ impl Operate {
             Agent { command } => agents::agent(command),
             Rules { command } => rules::rules(command.as_ref()),
             Pkg { command } => packages::pkg(command, get),
+            Ext { command } => ext::ext(command),
             Repos => repos::repos(),
             Repo { command } => repos::repo(command),
             Settings { command } => setup::settings(command.as_ref()),
@@ -250,6 +258,8 @@ pub enum Show {
     Rules,
     /// An answer of the package routes.
     Packages,
+    /// A change offered for a Pi package, or the changes of an update.
+    Offered,
     Settings,
     Retro,
     Usage,
@@ -302,6 +312,7 @@ pub fn render(show: &Show, text: &str) -> Result<String, String> {
         Show::Object => object(&value),
         Show::Rules => rules::show_rules(&value),
         Show::Packages => packages::show_packages(&value),
+        Show::Offered => ext::show_offered(&value),
         Show::Settings => setup::show_settings(&value),
         Show::Retro => improve::show_retro(&value),
         Show::Usage => setup::show_usage(&value),

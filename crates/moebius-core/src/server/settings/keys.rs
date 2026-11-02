@@ -41,6 +41,11 @@ const KEYS: &[Key] = &[
     key("regression.gate", "true", true),
     key("localize.enabled", "true", false),
     key("localize.files", "10", false),
+    key(
+        "packages.npm_registry",
+        "\"https://registry.npmjs.org\"",
+        false,
+    ),
     key("board.tick_ms", "2000", true),
     key("board.round_limit", "5", true),
     key("budgets.day_tokens", "", true),

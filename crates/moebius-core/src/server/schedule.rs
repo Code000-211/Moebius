@@ -1,5 +1,5 @@
 //! The schedule: once a minute, whether the Retro is due, a proposal of the Retro is to be tried, a research is to
-//! start, a replay is to run, a lesson is to be retired or an automation is to fire (see `app::automations`), the nightly look for newer versions of the installed packages (`packages::check_if_due`), and the pause of the Pi of each
+//! start, a replay is to run, a lesson is to be retired, the installed Pi packages are to be checked for updates or an automation is to fire (see `app::automations`), the nightly look for newer versions of the installed Moebius packages (`packages::check_if_due`), and the pause of the Pi of each
 //! chat that has waited long for its next message (`PiBolt::pause_idle_chats`). What fails is reported on the bus as
 //! `retro_error`.
 
@@ -63,6 +63,12 @@ impl Server {
             self.app.bus.publish(Event::PackageCheckError {
                 registry: String::new(),
                 message: e.to_string(),
+            });
+        }
+        if let Err(e) = self.app.on_package_schedule(config.retro_at) {
+            self.app.bus.publish(Event::HarnessError {
+                agent: None,
+                message: format!("cannot check the Pi packages for updates: {e}"),
             });
         }
         self.harness.pause_idle_chats(&self.app, Instant::now());

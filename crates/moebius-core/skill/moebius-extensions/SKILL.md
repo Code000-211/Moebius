@@ -8,6 +8,24 @@ description: Write a Pi extension (TypeScript that runs inside the Pi process of
 Goal: one small TypeScript file that does what was asked, loaded only by the agents that should have it, with the
 Moebius bridge still last.
 
+## Look for a package first
+
+More than 5,000 packages in the pi.dev catalog already give Pi extensions and skills. Before writing one, search it for
+the task and show the person what fits:
+
+- `"$MOEBIUS" ext search <words> --type extension` (or `skill`) lists the packages with their downloads;
+  `"$MOEBIUS" ext info npm:<name>` shows what one has, its dependencies and its install scripts, which Moebius never runs.
+- `"$MOEBIUS" ext add npm:<name> --agent <agent>` proposes installing it and giving the agent its extensions and skills
+  as `pkg:<name>`. The package is fetched and checked against the registry's integrity, vendored into `packages/<name>/`
+  of the harness configuration repository and offered as a change in the inbox with its source, version, integrity and
+  files. You can propose; you cannot merge it, because an extension is code that runs in every Pi process of the agents
+  that name it. Tell the person the change is waiting and what the package does.
+- `"$MOEBIUS" ext list` shows what is installed, `"$MOEBIUS" ext update` proposes newer versions with their changelog, and
+  `"$MOEBIUS" ext remove <name>` proposes removing one.
+
+Name a package's extensions in an agent as `pkg:<name>` or one of them as `pkg:<name>/<path>`; never copy a package's files
+into `extensions/` by hand, and never use `pi install`: a run starts with `--no-extensions` and fetches nothing.
+
 ## Where it goes
 
 - In a chat in the harness configuration repository (the usual way): write `extensions/<name>.ts` and add its path to

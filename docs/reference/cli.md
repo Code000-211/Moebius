@@ -164,6 +164,12 @@ takes a repository's name.
 | `decision-model` | `GET /v1/decision-model` | The model, its agreement per kind and its takeovers. |
 | `takeovers` | `GET /v1/takeovers` | Table `id kind status agreement count`. |
 | `takeover merge\|dismiss\|release <id> [--reason <text>]` | `POST /v1/takeovers/{id}/merge`, `/dismiss`, `/release` | The takeover. |
+| `ext search [<text>...] [--type <type>]` | `GET /v1/extensions/search?q=&type=` | Table `name version kinds weekly_downloads description`: the packages of the pi.dev catalog. `--type` is `extension`, `skill`, `theme` or `prompt`. |
+| `ext info <source>` | `GET /v1/extensions/info?source=` | The package a source names (`npm:<name>[@<version>]` or `git:<host>/<owner>/<repo>[@<ref>]`): its version, resources, dependencies, install scripts and whether it is installed. |
+| `ext add <source> [--agent <name>]` | `POST /v1/extensions/packages` | The change that installs the package, with its source, integrity and files. With `--agent` the agent names the package (`pkg:<name>`) in its extensions and skills in the same change. |
+| `ext update [<name>]` | `POST /v1/extensions/packages/{name}/update`, `POST /v1/extensions/update` | A change for each package with a newer version, with the version change, the changelog sections and the files; the packages that are current are named. |
+| `ext remove <name>` | `DELETE /v1/extensions/packages/{name}` | The change that removes the package and its names in the agents. |
+| `ext list` | `GET /v1/extensions/packages` | Table `name version source agents`. |
 | `server restart` | `POST /v1/server/restart` | `the server is restarting`. |
 
 `settings set` takes each value as JSON when it parses as JSON (`board.round_limit=7`, `board.tick_ms=500`,
@@ -185,6 +191,8 @@ a column script with `moebius.ask`) takes none (use `api`).
 | `takeover` | `merge`, `dismiss` | `POST /v1/takeovers/{data.takeover}/merge`, `/dismiss` |
 | `grilling_issues` | `confirm` (the proposed issues as they are), `dismiss` | `POST /v1/grillings/{data.grilling}/confirm`, `/dismiss` |
 | `grilling_report` | `dismiss` | `POST /v1/grillings/{data.grilling}/dismiss` |
+
+An item of the kind `extension_update` (`data.package`, `data.from`, `data.to`, `data.source`) takes no action: `ext update <data.package>` proposes the update, which resolves the item.
 
 `--reason` is sent with the decision where the route takes one.
 

@@ -130,7 +130,11 @@ proposal's and it has no card; a proposal for Moebius's own configuration has `d
 instead of `data.trials`), `grilling_issues` (`data.grilling`, `data.repository`, `data.issues`: an array of `{"title",
 "body", "blocked_by"}`; its `title` is "N issues from a grilling" and it has no card) and `grilling_report` (`data.grilling`,
 `data.repository`, `data.report`: the text; no card) and `takeover` (`data.takeover`, `data.kind`, `data.agreement`,
-`data.count`; its `title` is "The decision model can take over <kind>" and it has no card).
+`data.count`; its `title` is "The decision model can take over <kind>" and it has no card) and `extension_update`
+(`data.package`, `data.from`, `data.to`, `data.source`; its `title` is "<package> <from> -> <to>" and it has no card). The
+nightly schedule, from `retro_at` on, once a day, puts one `extension_update` item in the inbox for each installed package
+with a newer version, and no second one for a version it has told of; the item is resolved when the package is current or
+an update is proposed.
 A column script can add other kinds with `moebius.ask`.
 
 ## Endpoints
@@ -988,6 +992,75 @@ read, with the reason; `500` as for `PUT /v1/agents/{name}`.
 A person deletes a server from `mcp.toml`, committed and pushed the same way (`Delete the MCP server <name>`, kind
 `edit_mcp_server`). Response: `null`. Errors: `404` no such server; `409` no `[harness]`, or an agent names the server
 (the message names the agents); `500` as for `PUT`.
+
+### `GET /v1/extensions/search`
+
+The packages of the catalog of pi.dev: the npm registry's search (`[packages] npm_registry`) for the keyword `pi-package`
+and the words of `q`, at most 40. Query: `q` (words; none finds the most relevant packages) and `type` (`extension`,
+`skill`, `theme` or `prompt`; only packages whose keywords, with or without the prefix `pi-`, name it). Response: an
+array of `{"name", "version", "description", "kinds": [string], "weekly_downloads": number or null, "npm", "homepage",
+"repository", "date"}`; the links and date are null when the registry gives none. Allowed to a person and to the Moebius
+agent. Errors: `422` an unknown `type`; `422` the registry cannot be reached or answers something else.
+
+### `GET /v1/extensions/info`
+
+What the package of a source is, fetched without its dependencies into a throwaway directory. Query: `source`, such as
+`npm:pi-web-access`, `npm:@scope/name@^1.2.0` or `git:github.com/owner/repo@v1`. Response: `{"name", "source", "version",
+"resolved", "integrity" (null for git), "description", "resources": {"extensions", "skills", "prompts", "themes"}
+(paths in the package), "dependencies": [string], "install_scripts": [string] (scripts npm would run and Moebius does
+not), "files": number, "installed": the installed version or null}`. Errors: `404` no such package, version or ref;
+`422` the source is not one, or the download does not match its integrity.
+
+### `GET /v1/extensions/packages`
+
+The packages the harness configuration repository vendors (`packages.lock`), by name: an array of `{"name", "source",
+"version", "resolved", "integrity", "sha256", "resources", "install_scripts", "agents": [string] (the agents that name a
+resource of it), "error": string or null}`. `error` says why the files cannot be read. Errors: `409` no `[harness]`.
+
+### `POST /v1/extensions/packages`
+
+Proposes installing a package. Request: `{"source": string, "agent": string}`; `agent` is optional and names an agent
+that is given the package's extensions and skills as `pkg:<name>` in the same change. The package is fetched (an npm
+download whose SHA-512 is not the registry's `dist.integrity` is refused; no install script runs), put on a branch
+`moebius/ext-add-<name>-<n>` of the harness configuration clone, checked as a chat's branch is, pushed and offered as a
+change of the harness configuration repository with a `ready_to_merge` inbox item (see [Packages](harness-configuration.md#packages)).
+Nothing is installed until a person merges the change (`POST /v1/changes/{id}/merge`). Allowed to a person and to the
+Moebius agent; the agent's token cannot merge it. Response: `{"change": Change, "package", "action": "add", "source",
+"from": null, "to": version, "resolved", "integrity", "resources", "agents", "changelog": "", "files": ["A packages/..."],
+"dependency_files": number, "diff": string}`. `files` are the files of the package, without what npm installed below
+`node_modules`, which `dependency_files` counts. Errors: `404` no such package, version or ref; `409` the package is
+installed already, or no `[harness]`; `422` the source or version is not valid, the integrity does not match, npm or the
+registry failed, the agent does not exist or the package has nothing to give it, or the branch is not fit.
+
+### `POST /v1/extensions/packages/{name}/update`
+
+Proposes updating one package to the newest version its source allows: for npm the newest release within the range that
+was chosen when it was installed (the `latest` tag for none), for git the newest commit of the ref (a commit is pinned).
+`{name}` is the package's name, with a `/` written `%2F`. Request body: `{}`. Response: `{"offered": [Offered], "up_to_date":
+[name], "failed": [{"package", "error"}]}`, where `Offered` is the response of `POST /v1/extensions/packages` with
+`"action": "update"`, `from` and `to` the versions, `changelog` the sections of the package's changelog (`CHANGELOG.md`,
+or `pi.changelogPath`) after `from` up to `to` (headings `## [x.y.z]` or `## x.y.z - date`), `files` the changed files
+as `A`, `M` or `D` and a path, and `diff` the diff of them (cut off at 100,000 characters). The open `extension_update`
+inbox item of the package is resolved. Errors: `404` no such package; for one package asked alone, the other errors of
+`POST /v1/extensions/packages` instead of `failed`.
+
+### `POST /v1/extensions/update`
+
+Proposes updating every installed package, as the route above does for one: the response has an `offered` entry for each
+package with a newer version, `up_to_date` for the others, and `failed` for those whose newer version could not be fetched.
+
+### `DELETE /v1/extensions/packages/{name}`
+
+Proposes removing a package: its directory, its entry in `packages.lock` and its names out of the agents that have them,
+on a branch `moebius/ext-remove-<name>-<n>` offered as a change. Response: `Offered` with `"action": "remove"`, `from`
+the version and `agents` the agents that lose a name. Errors: `404` no such package; `409` no `[harness]`.
+
+A change that adds, updates or removes a package is merged by a person only: `POST /v1/changes/{id}/merge` (and `POST
+/v1/proposals/{id}/merge` for a proposal of the Retro) answers `403` with `only a person can merge a change that
+installs, updates or removes a package` to a run token when the change touches `packages/` or `packages.lock`. An
+extension is code that runs in every Pi process of the agents that name it. The check is made again, on the commit that
+is merged, when the branch is merged, so a commit added to the branch in between does not get past it. The `agent` of
+`POST /v1/extensions/packages` must be an agent name (`422` otherwise).
 
 ### `POST /v1/uploads`
 

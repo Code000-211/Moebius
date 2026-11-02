@@ -63,6 +63,8 @@ skills/<name>/SKILL.md a skill (a directory with this file)
 rules.md               the server's rules
 mcp.toml               the MCP servers
 extensions/...         any files an agent's extensions name
+packages/<name>/       a vendored Pi package with its production dependencies (see Packages)
+packages.lock          what each vendored package was fetched as
 ```
 
 Nothing else is read. The Moebius agent stays built in: `agents/Moebius.toml` configures it as `[agents.Moebius]` does, and
@@ -81,8 +83,8 @@ Nothing else is read. The Moebius agent stays built in: `agents/Moebius.toml` co
 | `harness` | string | `pi-bolt` | `pi-bolt`, or `claude-code` to run the agent on Claude Code (see [configuration](configuration.md#claude-code)), which needs `protocol = "anthropic"` and no `extensions`, else the agent is an error. Written only when it is not `pi-bolt`. |
 | `thinking` | string | none | Given to Pi-Bolt as `--thinking`. Pi-Bolt checks the value. |
 | `token_budget` | integer | none | The most tokens a card may use with this agent, as `agents.<name>.token_budget` in [configuration](configuration.md). At least 1. |
-| `skills` | array of strings | `[]` | Names of directories under `skills/` that hold a `SKILL.md`. Each is given to Pi-Bolt as `--skill`. A name that is not there is an error. |
-| `extensions` | array of strings | `[]` | Paths of files in the repository, relative to its root and without `..`. Each is given to Pi-Bolt as `--extension`, before the bridge. A path that is not a file is an error. |
+| `skills` | array of strings | `[]` | Names of directories under `skills/` that hold a `SKILL.md`, or `pkg:<package>[/<path>]` for the skills of a vendored package (see [Packages](#packages)). Each is given to Pi-Bolt as `--skill`. A name that is not there is an error. |
+| `extensions` | array of strings | `[]` | Paths of files in the repository, relative to its root and without `..`, or `pkg:<package>[/<path>]` for the extensions of a vendored package (see [Packages](#packages)). Each is given to Pi-Bolt as `--extension`, before the lens and the bridge. A path that is not a file, and a `pkg:` name that does not resolve, is an error. |
 | `tool_output` | table | the defaults | `hide_after_turns`, `max_lines`, `max_bytes` and `compress`, as `agents.<name>.tool_output` in [configuration](configuration.md); a key left out has its default. Pi-Bolt runs only. |
 | `engineering_skills` | boolean | `true` | Whether the agent is given the engineering skills Moebius brings for it (see [Engineering skills](#engineering-skills)); written only when it is `false`. Only the `Coder`, the `Reviewer` and the `Grilling-partner` have any. |
 | `mcp` | array of strings | `[]` | Names of servers in `mcp.toml`. A run of the agent is given exactly these servers. A name that is not there, a server that cannot be used (see [`mcp.toml`](#mcptoml)), or any name while `mcp.toml` cannot be read, is an error. |
@@ -140,6 +142,72 @@ its instructions where its `SKILL.md` is.
   copies that ship with Moebius move only with a new release.
 
 `GET /v1/skills` and `GET /v1/skills/{name}` give these skills `"source": {"url", "commit"}`.
+
+## Packages
+
+A Pi package is one unit of extensions, skills, prompt templates and themes, in Pi's own format. The catalog of pi.dev is
+the npm packages with the keyword `pi-package`. Moebius vendors a package into the repository, so that a run fetches
+nothing when it starts and every change is reviewed like any other configuration change. Pi's own `pi install` and
+`-e npm:` are never used for runs: Pi-Bolt is started with `--no-extensions`, and an agent gets only the files it names.
+
+```
+packages/<name>/       the package at its version, with its production dependencies in node_modules/
+packages.lock          one [[package]] table for each, sorted by name
+```
+
+`<name>` is the package's name; a scoped name `@scope/name` is the directory `packages/@scope/name/`. Only lowercase
+letters, digits, `.`, `-` and `_` are allowed, and a part does not start with `.` or `_`. `packages.lock` is TOML,
+written by Moebius:
+
+| Key | Meaning |
+|---|---|
+| `name` | The directory below `packages/`. For a git source, the `name` of its `package.json` (the repository's name without one). |
+| `source` | As `pi install` takes it, with the version or ref that was asked for: `npm:<name>[@<version>]` or `git:<host>/<owner>/<repo>[@<ref>]`. A git source may also be a full URL (`git:https://...`, `git:file:///path`, `git:git@host:owner/repo`). |
+| `version` | What was fetched: the npm version; for git, the `version` of `package.json`, else the short commit. |
+| `resolved` | The tarball URL of an npm package, the full commit of a git one. |
+| `integrity` | npm only: the registry's `dist.integrity` (`sha512-...`), which the download was checked against. A version whose packument has no sha512 integrity is refused. |
+| `sha256` | npm only: the SHA-256 of the tarball in hex. |
+
+An npm version is nothing (the `latest` tag), a tag, an exact version, or a range written `^1.2.3` or `~1.2.3`
+(releases only, not prereleases); anything else is refused. A git ref is a branch, a tag or a commit; a commit is
+pinned, a branch or tag is followed by an update to its newest commit.
+
+**What is fetched.** An npm package is its tarball, with a download whose SHA-512 is not the registry's `dist.integrity`
+refused. A git package is the files of the commit (`git archive`, no `.git`). The dependencies are then installed with
+`npm install --ignore-scripts --omit=dev --legacy-peer-deps --no-package-lock --no-bin-links`, so no install script of
+the package or of a dependency runs on the server, and the packages Pi supplies itself are not installed. A package
+whose `dependencies` or `optionalDependencies` are not registry versions, ranges or tags (a git repository, a path, a
+link, a tarball URL, an alias) is refused with `422`, since npm builds those and runs their `prepare` script despite
+`--ignore-scripts`; a git dependency further down fails, and the `.npmrc` and `.yarnrc` of the package are deleted
+before the install. The scripts a
+package would have run (`preinstall`, `install`, `postinstall`, `prepare`) are listed in its commit message and in
+`install_scripts` of `GET /v1/extensions/packages`.
+
+**Which resources load.** A package's resources are read from the `pi` field of its `package.json`: `pi.extensions`,
+`pi.skills`, `pi.prompts` and `pi.themes` are arrays of paths relative to the package, which may use `*`, `**` and `?` and
+`!pattern` exclusions. A kind the manifest does not mention is read from the convention directory `extensions/`,
+`skills/`, `prompts/` or `themes/`; `[]` means none. An extension is a `.ts`, `.js` or `.mjs` file, or a folder with an
+`index` of those; a skill is a folder with a `SKILL.md`; a prompt template is a `.md` file and a theme a `.json` file.
+A path that leaves the package is an error. Moebius loads the extensions and skills. Prompt templates and themes do not
+apply to RPC runs: they are listed and not loaded.
+
+**Naming a package.** `pkg:<name>` in an agent's `extensions` is every extension of the package, in the order the
+package lists them, and `pkg:<name>/<path>` one of them (the path as the package lists it, such as
+`pkg:pi-web-access/extensions/search.ts`); in `skills` the names are the same for the skills, `<path>` being the skill's
+folder. They are resolved from `packages.lock` to the files in `packages/` and given to Pi-Bolt as `--extension` and
+`--skill` where the agent's other extensions and skills are, so before the lens and the bridge. A name whose package is
+not in `packages.lock`, a package without a directory, a path the package does not list, and a whole-package name for a
+package that has none of that kind, are errors of the agent, like a missing file.
+
+**Changes.** Installing, updating and removing a package are made by `moebius ext` (see [the command line](cli.md))
+and `POST /v1/extensions/packages` (see [the desktop API](desktop-api.md#get-v1extensionssearch)), each on a branch
+`moebius/ext-<action>-<name>-<n>` of the clone, in one commit whose message gives the source, version, download and
+integrity and what the package has. The branch passes the same check as a chat's (it changes only harness configuration
+files, and every agent can still be read) and is offered as a change of the harness configuration repository, with a
+`ready_to_merge` inbox item. A person merges it; the run token of the Moebius agent can propose a package and cannot
+merge a change, or a proposal of the Retro, that changes `packages/` or `packages.lock` (`403`). A removal also takes the
+package's names out of the agents that have them. The nightly check puts a `extension_update` item in the inbox for each
+package with a newer version (see [the desktop API](desktop-api.md#get-v1extensionspackages)).
 
 ## `rules.md`
 
@@ -319,7 +387,7 @@ without `[harness]`, and together with `repository`) starts the chat in a worktr
 When the chat ends or is stopped, what it left is committed on that branch like any chat's work. If the branch has commits
 beyond the default branch, it is checked the way a branch of a Retro proposal is (see [The Retro](#the-retro)):
 
-- it changes only harness configuration files: `agents/`, `skills/`, `extensions/`, `rules.md` and `mcp.toml`;
+- it changes only harness configuration files: `agents/`, `skills/`, `extensions/`, `packages/`, `packages.lock`, `rules.md` and `mcp.toml`;
 - every agent that can be read on the default branch can still be read with the branch's files (a skill an agent names
   must exist in `skills/`, an extension in `extensions/` or wherever its path points, an MCP server in `mcp.toml`).
 
@@ -362,7 +430,7 @@ configured, the built-in agent `Retro-analyst` turns the report into proposals. 
 - Each proposal is a branch `proposal/<date>-<short-name>` made from the default branch, with one commit whose message is
   the proposal: the subject is its title, the body says what changes and which errors it addresses, and the last line is
   `Cards: 48, 50`, the `card` of each error of the report that it addresses (numbers that are not ids are ignored). It
-  changes only harness configuration files (`agents/`, `skills/`, `extensions/`, `rules.md`, `mcp.toml`).
+  changes only harness configuration files (`agents/`, `skills/`, `extensions/`, `packages/`, `packages.lock`, `rules.md`, `mcp.toml`).
 - When the run has succeeded, Moebius lists the `proposal/<date>-*` branches of the clone. A branch that changes
   nothing, changes another file, or breaks an agent that could be used on the default branch is left out, with a warning
   in the Retro. The others are pushed to `origin` and stored as proposals (`GET /v1/proposals`), with the agents whose files

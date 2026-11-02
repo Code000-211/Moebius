@@ -219,6 +219,25 @@ impl App {
         Ok(change)
     }
 
+    /// Offers `branch` of the harness configuration repository, which holds work that is not a chat's (a package to
+    /// install, say), as a change without a card: it must pass the check of a proposal (`HarnessRepo::check_chat_branch`)
+    /// and is then pushed and put in the inbox, ready to merge by a person.
+    pub fn offer_harness_branch(&self, branch: &str, title: &str) -> Result<Change> {
+        let harness_repo = self.harness_repo()?;
+        match harness_repo.check_chat_branch(self, branch) {
+            Ok(Some(_)) => {}
+            Ok(None) => return Err(AppError::Invalid(format!("{branch} changes nothing"))),
+            Err(why) => {
+                return Err(AppError::Invalid(format!(
+                    "the change is not fit to be offered: {why}"
+                )));
+            }
+        }
+        let head = git(harness_repo.path(), &["rev-parse", branch])?;
+        let change = self.store.add_harness_change(branch, &head)?;
+        self.put_in_inbox(change, title, None)
+    }
+
     /// Offers the branch of the chat `run`, as `offer_chat_change` says. The inner error says why the branch of a chat
     /// in the harness configuration repository is not fit to offer.
     fn offer_chat_branch(&self, run: &Run) -> Result<std::result::Result<Option<Change>, String>> {
@@ -372,7 +391,7 @@ impl App {
                 .merge(repository, &change, &message)?,
             None => self
                 .harness_repo()?
-                .merge_branch(self, &change.branch, &message)?,
+                .merge_branch(self, by, &change.branch, &message)?,
         };
         self.change_merged(&change, Some(&commit))?;
         Ok(commit)

@@ -10,6 +10,36 @@ about an agent carries over; the extensions do not.
 Pi-Bolt documents extensions in `docs/extensions.md` in its distribution. This page covers the Moebius side: how an
 extension gets into a run, how it sits next to the bridge, and one that works.
 
+## Find a package first
+
+Many extensions exist already. The pi.dev catalog (https://pi.dev/packages) lists the npm packages with the keyword
+`pi-package`, and Moebius can search it, install a package into the harness configuration repository and give it to an
+agent by name, without copying TypeScript by hand:
+
+```sh
+moebius ext search web search --type extension     # find one
+moebius ext info npm:pi-web-access                  # what it has, its dependencies, its install scripts
+moebius ext add npm:pi-web-access --agent Coder     # propose installing it for the Coder
+```
+
+`ext add` fetches the package, checks the download against the integrity the registry gave, runs no install script,
+and offers the result as a change of the harness configuration repository: `packages/pi-web-access/` with its production
+dependencies, an entry in `packages.lock` (source, version, download, integrity) and the Coder's `extensions` (and
+`skills`, if the package has any) with `pkg:pi-web-access` added. The change waits in the inbox with the source and the
+files; read them, since an extension is code that runs in every Pi process of the agents that name it, and merge it.
+The Moebius agent can propose a package and cannot merge one. From the merge on, the Coder's runs load the package's
+extensions in the order the package lists them, before the lens and the bridge.
+
+Name a package yourself in `agents/<name>.toml` as `pkg:<package>` for all its extensions (or skills) or
+`pkg:<package>/<path>` for one, such as `extensions = ["pkg:pi-web-access/extensions/search.ts"]`. A package that is not
+in `packages.lock` is an error of the agent. `moebius ext update` proposes newer versions within the range you chose,
+with the version change, the changelog sections and the file diff, and the nightly check puts an item in the inbox for
+each package that has one; `moebius ext remove <name>` proposes removing a package and its names. Packages can come from
+git too (`moebius ext add git:github.com/owner/repo@v1`), and `[packages] npm_registry` points at a mirror or a private
+registry. The formats are in [harness configuration](../reference/harness-configuration.md#packages).
+
+You still write an extension yourself when nothing in the catalog does what you need. The rest of this page covers that.
+
 ## The bridge comes last
 
 Moebius loads one extension into every run after all of yours, the bridge

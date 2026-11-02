@@ -9,13 +9,15 @@
 //!
 //! This module holds the clone itself: opening and refreshing it. `read` reads the agents, skills, MCP servers and
 //! rules from it, `edits` makes a person's edits commits pushed to `origin`, `branches` checks, proposes and merges
-//! the branches of the Retro, chats and trials, `create` makes a new repository, and `skill_files` reads and edits a
-//! skill's files beside its `SKILL.md`, and `offer` offers files written on a branch as a change.
+//! the branches of the Retro, chats and trials, `create` makes a new repository, `skill_files` reads and edits a
+//! skill's files beside its `SKILL.md`, `offer` offers files written on a branch as a change, and `packages` makes the
+//! branches that install, update and remove Pi packages.
 
 mod branches;
 mod create;
 mod edits;
 mod offer;
+mod packages;
 mod read;
 mod skill_files;
 
@@ -28,6 +30,7 @@ use crate::repos::{Repos, git};
 
 pub use branches::{OwnBranch, Proposed};
 pub use create::{SET_UP_MESSAGE, create};
+pub use packages::{PERSON_ONLY, PackageDiff, add_to_agent, remove_from_agents};
 use read::Layout;
 pub use read::{
     AgentDefinition, AgentSettings, AgentView, McpServerInfo, McpServerView, SkillInfo,

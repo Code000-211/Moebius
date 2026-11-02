@@ -46,6 +46,11 @@ gate = true
 enabled = true
 files = 10
 
+# `moebius ext` searches the npm registry for Pi packages and installs them from it. `npm_registry` names a mirror or a
+# private registry; credentials may be part of the URL.
+# [packages]
+# npm_registry = "https://registry.npmjs.org"
+
 # How often the board engine runs the column scripts, and how many coding rounds a card gets.
 [board]
 tick_ms = 2000

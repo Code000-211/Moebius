@@ -14,6 +14,7 @@ use crate::config::{
     valid_agent_name,
 };
 use crate::harness::mcp::{McpServer, parse_file};
+use crate::harness::packages;
 use crate::harness::skill;
 use crate::router::Protocol;
 
@@ -28,10 +29,10 @@ pub struct AgentSettings {
     pub thinking: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token_budget: Option<i64>,
-    /// Names of directories under `skills/`.
+    /// Names of directories under `skills/`, or `pkg:<package>[/<path>]` for the skills of a vendored package.
     #[serde(default)]
     pub skills: Vec<String>,
-    /// Paths of files in the repository.
+    /// Paths of files in the repository, or `pkg:<package>[/<path>]` for the extensions of a vendored package.
     #[serde(default)]
     pub extensions: Vec<String>,
     /// Names of servers in `mcp.toml`.
@@ -195,11 +196,19 @@ impl Layout {
             return Err(why.into());
         }
         for skill in &settings.skills {
+            if skill.starts_with(packages::PREFIX) {
+                packages::resolve(root, skill, packages::Kind::Skill)?;
+                continue;
+            }
             if !self.skills.contains(skill) {
                 return Err(format!("the skill {skill:?} is not in skills/"));
             }
         }
         for extension in &settings.extensions {
+            if extension.starts_with(packages::PREFIX) {
+                packages::resolve(root, extension, packages::Kind::Extension)?;
+                continue;
+            }
             let inside = Path::new(extension)
                 .components()
                 .all(|part| matches!(part, Component::Normal(_)));
@@ -238,15 +247,24 @@ pub(super) fn agent_config(
         thinking: settings.thinking.clone(),
         instructions: Some(definition.instructions.trim().to_string())
             .filter(|text| !text.is_empty()),
+        // A name that was checked when the agent was read resolves again; one that cannot is left out.
         skills: settings
             .skills
             .iter()
-            .map(|skill| root.join("skills").join(skill))
+            .flat_map(|skill| match skill.starts_with(packages::PREFIX) {
+                true => packages::resolve(root, skill, packages::Kind::Skill).unwrap_or_default(),
+                false => vec![root.join("skills").join(skill)],
+            })
             .collect(),
         extensions: settings
             .extensions
             .iter()
-            .map(|path| root.join(path))
+            .flat_map(|path| match path.starts_with(packages::PREFIX) {
+                true => {
+                    packages::resolve(root, path, packages::Kind::Extension).unwrap_or_default()
+                }
+                false => vec![root.join(path)],
+            })
             .collect(),
         mcp,
         token_budget: settings.token_budget,

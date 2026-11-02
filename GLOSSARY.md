@@ -44,6 +44,12 @@ Everything that shapes how a harness works apart from its own code (the agents, 
 and settings they draw on), kept in a git repository of its own.
 _Avoid_: harness config, setup, profile
 
+**Pi package**:
+A Pi package: one unit of extensions, skills, prompt templates and themes in Pi's own format, found in the pi.dev catalog (the npm
+packages with the keyword `pi-package`). Moebius vendors it into the harness configuration (`packages/<name>/`, pinned in
+`packages.lock`) through a change that a person merges, and an agent names it as `pkg:<name>`.
+_Avoid_: plugin (that is a decider of Moebius), add-on
+
 **Bridge**:
 The part of Moebius that lives inside a harness, as an extension of that harness, and through which Moebius checks every tool
 call before it runs.

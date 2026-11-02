@@ -269,6 +269,7 @@ async fn merge_change(
     UrlPath(id): UrlPath<i64>,
     axum::Json(merge): axum::Json<Reason>,
 ) -> Result<axum::Json<Merged>, ApiError> {
+    super::extensions::refuse_agent_merge(&state, &by, id).await?;
     blocking(&state.app, move |app| {
         app.merge_change(&by, id, &merge.reason)
             .map(|commit| Merged { commit })

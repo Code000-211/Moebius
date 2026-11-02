@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use super::HarnessRepo;
+use super::packages::PERSON_ONLY;
 use super::read::{Layout, agent_config, broken_agents, read_agent_at};
 use crate::app::{App, AppError, Result};
 use crate::config::AgentConfig;
@@ -218,7 +219,7 @@ impl HarnessRepo {
         reason: &str,
     ) -> Result<String> {
         let message = format!("Merge the proposal: {title}");
-        let head = self.merge_branch(app, branch, &message)?;
+        let head = self.merge_branch(app, by, branch, &message)?;
         self.record_proposal(app, by, branch, title, "merge_proposal", reason)?;
         Ok(git(&self.path, &["rev-parse", "--short", &head])?)
     }
@@ -226,11 +227,27 @@ impl HarnessRepo {
     /// Merges `branch` into the default branch with a merge commit and pushes it to `origin`; a merge that conflicts,
     /// and a push that fails, leave the clone as it was. On success the agents are read again and the merge commit is
     /// given.
-    pub fn merge_branch(&self, app: &App, branch: &str, message: &str) -> Result<String> {
+    ///
+    /// The branch is read once, under the lock: what is checked and what is merged is the same commit. Anyone but a
+    /// person is refused a branch that changes a package or the lock, since an extension is code.
+    pub fn merge_branch(
+        &self,
+        app: &App,
+        by: &Actor,
+        branch: &str,
+        message: &str,
+    ) -> Result<String> {
         let mut read_at = self.lock();
         let before = git(&self.path, &["rev-parse", "HEAD"])?;
         let default = self.repos.default_branch(&self.path)?;
-        self.repos.merge(&self.path, branch, message)?;
+        let tip = git(
+            &self.path,
+            &["rev-parse", "--verify", &format!("{branch}^{{commit}}")],
+        )?;
+        if !matches!(by, Actor::Person) && self.changes_packages_at(&default, &tip)? {
+            return Err(AppError::Forbidden(PERSON_ONLY.into()));
+        }
+        self.repos.merge(&self.path, &tip, message)?;
         let pushed = app
             .git_auth(&self.url)
             .and_then(|header| Ok(self.repos.push(&self.path, &default, header.as_deref())?));
@@ -328,10 +345,10 @@ fn split_cards(message: &str) -> (String, Vec<i64>) {
 
 /// Whether `file` is one of the files the harness configuration consists of.
 fn is_configuration(file: &str) -> bool {
-    ["agents/", "skills/", "extensions/"]
+    ["agents/", "skills/", "extensions/", "packages/"]
         .iter()
         .any(|dir| file.starts_with(dir))
-        || matches!(file, "rules.md" | "mcp.toml")
+        || matches!(file, "rules.md" | "mcp.toml" | "packages.lock")
 }
 
 #[cfg(test)]

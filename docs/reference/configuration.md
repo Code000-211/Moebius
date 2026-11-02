@@ -125,6 +125,15 @@ first on), over these keys: lines that are empty or start with `#` are skipped, 
 and `files <n>` (1 to 10) says how many files it names. A line that says anything else is ignored. The default branch is
 the repository's workflow: a repository that wants no hint for its coding writes `off` there.
 
+## `[packages]`
+
+Where Pi packages are found and fetched from (see [Packages](harness-configuration.md#packages)). The table is optional;
+a change needs a restart.
+
+| Key | Type | Default | Meaning and validation |
+|---|---|---|---|
+| `packages.npm_registry` | string | `https://registry.npmjs.org` | The npm registry that `moebius ext` searches (`/-/v1/search`, always with the keyword `pi-package`) and installs npm packages from, also `npm install` for the dependencies. A mirror or a private registry; `http://` or `https://`, and credentials in the URL (`https://user:pass@host`) are used and are not shown in errors or in the settings. |
+
 ## `[board]`
 
 | Key | Type | Default | Meaning and validation |

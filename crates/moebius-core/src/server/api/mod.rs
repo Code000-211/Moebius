@@ -10,6 +10,7 @@
 //! - `chats`: chats with an agent, and what grilling chats ended in.
 //! - `automations`: chats a schedule starts, and their firings.
 //! - `harness`: the agents, skills and MCP servers of the harness configuration repository, and setting one up.
+//! - `extensions`: searching the catalog of Pi packages, and proposing to install, update and remove them.
 //! - `rules`: the rules page and the rules in prose.
 //! - `settings`: `moebius.toml`, the API keys, the restart, and what the Models, Plugins and Get started pages show.
 //! - `improve`: usage, judgements and replays, the Retro and its proposals, the decision model, research and
@@ -34,6 +35,7 @@ mod automations;
 mod cards;
 mod chats;
 mod events;
+mod extensions;
 mod harness;
 mod improve;
 mod lessons;
@@ -133,6 +135,7 @@ impl ApiError {
         let status = match e {
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::Invalid(_) => StatusCode::UNPROCESSABLE_ENTITY,
+            AppError::Forbidden(_) => StatusCode::FORBIDDEN,
             AppError::Exists(_) | AppError::Conflict(_) => StatusCode::CONFLICT,
             AppError::Git(GitError::Conflict { .. }) => StatusCode::CONFLICT,
             AppError::Forge(ForgeError::Git(GitError::Conflict { .. })) => StatusCode::CONFLICT,
@@ -192,6 +195,7 @@ pub fn router(state: ApiState) -> Router {
         .merge(chats::routes())
         .merge(automations::routes())
         .merge(harness::routes())
+        .merge(extensions::routes())
         .merge(rules::routes())
         .merge(settings::routes())
         .merge(improve::routes())

@@ -182,6 +182,7 @@ impl Server {
         app.decisions.route("tool_call", guard::NAME);
         app.decisions.route(localize::KIND, localize::KIND);
         app.localize = config.localize;
+        app.packages = config.packages.clone();
         for kind in ["lint_report", "deep_check"] {
             app.decisions.route(kind, lens::NAME);
         }

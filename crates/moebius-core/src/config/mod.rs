@@ -24,8 +24,8 @@ pub use example::EXAMPLE;
 pub use registries::{DEFAULT_REGISTRY, DEFAULT_REGISTRY_URL, RegistryConfig};
 pub use sections::{
     AgentConfig, AgentSet, DecisionModelConfig, ForgejoConfig, GitHubConfig, GitLabConfig,
-    HarnessKind, LocalizeConfig, MAX_LOCALIZE_FILES, PLUGIN_TIME_LIMIT_SECONDS, PluginConfig,
-    RunnerConfig, TeacherConfig, TimeOfDay, TokenSource, ToolOutput, UpstreamConfig,
+    HarnessKind, LocalizeConfig, MAX_LOCALIZE_FILES, PLUGIN_TIME_LIMIT_SECONDS, PackagesConfig,
+    PluginConfig, RunnerConfig, TeacherConfig, TimeOfDay, TokenSource, ToolOutput, UpstreamConfig,
     valid_agent_name,
 };
 pub(crate) use sections::{default_protocol, default_true};
@@ -59,6 +59,8 @@ pub enum ConfigError {
     DecisionModelMinJudgements,
     #[error("localize.files must be between 1 and {max}, not {value}")]
     LocalizeFiles { value: u32, max: usize },
+    #[error("packages.npm_registry must be an http:// or https:// URL, not {0:?}")]
+    NpmRegistry(String),
     #[error("decision_model.url and decision_model.model must not be empty")]
     DecisionModelEmpty,
     #[error("decision_model.api_key_env: {name:?} is not the name of an environment variable")]
@@ -192,6 +194,8 @@ pub struct Config {
     pub decision_model: Option<DecisionModelConfig>,
     /// Whether code runs are told which files are likely relevant, and how many.
     pub localize: LocalizeConfig,
+    /// Where Pi packages are found and fetched from.
+    pub packages: PackagesConfig,
     /// The plugins in their own process, with their paths made absolute.
     pub plugins: Vec<PluginConfig>,
     /// The machines that run harnesses over SSH, with their key files made absolute.
@@ -332,6 +336,20 @@ impl Config {
             enabled: raw.localize.enabled.unwrap_or(defaults.enabled),
             files: files as usize,
         };
+        let packages = PackagesConfig {
+            npm_registry: match raw.packages.npm_registry {
+                None => PackagesConfig::default().npm_registry,
+                Some(url) => {
+                    let url = url.trim().trim_end_matches('/').to_string();
+                    if !(url.starts_with("http://") || url.starts_with("https://")) {
+                        return Err(ConfigError::NpmRegistry(
+                            crate::server::setup::without_credentials(&url),
+                        ));
+                    }
+                    url
+                }
+            },
+        };
         let checks_timeout = raw.checks.timeout_seconds.unwrap_or(1800);
         if checks_timeout == 0 {
             return Err(ConfigError::ChecksTimeout);
@@ -391,6 +409,7 @@ impl Config {
             teacher,
             decision_model,
             localize,
+            packages,
             plugins,
             runners,
             registries,
