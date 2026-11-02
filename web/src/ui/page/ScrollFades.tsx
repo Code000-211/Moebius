@@ -7,15 +7,9 @@
  * box that scrolls, for the pages that own their scroller; `useScrollFades` is the same mask for a scroller something
  * else draws, such as the virtualised list of a conversation.
  */
-import {
-  type CSSProperties,
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { type CSSProperties, type ReactNode, useState } from "react";
 import { cn } from "../lib/cn";
+import { useBoxWatch } from "../lib/useBoxWatch";
 
 /** How far the ramp of a faded edge reaches into the content. */
 const RAMP = "var(--space-24)";
@@ -55,49 +49,23 @@ const edgesNone = { left: false, right: false, top: false, bottom: false };
  * the scroller's `onScroll` and hand it the element as `box`.
  */
 export function useScrollFades<T extends HTMLElement>() {
-  const box = useRef<T | null>(null);
   const [cut, setCut] = useState(edgesNone);
-  // The edges only replace what is held when they differ. A box measured again would otherwise ask to render again,
-  // and that render would measure again, without end — and a page that never settles never shows what a click asked
-  // for, because the router waits for it to.
-  const measure = useCallback(() => {
-    const el = box.current;
-    if (!el) return;
-    const next = edgesOf(el);
-    setCut((held) =>
-      held.left === next.left &&
-      held.right === next.right &&
-      held.top === next.top &&
-      held.bottom === next.bottom
-        ? held
-        : next,
-    );
-  }, []);
-
-  const watch = useRef<ResizeObserver | null>(null);
-  const watched = useRef(new Set<Element>());
-  // Every render measures once more, once the DOM behind it is there, and takes on any child that arrived with the
-  // cards — a lane added under a filter is a new element, and only a render knows about it. `measure` rests when
-  // nothing moved, so a render that changed nothing costs one read of four numbers.
-  useEffect(() => {
-    measure();
-    const el = box.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    if (!watch.current) watch.current = new ResizeObserver(measure);
-    const observer = watch.current;
-    for (const each of [el, ...Array.from(el.children)]) {
-      if (watched.current.has(each)) continue;
-      watched.current.add(each);
-      observer.observe(each);
-    }
-  });
-  useEffect(
-    () => () => {
-      watch.current?.disconnect();
-      watch.current = null;
-      watched.current.clear();
+  // The edges only replace what is held when they differ, so the watching rests when nothing moved: a render that
+  // changed nothing costs one read of four numbers. The children are watched as well — a lane added under a filter is
+  // a new element, and the row it brings may be the one that makes the scroller run off at both ends.
+  const { box, remeasure: measure } = useBoxWatch<T>(
+    (el) => {
+      const next = edgesOf(el);
+      setCut((held) =>
+        held.left === next.left &&
+        held.right === next.right &&
+        held.top === next.top &&
+        held.bottom === next.bottom
+          ? held
+          : next,
+      );
     },
-    [],
+    { children: true },
   );
 
   const layers = `${axis(cut.left, cut.right, "to left", "to right")}, ${axis(cut.top, cut.bottom, "to top", "to bottom")}`;

@@ -9,8 +9,9 @@
  * It masks its own edge rather than laying a gradient over the top, so the words fade into whatever the line is drawn
  * on, the same way [`ScrollFades`](./ScrollFades.tsx) fades a scroller.
  */
-import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { cn } from "../lib/cn";
+import { useBoxWatch } from "../lib/useBoxWatch";
 
 export function FadedLine({
   text,
@@ -26,45 +27,17 @@ export function FadedLine({
   title?: string;
   className?: string;
 }) {
-  const box = useRef<HTMLSpanElement | null>(null);
-  const watch = useRef<ResizeObserver | null>(null);
-  const watched = useRef(new Set<Element>());
   const [runsOut, setRunsOut] = useState(false);
-  // The words are measured against the room they are given: a box wider than the line it holds has nothing to fade.
-  // Measuring only asks to render when the answer changes, so a render that changed nothing costs one read.
-  const measure = useCallback(() => {
-    const line = box.current;
-    const words = line?.firstElementChild;
-    if (!line || !words) return;
-    const next = words.getBoundingClientRect().width > line.clientWidth + 1;
-    setRunsOut((held) => (held === next ? held : next));
-  }, []);
-
-  // Every render measures once more, so words that arrived with it are measured with them, and each box is watched for
-  // the day the column it sits in narrows under it — watched once, not on every render.
-  useLayoutEffect(() => {
-    measure();
-    const line = box.current;
-    if (!line || typeof ResizeObserver === "undefined") return;
-    if (!watch.current) watch.current = new ResizeObserver(measure);
-    const observer = watch.current;
-    if (!watched.current.has(line)) {
-      watched.current.add(line);
-      observer.observe(line);
-    }
-    const words = line.firstElementChild;
-    if (words && !watched.current.has(words)) {
-      watched.current.add(words);
-      observer.observe(words);
-    }
-  });
-  useEffect(
-    () => () => {
-      watch.current?.disconnect();
-      watch.current = null;
-      watched.current.clear();
+  // The words are measured against the room they are given: a box wider than the line it holds has nothing to fade,
+  // and the words are watched too, because it is a new word that usually makes a line run out.
+  const { box } = useBoxWatch<HTMLSpanElement>(
+    (line) => {
+      const words = line.firstElementChild;
+      if (!words) return;
+      const next = words.getBoundingClientRect().width > line.clientWidth + 1;
+      setRunsOut((held) => (held === next ? held : next));
     },
-    [],
+    { children: true },
   );
   return (
     <span

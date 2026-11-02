@@ -178,17 +178,34 @@
 }
 
 /*
- * Four lines of text, the last one fading out: enough of a description to tell one row from the next, without a card
- * growing to the length of the longest. The mask is of `currentColor` because a mask reads alpha, not colour.
+ * Text that stops at the number of lines in its name, the way a card and a compact row stop at the length of the
+ * longest description rather than the length of the one in front of them.
  */
-@utility fade-clamp {
+@utility clamp-* {
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
-  line-clamp: 4;
+  -webkit-line-clamp: --value(integer);
+  line-clamp: --value(integer);
   overflow: hidden;
-  -webkit-mask-image: linear-gradient(to bottom, currentColor 0 68%, transparent 100%);
-  mask-image: linear-gradient(to bottom, currentColor 0 68%, transparent 100%);
+}
+
+/*
+ * The ramp over the last of `n` lines: what is above it is whole, and the last line fades out as it goes down, which is
+ * the sign that the writing does not stop where the box does. The ramp starts a little above the last line so the fade
+ * is seen to be a fade and not a line that happened to be pale. The mask is of `currentColor` because a mask reads
+ * alpha, not colour. Put it on a box only while there is something behind the cut — `FadedClamp` measures first.
+ */
+@utility fade-last-* {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    currentColor 0 calc(100% - 100% / --value(integer) - 8%),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    currentColor 0 calc(100% - 100% / --value(integer) - 8%),
+    transparent 100%
+  );
 }
 
 /*

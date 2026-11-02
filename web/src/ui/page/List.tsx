@@ -60,7 +60,7 @@ export function ListCard({
         // click away in the detail beside the list.
         <span
           className={cn(
-            "fade-clamp break-words text-sm",
+            "clamp-4 fade-last-4 break-words text-sm",
             alert ? "text-error-text" : "text-secondary",
           )}
         >
