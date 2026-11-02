@@ -5,11 +5,13 @@
  * proposal changes with `trial_done` and `proposal_status`, which `live/invalidation.ts` answers by reading again.
  *
  * The days are the list and the chosen day is the detail, so a person reads one day at a time: what was left out of
- * it, what went wrong, and what the Retro wants changed.
+ * it, what went wrong, and what the Retro wants changed. `?day=` names the day to open on, which is how the Inbox
+ * leads here from a proposal it cannot show all of.
  */
 import { WarningCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { useSearchParams } from "react-router";
 import { retro, retros, startRetro } from "../../api/calls/improve";
 import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
@@ -42,8 +44,9 @@ export function RetroPage() {
   const queryClient = useQueryClient();
   const list = useQuery({ queryKey: keys.retros, queryFn: retros });
   const [picked, setPicked] = useState<string | null>(null);
-  // The latest day until one is picked.
-  const date = picked ?? list.data?.[0]?.date ?? null;
+  const [params] = useSearchParams();
+  // The day a link came in with, else the latest; one picked from the list answers neither.
+  const date = picked ?? params.get("day") ?? list.data?.[0]?.date ?? null;
   const opened = useQuery({
     queryKey: keys.retro(date ?? ""),
     queryFn: () => retro(date as string),

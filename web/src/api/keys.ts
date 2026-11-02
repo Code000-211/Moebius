@@ -57,6 +57,7 @@ export const keys = {
   firings: (automation: number) => ["automations", "firings", automation] as const,
   retros: ["retros"] as const,
   retro: (date: string) => ["retros", date] as const,
+  proposals: ["proposals"] as const,
   lessons: ["lessons"] as const,
   research: ["research"] as const,
   shadowing: ["decision-model", "shadowing"] as const,

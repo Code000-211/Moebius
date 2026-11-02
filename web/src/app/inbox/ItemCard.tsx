@@ -1,18 +1,20 @@
 /**
- * One item of the inbox: why it is here in a word and a sentence, what it shows (the facts of a change, the trials or
- * the diff of a proposal, the issues of a grilling to edit, a report) and the buttons that act on it. The card is the
- * only layer on this page, so the kind's colour sits on the word alone and the parts are apart by space. While a
+ * One item of the inbox: why it is here in a word and a sentence, what it shows (the facts of a change, the change a
+ * proposal offers with the trials it was put through, the issues of a grilling to edit, a report) and the buttons that
+ * act on it. The card is the only layer on this page, so the kind's word is the only pill on it and the parts are
+ * apart by space. While a
  * request is on its way the buttons give way to what it does; a refusal of the server stays under the item in the
  * server's own words. The item leaves when the snapshot is read again, which the answer and the event cause.
  */
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router";
+import { proposals } from "../../api/calls/improve";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { InboxItem, Snapshot } from "../../api/types/board";
+import type { Proposal } from "../../api/types/improve";
 import { CodeBlock } from "../../ui/chat/CodeBlock";
-import { Tag } from "../../ui/chat/Tag";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
 import { cn } from "../../ui/lib/cn";
@@ -39,6 +41,7 @@ import {
   meta,
   PROPOSAL,
   proposalOf,
+  proposedOf,
   READY_TO_MERGE,
   removeIssue,
   STUCK,
@@ -85,11 +88,20 @@ export function ItemCard({
     mutation.mutate(action);
   };
 
-  const sentence = why(item, about);
   const change = changeOf(item);
   const grilling = grillingOf(item);
   const proposal = proposalOf(item);
   const takeover = takeoverOf(item);
+  // What a proposal offers lives on the proposal rather than on the item: the one made when the Retro stores it
+  // carries the change itself, and the one a trial ends with names its proposal and nothing else. The card reads the
+  // list once and looks for the one it is about, which is the thing it is asked to show.
+  const record = useQuery({
+    queryKey: keys.proposals,
+    queryFn: proposals,
+    enabled: item.kind === PROPOSAL && proposal !== null,
+  });
+  const proposed = record.data?.find((each) => each.id === proposal) ?? null;
+  const sentence = why(item, about, proposed?.kind);
   const reasonReady = rejecting !== null && rejecting.trim() !== "";
 
   const footer = () => {
@@ -164,6 +176,12 @@ export function ItemCard({
     } else if (item.kind === PROPOSAL && proposal !== null) {
       buttons.push(primary("Merge", { kind: "mergeProposal", proposal }));
       buttons.push(plain("Dismiss", () => act({ kind: "dismissProposal", proposal })));
+      const day = proposed?.retro_date;
+      if (day) {
+        buttons.push(
+          plain("Open in Retro", () => navigate(`/retro?day=${encodeURIComponent(day)}`)),
+        );
+      }
     } else if (item.kind === TAKEOVER && takeover !== null) {
       buttons.push(primary("Merge", { kind: "mergeTakeover", takeover }));
       buttons.push(plain("Dismiss", () => act({ kind: "dismissTakeover", takeover })));
@@ -190,7 +208,9 @@ export function ItemCard({
     >
       <div className="flex flex-wrap items-center gap-3">
         <Status tone={tone}>{label}</Status>
-        <span className="min-w-0 break-words text-sm text-secondary">{meta(item, about)}</span>
+        {meta(item, about) !== "" && (
+          <span className="min-w-0 break-words text-sm text-secondary">{meta(item, about)}</span>
+        )}
         <span className="flex-1" />
         <span className="text-sm text-secondary tabular-nums">{ago(now, item.at)}</span>
       </div>
@@ -207,11 +227,8 @@ export function ItemCard({
       </div>
 
       {item.kind === READY_TO_MERGE && <Facts item={item} snapshot={snapshot} />}
-      {item.kind === PROPOSAL && typeof item.data.diff === "string" ? (
-        <OwnChange item={item} />
-      ) : (
-        item.kind === PROPOSAL && <Trials item={item} />
-      )}
+      {item.kind === PROPOSAL && <OwnChange item={item} proposed={proposed} />}
+      {item.kind === PROPOSAL && <Trials item={item} />}
       {item.kind === GRILLING_ISSUES && <Issues drafts={drafts} onChange={setDrafts} />}
       {item.kind === GRILLING_REPORT && (
         <div className="whitespace-pre-wrap break-words rounded-control bg-sunken p-4 text-base text-text">
@@ -245,20 +262,33 @@ function Facts({ item, snapshot }: { item: InboxItem; snapshot: Snapshot }) {
   );
 }
 
-/** A proposal for Moebius's own configuration: the Retro's reason and the diff of what it changes. */
-function OwnChange({ item }: { item: InboxItem }) {
-  const reason = typeof item.data.reason === "string" ? item.data.reason : "";
-  const diff = typeof item.data.diff === "string" ? item.data.diff : "";
+/**
+ * What a proposal would change: the Retro's reason for it, then the change itself. A change to Moebius's own
+ * configuration or to a repository's comes as a diff, which is drawn here rather than described; a change to the
+ * harness configuration is a branch of that repository, so the card names the branch it lives on and the Retro page
+ * holds the rest.
+ */
+function OwnChange({ item, proposed }: { item: InboxItem; proposed: Proposal | null }) {
+  const shown = proposedOf(item, proposed);
   return (
     <div className="flex flex-col gap-3">
-      {reason && (
+      {shown.reason !== "" && (
         <p className="m-0 max-w-prose text-base text-secondary [overflow-wrap:anywhere]">
-          {reason}
+          {shown.reason}
         </p>
       )}
-      <CodeBlock language="diff" code={diff}>
-        {diff}
-      </CodeBlock>
+      {shown.diff !== "" ? (
+        <CodeBlock language="diff" code={shown.diff}>
+          {shown.diff}
+        </CodeBlock>
+      ) : (
+        shown.branch !== "" && (
+          <p className="m-0 max-w-prose text-sm text-secondary [overflow-wrap:anywhere]">
+            {"It is a commit on a branch of the harness configuration: "}
+            <code className="font-mono text-text">{shown.branch}</code>
+          </p>
+        )
+      )}
     </div>
   );
 }
@@ -266,13 +296,25 @@ function OwnChange({ item }: { item: InboxItem }) {
 /** What the trials of a proposal found, one line each; then, under a label, the same for the regression set. */
 function Trials({ item }: { item: InboxItem }) {
   const line = (trial: ReturnType<typeof trialsOf>[number], index: number) => (
-    <li key={`${trial.card}-${index}`} className="flex flex-wrap items-center gap-3">
-      <Tag>{trial.card}</Tag>
-      <Status tone={trial.positive ? "complete" : "neutral"}>{trial.outcome}</Status>
+    <li key={`${trial.card}-${index}`} className="flex flex-wrap items-baseline gap-3">
+      <span className="shrink-0 text-sm text-secondary tabular-nums">{trial.card}</span>
+      <span
+        className={cn(
+          "shrink-0 text-sm font-semibold",
+          trial.tone === "complete"
+            ? "text-complete-text"
+            : trial.tone === "error"
+              ? "text-error-text"
+              : "text-secondary",
+        )}
+      >
+        {trial.outcome}
+      </span>
       <span className="min-w-0 flex-1 break-words text-base text-secondary">{trial.reason}</span>
     </li>
   );
   const regression = trialsOf(item, "regression");
+  if (trialsOf(item, "trials").length === 0 && regression.length === 0) return null;
   return (
     <div className="flex flex-col gap-3">
       {/* biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with

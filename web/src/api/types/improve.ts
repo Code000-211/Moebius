@@ -42,6 +42,8 @@ export type ProposalStatus =
 export interface Proposal {
   id: number;
   kind?: "harness" | "settings" | "repository";
+  /** The day of the Retro that made it, `YYYY-MM-DD` — the day the Retro page opens on to read it again. */
+  retro_date: string;
   branch: string;
   title: string;
   body?: string;

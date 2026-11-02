@@ -274,7 +274,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
       title: "Let the Coder read the tests first",
       data: {
         proposal: 4,
-        branch: "retro/proposal-4",
+        branch: "proposal/2026-10-25-read-tests",
         trials: [
           { card: 3, outcome: "positive", reason: "It passed in one round." },
           { card: null, outcome: "untried", reason: "No card fits." },
@@ -342,6 +342,39 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
     inbox.push(made);
     return made;
   }
+
+  // The two proposals the inbox holds items for, and the Retro day that made them, so the card can show what a bare
+  // item does not carry and link to the day that explains it.
+  const retroDay = "2026-10-25";
+  const retros = [{ date: retroDay, status: "proposed", errors: 1, proposals: 2 }];
+  const proposals = [
+    {
+      id: 4,
+      kind: "harness",
+      retro_date: retroDay,
+      branch: "proposal/2026-10-25-read-tests",
+      title: "Let the Coder read the tests first",
+      body: "Two of the Coder's changes failed a test that was already in the repository; its instructions now say to read the tests a change has to pass before writing it.",
+      agents: ["Coder"],
+      cards: [3],
+      status: "positive",
+      trials: [],
+      diff: "",
+    },
+    {
+      id: 5,
+      kind: "settings",
+      retro_date: retroDay,
+      branch: "proposal/2026-10-25-round-limit",
+      title: "Raise the round limit to 7",
+      body: "Cards ran out of rounds before the review passed.",
+      agents: [],
+      cards: [],
+      status: "untried",
+      trials: [],
+      diff: "--- a/moebius.toml\n+++ b/moebius.toml\n@@ -1 +1 @@\n-round_limit = 5\n+round_limit = 7\n",
+    },
+  ];
 
   const resolveItem = (kind: string, key: string, id: number) => {
     for (const item of inbox) {
@@ -554,8 +587,11 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         path === "/v1/start" ||
         path === "/v1/usage" ||
         path === "/v1/settings" ||
+        path === "/v1/proposals" ||
         path === "/v1/server" ||
         path === "/v1/server/restart" ||
+        path === "/v1/retros" ||
+        /^\/v1\/retros\/\d{4}-\d{2}-\d{2}$/.test(path) ||
         path === "/v1/webhooks" ||
         path === "/v1/harness/setup" ||
         path === "/v1/repositories" ||
@@ -590,6 +626,19 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
           return fail(response, 422, "days must be a whole number from 1 to 365");
         }
         return ok(response, usageReport(days));
+      }
+      if (path === "/v1/proposals" && method === "GET") return ok(response, proposals);
+      if (path === "/v1/retros" && method === "GET") return ok(response, retros);
+      if (/^\/v1\/retros\/\d{4}-\d{2}-\d{2}$/.test(path) && method === "GET") {
+        const date = path.slice("/v1/retros/".length);
+        if (date !== retroDay) return fail(response, 404, "no such Retro");
+        return ok(response, {
+          date,
+          status: "proposed",
+          warnings: [],
+          report: { date, errors: [] },
+          proposals,
+        });
       }
       if (path === "/v1/settings" && method === "GET") return ok(response, settingsView());
       if (path === "/v1/settings" && method === "PUT") {

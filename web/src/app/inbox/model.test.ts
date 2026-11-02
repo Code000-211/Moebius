@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Board, Card, Change, InboxItem, Snapshot } from "../../api/types/board";
+import type { Proposal } from "../../api/types/improve";
 import {
   chatOf,
   chipName,
@@ -13,6 +14,7 @@ import {
   kindTag,
   meta,
   NO_FILTERS,
+  proposedOf,
   removeIssue,
   shown,
   summary,
@@ -78,6 +80,15 @@ const item = (
   data: Record<string, unknown>,
   at = 100,
 ): InboxItem => ({ id, kind, card_id, title: `Item ${id}`, data, resolved_at: null, at });
+
+const proposed = (extra: Partial<Proposal> = {}): Proposal => ({
+  id: 4,
+  retro_date: "2026-10-25",
+  branch: "proposal/2026-10-25-read-tests",
+  title: "Let the Coder read the tests first",
+  status: "positive",
+  ...extra,
+});
 
 const snapshot: Snapshot = {
   boards: [
@@ -173,7 +184,8 @@ describe("how an item tells itself", () => {
     expect(meta(approve as InboxItem, about(approve as InboxItem))).toBe(
       "radiance · #55 · by lowfreq",
     );
-    expect(meta(item(1, "proposal", null, {}), {})).toBe("Retro");
+    // A proposal is already the Retro's word, so it carries no source of its own.
+    expect(meta(item(1, "proposal", null, {}), {})).toBe("");
     expect(meta(item(1, "grilling_report", null, { grilling: 1 }), {})).toBe("Grilling");
   });
 
@@ -211,11 +223,43 @@ describe("how an item tells itself", () => {
       regression: [{ card: 2, outcome: "negative", reason: "broke it" }],
     });
     expect(trialsOf(proposal, "trials")).toEqual([
-      { card: "Card 4", outcome: "Positive", positive: true, reason: "faster" },
-      { card: "No card", outcome: "No change", positive: false, reason: "" },
+      { card: "Card 4", outcome: "Positive", tone: "complete", reason: "faster" },
+      { card: "No card", outcome: "No change", tone: "quiet", reason: "" },
     ]);
-    expect(trialsOf(proposal, "regression")[0]?.positive).toBe(false);
+    expect(trialsOf(proposal, "regression")[0]?.tone).toBe("error");
     expect(trialsOf(item(1, "proposal", null, {}), "trials")).toEqual([]);
+  });
+
+  it("shows what a proposal offers, from the item where it can and from the proposal where it cannot", () => {
+    // The item made when the Retro stores a proposal carries the change itself and wins over the record.
+    const stored = item(1, "proposal", null, {
+      kind: "settings",
+      reason: "Cards ran out of rounds.",
+      diff: "+round_limit = 7",
+      branch: "proposal/keep-me",
+    });
+    expect(
+      proposedOf(stored, proposed({ body: "Other", diff: "+other", branch: "other" })),
+    ).toEqual({
+      reason: "Cards ran out of rounds.",
+      diff: "+round_limit = 7",
+      branch: "proposal/keep-me",
+    });
+    // The item a trial ends with names its proposal and nothing else, so the record stands in for all three.
+    const fromTrial = item(2, "proposal", null, { proposal: 4 });
+    expect(
+      proposedOf(fromTrial, proposed({ body: "Read the tests first.", diff: "+read tests" })),
+    ).toEqual({
+      reason: "Read the tests first.",
+      diff: "+read tests",
+      branch: "proposal/2026-10-25-read-tests",
+    });
+    // A harness proposal has no diff, so the branch is what the card can show.
+    expect(proposedOf(fromTrial, null)).toEqual({ reason: "", diff: "", branch: "" });
+    expect(proposedOf(fromTrial, proposed({ diff: "" })).diff).toBe("");
+    // The sentence for such an item comes from the kind the record knows, not from the bare item.
+    expect(why(fromTrial, {})).toContain("harness configuration");
+    expect(why(fromTrial, {}, "settings")).toContain("moebius.toml");
   });
 });
 

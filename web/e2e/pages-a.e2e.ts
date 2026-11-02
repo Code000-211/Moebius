@@ -170,6 +170,28 @@ describe("the inbox", () => {
   );
 
   it.skipIf(usesRealServer)(
+    "shows what a proposal offers and where to read the rest of it",
+    async () => {
+      await open("/inbox");
+      await items().first().waitFor();
+      // The item a trial ends with names its proposal, so the card reads the proposal for what it offers:
+      // a change to the harness configuration is a branch, so the card says which branch it lives on.
+      const harness = item("Let the Coder read");
+      await harness.getByText("its instructions now say to read the tests").waitFor();
+      await harness.getByText("proposal/2026-10-25-read-tests").waitFor();
+      // The trials read as words beside the card they tried, and the kind's word is the only pill on the card.
+      await harness.getByText("Positive", { exact: true }).waitFor();
+      await harness.getByText("It passed in one round.").waitFor();
+      await harness.getByText("Card 3").waitFor();
+      expect(await harness.getByText("Retro", { exact: true }).count()).toBe(0);
+      // The day of the Retro that made it is one click away, for the detail the card does not hold.
+      await harness.getByRole("button", { name: "Open in Retro" }).click();
+      expect(path()).toBe("/retro?day=2026-10-25");
+      await page.getByText("proposal/2026-10-25-read-tests").waitFor();
+    },
+  );
+
+  it.skipIf(usesRealServer)(
     "filters by kind and by repository, with the counts of the other filter",
     async () => {
       await open("/inbox");

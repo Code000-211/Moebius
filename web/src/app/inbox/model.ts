@@ -4,6 +4,7 @@
  * proposes while a person edits it (the desktop app's `screens/inbox`).
  */
 import type { Board, Card, Change, InboxItem, Snapshot } from "../../api/types/board";
+import type { Proposal } from "../../api/types/improve";
 import type { GrillingIssue } from "../../api/types/inbox";
 import type { Tone } from "../../ui/page/Status";
 import { tokens } from "../board/model";
@@ -155,8 +156,11 @@ export function kindTag(item: InboxItem): { label: string; tone: Tone } {
   }
 }
 
-/** The sentence under the title: why the item is here. */
-export function why(item: InboxItem, about: Found): string | null {
+/**
+ * The sentence under the title: why the item is here. `changes` is what a proposal changes, for the items that do not
+ * say so themselves: the one a trial ends with names its proposal and nothing else.
+ */
+export function why(item: InboxItem, about: Found, changes?: string): string | null {
   const reason = text(item.data.reason);
   switch (item.kind) {
     case STUCK:
@@ -180,14 +184,16 @@ export function why(item: InboxItem, about: Found): string | null {
       const count = number(item.data.count) ?? 0;
       return `It chose what was recorded on ${agreement}% of ${count} judgements held back from training. Merging lets it decide this kind from now on.`;
     }
-    case PROPOSAL:
-      if (item.data.kind === "settings") {
+    case PROPOSAL: {
+      const own = text(item.data.kind) || (changes ?? "");
+      if (own === "settings") {
         return "The Retro proposes this change to moebius.toml. Merging saves it, and restarts the server when a key needs it.";
       }
-      if (item.data.kind === "repository") {
+      if (own === "repository") {
         return "The Retro proposes this change to the repository's own rules or column scripts. Merging offers it as a change on the repository.";
       }
       return "The Retro proposes this change to the harness configuration.";
+    }
     case GRILLING_ISSUES:
       return "The Grilling partner ended in these issues. Edit them, remove what you do not want, and confirm to make a card of each.";
     case GRILLING_REPORT:
@@ -197,7 +203,10 @@ export function why(item: InboxItem, about: Found): string | null {
   }
 }
 
-/** What the words above the title say: the repository, the card's number and who wrote it, or what the item comes from. */
+/**
+ * What the words above the title say: the repository, the card's number and who wrote it, or what the item comes
+ * from. A proposal says that already in its own kind, so it adds nothing here.
+ */
 export function meta(item: InboxItem, about: Found): string {
   const parts: string[] = [];
   if (about.board) parts.push(about.board.repository.name);
@@ -205,11 +214,9 @@ export function meta(item: InboxItem, about: Found): string {
     parts.push(`#${about.card.number}`);
     if (item.kind === APPROVE_ISSUE && about.card.author !== "")
       parts.push(`by ${about.card.author}`);
-  } else if (item.kind === PROPOSAL) {
-    parts.push("Retro");
   } else if (grillingOf(item) !== null) {
     parts.push("Grilling");
-  } else if (item.card_id === null) {
+  } else if (item.card_id === null && item.kind !== PROPOSAL) {
     parts.push("chat");
   }
   if (about.change?.harness_repository) parts.unshift("Harness configuration");
@@ -254,8 +261,27 @@ export function facts(item: InboxItem, about: Found): Fact[] {
 export interface Trial {
   card: string;
   outcome: string;
-  positive: boolean;
+  /** How the outcome reads in words alone: teal for what worked, red for what did not, quiet for the rest. */
+  tone: "complete" | "error" | "quiet";
   reason: string;
+}
+
+/**
+ * What the card of a proposal says about the change itself: the Retro's reason for it, the diff where one can be
+ * shown, and the branch the change lives on where it cannot. An item made when the Retro stores a proposal carries
+ * all three; the one a trial ends with carries none of them, so the proposal read back from the server stands in.
+ */
+export function proposedOf(
+  item: InboxItem,
+  proposed: Proposal | null,
+): { reason: string; diff: string; branch: string } {
+  const own = text(item.data.reason);
+  const diff = typeof item.data.diff === "string" ? text(item.data.diff) : "";
+  return {
+    reason: own !== "" ? own : (proposed?.body ?? ""),
+    diff: diff !== "" ? diff : (proposed?.diff ?? ""),
+    branch: text(item.data.branch) !== "" ? text(item.data.branch) : (proposed?.branch ?? ""),
+  };
 }
 
 /** The trials of a proposal (`key` is `trials`) or of its regression set (`regression`), one line each. */
@@ -271,7 +297,12 @@ export function trialsOf(item: InboxItem, key: "trials" | "regression"): Trial[]
     return {
       card: card !== null ? `Card ${card}` : "No card",
       outcome: sentence(outcome),
-      positive: outcome === "positive",
+      tone:
+        outcome === "positive"
+          ? "complete"
+          : outcome === "negative" || outcome === "failed"
+            ? "error"
+            : "quiet",
       reason: text(trial.reason),
     };
   });

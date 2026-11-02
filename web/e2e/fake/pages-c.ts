@@ -221,6 +221,7 @@ export function createPagesCFake(
     { date: "2026-10-28", status: "proposed", errors: 6, proposals: 3 },
     { date: "2026-10-27", status: "reported", errors: 0, proposals: 0 },
     { date: "2026-10-26", status: "failed", errors: 3, proposals: 0 },
+    { date: "2026-10-25", status: "proposed", errors: 1, proposals: 2 },
   ];
   const proposals = [
     {
@@ -288,6 +289,42 @@ export function createPagesCFake(
       ],
       diff: "--- a/moebius.toml\n+++ b/moebius.toml\n@@ -1 +1 @@\n-round_limit = 5\n+round_limit = 8\n",
       edits: { set: { round_limit: 8 }, remove: [] },
+      repository: null,
+      change: null,
+      at: NOW(),
+    },
+    // The two the Inbox holds items for (`fake/pages-a.ts`), from an earlier day: one for the harness, whose change
+    // is a branch rather than a diff, and one for `moebius.toml`, whose change comes as a diff.
+    {
+      id: 4,
+      kind: "harness",
+      retro_date: "2026-10-25",
+      branch: "proposal/2026-10-25-read-tests",
+      title: "Let the Coder read the tests first",
+      body: "Two of the Coder's changes on 2026-10-25 failed a test that was already in the repository; its instructions now say to read the tests a change has to pass before writing it.",
+      agents: ["Coder"],
+      cards: [3],
+      status: "positive",
+      trials: [],
+      diff: "",
+      edits: {},
+      repository: null,
+      change: null,
+      at: NOW(),
+    },
+    {
+      id: 5,
+      kind: "settings",
+      retro_date: "2026-10-25",
+      branch: "proposal/2026-10-25-round-limit",
+      title: "Raise the round limit to 7",
+      body: "Cards ran out of rounds before the review passed.",
+      agents: [],
+      cards: [],
+      status: "untried",
+      trials: [],
+      diff: "--- a/moebius.toml\n+++ b/moebius.toml\n@@ -1 +1 @@\n-round_limit = 5\n+round_limit = 7\n",
+      edits: { set: { round_limit: 7 }, remove: [] },
       repository: null,
       change: null,
       at: NOW(),
@@ -487,6 +524,7 @@ export function createPagesCFake(
       [
         "/v1/automations",
         "/v1/retros",
+        "/v1/proposals",
         "/v1/lessons",
         "/v1/research",
         "/v1/decision-model",
@@ -596,6 +634,7 @@ export function createPagesCFake(
       return reply(response, 200, made);
     }
     if (path === "/v1/retros" && method === "GET") return reply(response, 200, retroDays);
+    if (path === "/v1/proposals" && method === "GET") return reply(response, 200, proposals);
     if (retroDay && method === "GET") {
       const date = retroDay[1] as string;
       const day = retroDays.find((each) => each.date === date);
@@ -610,7 +649,7 @@ export function createPagesCFake(
             ]
           : [],
         report: { date, errors: full ? report.errors : [] },
-        proposals: full ? proposals : [],
+        proposals: proposals.filter((each) => each.retro_date === date),
       });
     }
     if (path === "/v1/retros" && method === "POST") {
