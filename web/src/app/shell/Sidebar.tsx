@@ -369,7 +369,7 @@ function Back({ collapsed, to }: { collapsed: boolean; to: string }) {
       aria-label={collapsed ? name : undefined}
       className={cn(
         "flex min-h-10 items-center gap-2 rounded-control px-3 text-base text-sidebar-text",
-        "transition-colors duration-(--motion-routine) ease-out hover:bg-sidebar-hover hover:text-text",
+        "transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text",
         collapsed && "justify-center px-0",
       )}
     >
@@ -401,7 +401,7 @@ function SignOut({ collapsed }: { collapsed: boolean }) {
       disabled={leaving}
       className={cn(
         "flex min-h-10 w-full cursor-pointer items-center gap-2 rounded-control px-3 text-base text-sidebar-text",
-        "transition-colors duration-(--motion-routine) ease-out hover:bg-sidebar-hover hover:text-text",
+        "transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text",
         "disabled:cursor-default disabled:opacity-45",
         collapsed && "justify-center px-0",
       )}
@@ -488,8 +488,10 @@ function Entry({
     "flex min-h-10 items-center gap-2 rounded-control px-3 text-base",
     collapsed && "justify-center px-0",
   );
-  const standing = "bg-sidebar-current font-semibold text-text";
-  const waiting = "text-sidebar-text hover:bg-sidebar-hover hover:text-text";
+  // The entry that stands wears the same fill as the chosen row of a page's list, so one fill means one thing
+  // wherever a thing is chosen.
+  const standing = "bg-selected font-semibold text-text";
+  const waiting = "text-sidebar-text hover:bg-hover hover:text-text";
   // Which entry stands is worked out here rather than asked of the router in a callback, because the rail wraps the
   // row in a tooltip and a tooltip's trigger folds a function `className` into text — the row would keep its link and
   // lose its whole shape, which is what made the rail's icons sit uncentred at half height.

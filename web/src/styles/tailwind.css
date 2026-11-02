@@ -72,8 +72,6 @@
   --color-sidebar: var(--sidebar);
   --color-sidebar-text: var(--sidebar-text);
   --color-sidebar-group: var(--sidebar-group);
-  --color-sidebar-current: var(--sidebar-current);
-  --color-sidebar-hover: var(--sidebar-hover);
   --color-scrollbar-thumb: var(--scrollbar-thumb);
 
   /* The rest of the palette by the other names it is asked for: the text roles by their token name, and the parts of
