@@ -222,6 +222,8 @@ pub(super) struct Fixture {
     pub(super) repository: Repository,
     /// The bare repository the clone's `origin` is.
     pub(super) remote: std::path::PathBuf,
+    /// The fake's address, `http://127.0.0.1:<port>`.
+    pub(super) api: String,
 }
 
 impl Fixture {
@@ -271,6 +273,7 @@ impl Fixture {
             engine,
             repository,
             remote,
+            api: url,
         }
     }
 

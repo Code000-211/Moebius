@@ -122,7 +122,7 @@ fn cut(text: &str) -> String {
 /// Searches the files of repository `id`'s default branch for `search.q`, ignoring case, and skips binary files.
 /// Reading stops once there is a hit more than the limit, so that a search for something common stays cheap.
 pub fn search(app: &App, id: i64, search: &Search) -> Result<Found> {
-    if search.q.is_empty() {
+    if search.q.trim().is_empty() {
         return Err(AppError::Invalid("a search needs a q".into()));
     }
     let limit = search.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);

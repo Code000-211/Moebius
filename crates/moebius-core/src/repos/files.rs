@@ -5,8 +5,7 @@
 //! it. [`crate::board::scripts`] commits a column's script the same way, through [`commit`].
 
 use std::collections::BTreeMap;
-use std::path::{Component, Path};
-use std::sync::Mutex;
+use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -28,9 +27,6 @@ const RULES_KIND: &str = "edit_repository_rules";
 
 /// The largest file, in bytes, that is read as text; a larger one is answered with its size only.
 pub const TEXT_LIMIT: u64 = 1024 * 1024;
-
-/// Edits take turns, so that two commits never meet in one clone.
-static EDITING: Mutex<()> = Mutex::new(());
 
 /// One entry of a directory as `GET /v1/repositories/{id}/tree` lists it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -90,7 +86,9 @@ pub(crate) fn inside(path: &str) -> Result<String> {
     let mut parts = Vec::new();
     for component in Path::new(trimmed).components() {
         match component {
-            Component::Normal(part) if part != ".git" => parts.push(part.to_string_lossy()),
+            Component::Normal(part) if !names_git(&part.to_string_lossy()) => {
+                parts.push(part.to_string_lossy())
+            }
             Component::CurDir => {}
             _ => {
                 return Err(AppError::Invalid(format!(
@@ -100,6 +98,17 @@ pub(crate) fn inside(path: &str) -> Result<String> {
         }
     }
     Ok(parts.join("/"))
+}
+
+/// Whether a path component reaches the `.git` directory on some file system: `.GIT` where names ignore case,
+/// `.git.` and `.git ` on Windows, `.git::$INDEX_ALLOCATION` on NTFS, and the short name `GIT~1`.
+fn names_git(part: &str) -> bool {
+    let name = part.split(':').next().unwrap_or("");
+    let name = name.trim_end_matches(['.', ' ']).to_ascii_lowercase();
+    name == ".git"
+        || name
+            .strip_prefix("git~")
+            .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// The directory `dir` of repository `id`'s default branch.
@@ -184,22 +193,6 @@ pub fn save_file(app: &App, by: &Actor, id: i64, path: &str, new: &NewFile) -> R
         return Err(AppError::Invalid("a file needs a path".into()));
     }
     let clone = Path::new(&repository.path);
-    // A link in the clone could lead the write out of the repository.
-    let mut walked = clone.to_path_buf();
-    for part in path.split('/') {
-        walked.push(part);
-        if walked
-            .symlink_metadata()
-            .is_ok_and(|m| m.file_type().is_symlink())
-        {
-            return Err(AppError::Invalid(format!(
-                "{path} goes through a link, which is not edited here"
-            )));
-        }
-    }
-    if walked.is_dir() {
-        return Err(AppError::Invalid(format!("{path} is a directory")));
-    }
     let (kind, context) = if path == RULES {
         crate::decide::rules::check(&new.text)
             .map_err(|why| AppError::Invalid(format!("{RULES}: {why}")))?;
@@ -214,10 +207,10 @@ pub fn save_file(app: &App, by: &Actor, id: i64, path: &str, new: &NewFile) -> R
         Some(message) if !message.is_empty() => message.to_string(),
         _ => format!("Update {path}"),
     };
+    // Checked once the clone is up to date, as origin may have added a link since: it could lead the write out of
+    // the repository.
     let write = || {
-        if let Some(parent) = walked.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        let walked = writable(clone, &path)?;
         Ok(std::fs::write(&walked, &new.text)?)
     };
     commit(
@@ -238,6 +231,36 @@ pub fn save_file(app: &App, by: &Actor, id: i64, path: &str, new: &NewFile) -> R
         write,
     )?;
     read(&repository, &path)
+}
+
+/// The place for `path` (from `clone`'s root) to be written or removed, once the clone is up to date with origin,
+/// which may have added a link since the path was first checked: refused with `Invalid` when the path goes through a
+/// link or is a directory, or when its parent, made here, is not inside the clone.
+pub(crate) fn writable(clone: &Path, path: &str) -> Result<PathBuf> {
+    let mut walked = clone.to_path_buf();
+    for part in path.split('/') {
+        walked.push(part);
+        if walked
+            .symlink_metadata()
+            .is_ok_and(|m| m.file_type().is_symlink())
+        {
+            return Err(AppError::Invalid(format!(
+                "{path} goes through a link, which is not edited here"
+            )));
+        }
+    }
+    if walked.is_dir() {
+        return Err(AppError::Invalid(format!("{path} is a directory")));
+    }
+    if let Some(parent) = walked.parent() {
+        std::fs::create_dir_all(parent)?;
+        if !parent.canonicalize()?.starts_with(clone.canonicalize()?) {
+            return Err(AppError::Invalid(format!(
+                "{path} is not a path inside the repository"
+            )));
+        }
+    }
+    Ok(walked)
 }
 
 /// A change to one file of a repository: what it is recorded and announced as.
@@ -266,8 +289,9 @@ pub(crate) fn commit(
     change: &Change,
     write: impl FnOnce() -> Result<()>,
 ) -> Result<()> {
-    let _editing = EDITING.lock().unwrap_or_else(|e| e.into_inner());
     let clone = Path::new(&repository.path);
+    let lock = app.repos.clone_lock(clone);
+    let _editing = lock.lock().unwrap_or_else(|e| e.into_inner());
     let path = change.path;
     let on_forge = repository.forge != "none";
     let header = if on_forge {
@@ -283,8 +307,17 @@ pub(crate) fn commit(
         git(clone, &["merge", "--ff-only", "--quiet", &upstream]).map_err(refused)?;
     }
     let before = git(clone, &["rev-parse", "HEAD"])?;
+    // Only this call's own work is undone: a branch that moved on, because something else landed, is left alone.
+    let own = std::cell::RefCell::new(None::<String>);
     let undo = |error: AppError| {
-        let _ = git(clone, &["reset", "--hard", "--quiet", &before]);
+        let head = git(clone, &["rev-parse", "HEAD"]).ok();
+        if head.as_ref() == Some(&before) || head.is_some() && head == *own.borrow() {
+            let _ = git(clone, &["reset", "--hard", "--quiet", &before]);
+        } else {
+            // The branch moved on and stays; only this call's own path goes back to what the branch has.
+            let _ = git(clone, &["reset", "--quiet", "--", path]);
+            let _ = git(clone, &["checkout", "--quiet", "HEAD", "--", path]);
+        }
         let _ = git(clone, &["clean", "-fdq", "--", path]);
         error
     };
@@ -294,6 +327,7 @@ pub(crate) fn commit(
         return Ok(());
     }
     git(clone, &["commit", "--quiet", "-m", change.message]).map_err(|e| undo(e.into()))?;
+    *own.borrow_mut() = git(clone, &["rev-parse", "HEAD"]).ok();
     if on_forge {
         app.repos
             .push(clone, &repository.default_branch, header.as_deref())
@@ -335,12 +369,24 @@ mod tests {
         assert_eq!(inside("src/").unwrap(), "src");
         assert_eq!(inside("./a/./b").unwrap(), "a/b");
         assert_eq!(inside("").unwrap(), "");
+        // Names that only look like .git stay editable.
+        assert_eq!(inside(".github/ci.yml").unwrap(), ".github/ci.yml");
+        assert_eq!(inside(".gitignore").unwrap(), ".gitignore");
+        assert_eq!(inside("git~x").unwrap(), "git~x");
         for path in [
             "../x",
             "a/../../x",
             "/etc/passwd",
             ".git/config",
             "a/.git/HEAD",
+            ".GIT/config",
+            ".Git/hooks/pre-commit",
+            "a/.git./config",
+            ".git /config",
+            ".git.../config",
+            "GIT~1/config",
+            "git~12/config",
+            ".git::$INDEX_ALLOCATION/config",
             "a\\b",
         ] {
             assert!(matches!(inside(path), Err(AppError::Invalid(_))), "{path}");

@@ -138,6 +138,8 @@ impl Forge for NoForge {
     /// is left as it is.
     fn refresh(&self, repository: &Repository) -> Result<(), ForgeError> {
         let clone = Path::new(&repository.path);
+        let lock = self.repos.clone_lock(clone);
+        let _refreshing = lock.lock().unwrap_or_else(|e| e.into_inner());
         self.repos.fetch(clone, None)?;
         let upstream = format!("origin/{}", repository.default_branch);
         match git(clone, &["merge", "--ff-only", "--quiet", &upstream]) {
@@ -267,10 +269,10 @@ impl Forge for GitHubForge {
         Ok(self.repos.fetch(clone, header.as_deref())?)
     }
 
-    /// The installation's token as a basic-auth header, for web addresses only: any other remote, such as a local
-    /// directory, needs none.
+    /// The installation's token as a basic-auth header, for addresses on this GitHub's web host only: the token goes
+    /// to no other host, and a local directory needs none.
     fn auth(&self, url: &str, name: &str) -> Result<Option<String>, ForgeError> {
-        if !url.starts_with("https://") {
+        if !self.github.is_web_url(url) {
             return Ok(None);
         }
         let (owner, repo) = name

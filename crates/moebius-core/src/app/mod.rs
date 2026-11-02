@@ -172,8 +172,8 @@ impl App {
         self.forges.insert(forge.name(), forge);
     }
 
-    /// The HTTP header git needs to reach `url` when it is a repository on github.com and the GitHub App is set up,
-    /// or one on the GitLab or the Forgejo that is set up; none otherwise, so a token never goes to another host.
+    /// The HTTP header git needs to reach `url` when it is a repository on the GitHub web host (github.com or the
+    /// Enterprise host) and the GitHub App is set up, or one on the GitLab or the Forgejo that is set up; none otherwise, so a token never goes to another host.
     pub fn git_auth(&self, url: &str) -> Result<Option<String>> {
         for name in ["gitlab", "forgejo"] {
             if let Some(forge) = self.forges.get(name)
@@ -182,13 +182,15 @@ impl App {
                 return Ok(Some(header));
             }
         }
-        let (Some(forge), Some(name)) = (
+        let (Some(forge), Some((_, path))) = (
             self.forges.get("github"),
-            url.strip_prefix("https://github.com/"),
+            url.strip_prefix("https://")
+                .and_then(|rest| rest.split_once('/')),
         ) else {
             return Ok(None);
         };
-        let name = name.trim_end_matches('/').trim_end_matches(".git");
+        // The forge sends the token only when the address is on its own host.
+        let name = path.trim_end_matches('/').trim_end_matches(".git");
         Ok(forge.auth(url, name)?)
     }
 

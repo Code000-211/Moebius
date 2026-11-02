@@ -372,7 +372,7 @@ between directories, given as `?path=src/lib`; left out or empty, it is the root
 string, "kind": "dir" or "file", "size": number}]}`: `path` is the directory without leading or trailing `/`, an
 entry's `path` is from the root, `size` is in bytes (0 for a directory); directories come first, each group sorted by
 name. Submodules are left out. Errors: `404` no such repository or directory (a file is not one); `422` the path is
-absolute, climbs out with `..`, or names `.git`.
+absolute, climbs out with `..`, or names `.git` (in any case, or as `.git.`, `.git `, `GIT~1`).
 
 ### `GET /v1/repositories/{id}/files`
 
@@ -410,7 +410,7 @@ recorded (kind `edit_file`, decider `person` or `agent:Moebius`; its context has
 commit's message) and the event `file_changed` is sent. Text that changes nothing makes no commit and no decision.
 Response: the file as `GET` answers it. Errors: `404` no such repository; `409` as for a script: the clone cannot be
 brought up to date or the push is refused, the commit is undone and the message is git's, with keys redacted; `422` the
-path is empty, absolute, climbs out with `..`, names `.git`, is a directory, or goes through a symbolic link in the
+path is empty, absolute, climbs out with `..`, names `.git` (in any case, or as `.git.`, `.git `, `GIT~1`), is a directory, or goes through a symbolic link in the
 clone.
 
 The repository's own rules, `.moebius/rules.md`, are checked first as `PUT /v1/rules` checks the server's: a `## `
@@ -933,7 +933,7 @@ One of a skill's other files; `{*path}` is the rest of the URL, from the skill's
 `{"path": string, "size": number, "text": string}`, with `binary` or `too_large` instead of `text` for a file that is
 not UTF-8 text or is larger than 1 MiB. A built-in skill's files are read too. Errors: `404` no such skill or file (a
 directory is not one); `409` no `[harness]`; `422` the path is empty, is `SKILL.md`, is absolute, climbs out with `..`,
-names `.git`, or goes through a symbolic link.
+names `.git` (in any case, or as `.git.`, `.git `, `GIT~1`), or goes through a symbolic link.
 
 ### `PUT /v1/skills/{name}/files/{*path}`
 

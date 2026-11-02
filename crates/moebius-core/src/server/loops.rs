@@ -680,11 +680,13 @@ mod tests {
     async fn git_reaches_a_web_address_with_the_installation_token_and_a_local_one_without() {
         let f = Fixture::new().await;
         let (repos, github) = (f.server.app.repos.clone(), f.server.github.clone().unwrap());
-        let (web, local) = tokio::task::spawn_blocking(move || {
+        let host = f.api.trim_start_matches("http://").to_string();
+        let (web, elsewhere, local) = tokio::task::spawn_blocking(move || {
             let forge = GitHubForge::new(github, repos, tokio::runtime::Handle::current());
-            let web = forge.auth("https://github.com/acme/widgets.git", "acme/widgets");
+            let web = forge.auth(&format!("https://{host}/acme/widgets.git"), "acme/widgets");
+            let elsewhere = forge.auth("https://attacker.example/x.git", "acme/widgets");
             let local = forge.auth("/srv/widgets.git", "acme/widgets");
-            (web.unwrap(), local.unwrap())
+            (web.unwrap(), elsewhere.unwrap(), local.unwrap())
         })
         .await
         .unwrap();
@@ -693,7 +695,25 @@ mod tests {
             Some("Authorization: Basic eC1hY2Nlc3MtdG9rZW46Z2hzX3Rva2Vu"),
             "x-access-token:ghs_token"
         );
+        assert_eq!(elsewhere, None, "the token goes to no other host");
         assert_eq!(local, None);
+
+        // The app's own path to it, which file and script edits take, treats an Enterprise host (not github.com) alike.
+        let app = f.server.app.clone();
+        let host = f.api.trim_start_matches("http://").to_string();
+        let (web, elsewhere) = tokio::task::spawn_blocking(move || {
+            (
+                app.git_auth(&format!("https://{host}/acme/widgets.git")),
+                app.git_auth("https://attacker.example/x.git"),
+            )
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            web.unwrap().as_deref(),
+            Some("Authorization: Basic eC1hY2Nlc3MtdG9rZW46Z2hzX3Rva2Vu")
+        );
+        assert_eq!(elsewhere.unwrap(), None);
     }
 
     #[tokio::test(flavor = "multi_thread")]

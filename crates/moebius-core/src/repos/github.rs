@@ -159,6 +159,26 @@ impl GitHub {
         })
     }
 
+    /// Whether `url` is an https address on this GitHub's web host: `github.com` for the public API, the Enterprise
+    /// host otherwise. Git credentials go to no other host.
+    pub fn is_web_url(&self, url: &str) -> bool {
+        let authority = |url: &str| {
+            let rest = url.split_once("://").map(|(_, rest)| rest)?;
+            Some(rest.split('/').next().unwrap_or("").to_ascii_lowercase())
+        };
+        let Some(api) = authority(&self.api_url) else {
+            return false;
+        };
+        let web = if api == "api.github.com" {
+            "github.com".to_string()
+        } else {
+            api
+        };
+        url.get(..8)
+            .is_some_and(|scheme| scheme.eq_ignore_ascii_case("https://"))
+            && authority(url).is_some_and(|host| host == web)
+    }
+
     /// A token for the app's installation on `owner`, found through `repo`. Tokens are reused until five minutes
     /// before they expire.
     pub async fn installation_token(&self, owner: &str, repo: &str) -> Result<String, GitHubError> {
@@ -455,6 +475,29 @@ mod tests {
     const PRIVATE_KEY: &[u8] = include_bytes!("../../testdata/github-app-test-key.pem");
     const PUBLIC_KEY: &[u8] = include_bytes!("../../testdata/github-app-test-key.pub.pem");
     const APP_ID: u64 = 4242;
+
+    #[test]
+    fn git_credentials_belong_to_the_web_host_of_the_api_only() {
+        let github = |api: &str| GitHub::new(api, APP_ID, PRIVATE_KEY).unwrap();
+        let public = github("https://api.github.com");
+        assert!(public.is_web_url("https://github.com/acme/widgets.git"));
+        assert!(public.is_web_url("HTTPS://GitHub.com/acme/widgets.git"));
+        for url in [
+            "https://attacker.example/x.git",
+            "https://github.com.attacker.example/x.git",
+            "https://github.com@attacker.example/x.git",
+            "http://github.com/acme/widgets.git",
+            "git@github.com:acme/widgets.git",
+            "/srv/widgets.git",
+            "https://api.github.com/acme/widgets.git",
+        ] {
+            assert!(!public.is_web_url(url), "{url}");
+        }
+        let enterprise = github("https://ghe.example:8443/api/v3/");
+        assert!(enterprise.is_web_url("https://ghe.example:8443/acme/widgets.git"));
+        assert!(!enterprise.is_web_url("https://github.com/acme/widgets.git"));
+        assert!(!enterprise.is_web_url("https://ghe.example/acme/widgets.git"));
+    }
 
     /// A GitHub that only accepts the app's JWT and hands out tokens that expire `token_lifetime` from now.
     struct Fake {

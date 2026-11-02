@@ -101,10 +101,7 @@ pub fn save_script(
     let path = path_of(&column);
     let message = format!("Change the {} column's script", column.name);
     let clone = Path::new(&repository.path);
-    let write = || {
-        std::fs::create_dir_all(clone.join(".moebius"))?;
-        Ok(std::fs::write(clone.join(&path), &text)?)
-    };
+    let write = || Ok(std::fs::write(files::writable(clone, &path)?, &text)?);
     let context = BTreeMap::from([("text".to_string(), text.clone())]);
     edit(
         app,
@@ -132,7 +129,7 @@ pub fn delete_script(app: &App, by: &Actor, id: i64, column: &str) -> Result<Scr
     let path = path_of(&column);
     let message = format!("Use the built-in script for the {} column", column.name);
     let clone = Path::new(&repository.path);
-    let write = || Ok(std::fs::remove_file(clone.join(&path))?);
+    let write = || Ok(std::fs::remove_file(files::writable(clone, &path)?)?);
     edit(
         app,
         by,

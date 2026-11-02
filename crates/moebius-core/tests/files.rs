@@ -314,6 +314,8 @@ async fn a_path_out_of_the_repository_is_refused() {
     for path in [
         "src%2F..%2F..%2Fescape.txt",
         ".git/hooks/pre-commit",
+        ".GIT/hooks/pre-commit",
+        ".git./hooks/pre-commit",
         "%2Fetc%2Fescape",
         "away/escape.txt",
         "src",
@@ -511,12 +513,132 @@ async fn a_search_finds_lines_per_file_with_a_regex_a_limit_and_binary_files_ski
     assert_eq!(exact["truncated"], false);
 
     // Refusals: nothing to look for, a regular expression that does not parse, and no such repository.
-    let (status, _) = setup.get(&route("q=")).await;
-    assert_eq!(status, 422);
+    for blank in ["q=", "q=%20%20", "q=%09%0A"] {
+        let (status, _) = setup.get(&route(blank)).await;
+        assert_eq!(status, 422, "{blank}");
+    }
     let (status, body) = setup.get(&route("q=(&regex=true")).await;
     assert_eq!(status, 422, "{body}");
     let (status, _) = setup
         .get(&format!("/v1/repositories/{}/search?q=x", repo.id + 99))
         .await;
     assert_eq!(status, 404);
+}
+
+/// A link that origin adds is followed by nothing: the check runs after the clone has caught up with origin.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_link_that_origin_adds_does_not_lead_a_save_out_of_the_clone() {
+    let dir = tempfile::tempdir().unwrap();
+    let setup = Setup::start(dir.path()).await;
+    let app = &setup.server.app;
+    let (id, clone, origin) = on_a_forge(dir.path(), app);
+    let outside = dir.path().join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+
+    // Someone else pushes `notes -> outside`; Moebius's clone does not have it yet.
+    let other = dir.path().join("other");
+    git(
+        dir.path(),
+        &["clone", "--quiet", origin.to_str().unwrap(), "other"],
+    )
+    .unwrap();
+    std::os::unix::fs::symlink(&outside, other.join("notes")).unwrap();
+    git(&other, &["add", "."]).unwrap();
+    git(&other, &["commit", "--quiet", "-m", "link"]).unwrap();
+    git(&other, &["push", "--quiet", "origin", "main"]).unwrap();
+    assert!(!clone.join("notes").exists());
+
+    let (status, message) = setup
+        .put(id, "notes/escape.txt", json!({ "text": "x" }))
+        .await;
+    assert_eq!(status, 422, "{message}");
+    assert!(!outside.join("escape.txt").exists());
+    assert_eq!(git(&clone, &["status", "--porcelain"]).unwrap(), "");
+}
+
+/// The same for a column script, which is written below `.moebius`: a link there leads out of the clone neither for a
+/// save nor for a delete.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_link_that_origin_adds_does_not_lead_a_script_out_of_the_clone() {
+    let dir = tempfile::tempdir().unwrap();
+    let setup = Setup::start(dir.path()).await;
+    let app = &setup.server.app;
+    let (id, clone, origin) = on_a_forge(dir.path(), app);
+    let outside = dir.path().join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    let column = moebius_core::board::column_named("ready").unwrap();
+    let text = moebius_core::board::built_in_script(&column.script).unwrap();
+    std::fs::write(outside.join(&column.script), "keep\n").unwrap();
+
+    let other = dir.path().join("other");
+    git(
+        dir.path(),
+        &["clone", "--quiet", origin.to_str().unwrap(), "other"],
+    )
+    .unwrap();
+    std::os::unix::fs::symlink(&outside, other.join(".moebius")).unwrap();
+    git(&other, &["add", "."]).unwrap();
+    git(&other, &["commit", "--quiet", "-m", "link"]).unwrap();
+    git(&other, &["push", "--quiet", "origin", "main"]).unwrap();
+    assert!(!clone.join(".moebius").exists());
+
+    let route = format!("/v1/repositories/{id}/scripts/ready");
+    let token = setup.token.clone();
+    let (status, message) = setup
+        .call(
+            &token,
+            reqwest::Method::PUT,
+            &route,
+            Some(json!({ "text": text })),
+        )
+        .await;
+    assert_eq!(status, 422, "{message}");
+    assert_eq!(
+        std::fs::read_to_string(outside.join(&column.script)).unwrap(),
+        "keep\n"
+    );
+    let (status, message) = setup
+        .call(&token, reqwest::Method::DELETE, &route, None)
+        .await;
+    assert!(status >= 400, "{message}");
+    assert!(outside.join(&column.script).exists());
+}
+
+/// A save that fails does not take a commit that landed meanwhile (a merge in the same clone) with it.
+#[cfg(unix)] // The failing commit is a hook, which is a shell script.
+#[tokio::test]
+async fn an_undone_save_leaves_a_commit_that_landed_meanwhile() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let setup = Setup::start(dir.path()).await;
+    let repo = setup
+        .server
+        .app
+        .add_repository("demo", source(dir.path()).to_str().unwrap())
+        .unwrap();
+    let clone = PathBuf::from(&repo.path);
+    let before = head(&clone);
+    // The hook lands a commit of its own, as a merge would, and then refuses the save's commit.
+    let hook = clone.join(".git/hooks/pre-commit");
+    std::fs::write(
+        &hook,
+        "#!/bin/sh\ngit update-ref HEAD \"$(git commit-tree 'HEAD^{tree}' -p HEAD -m merged)\"\nexit 1\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let (status, message) = setup
+        .put(repo.id, "new.txt", json!({ "text": "x\n" }))
+        .await;
+    assert_eq!(status, 500, "{message}");
+    assert_ne!(head(&clone), before, "the commit that landed is kept");
+    assert_eq!(
+        git(&clone, &["log", "-1", "--format=%s"]).unwrap(),
+        "merged"
+    );
+    // The failed save's own file is gone, from the index too, so the next save does not carry it.
+    assert_eq!(git(&clone, &["status", "--porcelain"]).unwrap(), "");
+    assert!(!clone.join("new.txt").exists());
 }

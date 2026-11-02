@@ -152,6 +152,10 @@ pub struct Repos {
     worktrees: PathBuf,
     /// Held while worktrees are added or removed: git cannot add one while another is pruned or added beside it.
     worktree_lock: std::sync::Arc<std::sync::Mutex<()>>,
+    /// One lock per clone, held while something changes its checked-out default branch.
+    clone_locks: std::sync::Arc<
+        std::sync::Mutex<std::collections::HashMap<PathBuf, std::sync::Arc<std::sync::Mutex<()>>>>,
+    >,
 }
 
 impl Repos {
@@ -160,7 +164,15 @@ impl Repos {
             clones: data_dir.join("repos"),
             worktrees: data_dir.join("worktrees"),
             worktree_lock: Default::default(),
+            clone_locks: Default::default(),
         }
+    }
+
+    /// The lock of the clone at `clone`: whoever changes the clone's checked-out default branch (a file saved, a
+    /// change merged, a fast-forward) holds it, so that two of them never meet in one working tree.
+    pub(crate) fn clone_lock(&self, clone: &Path) -> std::sync::Arc<std::sync::Mutex<()>> {
+        let mut locks = self.clone_locks.lock().unwrap_or_else(|e| e.into_inner());
+        locks.entry(clone.to_path_buf()).or_default().clone()
     }
 
     /// Keeps other threads from adding or removing worktrees until it is dropped.
@@ -373,6 +385,8 @@ impl Repos {
     /// Merges `branch` into the default branch checked out in the clone and returns the merge commit. A conflict
     /// leaves the default branch as it was.
     pub fn merge(&self, clone: &Path, branch: &str, message: &str) -> Result<String> {
+        let lock = self.clone_lock(clone);
+        let _merging = lock.lock().unwrap_or_else(|e| e.into_inner());
         let into = self.default_branch(clone)?;
         match git(
             clone,
