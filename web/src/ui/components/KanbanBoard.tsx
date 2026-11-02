@@ -185,20 +185,14 @@ export type KanbanHeaderProps = {
   count: number;
   /** How many cards the column holds, when it shows fewer than that. */
   total?: number;
-  /**
-   * The mark beside the column's name: the shape and colour of the state it holds. It never carries the meaning on its
-   * own — the name is beside it — and says nothing to the person hearing the page, so it is hidden from them.
-   */
-  mark?: ReactNode;
   className?: string;
 };
 
-export const KanbanHeader = ({ name, count, total, mark, className }: KanbanHeaderProps) => (
+export const KanbanHeader = ({ name, count, total, className }: KanbanHeaderProps) => (
   <header
     className={cn("mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2", className)}
   >
     <h2 className="m-0 flex min-w-0 items-center gap-2 text-lg font-semibold tracking-tight text-text">
-      {mark}
       {name}
     </h2>
     <div className="flex min-w-0 items-center gap-2">
