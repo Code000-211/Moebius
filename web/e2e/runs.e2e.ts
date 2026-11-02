@@ -234,6 +234,29 @@ describe("the diff of a card", () => {
       expect(await sheet.getByRole("list", { name: "What the colours mean" }).count()).toBe(0);
     },
   );
+
+  it.skipIf(usesRealServer)(
+    "ends where the diff ends, with no band of nothing under the last line",
+    async () => {
+      await open("/board/1?card=5");
+      const dock = page.getByRole("region", { name: "Card inspector" });
+      await dock.getByTestId("diff-card").click();
+      const sheet = page.getByRole("dialog");
+      const lastLine = sheet.locator('[data-testid="diff-line"]').last();
+      await lastLine.waitFor();
+      // The sheet is as tall as the diff it holds. Held to the height of the window, a change of one file sits in a
+      // band of nothing, so the last line of the file ends within the sheet's own padding of its bottom edge.
+      const sheetBox = await sheet.boundingBox();
+      const lineBox = await lastLine.boundingBox();
+      if (!sheetBox || !lineBox) throw new Error("the sheet or its last line drew no box");
+      expect(sheetBox.y + sheetBox.height - (lineBox.y + lineBox.height)).toBeLessThan(40);
+      // The list of files stops at its last row, rather than being held to the height of the lines beside it.
+      const listBox = await sheet.getByTestId("diff-files").boundingBox();
+      const rowBox = await sheet.getByTestId("diff-file").last().boundingBox();
+      if (!listBox || !rowBox) throw new Error("the list of files or its last row drew no box");
+      expect(listBox.y + listBox.height - (rowBox.y + rowBox.height)).toBeLessThan(12);
+    },
+  );
 });
 
 describe("the terminals", () => {

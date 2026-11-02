@@ -78,8 +78,9 @@ export function Changes({ of }: { of: DiffOf }) {
 
 /**
  * The headline of a change's diff on a card: how many files it touches and what they cost. The card opens the whole
- * diff in a sheet, because a dock a hand's width wide is not where a diff is read. The sheet is as tall as the
- * window less its margins, and closes on Escape or on its own X.
+ * diff in a sheet, because a dock a hand's width wide is not where a diff is read. The sheet is as tall as the diff it
+ * holds, up to the window less its margins, so a change of two files does not sit in a band of nothing; a big one
+ * still gets the height of the screen and scrolls its own two columns. It closes on Escape or on its own X.
  */
 export function ChangesCard({ of }: { of: { change: number } }) {
   const [open, setOpen] = useState(false);
@@ -115,11 +116,7 @@ export function ChangesCard({ of }: { of: { change: number } }) {
         <ArrowsOutIcon className="size-4 shrink-0 text-secondary" aria-hidden="true" />
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent
-          data-testid="change-diff"
-          aria-describedby={undefined}
-          className="h-[85vh] max-w-6xl"
-        >
+        <DialogContent data-testid="change-diff" aria-describedby={undefined} className="max-w-6xl">
           <div className="flex min-h-0 flex-1 flex-col gap-4 p-6">
             <DialogHeader>
               <DialogTitle>Changes</DialogTitle>

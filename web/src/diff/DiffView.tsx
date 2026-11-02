@@ -308,31 +308,38 @@ export function DiffView({ diff, truncated = false }: { diff: string; truncated?
         {truncated && <span>{" · the rest of the diff is left out"}</span>}
       </p>
       {/* Two inset columns separated by space alone, as the Files box of a repository is: the names where they are
-          compared, the lines where they are read, each scrolling on its own. */}
+          compared, the lines where they are read, each scrolling on its own. The list stops where its last row stops,
+          as the repository's tree does; held to the height of the column beside it, it would read as a box that
+          failed to fill. */}
       <div className="flex min-h-0 flex-1 flex-col gap-4 md:flex-row md:items-stretch">
-        <div className="max-h-96 w-full min-w-0 shrink-0 overflow-y-auto rounded-card bg-sunken p-2 md:max-h-none md:w-64">
-          <ul
-            /* biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with no marker from the accessibility tree entirely */
-            role="list"
-            aria-label="Changed files"
-            className="m-0 list-none p-0 text-base"
+        <div className="flex w-full min-w-0 shrink-0 flex-col md:w-64">
+          <div
+            data-testid="diff-files"
+            className="w-full min-h-0 shrink max-h-96 overflow-y-auto rounded-card bg-sunken p-2 md:max-h-none"
           >
-            <TreeBranch
-              nodes={nodes}
-              depth={0}
-              costs={costs}
-              chosen={file.path}
-              onSelect={setChosen}
-              closed={closed}
-              onToggle={(path) =>
-                setClosed((all) => {
-                  const next = new Set(all);
-                  if (!next.delete(path)) next.add(path);
-                  return next;
-                })
-              }
-            />
-          </ul>
+            <ul
+              /* biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with no marker from the accessibility tree entirely */
+              role="list"
+              aria-label="Changed files"
+              className="m-0 list-none p-0 text-base"
+            >
+              <TreeBranch
+                nodes={nodes}
+                depth={0}
+                costs={costs}
+                chosen={file.path}
+                onSelect={setChosen}
+                closed={closed}
+                onToggle={(path) =>
+                  setClosed((all) => {
+                    const next = new Set(all);
+                    if (!next.delete(path)) next.add(path);
+                    return next;
+                  })
+                }
+              />
+            </ul>
+          </div>
         </div>
         <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-card bg-code">
           <header className="flex shrink-0 flex-wrap items-center gap-4 p-4">
