@@ -50,6 +50,14 @@ impl Router {
                 "the body is not JSON",
             );
         };
+        if !request.is_object() {
+            return error(
+                protocol,
+                StatusCode::BAD_REQUEST,
+                "invalid_request_error",
+                "the body is not a JSON object",
+            );
+        }
         let checked = self.checks_answers(&headers).then(|| Decider {
             checker: self.checker.get().cloned(),
             grant: grant.clone(),
@@ -63,7 +71,13 @@ impl Router {
             .unwrap_or(false);
         if streaming && protocol == Protocol::OpenAi {
             // Without this, an OpenAI stream does not say how many tokens it used.
-            request["stream_options"]["include_usage"] = json!(true);
+            if let Some(request) = request.as_object_mut() {
+                let options = request.entry("stream_options").or_insert_with(|| json!({}));
+                if !options.is_object() {
+                    *options = json!({});
+                }
+                options["include_usage"] = json!(true);
+            }
         }
         let model = request
             .get("model")
@@ -304,7 +318,9 @@ data: [DONE]\n\n";
                         )
                     },
                 ),
-            );
+            )
+            // The fake takes what the router forwards, which is over axum's default limit in one test.
+            .layer(axum::extract::DefaultBodyLimit::max(16 * 1024 * 1024));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move { axum::serve(listener, app).await });
@@ -494,9 +510,84 @@ data: [DONE]\n\n";
             .collect();
         assert_eq!(
             counted,
-            [("claude-sonnet-5-5", 20, 7, 4), ("qwen-local", 30, 3, 0)]
+            [("claude-sonnet-5-5", 24, 7, 4), ("qwen-local", 30, 3, 0)]
         );
-        assert_eq!(s.store.tokens_for_card(s.card).unwrap(), 60);
+        assert_eq!(s.store.tokens_for_card(s.card).unwrap(), 64);
+    }
+
+    #[tokio::test]
+    async fn a_request_over_two_mebibytes_is_forwarded() {
+        let s = setup().await;
+        let token = s.router.issue_token(Grant {
+            run_id: s.run,
+            card_id: Some(s.card),
+            budget: None,
+        });
+        let big = "x".repeat(3 * 1024 * 1024);
+        let reply = reqwest::Client::new()
+            .post(format!("{}/v1/chat/completions", s.url))
+            .bearer_auth(&token)
+            .json(&json!({"model": "local", "messages": [{"role": "user", "content": big}]}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(reply.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn malformed_bodies_are_refused_or_passed_on_without_a_panic() {
+        let s = setup().await;
+        let grant = || Grant {
+            run_id: s.run,
+            card_id: Some(s.card),
+            budget: None,
+        };
+        let checked = s.router.issue_checked_token(grant());
+        let plain = s.router.issue_token(grant());
+        let send = |token: &str, path: &str, body: Value| {
+            reqwest::Client::new()
+                .post(format!("{}{path}", s.url))
+                .bearer_auth(token)
+                .json(&body)
+                .send()
+        };
+        for path in ["/v1/chat/completions", "/v1/messages"] {
+            let reply = send(&plain, path, json!([1, 2])).await.unwrap();
+            assert_eq!(reply.status(), 400, "{path}");
+            let body: Value = reply.json().await.unwrap();
+            assert_eq!(body["error"]["type"], "invalid_request_error");
+        }
+        // Values of the wrong type inside an object do not crash the handler, so the router stays up.
+        for body in [
+            json!({"model": "local", "stream": true, "stream_options": 1}),
+            json!({"model": "local", "messages": ["hi"]}),
+            json!({"model": "local", "messages": [{"role": "tool", "content": 1}, 7]}),
+        ] {
+            let reply = send(&checked, "/v1/chat/completions", body).await.unwrap();
+            assert_ne!(reply.status(), 500);
+        }
+        let reply = send(
+            &checked,
+            "/v1/messages",
+            json!({"model": "claude", "messages": ["hi", {"content": [1, {"type": "tool_result", "content": 5}]}]}),
+        )
+        .await
+        .unwrap();
+        assert_ne!(reply.status(), 500);
+        // The stream option is replaced by one that asks for usage.
+        let reply = send(
+            &plain,
+            "/v1/chat/completions",
+            json!({"model": "local", "stream": true, "stream_options": 1}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(reply.status(), 200);
+        let seen = s.seen.lock().unwrap();
+        assert_eq!(
+            seen.bodies.last().unwrap()["stream_options"]["include_usage"],
+            json!(true)
+        );
     }
 
     #[tokio::test]

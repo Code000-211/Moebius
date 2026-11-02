@@ -135,10 +135,36 @@ struct Running {
 #[derive(Default)]
 pub(super) struct Logins {
     secrets: Option<Secrets>,
-    /// Held while a token is refreshed, so that one refresh serves every request waiting for it.
-    access: tokio::sync::Mutex<HashMap<String, Access>>,
+    /// The access token of each login, behind a lock of its own that is held while the token is refreshed, so that
+    /// one refresh serves every request waiting for it and a slow token URL stalls only its own upstream.
+    access: std::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<Option<Access>>>>>,
     running: std::sync::Mutex<HashMap<String, Running>>,
+    /// The task of each login that waits, so that a newer login of the same secret can stop it.
+    tasks: std::sync::Mutex<HashMap<String, tokio::task::JoinHandle<()>>>,
     next: std::sync::atomic::AtomicU64,
+}
+
+impl Logins {
+    /// The slot that holds the access token of the login named `secret`.
+    fn slot(&self, secret: &str) -> Arc<tokio::sync::Mutex<Option<Access>>> {
+        let mut access = self.access.lock().unwrap_or_else(|p| p.into_inner());
+        access.entry(secret.to_string()).or_default().clone()
+    }
+
+    /// Forgets every access token kept, so that the next request refreshes.
+    #[cfg(test)]
+    pub(super) async fn forget_access(&self) {
+        let slots: Vec<_> = self
+            .access
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .values()
+            .cloned()
+            .collect();
+        for slot in slots {
+            *slot.lock().await = None;
+        }
+    }
 }
 
 /// What a token URL answered. Not `Debug`, so that its tokens cannot be printed by accident.
@@ -262,8 +288,9 @@ impl Router {
     /// The access token of a login: the one kept, or a new one for the stored refresh token once the kept one is
     /// due. The message of a failure says nothing secret.
     pub(super) async fn access_token(&self, oauth: &OAuthConfig) -> Result<String, String> {
-        let mut access = self.oauth.access.lock().await;
-        if let Some(kept) = access.get(&oauth.secret)
+        let slot = self.oauth.slot(&oauth.secret);
+        let mut access = slot.lock().await;
+        if let Some(kept) = access.as_ref()
             && Instant::now() < kept.refresh_at
         {
             return Ok(kept.token.clone());
@@ -285,7 +312,7 @@ impl Router {
         )
         .await
         .map_err(|refused| {
-            access.remove(&oauth.secret);
+            *access = None;
             format!("the login could not be refreshed ({refused}): log in again on the Models page")
         })?;
         self.keep(oauth, tokens, &mut access)
@@ -296,7 +323,7 @@ impl Router {
         &self,
         oauth: &OAuthConfig,
         tokens: Tokens,
-        access: &mut HashMap<String, Access>,
+        access: &mut Option<Access>,
     ) -> Result<String, String> {
         remember_secret(&tokens.access_token);
         if let Some(refresh) = &tokens.refresh_token {
@@ -311,13 +338,10 @@ impl Router {
         let lifetime = tokens
             .expires_in
             .map_or(DEFAULT_LIFETIME, Duration::from_secs);
-        access.insert(
-            oauth.secret.clone(),
-            Access {
-                token: tokens.access_token.clone(),
-                refresh_at: refresh_at(lifetime),
-            },
-        );
+        *access = Some(Access {
+            token: tokens.access_token.clone(),
+            refresh_at: refresh_at(lifetime),
+        });
         Ok(tokens.access_token)
     }
 
@@ -351,27 +375,70 @@ impl Router {
                 "there is nowhere to keep the refresh token".into(),
             ));
         }
+        // The login this one replaces stops first, since it holds the redirect port and could still store tokens.
+        let previous = self
+            .oauth
+            .tasks
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(&oauth.secret);
+        if let Some(previous) = previous {
+            previous.abort();
+            let _ = previous.await;
+        }
         let id = self
             .oauth
             .next
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let (login, waiting, paste) = match oauth.flow {
-            Flow::Device => {
-                let (login, waiting) = device::start(&self.client, &oauth).await?;
-                (login, waiting, None)
+        let started = match oauth.flow {
+            Flow::Device => device::start(&self.client, &oauth)
+                .await
+                .map(|(login, waiting)| (login, waiting, None)),
+            Flow::Code => code::start(&self.client, &oauth).await,
+        };
+        let (login, waiting, paste) = match started {
+            Ok(started) => started,
+            Err(error) => {
+                // The login that was stopped must not stay as one that waits.
+                self.end_login(
+                    &oauth.secret,
+                    self.running_id(&oauth.secret),
+                    Login::new(
+                        oauth.flow,
+                        LoginState::Failed,
+                        "replaced by a login that did not start",
+                    ),
+                );
+                return Err(error);
             }
-            Flow::Code => code::start(&self.client, &oauth).await?,
         };
         self.set_login(&oauth.secret, id, login.clone(), paste);
         let router = self.clone();
-        tokio::spawn(async move {
+        let secret = oauth.secret.clone();
+        let task = tokio::spawn(async move {
             let ended = match waiting.await {
                 Ok(tokens) => router.finish(&upstream, &oauth, tokens).await,
                 Err(message) => Login::new(oauth.flow, LoginState::Failed, message),
             };
             router.end_login(&oauth.secret, id, ended);
         });
+        let replaced = self
+            .oauth
+            .tasks
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(secret, task);
+        // A login started at the same moment must not go on, storing tokens, without a handle.
+        if let Some(replaced) = replaced {
+            replaced.abort();
+        }
         Ok(login)
+    }
+
+    /// The id of the login recorded for `secret`, or 0.
+    fn running_id(&self, secret: &str) -> u64 {
+        let running = self.oauth.running.lock().unwrap_or_else(|p| p.into_inner());
+        running.get(secret).map_or(0, |r| r.id)
     }
 
     /// Records `login` as the state of the login `id` that has just started, replacing any other.
@@ -418,7 +485,8 @@ impl Router {
     /// Keeps the tokens a login ended with and tells whether the upstream takes them.
     async fn finish(&self, upstream: &Upstream, oauth: &OAuthConfig, tokens: Tokens) -> Login {
         let kept = {
-            let mut access = self.oauth.access.lock().await;
+            let slot = self.oauth.slot(&oauth.secret);
+            let mut access = slot.lock().await;
             self.keep(oauth, tokens, &mut access)
         };
         if let Err(message) = kept {
@@ -580,7 +648,7 @@ mod tests {
 
         // A token that is due at once is refreshed for every request, each time with the token kept last.
         provider.set_lifetime(0);
-        router.oauth.access.lock().await.clear();
+        router.oauth.forget_access().await;
         for _ in 0..2 {
             router.access_token(&oauth).await.unwrap();
         }
@@ -602,7 +670,7 @@ mod tests {
 
         // A refused refresh says to log in again and names no token.
         provider.refuse_refresh();
-        router.oauth.access.lock().await.clear();
+        router.oauth.forget_access().await;
         let message = router
             .authenticate(&upstream, reqwest::Client::new().get("http://127.0.0.1:1"))
             .await
@@ -611,5 +679,67 @@ mod tests {
         assert!(message.contains("invalid_grant"), "{message}");
         assert!(message.contains("log in again"), "{message}");
         assert!(!message.contains("token-"), "{message}");
+    }
+
+    #[tokio::test]
+    async fn a_refresh_that_hangs_stalls_only_its_own_upstream() {
+        let provider = FakeProvider::start(3600).await;
+        let (router, dir) = router_with(&provider, Flow::Device);
+        Secrets::new(dir.path())
+            .set("provider-login", "refresh-token-0")
+            .unwrap();
+        let (_, oauth) = router.oauth_upstream(0).unwrap();
+        let token = router.access_token(&oauth).await.unwrap();
+        // Another login is in the middle of its refresh, which holds that login's lock.
+        let stalled = router.oauth.slot("other-login");
+        let _refreshing = stalled.lock().await;
+        let kept = tokio::time::timeout(Duration::from_secs(10), router.access_token(&oauth)).await;
+        assert_eq!(
+            kept.expect("the cached token waited for another login"),
+            Ok(token)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_new_login_stops_the_one_it_replaces_and_takes_its_redirect_port() {
+        let provider = FakeProvider::start(3600).await;
+        let (router, _dir) = router_with(&provider, Flow::Code);
+        // A port that is free now, wanted by every login of this upstream.
+        let port = {
+            let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            probe.local_addr().unwrap().port()
+        };
+        let mut upstreams = router.upstreams.read().unwrap().clone();
+        upstreams[0].oauth.as_mut().unwrap().redirect_port = Some(port);
+        router.set_upstreams(upstreams);
+        let first = router.start_login(0, true).await.unwrap();
+        assert!(
+            first.message.contains("sends you back here"),
+            "{}",
+            first.message
+        );
+        let second = router.start_login(0, true).await.unwrap();
+        // The second could bind the port: the first had let go of it.
+        assert!(
+            second.message.contains("sends you back here"),
+            "{}",
+            second.message
+        );
+    }
+
+    #[tokio::test]
+    async fn a_replacing_login_that_does_not_start_leaves_the_old_one_ended_not_waiting() {
+        let provider = FakeProvider::start(3600).await;
+        let (router, _dir) = router_with(&provider, Flow::Code);
+        let first = router.start_login(0, true).await.unwrap();
+        assert_eq!(first.state, LoginState::Waiting);
+        let mut upstreams = router.upstreams.read().unwrap().clone();
+        upstreams[0].oauth.as_mut().unwrap().authorize_url = Some("not a url".into());
+        router.set_upstreams(upstreams);
+        assert!(router.start_login(0, true).await.is_err());
+        let (_, oauth) = router.oauth_upstream(0).unwrap();
+        let running = router.oauth.running.lock().unwrap();
+        assert_eq!(running[&oauth.secret].login.state, LoginState::Failed);
+        assert!(running[&oauth.secret].paste.is_none());
     }
 }

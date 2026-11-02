@@ -135,17 +135,30 @@ impl Router {
         base_url: &str,
         key: Option<String>,
     ) -> Result<Vec<String>, String> {
-        self.list_models(&Upstream {
-            protocol: Protocol::OpenAi,
-            base_url: base_url.to_string(),
-            api_key: key,
-            oauth: None,
-        })
+        self.list_models_at(
+            &Upstream {
+                protocol: Protocol::OpenAi,
+                base_url: base_url.to_string(),
+                api_key: key,
+                oauth: None,
+            },
+            "/models",
+        )
         .await
     }
 
     /// The ids of the models one upstream lists, or a short message saying why not.
     pub(super) async fn list_models(&self, upstream: &Upstream) -> Result<Vec<String>, String> {
+        self.list_models_at(upstream, "/v1/models").await
+    }
+
+    /// [`Router::list_models`], where an `openai` upstream's list is at `openai_path` after its base url: a router
+    /// upstream's base has no `/v1`, the decision model's url is asked at `/models` whatever it ends in.
+    async fn list_models_at(
+        &self,
+        upstream: &Upstream,
+        openai_path: &str,
+    ) -> Result<Vec<String>, String> {
         if let Some(needs) = upstream.oauth.as_ref().and_then(|oauth| oauth.needs()) {
             return Err(format!("needs {needs}"));
         }
@@ -159,7 +172,7 @@ impl Router {
         }
         let base = upstream.base_url.trim_end_matches('/');
         let request = match upstream.protocol {
-            Protocol::OpenAi => self.client.get(format!("{base}/models")),
+            Protocol::OpenAi => self.client.get(format!("{base}{openai_path}")),
             // The default page of Anthropic's list is twenty models.
             Protocol::Anthropic => self
                 .client
@@ -197,5 +210,29 @@ impl Router {
             .iter()
             .filter_map(|m| m["id"].as_str().map(str::to_string))
             .collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::*;
+    use crate::store::Store;
+
+    #[tokio::test]
+    async fn the_decision_models_url_is_asked_at_models_whatever_it_ends_in() {
+        let app = axum::Router::new().route(
+            "/openai/models",
+            axum::routing::get(|| async {
+                axum::Json(serde_json::json!({"data": [{"id": "m1"}]}))
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/openai", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await });
+        let dir = tempfile::tempdir().unwrap();
+        let router = Router::new(Arc::new(Store::in_memory(dir.path()).unwrap()), Vec::new());
+        assert_eq!(router.endpoint_models(&url, None).await.unwrap(), ["m1"]);
     }
 }

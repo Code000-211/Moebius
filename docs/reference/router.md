@@ -15,6 +15,9 @@ harness only ever holds its run's token. The same listener also serves the [brid
 | `POST /v1/chat/completions` | `openai` | OpenAI chat completions, streamed (`"stream": true`) or not. |
 | `POST /v1/messages` | `anthropic` | Anthropic messages, streamed or not. |
 
+A body is taken up to 256 MiB (axum's default of 2 MiB would refuse a long conversation). A body that is not a JSON
+object is refused with `400` and `invalid_request_error`.
+
 The body is passed on to the upstream of the same protocol, unchanged except that for a streamed OpenAI request
 `stream_options.include_usage` is set to `true`, so that the upstream reports the tokens it used. The request is sent
 to `<base_url><route>`, with the headers `anthropic-version` and `anthropic-beta` copied from the client, and with the
@@ -48,11 +51,11 @@ API](desktop-api.md#get-v1modelsavailable)), with the protocols the upstreams li
 
 The desktop API's `GET /v1/models/available` (see the [desktop API](desktop-api.md#get-v1modelsavailable)) is answered by
 the router. It asks each upstream, once even if it is configured twice, which models it serves: for `openai`,
-`GET <base_url>/models`; for `anthropic`, `GET <base_url>/v1/models?limit=1000` with `anthropic-version: 2023-06-01`. Both
+`GET <base_url>/v1/models`; for `anthropic`, `GET <base_url>/v1/models?limit=1000` with `anthropic-version: 2023-06-01`. Both
 read `data[].id`, and send the upstream's key as for a request (`Authorization: Bearer` or `x-api-key`). An upstream has
 10 seconds to answer. The answer is kept for 5 minutes, and is dropped when the upstreams are edited. With
 `decision=true` the decision model's endpoint, which is not an upstream, is asked the same way as an `openai` upstream at
-its `url`, with its key, every time.
+its `url`, so `GET <url>/models` whatever the url ends in, with its key, every time.
 
 ## OAuth logins
 
@@ -224,7 +227,10 @@ read from the answer:
 
 - OpenAI: `usage.prompt_tokens`, `usage.completion_tokens` and `usage.prompt_tokens_details.cached_tokens`. In a stream
   the last chunk that carries `usage` counts.
-- Anthropic: `usage.input_tokens`, `usage.output_tokens` and `usage.cache_read_input_tokens`. In a stream, `message_start`
+- Anthropic: `usage.input_tokens`, `usage.output_tokens`, `usage.cache_read_input_tokens` and
+  `usage.cache_creation_input_tokens`. Anthropic's `input_tokens` leaves out both cache numbers, so the input tokens
+  recorded (and counted toward budgets) are the three added, as OpenAI's `prompt_tokens` includes its cached ones; the
+  cached tokens are the cache reads. In a stream, `message_start`
   carries `message.usage` and `message_delta` carries `usage`; later numbers replace earlier ones of the same kind.
 
 The tools are read from the same answer, in the order they are asked for, and stored as a list of names (`tools`; empty

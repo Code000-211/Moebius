@@ -57,7 +57,7 @@ async fn upstream(models: bool) -> String {
     use axum::response::IntoResponse;
     use serde_json::json;
     let app = axum::Router::new().route(
-        "/models",
+        "/v1/models",
         axum::routing::get(move || async move {
             if models {
                 axum::Json(json!({"data": [{"id": "qwen"}]})).into_response()

@@ -288,7 +288,7 @@ mod tests {
         };
         let count = asked.clone();
         let openai = serve(axum::Router::new().route(
-            "/models",
+            "/v1/models",
             axum::routing::get(move |headers: HeaderMap| async move {
                 count.fetch_add(1, Ordering::SeqCst);
                 if headers.get("authorization").map(|v| v.as_bytes()) != Some(b"Bearer sk-openai") {
@@ -312,7 +312,7 @@ mod tests {
         .await;
         let count = asked.clone();
         let refusing = serve(axum::Router::new().route(
-            "/models",
+            "/v1/models",
             axum::routing::get(move || async move {
                 count.fetch_add(1, Ordering::SeqCst);
                 StatusCode::UNAUTHORIZED

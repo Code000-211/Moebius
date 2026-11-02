@@ -15,6 +15,9 @@ pub(super) struct Counted {
     input: i64,
     output: i64,
     cached: i64,
+    /// Anthropic's `input_tokens` and `cache_creation_input_tokens`, which `input` adds to `cached`.
+    fresh: i64,
+    created: i64,
     pub(super) model: Option<String>,
     /// The tools the answer asks for, in order.
     tools: Vec<String>,
@@ -85,8 +88,10 @@ impl Counted {
                 }
             }
             Protocol::Anthropic => {
+                // Anthropic's `input_tokens` leaves out what was read from or written to the cache; the input is
+                // all three, as OpenAI's `prompt_tokens` is.
                 if let Some(n) = int("input_tokens") {
-                    self.input = n;
+                    self.fresh = n;
                 }
                 if let Some(n) = int("output_tokens") {
                     self.output = n;
@@ -94,6 +99,10 @@ impl Counted {
                 if let Some(n) = int("cache_read_input_tokens") {
                     self.cached = n;
                 }
+                if let Some(n) = int("cache_creation_input_tokens") {
+                    self.created = n;
+                }
+                self.input = self.fresh + self.created + self.cached;
             }
         }
         self.seen = true;
@@ -222,6 +231,25 @@ mod tests {
         assert!(names(answer, Protocol::OpenAi).is_empty());
         let answer = json!({"content": [{"type": "text", "text": "Hi"}]});
         assert!(names(answer, Protocol::Anthropic).is_empty());
+    }
+
+    #[test]
+    fn anthropic_input_adds_the_cache_tokens_which_its_input_tokens_leave_out() {
+        let mut counted = Counted::default();
+        counted.read(
+            &json!({"type": "message_start", "message": {"usage": {"input_tokens": 5,
+                "cache_creation_input_tokens": 1000, "cache_read_input_tokens": 200, "output_tokens": 1}}}),
+            Protocol::Anthropic,
+        );
+        // The final delta restates only some of the numbers.
+        counted.read(
+            &json!({"type": "message_delta", "usage": {"output_tokens": 30}}),
+            Protocol::Anthropic,
+        );
+        assert_eq!(
+            (counted.input, counted.cached, counted.output),
+            (1205, 200, 30)
+        );
     }
 
     #[test]

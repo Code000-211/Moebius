@@ -44,7 +44,7 @@ use std::time::Instant;
 
 use axum::Router as Routes;
 use axum::body::Bytes;
-use axum::extract::State;
+use axum::extract::{DefaultBodyLimit, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
@@ -166,9 +166,14 @@ impl Router {
                     },
                 ),
             )
+            // A long conversation, with tool outputs or a screenshot, passes axum's default 2 MiB.
+            .layer(DefaultBodyLimit::max(MAX_BODY))
             .with_state(self)
     }
 }
+
+/// The largest request body the router takes, in bytes.
+const MAX_BODY: usize = 256 * 1024 * 1024;
 
 /// An error in the shape the protocol's clients expect.
 fn error(protocol: Protocol, status: StatusCode, kind: &str, message: &str) -> Response {

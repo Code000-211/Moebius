@@ -255,15 +255,18 @@ impl Http {
         }
         // An event stream: the answer is the event whose data is the message with the request's id.
         let mut body = response.bytes_stream();
-        let mut buffer = String::new();
+        // Bytes are buffered and only complete events are decoded, so that a character split across chunks is whole.
+        let mut buffer: Vec<u8> = Vec::new();
+        // How much of the buffer is known to hold no end of an event, so that a chunk is scanned once.
+        let mut scanned = 0;
         while let Some(chunk) = body.next().await {
             let chunk = chunk
                 .map_err(|e| format!("cannot read the server's answer: {}", e.without_url()))?;
-            buffer.push_str(&String::from_utf8_lossy(&chunk));
-            let buffer_now = buffer.replace("\r\n", "\n");
-            let mut events: Vec<&str> = buffer_now.split("\n\n").collect();
-            let rest = events.pop().unwrap_or_default().to_string();
-            for event in events {
+            buffer.extend_from_slice(&chunk);
+            while let Some((end, gap)) = event_end(&buffer, scanned) {
+                let event: Vec<u8> = buffer.drain(..end + gap).take(end).collect();
+                scanned = 0;
+                let event = String::from_utf8_lossy(&event).replace("\r\n", "\n");
                 let data: Vec<&str> = event
                     .lines()
                     .filter_map(|line| line.strip_prefix("data:"))
@@ -276,9 +279,102 @@ impl Http {
                     return Ok(message);
                 }
             }
-            buffer = rest;
+            scanned = buffer.len();
         }
         Err("the server's event stream ended without an answer".into())
+    }
+}
+
+/// Where the first event of `buffer` ends, and how long the blank line after it is: at the first empty line, whether
+/// the lines end in `\n`, `\r\n` or `\r`, mixed or not. The first `scanned` bytes are known to hold no such line
+/// (a blank line cut by them is found again from three bytes before).
+fn event_end(buffer: &[u8], scanned: usize) -> Option<(usize, usize)> {
+    let mut at = scanned.saturating_sub(3);
+    while at < buffer.len() {
+        let end = line_end(&buffer[at..]);
+        if let Some(first) = end
+            && let Some(second) = line_end(&buffer[at + first..])
+        {
+            return Some((at, first + second));
+        }
+        at += 1;
+    }
+    None
+}
+
+/// The length of the line terminator `rest` starts with, if it does.
+fn line_end(rest: &[u8]) -> Option<usize> {
+    match rest {
+        [b'\r', b'\n', ..] => Some(2),
+        [b'\n', ..] | [b'\r', ..] => Some(1),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod sse_tests {
+    use super::*;
+
+    #[test]
+    fn an_event_ends_at_a_blank_line_of_any_line_endings_and_is_found_across_chunks() {
+        assert_eq!(event_end(b"data: x\n\r\nrest", 0), Some((7, 3)));
+        assert_eq!(event_end(b"data: x\r\n\nrest", 0), Some((7, 3)));
+        assert_eq!(event_end(b"data: x\r\rrest", 0), Some((7, 2)));
+        assert_eq!(event_end(b"data: x\n", 0), None);
+        // Fed in pieces, with only the new part scanned, the same end is found.
+        let whole = b"data: x\r\n\r\nrest";
+        for size in 1..5 {
+            let mut buffer = Vec::new();
+            let mut scanned = 0;
+            let mut found = None;
+            for piece in whole.chunks(size) {
+                buffer.extend_from_slice(piece);
+                found = event_end(&buffer, scanned);
+                if found.is_some() {
+                    break;
+                }
+                scanned = buffer.len();
+            }
+            assert_eq!(found.map(|(end, _)| end), Some(7), "size {size}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_character_split_across_chunks_of_an_event_stream_stays_whole() {
+        use axum::body::Body;
+        use axum::http::header;
+        use axum::response::IntoResponse;
+        let app = axum::Router::new().route(
+            "/mcp",
+            axum::routing::post(|| async {
+                // The euro sign is three bytes; the chunks cut it after the first, and an event after its `data:`.
+                let event = "data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"text\":\"5 \u{20ac}\"}}\r\n\r\n";
+                let bytes = event.as_bytes();
+                let cut = event.find('\u{20ac}').unwrap() + 1;
+                let chunks: Vec<Result<Vec<u8>, std::io::Error>> = vec![
+                    Ok(bytes[..5].to_vec()),
+                    Ok(bytes[5..cut].to_vec()),
+                    Ok(bytes[cut..].to_vec()),
+                ];
+                (
+                    [(header::CONTENT_TYPE, "text/event-stream")],
+                    Body::from_stream(futures_util::stream::iter(chunks)),
+                )
+                    .into_response()
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/mcp", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await });
+        let http = Http {
+            client: reqwest::Client::new(),
+            url,
+            headers: BTreeMap::new(),
+            session: std::sync::Mutex::new(None),
+            next_id: AtomicI64::new(1),
+        };
+        let answer = http.request("tools/list", json!({})).await.unwrap();
+        assert_eq!(answer["result"]["text"], "5 \u{20ac}");
     }
 }
 

@@ -158,16 +158,24 @@ pub(super) fn redact_results(request: &mut Value, protocol: Protocol) {
             _ => {}
         }
     }
-    for message in request["messages"].as_array_mut().into_iter().flatten() {
+    let messages = request.get_mut("messages").and_then(Value::as_array_mut);
+    // A message or block that is not an object is left as it is: the upstream refuses it.
+    for message in messages.into_iter().flatten() {
         match protocol {
             Protocol::OpenAi if message["role"] == "tool" => {
-                redact_content(&mut message["content"])
+                if let Some(content) = message.get_mut("content") {
+                    redact_content(content);
+                }
             }
             Protocol::OpenAi => {}
             Protocol::Anthropic => {
-                let blocks = message["content"].as_array_mut().into_iter().flatten();
-                for block in blocks.filter(|b| b["type"] == "tool_result") {
-                    redact_content(&mut block["content"]);
+                let blocks = message.get_mut("content").and_then(Value::as_array_mut);
+                for block in blocks.into_iter().flatten() {
+                    if block["type"] == "tool_result"
+                        && let Some(content) = block.get_mut("content")
+                    {
+                        redact_content(content);
+                    }
                 }
             }
         }

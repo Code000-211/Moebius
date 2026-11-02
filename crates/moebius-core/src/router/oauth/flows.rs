@@ -180,7 +180,7 @@ async fn a_request_with_the_anthropic_token_carries_the_headers_and_the_system_p
 
     // The access token is refreshed (as JSON) when it is due, and the next request carries the new one.
     provider.set_lifetime(0);
-    router.oauth.access.lock().await.clear();
+    router.oauth.forget_access().await;
     let _ = send(&router, json!({"model": "m", "messages": []}), &[]).await;
     let _ = send(&router, json!({"model": "m", "messages": []}), &[]).await;
     assert!(provider.json_tokens());
