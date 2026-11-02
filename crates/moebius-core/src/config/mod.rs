@@ -909,7 +909,13 @@ mod tests {
                     "acme".to_string(),
                     "https://git.example.com/acme/p".to_string()
                 ),
-                ("local".to_string(), "/srv/registries/local".to_string()),
+                (
+                    "local".to_string(),
+                    Path::new("/srv")
+                        .join("registries/local")
+                        .display()
+                        .to_string()
+                ),
             ]
         );
         let refused = |text: &str| parse(text).unwrap_err().to_string();

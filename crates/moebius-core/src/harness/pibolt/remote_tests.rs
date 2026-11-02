@@ -139,8 +139,7 @@ fn a_run_on_a_runner_reaches_the_router_through_the_tunnel() {
             .unwrap(),
     );
     let env_file = files.join("agent/env.json");
-    wait_for("the fake Pi writes its environment", || env_file.is_file());
-    let env: Value = serde_json::from_slice(&std::fs::read(&env_file).unwrap()).unwrap();
+    let env = written_env(&env_file);
     let check = env["MOEBIUS_CHECK_URL"].as_str().unwrap().to_string();
     assert!(
         check.starts_with("http://127.0.0.1:") && check != pi.router_url,
@@ -203,8 +202,7 @@ fn killing_all_runs_closes_their_tunnels_and_clears_the_runner() {
                 .unwrap(),
         )
         .join("agent/env.json");
-    wait_for("the fake Pi writes its environment", || env_file.is_file());
-    let env: Value = serde_json::from_slice(&std::fs::read(&env_file).unwrap()).unwrap();
+    let env = written_env(&env_file);
     let port: u16 = env["MOEBIUS_CHECK_URL"]
         .as_str()
         .unwrap()
@@ -313,4 +311,15 @@ fn a_runner_that_cannot_be_reached_fails_the_run_and_leaves_nothing() {
     assert!(!PathBuf::from(run.worktree.unwrap()).exists());
     assert!(!remote.exists());
     wait_for("the runner is free", || pi.runners.list()[0].busy == 0);
+}
+
+/// The environment the fake Pi wrote, once the whole file is there: it is written while the test may already see it.
+fn written_env(file: &Path) -> Value {
+    let read = || {
+        std::fs::read(file)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+    };
+    wait_for("the fake Pi writes its environment", || read().is_some());
+    read().unwrap()
 }
