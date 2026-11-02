@@ -71,7 +71,13 @@ impl Router {
             .unwrap_or("unknown")
             .to_string();
 
-        let (class, models) = match self.candidates(&model) {
+        // The day's tokens of a model are summed from the store, which must not block this thread.
+        let asked_model = model.clone();
+        let router = self.clone();
+        let candidates = tokio::task::spawn_blocking(move || router.candidates(&asked_model))
+            .await
+            .unwrap_or_else(|_| Err("the model class could not be resolved".to_string()));
+        let (class, models) = match candidates {
             Ok(candidates) => candidates,
             Err(message) => {
                 return error(

@@ -218,13 +218,10 @@ fn judge_report(app: &App, grant: &Grant, report: &Report) -> ReportReply {
 /// Sets the outcome `fixed` on the open findings of `file` in the run whose key the file no longer has.
 fn close_fixed(app: &App, run_id: i64, file: &str, present: &[String]) {
     let present: HashSet<&str> = present.iter().map(String::as_str).collect();
-    let Ok(open) = app
-        .store
-        .judgements_page(None, Some(run_id), Some("lint_report"), 2000)
-    else {
+    let Ok(open) = app.store.open_judgements_of_run(run_id, "lint_report") else {
         return;
     };
-    for judgement in open.into_iter().filter(|j| j.outcome.is_none()) {
+    for judgement in open {
         let Some(context) = judgement
             .context
             .first()

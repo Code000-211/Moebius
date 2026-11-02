@@ -386,6 +386,14 @@ CREATE TABLE localize_indexed (
 "#,
     lessons::SCHEMA,
     attempts::SCHEMA,
+    r#"
+CREATE INDEX judgements_by_card ON judgements (card_id, id);
+CREATE INDEX judgements_by_run ON judgements (run_id, kind, id);
+CREATE INDEX runs_by_card ON runs (card_id, id);
+CREATE INDEX usage_by_at ON usage (at);
+CREATE INDEX usage_by_model ON usage (model, at);
+CREATE INDEX events_by_kind ON events (run_id, kind, seq);
+"#,
 ];
 
 pub fn now() -> i64 {

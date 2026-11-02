@@ -152,9 +152,21 @@ impl BlobStore {
         let path = self.path(&id);
         if !path.exists() {
             std::fs::create_dir_all(path.parent().expect("blob paths have a parent"))?;
-            let tmp = path.with_extension("tmp");
+            // A name of its own per writer, so two puts of one content never write the same file.
+            static WRITERS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let tmp = path.with_extension(format!(
+                "{}-{}.tmp",
+                std::process::id(),
+                WRITERS.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ));
             std::fs::write(&tmp, clean.as_bytes())?;
-            std::fs::rename(&tmp, &path)?;
+            if let Err(e) = std::fs::rename(&tmp, &path) {
+                let _ = std::fs::remove_file(&tmp);
+                // Another writer may have stored the same content first (Windows refuses to replace a file in use).
+                if !path.exists() {
+                    return Err(e);
+                }
+            }
         }
         Ok(id)
     }
@@ -185,6 +197,28 @@ mod tests {
         assert_eq!(store.get(&a).unwrap(), "hello world");
         let files: Vec<_> = walk(dir.path());
         assert_eq!(files.len(), 1);
+    }
+
+    #[test]
+    fn concurrent_puts_of_one_content_all_succeed_and_leave_no_temp_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = BlobStore::new(dir.path());
+        let content = "x".repeat(1 << 20);
+        let barrier = std::sync::Barrier::new(8);
+        let ids: Vec<_> = std::thread::scope(|scope| {
+            let writers: Vec<_> = (0..8)
+                .map(|_| {
+                    scope.spawn(|| {
+                        barrier.wait();
+                        store.put(&content).unwrap()
+                    })
+                })
+                .collect();
+            writers.into_iter().map(|w| w.join().unwrap()).collect()
+        });
+        assert!(ids.iter().all(|id| *id == ids[0]));
+        assert_eq!(store.get(&ids[0]).unwrap(), content);
+        assert_eq!(walk(dir.path()).len(), 1);
     }
 
     #[test]

@@ -120,7 +120,7 @@ pub struct UsageTotals {
 }
 
 /// The start of the local day that is `?1 - 1` days ago, as Unix seconds: the first moment of a window of `?1` days.
-const WINDOW_START: &str = "CAST(strftime('%s', 'now', 'localtime', 'start of day', '-' || (?1 - 1) || ' days', 'utc') AS INTEGER)";
+pub(super) const WINDOW_START: &str = "CAST(strftime('%s', 'now', 'localtime', 'start of day', '-' || (?1 - 1) || ' days', 'utc') AS INTEGER)";
 
 impl Usage {
     pub fn total(&self) -> i64 {

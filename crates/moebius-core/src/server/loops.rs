@@ -33,8 +33,8 @@ impl Server {
                     && self
                         .app
                         .store
-                        .judgements_for_card(card.id)
-                        .is_ok_and(|js| js.iter().all(|j| j.outcome.is_some()))
+                        .has_pending_outcomes(card.id)
+                        .is_ok_and(|pending| !pending)
                 {
                     continue;
                 }
@@ -205,6 +205,7 @@ mod tests {
 
     use serde_json::json;
 
+    use crate::app::columns;
     use crate::config::Config;
     use crate::repos::forge::{Forge, GitHubForge};
     use crate::repos::git;
@@ -511,6 +512,69 @@ mod tests {
         override_with("function on_card(card) end");
         f.server.tick();
         assert!(waiting().is_empty());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_done_card_with_an_unfinished_localize_hint_is_not_settled_again() {
+        let f = Fixture::new().await;
+        let origin = f._dir.path().join("origin");
+        let plain = f
+            .server
+            .app
+            .add_repository("plain", origin.to_str().unwrap())
+            .unwrap();
+        let card = f
+            .server
+            .app
+            .create_issue(plain.id, "Anything", "", "person")
+            .unwrap();
+        // The script of Done fails whenever it runs, so a settle shows as the card's waiting reason.
+        let clone = Path::new(&plain.path);
+        std::fs::create_dir_all(clone.join(".moebius")).unwrap();
+        std::fs::write(
+            clone.join(".moebius/done.luau"),
+            "function on_card(card) error('boom') end",
+        )
+        .unwrap();
+        git(clone, &["add", "."]).unwrap();
+        git(clone, &["commit", "--quiet", "-m", "override"]).unwrap();
+        f.server
+            .app
+            .store
+            .move_card(card.id, columns::DONE)
+            .unwrap();
+        f.server
+            .app
+            .store
+            .add_judgement(&crate::store::NewJudgement {
+                kind: "localize".into(),
+                card_id: Some(card.id),
+                ..Default::default()
+            })
+            .unwrap();
+        f.server.tick();
+        assert!(
+            f.server.app.waiting(std::slice::from_ref(&card)).is_empty(),
+            "the Done card was settled again"
+        );
+        // Positive control: a pending judgement of another kind makes the same card settle and fail on the script.
+        f.server
+            .app
+            .store
+            .add_judgement(&crate::store::NewJudgement {
+                kind: "tool_call".into(),
+                card_id: Some(card.id),
+                ..Default::default()
+            })
+            .unwrap();
+        f.server.tick();
+        let reason = f
+            .server
+            .app
+            .waiting(std::slice::from_ref(&card))
+            .remove(&card.id)
+            .unwrap();
+        assert!(reason.starts_with("script error: done.luau"), "{reason}");
     }
 
     #[tokio::test(flavor = "multi_thread")]

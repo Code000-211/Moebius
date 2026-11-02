@@ -37,6 +37,9 @@ pub struct NewJudgement {
     pub card_id: Option<i64>,
 }
 
+/// What follows `FROM judgements` in `open_judgements_of_run`.
+const OPEN_OF_RUN_TAIL: &str = "WHERE run_id = ?1 AND kind = ?2 AND outcome IS NULL ORDER BY id";
+
 impl Store {
     pub fn add_judgement(&self, j: &NewJudgement) -> Result<Judgement> {
         let conn = self.conn();
@@ -92,6 +95,11 @@ impl Store {
              ORDER BY id DESC LIMIT ?4",
             params![card_id, run_id, kind, limit],
         )
+    }
+
+    /// The judgements of the kind made in the run that have no outcome yet, oldest first; served by `judgements_by_run`.
+    pub fn open_judgements_of_run(&self, run_id: i64, kind: &str) -> Result<Vec<Judgement>> {
+        self.judgements_query(OPEN_OF_RUN_TAIL, params![run_id, kind])
     }
 
     pub(super) fn judgements_query(
@@ -189,6 +197,16 @@ impl Store {
         self.judgements_where("card_id = ?1", card_id.into())
     }
 
+    /// Whether a judgement made for the card still waits for the outcome that `set_missing_outcomes` sets. The hints
+    /// of `localize` are left out: their outcome is the files a change touched, which a failed run never reports.
+    pub fn has_pending_outcomes(&self, card_id: i64) -> Result<bool> {
+        Ok(self.conn().query_row(
+            "SELECT EXISTS (SELECT 1 FROM judgements WHERE card_id = ?1 AND outcome IS NULL AND kind <> 'localize')",
+            [card_id],
+            |r| r.get(0),
+        )?)
+    }
+
     pub fn set_outcome(&self, judgement_id: i64, outcome: &str) -> Result<()> {
         self.conn().execute(
             "UPDATE judgements SET outcome = ?1 WHERE id = ?2",
@@ -237,6 +255,74 @@ impl Store {
 mod tests {
     use super::*;
     use crate::store::test_store as store;
+
+    #[test]
+    fn an_unfinished_localize_hint_is_not_a_pending_outcome() {
+        let (_dir, s) = store();
+        let repo = s.add_repository("r", "/r", "none", "main").unwrap();
+        let card = s.add_card(repo.id, "t", "b", "me", "Backlog").unwrap();
+        let judge = |kind: &str| {
+            s.add_judgement(&NewJudgement {
+                kind: kind.into(),
+                card_id: Some(card.id),
+                ..Default::default()
+            })
+            .unwrap()
+        };
+        judge("localize");
+        assert!(!s.has_pending_outcomes(card.id).unwrap());
+        judge("tool_call");
+        assert!(s.has_pending_outcomes(card.id).unwrap());
+        s.set_missing_outcomes(card.id, "done").unwrap();
+        assert!(!s.has_pending_outcomes(card.id).unwrap());
+    }
+
+    #[test]
+    fn the_hot_queries_use_their_indexes() {
+        let (_dir, s) = store();
+        let plan = |sql: &str| -> String {
+            let conn = s.conn();
+            let mut stmt = conn.prepare(&format!("EXPLAIN QUERY PLAN {sql}")).unwrap();
+            let rows: Vec<String> = stmt
+                .query_map([], |r| r.get::<_, String>(3))
+                .unwrap()
+                .map(|row| row.unwrap())
+                .collect();
+            rows.join("; ")
+        };
+        let open_of_run = format!("SELECT id FROM judgements {OPEN_OF_RUN_TAIL}")
+            .replace("?1", "1")
+            .replace("?2", "'x'");
+        let window = format!(
+            "SELECT id FROM usage WHERE at >= {} AND model = 'm'",
+            crate::store::usage::WINDOW_START
+        )
+        .replace("?1", "1");
+        for (sql, index) in [
+            (open_of_run.as_str(), "judgements_by_run"),
+            (window.as_str(), "usage_by_model"),
+            (
+                "SELECT id FROM judgements WHERE card_id = 1",
+                "judgements_by_card",
+            ),
+            (
+                "SELECT id FROM judgements WHERE run_id = 1 AND kind = 'x'",
+                "judgements_by_run",
+            ),
+            ("SELECT id FROM runs WHERE card_id = 1", "runs_by_card"),
+            ("SELECT id FROM usage WHERE at >= 5", "usage_by_at"),
+            (
+                "SELECT id FROM usage WHERE model = 'm' AND at >= 5",
+                "usage_by_model",
+            ),
+            (
+                "SELECT MAX(seq) FROM events WHERE run_id = 1 AND kind = 'x'",
+                "events_by_kind",
+            ),
+        ] {
+            assert!(plan(sql).contains(index), "{sql}: {}", plan(sql));
+        }
+    }
 
     #[test]
     fn refusals_are_counted_by_the_rule_named_in_the_reason() {
