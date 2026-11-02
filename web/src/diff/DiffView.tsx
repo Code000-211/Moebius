@@ -1,11 +1,14 @@
 /**
- * A unified diff drawn for reading: a list of the files with what each adds and removes, and the lines of the file
- * chosen with their numbers. Written for Moebius on `parse.ts`. The lines show unified or side by side (old file left,
- * new file right). It is the densest screen of the app and stays that way — monospace at 13px, 24px lines — but long
- * lines wrap rather than run sideways, a change is a sign as well as a tint, and a file shows at most `MAX_LINES`
- * lines, with what is left out said.
+ * A unified diff drawn for reading, in the two columns the Files box of a repository uses: the names of the files a
+ * change touched down the left, each with what it costs, and the lines of the file chosen down the right, with their
+ * numbers. Written for Moebius on `parse.ts`. The lines show unified or side by side (old file left, new file right).
+ * It is the densest screen of the app and stays that way — monospace at 13px, 24px lines — but long lines wrap rather
+ * than run sideways, a change is a sign as well as a tint, and a file shows at most `MAX_LINES` lines, with what is
+ * left out said. Each column scrolls on its own, so picking the next file never moves the list you picked from.
  */
 import { useMemo, useState } from "react";
+import { FileRow, FolderRow } from "../ui/files/TreeRows";
+import { type PathNode, treeOf } from "../ui/files/tree";
 import { cn } from "../ui/lib/cn";
 import { plural } from "../ui/lib/format";
 import { Empty } from "../ui/page/Empty";
@@ -195,9 +198,93 @@ function FileBody({ file, mode }: { file: FileDiff; mode: Mode }) {
   );
 }
 
+/**
+ * The sidebar: the paths a change touched, nested into the folders they sit in. Every folder starts open, because a
+ * change names few enough files to read at once and a closed folder would hide the very file someone is looking for;
+ * what a person closes stays closed while the diff is on the screen. Each file carries what it costs, so the column
+ * can be scanned for the biggest thing in it.
+ */
+function TreeBranch({
+  nodes,
+  depth,
+  costs,
+  chosen,
+  onSelect,
+  closed,
+  onToggle,
+}: {
+  nodes: PathNode[];
+  depth: number;
+  /** What each path adds and removes, by path. */
+  costs: Map<string, FileDiff>;
+  chosen: string;
+  onSelect: (path: string) => void;
+  closed: ReadonlySet<string>;
+  onToggle: (path: string) => void;
+}) {
+  return (
+    <>
+      {nodes.map((node) => {
+        if (node.kind === "dir") {
+          const isOpen = !closed.has(node.path);
+          return (
+            <li key={node.path}>
+              <FolderRow
+                name={node.name}
+                path={node.path}
+                depth={depth}
+                open={isOpen}
+                onToggle={onToggle}
+              />
+              {isOpen && (
+                <ul className="m-0 list-none p-0">
+                  <TreeBranch
+                    nodes={node.children}
+                    depth={depth + 1}
+                    costs={costs}
+                    chosen={chosen}
+                    onSelect={onSelect}
+                    closed={closed}
+                    onToggle={onToggle}
+                  />
+                </ul>
+              )}
+            </li>
+          );
+        }
+        const cost = costs.get(node.path);
+        return (
+          <li key={node.path} data-testid="diff-file">
+            <FileRow
+              name={node.name}
+              path={node.path}
+              depth={depth}
+              chosen={node.path === chosen}
+              onOpen={onSelect}
+              trailing={
+                cost && (
+                  <Delta
+                    additions={cost.additions}
+                    deletions={cost.deletions}
+                    className="shrink-0 text-sm"
+                  />
+                )
+              }
+            />
+          </li>
+        );
+      })}
+    </>
+  );
+}
+
 export function DiffView({ diff, truncated = false }: { diff: string; truncated?: boolean }) {
   const files = useMemo(() => parseUnifiedDiff(diff), [diff]);
-  const [chosen, setChosen] = useState(0);
+  const nodes = useMemo(() => treeOf(files.map((each) => each.path)), [files]);
+  const costs = useMemo(() => new Map(files.map((each) => [each.path, each] as const)), [files]);
+  const [chosen, setChosen] = useState<string | null>(null);
+  /** The folders a person closed. Everything else is open, so a diff says all of itself first. */
+  const [closed, setClosed] = useState<ReadonlySet<string>>(new Set());
   const [mode, setMode] = useState<Mode>("unified");
   if (files.length === 0) {
     return (
@@ -209,53 +296,46 @@ export function DiffView({ diff, truncated = false }: { diff: string; truncated?
       </div>
     );
   }
-  const file = files[Math.min(chosen, files.length - 1)] as FileDiff;
+  // The first file of the diff, until a row is clicked; a file that leaves the diff takes the next one in line.
+  const file = files.find((each) => each.path === chosen) ?? (files[0] as FileDiff);
   const sum = totals(files);
   return (
-    <div className="flex min-w-0 flex-col gap-4" data-testid="diff">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4" data-testid="diff">
       {/* What the change costs, in one line. It needs no key to the colours: each number carries its own sign. */}
       <p className="m-0 text-sm text-secondary tabular-nums" data-testid="diff-summary">
         {`${plural(files.length, "file", "files")} · `}
         <Delta additions={sum.additions} deletions={sum.deletions} />
         {truncated && <span>{" · the rest of the diff is left out"}</span>}
       </p>
-      <ul
-        /* biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with no marker from the accessibility tree entirely */
-        role="list"
-        className="m-0 flex max-h-64 list-none flex-col gap-1 overflow-y-auto p-0"
-        aria-label="Changed files"
-      >
-        {files.map((each, index) => (
-          <li key={each.path}>
-            <button
-              type="button"
-              data-testid="diff-file"
-              aria-current={each === file ? "true" : undefined}
-              onClick={() => setChosen(index)}
-              className={cn(
-                "flex min-h-10 w-full flex-wrap items-center gap-2 rounded-control px-3 py-2 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover",
-                each === file ? "bg-selected text-text" : "text-secondary",
-              )}
-            >
-              <span
-                className="min-w-0 flex-1 break-all font-mono text-sm text-text"
-                title={each.path}
-              >
-                {each.path}
-              </span>
-              {STATUS_WORD[each.status] && (
-                <span className="shrink-0 text-sm font-semibold text-secondary">
-                  {STATUS_WORD[each.status]}
-                </span>
-              )}
-              <Delta additions={each.additions} deletions={each.deletions} className="text-sm" />
-            </button>
-          </li>
-        ))}
-      </ul>
-      <section className="overflow-hidden rounded-card bg-surface shadow-card">
-        <header className="flex flex-col gap-2 p-4">
-          <div className="flex flex-wrap items-center gap-4">
+      {/* Two inset columns separated by space alone, as the Files box of a repository is: the names where they are
+          compared, the lines where they are read, each scrolling on its own. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-4 md:flex-row md:items-stretch">
+        <div className="max-h-96 w-full min-w-0 shrink-0 overflow-y-auto rounded-card bg-sunken p-2 md:max-h-none md:w-64">
+          <ul
+            /* biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with no marker from the accessibility tree entirely */
+            role="list"
+            aria-label="Changed files"
+            className="m-0 list-none p-0 text-base"
+          >
+            <TreeBranch
+              nodes={nodes}
+              depth={0}
+              costs={costs}
+              chosen={file.path}
+              onSelect={setChosen}
+              closed={closed}
+              onToggle={(path) =>
+                setClosed((all) => {
+                  const next = new Set(all);
+                  if (!next.delete(path)) next.add(path);
+                  return next;
+                })
+              }
+            />
+          </ul>
+        </div>
+        <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-card bg-code">
+          <header className="flex shrink-0 flex-wrap items-center gap-4 p-4">
             <p
               className="m-0 min-w-0 flex-1 break-all font-mono text-sm font-semibold text-text"
               data-testid="diff-path"
@@ -288,10 +368,12 @@ export function DiffView({ diff, truncated = false }: { diff: string; truncated?
                 </button>
               ))}
             </fieldset>
+          </header>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <FileBody file={file} mode={mode} />
           </div>
-        </header>
-        <FileBody file={file} mode={mode} />
-      </section>
+        </section>
+      </div>
     </div>
   );
 }

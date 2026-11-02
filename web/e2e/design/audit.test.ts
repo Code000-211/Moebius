@@ -35,7 +35,7 @@ interface Route {
   path: string;
   name: string;
   /** Something to open before measuring, so a sheet is on the screen when it is the thing being judged. */
-  open?: "search" | "chat" | "new issue" | "menu" | "terminal" | "chats" | "diff";
+  open?: "search" | "chat" | "new issue" | "menu" | "terminal" | "chats" | "diff" | "changes";
 }
 
 /** One page as the browser measured it. Every list holds findings as plain sentences. */
@@ -125,6 +125,8 @@ const routes: Route[] = [
   { path: "/board/1", name: "board-new-issue", open: "new issue" },
   { path: "/board/1", name: "board-terminal", open: "terminal" },
   { path: "/board/1?card=5", name: "board-diff", open: "diff" },
+  // The same diff read on its own page, where it fills the page instead of a sheet.
+  { path: "/runs/1000", name: "run-changes", open: "changes" },
   { path: "/chat", name: "chat-menu", open: "menu" },
   { path: "/chat", name: "chat-chats", open: "chats" },
 ];
@@ -239,6 +241,11 @@ async function open(page: Page, what: NonNullable<Route["open"]>) {
     // The dock keeps one line about a change; the diff is measured where it is read.
     await page.getByTestId("diff-card").click();
     await page.getByRole("dialog").first().waitFor({ timeout: 5_000 });
+    return;
+  }
+  if (what === "changes") {
+    await page.getByRole("tab", { name: "Changes" }).click();
+    await page.getByTestId("diff").waitFor({ timeout: 5_000 });
     return;
   }
   await page.getByRole("button", { name: "New issue" }).click();

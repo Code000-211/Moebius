@@ -257,7 +257,7 @@ function OpenRun({ id }: { id: number }) {
         <TabPanel
           idBase={views}
           value="changes"
-          className="min-h-0 flex-1 overflow-y-auto"
+          className="flex min-h-0 flex-1 flex-col"
           testId="run-changes"
         >
           <Changes of={{ run: id }} />

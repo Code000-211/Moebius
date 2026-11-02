@@ -124,9 +124,7 @@ export function ChangesCard({ of }: { of: { change: number } }) {
             <DialogHeader>
               <DialogTitle>Changes</DialogTitle>
             </DialogHeader>
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              <Changes of={of} />
-            </div>
+            <Changes of={of} />
           </div>
         </DialogContent>
       </Dialog>
