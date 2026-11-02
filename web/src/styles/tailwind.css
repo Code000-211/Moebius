@@ -357,8 +357,13 @@
     color: var(--text);
   }
 
-  /* A scrollbar is a hint about how much is off screen, not a piece of furniture: thin, no arrows, no track of its own
-     colour, and a thumb only a little stronger than a hairline. */
+  /* A scrollbar is a hint about how much is off screen, not a piece of furniture: the standard asks for a thin bar with
+     no track of its own colour and a thumb only a little stronger than a hairline, and asks for it only while the
+     pointer is inside the pane it scrolls. Only the paint is gated, so the room a bar takes never changes: a pane does
+     not narrow and its words do not slide aside when a hand arrives or leaves. A screen with nothing to hover keeps the
+     thumb, because there the bar is the only thing that says what is off screen. Chromium 121 and Firefox answer to the
+     standard properties below; a bar drawn from them keeps the browser's own arrows, which the pseudo-elements further
+     down would have hidden and no longer can, since a browser that reads `scrollbar-color` pays no attention to them. */
   * {
     scrollbar-width: thin;
     scrollbar-color: var(--scrollbar-thumb) transparent;
@@ -376,6 +381,30 @@
   ::-webkit-scrollbar-thumb {
     border-radius: var(--radius-round);
     background: var(--scrollbar-thumb);
+  }
+
+  @media (hover: hover) {
+    /* Both engines are spoken to, and the standard property leads: it is what Chromium 121 and Firefox paint from,
+       and a browser that reads it ignores the `::-webkit-scrollbar` pseudo-elements, which are left for the browsers
+       that have nothing else to read. Gate one path without the other and the bar stays on screen in whichever
+       browser was not written to. */
+    * {
+      scrollbar-color: transparent transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: transparent;
+    }
+
+    /* A pane shows its bar when the hand is anywhere inside it — `:hover` reaches every ancestor of what the pointer
+       is over — and keeps it shown while the hand drags that bar. */
+    *:hover {
+      scrollbar-color: var(--scrollbar-thumb) transparent;
+    }
+
+    *:hover::-webkit-scrollbar-thumb {
+      background: var(--scrollbar-thumb);
+    }
   }
 
   ::-webkit-scrollbar-button,

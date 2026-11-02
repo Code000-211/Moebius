@@ -79,3 +79,120 @@ export async function columnsScrollEach(page: Page): Promise<void> {
     2,
   );
 }
+
+/** A point for the pointer to wait at that is outside `box`, so nothing of that pane is hovered. */
+function parkOutside(
+  box: { x: number; y: number; width: number; height: number },
+  view: { width: number; height: number },
+): { x: number; y: number } {
+  const inPane = Math.round(box.y + Math.min(box.height / 2, 100));
+  const left = Math.round(box.x - 8);
+  if (left >= 1) return { x: left, y: inPane };
+  const right = Math.round(box.x + box.width + 8);
+  if (right <= view.width - 2) return { x: right, y: inPane };
+  const above = Math.round(box.y - 8);
+  if (above >= 1) return { x: Math.round(box.x + Math.min(box.width / 2, 100)), y: above };
+  return {
+    x: Math.round(box.x + Math.min(box.width / 2, 100)),
+    y: Math.round(Math.min(box.y + box.height + 8, view.height - 2)),
+  };
+}
+
+/**
+ * Checks the app's rule for scrollbars over every pane of the page that runs off: a thumb is painted only while the
+ * pointer is inside the pane it scrolls, and the pane keeps the same room — and its content the same place — whether
+ * the thumb is painted or not, so a bar arriving or leaving moves nothing. Every pane that has more behind its bottom
+ * edge than fits is read twice: once with the pointer parked outside it and once with the pointer in it. What has to
+ * differ between the readings is the eight-wide strip along the pane's right edge, where its own bar is drawn and no
+ * row of content reaches; what has not to differ is the width the pane has to lay its content in and where the pane
+ * and its first row stand.
+ */
+export async function scrollbarsAreQuiet(page: Page): Promise<void> {
+  const marks = await page.evaluate(() => {
+    const found: string[] = [];
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>("body *"))) {
+      const style = getComputedStyle(el);
+      const scrolls = style.overflowY === "auto" || style.overflowY === "scroll";
+      if (!scrolls || el.scrollHeight - el.clientHeight < 24) continue;
+      el.dataset.scrollbarPane = String(found.length);
+      found.push(el.dataset.scrollbarPane);
+    }
+    return found;
+  });
+  expect(marks.length, "the page has no pane that runs off to scroll").toBeGreaterThan(0);
+  const view = page.viewportSize() ?? { width: 1280, height: 720 };
+
+  for (const mark of marks) {
+    const pane = page.locator(`[data-scrollbar-pane="${mark}"]`);
+    const box = await pane.boundingBox();
+    if (!box) throw new Error(`pane ${mark} drew no box`);
+    // The strip is what the bar is painted on: inside the border box, where no row of content is drawn.
+    const top = Math.max(0, Math.ceil(box.y));
+    const clip = {
+      x: Math.round(box.x + box.width) - 8,
+      y: top,
+      width: 8,
+      height: Math.max(1, Math.round(Math.min(box.height, 160, view.height - top - 1))),
+    };
+    const reading = async () => ({
+      strip: await page.screenshot({ clip }),
+      state: await pane.evaluate((node0) => {
+        const el = node0 as HTMLElement;
+        const place = (node: Element) => {
+          const r = node.getBoundingClientRect();
+          return `${Math.round(r.x)},${Math.round(r.y)},${Math.round(r.width)},${Math.round(r.height)}`;
+        };
+        return {
+          thumb: getComputedStyle(el).scrollbarColor,
+          bar: el.offsetWidth - el.clientWidth,
+          room: `${el.clientWidth}x${el.clientHeight}`,
+          pane: place(el),
+          row: el.firstElementChild ? place(el.firstElementChild) : "",
+        };
+      }),
+    });
+
+    const park = parkOutside(box, view);
+    await page.mouse.move(park.x, park.y);
+    const quiet = await reading();
+    expect(quiet.state.thumb, `pane ${mark} paints a thumb while nothing of it is hovered`).toMatch(
+      /^rgba\(0, 0, 0, 0\)/,
+    );
+
+    await page.mouse.move(box.x + box.width / 2, box.y + Math.min(box.height / 2, 100));
+    await expect
+      .poll(() => pane.evaluate((el) => getComputedStyle(el).scrollbarColor), {
+        message: `pane ${mark} keeps its thumb hidden with the pointer inside it`,
+      })
+      .not.toMatch(/^rgba\(0, 0, 0, 0\)/);
+    const shown = await reading();
+
+    // A bar that takes room in the pane is painted from the colours of the page, so the strip says whether the thumb
+    // arrived. A bar that floats over the content instead — the flavour a headless browser draws, where a pane's
+    // offset width and client width are the same — is painted by the browser itself and answers to no colour of the
+    // page, so there is nothing in the strip to read and only the room is worth checking.
+    if (shown.state.bar > 0) {
+      expect(
+        Buffer.compare(quiet.strip, shown.strip),
+        `pane ${mark} shows no thumb of its own when the pointer is inside it`,
+      ).not.toBe(0);
+      await page.mouse.move(park.x, park.y);
+      // And it goes when the hand goes: the bar belongs to the pointer being inside, not to having been inside.
+      const away = await reading();
+      expect(
+        Buffer.compare(quiet.strip, away.strip),
+        `pane ${mark} keeps its thumb out after the pointer leaves it`,
+      ).toBe(0);
+    }
+    expect(shown.state.bar, `pane ${mark} gains or loses room for its bar on hover`).toBe(
+      quiet.state.bar,
+    );
+    expect(shown.state.room, `pane ${mark} takes a different room once its thumb is painted`).toBe(
+      quiet.state.room,
+    );
+    expect(shown.state.pane, `pane ${mark} moves when its thumb is painted`).toBe(quiet.state.pane);
+    expect(shown.state.row, `pane ${mark} shifts its content when its thumb is painted`).toBe(
+      quiet.state.row,
+    );
+  }
+}

@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { type Browser, type BrowserContext, chromium, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { dayName } from "../src/ui/lib/format";
-import { columnsScrollEach, pickOption, showing } from "./controls";
+import { columnsScrollEach, pickOption, scrollbarsAreQuiet, showing } from "./controls";
 import { startServer, type TestServer, usesRealServer } from "./server";
 
 let browser: Browser;
@@ -806,7 +806,9 @@ describe("the pages that put a list beside a detail", () => {
     await fresh();
     await read("/automations", "Automations");
     await columnsScrollEach(page);
+    await scrollbarsAreQuiet(page);
     await read("/experiments", "Experiments");
     await columnsScrollEach(page);
+    await scrollbarsAreQuiet(page);
   });
 });

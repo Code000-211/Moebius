@@ -7,7 +7,7 @@
  */
 import { type Browser, type BrowserContext, chromium, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { columnsScrollEach, pickOption, showing } from "./controls";
+import { columnsScrollEach, pickOption, scrollbarsAreQuiet, showing } from "./controls";
 import type { FakeServer } from "./fakeServer";
 import { startServer, type TestServer, usesRealServer } from "./server";
 
@@ -846,6 +846,7 @@ describe("the pages that put a list beside a detail", () => {
       await page.getByTestId("list-card").first().click();
       await page.getByTestId("detail-column").waitFor();
       await columnsScrollEach(page);
+      await scrollbarsAreQuiet(page);
     }
   });
 });
