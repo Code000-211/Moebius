@@ -1,7 +1,8 @@
 /**
- * The inspector dock of the board: the card chosen, with the issue it came from, what a person can do about it
- * (approve, merge, send back, retry), where it stands (run, waiting, checks, cost), its runs, its change — the
- * headline of its diff, which opens the whole diff in a sheet — its history and the script of its column, read-only.
+ * The inspector dock of the board: the card chosen, with the issue it came from and the change it offered — the
+ * headline of its diff, which opens the whole diff in a sheet — then what a person can do about it (approve, merge,
+ * send back, retry), where it stands (run, waiting, checks, cost), its runs, its history and the script of its
+ * column, read-only.
  * It is a drawer beside the board, so the board stays readable behind it: no border, the
  * groups apart by space, and every control labelled. It is the web counterpart of the desktop board's dock plus the
  * history screen; the script's editor comes with its page.
@@ -240,6 +241,14 @@ export function Dock({
         </KanbanIssueSection>
       )}
 
+      {/* A change is what a person came to the card to weigh, so it follows the issue it answers instead of
+          waiting behind the runs that made it. */}
+      {card.change && (
+        <KanbanIssueSection title="Changes">
+          <ChangesCard of={{ change: card.change.id }} />
+        </KanbanIssueSection>
+      )}
+
       {item && (
         <KanbanIssueSection title="Your turn">
           <p className="m-0 mb-4 text-base text-text [overflow-wrap:anywhere]">{item.title}</p>
@@ -305,12 +314,6 @@ export function Dock({
           ))}
         </ul>
       </KanbanIssueSection>
-
-      {card.change && (
-        <KanbanIssueSection title="Changes">
-          <ChangesCard of={{ change: card.change.id }} />
-        </KanbanIssueSection>
-      )}
 
       <KanbanIssueSection title="History">
         <QueryText
