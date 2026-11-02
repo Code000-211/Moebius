@@ -84,7 +84,9 @@ export function KanbanCardContent({
             onOpen();
           }}
           className={cn(
-            "flex min-h-10 w-full appearance-none items-center rounded-control bg-transparent p-0 text-left text-base font-semibold [overflow-wrap:anywhere]",
+            // The title keeps the 40px a control is asked to have and takes back the slack inside it, so the line of
+            // type sits the row's own gap from the state above it and the body below it rather than a gap and a half.
+            "-my-2 flex min-h-10 w-full appearance-none items-center rounded-control bg-transparent p-0 text-left text-base font-semibold [overflow-wrap:anywhere]",
             muted ? "text-secondary" : "text-text",
           )}
         >

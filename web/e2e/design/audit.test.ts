@@ -35,7 +35,7 @@ interface Route {
   path: string;
   name: string;
   /** Something to open before measuring, so a sheet is on the screen when it is the thing being judged. */
-  open?: "search" | "chat" | "new issue" | "menu" | "terminal" | "chats";
+  open?: "search" | "chat" | "new issue" | "menu" | "terminal" | "chats" | "diff";
 }
 
 /** One page as the browser measured it. Every list holds findings as plain sentences. */
@@ -120,8 +120,11 @@ const routes: Route[] = [
   // The layers that only exist once a person opens them.
   { path: "/inbox", name: "inbox-search", open: "search" },
   { path: "/inbox", name: "inbox-chat", open: "chat" },
+  // A card open takes a column of the page for a drawer, and its change opens a sheet of its own.
+  { path: "/board/1?card=1", name: "board-dock" },
   { path: "/board/1", name: "board-new-issue", open: "new issue" },
   { path: "/board/1", name: "board-terminal", open: "terminal" },
+  { path: "/board/1?card=5", name: "board-diff", open: "diff" },
   { path: "/chat", name: "chat-menu", open: "menu" },
   { path: "/chat", name: "chat-chats", open: "chats" },
 ];
@@ -229,6 +232,12 @@ async function open(page: Page, what: NonNullable<Route["open"]>) {
   if (what === "terminal") {
     // The shell is the reason the board's terminal is a sheet, so the sheet is measured like one.
     await page.getByRole("button", { name: "Terminal" }).click();
+    await page.getByRole("dialog").first().waitFor({ timeout: 5_000 });
+    return;
+  }
+  if (what === "diff") {
+    // The dock keeps one line about a change; the diff is measured where it is read.
+    await page.getByTestId("diff-card").click();
     await page.getByRole("dialog").first().waitFor({ timeout: 5_000 });
     return;
   }
