@@ -172,7 +172,9 @@
   --field: #ffffff;
   --lane: #f4f2ef;
   --hover: #f1efec;
-  --selected: #eceae6;
+  /* A chosen thing has to look chosen. One step under the fill it sits on is a difference of three percent, which
+     is nothing to the eye, so the chosen fill is a step below the hover of its own. */
+  --selected: #e3e0da;
   --track: #e9e6e1;
   --heat-empty: #efece8;
   --scrim: rgb(17 17 17 / 45%);

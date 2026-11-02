@@ -561,15 +561,19 @@ describe("projects", () => {
     "goes to a file by what is typed, with the keyboard or the mouse",
     async () => {
       await open("/projects/1");
-      await page.getByRole("button", { name: "Go to file" }).click();
       const field = page.getByRole("textbox", { name: "Go to file" });
+      const tree = page.getByRole("list", { name: "Files", exact: true });
+      // Where the tree sits in the page, whatever the viewport is scrolled to.
+      const treeTop = () =>
+        tree.evaluate((list) => list.getBoundingClientRect().top + window.scrollY);
+      const before = await treeTop();
       await field.fill("mr");
-      const best = page
-        .getByRole("dialog", { name: "Go to file" })
-        .getByRole("button")
-        .filter({ hasText: /main\.rs$/ });
+      const matches = page.getByRole("list", { name: "Matching files" });
+      const best = matches.getByRole("button").filter({ hasText: /main\.rs$/ });
       await best.first().waitFor();
       expect(await best.first().textContent()).toBe("src/main.rs");
+      // The dropdown hangs over the tree rather than shoving it down.
+      expect(Math.abs((await treeTop()) - before)).toBeLessThan(1);
       await field.press("ArrowDown");
       await field.press("Enter");
       await page.getByLabel("Text of src/server/main.rs").waitFor();
@@ -578,13 +582,24 @@ describe("projects", () => {
         .getByRole("list", { name: "Files" })
         .getByRole("button", { name: "server" })
         .waitFor();
-      expect(await page.getByRole("dialog", { name: "Go to file" }).count()).toBe(0);
+      // The file is chosen, so the bar empties and the tree is on its own again.
+      expect(await field.inputValue()).toBe("");
+      expect(await matches.count()).toBe(0);
 
-      // Ctrl+P opens it too, and a click on a result opens the file.
+      // Ctrl+P puts the caret in the bar, and the X empties it again.
       await page.keyboard.press("Control+p");
-      await page.getByRole("textbox", { name: "Go to file" }).fill("guide");
+      expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe(
+        "Go to file",
+      );
+      await page.keyboard.type("guide");
+      await page.getByRole("button", { name: "Clear go to file" }).click();
+      expect(await field.inputValue()).toBe("");
+      expect(await matches.count()).toBe(0);
+
+      // Typing again and clicking a result opens the file.
+      await field.fill("guide");
       await page
-        .getByRole("dialog", { name: "Go to file" })
+        .getByRole("list", { name: "Matching files" })
         .getByRole("button", { name: "docs/guide.md" })
         .click();
       await page.getByLabel("Text of docs/guide.md").waitFor();
@@ -596,12 +611,14 @@ describe("projects", () => {
     await page.getByRole("heading", { name: "Files" }).waitFor();
     await page.keyboard.press("Control+Shift+F");
     const field = page.getByRole("textbox", { name: "Search in files" });
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe(
+      "Search in files",
+    );
     await field.fill("main");
-    await field.press("Enter");
     await page.getByText(/^\d+ hits in 3 files$/).waitFor();
-    const panel = page.getByRole("dialog", { name: "Search in files" });
-    await panel.getByText("src/server/main.rs", { exact: true }).waitFor();
-    await panel.getByRole("button", { name: /mod main_loop;/ }).click();
+    const hits = page.getByRole("list", { name: "Search hits" });
+    await hits.getByText("src/server/main.rs", { exact: true }).waitFor();
+    await hits.getByRole("button", { name: /mod main_loop;/ }).click();
     const text = page.getByLabel("Text of src/server/main.rs");
     await text.waitFor();
     // The cursor is at the start of line 3.
@@ -612,12 +629,13 @@ describe("projects", () => {
     );
 
     // A search that fails says why, and a regular expression is asked for on its own.
-    await page.keyboard.press("Control+Shift+F");
-    const again = page.getByRole("textbox", { name: "Search in files" });
     await page.getByLabel("Regex").check();
-    await again.fill("(");
-    await again.press("Enter");
+    await field.fill("(");
     await alert("fatal: unmatched parenthesis").waitFor();
+
+    // Clearing the bar puts the editor back on its own.
+    await page.getByRole("button", { name: "Clear search in files" }).click();
+    expect(await hits.count()).toBe(0);
   });
 
   it("opens the page of a repository with its files for a real server", async () => {
@@ -631,7 +649,7 @@ describe("projects", () => {
     await page.goto(`${server.url}/projects/${id}`);
     await page.getByRole("heading", { name: "browse", level: 1 }).waitFor();
     await page.getByRole("heading", { name: "Files" }).waitFor();
-    await page.getByRole("button", { name: "Go to file" }).waitFor();
+    await page.getByRole("textbox", { name: "Go to file" }).waitFor();
     await page.getByText("This repository is on no forge").waitFor();
   });
 });
