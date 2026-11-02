@@ -1,14 +1,15 @@
 // From BloopAI/vibe-kanban packages/ui/src/components/KanbanIssuePanel.tsx (Apache-2.0), changed: the panel is a
 // read-only inspector, not the form for creating and editing an issue (the title, description editor, tags, assignees
 // and attachments are gone); it keeps the frame — the header with the number, the copy-link and close buttons, Escape
-// to close, the scrolling body — and takes its sections as children; it is a sheet beside the board rather than over
-// it, so it carries no border and separates its sections with space instead of rules, its controls are labelled,
-// and its body fades the edges it cuts off.
+// to close, the scrolling body — and takes its sections as children; it is a drawer beside the board, so it is as tall
+// as the box that holds it and carries no border, separating its sections with space instead of rules, labelling its
+// controls, and fading the edges its body cuts off.
 import { LinkIcon, XIcon } from "@phosphor-icons/react";
 import { type KeyboardEvent, type ReactNode, useId } from "react";
 import { cn } from "../lib/cn";
 import { useScrollFades } from "../page/ScrollFades";
 import { Button } from "./Button";
+import { IconButton } from "./IconButton";
 
 export interface KanbanIssuePanelProps {
   /** The card's number as it is written, such as `#12`. */
@@ -43,6 +44,10 @@ export function KanbanIssuePanel({
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key !== "Escape") return;
     const target = e.target as HTMLElement;
+    // Escape belongs to the topmost layer. A sheet the inspector itself opened — the diff of a change — is inside
+    // this section in the tree that opened it, even though it draws over the whole page, so its own Escape is
+    // stopped here rather than closing the card behind it as well.
+    if (target.closest('[role="dialog"]')) return;
     const isEditable =
       target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
     if (isEditable) {
@@ -64,7 +69,7 @@ export function KanbanIssuePanel({
     <section
       aria-label="Card inspector"
       className={cn(
-        "flex max-h-screen min-h-0 flex-col overflow-hidden rounded-sheet bg-surface shadow-card outline-none",
+        "flex h-full max-h-screen min-h-0 flex-col overflow-hidden rounded-sheet bg-surface shadow-card outline-none",
         className,
       )}
       onKeyDown={handleKeyDown}
@@ -96,10 +101,7 @@ export function KanbanIssuePanel({
         </div>
         <div className="flex items-center gap-2">
           {status}
-          <Button variant="ghost" size="sm" aria-label="Close the inspector" onClick={onClose}>
-            <XIcon className="size-4" weight="bold" aria-hidden="true" />
-            Close
-          </Button>
+          <IconButton icon={XIcon} aria-label="Close the inspector" onClick={onClose} />
         </div>
       </div>
 

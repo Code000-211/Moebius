@@ -200,21 +200,25 @@ export function BoardPage() {
 
   return (
     <>
-      <PageHeader
-        title={board.repository.name}
-        actions={
-          <>
-            <Button variant="secondary" onClick={() => setTerminalOpen(true)}>
-              <TerminalWindowIcon className="size-4" aria-hidden="true" />
-              Terminal
-            </Button>
-            <Button onClick={() => setCreating(true)}>
-              <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
-              New issue
-            </Button>
-          </>
-        }
-      />
+      {/* A card open takes a column of the page for its drawer, and the head of the page is part of the page: its
+          actions stand left of the drawer rather than under it. */}
+      <div className={inspected ? "xl:pr-96" : undefined}>
+        <PageHeader
+          title={board.repository.name}
+          actions={
+            <>
+              <Button variant="secondary" onClick={() => setTerminalOpen(true)}>
+                <TerminalWindowIcon className="size-4" aria-hidden="true" />
+                Terminal
+              </Button>
+              <Button onClick={() => setCreating(true)}>
+                <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
+                New issue
+              </Button>
+            </>
+          }
+        />
+      </div>
       {/* The dock stands beside the whole of the board, not beside its lanes: it belongs to the page, and starting it
           under the filters spent the room it asks for and left the filters standing alone over nothing. */}
       <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-start">
@@ -260,21 +264,25 @@ export function BoardPage() {
           </ScrollFades>
         </div>
         {inspected && (
-          <div className="w-full shrink-0 xl:sticky xl:top-0 xl:w-96">
-            <Dock
-              key={inspected.id}
-              board={board}
-              card={inspected}
-              item={inboxOf(inbox, inspected)}
-              busy={pending}
-              askFor={rejectFor}
-              onAskAnswered={() => setRejectFor(null)}
-              onDecide={decide}
-              onClose={() => {
-                setQuery({ card: "none" });
-                setRejectFor(null);
-              }}
-            />
+          // The column holds the drawer's width so the board keeps the room it has; the drawer itself is the window's
+          // height, level with the head of the page, and scrolls its own sections rather than the page's.
+          <div className="w-full shrink-0 xl:w-96">
+            <div className="xl:fixed xl:inset-y-6 xl:right-6 xl:w-96">
+              <Dock
+                key={inspected.id}
+                board={board}
+                card={inspected}
+                item={inboxOf(inbox, inspected)}
+                busy={pending}
+                askFor={rejectFor}
+                onAskAnswered={() => setRejectFor(null)}
+                onDecide={decide}
+                onClose={() => {
+                  setQuery({ card: "none" });
+                  setRejectFor(null);
+                }}
+              />
+            </div>
           </div>
         )}
       </div>
