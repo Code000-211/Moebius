@@ -196,13 +196,10 @@ function BlockView({
   block,
   isOpen,
   onToggle,
-  compact = false,
 }: {
   block: Block;
   isOpen: (key: string) => boolean;
   onToggle: (key: string) => void;
-  /** The rows of a block of steps sit closer together, for the dock, where a conversation is scanned rather than read. */
-  compact?: boolean;
 }) {
   switch (block.kind) {
     case "text":
@@ -236,15 +233,12 @@ function BlockView({
         />
       );
     case "steps":
-      // A row of the log is 32px rather than the 40px of a thing you aim at, and the gap stays the standard's
-      // 8px, so the rhythm a hand aims at is still 40px and the log simply holds more of it. The marker is what
-      // tells `e2e/design/audit.test.ts` these rows are a log at 32px rather than controls at 40px.
+      // A row of the log is 32px rather than the 40px of a thing you aim at, and the rows sit 4px apart, so a log of
+      // what the agent did reads as one block of small marks rather than a list to choose from. It is the same rhythm
+      // in the page and in the dock. The marker is what tells `e2e/design/audit.test.ts` these rows are a log at 32px
+      // rather than controls at 40px.
       return (
-        <div
-          className={cn("flex flex-col", compact ? "gap-1" : "gap-2")}
-          data-testid="steps"
-          data-audit="log"
-        >
+        <div className="flex flex-col gap-1" data-testid="steps" data-audit="log">
           {block.steps.map((step) => (
             <StepLine key={step.key} step={step} isOpen={isOpen} onToggle={onToggle} />
           ))}
@@ -278,13 +272,7 @@ export function Turn({ turn, unfolded, onToggle, compact = false }: TurnProps) {
   // colour, and what the agent did, answered and got wrong is the text and the rows under it, in the order it came. A
   // card of its own would put a second shadow inside the chat, which is itself a card on the page or a sheet over it.
   const view = (block: Block) => (
-    <BlockView
-      key={block.key}
-      block={block}
-      isOpen={isOpen}
-      onToggle={onToggle}
-      compact={compact}
-    />
+    <BlockView key={block.key} block={block} isOpen={isOpen} onToggle={onToggle} />
   );
   return (
     <div data-testid="turn" className={cn("flex min-w-0 flex-col", compact ? "gap-3" : "gap-4")}>

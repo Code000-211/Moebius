@@ -1,11 +1,12 @@
 /**
- * The button that puts `text` on the clipboard and says "Copied" for a moment. The same button is under every message,
- * in the head of every code block and beside a diff. It waits for the block it belongs to to be hovered or focused
- * (`copy-quiet` and `reveal-copy` in `styles/tailwind.css`), because it is a way of taking the words away rather than
- * part of them. It is the shared `Button`, so it is 40px tall like every other
- * control; its accessible name is what the button is for ("Copy message"), which a screen reader reads instead of the
- * word that changes. It uses the async Clipboard API, which a page served over HTTPS or from localhost may use; where
- * the browser refuses, it says "Copy failed" instead of nothing.
+ * The button that puts `text` on the clipboard and says "Copied" for a moment. The same button comes with every
+ * message, sits in the head of every code block and beside a diff. It waits for the block it belongs to to be
+ * hovered or focused (`copy-quiet` and `reveal-copy` in `styles/tailwind.css`), because it is a way of taking the
+ * words away rather than part of them. Under a message it floats over the corner of it rather than sitting on a row
+ * of its own (`copy-float`), so the message is as tall as its words. It is the shared `Button`, so it is the same
+ * height as every other control; its accessible name is what the button is for ("Copy message"), which a screen
+ * reader reads instead of the word that changes. It uses the async Clipboard API, which a page served over HTTPS or
+ * from localhost may use; where the browser refuses, it says "Copy failed" instead of nothing.
  */
 import { CheckIcon, CopyIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";

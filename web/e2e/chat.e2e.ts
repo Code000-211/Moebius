@@ -429,6 +429,10 @@ describe("copying", () => {
     fake().settle(run);
     await page.getByText("That is all.").waitFor();
 
+    // The message's Copy button floats over the corner of the words rather than ending the message with a row of its
+    // own, and a row that is not there yet does not answer the pointer either — a click meant for the last word of an
+    // answer must reach the word. So the block is hovered, the way a person gets to the button, before it is clicked.
+    await page.getByText("That is all.").hover();
     await page.getByRole("button", { name: "Copy message" }).click();
     await page.getByRole("button", { name: "Copy message" }).getByText("Copied").waitFor();
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(

@@ -51,4 +51,20 @@ describe("a Copy button at rest", () => {
     expect(utility("reveal-copy")).toContain("&:hover .copy-quiet");
     expect(utility("reveal-copy")).toContain("&:focus-within .copy-quiet");
   });
+
+  it("floats over the corner of a message rather than taking a row under it", () => {
+    // A row that is invisible until it is hovered still pushes the words above it up, which is the band of nothing
+    // under every answer. It leaves the flow only where a pointer can bring it back, so a touch screen keeps a row
+    // it can see.
+    const float = utility("copy-float");
+    expect(float).toContain("@media (hover: hover)");
+    expect(float).toContain("position: absolute");
+    // The pill the button stands on is a colour of its own, so it fades with the button rather than sitting there
+    // empty, and a row that is only invisible still swallows a click meant for the last word of the message.
+    expect(float).toContain("opacity: 0");
+    expect(float).toContain("pointer-events: none");
+    const revealed = utility("reveal-copy");
+    expect(revealed).toContain("&:hover .copy-float");
+    expect(revealed).toContain("pointer-events: auto");
+  });
 });

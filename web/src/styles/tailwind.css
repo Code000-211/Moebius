@@ -256,6 +256,38 @@
   &:focus-within .copy-quiet {
     opacity: 1;
   }
+
+  &:hover .copy-float,
+  &:focus-within .copy-float {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/*
+ * Where a message ends, the Copy button used to sit on a row of its own. It was invisible until the message was
+ * hovered, but the row was 32px tall the whole time, so every answer ended in a band of nothing. `copy-float` lifts
+ * such a row out of the flow and into the bottom corner of the block it belongs to: the words keep the height they
+ * would have had alone, and the button arrives over them rather than pushing them down. Put it on the row, not on the
+ * button, and mark the block `reveal-copy`, which shows the row, lets it be clicked again, and fades the pill it
+ * carries along with the button inside it — a pill of its own colour would otherwise sit there empty, which is the
+ * same band of nothing in a different place. A row that is only invisible still swallows a click meant for the word
+ * underneath it, so it stops answering the pointer until the block is looked at. On a screen with nothing to hover the
+ * row stays in the flow and stays visible, which is why the height of a message does not depend on the pointer. The
+ * pill is the sunken colour rather than a shadow: a chat is already a card on the page or a sheet over it, and a
+ * second shadow inside one is not the standard's.
+ */
+@utility copy-float {
+  @media (hover: hover) {
+    border-radius: var(--radius-round);
+    background: var(--surface-sunken);
+    bottom: 0;
+    opacity: 0;
+    transition: opacity var(--motion-routine) ease-out;
+    pointer-events: none;
+    position: absolute;
+    right: 0;
+  }
 }
 
 /*
