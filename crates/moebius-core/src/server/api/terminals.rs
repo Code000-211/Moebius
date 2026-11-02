@@ -405,6 +405,8 @@ mod tests {
             "the bridge is loaded last"
         );
         assert_eq!(read("agent/env.json")["MOEBIUS_RUN_TOKEN"], token);
+        // The terminal's Pi gets the cleared environment too: a variable only the server has is not in it.
+        assert!(read("agent/env.json")["CARGO_MANIFEST_DIR"].is_null());
         assert_eq!(status(app, run.id), "waiting");
 
         // What is said in the terminal is recorded as the chat's events, in the shapes of Pi's records.

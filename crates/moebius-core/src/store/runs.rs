@@ -223,7 +223,7 @@ impl Store {
     pub fn set_run_summary(&self, id: i64, summary: &str) -> Result<()> {
         self.conn().execute(
             "UPDATE runs SET summary = ?1 WHERE id = ?2",
-            params![summary, id],
+            params![crate::blobs::redact(summary), id],
         )?;
         Ok(())
     }
@@ -290,6 +290,26 @@ mod tests {
         let coded = s.add_run(Some(card.id), "Coder", "x", "code").unwrap();
         s.set_run_status(coded.id, "succeeded").unwrap();
         assert_eq!(note(), None);
+    }
+
+    #[test]
+    fn a_summary_and_a_note_are_redacted_before_they_are_stored() {
+        let (_dir, s) = store();
+        let repo = s.add_repository("r", "/srv/r", "none", "main").unwrap();
+        let card = s.add_card(repo.id, "First", "", "leon", "Backlog").unwrap();
+        let run = s.add_run(Some(card.id), "Coder", "x", "code").unwrap();
+        let key = format!("sk-ant-api03-{}", "x".repeat(40));
+        s.set_run_summary(run.id, &format!("The key is {key}."))
+            .unwrap();
+        s.set_card_note(card.id, &format!("Use {key}")).unwrap();
+        assert_eq!(
+            s.run(run.id).unwrap().unwrap().summary.as_deref(),
+            Some("The key is [redacted:anthropic-key].")
+        );
+        assert_eq!(
+            s.card(card.id).unwrap().unwrap().note.as_deref(),
+            Some("Use [redacted:anthropic-key]")
+        );
     }
 
     #[test]

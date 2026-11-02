@@ -14,7 +14,15 @@ use sha2::{Digest, Sha256};
 )]
 pub struct BlobId(pub String);
 
-static SECRETS: LazyLock<Vec<(&'static str, Regex)>> = LazyLock::new(|| {
+/// A pattern for a kind of secret: its name, its shape, and whether it is only a key when it does not continue a word
+/// (`sk-` is also the end of "task-", so those are looked at in [`starts_a_key`]).
+struct Pattern {
+    name: &'static str,
+    regex: Regex,
+    guarded: bool,
+}
+
+static SECRETS: LazyLock<Vec<Pattern>> = LazyLock::new(|| {
     [
         (
             "private-key",
@@ -24,16 +32,36 @@ static SECRETS: LazyLock<Vec<(&'static str, Regex)>> = LazyLock::new(|| {
         ("openai-key", r"sk-(?:proj-)?[A-Za-z0-9_\-]{20,}"),
         (
             "github-token",
-            r"(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}",
+            r"(?:(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})",
         ),
         ("gitlab-token", r"glpat-[A-Za-z0-9_\-]{20,}"),
         ("aws-access-key", r"AKIA[0-9A-Z]{16}"),
         ("webhook-secret", r"whsec_[A-Za-z0-9]{20,}"),
     ]
     .into_iter()
-    .map(|(name, pattern)| (name, Regex::new(pattern).expect("secret pattern compiles")))
+    .map(|(name, pattern)| Pattern {
+        name,
+        regex: Regex::new(pattern).expect("secret pattern compiles"),
+        guarded: pattern.starts_with("sk-"),
+    })
     .collect()
 });
+
+/// Whether a match that begins at the end of `before` is a key and not the tail of a word: it is when the character
+/// before is no letter or digit, or when that is the end of an escape (`\n`, `%3D`) that text carries a newline or an
+/// equals sign in.
+fn starts_a_key(before: &str) -> bool {
+    let Some(last) = before.chars().next_back() else {
+        return true;
+    };
+    if !last.is_ascii_alphanumeric() {
+        return true;
+    }
+    let bytes = before.as_bytes();
+    let n = bytes.len();
+    (n >= 2 && bytes[n - 2] == b'\\' && matches!(last, 'n' | 'r' | 't'))
+        || (n >= 3 && bytes[n - 3] == b'%' && bytes[n - 2..].iter().all(u8::is_ascii_hexdigit))
+}
 
 /// The secrets the server was given while it runs, redacted by their value; shorter ones are not kept, since they
 /// would be found in ordinary text.
@@ -64,9 +92,23 @@ pub fn redact(text: &str) -> String {
             out = out.replace(secret.as_str(), "[redacted:secret]");
         }
     }
-    for (name, re) in SECRETS.iter() {
-        out = re
-            .replace_all(&out, format!("[redacted:{name}]"))
+    for Pattern {
+        name,
+        regex,
+        guarded,
+    } in SECRETS.iter()
+    {
+        let replacement = format!("[redacted:{name}]");
+        let text = std::mem::take(&mut out);
+        out = regex
+            .replace_all(&text, |found: &regex::Captures| {
+                let whole = found.get(0).expect("a match has a whole");
+                if *guarded && !starts_a_key(&text[..whole.start()]) {
+                    whole.as_str().to_string()
+                } else {
+                    replacement.clone()
+                }
+            })
             .into_owned();
     }
     out
@@ -143,6 +185,33 @@ mod tests {
         assert_eq!(store.get(&a).unwrap(), "hello world");
         let files: Vec<_> = walk(dir.path());
         assert_eq!(files.len(), 1);
+    }
+
+    #[test]
+    fn a_key_pattern_does_not_match_inside_an_ordinary_word() {
+        let word = "src/task-management-integration-tests.rs and desk-lamp-with-a-long-name-here";
+        assert_eq!(redact(word), word);
+        let key = "sk-proj-abcdefghijklmnopqrstuvwx";
+        for text in [
+            format!("KEY={key}"),
+            format!("\"{key}\""),
+            format!("({key})"),
+            key.to_string(),
+        ] {
+            assert!(redact(&text).contains("[redacted:openai-key]"), "{text}");
+            assert!(!redact(&text).contains("abcdefghij"), "{text}");
+        }
+        // After an escaped newline, a percent-encoded character or a prefix, it is still a key.
+        let ghp = "ghp_abcdefghijklmnopqrstuvwxyz0123456789";
+        for text in [
+            format!("line\\n{key}"),
+            format!("a=1%3D{key}"),
+            format!("x_{key}"),
+            format!("x_{ghp}"),
+            format!("FOO{ghp}"),
+        ] {
+            assert!(!redact(&text).contains("abcdefghij"), "{text}");
+        }
     }
 
     #[test]

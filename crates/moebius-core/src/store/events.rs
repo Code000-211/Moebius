@@ -17,7 +17,18 @@ pub struct Event {
 impl Store {
     /// Stores an event of a run, with every secret in it redacted, and returns its `seq`.
     pub fn append_event(&self, run_id: i64, kind: &str, data: &serde_json::Value) -> Result<i64> {
-        let data = &crate::blobs::redact_json(data);
+        Ok(self.append_redacted_event(run_id, kind, data)?.0)
+    }
+
+    /// Like `append_event`, and returns the event's data as stored, so that it can be published without redacting it
+    /// again.
+    pub fn append_redacted_event(
+        &self,
+        run_id: i64,
+        kind: &str,
+        data: &serde_json::Value,
+    ) -> Result<(i64, serde_json::Value)> {
+        let data = crate::blobs::redact_json(data);
         let conn = self.conn();
         let seq: i64 = conn.query_row(
             "SELECT COALESCE(MAX(seq), 0) + 1 FROM events WHERE run_id = ?1",
@@ -26,9 +37,9 @@ impl Store {
         )?;
         conn.execute(
             "INSERT INTO events (run_id, seq, kind, data, at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![run_id, seq, kind, serde_json::to_string(data)?, now()],
+            params![run_id, seq, kind, serde_json::to_string(&data)?, now()],
         )?;
-        Ok(seq)
+        Ok((seq, data))
     }
 
     pub fn events(&self, run_id: i64) -> Result<Vec<Event>> {
@@ -123,6 +134,19 @@ mod tests {
         s.append_event(other.id, "mcp_call", &json!({ "decision": "refuse" }))
             .unwrap();
         assert_eq!(s.refused_tool_calls(run.id).unwrap(), 2);
+    }
+
+    #[test]
+    fn an_event_is_redacted_once_and_handed_back_as_stored() {
+        let (_dir, s) = store();
+        let run = s.add_run(None, "Coder", "pi-bolt", "code").unwrap();
+        let key = format!("sk-ant-api03-{}", "x".repeat(40));
+        let (seq, data) = s
+            .append_redacted_event(run.id, "said", &json!({ "message": key }))
+            .unwrap();
+        assert_eq!(data["message"], "[redacted:anthropic-key]");
+        assert_eq!(s.events(run.id).unwrap()[0].data, data);
+        assert_eq!(s.events(run.id).unwrap()[0].seq, seq);
     }
 
     #[test]

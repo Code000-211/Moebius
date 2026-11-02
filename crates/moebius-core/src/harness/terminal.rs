@@ -267,9 +267,12 @@ fn shell(worktree: &Path) -> CommandBuilder {
     command
 }
 
-/// `command` as a program on a terminal: its program, arguments, working directory and environment.
+/// `command` as a program on a terminal: its program, arguments, working directory and environment. A pseudo-terminal
+/// builder starts from the server's whole environment and `get_envs` does not say that `env_clear` was called, so it is
+/// cleared here: every command given is built from a cleared environment, with what it keeps set on it.
 pub fn on_terminal(command: &std::process::Command) -> CommandBuilder {
     let mut builder = CommandBuilder::new(command.get_program());
+    builder.env_clear();
     builder.args(command.get_args());
     if let Some(dir) = command.get_current_dir() {
         builder.cwd(dir);

@@ -85,7 +85,11 @@ fn settings(live: &Live, text: &str) -> std::result::Result<OwnEdits, String> {
         ));
     }
     let (before, after) = live.preview(&changes).map_err(|e| e.to_string())?;
-    let diff = unified("moebius.toml", &before, &after);
+    let diff = crate::blobs::redact(&strip_url_credentials(&unified(
+        "moebius.toml",
+        &before,
+        &after,
+    )));
     if diff.is_empty() {
         return Err("it changes nothing in moebius.toml".into());
     }
@@ -95,6 +99,15 @@ fn settings(live: &Live, text: &str) -> std::result::Result<OwnEdits, String> {
         edits: serde_json::to_value(&changes).unwrap_or_default(),
         repository: None,
     })
+}
+
+/// `text` with the `user:password@` of every URL in it removed, since the lines around a change show URLs as they are
+/// written in `moebius.toml`.
+fn strip_url_credentials(text: &str) -> String {
+    static CREDENTIALS: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"([A-Za-z][A-Za-z0-9+.-]*://)[^/\s@]+@").expect("pattern compiles")
+    });
+    CREDENTIALS.replace_all(text, "$1").into_owned()
 }
 
 /// A change to the `.moebius/` files of one repository: each file one of [`files`], rules that can be saved and
@@ -181,4 +194,48 @@ fn check(file: &str, text: &str) -> std::result::Result<(), String> {
         PERSON,
     )
     .map(drop)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{settings, strip_url_credentials};
+    use crate::config::Config;
+    use crate::server::settings::{Changes, Live};
+
+    #[test]
+    fn a_settings_proposal_shows_no_url_password_and_no_token() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("moebius.toml");
+        let token = "ghp_abcdefghijklmnopqrstuvwxyz0123456789";
+        std::fs::write(
+            &file,
+            format!(
+                "# proxy https://leon:hunter2@proxy.example/v1\n# token {token}\nrun_limit = 3\n# end\n"
+            ),
+        )
+        .unwrap();
+        let live = Live::new(Config::load(&file).unwrap());
+        let changes = Changes {
+            set: [("run_limit".to_string(), serde_json::json!(4))].into(),
+            remove: vec![],
+        };
+        let edits = settings(&live, &serde_json::to_string(&changes).unwrap()).unwrap();
+        assert!(edits.diff.contains("+run_limit = 4"), "{}", edits.diff);
+        assert!(
+            edits.diff.contains("https://proxy.example/v1"),
+            "{}",
+            edits.diff
+        );
+        assert!(!edits.diff.contains("hunter2"), "{}", edits.diff);
+        assert!(!edits.diff.contains("abcdefghij"), "{}", edits.diff);
+    }
+
+    #[test]
+    fn the_credentials_of_a_url_are_removed_from_a_diff() {
+        let diff = " base_url = \"https://leon:hunter2@proxy.example/v1\"\n+timeout = 5\n url = \"http://token@host:8080/x\"\n";
+        assert_eq!(
+            strip_url_credentials(diff),
+            " base_url = \"https://proxy.example/v1\"\n+timeout = 5\n url = \"http://host:8080/x\"\n"
+        );
+    }
 }

@@ -323,6 +323,35 @@ mod tests {
         assert_ne!(changes[0].head, change.head);
     }
 
+    #[test]
+    fn the_reason_of_a_rejection_is_redacted_in_the_note_and_the_judgement() {
+        let harness = Arc::new(FakeHarness::default());
+        let (_dir, app, engine, repo) = setup_with_harness(None, harness);
+        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        engine.settle(card.id).unwrap();
+        engine.settle(card.id).unwrap();
+        let change = app.store.changes(repo).unwrap().pop().unwrap();
+        let key = format!("sk-ant-api03-{}", "x".repeat(40));
+        app.reject_change(
+            &crate::decide::Actor::Person,
+            change.id,
+            &format!("Remove {key}"),
+        )
+        .unwrap();
+        let note = app.store.card(card.id).unwrap().unwrap().note;
+        assert_eq!(note.as_deref(), Some("Remove [redacted:anthropic-key]"));
+        let judged = app.store.judgements_for_card(card.id).unwrap();
+        assert!(
+            judged.iter().all(|j| !j.reason.contains("sk-ant")),
+            "{judged:?}"
+        );
+        assert!(
+            judged
+                .iter()
+                .any(|j| j.reason == "Remove [redacted:anthropic-key]")
+        );
+    }
+
     /// Commits `text` as `path` on the repository's default branch, as someone merging elsewhere would.
     fn commit_to_base(app: &App, repo: i64, path: &str, text: &str) {
         let clone = std::path::PathBuf::from(&app.store.repository(repo).unwrap().unwrap().path);

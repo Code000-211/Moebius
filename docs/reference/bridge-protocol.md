@@ -145,7 +145,7 @@ not be checked for secrets.`
 
 ## The environment of the harness
 
-The harness starts every Pi-Bolt run with these variables set:
+The harness starts every Pi-Bolt run (and every Claude Code run) with a cleared environment: only `PATH`, `HOME`, `USER`, `SHELL`, `TERM`, the locale (`LANG`, `LC_ALL`, `LC_CTYPE`), the temporary directory (`TMPDIR`, `TEMP`, `TMP`), the proxy settings (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `ALL_PROXY`, each in upper and lower case), the certificate settings (`SSL_CERT_FILE`, `SSL_CERT_DIR`, `NODE_EXTRA_CA_CERTS`), the toolchain places (`CARGO_HOME`, `RUSTUP_HOME`) and, for Windows, `SYSTEMROOT`, `WINDIR`, `SystemDrive`, `ProgramData`, `ProgramFiles`, `USERNAME`, `USERPROFILE`, `HOMEDRIVE`, `HOMEPATH`, `APPDATA`, `LOCALAPPDATA`, `PATHEXT`, `COMSPEC` and `CLAUDE_CODE_GIT_BASH_PATH` are taken from the server's environment, so that a provider key named by `api_key_env` never reaches an agent. The same holds for the Pi-Bolt terminal interface of a chat. It sets these variables:
 
 | Variable | Value |
 |---|---|

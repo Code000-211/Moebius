@@ -439,7 +439,7 @@ impl Store {
     pub fn set_card_note(&self, id: i64, note: &str) -> Result<()> {
         self.conn().execute(
             "UPDATE cards SET note = ?1 WHERE id = ?2",
-            params![note, id],
+            params![crate::blobs::redact(note), id],
         )?;
         Ok(())
     }

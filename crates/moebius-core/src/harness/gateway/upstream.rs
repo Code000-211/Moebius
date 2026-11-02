@@ -140,6 +140,8 @@ async fn send(stdin: &mut ChildStdin, message: &Value) -> Result<(), String> {
 impl Stdio {
     fn start(command: &str, server: &McpServer, worktree: Option<&Path>) -> Result<Self, String> {
         let mut process = Command::new(command);
+        // The server gets the variables its table names (`env`), not the server's whole environment.
+        crate::harness::clear_environment(process.as_std_mut());
         process
             .args(&server.args)
             .envs(&server.env)
@@ -221,7 +223,7 @@ impl Http {
         let response = request
             .send()
             .await
-            .map_err(|e| format!("cannot reach the server: {e}"))?;
+            .map_err(|e| format!("cannot reach the server: {}", e.without_url()))?;
         if !response.status().is_success() {
             return Err(format!("the server answered {}", response.status()));
         }
@@ -249,13 +251,14 @@ impl Http {
             return response
                 .json()
                 .await
-                .map_err(|e| format!("the server's answer is not JSON: {e}"));
+                .map_err(|e| format!("the server's answer is not JSON: {}", e.without_url()));
         }
         // An event stream: the answer is the event whose data is the message with the request's id.
         let mut body = response.bytes_stream();
         let mut buffer = String::new();
         while let Some(chunk) = body.next().await {
-            let chunk = chunk.map_err(|e| format!("cannot read the server's answer: {e}"))?;
+            let chunk = chunk
+                .map_err(|e| format!("cannot read the server's answer: {}", e.without_url()))?;
             buffer.push_str(&String::from_utf8_lossy(&chunk));
             let buffer_now = buffer.replace("\r\n", "\n");
             let mut events: Vec<&str> = buffer_now.split("\n\n").collect();
@@ -276,5 +279,60 @@ impl Http {
             buffer = rest;
         }
         Err("the server's event stream ended without an answer".into())
+    }
+}
+
+// Unix only: the stdio test starts `sh`.
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_stdio_server_gets_its_own_variables_not_the_servers_environment() {
+        // Cargo sets this variable for the test, as a key named by `api_key_env` is set for the server.
+        assert!(std::env::var_os("CARGO_MANIFEST_DIR").is_some());
+        let server = McpServer {
+            command: Some("sh".into()),
+            args: vec![
+                "-c".into(),
+                "echo \"[$CARGO_MANIFEST_DIR][$OWN][$PATH]\"".into(),
+            ],
+            env: BTreeMap::from([("OWN".to_string(), "mine".to_string())]),
+            url: None,
+            headers: BTreeMap::new(),
+        };
+        let started = Stdio::start("sh", &server, None).unwrap();
+        let mut line = String::new();
+        started
+            .io
+            .lock()
+            .await
+            .1
+            .read_line(&mut line)
+            .await
+            .unwrap();
+        assert!(
+            line.starts_with("[][mine][/") || line.starts_with("[][mine]["),
+            "{line}"
+        );
+        assert!(!line.contains("[mine][]"), "PATH is kept: {line}");
+    }
+
+    #[tokio::test]
+    async fn an_error_of_a_remote_server_does_not_show_the_url_with_its_key() {
+        let port = {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.local_addr().unwrap().port()
+        };
+        let http = Http {
+            client: reqwest::Client::new(),
+            url: format!("http://127.0.0.1:{port}/mcp?apiKey=very-secret-key-1234"),
+            headers: BTreeMap::new(),
+            session: std::sync::Mutex::new(None),
+            next_id: AtomicI64::new(1),
+        };
+        let error = http.post(&json!({})).await.unwrap_err();
+        assert!(error.starts_with("cannot reach the server"), "{error}");
+        assert!(!error.contains("very-secret-key"), "{error}");
     }
 }

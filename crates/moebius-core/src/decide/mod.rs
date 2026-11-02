@@ -238,7 +238,7 @@ impl Decisions {
             context: vec![context.blob],
             options: question.options.clone(),
             choice,
-            reason,
+            reason: crate::blobs::redact(&reason),
             decider,
             run_id: question.run_id,
             card_id: question.card_id,
@@ -338,6 +338,16 @@ mod tests {
         assert_eq!(all[0].decider, "refuser");
         let context = store.blobs().get(&all[0].context[0]).unwrap();
         assert!(context.contains("rm -rf /") && context.contains("[redacted:anthropic-key]"));
+    }
+
+    #[test]
+    fn the_reason_a_person_gives_is_redacted_before_it_is_stored() {
+        let (_dir, store, d) = setup();
+        let reason = format!("it printed sk-ant-api03-{}", "x".repeat(40));
+        d.record_by(&Actor::Person, &question("tool_call"), "allow", &reason)
+            .unwrap();
+        let all = store.judgements("tool_call").unwrap();
+        assert_eq!(all[0].reason, "it printed [redacted:anthropic-key]");
     }
 
     #[test]

@@ -186,6 +186,9 @@ fn a_code_run_on_claude_code_is_given_the_agent_and_the_router_and_commits_its_w
     assert!(argv.contains(&"--session-id".to_string()));
     assert!(!argv.contains(&"--mcp-config".to_string()), "{argv:?}");
     let env: Value = serde_json::from_str(&written(&s.app, run.id, "env.json")).unwrap();
+    // The server's environment does not reach Claude Code (cargo sets this variable for the test), but its PATH does.
+    assert!(env["CARGO_MANIFEST_DIR"].is_null(), "{env}");
+    assert!(env["PATH"].is_string());
     assert_eq!(env["ANTHROPIC_BASE_URL"], "http://127.0.0.1:9");
     let token = env["ANTHROPIC_API_KEY"].as_str().unwrap();
     assert!(token.starts_with("moebius-run-"));

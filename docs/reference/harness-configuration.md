@@ -19,7 +19,8 @@ mcp_env = ["DOCS_TOKEN"]
   repository for edits. Any other URL, such as a local path, uses plain git.
 - `mcp_env` (array of names, default none) lists the environment variables of the server that `mcp.toml` may take values
   from (see [`mcp.toml`](#mcptoml)). Each is a name of letters, digits and `_` that does not start with a digit, else
-  the file is refused.
+  the file is refused. Every value taken through `${NAME}` is treated as a secret: of 12 characters or more, it is
+  replaced by `[redacted:secret]` in all stored and streamed text while the server runs, so name only secrets here.
 - The server clones it to `<data_dir>/harness` when it starts. A clone that cannot be made stops the server; a clone that is
   there already is used as it is, so the server starts without the network.
 - Every 30 seconds the server fetches `origin` and fast-forwards the clone's default branch (the branch that is checked
@@ -156,7 +157,7 @@ letters, digits, `-` and `_`. A server is one of two kinds, and a table that is 
 |---|---|---|
 | `command` | string | A stdio server: the executable, not a shell command line. Not blank. |
 | `args` | array of strings | Its arguments. Only with `command`. Default none. |
-| `env` | table of strings | Its environment, added to the Moebius server's, which starts it. Only with `command`. Default none. |
+| `env` | table of strings | Its environment: the server starts it with a cleared environment (only `PATH`, `HOME`, the locale, the proxy and certificate settings and the like are kept; the list is in the [bridge protocol](bridge-protocol.md#the-environment-of-the-harness)) and adds these. Only with `command`. Default none. |
 | `url` | string | A remote server (streamable HTTP). |
 | `headers` | table of strings | Sent with every request, such as `Authorization`. Only with `url`. Default none. |
 

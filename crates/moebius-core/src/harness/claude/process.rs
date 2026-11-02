@@ -56,6 +56,8 @@ impl ClaudeCode {
     /// and connects only to the MCP servers it is given, and never asks before a tool call: the router checks them.
     pub(super) fn command(&self, agent: &AgentConfig, place: &Place) -> Command {
         let mut command = Command::new(&self.program);
+        // Not the server's whole environment: provider keys live in the router only.
+        crate::harness::clear_environment(&mut command);
         command
             .current_dir(place.worktree)
             .env("CLAUDE_CONFIG_DIR", place.config_dir)

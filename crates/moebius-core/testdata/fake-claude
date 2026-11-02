@@ -30,7 +30,7 @@ def put(name, text):
 
 put("env.json", json.dumps({k: os.environ.get(k) for k in (
     "ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "MOEBIUS", "MOEBIUS_RUN_TOKEN",
-    "MOEBIUS_URL", "MOEBIUS_TOKEN", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")}))
+    "MOEBIUS_URL", "MOEBIUS_TOKEN", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "PATH", "CARGO_MANIFEST_DIR")}))
 put("pid.txt", str(os.getpid()))
 put("argv.json", json.dumps(sys.argv[1:]))
 

@@ -260,6 +260,8 @@ fn fill(text: &str, lookup: &impl Fn(&str) -> Option<String>) -> Result<String, 
         let end = after.find('}').ok_or("a ${ is not closed")?;
         let name = &after[..end];
         let value = lookup(name).ok_or_else(|| format!("${{{name}}} is not set"))?;
+        // A value of the environment ends up in URLs and errors of the server; redact it wherever it appears.
+        crate::blobs::remember_secret(&value);
         filled.push_str(&rest[..start]);
         filled.push_str(&value);
         rest = &after[end + 1..];
@@ -391,6 +393,28 @@ mod tests {
                 .contains("is not in mcp_env")
         );
         assert!(check("bad name", secret, &names(&["OPENAI_API_KEY"])).is_err());
+    }
+
+    #[test]
+    fn a_value_taken_from_the_environment_is_remembered_as_a_secret() {
+        let key = "hosted-mcp-key-9f3a7c2e41";
+        let servers = BTreeMap::from([(
+            "hosted".to_string(),
+            McpServer {
+                command: None,
+                args: vec![],
+                env: BTreeMap::new(),
+                url: Some("https://mcp.example/v1?apiKey=${HOSTED_KEY}".into()),
+                headers: BTreeMap::new(),
+            },
+        )]);
+        let filled = with_values(&servers, &|_| Some(key.to_string())).unwrap();
+        let url = filled["hosted"].url.clone().unwrap();
+        assert!(url.contains(key));
+        assert_eq!(
+            crate::blobs::redact(&format!("cannot reach the server: error for url ({url})")),
+            "cannot reach the server: error for url (https://mcp.example/v1?apiKey=[redacted:secret])"
+        );
     }
 
     #[test]

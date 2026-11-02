@@ -42,6 +42,8 @@ impl PiBolt {
     /// and bridge, so the checks see the same tool calls.
     pub(super) fn command(&self, agent: &AgentConfig, place: &Place, interactive: bool) -> Command {
         let mut command = Command::new(&self.program);
+        // Not the server's whole environment: provider keys live in the router only.
+        crate::harness::clear_environment(&mut command);
         command
             .current_dir(place.worktree)
             .env("PI_CODING_AGENT_DIR", place.agent_dir)
@@ -361,6 +363,9 @@ mod tests {
             serde_json::from_slice(&std::fs::read(run_dir.join("agent/env.json")).unwrap())
                 .unwrap();
         assert_eq!(env["MOEBIUS"], "/usr/local/bin/moebius");
+        // The server's environment does not reach Pi (cargo sets this variable for the test), but its PATH does.
+        assert!(env["CARGO_MANIFEST_DIR"].is_null(), "{env}");
+        assert!(env["PATH"].is_string());
         assert_eq!(env["MOEBIUS_CHECK_URL"], "http://127.0.0.1:9");
         let plan: Value = serde_json::from_str(env["MOEBIUS_LENS"].as_str().unwrap()).unwrap();
         assert_eq!(plan["enabled"], true);

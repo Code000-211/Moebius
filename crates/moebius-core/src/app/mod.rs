@@ -268,14 +268,14 @@ impl App {
         data: &serde_json::Value,
     ) -> Result<()> {
         let _ordered = self.run_events.lock().unwrap_or_else(|e| e.into_inner());
-        // Pi's records can carry what a tool printed; nothing unredacted is stored or streamed.
-        let data = &crate::blobs::redact_json(data);
-        let seq = self.store.append_event(run_id, kind, data)?;
+        // Pi's records can carry what a tool printed; nothing unredacted is stored or streamed. The store redacts
+        // once and gives back what it stored.
+        let (seq, data) = self.store.append_redacted_event(run_id, kind, data)?;
         self.bus.publish(Event::RunEvent {
             run: run_id,
             seq,
             kind: kind.to_string(),
-            data: data.clone(),
+            data,
         });
         Ok(())
     }

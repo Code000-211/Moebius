@@ -189,7 +189,11 @@ impl RemoteRun {
         let mut script = format!("cd {}/work && exec env", quote(&self.dir));
         for (name, value) in command.get_envs() {
             let name = name.to_string_lossy();
-            if NOT_TUNNELLED.contains(&name.as_ref()) || !valid_variable(&name) {
+            // The local PATH, HOME and the like mean nothing on the runner.
+            if NOT_TUNNELLED.contains(&name.as_ref())
+                || crate::harness::KEPT_VARIABLES.contains(&name.as_ref())
+                || !valid_variable(&name)
+            {
                 continue;
             }
             match value {
