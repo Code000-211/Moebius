@@ -2,8 +2,9 @@
 // read-only inspector, not the form for creating and editing an issue (the title, description editor, tags, assignees
 // and attachments are gone); it keeps the frame — the header with the number, the copy-link and close buttons, Escape
 // to close, the scrolling body — and takes its sections as children; it is a drawer beside the board, so it is as tall
-// as the box that holds it and carries no border, separating its sections with space instead of rules, labelling its
-// controls, and fading the edges its body cuts off.
+// as the box that holds it, separating its sections with space instead of rules, labelling its controls, and fading
+// the edges its body cuts off. Where it stands the full height of the window it is flush to its three edges and part
+// of the page rather than a sheet over it, so it has no radius, no shadow, and one hairline where it meets the board.
 import { LinkIcon, XIcon } from "@phosphor-icons/react";
 import { type KeyboardEvent, type ReactNode, useId } from "react";
 import { cn } from "../lib/cn";
@@ -69,7 +70,7 @@ export function KanbanIssuePanel({
     <section
       aria-label="Card inspector"
       className={cn(
-        "flex h-full max-h-screen min-h-0 flex-col overflow-hidden rounded-sheet bg-surface shadow-card outline-none",
+        "flex h-full max-h-screen min-h-0 flex-col overflow-hidden rounded-sheet bg-surface shadow-card outline-none xl:rounded-none xl:border-l xl:border-hairline xl:shadow-none",
         className,
       )}
       onKeyDown={handleKeyDown}

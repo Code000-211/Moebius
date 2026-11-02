@@ -264,10 +264,11 @@ export function BoardPage() {
           </ScrollFades>
         </div>
         {inspected && (
-          // The column holds the drawer's width so the board keeps the room it has; the drawer itself is the window's
-          // height, level with the head of the page, and scrolls its own sections rather than the page's.
+          // The column holds the drawer's width so the board keeps the room it has; the drawer itself runs the whole
+          // height of the window and is flush to its top, right and bottom edges — it is the page's own card inspector
+          // rather than a sheet laid over it — and scrolls its sections rather than the page scrolling them.
           <div className="w-full shrink-0 xl:w-96">
-            <div className="xl:fixed xl:inset-y-6 xl:right-6 xl:w-96">
+            <div className="xl:fixed xl:inset-y-0 xl:right-0 xl:w-96">
               <Dock
                 key={inspected.id}
                 board={board}
