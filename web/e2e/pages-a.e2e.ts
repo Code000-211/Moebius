@@ -757,7 +757,7 @@ describe("the fleet", () => {
     await open("/fleet");
     await page
       .getByRole("navigation", { name: "Pages" })
-      .getByRole("link", { name: /^Fleet\b.*1 live/ })
+      .getByRole("link", { name: /^Fleet\b.*\b1$/ })
       .waitFor();
   });
 });

@@ -123,7 +123,7 @@ describe("the shell", () => {
     await page.goto(server.loginUrl);
     await pages().waitFor();
     for (const name of ["Inbox", "Chat", "Fleet", "Automations", "Retro", "Settings"]) {
-      // An entry may carry a count after its name ("Inbox 1", "Fleet 1 live").
+      // An entry may carry a count after its name ("Inbox 1", "Fleet 2").
       await pages()
         .getByRole("link", { name: new RegExp(`^${name}\\b`) })
         .waitFor();

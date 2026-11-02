@@ -130,11 +130,12 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
     );
   // What waits for you is counted even when the answer is none — a zero on Inbox and Chat is the answer to the
   // question the page is asked — and the row's own name says what is counted, so the number stands alone. What the
-  // machines are doing is said only when something is: "0 live" is machinery, and "live" is the state it names.
+  // machines are doing is said only when something is, and the number carries its colour: the row is about this
+  // server's work, so "2" on Fleet needs no word after it.
   const trailingOf = (path: string): Trailing | undefined => {
     if (path === "inbox") return { text: `${inbox}`, tone: inbox > 0 ? "attention" : "secondary" };
     if (path === "chat") return { text: `${unread}`, tone: unread > 0 ? "attention" : "secondary" };
-    if (path === "fleet" && working > 0) return { text: `${working} live`, tone: "progress" };
+    if (path === "fleet" && working > 0) return { text: `${working}`, tone: "progress" };
     return undefined;
   };
 
@@ -281,7 +282,7 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
                   icon={FolderIcon}
                   mark={{
                     color: live > 0 ? "var(--progress)" : "var(--hairline-strong)",
-                    word: live > 0 ? `${live} live` : "Idle",
+                    word: live > 0 ? `${live}` : "Idle",
                     tone: "progress",
                     printed: live > 0,
                   }}

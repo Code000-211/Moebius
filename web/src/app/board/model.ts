@@ -238,7 +238,8 @@ export function tokens(n: number): string {
 
 /**
  * The small line of a card under its number: in coding and review the agent and how far its rounds are, for a change
- * that waits to merge the rounds and what it cost; null when there is nothing to say.
+ * that waits to merge how many rounds it took; null when there is nothing to say. What a card cost is the dock's
+ * business, where the number is read on its own row rather than hung on the card.
  */
 export function cardDetail(card: Card, roundLimit: number): string | null {
   if (card.column === "In progress" || card.column === "In review") {
@@ -250,7 +251,7 @@ export function cardDetail(card: Card, roundLimit: number): string | null {
     return parts.length > 0 ? parts.join(" · ") : null;
   }
   if (card.column === "Ready to merge") {
-    return `${plural(card.rounds, "round", "rounds")} · ${tokens(card.tokens)}`;
+    return plural(card.rounds, "round", "rounds");
   }
   return null;
 }
@@ -336,13 +337,10 @@ export interface CardBadge {
   tone: Tone;
 }
 
-/** The badges of a card: what runs, what it costs, what stops it, how its change stands, who it waits for. */
+/** The badges of a card: what runs, what stops it, how its change stands, who it waits for. What it cost is the dock's, not the card's. */
 export function cardBadges(card: Card, status: CardStatus, next: boolean): CardBadge[] {
   const badges: CardBadge[] = [];
   if (status === "live") badges.push({ name: "Live", tone: "progress" });
-  if (card.tokens > 0 && (card.column === "In progress" || card.column === "In review")) {
-    badges.push({ name: tokens(card.tokens), tone: "neutral" });
-  }
   if (card.blocked_by.length > 0) {
     const numbers = card.blocked_by.map((n) => `#${n}`);
     const name =

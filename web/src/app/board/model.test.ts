@@ -245,13 +245,14 @@ describe("the words and links of a card", () => {
     expect(tokens(1_250_000)).toBe("1.3M tok");
   });
 
-  it("says the agent and round of a card in coding, and the cost of one that waits to merge", () => {
+  it("says the agent and round of a card in coding, and the rounds of one that waits to merge", () => {
     expect(cardDetail(card(1, { column: "In progress", run, rounds: 2 }), 5)).toBe(
       "Coder · round 2 of 5",
     );
     expect(cardDetail(card(1, { column: "In progress", rounds: 1 }), 0)).toBe("round 1");
+    // What a card cost is the dock's row, not a line on the card.
     expect(cardDetail(card(1, { column: "Ready to merge", rounds: 1, tokens: 96_000 }), 5)).toBe(
-      "1 round · 96k tok",
+      "1 round",
     );
     expect(cardDetail(card(1), 5)).toBeNull();
   });
@@ -268,7 +269,6 @@ describe("the words and links of a card", () => {
   it("badges what runs, blocks and waits, in the order of the desktop board", () => {
     const c = card(1, {
       column: "In progress",
-      tokens: 4000,
       blocked_by: [2, 3, 4],
       refusals: 1,
       change: { id: 1, state: "open", checks: "failure", review_verdict: null },
@@ -276,7 +276,6 @@ describe("the words and links of a card", () => {
     // The word and the state that colours it, in the order the desktop board draws them; the tones are the shared
     // pill's (`ui/page/Status`), where a fact that is not a state is `neutral`.
     expect(cardBadges(c, "needs-you", true)).toEqual([
-      { name: "4k tok", tone: "neutral" },
       { name: "Blocked by #2 and 2 more", tone: "error" },
       { name: "1 rule broken", tone: "error" },
       { name: "CI failed", tone: "error" },

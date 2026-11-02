@@ -171,7 +171,7 @@ describe("the board page", () => {
       expect(await pull.getAttribute("href")).toBe("https://github.com/acme/demo/pull/11");
       await ready.getByText("Green").waitFor();
       await ready.getByText("Your turn").waitFor();
-      await ready.getByText("2 rounds · 96k tok").waitFor();
+      await ready.getByText("2 rounds", { exact: true }).waitFor();
 
       await card(4).getByText("Blocked by #3").waitFor();
       await card(3).getByText("Next").waitFor();

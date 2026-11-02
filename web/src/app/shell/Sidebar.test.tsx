@@ -130,11 +130,11 @@ describe("the wide sidebar", () => {
     expect(idle.querySelector("span[aria-hidden='true']")).not.toBeNull();
   });
 
-  it("keeps the count of a board's live work as words beside its mark", async () => {
+  it("counts a board's live work beside its mark, in a number alone", async () => {
     show();
-    const live = await screen.findByRole("link", { name: "moebius-platform. 2 live" });
-    expect(live.textContent).toBe("moebius-platform2 live");
-    expect(live.querySelector("span.text-progress-text")?.textContent).toBe("2 live");
+    const live = await screen.findByRole("link", { name: "moebius-platform. 2" });
+    expect(live.textContent).toBe("moebius-platform2");
+    expect(live.querySelector("span.text-progress-text")?.textContent).toBe("2");
   });
 
   it("names the page switcher by what it does, and says the same on screen", () => {
@@ -251,7 +251,7 @@ describe("where an entry leads", () => {
 describe("the rail", () => {
   it("keeps a board's work in the name of its icon", async () => {
     show({ collapsed: true });
-    await screen.findByRole("link", { name: "moebius-platform. 2 live" });
+    await screen.findByRole("link", { name: "moebius-platform. 2" });
     await screen.findByRole("link", { name: "notes. Idle" });
   });
 

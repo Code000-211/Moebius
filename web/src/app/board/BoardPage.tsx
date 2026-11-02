@@ -32,7 +32,6 @@ import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { ScrollFades } from "../../ui/page/ScrollFades";
-import { Status } from "../../ui/page/Status";
 import { boardPath } from "../pages";
 import { ColumnMark } from "./ColumnMark";
 import { Dock } from "./Dock";
@@ -314,15 +313,6 @@ function BoardColumn({
   inspectedId: number | undefined;
   onSelect: (card: Card) => void;
 }) {
-  const statuses = cards.map((card) => cardStatus(card, inboxOf(inbox, card), board));
-  // The column's one word for what its cards are doing: the loudest state among them.
-  const doing = statuses.includes("live")
-    ? { name: "Working", tone: "progress" as const }
-    : statuses.includes("stuck")
-      ? { name: "Stuck", tone: "error" as const }
-      : statuses.includes("needs-you")
-        ? { name: "Your turn", tone: "attention" as const }
-        : null;
   return (
     <KanbanBoard name={name}>
       <KanbanHeader
@@ -330,7 +320,6 @@ function BoardColumn({
         count={cards.length}
         total={total}
         mark={<ColumnMark name={name} />}
-        status={doing && <Status tone={doing.tone}>{doing.name}</Status>}
       />
       <KanbanCards className="min-h-12">
         {cards.map((card) => {

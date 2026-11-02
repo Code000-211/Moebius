@@ -1,4 +1,4 @@
-// From BloopAI/vibe-kanban packages/ui/src/components/KanbanBoard.tsx (Apache-2.0), changed: no i18n and no "add task" button (a card comes from an issue); a column is a lane of the canvas with no border, and its header says what the cards in it are doing in a word; the drag context is a flex row of columns, not a divided grid; the Feature and Status types of the Gantt chart are gone; Card is a plain div (React 19 ref prop); a card is a borderless sheet whose state is a word, and it is dragged by its whole body, with the keyboard too (the original had a grip for phones, which the app does not need); the card is a group and not a named button, and its title is the button that opens it, so the issue link and the pull-request badge inside it stay in the accessibility tree; dragging uses dnd-kit (a pointer sensor, a keyboard sensor that moves to the next column even when it is scrolled out of view, a drag overlay and spoken announcements) instead of @hello-pangea/dnd, and a column as a whole takes a drop.
+// From BloopAI/vibe-kanban packages/ui/src/components/KanbanBoard.tsx (Apache-2.0), changed: no i18n and no "add task" button (a card comes from an issue); a column is a lane of the canvas with no border, and its header counts the cards in it; the drag context is a flex row of columns, not a divided grid; the Feature and Status types of the Gantt chart are gone; Card is a plain div (React 19 ref prop); a card is a borderless sheet whose state is a word, and it is dragged by its whole body, with the keyboard too (the original had a grip for phones, which the app does not need); the card is a group and not a named button, and its title is the button that opens it, so the issue link and the pull-request badge inside it stay in the accessibility tree; dragging uses dnd-kit (a pointer sensor, a keyboard sensor that moves to the next column even when it is scrolled out of view, a drag overlay and spoken announcements) instead of @hello-pangea/dnd, and a column as a whole takes a drop.
 import {
   type Announcements,
   type CollisionDetection,
@@ -16,7 +16,6 @@ import {
 } from "@dnd-kit/core";
 import { type ReactNode, type Ref, type RefObject, useCallback, useRef, useState } from "react";
 import { cn } from "../lib/cn";
-import { noun } from "../lib/format";
 
 /** What a drag ends with: the card (its id) and the column it was let go over, none when it was let go elsewhere or cancelled. */
 export type DropResult = { cardId: string; column: string | null };
@@ -186,8 +185,6 @@ export type KanbanHeaderProps = {
   count: number;
   /** How many cards the column holds, when it shows fewer than that. */
   total?: number;
-  /** What the cards of the column are doing, in a word: a `Status` saying `Working`, `Your turn`. */
-  status?: ReactNode;
   /**
    * The mark beside the column's name: the shape and colour of the state it holds. It never carries the meaning on its
    * own — the name is beside it — and says nothing to the person hearing the page, so it is hidden from them.
@@ -196,14 +193,7 @@ export type KanbanHeaderProps = {
   className?: string;
 };
 
-export const KanbanHeader = ({
-  name,
-  count,
-  total,
-  status,
-  mark,
-  className,
-}: KanbanHeaderProps) => (
+export const KanbanHeader = ({ name, count, total, mark, className }: KanbanHeaderProps) => (
   <header
     className={cn("mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2", className)}
   >
@@ -212,10 +202,8 @@ export const KanbanHeader = ({
       {name}
     </h2>
     <div className="flex min-w-0 items-center gap-2">
-      {status}
       <span className="text-sm text-secondary tabular-nums">
-        {total !== undefined && total > count ? `${count} of ${total}` : count}{" "}
-        {noun(count, "card", "cards")}
+        {total !== undefined && total > count ? `${count} of ${total}` : count}
       </span>
     </div>
   </header>
