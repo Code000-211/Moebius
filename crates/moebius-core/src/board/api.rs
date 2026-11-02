@@ -35,6 +35,7 @@ use mlua::{Lua, Table};
 use super::Engine;
 use super::card::change_table;
 use super::engine::Effects;
+use super::resolve_column;
 use super::sandbox::outside_script;
 use crate::app::{App, Reproduction, TestRun, columns};
 use crate::decide::Question;
@@ -137,6 +138,7 @@ impl Engine {
         m.set(
             "move",
             lua.create_function(move |_, (column, note): (String, Option<String>)| {
+                let column = resolve_column(&column).to_string();
                 if !names.contains(&column) {
                     return Err(mlua::Error::runtime(format!("no column {column:?}")));
                 }

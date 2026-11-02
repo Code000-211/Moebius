@@ -242,7 +242,7 @@ mod tests {
             .apply(
                 &seen,
                 Effects {
-                    move_to: Some("Ready".into()),
+                    move_to: Some("Not started".into()),
                     note: Some("stale".into()),
                     waiting: Some("stale".into()),
                     ..Effects::default()
@@ -343,6 +343,28 @@ mod tests {
             app.store.judgements("approve_issue").unwrap()[0].decider,
             "person"
         );
+    }
+
+    #[test]
+    fn a_repository_script_that_moves_a_card_to_ready_moves_it_to_not_started() {
+        let (_dir, app, engine, repo) = setup();
+        let clone = std::path::PathBuf::from(&app.store.repository(repo).unwrap().unwrap().path);
+        std::fs::create_dir_all(clone.join(".moebius")).unwrap();
+        std::fs::write(
+            clone.join(".moebius/backlog.luau"),
+            "function on_card(card) moebius.move('Ready') end",
+        )
+        .unwrap();
+        std::fs::write(
+            clone.join(".moebius/ready.luau"),
+            "function on_card(card) moebius.wait('held') end",
+        )
+        .unwrap();
+        git(&clone, &["add", "."]).unwrap();
+        git(&clone, &["commit", "--quiet", "-m", "old names"]).unwrap();
+        let card = app.create_issue(repo, "Old script", "", PERSON).unwrap();
+        engine.settle(card.id).unwrap();
+        assert_eq!(app.card(card.id).unwrap().column, "Not started");
     }
 
     #[test]

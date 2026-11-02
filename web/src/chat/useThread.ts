@@ -16,7 +16,7 @@ export interface Thread {
   lastSeq: number;
   /** Whether the stored events were read. */
   loaded: boolean;
-  /** Why the events could not be read, if they could not. */
+  /** Why the events could not be read, if they could not. The entries already read stay in `entries`. */
   error: string | null;
 }
 
@@ -41,6 +41,8 @@ export function useThread(id: number | null): Thread {
   const [thread, setThread] = useState<Thread>(EMPTY);
   const conversation = useRef<{ id: number; value: Conversation; loaded: boolean } | null>(null);
   const frame = useRef<number | null>(null);
+  /** The number of the latest read; a result of an older one does not touch the page. */
+  const latestRead = useRef(0);
   const connection = useConnection();
 
   const publish = (error: string | null) => {
@@ -57,16 +59,20 @@ export function useThread(id: number | null): Thread {
   // Reads what the conversation does not hold yet. Reads are ordinary requests that need no socket, so a chat is read
   // even while the stream is trying to connect again: a laptop waking from sleep used to leave the page on "Reading
   // the chat" until the socket opened, and never mark the chat as read at all.
+  // What a read brings is always taken in (reading the same events twice is harmless), but only the latest read says
+  // whether the page shows a failure, and a failure never takes a conversation that is on screen away: the page shows
+  // it above the entries.
   function refill(current: { id: number; value: Conversation; loaded: boolean }): void {
+    const read = ++latestRead.current;
     runEvents(current.id, current.value.lastSeq)
       .then((events) => {
         if (conversation.current !== current) return;
         current.value.backfill(events);
         current.loaded = true;
-        publish(null);
+        if (read === latestRead.current) publish(null);
       })
       .catch((e: unknown) => {
-        if (conversation.current !== current) return;
+        if (conversation.current !== current || read !== latestRead.current) return;
         publish(e instanceof Error ? e.message : "cannot read the chat");
       });
   }

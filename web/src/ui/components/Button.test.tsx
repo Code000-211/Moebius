@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 /**
- * A button that cannot be pressed says why in the one place that reaches everyone: the words a screen reader is told
+ * A button that cannot be pressed says why where everyone can reach it: in the app's own tooltip for a mouse and a
+ * keyboard (the button stays focusable, `aria-disabled`, and does nothing), and in the words a screen reader is told
  * alongside its name. Printing them beside the control would be furniture, and handing them to the browser's `title`
  * draws a box in colours nobody chose over a page that has its own.
  */
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { Button } from "./Button";
 
@@ -41,6 +42,41 @@ describe("a button that cannot be pressed", () => {
     // The reason is written once, in the line nobody sees: not in the name, not beside the control.
     expect(screen.getAllByText(REASON)).toHaveLength(1);
     expect(button.textContent).toBe("Offer the change");
+  });
+
+  it("stays focusable, does nothing when pressed, and shows the reason when it has the focus", async () => {
+    const pressed: string[] = [];
+    const submitted: string[] = [];
+    render(
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          submitted.push("submitted");
+        }}
+      >
+        <Button type="submit" disabled title={REASON} onClick={() => pressed.push("pressed")}>
+          Offer the change
+        </Button>
+      </form>,
+    );
+    const button = screen.getByRole("button", { name: "Offer the change" });
+    // Not `disabled`: that would take it out of the tab order and leave nobody to ask.
+    expect(button.hasAttribute("disabled")).toBe(false);
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    act(() => button.focus());
+    expect(document.activeElement).toBe(button);
+    fireEvent.click(button);
+    expect(pressed).toEqual([]);
+    expect(submitted).toEqual([]);
+    // The app's tooltip shows the reason for a keyboard, written in the page rather than in a box of the browser.
+    expect((await screen.findAllByText(REASON)).length).toBeGreaterThan(1);
+  });
+
+  it("is simply disabled when it has no reason to give", () => {
+    render(<Button disabled>Offer the change</Button>);
+    const button = screen.getByRole("button", { name: "Offer the change" });
+    expect(button.hasAttribute("disabled")).toBe(true);
+    expect(button.hasAttribute("aria-disabled")).toBe(false);
   });
 
   it("keeps whatever else the button was already pointed at", () => {

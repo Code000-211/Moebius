@@ -70,6 +70,10 @@ describe("listChanged", () => {
     expect(listChanged({ kind: "change_offered", data: {} })).toBe(true);
     expect(listChanged({ kind: "run_event", data: {} })).toBe(false);
   });
+
+  it("is true for a chat renamed, so every client shows the new title", () => {
+    expect(listChanged({ kind: "chat_renamed", data: { run: 7, title: "New" } })).toBe(true);
+  });
 });
 
 /**
@@ -85,6 +89,15 @@ describe("recentChat", () => {
       chat({ id: 5, started_at: 250 }),
     ];
     expect(recentChat(chats)?.id).toBe(9);
+  });
+
+  it("never takes a chat of the floating assistant, even when it is the newest", () => {
+    const chats = [
+      chat({ id: 3, started_at: 100 }),
+      chat({ id: 9, started_at: 400, origin: "assistant" }),
+    ];
+    expect(recentChat(chats)?.id).toBe(3);
+    expect(recentChat([chat({ id: 9, origin: "assistant" })])).toBeNull();
   });
 
   it("is null when there is nothing to open", () => {

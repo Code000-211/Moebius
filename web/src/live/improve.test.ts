@@ -9,7 +9,9 @@ describe("the events of the Rules, Automations, Retro, Experiments and Decision 
     for (const kind of ["retro_done", "trial_done"]) {
       expect(event(kind)).toContainEqual(keys.retros);
       expect(event(kind)).toContainEqual(keys.lessons);
+      expect(event(kind)).toContainEqual(keys.proposals);
     }
+    expect(event("proposal_status")).toContainEqual(keys.proposals);
     expect(event("proposal_status")).toContainEqual(keys.retros);
     expect(event("proposal_status")).toContainEqual(keys.rules);
   });

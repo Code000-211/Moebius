@@ -346,7 +346,7 @@ issue (no card is made).
 
 The script a column runs for a repository: the repository's own `.moebius/<file>.luau` on its default branch (see
 [column scripts](column-scripts.md#repository-overrides)), or the built-in one. `{column}` is the column's name as the
-board shows it, in any case and URL-encoded (`In%20progress`). Response: `{"column": string, "path": string, "source":
+board shows it, in any case and URL-encoded (`In%20progress`); `Ready`, the old name of `Not started`, finds that column too. Response: `{"column": string, "path": string, "source":
 "repository" or "built-in", "text": string}`. `path` is where the repository keeps its own script for the column
 (`.moebius/ready.luau` for `Not started`; the files are `backlog`, `ready`, `code` for `In progress`, `review`, `merge` and
 `done`), whichever `source` is. Errors: `404` no such repository or column.
@@ -1965,6 +1965,7 @@ like `POST /v1/runs/{id}/stop` does. Experiments done stay, and so do the lever 
 | `card_updated` | The title or body of a card changed: edited through the API, or changed on GitHub, GitLab or Forgejo. | The `Card`. |
 | `card_moved` | A card moved to another column. | `{"card": id, "from": column, "to": column}` |
 | `card_waiting` | The reason a card waits changed: set, replaced, or cleared because the card moved or its script did not wait. Not sent when it stays the same. | `{"card": id, "reason": string or null}` |
+| `chat_renamed` | A chat was given a name, or its name was cleared, through the API. | `{"run": id, "title": string}` (the title the list of chats shows now) |
 | `change_offered` | A card's change, the work of a chat or a kept lever of a research was offered to a person to merge. | The `Change` (`card_id` is null for a chat's or a lever's). |
 | `change_updated` | A change was published or published again, its checks started or ended, or the checks or review of its pull request changed. | The `Change`. |
 | `change_merged` | A change was merged, here or on its forge. | `{"change": id, "commit": sha or null}` |

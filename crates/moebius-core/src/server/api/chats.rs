@@ -644,12 +644,23 @@ mod tests {
         let listed: Vec<Chat> = get(&state, &addr, "/v1/chats").await;
         assert_eq!(listed[0].title, "Fix the login screen");
 
+        let mut events = state.app.bus.subscribe();
         let named: Chat = name("  The login screen  ", run.id)
             .await
             .json()
             .await
             .unwrap();
         assert_eq!(named.title, "The login screen");
+        let renamed = loop {
+            let event = events.recv().await.unwrap();
+            if event.kind == "chat_renamed" {
+                break event;
+            }
+        };
+        assert_eq!(
+            renamed.data,
+            serde_json::json!({"run": run.id, "title": "The login screen"})
+        );
         let listed: Vec<Chat> = get(&state, &addr, "/v1/chats").await;
         assert_eq!(listed[0].title, "The login screen");
 

@@ -602,6 +602,21 @@ describe("the Experiments page", () => {
   });
 });
 
+describe("the Experiments page with no research", () => {
+  it.skipIf(usesRealServer)("shows what the server refuses for the first brief", async () => {
+    await fresh();
+    fake().research.length = 0;
+    await open("/experiments", "Experiments");
+    await page.getByText("No research yet").waitFor();
+    fake().refuseNext("POST", "/v1/research", 422, "the measurement prints nothing");
+    await page.getByRole("button", { name: "New brief" }).click();
+    await page.getByLabel("What should get better").fill("Make the tests faster");
+    await page.getByLabel("Measurement").fill("echo 12");
+    await page.getByRole("button", { name: "Store the brief" }).click();
+    await region("The request was refused").getByText("the measurement prints nothing").waitFor();
+  });
+});
+
 describe("the Decisions page", () => {
   it("loads, with nothing decided on a new server", async () => {
     await fresh();

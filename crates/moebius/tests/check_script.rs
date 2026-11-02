@@ -49,6 +49,18 @@ fn a_good_script_prints_what_it_did() {
 }
 
 #[test]
+fn ready_is_accepted_as_the_name_of_the_not_started_column() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = check(
+        dir.path(),
+        "function on_card(card) moebius.move('Ready') end",
+        &["--column", "Ready"],
+    );
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    assert_eq!(text(&output.stdout), "moved the card to Not started\n");
+}
+
+#[test]
 fn a_script_with_an_error_fails_and_says_why() {
     let dir = tempfile::tempdir().unwrap();
     let output = check(

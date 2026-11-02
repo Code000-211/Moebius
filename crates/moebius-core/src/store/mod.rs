@@ -397,6 +397,8 @@ CREATE INDEX events_by_kind ON events (run_id, kind, seq);
     "ALTER TABLE runs ADD COLUMN title TEXT;",
     r#"
 UPDATE cards SET column_name = 'Not started' WHERE column_name = 'Ready';
+UPDATE card_moves SET from_column = 'Not started' WHERE from_column = 'Ready';
+UPDATE card_moves SET to_column = 'Not started' WHERE to_column = 'Ready';
 "#,
 ];
 
@@ -590,7 +592,8 @@ mod tests {
     }
 
     /// The first column was called "Ready" until the board was named for the work rather than the tool; the cards
-    /// already in it are the cards of the column now, so no approved card is left in a lane the workflow lacks.
+    /// already in it are the cards of the column now, so no approved card is left in a lane the workflow lacks, and
+    /// the history of a card names the column the same way.
     #[test]
     fn the_cards_of_the_old_ready_column_become_the_cards_of_not_started() {
         let dir = tempfile::tempdir().unwrap();
@@ -615,9 +618,28 @@ mod tests {
                 [],
             )
             .unwrap();
+            conn.execute(
+                "INSERT INTO card_moves (card_id, from_column, to_column, note, at) VALUES (1, 'Backlog', 'Ready', NULL, 1), (1, 'Ready', 'In progress', NULL, 2)",
+                [],
+            )
+            .unwrap();
         }
         let s = Store::open(dir.path()).unwrap();
-        assert_eq!(s.cards(1).unwrap()[0].column, "Not started");
+        let card = s.cards(1).unwrap()[0].clone();
+        assert_eq!(card.column, "Not started");
+        let moves: Vec<(String, String)> = s
+            .moves_for_card(card.id)
+            .unwrap()
+            .into_iter()
+            .map(|m| (m.from, m.to))
+            .collect();
+        assert_eq!(
+            moves,
+            vec![
+                ("Backlog".to_string(), "Not started".to_string()),
+                ("Not started".to_string(), "In progress".to_string())
+            ]
+        );
     }
 
     #[test]

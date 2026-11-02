@@ -1,12 +1,12 @@
 //! Page-wide keyboard shortcuts, and the checks every one of them makes before it acts.
 
 /**
- * True while a modal sheet is over the page. The page underneath still hears its own shortcut while focus is trapped
+ * True while a modal sheet is over the page (the app's `DialogContent` says `aria-modal`; one that is closing does not count). The page underneath still hears its own shortcut while focus is trapped
  * in the sheet, so the panel it opens would land behind the scrim where nobody can see it. A sheet that is not modal —
  * the floating chat, which leaves the page working — does not count.
  */
 export function modalIsOpen(): boolean {
-  return document.querySelector('[role="dialog"][aria-modal="true"]') !== null;
+  return document.querySelector('[role="dialog"][aria-modal="true"][data-state="open"]') !== null;
 }
 
 /**

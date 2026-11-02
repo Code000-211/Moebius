@@ -87,7 +87,7 @@ export function ChangesCard({ of }: { of: { change: number } }) {
   const query = useDiff(of);
   const headline = useMemo(() => {
     const diff = query.data?.diff;
-    if (!diff) return null;
+    if (diff === undefined) return null;
     const files = parseUnifiedDiff(diff);
     return { files: files.length, ...totals(files) };
   }, [query.data]);
@@ -99,6 +99,14 @@ export function ChangesCard({ of }: { of: { change: number } }) {
         busy={query.isFetching}
         onRetry={() => void query.refetch()}
       />
+    );
+  }
+  // An empty diff is an answer: nothing changed, or the branch is gone after the merge. There is nothing to open.
+  if (headline.files === 0) {
+    return (
+      <p data-testid="diff-empty" className="m-0 text-sm text-secondary">
+        No changes
+      </p>
     );
   }
   return (

@@ -2,7 +2,7 @@
 /**
  * Keeps the tokens of `theme.css` and `tailwind.css` inside the design standard,
  * [`docs/design-web.md`](../../../docs/design-web.md). The web app follows that standard rather than the desktop app's
- * Deep Velvet palette (ADR 0013), so this test reads the standard's own numbers
+ * Deep Velvet palette ([ADR 0016](../../../docs/adr/0016-the-web-app-has-its-own-design-standard.md)), so this test reads the standard's own numbers
  * rather than `theme.rs`: both themes define the same names, every radius and every step of the type and spacing scale
  * is one the standard lists, text is readable on the surface it sits on in both themes, and no colour literal appears
  * anywhere else in the app. It also fails a name that no theme defines, because a declaration that names a token which

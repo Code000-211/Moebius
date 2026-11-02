@@ -22,6 +22,8 @@ export interface PagesCFake {
   refuseNext(method: string, path: string, status: number, message: string): void;
   /** The text of the script of a column (lower case), once saved. */
   readonly scripts: Map<string, string>;
+  /** What `GET /v1/research` lists; a test that needs a server with no research empties it. */
+  readonly research: Array<Json & { id: number; status: string }>;
   /** What `GET /v1/retros` lists. A test that needs more days than the four writes them here. */
   readonly days: Array<{ date: string; status: string; errors: number; proposals: number }>;
 }
@@ -814,6 +816,7 @@ export function createPagesCFake(
     handle,
     requests,
     scripts,
+    research,
     days: retroDays,
     refuseNext(method, path, status, message) {
       refusals.set(`${method} ${path}`, { status, message });

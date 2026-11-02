@@ -9,7 +9,7 @@ use std::rc::Rc;
 use mlua::{Lua, Table};
 
 use super::sandbox::run_sandboxed;
-use super::{Limits, Workflow};
+use super::{Limits, Workflow, resolve_column};
 use crate::app::PERSON;
 
 /// Runs the column script `source`, called `name`, once in the same sandbox as the engine, on a made-up card in
@@ -30,6 +30,7 @@ pub fn check_script(
         .into_iter()
         .map(|c| c.name)
         .collect();
+    let column = resolve_column(column);
     if !columns.contains(&column.to_string()) {
         return Err(format!(
             "no column {column:?}; the columns are {}",
@@ -136,6 +137,7 @@ fn recording_api(
     m.set(
         "move",
         lua.create_function(move |_, (column, note): (String, Option<String>)| {
+            let column = resolve_column(&column).to_string();
             if !names.contains(&column) {
                 return Err(mlua::Error::runtime(format!("no column {column:?}")));
             }
@@ -333,6 +335,17 @@ mod tests {
         );
         assert_eq!(
             dry("function on_card(card) end", "Not started", "leon").unwrap(),
+            [] as [String; 0]
+        );
+    }
+
+    #[test]
+    fn ready_is_the_old_name_of_not_started_in_a_dry_run() {
+        let source = "function on_card(card) moebius.move('Ready') end";
+        let expected = ["moved the card to Not started"];
+        assert_eq!(dry(source, "Backlog", "leon").unwrap(), expected);
+        assert_eq!(
+            dry("function on_card(card) end", "Ready", "leon").unwrap(),
             [] as [String; 0]
         );
     }

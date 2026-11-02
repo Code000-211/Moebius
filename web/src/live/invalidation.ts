@@ -71,9 +71,9 @@ function improvePages(event: ServerEvent): QueryKey[] {
   switch (event.kind) {
     case "retro_done":
     case "trial_done":
-      return [keys.retros, keys.lessons];
+      return [keys.retros, keys.lessons, keys.proposals];
     case "proposal_status":
-      return [keys.retros, keys.lessons, keys.rules];
+      return [keys.retros, keys.lessons, keys.rules, keys.proposals];
     case "research_status":
     case "experiment_done":
       return [keys.research];

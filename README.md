@@ -147,7 +147,7 @@ moebius issue create 1 "Add a greeting" --body "Add hello.txt that says hello."
 moebius board
 ```
 
-The card moves from Backlog to Ready to In progress, and ends in Ready to merge with a change waiting in the inbox.
+The card moves from Backlog to Not started to In progress, and ends in Ready to merge with a change waiting in the inbox.
 
 > The server listens on plain HTTP and anyone with the token has full control. Keep it on `127.0.0.1` or a private
 > network, never on the internet.
@@ -178,7 +178,7 @@ Or just ask the Moebius agent: it knows the guide and the reference, and builds 
 | [`docs/architecture.md`](docs/architecture.md) | How a card moves and which module does what. |
 | [`docs/reference/`](docs/reference/) | [Column scripts](docs/reference/column-scripts.md), [rules](docs/reference/rules.md), [configuration](docs/reference/configuration.md), [command line](docs/reference/cli.md), [desktop API](docs/reference/desktop-api.md), [router](docs/reference/router.md), [plugin API](docs/reference/plugin-api.md), [bridge protocol](docs/reference/bridge-protocol.md), [harness configuration](docs/reference/harness-configuration.md), [training export](docs/reference/training-export.md), [decision model](docs/reference/decision-model.md). |
 | [`docs/guide/`](docs/guide/README.md) | How to build on Moebius, one task per page. |
-| [`docs/design.md`](docs/design.md) | The look of the desktop app. |
+| [`docs/design.md`](docs/design.md), [`docs/design-web.md`](docs/design-web.md) | The look of the desktop app, and the standard the web app is built to. |
 | [`examples/`](examples/README.md) | Examples that run in CI. |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to work on Moebius: where new code goes, the checks, the commits. |
 

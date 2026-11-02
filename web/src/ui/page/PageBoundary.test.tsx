@@ -44,4 +44,23 @@ describe("the frame around a page", () => {
     expect(screen.getByText("Fleet")).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
   });
+
+  it("tries again when the shell moves to another page", () => {
+    const reported = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { rerender } = render(
+      <PageBoundary resetKey="/fleet">
+        <Missing />
+      </PageBoundary>,
+    );
+    expect(screen.getByRole("alert")).toBeTruthy();
+    // Another page, same frame: the notice of the first must not stand in front of it.
+    rerender(
+      <PageBoundary resetKey="/board">
+        <p>Board</p>
+      </PageBoundary>,
+    );
+    expect(screen.getByText("Board")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    reported.mockRestore();
+  });
 });

@@ -104,6 +104,9 @@ fn every_tag_and_a_long_title_stay_inside_the_cards() {
         &[
             "Backlog",
             "backlog.luau",
+            "Not started",
+            "Ready to start",
+            "Next",
             "Your turn",
             "Blocked by #7, #8",
             "2 rules broken",

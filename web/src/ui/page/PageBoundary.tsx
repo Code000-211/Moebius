@@ -8,15 +8,24 @@
  * the sidebar, the banner of the connection and its retry with it. The frame keeps the shell standing and says what
  * failed in the words the rest of the app uses.
  *
- * A reload is the only honest retry: React remembers that the file failed and asks for it again only from a fresh
- * page, so the browser has to start over. An error boundary is a class, the one place the web app has none of.
+ * Moving to another page tries again (`resetKey` is the address the shell is at), so one page that failed does not
+ * block the others. A reload is the only honest retry for the page that failed: React remembers that the file failed
+ * and asks for it again only from a fresh page, so the browser has to start over. An error boundary is a class, the one place the web app has none of.
  */
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { Button } from "../components/Button";
 import { Notice } from "./Notice";
 
-export class PageBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+export class PageBoundary extends Component<
+  { children: ReactNode; resetKey?: string },
+  { failed: boolean }
+> {
   state: { failed: boolean } = { failed: false };
+
+  componentDidUpdate(before: { resetKey?: string }): void {
+    if (this.state.failed && before.resetKey !== this.props.resetKey)
+      this.setState({ failed: false });
+  }
 
   static getDerivedStateFromError(): { failed: boolean } {
     return { failed: true };

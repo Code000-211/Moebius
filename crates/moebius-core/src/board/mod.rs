@@ -32,4 +32,6 @@ pub use dry_run::check_script;
 pub use engine::{BoardError, Engine, Step};
 pub use limits::Limits;
 pub use runs::{AgentInfo, CardRuns, ChatRuns, ImproveRuns, Runs, StartError, Tui, Variant};
-pub use workflow::{Column, Workflow, built_in_script, column_named, repository_script};
+pub use workflow::{
+    Column, Workflow, built_in_script, column_named, repository_script, resolve_column,
+};

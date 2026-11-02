@@ -30,8 +30,19 @@ pub(super) const DEFAULT_SCRIPTS: &[(&str, &str)] = &[
     ("done.luau", include_str!("../../workflow/done.luau")),
 ];
 
-/// The column of the default workflow called `name`, in any case.
+/// The name of the column `name` stands for: "Ready", the name the column "Not started" had, is its alias, so scripts
+/// and callers written for it keep working. Any other name is returned as it is.
+pub fn resolve_column(name: &str) -> &str {
+    if name.eq_ignore_ascii_case("Ready") {
+        crate::app::columns::NOT_STARTED
+    } else {
+        name
+    }
+}
+
+/// The column of the default workflow called `name` (or its alias, see [`resolve_column`]), in any case.
 pub fn column_named(name: &str) -> Option<Column> {
+    let name = resolve_column(name);
     Workflow::default()
         .columns
         .into_iter()

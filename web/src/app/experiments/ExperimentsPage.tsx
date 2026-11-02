@@ -123,6 +123,11 @@ export function ExperimentsPage() {
     return (
       <>
         {header}
+        {failed && (
+          <Region label="The request was refused">
+            <Notice tone="error">{failed}</Notice>
+          </Region>
+        )}
         {composing ? (
           <NewBrief
             repositories={repositories}

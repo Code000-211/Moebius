@@ -19,6 +19,11 @@ Every board has the same six columns, in this order. Each column has one script 
 
 Column names are exact: capital first letter, one space between words. You cannot add, remove or rename columns yet.
 
+`Not started` was called `Ready` before. `Ready` is still accepted as its name wherever a column is named: the argument
+of `moebius.move`, `--column` of `check-script`, and `{column}` of the scripts routes of the desktop API. The column
+itself is always called `Not started`: `card.column`, the `card_moved` event and every response give that name, so a
+script that compares `card.column` with `"Ready"` must compare it with `"Not started"`.
+
 The board engine runs the script of a card's column for every card on every tick (`board.tick_ms`, default 2 seconds).
 After a script moved the card, it runs the script of the new column at once, and so on until a script leaves the card
 where it is (at most twelve more runs in one tick). A card in `Done` is skipped once every judgement
@@ -325,7 +330,7 @@ configuration and no repository, and it stores and starts nothing.
 | Option | Default | Meaning |
 |---|---|---|
 | `<file>` | required | The script, such as `.moebius/ready.luau`. |
-| `--column` | `Backlog` | The column the card is in: one of the six columns, spelled as in the table at the top. |
+| `--column` | `Backlog` | The column the card is in: one of the six columns, spelled as in the table at the top (`Ready` for `Not started` too). |
 | `--title` | `A card to check the script with` | The card's `title`. |
 | `--author` | `person` | The card's `author`. `card.trusted` is true only for `person`, as on a repository without a forge. |
 

@@ -187,6 +187,24 @@ async fn a_script_is_read_saved_used_and_given_back() {
 }
 
 #[tokio::test]
+async fn ready_names_the_not_started_column_in_the_scripts_route() {
+    let dir = tempfile::tempdir().unwrap();
+    let setup = Setup::start(dir.path()).await;
+    let repo = setup
+        .server
+        .app
+        .add_repository("demo", source(dir.path()).to_str().unwrap())
+        .unwrap();
+
+    let (status, view) = setup.get(repo.id, "Ready").await;
+    assert_eq!(status, 200, "{view}");
+    assert_eq!(view["column"], "Not started");
+    assert_eq!(view["path"], ".moebius/ready.luau");
+    let (_, built_in) = setup.get(repo.id, "Not started").await;
+    assert_eq!(view, built_in);
+}
+
+#[tokio::test]
 async fn a_script_that_fails_the_check_is_refused_and_nothing_is_committed() {
     let dir = tempfile::tempdir().unwrap();
     let setup = Setup::start(dir.path()).await;

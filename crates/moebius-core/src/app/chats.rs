@@ -11,6 +11,7 @@ use serde_json::json;
 use super::{App, AppError, Result};
 use crate::blobs::redact;
 use crate::board::Runs;
+use crate::bus::Event;
 use crate::config::AgentConfig;
 use crate::harness::terminal::tui_key;
 use crate::repos::git;
@@ -451,7 +452,12 @@ impl App {
         let named: String = title.trim().chars().take(TITLE_LENGTH).collect();
         let title = if named.is_empty() { None } else { Some(named) };
         self.store.set_run_title(run_id, title.as_deref())?;
-        self.chat_view(&Run { title, ..run })
+        let chat = self.chat_view(&Run { title, ..run })?;
+        self.bus.publish(Event::ChatRenamed {
+            run: run_id,
+            title: chat.title.clone(),
+        });
+        Ok(chat)
     }
 
     /// A person has read the chat `run_id` up to the event `seq`.

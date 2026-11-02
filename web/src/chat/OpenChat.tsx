@@ -422,9 +422,9 @@ export function OpenChat({
   return (
     <>
       <div className="min-h-0 flex-1" data-testid="conversation">
-        {thread.error ? (
-          <Notice tone="error">{thread.error}</Notice>
-        ) : (
+        {/* A conversation already read stays on screen: a failed read shows its reason above it, not instead of it. */}
+        {thread.error ? <Notice tone="error">{thread.error}</Notice> : null}
+        {thread.error && !thread.loaded ? null : (
           <ThreadView
             entries={thread.entries}
             working={working}

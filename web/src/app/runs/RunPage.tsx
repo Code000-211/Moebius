@@ -207,10 +207,14 @@ function OpenRun({ id }: { id: number }) {
             data-testid="conversation"
           >
             {thread.error ? (
-              <p role="alert" className="m-0 py-8 text-center text-base text-error-text">
+              <p
+                role="alert"
+                className={`m-0 text-center text-base text-error-text ${thread.loaded ? "pb-3" : "py-8"}`}
+              >
                 {thread.error}
               </p>
-            ) : (
+            ) : null}
+            {thread.error && !thread.loaded ? null : (
               <div className="min-h-0 flex-1 overflow-x-auto">
                 <ThreadView
                   entries={thread.entries}

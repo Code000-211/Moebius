@@ -44,6 +44,8 @@ const DialogContent = React.forwardRef<
       <DialogOverlay />
       <DialogPrimitive.Content
         ref={ref}
+        // Radix hides the page behind the sheet but does not say so in the dialog's own role; `modalIsOpen` looks for it.
+        aria-modal="true"
         className={cn(
           "fixed inset-0 z-sheet m-auto flex h-fit max-h-[calc(100%_-_2rem)] w-full max-w-lg",
           "flex-col overflow-y-auto",

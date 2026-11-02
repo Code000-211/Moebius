@@ -1,15 +1,17 @@
 // From BloopAI/vibe-kanban packages/ui/src/components/Button.tsx (Apache-2.0), changed to this app's design standard:
 // the variants are primary, secondary, ghost and danger; the primary fills with the ink colour and labels it with the
 // canvas colour; nothing carries a border, a size under 40px, or a colour of its own; the focus ring comes from the
-// global `:focus-visible` rule in `styles/tailwind.css`; a disabled button says why in its tooltip and in words no
-// one sees rather than in a line beside it, and since November in the words a screen reader is told rather than in
-// the browser's own tooltip box; Deep Velvet's coral accent is gone.
+// global `:focus-visible` rule in `styles/tailwind.css`; a button that cannot be pressed and has a reason stays
+// focusable (`aria-disabled`), shows the reason in the app's own tooltip on hover and on focus, and keeps it for a
+// screen reader in `aria-describedby`, rather than in a line beside it or the browser's own tooltip box; Deep Velvet's
+// coral accent is gone.
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import type * as React from "react";
 import { useId } from "react";
 
 import { cn } from "../lib/cn";
+import { Tooltip } from "./Tooltip";
 
 /**
  * One implementation of a button, for every page.
@@ -19,7 +21,7 @@ import { cn } from "../lib/cn";
  * least 40px tall, which is the smallest touch target the standard allows.
  */
 const buttonVariants = cva(
-  "inline-flex w-fit shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-control font-semibold text-text transition-colors duration-(--motion-routine) ease-out disabled:cursor-not-allowed disabled:opacity-45 [&_svg]:shrink-0",
+  "inline-flex w-fit shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-control font-semibold text-text transition-colors duration-(--motion-routine) ease-out disabled:cursor-not-allowed disabled:opacity-45 aria-disabled:cursor-not-allowed aria-disabled:opacity-45 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
@@ -55,11 +57,12 @@ export interface ButtonProps
 }
 
 /**
- * A button that cannot be pressed says why in words nobody sees, not in a line beside it and not in the browser's own
- * tooltip: the reason printed next to a control that cannot be clicked is the same words twice and reads as
- * furniture, and the box the browser draws for a `title` is a strip of another design system over the page it sits
- * on. The words are kept — a disabled button stays in the accessibility tree, so `aria-describedby` carries the
- * reason — and are simply not drawn by us or by the browser.
+ * A button that cannot be pressed and was given a `title` says why. It is not `disabled`, which would take it out of
+ * the tab order and leave a mouse and a keyboard nothing to ask: it is `aria-disabled`, stays focusable, ignores
+ * every click and Enter, and shows the reason in the app's own tooltip on hover and on focus. The browser's own
+ * tooltip box for a `title` is a strip of another design system over the page, so the attribute is not passed on.
+ * The words are also kept for a screen reader, in `aria-describedby`, and printed nowhere else: the reason beside a
+ * control that cannot be clicked is the same words twice. A button with no reason is simply `disabled`.
  *
  * A button of none given is a plain one. Inside a `<form>` a `<button>` submits it whether or not that was meant,
  * which turns the Cancel of a dialog into the thing the dialog was asked not to do, so the default is the quiet one
@@ -73,31 +76,40 @@ function Button({
   disabled,
   title,
   type,
+  onClick,
   "aria-describedby": describedBy,
   ...props
 }: ButtonProps) {
   const Comp = asChild ? Slot : "button";
   const classes = cn(buttonVariants({ variant, size, className }));
   const reason = useId();
-  const quiet = !asChild && disabled === true && title !== undefined;
+  const withReason = !asChild && disabled === true && title !== undefined;
   // Anything else the caller pointed at is kept: a field's hint and the reason a button cannot be pressed are both
   // worth hearing, in the order a person meets them.
-  const described = [describedBy, quiet ? reason : null].filter(Boolean).join(" ");
+  const described = [describedBy, withReason ? reason : null].filter(Boolean).join(" ");
+  const button = (
+    <Comp
+      className={classes}
+      disabled={withReason ? undefined : disabled}
+      aria-disabled={withReason ? true : undefined}
+      title={withReason ? undefined : title}
+      type={asChild ? type : (type ?? "button")}
+      aria-describedby={described === "" ? undefined : described}
+      onClick={
+        withReason
+          ? (event: React.MouseEvent<HTMLButtonElement>) => event.preventDefault()
+          : onClick
+      }
+      {...props}
+    />
+  );
+  if (!withReason) return button;
   return (
     <>
-      <Comp
-        className={classes}
-        disabled={disabled}
-        title={quiet ? undefined : title}
-        type={asChild ? type : (type ?? "button")}
-        aria-describedby={described === "" ? undefined : described}
-        {...props}
-      />
-      {quiet && (
-        <span id={reason} className="sr-only">
-          {title}
-        </span>
-      )}
+      <Tooltip content={title}>{button}</Tooltip>
+      <span id={reason} className="sr-only">
+        {title}
+      </span>
     </>
   );
 }

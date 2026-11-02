@@ -118,7 +118,8 @@ describe("Composer", () => {
     rerender(<Harness onSend={send} canSend={false} sendHint="Choose a repository first" />);
     const hinted = screen.getByRole("button", { name: "Send" }) as HTMLButtonElement;
     expect(hinted.getAttribute("title")).toBeNull();
-    expect(hinted.disabled).toBe(true);
+    // With a reason it stays focusable (`aria-disabled`), so a keyboard reaches the reason too.
+    expect(hinted.getAttribute("aria-disabled")).toBe("true");
     expect(quietReason(hinted)).toBe("Choose a repository first");
     rerender(<Harness onSend={send} />);
     expect(

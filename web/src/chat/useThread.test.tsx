@@ -16,7 +16,7 @@ const live = vi.hoisted(() => ({
 }));
 const api = vi.hoisted(() => ({
   /** What `GET /v1/runs/{id}/events` answers, each time it is asked. */
-  pages: [] as RunEvent[][],
+  pages: [] as (RunEvent[] | Error | Promise<RunEvent[]>)[],
   /** The `after` of every read, in the order they were asked for. */
   asked: [] as number[],
 }));
@@ -31,7 +31,9 @@ vi.mock("../live/LiveProvider", () => ({
 vi.mock("../api/calls/chat", () => ({
   runEvents: async (_run: number, after: number) => {
     api.asked.push(after);
-    return api.pages[api.asked.length - 1] ?? [];
+    const page = api.pages[api.asked.length - 1] ?? [];
+    if (page instanceof Error) throw page;
+    return page;
   },
 }));
 
@@ -107,5 +109,37 @@ describe("following a chat", () => {
     await waitFor(() => expect(result.current.lastSeq).toBe(1));
     rerender({ id: null });
     expect(result.current).toEqual({ entries: [], lastSeq: 0, loaded: false, error: null });
+  });
+
+  it("keeps a chat on screen when reading it again fails while the stream reconnects", async () => {
+    api.pages = [[event(1), event(2)], new Error("cannot reach the server")];
+    const { result, rerender } = renderHook(() => useThread(7));
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    live.connection = "reconnecting";
+    rerender();
+    await waitFor(() => expect(result.current.error).toBe("cannot reach the server"));
+    // The conversation stays; the page shows the reason above it.
+    expect(result.current.loaded).toBe(true);
+    expect(result.current.entries.at(-1)).toMatchObject({ text: "piece 1piece 2" });
+  });
+
+  it("does not let an older failed read overwrite a newer successful one", async () => {
+    let fail: (e: Error) => void = () => {};
+    const slow = new Promise<RunEvent[]>((_, reject) => {
+      fail = reject;
+    });
+    live.connection = "reconnecting";
+    api.pages = [slow, [event(1)]];
+    const { result, rerender } = renderHook(() => useThread(7));
+    await waitFor(() => expect(api.asked).toHaveLength(1));
+    live.connection = "online";
+    rerender();
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    await act(async () => {
+      fail(new Error("cannot reach the server"));
+      await slow.catch(() => {});
+    });
+    expect(result.current.error).toBeNull();
+    expect(result.current.entries.at(-1)).toMatchObject({ text: "piece 1" });
   });
 });

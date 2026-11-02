@@ -25,7 +25,14 @@ export interface ThemeState {
 
 const key = "moebius.theme";
 
+/**
+ * What was picked in this page, kept in memory as well: a browser that refuses to store it must not forget the pick
+ * the next time the system changes or a page asks. It outranks the storage, which only this page writes to.
+ */
+let chosen: ThemePreference | null = null;
+
 function preference(): ThemePreference {
+  if (chosen !== null) return chosen;
   try {
     const stored = localStorage.getItem(key);
     return stored === "light" || stored === "dark" ? stored : "system";
@@ -92,6 +99,7 @@ function notify(): void {
 }
 
 function setPreference(next: ThemePreference): void {
+  chosen = next;
   apply(next);
   try {
     localStorage.setItem(key, next);

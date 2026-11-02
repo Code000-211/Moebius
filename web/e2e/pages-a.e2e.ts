@@ -642,6 +642,28 @@ describe("projects", () => {
     },
   );
 
+  it.skipIf(usesRealServer)("leaves Ctrl+P to the browser while a dialog is open", async () => {
+    await open("/projects/1");
+    await page.getByRole("heading", { name: "Files" }).waitFor();
+    await page.keyboard.press("Control+k");
+    await page.getByRole("dialog").waitFor();
+    // The shortcut must not be taken (not marked as handled) and the caret must not move behind the scrim.
+    const handled = await page.evaluate(
+      () =>
+        new Promise<boolean>((resolve) => {
+          window.addEventListener("keydown", (e) => resolve(e.defaultPrevented), { once: true });
+          // Listens after the app's own handler, which is registered earlier on the same target.
+          window.dispatchEvent(
+            new KeyboardEvent("keydown", { key: "p", ctrlKey: true, cancelable: true }),
+          );
+        }),
+    );
+    expect(handled).toBe(false);
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).not.toBe(
+      "Go to file",
+    );
+  });
+
   it.skipIf(usesRealServer)("searches the files and opens a hit at its line", async () => {
     await open("/projects/1");
     await page.getByRole("heading", { name: "Files" }).waitFor();

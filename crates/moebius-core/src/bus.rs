@@ -63,6 +63,10 @@ pub enum Event {
         card: i64,
         reason: Option<String>,
     },
+    ChatRenamed {
+        run: i64,
+        title: String,
+    },
     ChangeUpdated(Change),
     ChangeOffered(Change),
     ChangeMerged {
@@ -225,7 +229,7 @@ mod tests {
             title: "Fix the bug".into(),
             body: "It fails".into(),
             author: "ada".into(),
-            column: "Ready".into(),
+            column: "Not started".into(),
             created_at: 1_700_000_000,
             note: None,
             retried_after: None,
@@ -319,9 +323,9 @@ mod tests {
                 Event::CardMoved {
                     card: 7,
                     from: "Backlog".into(),
-                    to: "Ready".into(),
+                    to: "Not started".into(),
                 },
-                json!({"kind": "card_moved", "data": {"card": 7, "from": "Backlog", "to": "Ready"}}),
+                json!({"kind": "card_moved", "data": {"card": 7, "from": "Backlog", "to": "Not started"}}),
             ),
             (
                 Event::CardWaiting {
@@ -329,6 +333,13 @@ mod tests {
                     reason: Some("waiting for a person".into()),
                 },
                 json!({"kind": "card_waiting", "data": {"card": 7, "reason": "waiting for a person"}}),
+            ),
+            (
+                Event::ChatRenamed {
+                    run: 4,
+                    title: "Plan".into(),
+                },
+                json!({"kind": "chat_renamed", "data": {"run": 4, "title": "Plan"}}),
             ),
             (
                 Event::ChangeUpdated(change.clone()),
@@ -391,10 +402,10 @@ mod tests {
             (
                 Event::ScriptChanged {
                     repository: 2,
-                    column: "Ready".into(),
+                    column: "Not started".into(),
                     path: ".moebius/ready.luau".into(),
                 },
-                json!({"kind": "script_changed", "data": {"repository": 2, "column": "Ready", "path": ".moebius/ready.luau"}}),
+                json!({"kind": "script_changed", "data": {"repository": 2, "column": "Not started", "path": ".moebius/ready.luau"}}),
             ),
             (
                 Event::FileChanged {

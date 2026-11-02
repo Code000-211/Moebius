@@ -21,7 +21,7 @@ export interface BoxWatch<T> {
 
 /**
  * Watch `measure` over the box it is given. `children` adds every child the box has, for a box whose answer depends on
- * the rows inside it rather than on the box alone; a child that arrives later is added by the render that brought it.
+ * the rows inside it rather than on the box alone; a child that arrives later is added by the render that brought it, and one that left is let go by the next.
  */
 export function useBoxWatch<T extends HTMLElement>(
   measure: (box: T) => void,
@@ -46,6 +46,12 @@ export function useBoxWatch<T extends HTMLElement>(
     if (!watch.current) watch.current = new ResizeObserver(remeasure);
     const observer = watch.current;
     const seen = children ? [el, ...Array.from(el.children)] : [el];
+    // A child that left the box is no longer watched, and the set no longer holds on to it and what it holds.
+    for (const each of Array.from(watched.current)) {
+      if (seen.includes(each)) continue;
+      observer.unobserve(each);
+      watched.current.delete(each);
+    }
     for (const each of seen) {
       if (watched.current.has(each)) continue;
       watched.current.add(each);
