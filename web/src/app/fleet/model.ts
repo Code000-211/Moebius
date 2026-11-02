@@ -78,17 +78,36 @@ export function working(snapshot: Snapshot, chats: readonly Chat[]): Work[] {
   return list.sort((a, b) => a.run - b.run);
 }
 
+import { plural } from "../../ui/lib/format";
+
 /** What the page says under its title. */
 export function context(count: number): string {
   if (count === 0) return "Nothing is working.";
-  return count === 1 ? "1 agent working" : `${count} agents working`;
+  return `${plural(count, "agent", "agents")} working`;
+}
+
+/** How a working run reads at a glance: the word, and the hue that goes with it. */
+export interface Status {
+  word: string;
+  /** Work under way, or something that waits for the person. */
+  tone: "progress" | "attention";
+}
+
+/**
+ * The word for a working run, with the hue that belongs to it. `waiting` is a run that waits for the person, which is
+ * why it takes the attention hue rather than the one for work under way.
+ */
+export function statusWord(status: string, asks: boolean): Status {
+  if (status === "waiting") return { word: asks ? "Asks you" : "Your turn", tone: "attention" };
+  if (status === "starting") return { word: "Starting", tone: "progress" };
+  return { word: "Running", tone: "progress" };
 }
 
 /** A number of tokens: `412k tokens`, `1.5M tokens`. */
 export function tokensText(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M tokens`;
   if (n >= 1_000) return `${Math.floor(n / 1_000)}k tokens`;
-  return `${n} tokens`;
+  return plural(n, "token", "tokens");
 }
 
 /** A time as a person reads it: `42s`, `7m 17s`, `1h 02m`. */
@@ -101,10 +120,45 @@ export function elapsed(seconds: number): string {
 
 const isStep = (entry: Entry) => entry.kind === "thinking" || entry.kind === "tool";
 
+/**
+ * Whether the agent of a run is at work this moment. A run that waits for the person is not thinking: the last thing it
+ * did has finished, and so has a length to tell.
+ */
+export function thinkingNow(status: string): boolean {
+  return status === "starting" || status === "running";
+}
+
+/**
+ * What followed the last run of steps, or null when the steps run to the end of the conversation. It is the time the
+ * last of them stopped.
+ */
+export function afterSteps(entries: readonly Entry[]): number | null {
+  return entries[entries.findLastIndex(isStep) + 1]?.at ?? null;
+}
+
+/**
+ * How long the thought at `index` went on, or null when nothing has come after it to say it stopped. An entry keeps the
+ * time its first piece arrived, so a thought runs until whatever follows it begins — the next step, or `nextAt`, what
+ * followed the last step of all.
+ */
+export function thoughtSeconds(
+  entries: readonly Entry[],
+  index: number,
+  nextAt: number | null = null,
+): number | null {
+  const entry = entries[index];
+  if (entry?.kind !== "thinking") return null;
+  const end = entries[index + 1]?.at ?? nextAt;
+  return end === undefined || end === null ? null : Math.max(0, end - entry.at);
+}
+
 /** The last run of steps (thinking and tool calls) in the entries; none when there is no step. */
 export function latestSteps(entries: readonly Entry[]): Entry[] {
   const end = entries.findLastIndex(isStep) + 1;
   if (end === 0) return [];
-  const before = entries.slice(0, end).findLastIndex((entry) => !isStep(entry));
+  // Walked back over the steps themselves to the thing that came before them. Copying the log to look for it cost
+  // more than the walk: a row of the Fleet does this for every tick of its clock.
+  let before = end - 1;
+  while (before >= 0 && isStep(entries[before] as Entry)) before -= 1;
   return entries.slice(before + 1, end);
 }

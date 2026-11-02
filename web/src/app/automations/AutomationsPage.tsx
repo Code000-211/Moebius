@@ -1,11 +1,17 @@
 /**
- * The Automations page: recurring work that runs on its own. The list of automations on the left; on the right the
- * editor of the one chosen (its name, its schedule with a picker of common ones and its next firing, its agent, where
- * its chats work, its prompt, whether it is on, and "Run now") and its past firings, each of which opens its chat. A
- * save is `POST /v1/automations` or `PUT /v1/automations/{id}`. The event stream keeps the list and the firings current.
+ * The Automations page: recurring work that runs on its own. The automations are the list on the left; the one chosen
+ * is the detail on the right, where its name, its schedule with a picker of common ones and its next firing, its
+ * agent, where its chats work, its prompt and a switch for whether it runs are edited, and its past runs are listed, each of
+ * which opens its chat. A save is `POST /v1/automations` or `PUT /v1/automations/{id}`, "Run now" is
+ * `POST /v1/automations/{id}/run` and a delete `DELETE /v1/automations/{id}`. The event stream keeps the list and the
+ * past runs current, so "in 3 h" and the next firing move on their own.
+ *
+ * The page fills the window and each column scrolls on its own: the past runs of an automation grow without limit, and
+ * reading them should not carry the list of automations away with it.
  */
+import { PlusIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router";
 import {
   automations,
@@ -16,26 +22,23 @@ import {
 } from "../../api/calls/automations";
 import { snapshot } from "../../api/calls/board";
 import { agents } from "../../api/calls/chat";
+import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { Automation, AutomationSettings, Firing } from "../../api/types/automations";
-import { ago } from "../../chat/format";
-import { Tag, type TagTone } from "../../ui/chat/Tag";
+import type { TagTone } from "../../ui/chat/Tag";
+import { Tag } from "../../ui/chat/Tag";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
 import { Loader } from "../../ui/components/Loader";
-import {
-  Body,
-  Box,
-  Chip,
-  Field,
-  ListCard,
-  ListDetail,
-  Notice,
-  PageHeader,
-  Select,
-  sayError,
-  TextArea,
-} from "../kit/Kit";
+import { ago } from "../../ui/lib/format";
+import { useNow } from "../../ui/lib/useNow";
+import { Box } from "../../ui/page/Box";
+import { Empty } from "../../ui/page/Empty";
+import { Field, Select, TextArea } from "../../ui/page/Field";
+import { ListCard, ListDetail } from "../../ui/page/List";
+import { Notice } from "../../ui/page/Notice";
+import { Body, PageHeader } from "../../ui/page/PageHeader";
+import { Switch } from "../../ui/page/Switch";
 import {
   type Form,
   formOf,
@@ -43,29 +46,24 @@ import {
   nextLine,
   PRESETS,
   request,
+  SUGGESTED_AUTOMATIONS,
   scheduleName,
   until,
 } from "./model";
 
 const NEW = "new";
 
-/** Unix seconds, kept current once a minute so "in 3 h" does not go stale. */
-function useNow(): number {
-  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 30_000);
-    return () => clearInterval(timer);
-  }, []);
-  return now;
-}
-
-function listTag(automation: Automation): { label: string; tone: TagTone } {
+/** Whether it will fire. Only a firing that went wrong or was passed over takes a hue of its own. */
+function statusWord(automation: Automation): { label: string; tone: TagTone } {
   const last = automation.last_firing;
-  if (last?.status === "failed") return { label: "Failed", tone: "red" };
-  if (last?.status === "skipped" && automation.enabled) return { label: "Skipped", tone: "amber" };
-  return automation.enabled ? { label: "On", tone: "teal" } : { label: "Off", tone: "plain" };
+  if (last?.status === "failed") return { label: "Failed", tone: "error" };
+  if (last?.status === "skipped" && automation.enabled) {
+    return { label: "Skipped", tone: "attention" };
+  }
+  return automation.enabled ? { label: "On", tone: "plain" } : { label: "Off", tone: "plain" };
 }
 
+/** The line under a name: when it fires next, or why the last firing did not work. */
 function listLine(automation: Automation, now: number): string {
   const last = automation.last_firing;
   if (last?.status === "failed") return last.reason;
@@ -79,6 +77,8 @@ export function AutomationsPage() {
   const now = useNow();
   const list = useQuery({ queryKey: keys.automations, queryFn: automations });
   const [chosen, setChosen] = useState<number | typeof NEW | null>(null);
+  /** The automation the form starts from, when the page offered one. */
+  const [starting, setStarting] = useState<Form | null>(null);
   const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const choose = (next: number | typeof NEW) => {
     setNotice(null);
@@ -88,9 +88,16 @@ export function AutomationsPage() {
   const header = (
     <PageHeader
       title="Automations"
-      context="Chats that start on a schedule, in the server's local time. What they offer lands in the Inbox."
+      context="Chats that start on a schedule."
       actions={
-        <Button size="sm" onClick={() => choose(NEW)}>
+        <Button
+          size="sm"
+          onClick={() => {
+            setStarting(null);
+            choose(NEW);
+          }}
+        >
+          <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
           New automation
         </Button>
       }
@@ -100,7 +107,7 @@ export function AutomationsPage() {
     return (
       <>
         {header}
-        <Loader message="Reading the automations…" className="py-double" />
+        <Loader message="Reading the automations" className="py-8" />
       </>
     );
   }
@@ -115,29 +122,63 @@ export function AutomationsPage() {
   const saved =
     typeof chosen === "number" ? list.data.find((each) => each.id === chosen) : undefined;
 
+  // With none saved there is nothing to list beside the page, so the page is one card that offers a place to start.
+  if (list.data.length === 0) {
+    return (
+      <>
+        {header}
+        {chosen === NEW ? (
+          <Editor
+            key={NEW}
+            now={now}
+            notice={notice}
+            setNotice={setNotice}
+            starting={starting}
+            onCreated={(id) => setChosen(id)}
+            onDeleted={() => setChosen(null)}
+          />
+        ) : (
+          <Empty
+            title="No automation yet"
+            body="An automation starts a chat on a schedule. Pick a starting point, or write your own."
+            action={
+              <div className="flex flex-wrap gap-2">
+                {SUGGESTED_AUTOMATIONS.map((each) => (
+                  <Button
+                    key={each.name}
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      setStarting({ ...newForm(), ...each });
+                      choose(NEW);
+                    }}
+                  >
+                    {each.name}
+                  </Button>
+                ))}
+              </div>
+            }
+          />
+        )}
+      </>
+    );
+  }
+
   return (
-    <>
+    <div className="flex h-full min-h-0 flex-col">
       {header}
       <ListDetail
-        list={
-          list.data.length === 0 ? (
-            <Box title="Automations">
-              <Body>None yet. One could triage new issues every morning.</Body>
-            </Box>
-          ) : (
-            list.data.map((automation) => (
-              <ListCard
-                key={automation.id}
-                title={automation.name}
-                tags={[listTag(automation)]}
-                line={listLine(automation, now)}
-                alert={automation.last_firing?.status === "failed"}
-                chosen={chosen === automation.id}
-                onClick={() => choose(automation.id)}
-              />
-            ))
-          )
-        }
+        list={list.data.map((automation) => (
+          <ListCard
+            key={automation.id}
+            title={automation.name}
+            tags={[statusWord(automation)]}
+            line={listLine(automation, now)}
+            alert={automation.last_firing?.status === "failed"}
+            selected={chosen === automation.id}
+            onClick={() => choose(automation.id)}
+          />
+        ))}
         detail={
           chosen === NEW || saved ? (
             <Editor
@@ -152,10 +193,11 @@ export function AutomationsPage() {
           ) : null
         }
       />
-    </>
+    </div>
   );
 }
 
+/** The editor of one automation: what it is called, when it runs, what its chats are, and what came of them. */
 function Editor({
   saved,
   now,
@@ -163,8 +205,11 @@ function Editor({
   setNotice,
   onCreated,
   onDeleted,
+  starting,
 }: {
-  saved: Automation | undefined;
+  saved?: Automation;
+  /** The fields to open a new automation with, when the empty page offered one. */
+  starting?: Form | null;
   now: number;
   notice: { tone: "ok" | "error"; text: string } | null;
   setNotice: (notice: { tone: "ok" | "error"; text: string } | null) => void;
@@ -172,7 +217,7 @@ function Editor({
   onDeleted: () => void;
 }) {
   const queryClient = useQueryClient();
-  const [form, setForm] = useState<Form>(() => (saved ? formOf(saved) : newForm()));
+  const [form, setForm] = useState<Form>(() => (saved ? formOf(saved) : (starting ?? newForm())));
   const [confirming, setConfirming] = useState(false);
   const id = saved?.id ?? null;
   const edit = (change: Partial<Form>) => {
@@ -203,7 +248,7 @@ function Editor({
       await refresh();
       setNotice(
         firing.status === "started"
-          ? { tone: "ok", text: "Started; its chat is among the firings below." }
+          ? { tone: "ok", text: "Started; its chat is among the past runs below." }
           : { tone: "error", text: `Not started: ${firing.reason}` },
       );
     },
@@ -230,158 +275,177 @@ function Editor({
   const names = new Set(agentList.data?.map((agent) => agent.name) ?? []);
   names.add(form.agent);
   const preset = PRESETS.find(([, cron]) => cron === form.schedule.trim());
+  // An automation that exists has nothing to save until a field of it changes; a new one can be saved as it was
+  // offered, because there is no stored form to compare it with.
+  const dirty = saved === undefined || JSON.stringify(form) !== JSON.stringify(formOf(saved));
 
   return (
-    <>
-      <Box>
-        <div className="flex flex-wrap items-center gap-base">
-          <Input
-            aria-label="Name of the automation"
-            placeholder="Name of the automation"
-            className="min-w-[200px] flex-1 font-semibold"
-            value={form.name}
-            onChange={(event) => edit({ name: event.target.value })}
-          />
-          {confirming ? (
-            <span className="flex items-center gap-base text-sm text-normal">
-              Delete this automation?
-              <Button size="sm" variant="outline" onClick={() => setConfirming(false)}>
-                Keep it
-              </Button>
-              <Button
-                size="sm"
-                variant="destructive"
-                disabled={remove.isPending}
-                onClick={() => remove.mutate()}
-              >
-                Delete
-              </Button>
-            </span>
-          ) : (
+    <div className="flex min-w-0 flex-col gap-6">
+      <Box
+        title="Automation"
+        actions={
+          confirming ? undefined : (
             <>
               <Button
                 size="sm"
-                variant="outline"
+                variant="secondary"
                 disabled={id === null || run.isPending}
+                title={id === null ? "Save it first" : undefined}
                 onClick={() => run.mutate()}
               >
-                Run now
+                {run.isPending ? "Starting" : "Run now"}
               </Button>
               {id !== null && (
-                <Button size="sm" variant="outline" onClick={() => setConfirming(true)}>
+                <Button size="sm" variant="secondary" onClick={() => setConfirming(true)}>
                   Delete automation
                 </Button>
               )}
-              <Button size="sm" disabled={save.isPending} onClick={submit}>
-                Save
+              <Button size="sm" disabled={save.isPending || !dirty} onClick={submit}>
+                {save.isPending ? "Saving" : "Save"}
               </Button>
             </>
+          )
+        }
+      >
+        <div className="flex flex-col gap-4">
+          <Field label="Name of the automation">
+            {(fieldId) => (
+              <Input
+                id={fieldId}
+                placeholder="Morning triage"
+                value={form.name}
+                onChange={(event) => edit({ name: event.target.value })}
+              />
+            )}
+          </Field>
+          {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
+          {confirming && (
+            <div className="flex flex-col gap-4 rounded-control bg-sunken p-4 sm:flex-row sm:items-center">
+              <p className="m-0 flex min-h-10 min-w-0 flex-1 items-center break-words text-base text-text">
+                Delete this automation? Its past runs stay listed.
+              </p>
+              <div className="flex gap-2">
+                <Button size="sm" variant="secondary" onClick={() => setConfirming(false)}>
+                  Keep it
+                </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  disabled={remove.isPending}
+                  onClick={() => remove.mutate()}
+                >
+                  Delete
+                </Button>
+              </div>
+            </div>
           )}
         </div>
-        {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
       </Box>
 
       <Box
         title="Schedule"
-        aside={
-          <span className="flex gap-half">
-            <Chip active={form.enabled} onClick={() => edit({ enabled: true })}>
-              On
-            </Chip>
-            <Chip active={!form.enabled} onClick={() => edit({ enabled: false })}>
-              Off
-            </Chip>
-          </span>
+        actions={
+          <Switch
+            checked={form.enabled}
+            onChange={(next) => edit({ enabled: next })}
+            label="Runs on its schedule"
+          />
         }
       >
-        <div className="flex flex-wrap gap-double">
-          <Field label="Repeats">
+        <div className="flex flex-col gap-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Repeats">
+              {(fieldId) => (
+                <Select
+                  id={fieldId}
+                  options={[
+                    ...PRESETS.map(([name, cron]) => [cron, name] as [string, string]),
+                    ...(!preset ? [["custom", "Custom"] as [string, string]] : []),
+                  ]}
+                  value={preset ? preset[1] : "custom"}
+                  onChange={(picked) => {
+                    if (picked !== "custom") edit({ schedule: picked });
+                  }}
+                />
+              )}
+            </Field>
+            <Field
+              label="Cron, in the server's local time"
+              hint="Five fields: minute, hour, day of the month, month, day of the week."
+            >
+              {(fieldId) => (
+                <Input
+                  id={fieldId}
+                  className="font-mono text-sm"
+                  placeholder="0 8 * * 1-5"
+                  value={form.schedule}
+                  onChange={(event) => edit({ schedule: event.target.value })}
+                />
+              )}
+            </Field>
+          </div>
+          <Body>
+            <span className="tabular-nums">
+              {nextLine(saved, form.schedule, form.enabled, now)}
+            </span>
+          </Body>
+        </div>
+      </Box>
+
+      <Box title="Chat" aside="Ends once the agent has answered">
+        <div className="flex flex-col gap-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Agent">
+              {(fieldId) => (
+                <Select
+                  id={fieldId}
+                  options={[...names]}
+                  value={form.agent}
+                  onChange={(picked) => edit({ agent: picked })}
+                />
+              )}
+            </Field>
+            <Field label="Works in">
+              {(fieldId) => (
+                <Select
+                  id={fieldId}
+                  options={[
+                    ["nowhere", "An empty directory"],
+                    ...(repositories.data?.boards.map(
+                      (board) =>
+                        [`repository:${board.repository.id}`, board.repository.name] as [
+                          string,
+                          string,
+                        ],
+                    ) ?? []),
+                    ["harness", "Harness configuration"],
+                  ]}
+                  value={form.place}
+                  onChange={(picked) => edit({ place: picked as Form["place"] })}
+                />
+              )}
+            </Field>
+          </div>
+          <Field label="Prompt">
             {(fieldId) => (
-              <Select
+              <TextArea
                 id={fieldId}
-                value={preset ? preset[1] : "custom"}
-                onChange={(event) => {
-                  if (event.target.value !== "custom") edit({ schedule: event.target.value });
-                }}
-              >
-                {PRESETS.map(([name, cron]) => (
-                  <option key={cron} value={cron}>
-                    {name}
-                  </option>
-                ))}
-                {!preset && <option value="custom">Custom</option>}
-              </Select>
-            )}
-          </Field>
-          <Field label="Cron, in the server's local time">
-            {(fieldId) => (
-              <Input
-                id={fieldId}
-                className="font-mono"
-                placeholder="0 8 * * 1-5"
-                value={form.schedule}
-                onChange={(event) => edit({ schedule: event.target.value })}
+                mono
+                rows={6}
+                placeholder="Triage the issues opened since yesterday: label them and say which are ready."
+                value={form.prompt}
+                onChange={(event) => edit({ prompt: event.target.value })}
               />
             )}
           </Field>
         </div>
-        <Body>{nextLine(saved, form.schedule, form.enabled, now)}</Body>
       </Box>
 
-      <Box title="Chat" aside="Ends once the agent has answered">
-        <div className="flex flex-wrap gap-double">
-          <Field label="Agent">
-            {(fieldId) => (
-              <Select
-                id={fieldId}
-                value={form.agent}
-                onChange={(event) => edit({ agent: event.target.value })}
-              >
-                {[...names].map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </Select>
-            )}
-          </Field>
-          <Field label="Works in">
-            {(fieldId) => (
-              <Select
-                id={fieldId}
-                value={form.place}
-                onChange={(event) => edit({ place: event.target.value as Form["place"] })}
-              >
-                <option value="nowhere">An empty directory</option>
-                {repositories.data?.boards.map((board) => (
-                  <option key={board.repository.id} value={`repository:${board.repository.id}`}>
-                    {board.repository.name}
-                  </option>
-                ))}
-                <option value="harness">Harness configuration</option>
-              </Select>
-            )}
-          </Field>
-        </div>
-        <Field label="Prompt">
-          {(fieldId) => (
-            <TextArea
-              id={fieldId}
-              mono
-              rows={6}
-              placeholder="Triage the issues opened since yesterday: label them and say which are ready."
-              value={form.prompt}
-              onChange={(event) => edit({ prompt: event.target.value })}
-            />
-          )}
-        </Field>
-      </Box>
-
-      <Box title="Firings" aside="Each opens its chat">
+      <Box title="Past runs" className="min-w-0">
         {id !== null && past.isPending ? (
-          <Body>Reading the firings…</Body>
+          <Loader message="Reading the past runs" className="py-8" />
         ) : past.data && past.data.length > 0 ? (
-          <ul className="m-0 flex list-none flex-col gap-half p-0">
+          <ul className="m-0 flex list-none flex-col gap-2 p-0">
             {past.data.map((firing) => (
               <li key={firing.id}>
                 <FiringRow firing={firing} now={now} />
@@ -392,36 +456,37 @@ function Editor({
           <Body>It has not fired yet.</Body>
         )}
       </Box>
-    </>
+    </div>
   );
 }
 
-/** A firing: when, what came of it, who fired it, and its chat, which a click opens. */
+/** A firing: what came of it and its status word, then when it ran and what asked for it. */
 function FiringRow({ firing, now }: { firing: Firing; now: number }) {
   const tone: TagTone =
-    firing.status === "started" ? "teal" : firing.status === "skipped" ? "amber" : "red";
+    firing.status === "started" ? "progress" : firing.status === "skipped" ? "attention" : "error";
   const what =
     firing.run_id === null
       ? firing.reason
       : firing.chat_status
         ? `Chat ${firing.run_id} · ${firing.chat_status}`
         : `Chat ${firing.run_id}`;
-  const line = (
+  const body = (
     <>
-      <span className="w-[90px] shrink-0 font-mono text-xs text-low">{ago(now, firing.at)}</span>
-      <Tag tone={tone}>{firing.status}</Tag>
-      <span className="w-[80px] shrink-0 font-mono text-xs text-low">
-        {firing.manual ? "Run now" : "Schedule"}
+      <span className="min-w-0 break-words text-base text-text">{what}</span>
+      <span className="flex flex-wrap items-center gap-2">
+        <Tag tone={tone}>{firing.status}</Tag>
+        <span className="text-sm text-secondary tabular-nums">{ago(now, firing.at)}</span>
+        <span className="text-sm text-secondary">{firing.manual ? "Run now" : "Schedule"}</span>
       </span>
-      <span className="min-w-0 break-words text-sm font-medium text-high">{what}</span>
     </>
   );
-  const row = "flex items-center gap-double rounded-lg border bg-surface p-base";
+  const row =
+    "flex min-h-10 flex-col gap-2 rounded-control bg-sunken p-4 transition-colors duration-(--motion-routine) ease-out";
   return firing.run_id === null ? (
-    <div className={row}>{line}</div>
+    <div className={row}>{body}</div>
   ) : (
-    <Link to={`/chat/${firing.run_id}`} className={`${row} hover:bg-lane`}>
-      {line}
+    <Link to={`/chat/${firing.run_id}`} className={`${row} hover:bg-raised`}>
+      {body}
     </Link>
   );
 }

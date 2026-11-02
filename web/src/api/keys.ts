@@ -12,12 +12,14 @@ export const keys = {
   usageDays: (days: number) => ["usage", days] as const,
   settings: ["settings"] as const,
   webhooks: ["webhooks"] as const,
-  /** What a repository's files page has read: directories, one file, the paths for "Go to file". */
+  /** What a repository's files page has read: directories, one file, the paths for "Go to file", a search. */
   files: (repository: number) => ["files", repository] as const,
   tree: (repository: number, directory: string) =>
     ["files", repository, "tree", directory] as const,
   file: (repository: number, path: string) => ["files", repository, "file", path] as const,
   filePaths: (repository: number) => ["files", repository, "paths"] as const,
+  fileSearch: (repository: number, query: string, regex: boolean) =>
+    ["files", repository, "search", query, regex] as const,
   snapshot: ["snapshot"] as const,
   /** Everything read about one card (its history and its runs) starts with this, so an event can make it all stale. */
   cards: ["card"] as const,
@@ -55,6 +57,7 @@ export const keys = {
   firings: (automation: number) => ["automations", "firings", automation] as const,
   retros: ["retros"] as const,
   retro: (date: string) => ["retros", date] as const,
+  proposals: ["proposals"] as const,
   lessons: ["lessons"] as const,
   research: ["research"] as const,
   shadowing: ["decision-model", "shadowing"] as const,

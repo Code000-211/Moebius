@@ -3,6 +3,9 @@
  * in the address (`?agent=`, or `?new=1` for a new one), so a reload and a link keep it. A server without a harness
  * configuration repository keeps its agents in `moebius.toml`: the page then reads the agent from the settings and
  * offers to set the repository up.
+ *
+ * The page fills the window and each column scrolls on its own: an agent's instructions are read on their own, and the
+ * list of agents should stay where it was left.
  */
 import { PlusIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
@@ -16,18 +19,22 @@ import {
   skillList,
 } from "../../api/calls/harness";
 import { availableModels, serverSettings } from "../../api/calls/models";
+import { sayError } from "../../api/errorText";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Agent } from "../../api/types/chat";
 import type { AgentDetail } from "../../api/types/harness";
-import { Tag } from "../../ui/chat/Tag";
+import type { TagTone } from "../../ui/chat/Tag";
 import { Button } from "../../ui/components/Button";
 import { Loader } from "../../ui/components/Loader";
-import { Box, ListCard, ListEditor } from "../harness/form";
+import { Empty } from "../../ui/page/Empty";
+import { chosenOrFirst, ListCard, ListDetail } from "../../ui/page/List";
+import { Notice } from "../../ui/page/Notice";
+import { PageHeader } from "../../ui/page/PageHeader";
+import { useDrafts } from "../harness/form";
 import { HarnessSetup } from "../harness/HarnessSetup";
-import { Header } from "../shell/Page";
 import { AgentEditor, type Saved } from "./AgentEditor";
-import { blankForm, formOf, fromFile } from "./model";
+import { type AgentForm, blankForm, formOf, fromFile } from "./model";
 
 const harnessName = (harness: string) =>
   harness === "pi-bolt" ? "Pi-Bolt" : harness === "claude-code" ? "Claude Code" : harness;
@@ -38,9 +45,19 @@ function cardLine(agent: Agent): string {
   return agent.harness === "claude-code" ? `${base} · ${harnessName(agent.harness)}` : base;
 }
 
+function cardTags(agent: Agent): Array<{ label: string; tone: TagTone }> {
+  const tags: Array<{ label: string; tone: TagTone }> = [];
+  if (agent.built_in) tags.push({ label: "Built in", tone: "plain" });
+  if (agent.error) tags.push({ label: "Broken", tone: "error" });
+  return tags;
+}
+
 export function AgentsPage() {
   const [params, setParams] = useSearchParams();
   const [saved, setSaved] = useState<Saved | null>(null);
+  // What was typed for each agent, held while the page lives, so choosing another row keeps the draft.
+  const drafts = useDrafts<AgentForm | null>();
+  const newDraft = { hold: drafts.hold(NEW), drop: () => drafts.drop(NEW) };
   const agents = useQuery({ queryKey: keys.agents, queryFn: readAgents });
   const skills = useQuery({ queryKey: keys.skills, queryFn: skillList });
   const mcp = useQuery({ queryKey: keys.mcpServers, queryFn: mcpServers });
@@ -69,57 +86,99 @@ export function AgentsPage() {
   // in the tables of moebius.toml.
   const editable = skills.isSuccess;
   const inFile = skills.isSuccess && skills.data.length === 0;
+  const none = agents.isSuccess && agents.data.length === 0;
+  // Why the button that adds an agent is quiet, printed beside it so that a keyboard and a screen reader reach it:
+  // a `disabled` button is out of the tab order and a tooltip does not go there. When the agents are kept in
+  // moebius.toml the box above the list already says what to do, and adding one there is allowed.
+  // The first agent is opened rather than an empty pane beside a list that has one in it; a list that cannot be
+  // opened yet chooses nothing.
+  const picked = chosenOrFirst(
+    chosen,
+    creating,
+    editable ? (agents.data?.map((agent) => agent.name) ?? []) : [],
+  );
+  const whyQuiet =
+    !editable && skills.isError
+      ? "The harness configuration could not be read, so no agent can be added yet."
+      : undefined;
+  const startNew = () => {
+    setSaved(null);
+    select({ new: "1", agent: null });
+  };
+  const newForm = blankForm("", true);
 
   return (
-    <>
-      <div className="flex items-start justify-between gap-base">
-        <Header breadcrumb="Build" title="Agents" />
-        <Button
-          size="sm"
-          disabled={!editable}
-          onClick={() => {
-            setSaved(null);
-            select({ new: "1", agent: null });
-          }}
-        >
-          <PlusIcon className="size-icon-sm" weight="bold" />
-          New agent
-        </Button>
-      </div>
-      <p className="m-0 mb-plusfifty text-sm text-normal">
-        {inFile
-          ? "What each run works with: model, instructions, skills, extensions. Saved in moebius.toml."
-          : "What each run works with: model, instructions, skills, MCP servers, extensions. An edit is a commit."}
-      </p>
+    <div className="flex h-full min-h-0 flex-col">
+      <PageHeader
+        title="Agents"
+        context={
+          inFile
+            ? "What each run works with: model, instructions, skills and extensions. Saved in moebius.toml."
+            : "What each run works with: model, instructions, skills, MCP servers and extensions."
+        }
+        actions={
+          <div className="flex flex-wrap items-center gap-3">
+            {whyQuiet && <span className="text-sm text-secondary">{whyQuiet}</span>}
+            <Button size="sm" disabled={!editable} onClick={startNew}>
+              <PlusIcon className="size-4" weight="bold" />
+              New agent
+            </Button>
+          </div>
+        }
+      />
       {inFile && (
-        <div className="mb-double">
+        <div className="mb-8">
           <HarnessSetup />
         </div>
       )}
-      <ListEditor
+      {skills.isError && (
+        <div className="mb-8">
+          <Notice
+            tone="error"
+            action={
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={skills.isFetching}
+                onClick={() => void skills.refetch()}
+              >
+                Try again
+              </Button>
+            }
+          >
+            {`Could not read the harness configuration, so no agent can be edited or added. ${skills.error.message}`}
+          </Notice>
+        </div>
+      )}
+      <ListDetail
         list={
           agents.isPending ? (
-            <Loader message="Reading the agents…" className="py-double" />
+            <Loader message="Reading the agents" className="py-8" />
           ) : agents.isError ? (
-            <p className="text-sm text-error">{agents.error.message}</p>
-          ) : agents.data.length === 0 ? (
-            <Box title="Agents">
-              <p className="m-0 text-sm text-normal">No agent yet.</p>
-            </Box>
+            <Notice
+              tone="error"
+              action={
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={agents.isFetching}
+                  onClick={() => void agents.refetch()}
+                >
+                  Try again
+                </Button>
+              }
+            >
+              {sayError(agents.error, "Could not read the agents. Try again.")}
+            </Notice>
           ) : (
             agents.data.map((agent) => (
               <ListCard
                 key={agent.name}
-                name={agent.name}
-                tags={
-                  <>
-                    {agent.built_in && <Tag>Built in</Tag>}
-                    {agent.error && <Tag tone="red">Broken</Tag>}
-                  </>
-                }
+                title={agent.name}
+                tags={cardTags(agent)}
                 line={cardLine(agent)}
-                red={agent.error !== undefined}
-                chosen={editable && !creating && chosen === agent.name}
+                alert={agent.error !== undefined}
+                selected={editable && !creating && picked === agent.name}
                 onClick={
                   editable
                     ? () => {
@@ -132,48 +191,85 @@ export function AgentsPage() {
             ))
           )
         }
-      >
-        {creating ? (
-          <AgentEditor
-            key="new"
-            initial={blankForm("", true)}
-            inFile={inFile}
-            skills={skills.data ?? []}
-            mcp={mcp.data ?? []}
-            runners={runners.data ?? []}
-            available={available.data}
-            saved={saved}
-            onSaved={setSaved}
-            onNamed={(name) => select({ agent: name, new: null })}
-            onDeleted={() => select({ agent: null, new: null })}
-          />
-        ) : chosen !== null && editable ? (
-          <ChosenAgent
-            key={chosen}
-            name={chosen}
-            builtIn={agents.data?.some((agent) => agent.name === chosen && agent.built_in) ?? false}
-            inFile={inFile}
-            skills={skills.data ?? []}
-            mcp={mcp.data ?? []}
-            runners={runners.data ?? []}
-            available={available.data}
-            saved={saved}
-            onSaved={setSaved}
-            onNamed={(name) => select({ agent: name, new: null })}
-            onDeleted={() => select({ agent: null, new: null })}
-          />
-        ) : (
-          <p className="m-0 text-sm text-low">Pick an agent to edit it.</p>
-        )}
-      </ListEditor>
-    </>
+        detail={
+          creating ? (
+            <AgentEditor
+              key="new"
+              initial={drafts.take(NEW, () => null) ?? newForm}
+              stored={newForm}
+              drafts={newDraft}
+              inFile={inFile}
+              skills={skills.isError ? null : (skills.data ?? [])}
+              mcp={mcp.isError ? null : (mcp.data ?? [])}
+              runners={runners.data ?? []}
+              available={available.data}
+              saved={saved}
+              onSaved={setSaved}
+              onNamed={(name) => {
+                drafts.drop(NEW);
+                select({ agent: name, new: null });
+              }}
+              onDeleted={() => {
+                drafts.drop(NEW);
+                select({ agent: null, new: null });
+              }}
+            />
+          ) : picked !== null && editable ? (
+            <ChosenAgent
+              key={picked}
+              name={picked}
+              draft={drafts.take(picked, () => null)}
+              drafts={{ hold: drafts.hold(picked), drop: () => drafts.drop(picked) }}
+              builtIn={
+                agents.data?.some((agent) => agent.name === picked && agent.built_in) ?? false
+              }
+              inFile={inFile}
+              skills={skills.isError ? null : (skills.data ?? [])}
+              mcp={mcp.isError ? null : (mcp.data ?? [])}
+              runners={runners.data ?? []}
+              available={available.data}
+              saved={saved}
+              onSaved={setSaved}
+              onNamed={(name) => select({ agent: name, new: null })}
+              onDeleted={() => select({ agent: null, new: null })}
+            />
+          ) : none ? (
+            <Empty
+              title="No agents yet"
+              body="An agent is what a run works with: its model, its instructions, the skills it reads. Create one to give the coder something to start from."
+              action={
+                editable ? (
+                  <Button size="sm" onClick={startNew}>
+                    <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
+                    New agent
+                  </Button>
+                ) : undefined
+              }
+            />
+          ) : (
+            <Empty
+              title="Nothing chosen"
+              body="Pick an agent on the left to change its model, its instructions and the skills it reads."
+            />
+          )
+        }
+      />
+    </div>
   );
 }
 
-type Shared = Omit<React.ComponentProps<typeof AgentEditor>, "initial" | "broken">;
+/** The draft of a new agent, which has no name to hold it yet. */
+const NEW = "\u0000new";
 
-/** Reads the files of the agent `name`, and opens the editor on them. */
-function ChosenAgent({ name, builtIn, ...shared }: Shared & { name: string; builtIn: boolean }) {
+type Shared = Omit<React.ComponentProps<typeof AgentEditor>, "initial" | "stored" | "broken">;
+
+/** Reads the files of the agent `name`, and opens the editor on them, or on what was typed for it. */
+function ChosenAgent({
+  name,
+  builtIn,
+  draft,
+  ...shared
+}: Shared & { name: string; builtIn: boolean; draft: AgentForm | null }) {
   const settings = useQuery({
     queryKey: keys.settings,
     queryFn: serverSettings,
@@ -205,21 +301,16 @@ function ChosenAgent({ name, builtIn, ...shared }: Shared & { name: string; buil
       opened = detail.data;
     }
   }
-  return (
-    <AgentEditor
-      {...shared}
-      initial={opened ? formOf(opened) : { ...blankForm(name), exists: true }}
-      broken={broken}
-    />
-  );
+  // What a save would replace. The draft is what was typed, which is not the same thing.
+  const stored = opened ? formOf(opened) : { ...blankForm(name), exists: true };
+  return <AgentEditor {...shared} initial={draft ?? stored} stored={stored} broken={broken} />;
 }
 
 function Broken({ name, message, ...shared }: Shared & { name: string; message: string }) {
-  return (
-    <AgentEditor {...shared} initial={{ ...blankForm(name), exists: true }} broken={message} />
-  );
+  const stored = { ...blankForm(name), exists: true };
+  return <AgentEditor {...shared} initial={stored} stored={stored} broken={message} />;
 }
 
 function Reading() {
-  return <p className="m-0 text-sm text-normal">Reading the agent…</p>;
+  return <p className="m-0 text-base text-secondary">Reading the agent</p>;
 }

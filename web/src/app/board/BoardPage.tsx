@@ -1,18 +1,20 @@
 /**
  * The board of a repository: its columns of the default workflow with their cards (dragged only where a person may
- * move them), the filters, the inspector dock, the form of a new issue and a shell in the repository's clone. Everything comes from the snapshot, which
- * the event stream keeps current (`live/invalidation.ts`), so a card moves on this page when the server moves it. The
- * chosen card and the filters are in the address (`?card=`, `?column=`, `?agent=`, `?status=`), so a reload and a link
- * keep them.
+ * move them), the filters, the inspector dock, the form of a new issue and a shell in the repository's clone, in a sheet over the
+ * board. The
+ * column of work in progress is the point of the page, so everything else is quiet: the header counts in one sentence,
+ * the filters are a row of labelled fields, a column says what its cards are doing in a word, and an empty column says
+ * what will arrive there. Everything comes from the snapshot, which the event stream keeps current
+ * (`live/invalidation.ts`), so a card moves on this page when the server moves it. The chosen card and the filters are
+ * in the address (`?card=`, `?column=`, `?agent=`, `?status=`), so a reload and a link keep them.
  */
-import { PlusIcon, TerminalWindowIcon, XIcon } from "@phosphor-icons/react";
+import { PlusIcon, TerminalWindowIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { snapshot } from "../../api/calls/board";
 import { keys } from "../../api/keys";
 import type { Board, Card, InboxItem } from "../../api/types/board";
-import { Terminal } from "../../terminal/Terminal";
 import { Button } from "../../ui/components/Button";
 import {
   type DropResult,
@@ -25,8 +27,13 @@ import {
 } from "../../ui/components/KanbanBoard";
 import { KanbanCardContent } from "../../ui/components/KanbanCardContent";
 import { Loader } from "../../ui/components/Loader";
+import { Empty } from "../../ui/page/Empty";
+import { Notice } from "../../ui/page/Notice";
+import { PageHeader } from "../../ui/page/PageHeader";
+import { ReadFailed } from "../../ui/page/ReadFailed";
+import { ScrollFades } from "../../ui/page/ScrollFades";
 import { boardPath } from "../pages";
-import { Header } from "../shell/Page";
+import { ColumnMark } from "./ColumnMark";
 import { Dock } from "./Dock";
 import { type Decision, useDecisions } from "./decisions";
 import { FilterBar } from "./FilterBar";
@@ -42,16 +49,27 @@ import {
   groupByColumn,
   inboxOf,
   inspectedCard,
-  isLive,
   issueUrl,
   nextCard,
   pullUrl,
 } from "./model";
 import { NewIssueDialog } from "./NewIssueDialog";
+import { RepositoryTerminal } from "./RepositoryTerminal";
 
-function plural(n: number, one: string, many: string): string {
-  return n === 0 ? `no ${many}` : n === 1 ? `1 ${one}` : `${n} ${many}`;
-}
+/**
+ * What a column holds when it is empty: one sentence for how a card comes to it. There is no title, because the
+ * column's header is already the name of the place, and a heading repeating it is a second label on the same thing.
+ */
+const COLUMN_EMPTY: Record<string, string> = {
+  Backlog: "Issues you create wait here until they are approved.",
+  "Not started": "Approved issues wait here until an agent takes one.",
+  "In progress": "A card arrives here when an agent starts a run on it.",
+  "In review": "A card arrives here when an agent has a change to review.",
+  "Ready to merge": "A card arrives here when its change passes its checks.",
+  Done: "A card arrives here once its change is merged.",
+};
+
+const ANY_COLUMN = "A card arrives when the column's script moves one in.";
 
 export function BoardPage() {
   const { id } = useParams();
@@ -61,24 +79,54 @@ export function BoardPage() {
   const { decide, pending, notice, setNotice } = useDecisions();
   const [creating, setCreating] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
-  const [rejectAsk, setRejectAsk] = useState(0);
+  // The card a send-back needs a reason for, not a count: a count stays raised once it is raised, so every card
+  // opened afterwards found the reason form waiting for it.
+  const [rejectFor, setRejectFor] = useState<number | null>(null);
 
-  if (data.isPending) return <Loader message="Reading the board…" className="py-double" />;
   const board = data.data?.boards.find((b) => String(b.repository.id) === id);
-  if (!data.data || !board) {
+  const inbox = data.data?.inbox ?? [];
+  const filters = useMemo<Filters>(
+    () => ({
+      column: params.get("column") ?? "",
+      agent: params.get("agent") ?? "",
+      status: params.get("status") ?? "",
+    }),
+    [params],
+  );
+  // The cards are grouped once per read of the board and once per change of the filter, not once per render of the
+  // dock or of a decision coming back.
+  const groups = useMemo(
+    () => (board ? groupByColumn(board, inbox, filters) : []),
+    [board, inbox, filters],
+  );
+
+  if (data.isPending) return <Loader message="Reading the board" className="py-8" />;
+  // A read that failed is not a board that does not exist, and the page that says so would send the person off to
+  // choose a project that is already chosen.
+  if (data.isError) {
     return (
       <>
-        <Header breadcrumb="Projects" title="Board" />
-        <p className="text-sm text-normal">There is no such board. Pick one from the sidebar.</p>
+        <PageHeader title="Board" />
+        <ReadFailed
+          error={data.error}
+          fallback="The board could not be read. Try again."
+          busy={data.isFetching}
+          onRetry={() => void data.refetch()}
+        />
       </>
     );
   }
-  const inbox = data.data.inbox;
-  const filters: Filters = {
-    column: params.get("column") ?? "",
-    agent: params.get("agent") ?? "",
-    status: params.get("status") ?? "",
-  };
+  if (!data.data || !board) {
+    return (
+      <>
+        <PageHeader title="Board" />
+        <Empty
+          title="There is no such board"
+          body="Pick a project in the sidebar to open its board."
+        />
+      </>
+    );
+  }
   const setQuery = (changes: Record<string, string>) =>
     setParams(
       (current) => {
@@ -92,14 +140,9 @@ export function BoardPage() {
       { replace: true },
     );
   const inspected = inspectedCard(board, inbox, params.get("card"));
-  const groups = groupByColumn(board, inbox, filters);
-  const waitingChanges = inbox.filter(
-    (item) =>
-      item.kind === "ready_to_merge" && board.cards.some((card) => card.id === item.card_id),
-  ).length;
-  const working = board.cards.filter(isLive).length;
-
   function onDragEnd(result: DropResult) {
+    // A decision is on its way: the buttons are disabled for the same moment, and a drag is another way to ask for one.
+    if (pending) return;
     if (!result.column) return;
     const card = board?.cards.find((c) => String(c.id) === result.cardId);
     if (!card) return;
@@ -114,9 +157,9 @@ export function BoardPage() {
       setQuery({ card: String(card.id) });
       decide(decision);
     } else if (drop.kind === "reject") {
-      // Sending a change back needs a reason: the dock asks for it.
+      // Sending a change back needs a reason: the dock asks for it, and only for this card.
       setQuery({ card: String(card.id) });
-      setRejectAsk((n) => n + 1);
+      setRejectFor(card.id);
     } else if (drop.kind === "refused") {
       setNotice({ tone: "error", text: `Cannot move #${number} to ${to}: ${drop.reason}` });
     }
@@ -140,120 +183,104 @@ export function BoardPage() {
 
   return (
     <>
-      <div className="flex items-start justify-between gap-base">
-        <Header breadcrumb="Projects" title={board.repository.name} />
-        <div className="flex items-center gap-base">
-          <Button
-            size="sm"
-            variant="outline"
-            aria-pressed={terminalOpen}
-            onClick={() => setTerminalOpen((open) => !open)}
-          >
-            <TerminalWindowIcon className="size-icon-sm" />
-            Terminal
-          </Button>
-          <Button size="sm" onClick={() => setCreating(true)}>
-            <PlusIcon className="size-icon-sm" weight="bold" />
-            New issue
-          </Button>
-        </div>
+      {/* A card open takes a column of the page for its drawer, and the head of the page is part of the page: its
+          actions stand left of the drawer rather than under it. */}
+      <div className={inspected ? "xl:pr-96" : undefined}>
+        <PageHeader
+          title={board.repository.name}
+          actions={
+            <>
+              <Button variant="secondary" onClick={() => setTerminalOpen(true)}>
+                <TerminalWindowIcon className="size-4" aria-hidden="true" />
+                Terminal
+              </Button>
+              <Button onClick={() => setCreating(true)}>
+                <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
+                New issue
+              </Button>
+            </>
+          }
+        />
       </div>
-      <p className="m-0 mb-[12px] font-mono text-[12.5px] text-normal">
-        {plural(working, "run", "runs")} working ·{" "}
-        {plural(waitingChanges, "change waits for you", "changes wait for you")} · default workflow
-      </p>
-      <FilterBar
-        repositories={data.data.boards.map((b) => b.repository)}
-        repository={board.repository.id}
-        onRepository={(repository) => navigate(boardPath(repository))}
-        columns={boardColumns(board)}
-        agents={agentsOf(board)}
-        filters={filters}
-        onChange={(next) => setQuery({ ...next })}
-      />
-      {notice && (
-        <div
-          role={notice.tone === "error" ? "alert" : "status"}
-          className={`mb-[12px] flex items-start justify-between gap-base rounded-lg border px-base py-base text-sm ${
-            notice.tone === "error"
-              ? "border-red-border bg-red-fill text-error"
-              : "border-teal-border bg-teal-fill text-success"
-          }`}
-        >
-          <span className="[overflow-wrap:anywhere]">{notice.text}</span>
-          <button
-            type="button"
-            onClick={() => setNotice(null)}
-            aria-label="Dismiss"
-            className="shrink-0 rounded-sm p-half hover:bg-card"
-          >
-            <XIcon className="size-icon-xs" weight="bold" />
-          </button>
-        </div>
-      )}
-      <div className="flex min-w-0 flex-col gap-[12px] xl:flex-row xl:items-start">
-        <div className="min-w-0 flex-1 overflow-x-auto pb-base">
-          <KanbanProvider onDragEnd={onDragEnd} renderOverlay={renderOverlay}>
-            {groups.map(({ column, cards, total }) => (
-              <BoardColumn
-                key={column.name}
-                board={board}
-                inbox={inbox}
-                name={column.name}
-                script={column.script}
-                cards={cards}
-                total={total}
-                inspectedId={inspected?.id}
-                onSelect={(card) => setQuery({ card: String(card.id) })}
-              />
-            ))}
-          </KanbanProvider>
+      {/* The dock stands beside the whole of the board, not beside its lanes: it belongs to the page, and starting it
+          under the filters spent the room it asks for and left the filters standing alone over nothing. */}
+      <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-start">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <FilterBar
+            repositories={data.data.boards.map((b) => b.repository)}
+            repository={board.repository.id}
+            onRepository={(repository) => navigate(boardPath(repository))}
+            columns={boardColumns(board)}
+            agents={agentsOf(board)}
+            filters={filters}
+            onChange={(next) => setQuery({ ...next })}
+          />
+          {notice && (
+            <Notice
+              tone={notice.tone}
+              className="mb-4"
+              action={
+                <Button variant="ghost" size="sm" onClick={() => setNotice(null)}>
+                  Dismiss
+                </Button>
+              }
+            >
+              {notice.text}
+            </Notice>
+          )}
+          <ScrollFades className="flex-1 pb-3">
+            <KanbanProvider onDragEnd={onDragEnd} renderOverlay={renderOverlay}>
+              {groups.map(({ column, cards, total }) => (
+                <BoardColumn
+                  key={column}
+                  board={board}
+                  inbox={inbox}
+                  name={column}
+                  cards={cards}
+                  total={total}
+                  busy={pending}
+                  inspectedId={inspected?.id}
+                  onSelect={(card) => setQuery({ card: String(card.id) })}
+                />
+              ))}
+            </KanbanProvider>
+          </ScrollFades>
         </div>
         {inspected && (
-          <div className="w-full shrink-0 xl:sticky xl:top-0 xl:w-[400px]">
-            <Dock
-              key={inspected.id}
-              board={board}
-              card={inspected}
-              item={inboxOf(inbox, inspected)}
-              busy={pending}
-              rejectAsk={rejectAsk}
-              onDecide={decide}
-              onClose={() => setQuery({ card: "none" })}
-            />
+          // The column holds the drawer's width so the board keeps the room it has; the drawer itself runs the whole
+          // height of the window and is flush to its top, right and bottom edges — it is the page's own card inspector
+          // rather than a sheet laid over it — and scrolls its sections rather than the page scrolling them.
+          <div className="w-full shrink-0 xl:w-96">
+            <div className="xl:fixed xl:inset-y-0 xl:right-0 xl:w-96">
+              <Dock
+                key={inspected.id}
+                board={board}
+                card={inspected}
+                item={inboxOf(inbox, inspected)}
+                busy={pending}
+                askFor={rejectFor}
+                onAskAnswered={() => setRejectFor(null)}
+                onDecide={decide}
+                onClose={() => {
+                  setQuery({ card: "none" });
+                  setRejectFor(null);
+                }}
+              />
+            </div>
           </div>
         )}
       </div>
-      {terminalOpen && (
-        <section
-          aria-label="Terminal of the repository"
-          className="mt-[12px] flex h-[22rem] flex-col gap-half"
-          data-testid="board-terminal"
-        >
-          <div className="flex items-center justify-between gap-base">
-            <span className="font-mono text-xs text-normal">
-              A shell in the clone of {board.repository.name}
-            </span>
-            <Button size="xs" variant="ghost" onClick={() => setTerminalOpen(false)}>
-              Close terminal
-            </Button>
-          </div>
-          <Terminal
-            key={board.repository.id}
-            path={`/v1/repositories/${board.repository.id}/terminal`}
-            autoFocus
-            className="min-h-0 flex-1"
-          />
-        </section>
-      )}
+      <RepositoryTerminal
+        repository={board.repository.id}
+        open={terminalOpen}
+        onOpenChange={setTerminalOpen}
+      />
       <NewIssueDialog
         repository={board.repository.id}
         name={board.repository.name}
         open={creating}
         onOpenChange={setCreating}
-        onCreated={(number) =>
-          setNotice({ tone: "ok", text: `Created issue #${number}. It waits in the Backlog.` })
-        }
+        onCreated={(card) => setNotice({ tone: "ok", text: `Created "${card.title}"` })}
       />
     </>
   );
@@ -263,36 +290,29 @@ function BoardColumn({
   board,
   inbox,
   name,
-  script,
   cards,
   total,
+  busy,
   inspectedId,
   onSelect,
 }: {
   board: Board;
   inbox: InboxItem[];
   name: string;
-  script: string | null;
   cards: Card[];
   total: number;
+  /** While a decision is on its way, when no card can be moved. */
+  busy: boolean;
   inspectedId: number | undefined;
   onSelect: (card: Card) => void;
 }) {
-  const live = cards.some(isLive);
-  const waits = cards.some((card) => {
-    const item = inboxOf(inbox, card);
-    return item !== undefined && item.kind !== "stuck";
-  });
   return (
-    <KanbanBoard
-      name={name}
-      className={waits ? "border-amber-border" : live ? "border-live-border" : undefined}
-    >
+    <KanbanBoard name={name}>
       <KanbanHeader
         name={name}
-        count={total}
-        detail={script ?? undefined}
-        color={waits ? "var(--amber)" : live ? "var(--live)" : "var(--text)"}
+        count={cards.length}
+        total={total}
+        mark={<ColumnMark name={name} />}
       />
       <KanbanCards className="min-h-12">
         {cards.map((card) => {
@@ -304,17 +324,24 @@ function BoardColumn({
               name={`#${card.number} ${card.title}`}
               testId={`card-${card.number}`}
               column={name}
+              dragDisabled={busy}
               isSelected={inspectedId === card.id}
               isLive={status === "live"}
-              onClick={() => onSelect(card)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") onSelect(card);
-              }}
+              onOpen={() => onSelect(card)}
             >
-              <CardContent board={board} inbox={inbox} card={card} cards={cards} />
+              <CardContent
+                board={board}
+                inbox={inbox}
+                card={card}
+                cards={cards}
+                onOpen={() => onSelect(card)}
+              />
             </KanbanCard>
           );
         })}
+        {/* The column is already the surface under these words; a card of its own inside it is a second one, and one
+            that reads as a card which has lost its words. */}
+        {cards.length === 0 && <Empty plain centered body={COLUMN_EMPTY[name] ?? ANY_COLUMN} />}
       </KanbanCards>
     </KanbanBoard>
   );
@@ -326,21 +353,25 @@ function CardContent({
   inbox,
   card,
   cards,
+  onOpen,
 }: {
   board: Board;
   inbox: InboxItem[];
   card: Card;
   cards: Card[];
+  /** Opens the card; left out on the drag overlay, where the card is only a picture of itself. */
+  onOpen?: () => void;
 }) {
   const status = cardStatus(card, inboxOf(inbox, card), board);
   const change = changeOf(board, card);
   const coding = card.column === "In progress" || card.column === "In review";
-  const next = card.column === "Ready" ? nextCard(cards) : undefined;
+  const next = card.column === "Not started" ? nextCard(cards) : undefined;
   return (
     <KanbanCardContent
       displayId={`#${card.number}`}
       issueUrl={issueUrl(board.repository, card)}
       title={card.title}
+      preview={card.body}
       detail={cardDetail(card, board.round_limit)}
       badges={cardBadges(card, status, next === card.id)}
       pullRequest={
@@ -355,6 +386,7 @@ function CardContent({
       rounds={coding ? { done: card.rounds, limit: board.round_limit } : null}
       isLoading={status === "live"}
       muted={card.column === "Done"}
+      onOpen={onOpen}
     />
   );
 }

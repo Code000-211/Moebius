@@ -7,7 +7,9 @@
 import { useState } from "react";
 import type { Provider } from "../../api/types/models";
 import { Button } from "../../ui/components/Button";
-import { Field, Notice, Select, TextInput } from "../harness/form";
+import { Input } from "../../ui/components/Input";
+import { Field, Select } from "../../ui/page/Field";
+import { Notice } from "../../ui/page/Notice";
 import {
   blankOther,
   FLOWS,
@@ -43,8 +45,11 @@ export function ProviderPanel({
   if (other) {
     const urlLabel = other.flow === "device" ? "Device URL" : "Authorize URL";
     return (
-      <div className="flex flex-col gap-plusfifty" data-testid="provider-panel">
-        <div className="grid gap-plusfifty sm:grid-cols-[1fr_3fr]">
+      <div className="flex flex-col gap-4" data-testid="provider-panel">
+        <h3 className="m-0 text-lg font-semibold tracking-tight text-text">
+          A provider with an OAuth login
+        </h3>
+        <div className="grid items-start gap-4 sm:grid-cols-2">
           <Field label="Protocol">
             {(id) => (
               <Select
@@ -57,7 +62,7 @@ export function ProviderPanel({
           </Field>
           <Field label="Base URL">
             {(id) => (
-              <TextInput
+              <Input
                 id={id}
                 mono
                 value={other.baseUrl}
@@ -67,7 +72,7 @@ export function ProviderPanel({
             )}
           </Field>
         </div>
-        <div className="grid gap-plusfifty sm:grid-cols-[1fr_3fr]">
+        <div className="grid items-start gap-4 sm:grid-cols-2">
           <Field label="Flow">
             {(id) => (
               <Select
@@ -80,7 +85,7 @@ export function ProviderPanel({
           </Field>
           <Field label="Client ID">
             {(id) => (
-              <TextInput
+              <Input
                 id={id}
                 mono
                 value={other.clientId}
@@ -91,7 +96,7 @@ export function ProviderPanel({
         </div>
         <Field label={urlLabel}>
           {(id) => (
-            <TextInput
+            <Input
               id={id}
               mono
               value={other.url}
@@ -102,7 +107,7 @@ export function ProviderPanel({
         </Field>
         <Field label="Token URL">
           {(id) => (
-            <TextInput
+            <Input
               id={id}
               mono
               value={other.tokenUrl}
@@ -113,7 +118,7 @@ export function ProviderPanel({
         </Field>
         <Field label="Scopes, separated by spaces">
           {(id) => (
-            <TextInput
+            <Input
               id={id}
               mono
               value={other.scopes}
@@ -122,22 +127,23 @@ export function ProviderPanel({
           )}
         </Field>
         {(missing ?? problem) && <Notice tone="error">{missing ?? problem}</Notice>}
-        <div className="flex gap-plusfifty">
+        <div className="flex flex-wrap items-center gap-3">
           <Button
             size="sm"
             disabled={adding}
+            title={adding ? "The provider is being added" : undefined}
             onClick={() => {
               const upstream = otherUpstream(other, Math.floor(Date.now() / 1000));
               if (typeof upstream === "string") setMissing(upstream);
               else onAdd(upstream);
             }}
           >
-            {adding ? "Adding…" : "Add and continue"}
+            {adding ? "Adding" : "Add and continue"}
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setOther(null)}>
+          <Button variant="secondary" size="sm" onClick={() => setOther(null)}>
             Back
           </Button>
-          <Button variant="outline" size="sm" onClick={onCancel}>
+          <Button variant="secondary" size="sm" onClick={onCancel}>
             Cancel
           </Button>
         </div>
@@ -145,43 +151,54 @@ export function ProviderPanel({
     );
   }
   return (
-    <div className="flex flex-col gap-plusfifty" data-testid="provider-panel">
-      <p className="m-0 text-sm text-normal">
+    <div className="flex flex-col gap-4" data-testid="provider-panel">
+      <p className="m-0 max-w-prose text-base text-secondary">
         Log in with a subscription instead of an API key. The upstream is added; you confirm the
         provider's terms in its row.
       </p>
+      {providers.length === 0 && (
+        <p className="m-0 text-base text-secondary">
+          The server has no provider built in. Add one with its own addresses.
+        </p>
+      )}
       {providers.map((provider) => (
-        <div key={provider.name} className="flex items-center justify-between gap-plusfifty">
-          <div className="min-w-0">
-            <div className="text-sm font-semibold text-high">{provider.title}</div>
-            <div className="truncate font-mono text-[11.5px] text-low">
+        <div
+          key={provider.name}
+          className="flex flex-wrap items-center justify-between gap-4 rounded-control bg-surface p-3"
+        >
+          <div className="flex min-w-0 flex-col gap-1">
+            <span className="min-w-0 break-words text-base font-semibold text-text">
+              {provider.title}
+            </span>
+            <span className="min-w-0 break-all font-mono text-sm text-secondary">
               {provider.protocol} · {provider.base_url}
-            </div>
+            </span>
             {provider.needs && (
-              <div className="text-xs text-amber">
+              <span className="text-sm text-attention-text">
                 Needs {provider.needs}, which is not served yet.
-              </div>
+              </span>
             )}
           </div>
           <Button
-            variant="outline"
+            variant="secondary"
             size="sm"
             disabled={adding}
+            title={adding ? "A provider is being added" : undefined}
             onClick={() => onAdd(presetUpstream(provider))}
           >
             Log in
           </Button>
         </div>
       ))}
-      <div className="flex items-center justify-between gap-plusfifty">
-        <div>
-          <div className="text-sm font-semibold text-high">Other</div>
-          <div className="text-[11.5px] text-low">
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-control bg-surface p-3">
+        <div className="flex min-w-0 flex-col gap-1">
+          <span className="text-base font-semibold text-text">Other</span>
+          <span className="min-w-0 break-words text-sm text-secondary">
             Any provider with an OAuth login: enter its addresses.
-          </div>
+          </span>
         </div>
         <Button
-          variant="outline"
+          variant="secondary"
           size="sm"
           aria-label="Log in to Other"
           onClick={() => setOther(blankOther())}
@@ -191,7 +208,7 @@ export function ProviderPanel({
       </div>
       {problem && <Notice tone="error">{problem}</Notice>}
       <div>
-        <Button variant="outline" size="sm" onClick={onCancel}>
+        <Button variant="secondary" size="sm" onClick={onCancel}>
           Cancel
         </Button>
       </div>

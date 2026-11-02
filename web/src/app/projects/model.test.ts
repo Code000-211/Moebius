@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Repository } from "../../api/types/board";
 import { rank, score } from "./fuzzy";
 import {
+  addFailure,
   cardsText,
   EMPTY_FORM,
   forgeTag,
@@ -90,6 +91,67 @@ describe("the form of a new repository", () => {
   it("reads logins separated by commas, spaces or lines", () => {
     expect(logins("leon, mona\nkim  ,")).toEqual(["leon", "mona", "kim"]);
     expect(logins("  ")).toEqual([]);
+  });
+});
+
+describe("what the server says about a repository it refused", () => {
+  const clone = (stderr: string) =>
+    `git clone --quiet -- https://github.com/acme/radiance.git /data/repos/radiance failed: ${stderr}`;
+
+  it("leads with what happened when a private repository over HTTPS cannot be signed in to", () => {
+    const message = clone(
+      "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+    );
+    const failure = addFailure(message);
+    expect(failure.headline).toBe("The server cannot sign in to GitHub.");
+    expect(failure.next).toBe(
+      "Set up the GitHub App under Settings and restart the server, then try again.",
+    );
+    expect(failure.field).toBe("url");
+    // The command line is there to open, and is not what the person reads first.
+    expect(failure.detail).toBe(message);
+  });
+
+  it("names the forge a token belongs to", () => {
+    const message =
+      "git clone --quiet -- https://gitlab.com/acme/radiance.git /r failed: " +
+      "remote: HTTP Basic: Access denied. fatal: Authentication failed";
+    expect(addFailure(message).headline).toBe("The server cannot sign in to GitLab.");
+    expect(addFailure(message).next).toContain("GitLab token");
+    expect(addFailure(message).next).toContain("restart the server");
+  });
+
+  it("says when the address has nothing at it, and that a private one reads the same", () => {
+    const failure = addFailure(clone("remote: Repository not found."));
+    expect(failure.headline).toBe("No repository at that address.");
+    expect(failure.next).toContain("cannot sign in");
+  });
+
+  it("separates an address it cannot reach from one it cannot sign in to", () => {
+    const failure = addFailure(
+      "git clone --quiet -- https://git.acme/radiance.git /r failed: " +
+        "fatal: unable to access 'https://git.acme/radiance.git/': Connection timed out",
+    );
+    expect(failure.headline).toBe("The server could not reach that address.");
+  });
+
+  it("has an answer for a run that failed for a reason it does not know", () => {
+    const failure = addFailure("git clone --quiet -- /srv/git/r /r failed: fatal: early EOF");
+    expect(failure.headline).toBe("The server could not clone this repository.");
+    expect(failure.detail).toContain("early EOF");
+  });
+
+  it("passes on a sentence that is already plain, under the field it is about", () => {
+    const taken = addFailure("a repository named demo exists already");
+    expect(taken.headline).toBe("a repository named demo exists already");
+    expect(taken.field).toBe("name");
+    expect(taken.detail).toBeNull();
+
+    const folder = addFailure(
+      "/srv/git/radiance has files but is not a git repository; run git init there, or give an empty folder",
+    );
+    expect(folder.field).toBe("url");
+    expect(folder.headline).toContain("git init");
   });
 });
 

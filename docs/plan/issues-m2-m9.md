@@ -26,7 +26,7 @@ person can merge it from the app through the GitHub API.
 card to done.
 
 ### 16. Dependencies
-A card waits in Ready until every card it is blocked by is done; `ready.luau` sees the card's dependencies.
+A card waits in Not started (the column first named Ready) until every card it is blocked by is done; `ready.luau` sees the card's dependencies.
 **Done when** a card blocked by another starts only after the other is done.
 
 ### 17. Review of M2

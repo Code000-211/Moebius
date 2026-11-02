@@ -1,8 +1,10 @@
-// From BloopAI/vibe-kanban packages/ui/src/components/StatusDot.tsx (Apache-2.0), changed: color is any CSS colour (a Deep Velvet variable), not the HSL triple of Vibe Kanban's tokens.
+// From BloopAI/vibe-kanban packages/ui/src/components/StatusDot.tsx (Apache-2.0), changed: a status is never colour
+// alone — the caller still has the word, beside the mark or in the name of the row it stands in — and `color` takes
+// one of the status tokens of styles/theme.css.
 import { cn } from "../lib/cn";
 
 export interface StatusDotProps {
-  /** Any CSS colour, such as `var(--teal)`. */
+  /** A status colour of the theme, such as `var(--complete)`. */
   color: string;
   className?: string;
 }
@@ -10,7 +12,7 @@ export interface StatusDotProps {
 export const StatusDot = ({ color, className }: StatusDotProps) => (
   <span
     aria-hidden="true"
-    className={cn("w-2 h-2 rounded-full shrink-0", className)}
+    className={cn("size-2 shrink-0 rounded-full", className)}
     style={{ backgroundColor: color }}
   />
 );

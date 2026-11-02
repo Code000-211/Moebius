@@ -5,6 +5,7 @@ import type {
   Export,
   KindCounts,
   Lesson,
+  Proposal,
   Research,
   RetroSummary,
   RetroView,
@@ -18,6 +19,11 @@ export function retros(): Promise<RetroSummary[]> {
 
 export function retro(date: string): Promise<RetroView> {
   return get<RetroView>(`/v1/retros/${date}`);
+}
+
+/** Every proposal the Retros have made, oldest first — what an Inbox item names by its proposal id. */
+export function proposals(): Promise<Proposal[]> {
+  return get<Proposal[]>("/v1/proposals");
 }
 
 /** Runs today's Retro now. */

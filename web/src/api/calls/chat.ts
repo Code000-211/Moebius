@@ -42,6 +42,11 @@ export function changeChatSettings(
   return post<Run>(`/v1/chats/${chat}/settings`, settings);
 }
 
+/** Names a chat, in place of the title taken from its first message; an empty name gives that title back. */
+export function nameChat(chat: number, title: string): Promise<Chat> {
+  return post<Chat>(`/v1/chats/${chat}/title`, { title });
+}
+
 /** Says that the person has read the chat up to the event `seq`. */
 export async function markSeen(chat: number, seq: number): Promise<void> {
   await post<unknown>(`/v1/chats/${chat}/seen`, { seq });

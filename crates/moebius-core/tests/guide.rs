@@ -582,12 +582,12 @@ fn large_cards_alone(f: &Fixture) {
         .add_run(Some(busy.id), "Coder", "idle", "code")
         .unwrap();
 
-    let ordinary = f.card("Ready", "A small fix", PERSON);
+    let ordinary = f.card("Not started", "A small fix", PERSON);
     assert_eq!(f.tick(&ordinary).moved.as_deref(), Some("In progress"));
 
-    let large = f.card("Ready", "[large] Rewrite the parser", PERSON);
+    let large = f.card("Not started", "[large] Rewrite the parser", PERSON);
     let step = f.tick(&large);
-    assert_eq!(f.column(&large), "Ready");
+    assert_eq!(f.column(&large), "Not started");
     assert_eq!(
         step.waiting.as_deref(),
         Some("a [large] card starts when no other run is going")
@@ -603,7 +603,7 @@ fn large_cards_alone(f: &Fixture) {
 fn ask_about_authors(f: &Fixture) {
     // A person's issue is trusted and goes on.
     let own = f.card("Backlog", "Mine", PERSON);
-    assert_eq!(f.tick(&own).moved.as_deref(), Some("Ready"));
+    assert_eq!(f.tick(&own).moved.as_deref(), Some("Not started"));
 
     // An author on the list waits for a person, with the reason in the inbox and as the card's waiting reason.
     let listed = f.card("Backlog", "Bump a dependency", "dependabot[bot]");
@@ -630,14 +630,14 @@ fn ask_about_authors(f: &Fixture) {
             "looks fine",
         )
         .unwrap();
-    assert_eq!(f.column(&listed), "Ready");
+    assert_eq!(f.column(&listed), "Not started");
     assert!(f.inbox(&listed).is_empty());
 }
 
 fn urgent_skips_blockers(f: &Fixture) {
     let blocker = f.card("Backlog", "First", PERSON);
     let blocked = |title: &str| {
-        let card = f.card("Ready", title, PERSON);
+        let card = f.card("Not started", title, PERSON);
         f.app
             .store
             .set_dependencies(card.id, &[blocker.number].into())
@@ -651,7 +651,7 @@ fn urgent_skips_blockers(f: &Fixture) {
         step.waiting,
         Some(format!("waiting for #{}", blocker.number))
     );
-    assert_eq!(f.column(&normal), "Ready");
+    assert_eq!(f.column(&normal), "Not started");
 
     let urgent = blocked("[urgent] Third");
     assert_eq!(f.tick(&urgent).moved.as_deref(), Some("In progress"));
@@ -695,7 +695,7 @@ fn agent_by_title(f: &Fixture) {
 
 fn decide_with_a_plugin(f: &Fixture) {
     let fine = f.card("Backlog", "Add a button", PERSON);
-    assert_eq!(f.tick(&fine).moved.as_deref(), Some("Ready"));
+    assert_eq!(f.tick(&fine).moved.as_deref(), Some("Not started"));
 
     let held = f.card("Backlog", "[wip] Add a menu", PERSON);
     let step = f.tick(&held);
@@ -740,7 +740,7 @@ fn script_marker(block: &Block) -> (String, Option<String>) {
 fn column_of(script: &str) -> &'static str {
     match script {
         "backlog.luau" => "Backlog",
-        "ready.luau" => "Ready",
+        "ready.luau" => "Not started",
         "code.luau" => "In progress",
         "review.luau" => "In review",
         "merge.luau" => "Ready to merge",

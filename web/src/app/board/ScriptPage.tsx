@@ -13,9 +13,9 @@ import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import { Button } from "../../ui/components/Button";
 import { Loader } from "../../ui/components/Loader";
-import { Notice as NoticeLine } from "../kit/Kit";
+import { Notice as NoticeLine } from "../../ui/page/Notice";
+import { PageHeader } from "../../ui/page/PageHeader";
 import { boardPath } from "../pages";
-import { Header } from "../shell/Page";
 import { type ScriptProblem, scriptProblem } from "./scriptError";
 
 const CodeEditor = lazy(() => import("../../ui/CodeEditor"));
@@ -32,17 +32,22 @@ export function ScriptPage() {
   const [notice, setNotice] = useState<Notice | null>(null);
   return (
     <>
-      <Header breadcrumb="Projects" title={`Script of ${name}`} />
-      <p className="mb-[12px] text-sm">
-        <Link to={boardPath(repository)} className="text-accent hover:underline">
-          Back to the board
-        </Link>
-      </p>
-      {source.isPending && <Loader message="Reading the script…" className="py-double" />}
+      <PageHeader
+        title={`Script of ${name}`}
+        context="What the column does with a card: when it starts a run, when it waits, and when it moves on."
+        actions={
+          <Button asChild variant="ghost">
+            <Link to={boardPath(repository)}>Back to the board</Link>
+          </Button>
+        }
+      />
+      {source.isPending && <Loader message="Reading the script" className="py-8" />}
       {source.error && (
-        <p role="alert" className="text-sm text-error">
-          {isApiError(source.error) ? source.error.message : "Could not read the script."}
-        </p>
+        <NoticeLine tone="error">
+          {isApiError(source.error)
+            ? source.error.message
+            : "Could not read the script. Try again."}
+        </NoticeLine>
       )}
       {source.data && (
         // The editor starts again from the script the server has whenever that changes under it.
@@ -127,11 +132,11 @@ function Editor({
   });
 
   return (
-    <div className="flex flex-col gap-base">
-      <p className="font-mono text-xs text-low">
-        {path} · {own ? "this repository's own" : "built in"}
+    <div className="flex flex-col gap-4">
+      <p className="m-0 text-sm text-secondary">
+        <span className="font-mono">{path}</span> · {own ? "this repository's own" : "built in"}
       </p>
-      <Suspense fallback={<Loader message="Opening the editor…" className="py-double" />}>
+      <Suspense fallback={<Loader message="Opening the editor" className="py-8" />}>
         <CodeEditor
           label={`Script of ${column}`}
           value={text}
@@ -144,29 +149,24 @@ function Editor({
         />
       </Suspense>
       {problem && (
-        <div role="alert" className="flex flex-col gap-half text-sm text-error">
-          <p data-testid="script-problem">
+        <div role="alert" className="flex flex-col gap-2 text-base text-error-text">
+          <p data-testid="script-problem" className="m-0">
             {problem.line === null ? problem.message : `Line ${problem.line}: ${problem.message}`}
           </p>
           {problem.full.includes("\n") && (
-            <pre className="m-0 overflow-auto rounded-md border bg-recessed p-base font-mono text-xs text-normal">
+            <pre className="m-0 overflow-auto rounded-control bg-code p-4 font-mono text-sm text-text">
               {problem.full}
             </pre>
           )}
         </div>
       )}
       {notice && <NoticeLine tone={notice.tone}>{notice.text}</NoticeLine>}
-      <div className="flex flex-wrap items-center gap-base">
-        <Button
-          size="sm"
-          disabled={save.isPending || (!changed && own)}
-          onClick={() => save.mutate()}
-        >
+      <div className="flex flex-wrap items-center gap-3">
+        <Button disabled={save.isPending || (!changed && own)} onClick={() => save.mutate()}>
           Save
         </Button>
         <Button
-          size="sm"
-          variant="outline"
+          variant="secondary"
           disabled={!changed}
           onClick={() => {
             setText(saved);
@@ -178,14 +178,13 @@ function Editor({
         </Button>
         {own &&
           (asking ? (
-            <span className="flex items-center gap-base text-sm text-normal">
+            <span className="flex flex-wrap items-center gap-3 text-base text-text">
               Use the built-in script instead?
-              <Button size="sm" variant="outline" onClick={() => setAsking(false)}>
+              <Button variant="secondary" onClick={() => setAsking(false)}>
                 Keep it
               </Button>
               <Button
-                size="sm"
-                variant="destructive"
+                variant="danger"
                 disabled={useBuiltIn.isPending}
                 onClick={() => useBuiltIn.mutate()}
               >
@@ -193,7 +192,7 @@ function Editor({
               </Button>
             </span>
           ) : (
-            <Button size="sm" variant="outline" onClick={() => setAsking(true)}>
+            <Button variant="secondary" onClick={() => setAsking(true)}>
               Use the built-in script
             </Button>
           ))}

@@ -1,18 +1,19 @@
 # Desktop app design
 
 The web app is the front end from now on ([ADR 0013](adr/0013-the-web-app-is-the-front-end.md)); the desktop app is kept
-working until it is removed, and this page and `theme.rs` stay the source of the look both share.
+working until it is removed. This page and `theme.rs` are the desktop app's look, and nothing else: the web app follows
+its own standard, in [`design-web.md`](design-web.md).
 
 The desktop app is a dense developer tool in a dark theme, Deep Velvet: a violet-black ground with islands of surface,
 soft radii, a compact type scale, and colour only where it says something about a run or is the one thing to press. Every value below is a named constant in
 [`crates/moebius-desktop/src/theme.rs`](../crates/moebius-desktop/src/theme.rs), which is the single source of truth;
 this page says what the constants are for.
 
-The web app (`web/`) wears the same theme. Its tokens live in [`web/src/styles/`](../web/src/styles/) (`theme.css` has every
-colour, radius and step of the spacing scale as a CSS variable under the name of the constant in kebab case, and
-`tailwind.css` makes them Tailwind names). `theme.rs` stays the single source of truth and the two must stay in step: a
-change to a constant is made in `theme.rs` first and then in `theme.css`, and `web/src/styles/theme.test.ts` fails when a
-colour is missing or differs.
+The web app (`web/`) does not wear this theme, and the two are not kept in step. Its tokens are its own, in
+[`web/src/styles/`](../web/src/styles/): `theme.css` has a dark and a light pair of every colour, radius, step of the
+spacing scale and size of the type scale, and `tailwind.css` makes them Tailwind names.
+`web/src/styles/tokens.test.ts` holds them to that standard and `web/e2e/design/audit.test.ts` measures the pages built
+from it; neither reads `theme.rs`.
 
 The mockups in [`docs/design/`](design/) (HTML and PNG: [board](design/board.png), [live view](design/live-view.png),
 [inbox](design/inbox.png), [agents](design/agents.png) and [usage](design/usage.png)) are the old look. They are kept
@@ -140,7 +141,7 @@ with a secret that only the processes it starts know, and keeps no password.
   "Open in Chat", a tile of the Fleet, an item of the inbox, a search result, a link to another page) keeps the place
   left: its page, the tab of its project, and the card, script, chat or agent open on it. The place reached shows
   "← Back to <the place left>" above its header, in secondary grey semibold at the breadcrumb's size (the repository's
-  name for a board, "main.rs of radiance" for a tab, "#48" for a card, "the Ready script" for a column's script,
+  name for a board, "main.rs of radiance" for a tab, "#48" for a card, "the Not started script" for a column's script,
   otherwise the page's title); a click restores the place left as it was. Alt+Left (where no text field takes it) and
   the mouse's back button go back too, and so does Escape in an editor (a column's script, a project's editor tab, the
   rules, an agent) when nothing in it is unsaved; with unsaved text Escape does nothing, so nothing typed is lost. A

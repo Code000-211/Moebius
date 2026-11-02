@@ -18,6 +18,11 @@ const call = (id: string, tool: string, input: ToolCall["input"], refusedCall = 
 const read = (id: string, path: string) => call(id, "read", { type: "read", path });
 const text = (value: string): Entry => ({ at: 0, kind: "text", text: value });
 const person = (message: string): Entry => ({ at: 0, kind: "person", said: "said", message });
+const thinking = (value: string): Entry => ({ at: 0, kind: "thinking", text: value });
+/** The same entry, arrived at `when`, so a test can space a conversation out in time. */
+const at = (entry: Entry, when: number): Entry => ({ ...entry, at: when });
+/** The entries of a block of steps, numbered as the conversation numbers them. */
+const indexed = (entries: Entry[]) => entries.map((entry, index) => ({ index, entry }));
 
 describe("groupTurns", () => {
   it("heads a turn with the person's message and puts what follows in its body", () => {
@@ -77,8 +82,6 @@ describe("groupTurns", () => {
 });
 
 describe("stepViews", () => {
-  const indexed = (entries: Entry[]) => entries.map((entry, index) => ({ index, entry }));
-
   it("makes two or more reads in a row one line, and leaves a single read alone", () => {
     const views = stepViews(
       indexed([
@@ -102,5 +105,76 @@ describe("stepViews", () => {
       ]),
     );
     expect(views.map((view) => view.kind)).toEqual(["tool", "tool", "tool"]);
+  });
+});
+
+/**
+ * A thought says how long it took once the model has moved on. The events never say when a thought stopped, so the
+ * only length there is is the gap from the moment its first piece arrived to the moment whatever came after it
+ * arrived; the thought the model is at this second has no length yet and is said in the present tense instead.
+ */
+describe("the length of a thought", () => {
+  const command = (id: string, when: number) =>
+    at(call(id, "bash", { type: "command", command: "ls" }), when);
+
+  it("measures a thought by the gap to the entry that came after it", () => {
+    const [thought] = stepViews(
+      indexed([at(thinking("Reading the issue."), 100), command("a", 112)]),
+      {
+        nextAt: 200,
+        working: true,
+      },
+    );
+    expect(thought).toMatchObject({ kind: "thinking", seconds: 12, ongoing: false });
+  });
+
+  it("measures the last thought of a block by the entry that ended the block", () => {
+    const [thought] = stepViews(indexed([at(thinking("Decided."), 100)]), {
+      nextAt: 130,
+      working: true,
+    });
+    expect(thought).toMatchObject({ kind: "thinking", seconds: 30, ongoing: false });
+  });
+
+  it("leaves the newest thought open while the model is at it", () => {
+    const [thought] = stepViews(indexed([at(thinking("Still weighing it."), 100)]), {
+      nextAt: null,
+      working: true,
+    });
+    expect(thought).toMatchObject({ kind: "thinking", seconds: null, ongoing: true });
+  });
+
+  it("gives no length to a thought nothing came after and nothing will", () => {
+    const [thought] = stepViews(indexed([at(thinking("That is all."), 100)]));
+    expect(thought).toMatchObject({ kind: "thinking", seconds: null, ongoing: false });
+  });
+
+  it("does not count a thought backwards when the next entry is stamped earlier", () => {
+    const [thought] = stepViews(indexed([at(thinking("Out of order."), 100), command("a", 90)]));
+    expect(thought).toMatchObject({ seconds: 0, ongoing: false });
+  });
+
+  it("has the conversation tell a block the time its last thought stopped at", () => {
+    const blocks =
+      groupTurns(
+        [at(person("go"), 0), at(thinking("First the tests."), 100), at(text("Done."), 130)],
+        false,
+      )[0]?.blocks ?? [];
+    const [steps] = blocks;
+    expect(steps?.kind === "steps" && steps.steps[0]).toMatchObject({
+      seconds: 30,
+      ongoing: false,
+    });
+  });
+
+  it("has the newest block hold its last thought open while the agent works", () => {
+    const blocks =
+      groupTurns([at(person("go"), 0), at(thinking("Still at it."), 100)], true)[0]?.blocks ?? [];
+    const [steps] = blocks;
+    expect(steps?.kind === "steps" && steps.working).toBe(true);
+    expect(steps?.kind === "steps" && steps.steps[0]).toMatchObject({
+      seconds: null,
+      ongoing: true,
+    });
   });
 });

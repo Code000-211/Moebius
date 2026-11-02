@@ -11,7 +11,9 @@ contributors. The copy was made from commit 7c3807084daad0d9d315064f60fa869de254
 
 Every copied file starts with a comment that names the file it comes from and says what was changed, as the license
 asks. The changes are the same everywhere: the text is plain English instead of react-i18next keys, the colour names
-resolve to the Deep Velvet theme of the desktop app, and the components use React 19 and Tailwind 4.
+resolve to this app's own design tokens (src/styles/theme.css, which is not the desktop app's palette), the components
+are borderless and carry a shadow instead, and they use React 19 and Tailwind 4.
 
-The fonts in public/fonts/ are Manrope and JetBrains Mono under the SIL Open Font License 1.1 (OFL.txt next to each);
-they are the files of crates/moebius-desktop/fonts/.
+The fonts in public/fonts/ are Inter Variable and JetBrains Mono under the SIL Open Font License 1.1 (OFL.txt next to
+each). The Inter files are the latin and latin-ext subsets of the variable font, from the rsms/inter releases; JetBrains
+Mono is the copy in crates/moebius-desktop/fonts/.

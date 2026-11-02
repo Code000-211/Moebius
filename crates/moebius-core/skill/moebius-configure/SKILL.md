@@ -46,9 +46,9 @@ the whole file as a commit there (the server checks it first and answers 422 wit
 ## A column's script in one repository
 
 ```sh
-"$MOEBIUS" api GET /v1/repositories/1/scripts/Ready               # the script that runs now, built in or its own
-"$MOEBIUS" check-script ready.luau --column Ready                  # check before saving
-"$MOEBIUS" api PUT /v1/repositories/1/scripts/Ready --body '{"text": "...", "reason": "..."}'
+"$MOEBIUS" api GET /v1/repositories/1/scripts/Not%20started               # the script that runs now, built in or its own
+"$MOEBIUS" check-script ready.luau --column "Not started"                  # check before saving
+"$MOEBIUS" api PUT /v1/repositories/1/scripts/Not%20started --body '{"text": "...", "reason": "..."}'
 "$MOEBIUS" api DELETE /v1/repositories/1/scripts/In%20progress     # back to the built-in script
 ```
 

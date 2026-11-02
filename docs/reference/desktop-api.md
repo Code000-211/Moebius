@@ -79,7 +79,9 @@ the person's next message), `worktree`, `started_at`, `ended_at`, `summary`, `re
 works in, or null) and `harness_repository` (true for a chat that works in the [harness configuration
 repository](harness-configuration.md#changing-it-in-a-chat); `harness` is the name of the harness that runs the agent)
 and `origin` (where a chat was started: `chat`, or `assistant` for the desktop app's floating window; `chat` for every
-other run) and `runner` (the name of the [runner](configuration.md#runners) the run's harness goes on, or null for a run on the server).
+other run) and `runner` (the name of the [runner](configuration.md#runners) the run's harness goes on, or null for a run on the server) and
+`title` (the name a person gave this chat, or null while it is untitled and its `Chat` title comes from its first
+message; see `POST /v1/chats/{id}/title`. Only a chat is ever named, so it is null for every other run).
 
 `Grilling`: `id`, `run_id` (the chat), `repository_id`, `issues` (array of `{"title", "body", "blocked_by"}`, where
 `blocked_by` is an array of indexes into `issues`; empty for a report and for an empty grilling), `report` (text or null),
@@ -87,8 +89,9 @@ other run) and `runner` (the name of the [runner](configuration.md#runners) the 
 `at`.
 
 `Chat`: `id` (the id of its run), `agent`, `status` (that of the run), `repository_id` (or null), `harness_repository`
-(true for a chat in the harness configuration repository), `started_at`, `ended_at`, `title` (the first line of the
-first message, at most 80 characters; empty while a chat started without a message has none), `answered` (the `seq` of the chat's last `agent_settled` or `moebius_error`
+(true for a chat in the harness configuration repository), `started_at`, `ended_at`, `title` (the name a person gave
+the chat, see `POST /v1/chats/{id}/title`, or the first line of the first message, at most 80 characters; empty while a
+chat started without a message has none), `answered` (the `seq` of the chat's last `agent_settled` or `moebius_error`
 event, 0 without one), `seen` (how far a person has read it, see `POST /v1/chats/{id}/seen`) and `changed_files` (how
 many files the chat's worktree changes against the default branch of its repository, committed or not, new files
 included: what `POST /v1/chats/{id}/offer` would offer; 0 for an ended chat and one without a repository), `asks`
@@ -345,7 +348,7 @@ The script a column runs for a repository: the repository's own `.moebius/<file>
 [column scripts](column-scripts.md#repository-overrides)), or the built-in one. `{column}` is the column's name as the
 board shows it, in any case and URL-encoded (`In%20progress`). Response: `{"column": string, "path": string, "source":
 "repository" or "built-in", "text": string}`. `path` is where the repository keeps its own script for the column
-(`.moebius/ready.luau` for `Ready`; the files are `backlog`, `ready`, `code` for `In progress`, `review`, `merge` and
+(`.moebius/ready.luau` for `Not started`; the files are `backlog`, `ready`, `code` for `In progress`, `review`, `merge` and
 `done`), whichever `source` is. Errors: `404` no such repository or column.
 
 ### `PUT /v1/repositories/{id}/scripts/{column}`
@@ -439,7 +442,7 @@ title is blank; `500` the forge refused the change, and then the card is as it w
 ### `POST /v1/cards/{id}/approve`
 
 A person approves an issue that waits in the backlog: the decision is recorded (kind `approve_issue`, decider `person`),
-the card's inbox items are resolved, and the card moves to `Ready`.
+the card's inbox items are resolved, and the card moves to `Not started`.
 
 Request: `{"reason": "..."}`; `reason` is optional.
 
@@ -1551,6 +1554,16 @@ already further, since reading never goes back. The desktop app sends it while t
 counts on the sidebar's Chat entry the chats that are unread. Response: `{}`. Errors: `404` no such run; `422` the run
 is not a chat.
 
+### `POST /v1/chats/{id}/title`
+
+Names a chat: `{"title": "..."}`, at most 80 characters of it, taken after the spaces at either end. The name replaces
+the title taken from the chat's first message everywhere the chat is titled: the list of chats, an inbox item and a
+pull request made from the chat's branch. An empty or blank `title` gives that title back. A chat may be named at any
+time, including after it ended: the name belongs to the chat, not to its run.
+
+Response: the `Chat` as `GET /v1/chats` shows it, with its new `title`. Errors: `404` no such run; `422` the run is not
+a chat.
+
 ### `POST /v1/chats/{id}/end`
 
 The desktop app offers no way to end a chat (its work is offered with `POST /v1/chats/{id}/offer`, and a chat that waits
@@ -1848,7 +1861,7 @@ The person reads the proposal, may edit, drop and reorder the issues, and confir
    issue itself or in a circle) and that the status is `proposed`, and sets the status to `confirmed`;
 2. makes one card per issue in the repository's `Backlog`, each blocked by the cards of its `blocked_by` (their numbers
    are the card's dependencies, as `card.blocked_by` reads them), blockers first. The cards are `confirmed`
-   (`card.confirmed`), so `backlog.luau` moves them on to `Ready` without approval, where `ready.luau` holds each until
+   (`card.confirmed`), so `backlog.luau` moves them on to `Not started` without approval, where `ready.luau` holds each until
    its blockers are done. Without a forge the cards are Moebius cards, authored by `person`. On a GitHub repository each
    issue is opened first through the GitHub API, its body ending in a line `Blocked by #3, #4` for the numbers of the
    issues that block it (the line the poll reads), and its card gets the issue's number, so that the poll finds the card
@@ -2022,4 +2035,5 @@ the order of their `seq`. Every event of a run is published and stored: Pi's rec
 (`{"message"}`, a person's steer, with secrets removed), `said` events (`{"message"}`, a person's message to a chat, the first
 one included, with secrets removed; stored before the agent's records of its answer) `shell_opened` events (`{"who"}`, a person opened a shell in the worktree; see `GET /v1/runs/{id}/terminal`), `tui_opened` events (`{"who"}`, a person opened Pi-Bolt's terminal interface in a chat; see `GET /v1/chats/{id}/tui`), `settings_changed` events (`{"model", "protocol", "thinking"}`, what a chat runs with in place of its agent's; see `POST /v1/chats/{id}/settings`) and `moebius_error` events (`{"message"}`) that explain why a
 run failed. The one exception is a run that was still going when the server stopped: it is failed at the next start with
-a `moebius_error` that is stored but not published.
+a `moebius_error` that is stored but not published. A chat that had answered and was only waiting for the next message is
+the exception to that: nothing was going in it, so it is `stopped` at the next start and nothing is added to it.

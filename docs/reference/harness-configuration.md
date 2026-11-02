@@ -424,9 +424,9 @@ configured, the built-in agent `Retro-analyst` turns the report into proposals. 
 - The analyst also writes lessons (see `GET /v1/lessons` in the [desktop API](desktop-api.md)): it ends its final answer
   with a fenced block ```` ```lessons ```` holding a JSON array of `{"card", "kind", "situation", "lesson", "advice"}`,
   one for a failed run, a review rejection or a card that merged at once (`merged` in the report). Each is stored for the
-  repository of its `card`; an entry of a card that is gone, with an empty part, or an unreadable block is left out with a
-  warning. A lesson is retired when it is not retrieved for 60 days (checked every minute) or when a trial run it was given
-  to is negative.
+  repository of its `card`, so `card` is the number the report line names; an entry of a card that is gone, naming no
+  card, with an empty part, or an unreadable block is left out with a warning. A lesson is retired when it is not
+  retrieved for 60 days (checked every minute) or when a trial run it was given to is negative.
 - Each proposal is a branch `proposal/<date>-<short-name>` made from the default branch, with one commit whose message is
   the proposal: the subject is its title, the body says what changes and which errors it addresses, and the last line is
   `Cards: 48, 50`, the `card` of each error of the report that it addresses (numbers that are not ids are ignored). It

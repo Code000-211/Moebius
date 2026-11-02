@@ -93,13 +93,15 @@ describe("signing in", () => {
     }
   });
 
-  it("signs out from the account menu", async () => {
+  it("signs out from Settings", async () => {
     await fresh();
     await page.goto(server.loginUrl);
     await pages().waitFor();
-    await page.getByRole("button", { name: "Account" }).click();
-    await page.getByRole("menuitem", { name: "Sign out" }).click();
-    await page.getByLabel("Token").waitFor();
+    await pages().getByRole("link", { name: "Settings" }).click();
+    await page.getByRole("heading", { name: "Settings", level: 1 }).waitFor();
+    await page.getByRole("button", { name: "Sign out" }).click();
+    // The way back in: the sign-in form's own field, named exactly, since Settings has several that say Token.
+    await page.getByLabel("Token", { exact: true }).waitFor();
   });
 });
 
@@ -108,27 +110,53 @@ describe("the shell", () => {
     await fresh();
     await page.goto(server.loginUrl);
     await pages().waitFor();
-    await pages().getByRole("link", { name: "Agents" }).click();
-    await page.waitForURL("**/agents");
-    await page.getByRole("heading", { name: "Agents" }).waitFor();
-    expect(await pages().getByRole("link", { name: "Agents" }).getAttribute("aria-current")).toBe(
-      "page",
-    );
+    await pages().getByRole("link", { name: "Fleet" }).first().click();
+    await page.waitForURL("**/fleet");
+    await page.getByRole("heading", { name: "Fleet", level: 1 }).waitFor();
+    expect(
+      await pages().getByRole("link", { name: "Fleet" }).first().getAttribute("aria-current"),
+    ).toBe("page");
   });
 
-  it("lists the same groups as the desktop sidebar and the boards of the snapshot", async () => {
+  it("lists the everyday pages, then the pages Settings holds, and the boards", async () => {
     await fresh();
     await page.goto(server.loginUrl);
     await pages().waitFor();
-    for (const name of ["Inbox", "Chat", "Fleet", "Automations", "Retro", "Models", "Settings"]) {
-      // An entry may carry a count after its name ("Inbox 1", "Fleet 1 live").
+    for (const name of ["Inbox", "Chat", "Fleet", "Automations", "Retro", "Settings"]) {
+      // An entry may carry a count after its name ("Inbox 1", "Fleet 2").
       await pages()
         .getByRole("link", { name: new RegExp(`^${name}\\b`) })
         .waitFor();
     }
-    for (const group of ["Projects", "Build", "Improve", "Setup"]) {
+    for (const group of ["Projects", "Improve"]) {
       await pages().getByText(group, { exact: true }).first().waitFor();
     }
+    // A group's label is not a link; the whole of the group is a row of the group.
+    expect(await pages().getByRole("link", { name: "Projects", exact: true }).count()).toBe(0);
+    await pages().getByRole("link", { name: "All projects" }).waitFor();
+    // The pages that set the server up are not listed beside the everyday ones: Settings opens them.
+    expect(await pages().getByRole("link", { name: "Models" }).count()).toBe(0);
+    await pages().getByRole("link", { name: "Settings" }).click();
+    await page.waitForURL("**/settings");
+    for (const name of [
+      "General",
+      "Models",
+      "Plugins",
+      "Terminal",
+      "Ports",
+      "Usage",
+      "Rules",
+      "Agents",
+      "Skills",
+      "MCP",
+    ]) {
+      await pages()
+        .getByRole("link", { name: new RegExp(`^${name}\\b`) })
+        .waitFor();
+    }
+    // The way back is a row under Search, and it goes where the person last was.
+    await pages().getByRole("link", { name: "Back" }).click();
+    await page.waitForURL("**/inbox");
     if (!usesRealServer) {
       await pages().getByRole("link", { name: /demo/ }).click();
       await page.waitForURL("**/board/1");
@@ -161,6 +189,26 @@ describe("the shell", () => {
     await page.goto(server.loginUrl);
     await page.getByTestId("connection").getByText("Online").waitFor();
   });
+
+  it("keeps the shell standing when a page's file cannot be fetched", async () => {
+    await fresh();
+    await page.goto(server.loginUrl);
+    await pages().waitFor();
+    // The file of the Fleet page never arrives, as when the server stops answering between the click and the fetch,
+    // or a newer version replaced the file this tab was told about.
+    let blocked = 0;
+    await page.route("**/assets/FleetPage-*.js", (route) => {
+      blocked += 1;
+      void route.abort("connectionrefused");
+    });
+    await pages().getByRole("link", { name: "Fleet" }).click();
+    const line = page.getByRole("alert").filter({ hasText: "The page could not be loaded" });
+    await line.getByRole("button", { name: "Reload" }).waitFor();
+    // What is not missing is still there to reload from: the sidebar and the connection, not a stack trace.
+    await pages().getByRole("link", { name: "Inbox" }).waitFor();
+    await page.getByTestId("connection").waitFor();
+    expect(blocked).toBeGreaterThan(0);
+  });
 });
 
 describe("the command bar", () => {
@@ -169,8 +217,16 @@ describe("the command bar", () => {
     await page.goto(server.loginUrl);
     await pages().waitFor();
     await page.keyboard.press("Control+k");
-    const input = page.getByPlaceholder("Go to a page…");
+    const input = page.getByPlaceholder("Search…");
     await input.waitFor();
+    // The sheet holds both the field and the list: the field stays the height of a control rather than growing to
+    // fill the sheet, and the list ends inside the sheet rather than running past it.
+    const sheet = await page.getByRole("dialog").boundingBox();
+    const field = await input.boundingBox();
+    const list = await page.getByRole("listbox").boundingBox();
+    if (!sheet || !field || !list) throw new Error("the dialog did not open as one sheet");
+    expect(field.height).toBeLessThanOrEqual(56);
+    expect(list.y + list.height).toBeLessThanOrEqual(sheet.y + sheet.height + 1);
     await input.fill("retro");
     await page.getByRole("option", { name: "Retro" }).waitFor();
     expect(await page.getByRole("option").count()).toBe(1);
@@ -184,8 +240,8 @@ describe("the command bar", () => {
     await fresh();
     await page.goto(server.loginUrl);
     await pages().waitFor();
-    await page.getByRole("button", { name: "Search pages" }).click();
-    const input = page.getByPlaceholder("Go to a page…");
+    await page.getByRole("button", { name: "Search" }).click();
+    const input = page.getByPlaceholder("Search…");
     await input.waitFor();
     await input.fill("zzzz");
     await page.getByText("No page matches.").waitFor();
@@ -205,11 +261,13 @@ describe("a server that does not answer", () => {
       await pages().waitFor();
       await pages().getByRole("link", { name: "Fleet" }).click();
       await page.waitForURL("**/fleet");
+      // A page is fetched when it opens, so it has to be on the screen before the server goes away: stopping the
+      // server mid-fetch loses the page itself, which is not the thing this test is about.
+      await page.getByRole("heading", { name: "Fleet" }).waitFor();
 
       await server.stop();
       const banner = page.getByRole("alert").filter({ hasText: "Cannot reach the server" });
       await banner.waitFor();
-      await page.getByRole("heading", { name: "Fleet" }).waitFor();
       await page.getByTestId("connection").getByText("Reconnecting").waitFor();
 
       await server.restart();

@@ -1,6 +1,7 @@
 /**
  * What a `run_event` or `run_ended` does to the list of chats in the cache, so that a chat's status and unread marker
- * follow the stream at once, without reading the list again (the desktop app's `Chats::on_event`).
+ * follow the stream at once, without reading the list again (the desktop app's `Chats::on_event`), and the one the
+ * sidebar opens when there is no chat id in the address.
  */
 import type { Chat } from "../api/types/chat";
 import type { ServerEvent } from "../api/types/events";
@@ -49,6 +50,19 @@ function replace(chats: Chat[], id: number, change: (chat: Chat) => Chat): Chat[
   const next = chats.slice();
   next[index] = changed;
   return next;
+}
+
+/**
+ * The chat to open when someone asks for Chat: the one started most recently, or null when there is none. The list
+ * from the server is newest first, but the newest of an edited or partially updated cache is picked by its own time
+ * rather than by where it happens to sit.
+ */
+export function recentChat(chats: Chat[]): Chat | null {
+  let newest: Chat | null = null;
+  for (const chat of chats) {
+    if (newest === null || chat.started_at > newest.started_at) newest = chat;
+  }
+  return newest;
 }
 
 /** Whether an event is one of a chat's runs worth reading the list again for: a chat started, ended or offered. */

@@ -1,22 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { ago, isOpen, isWorking, statusTag } from "./format";
+import { endedHint, isOpen, isWorking, statusTag } from "./format";
 import { pageContext } from "./pageContext";
-
-describe("ago", () => {
-  it("says it in the unit a person reads", () => {
-    expect(ago(1000, 990)).toBe("just now");
-    expect(ago(1000, 1000 - 300)).toBe("5 min ago");
-    expect(ago(100_000, 100_000 - 7200)).toBe("2 h ago");
-    expect(ago(1_000_000, 1_000_000 - 200_000)).toBe("2 d ago");
-    expect(ago(1000, 2000)).toBe("just now");
-  });
-});
 
 describe("statusTag", () => {
   it("has no tag for a chat that waits without a question", () => {
     expect(statusTag("waiting", false)).toBeNull();
-    expect(statusTag("waiting", true)).toEqual({ label: "Asks you", tone: "amber" });
-    expect(statusTag("failed", false)).toEqual({ label: "Failed", tone: "red" });
+    expect(statusTag("waiting", true)).toEqual({ label: "Asks you", tone: "attention" });
+    expect(statusTag("failed", false)).toEqual({ label: "Failed", tone: "error" });
+  });
+
+  it("says what a chat whose agent is gone is tagged", () => {
+    expect(statusTag("stopped", false)).toEqual({ label: "Agent disconnected", tone: "plain" });
   });
 
   it("knows which chats take messages and which work", () => {
@@ -29,6 +23,21 @@ describe("statusTag", () => {
   });
 });
 
+describe("endedHint", () => {
+  it("names the agent, the state, and the way on", () => {
+    expect(endedHint("stopped", "Moebius")).toBe(
+      "Moebius disconnected. Start a new chat to continue.",
+    );
+    expect(endedHint("succeeded", "Coder")).toBe(
+      "Coder ended this chat. Start a new chat to continue.",
+    );
+    // A state the app has not met is still answered rather than left blank.
+    expect(endedHint("vanished", "Moebius")).toBe(
+      "This chat has ended. Start a new chat to continue.",
+    );
+  });
+});
+
 describe("pageContext", () => {
   const snapshot = {
     boards: [{ repository: { id: 4, name: "demo" } }],
@@ -37,14 +46,21 @@ describe("pageContext", () => {
   } as never;
 
   it("names the page and its group", () => {
-    expect(pageContext("/inbox", undefined)).toEqual({ text: "Page: Inbox", repository: null });
+    expect(pageContext("/inbox", undefined)).toEqual({
+      text: "Page: Inbox",
+      name: "Inbox",
+      repository: null,
+    });
     expect(pageContext("/agents", undefined).text).toBe("Page: Build > Agents");
+    // The name is what a floating window says it is looking at, so it is the short form, without the group.
+    expect(pageContext("/agents", undefined).name).toBe("Agents");
   });
 
   it("names the repository of a board and starts chats there", () => {
     const context = pageContext("/board/4", snapshot);
     expect(context.repository).toBe(4);
     expect(context.text).toContain("Repository: demo (id 4)");
+    expect(context.name).toBe("demo");
   });
 
   it("names an open chat", () => {

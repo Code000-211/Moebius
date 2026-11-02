@@ -372,10 +372,10 @@ mod tests {
         refresh(&store, &repository).unwrap();
         let localizer = Localizer::new(store.clone());
         let first = store
-            .add_card(repository.id, "First", "", "person", "Ready")
+            .add_card(repository.id, "First", "", "person", "Not started")
             .unwrap();
         let second = store
-            .add_card(repository.id, "Second", "", "person", "Ready")
+            .add_card(repository.id, "Second", "", "person", "Not started")
             .unwrap();
         let title = "Reading the settings is slow";
         let body = "Opening the settings takes seconds on a large machine.";

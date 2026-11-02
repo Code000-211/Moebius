@@ -1,11 +1,18 @@
-// From BloopAI/vibe-kanban packages/ui/src/components/ChatAggregatedToolEntries.tsx (Apache-2.0), changed: the worst-status choice is a small function above the component; the header is a real button (keyboard and screen readers); the label of the count is not pluralised by appending an "s" to the unit when the caller gives a plural.
-import { CaretRightIcon, ListMagnifyingGlassIcon } from "@phosphor-icons/react";
+// From BloopAI/vibe-kanban packages/ui/src/components/ChatAggregatedToolEntries.tsx (Apache-2.0), changed: the header
+// is a real button 40px tall; the count is a figure that does not shift as it grows; a file is named by its name with
+// its whole path kept as the tooltip on one line whose end stays in view; the state of the group is a word with a hue;
+// the caret that says the row opens is always drawn rather than shown only while the pointer is over it.
+import { CaretDownIcon, ListMagnifyingGlassIcon } from "@phosphor-icons/react";
 import type { ElementType } from "react";
 import { cn } from "../lib/cn";
+import { plural } from "../lib/format";
+import { FadedLine } from "../page/FadedLine";
 import { ToolStatusDot, type ToolStatusLike } from "./ToolStatusDot";
 
 export interface AggregatedEntry {
   summary: string;
+  /** The whole path behind a summary that names only a file, kept for the tooltip. */
+  detail?: string;
   status?: ToolStatusLike;
   expansionKey: string;
 }
@@ -13,9 +20,7 @@ export interface AggregatedEntry {
 interface ChatAggregatedToolEntriesProps {
   entries: AggregatedEntry[];
   expanded: boolean;
-  isHovered: boolean;
   onToggle: () => void;
-  onHoverChange: (hovered: boolean) => void;
   /** Label to show before the count (e.g., "Read", "Search") */
   label: string;
   /** Unit label for counting (e.g., "file", "URL") - will be pluralized automatically */
@@ -52,9 +57,7 @@ export function worstStatus(entries: AggregatedEntry[]): ToolStatusLike | undefi
 export function ChatAggregatedToolEntries({
   entries,
   expanded,
-  isHovered,
   onToggle,
-  onHoverChange,
   label,
   unit,
   icon: Icon = ListMagnifyingGlassIcon,
@@ -66,14 +69,13 @@ export function ChatAggregatedToolEntries({
   const only = entries.length === 1 ? entries[0] : undefined;
   if (only) {
     return (
-      <div className={cn("flex items-center gap-base text-sm text-low", className)}>
-        <span className="relative shrink-0 pt-0.5">
-          <Icon className="size-icon-base" />
-          {only.status && (
-            <ToolStatusDot status={only.status} className="absolute -bottom-0.5 -left-0.5" />
-          )}
-        </span>
-        <span className="truncate">{only.summary}</span>
+      <div
+        className={cn("flex min-h-8 flex-wrap items-center gap-3 px-3 text-left", className)}
+        title={only.detail ?? only.summary}
+      >
+        <Icon aria-hidden="true" className="size-4 shrink-0 text-secondary" />
+        <FadedLine text={only.summary} className="flex-1 font-mono text-sm text-text" />
+        {only.status && <ToolStatusDot status={only.status} />}
       </div>
     );
   }
@@ -82,50 +84,37 @@ export function ChatAggregatedToolEntries({
 
   return (
     <div className={cn("flex flex-col", className)}>
-      {/* Header row - clickable to expand/collapse */}
       <button
         type="button"
-        className="group flex items-center gap-base text-left text-sm text-low"
+        className="flex min-h-8 w-full cursor-pointer items-center gap-3 rounded-control px-3 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
         onClick={onToggle}
-        onMouseEnter={() => onHoverChange(true)}
-        onMouseLeave={() => onHoverChange(false)}
         aria-expanded={expanded}
       >
-        <span className="relative shrink-0 pt-0.5">
-          {isHovered ? (
-            <CaretRightIcon
-              className={cn(
-                "size-icon-base transition-transform duration-150",
-                expanded && "rotate-90",
-              )}
-            />
-          ) : (
-            <Icon className="size-icon-base" />
-          )}
-          {aggregateStatus && (
-            <ToolStatusDot status={aggregateStatus} className="absolute -bottom-0.5 -left-0.5" />
-          )}
+        <Icon aria-hidden="true" className="size-4 shrink-0 text-secondary" />
+        <span className="min-w-0 flex-1 break-words text-base text-text">
+          {label} · <span className="tabular-nums">{plural(entries.length, unit, `${unit}s`)}</span>
         </span>
-        <span className="truncate">
-          {label} · {entries.length} {entries.length === 1 ? unit : `${unit}s`}
-        </span>
+        {aggregateStatus && <ToolStatusDot status={aggregateStatus} />}
+        <CaretDownIcon
+          aria-hidden="true"
+          className={cn(
+            "size-4 shrink-0 text-secondary transition-transform duration-(--motion-routine) ease-out",
+            !expanded && "-rotate-90",
+          )}
+        />
       </button>
 
-      {/* Expanded content */}
       {expanded && (
-        <div className="ml-6 flex flex-col gap-0.5 pt-1">
+        <div className="flex flex-col gap-1 pl-4">
           {entries.map((entry) => (
             <div
               key={entry.expansionKey}
-              className="flex items-center gap-base pl-base text-sm text-low"
+              title={entry.detail ?? entry.summary}
+              className="flex min-h-8 flex-wrap items-center gap-3 px-3"
             >
-              <span className="relative shrink-0 pt-0.5">
-                <Icon className="size-icon-base" />
-                {entry.status && (
-                  <ToolStatusDot status={entry.status} className="absolute -bottom-0.5 -left-0.5" />
-                )}
-              </span>
-              <span className="truncate font-mono text-xs">{entry.summary}</span>
+              <Icon aria-hidden="true" className="size-4 shrink-0 text-secondary" />
+              <FadedLine text={entry.summary} className="flex-1 font-mono text-sm text-text" />
+              {entry.status && <ToolStatusDot status={entry.status} />}
             </div>
           ))}
         </div>

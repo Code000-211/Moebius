@@ -8,7 +8,7 @@
 import { type Browser, type BrowserContext, chromium, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { FakeRuns } from "./fake/runs";
-import { PASTE_END, PASTE_START } from "./fake/runs";
+import { LONG_CHANGE_DIFF, MANY_FILE_CHANGE_DIFF, PASTE_END, PASTE_START } from "./fake/runs";
 import { startServer, type TestServer, usesRealServer } from "./server";
 
 let browser: Browser;
@@ -66,7 +66,7 @@ async function typed(what: string) {
 describe("the run view", () => {
   it("says there is no such run", async () => {
     await open("/runs/999999");
-    await page.getByText("There is no such run.").waitFor();
+    await page.getByRole("heading", { name: "There is no such run" }).waitFor();
   });
 
   it.skipIf(usesRealServer)("shows the run, its card, and the events as they arrive", async () => {
@@ -188,20 +188,130 @@ describe("the run view", () => {
 });
 
 describe("the diff of a card", () => {
-  it.skipIf(usesRealServer)("shows its added and removed lines in the board's dock", async () => {
-    await open("/board/1?card=5");
-    const dock = page.getByRole("region", { name: "Card inspector" });
-    await dock.getByText("Changes", { exact: true }).waitFor();
-    await dock
-      .locator('[data-testid="diff-line"][data-kind="added"]')
-      .filter({ hasText: "cc -O2 main.c" })
-      .waitFor();
-    await dock
-      .locator('[data-testid="diff-line"][data-kind="removed"]')
-      .filter({ hasText: "cc -O0 main.c" })
-      .waitFor();
-    expect(await dock.getByTestId("diff-path").textContent()).toBe("Makefile");
-  });
+  it.skipIf(usesRealServer)(
+    "shows the headline of a change in the dock and its lines in a sheet",
+    async () => {
+      await open("/board/1?card=5");
+      const dock = page.getByRole("region", { name: "Card inspector" });
+      await dock.getByText("Changes", { exact: true }).waitFor();
+      // The dock has room for one line about a change: what it touches, and what it costs.
+      const headline = dock.getByTestId("diff-card");
+      await headline.waitFor();
+      expect((await headline.textContent()) ?? "").toMatch(/\+\d+ added -\d+ removed/);
+      // The lines themselves are read in a sheet over the page, which closes on Escape.
+      await headline.click();
+      const sheet = page.getByRole("dialog");
+      await sheet
+        .locator('[data-testid="diff-line"][data-kind="added"]')
+        .filter({ hasText: "cc -O2 main.c" })
+        .waitFor();
+      await sheet
+        .locator('[data-testid="diff-line"][data-kind="removed"]')
+        .filter({ hasText: "cc -O0 main.c" })
+        .waitFor();
+      expect(await sheet.getByTestId("diff-path").textContent()).toBe("Makefile");
+      // A diff is read two columns wide — the list of files and the lines of the one that is open — so the sheet takes
+      // the window it is opened in rather than the measure a paragraph of prose wants: at a reading width the lines
+      // were a narrow strip beside the list, and every line of code was cut short.
+      const share = await sheet.evaluate(
+        (el) => el.getBoundingClientRect().width / window.innerWidth,
+      );
+      expect(share).toBeGreaterThan(0.85);
+      await page.keyboard.press("Escape");
+      await sheet.waitFor({ state: "detached" });
+      // Escape closed the sheet alone; the card is still open behind where it was.
+      await headline.waitFor();
+      expect(await dock.getByText("Changes", { exact: true }).count()).toBe(1);
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "spells what each file costs, and keeps no key to the colours",
+    async () => {
+      await open("/board/1?card=5");
+      const dock = page.getByRole("region", { name: "Card inspector" });
+      await dock.getByTestId("diff-card").click();
+      const sheet = page.getByRole("dialog");
+      await sheet.getByTestId("diff-summary").waitFor();
+      // The count of a file is `+14 -4`, and there is no key to the colours beside it.
+      const summary = sheet.getByTestId("diff-summary");
+      expect((await summary.textContent()) ?? "").toMatch(/\+\d+ added -\d+ removed/);
+      const row = sheet.getByTestId("diff-file").first();
+      expect((await row.textContent()) ?? "").toMatch(/\+\d+ added -\d+ removed/);
+      expect(await sheet.getByRole("list", { name: "What the colours mean" }).count()).toBe(0);
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "ends where the diff ends, with no band of nothing under the last line",
+    async () => {
+      await open("/board/1?card=5");
+      const dock = page.getByRole("region", { name: "Card inspector" });
+      await dock.getByTestId("diff-card").click();
+      const sheet = page.getByRole("dialog");
+      const lastLine = sheet.locator('[data-testid="diff-line"]').last();
+      await lastLine.waitFor();
+      // The sheet is as tall as the diff it holds. Held to the height of the window, a change of one file sits in a
+      // band of nothing, so the last line of the file ends within the sheet's own padding of its bottom edge.
+      const sheetBox = await sheet.boundingBox();
+      const lineBox = await lastLine.boundingBox();
+      if (!sheetBox || !lineBox) throw new Error("the sheet or its last line drew no box");
+      expect(sheetBox.y + sheetBox.height - (lineBox.y + lineBox.height)).toBeLessThan(40);
+      // The list of files stops at its last row, rather than being held to the height of the lines beside it.
+      const listBox = await sheet.getByTestId("diff-files").boundingBox();
+      const rowBox = await sheet.getByTestId("diff-file").last().boundingBox();
+      if (!listBox || !rowBox) throw new Error("the list of files or its last row drew no box");
+      expect(listBox.y + listBox.height - (rowBox.y + rowBox.height)).toBeLessThan(12);
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "stops the code at its last line when the list of files is the taller column",
+    async () => {
+      await open("/board/1?card=5");
+      fake().changeDiff = MANY_FILE_CHANGE_DIFF;
+      await page.reload();
+      await page.getByTestId("diff-card").click();
+      const sheet = page.getByRole("dialog");
+      const lastLine = sheet.locator('[data-testid="diff-line"]').last();
+      await lastLine.waitFor();
+      // The lines are as tall as the file they hold. Held to the height of the list beside them, the last line of a
+      // short file trailed a band of empty code down to the bottom of the taller column.
+      const lines = await sheet.getByTestId("diff-lines").boundingBox();
+      const lineBox = await lastLine.boundingBox();
+      const listBox = await sheet.getByTestId("diff-files").boundingBox();
+      if (!lines || !lineBox || !listBox)
+        throw new Error("the code, its last line or its list drew no box");
+      expect(lines.y + lines.height - (lineBox.y + lineBox.height)).toBeLessThan(12);
+      // The list is the taller of the two columns, which is what the code no longer follows.
+      expect(lines.y + lines.height).toBeLessThan(listBox.y + listBox.height);
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "scrolls its lines where they are, and never the sheet, when a diff is taller than the window",
+    async () => {
+      await open("/board/1?card=5");
+      fake().changeDiff = LONG_CHANGE_DIFF;
+      await page.reload();
+      await page.getByTestId("diff-card").click();
+      const sheet = page.getByRole("dialog");
+      const lines = sheet.getByTestId("diff-lines");
+      await lines.waitFor();
+      const box = await sheet.boundingBox();
+      if (!box) throw new Error("the sheet drew no box");
+      // A wheel over the sheet's own padding moves nothing. A sheet that scrolled as well slid both columns up out of
+      // sight and left a band of nothing where they were.
+      await page.mouse.move(box.x + 12, box.y + box.height - 12);
+      await page.mouse.wheel(0, 300);
+      expect(await sheet.evaluate((el) => el.scrollTop)).toBe(0);
+      // The same wheel over the lines scrolls them where they stand, inside the sheet.
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.wheel(0, 300);
+      await expect.poll(() => lines.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+      expect(await sheet.evaluate((el) => el.scrollTop)).toBe(0);
+    },
+  );
 });
 
 describe("the terminals", () => {
@@ -277,17 +387,40 @@ describe("the terminals", () => {
     },
   );
 
-  it.skipIf(usesRealServer)(
-    "opens a shell in the clone of a repository from the board",
-    async () => {
-      await open("/board/1");
-      await page.getByRole("button", { name: "Terminal" }).click();
-      await connected().waitFor();
-      expect(fake().terminals.at(-1)?.path).toBe("/v1/repositories/1/terminal");
-      await page.getByRole("button", { name: "Close terminal" }).click();
-      await expect.poll(() => fake().terminals.at(-1)?.closed).toBe(true);
-    },
-  );
+  it.skipIf(usesRealServer)("keeps the board's shell alive while its sheet is closed", async () => {
+    await open("/board/1");
+    await page.getByRole("button", { name: "Terminal" }).click();
+    await connected().waitFor();
+    const sheet = page.getByRole("dialog");
+    await sheet.waitFor();
+    expect(fake().terminals.at(-1)?.path).toBe("/v1/repositories/1/terminal");
+    // A sheet too small to read is the reason this one is not a band under the cards.
+    const box = await sheet.boundingBox();
+    expect(box?.height ?? 0).toBeGreaterThan(300);
+    expect(box?.width ?? 0).toBeGreaterThan(600);
+    await focusTerminal();
+    await page.keyboard.type("keepme");
+    await screen().filter({ hasText: "keepme" }).waitFor();
+
+    // Closing the sheet hides the shell rather than ending it: the scrollback, the working directory and
+    // whatever is running in it are what a person wants back when they look at a card and come back.
+    await sheet.getByRole("button", { name: "Close" }).click();
+    await expect.poll(() => page.getByRole("dialog").count()).toBe(0);
+    expect(fake().terminals.length).toBe(1);
+    expect(fake().terminals.at(-1)?.closed).not.toBe(true);
+
+    // Opening it again is the same shell, and it takes the keyboard without being clicked.
+    await page.getByRole("button", { name: "Terminal" }).click();
+    await sheet.waitFor();
+    expect(fake().terminals.length).toBe(1);
+    await screen().filter({ hasText: "keepme" }).waitFor();
+    await page.keyboard.type("andagain");
+    await typed("andagain");
+
+    // Leaving the board leaves nothing to show the shell, so the socket closes and the server ends it.
+    await page.goto(`${server.url}/inbox`);
+    await expect.poll(() => fake().terminals.at(-1)?.closed).toBe(true);
+  });
 
   it.skipIf(usesRealServer)(
     "opens Pi-Bolt's terminal interface from a chat that waits",
@@ -331,12 +464,11 @@ describe("the terminals", () => {
 });
 
 describe("the Ports page", () => {
-  it("opens from the sidebar", async () => {
+  it("opens from the sidebar, behind Settings", async () => {
     await open("/inbox");
-    await page
-      .getByRole("navigation", { name: "Pages" })
-      .getByRole("link", { name: "Ports" })
-      .click();
+    const nav = page.getByRole("navigation", { name: "Pages" });
+    await nav.getByRole("link", { name: "Settings" }).click();
+    await nav.getByRole("link", { name: "Ports" }).click();
     await page.waitForURL("**/ports");
     await page.getByRole("heading", { name: "Ports", level: 1 }).waitFor();
   });

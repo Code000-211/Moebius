@@ -37,6 +37,7 @@ reads them too: they are its `moebius` skill.
   [`moebius-desktop`](../crates/moebius-desktop/README.md) (the app), [`moebius`](../crates/moebius/README.md) (the
   binary and command line) and [`moebius-plugin-api`](../crates/moebius-plugin-api/README.md).
 - [`design.md`](design.md) and the mockups in [`design/`](design/): what the desktop app looks like.
+- [`design-web.md`](design-web.md): the standard the web app is built to — voice, type, colour, components, interaction.
 - [`web/README.md`](../web/README.md): the web app, its layout, scripts and licenses.
 
 ## Why it is the way it is

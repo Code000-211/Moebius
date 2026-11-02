@@ -4,7 +4,9 @@
  * proposes while a person edits it (the desktop app's `screens/inbox`).
  */
 import type { Board, Card, Change, InboxItem, Snapshot } from "../../api/types/board";
+import type { Proposal } from "../../api/types/improve";
 import type { GrillingIssue } from "../../api/types/inbox";
+import type { Tone } from "../../ui/page/Status";
 import { tokens } from "../board/model";
 
 export const READY_TO_MERGE = "ready_to_merge";
@@ -103,7 +105,8 @@ export function sentence(kind: string): string {
 export function chipName(kind: string): string {
   switch (kind) {
     case READY_TO_MERGE:
-      return "To merge";
+      // The board's own column name, so the chip and the card the chip filters to say one thing.
+      return "Ready to merge";
     case APPROVE_ISSUE:
       return "Approvals";
     case STUCK:
@@ -123,36 +126,41 @@ export function chipName(kind: string): string {
   }
 }
 
-export type Tone = "red" | "amber" | "plain";
-
-/** What the item is, and how loud: red for what is blocked, amber for what waits for the person's move. */
+/**
+ * What the item is, and how loud: the colour of an error for what is blocked, of attention for what waits for the
+ * person's move. The tones are the shared pill's (`ui/page/Status`), so the word and its hue mean the same thing here
+ * as they do on a card and on a run.
+ */
 export function kindTag(item: InboxItem): { label: string; tone: Tone } {
   switch (item.kind) {
     case STUCK:
-      return { label: "Stuck", tone: "red" };
+      return { label: "Stuck", tone: "error" };
     case READY_TO_MERGE:
       return item.card_id === null
-        ? { label: "Change from a chat", tone: "amber" }
-        : { label: "Ready to merge", tone: "amber" };
+        ? { label: "Change from a chat", tone: "attention" }
+        : { label: "Ready to merge", tone: "attention" };
     case APPROVE_ISSUE:
-      return { label: "Outside issue", tone: "amber" };
+      return { label: "Outside issue", tone: "attention" };
     case CHANGE_CLOSED:
-      return { label: "Closed without a merge", tone: "amber" };
+      return { label: "Closed without a merge", tone: "attention" };
     case PROPOSAL:
-      return { label: "Retro proposal", tone: "amber" };
+      return { label: "Retro proposal", tone: "attention" };
     case TAKEOVER:
-      return { label: "Decision model", tone: "amber" };
+      return { label: "Decision model", tone: "attention" };
     case GRILLING_ISSUES:
-      return { label: "Issues from a grilling", tone: "amber" };
+      return { label: "Issues from a grilling", tone: "attention" };
     case GRILLING_REPORT:
-      return { label: "Report from a grilling", tone: "amber" };
+      return { label: "Report from a grilling", tone: "attention" };
     default:
-      return { label: sentence(item.kind), tone: "plain" };
+      return { label: sentence(item.kind), tone: "neutral" };
   }
 }
 
-/** The sentence under the title: why the item is here. */
-export function why(item: InboxItem, about: Found): string | null {
+/**
+ * The sentence under the title: why the item is here. `changes` is what a proposal changes, for the items that do not
+ * say so themselves: the one a trial ends with names its proposal and nothing else.
+ */
+export function why(item: InboxItem, about: Found, changes?: string): string | null {
   const reason = text(item.data.reason);
   switch (item.kind) {
     case STUCK:
@@ -176,14 +184,16 @@ export function why(item: InboxItem, about: Found): string | null {
       const count = number(item.data.count) ?? 0;
       return `It chose what was recorded on ${agreement}% of ${count} judgements held back from training. Merging lets it decide this kind from now on.`;
     }
-    case PROPOSAL:
-      if (item.data.kind === "settings") {
+    case PROPOSAL: {
+      const own = text(item.data.kind) || (changes ?? "");
+      if (own === "settings") {
         return "The Retro proposes this change to moebius.toml. Merging saves it, and restarts the server when a key needs it.";
       }
-      if (item.data.kind === "repository") {
+      if (own === "repository") {
         return "The Retro proposes this change to the repository's own rules or column scripts. Merging offers it as a change on the repository.";
       }
       return "The Retro proposes this change to the harness configuration.";
+    }
     case GRILLING_ISSUES:
       return "The Grilling partner ended in these issues. Edit them, remove what you do not want, and confirm to make a card of each.";
     case GRILLING_REPORT:
@@ -193,7 +203,10 @@ export function why(item: InboxItem, about: Found): string | null {
   }
 }
 
-/** What the words above the title say: the repository, the card's number and who wrote it, or what the item comes from. */
+/**
+ * What the words above the title say: the repository, the card's number and who wrote it, or what the item comes
+ * from. A proposal says that already in its own kind, so it adds nothing here.
+ */
 export function meta(item: InboxItem, about: Found): string {
   const parts: string[] = [];
   if (about.board) parts.push(about.board.repository.name);
@@ -201,11 +214,9 @@ export function meta(item: InboxItem, about: Found): string {
     parts.push(`#${about.card.number}`);
     if (item.kind === APPROVE_ISSUE && about.card.author !== "")
       parts.push(`by ${about.card.author}`);
-  } else if (item.kind === PROPOSAL) {
-    parts.push("Retro");
   } else if (grillingOf(item) !== null) {
     parts.push("Grilling");
-  } else if (item.card_id === null) {
+  } else if (item.card_id === null && item.kind !== PROPOSAL) {
     parts.push("chat");
   }
   if (about.change?.harness_repository) parts.unshift("Harness configuration");
@@ -248,10 +259,29 @@ export function facts(item: InboxItem, about: Found): Fact[] {
 }
 
 export interface Trial {
-  card: string;
+  /** The card the trial ran on, or `null` when the proposal names none — there is then nothing to try it on. */
+  card: number | null;
   outcome: string;
-  positive: boolean;
+  /** How the outcome reads in words alone: teal for what worked, red for what did not, quiet for the rest. */
+  tone: "complete" | "error" | "quiet";
   reason: string;
+}
+
+/**
+ * What the card of a proposal says about the change itself: the Retro's reason for it and the diff, for the changes
+ * that come as one. An item made when the Retro stores a proposal carries both; the one a trial ends with carries
+ * neither, so the proposal read back from the server stands in.
+ */
+export function proposedOf(
+  item: InboxItem,
+  proposed: Proposal | null,
+): { reason: string; diff: string } {
+  const own = text(item.data.reason);
+  const diff = typeof item.data.diff === "string" ? text(item.data.diff) : "";
+  return {
+    reason: own !== "" ? own : (proposed?.body ?? ""),
+    diff: diff !== "" ? diff : (proposed?.diff ?? ""),
+  };
 }
 
 /** The trials of a proposal (`key` is `trials`) or of its regression set (`regression`), one line each. */
@@ -265,9 +295,14 @@ export function trialsOf(item: InboxItem, key: "trials" | "regression"): Trial[]
     const card = number(trial.card);
     const outcome = text(trial.outcome);
     return {
-      card: card !== null ? `Card ${card}` : "No card",
+      card,
       outcome: sentence(outcome),
-      positive: outcome === "positive",
+      tone:
+        outcome === "positive"
+          ? "complete"
+          : outcome === "negative" || outcome === "failed"
+            ? "error"
+            : "quiet",
       reason: text(trial.reason),
     };
   });
@@ -310,7 +345,8 @@ export function kindsOf(snapshot: Snapshot): string[] {
 
 /** What the page says under its title. */
 export function summary(total: number, shownCount: number): string {
-  if (total === 0) return "Nothing needs you.";
+  // An empty inbox is said by the empty state below it, which says it better.
+  if (total === 0) return "";
   if (total === 1) return "1 thing needs you.";
   if (total === shownCount) return `${total} things need you.`;
   return `${total} things need you; ${shownCount} shown.`;

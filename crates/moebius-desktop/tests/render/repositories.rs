@@ -12,7 +12,7 @@ fn two_repositories() -> App {
         vec![
             board(
                 repository(1, "radiance", Some("acme/radiance")),
-                vec![card(1, 1, "Ready", "Ship it")],
+                vec![card(1, 1, "Not started", "Ship it")],
             ),
             board(repository(2, "moebius", None), vec![]),
         ],

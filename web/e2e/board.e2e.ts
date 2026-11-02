@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Browser, type BrowserContext, chromium, type Locator, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { offers, pickOption, showing } from "./controls";
 import { LONG_TITLE } from "./fake/board";
 import { startServer, type TestServer, usesRealServer } from "./server";
 
@@ -101,7 +102,7 @@ describe("the board page", () => {
   it("loads for a real server and for the fake, with the columns of the default workflow", async () => {
     await fresh();
     await openBoard();
-    for (const name of ["Ready", "In progress", "In review", "Ready to merge", "Done"]) {
+    for (const name of ["Not started", "In progress", "In review", "Ready to merge", "Done"]) {
       await column(name).waitFor();
     }
     await page.getByRole("button", { name: "New issue" }).waitFor();
@@ -117,7 +118,7 @@ describe("the board page", () => {
     await page.getByRole("dialog").getByLabel("Title").fill("Write the changelog");
     await page.getByRole("dialog").getByLabel("Description").fill("List what changed.");
     await create.click();
-    await status("Created issue #").waitFor();
+    await status('Created "Write the changelog"').waitFor();
     // The card is on the board: in the Backlog, unless the board has moved it on already.
     await page.getByText("Write the changelog").first().waitFor();
     if (!usesRealServer) {
@@ -150,7 +151,7 @@ describe("the board page", () => {
       // Columns: Backlog is there because a card is in it; the counts follow the cards.
       await column("Backlog").waitFor();
       expect(
-        await column("Ready")
+        await column("Not started")
           .getByTestId(/^card-/)
           .count(),
       ).toBe(2);
@@ -169,14 +170,70 @@ describe("the board page", () => {
       const pull = ready.getByRole("link", { name: "Pull request #11, open" });
       expect(await pull.getAttribute("href")).toBe("https://github.com/acme/demo/pull/11");
       await ready.getByText("Green").waitFor();
-      await ready.getByText("Waits for you").waitFor();
-      await ready.getByText("2 rounds · 96k tok").waitFor();
+      await ready.getByText("Your turn").waitFor();
+      await ready.getByText("2 rounds", { exact: true }).waitFor();
 
       await card(4).getByText("Blocked by #3").waitFor();
       await card(3).getByText("Next").waitFor();
       await card(6).getByText("Stuck").waitFor();
-      await card(2).getByText("Waits for you").waitFor();
+      await card(2).getByText("Your turn").waitFor();
       await card(7).getByRole("link", { name: "Pull request #9, merged" }).waitFor();
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "says what an empty column holds on the column's own surface",
+    async () => {
+      await fresh();
+      await openBoard();
+      const words = column("In review").getByText(
+        "A card arrives here when an agent has a change to review.",
+        { exact: true },
+      );
+      await words.waitFor();
+      // The column is the surface these words sit on. A card of its own inside a column is a second surface under the
+      // same sentence, and one that reads as a card which has lost its words.
+      const face = await words.evaluate((el) => {
+        const box = el.closest("section");
+        const column = el.closest("section[aria-label]");
+        if (!box || !column) throw new Error("the empty state is not drawn in a column");
+        const style = getComputedStyle(box);
+        const sentence = el.getBoundingClientRect();
+        const space = box.getBoundingClientRect();
+        const lane = column.getBoundingClientRect();
+        return {
+          background: style.backgroundColor,
+          shadow: style.boxShadow,
+          heading: box.querySelector("h2") !== null,
+          // Centred in the column, and in the room under its header rather than at the top of it. The second one only
+          // reads when the state took the room: a state that only hugged its own line is the same height as its words.
+          centreX: Math.abs((sentence.left + sentence.right) / 2 - (lane.left + lane.right) / 2),
+          centreY: Math.abs((sentence.top + sentence.bottom) / 2 - (space.top + space.bottom) / 2),
+          room: space.height - sentence.height,
+        };
+      });
+      expect(face.background, "the empty state draws a surface of its own").toBe(
+        "rgba(0, 0, 0, 0)",
+      );
+      expect(face.heading, "a heading repeats the name the column's header already gives").toBe(
+        false,
+      );
+      expect(
+        face.centreX,
+        "the sentence sits in the middle of the column's width",
+      ).toBeLessThanOrEqual(2);
+      expect(
+        face.room,
+        "the sentence sits at the top of the column instead of in its space",
+      ).toBeGreaterThan(24);
+      expect(
+        face.centreY,
+        "the sentence is not in the middle of the room it was given",
+      ).toBeLessThanOrEqual(2);
+      expect(face.shadow, "the empty state lifts itself off the column").toBe("none");
+      // The column keeps its own fill, which is what the sentence rests on.
+      const lane = await column("In review").evaluate((el) => getComputedStyle(el).backgroundColor);
+      expect(lane, "the column has no fill of its own to sit on").not.toBe("rgba(0, 0, 0, 0)");
     },
   );
 });
@@ -185,10 +242,10 @@ describe("live data", () => {
   it.skipIf(usesRealServer)("moves a card when the server moves it", async () => {
     await fresh();
     await openBoard();
-    await column("Ready").getByTestId("card-3").waitFor();
+    await column("Not started").getByTestId("card-3").waitFor();
     broadcast(fake().moveCard(3, "In progress"));
     await column("In progress").getByTestId("card-3").waitFor();
-    expect(await column("Ready").getByTestId("card-3").count()).toBe(0);
+    expect(await column("Not started").getByTestId("card-3").count()).toBe(0);
   });
 
   it.skipIf(usesRealServer)("shows a card that the server adds", async () => {
@@ -207,7 +264,7 @@ describe("live data", () => {
     await fresh();
     await openBoard();
     await page.goto(`${server.url}/board/1?card=3`);
-    await dock().getByText("demo · Ready · by person").waitFor();
+    await dock().getByText("demo · Not started · by person").waitFor();
     broadcast(fake().moveCard(3, "In review"));
     await dock().getByText("demo · In review · by person").waitFor();
   });
@@ -215,7 +272,7 @@ describe("live data", () => {
 
 describe("the decisions", () => {
   it.skipIf(usesRealServer)(
-    "approves an issue from the dock and moves the card to Ready",
+    "approves an issue from the dock and moves the card to Not started",
     async () => {
       await fresh();
       await openBoard();
@@ -223,7 +280,7 @@ describe("the decisions", () => {
       await dock().getByText("Approve: Fix the login redirect").waitFor();
       await dock().getByRole("button", { name: "Approve" }).click();
       await status("Approved #2").waitFor();
-      await column("Ready").getByTestId("card-2").waitFor();
+      await column("Not started").getByTestId("card-2").waitFor();
       expect(fake().requests.at(-1)).toMatchObject({ method: "POST", path: "/v1/cards/2/approve" });
       // Nothing waits for you any more.
       await dock().getByRole("button", { name: "Approve" }).waitFor({ state: "detached" });
@@ -292,10 +349,10 @@ describe("dragging cards", () => {
       await fresh();
       await openBoard();
       const before = fake().requests.length;
-      // Ready -> Done: four columns to the right.
+      // Not started -> Done: four columns to the right.
       await drag(card(3), 4);
       await alert("Cannot move #3 to Done: Nobody decides this card now").waitFor();
-      await column("Ready").getByTestId("card-3").waitFor();
+      await column("Not started").getByTestId("card-3").waitFor();
       expect(fake().requests.length).toBe(before);
     },
   );
@@ -308,12 +365,12 @@ describe("dragging cards", () => {
     await column("In progress").getByTestId("card-1").waitFor();
   });
 
-  it.skipIf(usesRealServer)("approves an issue dropped on Ready", async () => {
+  it.skipIf(usesRealServer)("approves an issue dropped on Not started", async () => {
     await fresh();
     await openBoard();
     await drag(card(2), 1);
     await status("Approved #2").waitFor();
-    await column("Ready").getByTestId("card-2").waitFor();
+    await column("Not started").getByTestId("card-2").waitFor();
     expect(fake().requests.at(-1)).toMatchObject({ method: "POST", path: "/v1/cards/2/approve" });
   });
 
@@ -349,7 +406,7 @@ describe("dragging cards", () => {
     // The library listens for the arrow keys one task after the lift (as in drag() above).
     await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 0)));
     await page.keyboard.press("ArrowRight");
-    await expect.poll(spoken).toContain("is over the column Ready");
+    await expect.poll(spoken).toContain("is over the column Not started");
     await page.keyboard.press("Escape");
     await live.filter({ hasText: "Cancelled. #2" }).waitFor({ state: "attached" });
   });
@@ -363,7 +420,7 @@ describe("dragging cards", () => {
       width: number;
       height: number;
     };
-    const to = (await column("Ready").boundingBox()) as {
+    const to = (await column("Not started").boundingBox()) as {
       x: number;
       y: number;
       width: number;
@@ -376,16 +433,16 @@ describe("dragging cards", () => {
     await page.mouse.move(to.x + to.width / 2, to.y + 120, { steps: 20 });
     await page.mouse.up();
     await status("Approved #2").waitFor();
-    await column("Ready").getByTestId("card-2").waitFor();
+    await column("Not started").getByTestId("card-2").waitFor();
   });
 
   it.skipIf(usesRealServer)(
-    "refuses an issue that waits for approval dropped anywhere but Ready",
+    "refuses an issue that waits for approval dropped anywhere but Not started",
     async () => {
       await fresh();
       await openBoard();
       await drag(card(2), 2);
-      await alert("This issue waits for your approval: drop it on Ready").waitFor();
+      await alert("This issue waits for your approval: drop it on Not started").waitFor();
       await column("Backlog").getByTestId("card-2").waitFor();
     },
   );
@@ -431,13 +488,15 @@ describe("the dock", () => {
       await openBoard();
       // Without a choice the dock shows the first live card.
       await dock().getByRole("heading", { name: "Add a feature" }).waitFor();
-      await dock().getByText("Moved from Backlog to Ready", { exact: true }).waitFor();
+      await dock().getByText("Moved from Backlog to Not started", { exact: true }).waitFor();
       await dock().getByText("Run 1 started: Coder, code").waitFor();
       const run = dock().getByRole("link", { name: "Run 1", exact: true });
       expect(await run.getAttribute("href")).toBe("/runs/1");
       await dock().getByText(".moebius/code.luau · built in").waitFor();
       await dock().getByText('moebius.wait("nothing to do in In progress")').waitFor();
-      await dock().getByText("Coder · code (running)").waitFor();
+      await dock().getByText("Coder · code", { exact: true }).waitFor();
+      // The state is said once, by the pill beside the title — the run line does not repeat it.
+      await dock().getByText("Live", { exact: true }).waitFor();
 
       await dock().getByRole("link", { name: "Open the script" }).click();
       await page.waitForURL("**/board/1/scripts/In%20progress");
@@ -474,7 +533,7 @@ describe("the dock", () => {
     );
     expect(scrolls).toBe(false);
     // The card keeps to its column, too.
-    const lane = (await column("Ready").boundingBox()) as { x: number; width: number };
+    const lane = (await column("Not started").boundingBox()) as { x: number; width: number };
     const tile = (await card(4).boundingBox()) as { x: number; width: number };
     expect(tile.x + tile.width).toBeLessThanOrEqual(lane.x + lane.width);
   });
@@ -490,52 +549,61 @@ describe("the dock", () => {
     await dock().getByRole("button", { name: "Close the inspector" }).click();
     await dock().waitFor({ state: "detached" });
     await page.reload();
-    await column("Ready").waitFor();
+    await column("Not started").waitFor();
     expect(await dock().count()).toBe(0);
   });
 });
+
+/** One of the page's own choices: open it and take the row that shows `option`. */
+const pick = (scope: Page | Locator, label: string, option: string) =>
+  pickOption(page, scope.getByLabel(label), option);
+
+/** The tiles on the board, counted once the page has redrawn. The filters live in the address, so a choice is taken
+ * by a route before the columns follow it; counting at once can read the board as it was. */
+const shownIs = (count: number) =>
+  expect
+    .poll(() => page.getByTestId(/^card-/).count(), { timeout: 10_000, message: `${count} cards` })
+    .toBe(count);
 
 describe("the filters", () => {
   it.skipIf(usesRealServer)("filters by column, agent and status, and clears", async () => {
     await fresh();
     await openBoard();
     const filters = page.getByRole("search", { name: "Filter the cards" });
-    const shown = () => page.getByTestId(/^card-/).count();
-    expect(await shown()).toBe(7);
+    expect(await page.getByTestId(/^card-/).count()).toBe(7);
 
-    await filters.getByLabel("Column").selectOption("Done");
+    await pick(filters, "Column", "Done");
+    await shownIs(1);
     await card(7).waitFor();
-    expect(await shown()).toBe(1);
-    expect(await column("Ready").count()).toBe(0);
+    expect(await column("Not started").count()).toBe(0);
     await page.waitForURL("**column=Done");
 
     await filters.getByRole("button", { name: "Clear" }).click();
+    await shownIs(7);
     await card(3).waitFor();
-    expect(await shown()).toBe(7);
 
-    await filters.getByLabel("Agent").selectOption("Reviewer");
+    await pick(filters, "Agent", "Reviewer");
+    await shownIs(1);
     await card(6).waitFor();
-    expect(await shown()).toBe(1);
-    await filters.getByLabel("Agent").selectOption("");
+    await pick(filters, "Agent", "All agents");
+    await shownIs(7);
 
-    await filters.getByLabel("Status").selectOption("needs-you");
+    await pick(filters, "Status", "Your turn");
+    await shownIs(2);
     await card(2).waitFor();
-    expect(await shown()).toBe(2);
     await card(5).waitFor();
 
-    await filters.getByLabel("Status").selectOption("blocked");
+    await pick(filters, "Status", "Blocked");
+    await shownIs(1);
     await card(4).waitFor();
-    expect(await shown()).toBe(1);
 
     // Two filters together, and a reload keeps them.
-    await filters.getByLabel("Status").selectOption("stuck");
-    await filters.getByLabel("Agent").selectOption("Coder");
+    await pick(filters, "Status", "Stuck");
+    await pick(filters, "Agent", "Coder");
+    await shownIs(0);
     await page.reload();
-    await column("Ready")
-      .waitFor({ state: "detached" })
-      .catch(() => {});
-    expect(await shown()).toBe(0);
-    expect(await filters.getByLabel("Agent").inputValue()).toBe("Coder");
+    await shownIs(0);
+    expect(await showing(filters.getByLabel("Agent"))).toBe("Coder");
   });
 
   it.skipIf(usesRealServer)(
@@ -544,10 +612,9 @@ describe("the filters", () => {
       await fresh();
       await openBoard();
       const filters = page.getByRole("search", { name: "Filter the cards" });
-      expect(await filters.getByLabel("Repository").inputValue()).toBe("1");
-      expect(await filters.getByLabel("Repository").locator("option").allTextContents()).toEqual([
-        "demo",
-      ]);
+      // The trigger shows the board's name, and its list holds the one board there is.
+      expect(await showing(filters.getByLabel("Repository"))).toBe("demo");
+      expect(await offers(page, filters.getByLabel("Repository"))).toEqual(["demo"]);
     },
   );
 

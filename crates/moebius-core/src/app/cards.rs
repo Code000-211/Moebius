@@ -224,7 +224,7 @@ impl App {
             reason,
         )?;
         self.store.resolve_inbox_for_card(card_id)?;
-        self.move_card(card_id, columns::READY)
+        self.move_card(card_id, columns::NOT_STARTED)
     }
 
     /// A person retries a card that is stuck or whose pull request was closed without a merge: the decision is

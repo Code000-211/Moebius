@@ -1,7 +1,18 @@
 import { describe, expect, it } from "vitest";
 import type { UsageReport } from "../../api/types/usage";
 import { dayNumber } from "./figures";
-import { doings, heat, lensWhen, modelColours, span, tiles, todayOf, WEEKS } from "./model";
+import {
+  dayMeter,
+  doings,
+  heat,
+  lensWhen,
+  modelColours,
+  span,
+  tiles,
+  todayOf,
+  tokenFigure,
+  WEEKS,
+} from "./model";
 
 const report = (extra: Partial<UsageReport> = {}): UsageReport => ({
   today: "2026-10-28",
@@ -29,22 +40,47 @@ const report = (extra: Partial<UsageReport> = {}): UsageReport => ({
 });
 
 describe("the tiles", () => {
-  it("note the day's budget today and the average over a longer window", () => {
-    const today = tiles(report(), 1);
+  it("carry the totals the focal figure does not, each with its own note", () => {
+    const today = tiles(report());
     expect(today.map((tile) => [tile.label, tile.value])).toEqual([
-      ["Tokens", "1.84M"],
       ["Model calls", "1,284"],
       ["From cache", "61%"],
       ["Model time", "3 h 12 m"],
     ]);
-    expect(today[0]?.note).toBe("23% of the 8M daily budget");
-    expect(today[1]?.note).toBe("1,433 tokens per call on average");
-    expect(tiles(report(), 7)[0]?.note).toBe("263k tokens a day on average");
+    expect(today[0]?.note).toBe("1,433 tokens per call on average");
     const free = report();
-    free.totals.day_budget = null;
     free.totals.calls = 0;
-    expect(tiles(free, 1)[0]?.note).toBe("Input and output tokens");
-    expect(tiles(free, 1)[1]?.note).toBe("No model call yet");
+    expect(tiles(free)[0]?.note).toBe("No model call yet");
+  });
+
+  it("name the focal token figure for the window it counts", () => {
+    const day = tokenFigure(report());
+    expect([day.title, day.value, day.note]).toEqual([
+      "Tokens today",
+      "500k",
+      "of the 8M token budget, 6% used",
+    ]);
+    expect(day.meter?.word).toBe("Within budget");
+    // A longer window counts what it covers and leaves the day's meter behind.
+    const week = report({ days_in_window: 7 });
+    week.totals.tokens = 12_900_000;
+    const seven = tokenFigure(week);
+    expect([seven.title, seven.value, seven.note]).toEqual([
+      "Tokens, last 7 days",
+      "12.9M",
+      "1.84M a day on average, against a daily budget of 8M",
+    ]);
+    expect(seven.meter).toBeNull();
+    const free = report({ days_in_window: 7 });
+    free.totals.day_budget = null;
+    expect(tokenFigure(free).note).toBe("263k a day on average");
+    const noBudget = report();
+    noBudget.totals.day_budget = null;
+    expect(tokenFigure(noBudget)).toMatchObject({
+      title: "Tokens today",
+      note: "Input and output tokens",
+      meter: null,
+    });
   });
 
   it("tell the span of a window and the tokens used today", () => {
@@ -68,6 +104,42 @@ describe("the colours of the models", () => {
       })),
     });
     expect(modelColours(many)("m6")).toBe(1);
+  });
+});
+
+describe("today against the day's budget", () => {
+  /** Today's tokens, with the rest of the year left as it is. */
+  const todayUses = (tokens: number) => {
+    const each = report();
+    each.days = each.days.map((day) => (day.date === each.today ? { ...day, tokens } : day));
+    return each;
+  };
+
+  it("says how today stands in words as well as a hue", () => {
+    expect(dayMeter(todayUses(500_000))).toMatchObject({
+      tokens: 500_000,
+      budget: 8_000_000,
+      used: 0.0625,
+      word: "Within budget",
+      tone: "progress",
+    });
+    expect(dayMeter(todayUses(6_600_000))).toMatchObject({
+      word: "Near the budget",
+      tone: "attention",
+    });
+    expect(dayMeter(todayUses(8_000_000))).toMatchObject({
+      word: "Over budget",
+      tone: "error",
+    });
+  });
+
+  it("has nothing to say when there is no budget", () => {
+    const free = report();
+    free.totals.day_budget = null;
+    expect(dayMeter(free)).toBeNull();
+    const zero = report();
+    zero.totals.day_budget = 0;
+    expect(dayMeter(zero)).toBeNull();
   });
 });
 

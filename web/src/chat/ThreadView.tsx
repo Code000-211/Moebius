@@ -3,12 +3,55 @@
  * to its end as it grows, unless the person scrolled up (see `follow.ts`); reaching the end again, or sending a message
  * (`sent` counts them), follows again.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
+import {
+  type ReactNode,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { type ScrollerProps, Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { Turn } from "../ui/chat/Turn";
+import { Empty } from "../ui/page/Empty";
+import { useScrollFades } from "../ui/page/ScrollFades";
 import type { Entry } from "./conversation";
-import { afterScroll, afterSend, byPerson, type ScrollState, shouldRepin } from "./follow";
+import {
+  afterScroll,
+  afterSend,
+  afterToggle,
+  byPerson,
+  type ScrollState,
+  shouldRepin,
+} from "./follow";
 import { groupTurns } from "./turns";
+
+/**
+ * The scroller of the list, with the edges that have more behind them faded out. A conversation is read from its end,
+ * so the text cut off at the top is always the part just left behind; fading it lets the turns blend into the heading
+ * above rather than ending mid-word. The object that names it is made once, below, because a new one each render would
+ * make the list build its scroller again.
+ */
+function FadedScroller({ children, style, ref, ...rest }: ScrollerProps) {
+  const fades = useScrollFades<HTMLDivElement>();
+  return (
+    <div
+      {...rest}
+      ref={(element) => {
+        fades.box.current = element;
+        if (typeof ref === "function") ref(element);
+        else if (ref) ref.current = element;
+      }}
+      onScroll={fades.measure}
+      style={{ ...style, ...fades.style }}
+    >
+      {children}
+    </div>
+  );
+}
+
+const COMPONENTS = { Scroller: FadedScroller };
 
 interface ThreadViewProps {
   entries: Entry[];
@@ -16,20 +59,44 @@ interface ThreadViewProps {
   working: boolean;
   /** How many messages the person has sent from this page; a new one follows the conversation again. */
   sent: number;
-  /** Shown when there is nothing to show yet. */
-  empty: string;
+  /** What belongs here while it is empty, said in a sentence. Leave it out while the page is still loading. */
+  empty?: string;
+  /** What the empty place is called; "Nothing said yet" unless the page says otherwise. */
+  emptyTitle?: string;
+  /** What a person can press to start, while the place is empty: an empty chat that offers nothing asks to be read rather than used. */
+  emptyAction?: ReactNode;
+  /**
+   * Drawn in the floating chat's dock rather than on a page: one row of turns in less room, so the rhythm tightens and
+   * the empty place sits on the dock's own surface instead of in a card inside it.
+   */
+  compact?: boolean;
 }
 
-export function ThreadView({ entries, working, sent, empty }: ThreadViewProps) {
-  const turns = useMemo(() => groupTurns(entries, working), [entries, working]);
+export function ThreadView({
+  entries,
+  working,
+  sent,
+  empty,
+  emptyTitle = "Nothing said yet",
+  emptyAction,
+  compact = false,
+}: ThreadViewProps) {
+  // An answer arrives piece by piece, and the person may be typing while it does: the words shown trail the events by
+  // a render rather than cutting the keystroke off, and a long conversation groups once per batch instead of per piece.
+  const shown = useDeferredValue(entries);
+  const turns = useMemo(() => groupTurns(shown, working), [shown, working]);
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
   const list = useRef<VirtuosoHandle>(null);
   const scroller = useRef<HTMLElement | null>(null);
+  /** Takes the listeners of the scroller currently held, so attaching a new one leaves nothing behind. */
+  const leave = useRef<(() => void) | null>(null);
   const state = useRef<ScrollState>({ follow: true, top: 0 });
   const lastGesture = useRef<number | null>(null);
   const repins = useRef(0);
 
   const toggle = useCallback((key: string) => {
+    // What is opened is read where it is, so the list lets go of its end rather than scrolling the new text away.
+    state.current = afterToggle(state.current);
     setUnfolded((held) => {
       const next = new Set(held);
       if (!next.delete(key)) next.add(key);
@@ -69,14 +136,8 @@ export function ThreadView({ entries, working, sent, empty }: ThreadViewProps) {
 
   const attach = useCallback(
     (element: HTMLElement | Window | null) => {
-      const previous = scroller.current;
-      if (previous) {
-        previous.onscroll = null;
-        previous.onwheel = null;
-        previous.ontouchmove = null;
-        previous.onkeydown = null;
-        previous.onpointerdown = null;
-      }
+      leave.current?.();
+      leave.current = null;
       scroller.current = element instanceof HTMLElement ? element : null;
       const current = scroller.current;
       if (!current) return;
@@ -84,12 +145,21 @@ export function ThreadView({ entries, working, sent, empty }: ThreadViewProps) {
         lastGesture.current = performance.now();
       };
       current.onscroll = () => onScroll(current);
-      current.onwheel = gesture;
-      current.ontouchmove = gesture;
       current.onkeydown = gesture;
       // A press on the scroller itself is the scrollbar's; a press on a turn is not a scroll.
       current.onpointerdown = (event) => {
         if (event.target === current) gesture();
+      };
+      // Wheel and touch are listened to passively: a listener that could cancel them makes the browser wait for it
+      // before the page moves, and this one only notes that a hand moved.
+      current.addEventListener("wheel", gesture, { passive: true });
+      current.addEventListener("touchmove", gesture, { passive: true });
+      leave.current = () => {
+        current.onscroll = null;
+        current.onkeydown = null;
+        current.onpointerdown = null;
+        current.removeEventListener("wheel", gesture);
+        current.removeEventListener("touchmove", gesture);
       };
     },
     [onScroll],
@@ -112,9 +182,9 @@ export function ThreadView({ entries, working, sent, empty }: ThreadViewProps) {
 
   if (turns.length === 0) {
     return (
-      <p className="py-double text-center text-sm text-low" data-testid="empty-thread">
-        {empty}
-      </p>
+      <div className="p-4" data-testid="empty-thread">
+        <Empty title={emptyTitle} body={empty} action={emptyAction} plain={compact} />
+      </div>
     );
   }
   return (
@@ -126,11 +196,12 @@ export function ThreadView({ entries, working, sent, empty }: ThreadViewProps) {
       totalListHeightChanged={toEnd}
       computeItemKey={(_, turn) => turn.key}
       increaseViewportBy={400}
+      components={COMPONENTS}
       data-testid="thread"
       style={{ height: "100%" }}
       itemContent={(_, turn) => (
-        <div className="pb-[18px]">
-          <Turn turn={turn} unfolded={unfolded} onToggle={toggle} />
+        <div className={compact ? "pb-3" : "pb-6"}>
+          <Turn turn={turn} unfolded={unfolded} onToggle={toggle} compact={compact} />
         </div>
       )}
     />

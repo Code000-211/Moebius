@@ -3,11 +3,15 @@
  * restarts (`restart_keys` of `GET /v1/settings`), with a Restart button. While the server restarts it says so; the
  * event stream reconnects by itself and the next answer of the settings, which has nothing left to restart, takes the
  * banner away. The Settings and Models pages both show it.
+ *
+ * A restart is something the server needs from a person, so the banner is the one attention-coloured card of the
+ * page, with the word "Restart" beside the hue.
  */
+import { WarningCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { restartServer, settings } from "../../api/calls/settings";
-import { isApiError } from "../../api/http";
+import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import { Button } from "../../ui/components/Button";
 import { Notice } from "../../ui/page/Notice";
@@ -30,32 +34,38 @@ export function RestartBanner() {
     return (
       <div
         role="status"
-        className="rounded-md border border-[var(--amber-border)] bg-amber-fill p-base text-[13px] text-amber"
+        className="flex items-start gap-4 rounded-card bg-attention-fill p-4 text-attention-text"
       >
-        Restarting the server. The page reconnects by itself.
+        <WarningCircleIcon className="mt-1 size-4 shrink-0" aria-hidden="true" />
+        <p className="m-0 min-w-0 break-words text-base">
+          Restarting the server. The page reconnects by itself.
+        </p>
       </div>
     );
   }
   if (!needed || !data.data) {
     return restart.isError ? (
       <Notice tone="error">
-        {isApiError(restart.error) ? restart.error.message : "The server could not be restarted."}
+        {sayError(restart.error, "Could not restart the server. Try again.")}
       </Notice>
     ) : null;
   }
   return (
-    <div className="flex flex-col gap-half">
-      <div className="flex flex-wrap items-center gap-base rounded-md border border-[var(--amber-border)] bg-amber-fill p-base">
-        <span className="min-w-0 flex-1 text-[13px] text-amber">
-          {`Restart the server to use: ${data.data.restart_keys.join(", ")}`}
-        </span>
-        <Button size="sm" onClick={() => restart.mutate()}>
+    <div className="flex flex-col gap-4">
+      <section className="flex flex-col gap-4 rounded-card bg-attention-fill p-4 sm:flex-row sm:items-start">
+        <div className="flex min-w-0 flex-1 items-start gap-4 text-attention-text">
+          <WarningCircleIcon className="mt-1 size-4 shrink-0" aria-hidden="true" />
+          <p className="m-0 min-w-0 break-words text-base">
+            {`Restart the server to use: ${data.data.restart_keys.join(", ")}`}
+          </p>
+        </div>
+        <Button size="sm" disabled={restart.isPending} onClick={() => restart.mutate()}>
           Restart
         </Button>
-      </div>
+      </section>
       {restart.isError && (
         <Notice tone="error">
-          {isApiError(restart.error) ? restart.error.message : "The server could not be restarted."}
+          {sayError(restart.error, "Could not restart the server. Try again.")}
         </Notice>
       )}
     </div>

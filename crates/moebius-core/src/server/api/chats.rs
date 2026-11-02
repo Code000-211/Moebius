@@ -7,7 +7,8 @@
 //!   changes the model or reasoning level of a waiting chat.
 //! - `POST /v1/chats/{id}/messages` `{message}`: writes to a chat. `POST /v1/chats/{id}/offer` `{reason?}`: offers
 //!   what a chat's worktree changes as a change without ending the chat. `POST /v1/chats/{id}/end`: ends a chat.
-//!   `POST /v1/chats/{id}/seen` `{seq}`: a person has read a chat that far.
+//!   `POST /v1/chats/{id}/seen` `{seq}`: a person has read a chat that far. `POST /v1/chats/{id}/title` `{title}`:
+//!   names a chat, in place of the title taken from its first message.
 //! - `GET /v1/grillings` and `GET /v1/grillings/{id}`: what grilling chats ended in. `POST /v1/grillings/{id}/confirm`
 //!   `{issues: [{title, body, blocked_by}]}` makes a card of each issue the person kept; `POST
 //!   /v1/grillings/{id}/dismiss` drops the proposal or the report (see [`crate::harness::grilling`]).
@@ -33,6 +34,7 @@ pub(super) fn routes() -> Router<ApiState> {
         .route("/v1/chats/{id}/end", post(end_chat))
         .route("/v1/chats/{id}/seen", post(chat_seen))
         .route("/v1/chats/{id}/settings", post(change_chat_settings))
+        .route("/v1/chats/{id}/title", post(rename_chat))
         .route("/v1/grillings", get(grillings))
         .route("/v1/grillings/{id}", get(get_grilling))
         .route("/v1/grillings/{id}/confirm", post(confirm_grilling))
@@ -79,6 +81,13 @@ pub struct NewChatSettings {
     pub model: Option<String>,
     #[serde(default)]
     pub thinking: Option<String>,
+}
+
+/// The body of `POST /v1/chats/{id}/title`: the name a person gives a chat; empty gives back the title taken from
+/// its first message.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatTitle {
+    pub title: String,
 }
 
 /// The body of a message to a chat: what the person wrote, which the chat shows, and optionally where they are in the
@@ -189,6 +198,14 @@ async fn change_chat_settings(
         app.change_chat_settings(&*runs, id, chosen)
     })
     .await
+}
+
+async fn rename_chat(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+    axum::Json(named): axum::Json<ChatTitle>,
+) -> Result<axum::Json<Chat>, ApiError> {
+    blocking(&state.app, move |app| app.rename_chat(id, &named.title)).await
 }
 
 async fn chats(
@@ -607,6 +624,40 @@ mod tests {
             status(app, working.id) == "stopped"
         })
         .await;
+    }
+
+    // Unix only: the fake Pi is a Python script started by its `#!` line.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_chat_takes_a_name_and_gives_it_back() {
+        let (_dir, state, addr) = start().await;
+        let run = chat(&state, &addr, "Fix the login screen\nand the footer", None).await;
+        let name = |title: &str, id: i64| {
+            post(
+                &state,
+                &addr,
+                format!("/v1/chats/{id}/title"),
+                serde_json::json!({ "title": title }),
+            )
+        };
+        // Without a name the chat is titled by the first line of its first message.
+        let listed: Vec<Chat> = get(&state, &addr, "/v1/chats").await;
+        assert_eq!(listed[0].title, "Fix the login screen");
+
+        let named: Chat = name("  The login screen  ", run.id)
+            .await
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(named.title, "The login screen");
+        let listed: Vec<Chat> = get(&state, &addr, "/v1/chats").await;
+        assert_eq!(listed[0].title, "The login screen");
+
+        // A blank name gives back the title of the first message; a name only the run of a chat can take.
+        assert_eq!(name("   ", run.id).await.status(), 200);
+        let listed: Vec<Chat> = get(&state, &addr, "/v1/chats").await;
+        assert_eq!(listed[0].title, "Fix the login screen");
+        assert_eq!(name("Anything", 4242).await.status(), 404);
     }
 
     // Unix only: the fake Pi is a Python script started by its `#!` line.

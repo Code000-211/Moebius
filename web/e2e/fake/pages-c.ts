@@ -22,6 +22,8 @@ export interface PagesCFake {
   refuseNext(method: string, path: string, status: number, message: string): void;
   /** The text of the script of a column (lower case), once saved. */
   readonly scripts: Map<string, string>;
+  /** What `GET /v1/retros` lists. A test that needs more days than the four writes them here. */
+  readonly days: Array<{ date: string; status: string; errors: number; proposals: number }>;
 }
 
 type Json = Record<string, unknown>;
@@ -66,9 +68,19 @@ export function parseRules(
   return { rules: rules.map((rule) => ({ name: rule.name, text: rule.lines.join("\n").trim() })) };
 }
 
+/** The path as a person writes it: a segment with a space arrives from the browser as `%20`. */
+function decoded(path: string): string {
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
+}
+
 const SCRIPT_FILES: Record<string, string> = {
   backlog: "backlog",
-  ready: "ready",
+  // The column is "Not started"; its file in a repository keeps the name it has always had.
+  "not started": "ready",
   "in progress": "code",
   "in review": "review",
   "ready to merge": "merge",
@@ -207,10 +219,11 @@ export function createPagesCFake(
 
   // The Retro.
   const today = new Date().toISOString().slice(0, 10);
-  let retroDays: Array<{ date: string; status: string; errors: number; proposals: number }> = [
+  const retroDays: Array<{ date: string; status: string; errors: number; proposals: number }> = [
     { date: "2026-10-28", status: "proposed", errors: 6, proposals: 3 },
     { date: "2026-10-27", status: "reported", errors: 0, proposals: 0 },
     { date: "2026-10-26", status: "failed", errors: 3, proposals: 0 },
+    { date: "2026-10-25", status: "proposed", errors: 1, proposals: 2 },
   ];
   const proposals = [
     {
@@ -278,6 +291,42 @@ export function createPagesCFake(
       ],
       diff: "--- a/moebius.toml\n+++ b/moebius.toml\n@@ -1 +1 @@\n-round_limit = 5\n+round_limit = 8\n",
       edits: { set: { round_limit: 8 }, remove: [] },
+      repository: null,
+      change: null,
+      at: NOW(),
+    },
+    // The two the Inbox holds items for (`fake/pages-a.ts`), from an earlier day: one for the harness, whose change
+    // is a branch rather than a diff, and one for `moebius.toml`, whose change comes as a diff.
+    {
+      id: 4,
+      kind: "harness",
+      retro_date: "2026-10-25",
+      branch: "proposal/2026-10-25-read-tests",
+      title: "Let the Coder read the tests first",
+      body: "Two of the Coder's changes on 2026-10-25 failed a test that was already in the repository; its instructions now say to read the tests a change has to pass before writing it.",
+      agents: ["Coder"],
+      cards: [3],
+      status: "positive",
+      trials: [],
+      diff: "",
+      edits: {},
+      repository: null,
+      change: null,
+      at: NOW(),
+    },
+    {
+      id: 5,
+      kind: "settings",
+      retro_date: "2026-10-25",
+      branch: "proposal/2026-10-25-round-limit",
+      title: "Raise the round limit to 7",
+      body: "Cards ran out of rounds before the review passed.",
+      agents: [],
+      cards: [],
+      status: "untried",
+      trials: [],
+      diff: "--- a/moebius.toml\n+++ b/moebius.toml\n@@ -1 +1 @@\n-round_limit = 5\n+round_limit = 7\n",
+      edits: { set: { round_limit: 7 }, remove: [] },
       repository: null,
       change: null,
       at: NOW(),
@@ -477,6 +526,7 @@ export function createPagesCFake(
       [
         "/v1/automations",
         "/v1/retros",
+        "/v1/proposals",
         "/v1/lessons",
         "/v1/research",
         "/v1/decision-model",
@@ -488,9 +538,12 @@ export function createPagesCFake(
     const raw = method === "GET" ? "" : await readBody(request);
     const body = (raw === "" ? {} : JSON.parse(raw)) as Json;
     if (method !== "GET") requests.push({ method, path, body });
-    const refusal = refusals.get(`${method} ${path}`);
+    // A segment a person wrote reaches the server encoded ("scripts/Not%20started"); a test names it as it reads it.
+    const plain = `${method} ${decoded(path)}`;
+    const refusal = refusals.get(`${method} ${path}`) ?? refusals.get(plain);
     if (refusal) {
       refusals.delete(`${method} ${path}`);
+      refusals.delete(plain);
       return reply(response, refusal.status, refusal.message);
     }
 
@@ -583,6 +636,7 @@ export function createPagesCFake(
       return reply(response, 200, made);
     }
     if (path === "/v1/retros" && method === "GET") return reply(response, 200, retroDays);
+    if (path === "/v1/proposals" && method === "GET") return reply(response, 200, proposals);
     if (retroDay && method === "GET") {
       const date = retroDay[1] as string;
       const day = retroDays.find((each) => each.date === date);
@@ -597,7 +651,7 @@ export function createPagesCFake(
             ]
           : [],
         report: { date, errors: full ? report.errors : [] },
-        proposals: full ? proposals : [],
+        proposals: proposals.filter((each) => each.retro_date === date),
       });
     }
     if (path === "/v1/retros" && method === "POST") {
@@ -605,7 +659,7 @@ export function createPagesCFake(
       if (retroDays.some((day) => day.date === date)) {
         return reply(response, 409, `the Retro of ${date} exists already`);
       }
-      retroDays = [{ date, status: "reported", errors: 0, proposals: 0 }, ...retroDays];
+      retroDays.unshift({ date, status: "reported", errors: 0, proposals: 0 });
       broadcast({ kind: "retro_done", data: { date, status: "reported" } });
       return reply(response, 200, {
         date,
@@ -760,6 +814,7 @@ export function createPagesCFake(
     handle,
     requests,
     scripts,
+    days: retroDays,
     refuseNext(method, path, status, message) {
       refusals.set(`${method} ${path}`, { status, message });
     },

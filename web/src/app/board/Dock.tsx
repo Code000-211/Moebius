@@ -1,46 +1,62 @@
 /**
- * The inspector dock of the board: the card chosen, with what a person can do about it (approve, merge, send back,
- * retry), where it stands (run, guard, state), its runs, the diff of its change, its history and the script of its column, read-only. It is
- * the web counterpart of the desktop board's dock plus the history screen; the script's editor comes with its page.
+ * The inspector dock of the board: the card chosen, with the issue it came from and the change it offered — the
+ * headline of its diff, which opens the whole diff in a sheet — then what a person can do about it (approve, merge,
+ * send back, retry), where it stands (run, waiting, checks, cost), its runs, its history and the script of its
+ * column, read-only.
+ * It is a drawer beside the board, so the board stays readable behind it: no border, the
+ * groups apart by space, and every control labelled. It is the web counterpart of the desktop board's dock plus the
+ * history screen; the script's editor comes with its page.
  */
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useId, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { Link } from "react-router";
 import { cardRuns, history, script } from "../../api/calls/board";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Board, Card, InboxItem } from "../../api/types/board";
-import { Changes } from "../../diff/Changes";
+import { ChangesCard } from "../../diff/Changes";
+import { Markdown } from "../../ui/chat/Markdown";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
-import { KanbanBadge } from "../../ui/components/KanbanBadge";
 import { KanbanIssuePanel, KanbanIssueSection } from "../../ui/components/KanbanIssuePanel";
 import { RunningDots } from "../../ui/components/RunningDots";
+import { ago } from "../../ui/lib/format";
+import { useNow } from "../../ui/lib/useNow";
+import { Field } from "../../ui/page/Field";
+import { Notice } from "../../ui/page/Notice";
+import { Status, type Tone } from "../../ui/page/Status";
 import type { Decision } from "./decisions";
 import {
-  ago,
   type CardStatus,
   cardStatus,
   describeHistory,
   issueUrl,
   STATUS_LABELS,
   tokens,
+  waitingLine,
 } from "./model";
 
-const STATUS_TONE: Record<CardStatus, "plain" | "live" | "teal" | "amber" | "red"> = {
-  live: "live",
-  "needs-you": "amber",
-  stuck: "red",
-  blocked: "red",
-  waiting: "amber",
-  idle: "plain",
+const STATUS_TONE: Record<CardStatus, Tone> = {
+  live: "progress",
+  "needs-you": "attention",
+  stuck: "error",
+  blocked: "error",
+  waiting: "attention",
+  idle: "neutral",
 };
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+/** The checks of a change in a word. */
+const CHECKS: Record<string, string> = {
+  pending: "Running",
+  success: "Green",
+  failure: "Failed",
+};
+
+function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex items-baseline gap-base border-b border-line/50 py-half last:border-b-0">
-      <dt className="w-14 shrink-0 font-mono text-[11px] text-low">{label}</dt>
-      <dd className="m-0 min-w-0 flex-1 text-xs text-normal [overflow-wrap:anywhere]">
+    <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+      <dt className="w-20 shrink-0 text-sm font-semibold text-secondary">{label}</dt>
+      <dd className="m-0 min-w-0 flex-1 text-base text-text [overflow-wrap:anywhere]">
         {children}
       </dd>
     </div>
@@ -52,21 +68,25 @@ function Actions({
   card,
   item,
   busy,
-  rejectAsk,
+  askFor,
+  onAskAnswered,
   onDecide,
 }: {
   card: Card;
   item: InboxItem;
   busy: boolean;
-  rejectAsk: number;
+  /** The card a send-back is waiting on a reason for; this one, or none. */
+  askFor: number | null;
+  /** Says that the reason was sent or dropped, so the next send-back asks again. */
+  onAskAnswered: () => void;
   onDecide: (decision: Decision) => void;
 }) {
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
-  const reasonId = useId();
+  // The ask names the card it is about, so opening another card does not find this one's question waiting for it.
   useEffect(() => {
-    if (rejectAsk > 0) setRejecting(true);
-  }, [rejectAsk]);
+    if (askFor === card.id) setRejecting(true);
+  }, [askFor, card.id]);
   const change = typeof item.data.change === "number" ? item.data.change : null;
   const number = card.number;
 
@@ -77,24 +97,34 @@ function Actions({
       onDecide({ kind: "reject", change, number, reason: reason.trim() });
       setRejecting(false);
       setReason("");
+      onAskAnswered();
     };
     return (
       <form
-        className="flex flex-col gap-base"
+        className="flex flex-col gap-3"
         onSubmit={(e) => {
           e.preventDefault();
           send();
         }}
       >
-        <label htmlFor={reasonId} className="text-xs text-low">
-          Why? The next round is told
-        </label>
-        <Input id={reasonId} value={reason} onChange={(e) => setReason(e.target.value)} autoFocus />
-        <div className="flex gap-base">
+        <Field label="Why? The next round is told">
+          {(id) => (
+            <Input id={id} value={reason} onChange={(e) => setReason(e.target.value)} autoFocus />
+          )}
+        </Field>
+        <div className="flex flex-wrap gap-2">
           <Button type="submit" size="sm" disabled={!ready || busy}>
             Send back
           </Button>
-          <Button type="button" size="sm" variant="ghost" onClick={() => setRejecting(false)}>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setRejecting(false);
+              onAskAnswered();
+            }}
+          >
             Cancel
           </Button>
         </div>
@@ -103,7 +133,7 @@ function Actions({
   }
 
   return (
-    <div className="flex flex-wrap gap-base">
+    <div className="flex flex-wrap gap-2">
       {item.kind === "approve_issue" && (
         <Button
           size="sm"
@@ -122,7 +152,7 @@ function Actions({
           >
             Merge
           </Button>
-          <Button size="sm" variant="outline" disabled={busy} onClick={() => setRejecting(true)}>
+          <Button size="sm" variant="secondary" disabled={busy} onClick={() => setRejecting(true)}>
             Reject with a reason
           </Button>
         </>
@@ -147,15 +177,15 @@ function QueryText({
   query: { isPending: boolean; error: unknown };
   empty?: string;
 }) {
-  if (query.isPending) return <p className="m-0 text-xs text-low">Reading…</p>;
+  if (query.isPending) return <p className="m-0 text-sm text-secondary">Reading</p>;
   if (query.error) {
     return (
-      <p role="alert" className="m-0 text-xs text-error">
+      <Notice tone="error">
         {isApiError(query.error) ? query.error.message : "Could not read this."}
-      </p>
+      </Notice>
     );
   }
-  return empty ? <p className="m-0 text-xs text-low">{empty}</p> : null;
+  return empty ? <p className="m-0 text-sm text-secondary">{empty}</p> : null;
 }
 
 export function Dock({
@@ -163,7 +193,8 @@ export function Dock({
   card,
   item,
   busy,
-  rejectAsk,
+  askFor,
+  onAskAnswered,
   onDecide,
   onClose,
 }: {
@@ -171,8 +202,9 @@ export function Dock({
   card: Card;
   item: InboxItem | undefined;
   busy: boolean;
-  /** Bumped when a drop asks to send the change back; the reason form opens. */
-  rejectAsk: number;
+  /** The card a drop asked to send back; the reason form opens for that card alone. */
+  askFor: number | null;
+  onAskAnswered: () => void;
   onDecide: (decision: Decision) => void;
   onClose: () => void;
 }) {
@@ -184,102 +216,121 @@ export function Dock({
     queryKey: keys.script(repository.id, card.column),
     queryFn: () => script(repository.id, card.column),
   });
-  const now = Math.floor(Date.now() / 1000);
+  // The history of a card is read once and stays open, so the age of the last thing it did only moves with a clock of
+  // its own.
+  const now = useNow();
   const wait = board.waiting[String(card.id)];
-  const state = card.change
-    ? `checks: ${card.change.checks}`
-    : card.blocked_by.length > 0
-      ? `blocked by ${card.blocked_by.map((n) => `#${n}`).join(", ")}`
-      : `tokens: ${tokens(card.tokens)}`;
 
   return (
     <KanbanIssuePanel
       displayId={`#${card.number}`}
       issueUrl={issueUrl(repository, card)}
       title={card.title}
-      status={<KanbanBadge name={STATUS_LABELS[status]} tone={STATUS_TONE[status]} />}
+      status={<Status tone={STATUS_TONE[status]}>{STATUS_LABELS[status]}</Status>}
       onClose={onClose}
     >
-      <div className="px-base pb-base font-mono text-[11px] text-low">
+      <p className="m-0 -mt-2 px-4 pb-6 text-sm text-secondary">
         {repository.name} · {card.column} · by {card.author}
-      </div>
+      </p>
+
+      {/* The issue is what the card asks for, and the card is only its title: without the body a person decides
+          about a sentence they were never given. */}
+      {card.body.trim() !== "" && (
+        <KanbanIssueSection title="The issue">
+          <Markdown content={card.body} keepNewlines className="max-w-prose" />
+        </KanbanIssueSection>
+      )}
+
+      {/* A change is what a person came to the card to weigh, so it follows the issue it answers instead of
+          waiting behind the runs that made it. */}
+      {card.change && (
+        <KanbanIssueSection title="Changes">
+          <ChangesCard of={{ change: card.change.id }} />
+        </KanbanIssueSection>
+      )}
 
       {item && (
-        <KanbanIssueSection title="Waits for you">
-          <p className="m-0 mb-base text-xs text-normal [overflow-wrap:anywhere]">{item.title}</p>
-          <Actions card={card} item={item} busy={busy} rejectAsk={rejectAsk} onDecide={onDecide} />
+        <KanbanIssueSection title="Your turn">
+          <p className="m-0 mb-4 text-base text-text [overflow-wrap:anywhere]">{item.title}</p>
+          <Actions
+            card={card}
+            item={item}
+            busy={busy}
+            askFor={askFor}
+            onAskAnswered={onAskAnswered}
+            onDecide={onDecide}
+          />
         </KanbanIssueSection>
       )}
 
       <KanbanIssueSection title="Where it stands">
-        <dl className="m-0">
-          <Row label="run">
+        <dl className="m-0 flex flex-col gap-3">
+          <Row label="Run">
             {card.run ? (
-              <span className="inline-flex items-center gap-base">
-                {card.run.agent} · {card.run.purpose} ({card.run.status})
+              <span className="inline-flex flex-wrap items-center gap-2">
+                {card.run.agent} · {card.run.purpose}
                 {status === "live" && <RunningDots />}
               </span>
             ) : (
-              "no run started yet"
+              "No run has started"
             )}
           </Row>
-          <Row label="guard">
-            {wait ?? "Ready in column"}
-            {card.refusals > 0 &&
-              ` · ${card.refusals} ${card.refusals === 1 ? "rule" : "rules"} broken`}
+          <Row label="Waiting">{waitingLine(wait, card.refusals)}</Row>
+          {card.change && (
+            <Row label="Checks">{CHECKS[card.change.checks] ?? card.change.checks}</Row>
+          )}
+          {card.blocked_by.length > 0 && (
+            <Row label="Blocked by">{card.blocked_by.map((n) => `#${n}`).join(", ")}</Row>
+          )}
+          <Row label="Cost">
+            <span className="tabular-nums">{tokens(card.tokens)}</span>
           </Row>
-          <Row label="state">
-            {state} · {tokens(card.tokens)}
-          </Row>
-          {card.note && <Row label="note">{card.note}</Row>}
+          {card.note && <Row label="Note">{card.note}</Row>}
         </dl>
         {card.run && (
-          <Link
-            to={`/runs/${card.run.id}`}
-            className="mt-base inline-block text-xs text-accent hover:underline"
-          >
-            Open live view
-          </Link>
+          <Button asChild variant="secondary" size="sm" className="mt-4 w-fit">
+            <Link to={`/runs/${card.run.id}`}>Open live view</Link>
+          </Button>
         )}
       </KanbanIssueSection>
 
       <KanbanIssueSection title="Runs">
-        <QueryText query={runs} empty={runs.data?.length === 0 ? "No runs yet." : undefined} />
-        <ul className="m-0 list-none p-0">
+        <QueryText query={runs} empty={runs.data?.length === 0 ? "No runs yet" : undefined} />
+        {/* biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with
+            no marker from the accessibility tree entirely */}
+        <ul role="list" className="m-0 flex list-none flex-col gap-2 p-0">
           {(runs.data ?? []).map((run) => (
-            <li key={run.id} className="py-[2px] text-xs">
-              <Link to={`/runs/${run.id}`} className="text-accent hover:underline">
-                Run {run.id}
+            <li key={run.id} className="flex min-w-0 flex-wrap items-center gap-3">
+              <Link
+                to={`/runs/${run.id}`}
+                className="-ml-2 inline-flex min-h-10 items-center rounded-control px-2 text-base font-semibold text-text underline decoration-hairline-strong underline-offset-4 hover:decoration-current"
+              >
+                {`Run ${run.id}`}
               </Link>
-              <span className="text-normal">
-                {" "}
-                · {run.agent} · {run.purpose} · {run.status}
+              <span className="min-w-0 break-words text-sm text-secondary tabular-nums">
+                {run.agent} · {run.purpose} · {run.status}
               </span>
             </li>
           ))}
         </ul>
       </KanbanIssueSection>
 
-      {card.change && (
-        <KanbanIssueSection title="Changes">
-          <Changes of={{ change: card.change.id }} />
-        </KanbanIssueSection>
-      )}
-
       <KanbanIssueSection title="History">
         <QueryText
           query={entries}
-          empty={entries.data?.length === 0 ? "No history yet." : undefined}
+          empty={entries.data?.length === 0 ? "No history yet" : undefined}
         />
-        <ol className="m-0 list-none p-0">
+        {/* biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with
+            no marker from the accessibility tree entirely */}
+        <ol role="list" className="m-0 flex list-none flex-col gap-2 p-0">
           {(entries.data ?? []).map((entry, index) => (
             // The entries have no id; they are shown in the order the server sends them.
             // biome-ignore lint/suspicious/noArrayIndexKey: the history is a fixed, ordered list
-            <li key={index} className="flex gap-base py-[2px] text-xs">
-              <span className="w-16 shrink-0 font-mono text-[11px] text-low">
+            <li key={index} className="flex min-w-0 gap-4">
+              <span className="w-16 shrink-0 text-sm text-secondary tabular-nums">
                 {ago(now, entry.at)}
               </span>
-              <span className="min-w-0 flex-1 text-normal [overflow-wrap:anywhere]">
+              <span className="min-w-0 flex-1 text-base text-text [overflow-wrap:anywhere]">
                 {describeHistory(entry)}
               </span>
             </li>
@@ -291,22 +342,21 @@ export function Dock({
         <QueryText query={source} />
         {source.data && (
           <>
-            <div className="mb-half font-mono text-[11px] text-low">
+            <p className="m-0 mb-3 text-sm text-secondary">
               {source.data.path} ·{" "}
               {source.data.source === "repository" ? "this repository's own" : "built in"}
-            </div>
+            </p>
             <pre
               data-testid="script"
-              className="m-0 max-h-48 overflow-auto rounded-md border bg-recessed p-base font-mono text-[11px] text-normal"
+              className="m-0 max-h-48 overflow-auto rounded-control bg-code p-4 font-mono text-sm text-text"
             >
               {source.data.text}
             </pre>
-            <Link
-              to={`/board/${repository.id}/scripts/${encodeURIComponent(card.column)}`}
-              className="mt-base inline-block text-xs text-accent hover:underline"
-            >
-              Open the script
-            </Link>
+            <Button asChild variant="secondary" size="sm" className="mt-4 w-fit">
+              <Link to={`/board/${repository.id}/scripts/${encodeURIComponent(card.column)}`}>
+                Open the script
+              </Link>
+            </Button>
           </>
         )}
       </KanbanIssueSection>

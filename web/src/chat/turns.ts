@@ -11,9 +11,16 @@ export type PersonEntry = Extract<Entry, { kind: "person" }>;
 
 /** One line of a block of steps. `key` is stable while the conversation grows, for the folded state. */
 export type StepView =
-  | { kind: "thinking"; key: string; text: string }
+  /** Thinking says how long it took once the model moved on: `seconds`, or null while nothing after it has arrived. */
+  | ({ kind: "thinking"; key: string; text: string; seconds: number | null } & DurationState)
   | { kind: "tool"; key: string; call: ToolCall }
   | { kind: "reads"; key: string; calls: ToolCall[] };
+
+/** Whether the thinking on a line is still arriving. */
+export interface DurationState {
+  /** Whether the model is still thinking this one. */
+  ongoing: boolean;
+}
 
 export type Block =
   | { kind: "text"; key: string; text: string }
@@ -29,8 +36,18 @@ export interface Turn {
 
 const isRead = (call: ToolCall) => call.input.type === "read" && !refused(call);
 
-/** The lines of a block of steps: thinking and tool calls, with runs of two or more reads made one. */
-export function stepViews(entries: Array<{ index: number; entry: Entry }>): StepView[] {
+/**
+ * The lines of a block of steps: thinking and tool calls, with runs of two or more reads made one.
+ *
+ * `nextAt` is the time of the entry that follows the block, or null when the block runs to the end of the
+ * conversation; `working` is whether the agent works now. Together they say whether the last thinking line is still
+ * arriving, and for the ones that have stopped they give the length to show: an entry keeps the time its first piece
+ * arrived, so a thought runs from its own `at` to the `at` of whatever came after it.
+ */
+export function stepViews(
+  entries: Array<{ index: number; entry: Entry }>,
+  { nextAt = null, working = false }: { nextAt?: number | null; working?: boolean } = {},
+): StepView[] {
   const views: StepView[] = [];
   let reads: Array<{ index: number; call: ToolCall }> = [];
   const flush = () => {
@@ -46,14 +63,23 @@ export function stepViews(entries: Array<{ index: number; entry: Entry }>): Step
     }
     reads = [];
   };
-  for (const { index, entry } of entries) {
+  for (let position = 0; position < entries.length; position += 1) {
+    const { index, entry } = entries[position] as { index: number; entry: Entry };
     if (entry.kind === "tool" && isRead(entry.call)) {
       reads.push({ index, call: entry.call });
       continue;
     }
     flush();
     if (entry.kind === "thinking") {
-      views.push({ kind: "thinking", key: `step-${index}`, text: entry.text });
+      const last = index === entries[entries.length - 1]?.index;
+      const end = last ? nextAt : entries[position + 1]?.entry.at;
+      views.push({
+        kind: "thinking",
+        key: `step-${index}`,
+        text: entry.text,
+        seconds: end === undefined || end === null ? null : Math.max(0, end - entry.at),
+        ongoing: working && last && nextAt === null,
+      });
     } else if (entry.kind === "tool") {
       views.push({ kind: "tool", key: `step-${index}`, call: entry.call });
     }
@@ -109,11 +135,15 @@ export function groupTurns(entries: Entry[], working: boolean): Turn[] {
           run.push({ index, entry: next });
           index += 1;
         }
+        const ongoing = working && index === entries.length;
         turn(start).blocks.push({
           kind: "steps",
           key: `steps-${start}`,
-          steps: stepViews(run),
-          working: working && index === entries.length,
+          steps: stepViews(run, {
+            nextAt: ongoing ? null : (entries[index]?.at ?? null),
+            working,
+          }),
+          working: ongoing,
         });
         continue;
       }

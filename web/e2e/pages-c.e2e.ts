@@ -1,5 +1,5 @@
 /**
- * The pages of Rules, Automations, Retro, Experiments and Decision model, and the script editor, in a real browser:
+ * The pages of Rules, Automations, Retro, Experiments and Decisions, and the script editor, in a real browser:
  * each loads and shows its data, and each action sends its request and shows the outcome (a rule saved or refused, an
  * automation saved, run and deleted, a Retro started, a lesson edited, a research confirmed, an export made, a kind
  * released, a script saved, refused at its line and given up). The fake server (`fake/pages-c.ts`) has the data; against
@@ -11,6 +11,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Browser, type BrowserContext, chromium, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { dayName } from "../src/ui/lib/format";
+import { columnsScrollEach, pickOption, scrollbarsAreQuiet, showing } from "./controls";
 import { startServer, type TestServer, usesRealServer } from "./server";
 
 let browser: Browser;
@@ -62,6 +64,8 @@ async function open(path: string, title: string) {
   await page.goto(`${server.url}${path}`);
   await page.getByRole("heading", { name: title, level: 1 }).waitFor();
 }
+/** How the page names a day of the fake: "Today", "Yesterday", or the day and month, as every page does. */
+const dayOf = (date: string) => new RegExp(dayName(date).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
 const region = (name: string) => page.getByRole("region", { name, exact: true });
 const alert = (text: string | RegExp) => page.getByRole("alert").filter({ hasText: text });
 const status = (text: string | RegExp) => page.getByRole("status").filter({ hasText: text });
@@ -96,7 +100,6 @@ describe("the Rules page", () => {
     await patterns.getByText("3 refusals this week").waitFor();
     await patterns.getByText("No refusals this week").waitFor();
     const prose = region("Rules in prose");
-    await prose.getByText("rules.md of the harness configuration repository").waitFor();
     await prose.getByText("leave-ci-alone").waitFor();
     await prose.getByText("1 refusal this week").waitFor();
     await prose.getByText("Do not copy dependencies into the tree.").waitFor();
@@ -195,8 +198,8 @@ describe("the Rules page", () => {
     await fresh();
     await open("/rules", "Rules");
     const prose = region("Rules in prose");
-    await prose.getByRole("button", { name: "Let the Moebius agent write them" }).click();
-    const ask = prose.getByRole("button", { name: "Ask the agent" });
+    await prose.getByRole("button", { name: "Write with agent" }).click();
+    const ask = prose.getByRole("button", { name: "Submit" });
     expect(await ask.isDisabled()).toBe(true);
     await prose.getByLabel("What should be allowed or forbidden").fill("never edit the lockfile");
     await ask.click();
@@ -233,7 +236,7 @@ describe("the Automations page", () => {
   });
 
   it.skipIf(usesRealServer)(
-    "lists them, with the editor and the firings of the one chosen",
+    "lists them, with the editor and the past runs of the one chosen",
     async () => {
       await fresh();
       await open("/automations", "Automations");
@@ -252,15 +255,15 @@ describe("the Automations page", () => {
       expect(await page.getByLabel("Cron, in the server's local time").inputValue()).toBe(
         "0 8 * * 1-5",
       );
-      expect(await page.getByLabel("Repeats").inputValue()).toBe("0 8 * * 1-5");
-      expect(await page.getByLabel("Works in").inputValue()).toBe("repository:1");
+      expect(await showing(page.getByLabel("Repeats"))).toBe("Weekdays at 8");
+      expect(await showing(page.getByLabel("Works in"))).toBe("demo");
       await page.getByText("Fires next in 3 h.").waitFor();
-      const firings = region("Firings");
-      await firings.getByText("the chat of the firing before (41) still runs").waitFor();
-      const started = firings.getByRole("link", { name: /Chat 41 · succeeded/ });
+      const runs = region("Past runs");
+      await runs.getByText("the chat of the firing before (41) still runs").waitFor();
+      const started = runs.getByRole("link", { name: /Chat 41 · succeeded/ });
       expect(await started.getAttribute("href")).toBe("/chat/41");
       // A change of the schedule says that the next firing is not known until it is saved.
-      await page.getByLabel("Repeats").selectOption("0 9 * * 5");
+      await pickOption(page, page.getByLabel("Repeats"), "Every Friday at 9");
       await page.getByText("Save to see when it fires next.").waitFor();
     },
   );
@@ -270,14 +273,18 @@ describe("the Automations page", () => {
     await open("/automations", "Automations");
     await page.getByRole("button", { name: /Morning triage/ }).click();
     await page.getByRole("button", { name: "Run now" }).click();
-    await status("Started; its chat is among the firings below.").waitFor();
+    await status("Started; its chat is among the past runs below.").waitFor();
     expect(lastRequest()).toMatchObject({ method: "POST", path: "/v1/automations/1/run" });
-    const link = region("Firings").getByRole("link", { name: /Chat 52 · running/ });
+    const link = region("Past runs").getByRole("link", { name: /Chat 52 · running/ });
     expect(await link.getAttribute("href")).toBe("/chat/52");
 
     await page.getByLabel("Name of the automation").fill("Morning triage, early");
-    await page.getByLabel("Agent").selectOption("Coder");
-    await page.getByRole("button", { name: "Off", exact: true }).click();
+    await pickOption(page, page.getByLabel("Agent"), "Coder");
+    // One switch, not two buttons: it says which end it is on, and moving it is the whole of the change.
+    const runsOn = page.getByRole("switch", { name: "Runs on its schedule" });
+    expect(await runsOn.getAttribute("aria-checked")).toBe("true");
+    await runsOn.click();
+    expect(await runsOn.getAttribute("aria-checked")).toBe("false");
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await status("Saved.").waitFor();
     expect(lastRequest()).toMatchObject({
@@ -306,6 +313,8 @@ describe("the Automations page", () => {
       await open("/automations", "Automations");
       await page.getByRole("button", { name: /Morning triage/ }).click();
       fake().refuseNext("PUT", "/v1/automations/1", 422, "the agent Ghost does not exist");
+      // Save waits for something to save, so the refusal is asked for by changing the form first.
+      await page.getByLabel("Name of the automation").fill("Morning triage, once more");
       await page.getByRole("button", { name: "Save", exact: true }).click();
       await alert("the agent Ghost does not exist").waitFor();
       fake().refuseNext("POST", "/v1/automations/1/run", 404, "no such automation");
@@ -324,10 +333,10 @@ describe("the Automations page", () => {
     await fresh();
     await open("/automations", "Automations");
     await page.getByRole("button", { name: /Morning triage/ }).click();
-    await region("Firings").getByText("It has not fired yet.").count();
+    await region("Past runs").getByText("It has not fired yet.").count();
     await server.broadcast?.({ kind: "automation_fired", data: { automation: 1 } });
     // The page reads the firings again (the fake still has the same two).
-    await region("Firings")
+    await region("Past runs")
       .getByText(/Chat 41/)
       .waitFor();
   });
@@ -337,14 +346,14 @@ describe("the Retro page", () => {
   it("loads, and runs the Retro of today", async () => {
     await fresh();
     await open("/retro", "Retro");
-    await page.getByRole("button", { name: "Run the Retro now" }).click();
+    await page.getByRole("button", { name: "Run now" }).click();
     await page.getByText("No errors that day.").waitFor();
     await page
       .getByRole("button", { name: /Reported/ })
       .first()
       .waitFor();
     // The day has its Retro now: a second run is refused, and the page says so.
-    await page.getByRole("button", { name: "Run the Retro now" }).click();
+    await page.getByRole("button", { name: "Run now" }).click();
     await region("The Retro did not start").waitFor();
   });
 
@@ -353,14 +362,14 @@ describe("the Retro page", () => {
     async () => {
       await fresh();
       await open("/retro", "Retro");
-      const latest = page.getByRole("button", { name: /2026-10-28/ });
+      const latest = page.getByRole("button", { name: dayOf("2026-10-28") });
       await latest.getByText("Proposed").waitFor();
       await latest.getByText("6 errors · 3 proposals").waitFor();
       await page
-        .getByRole("button", { name: /2026-10-26/ })
+        .getByRole("button", { name: dayOf("2026-10-26") })
         .getByText("Failed")
         .waitFor();
-      const errors = region("Errors of 2026-10-28");
+      const errors = region("Errors");
       await errors.getByText("Failed tool calls · 1").waitFor();
       await errors.getByText("bash: cargo test exited with 101").waitFor();
       await errors.getByText("card 48 · run 12 · Coder").first().waitFor();
@@ -384,21 +393,62 @@ describe("the Retro page", () => {
       await settings.getByText("No card", { exact: true }).waitFor();
       await settings.getByText("+round_limit = 8").waitFor();
       // Another day.
-      await page.getByRole("button", { name: /2026-10-27/ }).click();
+      await page.getByRole("button", { name: dayOf("2026-10-27") }).click();
       await page.getByText("No errors that day.").waitFor();
-      await page.getByText("The Retro proposed nothing.").waitFor();
+      await page.getByText("None yet.").waitFor();
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "scrolls the list of days and the day beside it each on its own",
+    async () => {
+      await fresh();
+      // Enough days that the list is taller than the column it stands in.
+      for (let back = 1; back <= 20; back += 1) {
+        fake().days.push({
+          date: `2026-09-${String(back).padStart(2, "0")}`,
+          status: "reported",
+          errors: 0,
+          proposals: 0,
+        });
+      }
+      await open("/retro", "Retro");
+      const frame = page.locator("main");
+      const list = page.getByTestId("list-column");
+      const detail = page.getByTestId("detail-column");
+      // A day of errors is long, and the page keeps it inside the window rather than scrolling as one long sheet.
+      await expect
+        .poll(() => detail.evaluate((el) => el.scrollHeight - el.clientHeight))
+        .toBeGreaterThan(0);
+      expect(await frame.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeLessThan(8);
+      // Reading the day scrolls it where it is read and leaves the list of days where it was.
+      const detailBox = await detail.boundingBox();
+      if (!detailBox) throw new Error("the column of the day drew no box");
+      await page.mouse.move(detailBox.x + detailBox.width / 2, detailBox.y + 200);
+      await page.mouse.wheel(0, 600);
+      await expect.poll(() => detail.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+      expect(await list.evaluate((el) => el.scrollTop)).toBe(0);
+      expect(await frame.evaluate((el) => el.scrollTop)).toBe(0);
+      // The list scrolls in turn, and the day stays where the reader left it.
+      const read = await detail.evaluate((el) => el.scrollTop);
+      const listBox = await list.boundingBox();
+      if (!listBox) throw new Error("the column of days drew no box");
+      await page.mouse.move(listBox.x + listBox.width / 2, listBox.y + 200);
+      await page.mouse.wheel(0, 600);
+      await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+      expect(await detail.evaluate((el) => el.scrollTop)).toBe(read);
     },
   );
 
   it.skipIf(usesRealServer)("says why a second Retro of a day did not start", async () => {
     await fresh();
     await open("/retro", "Retro");
-    await page.getByRole("button", { name: "Run the Retro now" }).click();
+    await page.getByRole("button", { name: "Run now" }).click();
     await page
       .getByRole("button", { name: /Reported/ })
       .first()
       .waitFor();
-    await page.getByRole("button", { name: "Run the Retro now" }).click();
+    await page.getByRole("button", { name: "Run now" }).click();
     await alert(/exists already/).waitFor();
   });
 
@@ -449,8 +499,8 @@ describe("the Experiments page", () => {
     await page.getByRole("button", { name: "New brief" }).click();
     const store = page.getByRole("button", { name: "Store the brief" });
     expect(await store.isDisabled()).toBe(true);
-    await page.getByLabel("Goal").fill("Make the tests faster");
-    await page.getByLabel("Measure").fill("echo 12");
+    await page.getByLabel("What should get better").fill("Make the tests faster");
+    await page.getByLabel("Measurement").fill("echo 12");
     await page.getByRole("button", { name: "Higher is better" }).click();
     expect(await page.getByLabel("Token budget").inputValue()).toBe("200000");
     await store.click();
@@ -524,7 +574,7 @@ describe("the Experiments page", () => {
     await open("/experiments", "Experiments");
     const brief = region("Brief");
     await brief.getByRole("button", { name: "Edit the brief" }).click();
-    await brief.getByLabel("Goal").fill("Make the release build faster");
+    await brief.getByLabel("What should get better").fill("Make the release build faster");
     await brief.getByLabel("Token budget").fill("0");
     expect(await brief.getByRole("button", { name: "Save", exact: true }).isDisabled()).toBe(true);
     await brief.getByLabel("Token budget").fill("300000");
@@ -552,11 +602,11 @@ describe("the Experiments page", () => {
   });
 });
 
-describe("the Decision model page", () => {
+describe("the Decisions page", () => {
   it("loads, with nothing decided on a new server", async () => {
     await fresh();
-    await open("/decision-model", "Decision model");
-    await region("Kinds of decision").waitFor();
+    await open("/decision-model", "Decisions");
+    await region("Decision types").waitFor();
     await region("Exports").waitFor();
     await region("Shadowing").waitFor();
     await page.getByRole("button", { name: "Export training set" }).waitFor();
@@ -564,7 +614,7 @@ describe("the Decision model page", () => {
 
   it.skipIf(!usesRealServer)("says that a new server has no decision model", async () => {
     await fresh();
-    await open("/decision-model", "Decision model");
+    await open("/decision-model", "Decisions");
     await page.getByText("Nothing has been decided yet.").waitFor();
     await page.getByText("No export has been made yet.").waitFor();
     await region("Shadowing").getByText("No decision model is configured.").waitFor();
@@ -572,11 +622,9 @@ describe("the Decision model page", () => {
 
   it.skipIf(usesRealServer)("counts the kinds, lists the exports and the shadowing", async () => {
     await fresh();
-    await open("/decision-model", "Decision model");
-    await page
-      .getByText("1227 judgements in 3 kinds; they leave the server only in an export you start.")
-      .waitFor();
-    const kinds = region("Kinds of decision");
+    await open("/decision-model", "Decisions");
+    await page.getByText("1227 judgements in 3 types").waitFor();
+    const kinds = region("Decision types");
     const merge = kinds.getByRole("row").filter({ hasText: "merge" });
     await merge.getByText("GET /v1/exports/1/merge.jsonl").waitFor();
     await kinds
@@ -588,13 +636,13 @@ describe("the Decision model page", () => {
     await region("Exports")
       .getByRole("row")
       .filter({ hasText: "#1" })
-      .getByText("2026-10-26 07:33 UTC")
+      .getByText(/07:33 UTC/)
       .waitFor();
 
     const shadowing = region("Shadowing");
     await shadowing
       .getByText(
-        /moebius-decider decides alongside the current decider on judgements held out of training\. A kind is proposed in the inbox at 100 of them with at least 95% agreement\./,
+        /moebius-decider decides alongside the current decider on judgements held out of training\. A type is proposed in the inbox at 100 of them with at least 95% agreement\./,
       )
       .waitFor();
     await shadowing.getByText("No shadow yet").waitFor();
@@ -610,18 +658,18 @@ describe("the Decision model page", () => {
 
   it.skipIf(usesRealServer)("exports the training set and lists the new export", async () => {
     await fresh();
-    await open("/decision-model", "Decision model");
+    await open("/decision-model", "Decisions");
     await page.getByRole("button", { name: "Export training set" }).click();
     await region("Exports").getByRole("row").filter({ hasText: "#2" }).waitFor();
     expect(lastRequest()).toMatchObject({ method: "POST", path: "/v1/exports" });
     // Every kind has a file now.
-    await region("Kinds of decision").getByText("GET /v1/exports/2/tool_call.jsonl").waitFor();
+    await region("Decision types").getByText("GET /v1/exports/2/tool_call.jsonl").waitFor();
     expect(await page.getByText("Not exported yet").count()).toBe(0);
   });
 
   it.skipIf(usesRealServer)("says that an export was refused", async () => {
     await fresh();
-    await open("/decision-model", "Decision model");
+    await open("/decision-model", "Decisions");
     fake().refuseNext("POST", "/v1/exports", 422, 'no judgements of kind "x"');
     await page.getByRole("button", { name: "Export training set" }).click();
     await region("The export was refused").getByText('no judgements of kind "x"').waitFor();
@@ -631,7 +679,7 @@ describe("the Decision model page", () => {
     "releases a kind the model took over, or shows the server's sentence",
     async () => {
       await fresh();
-      await open("/decision-model", "Decision model");
+      await open("/decision-model", "Decisions");
       fake().refuseNext(
         "POST",
         "/v1/takeovers/3/release",
@@ -667,7 +715,7 @@ describe("the script editor", () => {
 
   it("opens the built-in script, saves one of its own, and goes back to the built-in", async () => {
     await fresh();
-    const { editor } = await openScript("Ready");
+    const { editor } = await openScript("Not started");
     await page.getByText("built in", { exact: false }).first().waitFor();
     expect(await page.getByRole("button", { name: "Use the built-in script" }).count()).toBe(0);
     const save = page.getByRole("button", { name: "Save", exact: true });
@@ -694,7 +742,7 @@ describe("the script editor", () => {
 
   it("refuses a bad script and shows the check's error at its line", async () => {
     await fresh();
-    const { editor } = await openScript("Ready");
+    const { editor } = await openScript("Not started");
     await type(editor, 'moebius.wait("fine")\nmoebius.move(card.id,\nmoebius.wait("a"');
     await page.getByRole("button", { name: "Save", exact: true }).click();
     const problem = page.getByTestId("script-problem");
@@ -707,7 +755,7 @@ describe("the script editor", () => {
     // The script was not saved: it is still the built-in one.
     await page.reload();
     await page.getByText("built in", { exact: false }).first().waitFor();
-    await page.getByRole("textbox", { name: "Script of Ready" }).waitFor();
+    await page.getByRole("textbox", { name: "Script of Not started" }).waitFor();
     expect(await page.getByText("moebius.move(card.id,").count()).toBe(0);
   });
 
@@ -732,16 +780,35 @@ describe("the script editor", () => {
 
   it.skipIf(usesRealServer)("shows what the server refuses besides a bad script", async () => {
     await fresh();
-    const { editor } = await openScript("Ready");
+    const { editor } = await openScript("Not started");
     await type(editor, "local a = 1\n");
     fake().refuseNext(
       "PUT",
-      "/v1/repositories/1/scripts/Ready",
+      "/v1/repositories/1/scripts/Not started",
       409,
       "the push was refused: not a fast-forward",
     );
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await alert("the push was refused: not a fast-forward").waitFor();
     expect(await page.getByTestId("script-problem").count()).toBe(0);
+  });
+});
+
+/** Opens `path` and chooses its first row, so the detail beside the list has something in it. */
+async function read(path: string, title: string) {
+  await open(path, title);
+  await page.getByTestId("list-card").first().click();
+  await page.getByTestId("detail-column").waitFor();
+}
+
+describe("the pages that put a list beside a detail", () => {
+  it.skipIf(usesRealServer)("keeps the list and the detail each inside the window", async () => {
+    await fresh();
+    await read("/automations", "Automations");
+    await columnsScrollEach(page);
+    await scrollbarsAreQuiet(page);
+    await read("/experiments", "Experiments");
+    await columnsScrollEach(page);
+    await scrollbarsAreQuiet(page);
   });
 });

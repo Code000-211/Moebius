@@ -242,7 +242,7 @@ impl App {
     /// in the harness configuration repository is not fit to offer.
     fn offer_chat_branch(&self, run: &Run) -> Result<std::result::Result<Option<Change>, String>> {
         let branch = run.branch();
-        let title = self.chat_title(run.id)?;
+        let title = self.chat_title(run)?;
         if run.harness_repository {
             let harness_repo = self.harness_repo()?;
             match harness_repo.check_chat_branch(self, &branch) {

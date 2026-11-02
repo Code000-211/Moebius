@@ -284,13 +284,13 @@ async fn a_grilling_ends_in_issues_that_become_cards_that_move_on_to_ready() {
     // backlog.luau moves them on without approval; ready.luau holds the second one until the first is done.
     for card in &cards {
         let step = server.engine.tick(card.id).unwrap();
-        assert_eq!(step.moved.as_deref(), Some("Ready"));
+        assert_eq!(step.moved.as_deref(), Some("Not started"));
     }
     assert!(item_kinds(&server).is_empty(), "no approval was asked for");
     let step = server.engine.tick(cards[1].id).unwrap();
     assert_eq!(step.moved, None);
     assert_eq!(step.waiting.as_deref(), Some("waiting for #1"));
-    assert_eq!(server.app.card(cards[1].id).unwrap().column, "Ready");
+    assert_eq!(server.app.card(cards[1].id).unwrap().column, "Not started");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -512,7 +512,7 @@ async fn confirming_on_a_github_repository_opens_the_issues_and_the_cards_carry_
     assert_eq!(server.app.store.dependencies(polled[1].id).unwrap(), [41]);
     for card in &polled {
         let step = server.engine.tick(card.id).unwrap();
-        assert_eq!(step.moved.as_deref(), Some("Ready"));
+        assert_eq!(step.moved.as_deref(), Some("Not started"));
     }
     assert!(item_kinds(&server).is_empty());
 }
@@ -582,7 +582,7 @@ async fn creating_an_issue_on_a_github_repository_opens_it_and_the_card_moves_on
     let cards = server.app.store.cards(repo.id).unwrap();
     assert_eq!(cards.len(), 1);
     let step = server.engine.tick(cards[0].id).unwrap();
-    assert_eq!(step.moved.as_deref(), Some("Ready"));
+    assert_eq!(step.moved.as_deref(), Some("Not started"));
 
     // Without a forge the issue stays local.
     let (status, local) = api

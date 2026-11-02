@@ -1,7 +1,13 @@
-// From BloopAI/vibe-kanban packages/ui/src/components/ChatFileEntry.tsx (Apache-2.0), changed: one layout for both cases (the original repeated the header); the diff is given as `children`, not as a diff input and a renderer; no VSCode, no "open in changes" and no i18n; the header is a real button.
+// From BloopAI/vibe-kanban packages/ui/src/components/ChatFileEntry.tsx (Apache-2.0), changed: one layout for both
+// cases (the original repeated the header); the diff is given as `children`, not as a diff input and a renderer; no
+// VSCode, no "open in changes" and no i18n; the header is a real button 40px tall; the file is named by its name, with
+// the whole path kept as a tooltip — a row of the same folder over and over says nothing — its state is a word with a
+// hue, and the counts of changed lines are figures that do not shift.
 import { CaretDownIcon, FileIcon as DefaultFileIcon } from "@phosphor-icons/react";
 import type { ElementType, ReactNode } from "react";
 import { cn } from "../lib/cn";
+import { fileName, plural } from "../lib/format";
+import { FadedLine } from "../page/FadedLine";
 import { ToolStatusDot, type ToolStatusLike } from "./ToolStatusDot";
 
 interface ChatFileEntryProps {
@@ -31,50 +37,48 @@ export function ChatFileEntry({
 }: ChatFileEntryProps) {
   const hasStats = additions !== undefined || deletions !== undefined;
   const FileIcon = fileIcon ?? DefaultFileIcon;
-  const isDenied = status?.status === "denied";
 
   return (
-    <div
-      className={cn(
-        "overflow-hidden rounded-sm border",
-        isDenied && "border-error bg-error/10",
-        className,
-      )}
-    >
+    <div className={cn("overflow-hidden rounded-control bg-sunken", className)}>
       <button
         type="button"
-        className={cn(
-          "flex w-full items-center p-base text-left",
-          isDenied ? "bg-error/20" : "bg-panel",
-          !onToggle && "cursor-default",
-        )}
+        className="flex min-h-8 w-full flex-wrap items-center gap-3 rounded-control px-3 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
         onClick={onToggle}
         aria-expanded={onToggle ? expanded : undefined}
       >
-        <span className="flex min-w-0 flex-1 items-center gap-base">
-          <span className="relative shrink-0">
-            <FileIcon className="size-icon-base" />
-            {status && (
-              <ToolStatusDot status={status} className="absolute -bottom-0.5 -right-0.5" />
+        <FileIcon aria-hidden="true" className="size-4 shrink-0 text-secondary" />
+        <FadedLine
+          text={fileName(filename)}
+          title={filename}
+          className="flex-1 font-mono text-sm text-text"
+        />
+        {hasStats && (
+          <span className="shrink-0 text-sm tabular-nums">
+            {additions !== undefined && additions > 0 && (
+              <span
+                className="text-diff-added-mark"
+                title={plural(additions, "line added", "lines added")}
+              >
+                +{additions}
+              </span>
+            )}
+            {additions !== undefined && deletions !== undefined && " "}
+            {deletions !== undefined && deletions > 0 && (
+              <span
+                className="text-diff-removed-mark"
+                title={plural(deletions, "line removed", "lines removed")}
+              >
+                -{deletions}
+              </span>
             )}
           </span>
-          <span className="truncate font-mono text-xs text-normal">{filename}</span>
-          {hasStats && (
-            <span className="shrink-0 text-sm">
-              {additions !== undefined && additions > 0 && (
-                <span className="text-success">+{additions}</span>
-              )}
-              {additions !== undefined && deletions !== undefined && " "}
-              {deletions !== undefined && deletions > 0 && (
-                <span className="text-error">-{deletions}</span>
-              )}
-            </span>
-          )}
-        </span>
+        )}
+        {status && <ToolStatusDot status={status} />}
         {onToggle && (
           <CaretDownIcon
+            aria-hidden="true"
             className={cn(
-              "size-icon-xs shrink-0 text-low transition-transform",
+              "size-4 shrink-0 text-secondary transition-transform duration-(--motion-routine) ease-out",
               !expanded && "-rotate-90",
             )}
           />

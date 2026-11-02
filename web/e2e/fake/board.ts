@@ -70,7 +70,7 @@ export const LONG_TITLE = `${"Supercalifragilistic".repeat(8)} and then a title 
 
 const SCRIPTS: Record<string, string> = {
   backlog: "backlog",
-  ready: "ready",
+  "not started": "ready",
   "in progress": "code",
   "in review": "review",
   "ready to merge": "merge",
@@ -99,7 +99,7 @@ function card(id: number, extra: Partial<FakeCard>): FakeCard {
     title: `Card ${id}`,
     body: "",
     author: "person",
-    column: "Ready",
+    column: "Not started",
     created_at: NOW - 3600,
     note: null,
     retried_after: null,
@@ -162,8 +162,8 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
       run: { id: 1, agent: "Coder", purpose: "code", status: "running" },
     }),
     card(2, { title: "Fix the login redirect", column: "Backlog", author: "stranger" }),
-    card(3, { title: "Document the API", column: "Ready" }),
-    card(4, { title: LONG_TITLE, column: "Ready", blocked_by: [3] }),
+    card(3, { title: "Document the API", column: "Not started" }),
+    card(4, { title: LONG_TITLE, column: "Not started", blocked_by: [3] }),
     card(5, {
       title: "Speed up the build",
       column: "Ready to merge",
@@ -217,8 +217,12 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
     [
       1,
       [
-        { at: NOW - 3000, kind: "moved", data: { from: "Backlog", to: "Ready", note: null } },
-        { at: NOW - 2000, kind: "moved", data: { from: "Ready", to: "In progress", note: null } },
+        { at: NOW - 3000, kind: "moved", data: { from: "Backlog", to: "Not started", note: null } },
+        {
+          at: NOW - 2000,
+          kind: "moved",
+          data: { from: "Not started", to: "In progress", note: null },
+        },
         { at: NOW - 1900, kind: "run_started", data: { run: 1, agent: "Coder", purpose: "code" } },
       ],
     ],
@@ -286,7 +290,7 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
       if (!target) return fail(404, "no such card");
       if (target.column !== "Backlog") return fail(422, "the card is not in Backlog");
       resolve(target.id, ["approve_issue"]);
-      send(move(target, "Ready"));
+      send(move(target, "Not started"));
       send({ kind: "card_updated", data: view(target) });
       return ok(view(target));
     }

@@ -10,8 +10,9 @@
  * entries that kept theirs.
  */
 import type { RunEvent } from "../api/types/chat";
+import { fileName } from "../ui/lib/format";
 
-/** What a tool call works on, shown compactly. */
+/** What a tool call works on, shown as one line — a file by its name, with `inputPath` for the whole path. */
 export type ToolInput =
   | { type: "unknown" }
   | { type: "read"; path: string }
@@ -120,13 +121,28 @@ export function inputSummary(input: ToolInput): string {
     case "read":
     case "edit":
     case "write":
-      return input.path;
+      return fileName(input.path);
     case "command":
       return input.command.split("\n")[0] ?? "";
     case "todos":
       return `${input.todos.length} items`;
     case "other":
       return input.json;
+  }
+}
+
+/**
+ * The whole path a file call names, for the tooltip of a row that shows only the file's name; null for the calls
+ * that are not about one file.
+ */
+export function inputPath(input: ToolInput): string | null {
+  switch (input.type) {
+    case "read":
+    case "edit":
+    case "write":
+      return input.path;
+    default:
+      return null;
   }
 }
 
@@ -169,6 +185,27 @@ function endText(data: Json): string {
 
 const MODEL_ERROR = "The model returned an error.";
 
+/**
+ * What a model's error says, as a person reads it. A gateway wraps its own sentence in JSON — `404: {"message":"no
+ * route for POST …","type":"not_found_error",…}` — and the only part worth reading is the sentence, so it comes out
+ * with whatever stood in front of the braces. Anything that is not that shape is left exactly as it came.
+ */
+export function readableError(text: string): string {
+  const start = text.indexOf("{");
+  if (start === -1 || !text.trimEnd().endsWith("}")) return text;
+  let body: unknown;
+  try {
+    body = JSON.parse(text.slice(start));
+  } catch {
+    return text;
+  }
+  const inner = object(object(body).error).message;
+  const sentence = string(object(body).message) || string(inner);
+  if (sentence === "") return text;
+  const lead = text.slice(0, start).trim();
+  return lead === "" ? sentence : `${lead} ${sentence}`;
+}
+
 /** The error of an assistant message that the provider ended with an error; null for any other message. */
 function modelErrorOf(message: Json): string | null {
   if (message.role !== "assistant" || message.stopReason !== "error") return null;
@@ -203,31 +240,76 @@ export class Conversation {
     return this.list.slice();
   }
 
-  /** Adds an event. One seen before is ignored; one older than the newest seen is put in its place. */
+  /**
+   * Adds one event as it arrives on the stream. One seen before is ignored; one older than the newest seen sits
+   * between entries already drawn, so the fold is done again and it takes its place. That is the only time a single
+   * event costs more than itself, and it is rare: what arrives while a chat is open is nearly always the next one.
+   */
   push(event: RunEvent): void {
     if (this.events.has(event.seq)) return;
-    if (event.seq > this.newest) {
-      this.apply(event);
-      this.events.set(event.seq, event);
-      this.newest = event.seq;
+    this.events.set(event.seq, event);
+    if (event.seq <= this.newest) {
+      this.rebuild();
       return;
     }
-    this.events.set(event.seq, event);
+    this.apply(event);
+    this.newest = event.seq;
+  }
+
+  /**
+   * Adds the events read from the server, which come as a page of them at a time. Reading what was missed and being
+   * sent what happens now are two different paths that meet in one conversation, so a page often arrives holding
+   * events older than the newest one the stream already brought. Each of those is put in its place once, for the
+   * whole page: folding the log again per event would cost the log again per event, which is seconds on a long chat
+   * that is still answering.
+   *
+   * The page also carries the server's time on events the stream already brought with this browser's clock on them,
+   * and a duration is worked out between two `at`s, so the stored time is the one kept.
+   */
+  backfill(events: readonly RunEvent[]): void {
+    const fresh: RunEvent[] = [];
+    let again = false;
+    for (const event of events) {
+      const held = this.events.get(event.seq);
+      if (held) {
+        if (held.at !== event.at) {
+          this.events.set(event.seq, event);
+          again = true;
+        }
+        continue;
+      }
+      this.events.set(event.seq, event);
+      fresh.push(event);
+      if (event.seq <= this.newest) again = true;
+    }
+    if (again) {
+      this.rebuild();
+      return;
+    }
+    // Nothing landed out of order and no time needed correcting, so the page is simply more of the chat: its events
+    // follow the last one drawn and are applied in their own order.
+    for (const event of fresh.sort((a, b) => a.seq - b.seq)) {
+      this.apply(event);
+      this.newest = event.seq;
+    }
+  }
+
+  /** Draws every event held again, in the order their `seq`s give them. */
+  private rebuild(): void {
     const sorted = [...this.events.values()].sort((a, b) => a.seq - b.seq);
-    this.events = new Map();
     this.list = [];
     this.calls = new Map();
     this.textOpen = this.thinkingOpen = false;
     this.modelError = null;
     this.newest = 0;
-    for (const each of sorted) {
-      this.apply(each);
-      this.events.set(each.seq, each);
-      this.newest = each.seq;
+    for (const event of sorted) {
+      this.apply(event);
+      this.newest = event.seq;
     }
   }
 
-  private addModelError(message: string): void {
+  private addModelError(raw: string): void {
+    const message = readableError(raw);
     if (this.modelError === message) return;
     this.modelError = message;
     this.add({ at: this.now, kind: "error", source: "model", message });

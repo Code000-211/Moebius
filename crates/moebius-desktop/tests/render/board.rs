@@ -15,7 +15,10 @@ use crate::fixtures::{
 /// The board of the mockup: every column, the cards and their tags.
 #[test]
 fn the_board_shows_its_columns_and_cards_like_the_mockup() {
-    let snapshot = snapshot(vec![radiance("Ready")], vec![item(1, "ready_to_merge", 45)]);
+    let snapshot = snapshot(
+        vec![radiance("Not started")],
+        vec![item(1, "ready_to_merge", 45)],
+    );
     let app = App::with_snapshot(snapshot);
     draw(
         &app,
@@ -23,7 +26,7 @@ fn the_board_shows_its_columns_and_cards_like_the_mockup() {
         &[
             "radiance",
             "3 runs working · 1 change waits for you · default workflow",
-            "Ready",
+            "Not started",
             "ready.luau",
             "In progress",
             "code.luau",
@@ -48,7 +51,7 @@ fn the_board_shows_its_columns_and_cards_like_the_mockup() {
             "CI running",
             "#45 · 2 rounds · 590k tok",
             "Green",
-            "Waits for you",
+            "Your turn",
             "#43",
         ],
     );
@@ -65,7 +68,7 @@ fn every_tag_and_a_long_title_stay_inside_the_cards() {
                 working(1, 1, "Backlog", "An issue from outside", json!({})),
                 working(2, 1, "Backlog", long, json!({"blocked_by": [7, 8]})),
                 card(6, 1, "Backlog", "Another issue from outside"),
-                card(7, 1, "Ready", "Ready to start"),
+                card(7, 1, "Not started", "Ready to start"),
                 working(
                     3,
                     1,
@@ -101,7 +104,7 @@ fn every_tag_and_a_long_title_stay_inside_the_cards() {
         &[
             "Backlog",
             "backlog.luau",
-            "Waits for you",
+            "Your turn",
             "Blocked by #7, #8",
             "2 rules broken",
             "1.2M tok",
@@ -205,17 +208,17 @@ fn a_boards_new_issue_button_opens_a_form_above_the_columns_that_creates_or_is_c
 /// The detail of a column's script as the server answers it.
 pub fn script(source: &str, text: &str) -> client::ScriptDetail {
     serde_json::from_value(json!({
-        "column": "Ready", "path": ".moebius/ready.luau", "source": source, "text": text
+        "column": "Not started", "path": ".moebius/ready.luau", "source": source, "text": text
     }))
     .unwrap()
 }
 
 pub const HOLD: &str = "-- Hold large cards until nothing else runs.\nfunction on_card(card)\n  if moebius.runs_active() > 0 then\n    moebius.wait(\"another run is going\")\n    return\n  end\n  moebius.move(\"In progress\", \"ready to code\")\nend\n";
 
-/// The board of the mockup with the editor of the Ready column's script open.
+/// The board of the mockup with the editor of the Not started column's script open.
 pub fn script_app(source: &str) -> App {
     let mut app = radiance_app();
-    let _ = app.update(Message::EditScript(1, "Ready".into()));
+    let _ = app.update(Message::EditScript(1, "Not started".into()));
     let _ = app.update(Message::Script(script_editor::Message::Opened(Ok(script(
         source, HOLD,
     )))));
@@ -225,7 +228,7 @@ pub fn script_app(source: &str) -> App {
 #[test]
 fn the_pencil_of_a_column_opens_the_editor_of_its_script() {
     let app = radiance_app();
-    for (column, _) in [("Ready", 0), ("In progress", 0), ("Done", 0)] {
+    for (column, _) in [("Not started", 0), ("In progress", 0), ("Done", 0)] {
         let mut ui = simulator(&app);
         ui.click(iced::widget::Id::from(format!("edit-script-{column}")))
             .unwrap_or_else(|_| panic!("no pencil in the {column} column"));
@@ -244,7 +247,7 @@ fn the_editor_shows_the_script_of_the_repository_and_can_save_or_give_it_back() 
         &app,
         "script-editor",
         &[
-            "Ready",
+            "Not started",
             "Repository",
             ".moebius/ready.luau",
             "Use the built-in script",
@@ -308,7 +311,7 @@ fn the_speech_bubble_opens_the_floating_chat_with_a_message_about_the_script() {
     assert!(shows(&app, "Your first message starts the chat."));
     assert!(shows(
         &app,
-        "About the Ready column's script (.moebius/ready.luau): "
+        "About the Not started column's script (.moebius/ready.luau): "
     ));
 }
 

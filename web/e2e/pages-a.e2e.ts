@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Browser, type BrowserContext, chromium, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { pickOption, showing } from "./controls";
 import type { PagesAFake } from "./fake/pages-a";
 import { startServer, type TestServer, usesRealServer } from "./server";
 
@@ -18,6 +19,13 @@ let server: TestServer;
 let context: BrowserContext;
 let page: Page;
 const directories: string[] = [];
+
+/**
+ * The chips that pick a repository. Both filter rows have a chip called All, so the test asks the
+ * fieldset the legend names, and wants the chip whose name is nothing but the word.
+ */
+const repositories = (page: Page) =>
+  page.locator("fieldset").filter({ has: page.locator("legend", { hasText: "Repository" }) });
 
 beforeAll(async () => {
   browser = await chromium.launch({
@@ -162,6 +170,35 @@ describe("the inbox", () => {
   );
 
   it.skipIf(usesRealServer)(
+    "shows what a proposal offers and opens the Retro it came from",
+    async () => {
+      await open("/inbox");
+      await items().first().waitFor();
+      // The item a trial ends with names its proposal, so the card reads the proposal for what it offers and stops
+      // at three lines of it: the whole of the argument is on the Retro page, which the preview itself opens.
+      const harness = item("Let the Coder read");
+      const reason = harness.getByRole("button", {
+        name: /its instructions now say to read the tests/,
+      });
+      await reason.waitFor();
+      expect(await reason.locator(".clamp-3").count()).toBe(1);
+      // Where the change lives is the Retro page's business, not the card's.
+      expect(await harness.getByText("proposal/2026-10-25-read-tests").count()).toBe(0);
+      // A trial that names no card only says there was nothing to try it on, so it is not on the card. The trials
+      // that ran are words beside the card they ran on, and the kind's word is the card's only pill.
+      expect(await harness.getByText("No card", { exact: true }).count()).toBe(0);
+      await harness.getByText("Card 3").waitFor();
+      await harness.getByText("It passed in one round.").waitFor();
+      expect(await harness.getByText("Positive", { exact: true }).count()).toBe(1);
+      expect(await harness.getByText("Retro", { exact: true }).count()).toBe(0);
+      // The preview lands on the proposal itself, not at the top of the day.
+      await reason.click();
+      expect(path()).toBe("/retro?day=2026-10-25&proposal=4");
+      await page.getByText("proposal/2026-10-25-read-tests").waitFor();
+    },
+  );
+
+  it.skipIf(usesRealServer)(
     "filters by kind and by repository, with the counts of the other filter",
     async () => {
       await open("/inbox");
@@ -171,7 +208,7 @@ describe("the inbox", () => {
         data: { name: "second", url: "/srv/git/second" },
       });
       expect(made.ok()).toBe(true);
-      await page.getByRole("button", { name: "Every repository" }).waitFor();
+      await repositories(page).getByRole("button", { name: "All", exact: true }).waitFor();
       await page.getByRole("button", { name: "All 9" }).waitFor();
 
       await page.getByRole("button", { name: "Stuck 1" }).click();
@@ -190,7 +227,7 @@ describe("the inbox", () => {
       await page.getByText("No item matches the filter.").waitFor({ state: "detached" });
       await page.getByText("9 things need you; 1 shown.").waitFor();
       expect(await items().count()).toBe(1);
-      await page.getByRole("button", { name: "Every repository" }).click();
+      await repositories(page).getByRole("button", { name: "All", exact: true }).click();
       await page.getByRole("button", { name: /^All \d+$/ }).click();
       await page.getByText("9 things need you.").waitFor();
       expect(await items().count()).toBe(9);
@@ -364,8 +401,7 @@ describe("projects", () => {
 
     await page
       .getByRole("navigation", { name: "Pages" })
-      .getByRole("link", { name: "Projects" })
-      .first()
+      .getByRole("link", { name: "All projects" })
       .click();
     await page.waitForURL("**/projects");
     const row = page.getByTestId("repository").filter({ hasText: "fresh" });
@@ -561,15 +597,19 @@ describe("projects", () => {
     "goes to a file by what is typed, with the keyboard or the mouse",
     async () => {
       await open("/projects/1");
-      await page.getByRole("button", { name: "Go to file" }).click();
       const field = page.getByRole("textbox", { name: "Go to file" });
+      const tree = page.getByRole("list", { name: "Files", exact: true });
+      // Where the tree sits in the page, whatever the viewport is scrolled to.
+      const treeTop = () =>
+        tree.evaluate((list) => list.getBoundingClientRect().top + window.scrollY);
+      const before = await treeTop();
       await field.fill("mr");
-      const best = page
-        .getByRole("dialog", { name: "Go to file" })
-        .getByRole("button")
-        .filter({ hasText: /main\.rs$/ });
+      const matches = page.getByRole("list", { name: "Matching files" });
+      const best = matches.getByRole("button").filter({ hasText: /main\.rs$/ });
       await best.first().waitFor();
       expect(await best.first().textContent()).toBe("src/main.rs");
+      // The dropdown hangs over the tree rather than shoving it down.
+      expect(Math.abs((await treeTop()) - before)).toBeLessThan(1);
       await field.press("ArrowDown");
       await field.press("Enter");
       await page.getByLabel("Text of src/server/main.rs").waitFor();
@@ -578,13 +618,24 @@ describe("projects", () => {
         .getByRole("list", { name: "Files" })
         .getByRole("button", { name: "server" })
         .waitFor();
-      expect(await page.getByRole("dialog", { name: "Go to file" }).count()).toBe(0);
+      // The file is chosen, so the bar empties and the tree is on its own again.
+      expect(await field.inputValue()).toBe("");
+      expect(await matches.count()).toBe(0);
 
-      // Ctrl+P opens it too, and a click on a result opens the file.
+      // Ctrl+P puts the caret in the bar, and the X empties it again.
       await page.keyboard.press("Control+p");
-      await page.getByRole("textbox", { name: "Go to file" }).fill("guide");
+      expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe(
+        "Go to file",
+      );
+      await page.keyboard.type("guide");
+      await page.getByRole("button", { name: "Clear go to file" }).click();
+      expect(await field.inputValue()).toBe("");
+      expect(await matches.count()).toBe(0);
+
+      // Typing again and clicking a result opens the file.
+      await field.fill("guide");
       await page
-        .getByRole("dialog", { name: "Go to file" })
+        .getByRole("list", { name: "Matching files" })
         .getByRole("button", { name: "docs/guide.md" })
         .click();
       await page.getByLabel("Text of docs/guide.md").waitFor();
@@ -596,12 +647,14 @@ describe("projects", () => {
     await page.getByRole("heading", { name: "Files" }).waitFor();
     await page.keyboard.press("Control+Shift+F");
     const field = page.getByRole("textbox", { name: "Search in files" });
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe(
+      "Search in files",
+    );
     await field.fill("main");
-    await field.press("Enter");
     await page.getByText(/^\d+ hits in 3 files$/).waitFor();
-    const panel = page.getByRole("dialog", { name: "Search in files" });
-    await panel.getByText("src/server/main.rs", { exact: true }).waitFor();
-    await panel.getByRole("button", { name: /mod main_loop;/ }).click();
+    const hits = page.getByRole("list", { name: "Search hits" });
+    await hits.getByText("src/server/main.rs", { exact: true }).waitFor();
+    await hits.getByRole("button", { name: /mod main_loop;/ }).click();
     const text = page.getByLabel("Text of src/server/main.rs");
     await text.waitFor();
     // The cursor is at the start of line 3.
@@ -612,12 +665,13 @@ describe("projects", () => {
     );
 
     // A search that fails says why, and a regular expression is asked for on its own.
-    await page.keyboard.press("Control+Shift+F");
-    const again = page.getByRole("textbox", { name: "Search in files" });
     await page.getByLabel("Regex").check();
-    await again.fill("(");
-    await again.press("Enter");
+    await field.fill("(");
     await alert("fatal: unmatched parenthesis").waitFor();
+
+    // Clearing the bar puts the editor back on its own.
+    await page.getByRole("button", { name: "Clear search in files" }).click();
+    expect(await hits.count()).toBe(0);
   });
 
   it("opens the page of a repository with its files for a real server", async () => {
@@ -631,7 +685,7 @@ describe("projects", () => {
     await page.goto(`${server.url}/projects/${id}`);
     await page.getByRole("heading", { name: "browse", level: 1 }).waitFor();
     await page.getByRole("heading", { name: "Files" }).waitFor();
-    await page.getByRole("button", { name: "Go to file" }).waitFor();
+    await page.getByRole("textbox", { name: "Go to file" }).waitFor();
     await page.getByText("This repository is on no forge").waitFor();
   });
 });
@@ -739,7 +793,7 @@ describe("the fleet", () => {
     await open("/fleet");
     await page
       .getByRole("navigation", { name: "Pages" })
-      .getByRole("link", { name: /^Fleet\b.*1 live/ })
+      .getByRole("link", { name: /^Fleet\b.*\b1$/ })
       .waitFor();
   });
 });
@@ -759,14 +813,15 @@ describe("usage", () => {
     async () => {
       await open("/usage");
       await page.getByText("1.84M", { exact: true }).first().waitFor();
-      await page.getByText("23% of the 8M daily budget").waitFor();
+      // The figure and the budget it is measured against are read together, in that order.
+      await page.getByText("of the 8M token budget, 23% used").waitFor();
       await page.getByText("1,284", { exact: true }).waitFor();
       await page.getByText("61%", { exact: true }).first().waitFor();
       await page.getByText("3 h 12 m", { exact: true }).first().waitFor();
       // The heatmap: a cell for each day of 53 weeks, and the busiest day.
       expect(await page.getByTestId("heatmap").locator("span[title]").count()).toBeGreaterThan(300);
       await page.getByText(/busiest day Sat 24 Oct with 2\.52M/).waitFor();
-      await page.getByText("Lighter means fewer tokens, darker more").waitFor();
+      await page.getByText(/The stronger the colour, the more tokens that day used/).waitFor();
       await page.getByRole("heading", { name: "Tokens by model" }).waitFor();
       const models = page.getByRole("table").first();
       await models.getByText("qwen-flash").waitFor();
@@ -779,21 +834,17 @@ describe("usage", () => {
       await page.getByRole("heading", { name: "Lint and type checks" }).waitFor();
       await page.getByText("Before the run ends").waitFor();
       await page.getByRole("cell", { name: "Coder" }).waitFor();
-      // The meter at the foot of the sidebar.
-      await page.getByTestId("tokens-meter").getByText("1.84M / 8M").waitFor();
     },
   );
 
   it.skipIf(usesRealServer)("reads another window when it is chosen", async () => {
     await open("/usage");
-    await page.getByText("23% of the 8M daily budget").waitFor();
+    await page.getByText("of the 8M token budget, 23% used").waitFor();
     await page.getByRole("button", { name: "7 days" }).click();
     await page.getByText("12.9M in the last 7 days across 2 models").waitFor();
-    await page.getByText("1.84M tokens a day on average").waitFor();
+    await page.getByText("1.84M a day on average").waitFor();
     await page.getByRole("button", { name: "30 days" }).click();
     await page.getByText(/in the last 30 days across 2 models/).waitFor();
-    // The meter is of today whatever the window.
-    await page.getByTestId("tokens-meter").getByText("1.84M / 8M").waitFor();
   });
 });
 
@@ -896,10 +947,16 @@ describe("settings", () => {
       "GitLab",
       "Forgejo",
     ]) {
-      await page.getByRole("heading", { name: box, exact: true }).waitFor();
+      // The level keeps the box of a key apart from a webhook of the same forge further down the page.
+      await page.getByRole("heading", { name: box, exact: true, level: 2 }).waitFor();
     }
     await page.getByRole("button", { name: "Save" }).waitFor();
     await page.getByRole("heading", { name: "This server" }).waitFor();
+    // How the app looks is chosen here rather than in the sidebar, and takes effect at once.
+    await page.getByRole("heading", { name: "Appearance", exact: true, level: 2 }).waitFor();
+    await page.getByRole("radio", { name: "Light" }).check();
+    await expect(page.locator("html").getAttribute("data-theme")).resolves.toBe("light");
+    await page.getByRole("radio", { name: "Follow the system" }).check();
   });
 
   it("saves a key to the file of a real server and reads it back", async () => {
@@ -920,16 +977,14 @@ describe("settings", () => {
     "shows every key with its value or its default and the file",
     async () => {
       await open("/settings");
-      await page
-        .getByText("The keys of /srv/moebius/moebius.toml. Save writes only what you changed.")
-        .waitFor();
+      await page.getByRole("heading", { name: "Settings", exact: true }).waitFor();
       expect(await page.getByLabel("Coding rounds a card").inputValue()).toBe("7");
       expect(await page.getByLabel("Tokens a day").inputValue()).toBe("8000000");
       // A key the file does not set shows the default.
       expect(await page.getByLabel("Runs at a time").inputValue()).toBe("");
       await page.getByText("Default 3", { exact: true }).waitFor();
       await page.getByText("Default 127.0.0.1:7171").waitFor();
-      expect(await page.getByLabel("Regression gate").inputValue()).toBe("true");
+      expect(await showing(page.getByLabel("Regression gate"))).toBe("true");
       await page.getByText("http://127.0.0.1:7171", { exact: true }).waitFor();
     },
   );
@@ -937,9 +992,8 @@ describe("settings", () => {
   it.skipIf(usesRealServer)("sends exactly the keys that were changed", async () => {
     await open("/settings");
     await page.getByLabel("Coding rounds a card").waitFor();
-    // Nothing changed: nothing is sent.
-    await page.getByRole("button", { name: "Save" }).click();
-    await page.getByText("No changes to save.").waitFor();
+    // Nothing changed: Save waits for a change, so nothing can be sent.
+    expect(await page.getByRole("button", { name: "Save" }).isDisabled()).toBe(true);
     expect(fake().requests.filter((r) => r.path === "/v1/settings")).toHaveLength(0);
 
     // A key put back to what the file says is not sent.
@@ -947,7 +1001,7 @@ describe("settings", () => {
     await page.getByLabel("Retro at (HH:MM)").fill("");
     await page.getByLabel("Coding rounds a card").fill("9");
     await page.getByLabel("Tokens a day").fill("");
-    await page.getByLabel("Regression gate").selectOption("false");
+    await pickOption(page, page.getByLabel("Regression gate"), "false");
     await page.getByLabel("MCP variables").fill("DOCS_TOKEN, OTHER");
     await page.getByRole("button", { name: "Save" }).click();
     await page.getByText("Saved.").waitFor();

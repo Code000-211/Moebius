@@ -15,7 +15,7 @@ Every board has six columns, each run by one Luau script; a repository replaces 
 | Column | File in the repository |
 |---|---|
 | `Backlog` | `.moebius/backlog.luau` |
-| `Ready` | `.moebius/ready.luau` |
+| `Not started` | `.moebius/ready.luau` |
 | `In progress` | `.moebius/code.luau` |
 | `In review` | `.moebius/review.luau` |
 | `Ready to merge` | `.moebius/merge.luau` |
@@ -28,16 +28,16 @@ the person merges your change.
 ## Steps
 
 1. Get the script the column runs now; an override replaces the whole script, so start from it:
-   `"$MOEBIUS" api GET /v1/repositories/<id>/scripts/Ready --json` gives its `text` (the repository id is in
+   `"$MOEBIUS" api GET /v1/repositories/<id>/scripts/Not%20started --json` gives its `text` (the repository id is in
    `"$MOEBIUS" repos`).
 2. Write `.moebius/<file>.luau` in your worktree with the one change. Keep `function on_card(card)`; keep what the
    default does that the person did not ask to change (blockers, budgets, the run limit, the round limit).
 3. Check every path:
-   `"$MOEBIUS" check-script .moebius/ready.luau --column Ready`, again with `--title "[large] ..."` or
+   `"$MOEBIUS" check-script .moebius/ready.luau --column "Not started"`, again with `--title "[large] ..."` or
    `--author someone` for the other branches. It prints what the script did (`moved the card to In progress`,
    `waited: ...`) or the error, with exit status 1.
 4. Leave the file in the worktree; it is offered as a change when the person offers the chat's changes, after your
-   answer, or the chat ends. In a chat without the repository, save it with `"$MOEBIUS" api PUT /v1/repositories/<id>/scripts/Ready` instead (see the `moebius-configure` skill).
+   answer, or the chat ends. In a chat without the repository, save it with `"$MOEBIUS" api PUT /v1/repositories/<id>/scripts/Not%20started` instead (see the `moebius-configure` skill).
 
 ## What a script can use
 
@@ -54,7 +54,7 @@ files, network or `require`.
 
 The default `ready.luau` with one change: a card whose title says `[large]` starts only when no other run is going.
 
-<!-- column: Ready -->
+<!-- column: Not started -->
 ```luau
 function on_card(card)
   if #card.blocked_by > 0 then
@@ -82,8 +82,8 @@ function on_card(card)
 end
 ```
 
-Try both paths: `"$MOEBIUS" check-script .moebius/ready.luau --column Ready` and
-`"$MOEBIUS" check-script .moebius/ready.luau --column Ready --title "[large] Rewrite the parser"`.
+Try both paths: `"$MOEBIUS" check-script .moebius/ready.luau --column "Not started"` and
+`"$MOEBIUS" check-script .moebius/ready.luau --column "Not started" --title "[large] Rewrite the parser"`.
 
 ## What can go wrong
 

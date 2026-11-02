@@ -7,6 +7,7 @@
  */
 import { type Browser, type BrowserContext, chromium, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { columnsScrollEach, pickOption, scrollbarsAreQuiet, showing } from "./controls";
 import type { FakeServer } from "./fakeServer";
 import { startServer, type TestServer, usesRealServer } from "./server";
 
@@ -92,13 +93,16 @@ describe("the Agents page", () => {
       await open("/agents?agent=Coder");
       const model = page.getByLabel("Model", { exact: true });
       await model.waitFor();
-      expect(await model.inputValue()).toBe("fake-coder");
-      await model.selectOption("claude-fake");
+      expect(await showing(model)).toBe("fake-coder");
+      await pickOption(page, model, "claude-fake");
       // Picking a model takes its protocol with it.
-      expect(await page.getByLabel("Protocol").inputValue()).toBe("anthropic");
-      await page.getByLabel("Thinking").selectOption("high");
+      expect(await showing(page.getByLabel("Protocol"))).toBe("anthropic");
+      await pickOption(page, page.getByLabel("Thinking"), "high");
       await page.getByLabel("Token budget per card").fill("2000000");
-      await page.getByLabel("Instructions", { exact: true }).fill("Keep changes tiny.");
+      // The card holding it is named Instructions too, so the field is asked for as what it is.
+      await page
+        .getByRole("textbox", { name: "Instructions", exact: true })
+        .fill("Keep changes tiny.");
       await save().click();
       await page.getByText("Saved as commit c0ffee1.").waitFor();
       expect(requests("PUT", "/v1/agents/Coder")[0]?.body).toEqual({
@@ -113,9 +117,8 @@ describe("the Agents page", () => {
         },
         instructions: "Keep changes tiny.",
       });
-      // Saving what is there makes no commit.
-      await save().click();
-      await page.getByText("it changed nothing", { exact: false }).waitFor();
+      // Nothing waits for the server now, so Save itself says so by resting.
+      expect(await save().isDisabled()).toBe(true);
 
       await page.getByLabel("Token budget per card").fill("0");
       await save().click();
@@ -152,7 +155,7 @@ describe("the Agents page", () => {
       await page.getByLabel("Name of the new agent").fill("Tester");
       await save().click();
       await page.getByText("Enter the model.").waitFor();
-      await page.getByLabel("Model", { exact: true }).selectOption("fake-small");
+      await pickOption(page, page.getByLabel("Model", { exact: true }), "fake-small");
       await save().click();
       await page.getByText("Saved as commit").waitFor();
       await card("Tester").waitFor();
@@ -185,9 +188,9 @@ describe("the Agents page", () => {
 
   it.skipIf(usesRealServer)("asks the Moebius agent to write the instructions", async () => {
     await open("/agents?agent=Coder");
-    await page.getByRole("button", { name: "Let the Moebius agent write them" }).click();
+    await page.getByRole("button", { name: "Write with agent" }).click();
     await page.getByLabel("What this agent should do").fill("Review small changes first.");
-    await page.getByRole("button", { name: "Ask the agent" }).click();
+    await page.getByRole("button", { name: "Submit" }).click();
     await page.getByRole("link", { name: "Open the chat" }).waitFor();
     const started = server.chat?.started.at(-1);
     expect(started?.agent).toBe("Moebius");
@@ -202,7 +205,7 @@ describe("the Agents page", () => {
       await page.getByTestId("harness-setup").waitFor();
       const model = page.getByLabel("Model", { exact: true });
       await model.waitFor();
-      await model.selectOption("fake-small");
+      await pickOption(page, model, "fake-small");
       await page.getByLabel("skill path").fill("skills/extra");
       await page.getByRole("button", { name: "Add skill" }).click();
       await save().click();
@@ -241,7 +244,9 @@ describe("the Skills page", () => {
       const description = page.getByLabel("Description");
       expect(await description.inputValue()).toBe("Write plainly.");
       await description.fill("Write very plainly.");
-      await page.getByLabel("SKILL.md", { exact: true }).fill("Use shorter sentences.\n");
+      await page
+        .getByRole("textbox", { name: "SKILL.md", exact: true })
+        .fill("Use shorter sentences.\n");
       await save().click();
       await page.getByText("Saved as commit c0ffee1.").waitFor();
       expect(requests("PUT", "/v1/skills/house-style")[0]?.body).toEqual({
@@ -271,7 +276,7 @@ describe("the Skills page", () => {
   it.skipIf(usesRealServer)("opens, saves, adds and deletes a skill's other files", async () => {
     await open("/skills?skill=house-style");
     await page.getByRole("button", { name: "scripts/check.py" }).click();
-    const text = page.getByLabel("File text");
+    const text = page.getByRole("textbox", { name: "File text", exact: true });
     expect(await text.inputValue()).toBe("print('ok')\n");
     await text.fill("print('changed')\n");
     await page.getByRole("button", { name: "Save file" }).click();
@@ -281,10 +286,13 @@ describe("the Skills page", () => {
     });
 
     await page.getByRole("button", { name: "New file" }).click();
-    await page.getByRole("button", { name: "Save file" }).click();
-    await page.getByText("Enter the file's path inside the skill").waitFor();
+    // A new file has no path yet: the page says what is missing where it is missing, and will not save until it is
+    // there, rather than waiting to be pressed to find out. The button that cannot be pressed says the same words to
+    // a screen reader, so the line that is on the screen is the first of the two.
+    await page.getByText("Enter the file's path inside the skill").first().waitFor();
+    expect(await page.getByRole("button", { name: "Save file" }).isDisabled()).toBe(true);
     await page.getByLabel("Path in the skill").fill("notes/a.md");
-    await page.getByLabel("File text").fill("Notes");
+    await page.getByRole("textbox", { name: "File text", exact: true }).fill("Notes");
     await page.getByRole("button", { name: "Save file" }).click();
     await page.getByText("Saved as commit").waitFor();
     await page.getByRole("button", { name: "notes/a.md" }).waitFor();
@@ -296,12 +304,38 @@ describe("the Skills page", () => {
   });
 
   it.skipIf(usesRealServer)(
+    "reads every file of a skill the way the first of them was read",
+    async () => {
+      await open("/skills?skill=house-style");
+      await page.getByRole("button", { name: "New file" }).click();
+      await page.getByLabel("Path in the skill").fill("notes/readme.md");
+      await page
+        .getByRole("textbox", { name: "File text", exact: true })
+        .fill("# Notes\n\nSay it once.\n");
+      await page.getByRole("button", { name: "Save file" }).click();
+      await page.getByText("Saved as commit").waitFor();
+      // It opens as the text; the drawing is one tab away and stays picked for the next file too.
+      expect(await page.getByRole("textbox", { name: "File text", exact: true }).count()).toBe(1);
+      await page.getByRole("tab", { name: "Rendered" }).click();
+      await page.getByRole("heading", { name: "Notes", exact: true }).waitFor();
+      await page.getByRole("button", { name: "SKILL.md" }).click();
+      expect(await page.getByRole("tab", { name: "Rendered" }).getAttribute("aria-selected")).toBe(
+        "true",
+      );
+      expect(await page.getByRole("textbox", { name: "SKILL.md", exact: true }).count()).toBe(0);
+      expect(
+        await page.getByRole("paragraph").filter({ hasText: "Use short sentences." }).count(),
+      ).toBeGreaterThan(0);
+    },
+  );
+
+  it.skipIf(usesRealServer)(
     "lists a file that is not text with its size and does not edit it",
     async () => {
       await open("/skills?skill=house-style");
       await page.getByRole("button", { name: "assets/logo.bin" }).click();
       await page.getByText("Not text, or too large to edit (20.0 KB).").waitFor();
-      expect(await page.getByLabel("File text").count()).toBe(0);
+      expect(await page.getByRole("textbox", { name: "File text" }).count()).toBe(0);
     },
   );
 
@@ -313,11 +347,13 @@ describe("the Skills page", () => {
       await page
         .getByText("Copied from https://github.com/acme/skills at commit 0123456789ab")
         .waitFor();
-      expect(
-        await page.getByLabel("SKILL.md", { exact: true }).getAttribute("readonly"),
-      ).not.toBeNull();
+      // A skill you cannot change is read, and it opens as the text all the same; the drawing is one tab away.
+      const box = page.getByRole("textbox", { name: "SKILL.md", exact: true });
+      expect(await box.getAttribute("readonly")).not.toBeNull();
+      await page.getByRole("tab", { name: "Rendered" }).click();
+      await page.getByText("The tdd skill.").waitFor();
       expect(await save().count()).toBe(0);
-      await page.getByRole("button", { name: "Update from upstream" }).click();
+      await page.getByRole("button", { name: "Update from the repository" }).click();
       await page.getByRole("link", { name: "Open the chat" }).waitFor();
       const message = String(server.chat?.started.at(-1)?.message);
       expect(message).toContain("Update the skill tdd from its source");
@@ -338,7 +374,7 @@ describe("the Skills page", () => {
   it.skipIf(usesRealServer)("imports from a link by asking the Moebius agent", async () => {
     await open("/skills");
     await page.getByRole("button", { name: "Import", exact: true }).click();
-    const ask = page.getByRole("button", { name: "Ask the agent" });
+    const ask = page.getByRole("button", { name: "Submit" });
     expect(await ask.isDisabled()).toBe(true);
     await page.getByRole("button", { name: "From a link" }).click();
     await page.getByLabel("A git repository or a page").fill("https://github.com/acme/more-skills");
@@ -371,7 +407,7 @@ describe("the Skills page", () => {
       expect(fake().uploads).toEqual([
         { id: "ab12cd34ab12cd34ab12cd34ab12cd34", size: 12, type: "application/zip" },
       ]);
-      await page.getByRole("button", { name: "Ask the agent" }).click();
+      await page.getByRole("button", { name: "Submit" }).click();
       await page.getByRole("link", { name: "Open the chat" }).waitFor();
       expect(String(server.chat?.started.at(-1)?.message)).toContain(
         "unzip -q /srv/moebius/uploads/ab12cd34ab12cd34ab12cd34ab12cd34.zip -d import",
@@ -401,7 +437,7 @@ describe("the MCP servers page", () => {
     await open("/mcp-servers");
     await page.getByRole("heading", { name: "MCP servers", exact: true }).waitFor();
     await page
-      .locator('[data-testid="list-card"], [data-testid="harness-setup"], :text("No server yet.")')
+      .locator('[data-testid="list-card"], [data-testid="harness-setup"], :text("No servers yet")')
       .first()
       .waitFor();
   });
@@ -432,7 +468,7 @@ describe("the MCP servers page", () => {
     await page.getByLabel("Name of the new server").fill("search");
     await save().click();
     await page.getByText("Enter the command.").waitFor();
-    await page.getByLabel("Kind").selectOption("URL");
+    await pickOption(page, page.getByLabel("Kind"), "URL");
     await page.getByLabel("URL", { exact: true }).fill("https://search.example.com/mcp");
     await page.getByRole("button", { name: "Add header" }).click();
     await page.getByLabel("Name 1").fill("Authorization");
@@ -462,7 +498,7 @@ describe("the MCP servers page", () => {
     await page.getByRole("button", { name: "Import", exact: true }).click();
     await page.getByRole("button", { name: "From a link" }).click();
     await page.getByLabel("A git repository or a page").fill("https://github.com/acme/docs-mcp");
-    await page.getByRole("button", { name: "Ask the agent" }).click();
+    await page.getByRole("button", { name: "Submit" }).click();
     await page.getByRole("link", { name: "Open the chat" }).waitFor();
     expect(String(server.chat?.started.at(-1)?.message)).toContain("mcp.toml");
   });
@@ -472,7 +508,7 @@ describe("the Models page", () => {
   it("loads", async () => {
     await open("/models");
     await page.getByRole("heading", { name: "Models", exact: true }).waitFor();
-    await page.getByRole("heading", { name: "Upstreams" }).waitFor();
+    await page.getByRole("heading", { name: "Providers" }).waitFor();
     await page.getByRole("heading", { name: "Model classes" }).waitFor();
     await page.getByRole("heading", { name: "Teacher" }).waitFor();
   });
@@ -502,17 +538,32 @@ describe("the Models page", () => {
   );
 
   it.skipIf(usesRealServer)(
+    "marks the answer with a check when every upstream answers",
+    async () => {
+      await open("/models", (held) => {
+        held.availableErrors = [];
+      });
+      await page.getByTestId("upstream").nth(0).waitFor();
+      const mark = page.getByRole("img", { name: "Answered" });
+      // Nothing is marked before the button is pressed: the count already says what the upstreams answered.
+      expect(await mark.count()).toBe(0);
+      await page.getByRole("button", { name: "Refresh" }).click();
+      await mark.waitFor();
+    },
+  );
+
+  it.skipIf(usesRealServer)(
     "sends a typed key once, stores it by name and never shows it back",
     async () => {
       await open("/models");
-      await page.getByRole("button", { name: "Add upstream" }).click();
+      await page.getByRole("button", { name: "Add provider" }).click();
       const row = page.getByTestId("upstream").nth(3);
       await row.getByLabel("Base URL").fill("https://api.new.example");
-      await row.getByLabel("Protocol").selectOption("anthropic");
-      await row.getByLabel("Key of upstream 4: where it comes from").selectOption("typed");
+      await pickOption(page, row.getByLabel("Protocol"), "anthropic");
+      await pickOption(page, row.getByLabel("Key of provider 4: where it comes from"), "Typed key");
       await save().click();
-      await page.getByText("Type the key of the upstream 4.").waitFor();
-      const key = row.getByLabel("Key of upstream 4: the key");
+      await page.getByText("Type the key of the provider 4.").waitFor();
+      const key = row.getByLabel("Key of provider 4: the key");
       expect(await key.getAttribute("type")).toBe("password");
       await key.fill("sk-secret-123");
       await save().click();
@@ -536,7 +587,7 @@ describe("the Models page", () => {
         remove: [],
       });
       // After the save the field is empty and says a key is stored.
-      const after = page.getByTestId("upstream").nth(3).getByLabel("Key of upstream 4: the key");
+      const after = page.getByTestId("upstream").nth(3).getByLabel("Key of provider 4: the key");
       expect(await after.inputValue()).toBe("");
       expect(await after.getAttribute("placeholder")).toBe("Stored; type to replace it");
       expect(await page.content()).not.toContain("sk-secret-123");
@@ -547,11 +598,15 @@ describe("the Models page", () => {
   it.skipIf(usesRealServer)("says when nothing changed and what the server refused", async () => {
     await open("/models");
     await page.getByTestId("upstream").nth(0).waitFor();
-    await save().click();
-    await page.getByText("No changes to save.").waitFor();
+    // Nothing changed: Save rests until something does.
+    expect(await save().isDisabled()).toBe(true);
     const first = page.getByTestId("upstream").nth(0);
-    await first.getByLabel("Key of upstream 1: where it comes from").selectOption("env");
-    await first.getByLabel("Key of upstream 1: environment variable").fill("OPENAI_KEY");
+    await pickOption(
+      page,
+      first.getByLabel("Key of provider 1: where it comes from"),
+      "From the environment",
+    );
+    await first.getByLabel("Key of provider 1: environment variable").fill("OPENAI_KEY");
     fake().refuseNext("PUT", "/v1/settings", 422, "environment variable OPENAI_KEY is not set");
     await save().click();
     await page.getByRole("alert").filter({ hasText: "OPENAI_KEY is not set" }).waitFor();
@@ -567,7 +622,7 @@ describe("the Models page", () => {
       await page.getByRole("button", { name: "Turn on the decision model" }).click();
       await save().click();
       await page.getByText("Enter the model of the decision model.").waitFor();
-      await page.getByLabel("Model", { exact: true }).selectOption("fake-small");
+      await pickOption(page, page.getByLabel("Model", { exact: true }), "fake-small");
       await save().click();
       await page.getByText("Saved.", { exact: true }).waitFor();
       const body = requests("PUT", "/v1/settings")[0]?.body as {
@@ -761,7 +816,7 @@ describe("the Plugins page", () => {
       await rows.nth(3).waitFor();
       const guard = await rows.nth(0).textContent();
       expect(guard).toContain("guard");
-      expect(guard).toContain("In the server");
+      expect(guard).toContain("Built in");
       expect(guard).toContain("tool_call");
       const process = await rows.nth(1).textContent();
       expect(process).toContain("Running");
@@ -775,4 +830,23 @@ describe("the Plugins page", () => {
       expect(own).toContain("/srv/.moebius/plugins/allow-reads.log");
     },
   );
+});
+
+describe("the pages that put a list beside a detail", () => {
+  it.skipIf(usesRealServer)("keeps the list and the detail each inside the window", async () => {
+    await open("/");
+    // The three lay out what the harness configuration holds the same way.
+    for (const [path, title] of [
+      ["/agents", "Agents"],
+      ["/skills", "Skills"],
+      ["/mcp-servers", "MCP servers"],
+    ] as const) {
+      await page.goto(`${server.url}${path}`);
+      await page.getByRole("heading", { name: title, level: 1 }).waitFor();
+      await page.getByTestId("list-card").first().click();
+      await page.getByTestId("detail-column").waitFor();
+      await columnsScrollEach(page);
+      await scrollbarsAreQuiet(page);
+    }
+  });
 });

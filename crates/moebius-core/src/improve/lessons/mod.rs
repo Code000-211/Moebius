@@ -38,15 +38,19 @@ const HEADING: &str = "Lessons from earlier cards";
 pub const BRIEF: &str = "Besides proposals, write lessons: short notes for the agents that work on this repository's \
     later cards, from the failed runs, the review rejections and the cards that merged at once (`merged` in the \
     report). End your final answer with one fenced block, ```lessons, holding a JSON array; each entry is \
-    {\"card\": <the card of the report>, \"kind\": \"failure\" | \"rejection\" | \"success\", \"situation\": <the kind \
+    {\"card\": <the number the report line names>, \"kind\": \"failure\" | \"rejection\" | \"success\", \"situation\": <the kind \
     of task or step it is about>, \"lesson\": <what went wrong, or what worked>, \"advice\": <what to do>}. Each text \
     is one or two sentences; write what holds for similar cards, not the story of this one, and leave out anything \
-    secret. Write no lesson the traces do not support.\n";
+    secret. Write no lesson the traces do not support. Write a lesson only for a report line that names a card: \
+    a lesson is kept with that card's repository, and one that names no card cannot be kept.\n";
 
 /// One lesson as the analyst writes it.
 #[derive(Debug, Deserialize)]
 struct Written {
-    card: i64,
+    /// The card the report line names. Some lines name none — a chat that only keeps the board — and the analyst
+    /// writes `null` for those, so it is read as such rather than refusing the whole block with them.
+    #[serde(default)]
+    card: Option<i64>,
     #[serde(default)]
     kind: String,
     situation: String,
@@ -85,18 +89,22 @@ pub fn store_written(app: &App, day: &str, answer: &str) -> Vec<String> {
     };
     let mut warnings = Vec::new();
     for entry in written {
-        let card = app.store.card(entry.card).ok().flatten();
+        let Some(card_id) = entry.card else {
+            warnings.push("a lesson names no card, which nothing can be kept with".to_string());
+            continue;
+        };
+        let card = app.store.card(card_id).ok().flatten();
         let (situation, lesson, advice) = (
             shorten(&entry.situation),
             shorten(&entry.lesson),
             shorten(&entry.advice),
         );
         let Some(card) = card else {
-            warnings.push(format!("a lesson names card {}, which is gone", entry.card));
+            warnings.push(format!("a lesson names card {card_id}, which is gone"));
             continue;
         };
         if [&situation, &lesson, &advice].iter().any(|t| t.is_empty()) {
-            warnings.push(format!("a lesson of card {} has an empty part", entry.card));
+            warnings.push(format!("a lesson of card {card_id} has an empty part"));
             continue;
         }
         let kind = if KINDS.contains(&entry.kind.as_str()) {
@@ -213,12 +221,23 @@ mod tests {
              {{\"card\": {}, \"kind\": \"rejection\", \"situation\": \"Changing the parser\", \
                \"lesson\": \"The reviewer wanted a test\", \"advice\": \"Add a parser test token=sk-ant-abcdefghijklmnopqrstuvwxyz\"}},\
              {{\"card\": 999, \"situation\": \"x\", \"lesson\": \"y\", \"advice\": \"z\"}},\
-             {{\"card\": {}, \"kind\": \"odd\", \"situation\": \" \", \"lesson\": \"y\", \"advice\": \"z\"}}\
+             {{\"card\": {}, \"kind\": \"odd\", \"situation\": \" \", \"lesson\": \"y\", \"advice\": \"z\"}},\
+             {{\"card\": null, \"kind\": \"failure\", \"situation\": \"A chat that only keeps the board\", \
+               \"lesson\": \"The flags were guessed\", \"advice\": \"Read the help first\"}}\
              ]\n```\n",
             card.id, card.id
         );
         let warnings = store_written(&app, "2026-03-10", &answer);
-        assert_eq!(warnings.len(), 2, "{warnings:?}");
+        // An entry naming no card is left out on its own. The report has lines with no card — a chat that only keeps
+        // the board — and the analyst writes what the line says rather than inventing a number, so one of them costs
+        // its entry and not the whole block beside it.
+        assert_eq!(warnings.len(), 3, "{warnings:?}");
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w == "a lesson names no card, which nothing can be kept with"),
+            "{warnings:?}"
+        );
         let stored = app.store.lessons(Some(repo.id), false).unwrap();
         assert_eq!(stored.len(), 1);
         assert_eq!(stored[0].kind, "rejection");

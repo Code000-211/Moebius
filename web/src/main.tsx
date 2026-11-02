@@ -9,8 +9,10 @@ import { RouterProvider } from "react-router";
 import { router } from "./app/routes";
 import { startLogin } from "./auth/login";
 import "./styles/tailwind.css";
+import { start as startTheme } from "./theme";
 
 void startLogin(window);
+startTheme();
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: false } },

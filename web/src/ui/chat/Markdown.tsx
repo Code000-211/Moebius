@@ -1,9 +1,13 @@
 /**
  * The agent's and the person's text as Markdown (GitHub flavoured: tables, task lists, strikethrough), drawn in the
- * app's colours. Code blocks are highlighted by highlight.js through `rehype-highlight` (its common languages) and
- * have a Copy button. Links open in a new tab. Raw HTML in the text is not rendered, as `react-markdown` does by
- * default.
+ * app's colours. It is body text: 15px on a relaxed line, headings from the scale rather than shrunk headings, and
+ * monospace only where a character counts — a path, a command, a block of code. A heading is drawn one level under
+ * the Markdown that asks for it, so a page keeps its one `<h1>` and an agent's `#` lands as an `<h2>`. Code blocks are
+ * highlighted by highlight.js through `rehype-highlight` (its common languages) and have a Copy button. What an agent
+ * writes line by line is drawn line by line (`keepNewlines`); a Markdown file's own wrapping stays soft. Links open in
+ * a new tab. Raw HTML in the text is not rendered, as `react-markdown` does by default.
  */
+import { CheckSquareIcon, SquareIcon } from "@phosphor-icons/react";
 import type { Element, ElementContent } from "hast";
 import { memo, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
@@ -42,68 +46,109 @@ const components: Components = {
     // A block's `code` is inside `pre`; this is the inline one (or the block's own element, which keeps its classes).
     const block = typeof className === "string" && className.includes("language-");
     return (
-      <code
-        className={cn(
-          block ? className : "rounded-sm bg-card px-half font-mono text-[0.9em] text-high",
-        )}
-      >
+      <code className={cn(block ? className : "rounded-small bg-code px-2 font-mono text-sm")}>
         {children}
       </code>
     );
   },
   a({ href, children }) {
     return (
-      <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent underline">
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-text underline underline-offset-4 transition-colors duration-(--motion-routine) ease-out hover:text-secondary"
+      >
         {children}
       </a>
     );
   },
-  p: ({ children }) => <p className="my-base first:mt-0 last:mb-0">{children}</p>,
+  p: ({ children }) => <p className="my-4 first:mt-0 last:mb-0">{children}</p>,
   ul: ({ children, className }) => (
     <ul
       className={cn(
-        "my-base list-disc pl-6",
-        className?.includes("contains-task-list") && "list-none pl-1",
+        "my-4 list-disc pl-6",
+        className?.includes("contains-task-list") && "list-none pl-0",
       )}
     >
       {children}
     </ul>
   ),
-  ol: ({ children }) => <ol className="my-base list-decimal pl-6">{children}</ol>,
-  h1: ({ children }) => (
-    <h1 className="mb-base mt-double text-lg font-bold text-high">{children}</h1>
+  ol: ({ children }) => <ol className="my-4 list-decimal pl-6">{children}</ol>,
+  li: ({ children, className }) => (
+    <li className={cn(className?.includes("task-list-item") && "flex items-start gap-2")}>
+      {children}
+    </li>
   ),
-  h2: ({ children }) => (
-    <h2 className="mb-base mt-double text-base font-bold text-high">{children}</h2>
-  ),
-  h3: ({ children }) => (
-    <h3 className="mb-base mt-plusfifty text-sm font-bold text-high">{children}</h3>
-  ),
-  h4: ({ children }) => (
-    <h4 className="mb-base mt-plusfifty text-sm font-bold text-high">{children}</h4>
-  ),
+  // A box of a task list is a state of a line of text, not a control to press, so it is an icon with a word.
+  input: ({ checked }) =>
+    checked ? (
+      <CheckSquareIcon
+        role="img"
+        aria-label="Done"
+        className="mt-1 size-4 shrink-0 text-complete"
+      />
+    ) : (
+      <SquareIcon
+        role="img"
+        aria-label="Not done"
+        className="mt-1 size-4 shrink-0 text-secondary"
+      />
+    ),
+  // One level down from what the Markdown asks for, and the same size each level was already drawn at: the outline of
+  // the page stays page title, then the agent's sections.
+  h1: ({ children }) => <h2 className="mb-2 mt-6 text-xl font-semibold text-text">{children}</h2>,
+  h2: ({ children }) => <h3 className="mb-2 mt-6 text-lg font-semibold text-text">{children}</h3>,
+  h3: ({ children }) => <h4 className="mb-2 mt-4 text-base font-semibold text-text">{children}</h4>,
+  h4: ({ children }) => <h5 className="mb-2 mt-4 text-base font-semibold text-text">{children}</h5>,
   blockquote: ({ children }) => (
-    <blockquote className="my-base border-l-2 pl-plusfifty text-low">{children}</blockquote>
+    <blockquote className="my-4 border-l-2 border-hairline-strong pl-4 text-secondary">
+      {children}
+    </blockquote>
   ),
   table: ({ children }) => (
-    <div className="my-base overflow-x-auto">
-      <table className="min-w-full border-collapse text-sm">{children}</table>
+    <div className="my-4 overflow-x-auto rounded-control">
+      <table className="w-full border-collapse text-left text-base">{children}</table>
     </div>
   ),
   th: ({ children }) => (
-    <th className="border px-base py-half text-left font-bold text-high">{children}</th>
+    <th className="border-b border-hairline bg-sunken px-3 py-2 text-left text-sm font-semibold text-secondary">
+      {children}
+    </th>
   ),
-  td: ({ children }) => <td className="border px-base py-half">{children}</td>,
-  hr: () => <hr className="my-double" />,
+  td: ({ children }) => (
+    <td className="border-b border-hairline px-3 py-2 align-top text-text">{children}</td>
+  ),
+  hr: () => <hr className="my-6 border-hairline" />,
 };
 
 const REMARK = [remarkGfm];
 // `detect` finds the language of a block that names none; `ignoreMissing` keeps an unknown name from throwing.
 const REHYPE = [[rehypeHighlight, { detect: false, ignoreMissing: true }]] as never;
 
-function MarkdownText({ content, className }: { content: string; className?: string }): ReactNode {
+function MarkdownText({
+  content,
+  className,
+  keepNewlines,
+}: {
+  content: string;
+  className?: string;
+  /**
+   * Keep every newline the text was written with inside a paragraph and a list item. What an agent writes is a line
+   * per thought, so its breaks are content: drawn as spaces they are lost from the screen, and — because a selection
+   * copies what is drawn — from anything pasted out of it. A Markdown file is written the other way, hard-wrapped by
+   * whoever wrote it, so there the breaks stay soft and only the blank lines make a paragraph.
+   */
+  keepNewlines?: boolean;
+}): ReactNode {
   return (
-    <div className={cn("text-sm text-normal", className)}>
+    <div
+      className={cn(
+        "text-base leading-relaxed text-text",
+        keepNewlines && "[&_li]:whitespace-pre-wrap [&_p]:whitespace-pre-wrap",
+        className,
+      )}
+    >
       <ReactMarkdown remarkPlugins={REMARK} rehypePlugins={REHYPE} components={components}>
         {content}
       </ReactMarkdown>

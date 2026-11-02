@@ -195,7 +195,7 @@ mod tests {
         let (_dir, app, engine, repo) = setup();
         let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
 
-        // Backlog -> Ready -> In progress, where the Coder run starts.
+        // Backlog -> Not started -> In progress, where the Coder run starts.
         let step = engine.settle(card.id).unwrap();
         assert_eq!(app.card(card.id).unwrap().column, "In progress");
         assert!(step.started_run.is_some());
@@ -337,7 +337,7 @@ mod tests {
 
         app.approve_issue(&crate::decide::Actor::Person, card.id, "fine by me")
             .unwrap();
-        assert_eq!(app.card(card.id).unwrap().column, "Ready");
+        assert_eq!(app.card(card.id).unwrap().column, "Not started");
         assert!(app.store.inbox().unwrap().is_empty());
         assert_eq!(
             app.store.judgements("approve_issue").unwrap()[0].decider,
@@ -359,7 +359,7 @@ mod tests {
         git(&clone, &["commit", "--quiet", "-m", "hold"]).unwrap();
         let card = app.create_issue(repo, "Held", "", PERSON).unwrap();
         let step = engine.settle(card.id).unwrap();
-        assert_eq!(app.card(card.id).unwrap().column, "Ready");
+        assert_eq!(app.card(card.id).unwrap().column, "Not started");
         assert_eq!(step.waiting.as_deref(), Some("held by the repository"));
     }
 
@@ -375,7 +375,7 @@ mod tests {
         let reason = format!("waiting for #{}", blocker.number);
         for _ in 0..2 {
             let step = engine.settle(card.id).unwrap();
-            assert_eq!(app.card(card.id).unwrap().column, "Ready");
+            assert_eq!(app.card(card.id).unwrap().column, "Not started");
             assert_eq!(step.waiting.as_deref(), Some(reason.as_str()));
         }
 
@@ -390,7 +390,7 @@ mod tests {
         let card = app.create_issue(repo, "Second", "", PERSON).unwrap();
         app.store.set_dependencies(card.id, &[99].into()).unwrap();
         let step = engine.settle(card.id).unwrap();
-        assert_eq!(app.card(card.id).unwrap().column, "Ready");
+        assert_eq!(app.card(card.id).unwrap().column, "Not started");
         assert_eq!(step.waiting.as_deref(), Some("waiting for #99"));
     }
 }

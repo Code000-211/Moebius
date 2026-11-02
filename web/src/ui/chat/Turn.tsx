@@ -1,19 +1,29 @@
 /**
- * One turn of a conversation (the desktop app's CH3-D): the person's message as the head of a card and what the agent
- * did and answered as its body. Presentational: the turn comes in as data (see `chat/turns.ts`), and so do the folded
- * state and the clicks. A later page that shows a run's conversation draws it with this.
+ * One turn of a conversation (the desktop app's CH3-D): the person's message as its head and what the agent did and
+ * answered as its body. Presentational: the turn comes in as data (see `chat/turns.ts`), and so do the folded state
+ * and the clicks. A later page that shows a run's conversation draws it with this.
+ *
+ * The answer is body text on a readable measure. What the agent did is one row apiece — thinking, a tool, a group of
+ * reads, a changed file, a todo list — each a control 40px tall that says its state in a word, opens to the text it
+ * worked with, and keeps that text on the colour of code rather than in a box of its own colours.
  */
 import { CircleNotchIcon } from "@phosphor-icons/react";
-import { useState } from "react";
-import { inputSummary, refused, type ToolCall, toolTitle, verdict } from "../../chat/conversation";
+import {
+  inputPath,
+  inputSummary,
+  refused,
+  type ToolCall,
+  toolTitle,
+  verdict,
+} from "../../chat/conversation";
 import type { Block, StepView, Turn as TurnData } from "../../chat/turns";
 import { cn } from "../lib/cn";
+import { plural } from "../lib/format";
 import { ChatAggregatedToolEntries } from "./ChatAggregatedToolEntries";
 import { ChatAssistantMessage } from "./ChatAssistantMessage";
 import { ChatCollapsedThinking } from "./ChatCollapsedThinking";
 import { ChatErrorMessage } from "./ChatErrorMessage";
 import { ChatFileEntry } from "./ChatFileEntry";
-import { ChatMarkdown } from "./ChatMarkdown";
 import { ChatTodoList } from "./ChatTodoList";
 import { ChatToolSummary } from "./ChatToolSummary";
 import { ChatUserMessage } from "./ChatUserMessage";
@@ -25,7 +35,7 @@ import type { ToolStatusLike } from "./ToolStatusDot";
 /** The most lines of a tool's output drawn; the rest is said to be left out. */
 const MAX_OUTPUT_LINES = 200;
 
-/** The status the dot of a tool call shows. */
+/** The status a tool call is in, told by one of the words `ToolStatusDot` knows. */
 export function toolStatus(call: ToolCall): ToolStatusLike {
   if (refused(call)) return { status: "denied" };
   if (call.execution?.state === "finished") {
@@ -42,6 +52,7 @@ function changesOf(call: ToolCall): DiffChange[] | null {
   return null;
 }
 
+/** What a tool was given and what it printed, on the colour of code, each with a Copy button. */
 function Details({ call }: { call: ToolCall }) {
   const check = verdict(call);
   const output = call.output.split("\n");
@@ -51,30 +62,38 @@ function Details({ call }: { call: ToolCall }) {
       ? call.input.command
       : call.input.type === "other"
         ? call.input.json
-        : inputSummary(call.input);
+        : (inputPath(call.input) ?? inputSummary(call.input));
   return (
-    <div className="ml-6 mt-half flex flex-col gap-half rounded-md border bg-recessed p-base">
+    <div
+      data-testid="tool-details"
+      className="reveal-copy mt-1 flex flex-col gap-3 rounded-control bg-code p-3"
+    >
       {check && !check.allowed && (
-        <div className="text-xs text-error">
+        <p className="break-words text-sm font-semibold text-error-text">
           Blocked: {check.reason || "a rule refused this call"}
-        </div>
+        </p>
       )}
       {input && (
-        <div className="flex items-start gap-base">
-          <pre className="min-w-0 flex-1 whitespace-pre-wrap break-all font-mono text-xs text-high">
+        <div className="flex items-start gap-3">
+          <pre className="min-w-0 flex-1 break-all whitespace-pre-wrap font-mono text-sm text-text">
             {input}
           </pre>
           <CopyButton text={input} label="Copy input" />
         </div>
       )}
       {call.output !== "" && (
-        <div className="flex items-start gap-base border-t pt-half">
-          <pre className="max-h-64 min-w-0 flex-1 overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-normal">
-            {shown}
-            {output.length > MAX_OUTPUT_LINES &&
-              `\n… ${output.length - MAX_OUTPUT_LINES} more lines left out`}
-          </pre>
-          <CopyButton text={call.output} label="Copy output" />
+        <div className="flex flex-col gap-2 border-t border-hairline pt-3">
+          <div className="flex items-start gap-3">
+            <pre className="max-h-64 min-w-0 flex-1 overflow-auto break-all whitespace-pre-wrap font-mono text-sm text-text tabular-nums">
+              {shown}
+            </pre>
+            <CopyButton text={call.output} label="Copy output" />
+          </div>
+          {output.length > MAX_OUTPUT_LINES && (
+            <p className="m-0 text-sm text-secondary tabular-nums">
+              {plural(output.length - MAX_OUTPUT_LINES, "more line", "more lines")} left out
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -111,24 +130,18 @@ function ToolLine({
       </ChatFileEntry>
     );
   }
-  const tag = refused(call) ? (
-    <span className="shrink-0 rounded-sm bg-error/10 px-base text-xs text-error">Blocked</span>
-  ) : call.execution?.state === "running" ? (
-    <span className="shrink-0 rounded-sm bg-live-fill px-base text-xs text-live">Running</span>
-  ) : null;
   const hasDetails =
     call.output !== "" || (check !== null && !check.allowed) || call.input.type !== "unknown";
   return (
     <div>
       <ChatToolSummary
         summary={inputSummary(call.input)}
+        detail={inputPath(call.input) ?? undefined}
         toolName={toolTitle(call)}
         status={status}
-        trailing={tag}
         isTruncated={hasDetails}
         expanded={expanded}
         onToggle={onToggle}
-        className={cn(refused(call) && "text-error")}
       />
       {expanded && <Details call={call} />}
     </div>
@@ -144,17 +157,16 @@ function StepLine({
   isOpen: (key: string) => boolean;
   onToggle: (key: string) => void;
 }) {
-  const [hovered, setHovered] = useState(false);
   if (step.kind === "thinking") {
     return (
       <ChatCollapsedThinking
         entries={[{ content: step.text, expansionKey: step.key }]}
+        seconds={step.seconds}
+        ongoing={step.ongoing}
         expanded={isOpen(step.key)}
-        isHovered={hovered}
         onToggle={() => onToggle(step.key)}
-        onHoverChange={setHovered}
         renderMarkdown={({ content, className }) => (
-          <Markdown content={content} className={className} />
+          <Markdown content={content} className={className} keepNewlines />
         )}
       />
     );
@@ -166,13 +178,12 @@ function StepLine({
         unit="file"
         entries={step.calls.map((call, index) => ({
           summary: inputSummary(call.input),
+          detail: inputPath(call.input) ?? undefined,
           status: toolStatus(call),
           expansionKey: `${step.key}-${index}`,
         }))}
         expanded={isOpen(step.key)}
-        isHovered={hovered}
         onToggle={() => onToggle(step.key)}
-        onHoverChange={setHovered}
       />
     );
   }
@@ -196,12 +207,11 @@ function BlockView({
         <ChatAssistantMessage
           content={block.text}
           renderMarkdown={({ content }) => (
-            <ChatMarkdown
-              content={content}
-              renderContent={({ content, className }) => (
-                <Markdown content={content} className={className} />
-              )}
-            />
+            // The answer keeps the measure of the standard and takes every line the agent wrote; the wrapper the
+            // component copied is one box that says the same.
+            <div className="max-w-prose">
+              <Markdown content={content} className="break-words" keepNewlines />
+            </div>
           )}
           actions={<CopyButton text={block.text} label="Copy message" />}
         />
@@ -223,16 +233,23 @@ function BlockView({
         />
       );
     case "steps":
+      // A row of the log is 32px rather than the 40px of a thing you aim at, and the rows sit 4px apart, so a log of
+      // what the agent did reads as one block of small marks rather than a list to choose from. It is the same rhythm
+      // in the page and in the dock. The marker is what tells `e2e/design/audit.test.ts` these rows are a log at 32px
+      // rather than controls at 40px.
       return (
-        <div className="flex flex-col gap-base" data-testid="steps">
+        <div className="flex flex-col gap-1" data-testid="steps" data-audit="log">
           {block.steps.map((step) => (
             <StepLine key={step.key} step={step} isOpen={isOpen} onToggle={onToggle} />
           ))}
           {block.working && (
-            <div className="flex items-center gap-base text-sm text-low" data-testid="working">
-              <CircleNotchIcon className="size-icon-base animate-spin" />
-              Working…
-            </div>
+            <p
+              className="flex items-center gap-3 px-3 text-sm font-semibold text-progress-text"
+              data-testid="working"
+            >
+              <CircleNotchIcon aria-hidden="true" className="size-4 animate-spin" />
+              Working
+            </p>
           )}
         </div>
       );
@@ -244,22 +261,30 @@ interface TurnProps {
   /** The keys of the steps that are unfolded. */
   unfolded: ReadonlySet<string>;
   onToggle: (key: string) => void;
+  /** A tighter rhythm between the blocks and the rows, for the floating chat's dock. */
+  compact?: boolean;
 }
 
-export function Turn({ turn, unfolded, onToggle }: TurnProps) {
+export function Turn({ turn, unfolded, onToggle, compact = false }: TurnProps) {
   const isOpen = (key: string) => unfolded.has(key);
   const head = turn.head;
+  // A turn is written on the canvas rather than stacked in boxes: the person's message is a band of the sunken
+  // colour, and what the agent did, answered and got wrong is the text and the rows under it, in the order it came. A
+  // card of its own would put a second shadow inside the chat, which is itself a card on the page or a sheet over it.
+  const view = (block: Block) => (
+    <BlockView key={block.key} block={block} isOpen={isOpen} onToggle={onToggle} />
+  );
   return (
-    <section data-testid="turn" className="overflow-hidden rounded-xl border bg-panel shadow-md">
+    <div data-testid="turn" className={cn("flex min-w-0 flex-col", compact ? "gap-3" : "gap-4")}>
       {head && (
         <ChatUserMessage
           content={head.message}
           title={head.said === "steered" ? "You steered the chat" : "You"}
-          className={cn("rounded-none border-0 bg-card", turn.blocks.length > 0 && "border-b")}
+          className="rounded-card"
           headerRight={<CopyButton text={head.message} label="Copy your message" />}
           renderMarkdown={({ content }) => (
             <p
-              className="whitespace-pre-wrap break-words px-double pb-plusfifty text-sm font-semibold text-high"
+              className="max-w-prose break-words whitespace-pre-wrap text-base leading-relaxed text-text"
               data-testid="person-message"
             >
               {content}
@@ -267,13 +292,7 @@ export function Turn({ turn, unfolded, onToggle }: TurnProps) {
           )}
         />
       )}
-      {turn.blocks.length > 0 && (
-        <div className="flex flex-col gap-plusfifty px-double py-double">
-          {turn.blocks.map((block) => (
-            <BlockView key={block.key} block={block} isOpen={isOpen} onToggle={onToggle} />
-          ))}
-        </div>
-      )}
-    </section>
+      {turn.blocks.map(view)}
+    </div>
   );
 }

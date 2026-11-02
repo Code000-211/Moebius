@@ -108,13 +108,13 @@ async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_ask
         ))));
     };
 
-    // The pencil of the Ready column reads the built-in script.
+    // The pencil of the Not started column reads the built-in script.
     let mut ui = Simulator::with_size(
         iced::Settings::default(),
         iced::Size::new(1440.0, 900.0),
         app.view(),
     );
-    ui.click(iced::widget::Id::from("edit-script-Ready"))
+    ui.click(iced::widget::Id::from("edit-script-Not started"))
         .unwrap();
     let messages: Vec<_> = ui.into_messages().collect();
     let task = app.update(messages.into_iter().next().unwrap());
@@ -127,7 +127,7 @@ async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_ask
     let task = app.update(Message::Script(script_editor::Message::Save));
     settle(&mut app, task).await;
     let refusal = client
-        .save_script(repository.id, "Ready", "this is not luau")
+        .save_script(repository.id, "Not started", "this is not luau")
         .await
         .unwrap_err();
     let ClientError::Server {
@@ -151,7 +151,11 @@ async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_ask
         "function on_card(card) moebius.wait('held') end\n"
     );
     assert_eq!(
-        client.script(repository.id, "Ready").await.unwrap().source,
+        client
+            .script(repository.id, "Not started")
+            .await
+            .unwrap()
+            .source,
         "repository"
     );
 
@@ -177,7 +181,7 @@ async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_ask
     );
     assert_eq!(
         chats[0].title,
-        "About the Ready column's script (.moebius/ready.luau):"
+        "About the Not started column's script (.moebius/ready.luau):"
     );
     // The agent was told where the person is (the fake Pi answers with its prompt); the chat shows only the message.
     let answer = loop {
@@ -192,7 +196,7 @@ async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_ask
             assert_eq!(said.len(), 1);
             assert_eq!(
                 said[0].data["message"],
-                "About the Ready column's script (.moebius/ready.luau):"
+                "About the Not started column's script (.moebius/ready.luau):"
             );
             break answered;
         }
@@ -200,20 +204,25 @@ async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_ask
     };
     assert!(
         answer.contains("[Where the person is in the Moebius app.")
-            && answer.contains("Editing the script of the Ready column (.moebius/ready.luau)")
+            && answer
+                .contains("Editing the script of the Not started column (.moebius/ready.luau)")
             && answer.contains("moebius.wait('held')")
-            && answer.ends_with("About the Ready column's script (.moebius/ready.luau):"),
+            && answer.ends_with("About the Not started column's script (.moebius/ready.luau):"),
         "{answer}"
     );
 
     // Back in the editor, the built-in script is used again.
-    let task = app.update(Message::EditScript(repository.id, "Ready".into()));
+    let task = app.update(Message::EditScript(repository.id, "Not started".into()));
     settle(&mut app, task).await;
     let task = app.update(Message::Script(script_editor::Message::UseBuiltIn));
     settle(&mut app, task).await;
     assert!(!clone.join(".moebius/ready.luau").exists());
     assert_eq!(
-        client.script(repository.id, "Ready").await.unwrap().source,
+        client
+            .script(repository.id, "Not started")
+            .await
+            .unwrap()
+            .source,
         "built-in"
     );
 }

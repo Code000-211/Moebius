@@ -17,8 +17,11 @@ export type Kind =
   /** True or false, sent as a JSON boolean. */
   | "yesno";
 
-/** A key of the configuration as a form shows it: the dotted key, its label and how it is typed. */
-export type Spec = readonly [key: string, label: string, kind: Kind];
+/**
+ * A key of the configuration as a form shows it: the dotted key, its label, how it is typed, and — for a key with no
+ * default — what an empty field means, so that empty is not a guess.
+ */
+export type Spec = readonly [key: string, label: string, kind: Kind, whenEmpty?: string];
 
 export const GROUPS: ReadonlyArray<readonly [title: string, specs: readonly Spec[]]> = [
   [
@@ -36,7 +39,7 @@ export const GROUPS: ReadonlyArray<readonly [title: string, specs: readonly Spec
     [
       ["board.tick_ms", "Board tick (ms)", "whole"],
       ["board.round_limit", "Coding rounds a card", "whole"],
-      ["budgets.day_tokens", "Tokens a day", "whole"],
+      ["budgets.day_tokens", "Tokens a day", "whole", "No limit"],
       ["checks.timeout_seconds", "Checks time limit (s)", "whole"],
     ],
   ],
@@ -62,8 +65,8 @@ export const GROUPS: ReadonlyArray<readonly [title: string, specs: readonly Spec
   [
     "GitHub",
     [
-      ["github.app_id", "App id", "whole"],
-      ["github.private_key_file", "Private key file", "code"],
+      ["github.app_id", "App id", "whole", "Set both, or neither"],
+      ["github.private_key_file", "Private key file", "code", "Set both, or neither"],
       ["github.api_url", "API URL", "code"],
       ["github.poll_seconds", "Poll every (s)", "whole"],
     ],
@@ -72,8 +75,8 @@ export const GROUPS: ReadonlyArray<readonly [title: string, specs: readonly Spec
     "GitLab",
     [
       ["gitlab.url", "URL", "code"],
-      ["gitlab.token_file", "Token file", "code"],
-      ["gitlab.token_secret", "Token secret", "code"],
+      ["gitlab.token_file", "Token file", "code", "This one or the secret"],
+      ["gitlab.token_secret", "Token secret", "code", "This one or the file"],
       ["gitlab.poll_seconds", "Poll every (s)", "whole"],
     ],
   ],
@@ -81,8 +84,8 @@ export const GROUPS: ReadonlyArray<readonly [title: string, specs: readonly Spec
     "Forgejo",
     [
       ["forgejo.url", "URL", "code"],
-      ["forgejo.token_file", "Token file", "code"],
-      ["forgejo.token_secret", "Token secret", "code"],
+      ["forgejo.token_file", "Token file", "code", "This one or the secret"],
+      ["forgejo.token_secret", "Token secret", "code", "This one or the file"],
       ["forgejo.poll_seconds", "Poll every (s)", "whole"],
     ],
   ],
@@ -110,6 +113,8 @@ export interface Field {
   original: string;
   /** What the server uses when the file does not set the key. */
   default: string | null;
+  /** For a key with no default: what leaving the field blank means, in a few words. */
+  whenEmpty: string | null;
 }
 
 /** A form: the inputs of the keys of one box. */
@@ -127,13 +132,21 @@ function textOf(value: unknown): string {
 }
 
 export function readField(spec: Spec, settings: ServerSettings): Field {
-  const [key, label, kind] = spec;
+  const [key, label, kind, whenEmpty] = spec;
   const setting = settings.values[key];
   const shown = textOf(setting?.value);
   const set = setting !== undefined && !setting.default;
   // A picker always shows a choice, so it holds the default when the file does not set the key.
   const text = set || kind === "yesno" ? shown : "";
-  return { key, label, kind, text, original: text, default: !set && shown !== "" ? shown : null };
+  return {
+    key,
+    label,
+    kind,
+    text,
+    original: text,
+    default: !set && shown !== "" ? shown : null,
+    whenEmpty: whenEmpty ?? null,
+  };
 }
 
 export function readForms(settings: ServerSettings): Form[] {

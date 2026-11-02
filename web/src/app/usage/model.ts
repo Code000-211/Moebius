@@ -1,9 +1,11 @@
 /**
- * The logic of the Usage page, apart from React: the windows, how the tiles tell their notes, the colour each model
- * keeps on every chart, the cells of the heatmap of the last year and the bars of where the model time goes
+ * The logic of the Usage page, apart from React: the windows, how the tiles tell their notes, today's spend against the
+ * day's budget, the colour each model keeps on every chart, the cells of the heatmap of the last year and the bars of
+ * where the model time goes
  * (the desktop app's `screens/usage`).
  */
 import type { ActivityUsage, UsageReport } from "../../api/types/usage";
+import { plural } from "../../ui/lib/format";
 import {
   dayNumber,
   duration,
@@ -11,7 +13,6 @@ import {
   MONTHS,
   monthAndDay,
   percent,
-  share,
   short,
   WEEKDAYS,
   weekday,
@@ -45,21 +46,14 @@ export interface Tile {
   note: string;
 }
 
-/** The four tiles of the totals. */
-export function tiles(report: UsageReport, days: number): Tile[] {
+/** The tiles of the totals, beside the focal figure of the tokens the window used. */
+export function tiles(report: UsageReport): Tile[] {
   const totals = report.totals;
-  const tokensNote =
-    days === 1
-      ? totals.day_budget !== null
-        ? `${share(totals.tokens, totals.day_budget)} of the ${short(totals.day_budget)} daily budget`
-        : "Input and output tokens"
-      : `${short(Math.floor(totals.tokens / days))} tokens a day on average`;
   const callsNote =
     totals.calls > 0
       ? `${grouped(Math.floor(totals.tokens / totals.calls))} tokens per call on average`
       : "No model call yet";
   return [
-    { label: "Tokens", value: short(totals.tokens), note: tokensNote },
     { label: "Model calls", value: grouped(totals.calls), note: callsNote },
     {
       label: "From cache",
@@ -83,7 +77,76 @@ function modelOrder(report: UsageReport): string[] {
   return order;
 }
 
-/** The colour of each model, as the number (1 to 6) of its CSS variable `--model-<n>`. */
+/** The share of the day's budget from which it is worth saying so. */
+const NEAR_BUDGET = 0.8;
+
+/** How today's spend against its budget reads: ongoing work, close to the limit, or past it. */
+export type MeterTone = "progress" | "attention" | "error";
+
+/** Today's tokens against the day's budget, as the focal figure of the page. */
+export interface Meter {
+  tokens: number;
+  budget: number;
+  /** The part of the budget used, from 0 to more than 1. */
+  used: number;
+  /** The word that says how today stands, so the hue is never the only sign. */
+  word: string;
+  tone: MeterTone;
+}
+
+/** Today's spend against the day's budget; none when the server sets no budget. */
+export function dayMeter(report: UsageReport): Meter | null {
+  const { tokens, budget } = todayOf(report);
+  if (budget === null || budget <= 0) return null;
+  const used = tokens / budget;
+  const standing: [string, MeterTone] =
+    used >= 1
+      ? ["Over budget", "error"]
+      : used >= NEAR_BUDGET
+        ? ["Near the budget", "attention"]
+        : ["Within budget", "progress"];
+  const [word, tone] = standing;
+  return { tokens, budget, used, word, tone };
+}
+
+/** The focal figure of the page: the tokens the chosen window covers, named for that window. */
+export interface TokenFigure {
+  title: string;
+  value: string;
+  note: string;
+  /** Today against its budget, which only the window of today can show. */
+  meter: Meter | null;
+}
+
+export function tokenFigure(report: UsageReport): TokenFigure {
+  const days = report.days_in_window;
+  const meter = dayMeter(report);
+  if (days === 1) {
+    const { tokens } = todayOf(report);
+    return {
+      title: "Tokens today",
+      value: short(tokens),
+      note: meter
+        ? `of the ${short(meter.budget)} token budget, ${percent(meter.used)} used`
+        : "Input and output tokens",
+      meter,
+    };
+  }
+  const totals = report.totals;
+  const average = short(Math.floor(totals.tokens / days));
+  const budget = totals.day_budget;
+  return {
+    title: `Tokens, last ${days} days`,
+    value: short(totals.tokens),
+    note:
+      budget !== null && budget > 0
+        ? `${average} a day on average, against a daily budget of ${short(budget)}`
+        : `${average} a day on average`,
+    meter: null,
+  };
+}
+
+/** The colour of each model, as the number (1 to 6) of its category variable `--cat-<n>`. */
 export function modelColours(report: UsageReport): (model: string) => number {
   const order = modelOrder(report);
   return (model) => (Math.max(0, order.indexOf(model)) % 6) + 1;
@@ -92,8 +155,11 @@ export function modelColours(report: UsageReport): (model: string) => number {
 /** The weeks of the heatmap: a year and the week it starts in. */
 export const WEEKS = 53;
 
-/** The weights of the four shades of a model's colour against an empty cell. */
-export const SHADE_WEIGHT = [32, 54, 78, 100] as const;
+/**
+ * The weights of the four shades of a model's colour against an empty cell. The lowest is high enough that the dimmest
+ * cell still stands out from an empty one in the light theme, where both sit on a pale ground.
+ */
+export const SHADE_WEIGHT = [45, 65, 82, 100] as const;
 
 export interface Cell {
   /** The day number. */
@@ -177,7 +243,7 @@ export function heat(report: UsageReport): Heat | null {
     const total = report.days.reduce((sum, day) => sum + day.tokens, 0);
     const number = dayNumber(busiest.date) ?? today;
     const [month, ofMonth] = monthAndDay(number);
-    aside = `${short(total)} tokens on ${report.days.length} days in the last year · busiest day ${WEEKDAYS[weekday(number)]} ${ofMonth} ${MONTHS[month]} with ${short(busiest.tokens)}`;
+    aside = `${short(total)} tokens on ${plural(report.days.length, "day", "days")} in the last year · busiest day ${WEEKDAYS[weekday(number)]} ${ofMonth} ${MONTHS[month]} with ${short(busiest.tokens)}`;
   }
   return { rows, months, leading, aside };
 }

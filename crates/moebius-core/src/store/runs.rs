@@ -27,6 +27,9 @@ pub struct Run {
     pub origin: String,
     /// The runner (`[[runners]]`) the run's harness went on; none for a run on the server.
     pub runner: Option<String>,
+    /// A chat's name as a person wrote it (`POST /v1/chats/{id}/title`); none while its title is its first message.
+    #[serde(default)]
+    pub title: Option<String>,
 }
 
 impl Run {
@@ -57,6 +60,7 @@ fn run_from_row(r: &rusqlite::Row) -> rusqlite::Result<Run> {
         harness_repository: r.get(11)?,
         origin: r.get(12)?,
         runner: r.get(13)?,
+        title: r.get(14)?,
     })
 }
 
@@ -89,6 +93,7 @@ impl Store {
             harness_repository: false,
             origin: "chat".into(),
             runner: None,
+            title: None,
         })
     }
 
@@ -99,7 +104,7 @@ impl Store {
     ) -> Result<Vec<Run>> {
         self.rows(&format!(
             "SELECT id, card_id, agent, harness, purpose, status, worktree, started_at, ended_at, summary, repository_id,
-                harness_repository, origin, runner
+                harness_repository, origin, runner, title
              FROM runs WHERE {clause} ORDER BY id"
         ), [param], run_from_row)
     }
@@ -109,6 +114,15 @@ impl Store {
         self.conn().execute(
             "UPDATE runs SET runner = ?1 WHERE id = ?2",
             params![runner, id],
+        )?;
+        Ok(())
+    }
+
+    /// Names a chat `title`, in place of the title taken from its first message; `None` gives that title back.
+    pub fn set_run_title(&self, id: i64, title: Option<&str>) -> Result<()> {
+        self.conn().execute(
+            "UPDATE runs SET title = ?1 WHERE id = ?2",
+            params![title, id],
         )?;
         Ok(())
     }
@@ -127,7 +141,7 @@ impl Store {
     pub fn runs_for_board(&self, repository_id: i64, except_column: &str) -> Result<Vec<Run>> {
         self.rows(
             "SELECT r.id, r.card_id, r.agent, r.harness, r.purpose, r.status, r.worktree, r.started_at, r.ended_at,
-                    r.summary, r.repository_id, r.harness_repository, r.origin, r.runner
+                    r.summary, r.repository_id, r.harness_repository, r.origin, r.runner, r.title
              FROM runs r JOIN cards c ON c.id = r.card_id
              WHERE c.repository_id = ?1 AND c.column_name <> ?2 AND r.purpose <> 'trial' ORDER BY r.id",
             params![repository_id, except_column],
@@ -198,17 +212,23 @@ impl Store {
         )?)
     }
 
-    /// Ends every run that has not ended as failed, with an event saying why; returns them. For a server that
-    /// starts again, since no run outlives the server that drove it.
+    /// Ends every run that has not ended, with an event saying why; returns them. For a server that starts again,
+    /// since no run outlives the server that drove it. A chat that had answered and was waiting for the next message
+    /// is the one run that did not fail with the server: nothing was going in it, so it ends as `stopped` and says
+    /// nothing, the way a chat ends when a person closes it.
     pub fn fail_unended_runs(&self, why: &str) -> Result<Vec<Run>> {
         let runs = self.active_runs()?;
         for run in &runs {
-            self.append_event(
-                run.id,
-                "moebius_error",
-                &serde_json::json!({ "message": why }),
-            )?;
-            self.set_run_status(run.id, "failed")?;
+            let idle_chat =
+                run.purpose == "chat" && run.status == "waiting" && self.answered_seq(run.id)? > 0;
+            if !idle_chat {
+                self.append_event(
+                    run.id,
+                    "moebius_error",
+                    &serde_json::json!({ "message": why }),
+                )?;
+            }
+            self.set_run_status(run.id, if idle_chat { "stopped" } else { "failed" })?;
         }
         Ok(runs)
     }
@@ -300,6 +320,21 @@ mod tests {
         let coded = s.add_run(Some(card.id), "Coder", "x", "code").unwrap();
         s.set_run_status(coded.id, "succeeded").unwrap();
         assert_eq!(note(), None);
+    }
+
+    /// The board read and the single read build a run from the same columns, so a name given to a run comes back from
+    /// both.
+    #[test]
+    fn the_runs_of_a_board_carry_the_same_fields_as_a_single_run() {
+        let (_dir, s) = store();
+        let repo = s.add_repository("r", "/srv/r", "none", "main").unwrap();
+        let card = s.add_card(repo.id, "First", "", "leon", "Backlog").unwrap();
+        let run = s.add_run(Some(card.id), "Coder", "x", "code").unwrap();
+        s.set_run_title(run.id, Some("Named")).unwrap();
+        let on_board = s.runs_for_board(repo.id, "Done").unwrap();
+        assert_eq!(on_board.len(), 1);
+        assert_eq!(on_board[0].title.as_deref(), Some("Named"));
+        assert_eq!(on_board[0], s.run(run.id).unwrap().unwrap());
     }
 
     #[test]

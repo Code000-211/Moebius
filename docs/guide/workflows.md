@@ -13,13 +13,13 @@ page describes what they do. The exact functions they call are in the
 A card is an issue on the board of one repository. It moves through six columns, each with a script:
 
 ```
-Backlog -> Ready -> In progress -> In review -> Ready to merge -> Done
+Backlog -> Not started -> In progress -> In review -> Ready to merge -> Done
 ```
 
 | Column | Script | What it does |
 |---|---|---|
-| `Backlog` | `backlog.luau` | Moves a trusted card, or one made from a confirmed grilling, to `Ready`. Any other card waits in the inbox as `approve_issue` until a person approves it. |
-| `Ready` | `ready.luau` | Waits while issues block the card, while the daily token budget is spent and while the run limit is reached. Then moves the card to `In progress`. |
+| `Backlog` | `backlog.luau` | Moves a trusted card, or one made from a confirmed grilling, to `Not started`. Any other card waits in the inbox as `approve_issue` until a person approves it. |
+| `Not started` | `ready.luau` | Waits while issues block the card, while the daily token budget is spent and while the run limit is reached. Then moves the card to `In progress`. |
 | `In progress` | `code.luau` | Starts a run of the agent `Coder` for each round, waits while it goes, and moves the card to `In review` when a round has succeeded. |
 | `In review` | `review.luau` | Publishes the change, waits for its checks, sends the card back when they fail or the change conflicts, has the agent `Reviewer` read it along two axes, Standards and Spec (when there is one) and offers the change to a person. |
 | `Ready to merge` | `merge.luau` | Waits for a person to merge. Sends the card back when the change no longer merges cleanly. |
@@ -43,7 +43,7 @@ change any of them for one repository.
 A trusted card moves on. For any other, `moebius.ask("approve_issue", ...)` adds one inbox item and the card waits for
 a person (see below).
 
-### Ready
+### Not started
 
 In this order: `waiting for #12, #13` while issues block the card (the numbers come from `blocked by #n` lines in the
 body of a GitHub issue, and an issue counts as done when its card is in `Done`); `the daily token budget is spent` when
@@ -380,7 +380,7 @@ to say. See the [desktop API](desktop-api.md) for a script that does all of this
 
 | Action | When it works | Call | What happens |
 |---|---|---|---|
-| Approve an issue | The card is in `Backlog`. | `POST /v1/cards/{id}/approve` `{"reason": "..."}` | The card's inbox items are resolved and the card moves to `Ready`. |
+| Approve an issue | The card is in `Backlog`. | `POST /v1/cards/{id}/approve` `{"reason": "..."}` | The card's inbox items are resolved and the card moves to `Not started`. |
 | Retry a card | The card has an open `stuck` item, or a `change_closed` item because its pull request was closed without a merge. | `POST /v1/cards/{id}/retry` `{"reason": "..."}` | The item is resolved and the card's rounds, reviews and tokens count from zero. The board starts work again. A card with a closed pull request goes back to `In progress` with the note `The pull request was closed without a merge.`, and its next publish opens a new pull request. |
 | Reject a change | The change is open and its card is in `Ready to merge`. | `POST /v1/changes/{id}/reject` `{"reason": "..."}` | The card goes back to `In progress`, the reason is its note (`A person rejected the change.` without one), and the next Coder round is told. The change stays open. |
 | Merge a change | The change is `open`. | `POST /v1/changes/{id}/merge` `{"reason": "..."}` | The default branch of the clone gets a merge commit (without a forge) or the pull request is merged (GitHub). The answer is `{"commit": ...}`. The card moves to `Done`. |
@@ -401,7 +401,7 @@ On GitHub a person can also merge the pull request there; the poll notices and t
 | What happens | How you see it |
 |---|---|
 | An issue from outside does not start. | The card stays in `Backlog` with an `approve_issue` item in the inbox. A person approves it. |
-| A card sits in `Ready`. | `waiting` in the snapshot says why: blockers, the daily budget or the run limit. |
+| A card sits in `Not started`. | `waiting` in the snapshot says why: blockers, the daily budget or the run limit. |
 | The Coder cannot be started. | A `board_error` event with `no agent named Coder`. Add `[agents.Coder]` to `moebius.toml`. |
 | A run fails. | The run's status is `failed`, and its events include a `moebius_error` that says why (`GET /v1/runs/{id}/events`). The next tick starts another round until a limit is reached. |
 | A card is stuck. | An inbox item `stuck` with the reason. `POST /v1/cards/{id}/retry` gives it a fresh start. |

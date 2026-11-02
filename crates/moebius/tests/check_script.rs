@@ -30,7 +30,7 @@ fn a_good_script_prints_what_it_did() {
           end
         end
     "#;
-    let output = check(dir.path(), script, &["--column", "Ready"]);
+    let output = check(dir.path(), script, &["--column", "Not started"]);
     assert!(output.status.success(), "{}", text(&output.stderr));
     assert_eq!(text(&output.stdout), "moved the card to In progress\n");
 

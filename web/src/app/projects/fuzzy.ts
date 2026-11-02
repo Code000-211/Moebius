@@ -63,10 +63,26 @@ export function score(query: string, path: string): number | null {
   return top + exact - path.length / 100;
 }
 
+/**
+ * Whether the characters of `wanted` occur in `path` in order — the same test `score` makes, but with no arrays and an
+ * early leave. `rank` asks it first so that the paths which cannot match never reach the scoring.
+ */
+function occurs(wanted: readonly string[], path: string): boolean {
+  let at = 0;
+  for (const want of wanted) {
+    at = path.indexOf(want, at);
+    if (at < 0) return false;
+    at += 1;
+  }
+  return true;
+}
+
 /** The paths that match `query`, the best first, at most `limit`; every path in order for a blank query. */
 export function rank(query: string, paths: readonly string[], limit: number): string[] {
+  const wanted = [...query.toLowerCase()].filter((char) => char.trim() !== "");
   const scored: Array<{ path: string; score: number }> = [];
   for (const path of paths) {
+    if (wanted.length > 0 && !occurs(wanted, path.toLowerCase())) continue;
     const each = score(query, path);
     if (each !== null) scored.push({ path, score: each });
   }

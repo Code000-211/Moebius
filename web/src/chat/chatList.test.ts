@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Chat } from "../api/types/chat";
-import { applyChatEvent, listChanged } from "./chatList";
+import { applyChatEvent, listChanged, recentChat } from "./chatList";
 
 const chat = (over: Partial<Chat> = {}): Chat => ({
   id: 7,
@@ -69,5 +69,30 @@ describe("listChanged", () => {
     expect(listChanged({ kind: "run_started", data: {} })).toBe(true);
     expect(listChanged({ kind: "change_offered", data: {} })).toBe(true);
     expect(listChanged({ kind: "run_event", data: {} })).toBe(false);
+  });
+});
+
+/**
+ * Asking for Chat opens a conversation rather than an empty field, so the sidebar wants the newest chat of a list it
+ * may have edited itself — an event has moved a chat's status without reordering anything. The newest is the one
+ * started last, told by its own `started_at`, not by where it happens to sit.
+ */
+describe("recentChat", () => {
+  it("takes the one started last, wherever it sits in the list", () => {
+    const chats = [
+      chat({ id: 3, started_at: 100 }),
+      chat({ id: 9, started_at: 400 }),
+      chat({ id: 5, started_at: 250 }),
+    ];
+    expect(recentChat(chats)?.id).toBe(9);
+  });
+
+  it("is null when there is nothing to open", () => {
+    expect(recentChat([])).toBeNull();
+  });
+
+  it("takes the first of two that started in the same second, the order the server sends them in", () => {
+    const [earlier, later] = [chat({ id: 4, started_at: 500 }), chat({ id: 6, started_at: 500 })];
+    expect(recentChat([earlier, later])).toBe(earlier);
   });
 });

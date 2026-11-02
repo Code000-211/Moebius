@@ -1,4 +1,8 @@
-// From BloopAI/vibe-kanban packages/ui/src/components/ChatToolSummary.tsx (Apache-2.0), changed: React 19 ref prop in place of forwardRef; the icon is picked from the tool's name (read, edit, write, bash, search, web) instead of Vibe Kanban's action types; the pill can carry a tag (Blocked, Running) and a note (how long it ran); no references to other components of Vibe Kanban.
+// From BloopAI/vibe-kanban packages/ui/src/components/ChatToolSummary.tsx (Apache-2.0), changed: the icon is picked
+// from the tool's name (read, edit, write, bash, search, web) instead of Vibe Kanban's action types; the row is 40px
+// tall, the tool is named in a label rather than small monospace, a file is named by its name with its whole path kept
+// as the tooltip, what it was given is one line whose end is kept in view and whose beginning fades when the line runs
+// out, and its state is a word with a hue.
 import {
   FileTextIcon,
   GlobeIcon,
@@ -6,23 +10,24 @@ import {
   NotePencilIcon,
   TerminalWindowIcon,
 } from "@phosphor-icons/react";
-import type { ReactNode, Ref } from "react";
 import { cn } from "../lib/cn";
+import { FadedLine } from "../page/FadedLine";
+import { Tag } from "./Tag";
 import { ToolStatusDot, type ToolStatusLike } from "./ToolStatusDot";
 
 interface ChatToolSummaryProps {
+  /** What the tool was given: the file it read, the command it ran. */
   summary: string;
+  /** The whole path behind a summary that names only a file, kept for the tooltip. */
+  detail?: string;
   className?: string;
   expanded?: boolean;
   onToggle?: () => void;
   status?: ToolStatusLike;
   /** The name of the tool (`read`, `bash`, an MCP tool's `server · tool`), which picks the icon. */
   toolName?: string;
-  /** Whether the summary is cut, so that a click can show all of it. */
+  /** Whether there is more to see, so that a click opens it. */
   isTruncated?: boolean;
-  /** Something on the right of the summary: a tag, how long the tool ran. */
-  trailing?: ReactNode;
-  ref?: Ref<HTMLSpanElement>;
 }
 
 function iconOf(toolName: string | undefined) {
@@ -44,16 +49,14 @@ function iconOf(toolName: string | undefined) {
 
 export function ChatToolSummary({
   summary,
+  detail,
   className,
   expanded,
   onToggle,
   status,
   toolName,
   isTruncated,
-  trailing,
-  ref,
 }: ChatToolSummaryProps) {
-  // Can expand if text is truncated and onToggle is provided
   const canExpand = Boolean(isTruncated && onToggle);
   const Icon = iconOf(toolName);
 
@@ -63,33 +66,18 @@ export function ChatToolSummary({
     <Root
       type={canExpand ? "button" : undefined}
       className={cn(
-        "flex w-full items-center gap-base text-left text-sm text-low",
-        canExpand && "cursor-pointer",
+        "flex min-h-8 w-full flex-wrap items-center gap-3 rounded-control px-3 text-left transition-colors duration-(--motion-routine) ease-out",
+        canExpand && "cursor-pointer hover:bg-hover",
         className,
       )}
       onClick={canExpand ? onToggle : undefined}
       aria-expanded={canExpand ? expanded : undefined}
+      title={detail || undefined}
     >
-      <span className="relative shrink-0 pt-0.5">
-        <Icon className="size-icon-base" />
-        {status && <ToolStatusDot status={status} className="absolute -bottom-0.5 -left-0.5" />}
-      </span>
-      {toolName && (
-        <span className="shrink-0 rounded-sm bg-card px-base py-half font-mono text-xs text-high">
-          {toolName}
-        </span>
-      )}
-      <span
-        ref={ref}
-        className={cn(
-          "min-w-0 flex-1 font-mono text-xs",
-          !expanded && "truncate",
-          expanded && "whitespace-pre-wrap break-all",
-        )}
-      >
-        {summary}
-      </span>
-      {trailing}
+      <Icon aria-hidden="true" className="size-4 shrink-0 text-secondary" />
+      {toolName && <Tag className="shrink-0">{toolName}</Tag>}
+      <FadedLine text={summary} className="flex-1 font-mono text-sm text-text" />
+      {status && <ToolStatusDot status={status} />}
     </Root>
   );
 }

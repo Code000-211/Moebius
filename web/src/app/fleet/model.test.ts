@@ -2,7 +2,17 @@ import { describe, expect, it } from "vitest";
 import type { Card, CardRun, Snapshot } from "../../api/types/board";
 import type { Chat } from "../../api/types/chat";
 import type { Entry } from "../../chat/conversation";
-import { context, elapsed, latestSteps, tokensText, working } from "./model";
+import {
+  afterSteps,
+  context,
+  elapsed,
+  latestSteps,
+  statusWord,
+  thinkingNow,
+  thoughtSeconds,
+  tokensText,
+  working,
+} from "./model";
 
 const card = (id: number, number: number, run: CardRun | null, tokens = 0): Card => ({
   id,
@@ -110,6 +120,15 @@ describe("which runs are working", () => {
   });
 });
 
+describe("the word a row leads with", () => {
+  it("says what the run is doing and whether it waits for the person", () => {
+    expect(statusWord("running", false)).toEqual({ word: "Running", tone: "progress" });
+    expect(statusWord("starting", false)).toEqual({ word: "Starting", tone: "progress" });
+    expect(statusWord("waiting", true)).toEqual({ word: "Asks you", tone: "attention" });
+    expect(statusWord("waiting", false)).toEqual({ word: "Your turn", tone: "attention" });
+  });
+});
+
 describe("how a tile tells its run", () => {
   it("tells tokens and time", () => {
     expect(tokensText(412_000)).toBe("412k tokens");
@@ -119,6 +138,29 @@ describe("how a tile tells its run", () => {
     expect(elapsed(437)).toBe("7m 17s");
     expect(elapsed(3720)).toBe("1h 02m");
     expect(elapsed(-5)).toBe("0s");
+  });
+
+  it("says how long a thought went on, and which one is still going", () => {
+    const thought = (at: number): Entry => ({ at, kind: "thinking", text: "t" });
+    const tool = (at: number): Entry => ({ at, kind: "tool", call: { at } }) as unknown as Entry;
+    const text = (at: number): Entry => ({ at, kind: "text", text: "a" });
+    // A thought runs until whatever follows it begins.
+    expect(thoughtSeconds([thought(100), thought(105), tool(112)], 0)).toBe(5);
+    expect(thoughtSeconds([thought(100), thought(105), tool(112)], 1)).toBe(7);
+    // The last line is measured against whatever followed the steps at all, and a tool is not a thought.
+    expect(thoughtSeconds([thought(100), thought(105)], 1, 112)).toBe(7);
+    expect(thoughtSeconds([thought(100), thought(105)], 1)).toBeNull();
+    expect(thoughtSeconds([thought(100), tool(105)], 1, 112)).toBeNull();
+    // The time whatever came after the last step arrived, and none when the steps are the end of it.
+    expect(afterSteps([text(0), thought(100), thought(105), text(109)])).toBe(109);
+    expect(afterSteps([text(0), thought(100)])).toBeNull();
+  });
+
+  it("knows a run that waits for the person is not thinking", () => {
+    expect(thinkingNow("starting")).toBe(true);
+    expect(thinkingNow("running")).toBe(true);
+    expect(thinkingNow("waiting")).toBe(false);
+    expect(thinkingNow("done")).toBe(false);
   });
 
   it("shows the last run of steps", () => {

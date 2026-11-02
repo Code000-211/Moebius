@@ -378,8 +378,8 @@ export function modelsChanges(form: ModelsForm, secrets: string[]): Plan | strin
   for (const [place, upstream] of form.upstreams.entries()) {
     const original = upstream.origin === null ? undefined : form.originalUpstreams[upstream.origin];
     if (original !== undefined && same(original, upstream)) continue;
-    if (upstream.baseUrl.trim() === "") return "Enter the base URL of each upstream.";
-    const planned = planKey(upstream.key, `the upstream ${place + 1}`, () => fresh("upstream"));
+    if (upstream.baseUrl.trim() === "") return "Enter the base URL of each provider.";
+    const planned = planKey(upstream.key, `the provider ${place + 1}`, () => fresh("upstream"));
     if (typeof planned === "string") return planned;
     if (planned.store) plan.store.push(planned.store);
     const table: Obj = {

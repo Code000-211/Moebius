@@ -1,4 +1,6 @@
-// From BloopAI/vibe-kanban packages/ui/src/components/IconButton.tsx (Apache-2.0), changed: none beyond formatting (the colour names resolve to Deep Velvet in styles/tailwind.css).
+// From BloopAI/vibe-kanban packages/ui/src/components/IconButton.tsx (Apache-2.0), changed to this app's design
+// standard: 40px on a side, no border, `ghost` and `secondary` in place of the old default and tertiary, and a
+// mandatory accessible name.
 
 import type { Icon } from "@phosphor-icons/react";
 import { cn } from "../lib/cn";
@@ -8,7 +10,9 @@ interface IconButtonProps {
   iconClassName?: string;
   onClick?: () => void;
   disabled?: boolean;
-  variant?: "default" | "tertiary";
+  /** `ghost` sits in a toolbar; `secondary` is a filled square beside other controls. */
+  variant?: "ghost" | "secondary";
+  /** The name a screen reader reads; an icon-only control always needs one. */
   "aria-label": string;
   title?: string;
   className?: string;
@@ -19,23 +23,19 @@ export function IconButton({
   iconClassName,
   onClick,
   disabled,
-  variant = "default",
+  variant = "ghost",
   "aria-label": ariaLabel,
   title,
   className,
 }: IconButtonProps) {
-  const variantStyles = disabled
-    ? "opacity-40 cursor-not-allowed"
-    : variant === "default"
-      ? "text-low hover:text-normal hover:bg-secondary/50"
-      : "bg-panel hover:bg-secondary text-normal";
-
   return (
     <button
       type="button"
       className={cn(
-        "flex items-center justify-center p-half rounded-sm transition-colors",
-        variantStyles,
+        "inline-flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-control transition-colors duration-(--motion-routine) ease-out hover:text-text disabled:cursor-not-allowed disabled:opacity-45",
+        variant === "ghost"
+          ? "text-secondary hover:bg-hover"
+          : "bg-sunken text-text hover:bg-hover",
         className,
       )}
       onClick={onClick}
@@ -43,7 +43,7 @@ export function IconButton({
       aria-label={ariaLabel}
       title={title}
     >
-      <IconComponent className={cn("size-icon-sm", iconClassName)} weight="bold" />
+      <IconComponent className={cn("size-5", iconClassName)} weight="bold" />
     </button>
   );
 }

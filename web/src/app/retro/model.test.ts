@@ -44,16 +44,16 @@ describe("a report", () => {
 
 describe("the tags", () => {
   it("of a Retro", () => {
-    expect(retroTag("proposed")).toEqual({ label: "Proposed", tone: "teal" });
-    expect(retroTag("failed")).toEqual({ label: "Failed", tone: "red" });
+    expect(retroTag("proposed")).toEqual({ label: "Proposed", tone: "complete" });
+    expect(retroTag("failed")).toEqual({ label: "Failed", tone: "error" });
     expect(retroTag("analysing").label).toBe("Analysing");
     expect(retroTag("reported").label).toBe("Reported");
   });
 
   it("of a proposal", () => {
-    expect(proposalTag("positive")).toEqual({ label: "Positive", tone: "teal" });
-    expect(proposalTag("negative").tone).toBe("red");
-    expect(proposalTag("untried").tone).toBe("amber");
+    expect(proposalTag("positive")).toEqual({ label: "Positive", tone: "complete" });
+    expect(proposalTag("negative").tone).toBe("error");
+    expect(proposalTag("untried").tone).toBe("attention");
     expect(proposalTag("open").label).toBe("Open");
     expect(ownKind("settings")).toBe("moebius.toml");
     expect(ownKind("repository")).toBe(".moebius/");
@@ -77,7 +77,7 @@ describe("the lines", () => {
 
   it("of a trial name its card", () => {
     expect(trialLine({ card_id: 48, outcome: "positive", reason: "" })).toEqual({
-      outcome: { label: "Positive", tone: "teal" },
+      outcome: { label: "Positive", tone: "complete" },
       card: "Card 48",
     });
     expect(trialLine({ card_id: 7, regression: true, outcome: "negative", reason: "" }).card).toBe(

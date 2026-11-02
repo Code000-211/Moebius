@@ -311,7 +311,7 @@ mod tests {
     fn snapshot() -> Snapshot {
         let card = |id: i64, repository: i64, title: &str| {
             json!({"id": id, "repository_id": repository, "number": id, "title": title,
-                   "column": "Ready", "created_at": 1})
+                   "column": "Not started", "created_at": 1})
         };
         let board = |id: i64, name: &str, cards: Vec<serde_json::Value>| {
             json!({"repository": {"id": id, "name": name}, "cards": cards, "round_limit": 5,
@@ -419,7 +419,7 @@ mod tests {
     #[test]
     fn at_most_eight_entries_and_the_ask_entry_is_never_cut() {
         let cards: Vec<_> = (1..=20)
-            .map(|id| json!({"id": id, "repository_id": 1, "number": id, "title": "same", "column": "Ready"}))
+            .map(|id| json!({"id": id, "repository_id": 1, "number": id, "title": "same", "column": "Not started"}))
             .collect();
         let snapshot: Snapshot = serde_json::from_value(json!({"boards": [
             {"repository": {"id": 1, "name": "r"}, "cards": cards, "round_limit": 5,
@@ -428,7 +428,7 @@ mod tests {
         let entries = matches("same", &snapshot, &[], &[]);
         assert_eq!(entries.len(), 8);
         assert!(matches!(entries[7].target, Target::Ask(_)));
-        assert_eq!(entries[0].detail, "r · Ready");
+        assert_eq!(entries[0].detail, "r · Not started");
     }
 
     #[test]

@@ -1,19 +1,32 @@
 /**
  * The Retro page: the Retros of the days, the errors of the one chosen grouped by kind, the proposals the Retro
  * analyst made with their status and what their trials found, and under them the lessons it learned (`Lessons`).
- * "Run the Retro now" is `POST /v1/retros`; the server says when a Retro ends with `retro_done` and when a trial or a
+ * "Run now" is `POST /v1/retros`; the server says when a Retro ends with `retro_done` and when a trial or a
  * proposal changes with `trial_done` and `proposal_status`, which `live/invalidation.ts` answers by reading again.
+ *
+ * The days are the list and the chosen day is the detail, so a person reads one day at a time: what was left out of
+ * it, what went wrong, and what the Retro wants changed. The page fills the window and each column scrolls on its own,
+ * because a day of errors is long and the list of days should stay where it was left. `?day=` names the day to open on
+ * and `?proposal=` the one to land on, which is how the Inbox leads here from a proposal it cannot show all of.
  */
+import { WarningCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 import { retro, retros, startRetro } from "../../api/calls/improve";
+import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
-import type { Proposal, RetroView } from "../../api/types/improve";
-import { CodeBlock } from "../../ui/chat/CodeBlock";
+import type { Proposal, ReportError, RetroView } from "../../api/types/improve";
 import { Tag } from "../../ui/chat/Tag";
 import { Button } from "../../ui/components/Button";
 import { Loader } from "../../ui/components/Loader";
-import { Body, Box, ListCard, ListDetail, Notice, PageHeader, sayError } from "../kit/Kit";
+import { dayName } from "../../ui/lib/format";
+import { Box } from "../../ui/page/Box";
+import { Empty } from "../../ui/page/Empty";
+import { ListCard, ListDetail } from "../../ui/page/List";
+import { Notice } from "../../ui/page/Notice";
+import { Body, PageHeader } from "../../ui/page/PageHeader";
+import { ReadFailed } from "../../ui/page/ReadFailed";
 import { Lessons } from "./Lessons";
 import {
   cardsLine,
@@ -23,15 +36,20 @@ import {
   plural,
   proposalTag,
   retroTag,
+  type TagSpec,
   trialLine,
 } from "./model";
+import { Diff, Region } from "./parts";
 
 export function RetroPage() {
   const queryClient = useQueryClient();
   const list = useQuery({ queryKey: keys.retros, queryFn: retros });
   const [picked, setPicked] = useState<string | null>(null);
-  // The latest day until one is picked.
-  const date = picked ?? list.data?.[0]?.date ?? null;
+  const [params] = useSearchParams();
+  // The day a link came in with, else the latest; one picked from the list answers neither.
+  const date = picked ?? params.get("day") ?? list.data?.[0]?.date ?? null;
+  // The proposal a link came in for, which the day is scrolled to rather than read from its top.
+  const wanted = params.get("proposal");
   const opened = useQuery({
     queryKey: keys.retro(date ?? ""),
     queryFn: () => retro(date as string),
@@ -46,19 +64,26 @@ export function RetroPage() {
   });
 
   return (
-    <>
+    <div className="flex h-full min-h-0 flex-col">
       <PageHeader
-        breadcrumb="Improve"
         title="Retro"
-        context="Errors of each day, and the changes the Retro proposes to avoid them."
+        context="Help Moebius self-improve."
         actions={
           <Button size="sm" disabled={run.isPending} onClick={() => run.mutate()}>
-            Run the Retro now
+            {run.isPending ? "Running" : "Run now"}
           </Button>
         }
       />
       {list.isPending ? (
-        <Loader message="Reading the Retros…" className="py-double" />
+        <Loader message="Reading the Retros" className="py-8" />
+      ) : list.isError ? (
+        // A read that failed is not a server that has run no Retro yet.
+        <ReadFailed
+          error={list.error}
+          fallback="The Retros could not be read. Try again."
+          busy={list.isFetching}
+          onRetry={() => void list.refetch()}
+        />
       ) : (
         <ListDetail
           list={
@@ -66,139 +91,219 @@ export function RetroPage() {
               list.data.map((each) => (
                 <ListCard
                   key={each.date}
-                  title={each.date}
+                  title={dayName(each.date)}
                   tags={[retroTag(each.status)]}
                   line={`${plural(each.errors, "error", "errors")} · ${plural(each.proposals, "proposal", "proposals")}`}
-                  chosen={date === each.date}
+                  alert={each.status === "failed"}
+                  selected={date === each.date}
                   onClick={() => setPicked(each.date)}
                 />
               ))
             ) : (
-              <Box title="Retros">
-                <Body>None yet.</Body>
-              </Box>
+              <Empty
+                title="No day read yet"
+                body="A Retro reads the day's runs and writes down what went wrong."
+              />
             )
           }
           detail={
             <>
               {run.error && (
-                <Box title="The Retro did not start">
+                <Region label="The Retro did not start">
                   <Notice tone="error">{sayError(run.error, "The Retro did not start.")}</Notice>
-                </Box>
+                </Region>
               )}
               {opened.data ? (
-                <Day view={opened.data} />
+                <Day view={opened.data} wanted={wanted} />
               ) : date === null ? (
-                <Box title="No Retro yet">
-                  <Body>The first runs at retro_at, or press "Run the Retro now".</Body>
-                </Box>
+                <Empty
+                  title="No Retro yet"
+                  body={
+                    <>
+                      The first comes at <span className="font-mono">retro_at</span>, or start one
+                      now.
+                    </>
+                  }
+                />
+              ) : opened.isPending ? (
+                <Loader message="Reading the Retro" className="py-8" />
               ) : opened.error ? (
-                <Notice tone="error">{sayError(opened.error, "Could not read the Retro.")}</Notice>
+                <Notice tone="error">
+                  {sayError(opened.error, "Could not read the Retro. Try again.")}
+                </Notice>
               ) : (
-                <Box title="Retro">
-                  <Body>Reading the Retro…</Body>
-                </Box>
+                <Empty title="Nothing came back" body="The Retro answered without a report." />
               )}
               <Lessons />
             </>
           }
         />
       )}
-    </>
+    </div>
   );
 }
 
 /** One day: what was left out, its errors by kind and its proposals. */
-function Day({ view }: { view: RetroView }) {
+/** The day a person is reading. `wanted` is the proposal a link came in for. */
+function Day({ view, wanted }: { view: RetroView; wanted: string | null }) {
   const groups = groupErrors(view.report.errors);
   const proposals = view.proposals ?? [];
+  const warnings = view.warnings ?? [];
   return (
     <>
-      {view.warnings && view.warnings.length > 0 && (
-        <Box title="Left out">
-          {view.warnings.map((warning) => (
-            <p key={warning} className="break-words text-sm text-amber">
-              {warning}
-            </p>
-          ))}
+      {warnings.length > 0 && (
+        <Box
+          title="Left out"
+          aside={
+            <span className="tabular-nums">
+              {`${plural(warnings.length, "part", "parts")} of the day`}
+            </span>
+          }
+          className="min-w-0"
+        >
+          <div className="flex flex-col gap-4">
+            {warnings.map((warning) => (
+              <div
+                key={warning}
+                className="flex items-start gap-4 rounded-control bg-attention-fill p-4 text-attention-text"
+              >
+                <WarningCircleIcon className="mt-1 size-4 shrink-0" aria-hidden="true" />
+                <p className="m-0 min-w-0 break-words text-base">{warning}</p>
+              </div>
+            ))}
+          </div>
         </Box>
       )}
-      <Box title={`Errors of ${view.date}`}>
+      <Box title="Errors" className="min-w-0">
         {groups.length === 0 ? (
           <Body>No errors that day.</Body>
         ) : (
-          groups.map((group) => (
-            <div key={group.kind} className="flex flex-col gap-half">
-              <h3 className="text-sm font-semibold text-high">
-                {group.label} · {group.errors.length}
-              </h3>
-              {group.errors.map((error, index) => (
-                <div
-                  // biome-ignore lint/suspicious/noArrayIndexKey: the errors are a fixed report, in order
-                  key={index}
-                  className="flex flex-col gap-half"
-                >
-                  <span className="font-mono text-xs text-low">{origin(error)}</span>
-                  <span className="whitespace-pre-wrap break-words text-sm text-normal">
-                    {error.text}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ))
+          <div className="flex flex-col gap-6">
+            {groups.map((group) => (
+              <ErrorGroup key={group.kind} label={group.label} errors={group.errors} />
+            ))}
+          </div>
         )}
       </Box>
-      <Box title="Proposals">
+      <Box
+        title="Proposals"
+        aside={
+          proposals.length > 0 ? (
+            <span className="tabular-nums">{`${proposals.length} from this day`}</span>
+          ) : undefined
+        }
+        className="min-w-0"
+      >
         {proposals.length === 0 ? (
-          <Body>The Retro proposed nothing.</Body>
+          <Body>None yet.</Body>
         ) : (
-          proposals.map((proposal) => <ProposalCard key={proposal.id} proposal={proposal} />)
+          <div className="flex flex-col gap-4">
+            {proposals.map((proposal) => (
+              <ProposalCard
+                key={proposal.id}
+                proposal={proposal}
+                aimed={String(proposal.id) === wanted}
+              />
+            ))}
+          </div>
         )}
       </Box>
     </>
   );
 }
 
-/** A proposal: its title and status, the agents it changes, its branch, what it says it does, the cards it addresses and what the trials found, or the diff of a change to Moebius's own configuration. */
-function ProposalCard({ proposal }: { proposal: Proposal }) {
+/** The errors of one kind: how many, then each with where it happened. */
+function ErrorGroup({ label, errors }: { label: string; errors: ReportError[] }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-4">
+      <h3 className="m-0 break-words text-base font-semibold text-text tabular-nums">
+        {`${label} · ${errors.length}`}
+      </h3>
+      <div className="flex flex-col gap-4">
+        {errors.map((error, index) => (
+          <div
+            // biome-ignore lint/suspicious/noArrayIndexKey: the errors are a fixed report, in order
+            key={index}
+            className="flex min-w-0 flex-col gap-4 rounded-card bg-sunken p-4"
+          >
+            {origin(error) !== "" && (
+              <span className="break-words font-mono text-sm text-secondary tabular-nums">
+                {origin(error)}
+              </span>
+            )}
+            <p className="m-0 min-w-0 break-words text-base leading-normal text-text whitespace-pre-wrap">
+              {error.text}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** A proposal: its title and status, the agents it changes, its branch, what it says it does, the cards it
+ * addresses and what the trials found, or the diff of a change to Moebius's own configuration. The one a link from
+ * the Inbox named is aimed at — the day is scrolled to it rather than read from its top. */
+function ProposalCard({ proposal, aimed }: { proposal: Proposal; aimed?: boolean }) {
   const status = proposalTag(proposal.status);
   const own = ownKind(proposal.kind);
+  const box = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (aimed) box.current?.scrollIntoView({ behavior: "instant", block: "start" });
+  }, [aimed]);
   return (
-    <article className="flex flex-col gap-half rounded-lg border bg-lane p-base">
-      <div className="flex flex-wrap items-center gap-half">
-        <h3 className="mr-auto break-words text-sm font-semibold text-high">{proposal.title}</h3>
+    <article ref={box} className="flex min-w-0 flex-col gap-4 rounded-card bg-sunken p-4">
+      <h3 className="m-0 min-w-0 break-words text-base font-semibold text-text">
+        {proposal.title}
+      </h3>
+      <div className="flex flex-wrap gap-2">
+        <Tag tone={status.tone}>{status.label}</Tag>
+        {own && (
+          <code className="break-words rounded-full bg-code px-2 py-1 font-mono text-xs text-text">
+            {own}
+          </code>
+        )}
         {proposal.agents?.map((agent) => (
           <Tag key={agent}>{agent}</Tag>
         ))}
-        {own && <Tag>{own}</Tag>}
-        <Tag tone={status.tone}>{status.label}</Tag>
       </div>
-      <span className="break-all font-mono text-xs text-low">{proposal.branch}</span>
+      <span className="min-w-0 break-words font-mono text-sm text-secondary">
+        {proposal.branch}
+      </span>
       {proposal.body && (
-        <p className="whitespace-pre-wrap break-words text-sm text-normal">{proposal.body}</p>
+        <p className="m-0 min-w-0 break-words text-base leading-normal text-text whitespace-pre-wrap">
+          {proposal.body}
+        </p>
       )}
       {proposal.cards && proposal.cards.length > 0 && (
-        <span className="font-mono text-xs text-low">{cardsLine(proposal.cards)}</span>
+        <span className="min-w-0 break-words text-sm text-secondary tabular-nums">
+          {cardsLine(proposal.cards)}
+        </span>
       )}
       {proposal.trials?.map((trial, index) => {
         const line = trialLine(trial);
         return (
-          <div
+          <TrialRow
             // biome-ignore lint/suspicious/noArrayIndexKey: the trials are stored in order and never change
             key={index}
-            className="flex flex-wrap items-center gap-base"
-          >
-            <Tag tone={line.outcome.tone}>{line.outcome.label}</Tag>
-            <span className="font-mono text-xs text-low">{line.card}</span>
-            <span className="min-w-0 flex-1 break-words text-sm text-normal">{trial.reason}</span>
-          </div>
+            outcome={line.outcome}
+            card={line.card}
+            reason={trial.reason}
+          />
         );
       })}
-      {proposal.diff && (
-        <CodeBlock language="diff" code={proposal.diff}>
-          {proposal.diff}
-        </CodeBlock>
-      )}
+      {proposal.diff && <Diff text={proposal.diff} />}
     </article>
+  );
+}
+
+/** One trial: what came of it, the card it was tried on, and why. */
+function TrialRow({ outcome, card, reason }: { outcome: TagSpec; card: string; reason: string }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center">
+      <Tag tone={outcome.tone}>{outcome.label}</Tag>
+      <span className="shrink-0 break-words text-sm text-secondary tabular-nums">{card}</span>
+      <p className="m-0 min-w-0 flex-1 break-words text-base text-text">{reason}</p>
+    </div>
   );
 }

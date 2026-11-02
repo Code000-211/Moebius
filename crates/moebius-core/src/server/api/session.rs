@@ -563,7 +563,7 @@ mod tests {
         let event = crate::bus::Event::CardMoved {
             card: 1,
             from: "Backlog".into(),
-            to: "Ready".into(),
+            to: "Not started".into(),
         };
         let received = loop {
             state.app.bus.publish(event.clone());

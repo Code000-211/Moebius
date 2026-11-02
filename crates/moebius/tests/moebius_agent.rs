@@ -35,7 +35,7 @@ fn answer(body: &Value) -> String {
             tool_call_answer("call_write", "write", &arguments, 400)
         }
         1 => {
-            let command = "\"$MOEBIUS\" check-script .moebius/ready.luau --column Ready";
+            let command = "\"$MOEBIUS\" check-script .moebius/ready.luau --column \"Not started\"";
             tool_call_answer("call_check", "bash", &json!({ "command": command }), 450)
         }
         _ => text_answer("Done.", 500),
@@ -66,7 +66,7 @@ async fn a_chat_with_the_moebius_agent_writes_a_column_script_and_it_is_offered_
         .unwrap();
 
     // No agent is named: the chat is with the Moebius agent.
-    let message = "Start cards in Ready as soon as nothing blocks them.";
+    let message = "Start cards in Not started as soon as nothing blocks them.";
     let run: Value = started
         .post(
             "/v1/chats",

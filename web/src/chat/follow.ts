@@ -1,6 +1,7 @@
 /**
  * Whether the conversation follows what the agent writes. It does while the person is at its end, stops when they
- * scroll up, and starts again when they reach the end or send a message. Content that grows moves no `scrollTop`, but
+ * scroll up, and starts again when they reach the end or send a message; opening a step of the conversation stops it
+ * too, because that is what a person goes to read. Content that grows moves no `scrollTop`, but
  * the list that draws only what is on screen sometimes does (it measures a taller turn and corrects its position),
  * so a `scrollTop` that went down stops the following only when the person did it: with the wheel, a finger, a key or
  * the scrollbar, shortly before.
@@ -49,4 +50,13 @@ export function shouldRepin(state: ScrollState, scrolled: Scrolled): boolean {
 /** What sending a message does: the conversation follows again, wherever it was scrolled to. */
 export function afterSend(state: ScrollState): ScrollState {
   return { ...state, follow: true };
+}
+
+/**
+ * What opening or closing a step of the conversation does: the end is let go of. A person who unfolds a thought is
+ * reading what is above the last line, and a list pinned to its end scrolls that out of the way the moment it grows.
+ * Scrolling to the end, or sending a message, takes the end again.
+ */
+export function afterToggle(state: ScrollState): ScrollState {
+  return { ...state, follow: false };
 }

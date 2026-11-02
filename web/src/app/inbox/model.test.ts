@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Board, Card, Change, InboxItem, Snapshot } from "../../api/types/board";
+import type { Proposal } from "../../api/types/improve";
 import {
   chatOf,
   chipName,
@@ -13,6 +14,7 @@ import {
   kindTag,
   meta,
   NO_FILTERS,
+  proposedOf,
   removeIssue,
   shown,
   summary,
@@ -79,6 +81,15 @@ const item = (
   at = 100,
 ): InboxItem => ({ id, kind, card_id, title: `Item ${id}`, data, resolved_at: null, at });
 
+const proposed = (extra: Partial<Proposal> = {}): Proposal => ({
+  id: 4,
+  retro_date: "2026-10-25",
+  branch: "proposal/2026-10-25-read-tests",
+  title: "Let the Coder read the tests first",
+  status: "positive",
+  ...extra,
+});
+
 const snapshot: Snapshot = {
   boards: [
     board(
@@ -125,15 +136,17 @@ describe("what an item is about", () => {
 
 describe("how an item tells itself", () => {
   it("tags the kinds, red for stuck and amber for what waits for a move", () => {
-    expect(kindTag(item(1, "stuck", 1, {}))).toEqual({ label: "Stuck", tone: "red" });
+    expect(kindTag(item(1, "stuck", 1, {}))).toEqual({ label: "Stuck", tone: "error" });
     expect(kindTag(item(1, "ready_to_merge", null, {})).label).toBe("Change from a chat");
     expect(kindTag(item(1, "ready_to_merge", 4, {})).label).toBe("Ready to merge");
     expect(kindTag(item(1, "needs_design", 4, {}))).toEqual({
       label: "Needs design",
-      tone: "plain",
+      tone: "neutral",
     });
     expect(chipName("approve_issue")).toBe("Approvals");
     expect(chipName("needs_design")).toBe("Needs design");
+    // The chip says what the column the card sits in is called, not a shorter word for the same thing.
+    expect(chipName("ready_to_merge")).toBe("Ready to merge");
   });
 
   it("says why an item is there", () => {
@@ -171,7 +184,8 @@ describe("how an item tells itself", () => {
     expect(meta(approve as InboxItem, about(approve as InboxItem))).toBe(
       "radiance · #55 · by lowfreq",
     );
-    expect(meta(item(1, "proposal", null, {}), {})).toBe("Retro");
+    // A proposal is already the Retro's word, so it carries no source of its own.
+    expect(meta(item(1, "proposal", null, {}), {})).toBe("");
     expect(meta(item(1, "grilling_report", null, { grilling: 1 }), {})).toBe("Grilling");
   });
 
@@ -209,11 +223,38 @@ describe("how an item tells itself", () => {
       regression: [{ card: 2, outcome: "negative", reason: "broke it" }],
     });
     expect(trialsOf(proposal, "trials")).toEqual([
-      { card: "Card 4", outcome: "Positive", positive: true, reason: "faster" },
-      { card: "No card", outcome: "No change", positive: false, reason: "" },
+      { card: 4, outcome: "Positive", tone: "complete", reason: "faster" },
+      { card: null, outcome: "No change", tone: "quiet", reason: "" },
     ]);
-    expect(trialsOf(proposal, "regression")[0]?.positive).toBe(false);
+    expect(trialsOf(proposal, "regression")[0]?.tone).toBe("error");
     expect(trialsOf(item(1, "proposal", null, {}), "trials")).toEqual([]);
+  });
+
+  it("shows what a proposal offers, from the item where it can and from the proposal where it cannot", () => {
+    // The item made when the Retro stores a proposal carries the change itself and wins over the record.
+    const stored = item(1, "proposal", null, {
+      kind: "settings",
+      reason: "Cards ran out of rounds.",
+      diff: "+round_limit = 7",
+    });
+    expect(proposedOf(stored, proposed({ body: "Other", diff: "+other" }))).toEqual({
+      reason: "Cards ran out of rounds.",
+      diff: "+round_limit = 7",
+    });
+    // The item a trial ends with names its proposal and nothing else, so the record stands in for both.
+    const fromTrial = item(2, "proposal", null, { proposal: 4 });
+    expect(
+      proposedOf(fromTrial, proposed({ body: "Read the tests first.", diff: "+read tests" })),
+    ).toEqual({
+      reason: "Read the tests first.",
+      diff: "+read tests",
+    });
+    // A harness proposal has no diff, and nothing at all to show without its proposal.
+    expect(proposedOf(fromTrial, null)).toEqual({ reason: "", diff: "" });
+    expect(proposedOf(fromTrial, proposed({ diff: "" })).diff).toBe("");
+    // The sentence for such an item comes from the kind the record knows, not from the bare item.
+    expect(why(fromTrial, {})).toContain("harness configuration");
+    expect(why(fromTrial, {}, "settings")).toContain("moebius.toml");
   });
 });
 
@@ -239,7 +280,8 @@ describe("the filters", () => {
   });
 
   it("tells how many things need the person", () => {
-    expect(summary(0, 0)).toBe("Nothing needs you.");
+    // An empty inbox is said by the empty state of the page, and not twice over.
+    expect(summary(0, 0)).toBe("");
     expect(summary(1, 1)).toBe("1 thing needs you.");
     expect(summary(5, 5)).toBe("5 things need you.");
     expect(summary(5, 2)).toBe("5 things need you; 2 shown.");

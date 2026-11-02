@@ -1,8 +1,10 @@
 /**
  * The page of one repository (`/projects/:id`; the desktop app's `screens/project`): where it is and what it trusts,
  * with the logins of a repository on a forge to edit, and its files on the default branch, which can be read, edited
- * and saved as a commit. The board of the repository is its own page.
+ * and saved as a commit. The two parts are borderless cards grouped by space. The board of the repository is its own
+ * page.
  */
+import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router";
@@ -14,45 +16,76 @@ import type { Repository } from "../../api/types/board";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
 import { Loader } from "../../ui/components/Loader";
+import { Tooltip } from "../../ui/components/Tooltip";
+import { cn } from "../../ui/lib/cn";
 import { Box } from "../../ui/page/Box";
+import { Empty } from "../../ui/page/Empty";
 import { Field } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
+import { PageHeader } from "../../ui/page/PageHeader";
+import { ReadFailed } from "../../ui/page/ReadFailed";
 import { boardPath } from "../pages";
-import { Header } from "../shell/Page";
 import { FilesPanel } from "./FilesPanel";
 import { forgeTag, logins, onForge } from "./model";
 
 export function ProjectPage() {
   const { id } = useParams();
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => readSnapshot() });
-  if (data.isPending) return <Loader message="Reading the project…" className="py-double" />;
+  if (data.isPending) return <Loader message="Reading the project" className="py-8" />;
   const board = data.data?.boards.find((each) => String(each.repository.id) === id);
+  // A read that failed is not a repository that has gone: saying so comes before the page that says it is not here.
+  if (data.isError) {
+    return (
+      <>
+        <PageHeader title="Project" />
+        <ReadFailed
+          error={data.error}
+          fallback="The project could not be read. Try again."
+          busy={data.isFetching}
+          onRetry={() => void data.refetch()}
+        />
+      </>
+    );
+  }
   if (!board) {
     return (
       <>
-        <Header breadcrumb="Projects" title="Project" />
-        <p className="text-sm text-normal">
-          There is no such repository. Pick one from the{" "}
-          <Link to="/projects" className="text-accent">
-            Projects
-          </Link>
-          .
-        </p>
+        <PageHeader title="Project" />
+        <Empty
+          title="No such repository"
+          body="This server has no repository with that address. It may have been removed."
+          action={
+            <Button asChild size="sm">
+              <Link to="/projects">Choose a repository</Link>
+            </Button>
+          }
+        />
       </>
     );
   }
   const { repository } = board;
   return (
     <>
-      <div className="flex items-start justify-between gap-base">
-        <Header breadcrumb="Projects" title={repository.name} />
-        <Button asChild size="sm" variant="outline">
-          <Link to={boardPath(repository.id)}>Open board</Link>
-        </Button>
-      </div>
-      <div className="flex flex-col gap-[12px]">
+      <PageHeader
+        title={repository.name}
+        back={
+          <Tooltip content="All projects" side="bottom">
+            <Button asChild variant="icon" aria-label="All projects">
+              <Link to="/projects">
+                <ArrowLeftIcon className="size-5" />
+              </Link>
+            </Button>
+          </Tooltip>
+        }
+        actions={
+          <Button asChild size="sm" variant="secondary">
+            <Link to={boardPath(repository.id)}>Open board</Link>
+          </Button>
+        }
+      />
+      <div className="flex flex-col gap-6">
         <Box title="Settings">
-          <dl className="m-0 mb-[12px] flex flex-wrap gap-base">
+          <dl className="m-0 mb-4 flex flex-wrap gap-4">
             <Fact label="Forge" value={forgeTag(repository)} />
             <Fact label="Default branch" value={repository.default_branch} mono />
             <Fact label="Clone on the server" value={repository.path} mono />
@@ -60,7 +93,7 @@ export function ProjectPage() {
           {onForge(repository) ? (
             <Trusted key={repository.trusted.join(",")} repository={repository} />
           ) : (
-            <p className="m-0 text-[13px] text-normal">
+            <p className="m-0 max-w-prose text-base text-secondary">
               This repository is on no forge, so it has no trusted authors: its issues come from
               here.
             </p>
@@ -72,18 +105,22 @@ export function ProjectPage() {
   );
 }
 
+/** One fact of the repository: its label, and the value under it. A path or a branch is monospace and wraps. */
 function Fact({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="min-w-[160px] flex-1 rounded-md border bg-lane p-[10px]">
-      <dt className="font-mono text-[11px] text-low">{label}</dt>
-      <dd className={`m-0 break-all text-[13px] text-high ${mono ? "font-mono text-[12px]" : ""}`}>
+    <div className="min-w-48 flex-1 rounded-control bg-sunken p-3">
+      <dt className="text-sm font-semibold text-secondary">{label}</dt>
+      <dd
+        className={cn("m-0 mt-1 break-all text-text", mono ? "font-mono text-sm" : "text-base")}
+        title={value}
+      >
         {value}
       </dd>
     </div>
   );
 }
 
-/** The logins whose issues need no approval, as a line with a pencil that opens a field to change them. */
+/** The logins whose issues need no approval, as a line with the way to change them. */
 function Trusted({ repository }: { repository: Repository }) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<string | null>(null);
@@ -96,15 +133,15 @@ function Trusted({ repository }: { repository: Repository }) {
   });
   if (editing === null) {
     return (
-      <div className="flex flex-wrap items-center gap-base">
-        <span className="font-mono text-[12.5px] text-normal" data-testid="trusted">
+      <div className="flex flex-wrap items-center gap-4">
+        <p className="m-0 min-w-0 flex-1 break-words text-base text-text" data-testid="trusted">
           {repository.trusted.length === 0
             ? "No trusted authors"
             : `Trusts ${repository.trusted.join(", ")}`}
-        </span>
+        </p>
         <Button
-          size="xs"
-          variant="outline"
+          size="sm"
+          variant="secondary"
           onClick={() => {
             save.reset();
             setEditing(repository.trusted.join(", "));
@@ -117,7 +154,7 @@ function Trusted({ repository }: { repository: Repository }) {
   }
   return (
     <form
-      className="flex flex-col gap-base"
+      className="flex max-w-md flex-col gap-4"
       onSubmit={(e) => {
         e.preventDefault();
         if (!save.isPending) save.mutate(editing);
@@ -130,20 +167,22 @@ function Trusted({ repository }: { repository: Repository }) {
         <Input
           value={editing}
           placeholder="leon, mona"
+          autoComplete="off"
           onChange={(e) => setEditing(e.target.value)}
           autoFocus
         />
       </Field>
-      <div className="flex gap-base">
+      <div className="flex gap-2">
         <Button type="submit" size="sm" disabled={save.isPending}>
-          {save.isPending ? "Saving…" : "Save"}
+          {save.isPending ? "Saving" : "Save"}
         </Button>
-        <Button type="button" size="sm" variant="outline" onClick={() => setEditing(null)}>
+        <Button type="button" size="sm" variant="secondary" onClick={() => setEditing(null)}>
           Cancel
         </Button>
       </div>
       {save.isError && (
         <Notice tone="error">
+          <span className="font-semibold">Couldn't save the logins. They stay as they were. </span>
           {isApiError(save.error) ? save.error.message : "The logins could not be saved."}
         </Notice>
       )}
