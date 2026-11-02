@@ -341,8 +341,11 @@ export function DiffView({ diff, truncated = false }: { diff: string; truncated?
             </ul>
           </div>
         </div>
-        <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-card bg-code">
-          <header className="flex shrink-0 flex-wrap items-center gap-3 px-3 py-1">
+        {/* The code block ends where its last line does. Only the header and the lines carry the colour of code,
+            so a file with a short diff does not trail a band of empty code down to the bottom of the taller list
+            beside it; the lines shrink to the column and scroll there when a diff is longer than it. */}
+        <section className="flex min-w-0 flex-1 flex-col">
+          <header className="flex shrink-0 flex-wrap items-center gap-3 rounded-t-card bg-code px-3 py-1">
             <p
               className="m-0 min-w-0 flex-1 break-all font-mono text-sm font-semibold text-text"
               data-testid="diff-path"
@@ -376,7 +379,7 @@ export function DiffView({ diff, truncated = false }: { diff: string; truncated?
               ))}
             </fieldset>
           </header>
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="min-h-0 overflow-y-auto rounded-b-card bg-code" data-testid="diff-lines">
             <FileBody file={file} mode={mode} />
           </div>
         </section>

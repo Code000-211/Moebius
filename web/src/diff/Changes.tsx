@@ -116,7 +116,14 @@ export function ChangesCard({ of }: { of: { change: number } }) {
         <ArrowsOutIcon className="size-4 shrink-0 text-secondary" aria-hidden="true" />
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent data-testid="change-diff" aria-describedby={undefined} className="max-w-6xl">
+        {/* The sheet answers for the scroll of its two columns and nothing else, so it is clipped rather than
+            scrolled: a sheet that scrolled as well slid both columns up out of sight and left a band of nothing
+            where they were, which is what a person met when the wheel landed on the sheet instead of a column. */}
+        <DialogContent
+          data-testid="change-diff"
+          aria-describedby={undefined}
+          className="max-w-6xl overflow-hidden"
+        >
           <div className="flex min-h-0 flex-1 flex-col gap-4 p-6">
             <DialogHeader>
               <DialogTitle>Changes</DialogTitle>

@@ -50,6 +50,8 @@ export interface FakeRuns {
   refuseSteer: string | null;
   /** Refuses the next terminals with this status (the browser only sees that the socket did not open). */
   refuseTerminals: number | null;
+  /** What `GET /v1/changes/1/diff` answers. A test that needs a diff taller than a window writes a longer one. */
+  changeDiff: string;
   /** Stores an event of the run and sends it on the event socket; returns its `seq`. */
   emit(run: number, kind: string, data?: Record<string, unknown>): number;
   /** Cuts the terminals, as the server stopping does. */
@@ -103,6 +105,35 @@ index 4444444..5555555 100644
 +	cc -O2 main.c
  clean:
 `;
+
+/** Change 1's diff is longer than a window, so a person reading it scrolls the lines and not the sheet. */
+export const LONG_CHANGE_DIFF =
+  `diff --git a/src/story.rs b/src/story.rs
+index 6666666..7777777 100644
+--- a/src/story.rs
++++ b/src/story.rs
+@@ -1,2 +1,62 @@
+-fn first() {}
+-fn last() {}
+` +
+  Array.from({ length: 60 }, (_unused, line) => `+fn verse_${line + 1}() {}`).join("\n") +
+  "\n+fn last() {}\n";
+
+/**
+ * Change 1's diff touches more files than it has lines, so the list of files is the taller of the two columns and the
+ * file being read ends well above it.
+ */
+export const MANY_FILE_CHANGE_DIFF = Array.from({ length: 10 }, (_unused, file) => {
+  const name = `src/verse_${file + 1}.rs`;
+  return (
+    `diff --git a/${name} b/${name}\n` +
+    `index 8888888..9999999 100644\n` +
+    `--- a/${name}\n` +
+    `+++ b/${name}\n` +
+    `@@ -1,2 +1,3 @@\n pub fn verse() {\n` +
+    `+    // sung once more\n }\n`
+  );
+}).join("");
 
 function readBody(request: IncomingMessage): Promise<string> {
   return new Promise((done) => {
@@ -171,6 +202,7 @@ export function createFakeRuns(
     steered,
     refuseTerminals: null,
     refuseSteer: null,
+    changeDiff: CHANGE_DIFF,
     ports: [
       { port: 3000, pid: 4242, process: "node", kind: "run", run: 1000 },
       { port: 8080, pid: 4300, process: "python3", kind: "terminal", run: null },
@@ -190,7 +222,7 @@ export function createFakeRuns(
       const url = new URL(request.url ?? "/", "http://x");
       if (path === "/v1/ports" && method === "GET") return reply(response, 200, fake.ports);
       if (path === "/v1/changes/1/diff" && method === "GET") {
-        return reply(response, 200, { diff: CHANGE_DIFF, truncated: false });
+        return reply(response, 200, { diff: fake.changeDiff, truncated: false });
       }
       const one = /^\/v1\/runs\/(\d+)(\/(?:events|steer|diff))?$/.exec(path);
       if (!one) return false;

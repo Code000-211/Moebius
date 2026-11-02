@@ -8,7 +8,7 @@
 import { type Browser, type BrowserContext, chromium, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { FakeRuns } from "./fake/runs";
-import { PASTE_END, PASTE_START } from "./fake/runs";
+import { LONG_CHANGE_DIFF, MANY_FILE_CHANGE_DIFF, PASTE_END, PASTE_START } from "./fake/runs";
 import { startServer, type TestServer, usesRealServer } from "./server";
 
 let browser: Browser;
@@ -255,6 +255,54 @@ describe("the diff of a card", () => {
       const rowBox = await sheet.getByTestId("diff-file").last().boundingBox();
       if (!listBox || !rowBox) throw new Error("the list of files or its last row drew no box");
       expect(listBox.y + listBox.height - (rowBox.y + rowBox.height)).toBeLessThan(12);
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "stops the code at its last line when the list of files is the taller column",
+    async () => {
+      await open("/board/1?card=5");
+      fake().changeDiff = MANY_FILE_CHANGE_DIFF;
+      await page.reload();
+      await page.getByTestId("diff-card").click();
+      const sheet = page.getByRole("dialog");
+      const lastLine = sheet.locator('[data-testid="diff-line"]').last();
+      await lastLine.waitFor();
+      // The lines are as tall as the file they hold. Held to the height of the list beside them, the last line of a
+      // short file trailed a band of empty code down to the bottom of the taller column.
+      const lines = await sheet.getByTestId("diff-lines").boundingBox();
+      const lineBox = await lastLine.boundingBox();
+      const listBox = await sheet.getByTestId("diff-files").boundingBox();
+      if (!lines || !lineBox || !listBox)
+        throw new Error("the code, its last line or its list drew no box");
+      expect(lines.y + lines.height - (lineBox.y + lineBox.height)).toBeLessThan(12);
+      // The list is the taller of the two columns, which is what the code no longer follows.
+      expect(lines.y + lines.height).toBeLessThan(listBox.y + listBox.height);
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "scrolls its lines where they are, and never the sheet, when a diff is taller than the window",
+    async () => {
+      await open("/board/1?card=5");
+      fake().changeDiff = LONG_CHANGE_DIFF;
+      await page.reload();
+      await page.getByTestId("diff-card").click();
+      const sheet = page.getByRole("dialog");
+      const lines = sheet.getByTestId("diff-lines");
+      await lines.waitFor();
+      const box = await sheet.boundingBox();
+      if (!box) throw new Error("the sheet drew no box");
+      // A wheel over the sheet's own padding moves nothing. A sheet that scrolled as well slid both columns up out of
+      // sight and left a band of nothing where they were.
+      await page.mouse.move(box.x + 12, box.y + box.height - 12);
+      await page.mouse.wheel(0, 300);
+      expect(await sheet.evaluate((el) => el.scrollTop)).toBe(0);
+      // The same wheel over the lines scrolls them where they stand, inside the sheet.
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.wheel(0, 300);
+      await expect.poll(() => lines.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+      expect(await sheet.evaluate((el) => el.scrollTop)).toBe(0);
     },
   );
 });
