@@ -37,7 +37,7 @@ describe("the counts of a changed file", () => {
   it("is a row of the step list, at the height the others are", () => {
     const { container } = draw(2, 1);
     const row = container.querySelector("button")?.getAttribute("class") ?? "";
-    expect(row).toContain("min-h-10");
+    expect(row).toContain("min-h-8");
     expect(row).not.toContain("min-h-12");
   });
 });

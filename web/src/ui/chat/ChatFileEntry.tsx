@@ -42,7 +42,7 @@ export function ChatFileEntry({
     <div className={cn("overflow-hidden rounded-control bg-sunken", className)}>
       <button
         type="button"
-        className="flex min-h-10 w-full flex-wrap items-center gap-3 rounded-control px-3 py-2 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
+        className="flex min-h-8 w-full flex-wrap items-center gap-3 rounded-control px-3 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
         onClick={onToggle}
         aria-expanded={onToggle ? expanded : undefined}
       >

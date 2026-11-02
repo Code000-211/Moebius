@@ -7,7 +7,8 @@
  * What it measures, per page: sideways overflow and who causes it; text clipped by its own box, where a line that
  * fades out where it runs short is saying there is more rather than being cut; border radii outside
  * the scale; padding, margin and gap that are not on the grid; type sizes and weights outside the scale; interactive
- * rows under 40px; the contrast of text against what is really behind it; children of a centred row whose middle is
+ * rows under their floor (40px, or 32 in a conversation's step log); the contrast of text against what is really
+ * behind it; children of a centred row whose middle is
  * not in line; a raised surface inside another raised surface, which stacks one elevation on another; and a sheet
  * whose last thing stops short of its own bottom padding, which leaves a band of nothing under it; and a control or
  * row shorter than the words it holds, which then draw below its box. Terminals and code
@@ -468,7 +469,12 @@ function measure(input: {
     if (!aimable) continue;
     const box = el.getBoundingClientRect();
     const label = (ownText(el) || el.getAttribute("aria-label") || "").slice(0, 30);
-    if (box.height < 40)
+    // A conversation's step log is the one list whose rows are shorter than a thing you aim at. A thought and a tool
+    // call are lines of a log read top to bottom, the whole line opens one of them, and the standard's own answer to a
+    // page that is too loose is to cut rows rather than shrink them — so the log keeps 32px, a floor rather than no
+    // floor. `Turn.tsx` marks the block, and nothing else may wear the marker to slip past this.
+    const floor = el.closest('[data-audit="log"]') ? 32 : 40;
+    if (box.height < floor)
       found.targets.push(`${name(el, `${Math.round(box.height)}px tall`)} ${label}`);
   }
 

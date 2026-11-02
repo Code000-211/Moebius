@@ -70,7 +70,7 @@ export function ChatAggregatedToolEntries({
   if (only) {
     return (
       <div
-        className={cn("flex min-h-10 flex-wrap items-center gap-3 px-3 text-left", className)}
+        className={cn("flex min-h-8 flex-wrap items-center gap-3 px-3 text-left", className)}
         title={only.detail ?? only.summary}
       >
         <Icon aria-hidden="true" className="size-4 shrink-0 text-secondary" />
@@ -86,7 +86,7 @@ export function ChatAggregatedToolEntries({
     <div className={cn("flex flex-col", className)}>
       <button
         type="button"
-        className="flex min-h-10 w-full cursor-pointer items-center gap-3 rounded-control px-3 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
+        className="flex min-h-8 w-full cursor-pointer items-center gap-3 rounded-control px-3 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
         onClick={onToggle}
         aria-expanded={expanded}
       >
@@ -110,7 +110,7 @@ export function ChatAggregatedToolEntries({
             <div
               key={entry.expansionKey}
               title={entry.detail ?? entry.summary}
-              className="flex min-h-10 flex-wrap items-center gap-3 px-3"
+              className="flex min-h-8 flex-wrap items-center gap-3 px-3"
             >
               <Icon aria-hidden="true" className="size-4 shrink-0 text-secondary" />
               <FadedLine text={entry.summary} className="flex-1 font-mono text-sm text-text" />

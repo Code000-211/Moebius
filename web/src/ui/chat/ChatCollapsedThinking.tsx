@@ -59,7 +59,7 @@ export function ChatCollapsedThinking({
     <div className={cn("flex max-w-prose flex-col", className)}>
       <button
         type="button"
-        className="flex min-h-10 cursor-pointer items-center gap-2 self-start rounded-control px-3 text-left text-sm text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text"
+        className="flex min-h-8 cursor-pointer items-center gap-2 self-start rounded-control px-3 text-left text-sm text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text"
         onClick={onToggle}
         aria-expanded={expanded}
       >

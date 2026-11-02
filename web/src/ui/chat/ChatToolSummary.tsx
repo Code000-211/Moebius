@@ -66,7 +66,7 @@ export function ChatToolSummary({
     <Root
       type={canExpand ? "button" : undefined}
       className={cn(
-        "flex min-h-10 w-full flex-wrap items-center gap-3 rounded-control px-3 py-1 text-left transition-colors duration-(--motion-routine) ease-out",
+        "flex min-h-8 w-full flex-wrap items-center gap-3 rounded-control px-3 text-left transition-colors duration-(--motion-routine) ease-out",
         canExpand && "cursor-pointer hover:bg-hover",
         className,
       )}

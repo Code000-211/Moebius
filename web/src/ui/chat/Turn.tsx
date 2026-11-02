@@ -236,8 +236,15 @@ function BlockView({
         />
       );
     case "steps":
+      // A row of the log is 32px rather than the 40px of a thing you aim at, and the gap stays the standard's
+      // 8px, so the rhythm a hand aims at is still 40px and the log simply holds more of it. The marker is what
+      // tells `e2e/design/audit.test.ts` these rows are a log at 32px rather than controls at 40px.
       return (
-        <div className={cn("flex flex-col", compact ? "gap-1" : "gap-2")} data-testid="steps">
+        <div
+          className={cn("flex flex-col", compact ? "gap-1" : "gap-2")}
+          data-testid="steps"
+          data-audit="log"
+        >
           {block.steps.map((step) => (
             <StepLine key={step.key} step={step} isOpen={isOpen} onToggle={onToggle} />
           ))}
