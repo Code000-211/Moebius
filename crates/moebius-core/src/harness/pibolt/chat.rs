@@ -217,6 +217,52 @@ mod tests {
     };
     use crate::router::Protocol;
 
+    fn wait_until_ended_after_end(app: &App, pi: &PiBolt, run_id: i64) {
+        app.end_chat(pi, run_id).unwrap();
+        wait_until_ended(app, run_id);
+    }
+
+    #[test]
+    fn a_chat_whose_terminal_cannot_be_prepared_keeps_its_pi() {
+        let (_dir, app, pi, repo) = setup();
+        let repository = app.repository(repo).unwrap();
+        let run = pi
+            .start_chat(
+                &app,
+                "Coder",
+                (Some(&repository), false),
+                Some("Hello"),
+                Some("Hello"),
+                "chat",
+                &ChatSettings::default(),
+            )
+            .unwrap();
+        wait_for_run(&app, run.id, "the agent answers", |run| {
+            run.status == "waiting"
+        });
+        // The lens cannot be written: a directory is where the file goes. (The live Pi's own directory stays intact.)
+        let lens = app
+            .data_dir
+            .join(format!("runs/{}/moebius-lens.ts", run.id));
+        let _ = std::fs::remove_file(&lens);
+        std::fs::create_dir(&lens).unwrap();
+        assert!(pi.tui(&app, run.id).is_err());
+        // The chat still has its Pi, and is neither ended nor stuck without one.
+        assert!(pi.live_chat(run.id).is_some());
+        assert!(lock(&pi.paused).is_empty());
+        assert_eq!(app.run(run.id).unwrap().status, "waiting");
+        assert!(pi.say(run.id, "Still there?"));
+        let answered = |run: &Run| {
+            run.status == "waiting"
+                && app.store.events(run.id).unwrap().iter().any(|event| {
+                    event.kind == "message_update"
+                        && event.data.to_string().contains("You said: Still there?")
+                })
+        };
+        wait_for_run(&app, run.id, "the Pi answers", answered);
+        wait_until_ended_after_end(&app, &pi, run.id);
+    }
+
     #[test]
     fn a_chat_idle_for_long_loses_its_pi_and_the_next_message_starts_it_again() {
         let (_dir, app, pi, repo) = setup();

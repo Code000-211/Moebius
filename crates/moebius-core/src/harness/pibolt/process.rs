@@ -3,7 +3,7 @@
 //! instructions, skills, extensions and the bridge, and the process itself with the thread that reads it (see
 //! `reader`).
 
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -12,7 +12,7 @@ use std::time::Instant;
 use serde_json::{Value, json};
 
 use super::reader::Reader;
-use super::{BRIDGE, LENS, Live, MOEBIUS_AGENT, PiBolt, lock, run_dir, send};
+use super::{BRIDGE, LENS, Live, MOEBIUS_AGENT, PiBolt, kill_process, lock, run_dir, send};
 use crate::app::App;
 use crate::bus::Event;
 use crate::config::AgentConfig;
@@ -213,7 +213,7 @@ impl PiBolt {
             };
             command = remote.command(&command, &local)?;
         }
-        let mut child = command
+        let mut child = crate::platform::own_group(&mut command)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::from(stderr))
@@ -230,6 +230,27 @@ impl PiBolt {
             run: run.clone(),
         };
         lock(&self.live).insert(run.id, live.clone());
+        let begun = self.begin(app, card, &live, prompt, stdout);
+        if begun.is_err() {
+            // Nothing reads this Pi: end it and what it started, so that it is not orphaned.
+            lock(&self.live).remove(&run.id);
+            lock(&live.stdin).take();
+            kill_process(&live);
+            let _ = lock(&live.child).wait();
+        }
+        begun
+    }
+
+    /// Marks the run as started, gives Pi its prompt and starts the thread that reads it.
+    fn begin(
+        &self,
+        app: &Arc<App>,
+        card: Option<&Card>,
+        live: &Live,
+        prompt: Option<&str>,
+        stdout: impl Read + Send + 'static,
+    ) -> Result<(), String> {
+        let run = live.run.clone();
         match prompt {
             Some(prompt) => {
                 app.store
@@ -252,7 +273,7 @@ impl PiBolt {
         let reader = Reader {
             app: app.clone(),
             run,
-            live,
+            live: live.clone(),
             router: self.router.clone(),
             lives: self.live.clone(),
         };
@@ -293,8 +314,76 @@ mod tests {
     use super::*;
     use crate::board::{CardRuns, Variant};
     use crate::harness::mcp::McpServer;
-    use crate::harness::pibolt::testing::{setup, wait_until_ended};
+    use crate::harness::pibolt::testing::{child_pid, setup, wait_until_ended, wait_until_gone};
     use crate::repos::git;
+
+    // Linux only: whether the fake's `sleep` runs is read from `/proc`.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn stopping_a_run_that_does_not_settle_ends_it_stopped_and_kills_what_it_started() {
+        let (_dir, app, pi, repo) = setup();
+        // The fake never answers `abort`, as a Pi stuck in a tool does not.
+        let card = app
+            .create_issue(repo, "Please [deaf]", "", "person")
+            .unwrap();
+        let run = pi
+            .start(&app, &card, "Coder", ("code", None), Variant::default())
+            .unwrap();
+        let child = child_pid(&app, run.id);
+        assert!(crate::platform::is_running(child));
+        assert!(pi.stop(run.id));
+        // Killed after STOP_GRACE: stopped, not failed, which the board would start again.
+        let run = wait_until_ended(&app, run.id);
+        assert_eq!(run.status, "stopped", "{run:?}");
+        wait_until_gone("the background process is killed", child);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_stopped_run_leaves_no_background_process_of_its_agent() {
+        let (_dir, app, pi, repo) = setup();
+        let card = app
+            .create_issue(repo, "Please [child]", "", "person")
+            .unwrap();
+        let run = pi
+            .start(&app, &card, "Coder", ("code", None), Variant::default())
+            .unwrap();
+        let child = child_pid(&app, run.id);
+        assert!(pi.stop(run.id));
+        // Pi settles and exits at once; what it started goes with it.
+        let run = wait_until_ended(&app, run.id);
+        assert_eq!(run.status, "stopped");
+        wait_until_gone("the background process is killed", child);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_launch_that_fails_after_pi_started_kills_it() {
+        let (_dir, app, pi, _repo) = setup();
+        // The chat cannot be marked as waiting once Pi runs.
+        app.store.execute_batch_for_test(
+            "CREATE TRIGGER no_waiting BEFORE UPDATE OF status ON runs WHEN NEW.status = 'waiting' \
+             BEGIN SELECT RAISE(ABORT, 'refused'); END",
+        );
+        let started = crate::board::ChatRuns::start_chat(
+            &pi,
+            &app,
+            "Coder",
+            (None, false),
+            None,
+            None,
+            "chat",
+            &crate::app::ChatSettings::default(),
+        );
+        assert!(started.is_err());
+        assert!(lock(&pi.live).is_empty(), "the Pi stays in live");
+        // No process of the run's agent directory is left.
+        let marker = app.data_dir.join("runs").to_string_lossy().into_owned();
+        assert!(
+            crate::harness::pibolt::testing::processes_with_env(&marker).is_empty(),
+            "an orphaned Pi runs"
+        );
+    }
 
     #[test]
     fn a_run_is_stored_event_by_event_and_its_work_committed() {

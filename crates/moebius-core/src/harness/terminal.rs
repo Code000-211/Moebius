@@ -185,7 +185,7 @@ pub async fn serve(socket: WebSocket, worktree: &Path, mut slot: Slot) {
 /// Runs `command` on a pseudo-terminal for as long as `socket` is open, as [`serve`] does the shell. The caller gives
 /// back `slot` when it is done with what the program leaves.
 pub async fn serve_command(mut socket: WebSocket, command: CommandBuilder, slot: &mut Slot) {
-    let (master, mut child, reader, writer) = match start(command) {
+    let (master, child, reader, writer) = match start(command) {
         Ok(started) => started,
         Err(e) => {
             let reason = e.to_string();
@@ -237,16 +237,23 @@ pub async fn serve_command(mut socket: WebSocket, command: CommandBuilder, slot:
             },
         }
     }
-    // Closing the master hangs the shell up; the kill is for one that ignores that. `wait` collects the shell.
+    let _ = tokio::task::spawn_blocking(move || hang_up(master, child, pid)).await;
+}
+
+/// Ends the terminal's program: the whole session it leads is killed (its background jobs have groups of their own),
+/// which also ends the thread that reads the terminal, since nothing holds the terminal's other end any more. `wait`
+/// collects the program.
+fn hang_up(
+    master: Box<dyn portable_pty::MasterPty + Send>,
+    mut child: Box<dyn portable_pty::Child + Send + Sync>,
+    pid: Option<u32>,
+) {
     drop(master);
-    let _ = tokio::task::spawn_blocking(move || {
-        if let Some(pid) = pid {
-            crate::platform::kill_tree(pid);
-        }
-        let _ = child.kill();
-        let _ = child.wait();
-    })
-    .await;
+    if let Some(pid) = pid {
+        crate::platform::kill_session(pid);
+    }
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 fn fail(e: impl std::fmt::Display) -> StartError {
@@ -372,6 +379,45 @@ mod tests {
         assert_eq!(slots.programs(), vec![(0, 11)]);
         drop(server);
         assert!(slots.programs().is_empty());
+    }
+
+    // Linux only: the shell is `sh`, whose job control puts the job in a group of its own, and the session's members are
+    // read from `/proc`.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn closing_a_terminal_kills_its_background_jobs_and_ends_its_reader() {
+        let mut command = CommandBuilder::new("sh");
+        command.args(["-c", "set -m; sleep 300 & echo job=$!; wait"]);
+        let (master, child, mut reader, _writer) = start(command).unwrap();
+        let pid = child.process_id();
+        // The job's pid is the first thing the shell prints.
+        let mut seen = String::new();
+        let mut buffer = [0u8; 256];
+        let job: u32 = loop {
+            let n = reader.read(&mut buffer).unwrap();
+            assert!(n > 0, "the shell ended early: {seen:?}");
+            seen.push_str(&String::from_utf8_lossy(&buffer[..n]));
+            if let Some(job) = seen.split("job=").nth(1).and_then(|rest| {
+                let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+                (rest.len() > digits.len())
+                    .then(|| digits.parse().ok())
+                    .flatten()
+            }) {
+                break job;
+            }
+        };
+        let running = crate::platform::is_running;
+        assert!(running(job));
+        let reading =
+            std::thread::spawn(move || while reader.read(&mut buffer).is_ok_and(|n| n > 0) {});
+        hang_up(master, child, pid);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while running(job) {
+            assert!(std::time::Instant::now() < deadline, "the job still runs");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        // The reader thread ends because no process holds the terminal any more.
+        reading.join().unwrap();
     }
 
     #[test]

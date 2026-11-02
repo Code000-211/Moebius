@@ -123,6 +123,39 @@ pub(super) fn argv_and_stdin(app: &App, run_id: i64) -> (Vec<String>, Vec<Value>
     (read.unwrap(), stdin.collect())
 }
 
+/// The pid of the background process the fake Pi of the run `run_id` started for a `[child]` or `[deaf]` prompt.
+pub(super) fn child_pid(app: &App, run_id: i64) -> u32 {
+    let file = app.data_dir.join(format!("runs/{run_id}/agent/child.txt"));
+    let mut pid = None;
+    wait_for("Pi starts its child", || {
+        pid = std::fs::read_to_string(&file)
+            .ok()
+            .and_then(|text| text.parse::<u32>().ok());
+        pid.is_some()
+    });
+    pid.unwrap()
+}
+
+/// The processes whose environment mentions `needle`, such as a run's agent directory.
+#[cfg(target_os = "linux")]
+pub(in crate::harness) fn processes_with_env(needle: &str) -> Vec<u32> {
+    let own = std::process::id();
+    std::fs::read_dir("/proc")
+        .unwrap()
+        .filter_map(|entry| entry.ok()?.file_name().to_str()?.parse::<u32>().ok())
+        .filter(|pid| *pid != own)
+        .filter(|pid| {
+            std::fs::read(format!("/proc/{pid}/environ"))
+                .is_ok_and(|env| String::from_utf8_lossy(&env).contains(needle))
+        })
+        .collect()
+}
+
+/// Waits until the process `pid` is gone.
+pub(super) fn wait_until_gone(what: &str, pid: u32) {
+    wait_for(what, || !crate::platform::is_running(pid));
+}
+
 /// The value after `flag` in `argv`.
 pub(super) fn flag<'a>(argv: &'a [String], flag: &str) -> Option<&'a str> {
     let at = argv.iter().position(|arg| arg == flag)?;

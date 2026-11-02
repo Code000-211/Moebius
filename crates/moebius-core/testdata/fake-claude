@@ -4,6 +4,7 @@
 # result) as JSON lines, one turn per message, and exits when stdin closes.
 # It keeps its arguments in argv.json, a few environment variables in env.json, every line it is sent in stdin.jsonl and
 # the last message in prompt.txt, all in CLAUDE_CONFIG_DIR, and its pid in pid.txt.
+# A message containing "[child]" also starts a background `sleep` (pid in child.txt) and is hung.
 # A message containing "[hang]" is never answered (the process waits to be killed). A message containing "[nothing]"
 # is answered without a change, as is one for the reviewer, which answers with a verdict. A message containing "[router]"
 # asks the router at ANTHROPIC_BASE_URL with ANTHROPIC_API_KEY and answers with what came back: the text, and each
@@ -13,6 +14,7 @@
 import json
 import os
 import re
+import subprocess
 import sys
 import urllib.request
 
@@ -76,6 +78,10 @@ for line in sys.stdin:
     message = json.loads(line)
     text = "".join(part.get("text", "") for part in message["message"]["content"])
     put("prompt.txt", text)
+    if "[child]" in text:
+        # A background process the agent started, as a dev server would be; its pid is kept in child.txt.
+        put("child.txt", str(subprocess.Popen(["sleep", "300"]).pid))
+        text += "[hang]"
     if "[hang]" in text:
         assistant([{"type": "text", "text": "Waiting."}])
         continue

@@ -305,6 +305,168 @@ fn a_run_is_steered_with_a_message_and_stopped_by_killing_it() {
     assert!(!s.claude.steer(run.id, "Too late."));
 }
 
+// Linux only: whether the fake's `sleep` runs is read from `/proc`.
+#[cfg(target_os = "linux")]
+#[test]
+fn stopping_a_run_kills_what_its_agent_started() {
+    let s = setup();
+    let card = s
+        .app
+        .create_issue(s.repo, "Please [child]", "", "person")
+        .unwrap();
+    let run = s
+        .claude
+        .start(&s.app, &card, "Coder", ("code", None), Variant::default())
+        .unwrap();
+    let child: u32 = written(&s.app, run.id, "child.txt").parse().unwrap();
+    assert!(crate::platform::is_running(child));
+    assert!(s.claude.stop(run.id));
+    let run = wait_until_ended(&s.app, run.id);
+    assert_eq!(run.status, "stopped");
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while crate::platform::is_running(child) {
+        assert!(Instant::now() < deadline, "the background process runs");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+// Linux only: whether the fake's `sleep` runs is read from `/proc`.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_chat_that_ends_leaves_no_background_process_of_its_agent() {
+    let s = setup();
+    let repository = s.app.repository(s.repo).unwrap();
+    let run = s
+        .claude
+        .start_chat(
+            &s.app,
+            "Coder",
+            (Some(&repository), false),
+            Some("Hello"),
+            Some("[child] Hello"),
+            "chat",
+            &ChatSettings::default(),
+        )
+        .unwrap();
+    let child: u32 = written(&s.app, run.id, "child.txt").parse().unwrap();
+    assert!(crate::platform::is_running(child));
+    // The fake hangs on that message; the next one is answered, and the chat waits.
+    s.app.say_in_chat(&s.claude, run.id, "Next", None).unwrap();
+    wait_for_run(&s.app, run.id, "the agent answers", |run| {
+        run.status == "waiting"
+    });
+    // Claude Code exits on its own once its stdin is closed; what it started must not stay.
+    s.app.end_chat(&s.claude, run.id).unwrap();
+    wait_until_ended(&s.app, run.id);
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while crate::platform::is_running(child) {
+        assert!(Instant::now() < deadline, "the background process runs");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+// Linux only: the processes of the run are found by their environment in `/proc`.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_launch_that_fails_after_claude_code_started_kills_it() {
+    let s = setup();
+    // The chat cannot be marked as waiting once Claude Code runs.
+    s.app.store.execute_batch_for_test(
+        "CREATE TRIGGER no_waiting BEFORE UPDATE OF status ON runs WHEN NEW.status = 'waiting' \
+         BEGIN SELECT RAISE(ABORT, 'refused'); END",
+    );
+    let started = crate::board::ChatRuns::start_chat(
+        &s.claude,
+        &s.app,
+        "Coder",
+        (None, false),
+        None,
+        None,
+        "chat",
+        &ChatSettings::default(),
+    );
+    assert!(started.is_err());
+    assert!(lock(&s.claude.live).is_empty(), "Claude Code stays in live");
+    let marker = s.app.data_dir.join("runs").to_string_lossy().into_owned();
+    assert!(
+        crate::harness::pibolt::testing::processes_with_env(&marker).is_empty(),
+        "an orphaned Claude Code runs"
+    );
+}
+
+#[test]
+fn a_chat_given_another_model_before_its_first_message_starts_a_session_instead_of_resuming_one() {
+    let s = setup();
+    let repository = s.app.repository(s.repo).unwrap();
+    let run = s
+        .claude
+        .start_chat(
+            &s.app,
+            "Coder",
+            (Some(&repository), false),
+            None,
+            None,
+            "chat",
+            &ChatSettings::default(),
+        )
+        .unwrap();
+    let argv_of = |what: &str| -> Vec<String> {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            let argv: Vec<String> =
+                serde_json::from_str(&written(&s.app, run.id, "argv.json")).unwrap_or_default();
+            if argv.windows(2).any(|w| w == ["--model", what]) {
+                return argv;
+            }
+            assert!(Instant::now() < deadline, "no claude with {what}");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    };
+    let first = argv_of("claude-test");
+    let session = first[first.iter().position(|a| a == "--session-id").unwrap() + 1].clone();
+
+    // Nothing was said yet: Claude Code has written no session to resume.
+    let served = [Protocol::Anthropic];
+    s.app
+        .change_chat_settings(&s.claude, run.id, (Some("claude-other"), None, &served))
+        .unwrap();
+    let second = argv_of("claude-other");
+    assert!(
+        second
+            .windows(2)
+            .any(|w| w == ["--session-id", session.as_str()])
+    );
+    assert!(!second.contains(&"--resume".to_string()), "{second:?}");
+
+    // After a message it is resumed.
+    wait_for_run(&s.app, run.id, "the chat waits", |run| {
+        run.status == "waiting"
+    });
+    s.app.say_in_chat(&s.claude, run.id, "Hello", None).unwrap();
+    let answered = |run: &Run| {
+        run.status == "waiting"
+            && s.app
+                .store
+                .events(run.id)
+                .unwrap()
+                .iter()
+                .any(|e| e.kind == "agent_settled")
+    };
+    wait_for_run(&s.app, run.id, "the agent answers", answered);
+    s.app
+        .change_chat_settings(&s.claude, run.id, (Some("claude-third"), None, &served))
+        .unwrap();
+    let third = argv_of("claude-third");
+    assert!(
+        third
+            .windows(2)
+            .any(|w| w == ["--resume", session.as_str()])
+    );
+
+    s.app.end_chat(&s.claude, run.id).unwrap();
+    wait_until_ended(&s.app, run.id);
+}
+
 #[test]
 fn an_agent_that_does_not_speak_anthropic_cannot_run_on_claude_code() {
     let s = setup();

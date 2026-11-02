@@ -3,9 +3,10 @@
 //! it the agent's model and instructions, the router and the run's token, and the process itself with the thread that
 //! reads it (see `reader`).
 
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
@@ -194,7 +195,7 @@ impl ClaudeCode {
             };
             command = remote.command(&command, &local)?;
         }
-        let mut child = command
+        let mut child = crate::platform::own_group(&mut command)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::from(stderr))
@@ -208,11 +209,34 @@ impl ClaudeCode {
             chat,
             closing: Arc::new(Mutex::new(None)),
             session: session.to_string(),
+            messaged: Arc::new(AtomicBool::new(prompt.is_some() || resumes)),
             agent: agent.clone(),
             run: run.clone(),
             app: app.clone(),
         };
         lock(&self.live).insert(run.id, live.clone());
+        let begun = self.begin(app, card, &live, prompt, stdout);
+        if begun.is_err() {
+            // Nothing reads this Claude Code: end it and what it started, so that it is not orphaned.
+            lock(&self.live).remove(&run.id);
+            lock(&live.stdin).take();
+            super::kill_process(&live);
+            let _ = lock(&live.child).wait();
+        }
+        begun
+    }
+
+    /// Marks the run as started, gives Claude Code its prompt and starts the thread that reads it.
+    fn begin(
+        &self,
+        app: &Arc<App>,
+        card: Option<&Card>,
+        live: &Live,
+        prompt: Option<&str>,
+        stdout: impl Read + Send + 'static,
+    ) -> Result<(), String> {
+        let run = live.run.clone();
+        let chat = live.chat;
         match prompt {
             Some(prompt) => {
                 app.store
@@ -223,16 +247,17 @@ impl ClaudeCode {
                     card: card.map(|card| card.id),
                 });
                 keep(app, run.id, chat, "agent_start", &json!({}));
-                send(&live.stdin, &user_message(session, prompt));
+                send(&live.stdin, &user_message(&live.session, prompt));
             }
             None => app
                 .store
                 .set_run_status(run.id, "waiting")
                 .map_err(|e| e.to_string())?,
         }
+        super::kill_leftovers_after_exit(live).map_err(|e| e.to_string())?;
         let reader = Reader {
             app: app.clone(),
-            live,
+            live: live.clone(),
             router: self.router.clone(),
             lives: self.live.clone(),
         };

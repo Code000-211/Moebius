@@ -37,7 +37,7 @@ mod reader;
 #[cfg(all(test, unix))]
 mod remote_tests;
 #[cfg(all(test, unix))]
-mod testing;
+pub(in crate::harness) mod testing;
 mod tui;
 
 use std::collections::{BTreeMap, HashMap};
@@ -66,7 +66,11 @@ pub(crate) use crate::harness::run::{
 };
 
 /// How long Pi may take to exit after it was asked to stop.
-const STOP_GRACE: Duration = Duration::from_secs(10);
+const STOP_GRACE: Duration = if cfg!(test) {
+    Duration::from_millis(500)
+} else {
+    Duration::from_secs(10)
+};
 
 /// How long a chat waits for the person's next message before its Pi is ended, to be started again on the same session
 /// by the next message (see `PiBolt::pause_idle_chats`).
@@ -170,7 +174,7 @@ impl PiBolt {
     pub fn kill_all(&self) {
         let all: Vec<Live> = lock(&self.live).values().cloned().collect();
         for live in all {
-            let _ = lock(&live.child).kill();
+            kill_process(&live);
             // Nothing runs `Drop` across the restart: close the tunnel and clear the runner's directory now.
             if let Some(remote) = &live.run.remote {
                 remote.cleanup();
@@ -283,14 +287,15 @@ impl CardRuns for PiBolt {
             &live.stdin,
             &json!({ "id": "moebius-abort", "type": "abort" }),
         );
+        // A Pi that does not settle in time is killed, and its exit is no failure.
+        *lock(&live.closing) = Some(Closing::Stopped);
         if live.chat {
             // A waiting chat has no turn to abort, so Pi is also asked to exit.
-            *lock(&live.closing) = Some(Closing::Stopped);
             lock(&live.stdin).take();
         }
         std::thread::spawn(move || {
             if !wait_for_exit(&live.child, STOP_GRACE) {
-                let _ = lock(&live.child).kill();
+                kill_process(&live);
             }
         });
         true
@@ -390,14 +395,21 @@ fn run_dir(app: &App, run_id: i64) -> PathBuf {
     app.data_dir.join("runs").join(run_id.to_string())
 }
 
-/// Closes Pi's stdin, which asks it to shut down, and kills it when it has not exited within [`STOP_GRACE`].
+/// Closes Pi's stdin, which asks it to shut down, waits up to [`STOP_GRACE`] for it to exit and kills it and what it
+/// started.
 fn shut_down(live: &Live) {
     lock(&live.stdin).take();
-    if !wait_for_exit(&live.child, STOP_GRACE) {
-        let mut child = lock(&live.child);
-        let _ = child.kill();
-        let _ = child.wait();
-    }
+    wait_for_exit(&live.child, STOP_GRACE);
+    // Also after a clean exit: what the agent started (a dev server, a watcher) must not outlive its run.
+    kill_process(live);
+    let _ = lock(&live.child).wait();
+}
+
+/// Kills Pi and everything it started (see `platform::own_group`).
+fn kill_process(live: &Live) {
+    let mut child = lock(&live.child);
+    crate::platform::kill_tree(child.id());
+    let _ = child.kill();
 }
 
 /// Writes one JSON line to Pi; false when its stdin is closed or broken.

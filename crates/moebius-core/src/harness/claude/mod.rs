@@ -26,7 +26,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
+use std::time::Duration;
 
 use serde_json::{Value, json};
 
@@ -71,6 +73,9 @@ struct Live {
     closing: Arc<Mutex<Option<Closing>>>,
     /// The conversation's session, which a chat's next process resumes.
     session: String,
+    /// Whether the session has had a message; Claude Code writes a session only then, so before it there is nothing
+    /// to `--resume`.
+    messaged: Arc<AtomicBool>,
     /// The agent as this process was started with it.
     agent: AgentConfig,
     run: RunningRun,
@@ -109,7 +114,7 @@ impl ClaudeCode {
     pub fn kill_all(&self) {
         let all: Vec<Live> = lock(&self.live).values().cloned().collect();
         for live in all {
-            let _ = lock(&live.child).kill();
+            kill_process(&live);
             // Nothing runs `Drop` across the restart: close the tunnel and clear the runner's directory now.
             if let Some(remote) = &live.run.remote {
                 remote.cleanup();
@@ -214,6 +219,7 @@ impl CardRuns for ClaudeCode {
         let Some(live) = lock(&self.live).get(&run_id).cloned() else {
             return false;
         };
+        live.messaged.store(true, Ordering::SeqCst);
         send(&live.stdin, &user_message(&live.session, message))
     }
 
@@ -224,7 +230,7 @@ impl CardRuns for ClaudeCode {
         };
         *lock(&live.closing) = Some(Closing::Stopped);
         lock(&live.stdin).take();
-        let _ = lock(&live.child).kill();
+        kill_process(&live);
         true
     }
 }
@@ -348,14 +354,14 @@ impl ChatRuns for ClaudeCode {
             *closing = Some(Closing::Restarting);
         }
         lock(&live.stdin).take();
-        let _ = lock(&live.child).kill();
+        kill_process(&live);
         let _ = lock(&live.child).wait();
         let resumed = self.launch(
             app,
             None,
             &config,
             live.run.clone(),
-            (&live.session, true),
+            (&live.session, live.messaged.load(Ordering::SeqCst)),
             None,
         );
         if let Err(e) = resumed {
@@ -389,6 +395,36 @@ impl ChatRuns for ClaudeCode {
     }
 }
 
+/// Kills Claude Code and everything it started (see `platform::own_group`).
+fn kill_process(live: &Live) {
+    let mut child = lock(&live.child);
+    crate::platform::kill_tree(child.id());
+    let _ = child.kill();
+}
+
+/// Starts a thread that kills what Claude Code started once it has exited, also after a clean exit, so that a dev
+/// server or watcher of its agent does not outlive its run. Such a process holds Claude Code's stdout open, so the
+/// reader would not see the end of it. A chat that goes on in a new process is left alone.
+fn kill_leftovers_after_exit(live: &Live) -> std::io::Result<()> {
+    let live = live.clone();
+    std::thread::Builder::new()
+        .name(format!("claude leftovers {}", live.run.id))
+        .spawn(move || {
+            loop {
+                // Bound first, so the lock is not held while sleeping.
+                let exited = lock(&live.child).try_wait();
+                match exited {
+                    Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+                    _ => break,
+                }
+            }
+            if *lock(&live.closing) != Some(Closing::Restarting) {
+                kill_process(&live);
+            }
+        })
+        .map(drop)
+}
+
 /// Gives a chat's agent the person's message, after saying so with `agent_start`, so that the chat reads as working
 /// until its answer.
 fn tell(live: &Live, message: &str) -> bool {
@@ -396,6 +432,7 @@ fn tell(live: &Live, message: &str) -> bool {
         return false;
     }
     keep(&live.app, live.run.id, live.chat, "agent_start", &json!({}));
+    live.messaged.store(true, Ordering::SeqCst);
     send(&live.stdin, &user_message(&live.session, message))
 }
 

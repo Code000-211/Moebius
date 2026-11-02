@@ -443,6 +443,12 @@ impl Store {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
+    /// Runs `sql` on the database, for tests that make it fail.
+    #[cfg(all(test, target_os = "linux"))]
+    pub(crate) fn execute_batch_for_test(&self, sql: &str) {
+        self.conn().execute_batch(sql).unwrap();
+    }
+
     pub fn blobs(&self) -> &BlobStore {
         &self.blobs
     }

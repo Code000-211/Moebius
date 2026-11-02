@@ -679,7 +679,8 @@ Response: the `Run`. Errors: `404` no such run; `422` the message is blank or th
 
 A person stops a running run: the decision is recorded (kind `stop`, decider `person`) and the harness asks the agent to
 abort (Pi-Bolt's `abort` command; a Pi-Bolt that has not exited after 10 seconds is killed; Claude Code is killed at
-once). The run ends as `stopped`,
+once; the agent's own process group goes with it, so the dev servers and watchers it started end too). The run ends as
+`stopped`, also when Pi-Bolt had to be killed,
 which publishes `run_ended`. The card is not retried by itself: its script puts it in the inbox as stuck ("stopped by a
 person"), and a person decides with retry.
 
@@ -700,8 +701,8 @@ of the run or chat, with `TERM=xterm-256color`.
 - Binary messages carry bytes both ways: from the client to the shell's input, from the shell's output to the client.
 - A text message `{"type": "resize", "cols": N, "rows": M}` sets the size of the terminal in cells (the size is 80 by
   24 until then).
-- When the shell exits the server closes the socket; when the socket closes the server kills the shell and its process
-  group.
+- When the shell exits the server closes the socket; when the socket closes the server kills the shell and every
+  process of its session, background jobs included (on Windows, its process tree).
 - A run has at most 4 terminals open at a time.
 - It is a person's shell, so the guard (which checks the tool calls of agents) does not look at it, and nothing the
   person types or sees is stored. Opening one stores a `shell_opened` run event, `{"who": "person"}`.
@@ -720,7 +721,8 @@ Only `--mode rpc` is left out.
 
 The chat and its terminal are one conversation:
 
-- Opening it ends the chat's own Pi (idle, as the chat waits; the chat stays `waiting`) and starts the interactive one
+- Opening it ends the chat's own Pi (idle, as the chat waits; the chat stays `waiting`), together with every process its
+  agent started (a dev server, a watcher), and starts the interactive one
   with `--continue` on the chat's own agent directory and Pi sessions (`runs/<id>/agent`, `runs/<id>/sessions`), so it
   continues the chat's session with everything said so far.
 - While it is open, Moebius reads what Pi adds to the session file (the newest one in the chat's sessions, every half
@@ -735,7 +737,7 @@ The chat and its terminal are one conversation:
   `waiting` while the terminal waits for the person. What the session held before the terminal opened is not recorded
   again, and secrets are removed as from every event. As the file is read every half second, the `tool_check` event of
   a call made in the terminal (recorded when the bridge asks) can come before the events of the message that made it.
-- Closing it (the socket closes, or the program exits) ends Pi-Bolt and its process group and starts the chat's own Pi
+- Closing it (the socket closes, or the program exits) ends Pi-Bolt and its whole session, background jobs included, and starts the chat's own Pi
   again with `--continue` on the same session, without a message; the chat is `waiting` and its next message continues
   the whole conversation, the terminal's part included. The terminal's place is given back only then, so a message sent
   as it closes is answered `409`, never lost.
@@ -1300,7 +1302,7 @@ chat ends. The chat's run uses the agent's configuration like any run; its `toke
 daily budget applies, and a chat does not count against the board's run limit.
 
 A chat lasts until it is ended or stopped. A chat that has waited 30 minutes for its next message, with no terminal open,
-has its Pi ended to free what it holds; the chat stays `waiting` with its worktree, and the next message starts its Pi
+has its Pi ended to free what it holds, together with every process its agent started (a dev server, a watcher); the chat stays `waiting` with its worktree, and the next message starts its Pi
 again with `--continue` on the chat's own session, so the agent answers it with the whole conversation. Ending, stopping
 or opening the terminal of such a chat works as for any waiting chat.
 

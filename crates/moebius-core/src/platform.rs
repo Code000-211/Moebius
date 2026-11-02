@@ -5,6 +5,8 @@
 //! - A program that may start others runs in its own process group on Linux, and the group is killed with it; on
 //!   Windows it gets a new process group and its tree of processes is killed with `taskkill /T` (a process whose
 //!   parent has already ended is not reached).
+//!   A terminal's shell leads a session, whose every process (background jobs have groups of their own) is killed with it
+//!   on Linux.
 //! - A file that holds a secret is created readable by its owner only (mode `0600`) on Linux; on Windows it keeps the
 //!   permissions of its directory, which under the person's profile is readable by them and the administrators.
 //! - A skill is linked into a run's configuration on Linux and copied on Windows.
@@ -77,6 +79,64 @@ pub fn kill_tree(pid: u32) {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status();
+}
+
+/// Kills every process of the session that the process `pid` leads, which is what a shell on a pseudo-terminal is:
+/// its background jobs have groups of their own in the same session, so [`kill_tree`] alone leaves them running. On
+/// Windows it is [`kill_tree`].
+pub fn kill_session(pid: u32) {
+    // A member can fork between the scan and its own kill, so scan again until none is left (bounded: a zombie that
+    // is not yet collected is not counted, but a fork bomb must not hold this forever).
+    #[cfg(unix)]
+    for _ in 0..20 {
+        let members = session_members(pid);
+        if members.is_empty() {
+            break;
+        }
+        let _ = Command::new("kill")
+            .args(["-KILL", "--"])
+            .args(members.iter().map(u32::to_string))
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+    kill_tree(pid);
+}
+
+/// The processes whose session is `sid` and that still run (no zombies), from `/proc`; none where there is no `/proc`.
+#[cfg(unix)]
+fn session_members(sid: u32) -> Vec<u32> {
+    let Ok(entries) = std::fs::read_dir("/proc") else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(|entry| entry.ok()?.file_name().to_str()?.parse::<u32>().ok())
+        .filter(|pid| {
+            // `pid (name) state ppid pgrp session ...`, the session being the fourth field after the name; the name may hold spaces and parentheses.
+            let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else {
+                return false;
+            };
+            let Some((_, rest)) = stat.rsplit_once(')') else {
+                return false;
+            };
+            let mut fields = rest.split_whitespace();
+            let running = fields.next() != Some("Z");
+            running
+                && fields
+                    .nth(2)
+                    .is_some_and(|session| session.parse() == Ok(sid))
+        })
+        .collect()
+}
+
+/// Whether the process `pid` is running: it exists and is no zombie waiting to be collected.
+#[cfg(all(test, target_os = "linux"))]
+pub(crate) fn is_running(pid: u32) -> bool {
+    std::fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|stat| {
+        let after_name = stat.rsplit(')').next().unwrap_or("");
+        !after_name.trim_start().starts_with('Z')
+    })
 }
 
 /// Makes `options` create a file only its owner can read and write (see the module's note for Windows).
@@ -234,5 +294,24 @@ mod tests {
         let mut child = own_group(&mut command).spawn().unwrap();
         kill_tree(child.id());
         assert!(!child.wait().unwrap().success());
+    }
+
+    // Linux only: the session's members are read from `/proc`, and `setsid` starts the session.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn killing_a_session_leaves_none_of_its_processes() {
+        let mut command = Command::new("setsid");
+        command.args(["sh", "-c", "sleep 600 & sleep 601 & wait"]);
+        let mut child = command.spawn().unwrap();
+        let pid = child.id();
+        // The shell and its two jobs are in the session.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while session_members(pid).len() < 3 {
+            assert!(std::time::Instant::now() < deadline, "the jobs start");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        kill_session(pid);
+        let _ = child.wait();
+        assert_eq!(session_members(pid), Vec::<u32>::new());
     }
 }

@@ -27,19 +27,28 @@ impl PiBolt {
         let ended = || format!("chat {run_id} has ended");
         let run_dir = run_dir(app, run_id);
         // A chat that waited long has no Pi to end.
-        let run = if paused.get(&run_id).is_some_and(Paused::is_idle) {
-            paused.remove(&run_id).expect("the chat is paused").run
+        let idle = paused.get(&run_id).is_some_and(Paused::is_idle);
+        let live = if idle {
+            None
         } else {
-            let live = self.live_chat(run_id).ok_or_else(ended)?;
-            if !self.end_waiting_pi(&live) {
-                return Err(ended());
-            }
-            live.run
+            Some(self.live_chat(run_id).ok_or_else(ended)?)
         };
+        let run = match &live {
+            Some(live) => live.run.clone(),
+            None => paused[&run_id].run.clone(),
+        };
+        // Written before the Pi is ended, so that a failure leaves the chat as it was.
         let agent_dir = self.write_agent_dir(run_dir.join("agent"), &config, &run.token)?;
         // A chat from before the server was started again may lack the lens.
         std::fs::write(run_dir.join("moebius-lens.ts"), super::LENS)
             .map_err(|e| format!("cannot write the lens extension: {e}"))?;
+        match live {
+            Some(live) if !self.end_waiting_pi(&live) => return Err(ended()),
+            Some(_) => {}
+            None => {
+                paused.remove(&run_id);
+            }
+        }
         let sessions = run_dir.join("sessions");
         let place = Place {
             worktree: &run.worktree,
