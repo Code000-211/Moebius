@@ -193,6 +193,16 @@ impl Host {
         self.plugins.values().map(|p| p.manifest()).collect()
     }
 
+    /// Kills every plugin that runs in its own process and does not start it again. The processes end even while
+    /// something still holds the host, which a drop would wait for.
+    pub fn stop_processes(&self) {
+        for entry in self.plugins.values() {
+            if let Entry::Process(process) = entry {
+                process.stop();
+            }
+        }
+    }
+
     /// How long a call into a plugin may take.
     pub fn limit(&self) -> Duration {
         self.limit

@@ -104,6 +104,29 @@ fn read_token(token: &TokenSource, secrets: &Secrets, forge: &str) -> Result<Str
     Ok(token)
 }
 
+/// The client for the GitHub App of `g`: its key file must be readable and hold an RSA key in PEM form.
+fn github_client(g: &crate::config::GitHubConfig) -> Result<GitHub, String> {
+    let key = std::fs::read(&g.private_key_file)
+        .map_err(|e| format!("cannot read {}: {e}", g.private_key_file.display()))?;
+    GitHub::new(&g.api_url, g.app_id, &key).map_err(|e| e.to_string())
+}
+
+/// The checks of `Server::new` on the forges of `config` that depend on files and secrets: the key of the GitHub App
+/// must be a readable RSA key and the access tokens of GitLab and Forgejo must be readable. `Server::new` and the
+/// editing of the settings both run them, so a file that `moebius serve` would refuse is not written.
+pub(crate) fn check_forges(config: &Config, secrets: &Secrets) -> Result<(), String> {
+    if let Some(g) = &config.github {
+        github_client(g)?;
+    }
+    if let Some(g) = &config.gitlab {
+        read_token(&g.token, secrets, "GitLab")?;
+    }
+    if let Some(f) = &config.forgejo {
+        read_token(&f.token, secrets, "Forgejo")?;
+    }
+    Ok(())
+}
+
 impl Server {
     /// Opens the store, reads the app's token and sets up every part. The router must already be bound to
     /// `router_addr`, since each run is told where to find it.
@@ -166,10 +189,7 @@ impl Server {
         }
         let github = match &config.github {
             Some(g) => {
-                let key = std::fs::read(&g.private_key_file)
-                    .map_err(|e| format!("cannot read {}: {e}", g.private_key_file.display()))?;
-                let github =
-                    Arc::new(GitHub::new(&g.api_url, g.app_id, &key).map_err(|e| e.to_string())?);
+                let github = Arc::new(github_client(g)?);
                 app.add_forge(Box::new(GitHubForge::new(
                     github.clone(),
                     app.repos.clone(),

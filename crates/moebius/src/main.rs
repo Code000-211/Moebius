@@ -251,7 +251,7 @@ fn run(cli: Cli) -> Result<(), String> {
             let config = Config::load(&cli.config).map_err(|e| e.to_string())?;
             let runtime = tokio::runtime::Runtime::new()
                 .map_err(|e| format!("cannot start the runtime: {e}"))?;
-            runtime.block_on(async {
+            let restarting = runtime.block_on(async {
                 let api = tokio::net::TcpListener::bind(config.listen)
                     .await
                     .map_err(|e| format!("cannot listen on {}: {e}", config.listen))?;
@@ -277,10 +277,13 @@ fn run(cli: Cli) -> Result<(), String> {
                     // The board and the schedule have stopped with `serve`; the runs go back to the board at the next
                     // start, which fails what was left unended.
                     server.harness.kill_all();
-                    return Err(restart());
+                    // Not left to the drop of the host: the board's threads may still hold the app for a while.
+                    server.app.decisions.host().stop_processes();
+                    return Ok(true);
                 }
-                served
-            })
+                served.map(|()| false)
+            })?;
+            finish(runtime, restarting, SHUTDOWN_TIME, restart)
         }
     }
 }
@@ -378,6 +381,23 @@ const INIT_AGENTS: &str = "# Agents run on Pi-Bolt. The default workflow starts 
 files of the\n# harness configuration repository (agents/Coder.toml and agents/Coder.md), added in the app or with \
 `moebius agent save`.\n";
 
+/// How long the end of the runtime waits for blocking work, such as a git fetch, that is still running.
+const SHUTDOWN_TIME: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Ends the runtime, and only then starts `restart` if the server asked for one. The server and what runs on the
+/// runtime are gone before the new program starts: on Windows the old program waits for the new one, and must not
+/// keep its terminals and store open meanwhile. Blocking work that is still running is waited for at most `bound`,
+/// so that a stalled fetch cannot hold a restart back.
+fn finish(
+    runtime: tokio::runtime::Runtime,
+    restarting: bool,
+    bound: std::time::Duration,
+    restart: impl FnOnce() -> String,
+) -> Result<(), String> {
+    runtime.shutdown_timeout(bound);
+    if restarting { Err(restart()) } else { Ok(()) }
+}
+
 /// Starts this program again, with the arguments it was started with, in place of the running one. It returns only to
 /// say why that failed. Windows cannot replace a running program, so there the new one is started and this one waits
 /// for it and ends with its exit code.
@@ -403,8 +423,72 @@ fn restart() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, Command, run};
+    use super::{Cli, Command, finish, run};
     use clap::{CommandFactory, Parser};
+
+    #[test]
+    fn a_restart_starts_only_after_the_runtime_and_what_runs_on_it_are_gone() {
+        struct Gone(std::sync::Arc<std::sync::atomic::AtomicBool>);
+        impl Drop for Gone {
+            fn drop(&mut self) {
+                self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        let gone = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let held = Gone(gone.clone());
+        runtime.spawn(async move {
+            let _held = held;
+            std::future::pending::<()>().await;
+        });
+        let seen = gone.clone();
+        let error = finish(
+            runtime,
+            true,
+            std::time::Duration::from_secs(60),
+            move || {
+                assert!(seen.load(std::sync::atomic::Ordering::SeqCst));
+                "restarted".to_string()
+            },
+        );
+        assert_eq!(error, Err("restarted".to_string()));
+        assert_eq!(
+            finish(
+                tokio::runtime::Runtime::new().unwrap(),
+                false,
+                std::time::Duration::from_secs(60),
+                || unreachable!()
+            ),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn blocking_work_that_does_not_end_does_not_hold_a_restart_back() {
+        let (release, released) = std::sync::mpsc::channel::<()>();
+        let (started, running) = std::sync::mpsc::channel();
+        let ended = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let flag = ended.clone();
+        runtime.spawn_blocking(move || {
+            started.send(()).unwrap();
+            let _ = released.recv_timeout(std::time::Duration::from_secs(120));
+            flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        });
+        running.recv().unwrap();
+        let seen = ended.clone();
+        let error = finish(
+            runtime,
+            true,
+            std::time::Duration::from_millis(10),
+            move || {
+                assert!(!seen.load(std::sync::atomic::Ordering::SeqCst));
+                "restarted".to_string()
+            },
+        );
+        assert_eq!(error, Err("restarted".to_string()));
+        let _ = release.send(());
+    }
 
     #[test]
     fn the_command_line_is_well_formed() {

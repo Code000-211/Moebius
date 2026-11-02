@@ -162,6 +162,7 @@ impl Live {
                 )
                 .map_err(invalid)?;
         }
+        crate::server::check_forges(&config, &self.secrets).map_err(invalid)?;
         let mut context = prepare()?;
         write_atomically(&self.started.file, edited.as_bytes(), false)?;
         context.insert("file".to_string(), self.started.file.display().to_string());
@@ -361,5 +362,47 @@ mod tests {
                 "{name} is marked live but not applied"
             );
         }
+    }
+
+    #[test]
+    fn a_change_that_serve_would_refuse_for_a_forge_is_refused_and_not_written() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("moebius.toml");
+        let original = "[router]\nlisten = \"127.0.0.1:0\"\n";
+        std::fs::write(&file, original).unwrap();
+        let server =
+            Server::new(Config::load(&file).unwrap(), "127.0.0.1:1".parse().unwrap()).unwrap();
+        let attempt = |sets: &[(&str, Value)]| {
+            let changes = Changes {
+                set: sets
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.clone()))
+                    .collect(),
+                remove: vec![],
+            };
+            server.live.save(&server.app, &actor(), &changes)
+        };
+        std::fs::write(dir.path().join("not-a-key.pem"), "this is not a key").unwrap();
+        let refused = [
+            vec![
+                ("github.app_id", json!(1)),
+                ("github.private_key_file", json!("not-a-key.pem")),
+            ],
+            vec![
+                ("github.app_id", json!(1)),
+                ("github.private_key_file", json!("missing.pem")),
+            ],
+            vec![("gitlab.token_file", json!("missing-token"))],
+            vec![("gitlab.token_secret", json!("gitlab"))],
+            vec![("forgejo.token_file", json!("missing-token"))],
+            vec![("forgejo.token_secret", json!("codeberg"))],
+        ];
+        for sets in &refused {
+            let error = attempt(sets);
+            assert!(matches!(error, Err(AppError::Invalid(_))), "{sets:?}");
+            assert_eq!(std::fs::read_to_string(&file).unwrap(), original);
+        }
+        std::fs::write(dir.path().join("gitlab-token"), "glpat\n").unwrap();
+        attempt(&[("gitlab.token_file", json!("gitlab-token"))]).unwrap();
     }
 }

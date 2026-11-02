@@ -264,14 +264,22 @@ impl Process {
     }
 }
 
-impl Drop for Process {
-    fn drop(&mut self) {
+impl Process {
+    /// Kills the process and keeps it from being started again, without waiting for the [`Process`] to be dropped.
+    /// Calling it again does nothing.
+    pub(crate) fn stop(&self) {
         self.shared.stopped.store(true, Ordering::SeqCst);
         // Killed first, so that a write that waits for the process ends before the lock on stdin is asked for.
         if let Some(child) = self.shared.inner().child.as_mut() {
             let _ = child.kill();
         }
         self.shared.stdin().take();
+    }
+}
+
+impl Drop for Process {
+    fn drop(&mut self) {
+        self.stop();
     }
 }
 
@@ -366,6 +374,18 @@ mod tests {
             Err(Refusal::WrongKind { .. })
         ));
         eventually(|| logged.lock().unwrap().iter().any(|line| line == "started"));
+    }
+
+    #[test]
+    fn stopping_the_processes_kills_them_while_the_host_is_still_held() {
+        let (host, _) = host("answers", LIMIT);
+        assert_eq!(host.status("test").unwrap().state, State::Running);
+        host.stop_processes();
+        eventually(|| host.status("test").unwrap().state == State::Stopped);
+        assert!(matches!(
+            host.decide("test", &request()),
+            Err(Refusal::NotRunning { .. })
+        ));
     }
 
     #[test]

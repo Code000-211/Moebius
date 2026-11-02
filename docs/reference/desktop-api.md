@@ -1216,7 +1216,9 @@ A person changes `moebius.toml`. Request: `{"set": {...}, "remove": [...]}`, bot
 
 The change is made to the text of the file, so its comments and the order of its keys stay. The result is read as
 `moebius serve` would read it; if that fails (an unknown key, a value of the wrong type or out of range, an environment
-variable of an upstream that is not set, a secret that is not stored, `[agents.*]` together with `[harness]`) the
+variable of an upstream that is not set, a secret that is not stored, a GitHub App key file, a GitLab or Forgejo
+token file that cannot be read, a token secret that is not stored or a token that is empty, `[agents.*]` together with
+`[harness]`) the
 answer is `422` with the message of the parse and nothing is written. Otherwise the file is written in one step (a
 temporary file in its directory that replaces it), the decision is recorded (kind `edit_settings`, decider `person`,
 the `set` and `remove` in its context; a URL has no user name and password there, and a key is never part of a
