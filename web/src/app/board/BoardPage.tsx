@@ -33,6 +33,7 @@ import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { ScrollFades } from "../../ui/page/ScrollFades";
 import { boardPath } from "../pages";
+import { ColumnMark } from "./ColumnMark";
 import { Dock } from "./Dock";
 import { type Decision, useDecisions } from "./decisions";
 import { FilterBar } from "./FilterBar";
@@ -325,7 +326,12 @@ function BoardColumn({
 }) {
   return (
     <KanbanBoard name={name}>
-      <KanbanHeader name={name} count={cards.length} total={total} />
+      <KanbanHeader
+        name={name}
+        count={cards.length}
+        total={total}
+        mark={<ColumnMark name={name} />}
+      />
       <KanbanCards className="min-h-12">
         {cards.map((card) => {
           const status = cardStatus(card, inboxOf(inbox, card), board);
