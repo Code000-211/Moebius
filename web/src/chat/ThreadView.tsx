@@ -65,6 +65,11 @@ interface ThreadViewProps {
   emptyTitle?: string;
   /** What a person can press to start, while the place is empty: an empty chat that offers nothing asks to be read rather than used. */
   emptyAction?: ReactNode;
+  /**
+   * Drawn in the floating chat's dock rather than on a page: one row of turns in less room, so the rhythm tightens and
+   * the empty place sits on the dock's own surface instead of in a card inside it.
+   */
+  compact?: boolean;
 }
 
 export function ThreadView({
@@ -74,6 +79,7 @@ export function ThreadView({
   empty,
   emptyTitle = "Nothing said yet",
   emptyAction,
+  compact = false,
 }: ThreadViewProps) {
   // An answer arrives piece by piece, and the person may be typing while it does: the words shown trail the events by
   // a render rather than cutting the keystroke off, and a long conversation groups once per batch instead of per piece.
@@ -177,7 +183,7 @@ export function ThreadView({
   if (turns.length === 0) {
     return (
       <div className="p-4" data-testid="empty-thread">
-        <Empty title={emptyTitle} body={empty} action={emptyAction} />
+        <Empty title={emptyTitle} body={empty} action={emptyAction} plain={compact} />
       </div>
     );
   }
@@ -194,8 +200,8 @@ export function ThreadView({
       data-testid="thread"
       style={{ height: "100%" }}
       itemContent={(_, turn) => (
-        <div className="pb-6">
-          <Turn turn={turn} unfolded={unfolded} onToggle={toggle} />
+        <div className={compact ? "pb-3" : "pb-6"}>
+          <Turn turn={turn} unfolded={unfolded} onToggle={toggle} compact={compact} />
         </div>
       )}
     />

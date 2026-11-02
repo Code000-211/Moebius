@@ -17,6 +17,7 @@ import {
   verdict,
 } from "../../chat/conversation";
 import type { Block, StepView, Turn as TurnData } from "../../chat/turns";
+import { cn } from "../lib/cn";
 import { plural } from "../lib/format";
 import { ChatAggregatedToolEntries } from "./ChatAggregatedToolEntries";
 import { ChatAssistantMessage } from "./ChatAssistantMessage";
@@ -195,10 +196,13 @@ function BlockView({
   block,
   isOpen,
   onToggle,
+  compact = false,
 }: {
   block: Block;
   isOpen: (key: string) => boolean;
   onToggle: (key: string) => void;
+  /** The rows of a block of steps sit closer together, for the dock, where a conversation is scanned rather than read. */
+  compact?: boolean;
 }) {
   switch (block.kind) {
     case "text":
@@ -233,7 +237,7 @@ function BlockView({
       );
     case "steps":
       return (
-        <div className="flex flex-col gap-2" data-testid="steps">
+        <div className={cn("flex flex-col", compact ? "gap-1" : "gap-2")} data-testid="steps">
           {block.steps.map((step) => (
             <StepLine key={step.key} step={step} isOpen={isOpen} onToggle={onToggle} />
           ))}
@@ -256,19 +260,27 @@ interface TurnProps {
   /** The keys of the steps that are unfolded. */
   unfolded: ReadonlySet<string>;
   onToggle: (key: string) => void;
+  /** A tighter rhythm between the blocks and the rows, for the floating chat's dock. */
+  compact?: boolean;
 }
 
-export function Turn({ turn, unfolded, onToggle }: TurnProps) {
+export function Turn({ turn, unfolded, onToggle, compact = false }: TurnProps) {
   const isOpen = (key: string) => unfolded.has(key);
   const head = turn.head;
   // A turn is written on the canvas rather than stacked in boxes: the person's message is a band of the sunken
   // colour, and what the agent did, answered and got wrong is the text and the rows under it, in the order it came. A
   // card of its own would put a second shadow inside the chat, which is itself a card on the page or a sheet over it.
   const view = (block: Block) => (
-    <BlockView key={block.key} block={block} isOpen={isOpen} onToggle={onToggle} />
+    <BlockView
+      key={block.key}
+      block={block}
+      isOpen={isOpen}
+      onToggle={onToggle}
+      compact={compact}
+    />
   );
   return (
-    <div data-testid="turn" className="flex min-w-0 flex-col gap-4">
+    <div data-testid="turn" className={cn("flex min-w-0 flex-col", compact ? "gap-3" : "gap-4")}>
       {head && (
         <ChatUserMessage
           content={head.message}

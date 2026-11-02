@@ -180,6 +180,7 @@ export function FloatingChat() {
           empty="Ask the agent about this page, or start from one of these. It is told where you are."
           // The starters are for the moment before anything is written; once a message is on its way they are in the way.
           emptyAction={message.trim() === "" ? <Starters onPick={write} /> : undefined}
+          compact
         />
       </div>
       <Composer
