@@ -342,7 +342,7 @@ export function DiffView({ diff, truncated = false }: { diff: string; truncated?
           </div>
         </div>
         <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-card bg-code">
-          <header className="flex shrink-0 flex-wrap items-center gap-4 p-4">
+          <header className="flex shrink-0 flex-wrap items-center gap-3 px-3 py-1">
             <p
               className="m-0 min-w-0 flex-1 break-all font-mono text-sm font-semibold text-text"
               data-testid="diff-path"
