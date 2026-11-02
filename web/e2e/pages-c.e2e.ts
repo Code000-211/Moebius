@@ -458,8 +458,8 @@ describe("the Experiments page", () => {
     await page.getByRole("button", { name: "New brief" }).click();
     const store = page.getByRole("button", { name: "Store the brief" });
     expect(await store.isDisabled()).toBe(true);
-    await page.getByLabel("Goal").fill("Make the tests faster");
-    await page.getByLabel("Measure").fill("echo 12");
+    await page.getByLabel("What should get better").fill("Make the tests faster");
+    await page.getByLabel("Measurement").fill("echo 12");
     await page.getByRole("button", { name: "Higher is better" }).click();
     expect(await page.getByLabel("Token budget").inputValue()).toBe("200000");
     await store.click();
@@ -533,7 +533,7 @@ describe("the Experiments page", () => {
     await open("/experiments", "Experiments");
     const brief = region("Brief");
     await brief.getByRole("button", { name: "Edit the brief" }).click();
-    await brief.getByLabel("Goal").fill("Make the release build faster");
+    await brief.getByLabel("What should get better").fill("Make the release build faster");
     await brief.getByLabel("Token budget").fill("0");
     expect(await brief.getByRole("button", { name: "Save", exact: true }).isDisabled()).toBe(true);
     await brief.getByLabel("Token budget").fill("300000");

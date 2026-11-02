@@ -73,7 +73,7 @@ export function ExperimentsPage() {
   const header = (
     <PageHeader
       title="Experiments"
-      context="Try one change at a time against one number."
+      context="Try one change at a time against a reference point."
       actions={
         <Button
           size="sm"
@@ -227,11 +227,13 @@ export function ExperimentsPage() {
   );
 }
 
-/** The fields every brief has: its goal, the command that measures the number, which way is better, and the budget. */
+/** The fields every brief has: what should get better, the command that measures it, which way of that number is
+ * the goal, and the budget. The words here are the ones the form shows; `goal`, `measure` and `better` are what the
+ * request calls them. */
 function BriefFields({ form, onChange }: { form: Form; onChange: (form: Form) => void }) {
   return (
     <>
-      <Field label="Goal" hint="What should get better, said once.">
+      <Field label="What should get better">
         {(id) => (
           <Input
             id={id}
@@ -242,7 +244,7 @@ function BriefFields({ form, onChange }: { form: Form; onChange: (form: Form) =>
         )}
       </Field>
       <Field
-        label="Measure"
+        label="Measurement"
         hint="A shell command run in a worktree. Its result is the last number it prints."
       >
         {(id) => (
@@ -257,9 +259,7 @@ function BriefFields({ form, onChange }: { form: Form; onChange: (form: Form) =>
       </Field>
       <div className="grid gap-4 md:grid-cols-2">
         <fieldset className="m-0 min-w-0 border-0 p-0">
-          <legend className="m-0 mb-2 p-0 text-sm font-semibold text-secondary">
-            Which way is better
-          </legend>
+          <legend className="m-0 mb-2 p-0 text-sm font-semibold text-secondary">Goal</legend>
           <div className="flex flex-wrap gap-2">
             <Chip
               selected={form.better === "lower"}
