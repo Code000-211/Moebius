@@ -2,10 +2,12 @@
 // read-only inspector, not the form for creating and editing an issue (the title, description editor, tags, assignees
 // and attachments are gone); it keeps the frame — the header with the number, the copy-link and close buttons, Escape
 // to close, the scrolling body — and takes its sections as children; it is a sheet beside the board rather than over
-// it, so it carries no border and separates its sections with space instead of rules, and its controls are labelled.
+// it, so it carries no border and separates its sections with space instead of rules, its controls are labelled,
+// and its body fades the edges it cuts off.
 import { LinkIcon, XIcon } from "@phosphor-icons/react";
 import { type KeyboardEvent, type ReactNode, useId } from "react";
 import { cn } from "../lib/cn";
+import { useScrollFades } from "../page/ScrollFades";
 import { Button } from "./Button";
 
 export interface KanbanIssuePanelProps {
@@ -34,6 +36,10 @@ export function KanbanIssuePanel({
   className,
   children,
 }: KanbanIssuePanelProps) {
+  // A card's sections are read from the top and the dock scrolls the whole height of the board, so both edges
+  // are usually cut mid-sentence.
+  const fades = useScrollFades<HTMLDivElement>();
+
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key !== "Escape") return;
     const target = e.target as HTMLElement;
@@ -97,8 +103,13 @@ export function KanbanIssuePanel({
         </div>
       </div>
 
-      {/* Scrollable content: the title wraps, however long */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      {/* Scrollable content: the title wraps, however long, and the edges with more behind them fade out */}
+      <div
+        ref={fades.box}
+        onScroll={fades.measure}
+        style={fades.style}
+        className="min-h-0 flex-1 overflow-y-auto"
+      >
         <h2 className="m-0 px-4 pt-2 pb-4 text-lg font-semibold tracking-tight text-text [overflow-wrap:anywhere]">
           {title}
         </h2>
