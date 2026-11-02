@@ -470,8 +470,9 @@ copy of the worktree, so that a refusal can later be weighed by what the call wo
 
 - **Which calls.** `tool_call` judgements that refused the call, have no replay yet, are at most a week
   old, belong to a run whose repository still exists, and are **reversible**. At most 20 are replayed per night, the
-  oldest first, one after the other; none runs beside a trial (the schedule asks the trials first, and stops when a
-  proposal is `trying`). Calls that cannot be replayed are never picked and keep their outcome. A refusal on a card that is
+  oldest first, one after the other on a thread of their own (the schedule goes on meanwhile, and never two
+  replay threads run at once); no trial starts while a replay thread is going (it waits for the next minute), and a replay thread stops when a
+  proposal is `trying`. Calls that cannot be replayed are never picked and keep their outcome. A refusal on a card that is
   done already has the card's outcome (such as `merged`); its replay replaces it, since for a refusal what the call would
   have done says more, and the card still tells how it ended.
 - **Reversible** means everything the call does stays inside the run's worktree: `read`, `write`, `edit`, `ls`, `grep`
@@ -481,10 +482,12 @@ copy of the worktree, so that a refusal can later be weighed by what the call wo
   `submodule`; a URL; `curl`, `wget`, `ssh`, `scp`, `rsync`, `sftp`, `ftp`, `nc` and the like; `sudo`, `su`, `kill`,
   `pkill`; package managers and `cargo`; `env`, `printenv`, `export` and any `$` (variable or substitution);
   interpreters such as `python` and `node`; a shell nested too deeply to follow. This reads the command line, it is not a
-  sandbox, so it errs on the side of not reversible.
+  sandbox, so it errs on the side of not reversible. A `bash` command is replayed only when it also names **no
+  absolute path** (even one inside the worktree, which would act on the original and not on the copy).
 - **The copy** is a directory `<data_dir>/replays/<judgement id>` holding the files of the run's worktree if it still
   exists (not `.git`, and no symbolic links), else a `git archive` of the card's change branch, else of the repository's
-  default branch. `read`, `write` and `edit` are applied by Moebius (an edit's text must occur exactly once); `ls` is
+  default branch (its symbolic links removed after extracting). Git does not look above the copy for a repository
+  (`GIT_CEILING_DIRECTORIES`), and the file tools refuse a path that leaves the copy. `read`, `write` and `edit` are applied by Moebius (an edit's text must occur exactly once); `ls` is
   listed; `grep`, `find` and `bash -c` run in the copy with an empty environment (`PATH` only, `HOME` the copy), no input
   and 60 seconds, after which the process group is killed. The copy is removed afterwards; the worktree is never touched.
 - **What is stored** (`GET /v1/replays`): the exit code (or that it timed out), the output (secrets removed, last 4 KB)

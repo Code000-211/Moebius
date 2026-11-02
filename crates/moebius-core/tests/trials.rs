@@ -626,6 +626,18 @@ async fn trials_start_in_the_window_only_one_at_a_time_and_a_server_start_reopen
         server.config.trial_window
     ));
 
+    // While replays go, none starts; the replay in progress finishes first.
+    server
+        .app
+        .replaying
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    trial::on_schedule(&server.app, &runs, repo, (around(1380, 60), 3), 5).unwrap();
+    assert!(open(first) && open(second));
+    server
+        .app
+        .replaying
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+
     // Inside it, the oldest open proposal is tried.
     let mut events = server.app.bus.subscribe();
     trial::on_schedule(&server.app, &runs, repo, (around(1380, 60), 3), 5).unwrap();

@@ -555,7 +555,7 @@ At the top:
 | `decide/guard/mod.rs` | The `guard` decider: built-in rules first, then the rules in prose for the teacher or the decision model. |
 | `decide/guard/shell.rs` | How the guard reads a tool call: simple commands, redirects, nested shells, `cd`, and paths. |
 | `decide/guard/patterns.rs` | The built-in rules, fixed patterns over a tool call. |
-| `decide/guard/reversible.rs` | Whether a tool call can be replayed: its effects stay in the worktree. |
+| `decide/guard/reversible.rs` | Whether a tool call can be replayed: its effects stay in the worktree, and a `bash` command names no absolute path. |
 | `decide/guard/teacher.rs` | The teacher model: what it is told, the request through the router, and reading its answer. |
 | `decide/localize/mod.rs` | The decision point `localize`: the ranked list of files as a choice, the outcome of a hint with its recall and precision, and the baseline decider that answers it. |
 | `decide/localize/index.rs` | The search index of a repository, read from the files of its default branch and made again when the branch moves. |

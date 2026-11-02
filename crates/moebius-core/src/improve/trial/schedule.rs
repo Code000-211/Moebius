@@ -146,7 +146,7 @@ pub fn start(
 }
 
 /// The schedule's check, once a minute: inside the trial window, and when no other proposal is being tried and the
-/// board has a run to spare (`run_limit`, counting the runs of cards), starts the trials of the oldest open proposal,
+/// board has a run to spare (`run_limit`, counting the runs of cards) and no replay is going, starts the trials of the oldest open proposal,
 /// with a regression set of `regression` cards.
 pub fn on_schedule(
     app: &Arc<App>,
@@ -168,6 +168,10 @@ pub fn on_schedule(
         .filter(|run| run.card_id.is_some())
         .count();
     if active >= run_limit as usize {
+        return Ok(());
+    }
+    // A replay in progress finishes first, so that no trial starts beside it.
+    if app.replaying.load(std::sync::atomic::Ordering::SeqCst) {
         return Ok(());
     }
     if app

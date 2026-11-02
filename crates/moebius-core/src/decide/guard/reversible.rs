@@ -75,6 +75,98 @@ pub fn reversible(tool: &str, input: &Value, worktree: &Path) -> Result<(), Stri
     }
 }
 
+/// The places a word of a command line may name: the word, the value after `=` (`--option=/path`, `NAME=/path`) and
+/// the value attached to a short option (`-t/path`).
+fn candidates(word: &str) -> Vec<&str> {
+    let mut found = vec![word];
+    if let Some((_, value)) = word.split_once('=') {
+        found.push(value);
+    }
+    let bytes = word.as_bytes();
+    if bytes.len() > 2 && bytes[0] == b'-' && bytes[1] != b'-' && word.is_char_boundary(2) {
+        found.push(&word[2..]);
+    }
+    found
+}
+
+/// Whether `path`, taken from `cwd` (inside `root`), steps above `root` at any point, even if it comes back: the
+/// kernel stops `..` at the top of the file system, so a path with more `..` than the worktree is deep can land on
+/// the original worktree when the command runs in a copy elsewhere.
+fn climbs_above(root: &Path, cwd: &Path, path: &str) -> bool {
+    if path.starts_with('/') || !path.contains("..") {
+        return false;
+    }
+    let mut depth = cwd.strip_prefix(root).map_or(0, |r| r.components().count()) as i64;
+    for part in path.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => depth -= 1,
+            _ => depth += 1,
+        }
+        if depth < 0 {
+            return true;
+        }
+    }
+    false
+}
+
+/// Whether the call can be replayed: it is [`reversible`], and a `bash` command names no way to the original
+/// worktree. A replay runs the command unchanged in a copy of the worktree, so an absolute path (also as the value of
+/// an option or of a `NAME=value` prefix, or in a brace expansion), or more `..` than the worktree is deep, even when
+/// it names a place inside the original worktree, would act on the original and not on the copy.
+pub fn replayable(tool: &str, input: &Value, worktree: &Path) -> Result<(), String> {
+    reversible(tool, input, worktree)?;
+    if tool != "bash" {
+        return Ok(());
+    }
+    let call = ToolCall {
+        tool,
+        input: input.clone(),
+        worktree: Some(worktree),
+    };
+    static ASSIGNMENT: LazyLock<Regex> = LazyLock::new(|| {
+        // `NAME=value` prefixes are not among the words of a command, so the text is read for them.
+        Regex::new(r"(?:^|[\s;&|(){}`'\x22])[A-Za-z_][A-Za-z0-9_]*=[^\s;&|(){}`'\x22]*(?:/|\.\.)")
+            .expect("pattern compiles")
+    });
+    let allowed = ["/dev/null", "/dev/stdout", "/dev/stderr"];
+    let command = call.command();
+    let assignment = ASSIGNMENT
+        .find_iter(command)
+        .map(|m| m.as_str())
+        .find(|m| !allowed.iter().any(|a| m.ends_with(a)));
+    if let Some(found) = assignment {
+        return Err(format!(
+            "{} is an absolute path, which a replay would not keep in the copy",
+            found.trim_start_matches(|c: char| !c.is_alphanumeric() && c != '_')
+        ));
+    }
+    let root = normalise(worktree);
+    let found = std::cell::RefCell::new(None);
+    any_simple(&call, &|simple, cwd| {
+        for word in simple.words.iter().chain(&simple.writes) {
+            for path in candidates(word) {
+                let absolute = path.starts_with('/') && !allowed.contains(&path);
+                let braced = path.contains('{') && path.contains('/');
+                if absolute || braced {
+                    found.borrow_mut().get_or_insert(format!(
+                        "{word} is an absolute path, which a replay would not keep in the copy"
+                    ));
+                } else if climbs_above(&root, cwd, path) {
+                    found.borrow_mut().get_or_insert(format!(
+                        "{word} is an absolute path in disguise: it climbs above the worktree, which a replay would not keep in the copy"
+                    ));
+                }
+            }
+        }
+        found.borrow().is_some()
+    });
+    match found.into_inner() {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
+}
+
 fn command_reversible(call: &ToolCall) -> Result<(), String> {
     static BEYOND: LazyLock<Regex> = LazyLock::new(|| {
         let names = BEYOND_THE_WORKTREE.join("|");
@@ -176,6 +268,38 @@ mod tests {
         ] {
             assert_eq!(reversible_bash(command), Ok(()), "{command}");
         }
+    }
+
+    #[test]
+    fn a_replay_refuses_commands_with_absolute_paths_even_inside_the_worktree() {
+        let replayable =
+            |command: &str| replayable("bash", &json!({ "command": command }), Path::new(WORKTREE));
+        for command in [
+            "cd /srv/wt/1 && git reset --hard HEAD~2 && rm -rf src",
+            "rm -rf /srv/wt/1/src",
+            "echo hi > /srv/wt/1/out.txt",
+            "git -C /srv/wt/1 log",
+            "bash -c 'cd /srv/wt/1/a/..; rm x'",
+            "cp --target-directory=/srv/wt/1/x a",
+            "cd ../../../../../../../srv/wt/1 && git reset --hard HEAD~2 && rm -rf src",
+            "rm -rf ../../../../../../../srv/wt/1/src",
+            "cd src && rm -rf ../../../../../../srv/wt/1/src",
+            "GIT_DIR=/srv/wt/1/.git GIT_WORK_TREE=/srv/wt/1 git reset --hard HEAD~2",
+            "FOO=../../../../../../srv/wt/1 rm x",
+            "mv -t/srv/wt/1 src",
+            "sort -o/srv/wt/1/Cargo.toml x",
+            "rm -rf {/srv/wt/1/src,}",
+            "bash -c 'GIT_DIR=/srv/wt/1/.git git clean -fdx'",
+        ] {
+            let error = replayable(command).expect_err(command);
+            assert!(error.contains("absolute"), "{command}: {error}");
+        }
+        assert_eq!(replayable("rm -rf src && echo hi > /dev/null 2>&1"), Ok(()));
+        assert_eq!(replayable("echo hi > out.txt"), Ok(()));
+        assert_eq!(replayable("cd src && rm -rf ../build"), Ok(()));
+        assert_eq!(replayable("sed -i s/a/b/ src/main.rs"), Ok(()));
+        // What reversible refuses is refused still.
+        assert!(replayable("rm -rf /etc").is_err());
     }
 
     #[test]

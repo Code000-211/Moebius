@@ -40,7 +40,7 @@ use patterns::broken_rule;
 use shell::ToolCall;
 
 pub use patterns::patterns;
-pub use reversible::{relative_to, reversible};
+pub use reversible::{relative_to, replayable, reversible};
 pub use teacher::Teacher;
 
 /// The built-in rule that a call breaks, with what the rule says. `check` tests it on the call as it is executed and

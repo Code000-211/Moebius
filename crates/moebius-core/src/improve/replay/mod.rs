@@ -20,7 +20,7 @@
 //! The sentence replaces an outcome the judgement had (a card that is done gives each of its judgements the card's outcome,
 //! which the card still tells): for a refusal, what the call would have done says more. A replay that could not be made
 //! reads `replayed: not run; <why>` and is stored all the same, so that it is not tried again. The schedule asks [`on_schedule`] once a minute; inside the trial window, when no proposal is being tried, it
-//! replays the oldest calls, at most [`PER_NIGHT`] per night. `POST /v1/judgements/{id}/replay` replays one at any hour.
+//! replays the oldest calls on a thread of its own (one at a time), at most [`PER_NIGHT`] per night. `POST /v1/judgements/{id}/replay` replays one at any hour.
 //!
 //! This module holds the entry points, the one replay a person asks for and the schedule's; `call` reads the refused
 //! call from its judgement, `copy` makes the throwaway copy and lists its files, `process` runs the call in it, and
@@ -32,9 +32,11 @@ mod outcome;
 mod process;
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use crate::app::{App, AppError, Result};
+use crate::bus::Event;
 use crate::config::TimeOfDay;
 use crate::improve::trial::in_window;
 use crate::store::{Judgement, Replay, now};
@@ -89,8 +91,8 @@ pub fn due(app: &App, count: usize) -> Result<Vec<Judgement>> {
     Ok(due)
 }
 
-/// Replays up to `count` due calls, one after the other, and stops when a proposal is being tried, so that a replay
-/// never runs beside a trial. Returns how many were replayed.
+/// Replays up to `count` due calls, one after the other, and stops when a proposal is being tried. A trial does not
+/// start while replays go ([`crate::improve::trial::on_schedule`]), so a replay never runs beside a trial. Returns how many were replayed.
 pub fn run_due(app: &App, count: usize, limit: Duration) -> Result<usize> {
     let mut replayed = 0;
     for judgement in due(app, count)? {
@@ -108,8 +110,47 @@ pub fn run_due(app: &App, count: usize, limit: Duration) -> Result<usize> {
     Ok(replayed)
 }
 
+/// Clears the flag that replays are going when dropped, also when the thread panics.
+struct Replaying<'a>(&'a AtomicBool);
+
+impl Drop for Replaying<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
+/// Replays up to `count` due calls on a thread of its own, so that the schedule goes on meanwhile. Returns `None` when
+/// replays are going already. A failure is published as `retro_error`, as the schedule's other work reports it.
+pub fn start_due(
+    app: &Arc<App>,
+    count: usize,
+    limit: Duration,
+) -> Option<std::thread::JoinHandle<()>> {
+    if app.replaying.swap(true, Ordering::SeqCst) {
+        return None;
+    }
+    let thread_app = app.clone();
+    let started = std::thread::Builder::new()
+        .name("replays".into())
+        .spawn(move || {
+            let _going = Replaying(&thread_app.replaying);
+            if let Err(e) = run_due(&thread_app, count, limit) {
+                thread_app.bus.publish(Event::RetroError {
+                    message: e.to_string(),
+                });
+            }
+        });
+    match started {
+        Ok(handle) => Some(handle),
+        Err(_) => {
+            app.replaying.store(false, Ordering::SeqCst);
+            None
+        }
+    }
+}
+
 /// The schedule's check, once a minute: inside the trial window, and while the night's [`PER_NIGHT`] are not used up,
-/// replays the due calls.
+/// starts replaying the due calls on a thread of their own, unless replays are going already.
 pub fn on_schedule(app: &Arc<App>, window: (TimeOfDay, TimeOfDay)) -> Result<()> {
     let minutes = app.store.minutes_into_the_day()?;
     if !in_window(TimeOfDay(minutes), window) {
@@ -118,5 +159,32 @@ pub fn on_schedule(app: &Arc<App>, window: (TimeOfDay, TimeOfDay)) -> Result<()>
     // The night began this many minutes ago (a minute more, as the clock is read twice).
     let elapsed = i64::from((minutes + 24 * 60 - window.0.0) % (24 * 60));
     let done = app.store.replays_since(now() - elapsed * 60 - 60)?;
-    run_due(app, PER_NIGHT.saturating_sub(done), TIME_LIMIT).map(drop)
+    start_due(app, PER_NIGHT.saturating_sub(done), TIME_LIMIT);
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::store::Store;
+    use moebius_plugin_api::Host;
+
+    #[test]
+    fn replays_go_on_a_thread_of_their_own_and_never_two_at_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(Store::in_memory(&dir.path().join("blobs")).unwrap());
+        let host = Arc::new(Host::new(Duration::from_secs(1)));
+        let app = Arc::new(App::new(store, host, &dir.path().join("data")));
+        app.replaying.store(true, Ordering::SeqCst);
+        assert!(start_due(&app, 5, TIME_LIMIT).is_none());
+        assert!(
+            app.replaying.load(Ordering::SeqCst),
+            "the other's flag stays"
+        );
+        app.replaying.store(false, Ordering::SeqCst);
+        let handle = start_due(&app, 5, TIME_LIMIT).expect("starts");
+        handle.join().unwrap();
+        assert!(!app.replaying.load(Ordering::SeqCst));
+        assert!(start_due(&app, 5, TIME_LIMIT).is_some());
+    }
 }

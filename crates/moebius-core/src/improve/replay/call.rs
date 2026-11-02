@@ -58,7 +58,7 @@ pub(super) fn call_of(app: &App, judgement: &Judgement) -> Result<Call> {
     let worktree = context
         .get("worktree")
         .ok_or_else(|| not("is about a run without a worktree"))?;
-    guard::reversible(tool, &input, Path::new(worktree))
+    guard::replayable(tool, &input, Path::new(worktree))
         .map_err(|why| not(&format!("is not reversible: {why}")))?;
     Ok(Call {
         tool: tool.clone(),

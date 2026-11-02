@@ -345,6 +345,40 @@ async fn a_call_that_is_not_reversible_is_refused_by_the_api_and_never_picked() 
     assert_eq!(status, 422, "{body}");
     assert!(body.as_str().unwrap().contains("git push"), "{body}");
     assert_eq!(api.replay(outside).await.0, 422);
+    // A command that names the original worktree by its absolute path would act on it, not on the copy.
+    let worktree = run.worktree.clone().unwrap();
+    write(&PathBuf::from(&worktree), "precious.txt", "keep");
+    let absolute = refused(
+        &server,
+        &run,
+        "bash",
+        json!({ "command": format!("cd {worktree} && rm -rf precious.txt") }),
+    );
+    let (status, body) = api.replay(absolute).await;
+    assert_eq!(status, 422, "{body}");
+    assert!(body.as_str().unwrap().contains("absolute path"), "{body}");
+    assert!(PathBuf::from(&worktree).join("precious.txt").exists());
+    // So does one that climbs to the original with `..`, which the kernel stops at the top of the file system.
+    let climbing = "../".repeat(40);
+    for command in [
+        format!(
+            "rm -rf {climbing}{}/precious.txt",
+            worktree.trim_start_matches('/')
+        ),
+        format!("GIT_DIR={worktree}/.git git clean -fdx"),
+        format!("rm -rf {{{worktree}/precious.txt,}}"),
+    ] {
+        let id = refused(&server, &run, "bash", json!({ "command": command }));
+        let (status, body) = api.replay(id).await;
+        assert_eq!(status, 422, "{command}: {body}");
+        assert!(PathBuf::from(&worktree).join("precious.txt").exists());
+    }
+    assert!(
+        replay::due(&server.app, 10)
+            .unwrap()
+            .iter()
+            .all(|j| j.id != absolute)
+    );
     assert_eq!(api.replay(9999).await.0, 404);
 
     // A call that was allowed, and a decision that is not about a tool call, are not replayed either.

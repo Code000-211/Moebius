@@ -24,6 +24,7 @@ mod whereabouts;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
@@ -108,6 +109,8 @@ pub struct App {
     judging: Mutex<BTreeSet<i64>>,
     /// The runs of reproduction tests, going or ended (see `reproduce`).
     tests: Mutex<HashMap<reproduce::TestKey, TestRun>>,
+    /// Whether the schedule's replays are going now (see `replay::start_due`).
+    pub replaying: AtomicBool,
     /// Held while a run event is stored and published, so that events are published in the order of their `seq`.
     run_events: Mutex<()>,
     /// Held while a message is given to a chat's agent or a chat's work is committed to be offered, so that the agent
@@ -143,6 +146,7 @@ impl App {
             checking: Mutex::default(),
             judging: Mutex::default(),
             tests: Mutex::default(),
+            replaying: AtomicBool::new(false),
             run_events: Mutex::default(),
             chat_turns: Mutex::default(),
             terminals: Arc::default(),

@@ -1,6 +1,7 @@
 //! Measuring: a brief's `measure` command run in a fresh worktree with a cleared environment and a time limit, the
 //! last number it printed, and whether a lever's measurement beats the baseline by enough to be kept.
 
+use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -67,6 +68,18 @@ pub fn spent(tokens: i64, budget: i64) -> bool {
     tokens >= budget
 }
 
+/// The last `count` bytes of the file, or what there is of it, without reading the rest.
+fn end_of(path: &Path, count: usize) -> Vec<u8> {
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return Vec::new();
+    };
+    let len = file.metadata().map_or(0, |m| m.len());
+    let _ = file.seek(SeekFrom::Start(len.saturating_sub(count as u64)));
+    let mut bytes = Vec::new();
+    let _ = file.take(count as u64).read_to_end(&mut bytes);
+    bytes
+}
+
 /// Runs the measure `command` in a fresh worktree of `repository` at `rev`, named `name`, and returns the number it
 /// printed or why the measurement failed.
 pub(super) fn measure(
@@ -89,9 +102,7 @@ pub(super) fn measure(
     let ended = std::fs::File::create(&out)
         .and_then(|stdout| Ok((stdout, std::fs::File::create(&err)?)))
         .and_then(|files| run_apart("sh", &["-c", command], &worktree, files, limit));
-    let printed = std::fs::read(&out).unwrap_or_default();
-    let printed = &printed[printed.len().saturating_sub(OUTPUT_LOOKED_AT)..];
-    let printed = String::from_utf8_lossy(printed).into_owned();
+    let printed = String::from_utf8_lossy(&end_of(&out, OUTPUT_LOOKED_AT)).into_owned();
     let complaint = tail(&err);
     let _ = std::fs::remove_file(&out);
     let _ = std::fs::remove_file(&err);
@@ -145,6 +156,16 @@ mod tests {
 
     // Unix only: the measure runs with `sh`.
     #[cfg(unix)]
+    #[test]
+    fn only_the_end_of_a_long_output_is_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("out");
+        std::fs::write(&path, "0123456789").unwrap();
+        assert_eq!(end_of(&path, 4), b"6789");
+        assert_eq!(end_of(&path, 100), b"0123456789");
+        assert_eq!(end_of(&dir.path().join("none"), 4), b"");
+    }
+
     #[test]
     fn a_measure_runs_in_a_worktree_with_a_clean_environment_and_a_time_limit() {
         let (_dir, app, repository) = app_with_repository();

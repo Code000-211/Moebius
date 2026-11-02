@@ -21,7 +21,15 @@ fn run_limited(
     limit: Duration,
 ) -> std::io::Result<(Option<i32>, bool)> {
     let file = std::fs::File::create(log)?;
-    run_apart(program, args, dir, (file.try_clone()?, file), limit)
+    // The copy has no `.git`: git must not walk up from it into a repository around the data directory.
+    let ceiling = dir.parent().map(std::path::absolute).transpose()?;
+    spawn_limited(
+        program,
+        args,
+        dir,
+        (file.try_clone()?, file),
+        (limit, ceiling.as_deref()),
+    )
 }
 
 /// Like `run_limited`, with what the program prints on its standard output and on its standard error in two files.
@@ -32,20 +40,34 @@ pub(crate) fn run_apart(
     (stdout, stderr): (std::fs::File, std::fs::File),
     limit: Duration,
 ) -> std::io::Result<(Option<i32>, bool)> {
+    spawn_limited(program, args, dir, (stdout, stderr), (limit, None))
+}
+
+/// Runs the program; `git_ceiling` is a directory that git does not look in or above for a repository.
+fn spawn_limited(
+    program: &str,
+    args: &[&str],
+    dir: &Path,
+    (stdout, stderr): (std::fs::File, std::fs::File),
+    (limit, git_ceiling): (Duration, Option<&Path>),
+) -> std::io::Result<(Option<i32>, bool)> {
     let path = std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin:/usr/bin:/bin".into());
-    let mut child = platform::own_group(
-        Command::new(program)
-            .args(args)
-            .current_dir(dir)
-            .env_clear()
-            .env("PATH", path)
-            .env("HOME", dir)
-            .stdin(Stdio::null())
-            .stdout(stdout)
-            .stderr(stderr),
-    )
-    .spawn()
-    .map_err(|e| platform::unix_program_error(program, e))?;
+    let mut command = Command::new(program);
+    command
+        .args(args)
+        .current_dir(dir)
+        .env_clear()
+        .env("PATH", path)
+        .env("HOME", dir)
+        .stdin(Stdio::null())
+        .stdout(stdout)
+        .stderr(stderr);
+    if let Some(ceiling) = git_ceiling {
+        command.env("GIT_CEILING_DIRECTORIES", ceiling);
+    }
+    let mut child = platform::own_group(&mut command)
+        .spawn()
+        .map_err(|e| platform::unix_program_error(program, e))?;
     let id = child.id();
     let kill = || platform::kill_tree(id);
     let deadline = Instant::now() + limit;
@@ -64,9 +86,30 @@ pub(crate) fn run_apart(
     }
 }
 
+/// Whether `target`, with the links on its way followed, is inside `copy`; a path that does not exist yet counts by its
+/// nearest existing parent.
+fn stays_in(copy: &Path, target: &Path) -> bool {
+    let Ok(copy) = copy.canonicalize() else {
+        return false;
+    };
+    let mut nearest = target;
+    loop {
+        if let Ok(real) = nearest.canonicalize() {
+            return real.starts_with(&copy);
+        }
+        match nearest.parent() {
+            Some(parent) => nearest = parent,
+            None => return false,
+        }
+    }
+}
+
 /// Applies a file tool to the copy, the way the tool would: the exit code and what it printed.
 fn apply_file_tool(copy: &Path, tool: &str, input: &Value, relative: &Path) -> (i32, String) {
     let target = copy.join(relative);
+    if !stays_in(copy, &target) {
+        return (1, format!("{} leaves the copy", relative.display()));
+    }
     let text = |key: &str| input[key].as_str();
     let done = |result: std::io::Result<String>| match result {
         Ok(output) => (0, output),
@@ -186,6 +229,23 @@ pub(super) fn run_in_copy(
 mod tests {
     use super::*;
 
+    // Making a symbolic link needs a privilege on Windows.
+    #[cfg(unix)]
+    #[test]
+    fn a_file_tool_does_not_follow_a_link_out_of_the_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let (copy, outside) = (dir.path().join("copy"), dir.path().join("outside"));
+        std::fs::create_dir_all(&copy).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, copy.join("cfg")).unwrap();
+        let input = serde_json::json!({ "content": "x" });
+        let (exit, _) = apply_file_tool(&copy, "write", &input, Path::new("cfg/new.txt"));
+        assert_eq!(exit, 1);
+        assert!(!outside.join("new.txt").exists());
+        let (exit, _) = apply_file_tool(&copy, "write", &input, Path::new("sub/new.txt"));
+        assert_eq!(exit, 0);
+    }
+
     // Unix only: the replayed call runs with `bash`.
     #[cfg(unix)]
     #[test]
@@ -206,7 +266,39 @@ mod tests {
         let variables = "env | cut -d= -f1 | grep -vx -e PWD -e SHLVL -e _ | sort | tr '\\n' ' '; echo $HOME; exit 3";
         assert_eq!(run(variables, 30), (Some(3), false));
         let printed = std::fs::read_to_string(&log).unwrap();
-        assert_eq!(printed.trim(), format!("HOME PATH {}", copy.display()));
+        assert_eq!(
+            printed.trim(),
+            format!("GIT_CEILING_DIRECTORIES HOME PATH {}", copy.display())
+        );
         assert_eq!(run("sleep 30", 1), (None, true));
+    }
+
+    // Unix only: the replayed call runs with `bash`, and git must be installed.
+    #[cfg(unix)]
+    #[test]
+    fn git_in_the_copy_does_not_find_a_repository_around_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let around = dir.path().join("around");
+        let (copy, log) = (around.join("replays/1"), dir.path().join("log"));
+        std::fs::create_dir_all(&copy).unwrap();
+        crate::repos::git(&around, &["init", "--quiet"]).unwrap();
+        std::fs::write(copy.join("a.txt"), "keep").unwrap();
+        // The copy's parent is the ceiling: git neither looks in it nor above it.
+        let command = "git clean -fdx; git rev-parse --show-toplevel";
+        let (code, _) = run_limited(
+            "bash",
+            &["-c", command],
+            &copy,
+            &log,
+            Duration::from_secs(30),
+        )
+        .unwrap();
+        assert_eq!(
+            code,
+            Some(128),
+            "{}",
+            std::fs::read_to_string(&log).unwrap()
+        );
+        assert!(copy.join("a.txt").exists());
     }
 }
