@@ -216,46 +216,50 @@ export function BoardPage() {
           </>
         }
       />
-      <FilterBar
-        repositories={data.data.boards.map((b) => b.repository)}
-        repository={board.repository.id}
-        onRepository={(repository) => navigate(boardPath(repository))}
-        columns={boardColumns(board)}
-        agents={agentsOf(board)}
-        filters={filters}
-        onChange={(next) => setQuery({ ...next })}
-      />
-      {notice && (
-        <Notice
-          tone={notice.tone}
-          className="mb-4"
-          action={
-            <Button variant="ghost" size="sm" onClick={() => setNotice(null)}>
-              Dismiss
-            </Button>
-          }
-        >
-          {notice.text}
-        </Notice>
-      )}
+      {/* The dock stands beside the whole of the board, not beside its lanes: it belongs to the page, and starting it
+          under the filters spent the room it asks for and left the filters standing alone over nothing. */}
       <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-start">
-        <ScrollFades className="flex-1 pb-3">
-          <KanbanProvider onDragEnd={onDragEnd} renderOverlay={renderOverlay}>
-            {groups.map(({ column, cards, total }) => (
-              <BoardColumn
-                key={column}
-                board={board}
-                inbox={inbox}
-                name={column}
-                cards={cards}
-                total={total}
-                busy={pending}
-                inspectedId={inspected?.id}
-                onSelect={(card) => setQuery({ card: String(card.id) })}
-              />
-            ))}
-          </KanbanProvider>
-        </ScrollFades>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <FilterBar
+            repositories={data.data.boards.map((b) => b.repository)}
+            repository={board.repository.id}
+            onRepository={(repository) => navigate(boardPath(repository))}
+            columns={boardColumns(board)}
+            agents={agentsOf(board)}
+            filters={filters}
+            onChange={(next) => setQuery({ ...next })}
+          />
+          {notice && (
+            <Notice
+              tone={notice.tone}
+              className="mb-4"
+              action={
+                <Button variant="ghost" size="sm" onClick={() => setNotice(null)}>
+                  Dismiss
+                </Button>
+              }
+            >
+              {notice.text}
+            </Notice>
+          )}
+          <ScrollFades className="flex-1 pb-3">
+            <KanbanProvider onDragEnd={onDragEnd} renderOverlay={renderOverlay}>
+              {groups.map(({ column, cards, total }) => (
+                <BoardColumn
+                  key={column}
+                  board={board}
+                  inbox={inbox}
+                  name={column}
+                  cards={cards}
+                  total={total}
+                  busy={pending}
+                  inspectedId={inspected?.id}
+                  onSelect={(card) => setQuery({ card: String(card.id) })}
+                />
+              ))}
+            </KanbanProvider>
+          </ScrollFades>
+        </div>
         {inspected && (
           <div className="w-full shrink-0 xl:sticky xl:top-0 xl:w-96">
             <Dock

@@ -1,7 +1,7 @@
 /**
- * The inspector dock of the board: the card chosen, with what a person can do about it (approve, merge, send back,
- * retry), where it stands (run, waiting, checks, cost), its runs, the diff of its change, its history and the script
- * of its column, read-only. It is a sheet beside the board, so the board stays readable behind it: no border, the
+ * The inspector dock of the board: the card chosen, with the issue it came from, what a person can do about it
+ * (approve, merge, send back, retry), where it stands (run, waiting, checks, cost), its runs, the diff of its change,
+ * its history and the script of its column, read-only. It is a sheet beside the board, so the board stays readable behind it: no border, the
  * groups apart by space, and every control labelled. It is the web counterpart of the desktop board's dock plus the
  * history screen; the script's editor comes with its page.
  */
@@ -13,6 +13,7 @@ import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Board, Card, InboxItem } from "../../api/types/board";
 import { Changes } from "../../diff/Changes";
+import { Markdown } from "../../ui/chat/Markdown";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
 import { KanbanIssuePanel, KanbanIssueSection } from "../../ui/components/KanbanIssuePanel";
@@ -229,6 +230,14 @@ export function Dock({
       <p className="m-0 -mt-2 px-4 pb-6 text-sm text-secondary">
         {repository.name} · {card.column} · by {card.author}
       </p>
+
+      {/* The issue is what the card asks for, and the card is only its title: without the body a person decides
+          about a sentence they were never given. */}
+      {card.body.trim() !== "" && (
+        <KanbanIssueSection title="The issue">
+          <Markdown content={card.body} keepNewlines className="max-w-prose" />
+        </KanbanIssueSection>
+      )}
 
       {item && (
         <KanbanIssueSection title="Your turn">
