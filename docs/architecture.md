@@ -93,6 +93,13 @@ like the iced app and does not know anything the API does not say.
    command into one `ssh` that copies the files it names and runs it in the run's checkout there. Everything after that is
    as for a local run, the reader included. When the run ends `finish` first has the runner commit what the agent left and
    fetches it into the worktree (`RunningRun::bring_back`), so that the commit, the checks and the change are done here.
+   When a launcher is configured (`launches = true` on a `[[plugins]]` entry),
+   `PiBolt::launch` asks it (`Launcher::start`, `harness/launch.rs`) just before it spawns Pi: "unchanged" starts Pi as
+   above, a wrapped launch starts the launcher's program instead, with the launcher's environment and the addresses it
+   names written into the agent directory, and `Live` keeps its stop and cleanup commands (`kill_process` runs the stop
+   command, `shut_down` the cleanup). A launcher that errors or is too slow fails the run before Pi starts, and a start that fails after it answered
+   (`Unstarted`) runs its cleanup; the server
+   asks it for leftovers at its start (`Server::new`).
 6. **Pi works.** A thread per run (`Reader::read`) reads Pi's records: each is stored and published as `run_event` with
    its `seq` (`App::record_run_event`, which `check::call::ask` and `App::steer_run` use too). Pi asks the model through the router (`Router::forward`), which counts the tokens and may
    refuse with 429.
@@ -380,6 +387,7 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | `process/mod.rs` | A plugin in its own process (`Process`): its status, and a call sent as a JSON line and its reply awaited. |
 | `process/supervise.rs` | The thread that starts a plugin process, reads its manifest and replies, logs its standard error, and starts it again after a pause when it stops. |
 | `process/serve.rs` | `serve`: the plugin's side of the JSON Lines, which runs a Rust `Plugin` as its own program. |
+| `launcher.rs` | The launcher kind: the request a harness process is started with, the answer (unchanged or a wrapped launch with its stop and cleanup commands), the leftovers, and `Host::launch` and `Host::leftovers`. |
 
 ### `crates/moebius-core` (the server)
 
@@ -592,7 +600,9 @@ At the top:
 | `harness/claude/process.rs` | Starting Claude Code: its own configuration directory with the agent's skills, `mcp.json`, its command line and environment (the router and the run's token) and its process. |
 | `harness/claude/reader.rs` | Reading Claude Code's `stream-json` records as the run events a Pi-Bolt run has, and ending the run. |
 | `harness/claude/tests.rs` | For the tests only: Claude Code runs and chats against the fake `claude`, and the router's check of its calls. |
+| `harness/pibolt/launcher_tests.rs` | For the tests only: Pi through a fake launcher, compiled in and in its own process (`testdata/fake-launcher`). |
 | `harness/pibolt/remote_tests.rs` | For the tests only: runs on a runner over the fake `ssh` of `testdata/`. |
+| `harness/launch.rs` | The launcher of harness processes (`Launcher`, from the `[[plugins]]` entry with `launches = true`): asks it how to start a process, builds the wrapped command, runs its stop and cleanup commands, and removes what earlier runs left; any failure is an error that fails the run. |
 | `harness/remote/mod.rs` | The runners (`[[runners]]`): which machines there are and how many runs go on each (`Runners`, a `Slot` per run, the list `GET /v1/runners` answers). |
 | `harness/remote/session.rs` | One run on a runner over SSH (`RemoteRun`): the reverse tunnel to the router, the run's branch pushed to the machine's clone and checked out, the harness's command line turned into an `ssh` command with the files it names copied over, and the commits fetched back. |
 | `harness/pick.rs` | `Harnesses`, the server's `Runs`: Pi-Bolt and Claude Code side by side, a lookup from an agent to the harness it runs on. |

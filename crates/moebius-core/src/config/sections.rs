@@ -224,6 +224,10 @@ pub struct PluginConfig {
     /// The kinds of decision it answers.
     #[serde(default)]
     pub decides: Vec<String>,
+    /// Whether it is the launcher: it is asked how to start every harness process and may wrap it, such as in a
+    /// sandbox. At most one plugin is.
+    #[serde(default)]
+    pub launches: bool,
 }
 
 /// A machine that runs harnesses over SSH, from `[[runners]]`.
@@ -524,6 +528,11 @@ pub(super) fn plugins(
         if plugin.path.components().count() > 1 {
             plugin.path = base.join(&plugin.path);
         }
+    }
+    if let Some(second) = plugins.iter().filter(|plugin| plugin.launches).nth(1) {
+        return Err(ConfigError::LauncherTwice {
+            name: second.name.clone(),
+        });
     }
     Ok(plugins)
 }

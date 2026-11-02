@@ -222,3 +222,51 @@ mod tests {
         assert!(git(&bare, &["rev-parse", "--verify", &branch]).is_err());
     }
 }
+
+// Unix only: the launcher is a Python script started by its `#!` line.
+#[cfg(all(test, unix))]
+mod launcher_tests {
+    use crate::config::Config;
+    use crate::server::Server;
+
+    fn config(dir: &std::path::Path, program: &str, args: &str) -> Config {
+        Config::parse(
+            &format!(
+                "[[plugins]]\nname = \"box\"\npath = \"{program}\"\nargs = [{args}]\nlaunches = true\n"
+            ),
+            dir,
+            &dir.join("moebius.toml"),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn the_launcher_is_asked_for_its_leftovers_when_the_server_starts() {
+        let dir = tempfile::tempdir().unwrap();
+        let launcher =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/fake-launcher");
+        let args = format!("\"{}\"", dir.path().display());
+        std::fs::write(
+            dir.path().join("leftover.txt"),
+            "a profile of a run that died",
+        )
+        .unwrap();
+        let config = config(dir.path(), launcher.to_str().unwrap(), &args);
+        let server = Server::new(config, "127.0.0.1:1".parse().unwrap()).unwrap();
+        assert!(!dir.path().join("leftover.txt").exists());
+        assert!(server.harness.pi_bolt.launcher.is_some());
+        let requests = std::fs::read_to_string(dir.path().join("requests.jsonl")).unwrap();
+        assert!(requests.contains(r#""method": "leftovers""#), "{requests}");
+    }
+
+    #[test]
+    fn a_server_whose_launcher_cannot_answer_does_not_start() {
+        let dir = tempfile::tempdir().unwrap();
+        // `false` exits at once: the plugin never sends a manifest.
+        let config = config(dir.path(), "false", "");
+        let error = Server::new(config, "127.0.0.1:1".parse().unwrap())
+            .err()
+            .expect("the server refuses to start");
+        assert!(error.contains("launcher box"), "{error}");
+    }
+}

@@ -43,7 +43,7 @@ reads them too: they are its `moebius` skill.
 
 - [`spec.md`](spec.md): what the first version does and how it is built.
 - [`adr/`](adr/): the decisions behind its shape, one record each. Where the spec and a record disagree, the record
-  wins. [0013](adr/0013-the-web-app-is-the-front-end.md) says which front end is the one to build on.
+  wins. [0013](adr/0013-the-web-app-is-the-front-end.md) says which front end is the one to build on, and [0014](adr/0014-a-launcher-plugin-wraps-how-a-harness-starts.md) why a sandbox is a plugin of the launcher kind.
 - [`plan/`](plan/): the issues the first version was built from, milestone by milestone
   ([M0 and M1](plan/issues-m0-m1.md), [M2 to M9](plan/issues-m2-m9.md)). Later work is in the repository's GitHub
   issues.

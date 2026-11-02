@@ -37,6 +37,7 @@ static SECRETS: LazyLock<Vec<Pattern>> = LazyLock::new(|| {
         ("gitlab-token", r"glpat-[A-Za-z0-9_\-]{20,}"),
         ("aws-access-key", r"AKIA[0-9A-Z]{16}"),
         ("webhook-secret", r"whsec_[A-Za-z0-9]{20,}"),
+        ("run-token", r"moebius-run-[0-9a-f]{32,}"),
     ]
     .into_iter()
     .map(|(name, pattern)| Pattern {
@@ -246,6 +247,14 @@ mod tests {
         ] {
             assert!(!redact(&text).contains("abcdefghij"), "{text}");
         }
+    }
+
+    #[test]
+    fn a_run_token_is_redacted() {
+        let token = format!("moebius-run-{}", "0123456789abcdef".repeat(3));
+        let text = redact(&format!("the launcher failed: {token}"));
+        assert_eq!(text, "the launcher failed: [redacted:run-token]");
+        assert_eq!(redact("moebius-run-nope"), "moebius-run-nope");
     }
 
     #[test]

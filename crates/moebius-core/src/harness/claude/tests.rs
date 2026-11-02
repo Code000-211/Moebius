@@ -394,6 +394,26 @@ fn a_launch_that_fails_after_claude_code_started_kills_it() {
     );
 }
 
+// Unix only: the fake `claude` is a script; it must not even be started.
+#[cfg(unix)]
+#[test]
+fn claude_code_does_not_start_while_a_launcher_is_configured() {
+    let mut s = setup();
+    s.claude.launcher_configured = true;
+    let started = crate::board::ChatRuns::start_chat(
+        &s.claude,
+        &s.app,
+        "Coder",
+        (None, false),
+        None,
+        None,
+        "chat",
+        &ChatSettings::default(),
+    );
+    assert!(started.is_err_and(|e| e.to_string().contains("launcher")));
+    assert!(lock(&s.claude.live).is_empty());
+}
+
 #[test]
 fn a_chat_given_another_model_before_its_first_message_starts_a_session_instead_of_resuming_one() {
     let s = setup();

@@ -4,8 +4,10 @@
 //! A plugin answers [`Call`]s. Every message is serialisable, so that the same calls travel as JSON Lines to a plugin
 //! in its own process ([`Envelope`], and `process` which starts and looks after such a plugin). The core never calls a
 //! plugin directly: it goes through the [`Host`], which gives every call a time limit and turns a timeout, a panic, a
-//! crash or an error into a [`Refusal`] (fail closed).
+//! crash or an error into a [`Refusal`] (fail closed). Besides deciders there are launchers, which may wrap how a
+//! harness process is started (`launcher`).
 
+mod launcher;
 mod process;
 
 use std::collections::BTreeMap;
@@ -16,6 +18,10 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub use launcher::{
+    CommandLine, LAUNCH, LEFTOVERS, LaunchAnswer, LaunchRequest, LaunchRun, Leftovers,
+    LeftoversRequest, Urls, UrlsInside, Wrapped,
+};
 pub use process::{Process, ProcessSpec, ProcessStatus, State, serve};
 
 /// What a plugin can be. One plugin may be several kinds at once.
@@ -34,6 +40,8 @@ pub enum Kind {
     Router,
     /// Describes a screen of the desktop app as data.
     View,
+    /// Wraps how a harness process is started, such as inside a sandbox (see the `launcher` module).
+    Launcher,
 }
 
 /// Who a plugin is and what it can do.
@@ -293,7 +301,7 @@ mod tests {
     use super::*;
 
     /// A decider that behaves as its name says.
-    struct Test(&'static str);
+    pub(crate) struct Test(pub(crate) &'static str);
 
     impl Plugin for Test {
         fn manifest(&self) -> Manifest {

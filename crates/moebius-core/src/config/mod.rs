@@ -114,6 +114,8 @@ pub enum ConfigError {
     PluginPath { name: String },
     #[error("plugins.decides: {kind:?} is decided by two plugins")]
     PluginDecidesTwice { kind: String },
+    #[error("plugins.launches: {name:?} is a second launcher; only one plugin can be")]
+    LauncherTwice { name: String },
     #[error("runners.name: {name:?} is not a name (letters, digits, - and _)")]
     RunnerName { name: String },
     #[error("runners: two runners are named {name:?}")]
@@ -858,6 +860,9 @@ mod tests {
         assert_eq!(c.plugins[0].decides, ["start_card"]);
         assert_eq!(c.plugins[1].path, PathBuf::from("notes-plugin"));
         assert!(c.plugins[1].decides.is_empty());
+        assert!(!c.plugins[0].launches && !c.plugins[1].launches);
+        let c = parse("[[plugins]]\nname = \"box\"\npath = \"p\"\nlaunches = true\n").unwrap();
+        assert!(c.plugins[0].launches);
         let plugin = |name: &str, decides: &str| {
             format!("[[plugins]]\nname = \"{name}\"\npath = \"p\"\ndecides = [{decides}]\n")
         };
@@ -872,6 +877,12 @@ mod tests {
             (
                 "[[plugins]]\nname = \"a\"\npath = \"\"\n".to_string(),
                 "must not be empty",
+            ),
+            (
+                plugin("a", "")
+                    + &plugin("b", "")
+                    + "launches = true\n[[plugins]]\nname = \"c\"\npath = \"p\"\nlaunches = true\n",
+                "second launcher",
             ),
         ] {
             let error = parse(&text).unwrap_err().to_string();

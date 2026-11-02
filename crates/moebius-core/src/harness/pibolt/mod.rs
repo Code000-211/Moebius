@@ -31,6 +31,9 @@
 //! harness and live in `run`.
 
 mod chat;
+// Unix only: the fake Pi and the fake launcher are Python scripts started by their `#!` lines.
+#[cfg(all(test, unix))]
+mod launcher_tests;
 mod process;
 mod reader;
 // Unix only: the fake `ssh` and the fake Pi are Python scripts started by their `#!` lines.
@@ -52,6 +55,7 @@ use serde_json::{Value, json};
 use crate::app::{App, ChatSettings};
 use crate::board::{AgentInfo, CardRuns, ChatRuns, ImproveRuns, StartError, Variant};
 use crate::config::{AgentConfig, AgentSet};
+use crate::harness::launch::{Launched, Launcher};
 use crate::harness::remote::Runners;
 use crate::router::Router;
 use crate::store::{Card, Repository, Run};
@@ -98,6 +102,9 @@ pub struct PiBolt {
     pub agents: Arc<RwLock<AgentSet>>,
     /// The machines an agent's `runner` can name; none unless the server sets them.
     pub runners: Arc<Runners>,
+    /// The launcher plugin that may wrap how Pi starts, such as in a sandbox; none unless `[[plugins]]` names one.
+    /// With one, no Pi starts without asking it, and one that cannot be asked does not start.
+    pub launcher: Option<Arc<Launcher>>,
     live: Arc<Mutex<HashMap<i64, Live>>>,
     /// The chats whose terminal interface is open, or that waited [`IDLE`], which have no Pi of their own meanwhile.
     /// Taken before `live` by whoever takes both, and held while a chat moves between the two.
@@ -109,6 +116,8 @@ pub struct PiBolt {
 struct Live {
     stdin: Arc<Mutex<Option<ChildStdin>>>,
     child: Arc<Mutex<Child>>,
+    /// What ends the wrapped process tree and cleans up after it, when the launcher wrapped this Pi.
+    launched: Option<Arc<Launched>>,
     chat: bool,
     /// Why a chat's Pi was asked to exit, so that its exit is no failure.
     closing: Arc<Mutex<Option<Closing>>>,
@@ -164,6 +173,7 @@ impl PiBolt {
                 skill_overrides: BTreeMap::new(),
             })),
             runners: Arc::new(Runners::default()),
+            launcher: None,
             live: Arc::new(Mutex::new(HashMap::new())),
             paused: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -173,13 +183,19 @@ impl PiBolt {
     /// start, so that the board starts them again.
     pub fn kill_all(&self) {
         let all: Vec<Live> = lock(&self.live).values().cloned().collect();
-        for live in all {
-            kill_process(&live);
-            // Nothing runs `Drop` across the restart: close the tunnel and clear the runner's directory now.
-            if let Some(remote) = &live.run.remote {
-                remote.cleanup();
+        // Each wrapped run has its own stop and cleanup commands, which may take a while: they run side by side.
+        std::thread::scope(|scope| {
+            for live in &all {
+                scope.spawn(move || {
+                    kill_process(live);
+                    finish_launch(live);
+                    // Nothing runs `Drop` across the restart: close the tunnel and clear the runner's directory now.
+                    if let Some(remote) = &live.run.remote {
+                        remote.cleanup();
+                    }
+                });
             }
-        }
+        });
     }
 
     /// The agents as they are now.
@@ -403,10 +419,22 @@ fn shut_down(live: &Live) {
     // Also after a clean exit: what the agent started (a dev server, a watcher) must not outlive its run.
     kill_process(live);
     let _ = lock(&live.child).wait();
+    finish_launch(live);
 }
 
-/// Kills Pi and everything it started (see `platform::own_group`).
+/// Runs the cleanup of a Pi the launcher wrapped, once, after the Pi has ended.
+fn finish_launch(live: &Live) {
+    if let Some(launched) = &live.launched {
+        launched.finish();
+    }
+}
+
+/// Kills Pi and everything it started (see `platform::own_group`); a wrapped Pi is ended by the launcher's stop
+/// command first, which reaches the processes the wrapper's group does not.
 fn kill_process(live: &Live) {
+    if let Some(launched) = &live.launched {
+        launched.stop();
+    }
     let mut child = lock(&live.child);
     crate::platform::kill_tree(child.id());
     let _ = child.kill();

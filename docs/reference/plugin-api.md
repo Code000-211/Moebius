@@ -7,6 +7,10 @@ messages a plugin in its own process speaks. The code is in `crates/moebius-plug
 [`crates/moebius-plugin-api/examples/allow_reads.rs`](../../crates/moebius-plugin-api/examples/allow_reads.rs), and the
 same decider in its own process in
 [`crates/moebius-plugin-api/examples/allow_reads_process.rs`](../../crates/moebius-plugin-api/examples/allow_reads_process.rs).
+A launcher, the other kind the core uses, is in
+[`wrap_launcher.rs`](../../crates/moebius-plugin-api/examples/wrap_launcher.rs) and, in its own process, in
+[`wrap_launcher_process.rs`](../../crates/moebius-plugin-api/examples/wrap_launcher_process.rs); see
+[Launchers](#launchers).
 
 A plugin is either compiled into the `moebius` binary, or a program of its own, in any language, that `moebius.toml`
 names under [`[[plugins]]`](configuration.md#plugins) and that speaks [JSON Lines](#plugins-in-their-own-process) on
@@ -46,8 +50,9 @@ Serialised in lower case with underscores, as in `"decider"`.
 | `decider` | Answers decision points. | Yes: `guard` decides `tool_call`, and `lens` decides `lint_report` and `deep_check` (see [the lens decisions](decision-model.md#the-lens-decisions)). |
 | `router` | The model provider the harnesses use. | No. `router/` is part of the core. |
 | `view` | Describes a screen of the desktop app as data. | No. |
+| `launcher` | Wraps how a harness process is started, such as in a sandbox. | Yes: Pi-Bolt asks the configured launcher before it starts Pi (see [Launchers](#launchers)). |
 
-Only the `decider` kind has methods defined today.
+Only the `decider` and `launcher` kinds have methods defined today.
 
 ### `Call`
 
@@ -56,7 +61,7 @@ One call into a plugin.
 | Field | Type | Meaning |
 |---|---|---|
 | `kind` | `Kind` | Which kind of plugin the call is for. |
-| `method` | string | The method of that kind. The only method defined is `decide` of `decider`. |
+| `method` | string | The method of that kind. The methods defined are `decide` of `decider` and `launch` and `leftovers` of `launcher`. |
 | `params` | JSON value | The method's parameters. Missing means `null`. |
 
 `Call::new(kind, method, params)` builds one from any serialisable `params`.
@@ -153,7 +158,8 @@ In `Server::new` (`crates/moebius-core/src/server/mod.rs`), the host is built, t
 ```rust
 let mut host = Host::new(PLUGIN_TIME_LIMIT);
 host.add(Guard::new(teacher));
-let mut app = App::new(store.clone(), Arc::new(host), &config.data_dir);
+let host = Arc::new(host);
+let mut app = App::new(store.clone(), host.clone(), &config.data_dir);
 app.decisions.route("tool_call", guard::NAME);
 ```
 
@@ -190,6 +196,133 @@ The kind `localize` is asked once at the start of every `code` run of a card, wi
 whose text best matches the issue, one path per line). The `choice` is a JSON list of at most `files` objects
 `{"path": string, "reason": string}`, best first, each path of a file of the repository once; see
 [the decision model](decision-model.md#localize).
+
+## Launchers
+
+A launcher is a plugin of the kind `launcher` that may wrap how a harness process is started, such as inside a sandbox.
+At most one plugin is the launcher: the `[[plugins]]` entry with [`launches = true`](configuration.md#plugins). A launcher
+is a `Plugin` like any other (the example `wrap_launcher.rs` is one compiled into a host); the server wires one only from
+`[[plugins]]`. **Without a launcher the
+harness starts exactly as before; the launcher code is not entered.** The reasons and the first launcher, a sandbox, are
+in [ADR 0014](../adr/0014-a-launcher-plugin-wraps-how-a-harness-starts.md).
+
+The types are in `crates/moebius-plugin-api/src/launcher.rs`; `host.launch(plugin, &request)` and
+`host.leftovers(plugin, &request)` make the two calls. The manifest of a launcher lists `"launcher"` in `kinds`.
+
+### The method `launch`
+
+The core calls it just before it starts a harness process for a run (today Pi-Bolt: a card run, a chat's Pi, each time
+a chat's Pi is started again). The parameters are a `LaunchRequest`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `run` | object | `id` (integer), `purpose` (`code`, `review`, `chat`, `retro`, `trial`, `research` and the like), `agent` (the agent's name), `chat` (boolean: the process stays up between messages) and `card` (the card's id or `null`). |
+| `program` | string | The harness's executable as the core would start it. |
+| `args` | array of strings | Its arguments. |
+| `env` | map of string to string | Its complete environment, the run token (`MOEBIUS_RUN_TOKEN`) included: not the server's, but the few variables every program needs and those Moebius sets. With a launcher, `TMPDIR`, `TEMP` and `TMP` name a directory of the run (`<data_dir>/runs/<id>/tmp`) instead of the shared one. |
+| `dir` | string | The working directory: the run's worktree, or an empty directory for a chat without a repository. |
+| `read_only` | array of strings | Paths the process needs to read: its agent directory (`models.json`, `mcp.json`), the lens and bridge extensions, and the agent's own extensions and skills. They may be files or directories. |
+| `read_write` | array of strings | Paths it needs to read and write: the worktree, its sessions directory, and the run's temporary directory. |
+| `urls` | object | `router`, `gateway` and `check`: the addresses the process must reach as the server reaches them, such as `http://127.0.0.1:7172`, `http://127.0.0.1:7172/mcp` and `http://127.0.0.1:7172` (the tool-call check the bridge asks, `MOEBIUS_CHECK_URL`). |
+| `clone` | string or `null` | The clone of the repository the worktree belongs to, whose git directory the worktree's git uses; `null` without a repository. |
+| `runner` | string or `null` | The name of the `[[runners]]` machine when the run goes there over SSH, else `null`. |
+
+The paths and URLs name what exists when the process starts. The agent directory is written before the call and written
+again if the answer names other addresses.
+
+The result is a `LaunchAnswer`, told apart by `answer`:
+
+```json
+{"answer": "unchanged"}
+```
+
+```json
+{
+  "answer": "wrapped",
+  "program": "box-run",
+  "args": ["--profile", "/tmp/run-7.profile", "--", "pi-bolt", "--mode", "rpc"],
+  "env": {"PATH": "/usr/bin", "MOEBIUS_RUN_TOKEN": "moebius-run-x"},
+  "urls": {"router": "http://10.0.0.1:7172", "gateway": "http://10.0.0.1:7172/mcp", "check": "http://10.0.0.1:7172"},
+  "stop": {"program": "box-run", "args": ["stop", "--run", "7"]},
+  "cleanup": {"program": "box-run", "args": ["cleanup", "--run", "7"]},
+  "remove": ["/tmp/run-7.profile"]
+}
+```
+
+| Field of `wrapped` | Type | Meaning |
+|---|---|---|
+| `program`, `args` | string, array | What the core starts instead of the harness, in the same working directory, in its own process group, with standard input and output piped: the core speaks the harness's protocol (Pi's RPC) over them as it does without a launcher, so the wrapper must pass them through to the harness. Standard error goes to the run's log. `program` must not be empty; `args` defaults to empty. |
+| `env` | map | The wrapped program's complete environment. Nothing of the server's is added. Default empty. |
+| `urls` | object | The addresses as the harness sees them from inside, where they differ from the request's: `router` goes into `models.json` (the provider's `baseUrl`, with `/v1` for the OpenAI protocol), `gateway` into `mcp.json`, `check` into `MOEBIUS_CHECK_URL`. A missing one stays; a `router` without a `gateway` puts the gateway at `<router>/mcp`. Default none. The launcher puts every other variable it wants in `env`. |
+| `stop` | command or `null` | A command that ends the whole wrapped process tree. |
+| `cleanup` | command or `null` | A command to run once when the wrapped process has ended. |
+| `remove` | array of strings | Files and directories the launcher created, which the core removes after `cleanup`. |
+| `note` | string or `null` | Something to say about the launch, recorded as a `launcher_note` event of the run (secrets redacted). Default none. |
+
+A command is `{"program": string, "args": [string], "env": {string: string}}` (`args` and `env` default to empty). The
+core runs it in its own process group with standard streams closed, an environment cleared but for `PATH`, `HOME` and the
+few variables every program needs plus `env`, and kills it after 30 seconds. A command that fails or is killed is noted
+as a line in the run's `stderr.log` (`moebius: the launcher's stop command failed: ...`); it does not fail the run, since
+the run has ended or is being ended.
+
+What the core does with a wrapped launch:
+
+| When | What |
+|---|---|
+| The run starts | It starts the wrapped program. |
+| The process is ended: the run is stopped, killed (after a stop that is not obeyed), a chat's process is ended or restarted, the server restarts, or the process exits on its own | It runs `stop`, then kills the wrapper's own process group as it does without a launcher. This happens every time a process is ended, after a normal end too, and may happen more than once for one process (a stopped run runs it from the stop and again when its reader finishes), so `stop` must be idempotent and succeed when nothing is left. |
+| The process has ended, for whatever reason, including a start that failed after the launcher answered (the answer was unusable, the core could not write the agent directory or the process could not be spawned) | It runs `cleanup` and removes `remove`, once. |
+
+A chat's Pi that is ended while the chat waits and started again for the next message is a new launch each time, with
+its own stop and cleanup. Those, and the launch itself, run while the core holds the chats' lock, so a slow launcher
+delays the other chats' messages meanwhile; when the server restarts the stop and cleanup of the runs go side by side.
+
+### The method `leftovers`
+
+The core calls it when the server starts, after it has failed the runs the last server left going, and removes what the
+launcher names, so that a profile or a container of a run that died with the server does not stay. The parameters are a
+`LeftoversRequest`: `running`, the ids of the runs that exist (empty at the server's start). The result is `Leftovers`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `cleanup` | array of commands | Commands to run, such as one that deletes a sandbox. Default empty. |
+| `remove` | array of strings | Files and directories to remove, after the commands. Default empty. |
+
+A command of `cleanup` that fails is collected; the server then does not start and says which.
+
+### Failing closed
+
+A launcher is asked for every launch, and what it cannot do is never a reason to start the harness bare:
+
+| What happens | The core |
+|---|---|
+| The launcher does not answer within the host's time limit (30 seconds) | Fails the run (`TimedOut`). |
+| It returns an error, panics, is not running, is not a launcher (`WrongKind`), is unknown, or its reply is not a `LaunchAnswer` (`BadReply`), or a wrapped one without a `program` | Fails the run before the harness starts, with `the launcher <name> did not start the run: <why>` (secrets, run tokens included, redacted). |
+| It wraps a run whose `runner` is set | Fails the run: a launcher on the server cannot wrap a harness on another machine. It answers `unchanged` for those, with a `note` saying so. In both cases a `cleanup` and `remove` it gave are run. |
+| It cannot name its leftovers at the server's start | The server does not start. |
+
+For a run on a card, a failed start is a failed run like a harness that cannot be started, so the board's usual handling
+applies. The one process outside this: Pi-Bolt's terminal interface for a chat (`GET /v1/chats/{id}/tui`) is a process
+the person's terminal owns, so while a launcher is configured it is refused with an error saying so. Claude Code is not
+asked yet, so while a launcher is configured a Claude Code run fails to start with an error saying so, instead of
+starting outside the launcher.
+
+### A launcher in its own process
+
+A launcher in its own process is a `[[plugins]]` entry with `launches = true`, speaking the
+[wire format](#the-wire-format) below with the kind `launcher`:
+
+```json
+< {"type":"manifest","manifest":{"name":"box-run","version":"0.1.0","kinds":["launcher"]}}
+> {"type":"call","id":1,"call":{"kind":"launcher","method":"launch","params":{"run":{"id":7,"purpose":"code","agent":"Coder","chat":false,"card":3},"program":"pi-bolt","args":["--mode","rpc"],"env":{"PATH":"/usr/bin"},"dir":"/data/worktrees/run-7","read_only":["/data/runs/7/agent"],"read_write":["/data/worktrees/run-7"],"urls":{"router":"http://127.0.0.1:7172","gateway":"http://127.0.0.1:7172/mcp","check":"http://127.0.0.1:7172"},"clone":"/data/repos/demo","runner":null}}}
+< {"type":"reply","id":1,"result":{"answer":"unchanged"}}
+> {"type":"call","id":2,"call":{"kind":"launcher","method":"leftovers","params":{"running":[]}}}
+< {"type":"reply","id":2,"result":{"cleanup":[],"remove":["/tmp/run-3.profile"]}}
+```
+
+Because the core runs the stop and cleanup commands itself, the launcher process need not be running to end a run that
+was started through it. `crates/moebius-plugin-api/examples/wrap_launcher_process.rs` is one in Rust; `serve` runs any
+`Plugin` as such a program. A launcher sees the run's token and environment, so it is trusted as much as the server.
 
 ## Plugins in their own process
 

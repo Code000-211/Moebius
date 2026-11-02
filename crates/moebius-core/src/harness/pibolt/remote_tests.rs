@@ -35,7 +35,7 @@ fn runner(dir: &Path) -> (RunnerConfig, PathBuf, PathBuf) {
 }
 
 /// A server whose Coder goes to the runner `box`.
-fn with_runner() -> (tempfile::TempDir, Arc<App>, PiBolt, i64, PathBuf, PathBuf) {
+pub(super) fn with_runner() -> (tempfile::TempDir, Arc<App>, PiBolt, i64, PathBuf, PathBuf) {
     let (dir, app, mut pi, repo) = setup();
     let (config, remote, key) = runner(dir.path());
     pi.runners = Arc::new(Runners::new(vec![config]));

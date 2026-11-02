@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+# A launcher plugin in its own process for tests (see docs/reference/plugin-api.md). Started with a directory as its
+# argument, it wraps every launch in `sh` that appends "wrapped" to MARKER (the file `marker.txt` in the directory)
+# before it starts the harness, tells the core the stop command appends "stopped" and the cleanup command "cleaned",
+# and that the file `created.txt` in the directory is to be removed; it sees the router and the gateway at another
+# port. It answers a launch on a runner unchanged, and, for leftovers, names the file `leftover.txt` of the directory.
+# Every request it gets is appended to requests.jsonl in the directory.
+import json
+import os
+import sys
+
+directory = sys.argv[1]
+marker = os.path.join(directory, "marker.txt")
+
+
+def send(message):
+    sys.stdout.write(json.dumps(message) + "\n")
+    sys.stdout.flush()
+
+
+def append(text):
+    return ["sh", "-c", 'echo "$0" >> "$1"', text, marker]
+
+
+send({"type": "manifest", "manifest": {"name": "box", "version": "0", "kinds": ["launcher"]}})
+for line in sys.stdin:
+    message = json.loads(line)
+    if message.get("type") != "call":
+        continue
+    call = message["call"]
+    params = call["params"]
+    with open(os.path.join(directory, "requests.jsonl"), "a") as f:
+        f.write(json.dumps({"method": call["method"], "params": params}) + "\n")
+    if call["method"] == "leftovers":
+        result = {"cleanup": [], "remove": [os.path.join(directory, "leftover.txt")]}
+    elif params.get("runner"):
+        result = {"answer": "unchanged"}
+    else:
+        with open(os.path.join(directory, "created.txt"), "w") as f:
+            f.write("profile\n")
+        stop = append("stopped")
+        cleanup = append("cleaned")
+        result = {
+            "answer": "wrapped",
+            "program": "sh",
+            "args": ["-c", 'echo wrapped >> "$1"; shift; exec "$@"', "sh", marker, params["program"]] + params["args"],
+            "env": params["env"],
+            "urls": {"router": "http://127.0.0.1:55", "check": "http://127.0.0.1:56"},
+            "stop": {"program": stop[0], "args": stop[1:]},
+            "cleanup": {"program": cleanup[0], "args": cleanup[1:]},
+            "remove": [os.path.join(directory, "created.txt")],
+        }
+    send({"type": "reply", "id": message["id"], "result": result})

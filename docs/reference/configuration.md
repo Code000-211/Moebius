@@ -286,6 +286,7 @@ and `GET /v1/plugins` show its state. There are none by default.
 | `plugins.path` | path | required | The program. Empty refuses the file. See [Paths](#paths). |
 | `plugins.args` | array of strings | `[]` | The program's arguments. |
 | `plugins.decides` | array of strings | `[]` | The kinds of decision the plugin answers, such as `start_card`. A kind named by two entries refuses the file. A kind has one decider, so naming `tool_call` replaces the guard, with the built-in rules and the teacher. |
+| `plugins.launches` | boolean | `false` | Whether the plugin is the launcher: it is asked before every Pi-Bolt process starts and may wrap it, such as in a sandbox (see [launchers](plugin-api.md#launchers)). Its manifest must list the kind `launcher`. A launcher that fails or is too slow fails the run, and while one is configured Pi-Bolt's terminal interface and Claude Code runs are not available. At most one plugin has it, else the file is refused. |
 
 ## `[[runners]]`
 

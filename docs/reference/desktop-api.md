@@ -1859,6 +1859,8 @@ A `run_event`'s source is told by its inner `kind`:
   many the agent was told about; `file` and `tool_call_id` are null for `deep`. See [the lens](bridge-protocol.md#the-lens).
 - `mcp_error`: an MCP server of the run's agent could not be started or reached, `{"server", "message"}`; its tools are
   left out.
+- `launcher_note`: what the launcher plugin said about starting the run's process, `{"note"}` (see
+  [launchers](plugin-api.md#launchers)), such as that the run is on a runner and is not wrapped.
 - Every other kind is a record Pi-Bolt wrote on its RPC channel, with its `type` as the kind (for example
   `agent_settled`, `tool_execution_end`, `response`) and the whole record as `data`. A line that is not JSON is passed on
   as kind `unparsed` with `{"type": "unparsed", "error", "text"}`. A run on Claude Code (`harness` is `claude-code`)
@@ -1877,7 +1879,7 @@ message with `"stopReason": "error"` and an `"errorMessage"`, in the `message` o
 Moebius ends in failure has a `moebius_error` event instead.
 
 `seq` is the number the event is stored under, the same as in `GET /v1/runs/{id}/events`. Events of a run are published in
-the order of their `seq`. Every event of a run is published and stored: Pi's records, `tool_check`, `mcp_call` and `mcp_error` events, `steered` events
+the order of their `seq`. Every event of a run is published and stored: Pi's records, `tool_check`, `mcp_call`, `mcp_error` and `launcher_note` events, `steered` events
 (`{"message"}`, a person's steer, with secrets removed), `said` events (`{"message"}`, a person's message to a chat, the first
 one included, with secrets removed; stored before the agent's records of its answer) `shell_opened` events (`{"who"}`, a person opened a shell in the worktree; see `GET /v1/runs/{id}/terminal`), `tui_opened` events (`{"who"}`, a person opened Pi-Bolt's terminal interface in a chat; see `GET /v1/chats/{id}/tui`), `settings_changed` events (`{"model", "protocol", "thinking"}`, what a chat runs with in place of its agent's; see `POST /v1/chats/{id}/settings`) and `moebius_error` events (`{"message"}`) that explain why a
 run failed. The one exception is a run that was still going when the server stopped: it is failed at the next start with

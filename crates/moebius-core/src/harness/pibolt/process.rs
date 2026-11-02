@@ -16,11 +16,13 @@ use super::{BRIDGE, LENS, Live, MOEBIUS_AGENT, PiBolt, kill_process, lock, run_d
 use crate::app::App;
 use crate::bus::Event;
 use crate::config::AgentConfig;
+use crate::harness::launch::{Ask, Launched, Launcher, Unstarted, Wrapping};
 use crate::harness::mcp;
 use crate::harness::remote::Local;
 use crate::harness::run::RunningRun;
 use crate::router::Protocol;
 use crate::store::Card;
+use moebius_plugin_api::{LaunchRun, Urls, UrlsInside};
 
 /// Where a Pi starts and what it is given: the worktree it works in, its agent directory and sessions, whether it
 /// continues the latest session there, the lens and bridge extensions, the token of the router and whether it operates Moebius
@@ -34,6 +36,16 @@ pub(super) struct Place<'a> {
     pub(super) bridge: &'a Path,
     pub(super) token: &'a str,
     pub(super) operates: bool,
+}
+
+/// Where a run's Pi is started from, for the launcher: the agent's name, its card, its definition, the run's directory
+/// and the file Pi's standard error goes to.
+struct Spot<'a> {
+    stored: &'a str,
+    card: Option<&'a Card>,
+    agent: &'a AgentConfig,
+    run_dir: &'a Path,
+    log: &'a Path,
 }
 
 impl PiBolt {
@@ -110,24 +122,25 @@ impl PiBolt {
         agent: &AgentConfig,
         token: &str,
     ) -> Result<PathBuf, String> {
-        self.write_agent_files(agent_dir, agent, token, &self.router_url)
+        let gateway = format!("{}/mcp", self.router_url);
+        self.write_agent_files(agent_dir, agent, token, (&self.router_url, &gateway))
     }
 
-    /// Writes the agent directory as `write_agent_dir` does, with the router at `router_url`, which is the tunnel's end
-    /// for a run on a runner.
+    /// Writes the agent directory as `write_agent_dir` does, with the router and the MCP gateway at `(router_url,
+    /// gateway_url)`, which are the tunnel's end for a run on a runner and the launcher's addresses for a wrapped one.
     fn write_agent_files(
         &self,
         agent_dir: PathBuf,
         agent: &AgentConfig,
         token: &str,
-        router_url: &str,
+        (router_url, gateway_url): (&str, &str),
     ) -> Result<PathBuf, String> {
         std::fs::create_dir_all(&agent_dir).map_err(|e| e.to_string())?;
         if !agent.mcp.is_empty() {
             // The run reaches its servers only through the MCP gateway, which is given their values.
             let servers = mcp::with_values(&agent.mcp, &|name| std::env::var(name).ok())?;
             self.router.allow_mcp(token, servers);
-            let gateway = mcp::pi_config(&format!("{router_url}/mcp"), token);
+            let gateway = mcp::pi_config(gateway_url, token);
             write_private(&agent_dir.join("mcp.json"), &gateway)?;
         }
         let (api, base_url) = match agent.protocol {
@@ -175,24 +188,28 @@ impl PiBolt {
             .as_ref()
             .and_then(|remote| remote.router_url())
             .unwrap_or(&self.router_url);
+        let gateway_url = format!("{router_url}/mcp");
         let agent_dir = self
-            .write_agent_files(run_dir.join("agent"), agent, &run.token, router_url)
+            .write_agent_files(
+                run_dir.join("agent"),
+                agent,
+                &run.token,
+                (router_url, &gateway_url),
+            )
             .map_err(|e| format!("cannot write the agent directory: {e}"))?;
         let bridge = run_dir.join("moebius-bridge.ts");
         std::fs::write(&bridge, BRIDGE)
             .map_err(|e| format!("cannot write the bridge extension: {e}"))?;
         let lens = run_dir.join("moebius-lens.ts");
         std::fs::write(&lens, LENS).map_err(|e| format!("cannot write the lens extension: {e}"))?;
+        let log = run_dir.join("stderr.log");
         let stderr = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .open(run_dir.join("stderr.log"))
+            .open(&log)
             .map_err(|e| e.to_string())?;
-        let operates = app
-            .store
-            .run(run.id)
-            .map_err(|e| e.to_string())?
-            .is_some_and(|stored| stored.agent == MOEBIUS_AGENT);
+        let stored = app.store.run(run.id).map_err(|e| e.to_string())?;
+        let operates = stored.as_ref().is_some_and(|s| s.agent == MOEBIUS_AGENT);
         let sessions = run_dir.join("sessions");
         let place = Place {
             worktree: &run.worktree,
@@ -205,6 +222,41 @@ impl PiBolt {
             operates,
         };
         let mut command = self.command(agent, &place, false);
+        let mut launched = None;
+        if let Some(launcher) = &self.launcher {
+            let stored = stored.as_ref().ok_or("the run is gone")?;
+            let spot = Spot {
+                stored: &stored.agent,
+                card,
+                agent,
+                run_dir: &run_dir,
+                log: &log,
+            };
+            launched = self.through_launcher(app, launcher, &run, &place, spot, &mut command)?;
+            if let Some((urls, _)) = &launched {
+                if urls.router.is_some() || urls.gateway.is_some() {
+                    let inside_router = urls.router.as_deref().unwrap_or(router_url);
+                    let inside_gateway =
+                        urls.gateway.clone().unwrap_or_else(|| match &urls.router {
+                            Some(router) => format!("{router}/mcp"),
+                            None => gateway_url.clone(),
+                        });
+                    self.write_agent_files(
+                        agent_dir.clone(),
+                        agent,
+                        &run.token,
+                        (inside_router, &inside_gateway),
+                    )
+                    .map_err(|e| format!("cannot write the agent directory: {e}"))?;
+                }
+                if let Some(check) = &urls.check {
+                    command.env("MOEBIUS_CHECK_URL", check);
+                }
+            }
+        }
+        let launched = launched.map(|(_, launched)| launched);
+        // Whatever fails before Pi has started cleans up after the launcher.
+        let unstarted = Unstarted::new(launched.as_ref());
         if let Some(remote) = &remote {
             let local = Local {
                 worktree: &run.worktree,
@@ -213,14 +265,20 @@ impl PiBolt {
             };
             command = remote.command(&command, &local)?;
         }
+        let program = match &launched {
+            Some(_) => command.get_program().to_string_lossy().into_owned(),
+            None => self.program.display().to_string(),
+        };
         let mut child = crate::platform::own_group(&mut command)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::from(stderr))
             .spawn()
-            .map_err(|e| format!("cannot start {}: {e}", self.program.display()))?;
+            .map_err(|e| format!("cannot start {program}: {e}"))?;
+        unstarted.started();
         let stdout = child.stdout.take().expect("stdout is piped");
         let live = Live {
+            launched,
             stdin: Arc::new(Mutex::new(child.stdin.take())),
             child: Arc::new(Mutex::new(child)),
             chat: run.purpose == "chat",
@@ -237,8 +295,76 @@ impl PiBolt {
             lock(&live.stdin).take();
             kill_process(&live);
             let _ = lock(&live.child).wait();
+            super::finish_launch(&live);
         }
         begun
+    }
+
+    /// Asks the launcher how to start Pi for `run`, which `command` starts as it is. When the launcher wraps it,
+    /// `command` becomes the wrapped one, and the addresses Pi sees and what ends it are returned. An `Err` fails the
+    /// run: with a launcher configured, Pi is never started without its answer.
+    fn through_launcher(
+        &self,
+        app: &App,
+        launcher: &Launcher,
+        run: &RunningRun,
+        place: &Place,
+        spot: Spot,
+        command: &mut Command,
+    ) -> Result<Option<(UrlsInside, Arc<Launched>)>, String> {
+        let remote = run.remote.as_ref().map(|remote| remote.runner());
+        let mut read_only = vec![
+            place.agent_dir.to_path_buf(),
+            place.lens.to_path_buf(),
+            place.bridge.to_path_buf(),
+        ];
+        read_only.extend(spot.agent.extensions.iter().cloned());
+        read_only.extend(spot.agent.skills.iter().cloned());
+        let mut read_write = vec![place.worktree.to_path_buf(), place.sessions.to_path_buf()];
+        if remote.is_none() {
+            // Pi's temporary files go to a directory of the run, which only it can write, not to the shared one.
+            let tmp = spot.run_dir.join("tmp");
+            std::fs::create_dir_all(&tmp)
+                .map_err(|e| format!("cannot make the temporary directory of the run: {e}"))?;
+            for name in ["TMPDIR", "TEMP", "TMP"] {
+                command.env(name, &tmp);
+            }
+            read_write.push(tmp);
+        }
+        let ask = Ask {
+            run: LaunchRun {
+                id: run.id,
+                purpose: run.purpose.clone(),
+                agent: spot.stored.to_string(),
+                chat: run.purpose == "chat",
+                card: spot.card.map(|card| card.id),
+            },
+            dir: place.worktree,
+            read_only,
+            read_write,
+            urls: Urls {
+                router: self.router_url.clone(),
+                gateway: format!("{}/mcp", self.router_url),
+                check: self.router_url.clone(),
+            },
+            clone: run.clone.as_deref(),
+            runner: remote,
+            log: spot.log,
+        };
+        let (note, wrapping) = launcher.start(ask, command)?;
+        if let Some(note) = note {
+            let _ = app.record_run_event(run.id, "launcher_note", &json!({ "note": note }));
+        }
+        Ok(wrapping.map(
+            |Wrapping {
+                 command: wrapped,
+                 launched,
+                 urls,
+             }| {
+                *command = wrapped;
+                (urls, launched)
+            },
+        ))
     }
 
     /// Marks the run as started, gives Pi its prompt and starts the thread that reads it.

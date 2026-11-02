@@ -38,6 +38,7 @@ use crate::decide::guard::{self, Guard, Teacher};
 use crate::decide::localize::{self, Localizer};
 use crate::decide::model::{self, DecisionModel, Routed};
 use crate::harness::gateway::Gateway;
+use crate::harness::launch::Launcher;
 use crate::harness::lens;
 use crate::harness::pibolt::PiBolt;
 use crate::harness::pick::Harnesses;
@@ -173,7 +174,8 @@ impl Server {
         host.add(Localizer::new(store.clone()));
         host.add(guard);
         host.add(lens::Lens);
-        let mut app = App::new(store.clone(), Arc::new(host), &config.data_dir);
+        let host = Arc::new(host);
+        let mut app = App::new(store.clone(), host.clone(), &config.data_dir);
         app.decisions.share_routed(routed);
         app.checks_timeout = config.checks_timeout;
         app.decisions.route("tool_call", guard::NAME);
@@ -187,6 +189,11 @@ impl Server {
                 app.decisions.route(kind, &plugin.name);
             }
         }
+        let launcher = config
+            .plugins
+            .iter()
+            .find(|plugin| plugin.launches)
+            .map(|plugin| Arc::new(Launcher::new(host.clone(), plugin.name.clone())));
         let github = match &config.github {
             Some(g) => {
                 let github = Arc::new(github_client(g)?);
@@ -234,6 +241,10 @@ impl Server {
         router.set_checker(check::Checker::new(app.clone(), config.rules_path()));
         let runners = Arc::new(Runners::new(config.runners.clone()));
         leftovers::end_runs_of_a_previous_server(&app, &runners)?;
+        if let Some(launcher) = &launcher {
+            // The runs of the last start are ended: nothing exists that the launcher must keep.
+            launcher.clean_leftovers(&[])?;
+        }
         if let Some(model) = model {
             model::start(&app, model)
                 .map_err(|e| format!("cannot start the decision model: {e}"))?;
@@ -247,6 +258,7 @@ impl Server {
             config.agents.clone(),
         );
         pi_bolt.runners = runners;
+        pi_bolt.launcher = launcher;
         let harness = Arc::new(Harnesses::new(pi_bolt, &config.claude_code));
         let harness_repo = match &config.harness_url {
             Some(url) => Some(Arc::new(HarnessRepo::open(

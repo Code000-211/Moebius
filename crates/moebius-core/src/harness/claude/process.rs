@@ -141,6 +141,12 @@ impl ClaudeCode {
         (session, resumes): (&str, bool),
         prompt: Option<&str>,
     ) -> Result<(), String> {
+        if self.launcher_configured {
+            return Err(
+                "Claude Code is not started through the launcher yet, so it does not start while one is configured"
+                    .into(),
+            );
+        }
         app.store
             .set_run_worktree(run.id, &run.worktree.to_string_lossy())
             .map_err(|e| e.to_string())?;

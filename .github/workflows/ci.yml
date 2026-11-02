@@ -37,6 +37,8 @@ jobs:
           if-no-files-found: ignore
       - run: cargo run -p moebius-plugin-api --example allow_reads
       - run: cargo run -p moebius-plugin-api --example allow_reads_process
+      - run: cargo run -p moebius-plugin-api --example wrap_launcher
+      - run: cargo run -p moebius-plugin-api --example wrap_launcher_process
 
   # The desktop app, the command line and the plugin API build and pass their tests on Windows, and so do the server's
   # tests that need no Unix program (the others are `#[cfg(unix)]`, each saying why). The server is documented and

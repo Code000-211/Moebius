@@ -60,6 +60,9 @@ pub struct ClaudeCode {
     pub agents: Arc<RwLock<AgentSet>>,
     /// The machines an agent's `runner` can name, shared with Pi-Bolt.
     pub runners: Arc<Runners>,
+    /// Whether a launcher is configured. Claude Code does not ask it yet, so with one no Claude Code run starts rather
+    /// than one outside the launcher.
+    pub launcher_configured: bool,
     live: Arc<Mutex<HashMap<i64, Live>>>,
 }
 
@@ -106,6 +109,7 @@ impl ClaudeCode {
             router,
             agents,
             runners: Arc::new(Runners::default()),
+            launcher_configured: false,
             live: Arc::new(Mutex::new(HashMap::new())),
         }
     }
