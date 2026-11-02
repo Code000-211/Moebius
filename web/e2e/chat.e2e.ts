@@ -137,8 +137,9 @@ describe("an answer that streams in", () => {
       .toBeGreaterThan(await thread().evaluate((element) => element.clientHeight * 3));
     expect(await thread().evaluate((element) => element.scrollTop)).toBe(0);
 
-    // Reaching the end follows again.
-    await thread().evaluate((element) => element.scrollTo({ top: element.scrollHeight }));
+    // Reaching the end follows again: the person scrolls down to it, and only then does more come.
+    await page.mouse.wheel(0, 100_000);
+    await expect.poll(() => distanceFromEnd(thread())).toBeLessThan(40);
     fake().delta(run, paragraph(61));
     await page.getByText("Paragraph 61:").waitFor();
     await expect.poll(() => distanceFromEnd(thread())).toBeLessThan(40);
