@@ -1,7 +1,8 @@
 /**
  * The state of a place with nothing in it yet: what belongs here and how to begin. It replaces a blank panel or a row
- * of machinery, and carries an action only when there is one to take. On the canvas it is a card of its own; in a card
- * it is `plain`, because one surface is enough to read a sentence on.
+ * of machinery, and carries an action only when there is one to take. On the canvas it is a card of its own; where it
+ * sits on a surface that is already one — a card, a lane of the board — it is `plain`, because one surface is enough to
+ * read a sentence on.
  */
 import type { ReactNode } from "react";
 import { cn } from "../lib/cn";

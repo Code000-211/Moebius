@@ -180,6 +180,31 @@ describe("the board page", () => {
       await card(7).getByRole("link", { name: "Pull request #9, merged" }).waitFor();
     },
   );
+
+  it.skipIf(usesRealServer)(
+    "says what an empty column holds on the column's own surface",
+    async () => {
+      await fresh();
+      await openBoard();
+      const title = column("In review").getByText("Nothing to review", { exact: true });
+      await title.waitFor();
+      // The column is the surface these words sit on. A card of its own inside a column is a second surface under the
+      // same sentence, and one that reads as a card which has lost its words.
+      const face = await title.evaluate((el) => {
+        const box = el.closest("section");
+        if (!box) throw new Error("the empty state is not drawn in a box");
+        const style = getComputedStyle(box);
+        return { background: style.backgroundColor, shadow: style.boxShadow };
+      });
+      expect(face.background, "the empty state draws a surface of its own").toBe(
+        "rgba(0, 0, 0, 0)",
+      );
+      expect(face.shadow, "the empty state lifts itself off the column").toBe("none");
+      // The column keeps its own fill, which is what the sentence rests on.
+      const lane = await column("In review").evaluate((el) => getComputedStyle(el).backgroundColor);
+      expect(lane, "the column has no fill of its own to sit on").not.toBe("rgba(0, 0, 0, 0)");
+    },
+  );
 });
 
 describe("live data", () => {

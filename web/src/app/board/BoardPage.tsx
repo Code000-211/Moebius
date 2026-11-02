@@ -357,7 +357,9 @@ function BoardColumn({
             </KanbanCard>
           );
         })}
-        {cards.length === 0 && <Empty {...(COLUMN_EMPTY[name] ?? ANY_COLUMN)} />}
+        {/* The column is already the surface under these words; a card of its own inside it is a second one, and one
+            that reads as a card which has lost its words. */}
+        {cards.length === 0 && <Empty plain {...(COLUMN_EMPTY[name] ?? ANY_COLUMN)} />}
       </KanbanCards>
     </KanbanBoard>
   );

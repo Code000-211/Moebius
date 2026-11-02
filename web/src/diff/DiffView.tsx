@@ -290,6 +290,7 @@ export function DiffView({ diff, truncated = false }: { diff: string; truncated?
     return (
       <div data-testid="diff-empty">
         <Empty
+          plain
           title="No changes"
           body="Nothing was changed here yet. What a run or a change adds and removes appears in this list, file by file."
         />
