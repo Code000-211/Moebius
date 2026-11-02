@@ -372,6 +372,7 @@ function CardContent({
       displayId={`#${card.number}`}
       issueUrl={issueUrl(board.repository, card)}
       title={card.title}
+      preview={card.body}
       detail={cardDetail(card, board.round_limit)}
       badges={cardBadges(card, status, next === card.id)}
       pullRequest={

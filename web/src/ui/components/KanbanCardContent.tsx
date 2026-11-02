@@ -6,6 +6,7 @@
 // `Status` pill, and the card is opened by its title being a button, so the card itself stays a group the links sit in.
 
 import { cn } from "../lib/cn";
+import { FadedClamp } from "../page/FadedClamp";
 import { Status, type Tone } from "../page/Status";
 import { PrBadge, type PrBadgeStatus } from "./PrBadge";
 import { RunningDots } from "./RunningDots";
@@ -25,6 +26,8 @@ export type KanbanCardContentProps = {
   /** Where the card's issue is, when the app knows; the number is then a link. */
   issueUrl?: string | null;
   title: string;
+  /** The first lines of the issue behind the card; the whole of it is in the dock the card opens. */
+  preview?: string | null;
   /** The line under the title: the agent and how far its rounds are. */
   detail?: string | null;
   badges?: CardLabel[];
@@ -47,6 +50,7 @@ export function KanbanCardContent({
   displayId,
   issueUrl,
   title,
+  preview,
   detail,
   badges = [],
   pullRequest,
@@ -97,14 +101,19 @@ export function KanbanCardContent({
         </span>
       )}
 
-      {/* Row 3: the agent and the round */}
+      {/* Row 3: what the issue asks for, three lines of it, the whole of it a click away */}
+      {preview && preview.trim() !== "" && (
+        <FadedClamp text={preview.trim()} className="text-sm text-secondary" />
+      )}
+
+      {/* Row 4: the agent and the round */}
       {detail && (
         <span className="text-sm text-secondary tabular-nums [overflow-wrap:anywhere]">
           {detail}
         </span>
       )}
 
-      {/* Row 4: the rounds of the card, one segment each */}
+      {/* Row 5: the rounds of the card, one segment each */}
       {rounds && rounds.limit > 0 && rounds.done > 0 && (
         <div
           role="img"
@@ -124,7 +133,7 @@ export function KanbanCardContent({
         </div>
       )}
 
-      {/* Row 5: where the card lives outside Moebius, each link a 40px target */}
+      {/* Row 6: where the card lives outside Moebius, each link a 40px target */}
       {(issueUrl || pullRequest) && (
         <div className="-mx-2 flex min-w-0 flex-wrap items-center justify-between gap-2">
           {issueUrl ? (

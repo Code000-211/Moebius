@@ -63,7 +63,7 @@ Never: decorative punctuation and exclamation marks, throat clearing ("Let me", 
 - Put the meaningful part of a long path or identifier in view. Size layouts for realistic content, including longer translations.
 - Keep live status under 40 characters. Set length expectations wherever content is created.
 
-- A description in a compact list stops at four lines, the last one fading out; the whole of it is one click away in the detail beside the list.
+- A description that is cut short stops at a whole number of lines and lets the last of them fade out, so the cut reads as a cut and not as writing that happened to end there. A compact list stops at four lines, the whole of the description one click away in the detail beside it. A board card is stricter — three lines (`ui/page/FadedClamp.tsx`) — because a column of them is scanned side by side, and it earns its fade the way a scroller does, by measuring first (`ui/lib/useBoxWatch.ts`): a description that fits the three lines is drawn plain, because a fade over writing that is all there is a lie.
 
 ## Type, color, shape
 System font, or an equally readable alternative; monospace only where character precision matters. Scale: 12 caption, 13 metadata, 15 body, 17 emphasized, 22 section title, 28 page title. Body line height about 1.5. Regular and semibold for most content; heavier weights for a few headings. Tabular numbers for changing counts and timers.

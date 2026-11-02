@@ -12,7 +12,7 @@ import { KanbanCardContent } from "./KanbanCardContent";
 
 afterEach(cleanup);
 
-function Card({ onOpen }: { onOpen: () => void }) {
+function Card({ onOpen, preview }: { onOpen: () => void; preview?: string | null }) {
   return (
     <KanbanProvider onDragEnd={() => {}} renderOverlay={() => null}>
       <KanbanCards>
@@ -27,6 +27,7 @@ function Card({ onOpen }: { onOpen: () => void }) {
             displayId="#12"
             issueUrl="https://github.com/acme/demo/issues/12"
             title="Fix the parser"
+            preview={preview}
             detail="Coder · round 1 of 5"
             badges={[{ name: "Your turn", tone: "attention" }]}
             onOpen={onOpen}
@@ -51,6 +52,17 @@ describe("a board card", () => {
     render(<Card onOpen={onOpen} />);
     fireEvent.click(screen.getByRole("button", { name: "Fix the parser" }));
     expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows what the issue asks for, below the title", () => {
+    render(<Card onOpen={() => {}} preview="The board is cramped on a phone" />);
+    const preview = screen.getByText("The board is cramped on a phone");
+    expect(preview.className).toContain("clamp-3");
+  });
+
+  it("holds nothing where a blank issue would have left a gap", () => {
+    const { container } = render(<Card onOpen={() => {}} preview="   " />);
+    expect(container.querySelector(".clamp-3")).toBeNull();
   });
 
   it("opens with Enter on the card itself, where the drag handle takes focus", () => {
