@@ -333,7 +333,7 @@ async fn the_moebius_agent_operates_moebius_from_its_chat() {
 #[cfg(unix)]
 async fn fake_upstream() -> String {
     let app = axum::Router::new().route(
-        "/models",
+        "/v1/models",
         axum::routing::get(|| async { axum::Json(json!({"data": [{"id": "qwen"}]})) }),
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
