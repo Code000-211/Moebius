@@ -188,20 +188,52 @@ describe("the run view", () => {
 });
 
 describe("the diff of a card", () => {
-  it.skipIf(usesRealServer)("shows its added and removed lines in the board's dock", async () => {
-    await open("/board/1?card=5");
-    const dock = page.getByRole("region", { name: "Card inspector" });
-    await dock.getByText("Changes", { exact: true }).waitFor();
-    await dock
-      .locator('[data-testid="diff-line"][data-kind="added"]')
-      .filter({ hasText: "cc -O2 main.c" })
-      .waitFor();
-    await dock
-      .locator('[data-testid="diff-line"][data-kind="removed"]')
-      .filter({ hasText: "cc -O0 main.c" })
-      .waitFor();
-    expect(await dock.getByTestId("diff-path").textContent()).toBe("Makefile");
-  });
+  it.skipIf(usesRealServer)(
+    "shows the headline of a change in the dock and its lines in a sheet",
+    async () => {
+      await open("/board/1?card=5");
+      const dock = page.getByRole("region", { name: "Card inspector" });
+      await dock.getByText("Changes", { exact: true }).waitFor();
+      // The dock has room for one line about a change: what it touches, and what it costs.
+      const headline = dock.getByTestId("diff-card");
+      await headline.waitFor();
+      expect((await headline.textContent()) ?? "").toMatch(/\+\d+ added -\d+ removed/);
+      // The lines themselves are read in a sheet over the page, which closes on Escape.
+      await headline.click();
+      const sheet = page.getByRole("dialog");
+      await sheet
+        .locator('[data-testid="diff-line"][data-kind="added"]')
+        .filter({ hasText: "cc -O2 main.c" })
+        .waitFor();
+      await sheet
+        .locator('[data-testid="diff-line"][data-kind="removed"]')
+        .filter({ hasText: "cc -O0 main.c" })
+        .waitFor();
+      expect(await sheet.getByTestId("diff-path").textContent()).toBe("Makefile");
+      await page.keyboard.press("Escape");
+      await sheet.waitFor({ state: "detached" });
+      // Escape closed the sheet alone; the card is still open behind where it was.
+      await headline.waitFor();
+      expect(await dock.getByText("Changes", { exact: true }).count()).toBe(1);
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "spells what each file costs, and keeps no key to the colours",
+    async () => {
+      await open("/board/1?card=5");
+      const dock = page.getByRole("region", { name: "Card inspector" });
+      await dock.getByTestId("diff-card").click();
+      const sheet = page.getByRole("dialog");
+      await sheet.getByTestId("diff-summary").waitFor();
+      // The count of a file is `+14 -4`, and there is no key to the colours beside it.
+      const summary = sheet.getByTestId("diff-summary");
+      expect((await summary.textContent()) ?? "").toMatch(/\+\d+ added -\d+ removed/);
+      const row = sheet.getByTestId("diff-file").first();
+      expect((await row.textContent()) ?? "").toMatch(/\+\d+ added -\d+ removed/);
+      expect(await sheet.getByRole("list", { name: "What the colours mean" }).count()).toBe(0);
+    },
+  );
 });
 
 describe("the terminals", () => {

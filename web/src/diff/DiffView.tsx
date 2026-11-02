@@ -2,13 +2,14 @@
  * A unified diff drawn for reading: a list of the files with what each adds and removes, and the lines of the file
  * chosen with their numbers. Written for Moebius on `parse.ts`. The lines show unified or side by side (old file left,
  * new file right). It is the densest screen of the app and stays that way — monospace at 13px, 24px lines — but long
- * lines wrap rather than run sideways, added and removed are named in words as well as tinted, and a file shows at most
- * `MAX_LINES` lines, with what is left out said.
+ * lines wrap rather than run sideways, a change is a sign as well as a tint, and a file shows at most `MAX_LINES`
+ * lines, with what is left out said.
  */
 import { useMemo, useState } from "react";
 import { cn } from "../ui/lib/cn";
 import { plural } from "../ui/lib/format";
 import { Empty } from "../ui/page/Empty";
+import { Delta } from "./Delta";
 import { type DiffLine, type FileDiff, parseUnifiedDiff, sideBySide, totals } from "./parse";
 
 const MAX_LINES = 2000;
@@ -36,17 +37,6 @@ const MARK_TONE = {
 } as const;
 
 const MARK_WORD = { added: "Added", removed: "Removed" } as const;
-
-/** What a file adds and removes, as words and digits, never as colour alone. */
-function Counts({ file }: { file: Pick<FileDiff, "additions" | "deletions"> }) {
-  return (
-    <span className="shrink-0 text-sm tabular-nums">
-      <span className="text-complete-text">{file.additions} added</span>
-      <span className="text-secondary"> · </span>
-      <span className="text-error-text">{file.deletions} removed</span>
-    </span>
-  );
-}
 
 /** The edge stripe of a changed line: its hue again, at the edge of the tint. */
 function Stripe({ kind }: { kind: "added" | "removed" }) {
@@ -223,33 +213,12 @@ export function DiffView({ diff, truncated = false }: { diff: string; truncated?
   const sum = totals(files);
   return (
     <div className="flex min-w-0 flex-col gap-4" data-testid="diff">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <p className="m-0 text-sm text-secondary tabular-nums" data-testid="diff-summary">
-          {`${plural(files.length, "file", "files")} · `}
-          <span className="text-complete-text">{`${sum.additions} added`}</span>
-          <span> · </span>
-          <span className="text-error-text">{`${sum.deletions} removed`}</span>
-          {truncated && <span>{" · the rest of the diff is left out"}</span>}
-        </p>
-        <ul
-          /* biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with no marker from the accessibility tree entirely */
-          role="list"
-          aria-label="What the colours mean"
-          className="m-0 flex flex-wrap items-center gap-2 p-0"
-        >
-          <li className="inline-flex items-center gap-2 rounded-full bg-diff-added px-3 py-1 text-sm font-semibold text-complete-text">
-            <span className="size-2 shrink-0 rounded-full bg-diff-added-mark" aria-hidden="true" />
-            Added
-          </li>
-          <li className="inline-flex items-center gap-2 rounded-full bg-diff-removed px-3 py-1 text-sm font-semibold text-error-text">
-            <span
-              className="size-2 shrink-0 rounded-full bg-diff-removed-mark"
-              aria-hidden="true"
-            />
-            Removed
-          </li>
-        </ul>
-      </div>
+      {/* What the change costs, in one line. It needs no key to the colours: each number carries its own sign. */}
+      <p className="m-0 text-sm text-secondary tabular-nums" data-testid="diff-summary">
+        {`${plural(files.length, "file", "files")} · `}
+        <Delta additions={sum.additions} deletions={sum.deletions} />
+        {truncated && <span>{" · the rest of the diff is left out"}</span>}
+      </p>
       <ul
         /* biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with no marker from the accessibility tree entirely */
         role="list"
@@ -279,7 +248,7 @@ export function DiffView({ diff, truncated = false }: { diff: string; truncated?
                   {STATUS_WORD[each.status]}
                 </span>
               )}
-              <Counts file={each} />
+              <Delta additions={each.additions} deletions={each.deletions} className="text-sm" />
             </button>
           </li>
         ))}
@@ -299,7 +268,7 @@ export function DiffView({ diff, truncated = false }: { diff: string; truncated?
                 {STATUS_WORD[file.status]}
               </span>
             )}
-            <Counts file={file} />
+            <Delta additions={file.additions} deletions={file.deletions} className="text-sm" />
             <fieldset
               aria-label="Layout"
               className="m-0 flex gap-1 rounded-control border-0 bg-sunken p-1"
