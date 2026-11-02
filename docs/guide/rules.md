@@ -125,8 +125,9 @@ The teacher's tokens count in the run's usage and against the card's token budge
 ## How to try it and see a refusal
 
 Start a chat with an agent (see [Agents](agents.md)) and ask it to do the forbidden thing, for example to run
-`git push --force`. Or put a card through the workflow whose issue asks for it. A chat has no card, so only the built-in
-and the server's rules apply to it; a repository's rules apply to the runs of its cards.
+`git push --force`. Or put a card through the workflow whose issue asks for it. A chat has no card; when it works in a repository, that
+repository's rules apply to it as they do to the runs of its cards, and a chat in no repository has only the built-in
+and the server's rules.
 
 Every checked call is stored in the run's events as a `tool_check`. Read them and keep the refusals:
 

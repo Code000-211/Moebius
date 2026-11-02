@@ -48,6 +48,28 @@ impl ToolCall<'_> {
     }
 }
 
+/// The call in the guard's vocabulary: Claude Code's tool names are mapped to `bash`, `write` and `edit`, and its
+/// `file_path` and `notebook_path` to `path`; for Claude Code's writing tools those win over a `path` the call
+/// also carries, because they are what the tool writes to. Other calls are as they are.
+pub(super) fn normalise_call(tool: &str, mut input: Value) -> (String, Value) {
+    let writes_file_path = matches!(tool, "Write" | "Edit" | "MultiEdit" | "NotebookEdit");
+    let tool = match tool {
+        "Bash" => "bash",
+        "Write" => "write",
+        "Edit" | "MultiEdit" | "NotebookEdit" => "edit",
+        other => other,
+    };
+    if let Some(object) = input.as_object_mut()
+        && (writes_file_path || !object.contains_key("path"))
+        && let Some(path) = ["file_path", "notebook_path"]
+            .iter()
+            .find_map(|key| object.get(*key).cloned())
+    {
+        object.insert("path".into(), path);
+    }
+    (tool.to_string(), input)
+}
+
 /// Whether `path` starts at the home directory, which is never inside a worktree.
 pub(super) fn is_home(path: &str) -> bool {
     path.starts_with('~') || path.starts_with("$HOME") || path.starts_with("${HOME}")
@@ -56,7 +78,7 @@ pub(super) fn is_home(path: &str) -> bool {
 /// One simple command of a command line.
 #[derive(Default)]
 pub(super) struct Simple {
-    /// Its words, with quotes removed and leading `sudo`, `env`, `command` and `NAME=value` skipped. The first is
+    /// Its words, with quotes removed and leading wrappers (`sudo`, `env`, `command`, `time`, `exec`, `nohup`, `timeout`, `nice`) with their options, and `NAME=value` skipped. The first is
     /// the command.
     pub(super) words: Vec<String>,
     /// The files it redirects output to (`>`, `>>`, `2>`, `&>`), not counting `2>&1` and the like.
@@ -84,7 +106,8 @@ fn simple_commands(command: &str) -> Vec<Simple> {
             }
             '>' => {
                 chars.next();
-                if chars.peek() == Some(&'>') {
+                // `>>`, and `>|`, which writes over a file `noclobber` protects.
+                if matches!(chars.peek(), Some('>' | '|')) {
                     chars.next();
                 }
                 let duplicates = chars.peek() == Some(&'&');
@@ -97,6 +120,10 @@ fn simple_commands(command: &str) -> Vec<Simple> {
                 if !(duplicates && descriptor) {
                     current.writes.push(target);
                 }
+            }
+            '\\' if line_continuation(&chars) => {
+                chars.next();
+                chars.next();
             }
             c if c.is_whitespace() || c == '<' => {
                 chars.next();
@@ -123,30 +150,120 @@ fn simple_commands(command: &str) -> Vec<Simple> {
         .collect()
 }
 
-/// `words` without the leading `sudo`, `env`, `command` and `NAME=value`.
+/// Shell reserved words and wrappers that run the command after them, which take no option with a value.
+const WRAPPERS: [&str; 15] = [
+    "{", "!", "if", "then", "do", "else", "elif", "while", "until", "time", "exec", "nohup",
+    "command", "builtin", "nice",
+];
+
+/// `words` without what comes before the command: reserved words (`if`, `then`, `{`, `!` ...), wrappers (`sudo`,
+/// `env`, `time`, `exec`, `nohup`, `timeout`, `nice`, `command`) with their options, and `NAME=value`. The program
+/// that is left is named by its basename, so `/bin/rm` is `rm`.
 fn without_prefixes(words: Vec<String>) -> Vec<String> {
-    let skipped = words
-        .iter()
-        .take_while(|word| {
-            matches!(word.as_str(), "sudo" | "env" | "command") || word.contains('=')
-        })
-        .count();
-    words.into_iter().skip(skipped).collect()
+    let mut at = 0;
+    while let Some(word) = words.get(at) {
+        let name = word.rsplit('/').next().unwrap_or(word);
+        // The options a wrapper takes a value for (`sudo -u root`, `env -u NAME`, `timeout -s KILL`, `nice -n 5`).
+        let valued: &[&str] = match name {
+            "sudo" => &[
+                "-u",
+                "-g",
+                "-h",
+                "-p",
+                "-C",
+                "-D",
+                "-R",
+                "-T",
+                "-U",
+                "-r",
+                "-t",
+                "--user",
+                "--group",
+                "--host",
+                "--prompt",
+                "--close-from",
+                "--chdir",
+                "--role",
+                "--type",
+                "--other-user",
+                "--command-timeout",
+            ],
+            "env" => &["-u", "-C", "-S", "--unset", "--chdir", "--split-string"],
+            "timeout" => &["-s", "-k", "--signal", "--kill-after"],
+            "nice" => &["-n", "--adjustment"],
+            "exec" => &["-a"],
+            _ => &[],
+        };
+        let wrapper = matches!(name, "sudo" | "env" | "timeout") || WRAPPERS.contains(&name);
+        if wrapper && !word.contains('=') {
+            at += 1;
+            while let Some(option) = words.get(at).filter(|w| w.starts_with('-') && w.len() > 1) {
+                at += 1 + usize::from(valued.contains(&option.as_str()));
+            }
+            // `timeout` is followed by its duration.
+            if name == "timeout" {
+                at += 1;
+            }
+        } else if word.contains('=') && !word.starts_with('-') {
+            at += 1;
+        } else {
+            break;
+        }
+    }
+    let mut rest: Vec<String> = words.into_iter().skip(at).collect();
+    if let Some(program) = rest.first_mut()
+        && program.contains('/')
+        && let Some(name) = program.rsplit('/').next().filter(|n| !n.is_empty())
+    {
+        *program = name.to_string();
+    }
+    rest
+}
+
+/// Whether the `$` the reader is at opens a `$'...'` string.
+fn ansi_quote(chars: &Peekable<Chars>) -> bool {
+    let mut ahead = chars.clone();
+    ahead.next();
+    ahead.peek() == Some(&'\'')
+}
+
+/// Whether the reader is at a backslash before a new line, which continues the line.
+fn line_continuation(chars: &Peekable<Chars>) -> bool {
+    let mut ahead = chars.clone();
+    ahead.next();
+    ahead.peek() == Some(&'\n')
 }
 
 /// The next word, with its quotes removed; quoted spaces and operators stay in the word.
 fn read_word(chars: &mut Peekable<Chars>) -> String {
     let mut word = String::new();
     let mut quote = None;
+    let mut escapes = false;
     while let Some(&c) = chars.peek() {
         match (quote, c) {
-            (Some(open), c) if c == open => quote = None,
+            (Some(open), c) if c == open => {
+                quote = None;
+                escapes = false;
+            }
+            // `$'...'` quotes like single quotes, and `\'` inside it is an escaped quote.
+            (None, '$') if ansi_quote(chars) => {
+                chars.next();
+                quote = Some('\'');
+                escapes = true;
+            }
+            (Some('\''), '\\') if escapes => {
+                chars.next();
+                word.extend(chars.peek());
+            }
             (None, '"' | '\'') => quote = Some(c),
             (None, ';' | '|' | '&' | '\n' | '(' | ')' | '`' | '<' | '>') => break,
             (None, c) if c.is_whitespace() => break,
             (quote, '\\') if quote != Some('\'') => {
                 chars.next();
-                word.extend(chars.peek());
+                // A backslash before a new line continues the line.
+                if chars.peek() != Some(&'\n') {
+                    word.extend(chars.peek());
+                }
             }
             _ => word.push(c),
         }

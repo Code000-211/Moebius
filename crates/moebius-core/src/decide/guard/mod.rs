@@ -10,6 +10,9 @@
 //!    `decision_model`), it is asked instead of the teacher, the judgement's decider is `guard/decision-model`, and it
 //!    too refuses when it fails. The built-in patterns of step 1 always apply first.
 //!
+//! The call is read in the guard's vocabulary (`bash`, `write`, `edit`, key `path`): the names and keys of Claude Code
+//! (`Bash`, `Write`, `Edit`, `MultiEdit`, `NotebookEdit`, `file_path`, `notebook_path`) are mapped to it first.
+//!
 //! A question whose context has a `rules_error` (the rules files could not be read) is refused outright, by
 //! `guard/patterns`.
 //!
@@ -39,6 +42,18 @@ use shell::ToolCall;
 pub use patterns::patterns;
 pub use reversible::{relative_to, reversible};
 pub use teacher::Teacher;
+
+/// The built-in rule that a call breaks, with what the rule says. `check` tests it on the call as it is executed and
+/// hands the answer to the guard in the question's context as `builtin_refusal`, because every other value of the
+/// context has been redacted by then, which can hide a command (inside a private key's markers) and its secret.
+pub fn builtin_refusal(tool: &str, input: &Value, worktree: Option<&Path>) -> Option<String> {
+    let (tool, input) = shell::normalise_call(tool, input.clone());
+    broken_rule(&ToolCall {
+        tool: &tool,
+        input,
+        worktree,
+    })
+}
 
 /// The plugin's name, which `Decisions` routes `tool_call` to.
 pub const NAME: &str = "guard";
@@ -102,12 +117,15 @@ impl Plugin for Guard {
             )));
         }
         let context = &request.context;
+        let input: Value = context
+            .get("input")
+            .and_then(|input| serde_json::from_str(input).ok())
+            .unwrap_or_default();
+        let tool = context.get("tool").map_or("", String::as_str);
+        let (tool, input) = shell::normalise_call(tool, input);
         let tool_call = ToolCall {
-            tool: context.get("tool").map_or("", String::as_str),
-            input: context
-                .get("input")
-                .and_then(|input| serde_json::from_str(input).ok())
-                .unwrap_or_default(),
+            tool: &tool,
+            input,
             worktree: context.get("worktree").map(Path::new),
         };
         let decision = if let Some(error) = context.get("rules_error") {
@@ -116,7 +134,11 @@ impl Plugin for Guard {
                 format!("the rules cannot be read, so no call is allowed: {error}"),
                 "patterns",
             )
-        } else if let Some(reason) = broken_rule(&tool_call) {
+        } else if let Some(reason) = context
+            .get("builtin_refusal")
+            .cloned()
+            .or_else(|| broken_rule(&tool_call))
+        {
             decision("refuse", reason, "patterns")
         } else {
             let prose = rules::parse(context.get("rules").map_or("", String::as_str));
@@ -183,6 +205,41 @@ mod tests {
         );
         assert_eq!(
             decide("read", json!({ "path": "/etc/hosts" })).choice,
+            "allow"
+        );
+    }
+
+    #[test]
+    fn claude_code_shaped_calls_meet_the_built_in_rules() {
+        let refused = decide("Bash", json!({ "command": "git push --force" }));
+        assert!(refused.reason.starts_with("no-force-push: "), "{refused:?}");
+        let refused = decide("Bash", json!({ "command": "rm -rf ~" }));
+        assert!(refused.reason.starts_with("no-destructive-commands: "));
+        for tool in ["Write", "Edit", "MultiEdit"] {
+            let refused = decide(tool, json!({ "file_path": "/etc/passwd" }));
+            assert!(
+                refused.reason.starts_with("stay-in-the-worktree: "),
+                "{tool}: {refused:?}"
+            );
+        }
+        for tool in ["Write", "Edit"] {
+            let refused = decide(
+                tool,
+                json!({ "file_path": "/etc/passwd", "path": "/srv/wt/1/a" }),
+            );
+            assert!(
+                refused.reason.starts_with("stay-in-the-worktree: "),
+                "{tool}: {refused:?}"
+            );
+        }
+        let refused = decide("NotebookEdit", json!({ "notebook_path": "/etc/a.ipynb" }));
+        assert!(refused.reason.starts_with("stay-in-the-worktree: "));
+        assert_eq!(
+            decide("Write", json!({ "file_path": "/srv/wt/1/a.rs" })).choice,
+            "allow"
+        );
+        assert_eq!(
+            decide("Read", json!({ "file_path": "/etc/hosts" })).choice,
             "allow"
         );
     }

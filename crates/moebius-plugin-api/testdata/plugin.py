@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # A plugin process in tests. It behaves as its first argument says, and its second argument, if given, is the name its
 # manifest gives (the rest it writes to standard error after "started"): answers (the first option), errors, crashes (exits when called), garbage (writes a line that is not a
-# reply), hangs (never answers), silent (sends no manifest) or exits (exits at once).
+# reply), stalls (reads nothing, writes a line that is not a reply after a second and stays), hangs (never answers), silent (sends no manifest) or exits (exits at once).
 import json
 import sys
 
@@ -22,6 +22,14 @@ if mode == "silent":
     sys.exit(0)
 send({"type": "manifest", "manifest": {"name": name, "version": "1.2.3", "kinds": ["decider"]}})
 print("started", *sys.argv[3:], file=sys.stderr, flush=True)
+if mode == "stalls":
+    import time
+
+    time.sleep(1)
+    sys.stdout.write("not json\n")
+    sys.stdout.flush()
+    time.sleep(120)
+    sys.exit(0)
 for line in sys.stdin:
     message = json.loads(line)
     id = message["id"]

@@ -235,6 +235,50 @@ mod tests {
     }
 
     #[test]
+    fn keywords_braces_wrappers_and_program_paths_do_not_hide_a_command() {
+        for command in [
+            "if true; then rm -rf ../old; fi",
+            "{ rm -rf /; }",
+            "! rm -rf /",
+            "time rm -rf /",
+            "exec rm -rf /",
+            "nohup rm -rf / &",
+            "timeout 5 rm -rf /",
+            "timeout -s KILL 5 rm -rf /",
+            "/bin/rm -rf /",
+            "sudo -u root rm -rf /",
+            "env -u FOO rm -rf /",
+            "while true; do rm -rf /; done",
+            "nice -n 5 rm -rf /",
+            "sudo --user root rm -rf /",
+            "timeout --signal KILL 5 rm -rf /",
+            "env --unset FOO rm -rf /",
+            "nice --adjustment 5 rm -rf /",
+            "exec -a name rm -rf /",
+        ] {
+            assert_eq!(bash(command), Some("no-destructive-commands"), "{command}");
+        }
+        assert_eq!(bash("/usr/bin/git push -f"), Some("no-force-push"));
+        assert_eq!(bash("sudo -u x git push --force"), Some("no-force-push"));
+        assert_eq!(bash("time cargo test"), None);
+        assert_eq!(bash("timeout 5 rm -rf ./target"), None);
+    }
+
+    #[test]
+    fn line_continuations_dollar_quotes_and_clobbering_redirects_are_read() {
+        assert_eq!(bash("rm -rf \\\n/"), Some("no-destructive-commands"));
+        assert_eq!(bash("git push \\\n-f"), Some("no-force-push"));
+        assert_eq!(bash("echo x >| /etc/passwd"), Some("stay-in-the-worktree"));
+        assert_eq!(bash("rm -rf $'/etc'"), Some("no-destructive-commands"));
+        assert_eq!(bash("echo hi >| out.txt"), None);
+        // The `\\` escape of `$'...'` ends with its quote: the later `'\\'` is a backslash, not an escaped quote.
+        assert_eq!(
+            bash("echo $'a''\\' && rm -rf / && echo '\\'"),
+            Some("no-destructive-commands")
+        );
+    }
+
+    #[test]
     fn deletes_inside_the_worktree_and_harmless_look_alikes_are_allowed() {
         for command in [
             "rm -rf ./target",

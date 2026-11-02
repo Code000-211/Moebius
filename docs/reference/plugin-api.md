@@ -175,6 +175,7 @@ fail-closed option `refuse`. All context values are strings:
 | `worktree` | when the run has a worktree | The absolute path of the run's worktree. |
 | `card_title`, `card_body` | when the card is found | The card's title and body. |
 | `rules` | unless `rules_error` is set | The rules that apply as Markdown (`## <name>` and the text), possibly empty. See [rules](rules.md). |
+| `builtin_refusal` | when the call breaks a built-in rule | The rule's name and what it says, tested on the call before the context was redacted and with Claude Code's tool names and keys (`Bash`, `Write`, `Edit`, `file_path`) read as `bash`, `write`, `edit` and `path`. The guard refuses with it. |
 | `rules_error` | when the server's rules file exists but cannot be read | Why it cannot (a message). The guard refuses every call then. |
 
 A decider for `tool_call` that refuses should say which rule it applied at the start of `reason`, followed by a colon,

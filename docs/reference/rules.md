@@ -35,8 +35,8 @@ Two files, read afresh for every tool call:
 1. The server's file, named by `rules_file` in the configuration (by default `rules.md` next to `moebius.toml`), or the `rules.md` of the [harness configuration](harness-configuration.md) when `[harness]` is set. A missing file means no server rules.
 2. The repository's `.moebius/rules.md` on its default branch, read with `git show <ref>:.moebius/rules.md`. `<ref>` is
    the default branch of the clone for a repository without a forge and `origin/<default branch>` for a GitHub
-   repository. A file that is not committed to that branch is not read. A run whose card is gone has no repository
-   rules.
+   repository. A file that is not committed to that branch is not read. The repository is the one of the run's card or, for a run without a card (a chat or a research run), the one the run
+   works in. A run with neither has no repository rules.
 
 The server's rules come first, then the repository's. A repository adds rules and cannot weaken the server's: a rule in
 the repository's file whose name equals the name of a rule already listed (compared exactly, case included) is dropped,

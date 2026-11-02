@@ -87,20 +87,25 @@ fn openai_event(data: &Value) -> Vec<u8> {
 
 /// A `tool_use` block of an Anthropic stream, held back from its start to its stop.
 struct HeldBlock {
+    /// Tells the block from another that starts under the same index.
+    seq: usize,
     index: Value,
     id: String,
     name: String,
     /// The input as the start event gives it, which the deltas replace when they hold any.
     input: Value,
     json: String,
-    /// The block's events, and every other event that came meanwhile, in order: whether it is the block's, and it.
-    events: Vec<(bool, Event)>,
 }
 
 /// An Anthropic stream being checked.
 #[derive(Default)]
 struct AnthropicStream {
-    held: Option<HeldBlock>,
+    /// The `tool_use` blocks that have started and not stopped, however many are interleaved.
+    held: Vec<HeldBlock>,
+    /// The events kept back while any block is held, in order, as they will be written: the `seq` of the held block
+    /// an event belongs to, or none for an event that only waits so that the order is kept.
+    queue: Vec<(Option<usize>, Vec<u8>)>,
+    started: usize,
     allowed: usize,
     refused: usize,
 }
@@ -109,31 +114,40 @@ impl AnthropicStream {
     async fn event(&mut self, event: Event, decider: &Decider) -> Vec<Vec<u8>> {
         let data = event.data.clone().unwrap_or(Value::Null);
         let kind = data["type"].as_str().unwrap_or_default();
-        if let Some(held) = &mut self.held {
-            let own = data["index"] == held.index;
-            if own && kind == "content_block_delta" && data["delta"]["type"] == "input_json_delta" {
-                held.json
-                    .push_str(data["delta"]["partial_json"].as_str().unwrap_or_default());
-            }
-            let stops = own && kind == "content_block_stop";
-            held.events.push((own, event));
-            if !stops {
-                return vec![];
-            }
-            let held = self.held.take().expect("a block is held");
-            return self.decide(held, decider).await;
-        }
         if kind == "content_block_start" && data["content_block"]["type"] == "tool_use" {
             let block = &data["content_block"];
-            self.held = Some(HeldBlock {
+            // A block that starts again under an index that is held would hide the first one: it is held apart.
+            self.started += 1;
+            let seq = self.started;
+            self.held.push(HeldBlock {
+                seq,
                 index: data["index"].clone(),
                 id: block["id"].as_str().unwrap_or_default().to_string(),
                 name: block["name"].as_str().unwrap_or_default().to_string(),
                 input: block["input"].clone(),
                 json: String::new(),
-                events: vec![(true, event)],
             });
+            self.queue.push((Some(seq), event.raw));
             return vec![];
+        }
+        if !self.held.is_empty() {
+            let at = self.held.iter().rposition(|h| h.index == data["index"]);
+            let Some(at) = at else {
+                self.queue.push((None, event.raw));
+                return vec![];
+            };
+            if kind == "content_block_delta" && data["delta"]["type"] == "input_json_delta" {
+                self.held[at]
+                    .json
+                    .push_str(data["delta"]["partial_json"].as_str().unwrap_or_default());
+            }
+            let stops = kind == "content_block_stop";
+            self.queue.push((Some(self.held[at].seq), event.raw));
+            if !stops {
+                return vec![];
+            }
+            let held = self.held.remove(at);
+            return self.decide(held, decider).await;
         }
         if kind == "message_delta"
             && data["delta"]["stop_reason"] == "tool_use"
@@ -148,6 +162,7 @@ impl AnthropicStream {
     }
 
     /// The events of a complete block: as they came when its call is allowed, else a text block with the refusal.
+    /// Then the events that waited and no longer wait for a block that is still held.
     async fn decide(&mut self, held: HeldBlock, decider: &Decider) -> Vec<Vec<u8>> {
         let input = if held.json.trim().is_empty() {
             held.input.clone()
@@ -159,37 +174,53 @@ impl AnthropicStream {
             name: held.name.clone(),
             input,
         };
-        let Some(reason) = decider.refused(&call).await else {
-            self.allowed += 1;
-            return held
-                .events
-                .into_iter()
-                .map(|(_, event)| event.raw)
-                .collect();
-        };
-        self.refused += 1;
-        let index = held.index;
-        let mut out = vec![
-            anthropic_event(json!({ "type": "content_block_start", "index": index,
-                "content_block": { "type": "text", "text": "" } })),
-            anthropic_event(json!({ "type": "content_block_delta", "index": index,
-                "delta": { "type": "text_delta", "text": call.refusal(&reason) } })),
-            anthropic_event(json!({ "type": "content_block_stop", "index": index })),
-        ];
-        out.extend(
-            held.events
-                .into_iter()
-                .filter(|(own, _)| !own)
-                .map(|(_, event)| event.raw),
-        );
-        out
+        let own = |owner: &Option<usize>| *owner == Some(held.seq);
+        match decider.refused(&call).await {
+            None => {
+                self.allowed += 1;
+                for (owner, _) in self.queue.iter_mut().filter(|(owner, _)| own(owner)) {
+                    *owner = None;
+                }
+            }
+            Some(reason) => {
+                self.refused += 1;
+                let index = held.index.clone();
+                let refusal = [
+                    anthropic_event(json!({ "type": "content_block_start", "index": index,
+                        "content_block": { "type": "text", "text": "" } })),
+                    anthropic_event(json!({ "type": "content_block_delta", "index": index,
+                        "delta": { "type": "text_delta", "text": call.refusal(&reason) } })),
+                    anthropic_event(json!({ "type": "content_block_stop", "index": index })),
+                ];
+                // The refusal takes the place of the block's first event, and the rest of its events are dropped.
+                let at = self.queue.iter().position(|(owner, _)| own(owner));
+                self.queue.retain(|(owner, _)| !own(owner));
+                if let Some(at) = at {
+                    let tail = self.queue.split_off(at);
+                    self.queue
+                        .extend(refusal.into_iter().map(|bytes| (None, bytes)));
+                    self.queue.extend(tail);
+                }
+            }
+        }
+        // What no longer waits for a held block goes on, up to the first event that does.
+        let waiting = self
+            .queue
+            .iter()
+            .position(|(owner, _)| owner.is_some())
+            .unwrap_or(self.queue.len());
+        self.queue
+            .drain(..waiting)
+            .map(|(_, bytes)| bytes)
+            .collect()
     }
 
-    /// The end of the stream: a block still held was never finished and is dropped with the events of its own.
+    /// The end of the stream: blocks still held were never finished and are dropped with the events of their own.
     fn end(self) -> Vec<Vec<u8>> {
-        let held = self.held.into_iter().flat_map(|held| held.events);
-        held.filter(|(own, _)| !own)
-            .map(|(_, event)| event.raw)
+        self.queue
+            .into_iter()
+            .filter(|(owner, _)| owner.is_none())
+            .map(|(_, bytes)| bytes)
             .collect()
     }
 }
@@ -509,6 +540,46 @@ data: {\"type\":\"message_stop\"}\n\n";
         let body = checked(cut, Protocol::Anthropic, 64).await;
         assert!(!body.contains("tool_use"), "{body}");
         assert!(body.contains("ping"));
+    }
+
+    /// Two `tool_use` blocks, the second starting before the first stops.
+    const INTERLEAVED: &str = "event: message_start\n\
+data: {\"type\":\"message_start\",\"message\":{\"id\":\"m\"}}\n\n\
+event: content_block_start\n\
+data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"t0\",\"name\":\"FIRST\",\"input\":{}}}\n\n\
+event: content_block_start\n\
+data: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"t1\",\"name\":\"SECOND\",\"input\":{}}}\n\n\
+event: content_block_delta\n\
+data: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{}\"}}\n\n\
+event: content_block_stop\n\
+data: {\"type\":\"content_block_stop\",\"index\":0}\n\n\
+event: content_block_stop\n\
+data: {\"type\":\"content_block_stop\",\"index\":1}\n\n\
+event: message_stop\n\
+data: {\"type\":\"message_stop\"}\n\n";
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn interleaved_anthropic_tool_calls_are_each_checked() {
+        let stream = INTERLEAVED
+            .replace("FIRST", "Read")
+            .replace("SECOND", "Read");
+        assert_eq!(checked(&stream, Protocol::Anthropic, 4096).await, stream);
+        let stream = INTERLEAVED
+            .replace("FIRST", "Read")
+            .replace("SECOND", "bash");
+        for piece in [9, 4096] {
+            let body = checked(&stream, Protocol::Anthropic, piece).await;
+            assert!(body.contains("\"name\":\"Read\""), "{body}");
+            assert!(!body.contains("\"name\":\"bash\""), "{body}");
+            assert!(body.contains("refused the tool call bash (t1)"), "{body}");
+        }
+        let stream = INTERLEAVED
+            .replace("FIRST", "bash")
+            .replace("SECOND", "Read");
+        let body = checked(&stream, Protocol::Anthropic, 4096).await;
+        assert!(!body.contains("\"name\":\"bash\""), "{body}");
+        assert!(body.contains("\"name\":\"Read\""), "{body}");
+        assert!(body.contains("refused the tool call bash (t0)"), "{body}");
     }
 
     const OPENAI: &str = "data: {\"id\":\"c\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Looking.\"},\"finish_reason\":null}]}\n\n\

@@ -267,10 +267,11 @@ impl Process {
 impl Drop for Process {
     fn drop(&mut self) {
         self.shared.stopped.store(true, Ordering::SeqCst);
-        self.shared.stdin().take();
+        // Killed first, so that a write that waits for the process ends before the lock on stdin is asked for.
         if let Some(child) = self.shared.inner().child.as_mut() {
             let _ = child.kill();
         }
+        self.shared.stdin().take();
     }
 }
 
@@ -390,6 +391,25 @@ mod tests {
             hangs.decide("test", &request()),
             Err(Refusal::TimedOut { millis: 300, .. })
         ));
+    }
+
+    #[test]
+    fn a_call_blocked_writing_to_a_plugin_that_reads_nothing_fails_when_the_plugin_is_restarted() {
+        let (host, _) = host("stalls", LIMIT);
+        // More than a pipe holds, so that the write waits for a plugin that never reads.
+        let mut big = request();
+        big.context.insert("padding".into(), "x".repeat(4 << 20));
+        let (done, answered) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = done.send(host.decide("test", &big));
+        });
+        let refused = answered
+            .recv_timeout(Duration::from_secs(60))
+            .expect("the call never returned");
+        assert!(
+            matches!(refused, Err(Refusal::NotRunning { .. })),
+            "{refused:?}"
+        );
     }
 
     #[test]

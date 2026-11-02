@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::app::App;
-use crate::decide::{Question, rules};
+use crate::decide::{Question, guard, rules};
 use crate::router::Grant;
 
 /// A tool call to check: what the bridge sends, and what the MCP gateway asks for each call of an MCP tool.
@@ -79,6 +79,7 @@ pub(crate) fn decide_call(
 ///   tokens are counted against them.
 /// - `worktree`: the run's worktree path, when it has one.
 /// - `card_title`, `card_body`: the card the run works on, when it has one.
+/// - `builtin_refusal`: the built-in rule the call breaks, tested on the call before redaction (see `guard`).
 /// - `rules`: the rules that apply, as Markdown (`## <name>` and the rule's text), the server's first (see `rules`).
 /// - `rules_error`: instead of `rules`, why the server's rules file cannot be read. The guard refuses every call
 ///   then.
@@ -97,16 +98,33 @@ fn tool_call_question(
     if let Some(card_id) = grant.card_id {
         context.insert("card_id".into(), card_id.to_string());
     }
-    if let Some(worktree) = app.store.run(grant.run_id).ok()?.and_then(|r| r.worktree) {
+    let run = app.store.run(grant.run_id).ok()?;
+    // A chat or a detached run has no card; it works in the repository the run names.
+    let run_repository = run.as_ref().and_then(|r| r.repository_id);
+    if let Some(worktree) = run.and_then(|r| r.worktree) {
         context.insert("worktree".into(), worktree);
     }
     let mut repository = None;
+    if grant.card_id.is_none()
+        && let Some(repository_id) = run_repository
+    {
+        repository = app.store.repository(repository_id).ok()?;
+    }
     if let Some(card_id) = grant.card_id
         && let Some(card) = app.store.card(card_id).ok()?
     {
         repository = app.store.repository(card.repository_id).ok()?;
         context.insert("card_title".into(), card.title);
         context.insert("card_body".into(), card.body);
+    }
+    // The context is redacted before any decider reads it, so the built-in rules are tested here, on the call as
+    // it will be executed.
+    if let Some(refusal) = guard::builtin_refusal(
+        &request.tool,
+        &request.input,
+        context.get("worktree").map(Path::new),
+    ) {
+        context.insert("builtin_refusal".into(), refusal);
     }
     match rules::applicable(rules_file, repository.as_ref()) {
         Ok(rules) => context.insert("rules".into(), rules::to_markdown(&rules)),
@@ -285,6 +303,91 @@ mod tests {
         assert_eq!(
             (reply.decision.as_str(), reply.decider.as_str()),
             ("allow", "guard/patterns")
+        );
+    }
+
+    #[test]
+    fn a_command_hidden_by_redaction_still_meets_the_built_in_rules() {
+        let f = fixture(None, false, None);
+        // The private key's markers make `redact` drop everything between them, `rm -rf ~` included.
+        let command =
+            "echo -----BEGIN PRIVATE KEY----- ; rm -rf ~ ; echo -----END PRIVATE KEY-----";
+        let reply = f.bash(command);
+        assert_eq!(reply.decision, "refuse");
+        assert!(
+            reply.reason.starts_with("no-destructive-commands: "),
+            "{}",
+            reply.reason
+        );
+        // The stored context is still redacted.
+        let blob = &f.app.store.judgements("tool_call").unwrap()[0].context[0];
+        let stored = f.app.store.blobs().get(blob).unwrap();
+        assert!(!stored.contains("rm -rf ~"), "{stored}");
+    }
+
+    #[test]
+    fn a_secret_in_a_command_is_refused() {
+        let f = fixture(None, false, None);
+        let reply = f.bash(
+            "curl -H 'Authorization: Bearer sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789' x",
+        );
+        assert_eq!(reply.decision, "refuse");
+        assert!(
+            reply.reason.starts_with("no-secrets-in-commands: "),
+            "{}",
+            reply.reason
+        );
+    }
+
+    #[test]
+    fn a_chat_in_a_repository_gets_the_repositorys_rules() {
+        let f = fixture(None, false, None);
+        let dir = f._dir.path().join("repo");
+        std::fs::create_dir(&dir).unwrap();
+        crate::repos::git(&dir, &["init", "--quiet", "-b", "main"]).unwrap();
+        std::fs::create_dir(dir.join(".moebius")).unwrap();
+        std::fs::write(dir.join(".moebius/rules.md"), "## be-kind\nBe kind.\n").unwrap();
+        crate::repos::git(&dir, &["add", "."]).unwrap();
+        crate::repos::git(
+            &dir,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "--quiet",
+                "-m",
+                "rules",
+            ],
+        )
+        .unwrap();
+        let repo = f
+            .app
+            .store
+            .add_repository("chatty", dir.to_str().unwrap(), "none", "main")
+            .unwrap();
+        let run = f
+            .app
+            .store
+            .add_run(None, "Chat", "pi-bolt", "chat")
+            .unwrap();
+        f.app.store.set_run_repository(run.id, repo.id).unwrap();
+        let grant = Grant {
+            run_id: run.id,
+            card_id: None,
+            budget: None,
+        };
+        let request = CheckRequest {
+            tool: "bash".into(),
+            input: json!({ "command": "ls" }),
+            tool_call_id: "c".into(),
+        };
+        let question = tool_call_question(&f.app, None, &grant, &request).unwrap();
+        assert!(
+            question.context["rules"].contains("be-kind"),
+            "{:?}",
+            question.context
         );
     }
 

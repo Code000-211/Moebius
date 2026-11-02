@@ -16,15 +16,15 @@ pub(super) fn look_after(shared: &Shared, stop: &mpsc::Receiver<()>) {
     loop {
         let started = Instant::now();
         let (why, refusal) = run(shared);
-        let unanswered: Vec<_> = {
-            let mut inner = shared.inner();
-            shared.stdin().take();
-            if let Some(mut child) = inner.child.take() {
-                let _ = child.kill();
-                let _ = child.wait();
-            }
-            inner.pending.drain().map(|(_, tx)| tx).collect()
-        };
+        // The child is killed before the lock on stdin is asked for and without holding `inner`: a call that is
+        // writing holds that lock for as long as the process does not read, and only the kill ends its write.
+        let child = shared.inner().child.take();
+        if let Some(mut child) = child {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        shared.stdin().take();
+        let unanswered: Vec<_> = shared.inner().pending.drain().map(|(_, tx)| tx).collect();
         for tx in unanswered {
             let _ = tx.send(Err(refusal.clone()));
         }
