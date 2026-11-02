@@ -9,7 +9,7 @@
 //! This module holds the commands as clap sees them, the dispatch to the command groups and the helpers they share
 //! for reading input and writing answers. `client` finds the server and sends the requests; each other module is one
 //! group of commands, with its requests and how its answers are written: `api` (any route), `board` (the board,
-//! cards, the inbox and issues), `chats` (chats and grillings), `automations`, `agents`, `rules`, `repos`
+//! cards, the inbox and issues), `chats` (chats and grillings), `automations`, `agents`, `rules`, `packages`, `repos`
 //! (repositories), `ssh` (a server reached through an SSH tunnel), `window` (the web app as a window of its own), `setup` (`doctor`, settings, API keys, usage and the server itself) and `improve` (Retros,
 //! proposals, research, the decision model and its takeovers).
 
@@ -20,6 +20,7 @@ mod board;
 mod chats;
 mod client;
 mod improve;
+mod packages;
 mod repos;
 mod rules;
 mod setup;
@@ -38,6 +39,7 @@ use chats::{ChatCommand, GrillingCommand};
 use client::Request;
 pub use client::{Client, Connection, connect, desktop_settings_path};
 use improve::{ProposalCommand, ResearchCommand, RetroCommand, TakeoverCommand};
+use packages::PkgCommand;
 use repos::RepoCommand;
 use rules::RulesCommand;
 use setup::{SecretsCommand, ServerCommand, SettingsCommand};
@@ -110,6 +112,11 @@ pub enum Operate {
     Secrets {
         #[command(subcommand)]
         command: SecretsCommand,
+    },
+    /// Find, install, update and remove packages: plugins, workflows, rules and skills.
+    Pkg {
+        #[command(subcommand)]
+        command: PkgCommand,
     },
     /// The repositories.
     Repos,
@@ -206,6 +213,7 @@ impl Operate {
             Agents => agents::agents(),
             Agent { command } => agents::agent(command),
             Rules { command } => rules::rules(command.as_ref()),
+            Pkg { command } => packages::pkg(command, get),
             Repos => repos::repos(),
             Repo { command } => repos::repo(command),
             Settings { command } => setup::settings(command.as_ref()),
@@ -240,6 +248,8 @@ pub enum Show {
     /// An object, one line for each field.
     Object,
     Rules,
+    /// An answer of the package routes.
+    Packages,
     Settings,
     Retro,
     Usage,
@@ -291,6 +301,7 @@ pub fn render(show: &Show, text: &str) -> Result<String, String> {
         Show::Table(columns) => table(&value, columns),
         Show::Object => object(&value),
         Show::Rules => rules::show_rules(&value),
+        Show::Packages => packages::show_packages(&value),
         Show::Settings => setup::show_settings(&value),
         Show::Retro => improve::show_retro(&value),
         Show::Usage => setup::show_usage(&value),

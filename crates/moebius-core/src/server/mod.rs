@@ -5,7 +5,7 @@
 //! This module wires every part from the configuration and serves them; `leftovers` ends what a server that stopped
 //! left going, `loops` holds the board's tick, the polls of the forges and the refresh of the clones, and `schedule` what is
 //! looked at once a minute. `api` is the desktop API, `settings` edits `moebius.toml` while the server runs, and
-//! `setup` is what the Models, Plugins and Get started pages show. `plugins` starts the plugins in their own process, and
+//! `setup` is what the Models, Plugins and Get started pages show. `plugins` starts the plugins in their own process, `packages` is the package manager, and
 //! `webhooks` is how a forge's webhook wakes its poll.
 
 pub mod api;
@@ -17,6 +17,7 @@ mod fake_github;
 mod fake_gitlab;
 mod leftovers;
 mod loops;
+pub mod packages;
 mod plugins;
 pub mod ports;
 mod schedule;

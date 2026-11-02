@@ -24,7 +24,7 @@ const fn key(name: &'static str, default: &'static str, live: bool) -> Key {
 }
 
 /// Every key of `docs/reference/configuration.md`, in its order. `router.upstreams`, `router.classes`, `plugins`,
-/// `runners` and `agents` stand for the whole array of tables, the whole table of classes, the whole arrays of plugins
+/// `runners`, `registries` and `agents` stand for the whole array of tables, the whole table of classes, the whole arrays of plugins
 /// and runners and the whole table of agents.
 const KEYS: &[Key] = &[
     key("data_dir", "\".moebius\"", false),
@@ -63,6 +63,7 @@ const KEYS: &[Key] = &[
     key("decision_model.min_judgements", "100", false),
     key("plugins", "[]", false),
     key("runners", "[]", false),
+    key("registries", "[]", false),
     key("github.app_id", "", false),
     key("github.private_key_file", "", false),
     key("github.api_url", "\"https://api.github.com\"", false),

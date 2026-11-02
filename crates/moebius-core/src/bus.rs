@@ -158,6 +158,24 @@ pub enum Event {
         agent: Option<String>,
         message: String,
     },
+    PackageInstalled {
+        name: String,
+        version: String,
+        kind: String,
+    },
+    PackageRemoved {
+        name: String,
+        kind: String,
+    },
+    PackageUpdateAvailable {
+        name: String,
+        version: String,
+    },
+    PackageCheckError {
+        /// The registry that could not be read; empty when the check itself failed.
+        registry: String,
+        message: String,
+    },
     PortOpened(Port),
     PortClosed(Port),
     Lagged {
@@ -488,6 +506,35 @@ mod tests {
                     message: "boom".into(),
                 },
                 json!({"kind": "harness_error", "data": {"message": "boom"}}),
+            ),
+            (
+                Event::PackageInstalled {
+                    name: "gate".into(),
+                    version: "1.0.0".into(),
+                    kind: "plugin".into(),
+                },
+                json!({"kind": "package_installed", "data": {"name": "gate", "version": "1.0.0", "kind": "plugin"}}),
+            ),
+            (
+                Event::PackageRemoved {
+                    name: "gate".into(),
+                    kind: "plugin".into(),
+                },
+                json!({"kind": "package_removed", "data": {"name": "gate", "kind": "plugin"}}),
+            ),
+            (
+                Event::PackageUpdateAvailable {
+                    name: "gate".into(),
+                    version: "1.1.0".into(),
+                },
+                json!({"kind": "package_update_available", "data": {"name": "gate", "version": "1.1.0"}}),
+            ),
+            (
+                Event::PackageCheckError {
+                    registry: "moebius-plugins".into(),
+                    message: "boom".into(),
+                },
+                json!({"kind": "package_check_error", "data": {"registry": "moebius-plugins", "message": "boom"}}),
             ),
             (
                 Event::PortOpened(port.clone()),

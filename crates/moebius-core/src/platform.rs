@@ -152,6 +152,20 @@ pub fn owner_only(options: &mut OpenOptions) -> &mut OpenOptions {
     }
 }
 
+/// Lets the owner run the existing file `path`, which a downloaded program needs.
+pub fn make_executable(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
+    }
+    #[cfg(windows)]
+    {
+        let _ = path;
+        Ok(())
+    }
+}
+
 /// Gives the existing file `path` the permissions of [`owner_only`].
 pub fn make_owner_only(path: &Path) -> std::io::Result<()> {
     #[cfg(unix)]

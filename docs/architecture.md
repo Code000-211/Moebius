@@ -375,6 +375,7 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | `cli/automations.rs` | `automation` (list, save, run, delete). |
 | `cli/agents.rs` | `agents` and `agent` (show, save, delete). |
 | `cli/rules.rs` | `rules` and `rules save`. |
+| `cli/packages.rs` | `pkg search`, `info`, `install`, `update`, `remove` and `list`, and how their answers are written. |
 | `cli/repos.rs` | `repos` and `repo add`. |
 | `cli/setup.rs` | `doctor`, `settings`, `secrets set`, `usage` and `server restart`. |
 | `cli/improve.rs` | `retro`, `proposals` and `proposal`, `research`, `decision-model`, `takeovers` and `takeover`. |
@@ -427,6 +428,7 @@ At the top:
 | `config/mod.rs` | `Config`: the file parsed, every default applied, every path made absolute, and the errors that refuse it. |
 | `config/example.rs` | The commented example `moebius init` writes, every key at its default. |
 | `config/raw.rs` | The file as it is written: every key optional, unknown keys refused. |
+| `config/registries.rs` | The package registries from `[[registries]]`, with the default one first. |
 | `config/sections.rs` | The types of the sections (the router's upstreams, the GitHub App, the teacher, the decision model, the agents) and their checks. |
 
 `router/`, the model provider:
@@ -484,6 +486,15 @@ At the top:
 | `server/leftovers.rs` | What a server that stopped left going, ended at the next start: its runs failed and their worktrees removed, its Retros, research and trials set back. |
 | `server/loops.rs` | The board's tick, the polls of GitHub, GitLab and Forgejo (also at once when a webhook wakes one), and the refresh of the clones every 30 seconds. |
 | `server/plugins.rs` | Starting the plugins in their own process that `[[plugins]]` names, with their standard error in `<data_dir>/plugins/<name>.log`, redacted. |
+| `server/packages/mod.rs` | The package manager: the errors, the registries' catalog, the choice of a version, and search, info, list, install, update and remove (see `docs/reference/packages.md`). |
+| `server/packages/version.rs` | Versions and the ranges of Moebius versions a package works with. |
+| `server/packages/manifest.rs` | A package as `moebius-package.toml` and an entry of `index.toml` say it, and the checks of an entry. |
+| `server/packages/registry.rs` | Reading a registry: cloning or fetching its git repository and parsing its `index.toml` as a whole. |
+| `server/packages/lock.rs` | `<data_dir>/packages.lock`, what is installed. |
+| `server/packages/download.rs` | Downloading what a package installs and checking its sha256 before anything is written. |
+| `server/packages/plugin.rs` | Installing, updating and removing a plugin: its program, its `[[plugins]]` entry through the live settings, and starting it in the plugin host. |
+| `server/packages/propose.rs` | Workflow, rules and skills packages: their files proposed as a change to a repository or to the harness configuration repository. |
+| `server/packages/check.rs` | The nightly look for newer versions of the installed packages, and the inbox items it adds. |
 | `server/schedule.rs` | Once a minute: the Retro, trials, research, replays and automations when they are due, and the pause of chats that wait idle. |
 | `server/fake_github.rs` | For the tests only: a fake GitHub with one repository, and a server that polls it. |
 | `server/fake_gitlab.rs` | For the tests only: a fake GitLab with one project, a server that polls it, and the tests of the GitLab forge through it. |
@@ -503,6 +514,7 @@ At the top:
 | `server/api/uploads.rs` | `POST /v1/uploads`: zip files for the Moebius agent to import from. |
 | `server/ports/mod.rs` | The ports that processes of runs, chats and terminals listen on: whose each is, and the watch that publishes `port_opened` and `port_closed` every 3 seconds. |
 | `server/ports/proc.rs` | Reading the listening sockets, their holders and the process tree from `/proc` (Linux; nothing elsewhere). |
+| `server/api/packages.rs` | The package manager's routes: search, list, info, install, update and remove. |
 | `server/api/ports.rs` | `GET /v1/ports` and the WebSocket tunnel to a port of the server's loopback address. |
 | `server/api/terminals.rs` | The terminal WebSockets: a shell in a run's worktree or on the server, and Pi's terminal interface of a chat. |
 | `server/api/session.rs` | Signing in from a browser: the sessions in memory, the one-time login codes, and `/v1/session` and `/v1/session/codes`. |
@@ -609,6 +621,7 @@ At the top:
 | `harness/terminal.rs` | A person's shell in a run's worktree on a pseudo-terminal (`portable-pty`), served over the WebSocket `GET /v1/runs/{id}/terminal` (and `GET /v1/terminal`, in the directory of `moebius.toml`, and `GET /v1/repositories/{id}/terminal`, in a repository's clone); at most 4 per run or on the server, not checked by the guard. The same serving carries Pi-Bolt's interactive mode for a waiting chat (`GET /v1/chats/{id}/tui`, one per chat), whose tool calls the bridge still checks; `harness/pibolt/tui.rs` ends the chat's own Pi for it, continues the chat's Pi session in it, records what it adds to the session file as the chat's events, and starts the chat's Pi again on the same session when it closes. |
 | `harness/repo/mod.rs` | The harness configuration repository's clone: opened, refreshed, and its agents read again when it changes. |
 | `harness/repo/read.rs` | Reading the agents, skills and MCP servers from it, each agent checked as a run uses it. |
+| `harness/repo/offer.rs` | Files written on a branch of the default branch and offered as a change in the inbox; the package manager proposes skills with it. |
 | `harness/repo/edits.rs` | A person's edits of agents, skills, MCP servers and rules, as commits pushed to its origin. |
 | `harness/repo/skill_files.rs` | A skill's other files, beside its `SKILL.md`: read, and written or deleted as commits like any edit. |
 | `harness/repo/branches.rs` | Its branches: the Retro's proposals and chats' branches checked, pushed, merged or dismissed, the Retro's branches for Moebius's own configuration read and deleted, and a trial's worktree of a branch. |

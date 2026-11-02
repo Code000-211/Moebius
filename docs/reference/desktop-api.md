@@ -122,7 +122,7 @@ end of the output of the repository's own checks, or null). A change's `branch` 
 
 `InboxItem`: `id`, `kind`, `card_id` (or null), `title`, `data` (an object that depends on the kind), `resolved_at` (null
 in the snapshot, which holds only open items), `at`. Kinds the core adds: `approve_issue` (`data.reason`), `stuck`
-(`data.reason`), `ready_to_merge` (`data.change`, `data.branch`, and `data.judgements`, the review's judgement calls, when it had any), `change_closed` (`data.change`, `data.pull_request`) and
+(`data.reason`), `package_update` (`data.name`, `data.installed`, `data.version`; no card), `ready_to_merge` (`data.change`, `data.branch`, and `data.judgements`, the review's judgement calls, when it had any), `change_closed` (`data.change`, `data.pull_request`) and
 `proposal` (`data.proposal`, `data.branch`, `data.trials`: an array of `{"card", "outcome", "reason"}` for the cards it
 addresses, and `data.regression`: the same for the cards of the regression set, empty when none was tried; its `title` is the
 proposal's and it has no card; a proposal for Moebius's own configuration has `data.kind` (`settings` or
@@ -1168,6 +1168,68 @@ how many times it was started again (`restarts`); why it stopped the last time (
 `null`); and the file its standard error goes to (`log`). Until such a plugin has sent its manifest, its `version` is
 empty and its `kinds` are empty.
 
+### Packages
+
+The package manager (see [packages](packages.md)). A package is a `plugin`, `workflow`, `rules` or `skills` package.
+
+#### `GET /v1/packages/search`
+
+Query `q`: text; the packages whose name, description or kind contains it (case does not matter), all without one.
+Every registry in [`[[registries]]`](configuration.md#registries) is read afresh (cloned or fetched). Response:
+
+```json
+{
+  "packages": [
+    {"name": "gate", "kind": "plugin", "version": "1.1.0", "description": "Holds cards marked wip.",
+     "registry": "moebius-plugins", "compatible": true, "installed": null}
+  ],
+  "problems": [{"registry": "acme", "message": "cannot read index.toml: ..."}]
+}
+```
+
+One package for each name and registry. `version` is the newest that works with this Moebius, or the newest of all with
+`compatible` false when none does. `installed` is the installed version or null. A registry that cannot be cloned or
+whose index is not valid is in `problems` (secrets redacted), and the others are answered.
+
+#### `GET /v1/packages`
+
+What is installed: an array of the lock's entries (`name`, `version`, `kind`, `registry`, `url`, `sha256`, and
+`program`, `repository`, `change`, `files`, `rules` where they apply; see [the lock](packages.md#the-lock-data_dirpackageslock))
+with `update_available`: the newest version the nightly check found, or null. Nothing is fetched.
+
+#### `GET /v1/packages/{name}`
+
+Every version of the package in the first registry that has it, newest first. Response: `{"name", "registry",
+"installed": the lock's entry or null, "versions": [...]}`; each version is the index entry (`version`, `kind`,
+`description`, `license`, `homepage`, `moebius`, `targets`, `plugin` with its `settings`, `downloads`, `files`) with
+`compatible`, whether it works with this Moebius. Errors: `404` no registry has it; `502` a registry could not be read
+and none has it.
+
+#### `POST /v1/packages`
+
+Installs a package (see [installing](packages.md#installing)). Request: `{"name", "version"?, "registry"?, "repository"?}`;
+`version` is exact, without it the newest that works with this Moebius; `repository` is a repository's name, for a
+workflow or rules package. Response, here and for the two routes below, an `Outcome`: `name`, `version`, `kind`,
+`action` (`installed`, `updated`, `removed` or `unchanged`), `restart_needed` (a launcher is read when the server
+starts), `change` (the change that proposes the files of a workflow, rules or skills package; absent for a plugin) and
+`plugin` (a plugin's `program`, `state`, `restarts` and `error`, as `GET /v1/plugins` has them; absent for the others) and `leftover` (after removing a plugin, the folder of its
+files when it could not be deleted; the removal is done all the same; absent otherwise).
+Errors: `403` a run token asks for a plugin (the Moebius agent may propose the other kinds); `404` no registry has the
+package; `409` it is installed; `422` the version does not exist or does not work with this Moebius, no download fits
+this target or the sha256 differs, there is no such registry or repository, or the files cannot be proposed (skills
+without a harness configuration repository); `502` a registry or a download could not be reached. Recorded as the
+decision `install_package`.
+
+#### `POST /v1/packages/{name}/update`
+
+Updates to the newest version of the package's registry that works with this Moebius; `unchanged` when it has it.
+Request body: none. Person only (`403` for a run token). Errors: `404` it is not installed; `422` the new version does not
+start (the old one stays) or is refused as an install is. Recorded as `update_package`.
+
+#### `DELETE /v1/packages/{name}`
+
+Removes the package. Person only. Error: `404` it is not installed. Recorded as `remove_package`.
+
 ### `GET /v1/settings`
 
 Every key of [`moebius.toml`](configuration.md) with its value in the file, or its default, for the Settings and
@@ -1829,6 +1891,10 @@ like `POST /v1/runs/{id}/stop` does. Experiments done stay, and so do the lever 
 | `board_error` | A column script failed; the card stays where it is. | `{"card": id, "message": string}` |
 | `forge_error` | Polling a repository on GitHub, GitLab or Forgejo, or refreshing the clone of a repository without a forge, failed; it is tried again at the next poll or refresh (every 30 seconds without a forge). | `{"repository": "owner/repo" (GitHub, Forgejo), the project's path (GitLab) or the repository's name, "message": string}` |
 | `harness_error` | An agent's files in the harness configuration repository are broken (it is left out), or refreshing the repository failed (every 30 seconds). | `{"agent": name (left out when the refresh failed), "message": string}` |
+| `package_installed` | A package was installed or updated (a plugin is in place and started; the files of the others are proposed). | `{"name": string, "version": string, "kind": "plugin" \| "workflow" \| "rules" \| "skills"}` |
+| `package_removed` | A package was removed. | `{"name": string, "kind": string}` |
+| `package_update_available` | The nightly check found a newer version that works with this Moebius; it is in the inbox. | `{"name": string, "version": string}` |
+| `package_check_error` | The nightly check could not read a registry, or failed. | `{"registry": string (empty when the check itself failed), "message": string}` |
 | `retro_done` | A Retro ended: it was `reported`, or the analyst's run ended and its proposals were stored (`proposed`), or it `failed`. | `{"date": "YYYY-MM-DD", "status": "reported" \| "proposed" \| "failed", "proposals": number}` |
 | `retro_error` | The schedule could not start the day's Retro, the trials of a proposal, a research or the replays, or the trials of a proposal broke off; it is tried again a minute later. | `{"message": string}` |
 | `replayed` | A refused tool call was replayed and its judgement has the outcome. | `{"judgement": id, "run": id, "outcome": string}` |

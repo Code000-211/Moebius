@@ -360,6 +360,10 @@ const FILES: &[(&str, &str)] = &[
         include_str!("../../../../docs/reference/harness-configuration.md"),
     ),
     (
+        "reference/packages.md",
+        include_str!("../../../../docs/reference/packages.md"),
+    ),
+    (
         "reference/plugin-api.md",
         include_str!("../../../../docs/reference/plugin-api.md"),
     ),

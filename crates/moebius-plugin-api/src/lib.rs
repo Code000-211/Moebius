@@ -12,7 +12,7 @@ mod process;
 
 use std::collections::BTreeMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::{Arc, mpsc};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard, mpsc};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -160,7 +160,7 @@ impl Entry {
 /// Holds the plugins and makes every call into them.
 #[derive(Clone)]
 pub struct Host {
-    plugins: BTreeMap<String, Entry>,
+    plugins: Arc<RwLock<BTreeMap<String, Entry>>>,
     limit: Duration,
 }
 
@@ -168,7 +168,7 @@ impl Host {
     /// A host whose calls are cut off after `limit`.
     pub fn new(limit: Duration) -> Self {
         Self {
-            plugins: BTreeMap::new(),
+            plugins: Arc::default(),
             limit,
         }
     }
@@ -176,21 +176,54 @@ impl Host {
     /// Adds a plugin under its manifest's name, replacing one with the same name.
     pub fn add(&mut self, plugin: impl Plugin) -> &mut Self {
         let plugin: Arc<dyn Plugin> = Arc::new(plugin);
-        self.plugins
+        self.write()
             .insert(plugin.manifest().name, Entry::Compiled(plugin));
         self
     }
 
     /// Adds a plugin in its own process under the name it was started with, replacing one with the same name.
     pub fn add_process(&mut self, process: Process) -> &mut Self {
-        self.plugins
-            .insert(process.manifest().name, Entry::Process(Arc::new(process)));
+        self.set_process(process);
         self
+    }
+
+    /// Adds a plugin in its own process while the host is in use, replacing one with the same name, whose process is
+    /// stopped. Calls that are going on keep the plugin they started with.
+    pub fn set_process(&self, process: Process) {
+        let name = process.manifest().name;
+        let replaced = self.write().insert(name, Entry::Process(Arc::new(process)));
+        if let Some(Entry::Process(old)) = replaced {
+            old.stop();
+        }
+    }
+
+    /// Takes the plugin `plugin` out of the host and stops its process; false when the host holds none of that name.
+    pub fn remove(&self, plugin: &str) -> bool {
+        match self.write().remove(plugin) {
+            Some(Entry::Process(old)) => {
+                old.stop();
+                true
+            }
+            Some(Entry::Compiled(_)) => true,
+            None => false,
+        }
+    }
+
+    fn read(&self) -> RwLockReadGuard<'_, BTreeMap<String, Entry>> {
+        self.plugins
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn write(&self) -> RwLockWriteGuard<'_, BTreeMap<String, Entry>> {
+        self.plugins
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     /// How the plugin `plugin` is doing, if it runs in its own process.
     pub fn status(&self, plugin: &str) -> Option<ProcessStatus> {
-        match self.plugins.get(plugin)? {
+        match self.read().get(plugin)? {
             Entry::Process(process) => Some(process.status()),
             Entry::Compiled(_) => None,
         }
@@ -198,13 +231,13 @@ impl Host {
 
     /// The manifests of the plugins the host holds, by name.
     pub fn manifests(&self) -> Vec<Manifest> {
-        self.plugins.values().map(|p| p.manifest()).collect()
+        self.read().values().map(|p| p.manifest()).collect()
     }
 
     /// Kills every plugin that runs in its own process and does not start it again. The processes end even while
     /// something still holds the host, which a drop would wait for.
     pub fn stop_processes(&self) {
-        for entry in self.plugins.values() {
+        for entry in self.read().values() {
             if let Entry::Process(process) = entry {
                 process.stop();
             }
@@ -221,7 +254,7 @@ impl Host {
     pub fn call(&self, plugin: &str, call: Call) -> Result<Value, Refusal> {
         let limit = self.limit;
         let target = self
-            .plugins
+            .read()
             .get(plugin)
             .ok_or_else(|| Refusal::UnknownPlugin(plugin.to_string()))?
             .clone();

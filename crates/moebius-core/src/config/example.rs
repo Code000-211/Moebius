@@ -165,6 +165,13 @@ program = "claude"
 # bin_dir = "/usr/local/bin"              # where pi-bolt and claude are on the machine; without it, its PATH
 # ssh = "ssh"                             # the ssh program
 
+# A registry of packages: a git repository with an index.toml at its root (see docs/reference/packages.md). The registry
+# `moebius-plugins`, Moebius's own, is always there; an entry named like it replaces its url. `moebius pkg` installs
+# plugins, workflows, rules and skills from the registries.
+# [[registries]]
+# name = "acme"
+# url = "https://git.example.com/acme/moebius-packages"
+
 # Moebius acts as its own GitHub App. The key file is read at start; relative paths are inside this file's directory.
 # [github]
 # app_id = 123456

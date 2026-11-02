@@ -1,5 +1,5 @@
 //! The schedule: once a minute, whether the Retro is due, a proposal of the Retro is to be tried, a research is to
-//! start, a replay is to run, a lesson is to be retired or an automation is to fire (see `app::automations`), and the pause of the Pi of each
+//! start, a replay is to run, a lesson is to be retired or an automation is to fire (see `app::automations`), the nightly look for newer versions of the installed packages (`packages::check_if_due`), and the pause of the Pi of each
 //! chat that has waited long for its next message (`PiBolt::pause_idle_chats`). What fails is reported on the bus as
 //! `retro_error`.
 
@@ -57,6 +57,14 @@ impl Server {
         report(replay::on_schedule(&self.app, window));
         lessons::on_schedule(&self.app);
         report(self.on_automations(&*runs));
+        if let Err(e) =
+            crate::server::packages::check_if_due(&self.app, &self.live, self.harness_repo.as_ref())
+        {
+            self.app.bus.publish(Event::PackageCheckError {
+                registry: String::new(),
+                message: e.to_string(),
+            });
+        }
         self.harness.pause_idle_chats(&self.app, Instant::now());
     }
 

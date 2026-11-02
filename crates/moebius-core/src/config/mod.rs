@@ -2,10 +2,11 @@
 //!
 //! This module holds `Config` itself, read and checked from the file, and its errors; `example` is the commented
 //! example `moebius init` writes, `raw` the file as it is written, and `sections` the types of its sections, with the
-//! checks of each.
+//! checks of each, and `registries` the package registries.
 
 mod example;
 mod raw;
+mod registries;
 mod sections;
 
 use std::collections::BTreeMap;
@@ -20,6 +21,7 @@ use crate::harness::mcp::valid_variable;
 use crate::router::{Classes, check_class};
 
 pub use example::EXAMPLE;
+pub use registries::{DEFAULT_REGISTRY, DEFAULT_REGISTRY_URL, RegistryConfig};
 pub use sections::{
     AgentConfig, AgentSet, DecisionModelConfig, ForgejoConfig, GitHubConfig, GitLabConfig,
     HarnessKind, LocalizeConfig, MAX_LOCALIZE_FILES, PLUGIN_TIME_LIMIT_SECONDS, PluginConfig,
@@ -116,6 +118,12 @@ pub enum ConfigError {
     PluginDecidesTwice { kind: String },
     #[error("plugins.launches: {name:?} is a second launcher; only one plugin can be")]
     LauncherTwice { name: String },
+    #[error("registries.name: {name:?} is not a name (letters, digits, - and _)")]
+    RegistryName { name: String },
+    #[error("registries: two registries are named {name:?}")]
+    RegistryTwice { name: String },
+    #[error("registries.url of {name:?} must not be empty, start with - or contain a line break")]
+    RegistryUrl { name: String },
     #[error("runners.name: {name:?} is not a name (letters, digits, - and _)")]
     RunnerName { name: String },
     #[error("runners: two runners are named {name:?}")]
@@ -188,6 +196,8 @@ pub struct Config {
     pub plugins: Vec<PluginConfig>,
     /// The machines that run harnesses over SSH, with their key files made absolute.
     pub runners: Vec<RunnerConfig>,
+    /// The package registries, the default one first.
+    pub registries: Vec<RegistryConfig>,
     pub agents: BTreeMap<String, AgentConfig>,
 }
 
@@ -288,6 +298,7 @@ impl Config {
             .unwrap_or_else(|| PathBuf::from("pi-bolt"));
         let plugins = plugins(raw.plugins, base)?;
         let runners = runners(raw.runners, base)?;
+        let registries = registries::registries(raw.registries, base)?;
         for (name, agent) in &raw.agents {
             if let Some(runner) = &agent.runner
                 && !runners.iter().any(|r| &r.name == runner)
@@ -382,6 +393,7 @@ impl Config {
             localize,
             plugins,
             runners,
+            registries,
             agents: raw.agents,
             data_dir,
         })
@@ -846,6 +858,51 @@ mod tests {
             parse("unknown = 1"),
             Err(ConfigError::Parse { .. })
         ));
+    }
+
+    #[test]
+    fn registries_start_with_the_default_one_which_an_entry_of_its_name_replaces() {
+        let names = |c: &Config| -> Vec<(String, String)> {
+            c.registries
+                .iter()
+                .map(|r| (r.name.clone(), r.url.clone()))
+                .collect()
+        };
+        let c = parse("").unwrap();
+        assert_eq!(
+            names(&c),
+            [(
+                "moebius-plugins".to_string(),
+                DEFAULT_REGISTRY_URL.to_string()
+            )]
+        );
+        let c = parse(
+            "[[registries]]\nname = \"acme\"\nurl = \"https://git.example.com/acme/p\"\n\
+             [[registries]]\nname = \"local\"\nurl = \"registries/local\"\n\
+             [[registries]]\nname = \"moebius-plugins\"\nurl = \"/srv/mirror\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            names(&c),
+            [
+                ("moebius-plugins".to_string(), "/srv/mirror".to_string()),
+                (
+                    "acme".to_string(),
+                    "https://git.example.com/acme/p".to_string()
+                ),
+                ("local".to_string(), "/srv/registries/local".to_string()),
+            ]
+        );
+        let refused = |text: &str| parse(text).unwrap_err().to_string();
+        assert!(
+            refused("[[registries]]\nname = \"a b\"\nurl = \"u\"\n").contains("registries.name")
+        );
+        let twice = "[[registries]]\nname = \"a\"\nurl = \"u\"\n";
+        assert!(refused(&format!("{twice}{twice}")).contains("two registries"));
+        assert!(
+            refused("[[registries]]\nname = \"a\"\nurl = \"-oProxy\"\n").contains("registries.url")
+        );
+        assert!(refused("[[registries]]\nname = \"a\"\n").contains("url"));
     }
 
     #[test]

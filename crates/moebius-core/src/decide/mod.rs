@@ -90,6 +90,15 @@ impl Decisions {
         self
     }
 
+    /// Stops the plugin `plugin` from answering any kind, such as when it is removed.
+    pub fn unroute(&self, plugin: &str) -> &Self {
+        self.by_kind
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .retain(|_, decider| decider != plugin);
+        self
+    }
+
     /// Whether a decider plugin answers decisions of `kind`, as opposed to a kind only a person decides.
     pub fn decides(&self, kind: &str) -> bool {
         self.by_kind

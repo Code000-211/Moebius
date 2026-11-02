@@ -6,7 +6,9 @@ use std::path::PathBuf;
 
 use serde::Deserialize;
 
-use super::{AgentConfig, PluginConfig, RunnerConfig, UpstreamConfig, default_protocol};
+use super::{
+    AgentConfig, PluginConfig, RegistryConfig, RunnerConfig, UpstreamConfig, default_protocol,
+};
 use crate::router::{Classes, Protocol};
 
 #[derive(Debug, Deserialize)]
@@ -164,6 +166,8 @@ pub(super) struct Raw {
     pub(super) plugins: Vec<PluginConfig>,
     #[serde(default)]
     pub(super) runners: Vec<RunnerConfig>,
+    #[serde(default)]
+    pub(super) registries: Vec<RegistryConfig>,
     #[serde(default)]
     pub(super) agents: BTreeMap<String, AgentConfig>,
 }

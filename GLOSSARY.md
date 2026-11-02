@@ -202,6 +202,15 @@ A unit of extension that can add to or replace any part of Moebius; it runs eith
 Moebius.
 _Avoid_: extension (that word belongs to Pi-Bolt), addon, module
 
+**Package**:
+A plugin, a set of column scripts, a rules fragment or a set of skills that a registry offers and `moebius pkg` installs,
+at a pinned version and checked against the sha256 of its index.
+_Avoid_: add-on, module, extension (that word belongs to Pi-Bolt)
+
+**Registry**:
+A git repository with an `index.toml` that lists packages with their downloads; `moebius-plugins` is the default.
+_Avoid_: store, marketplace, catalog
+
 **Bundled plugin**:
 A plugin that ships with every installation of Moebius and is on by default, such as the GitHub forge or self-improvement,
 but that can still be removed.

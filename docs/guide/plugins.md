@@ -260,3 +260,46 @@ moves on and the second waits in `Backlog` with `the title says [wip]`.
 | The server does not know your plugin. | Nothing registers a plugin by itself. If you did not rebuild and restart with it added in `Server::new`, or name it under `[[plugins]]` with the kind in `decides`, the kind has no route. |
 | Your plugin process is `restarting` on the Plugins page. | Its `error` says why it stopped: `it exited before its manifest`, `its manifest names "x", not "y"`, `it sent no manifest within 30000 ms`, `it wrote a line that is not a reply: ...`. Its log, `<data_dir>/plugins/<name>.log`, has what it wrote to standard error. Write nothing but messages to standard output. |
 | You routed `tool_call` and rules stopped working. | The guard no longer answers. See the warning at the top. |
+
+## Publish a plugin and install it
+
+Plugins that others should be able to install live in a registry: a git repository with an `index.toml` at its root
+(see [packages](../reference/packages.md)). Moebius's own is [`Code000-211/moebius-plugins`](https://github.com/Code000-211/moebius-plugins),
+which every server reads; yours can be another repository with the same layout, added with
+`[[registries]]`.
+
+1. Put the plugin in `plugins/<name>/` of the registry repository, in any language, with a `moebius-package.toml`:
+
+   ```toml
+   name = "start-gate"
+   version = "0.1.0"
+   kind = "plugin"
+   description = "Holds cards whose title says [wip]."
+   moebius = ">=0.1"
+   targets = ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"]
+
+   [plugin]
+   kind = "decider"
+   program = "start-gate"
+   decides = ["start_card"]
+   ```
+
+   A Rust plugin depends on `moebius-plugin-api` by git tag of this repository. A launcher says `kind = "launcher"`.
+2. Build the program for each target and release it (in `moebius-plugins`, a GitHub release tagged
+   `<name>-v<version>` holds the program of each target). Each build is one file; the sha256 of each goes in the index.
+3. Add the version to `index.toml`: the manifest's fields as a `[[package]]`, with a `[[package.downloads]]` of `target`,
+   `url` and `sha256` for each target. In `moebius-plugins` CI writes the entry when a release is published.
+4. A person installs it on a server:
+
+   ```sh
+   moebius pkg search gate
+   moebius pkg install start-gate
+   ```
+
+   The program is downloaded to `<data_dir>/packages/start-gate/0.1.0/`, checked against the sha256, and a `[[plugins]]`
+   entry that names it is written to `moebius.toml`; the plugin is started at once and decides its kinds. `moebius pkg
+   update` swaps in a newer version, and `moebius pkg remove` takes the entry and the files away. Once a night the
+   server looks for newer versions and puts one item in the inbox for each.
+
+A download whose sha256 differs from the index is refused, and so is a version whose `moebius` range does not include
+the running Moebius. Nothing of the package runs before it is in place.

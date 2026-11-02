@@ -10,11 +10,12 @@
 //! This module holds the clone itself: opening and refreshing it. `read` reads the agents, skills, MCP servers and
 //! rules from it, `edits` makes a person's edits commits pushed to `origin`, `branches` checks, proposes and merges
 //! the branches of the Retro, chats and trials, `create` makes a new repository, and `skill_files` reads and edits a
-//! skill's files beside its `SKILL.md`.
+//! skill's files beside its `SKILL.md`, and `offer` offers files written on a branch as a change.
 
 mod branches;
 mod create;
 mod edits;
+mod offer;
 mod read;
 mod skill_files;
 

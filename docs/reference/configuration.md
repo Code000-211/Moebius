@@ -288,6 +288,18 @@ and `GET /v1/plugins` show its state. There are none by default.
 | `plugins.decides` | array of strings | `[]` | The kinds of decision the plugin answers, such as `start_card`. A kind named by two entries refuses the file. A kind has one decider, so naming `tool_call` replaces the guard, with the built-in rules and the teacher. |
 | `plugins.launches` | boolean | `false` | Whether the plugin is the launcher: it is asked before every Pi-Bolt process starts and may wrap it, such as in a sandbox (see [launchers](plugin-api.md#launchers)). Its manifest must list the kind `launcher`. A launcher that fails or is too slow fails the run, and while one is configured Pi-Bolt's terminal interface and Claude Code runs are not available. At most one plugin has it, else the file is refused. |
 
+## `[[registries]]`
+
+A registry of [packages](packages.md): a git repository with an `index.toml` at its root. Registries are read by
+`moebius pkg` and the nightly check, cloned to `<data_dir>/registries/<name>`, and are read when the server starts. The
+registry `moebius-plugins` (`https://github.com/Code000-211/moebius-plugins`) is always the first; an entry named
+`moebius-plugins` replaces its URL, any other adds a registry after it. There are none by default.
+
+| Key | Type | Default | Meaning and validation |
+|---|---|---|---|
+| `registries.name` | string | required | Letters, digits, `-` and `_`, and not the name of another entry, else the file is refused. |
+| `registries.url` | string | required | Anything `git clone` takes, as seen from the server. Not empty, not starting with `-`, no line breaks. A path with a directory in it is resolved against the file's directory. |
+
 ## `[[runners]]`
 
 A machine that runs the harness of a card's runs over SSH, instead of the server. An agent whose `runner` names it, or a

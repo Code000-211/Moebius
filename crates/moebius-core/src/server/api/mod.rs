@@ -17,6 +17,7 @@
 //! - `lessons`: the lessons the Retro learned from earlier cards, edited and deleted by a person.
 //! - `uploads`: zip files for the Moebius agent to import from.
 //! - `terminals`: shells and Pi's terminal interface over a WebSocket.
+//! - `packages`: the package manager: search, install, update and remove plugins, workflows, rules and skills.
 //! - `ports`: the ports that runs and terminals listen on, and a WebSocket that carries a connection to one.
 //! - `whereabouts`: where the server runs and what the desktop app reports about itself.
 //! - `events`: the WebSocket on which every event of the core arrives.
@@ -36,6 +37,7 @@ mod events;
 mod harness;
 mod improve;
 mod lessons;
+mod packages;
 mod ports;
 mod repositories;
 mod rules;
@@ -122,6 +124,12 @@ impl IntoResponse for ApiError {
 
 impl From<AppError> for ApiError {
     fn from(e: AppError) -> Self {
+        Self::from_app(&e)
+    }
+}
+
+impl ApiError {
+    fn from_app(e: &AppError) -> Self {
         let status = match e {
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::Invalid(_) => StatusCode::UNPROCESSABLE_ENTITY,
@@ -188,6 +196,7 @@ pub fn router(state: ApiState) -> Router {
         .merge(settings::routes())
         .merge(improve::routes())
         .merge(lessons::routes())
+        .merge(packages::routes())
         .merge(uploads::routes())
         .merge(terminals::routes())
         .merge(ports::routes())

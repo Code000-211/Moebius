@@ -377,6 +377,25 @@ mod tests {
     }
 
     #[test]
+    fn a_plugin_is_added_replaced_and_removed_while_the_host_is_in_use() {
+        let host = Host::new(LIMIT);
+        assert!(host.manifests().is_empty());
+        host.set_process(Process::start(spec("answers", &[]), LIMIT, |_| {}));
+        assert_eq!(host.status("test").unwrap().state, State::Running);
+        let shared = host.clone();
+        assert!(shared.decide("test", &request()).is_ok());
+        // A plugin of the same name replaces the first, and the first one's process stops.
+        host.set_process(Process::start(spec("answers", &[]), LIMIT, |_| {}));
+        assert_eq!(shared.manifests().len(), 1);
+        assert!(host.remove("test"));
+        assert!(!host.remove("test"));
+        assert!(matches!(
+            shared.decide("test", &request()),
+            Err(Refusal::UnknownPlugin(_))
+        ));
+    }
+
+    #[test]
     fn stopping_the_processes_kills_them_while_the_host_is_still_held() {
         let (host, _) = host("answers", LIMIT);
         assert_eq!(host.status("test").unwrap().state, State::Running);
