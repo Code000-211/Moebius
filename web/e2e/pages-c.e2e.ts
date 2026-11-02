@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { type Browser, type BrowserContext, chromium, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { dayName } from "../src/ui/lib/format";
-import { pickOption, showing } from "./controls";
+import { columnsScrollEach, pickOption, showing } from "./controls";
 import { startServer, type TestServer, usesRealServer } from "./server";
 
 let browser: Browser;
@@ -791,5 +791,22 @@ describe("the script editor", () => {
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await alert("the push was refused: not a fast-forward").waitFor();
     expect(await page.getByTestId("script-problem").count()).toBe(0);
+  });
+});
+
+/** Opens `path` and chooses its first row, so the detail beside the list has something in it. */
+async function read(path: string, title: string) {
+  await open(path, title);
+  await page.getByTestId("list-card").first().click();
+  await page.getByTestId("detail-column").waitFor();
+}
+
+describe("the pages that put a list beside a detail", () => {
+  it.skipIf(usesRealServer)("keeps the list and the detail each inside the window", async () => {
+    await fresh();
+    await read("/automations", "Automations");
+    await columnsScrollEach(page);
+    await read("/experiments", "Experiments");
+    await columnsScrollEach(page);
   });
 });

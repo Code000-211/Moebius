@@ -4,6 +4,9 @@
  * which lets it run in the trial window, or starts it now; a running research can be stopped, and the brief of a
  * draft is edited in place (`PUT /v1/research/{id}`). The server says when something changed with `research_status`
  * and `experiment_done`, which `live/invalidation.ts` answers by reading again.
+ *
+ * The page fills the window and each column scrolls on its own: a research with its baseline and its levers is read on
+ * its own, and the list of briefs should stay where it was left.
  */
 import { PencilSimpleIcon, PlusIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -158,7 +161,7 @@ export function ExperimentsPage() {
   }
 
   return (
-    <>
+    <div className="flex h-full min-h-0 flex-col">
       {header}
       <ListDetail
         list={list.data.map((research) => {
@@ -223,7 +226,7 @@ export function ExperimentsPage() {
           </>
         }
       />
-    </>
+    </div>
   );
 }
 

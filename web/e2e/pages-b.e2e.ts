@@ -7,7 +7,7 @@
  */
 import { type Browser, type BrowserContext, chromium, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { pickOption, showing } from "./controls";
+import { columnsScrollEach, pickOption, showing } from "./controls";
 import type { FakeServer } from "./fakeServer";
 import { startServer, type TestServer, usesRealServer } from "./server";
 
@@ -830,4 +830,22 @@ describe("the Plugins page", () => {
       expect(own).toContain("/srv/.moebius/plugins/allow-reads.log");
     },
   );
+});
+
+describe("the pages that put a list beside a detail", () => {
+  it.skipIf(usesRealServer)("keeps the list and the detail each inside the window", async () => {
+    await open("/");
+    // The three lay out what the harness configuration holds the same way.
+    for (const [path, title] of [
+      ["/agents", "Agents"],
+      ["/skills", "Skills"],
+      ["/mcp-servers", "MCP servers"],
+    ] as const) {
+      await page.goto(`${server.url}${path}`);
+      await page.getByRole("heading", { name: title, level: 1 }).waitFor();
+      await page.getByTestId("list-card").first().click();
+      await page.getByTestId("detail-column").waitFor();
+      await columnsScrollEach(page);
+    }
+  });
 });

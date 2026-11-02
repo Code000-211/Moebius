@@ -3,6 +3,9 @@
  * in the address (`?agent=`, or `?new=1` for a new one), so a reload and a link keep it. A server without a harness
  * configuration repository keeps its agents in `moebius.toml`: the page then reads the agent from the settings and
  * offers to set the repository up.
+ *
+ * The page fills the window and each column scrolls on its own: an agent's instructions are read on their own, and the
+ * list of agents should stay where it was left.
  */
 import { PlusIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
@@ -105,7 +108,7 @@ export function AgentsPage() {
   const newForm = blankForm("", true);
 
   return (
-    <>
+    <div className="flex h-full min-h-0 flex-col">
       <PageHeader
         title="Agents"
         context={
@@ -251,7 +254,7 @@ export function AgentsPage() {
           )
         }
       />
-    </>
+    </div>
   );
 }
 

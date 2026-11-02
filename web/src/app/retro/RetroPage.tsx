@@ -86,7 +86,6 @@ export function RetroPage() {
         />
       ) : (
         <ListDetail
-          eachScrolls
           list={
             list.data && list.data.length > 0 ? (
               list.data.map((each) => (

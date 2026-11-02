@@ -5,6 +5,9 @@
  * which opens its chat. A save is `POST /v1/automations` or `PUT /v1/automations/{id}`, "Run now" is
  * `POST /v1/automations/{id}/run` and a delete `DELETE /v1/automations/{id}`. The event stream keeps the list and the
  * past runs current, so "in 3 h" and the next firing move on their own.
+ *
+ * The page fills the window and each column scrolls on its own: the past runs of an automation grow without limit, and
+ * reading them should not carry the list of automations away with it.
  */
 import { PlusIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -162,7 +165,7 @@ export function AutomationsPage() {
   }
 
   return (
-    <>
+    <div className="flex h-full min-h-0 flex-col">
       {header}
       <ListDetail
         list={list.data.map((automation) => (
@@ -190,7 +193,7 @@ export function AutomationsPage() {
           ) : null
         }
       />
-    </>
+    </div>
   );
 }
 

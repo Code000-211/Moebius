@@ -5,6 +5,9 @@
  * for. A server without a harness configuration repository lists no servers, and the page then offers to set one up.
  * The server chosen is in the address (`?server=`, or `?new=1`), and what was typed for one is kept while the page
  * lives, so moving along the list does not throw it away.
+ *
+ * The page fills the window and each column scrolls on its own, so editing a long server leaves the list of servers
+ * where it was left.
  */
 import { PlusIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -85,7 +88,7 @@ export function McpPage() {
   const newForm = blankForm();
 
   return (
-    <>
+    <div className="flex h-full min-h-0 flex-col">
       <PageHeader
         title="MCP servers"
         context="The tools an agent can be given beyond its own."
@@ -127,7 +130,7 @@ export function McpPage() {
       )}
       {noRepository && <HarnessSetup />}
       {editable && (
-        <div className="flex flex-col gap-8">
+        <div className="flex min-h-0 flex-1 flex-col gap-8">
           {importing && <ImportPanel kind="mcp" onClose={() => setImporting(false)} />}
           <ListDetail
             list={
@@ -218,7 +221,7 @@ export function McpPage() {
           />
         </div>
       )}
-    </>
+    </div>
   );
 }
 

@@ -5,6 +5,9 @@
  * brings are shown and cannot be changed. A server without a harness configuration repository lists no skills, and
  * the page then offers to set one up. The skill chosen is in the address (`?skill=`, or `?new=1`), and what was typed
  * for a skill is kept while the page lives, so moving along the list does not throw it away.
+ *
+ * The page fills the window and each column scrolls on its own: the text of a skill is long enough to read on its own,
+ * and turning it should not carry the list of skills away with it.
  */
 import { PlusIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
@@ -69,7 +72,7 @@ export function SkillsPage() {
         : WHY_MUTED;
 
   return (
-    <>
+    <div className="flex h-full min-h-0 flex-col">
       <PageHeader
         title="Skills"
         context="What an agent reads before it starts."
@@ -111,7 +114,7 @@ export function SkillsPage() {
       )}
       {noRepository && <HarnessSetup />}
       {editable && (
-        <div className="flex flex-col gap-8">
+        <div className="flex min-h-0 flex-1 flex-col gap-8">
           {importing && <ImportPanel kind="skills" onClose={() => setImporting(false)} />}
           <ListDetail
             list={skills.data.map((skill) => (
@@ -171,7 +174,7 @@ export function SkillsPage() {
           />
         </div>
       )}
-    </>
+    </div>
   );
 }
 
