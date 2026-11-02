@@ -4,6 +4,7 @@
  * and saved as a commit. The two parts are borderless cards grouped by space. The board of the repository is its own
  * page.
  */
+import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router";
@@ -15,6 +16,7 @@ import type { Repository } from "../../api/types/board";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
 import { Loader } from "../../ui/components/Loader";
+import { Tooltip } from "../../ui/components/Tooltip";
 import { cn } from "../../ui/lib/cn";
 import { Box } from "../../ui/page/Box";
 import { Empty } from "../../ui/page/Empty";
@@ -66,6 +68,15 @@ export function ProjectPage() {
     <>
       <PageHeader
         title={repository.name}
+        back={
+          <Tooltip content="All projects" side="bottom">
+            <Button asChild variant="icon" aria-label="All projects">
+              <Link to="/projects">
+                <ArrowLeftIcon className="size-5" />
+              </Link>
+            </Button>
+          </Tooltip>
+        }
         actions={
           <Button asChild size="sm" variant="secondary">
             <Link to={boardPath(repository.id)}>Open board</Link>
