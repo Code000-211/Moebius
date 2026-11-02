@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{App, Result};
 use crate::blobs::redact;
-use crate::repos::git_bytes;
+use crate::repos::{git_bytes, git_bytes_env};
 
 /// The most bytes of a diff one answer carries; a longer one is cut and says so.
 pub const DIFF_LIMIT: usize = 2_000_000;
@@ -23,10 +23,11 @@ pub struct Diff {
 
 impl Diff {
     fn read(dir: &Path, args: &[&str]) -> Diff {
-        let text = git_bytes(dir, args)
-            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-            .unwrap_or_default();
-        let mut diff = redact(&text);
+        Diff::from_bytes(&git_bytes(dir, args).unwrap_or_default())
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Diff {
+        let mut diff = redact(&String::from_utf8_lossy(bytes));
         let truncated = diff.len() > DIFF_LIMIT;
         if truncated {
             let mut end = DIFF_LIMIT;
@@ -36,6 +37,27 @@ impl Diff {
             diff.truncate(end);
         }
         Diff { diff, truncated }
+    }
+}
+
+/// Everything in `worktree` since `start`, files not yet added included: the files are added to a temporary copy of the
+/// index, so the worktree's own index stays as the agent left it. Without the copy, only tracked paths are shown.
+fn worktree_diff(worktree: &Path, start: &str, scratch: &Path) -> Diff {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let index = scratch.join(format!(
+        "diff-{}-{}.index",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let env = [("GIT_INDEX_FILE", index.as_path())];
+    let staged = git_bytes_env(worktree, &["read-tree", "HEAD"], &env)
+        .and_then(|_| git_bytes_env(worktree, &["add", "-A"], &env))
+        .and_then(|_| git_bytes_env(worktree, &["diff", "--cached", start], &env));
+    let _ = std::fs::remove_file(&index);
+    match staged {
+        Ok(bytes) => Diff::from_bytes(&bytes),
+        Err(_) => Diff::read(worktree, &["diff", start]),
     }
 }
 
@@ -74,7 +96,7 @@ impl App {
             let start = git_bytes(worktree, &["merge-base", &base, "HEAD"])
                 .map(|bytes| String::from_utf8_lossy(&bytes).trim().to_string())
                 .unwrap_or(base);
-            return Ok(Diff::read(worktree, &["diff", &start]));
+            return Ok(worktree_diff(worktree, &start, &self.data_dir));
         }
         let range = format!("{base}...{}", run.branch());
         Ok(Diff::read(&clone, &["diff", &range]))

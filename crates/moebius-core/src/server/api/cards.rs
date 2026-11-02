@@ -700,6 +700,13 @@ mod tests {
         app.store.set_run_status(live.id, "running").unwrap();
         let diff: Diff = get(&state, &addr, &format!("/v1/runs/{}/diff", live.id)).await;
         assert!(diff.diff.contains("+more"), "{}", diff.diff);
+        // A file the agent created and has not committed is in it too, and the worktree's index is left alone.
+        std::fs::write(wt.path.join("fresh.txt"), "brand new\n").unwrap();
+        let diff: Diff = get(&state, &addr, &format!("/v1/runs/{}/diff", live.id)).await;
+        assert!(diff.diff.contains("+++ b/fresh.txt"), "{}", diff.diff);
+        assert!(diff.diff.contains("+brand new"));
+        let status = crate::repos::git(&wt.path, &["status", "--porcelain"]).unwrap();
+        assert!(status.contains("?? fresh.txt"), "{status}");
 
         // A run with nothing to compare, and runs and changes that do not exist.
         let bare = app.store.add_run(None, "Moebius", "test", "chat").unwrap();

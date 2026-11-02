@@ -92,20 +92,23 @@ impl App {
             if let Some(run) = tests.get(&key) {
                 return Ok(run.clone());
             }
+            // Only the change's latest commit matters, and a closed change needs no answers.
+            tests.retain(|(other, other_head, _, _), _| {
+                if *other == change {
+                    *other_head == head
+                } else {
+                    self.change(*other).is_ok_and(|c| c.state == "open")
+                }
+            });
             tests.insert(key.clone(), pending());
         }
         let app = self.clone();
+        let key_for_failure = key.clone();
         let command = command.to_string();
         let started = std::thread::Builder::new()
             .name(format!("test of change {change}"))
             .spawn(move || {
-                let at_base = files.is_some();
-                let name = format!(
-                    "test-{}-{}-{}",
-                    change,
-                    if at_base { "base" } else { "change" },
-                    &head[..12.min(head.len())]
-                );
+                let name = test_name(change, &head, &command, &files);
                 let (rev, prepare) = match &files {
                     Some(files) => (base.as_str(), files.as_slice()),
                     None => (head.as_str(), &[][..]),
@@ -130,12 +133,18 @@ impl App {
                         output,
                     },
                 };
-                app.tests
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .insert(key, run);
+                // An entry pruned while the test ran (the change moved on or closed) stays gone.
+                let mut tests = app.tests.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some(slot) = tests.get_mut(&key) {
+                    *slot = run;
+                }
             });
         if let Err(e) = started {
+            // Nothing runs, so nothing may stay pending: a script would wait for it until the commit moves.
+            self.tests
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(&key_for_failure);
             return Ok(TestRun {
                 status: "error",
                 output: format!("cannot start the test: {e}"),
@@ -174,6 +183,21 @@ pub(super) fn reproduction_at(clone: &Path, head: &str, base: &str) -> Option<Re
     parse(&text)
 }
 
+/// The name of the worktree and log of one test: the command and the files are in it as a short hash, as two tests of one
+/// commit may run at the same time and must not share a worktree.
+fn test_name(change: i64, head: &str, command: &str, files: &Option<Vec<String>>) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    (command, files).hash(&mut hasher);
+    format!(
+        "test-{}-{}-{}-{:08x}",
+        change,
+        if files.is_some() { "base" } else { "change" },
+        &head[..12.min(head.len())],
+        hasher.finish() as u32
+    )
+}
+
 fn pending() -> TestRun {
     TestRun {
         status: "pending",
@@ -202,6 +226,31 @@ mod tests {
     use super::*;
 
     #[test]
+    fn two_tests_of_one_commit_have_worktrees_of_their_own() {
+        let head = "0123456789abcdef";
+        let name = |command: &str, files: Option<Vec<&str>>| {
+            test_name(
+                1,
+                head,
+                command,
+                &files.map(|f| f.into_iter().map(String::from).collect()),
+            )
+        };
+        let names = [
+            name("cargo test a", None),
+            name("cargo test b", None),
+            name("cargo test a", Some(vec!["t.rs"])),
+            name("cargo test a", Some(vec!["u.rs"])),
+        ];
+        for (i, one) in names.iter().enumerate() {
+            for other in &names[i + 1..] {
+                assert_ne!(one, other);
+            }
+        }
+        assert_eq!(names[0], name("cargo test a", None));
+    }
+
+    #[test]
     fn the_reproduce_file_names_a_command_and_its_files_or_why_there_is_none() {
         assert_eq!(
             parse("# the test\ncargo test --test issue_7\n\ntests/issue_7.rs\n"),
@@ -217,5 +266,70 @@ mod tests {
             ))
         );
         assert_eq!(parse("# nothing\n\n"), None);
+    }
+
+    // Unix only: the test is a shell command.
+    #[cfg(unix)]
+    #[test]
+    fn running_a_test_forgets_old_commits_and_closed_changes() {
+        use crate::store::Store;
+        use moebius_plugin_api::Host;
+        use std::time::{Duration, Instant};
+
+        let dir = tempfile::tempdir().unwrap();
+        let origin = dir.path().join("origin");
+        std::fs::create_dir_all(&origin).unwrap();
+        git(&origin, &["init", "--quiet", "-b", "main"]).unwrap();
+        std::fs::write(origin.join("README.md"), "hello\n").unwrap();
+        git(&origin, &["add", "."]).unwrap();
+        git(&origin, &["commit", "--quiet", "-m", "first"]).unwrap();
+        let head = git(&origin, &["rev-parse", "HEAD"])
+            .unwrap()
+            .trim()
+            .to_string();
+        let store = Arc::new(Store::in_memory(&dir.path().join("blobs")).unwrap());
+        let app = Arc::new(App::new(
+            store,
+            Arc::new(Host::new(Duration::from_secs(5))),
+            &dir.path().join("data"),
+        ));
+        let repo = app
+            .add_repository("demo", origin.to_str().unwrap())
+            .unwrap();
+        let card = app.create_issue(repo.id, "Fix it", "", "person").unwrap();
+        let open = app
+            .store
+            .add_change(repo.id, Some(card.id), "moebius/card", None, &head)
+            .unwrap();
+        let closed = app
+            .store
+            .add_change(repo.id, None, "other", None, &head)
+            .unwrap();
+        app.store.set_change_state(closed.id, "closed").unwrap();
+
+        let key = |change: i64, head: &str| -> TestKey {
+            (change, head.to_string(), "true".to_string(), None)
+        };
+        {
+            let mut tests = app.tests.lock().unwrap();
+            tests.insert(key(open.id, "old"), pending());
+            tests.insert(key(closed.id, &head), pending());
+        }
+        app.run_test(card.id, "true", None).unwrap();
+        // Wait for the thread, which must not bring back what was pruned.
+        let deadline = Instant::now() + Duration::from_secs(60);
+        loop {
+            let status = app.tests.lock().unwrap()[&key(open.id, &head)].status;
+            if status != "pending" {
+                assert_eq!(status, "passed");
+                break;
+            }
+            assert!(Instant::now() < deadline, "the test did not end");
+            std::thread::yield_now();
+        }
+        let tests = app.tests.lock().unwrap();
+        assert!(!tests.contains_key(&key(open.id, "old")));
+        assert!(!tests.contains_key(&key(closed.id, &head)));
+        assert_eq!(tests.len(), 1);
     }
 }

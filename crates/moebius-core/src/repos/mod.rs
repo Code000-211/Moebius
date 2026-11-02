@@ -50,6 +50,25 @@ pub fn git_bytes(dir: &Path, args: &[&str]) -> Result<Vec<u8>> {
     Ok(output.stdout)
 }
 
+/// Runs git in `dir` with the extra environment variables `env` and returns its standard output as it is.
+pub fn git_bytes_env(dir: &Path, args: &[&str], env: &[(&str, &Path)]) -> Result<Vec<u8>> {
+    let output = Command::new("git")
+        .args(IDENTITY)
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .envs(env.iter().copied())
+        .output()?;
+    if !output.status.success() {
+        return Err(GitError::Failed {
+            args: args.join(" "),
+            stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        });
+    }
+    Ok(output.stdout)
+}
+
 /// Runs git in `dir` with `input` on its standard input and returns its standard output as it is, for `cat-file --batch`.
 pub fn git_with_input(dir: &Path, args: &[&str], input: Vec<u8>) -> Result<Vec<u8>> {
     use std::io::Write;
