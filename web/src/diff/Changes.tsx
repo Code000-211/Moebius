@@ -122,7 +122,7 @@ export function ChangesCard({ of }: { of: { change: number } }) {
         <DialogContent
           data-testid="change-diff"
           aria-describedby={undefined}
-          className="max-w-6xl overflow-hidden"
+          className="max-w-[min(90vw,1600px)] overflow-hidden"
         >
           <div className="flex min-h-0 flex-1 flex-col gap-4 p-6">
             <DialogHeader>

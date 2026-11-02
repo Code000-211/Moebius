@@ -210,6 +210,13 @@ describe("the diff of a card", () => {
         .filter({ hasText: "cc -O0 main.c" })
         .waitFor();
       expect(await sheet.getByTestId("diff-path").textContent()).toBe("Makefile");
+      // A diff is read two columns wide — the list of files and the lines of the one that is open — so the sheet takes
+      // the window it is opened in rather than the measure a paragraph of prose wants: at a reading width the lines
+      // were a narrow strip beside the list, and every line of code was cut short.
+      const share = await sheet.evaluate(
+        (el) => el.getBoundingClientRect().width / window.innerWidth,
+      );
+      expect(share).toBeGreaterThan(0.85);
       await page.keyboard.press("Escape");
       await sheet.waitFor({ state: "detached" });
       // Escape closed the sheet alone; the card is still open behind where it was.
