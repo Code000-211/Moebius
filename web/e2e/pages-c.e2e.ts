@@ -399,6 +399,47 @@ describe("the Retro page", () => {
     },
   );
 
+  it.skipIf(usesRealServer)(
+    "scrolls the list of days and the day beside it each on its own",
+    async () => {
+      await fresh();
+      // Enough days that the list is taller than the column it stands in.
+      for (let back = 1; back <= 20; back += 1) {
+        fake().days.push({
+          date: `2026-09-${String(back).padStart(2, "0")}`,
+          status: "reported",
+          errors: 0,
+          proposals: 0,
+        });
+      }
+      await open("/retro", "Retro");
+      const frame = page.locator("main");
+      const list = page.getByTestId("list-column");
+      const detail = page.getByTestId("detail-column");
+      // A day of errors is long, and the page keeps it inside the window rather than scrolling as one long sheet.
+      await expect
+        .poll(() => detail.evaluate((el) => el.scrollHeight - el.clientHeight))
+        .toBeGreaterThan(0);
+      expect(await frame.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeLessThan(8);
+      // Reading the day scrolls it where it is read and leaves the list of days where it was.
+      const detailBox = await detail.boundingBox();
+      if (!detailBox) throw new Error("the column of the day drew no box");
+      await page.mouse.move(detailBox.x + detailBox.width / 2, detailBox.y + 200);
+      await page.mouse.wheel(0, 600);
+      await expect.poll(() => detail.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+      expect(await list.evaluate((el) => el.scrollTop)).toBe(0);
+      expect(await frame.evaluate((el) => el.scrollTop)).toBe(0);
+      // The list scrolls in turn, and the day stays where the reader left it.
+      const read = await detail.evaluate((el) => el.scrollTop);
+      const listBox = await list.boundingBox();
+      if (!listBox) throw new Error("the column of days drew no box");
+      await page.mouse.move(listBox.x + listBox.width / 2, listBox.y + 200);
+      await page.mouse.wheel(0, 600);
+      await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+      expect(await detail.evaluate((el) => el.scrollTop)).toBe(read);
+    },
+  );
+
   it.skipIf(usesRealServer)("says why a second Retro of a day did not start", async () => {
     await fresh();
     await open("/retro", "Retro");

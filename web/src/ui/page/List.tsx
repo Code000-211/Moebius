@@ -1,8 +1,8 @@
 /**
  * The list of things on the left of a page and the detail of the one chosen beside it. `ListCard` is the row of that
  * list — a title, tags, a line, and whether it is the chosen one; `ListDetail` puts the two side by side, stacks them
- * on a narrow screen, and lays the rows out as a list a screen reader can count, so a page needs no markup of its own
- * for that; `Table` is the rows of a detail that is a list of records. These are the pieces the Agents, Skills, MCP,
+ * on a narrow screen, lays the rows out as a list a screen reader can count, so a page needs no markup of its own for
+ * that, and can give each column its own scroll; `Table` is the rows of a detail that is a list of records. These are the pieces the Agents, Skills, MCP,
  * Automations, Retro and Experiments pages share.
  */
 import { Children, Fragment, isValidElement, type ReactElement, type ReactNode } from "react";
@@ -128,17 +128,49 @@ function Rows({ children }: { children: ReactNode }) {
  * are no rows — and an empty state handed over instead of rows both leave the column out, so the detail, which is then
  * the empty state with the first row in it, takes the width the page has. A loader is not nothing: the rows are on
  * their way, and the column keeps its place until they arrive.
+ *
+ * `eachScrolls` gives each column the height the page has and lets it scroll on its own, for a page whose detail is
+ * long enough that scrolling one column should not carry the other away with it. The caller then fills the page —
+ * `flex h-full min-h-0 flex-col` round the header and this — and stacked columns go back to scrolling with the page.
  */
-export function ListDetail({ list, detail }: { list: ReactNode; detail: ReactNode }) {
+export function ListDetail({
+  list,
+  detail,
+  eachScrolls = false,
+}: {
+  list: ReactNode;
+  detail: ReactNode;
+  eachScrolls?: boolean;
+}) {
   const nothingToList = childrenOf(list).every((child) => !isCard(child) && isEmpty(child));
   return (
-    <div className={cn("flex flex-col gap-6", !nothingToList && "lg:flex-row lg:items-start")}>
+    <div
+      className={cn(
+        "flex flex-col gap-6",
+        !nothingToList && "lg:flex-row lg:items-start",
+        eachScrolls && "min-h-0 flex-1 lg:items-stretch",
+      )}
+    >
       {!nothingToList && (
-        <div className="flex w-full shrink-0 flex-col gap-2 lg:w-72">
+        <div
+          data-testid="list-column"
+          className={cn(
+            "flex w-full shrink-0 flex-col gap-2 lg:w-72",
+            eachScrolls && "lg:min-h-0 lg:overflow-y-auto",
+          )}
+        >
           <Rows>{list}</Rows>
         </div>
       )}
-      <div className="flex min-w-0 flex-1 flex-col gap-6">{detail}</div>
+      <div
+        data-testid="detail-column"
+        className={cn(
+          "flex min-w-0 flex-1 flex-col gap-6",
+          eachScrolls && "lg:min-h-0 lg:overflow-y-auto",
+        )}
+      >
+        {detail}
+      </div>
     </div>
   );
 }

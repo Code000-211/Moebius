@@ -5,8 +5,9 @@
  * proposal changes with `trial_done` and `proposal_status`, which `live/invalidation.ts` answers by reading again.
  *
  * The days are the list and the chosen day is the detail, so a person reads one day at a time: what was left out of
- * it, what went wrong, and what the Retro wants changed. `?day=` names the day to open on and `?proposal=` the one
- * to land on, which is how the Inbox leads here from a proposal it cannot show all of.
+ * it, what went wrong, and what the Retro wants changed. The page fills the window and each column scrolls on its own,
+ * because a day of errors is long and the list of days should stay where it was left. `?day=` names the day to open on
+ * and `?proposal=` the one to land on, which is how the Inbox leads here from a proposal it cannot show all of.
  */
 import { WarningCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -63,7 +64,7 @@ export function RetroPage() {
   });
 
   return (
-    <>
+    <div className="flex h-full min-h-0 flex-col">
       <PageHeader
         title="Retro"
         context="Help Moebius self-improve."
@@ -85,6 +86,7 @@ export function RetroPage() {
         />
       ) : (
         <ListDetail
+          eachScrolls
           list={
             list.data && list.data.length > 0 ? (
               list.data.map((each) => (
@@ -138,7 +140,7 @@ export function RetroPage() {
           }
         />
       )}
-    </>
+    </div>
   );
 }
 

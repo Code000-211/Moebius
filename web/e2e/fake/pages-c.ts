@@ -22,6 +22,8 @@ export interface PagesCFake {
   refuseNext(method: string, path: string, status: number, message: string): void;
   /** The text of the script of a column (lower case), once saved. */
   readonly scripts: Map<string, string>;
+  /** What `GET /v1/retros` lists. A test that needs more days than the four writes them here. */
+  readonly days: Array<{ date: string; status: string; errors: number; proposals: number }>;
 }
 
 type Json = Record<string, unknown>;
@@ -217,7 +219,7 @@ export function createPagesCFake(
 
   // The Retro.
   const today = new Date().toISOString().slice(0, 10);
-  let retroDays: Array<{ date: string; status: string; errors: number; proposals: number }> = [
+  const retroDays: Array<{ date: string; status: string; errors: number; proposals: number }> = [
     { date: "2026-10-28", status: "proposed", errors: 6, proposals: 3 },
     { date: "2026-10-27", status: "reported", errors: 0, proposals: 0 },
     { date: "2026-10-26", status: "failed", errors: 3, proposals: 0 },
@@ -657,7 +659,7 @@ export function createPagesCFake(
       if (retroDays.some((day) => day.date === date)) {
         return reply(response, 409, `the Retro of ${date} exists already`);
       }
-      retroDays = [{ date, status: "reported", errors: 0, proposals: 0 }, ...retroDays];
+      retroDays.unshift({ date, status: "reported", errors: 0, proposals: 0 });
       broadcast({ kind: "retro_done", data: { date, status: "reported" } });
       return reply(response, 200, {
         date,
@@ -812,6 +814,7 @@ export function createPagesCFake(
     handle,
     requests,
     scripts,
+    days: retroDays,
     refuseNext(method, path, status, message) {
       refusals.set(`${method} ${path}`, { status, message });
     },
