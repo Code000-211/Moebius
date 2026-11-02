@@ -209,16 +209,11 @@ impl App {
     }
 
     /// Removes a repository and everything stored for it, and deletes its clone and worktrees. Refuses while a run
-    /// of the repository is still going, so that nothing is taken from under it. The removal is recorded as a
+    /// of the repository or of one of its cards is still going, so that nothing is taken from under it. The removal is recorded as a
     /// `delete_repository` decision and announced as `repository_removed`.
     pub fn remove_repository(&self, by: &Actor, id: i64, reason: &str) -> Result<Repository> {
         let repository = self.repository(id)?;
-        if self
-            .store
-            .active_runs()?
-            .iter()
-            .any(|run| run.repository_id == Some(id))
-        {
+        if self.store.repository_has_active_run(id)? {
             return Err(AppError::Conflict(format!(
                 "{} has a run in progress; stop it before removing the repository",
                 repository.name
@@ -385,5 +380,98 @@ mod tests {
             app.remove_repository(&Actor::Person, repository.id, "not wanted")
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn removing_a_repository_is_refused_while_a_run_of_one_of_its_cards_is_going() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(Store::in_memory(&dir.path().join("blobs")).unwrap());
+        let app = App::new(
+            store.clone(),
+            Arc::new(Host::new(std::time::Duration::from_secs(1))),
+            &dir.path().join("data"),
+        );
+        let path = dir.path().join("mine").to_string_lossy().into_owned();
+        let repository = app.add_repository("mine", &path).unwrap();
+        let card = store
+            .add_card(repository.id, "Card", "", PERSON, columns::BACKLOG)
+            .unwrap();
+        // A card run has a card but no repository of its own.
+        let run = store
+            .add_run(Some(card.id), "Coder", "pi-bolt", "code")
+            .unwrap();
+
+        let refused = app
+            .remove_repository(&Actor::Person, repository.id, "not wanted")
+            .unwrap_err();
+
+        assert!(matches!(refused, AppError::Conflict(_)), "{refused}");
+        assert!(store.repository(repository.id).unwrap().is_some());
+        assert!(store.run(run.id).unwrap().is_some());
+        store.set_run_status(run.id, "succeeded").unwrap();
+        assert!(
+            app.remove_repository(&Actor::Person, repository.id, "not wanted")
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn removing_a_repository_removes_its_card_less_inbox_items() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(Store::in_memory(&dir.path().join("blobs")).unwrap());
+        let app = App::new(
+            store.clone(),
+            Arc::new(Host::new(std::time::Duration::from_secs(1))),
+            &dir.path().join("data"),
+        );
+        let path = |name: &str| dir.path().join(name).to_string_lossy().into_owned();
+        let gone = app.add_repository("mine", &path("mine")).unwrap();
+        let chat = store.add_run(None, "Moebius", "pi-bolt", "chat").unwrap();
+        store.set_run_repository(chat.id, gone.id).unwrap();
+        store.set_run_status(chat.id, "succeeded").unwrap();
+        let grilling = store
+            .add_grilling(chat.id, gone.id, &[], None, "reported", "")
+            .unwrap();
+        let change = store
+            .add_change(gone.id, None, "branch", Some(1), "abc")
+            .unwrap();
+        let item = |kind: &str, data: serde_json::Value| {
+            store.add_inbox_item(kind, None, "Item", &data).unwrap()
+        };
+        item(
+            "grilling_report",
+            serde_json::json!({ "grilling": grilling.id }),
+        );
+        item(
+            "grilling_issues",
+            serde_json::json!({ "grilling": grilling.id }),
+        );
+        item("ready_to_merge", serde_json::json!({ "change": change.id }));
+        store
+            .add_retro("2026-01-01", &serde_json::json!({}), "done")
+            .unwrap();
+        let proposal = store
+            .add_own_proposal(
+                "2026-01-01",
+                "branch",
+                "Title",
+                "Body",
+                &[],
+                &crate::store::OwnEdits {
+                    kind: "repository".into(),
+                    diff: String::new(),
+                    edits: serde_json::json!([]),
+                    repository: Some(gone.id),
+                },
+            )
+            .unwrap();
+        item("proposal", serde_json::json!({ "proposal": proposal }));
+        let unrelated = item("takeover", serde_json::json!({ "takeover": 1 }));
+
+        app.remove_repository(&Actor::Person, gone.id, "not wanted")
+            .unwrap();
+
+        let open: Vec<i64> = store.inbox().unwrap().iter().map(|i| i.id).collect();
+        assert_eq!(open, vec![unrelated.id]);
     }
 }

@@ -186,7 +186,7 @@ impl Store {
     }
 
     /// Removes a repository and everything stored for it: its cards with their changes, runs, decisions, inbox,
-    /// moves and dependencies; its chats and grillings; its lessons, research, automations and localize index. The
+    /// moves and dependencies; the open inbox items of its card-less changes, grillings and proposals; its chats and grillings; its lessons, research, automations and localize index. The
     /// clone and worktrees on disk belong to the caller. Says whether such a repository was stored.
     ///
     /// The foreign keys decide the order: whatever points at a card, a run, a change or a judgement goes first.
@@ -218,6 +218,12 @@ impl Store {
             format!("DELETE FROM shadows WHERE judgement_id IN ({judgements})"),
             format!("DELETE FROM judgements WHERE id IN ({judgements})"),
             format!("DELETE FROM inbox_items WHERE card_id IN ({cards})"),
+            format!(
+                "DELETE FROM inbox_items WHERE card_id IS NULL AND (\
+                 (kind = 'ready_to_merge' AND json_extract(data, '$.change') IN ({changes})) \
+                 OR (kind IN ('grilling_issues', 'grilling_report') AND json_extract(data, '$.grilling') IN (SELECT id FROM grillings WHERE repository_id = ?1 OR run_id IN ({runs}))) \
+                 OR (kind = 'proposal' AND json_extract(data, '$.proposal') IN ({proposals})))"
+            ),
             format!("DELETE FROM dependencies WHERE card_id IN ({cards})"),
             format!("DELETE FROM card_moves WHERE card_id IN ({cards})"),
             format!("DELETE FROM attempts WHERE run_id IN ({runs}) OR card_id IN ({cards})"),

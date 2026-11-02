@@ -185,12 +185,17 @@ impl Repos {
         Ok(())
     }
 
-    /// Clones `url` as `name`, or fetches if the clone already exists. Returns the clone's path.
+    /// Clones `url` as `name`, or fetches if the clone already exists and came from `url`. A leftover clone of
+    /// another origin (a removed repository whose files could not all be deleted) is deleted and cloned afresh.
+    /// Returns the clone's path.
     pub fn clone_or_fetch(&self, name: &str, url: &str, auth: Option<&str>) -> Result<PathBuf> {
         let path = self.clone_path(name);
-        if path.join(".git").exists() {
+        let same_origin =
+            path.join(".git").exists() && self.origin_url(&path).is_ok_and(|origin| origin == url);
+        if same_origin {
             self.fetch(&path, auth)?;
         } else {
+            self.remove(name)?;
             self.clone_into(&path, url, auth)?;
         }
         Ok(path)
@@ -433,6 +438,33 @@ mod tests {
         for thread in threads {
             thread.join().unwrap();
         }
+    }
+
+    #[test]
+    fn a_leftover_clone_of_another_origin_is_cloned_afresh() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = origin(dir.path());
+        let second = dir.path().join("second");
+        std::fs::create_dir(&second).unwrap();
+        git(&second, &["init", "--quiet", "--initial-branch=main"]).unwrap();
+        commit(&second, "OTHER.md", "other");
+        let repos = Repos::new(&dir.path().join("data"));
+        let clone = repos
+            .clone_or_fetch("demo", first.to_str().unwrap(), None)
+            .unwrap();
+        assert!(clone.join("README.md").exists());
+
+        let again = repos
+            .clone_or_fetch("demo", second.to_str().unwrap(), None)
+            .unwrap();
+
+        assert_eq!(
+            repos.origin_url(&again).unwrap(),
+            second.to_str().unwrap(),
+            "the clone follows the new URL"
+        );
+        assert!(again.join("OTHER.md").exists());
+        assert!(!again.join("README.md").exists());
     }
 
     #[test]

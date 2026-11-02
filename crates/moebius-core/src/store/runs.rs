@@ -188,6 +188,16 @@ impl Store {
         self.runs_where("ended_at IS NULL AND ?1", 1.into())
     }
 
+    /// Whether a run that has not ended belongs to repository `id`, directly or through one of its cards.
+    pub fn repository_has_active_run(&self, id: i64) -> Result<bool> {
+        Ok(self.conn().query_row(
+            "SELECT EXISTS (SELECT 1 FROM runs WHERE ended_at IS NULL AND (repository_id = ?1 \
+             OR card_id IN (SELECT id FROM cards WHERE repository_id = ?1)))",
+            [id],
+            |r| r.get(0),
+        )?)
+    }
+
     /// Ends every run that has not ended as failed, with an event saying why; returns them. For a server that
     /// starts again, since no run outlives the server that drove it.
     pub fn fail_unended_runs(&self, why: &str) -> Result<Vec<Run>> {

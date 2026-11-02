@@ -307,7 +307,8 @@ or has other characters.
 
 A person, or the Moebius agent, removes a repository from Moebius: the repository with every card of its board and what
 belongs to them (their runs and their transcripts, usage, judgements, replay shadows, inbox and dependencies), its
-changes, its chats and grillings, its lessons, its research, its automations and its localize index; and its clone and
+changes, its chats and grillings, the open inbox items that name its changes (`ready_to_merge`), grillings
+(`grilling_issues`, `grilling_report`) or proposals (`proposal`) without belonging to a card, its lessons, its research, its automations and its localize index; and its clone and
 worktrees under the server's data directory. The decision is recorded (kind `delete_repository`, decider `person` or
 `agent:Moebius`; its context has `repository`) and the event `repository_removed` is sent.
 
