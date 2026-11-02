@@ -15,6 +15,9 @@ pub struct Secrets {
     path: PathBuf,
 }
 
+/// Held across a read-modify-write of the file, by every [`Secrets`] however it was cloned or made.
+static WRITING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 impl Secrets {
     pub fn new(data_dir: &Path) -> Self {
         Self {
@@ -55,6 +58,7 @@ impl Secrets {
         if value.trim().is_empty() {
             return Err(invalid("the key is empty"));
         }
+        let _writing = WRITING.lock().unwrap_or_else(|e| e.into_inner());
         let mut secrets = self.read()?;
         secrets.insert(
             name.to_string(),
@@ -65,6 +69,7 @@ impl Secrets {
 
     /// Removes the key stored under `name`; false when there was none.
     pub fn remove(&self, name: &str) -> Result<bool> {
+        let _writing = WRITING.lock().unwrap_or_else(|e| e.into_inner());
         let mut secrets = self.read()?;
         let had = secrets.remove(name).is_some();
         if had {
@@ -162,6 +167,26 @@ mod tests {
         // No temporary file is left.
         let files: Vec<_> = std::fs::read_dir(dir.path()).unwrap().collect();
         assert_eq!(files.len(), 1);
+    }
+
+    #[test]
+    fn secrets_set_at_once_from_several_clones_are_all_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let threads: Vec<_> = (0..4)
+            .map(|t| {
+                // Each thread has its own value, as the OAuth refresh and the settings route do.
+                let secrets = Secrets::new(dir.path());
+                std::thread::spawn(move || {
+                    for i in 0..25 {
+                        secrets.set(&format!("k{t}_{i}"), "v").unwrap();
+                    }
+                })
+            })
+            .collect();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+        assert_eq!(Secrets::new(dir.path()).names().unwrap().len(), 100);
     }
 
     #[test]

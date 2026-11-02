@@ -481,11 +481,12 @@ fn fake_remote(s: &Running) -> std::path::PathBuf {
     let port = s.url.rsplit(':').next().unwrap();
     let fake = Path::new(env!("CARGO_MANIFEST_DIR")).join("../moebius-core/testdata/fake-ssh");
     let wrapper = s.dir.path().join("ssh");
+    let pid_file = s.dir.path().join("ssh.pid");
     std::fs::write(
         &wrapper,
         format!(
             "#!/usr/bin/env python3\nimport os, sys\nargs = [a.replace(':7171', ':{port}') for a in sys.argv[1:]]\n\
-             os.environ['HOME'] = {remote_home:?}\nos.execv({fake:?}, [{fake:?}] + args)\n"
+             os.environ['HOME'] = {remote_home:?}\nopen({pid_file:?}, 'w').write(str(os.getpid()))\nos.execv({fake:?}, [{fake:?}] + args)\n"
         ),
     )
     .unwrap();
@@ -558,6 +559,69 @@ async fn connect_holds_a_tunnel_that_the_following_commands_use() {
 
     let _ = connect.kill();
     let _ = connect.wait();
+}
+
+// Uses the fake ssh, a Python script, and a signal.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn ctrl_c_on_connect_removes_the_connection_file_and_ends_ssh() {
+    use std::io::BufRead;
+    use std::os::unix::fs::PermissionsExt;
+    let s = start().await;
+    let config = fake_remote(&s);
+    let file = config.join("moebius/connected.toml");
+    // A file that was there with a wider mode is private once the token is in it.
+    std::fs::write(&file, "").unwrap();
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let mut connect = std::process::Command::new(env!("CARGO_BIN_EXE_moebius"))
+        .args(["connect", "fakehost", "--no-window"])
+        .env_remove("MOEBIUS_URL")
+        .env_remove("MOEBIUS_TOKEN")
+        .env("XDG_CONFIG_HOME", &config)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(connect.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    assert!(line.starts_with("Connected to fakehost"), "{line}");
+    assert!(file.exists());
+    assert_eq!(
+        std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    let ssh: u32 = std::fs::read_to_string(s.dir.path().join("ssh.pid"))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+
+    let sent = std::process::Command::new("kill")
+        .args(["-INT", &connect.id().to_string()])
+        .status()
+        .unwrap();
+    assert!(sent.success());
+    let status = connect.wait().unwrap();
+    assert_eq!(status.code(), Some(130));
+    assert!(!file.exists());
+    // ssh was not left behind (a process that is gone, or only waiting to be reaped).
+    let gone = || match std::fs::read_to_string(format!("/proc/{ssh}/stat")) {
+        Err(_) => true,
+        Ok(stat) => stat
+            .rsplit(") ")
+            .next()
+            .is_some_and(|rest| rest.starts_with('Z')),
+    };
+    let started = std::time::Instant::now();
+    while !gone() {
+        assert!(
+            started.elapsed().as_secs() < 30,
+            "ssh {ssh} is still running"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
 }
 
 // The fake browser is a shell script started by its `#!` line, which Windows does not run.

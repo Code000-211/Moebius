@@ -36,6 +36,27 @@ pub fn own_group(command: &mut Command) -> &mut Command {
     }
 }
 
+/// Kills the process `pid` alone.
+pub fn kill_process(pid: u32) {
+    #[cfg(unix)]
+    let mut kill = {
+        let mut kill = Command::new("kill");
+        kill.args(["-KILL", &pid.to_string()]);
+        kill
+    };
+    #[cfg(windows)]
+    let mut kill = {
+        let mut kill = Command::new("taskkill");
+        kill.args(["/F", "/PID", &pid.to_string()]);
+        kill
+    };
+    let _ = kill
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+}
+
 /// Kills the process `pid`, which leads its own process group (see [`own_group`]; a shell on a pseudo-terminal does
 /// too), and every process it started.
 pub fn kill_tree(pid: u32) {

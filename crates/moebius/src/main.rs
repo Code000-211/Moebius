@@ -200,6 +200,8 @@ fn run(cli: Cli) -> Result<(), String> {
                 cli::ssh::Tunnel::open(&cli::ssh::program(desktop.as_deref()), &host, port)?;
             let file = cli::ssh::connected_path(desktop.as_deref())
                 .ok_or("there is no config directory to write the connection to")?;
+            let _remove = cli::ssh::ConnectedFile(file.clone());
+            cli::ssh::remove_on_interrupt(file.clone(), tunnel.pid());
             cli::ssh::write_connected(&file, &tunnel)?;
             println!(
                 "Connected to {host}: {}. The other moebius commands use it until this one ends (Ctrl+C).",
@@ -215,9 +217,7 @@ fn run(cli: Cli) -> Result<(), String> {
                     cli::window::open(&cli::window::login_url(&client)?, browser.as_deref())?;
                 println!("{}", cli::window::describe(&opened));
             }
-            let ended = tunnel.wait();
-            let _ = std::fs::remove_file(&file);
-            ended?;
+            tunnel.wait()?;
             Err(format!("the connection to {host} ended"))
         }
         Some(Command::Open { browser }) => {

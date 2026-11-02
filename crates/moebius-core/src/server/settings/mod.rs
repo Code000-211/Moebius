@@ -73,17 +73,24 @@ pub fn read_raw(file: &Path) -> Result<(String, toml::Table)> {
 }
 
 /// Writes `bytes` to `path` through a temporary file in the same directory, which replaces it in one step. The file
-/// is readable by its owner only when `private`.
-fn write_atomically(path: &Path, bytes: &[u8], private: bool) -> std::io::Result<()> {
+/// is readable by its owner only when `private`; otherwise it keeps the mode of the file it replaces. Each write
+/// has its own temporary file.
+pub fn write_atomically(path: &Path, bytes: &[u8], private: bool) -> std::io::Result<()> {
     use std::io::Write;
     let name = path.file_name().unwrap_or_default().to_string_lossy();
-    let temporary = path.with_file_name(format!(".{name}.{}.tmp", std::process::id()));
+    static WRITES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let unique = WRITES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let temporary = path.with_file_name(format!(".{name}.{}.{unique}.tmp", std::process::id()));
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);
     if private {
         crate::platform::owner_only(&mut options);
     }
     let written = options.open(&temporary).and_then(|mut file| {
+        // A file that is replaced keeps its permissions, unless it must be private: that never depends on what was there.
+        if !private && let Ok(existing) = std::fs::metadata(path) {
+            file.set_permissions(existing.permissions())?;
+        }
         file.write_all(bytes)?;
         file.sync_all()
     });
@@ -93,5 +100,35 @@ fn write_atomically(path: &Path, bytes: &[u8], private: bool) -> std::io::Result
             let _ = std::fs::remove_file(&temporary);
             Err(e)
         }
+    }
+}
+
+// Unix modes only; Windows has no modes (see `platform`).
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn replacing_a_file_keeps_its_mode_and_a_private_one_is_private_whatever_was_there() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("moebius.toml");
+        std::fs::write(&file, "a = 1\n").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
+        write_atomically(&file, b"a = 2\n", false).unwrap();
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "a = 2\n");
+        assert_eq!(mode(&file), 0o600);
+        // A file that is not there yet takes the usual mode, and no temporary file is left.
+        let fresh = dir.path().join("fresh.toml");
+        write_atomically(&fresh, b"", false).unwrap();
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
+        // A private file is owner-only also over a wider one (a restored backup, say).
+        let secrets = dir.path().join("secrets.toml");
+        std::fs::write(&secrets, "k = 1\n").unwrap();
+        std::fs::set_permissions(&secrets, std::fs::Permissions::from_mode(0o644)).unwrap();
+        write_atomically(&secrets, b"k = 2\n", true).unwrap();
+        assert_eq!(std::fs::read_to_string(&secrets).unwrap(), "k = 2\n");
+        assert_eq!(mode(&secrets), 0o600);
     }
 }

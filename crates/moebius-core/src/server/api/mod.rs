@@ -169,8 +169,8 @@ fn create_token(path: &Path) -> std::io::Result<String> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    std::fs::write(path, &token)?;
-    crate::platform::make_owner_only(path)?;
+    // A new file with its own mode replaces whatever was there, so no one who held the old one open can read the token.
+    crate::server::settings::write_atomically(path, token.as_bytes(), true)?;
     Ok(token)
 }
 
@@ -368,5 +368,27 @@ mod tests {
         let a = load_or_create_token(&path).unwrap();
         assert_eq!(a.len(), 64);
         assert_eq!(load_or_create_token(&path).unwrap(), a);
+    }
+
+    // A Unix mode check; Windows has no modes (see `platform`).
+    #[cfg(unix)]
+    #[test]
+    fn a_token_file_is_private_also_when_an_empty_one_was_there() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("token");
+        std::fs::write(&path, "").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let held = std::fs::File::open(&path).unwrap();
+        load_or_create_token(&path).unwrap();
+        // A descriptor opened before the server started does not see the token.
+        let mut seen = String::new();
+        std::io::Read::read_to_string(&mut &held, &mut seen).unwrap();
+        assert_eq!(seen, "");
+        let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&path), 0o600);
+        let fresh = dir.path().join("fresh");
+        load_or_create_token(&fresh).unwrap();
+        assert_eq!(mode(&fresh), 0o600);
     }
 }

@@ -138,6 +138,11 @@ impl Tunnel {
         Ok(tunnel)
     }
 
+    /// The process id of the `ssh` that holds the tunnel.
+    pub fn pid(&self) -> u32 {
+        self.child.id()
+    }
+
     /// Waits until `ssh` ends: the connection dropped or the process was told to stop.
     pub fn wait(&mut self) -> Result<(), String> {
         // Holding the pipe open keeps the remote side's `cat` running.
@@ -148,6 +153,50 @@ impl Tunnel {
             .map(|_| ())
             .map_err(|e| format!("cannot wait for ssh: {e}"))
     }
+}
+
+/// Removes the file `connect` wrote when it is dropped, so that an early error or a return leaves no token behind.
+pub struct ConnectedFile(pub PathBuf);
+
+impl Drop for ConnectedFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// Removes `file` and kills `ssh` (process `ssh_pid`) when Ctrl+C arrives, and ends the process: the other cleanup (the
+/// guard's drop, the tunnel's) does not run when the process is stopped by the signal, and the signal may reach this
+/// process alone. Returns once the signal is being watched, so a Ctrl+C after that cannot slip past.
+pub fn remove_on_interrupt(file: PathBuf, ssh_pid: u32) {
+    let (registered, wait_for_it) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        else {
+            let _ = registered.send(());
+            return;
+        };
+        let arrived = runtime.block_on(async {
+            let interrupt = tokio::signal::ctrl_c();
+            tokio::pin!(interrupt);
+            // The first poll installs the handler.
+            let first =
+                std::future::poll_fn(|cx| std::task::Poll::Ready(interrupt.as_mut().poll(cx)))
+                    .await;
+            let _ = registered.send(());
+            match first {
+                std::task::Poll::Ready(result) => result,
+                std::task::Poll::Pending => interrupt.await,
+            }
+        });
+        if arrived.is_ok() {
+            let _ = std::fs::remove_file(&file);
+            moebius_core::platform::kill_process(ssh_pid);
+            std::process::exit(130);
+        }
+    });
+    let _ = wait_for_it.recv();
 }
 
 /// Where `connect` leaves the tunnel for the commands that follow: next to the desktop app's settings.
@@ -174,16 +223,8 @@ pub fn write_connected(path: &Path, tunnel: &Tunnel) -> Result<(), String> {
         std::fs::create_dir_all(dir)
             .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
     }
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    options
-        .open(path)
-        .and_then(|mut file| file.write_all(text.as_bytes()))
+    // A new file with its own mode replaces any that was there, as for the server's token.
+    moebius_core::server::settings::write_atomically(path, text.as_bytes(), true)
         .map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
 
@@ -246,6 +287,15 @@ mod tests {
         // Nothing listens there any more.
         let error = wait_until_healthy(&url, Duration::ZERO).unwrap_err();
         assert!(error.contains("did not answer"), "{error}");
+    }
+
+    #[test]
+    fn the_connection_file_is_removed_when_its_guard_is_dropped() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("connected.toml");
+        std::fs::write(&path, "token = \"t\"").unwrap();
+        drop(ConnectedFile(path.clone()));
+        assert!(!path.exists());
     }
 
     #[test]
