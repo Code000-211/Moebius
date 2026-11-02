@@ -103,7 +103,7 @@ export function ProjectsPage() {
                   </span>
                 ) : asking === repository.id ? (
                   <>
-                    <p className="m-0 min-w-0 flex-1 break-words text-base text-text">
+                    <p className="m-0 min-w-0 flex-1 break-words text-right text-base text-text">
                       {`Delete ${repository.name} with its cards and chats?`}
                     </p>
                     <Button size="sm" variant="secondary" onClick={() => setAsking(null)}>
