@@ -282,6 +282,12 @@ async fn board_limits_budgets_and_agents_apply_without_a_restart() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_key_that_needs_a_restart_is_written_and_reported_and_the_server_restarts_on_request() {
     let f = Fixture::start(FILE).await;
+    // A change the next start could not use is refused, so the GitHub App's key is a real one.
+    std::fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/github-app-test-key.pem"),
+        f.dir.path().join("k.pem"),
+    )
+    .unwrap();
     let (status, saved) = f
         .change(
             json!({"listen": "127.0.0.1:9999", "github.app_id": 3, "github.private_key_file": "k.pem", "teacher": {"model": "m"}}),
