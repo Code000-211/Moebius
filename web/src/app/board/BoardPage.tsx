@@ -288,9 +288,7 @@ export function BoardPage() {
         name={board.repository.name}
         open={creating}
         onOpenChange={setCreating}
-        onCreated={(number) =>
-          setNotice({ tone: "ok", text: `Created issue #${number}. It waits in the Backlog.` })
-        }
+        onCreated={(card) => setNotice({ tone: "ok", text: `Created "${card.title}"` })}
       />
     </>
   );

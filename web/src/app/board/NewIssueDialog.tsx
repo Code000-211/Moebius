@@ -10,6 +10,7 @@ import { Link } from "react-router";
 import { createIssue } from "../../api/calls/board";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
+import type { Card } from "../../api/types/board";
 import { Button } from "../../ui/components/Button";
 import {
   Dialog,
@@ -35,8 +36,8 @@ export function NewIssueDialog({
   name: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** The server made the card: its number. */
-  onCreated: (number: number) => void;
+  /** The server made the card: the card itself, so the page can say what it made. */
+  onCreated: (card: Card) => void;
 }) {
   const queryClient = useQueryClient();
   const [title, setTitle] = useState("");
@@ -48,7 +49,7 @@ export function NewIssueDialog({
       setTitle("");
       setBody("");
       onOpenChange(false);
-      onCreated(card.number);
+      onCreated(card);
     },
   });
   const ready = title.trim() !== "" && !create.isPending;

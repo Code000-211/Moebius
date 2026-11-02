@@ -118,7 +118,7 @@ describe("the board page", () => {
     await page.getByRole("dialog").getByLabel("Title").fill("Write the changelog");
     await page.getByRole("dialog").getByLabel("Description").fill("List what changed.");
     await create.click();
-    await status("Created issue #").waitFor();
+    await status('Created "Write the changelog"').waitFor();
     // The card is on the board: in the Backlog, unless the board has moved it on already.
     await page.getByText("Write the changelog").first().waitFor();
     if (!usesRealServer) {
