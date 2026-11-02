@@ -298,10 +298,7 @@ export function SearchInFiles({
             >
               {search.data.files.map((file) => (
                 <li key={file.path} className="flex flex-col gap-1">
-                  <p
-                    className="m-0 break-all font-mono text-sm font-semibold text-text"
-                    title={file.path}
-                  >
+                  <p className="m-0 break-all text-sm font-semibold text-text" title={file.path}>
                     {file.path}
                   </p>
                   <ul className="m-0 list-none p-0">
