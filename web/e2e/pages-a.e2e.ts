@@ -20,6 +20,13 @@ let context: BrowserContext;
 let page: Page;
 const directories: string[] = [];
 
+/**
+ * The chips that pick a repository. Both filter rows have a chip called All, so the test asks the
+ * fieldset the legend names, and wants the chip whose name is nothing but the word.
+ */
+const repositories = (page: Page) =>
+  page.locator("fieldset").filter({ has: page.locator("legend", { hasText: "Repository" }) });
+
 beforeAll(async () => {
   browser = await chromium.launch({
     executablePath: process.env.MOEBIUS_E2E_CHROMIUM || undefined,
@@ -172,7 +179,7 @@ describe("the inbox", () => {
         data: { name: "second", url: "/srv/git/second" },
       });
       expect(made.ok()).toBe(true);
-      await page.getByRole("button", { name: "Every repository" }).waitFor();
+      await repositories(page).getByRole("button", { name: "All", exact: true }).waitFor();
       await page.getByRole("button", { name: "All 9" }).waitFor();
 
       await page.getByRole("button", { name: "Stuck 1" }).click();
@@ -191,7 +198,7 @@ describe("the inbox", () => {
       await page.getByText("No item matches the filter.").waitFor({ state: "detached" });
       await page.getByText("9 things need you; 1 shown.").waitFor();
       expect(await items().count()).toBe(1);
-      await page.getByRole("button", { name: "Every repository" }).click();
+      await repositories(page).getByRole("button", { name: "All", exact: true }).click();
       await page.getByRole("button", { name: /^All \d+$/ }).click();
       await page.getByText("9 things need you.").waitFor();
       expect(await items().count()).toBe(9);

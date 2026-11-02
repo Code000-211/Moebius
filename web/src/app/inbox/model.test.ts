@@ -134,6 +134,8 @@ describe("how an item tells itself", () => {
     });
     expect(chipName("approve_issue")).toBe("Approvals");
     expect(chipName("needs_design")).toBe("Needs design");
+    // The chip says what the column the card sits in is called, not a shorter word for the same thing.
+    expect(chipName("ready_to_merge")).toBe("Ready to merge");
   });
 
   it("says why an item is there", () => {

@@ -102,7 +102,7 @@ export function InboxPage() {
               selected={filters.repository === null}
               onClick={() => setFilter({ repository: null })}
             >
-              Every repository
+              All
             </Chip>
             {snapshot.boards.map((board) => (
               <Chip

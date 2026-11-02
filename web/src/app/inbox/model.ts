@@ -104,7 +104,8 @@ export function sentence(kind: string): string {
 export function chipName(kind: string): string {
   switch (kind) {
     case READY_TO_MERGE:
-      return "To merge";
+      // The board's own column name, so the chip and the card the chip filters to say one thing.
+      return "Ready to merge";
     case APPROVE_ISSUE:
       return "Approvals";
     case STUCK:
