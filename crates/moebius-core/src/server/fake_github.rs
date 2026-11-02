@@ -130,8 +130,12 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
             "/repos/acme/widgets/pulls/{number}",
             get(
                 |State(fake): State<Arc<FakeGitHub>>, UrlPath(number): UrlPath<u64>| async move {
+                    // Pull request 404 was deleted.
+                    if number == 404 {
+                        return StatusCode::NOT_FOUND.into_response();
+                    }
                     assert_eq!(number, 7);
-                    axum::Json(fake.pulls.lock().unwrap().pull.clone())
+                    axum::Json(fake.pulls.lock().unwrap().pull.clone()).into_response()
                 },
             ),
         )

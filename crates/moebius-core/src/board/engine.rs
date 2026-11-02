@@ -112,15 +112,27 @@ impl Engine {
                 script: column.script.clone(),
                 message: e.to_string(),
             })?;
-        let mut effects = effects.take();
+        self.apply(&card, effects.take())
+    }
+
+    /// Applies what a script did to `card`, which is the card as the script saw it.
+    fn apply(&self, card: &Card, mut effects: Effects) -> Result<Step, BoardError> {
+        let card_id = card.id;
         if let Some(to) = effects.move_to.take()
             && to != card.column
         {
-            if let Some(note) = &effects.note {
-                self.app
-                    .store
-                    .set_card_note(card_id, note)
-                    .map_err(AppError::from)?;
+            // Only if the card is still where the script saw it: a person or the forge poll may have moved it since.
+            let moved = self
+                .app
+                .move_card_from(card_id, &card.column, &to, effects.note.as_deref())?
+                .is_some();
+            if !moved {
+                // What the script worked out, why the card waits included, was for a column it has left.
+                return Ok(Step {
+                    moved: None,
+                    waiting: None,
+                    started_run: effects.started_run,
+                });
             }
             if card.column == columns::READY_TO_MERGE {
                 // The change is no longer waiting for a person.
@@ -129,7 +141,6 @@ impl Engine {
                     .resolve_inbox_for_card(card_id)
                     .map_err(AppError::from)?;
             }
-            self.app.move_card(card_id, &to)?;
             effects.moved = Some(to);
         }
         // A card that moved no longer waits for what it waited for.
@@ -215,6 +226,54 @@ mod tests {
                 .iter()
                 .all(|j| j.outcome.as_deref() == Some("merged"))
         );
+    }
+
+    #[test]
+    fn a_move_worked_out_from_a_stale_card_is_not_applied() {
+        use super::Effects;
+        let (_dir, app, engine, repo) = setup();
+        let card = app.create_issue(repo, "Add", "", PERSON).unwrap();
+        // The script saw the card in the backlog; meanwhile a person or the forge poll finished it.
+        let seen = app.card(card.id).unwrap();
+        app.move_card(card.id, columns::DONE).unwrap();
+        let moves = app.store.moves_for_card(card.id).unwrap().len();
+
+        let step = engine
+            .apply(
+                &seen,
+                Effects {
+                    move_to: Some("Ready".into()),
+                    note: Some("stale".into()),
+                    waiting: Some("stale".into()),
+                    ..Effects::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(step.moved, None);
+        assert_eq!(step.waiting, None);
+        assert!(app.waiting(&[app.card(card.id).unwrap()]).is_empty());
+        let card = app.card(card.id).unwrap();
+        assert_eq!(card.column, columns::DONE);
+        assert_ne!(card.note.as_deref(), Some("stale"));
+        assert_eq!(app.store.moves_for_card(card.id).unwrap().len(), moves);
+    }
+
+    #[test]
+    fn an_offer_is_not_made_for_a_card_moved_while_the_change_was_published() {
+        let (_dir, app, _engine, repo) = setup();
+        let card = app.create_issue(repo, "Add", "", PERSON).unwrap();
+        let seen = app.card(card.id).unwrap().column;
+        let change = app
+            .store
+            .add_change(repo, Some(card.id), "moebius/card-1", None, "abc")
+            .unwrap();
+        // While the change was published, a person finished the card.
+        app.move_card(card.id, columns::DONE).unwrap();
+
+        let (_, moved) = app.finish_offer(card.id, &seen, change, None).unwrap();
+        assert!(!moved);
+        assert_eq!(app.card(card.id).unwrap().column, columns::DONE);
+        assert!(app.store.inbox_for_card(card.id).unwrap().is_empty());
     }
 
     #[test]

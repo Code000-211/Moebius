@@ -33,6 +33,9 @@ pub struct Issue {
     /// `opened` or `closed`.
     pub state: String,
     pub author: User,
+    /// When the issue last changed, in the form GitLab always writes it, so that it compares as text.
+    #[serde(default)]
+    updated_at: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -106,6 +109,9 @@ pub struct GitLab {
     token: String,
     /// The ETag of the last full answer to the issues list, per project.
     etags: Mutex<HashMap<String, String>>,
+    /// The `updated_at` of the newest issue in the last full answer, per project: the next poll stops paging once it
+    /// reaches issues older than that.
+    newest: Mutex<HashMap<String, String>>,
 }
 
 impl GitLab {
@@ -118,6 +124,7 @@ impl GitLab {
             url,
             token: token.trim().to_string(),
             etags: Mutex::new(HashMap::new()),
+            newest: Mutex::new(HashMap::new()),
         }
     }
 
@@ -132,15 +139,19 @@ impl GitLab {
     }
 
     /// The issues of `project`, open and closed; none when GitLab says nothing changed since the last call. They come
-    /// in pages of a hundred, which are followed to the end.
+    /// in pages of a hundred, newest change first, which are followed until a page ends with an issue older than the
+    /// newest one of the last answer: once an answer is known, the list holds only the issues updated since, not all
+    /// of them.
     pub async fn issues(&self, project: &str) -> Result<Option<Vec<Issue>>, GitLabError> {
         let known = self.etags().get(project).cloned();
+        let known_newest = self.newest().get(project).cloned();
         let mut url = format!(
-            "{}/issues?state=all&per_page=100",
+            "{}/issues?state=all&per_page=100&order_by=updated_at&sort=desc",
             self.project_url(project)
         );
         let mut issues = Vec::new();
         let mut etag = None;
+        let mut newest: Option<String> = None;
         loop {
             let mut request = self.http.get(&url);
             if let (Some(known), None) = (&known, &etag) {
@@ -163,14 +174,28 @@ impl GitLab {
             }
             let next = self.next_page(response.headers());
             let page: Vec<Issue> = response.json().await?;
+            if newest.is_none() {
+                newest = page.first().and_then(|i| i.updated_at.clone());
+            }
+            // Newest-updated first: past the newest issue of the last poll, nothing has changed.
+            let reached_known = match (
+                &known_newest,
+                page.last().and_then(|i| i.updated_at.as_ref()),
+            ) {
+                (Some(known), Some(last)) => last < known,
+                _ => false,
+            };
             issues.extend(page);
             match next {
-                Some(next) => url = next,
-                None => break,
+                Some(next) if !reached_known => url = next,
+                _ => break,
             }
         }
         if let Some(etag) = etag.filter(|e| !e.is_empty()) {
             self.etags().insert(project.to_string(), etag);
+            if let Some(newest) = newest {
+                self.newest().insert(project.to_string(), newest);
+            }
         }
         Ok(Some(issues))
     }
@@ -178,6 +203,7 @@ impl GitLab {
     /// Forgets the ETag of `project`, so the next call to [`GitLab::issues`] lists the issues again.
     pub fn forget_issues_etag(&self, project: &str) {
         self.etags().remove(project);
+        self.newest().remove(project);
     }
 
     /// Opens an issue in `project` and returns its number.
@@ -330,6 +356,12 @@ impl GitLab {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
+    fn newest(&self) -> std::sync::MutexGuard<'_, HashMap<String, String>> {
+        self.newest
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     /// The next page of a list, if the `Link` header names one on this API (the token is sent nowhere else).
     fn next_page(&self, headers: &reqwest::header::HeaderMap) -> Option<String> {
         let link = headers.get("link")?.to_str().ok()?;
@@ -376,6 +408,12 @@ mod tests {
     #[derive(Default)]
     struct Fake {
         asked: Mutex<Vec<(String, Option<String>)>>,
+        /// Requests for a later page of issues.
+        later_pages: std::sync::atomic::AtomicUsize,
+        /// Whether an old issue has changed since the first answer, which then lists it first.
+        changed: std::sync::atomic::AtomicBool,
+        /// Whether the first page holds only issues newer than the first answer's newest, with more after them.
+        busy: std::sync::atomic::AtomicBool,
     }
 
     async fn serve() -> (String, Arc<Fake>) {
@@ -392,28 +430,59 @@ mod tests {
                             return StatusCode::UNAUTHORIZED.into_response();
                         }
                         assert_eq!((query["state"].as_str(), query["per_page"].as_str()), ("all", "100"));
-                        let issue = |iid: u64| {
+                        assert_eq!(
+                            (query["order_by"].as_str(), query["sort"].as_str()),
+                            ("updated_at", "desc"),
+                            "the newest change comes first, so the first page's ETag sees every change"
+                        );
+                        let issue = |iid: u64, updated_at: &str| {
                             json!({ "iid": iid, "title": "Issue", "description": null,
-                                    "state": "opened", "author": { "username": "leon" } })
+                                    "state": "opened", "author": { "username": "leon" },
+                                    "updated_at": updated_at })
                         };
                         if query.contains_key("page") {
-                            return axum::Json(json!([issue(3)])).into_response();
+                            fake.later_pages.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            return axum::Json(json!([issue(3, "2026-01-01T00:00:00.000Z")]))
+                                .into_response();
                         }
                         let asked = headers
                             .get("if-none-match")
                             .map(|v| v.to_str().unwrap().to_string());
                         fake.asked.lock().unwrap().push((project, asked.clone()));
+                        let host = headers.get("host").unwrap().to_str().unwrap();
+                        let next = format!(
+                            "<http://{host}/api/v4/projects/acme%2Ftools%2Fwidgets/issues?state=all&per_page=100&order_by=updated_at&sort=desc&page=2>; rel=\"next\", \
+                             <http://elsewhere/api/v4/x>; rel=\"last\""
+                        );
+                        if fake.busy.load(std::sync::atomic::Ordering::SeqCst) {
+                            // Every issue of the first page is newer than the last poll's newest: more may follow.
+                            return (
+                                [("etag", "W/\"v3\"".to_string()), ("link", next)],
+                                axum::Json(json!([
+                                    issue(5, "2026-07-01T00:00:00.000Z"),
+                                    issue(4, "2026-06-15T00:00:00.000Z")
+                                ])),
+                            )
+                                .into_response();
+                        }
+                        if fake.changed.load(std::sync::atomic::Ordering::SeqCst) {
+                            // Issue 3, which was on the last page, changed and is first now.
+                            return (
+                                [("etag", "W/\"v2\"".to_string()), ("link", next)],
+                                axum::Json(json!([
+                                    issue(3, "2026-06-01T00:00:00.000Z"),
+                                    issue(1, "2026-02-01T00:00:00.000Z"),
+                                    issue(9, "2026-01-02T00:00:00.000Z")
+                                ])),
+                            )
+                                .into_response();
+                        }
                         if asked.as_deref() == Some("W/\"v1\"") {
                             return StatusCode::NOT_MODIFIED.into_response();
                         }
-                        let host = headers.get("host").unwrap().to_str().unwrap();
-                        let next = format!(
-                            "<http://{host}/api/v4/projects/acme%2Ftools%2Fwidgets/issues?state=all&per_page=100&page=2>; rel=\"next\", \
-                             <http://elsewhere/api/v4/x>; rel=\"last\""
-                        );
                         (
                             [("etag", "W/\"v1\"".to_string()), ("link", next)],
-                            axum::Json(json!([issue(1)])),
+                            axum::Json(json!([issue(1, "2026-02-01T00:00:00.000Z")])),
                         )
                             .into_response()
                     },
@@ -457,6 +526,32 @@ mod tests {
                 (project, None)
             ],
             "the project's path is one segment of the address"
+        );
+
+        assert_eq!(
+            fake.later_pages.load(std::sync::atomic::Ordering::SeqCst),
+            2
+        );
+
+        // An issue from the last page changes: the pages that hold only issues older than the newest one of the
+        // last poll are not read again.
+        fake.changed
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let issues = gitlab.issues("acme/tools/widgets").await.unwrap().unwrap();
+        assert_eq!(issues.iter().map(|i| i.iid).collect::<Vec<_>>(), [3, 1, 9]);
+        assert_eq!(
+            fake.later_pages.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "the first page ends with an issue older than the last poll's newest, so the next page is not asked for"
+        );
+
+        // The first page still ends with an issue newer than that: the next page may hold changes too.
+        fake.busy.store(true, std::sync::atomic::Ordering::SeqCst);
+        let issues = gitlab.issues("acme/tools/widgets").await.unwrap().unwrap();
+        assert_eq!(issues.iter().map(|i| i.iid).collect::<Vec<_>>(), [5, 4, 3]);
+        assert_eq!(
+            fake.later_pages.load(std::sync::atomic::Ordering::SeqCst),
+            3
         );
 
         let refused = GitLab::new(&url, "wrong").issues("acme/widgets").await;

@@ -410,6 +410,29 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn a_pull_request_that_cannot_be_read_does_not_stop_the_poll_of_the_later_ones() {
+        let f = Fixture::new().await;
+        let mut events = f.server.app.bus.subscribe();
+        // The earlier change's pull request was deleted, so the forge answers 404 for it.
+        f.server
+            .app
+            .store
+            .add_change(f.repository.id, None, "moebius/gone", Some(404), "abc")
+            .unwrap();
+        let change = f.offered_change().await;
+
+        f.fake.set_pull("closed", true);
+        f.server.poll_github().await;
+
+        assert_eq!(f.change(change.id).state, "merged");
+        assert_eq!(f.card(1).unwrap().column, "Done");
+        let error = std::iter::from_fn(|| events.try_recv().ok())
+            .find(|event| event.kind == "forge_error")
+            .expect("the failure is reported");
+        assert!(error.data.to_string().contains("#404"), "{error:?}");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn a_pull_request_closed_without_a_merge_closes_the_change_and_tells_the_person_once() {
         let f = Fixture::new().await;
         let change = f.offered_change().await;

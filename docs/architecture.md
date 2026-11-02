@@ -516,8 +516,8 @@ At the top:
 |---|---|
 | `repos/mod.rs` | Clones, worktrees, branches, pushes, merges and conflict checks through the `git` command line. |
 | `repos/forge.rs` | The `Forge` trait with the forges `none`, `github`, `gitlab` and `forgejo`, and the forge-neutral `Issue`. |
-| `repos/github.rs` | The GitHub App client: JWT, installation tokens, issues with ETags, pull requests, checks, reviews, merge. |
-| `repos/gitlab.rs` | The GitLab client: the access token, issues with ETags, merge requests, pipelines and their failed jobs, approvals, merge. |
+| `repos/github.rs` | The GitHub App client: JWT, installation tokens, issues newest-updated first with ETags (paging stops at the last poll's newest), pull requests, checks, reviews, merge. |
+| `repos/gitlab.rs` | The GitLab client: the access token, issues newest-updated first with ETags (paging stops at the last poll's newest), merge requests, pipelines and their failed jobs, approvals, merge. |
 | `repos/forgejo.rs` | The Forgejo client (Codeberg, Forgejo, Gitea): the access token, issues with ETags where given, pull requests, commit statuses, reviews, merge. |
 | `repos/poll/mod.rs` | The poll of the forges: the loop over their repositories, issues into cards, and what became of each change (`Polled`, `Request`). |
 | `repos/poll/github.rs` | What GitHub answers, read for the poll: issues, a pull request with its check runs and latest review. |

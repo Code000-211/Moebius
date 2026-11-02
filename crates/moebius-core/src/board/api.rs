@@ -232,12 +232,14 @@ impl Engine {
             "offer_change",
             lua.create_function(move |_, judgements: Option<String>| {
                 let judgements = judgements.filter(|j| !j.trim().is_empty());
-                let change = outside_script(&clock, || {
+                let (change, moved) = outside_script(&clock, || {
                     app.offer_change_noted(card_id, judgements.as_deref())
                 })
                 .map_err(mlua::Error::external)?;
                 let mut fx = fx.borrow_mut();
-                fx.moved = Some(columns::READY_TO_MERGE.into());
+                if moved {
+                    fx.moved = Some(columns::READY_TO_MERGE.into());
+                }
                 fx.move_to = None;
                 Ok(change.id)
             })?,

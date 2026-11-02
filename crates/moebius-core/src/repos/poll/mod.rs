@@ -17,7 +17,7 @@ use std::sync::Arc;
 use crate::app::App;
 use crate::bus::Event;
 use crate::repos::forge::{ForgeError, Issue};
-use crate::store::Repository;
+use crate::store::{Change, Repository};
 
 /// What became of the pull or merge request of a change, as the poll reads it from any forge.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,7 +47,8 @@ pub struct Status {
 pub trait Polled: Send + Sync {
     /// The forge repositories name, such as `github`.
     const FORGE: &'static str;
-    /// The issues of the repository `name` on the forge; none when nothing changed since the last call.
+    /// The issues of the repository `name` on the forge; none when nothing changed since the last call. Once a
+    /// previous answer is known, a forge may list only the issues updated since its newest one, not all of them.
     fn issues(
         &self,
         name: &str,
@@ -142,33 +143,52 @@ async fn poll_requests<F: Polled>(
 ) -> Result<(), String> {
     let (store, id) = (app.store.clone(), repository.id);
     let changes = blocking(move || store.open_pull_requests(id)).await?;
+    let mut failures = Vec::new();
     for change in changes {
         let Some(number) = change.pull_request else {
             continue;
         };
-        let request = client
-            .request(name, number)
-            .await
-            .map_err(|e| e.to_string())?;
-        let app = app.clone();
-        match request {
-            Request::Merged { commit } => {
-                blocking(move || app.change_merged(&change, commit.as_deref())).await?
-            }
-            Request::Closed => blocking(move || app.change_closed(&change)).await?,
-            Request::Open(status) => {
-                blocking(move || {
-                    app.record_change_status(
-                        &change,
-                        status.checks,
-                        &status.head,
-                        status.failed.as_deref(),
-                        status.review.as_deref(),
-                    )
-                })
-                .await?
-            }
+        // One change that cannot be read (a deleted merge request answers 404) does not stop the others.
+        if let Err(message) = poll_request(app, client, name, change, number).await {
+            failures.push(format!("#{number}: {message}"));
         }
     }
-    Ok(())
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("; "))
+    }
+}
+
+/// Reads the pull or merge request `number` of `change` and records what became of it.
+async fn poll_request<F: Polled>(
+    app: &Arc<App>,
+    client: &F,
+    name: &str,
+    change: Change,
+    number: i64,
+) -> Result<(), String> {
+    let request = client
+        .request(name, number)
+        .await
+        .map_err(|e| e.to_string())?;
+    let app = app.clone();
+    match request {
+        Request::Merged { commit } => {
+            blocking(move || app.change_merged(&change, commit.as_deref())).await
+        }
+        Request::Closed => blocking(move || app.change_closed(&change)).await,
+        Request::Open(status) => {
+            blocking(move || {
+                app.record_change_status(
+                    &change,
+                    status.checks,
+                    &status.head,
+                    status.failed.as_deref(),
+                    status.review.as_deref(),
+                )
+            })
+            .await
+        }
+    }
 }

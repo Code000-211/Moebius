@@ -474,6 +474,32 @@ impl Store {
         Ok(())
     }
 
+    /// Moves a card from `from` to `to` only if it is still in `from`, setting its note to `note` when one is given, and
+    /// records the move. Returns whether the card moved: it did not when something else moved it first.
+    pub fn move_card_from(
+        &self,
+        id: i64,
+        from: &str,
+        to: &str,
+        note: Option<&str>,
+    ) -> Result<bool> {
+        let note = note.map(crate::blobs::redact);
+        let conn = self.conn();
+        let recorded = conn.execute(
+            "INSERT INTO card_moves (card_id, from_column, to_column, note, at)
+             SELECT id, column_name, ?1, COALESCE(?2, note), ?3 FROM cards WHERE id = ?4 AND column_name = ?5",
+            params![to, note, now(), id, from],
+        )?;
+        if recorded == 0 {
+            return Ok(false);
+        }
+        conn.execute(
+            "UPDATE cards SET column_name = ?1, note = COALESCE(?2, note) WHERE id = ?3",
+            params![to, note, id],
+        )?;
+        Ok(true)
+    }
+
     /// The moves of a card since moves were recorded, oldest first.
     pub fn moves_for_card(&self, card_id: i64) -> Result<Vec<CardMove>> {
         self.rows("SELECT from_column, to_column, note, at FROM card_moves WHERE card_id = ?1 ORDER BY id", [card_id], |r| {

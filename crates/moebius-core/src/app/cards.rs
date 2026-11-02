@@ -324,6 +324,27 @@ impl App {
         self.card(card_id)
     }
 
+    /// Moves the card from `from` to `column` only if it is still in `from`, setting its note to `note` when one is
+    /// given; none when something else moved it first, which is left as it is.
+    pub fn move_card_from(
+        &self,
+        card_id: i64,
+        from: &str,
+        column: &str,
+        note: Option<&str>,
+    ) -> Result<Option<Card>> {
+        if !self.store.move_card_from(card_id, from, column, note)? {
+            return Ok(None);
+        }
+        self.bus.publish(Event::CardMoved {
+            card: card_id,
+            from: from.to_string(),
+            to: column.to_string(),
+        });
+        self.set_waiting(card_id, None);
+        self.card(card_id).map(Some)
+    }
+
     /// Why the card waits now, or none when it does not. Publishes `card_waiting` when that is not what it was.
     pub fn set_waiting(&self, card_id: i64, reason: Option<String>) {
         let mut waiting = self.waiting.lock().unwrap_or_else(|e| e.into_inner());

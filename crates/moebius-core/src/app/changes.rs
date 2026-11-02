@@ -102,15 +102,40 @@ impl App {
     /// Publishes the card's change and puts it in the inbox, ready to merge.
     pub fn offer_change(&self, card_id: i64) -> Result<Change> {
         self.offer_change_noted(card_id, None)
+            .map(|(change, _)| change)
     }
 
-    /// Like `offer_change`, with the judgement calls of the review attached to the inbox item as `judgements`.
-    pub fn offer_change_noted(&self, card_id: i64, judgements: Option<&str>) -> Result<Change> {
+    /// Like `offer_change`, with the judgements of the review attached to the inbox item as `judgements`. Also says
+    /// whether the card moved to Ready to merge: it does not when a person or the forge poll moved it while the
+    /// change was published, and then nothing is put in the inbox.
+    pub fn offer_change_noted(
+        &self,
+        card_id: i64,
+        judgements: Option<&str>,
+    ) -> Result<(Change, bool)> {
+        let seen = self.card(card_id)?.column;
         let change = self.publish_change(card_id)?;
+        self.finish_offer(card_id, &seen, change, judgements)
+    }
+
+    /// Moves the card from the column it was `seen` in to Ready to merge and puts `change` in the inbox, only if the
+    /// card is still there; otherwise the card is left where it is and the inbox is left alone.
+    pub(crate) fn finish_offer(
+        &self,
+        card_id: i64,
+        seen: &str,
+        change: Change,
+        judgements: Option<&str>,
+    ) -> Result<(Change, bool)> {
+        if self
+            .move_card_from(card_id, seen, columns::READY_TO_MERGE, None)?
+            .is_none()
+        {
+            return Ok((change, false));
+        }
         let card = self.card(card_id)?;
         let change = self.put_in_inbox(change, &card.title, judgements)?;
-        self.move_card(card_id, columns::READY_TO_MERGE)?;
-        Ok(change)
+        Ok((change, true))
     }
 
     /// Offers what a chat in a repository left on its branch as a change without a card: published through the

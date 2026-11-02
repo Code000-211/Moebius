@@ -99,7 +99,9 @@ pub struct Forgejo {
     url: String,
     api_url: String,
     token: String,
-    /// The ETag of the last full answer to the issues list, per repository.
+    /// The ETag of the last answer to the issues list, per repository, kept only when the answer was one page: the
+    /// ETag is of the first page, and Forgejo lists newest created first, so a change to an issue on a later page
+    /// would not change it.
     etags: Mutex<HashMap<String, String>>,
 }
 
@@ -127,7 +129,8 @@ impl Forgejo {
     }
 
     /// The issues of `repo` (`owner/repo`), open and closed, without its pull requests; none when the forge says
-    /// nothing changed since the last call. They come in pages of fifty, which are followed to the end.
+    /// nothing changed since the last call, which is only known when all the issues fit one page. They come in pages of
+    /// fifty, which are followed to the end.
     pub async fn issues(&self, repo: &str) -> Result<Option<Vec<Issue>>, ForgejoError> {
         let known = self.etags().get(repo).cloned();
         let mut url = format!(
@@ -136,7 +139,9 @@ impl Forgejo {
         );
         let mut issues = Vec::new();
         let mut etag = None;
+        let mut pages = 0;
         loop {
+            pages += 1;
             let mut request = self.http.get(&url);
             if let (Some(known), None) = (&known, &etag) {
                 request = request.header("If-None-Match", known);
@@ -164,9 +169,10 @@ impl Forgejo {
                 None => break,
             }
         }
-        if let Some(etag) = etag.filter(|e| !e.is_empty()) {
-            self.etags().insert(repo.to_string(), etag);
-        }
+        match etag.filter(|e| !e.is_empty()) {
+            Some(etag) if pages == 1 => self.etags().insert(repo.to_string(), etag),
+            _ => self.etags().remove(repo),
+        };
         Ok(Some(issues))
     }
 
@@ -351,6 +357,8 @@ mod tests {
     #[derive(Default)]
     struct Fake {
         asked: Mutex<Vec<Option<String>>>,
+        /// Whether all the issues fit the first page.
+        single: std::sync::atomic::AtomicBool,
     }
 
     async fn serve() -> (String, Arc<Fake>) {
@@ -385,6 +393,16 @@ mod tests {
                         fake.asked.lock().unwrap().push(asked.clone());
                         if asked.as_deref() == Some("\"v1\"") {
                             return StatusCode::NOT_MODIFIED.into_response();
+                        }
+                        if fake.single.load(std::sync::atomic::Ordering::SeqCst) {
+                            if asked.as_deref() == Some("\"v2\"") {
+                                return StatusCode::NOT_MODIFIED.into_response();
+                            }
+                            return (
+                                [("etag", "\"v2\"".to_string())],
+                                axum::Json(json!([issue(1, false)])),
+                            )
+                                .into_response();
                         }
                         let host = headers.get("host").unwrap().to_str().unwrap();
                         let next = format!(
@@ -423,12 +441,20 @@ mod tests {
             (Some(""), "leon")
         );
 
+        // The ETag is of the first page only, which a change on a later page does not touch: with several pages
+        // the issues are listed every time.
+        assert!(forgejo.issues("acme/widgets").await.unwrap().is_some());
+        assert_eq!(*fake.asked.lock().unwrap(), [None, None]);
+
+        // All issues on one page: the ETag covers them.
+        fake.single.store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(forgejo.issues("acme/widgets").await.unwrap().is_some());
         assert_eq!(forgejo.issues("acme/widgets").await.unwrap(), None);
         forgejo.forget_issues_etag("acme/widgets");
         assert!(forgejo.issues("acme/widgets").await.unwrap().is_some());
         assert_eq!(
             *fake.asked.lock().unwrap(),
-            [None, Some("\"v1\"".to_string()), None]
+            [None, None, None, Some("\"v2\"".to_string()), None]
         );
 
         let refused = Forgejo::new(&url, "wrong").issues("acme/widgets").await;
