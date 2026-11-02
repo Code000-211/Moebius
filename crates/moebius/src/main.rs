@@ -202,23 +202,30 @@ fn run(cli: Cli) -> Result<(), String> {
                 .ok_or("there is no config directory to write the connection to")?;
             let _remove = cli::ssh::ConnectedFile(file.clone());
             cli::ssh::remove_on_interrupt(file.clone(), tunnel.pid());
-            cli::ssh::write_connected(&file, &tunnel)?;
-            println!(
-                "Connected to {host}: {}. The other moebius commands use it until this one ends (Ctrl+C).",
-                tunnel.connection.url
-            );
-            if !no_window {
-                cli::ssh::wait_until_healthy(
-                    &tunnel.connection.url,
-                    std::time::Duration::from_secs(60),
-                )?;
-                let client = cli::Client::new(tunnel.connection.clone())?;
-                let opened =
-                    cli::window::open(&cli::window::login_url(&client)?, browser.as_deref())?;
-                println!("{}", cli::window::describe(&opened));
+            let ended = (|| -> Result<(), String> {
+                cli::ssh::write_connected(&file, &tunnel)?;
+                println!(
+                    "Connected to {host}: {}. The other moebius commands use it until this one ends (Ctrl+C).",
+                    tunnel.connection.url
+                );
+                if !no_window {
+                    cli::ssh::wait_until_healthy(
+                        &tunnel.connection.url,
+                        std::time::Duration::from_secs(60),
+                    )?;
+                    let client = cli::Client::new(tunnel.connection.clone())?;
+                    let opened =
+                        cli::window::open(&cli::window::login_url(&client)?, browser.as_deref())?;
+                    println!("{}", cli::window::describe(&opened));
+                }
+                tunnel.wait()?;
+                Err(format!("the connection to {host} ended"))
+            })();
+            // Ctrl+C killed ssh, which ended whatever this was waiting for: that is no error.
+            if cli::ssh::interrupted() {
+                std::process::exit(130);
             }
-            tunnel.wait()?;
-            Err(format!("the connection to {host} ended"))
+            ended
         }
         Some(Command::Open { browser }) => {
             let desktop = cli::desktop_settings_path();

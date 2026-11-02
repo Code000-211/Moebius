@@ -191,12 +191,22 @@ pub fn remove_on_interrupt(file: PathBuf, ssh_pid: u32) {
             }
         });
         if arrived.is_ok() {
+            // The main thread ends the process once ssh is gone (see `interrupted`): two threads that both call
+            // `exit` race for the exit code and can hang the process.
+            INTERRUPTED.store(true, std::sync::atomic::Ordering::SeqCst);
             let _ = std::fs::remove_file(&file);
             moebius_core::platform::kill_process(ssh_pid);
-            std::process::exit(130);
         }
     });
     let _ = wait_for_it.recv();
+}
+
+/// Set when Ctrl+C ended a `connect`.
+static INTERRUPTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether Ctrl+C ended the `connect` of this process; it then exits with 130, as a shell expects.
+pub fn interrupted() -> bool {
+    INTERRUPTED.load(std::sync::atomic::Ordering::SeqCst)
 }
 
 /// Where `connect` leaves the tunnel for the commands that follow: next to the desktop app's settings.
