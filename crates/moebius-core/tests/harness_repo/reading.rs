@@ -2,7 +2,10 @@
 //! only there, the skills and MCP servers listed without secrets, a built-in agent with its own files, and a commit
 //! someone else pushes arriving at the next refresh.
 
-use moebius_core::board::{CardRuns, Variant};
+use moebius_core::board::CardRuns;
+// Only the test that starts a run, which needs a Unix fake Pi, uses it.
+#[cfg(unix)]
+use moebius_core::board::Variant;
 use moebius_core::decide::rules;
 use moebius_core::repos::git;
 use moebius_core::router::Protocol;
