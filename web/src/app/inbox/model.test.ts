@@ -223,8 +223,8 @@ describe("how an item tells itself", () => {
       regression: [{ card: 2, outcome: "negative", reason: "broke it" }],
     });
     expect(trialsOf(proposal, "trials")).toEqual([
-      { card: "Card 4", outcome: "Positive", tone: "complete", reason: "faster" },
-      { card: "No card", outcome: "No change", tone: "quiet", reason: "" },
+      { card: 4, outcome: "Positive", tone: "complete", reason: "faster" },
+      { card: null, outcome: "No change", tone: "quiet", reason: "" },
     ]);
     expect(trialsOf(proposal, "regression")[0]?.tone).toBe("error");
     expect(trialsOf(item(1, "proposal", null, {}), "trials")).toEqual([]);
@@ -236,26 +236,21 @@ describe("how an item tells itself", () => {
       kind: "settings",
       reason: "Cards ran out of rounds.",
       diff: "+round_limit = 7",
-      branch: "proposal/keep-me",
     });
-    expect(
-      proposedOf(stored, proposed({ body: "Other", diff: "+other", branch: "other" })),
-    ).toEqual({
+    expect(proposedOf(stored, proposed({ body: "Other", diff: "+other" }))).toEqual({
       reason: "Cards ran out of rounds.",
       diff: "+round_limit = 7",
-      branch: "proposal/keep-me",
     });
-    // The item a trial ends with names its proposal and nothing else, so the record stands in for all three.
+    // The item a trial ends with names its proposal and nothing else, so the record stands in for both.
     const fromTrial = item(2, "proposal", null, { proposal: 4 });
     expect(
       proposedOf(fromTrial, proposed({ body: "Read the tests first.", diff: "+read tests" })),
     ).toEqual({
       reason: "Read the tests first.",
       diff: "+read tests",
-      branch: "proposal/2026-10-25-read-tests",
     });
-    // A harness proposal has no diff, so the branch is what the card can show.
-    expect(proposedOf(fromTrial, null)).toEqual({ reason: "", diff: "", branch: "" });
+    // A harness proposal has no diff, and nothing at all to show without its proposal.
+    expect(proposedOf(fromTrial, null)).toEqual({ reason: "", diff: "" });
     expect(proposedOf(fromTrial, proposed({ diff: "" })).diff).toBe("");
     // The sentence for such an item comes from the kind the record knows, not from the bare item.
     expect(why(fromTrial, {})).toContain("harness configuration");

@@ -19,6 +19,7 @@ import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
 import { cn } from "../../ui/lib/cn";
 import { ago } from "../../ui/lib/format";
+import { FadedClamp } from "../../ui/page/FadedClamp";
 import { Field, TextArea } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 import { Status } from "../../ui/page/Status";
@@ -176,11 +177,8 @@ export function ItemCard({
     } else if (item.kind === PROPOSAL && proposal !== null) {
       buttons.push(primary("Merge", { kind: "mergeProposal", proposal }));
       buttons.push(plain("Dismiss", () => act({ kind: "dismissProposal", proposal })));
-      const day = proposed?.retro_date;
-      if (day) {
-        buttons.push(
-          plain("Open in Retro", () => navigate(`/retro?day=${encodeURIComponent(day)}`)),
-        );
+      if (proposed) {
+        buttons.push(plain("Open in Retro", () => navigate(retroLink(proposed))));
       }
     } else if (item.kind === TAKEOVER && takeover !== null) {
       buttons.push(primary("Merge", { kind: "mergeTakeover", takeover }));
@@ -262,42 +260,55 @@ function Facts({ item, snapshot }: { item: InboxItem; snapshot: Snapshot }) {
   );
 }
 
+/** Where a proposal is read in full: the day of the Retro that made it, opened on the proposal itself. */
+function retroLink(proposed: Proposal): string {
+  const day = encodeURIComponent(proposed.retro_date);
+  return `/retro?day=${day}&proposal=${encodeURIComponent(String(proposed.id))}`;
+}
+
 /**
- * What a proposal would change: the Retro's reason for it, then the change itself. A change to Moebius's own
- * configuration or to a repository's comes as a diff, which is drawn here rather than described; a change to the
- * harness configuration is a branch of that repository, so the card names the branch it lives on and the Retro page
- * holds the rest.
+ * What a proposal would change: the Retro's reason for it, three lines at most, and the diff when the change comes
+ * as one. The whole of a proposal is read on the Retro page rather than on a card that lists them, so the reason
+ * stops at what tells one from the next and is itself the way there.
  */
 function OwnChange({ item, proposed }: { item: InboxItem; proposed: Proposal | null }) {
+  const navigate = useNavigate();
   const shown = proposedOf(item, proposed);
+  const open = () => {
+    if (proposed) navigate(retroLink(proposed));
+  };
+  if (shown.reason === "" && shown.diff === "") return null;
   return (
     <div className="flex flex-col gap-3">
       {shown.reason !== "" && (
-        <p className="m-0 max-w-prose text-base text-secondary [overflow-wrap:anywhere]">
-          {shown.reason}
-        </p>
+        // Three lines at most, the last one fading: the whole of the reason is a click away on the Retro page, so a
+        // card that lists proposals does not have to hold all of it. With no proposal to open it stays plain text.
+        <button
+          type="button"
+          disabled={proposed === null}
+          onClick={open}
+          className="flex min-h-10 w-full max-w-prose cursor-pointer items-center text-left text-base text-secondary transition-colors duration-(--motion-routine) ease-out hover:text-text disabled:cursor-default disabled:hover:text-secondary"
+        >
+          <FadedClamp text={shown.reason} />
+        </button>
       )}
-      {shown.diff !== "" ? (
+      {shown.diff !== "" && (
         <CodeBlock language="diff" code={shown.diff}>
           {shown.diff}
         </CodeBlock>
-      ) : (
-        shown.branch !== "" && (
-          <p className="m-0 max-w-prose text-sm text-secondary [overflow-wrap:anywhere]">
-            {"It is a commit on a branch of the harness configuration: "}
-            <code className="font-mono text-text">{shown.branch}</code>
-          </p>
-        )
       )}
     </div>
   );
 }
 
-/** What the trials of a proposal found, one line each; then, under a label, the same for the regression set. */
+/**
+ * What the trials of a proposal found, one line each; then, under a label, the same for the regression set. A trial
+ * that names no card only says there was nothing to try the proposal on, which is not something found.
+ */
 function Trials({ item }: { item: InboxItem }) {
   const line = (trial: ReturnType<typeof trialsOf>[number], index: number) => (
     <li key={`${trial.card}-${index}`} className="flex flex-wrap items-baseline gap-3">
-      <span className="shrink-0 text-sm text-secondary tabular-nums">{trial.card}</span>
+      <span className="shrink-0 text-sm text-secondary tabular-nums">{`Card ${trial.card}`}</span>
       <span
         className={cn(
           "shrink-0 text-sm font-semibold",
@@ -313,14 +324,15 @@ function Trials({ item }: { item: InboxItem }) {
       <span className="min-w-0 flex-1 break-words text-base text-secondary">{trial.reason}</span>
     </li>
   );
-  const regression = trialsOf(item, "regression");
-  if (trialsOf(item, "trials").length === 0 && regression.length === 0) return null;
+  const tried = trialsOf(item, "trials").filter((trial) => trial.card !== null);
+  const regression = trialsOf(item, "regression").filter((trial) => trial.card !== null);
+  if (tried.length === 0 && regression.length === 0) return null;
   return (
     <div className="flex flex-col gap-3">
       {/* biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with
           no marker from the accessibility tree entirely */}
       <ul role="list" className="m-0 flex list-none flex-col gap-2 p-0">
-        {trialsOf(item, "trials").map(line)}
+        {tried.map(line)}
       </ul>
       {regression.length > 0 && (
         <>

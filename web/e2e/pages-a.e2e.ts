@@ -170,23 +170,30 @@ describe("the inbox", () => {
   );
 
   it.skipIf(usesRealServer)(
-    "shows what a proposal offers and where to read the rest of it",
+    "shows what a proposal offers and opens the Retro it came from",
     async () => {
       await open("/inbox");
       await items().first().waitFor();
-      // The item a trial ends with names its proposal, so the card reads the proposal for what it offers:
-      // a change to the harness configuration is a branch, so the card says which branch it lives on.
+      // The item a trial ends with names its proposal, so the card reads the proposal for what it offers and stops
+      // at three lines of it: the whole of the argument is on the Retro page, which the preview itself opens.
       const harness = item("Let the Coder read");
-      await harness.getByText("its instructions now say to read the tests").waitFor();
-      await harness.getByText("proposal/2026-10-25-read-tests").waitFor();
-      // The trials read as words beside the card they tried, and the kind's word is the only pill on the card.
-      await harness.getByText("Positive", { exact: true }).waitFor();
-      await harness.getByText("It passed in one round.").waitFor();
+      const reason = harness.getByRole("button", {
+        name: /its instructions now say to read the tests/,
+      });
+      await reason.waitFor();
+      expect(await reason.locator(".clamp-3").count()).toBe(1);
+      // Where the change lives is the Retro page's business, not the card's.
+      expect(await harness.getByText("proposal/2026-10-25-read-tests").count()).toBe(0);
+      // A trial that names no card only says there was nothing to try it on, so it is not on the card. The trials
+      // that ran are words beside the card they ran on, and the kind's word is the card's only pill.
+      expect(await harness.getByText("No card", { exact: true }).count()).toBe(0);
       await harness.getByText("Card 3").waitFor();
+      await harness.getByText("It passed in one round.").waitFor();
+      expect(await harness.getByText("Positive", { exact: true }).count()).toBe(1);
       expect(await harness.getByText("Retro", { exact: true }).count()).toBe(0);
-      // The day of the Retro that made it is one click away, for the detail the card does not hold.
-      await harness.getByRole("button", { name: "Open in Retro" }).click();
-      expect(path()).toBe("/retro?day=2026-10-25");
+      // The preview lands on the proposal itself, not at the top of the day.
+      await reason.click();
+      expect(path()).toBe("/retro?day=2026-10-25&proposal=4");
       await page.getByText("proposal/2026-10-25-read-tests").waitFor();
     },
   );

@@ -5,12 +5,12 @@
  * proposal changes with `trial_done` and `proposal_status`, which `live/invalidation.ts` answers by reading again.
  *
  * The days are the list and the chosen day is the detail, so a person reads one day at a time: what was left out of
- * it, what went wrong, and what the Retro wants changed. `?day=` names the day to open on, which is how the Inbox
- * leads here from a proposal it cannot show all of.
+ * it, what went wrong, and what the Retro wants changed. `?day=` names the day to open on and `?proposal=` the one
+ * to land on, which is how the Inbox leads here from a proposal it cannot show all of.
  */
 import { WarningCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { retro, retros, startRetro } from "../../api/calls/improve";
 import { sayError } from "../../api/errorText";
@@ -47,6 +47,8 @@ export function RetroPage() {
   const [params] = useSearchParams();
   // The day a link came in with, else the latest; one picked from the list answers neither.
   const date = picked ?? params.get("day") ?? list.data?.[0]?.date ?? null;
+  // The proposal a link came in for, which the day is scrolled to rather than read from its top.
+  const wanted = params.get("proposal");
   const opened = useQuery({
     queryKey: keys.retro(date ?? ""),
     queryFn: () => retro(date as string),
@@ -111,7 +113,7 @@ export function RetroPage() {
                 </Region>
               )}
               {opened.data ? (
-                <Day view={opened.data} />
+                <Day view={opened.data} wanted={wanted} />
               ) : date === null ? (
                 <Empty
                   title="No Retro yet"
@@ -141,7 +143,8 @@ export function RetroPage() {
 }
 
 /** One day: what was left out, its errors by kind and its proposals. */
-function Day({ view }: { view: RetroView }) {
+/** The day a person is reading. `wanted` is the proposal a link came in for. */
+function Day({ view, wanted }: { view: RetroView; wanted: string | null }) {
   const groups = groupErrors(view.report.errors);
   const proposals = view.proposals ?? [];
   const warnings = view.warnings ?? [];
@@ -195,7 +198,11 @@ function Day({ view }: { view: RetroView }) {
         ) : (
           <div className="flex flex-col gap-4">
             {proposals.map((proposal) => (
-              <ProposalCard key={proposal.id} proposal={proposal} />
+              <ProposalCard
+                key={proposal.id}
+                proposal={proposal}
+                aimed={String(proposal.id) === wanted}
+              />
             ))}
           </div>
         )}
@@ -234,12 +241,17 @@ function ErrorGroup({ label, errors }: { label: string; errors: ReportError[] })
 }
 
 /** A proposal: its title and status, the agents it changes, its branch, what it says it does, the cards it
- * addresses and what the trials found, or the diff of a change to Moebius's own configuration. */
-function ProposalCard({ proposal }: { proposal: Proposal }) {
+ * addresses and what the trials found, or the diff of a change to Moebius's own configuration. The one a link from
+ * the Inbox named is aimed at — the day is scrolled to it rather than read from its top. */
+function ProposalCard({ proposal, aimed }: { proposal: Proposal; aimed?: boolean }) {
   const status = proposalTag(proposal.status);
   const own = ownKind(proposal.kind);
+  const box = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (aimed) box.current?.scrollIntoView({ behavior: "instant", block: "start" });
+  }, [aimed]);
   return (
-    <article className="flex min-w-0 flex-col gap-4 rounded-card bg-sunken p-4">
+    <article ref={box} className="flex min-w-0 flex-col gap-4 rounded-card bg-sunken p-4">
       <h3 className="m-0 min-w-0 break-words text-base font-semibold text-text">
         {proposal.title}
       </h3>

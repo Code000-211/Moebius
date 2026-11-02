@@ -259,7 +259,8 @@ export function facts(item: InboxItem, about: Found): Fact[] {
 }
 
 export interface Trial {
-  card: string;
+  /** The card the trial ran on, or `null` when the proposal names none — there is then nothing to try it on. */
+  card: number | null;
   outcome: string;
   /** How the outcome reads in words alone: teal for what worked, red for what did not, quiet for the rest. */
   tone: "complete" | "error" | "quiet";
@@ -267,20 +268,19 @@ export interface Trial {
 }
 
 /**
- * What the card of a proposal says about the change itself: the Retro's reason for it, the diff where one can be
- * shown, and the branch the change lives on where it cannot. An item made when the Retro stores a proposal carries
- * all three; the one a trial ends with carries none of them, so the proposal read back from the server stands in.
+ * What the card of a proposal says about the change itself: the Retro's reason for it and the diff, for the changes
+ * that come as one. An item made when the Retro stores a proposal carries both; the one a trial ends with carries
+ * neither, so the proposal read back from the server stands in.
  */
 export function proposedOf(
   item: InboxItem,
   proposed: Proposal | null,
-): { reason: string; diff: string; branch: string } {
+): { reason: string; diff: string } {
   const own = text(item.data.reason);
   const diff = typeof item.data.diff === "string" ? text(item.data.diff) : "";
   return {
     reason: own !== "" ? own : (proposed?.body ?? ""),
     diff: diff !== "" ? diff : (proposed?.diff ?? ""),
-    branch: text(item.data.branch) !== "" ? text(item.data.branch) : (proposed?.branch ?? ""),
   };
 }
 
@@ -295,7 +295,7 @@ export function trialsOf(item: InboxItem, key: "trials" | "regression"): Trial[]
     const card = number(trial.card);
     const outcome = text(trial.outcome);
     return {
-      card: card !== null ? `Card ${card}` : "No card",
+      card,
       outcome: sentence(outcome),
       tone:
         outcome === "positive"
