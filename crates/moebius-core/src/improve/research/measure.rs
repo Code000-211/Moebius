@@ -154,8 +154,6 @@ mod tests {
         (dir, app, repository)
     }
 
-    // Unix only: the measure runs with `sh`.
-    #[cfg(unix)]
     #[test]
     fn only_the_end_of_a_long_output_is_read() {
         let dir = tempfile::tempdir().unwrap();
@@ -166,6 +164,8 @@ mod tests {
         assert_eq!(end_of(&dir.path().join("none"), 4), b"");
     }
 
+    // Unix only: the measure runs with `sh`.
+    #[cfg(unix)]
     #[test]
     fn a_measure_runs_in_a_worktree_with_a_clean_environment_and_a_time_limit() {
         let (_dir, app, repository) = app_with_repository();
