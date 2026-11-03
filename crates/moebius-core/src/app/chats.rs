@@ -293,24 +293,35 @@ impl App {
     }
 
     /// A person changes the model or the reasoning level of the chat `run_id` (see `ChatSettings`); what is not given
-    /// stays. The chat must be waiting: while its agent works the answer is a conflict. The change is kept as a
-    /// `settings_changed` event and told to the chat's Pi (see [`Runs::change_chat`]), so that the next message is
-    /// answered with it. `served` are the protocols the router's upstreams list `model` under.
+    /// stays. The chat must be waiting, or have ended because its agent went away: while its agent works the answer is a
+    /// conflict, and a chat that ended any other way is ended for good. The change is kept as a `settings_changed`
+    /// event, so that the next message is answered with it: the chat's agent is told at once when it is up (see
+    /// [`Runs::change_chat`]), and starts with what is stored when it is made again for the message (see
+    /// [`App::wake_chat`]). `served` are the protocols the router's upstreams list `model` under.
     pub fn change_chat_settings(
         self: &Arc<Self>,
         runs: &dyn Runs,
         run_id: i64,
         (model, thinking, served): (Option<&str>, Option<&str>, &[Protocol]),
     ) -> Result<Run> {
-        let run = self.running_chat(run_id)?;
+        let run = self.chat(run_id)?;
         check_settings(model, thinking)?;
         let _turn = self.chat_turns.lock().unwrap_or_else(|e| e.into_inner());
         let run = self.run(run.id)?;
-        if run.status != "waiting" {
-            return Err(AppError::Conflict(format!(
-                "chat {run_id} is {}: its model and reasoning change once the agent has answered",
-                run.status
-            )));
+        if run.status != "waiting" && run.status != "stopped" {
+            // A chat whose agent went away is not ended for good: the agent made again for the next message starts on
+            // what is stored, so such a chat is given its settings too.
+            return Err(if run.ended_at.is_some() {
+                AppError::Invalid(format!(
+                    "chat {run_id} ended {}; its model and reasoning cannot change",
+                    run.status
+                ))
+            } else {
+                AppError::Conflict(format!(
+                    "chat {run_id} is {}: its model and reasoning change once the agent has answered",
+                    run.status
+                ))
+            });
         }
         let mut settings = self.chat_settings(run_id)?;
         if let Some(model) = model {
@@ -321,7 +332,10 @@ impl App {
             settings.thinking = Some(thinking.to_string());
         }
         self.record_run_event(run_id, "settings_changed", &json!(settings))?;
-        runs.change_chat(self, run_id).map_err(AppError::Invalid)?;
+        // Only a chat whose agent is up has an agent to tell.
+        if run.status == "waiting" {
+            runs.change_chat(self, run_id).map_err(AppError::Invalid)?;
+        }
         self.run(run_id)
     }
 

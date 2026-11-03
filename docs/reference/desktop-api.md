@@ -1508,10 +1508,10 @@ The chat is `running` from the request on, before the agent says it has started,
 
 ### `POST /v1/chats/{id}/settings`
 
-Changes the model or the reasoning level a chat that has not ended runs with, in place of its agent's (see
-`POST /v1/chats`): `{"model": "...", "thinking": "..."}`, each optional and kept as it was when not given. The agent
-answers the next message with them. The chat must be `waiting`, between turns: while its agent works the answer is
-`409`.
+Changes the model or the reasoning level a chat runs with, in place of its agent's (see `POST /v1/chats`):
+`{"model": "...", "thinking": "..."}`, each optional and kept as it was when not given. The agent answers the next
+message with them. The chat must be `waiting`, between turns, or `stopped`, its agent gone: while its agent works the
+answer is `409`, and a chat that ended any other way is ended for good.
 
 The change is stored as a `settings_changed` run event holding what the chat now runs with, `{"model", "protocol",
 "thinking"}` (each null while the agent's is used; `protocol` is `openai` or `anthropic`, chosen as in
@@ -1524,9 +1524,13 @@ The change is stored as a `settings_changed` run event holding what the chat now
   on the same session and the new `--model` and `--thinking`; the chat stays `waiting` and keeps its conversation.
 - A chat whose Pi was ended after waiting long, or whose terminal is open, has no Pi to tell: its Pi is started with
   the new settings when the next message comes or the terminal closes.
+- A chat whose agent went away (`stopped`) has none to tell either: the agent its next message makes (see
+  `POST /v1/chats/{id}/messages`) starts with the new settings, so a person leaves a chat on a better model as they
+  leave it.
 
 Response: the `Run`. Errors: `404` no such run; `409` the chat's agent is working; `422` the run is not a chat, the chat
-has ended, `model` is blank or `thinking` is not one of `off`, `minimal`, `low`, `medium`, `high`, `xhigh` and `max`.
+ended for good (`succeeded` or `failed`), `model` is blank or `thinking` is not one of `off`, `minimal`, `low`, `medium`,
+`high`, `xhigh` and `max`.
 
 ### `POST /v1/chats/{id}/offer`
 

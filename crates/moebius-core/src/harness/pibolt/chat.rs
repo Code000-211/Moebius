@@ -590,6 +590,65 @@ mod tests {
         assert_eq!(said.len(), 3, "the message belongs to this chat");
     }
 
+    /// A chat whose agent went away is still left on the model and reasoning its next agent starts with. There is
+    /// nobody to tell at the time, and the choice belongs to the person reading the chat, not to a new chat.
+    #[test]
+    fn a_chat_whose_agent_went_on_keeps_a_model_and_level_for_the_agent_made_again() {
+        let (_dir, app, pi, _repo) = setup();
+        let run = app
+            .start_chat(
+                &pi,
+                Some("Coder"),
+                None,
+                false,
+                None,
+                None,
+                None,
+                None,
+                (Some("first-model"), Some("low"), &[][..]),
+            )
+            .unwrap();
+        assert_eq!(run.status, "waiting");
+        assert!(pi.stop(run.id));
+        assert_eq!(wait_until_ended(&app, run.id).status, "stopped");
+
+        app.change_chat_settings(&pi, run.id, (Some("other-model"), Some("high"), &[]))
+            .unwrap();
+        assert_eq!(
+            app.run(run.id).unwrap().status,
+            "stopped",
+            "choosing does not answer the chat"
+        );
+        let settings = app.chat_settings(run.id).unwrap();
+        assert_eq!(settings.model.as_deref(), Some("other-model"));
+        assert_eq!(settings.thinking.as_deref(), Some("high"));
+        let listed = &app.chats(false).unwrap()[0];
+        assert_eq!(listed.model.as_deref(), Some("other-model"));
+        assert_eq!(listed.thinking.as_deref(), Some("high"));
+
+        // The agent the next message makes starts with them.
+        app.say_in_chat(&pi, run.id, "Carry on", None).unwrap();
+        wait_for_run(&app, run.id, "the agent answers", |run| {
+            run.status == "waiting"
+        });
+        let (argv, _) = argv_and_stdin(&app, run.id);
+        assert_eq!(flag(&argv, "--model"), Some("other-model"));
+        assert_eq!(flag(&argv, "--thinking"), Some("high"));
+
+        // A chat that ended for good is given nothing: it is ended, not resting.
+        app.end_chat(&pi, run.id).unwrap();
+        wait_until_ended(&app, run.id);
+        let why = app
+            .change_chat_settings(&pi, run.id, (Some("third-model"), None, &[]))
+            .unwrap_err();
+        assert!(format!("{why}").contains("ended"), "{why}");
+        assert_eq!(
+            app.chat_settings(run.id).unwrap().model.as_deref(),
+            Some("other-model"),
+            "the refused change left nothing behind"
+        );
+    }
+
     #[test]
     fn writing_to_a_chat_that_was_ended_keeps_it_ended() {
         let (_dir, app, pi, repo) = setup();

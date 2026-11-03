@@ -571,6 +571,37 @@ describe("an open chat", () => {
     );
   });
 
+  /**
+   * A chat whose agent went away is not a chat you can only read: the next message answers on the model and level
+   * chosen here, so the choice stays where the conversation is, and stays changeable while nobody is working.
+   */
+  it.skipIf(usesRealServer)(
+    "keeps the model and reasoning choices after its agent goes away",
+    async () => {
+      await open("/chat");
+      const id = fake().seed({ title: "Hi", events: [["said", { message: "Hi" }]] });
+      await page.goto(`${server.url}/chat/${id}`);
+      const stopped = await context.request.post(`${server.url}/v1/chats/${id}/stop`, {
+        headers: { "X-Moebius": "1" },
+      });
+      expect(stopped.ok(), await stopped.text()).toBe(true);
+      await page.getByText("Agent disconnected", { exact: true }).first().waitFor();
+
+      await page.getByRole("button", { name: /^Model: / }).click();
+      await page.getByRole("menuitemradio", { name: "fake-small" }).click();
+      await page.getByRole("button", { name: "Model: fake-small" }).waitFor();
+      expect(fake().chats[0]?.model).toBe("fake-small");
+
+      await page.getByRole("button", { name: /^Reasoning: / }).click();
+      await page.getByRole("menuitemradio", { name: "high", exact: true }).click();
+      await page.getByRole("button", { name: "Reasoning: high" }).waitFor();
+      expect(fake().chats[0]?.thinking).toBe("high");
+      // Choosing is not answering: the chat waits for its next message with them.
+      expect(fake().chats[0]?.status).toBe("stopped");
+      expect(fake().said).toEqual([]);
+    },
+  );
+
   it.skipIf(usesRealServer)(
     "stops after asking, and its next message takes the same chat up again",
     async () => {

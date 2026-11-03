@@ -163,8 +163,8 @@ pub trait ChatRuns: Send + Sync {
         settings: &ChatSettings,
     ) -> Result<Run, StartError>;
 
-    /// The waiting chat `run_id` was given other settings (see `ChatSettings`), which its latest `settings_changed`
-    /// event holds: its agent answers the next message with them.
+    /// The chat `run_id`, whose agent is up, was given other settings (see `ChatSettings`), which its latest
+    /// `settings_changed` event holds: its agent answers the next message with them.
     fn change_chat(&self, app: &Arc<App>, run_id: i64) -> Result<(), String>;
 
     /// Sends a person's message to a chat's agent; it answers when it is done with what it is doing. False when the

@@ -464,7 +464,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/
 
 A chat can run on another model and reasoning level than its agent's: `model` and `thinking` (`off`, `minimal`, `low`,
 `medium`, `high`, `xhigh` or `max`) in `POST /v1/chats`, and `POST /v1/chats/{id}/settings` to change them while the
-chat waits (`409` while the agent works). Pi is started with them every time, so they last after the terminal or a long
+chat waits or after its agent went away (`409` while the agent works). Pi is started with them every time, so they last after the terminal or a long
 wait; a new reasoning level is sent to the waiting Pi with `set_thinking_level`, and a new model starts the chat's Pi
 again on the same session, as Pi knows only the model it was started with. Without `message` a chat starts and waits,
 so its terminal can be opened at once. In the desktop app these are the pickers under the field to write in, and the

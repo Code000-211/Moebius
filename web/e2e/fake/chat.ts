@@ -362,7 +362,9 @@ export function createFakeChat(
             chat.seen = Math.max(chat.seen, Number(body.seq));
             return reply(response, 200, {});
           case "/settings":
-            if (chat.status !== "waiting") return reply(response, 409, "the agent is working");
+            // A chat whose agent went away has no agent to tell, but keeps the choice for the agent made again.
+            if (chat.status !== "waiting" && chat.status !== "stopped")
+              return reply(response, 409, "the agent is working");
             if (typeof body.model === "string") chat.model = body.model;
             if (typeof body.thinking === "string") chat.thinking = body.thinking;
             return reply(response, 200, run(chat));

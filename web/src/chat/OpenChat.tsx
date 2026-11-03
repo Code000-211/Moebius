@@ -353,6 +353,7 @@ export function OpenChat({
   // A chat whose agent went away still takes a message: that chat is taken up again, told what was said in it, so the
   // person goes on where they are rather than in a new chat.
   const writesHere = takesMessage(chat.status);
+  const gone = chat.status === "stopped";
 
   // Pi-Bolt's own terminal interface takes the place of the conversation; the top bar's button brings it back.
   if (open && params.get("terminal") === "1") {
@@ -464,7 +465,10 @@ export function OpenChat({
         pills={
           <>
             <Tag>{place ?? "no repository"}</Tag>
-            {open && (
+            {/* The model and the reasoning level are chosen wherever a message will be answered. While the agent is up
+                it is told them; after it went away there is nobody to tell yet, and the agent made again for the next
+                message starts on them, so the choice is still the person's to make here. */}
+            {writesHere && (
               <>
                 <PillSelect
                   label="Model"
@@ -473,7 +477,7 @@ export function OpenChat({
                   placeholder="Server default"
                   options={modelOptions}
                   onChange={(value) => void change({ model: value })}
-                  disabled={!waiting}
+                  disabled={!waiting && !gone}
                   searchable
                 />
                 <PillSelect
@@ -483,7 +487,7 @@ export function OpenChat({
                   placeholder="Not set"
                   options={levelOptions}
                   onChange={(value) => void change({ thinking: value })}
-                  disabled={!waiting}
+                  disabled={!waiting && !gone}
                 />
               </>
             )}
