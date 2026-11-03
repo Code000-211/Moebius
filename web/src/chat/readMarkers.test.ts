@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Chat } from "../api/types/chat";
-import { askingCount, listedChats, seqToMark, unreadCount } from "./readMarkers";
+import { askingCount, seqToMark, unreadCount } from "./readMarkers";
 
 const chat = (id: number, over: Partial<Chat> = {}): Chat => ({
   id,
@@ -50,21 +50,17 @@ describe("counts", () => {
   const chats = [
     chat(1, { answered: 3, seen: 1 }),
     chat(2, { answered: 3, seen: 3 }),
-    chat(3, { answered: 9, seen: 0, origin: "assistant" }),
+    chat(3, { answered: 9, seen: 0, origin: "assistant", asks: true }),
     chat(4, { asks: true }),
     chat(5, { asks: true, status: "running" }),
   ];
 
-  it("counts the unread chats of the page, not those of the floating window", () => {
-    expect(unreadCount(chats)).toBe(1);
+  it("counts every unread chat, whoever started it", () => {
+    // The conversation of the floating window is a chat of this page like any other, and unread until it is read.
+    expect(unreadCount(chats)).toBe(2);
   });
 
   it("counts the chats that wait for an answer to a question", () => {
-    expect(askingCount(chats)).toBe(1);
-  });
-
-  it("lists the chats of the floating window only when one is open", () => {
-    expect(listedChats(chats, null).map((each) => each.id)).toEqual([1, 2, 4, 5]);
-    expect(listedChats(chats, 3).map((each) => each.id)).toEqual([1, 2, 3, 4, 5]);
+    expect(askingCount(chats)).toBe(2);
   });
 });

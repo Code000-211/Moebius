@@ -53,16 +53,14 @@ function replace(chats: Chat[], id: number, change: (chat: Chat) => Chat): Chat[
 }
 
 /**
- * The chat to open when someone asks for Chat: the one started most recently, or null when there is none. A
- * chat of the floating assistant does not count: the Chat page does not list it. The list
- * from the server is newest first, but the newest of an edited or partially updated cache is picked by its own time
- * rather than by where it happens to sit.
+ * The chat to open when someone asks for Chat: the one started most recently, or null when there is none — wherever
+ * it was started, since a conversation begun in the floating window is a chat of the Chat page like any other. The
+ * list from the server is newest first, but the newest of an edited or partially updated cache is picked by its own
+ * time rather than by where it happens to sit.
  */
 export function recentChat(chats: Chat[]): Chat | null {
   let newest: Chat | null = null;
   for (const chat of chats) {
-    // The floating assistant's chats are not on the Chat page, so the link to that page never opens one.
-    if (chat.origin === "assistant") continue;
     if (newest === null || chat.started_at > newest.started_at) newest = chat;
   }
   return newest;

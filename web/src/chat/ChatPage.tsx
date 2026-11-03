@@ -14,7 +14,7 @@ import { ChatTopBar } from "./ChatTopBar";
 import { NewChat } from "./NewChat";
 import { ChatActions, ChatTitle, OpenChat } from "./OpenChat";
 import { placeName } from "./places";
-import { askingCount, listedChats } from "./readMarkers";
+import { askingCount } from "./readMarkers";
 
 export function ChatPage() {
   const params = useParams();
@@ -28,18 +28,18 @@ export function ChatPage() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: it runs when another chat is opened
   useEffect(() => setNotice(null), [openId]);
 
+  // Every chat of the server is on this page, including the ones started in the floating window.
   const all = chats.data ?? [];
-  const listed = listedChats(all, openId);
   const open = openId === null ? undefined : all.find((chat) => chat.id === openId);
 
   return (
     <div className="mx-auto flex h-full w-full max-w-3xl flex-col gap-4" data-testid="chat-page">
       <ChatTopBar
-        chats={listed}
+        chats={all}
         openId={openId}
         now={now}
         places={(chat) => placeName(snapshot.data, chat)}
-        asking={askingCount(listed)}
+        asking={askingCount(all)}
         title={
           open ? (
             <ChatTitle chat={open} onNotice={setNotice} />

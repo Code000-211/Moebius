@@ -3,8 +3,9 @@
  * sheet with the Moebius agent over the page. The sheet is a borderless card down the right that leaves the page
  * recognisable behind it; Escape, or the control that minimises it, closes it and the focus goes back to the button
  * that opened it. Minimising turns it back into the button and the chat stays across pages. Every message carries
- * where the person is, which only the agent is told; the first one starts a chat of origin `assistant` (the Chat page
- * leaves it out of its list), in the repository of the page when it has one, and the later ones go to the same chat.
+ * where the person is, which only the agent is told; the first one starts a chat of origin `assistant`, in the
+ * repository of the page when it has one, and the later ones go to the same chat. That chat is a chat of the Chat page
+ * like any other — listed there, unread until it is read in one place or the other.
  * A chat whose agent went away is taken up again with what was said in it, as on the Chat page; one the agent ended
  * is left behind, and the next message starts a new conversation.
  */
@@ -13,14 +14,16 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { snapshot as readSnapshot } from "../api/calls/board";
-import { chats as readChats, say, startChat } from "../api/calls/chat";
+import { markSeen, chats as readChats, say, startChat } from "../api/calls/chat";
 import { keys } from "../api/keys";
+import type { Chat } from "../api/types/chat";
 import { Tag } from "../ui/chat/Tag";
 import { Button } from "../ui/components/Button";
 import { Notice } from "../ui/page/Notice";
 import { Composer } from "./Composer";
 import { isOpen, isWorking, statusTag, takesMessage } from "./format";
 import { pageContext } from "./pageContext";
+import { seqToMark } from "./readMarkers";
 import { Starters } from "./Starters";
 import { ThreadView } from "./ThreadView";
 import { useThread } from "./useThread";
@@ -46,6 +49,8 @@ export function FloatingChat() {
   // What the composer holds right now, which the closure of a send cannot see: what is typed while an answer is on its
   // way is the next question, not something to clear away with the one that was sent.
   const held = useRef(message);
+  /** How far the chat open in the sheet has been marked read; 0 again for the next conversation. */
+  const marked = useRef({ id: 0, seq: 0 });
   const write = (value: string) => {
     held.current = value;
     setMessage(value);
@@ -84,6 +89,24 @@ export function FloatingChat() {
       opener.current?.focus();
     }
   }, [shown]);
+
+  // Marks the conversation read once an answer is held, not at every streamed piece of it, and only while the sheet is
+  // open. An answer that arrived after it was minimised is still unread, which is what the Chat page's count is for.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: it runs when the answer, the marker or the events move
+  useEffect(() => {
+    if (!shown || chatId === null) return;
+    const seq = seqToMark(chat, thread.lastSeq);
+    if (seq === null || (marked.current.id === chatId && seq <= marked.current.seq)) return;
+    marked.current = { id: chatId, seq };
+    queryClient.setQueryData<Chat[]>(keys.chats, (held) =>
+      held?.map((each) =>
+        each.id === chatId ? { ...each, seen: Math.max(each.seen, seq) } : each,
+      ),
+    );
+    markSeen(chatId, seq).catch(() => {
+      marked.current = { id: chatId, seq: 0 };
+    });
+  }, [shown, chatId, chat?.answered, chat?.seen, thread.lastSeq]);
 
   async function send() {
     const text = message.trim();

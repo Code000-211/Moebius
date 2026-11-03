@@ -7,7 +7,7 @@ import type { Agent, AvailableModels, Chat, NewChat, RunEvent, Skill } from "../
 /** How many events one request asks for; a longer chat is read in pieces. */
 export const EVENT_PAGE = 500;
 
-/** The chats, newest first, the ones of the floating window included (the Chat page leaves those out itself). */
+/** The chats, newest first, wherever they were started — the Chat page lists all of them, the floating window's included. */
 export function chats(): Promise<Chat[]> {
   return get<Chat[]>("/v1/chats?all=true");
 }

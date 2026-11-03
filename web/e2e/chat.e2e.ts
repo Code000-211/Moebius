@@ -724,6 +724,10 @@ describe("the floating chat", () => {
         context: "Page: Inbox",
       });
 
+      // Reading the answer in the sheet is reading the chat, so it is marked read there and then: the Chat page lists
+      // it below, and holds nothing up as new that the person has already seen.
+      await expect.poll(() => fake().seen.at(-1)?.seq ?? 0).toBeGreaterThan(0);
+
       // The chat stays across pages, and the next message goes to the same chat.
       await page
         .getByRole("navigation", { name: "Pages" })
@@ -745,11 +749,13 @@ describe("the floating chat", () => {
         context: "Page: Improve > Retro",
       });
 
-      // Minimised, it is the button again; the Chat page does not list this chat.
+      // Minimised, it is the button again, and the conversation it started is on the Chat page like any other: the
+      // count says one, and the list holds it under the first thing said in it.
       await window.getByRole("button", { name: "Minimise the floating chat" }).click();
       await window.waitFor({ state: "detached" });
       await page.goto(`${server.url}/chat`);
-      await page.getByRole("button", { name: "Chats (0)" }).waitFor();
+      await page.getByRole("button", { name: "Chats (1)" }).click();
+      await page.getByTestId("chat-row").filter({ hasText: "What is this page?" }).waitFor();
     },
   );
 

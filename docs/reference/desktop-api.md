@@ -1487,7 +1487,7 @@ Request:
 | `harness` | boolean | Work in the harness configuration repository instead (default false): in a worktree on the branch `moebius/chat-<run id>` of its default branch, so that the agents, skills, extensions, MCP servers and rules can be built as files and merged (see [changing it in a chat](harness-configuration.md#changing-it-in-a-chat)). The run has `harness_repository` true. Not together with `repository`. |
 | `continues` | number | The id of an ended chat this one goes on from. Its agent, place (repository or harness configuration repository), model and reasoning level are used unless `agent`, `repository`, `model` or `thinking` name others, and the agent is given what was said in it (the person's messages and the agent's answers, at most the last 20 000 characters) before `message`. The new chat's `said` event holds only `message`. |
 | `context` | string | Where the person is in the app (the page, the repository, the open card or chat, the text being edited), as the desktop app describes it. The agent is told it before `message`, under the line `[Where the person is in the Moebius app. Use it to understand what they mean; do not repeat it.]`, with secrets removed and cut to 4 000 characters; the `said` event holds only `message`. Optional; blank is the same as none. |
-| `origin` | string | Where the chat is started: `chat` (the default), on the Chat page or by any client, `automation`, as an automation's chats are (see `POST /v1/automations`), or `assistant`, a conversation in the desktop app's floating window, which the person reads there. `GET /v1/chats` leaves out the chats of origin `assistant` unless asked for them, so the Chat page and its unread count do not show them; the run, its events and every other chat route work as for any chat. |
+| `origin` | string | Where the chat is started: `chat` (the default), on the Chat page or by any client, `automation`, as an automation's chats are (see `POST /v1/automations`), or `assistant`, a conversation in the desktop app's floating window, which the person reads there. `GET /v1/chats` leaves out the chats of origin `assistant` unless asked for them with `all=true`; what an app does with them is its own (the web app lists them on its Chat page with every other chat and counts them unread until they are read, the desktop app keeps them out of its Chat page). The run, its events and every other chat route work as for any chat. |
 
 Response: the `Run` (`purpose` `chat`, `card_id` null). Errors: `404` no such repository or no run `continues`; `422`
 the message is blank or missing with `continues`, `model` is blank, `thinking` is not one of the levels, the agent does not exist, it is a built-in agent and neither its own `[agents.<name>]` nor
@@ -1499,7 +1499,7 @@ the message is blank or missing with `continues`, `model` is blank, `thinking` i
 
 The chats, newest first, without those of origin `assistant` (the desktop app's floating window). Query: `all=true`
 lists those too, each with its `origin`; the desktop app asks for them so that its Fleet page shows the agents they
-keep working and "Open in Chat" can show one. Response: an array of `Chat`. A chat's history is its run's events, read with
+keep working and "Open in Chat" can show one, and the web app asks for them because its Chat page lists every chat. Response: an array of `Chat`. A chat's history is its run's events, read with
 `GET /v1/runs/{id}/events` and followed on `GET /v1/events`.
 
 ### `POST /v1/chats/{id}/messages`
