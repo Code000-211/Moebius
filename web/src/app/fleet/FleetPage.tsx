@@ -22,6 +22,7 @@ import { Loader } from "../../ui/components/Loader";
 import { cn } from "../../ui/lib/cn";
 import { useNow } from "../../ui/lib/useNow";
 import { Empty } from "../../ui/page/Empty";
+import { FadedLine } from "../../ui/page/FadedLine";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { Status } from "../../ui/page/Status";
@@ -160,9 +161,14 @@ function Row({ work, now }: { work: Work; now: number }) {
                   <>
                     <ToolStatusDot status={toolStatus(entry.call)} className="shrink-0" />
                     <span className="shrink-0 font-mono text-text">{toolTitle(entry.call)}</span>
-                    <span className="break-words" title={inputPath(entry.call.input) ?? undefined}>
-                      {inputSummary(entry.call.input)}
-                    </span>
+                    {/* One line, as in a conversation: a command is read by its end, so what a line that runs out
+                        hides is its beginning, and the whole of it stays in the tooltip — the whole path of a file
+                        call, the whole command of a shell call. */}
+                    <FadedLine
+                      text={inputSummary(entry.call.input)}
+                      title={inputPath(entry.call.input) ?? inputSummary(entry.call.input)}
+                      className="flex-1"
+                    />
                   </>
                 ) : (
                   <>

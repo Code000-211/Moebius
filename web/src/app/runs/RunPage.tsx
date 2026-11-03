@@ -227,8 +227,8 @@ function OpenRun({ id }: { id: number }) {
               </div>
             )}
           </div>
-          <div className="mt-3 shrink-0">
-            {running ? (
+          {running ? (
+            <div className="mt-3 shrink-0">
               <Composer
                 value={message}
                 onChange={setMessage}
@@ -237,14 +237,18 @@ function OpenRun({ id }: { id: number }) {
                 placeholder="Steer the run"
                 error={error}
               />
-            ) : (
-              <p className="m-0 text-sm text-secondary" data-testid="run-hint">
-                {open
-                  ? "The run is not working now, so it cannot be steered."
-                  : "This run has ended."}
-              </p>
-            )}
-          </div>
+            </div>
+          ) : (
+            // A run that has ended says so in its own tag in the title row, where every run's state is said; a run that
+            // is merely between turns is the one where the field's absence needs explaining.
+            open && (
+              <div className="mt-3 shrink-0">
+                <p className="m-0 text-sm text-secondary" data-testid="run-hint">
+                  The run is not working now, so it cannot be steered.
+                </p>
+              </div>
+            )
+          )}
         </TabPanel>
       )}
       {terminalSeen && open && (
