@@ -8,6 +8,7 @@
  * as `{"kind": "run_event", "data": {"run", "seq", "kind", "data"}}`, as the server does.
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { eventPage } from "./events";
 
 export interface StoredEvent {
   seq: number;
@@ -54,6 +55,8 @@ export interface FakeChat {
   readonly said: Array<{ chat: number; body: Record<string, unknown> }>;
   /** The `seq` of each `POST /v1/chats/{id}/seen`, as received. */
   readonly seen: Array<{ chat: number; seq: number }>;
+  /** The query of each read of a run's events, in the order they were asked for. */
+  readonly reads: Array<Record<string, string>>;
   /** Whether a message is answered by the fake itself; a test that plays the agent turns it off. */
   autoAnswer: boolean;
   /** Makes a chat that is already there, with events if given. */
@@ -139,6 +142,7 @@ export function createFakeChat(
   const started: Array<Record<string, unknown>> = [];
   const said: Array<{ chat: number; body: Record<string, unknown> }> = [];
   const seen: Array<{ chat: number; seq: number }> = [];
+  const reads: Array<Record<string, string>> = [];
   let nextId = 1;
 
   const find = (id: number) => chats.find((chat) => chat.id === id);
@@ -167,6 +171,7 @@ export function createFakeChat(
     started,
     said,
     seen,
+    reads,
     autoAnswer: true,
 
     emit(id, kind, data = {}) {
@@ -328,10 +333,8 @@ export function createFakeChat(
       if (one && method === "GET" && one[2] === "/events") {
         const id = Number(one[1]);
         if (!find(id)) return reply(response, 404, "no such run");
-        const after = Number(url.searchParams.get("after") ?? 0);
-        const limit = Number(url.searchParams.get("limit") ?? 500);
-        const page = (events.get(id) ?? []).filter((event) => event.seq > after).slice(0, limit);
-        return reply(response, 200, page);
+        reads.push(Object.fromEntries(url.searchParams));
+        return reply(response, 200, eventPage(events.get(id) ?? [], url.searchParams));
       }
 
       if (one && method === "POST") {

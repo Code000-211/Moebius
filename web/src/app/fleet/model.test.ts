@@ -141,9 +141,10 @@ describe("how a tile tells its run", () => {
   });
 
   it("says how long a thought went on, and which one is still going", () => {
-    const thought = (at: number): Entry => ({ at, kind: "thinking", text: "t" });
-    const tool = (at: number): Entry => ({ at, kind: "tool", call: { at } }) as unknown as Entry;
-    const text = (at: number): Entry => ({ at, kind: "text", text: "a" });
+    const thought = (at: number): Entry => ({ at, seq: at, kind: "thinking", text: "t" });
+    const tool = (at: number): Entry =>
+      ({ at, seq: at, kind: "tool", call: { at } }) as unknown as Entry;
+    const text = (at: number): Entry => ({ at, seq: at, kind: "text", text: "a" });
     // A thought runs until whatever follows it begins.
     expect(thoughtSeconds([thought(100), thought(105), tool(112)], 0)).toBe(5);
     expect(thoughtSeconds([thought(100), thought(105), tool(112)], 1)).toBe(7);
@@ -164,8 +165,8 @@ describe("how a tile tells its run", () => {
   });
 
   it("shows the last run of steps", () => {
-    const text: Entry = { at: 0, kind: "text", text: "a" };
-    const thought: Entry = { at: 0, kind: "thinking", text: "t" };
+    const text: Entry = { at: 0, seq: 0, kind: "text", text: "a" };
+    const thought: Entry = { at: 0, seq: 1, kind: "thinking", text: "t" };
     expect(latestSteps([text])).toEqual([]);
     expect(latestSteps([thought, text, thought, thought, text])).toHaveLength(2);
     expect(latestSteps([thought, thought])).toHaveLength(2);

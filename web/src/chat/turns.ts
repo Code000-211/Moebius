@@ -49,15 +49,15 @@ export function stepViews(
   { nextAt = null, working = false }: { nextAt?: number | null; working?: boolean } = {},
 ): StepView[] {
   const views: StepView[] = [];
-  let reads: Array<{ index: number; call: ToolCall }> = [];
+  let reads: Array<{ seq: number; call: ToolCall }> = [];
   const flush = () => {
     if (reads.length === 1) {
       const [only] = reads;
-      if (only) views.push({ kind: "tool", key: `step-${only.index}`, call: only.call });
+      if (only) views.push({ kind: "tool", key: `step-${only.seq}`, call: only.call });
     } else if (reads.length > 1) {
       views.push({
         kind: "reads",
-        key: `step-${reads[0]?.index}`,
+        key: `step-${reads[0]?.seq}`,
         calls: reads.map((read) => read.call),
       });
     }
@@ -66,7 +66,7 @@ export function stepViews(
   for (let position = 0; position < entries.length; position += 1) {
     const { index, entry } = entries[position] as { index: number; entry: Entry };
     if (entry.kind === "tool" && isRead(entry.call)) {
-      reads.push({ index, call: entry.call });
+      reads.push({ seq: entry.seq, call: entry.call });
       continue;
     }
     flush();
@@ -75,13 +75,13 @@ export function stepViews(
       const end = last ? nextAt : entries[position + 1]?.entry.at;
       views.push({
         kind: "thinking",
-        key: `step-${index}`,
+        key: `step-${entry.seq}`,
         text: entry.text,
         seconds: end === undefined || end === null ? null : Math.max(0, end - entry.at),
         ongoing: working && last && nextAt === null,
       });
     } else if (entry.kind === "tool") {
-      views.push({ kind: "tool", key: `step-${index}`, call: entry.call });
+      views.push({ kind: "tool", key: `step-${entry.seq}`, call: entry.call });
     }
   }
   flush();
@@ -92,9 +92,9 @@ export function stepViews(
 export function groupTurns(entries: Entry[], working: boolean): Turn[] {
   const turns: Turn[] = [];
   let current: Turn | null = null;
-  const turn = (index: number): Turn => {
+  const turn = (seq: number): Turn => {
     if (!current) {
-      current = { key: `turn-${index}`, head: null, blocks: [] };
+      current = { key: `turn-${seq}`, head: null, blocks: [] };
       turns.push(current);
     }
     return current;
@@ -104,30 +104,30 @@ export function groupTurns(entries: Entry[], working: boolean): Turn[] {
     const entry = entries[index] as Entry;
     switch (entry.kind) {
       case "person":
-        current = { key: `turn-${index}`, head: entry, blocks: [] };
+        current = { key: `turn-${entry.seq}`, head: entry, blocks: [] };
         turns.push(current);
         break;
       case "text":
-        turn(index).blocks.push({ kind: "text", key: `text-${index}`, text: entry.text });
+        turn(entry.seq).blocks.push({ kind: "text", key: `text-${entry.seq}`, text: entry.text });
         break;
       case "error":
-        turn(index).blocks.push({
+        turn(entry.seq).blocks.push({
           kind: "error",
-          key: `error-${index}`,
+          key: `error-${entry.seq}`,
           source: entry.source,
           message: entry.message,
         });
         break;
       case "mcpError":
-        turn(index).blocks.push({
+        turn(entry.seq).blocks.push({
           kind: "mcpError",
-          key: `mcp-${index}`,
+          key: `mcp-${entry.seq}`,
           server: entry.server,
           message: entry.message,
         });
         break;
       default: {
-        const start = index;
+        const start = entries[index] as Entry;
         const run: Array<{ index: number; entry: Entry }> = [];
         while (index < entries.length) {
           const next = entries[index] as Entry;
@@ -136,9 +136,9 @@ export function groupTurns(entries: Entry[], working: boolean): Turn[] {
           index += 1;
         }
         const ongoing = working && index === entries.length;
-        turn(start).blocks.push({
+        turn(start.seq).blocks.push({
           kind: "steps",
-          key: `steps-${start}`,
+          key: `steps-${start.seq}`,
           steps: stepViews(run, {
             nextAt: ongoing ? null : (entries[index]?.at ?? null),
             working,

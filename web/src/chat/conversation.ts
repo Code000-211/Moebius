@@ -53,7 +53,12 @@ export type Said = "said" | "steered";
 /** Where an error comes from: the model's provider (refused key, quota, an HTTP error), or Moebius, which ended the run. */
 export type ErrorSource = "model" | "run";
 
-export type Entry = { at: number } & (
+/**
+ * One thing the chat shows. `at` is when it arrived and `seq` the event that started it: a page that reads older
+ * messages puts them above the ones drawn, so nothing may be named by its place in the list, or every turn would
+ * change its name whenever something was added above it.
+ */
+export type Entry = { at: number; seq: number } & (
   | { kind: "text"; text: string }
   | { kind: "thinking"; text: string }
   | { kind: "tool"; call: ToolCall }
@@ -219,6 +224,8 @@ export class Conversation {
   private textOpen = false;
   private thinkingOpen = false;
   private now = 0;
+  /** The `seq` of the event being folded; what an entry drawn from it is named by. */
+  private seq = 0;
   private newest = 0;
   /** The error of the model that the turn showed already, so that `agent_end`, which repeats it, adds none. */
   private modelError: string | null = null;
@@ -226,6 +233,13 @@ export class Conversation {
   /** The highest `seq` seen; 0 when none. */
   get lastSeq(): number {
     return this.newest;
+  }
+
+  /** The lowest `seq` held; 0 when none. What a page of older events is asked to stop below. */
+  get oldestSeq(): number {
+    let seq = 0;
+    for (const event of this.events.values()) seq = seq === 0 || event.seq < seq ? event.seq : seq;
+    return seq;
   }
 
   /** The time of the newest event, Unix seconds; 0 when none. */
@@ -312,7 +326,7 @@ export class Conversation {
     const message = readableError(raw);
     if (this.modelError === message) return;
     this.modelError = message;
-    this.add({ at: this.now, kind: "error", source: "model", message });
+    this.add({ at: this.now, seq: this.seq, kind: "error", source: "model", message });
   }
 
   private add(entry: Entry): number {
@@ -330,6 +344,7 @@ export class Conversation {
     if (index === undefined) {
       index = this.add({
         at: this.now,
+        seq: this.seq,
         kind: "tool",
         call: {
           id,
@@ -359,7 +374,7 @@ export class Conversation {
     if (last && last.kind === kind && open) {
       this.list[this.list.length - 1] = { ...last, text: last.text + delta };
     } else {
-      this.add({ at: this.now, kind, text: delta });
+      this.add({ at: this.now, seq: this.seq, kind, text: delta });
     }
     this.close();
     if (kind === "text") this.textOpen = true;
@@ -368,6 +383,7 @@ export class Conversation {
 
   private apply(event: RunEvent): void {
     this.now = event.at;
+    this.seq = event.seq;
     const data = event.data;
     const id = string(data.toolCallId);
     const tool = string(data.toolName);
@@ -445,6 +461,7 @@ export class Conversation {
       case "mcp_error":
         this.add({
           at: this.now,
+          seq: this.seq,
           kind: "mcpError",
           server: string(data.server),
           message: string(data.message),
@@ -456,6 +473,7 @@ export class Conversation {
         this.modelError = null;
         this.add({
           at: this.now,
+          seq: this.seq,
           kind: "person",
           said: event.kind === "steered" ? "steered" : "said",
           message: string(data.message),
@@ -463,7 +481,13 @@ export class Conversation {
         this.close();
         break;
       case "moebius_error":
-        this.add({ at: this.now, kind: "error", source: "run", message: string(data.message) });
+        this.add({
+          at: this.now,
+          seq: this.seq,
+          kind: "error",
+          source: "run",
+          message: string(data.message),
+        });
         this.close();
         break;
     }
@@ -505,6 +529,7 @@ export class Conversation {
     if (index === undefined) {
       index = this.add({
         at: this.now,
+        seq: this.seq,
         kind: "tool",
         call: {
           id,

@@ -100,6 +100,46 @@ impl Store {
         .collect()
     }
 
+    /// The newest `limit` events of a run, oldest first: the end of its log, for a page that reads a long chat
+    /// backwards from where it finished rather than from where it began.
+    pub fn events_tail(&self, run_id: i64, limit: i64) -> Result<Vec<Event>> {
+        self.events_before(run_id, i64::MAX, limit)
+    }
+
+    /// At most `limit` events of a run with a sequence number below `before`, in order: the piece of the log above
+    /// the one a client holds already.
+    pub fn events_before(&self, run_id: i64, before: i64, limit: i64) -> Result<Vec<Event>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT run_id, seq, kind, data, at FROM events WHERE run_id = ?1 AND seq < ?2 ORDER BY seq DESC LIMIT ?3",
+        )?;
+        let rows = stmt.query_map(params![run_id, before, limit], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+                r.get(4)?,
+            ))
+        })?;
+        let mut page: Vec<Event> = rows
+            .map(|row| {
+                let (run_id, seq, kind, data, at) = row?;
+                Ok(Event {
+                    run_id,
+                    seq,
+                    kind,
+                    data: serde_json::from_str(&data)?,
+                    at,
+                })
+            })
+            .collect::<Result<_>>()?;
+        // The newest were asked for first, so the page comes back with its end at the front; a chat is read from its
+        // beginning whatever way the reader came.
+        page.reverse();
+        Ok(page)
+    }
+
     /// How many tool calls of a run were refused, by the check or by the MCP gateway.
     pub fn refused_tool_calls(&self, run_id: i64) -> Result<i64> {
         Ok(self.conn().query_row(
@@ -134,6 +174,26 @@ mod tests {
         s.append_event(other.id, "mcp_call", &json!({ "decision": "refuse" }))
             .unwrap();
         assert_eq!(s.refused_tool_calls(run.id).unwrap(), 2);
+    }
+
+    #[test]
+    fn a_long_log_is_read_backwards_from_its_end() {
+        let (_dir, s) = store();
+        let run = s.add_run(None, "Coder", "pi-bolt", "chat").unwrap();
+        for piece in 1..=10 {
+            s.append_event(run.id, "message_update", &json!({ "piece": piece }))
+                .unwrap();
+        }
+        let seqs = |events: Vec<super::Event>| events.iter().map(|e| e.seq).collect::<Vec<_>>();
+        assert_eq!(seqs(s.events_tail(run.id, 3).unwrap()), vec![8, 9, 10]);
+        assert_eq!(seqs(s.events_before(run.id, 8, 3).unwrap()), vec![5, 6, 7]);
+        // A page below the beginning is short, not empty of a log that has none left above it.
+        assert_eq!(seqs(s.events_before(run.id, 3, 5).unwrap()), vec![1, 2]);
+        // Another run's events are not a page of this one's.
+        let other = s.add_run(None, "Coder", "pi-bolt", "chat").unwrap();
+        s.append_event(other.id, "message_update", &json!({ "piece": 1 }))
+            .unwrap();
+        assert_eq!(seqs(s.events_tail(other.id, 500).unwrap()), vec![1]);
     }
 
     #[test]

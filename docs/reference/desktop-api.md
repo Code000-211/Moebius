@@ -510,8 +510,10 @@ The stored events of a run, in order. A client loads a long run in pieces and th
 `seq` it has: every `run_event` on the stream carries the `seq` the event was stored under, so the client drops those
 it already has and sees every event exactly once.
 
-Query: `after` (default 0) returns only events with a `seq` above it; `limit` (default 500, at most 5000, at least 1)
-is the most it returns.
+A page is read either forwards or backwards, never both at once. Forwards: `after` (default 0) returns only events with
+a `seq` above it. Backwards, for a page that opens a long chat at its last message: `tail` (default false) returns the
+newest events, and `before` returns those with a `seq` below it; each is answered oldest first, so the page that follows
+it asks for the `seq` of its first event. `limit` (default 500, at most 5000, at least 1) is the most either returns.
 
 Response: an array of `{"seq": number, "kind": string, "data": object, "at": number}`, oldest first, where `kind` and
 `data` are those of the `run_event` (below). Errors: `404` no such run.

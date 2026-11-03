@@ -7,6 +7,7 @@ import {
   byPerson,
   END_SLACK,
   GESTURE_WINDOW_MS,
+  prepended,
   shouldRepin,
 } from "./follow";
 
@@ -90,5 +91,23 @@ describe("afterToggle", () => {
 describe("afterSend", () => {
   it("follows again, wherever the person had scrolled", () => {
     expect(afterSend({ follow: false, top: 10 })).toEqual({ follow: true, top: 10 });
+  });
+});
+
+describe("prepended", () => {
+  const turns = (keys: string[]) => keys.map((key) => ({ key }));
+
+  it("says how many turns came above the one being read", () => {
+    // The page above arrived: the turn that was at the top is now two down, so the list counts from two lower.
+    expect(prepended(turns(["a", "b", "c", "d"]), "c")).toBe(2);
+    expect(prepended(turns(["a", "b", "c"]), "a")).toBe(0);
+  });
+
+  it("says nothing when there was no turn to anchor to", () => {
+    expect(prepended(turns(["a"]), null)).toBe(0);
+  });
+
+  it("says when the turn is gone, which is another conversation", () => {
+    expect(prepended(turns(["x", "y"]), "a")).toBeNull();
   });
 });

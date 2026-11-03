@@ -1,6 +1,6 @@
 //! The runs: one run and its stored events, and what a person does to a run that is going on.
 //!
-//! - `GET /v1/runs/{id}`: a run. `GET /v1/runs/{id}/events?after=&limit=`: its stored events, in pages.
+//! - `GET /v1/runs/{id}`: a run. `GET /v1/runs/{id}/events?after=&before=&tail=&limit=`: its stored events, in pages.
 //! - `GET /v1/runs/{id}/diff`: what the run changed, as a unified diff.
 //! - `POST /v1/runs/{id}/steer` `{message}`: a person sends a message to a running run.
 //! - `POST /v1/runs/{id}/stop` `{reason}`: a person stops a running run; a chat ends as stopped.
@@ -36,11 +36,15 @@ const DEFAULT_EVENTS: i64 = 500;
 /// The most events of a run one request returns.
 const MAX_EVENTS: i64 = 5000;
 
-/// Which of a run's events to return: those after `after`, at most `limit`.
+/// Which of a run's events to return, at most `limit`: those after `after`, or — with `before` or `tail` — the newest
+/// ones below it, so that a page reading a long chat starts at its end and works backwards.
 #[derive(Debug, Deserialize)]
 struct EventsQuery {
     #[serde(default)]
     after: i64,
+    before: Option<i64>,
+    #[serde(default)]
+    tail: bool,
     limit: Option<i64>,
 }
 
@@ -90,9 +94,17 @@ async fn run_events(
     Query(query): Query<EventsQuery>,
 ) -> Result<axum::Json<Vec<Event>>, ApiError> {
     let limit = query.limit.unwrap_or(DEFAULT_EVENTS).clamp(1, MAX_EVENTS);
+    let (after, before, tail) = (query.after, query.before, query.tail);
     blocking(&state.app, move |app| {
         app.run(id)?;
-        Ok(app.store.events_after(id, query.after, limit)?)
+        let events = if tail {
+            app.store.events_tail(id, limit)?
+        } else if let Some(before) = before {
+            app.store.events_before(id, before, limit)?
+        } else {
+            app.store.events_after(id, after, limit)?
+        };
+        Ok(events)
     })
     .await
 }
@@ -263,6 +275,43 @@ mod tests {
             paged.extend(page);
         }
         assert_eq!(paged, all);
+
+        // The same pages read backwards from the end, which is how a chat page opens: at its last message.
+        let tail: Vec<Event> = get(
+            &state,
+            &addr,
+            &format!("/v1/runs/{}/events?tail=true&limit=3", run.id),
+        )
+        .await;
+        assert_eq!(
+            tail.iter().map(|e| e.seq).collect::<Vec<_>>(),
+            vec![5, 6, 7]
+        );
+        let older: Vec<Event> = get(
+            &state,
+            &addr,
+            &format!("/v1/runs/{}/events?before=5&limit=3", run.id),
+        )
+        .await;
+        assert_eq!(
+            older.iter().map(|e| e.seq).collect::<Vec<_>>(),
+            vec![2, 3, 4]
+        );
+        // Walking back to the beginning lands on the first event and then on nothing.
+        let first: Vec<Event> = get(
+            &state,
+            &addr,
+            &format!("/v1/runs/{}/events?before=2&limit=3", run.id),
+        )
+        .await;
+        assert_eq!(first.iter().map(|e| e.seq).collect::<Vec<_>>(), vec![1]);
+        let none: Vec<Event> = get(
+            &state,
+            &addr,
+            &format!("/v1/runs/{}/events?before=1&limit=3", run.id),
+        )
+        .await;
+        assert!(none.is_empty());
     }
 
     // Unix only: the fake Pi is a Python script started by its `#!` line.

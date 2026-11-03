@@ -4,8 +4,9 @@
  * the words have not been read yet. Only the first is worth a card with a sentence in it, so the second has to draw
  * the turns that are coming instead — a card that is about to be thrown away moves the page twice.
  */
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Entry } from "./conversation";
 import { ThreadView } from "./ThreadView";
 
 afterEach(cleanup);
@@ -30,5 +31,52 @@ describe("a conversation that is still being read", () => {
     const empty = screen.getByTestId("empty-thread");
     expect(empty.textContent).toContain("Nothing said yet");
     expect(empty.textContent).toContain("Start with one of these.");
+  });
+});
+
+/** An entry of the person, as the conversation gives it to the list. */
+function said(seq: number, message = `go ${seq}`): Entry {
+  return { at: 1_700_000_000 + seq, seq, kind: "person", said: "said", message };
+}
+
+describe("a conversation with more chat above it", () => {
+  it("offers the messages above the oldest turn, and reads them when pressed", () => {
+    const loadOlder = vi.fn();
+    render(
+      <ThreadView
+        entries={[said(1), said(2)]}
+        working={false}
+        sent={0}
+        hasOlder
+        loadOlder={loadOlder}
+      />,
+    );
+    const row = screen.getByTestId("older");
+    expect(row.textContent).toContain("Load earlier messages");
+    fireEvent.click(screen.getByTestId("load-older"));
+    expect(loadOlder).toHaveBeenCalledOnce();
+  });
+
+  it("draws the shape of what is above while it is being read", () => {
+    render(
+      <ThreadView
+        entries={[said(1)]}
+        working={false}
+        sent={0}
+        hasOlder
+        olderLoading
+        loadOlder={() => {}}
+      />,
+    );
+    const row = screen.getByTestId("older");
+    expect(row.textContent).toBe("Reading earlier messages");
+    expect(screen.queryByTestId("load-older")).toBeNull();
+    for (const bar of row.querySelectorAll("[aria-hidden='true']"))
+      expect(bar.textContent).toBe("");
+  });
+
+  it("says nothing above a conversation that begins where it is drawn", () => {
+    render(<ThreadView entries={[said(1)]} working={false} sent={0} />);
+    expect(screen.queryByTestId("older")).toBeNull();
   });
 });

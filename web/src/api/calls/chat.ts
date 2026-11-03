@@ -63,6 +63,16 @@ export async function runEvents(run: number, after = 0): Promise<RunEvent[]> {
   }
 }
 
+/**
+ * One page of a run's events read backwards: the newest `EVENT_PAGE` of them, or the ones below the `seq` the page
+ * before it ended at. A chat is opened at its last message, so its first read goes this way; the rest of the log comes
+ * when a person scrolls up to it.
+ */
+export function olderEvents(run: number, below: number | null): Promise<RunEvent[]> {
+  const from = below === null ? "tail=true" : `before=${below}`;
+  return get<RunEvent[]>(`/v1/runs/${run}/events?${from}&limit=${EVENT_PAGE}`);
+}
+
 export function agents(): Promise<Agent[]> {
   return get<Agent[]>("/v1/agents");
 }
