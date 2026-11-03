@@ -9,7 +9,7 @@
  * is not there is dropped in silence and the control simply loses its colour, its border or its focus ring.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { basename, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
@@ -236,7 +236,7 @@ describe("the tokens", () => {
     const allowed = new Set(["theme.css"]);
     const offenders: string[] = [];
     for (const path of sources(srcRoot)) {
-      const name = path.split("/").pop() ?? "";
+      const name = basename(path);
       if (allowed.has(name) || name.endsWith(".test.ts") || name.endsWith(".test.tsx")) continue;
       const text = readFileSync(path, "utf8");
       const hits = [
@@ -269,7 +269,7 @@ describe("the tokens", () => {
     const defined = new Set<string>([...dark.keys(), ...light.keys()]);
     const offenders: string[] = [];
     for (const path of sources(srcRoot)) {
-      const name = path.split("/").pop() ?? "";
+      const name = basename(path);
       if (name === "theme.css" || name.endsWith(".test.ts") || name.endsWith(".test.tsx")) continue;
       const text = readFileSync(path, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
       const local = new Set([...text.matchAll(/--([a-z0-9-]+):/g)].map(([, own]) => own ?? ""));
