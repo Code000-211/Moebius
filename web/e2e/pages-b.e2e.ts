@@ -209,7 +209,10 @@ describe("the Agents page", () => {
       await page.getByLabel("skill path").fill("skills/extra");
       await page.getByRole("button", { name: "Add skill" }).click();
       await save().click();
-      await page.getByText("Saved in moebius.toml.").waitFor();
+      await page
+        .getByTestId("detail-column")
+        .getByText("Saved in moebius.toml.", { exact: true })
+        .waitFor();
       const { set } = sent<{ set: Record<string, unknown> }>("PUT", "/v1/settings");
       expect(set["agents.Coder"]).toMatchObject({
         model: "fake-small",

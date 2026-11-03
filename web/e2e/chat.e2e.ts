@@ -245,7 +245,7 @@ describe("a chat longer than the page opens with", () => {
     // And the beginning is not on the page, because it was never read. Nothing says so either: the chat is simply
     // waiting to be scrolled up, with no row above its oldest turn promising anything.
     expect(await page.getByText("Question 1", { exact: true }).count()).toBe(0);
-    expect(await page.getByTestId("older").count()).toBe(0);
+    await expect.poll(() => page.getByTestId("older").count()).toBe(0);
 
     // The person scrolls up. Reaching the top of the conversation reads what is above it, with nothing to press.
     await thread().hover();
@@ -263,7 +263,7 @@ describe("a chat longer than the page opens with", () => {
     // scrolling there again asks for nothing and nothing appears above it.
     await page.mouse.wheel(0, -100_000);
     await page.getByText("Question 1", { exact: true }).waitFor();
-    expect(await page.getByTestId("older").count()).toBe(0);
+    await expect.poll(() => page.getByTestId("older").count()).toBe(0);
     await expect
       .poll(() => fake().reads.filter((read) => read.before !== undefined).length)
       .toBe(1);
@@ -756,6 +756,41 @@ describe("the floating chat", () => {
       await page.goto(`${server.url}/chat`);
       await page.getByRole("button", { name: "Chats (1)" }).click();
       await page.getByTestId("chat-row").filter({ hasText: "What is this page?" }).waitFor();
+    },
+  );
+
+  /**
+   * Minimising the sheet is not reading: an answer that arrives while it is a button again is still unread, and
+   * opening the sheet is what reads it.
+   */
+  it.skipIf(usesRealServer)(
+    "does not mark a chat read for an answer that arrived while it was minimised",
+    async () => {
+      await open("/inbox");
+      fake().autoAnswer = false;
+      await page.getByRole("button", { name: "Open the floating chat" }).click();
+      const window = page.getByRole("dialog", { name: "Floating chat" });
+      await window.getByRole("textbox", { name: "Message" }).fill("Look at this");
+      await window.getByRole("textbox", { name: "Message" }).press("Enter");
+      await window.getByTestId("person-message").filter({ hasText: "Look at this" }).waitFor();
+      const run = fake().chats[0]?.id as number;
+
+      await window.getByRole("button", { name: "Minimise the floating chat" }).click();
+      await window.waitFor({ state: "detached" });
+      fake().agentStart(run);
+      fake().delta(run, "The answer came late.");
+      fake().settle(run, "The answer came late.");
+      // The count beside Chat in the sidebar is the app's word for it: one chat waits with an answer nobody read.
+      await page
+        .getByRole("navigation", { name: "Pages" })
+        .getByRole("link", { name: "Chat" })
+        .filter({ hasText: "1" })
+        .waitFor();
+      expect(fake().seen).toHaveLength(0);
+
+      await page.getByRole("button", { name: "Open the floating chat" }).click();
+      await window.getByText("The answer came late.").waitFor();
+      await expect.poll(() => fake().seen.at(-1)?.seq ?? 0).toBeGreaterThan(0);
     },
   );
 
