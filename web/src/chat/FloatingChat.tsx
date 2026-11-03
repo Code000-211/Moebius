@@ -200,6 +200,7 @@ export function FloatingChat() {
             loadingMessage="Reading the chat"
             hasOlder={chatId !== null && thread.hasOlder}
             olderLoading={thread.olderLoading}
+            olderError={chatId !== null ? thread.olderError : null}
             loadOlder={thread.loadOlder}
             empty="Ask the agent about this page, or start from one of these. It is told where you are."
             // The starters are for the moment before anything is written; once a message is on its way they are in the way.

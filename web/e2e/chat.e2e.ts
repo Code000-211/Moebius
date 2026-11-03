@@ -242,11 +242,12 @@ describe("a chat longer than the page opens with", () => {
     const history = () => fake().reads.filter((read) => read.after === undefined);
     expect(history()).toHaveLength(1);
     expect(history()[0]?.tail).toBe("true");
-    // And the beginning is not on the page, because it was never read. What is above it is offered from its top.
+    // And the beginning is not on the page, because it was never read. Nothing says so either: the chat is simply
+    // waiting to be scrolled up, with no row above its oldest turn promising anything.
     expect(await page.getByText("Question 1", { exact: true }).count()).toBe(0);
-    await page.getByTestId("load-older").waitFor();
+    expect(await page.getByTestId("older").count()).toBe(0);
 
-    // The person scrolls up. Reaching the top of the conversation asks for what is above it.
+    // The person scrolls up. Reaching the top of the conversation reads what is above it, with nothing to press.
     await thread().hover();
     await page.mouse.wheel(0, -2_000);
     await page.mouse.wheel(0, -100_000);
@@ -258,11 +259,11 @@ describe("a chat longer than the page opens with", () => {
     await expect.poll(() => distanceFromEnd(thread())).toBeGreaterThan(1_000);
     // The turn at the top is still in view, and the answer the pages cut in two reads as one under its question.
     await page.getByText("Answer 134. And more 134.").waitFor();
-    // The chat begins with what that page brought, so the top of the conversation now holds its first message, the
-    // offer is gone, and scrolling there again asks for nothing.
+    // The chat begins with what that page brought: the top of the conversation now holds its first message, so
+    // scrolling there again asks for nothing and nothing appears above it.
     await page.mouse.wheel(0, -100_000);
     await page.getByText("Question 1", { exact: true }).waitFor();
-    await page.getByTestId("older").waitFor({ state: "detached" });
+    expect(await page.getByTestId("older").count()).toBe(0);
     await expect
       .poll(() => fake().reads.filter((read) => read.before !== undefined).length)
       .toBe(1);

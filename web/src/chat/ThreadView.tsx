@@ -57,12 +57,15 @@ function FadedScroller({ children, style, ref, ...rest }: ScrollerProps) {
 }
 
 /**
- * What the row above the oldest turn can say: whether the chat goes on above what is drawn, and how to read it. It
- * comes to the list as its context, so the components of the list are named once rather than rebuilt each render.
+ * What the row above the oldest turn can say: whether a page of the chat is on its way, why it could not come, and
+ * how to ask for it again. It comes to the list as its context, so the components of the list are named once rather
+ * than rebuilt each render.
  */
 interface Older {
+  /** Whether the chat goes on above the oldest turn drawn, so asking again would bring something. */
   hasOlder: boolean;
   olderLoading: boolean;
+  olderError: string | null;
   loadOlder?: () => void;
 }
 
@@ -73,11 +76,15 @@ interface Older {
 const FIRST_INDEX = 1_000_000;
 
 /**
- * The row above the oldest turn: it says the chat goes on past what is drawn, and reads the rest. While that is on its
- * way it draws the shape of a turn, which is what is coming.
+ * The row above the oldest turn, which says what is happening above it rather than asking to be pressed. Reaching the
+ * top of the conversation is what reads the rest (see `startReached` below), so a button offering the same thing is a
+ * step in the middle of a gesture that already asked for it — and, worse, a promise the page may not be able to keep.
+ * The row is drawn only while that read is on its way, when it draws the shape of the turns coming, or when it failed
+ * and asking again is a button with something to do.
  */
 function OlderRow({ context }: { context: Older }) {
-  if (!context.hasOlder) return null;
+  const failed = context.olderError !== null && context.hasOlder;
+  if (!context.olderLoading && !failed) return null;
   return (
     <div className="flex min-h-14 items-center justify-center px-4 pb-3" data-testid="older">
       {context.olderLoading ? (
@@ -90,15 +97,18 @@ function OlderRow({ context }: { context: Older }) {
           <Skeleton className="w-3/4" />
         </Reading>
       ) : (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => context.loadOlder?.()}
-          data-testid="load-older"
-        >
-          Load earlier messages
-        </Button>
+        <span className="flex items-center gap-3">
+          <span className="text-sm text-secondary">{context.olderError}</span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => context.loadOlder?.()}
+            data-testid="retry-older"
+          >
+            Try again
+          </Button>
+        </span>
       )}
     </div>
   );
@@ -130,10 +140,12 @@ interface ThreadViewProps {
    * the empty place sits on the dock's own surface instead of in a card inside it.
    */
   compact?: boolean;
-  /** Whether the chat goes on above the oldest turn drawn. A long one opens at its end; the rest is read from here. */
+  /** Whether the chat goes on above the oldest turn drawn. A long one opens at its end; scrolling to its top reads the rest. */
   hasOlder?: boolean;
   /** Whether the messages above are being read. */
   olderLoading?: boolean;
+  /** Why the messages above could not be read, if they could not. */
+  olderError?: string | null;
   /** Reads the messages above the oldest turn drawn. */
   loadOlder?: () => void;
 }
@@ -150,6 +162,7 @@ export function ThreadView({
   compact = false,
   hasOlder = false,
   olderLoading = false,
+  olderError = null,
   loadOlder,
 }: ThreadViewProps) {
   // An answer arrives piece by piece, and the person may be typing while it does: the words shown trail the events by
@@ -296,7 +309,7 @@ export function ThreadView({
       computeItemKey={(_, turn) => turn.key}
       firstItemIndex={anchor.base}
       startReached={reachedStart}
-      context={{ hasOlder, olderLoading, loadOlder }}
+      context={{ hasOlder, olderLoading, olderError, loadOlder }}
       increaseViewportBy={400}
       components={COMPONENTS}
       data-testid="thread"

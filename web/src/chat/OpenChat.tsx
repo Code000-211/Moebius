@@ -439,6 +439,7 @@ export function OpenChat({
             loadingMessage="Reading the chat"
             hasOlder={thread.hasOlder}
             olderLoading={thread.olderLoading}
+            olderError={thread.olderError}
             loadOlder={thread.loadOlder}
             empty={thread.loaded ? "Start with one of these, or write your own." : undefined}
             // The starters are for the moment before anything is written; once a message is on its way they are in

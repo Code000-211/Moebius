@@ -190,14 +190,15 @@ describe("opening a chat", () => {
     const { result } = renderHook(() => useThread(7));
     await waitFor(() => expect(result.current.hasOlder).toBe(true));
     act(() => result.current.loadOlder());
-    await waitFor(() => expect(result.current.error).toBe("cannot reach the server"));
-    // What was read stays, and the way to ask again is still there.
+    await waitFor(() => expect(result.current.olderError).toBe("cannot reach the server"));
+    // What was read stays and is fine, so the chat itself does not report a failure: only the part above it does.
+    expect(result.current.error).toBeNull();
     expect(result.current.olderLoading).toBe(false);
     expect(result.current.hasOlder).toBe(true);
     expect(result.current.entries).toHaveLength(PAGE);
     act(() => result.current.loadOlder());
     await waitFor(() => expect(result.current.hasOlder).toBe(false));
-    expect(result.current.error).toBeNull();
+    expect(result.current.olderError).toBeNull();
     expect(api.backwards).toEqual([null, 41, 41]);
   });
 
@@ -211,6 +212,17 @@ describe("opening a chat", () => {
     expect(api.backwards).toEqual([null, 41]);
     expect(result.current.entries[0]).toMatchObject({ kind: "person", message: "go 40" });
     expect(result.current.olderLoading).toBe(false);
+  });
+
+  it("stops offering the messages above once the first of them is held", async () => {
+    // The page above is as full as one comes, and it brings the chat's first message: nothing is left above it, so
+    // the conversation is whole and there is nothing more to scroll up to.
+    api.tails = [fullPage(101), fullPage(1)];
+    const { result } = renderHook(() => useThread(7));
+    await waitFor(() => expect(result.current.hasOlder).toBe(true));
+    act(() => result.current.loadOlder());
+    await waitFor(() => expect(result.current.hasOlder).toBe(false));
+    expect(result.current.entries[0]).toMatchObject({ kind: "person", message: "go 1" });
   });
 
   it("asks for the messages above once while one is on its way", async () => {
@@ -233,6 +245,18 @@ describe("opening a chat", () => {
     });
     expect(result.current.olderLoading).toBe(false);
     expect(api.backwards).toHaveLength(2);
+  });
+
+  it("says nothing is above a chat that is exactly one page of events", async () => {
+    // A page as full as one comes whose oldest event is the first of the chat: how full the page was says nothing
+    // once the beginning is held, and offering what is above it would offer a page that is not there.
+    api.tails = [fullPage(1)];
+    const { result } = renderHook(() => useThread(7));
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    expect(result.current.entries).toHaveLength(PAGE);
+    expect(result.current.hasOlder).toBe(false);
+    act(() => result.current.loadOlder());
+    expect(api.backwards).toEqual([null]);
   });
 
   it("says nothing is above a chat that is shorter than the window", async () => {
@@ -294,6 +318,7 @@ describe("following a chat", () => {
       error: null,
       hasOlder: false,
       olderLoading: false,
+      olderError: null,
     });
   });
 
