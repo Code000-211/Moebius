@@ -53,6 +53,7 @@ const KEYS: &[Key] = &[
     key("router.listen", "\"127.0.0.1:7172\"", false),
     key("router.upstreams", "[]", true),
     key("router.classes", "{}", true),
+    key("router.model_thinking", "{}", true),
     key("pi_bolt.program", "\"pi-bolt\"", false),
     key("claude_code.program", "\"claude\"", false),
     key("teacher.model", "", false),

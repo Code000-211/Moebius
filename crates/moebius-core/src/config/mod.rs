@@ -15,18 +15,20 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use raw::{Raw, RawWindow};
-use sections::{check_key, decision_model, forgejo, gitlab, plugins, runners, teacher};
+use sections::{
+    check_key, check_model_thinking, decision_model, forgejo, gitlab, plugins, runners, teacher,
+};
 
 use crate::harness::mcp::valid_variable;
-use crate::router::{Classes, check_class};
+use crate::router::{Classes, ModelThinking, check_class};
 
 pub use example::EXAMPLE;
 pub use registries::{DEFAULT_REGISTRY, DEFAULT_REGISTRY_URL, RegistryConfig};
 pub use sections::{
     AgentConfig, AgentSet, DecisionModelConfig, ForgejoConfig, GitHubConfig, GitLabConfig,
     HarnessKind, LocalizeConfig, MAX_LOCALIZE_FILES, PLUGIN_TIME_LIMIT_SECONDS, PackagesConfig,
-    PluginConfig, RunnerConfig, TeacherConfig, TimeOfDay, TokenSource, ToolOutput, UpstreamConfig,
-    valid_agent_name,
+    PluginConfig, RunnerConfig, THINKING_LEVELS, TeacherConfig, TimeOfDay, TokenSource, ToolOutput,
+    UpstreamConfig, valid_agent_name,
 };
 pub(crate) use sections::{default_protocol, default_true};
 
@@ -77,6 +79,8 @@ pub enum ConfigError {
     OAuthAndKey,
     #[error("router.classes: {0}")]
     Class(String),
+    #[error("router.model_thinking: {0}")]
+    ModelThinking(String),
     #[error("checks.timeout_seconds must be at least 1")]
     ChecksTimeout,
     #[error("budgets.day_tokens must be at least 1")]
@@ -171,6 +175,9 @@ pub struct Config {
     pub upstreams: Vec<UpstreamConfig>,
     /// The model classes a request may name instead of a model, by name.
     pub classes: Classes,
+    /// The reasoning level names of the models whose endpoints take names other than Pi-Bolt's, by model name
+    /// (`[router.model_thinking]`).
+    pub model_thinking: ModelThinking,
     pub pi_bolt: PathBuf,
     /// Claude Code's command line, for the agents whose harness is `claude-code`.
     pub claude_code: PathBuf,
@@ -257,6 +264,7 @@ impl Config {
         for (name, models) in &raw.router.classes {
             check_class(name, models).map_err(ConfigError::Class)?;
         }
+        check_model_thinking(&raw.router.model_thinking).map_err(ConfigError::ModelThinking)?;
         if let Some(name) = raw.agents.keys().find(|n| !valid_agent_name(n)) {
             return Err(ConfigError::AgentName { name: name.clone() });
         }
@@ -382,6 +390,7 @@ impl Config {
             router_listen,
             upstreams: raw.router.upstreams,
             classes: raw.router.classes,
+            model_thinking: raw.router.model_thinking,
             moebius: std::env::current_exe().unwrap_or_else(|_| PathBuf::from("moebius")),
             pi_bolt: program(base, pi_bolt),
             claude_code: program(base, claude_code),
@@ -603,6 +612,38 @@ mod tests {
             parse("[router.classes]\nfast = [{ model = \"a\", day_tokens = 0 }]\n"),
             Err(ConfigError::Class(_))
         ));
+    }
+
+    #[test]
+    fn the_reasoning_level_names_of_a_model_are_read_and_checked() {
+        let c = parse(
+            "[router.model_thinking]\nqwen-local = { high = \"xhigh\", xhigh = \"xhigh\" }\n\
+             other = { minimal = \"low\" }\n",
+        )
+        .unwrap();
+        assert_eq!(c.model_thinking["qwen-local"]["high"], "xhigh");
+        assert_eq!(c.model_thinking["qwen-local"]["xhigh"], "xhigh");
+        assert_eq!(c.model_thinking["other"]["minimal"], "low");
+        // A level Pi-Bolt does not take, a value that is empty, and a model without a name are refused.
+        let refused = [
+            "[router.model_thinking]\nqwen-local = { highest = \"xhigh\" }\n",
+            "[router.model_thinking]\nqwen-local = { high = \"\" }\n",
+            "[router.model_thinking]\n\" \" = { high = \"xhigh\" }\n",
+        ];
+        for text in refused {
+            assert!(
+                matches!(parse(text), Err(ConfigError::ModelThinking(_))),
+                "{text}"
+            );
+        }
+        assert!(
+            parse("[router.model_thinking]\nqwen-local = { highest = \"xhigh\" }\n")
+                .unwrap_err()
+                .to_string()
+                .contains("is not a reasoning level")
+        );
+        // A model that needs no map at all is not in the table, and the file stays as it was without one.
+        assert!(parse("").unwrap().model_thinking.is_empty());
     }
 
     #[test]

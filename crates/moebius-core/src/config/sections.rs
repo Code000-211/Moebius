@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use super::ConfigError;
 use super::raw::{RawDecisionModel, RawForgejo, RawGitLab, RawTeacher};
 use crate::harness::mcp::{McpServer, valid_variable};
-use crate::router::{OAuthConfig, Protocol};
+use crate::router::{ModelThinking, OAuthConfig, Protocol};
 
 /// Whether `name` can name an agent: letters, digits, `-` and `_`, and not empty.
 pub fn valid_agent_name(name: &str) -> bool {
@@ -75,6 +75,31 @@ pub struct UpstreamConfig {
     pub api_key_secret: Option<String>,
     /// How the upstream logs in with OAuth instead of a key; not set together with a key.
     pub oauth: Option<OAuthConfig>,
+}
+
+/// The reasoning levels Pi-Bolt takes (`--thinking`, `set_thinking_level`), from the least work to the most.
+pub const THINKING_LEVELS: [&str; 7] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+/// What is wrong with `[router.model_thinking]`, if anything: a model must have a name, every level must be one
+/// Pi-Bolt takes, and the value of a level must not be empty.
+pub(super) fn check_model_thinking(maps: &ModelThinking) -> Result<(), String> {
+    for (model, levels) in maps {
+        if model.trim().is_empty() {
+            return Err("a model without a name".into());
+        }
+        for (level, value) in levels {
+            if !THINKING_LEVELS.contains(&level.as_str()) {
+                return Err(format!(
+                    "{model}: {level} is not a reasoning level ({})",
+                    THINKING_LEVELS.join(", ")
+                ));
+            }
+            if value.trim().is_empty() {
+                return Err(format!("{model}: the value for {level} is empty"));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The GitHub App Moebius acts as.

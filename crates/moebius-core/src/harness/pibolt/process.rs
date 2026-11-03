@@ -115,7 +115,8 @@ impl PiBolt {
     /// Writes the agent directory `agent_dir`: `models.json` with the router as the `moebius` provider, and, if the agent
     /// has MCP servers, `mcp.json` with the MCP gateway, which is told the servers the run's token may use (without it
     /// Pi connects to none). Both hold the run's token, so only the server's user can read them. The model is marked as
-    /// one that reasons when the agent has a reasoning level other than `off`, without which Pi would turn the level off.
+    /// one that reasons when the agent has a reasoning level other than `off`, without which Pi would turn the level off,
+    /// and is given the level names of `[router.model_thinking]` when its endpoint takes any.
     pub(super) fn write_agent_dir(
         &self,
         agent_dir: PathBuf,
@@ -147,13 +148,20 @@ impl PiBolt {
             Protocol::OpenAi => ("openai-completions", format!("{router_url}/v1")),
             Protocol::Anthropic => ("anthropic-messages", router_url.to_string()),
         };
+        let mut model = json!({ "id": agent.model, "reasoning": reasons(agent) });
+        // A model whose endpoint names the reasoning levels differently is given the value to send for each, which is
+        // how it can be asked for a level Pi-Bolt would not send at all (`xhigh`). Without the map Pi sends the name
+        // of the level, which the router passes to the upstream as it came.
+        if let Some(levels) = self.router.thinking_map(&agent.model) {
+            model["thinkingLevelMap"] = json!(levels);
+        }
         let models = json!({
             "providers": {
                 "moebius": {
                     "baseUrl": base_url,
                     "api": api,
                     "apiKey": token,
-                    "models": [{ "id": agent.model, "reasoning": reasons(agent) }]
+                    "models": [model]
                 }
             }
         });
@@ -442,6 +450,7 @@ mod tests {
     use crate::harness::mcp::McpServer;
     use crate::harness::pibolt::testing::{child_pid, setup, wait_until_ended, wait_until_gone};
     use crate::repos::git;
+    use std::collections::BTreeMap;
 
     // Linux only: whether the fake's `sleep` runs is read from `/proc`.
     #[cfg(target_os = "linux")]
@@ -749,5 +758,55 @@ mod tests {
         assert_eq!(given["docs"].args, ["moebius-core"]);
         pi.router.revoke_token(&token);
         assert!(pi.router.mcp_grant(&token).is_none());
+    }
+
+    #[test]
+    fn the_other_level_names_of_a_model_are_written_into_its_models_json() {
+        let (dir, _app, pi, _repo) = setup();
+        let token = pi.router.issue_token(crate::router::Grant {
+            run_id: 1,
+            card_id: None,
+            budget: None,
+        });
+        let agent = AgentConfig {
+            model: "qwen-local".into(),
+            thinking: Some("xhigh".into()),
+            ..pi.agent_set().agents["Coder"].clone()
+        };
+        let written = |dir: &Path, agent: &AgentConfig| {
+            pi.write_agent_dir(dir.to_path_buf(), agent, &token)
+                .unwrap();
+            let file = dir.join("models.json");
+            serde_json::from_slice::<Value>(&std::fs::read(&file).unwrap()).unwrap()
+        };
+        let model = |dir: &Path, agent: &AgentConfig| {
+            written(dir, agent)["providers"]["moebius"]["models"][0].clone()
+        };
+        // Nothing is told about the model, so Pi is given no map and sends the name of the level itself.
+        assert_eq!(
+            model(&dir.path().join("agent"), &agent),
+            json!({"id": "qwen-local", "reasoning": true})
+        );
+
+        pi.router.set_model_thinking(BTreeMap::from([(
+            "qwen-local".to_string(),
+            BTreeMap::from([
+                ("high".to_string(), "xhigh".to_string()),
+                ("xhigh".to_string(), "xhigh".to_string()),
+            ]),
+        )]));
+        assert_eq!(
+            model(&dir.path().join("agent"), &agent)["thinkingLevelMap"],
+            json!({"high": "xhigh", "xhigh": "xhigh"})
+        );
+        // A model nobody spoke of keeps the file it had, so an endpoint that takes the levels' names is unaffected.
+        let other = AgentConfig {
+            model: "another-model".into(),
+            ..agent.clone()
+        };
+        assert_eq!(
+            model(&dir.path().join("other"), &other),
+            json!({"id": "another-model", "reasoning": true})
+        );
     }
 }

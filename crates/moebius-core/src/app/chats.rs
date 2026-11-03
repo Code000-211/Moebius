@@ -13,7 +13,7 @@ use super::{App, AppError, Result};
 use crate::blobs::redact;
 use crate::board::Runs;
 use crate::bus::Event;
-use crate::config::AgentConfig;
+use crate::config::{AgentConfig, THINKING_LEVELS};
 use crate::harness::terminal::tui_key;
 use crate::repos::git;
 use crate::router::Protocol;
@@ -68,9 +68,6 @@ fn asks(answer: &str) -> bool {
                 .ends_with(['?', '？'])
         })
 }
-
-/// The reasoning levels a chat can be given, as Pi-Bolt takes them (`--thinking`, `set_thinking_level`).
-pub const THINKING_LEVELS: [&str; 7] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 /// What a chat runs with in place of its agent's: a model, with the protocol the router serves it in, and a reasoning
 /// level; each is the agent's while none. A chat keeps them as `settings_changed` events, the latest of which counts,

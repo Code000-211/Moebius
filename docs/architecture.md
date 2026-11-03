@@ -452,7 +452,7 @@ At the top:
 | `router/grants.rs` | The runs' tokens and what each allows: the card's, the run's and the day's token budgets, the MCP servers the gateway gives the run, and which tokens' answers are checked. |
 | `router/calls/mod.rs` | The check of the tool calls in the answers to a harness without a bridge (Claude Code): each call through `decide("tool_call")`, a refused one replaced by a text naming the rule; whole answers, and the secrets of tool results in requests. |
 | `router/calls/stream.rs` | A streamed answer checked as it passes: a tool call's events held back until the call is complete and decided. |
-| `router/models.rs` | The models the upstreams serve and the model classes, for the pickers of the desktop app. |
+| `router/models.rs` | The models the upstreams serve and the model classes, for the pickers of the desktop app, and the reasoning level names of the models whose endpoints take names other than Pi-Bolt's (`[router.model_thinking]`), which a run's `models.json` is given. |
 | `router/oauth/mod.rs` | The OAuth login of an upstream: its `oauth` table, the warning confirmed before a login, the access token refreshed before it expires and the refresh token kept in `secrets.toml`. |
 | `router/oauth/device.rs` | The device authorization grant: the code the person enters at the provider, and the token URL polled until it is confirmed. |
 | `router/oauth/code.rs` | An authorization code with PKCE, the browser sent back to a loopback listener. |

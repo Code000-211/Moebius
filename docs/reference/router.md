@@ -47,6 +47,15 @@ a request naming any other model goes to that model alone.
 `GET /v1/models/available` lists the classes beside the models (see the [desktop
 API](desktop-api.md#get-v1modelsavailable)), with the protocols the upstreams list any of their models under.
 
+## Reasoning level names
+
+The router sends the `reasoning_effort` of a request to the upstream unchanged: it asks nothing of the value and
+changes none. Who asks for a level is the harness, and Pi-Bolt sends the name of the level it was given, which an
+endpoint that names them differently does not take. `[router.model_thinking]` (see
+[configuration](configuration.md#routermodel_thinking)) gives the value of each level of such a model, and Moebius
+writes it into the run's `models.json` beside the model, so the harness sends that value instead (see
+[Pi-Bolt's model configuration](harness-configuration.md#what-a-run-is-given)).
+
 ## Listing models
 
 The desktop API's `GET /v1/models/available` (see the [desktop API](desktop-api.md#get-v1modelsavailable)) is answered by

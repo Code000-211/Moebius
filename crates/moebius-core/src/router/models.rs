@@ -1,6 +1,9 @@
 //! The models the upstreams serve, asked of all of them at once for the pickers of the desktop app and kept for a
-//! while, without a key or a password in the answer, and the model classes the router serves besides them.
+//! while, without a key or a password in the answer, the model classes the router serves besides them, and the
+//! reasoning level names of the models whose endpoints take names other than Pi-Bolt's (`[router.model_thinking]`),
+//! which a run's `models.json` is given so that its harness can ask for a level the endpoint would not take.
 
+use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -8,6 +11,9 @@ use serde_json::Value;
 
 use super::{Protocol, Router, Upstream};
 use crate::server::setup::without_credentials;
+
+/// The reasoning level names by model: for each reasoning level of a model, the value its endpoint takes.
+pub type ModelThinking = BTreeMap<String, BTreeMap<String, String>>;
 
 /// How long one upstream has to list its models.
 const MODELS_TIMEOUT: Duration = Duration::from_secs(10);
@@ -54,6 +60,30 @@ pub struct AvailableModels {
 }
 
 impl Router {
+    /// Takes the reasoning level names of the models that need them, for a router being built.
+    pub fn with_model_thinking(self, maps: ModelThinking) -> Self {
+        self.set_model_thinking(maps);
+        self
+    }
+
+    /// Replaces the reasoning level names; the next run of a model is written with the new ones.
+    pub fn set_model_thinking(&self, maps: ModelThinking) {
+        *self
+            .model_thinking
+            .write()
+            .unwrap_or_else(|p| p.into_inner()) = maps;
+    }
+
+    /// The value to send for each reasoning level of `model`, when its endpoint takes names other than the levels'
+    /// own; none when it takes the levels themselves.
+    pub fn thinking_map(&self, model: &str) -> Option<BTreeMap<String, String>> {
+        self.model_thinking
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(model)
+            .cloned()
+    }
+
     /// The models the upstreams serve, asked of all of them at once. The answer is kept for five minutes unless
     /// `refresh` is set. An upstream that fails is listed in `errors`; no key is ever in the answer. The classes are
     /// the router's at the time of asking.

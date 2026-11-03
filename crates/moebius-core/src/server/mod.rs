@@ -148,6 +148,7 @@ impl Server {
             Router::new(store.clone(), upstreams)
                 .with_day_budget(config.day_tokens)
                 .with_classes(config.classes.clone())
+                .with_model_thinking(config.model_thinking.clone())
                 .with_secrets(secrets.clone()),
         );
 

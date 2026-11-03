@@ -108,6 +108,12 @@ listen = "127.0.0.1:7172"
 # fast = ["qwen3.8-flash-next", "claude-haiku-5"]
 # strong = [{ model = "claude-opus-5", day_tokens = 5000000 }, "claude-sonnet-5-5"]
 
+# An endpoint that names its reasoning levels differently is given the value to send for each of them, beside the model
+# in the run's models.json. A level its table does not name keeps what Pi-Bolt sends on its own (the name of the level,
+# up to high), and it sends no xhigh or max at all, so those are only reached through this table.
+# [router.model_thinking]
+# "qwen3.8-max" = { high = "xhigh", xhigh = "xhigh" }
+
 [pi_bolt]
 program = "pi-bolt"
 
