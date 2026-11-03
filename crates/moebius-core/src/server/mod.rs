@@ -148,6 +148,7 @@ impl Server {
             Router::new(store.clone(), upstreams)
                 .with_day_budget(config.day_tokens)
                 .with_classes(config.classes.clone())
+                .with_model_thinking(config.model_thinking.clone())
                 .with_secrets(secrets.clone()),
         );
 
@@ -364,6 +365,7 @@ impl Server {
             () = loops::board(self.clone()) => Ok(()),
             () = loops::poll(self.clone()) => Ok(()),
             () = loops::refresh(self.clone()) => Ok(()),
+            () = loops::levels(self.clone()) => Ok(()),
             () = ports::watch(self.app.clone(), ports::PERIOD) => Ok(()),
             () = schedule::run(self.clone()) => Ok(()),
             () = self.live.restart_asked() => Ok(()),

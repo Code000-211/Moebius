@@ -9,7 +9,7 @@ use serde::Deserialize;
 use super::{
     AgentConfig, PluginConfig, RegistryConfig, RunnerConfig, UpstreamConfig, default_protocol,
 };
-use crate::router::{Classes, Protocol};
+use crate::router::{Classes, ModelThinking, Protocol};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -65,6 +65,9 @@ pub(super) struct RawRouter {
     pub(super) upstreams: Vec<UpstreamConfig>,
     #[serde(default)]
     pub(super) classes: Classes,
+    /// The models whose endpoints name the reasoning levels differently (`[router.model_thinking]`).
+    #[serde(default)]
+    pub(super) model_thinking: ModelThinking,
 }
 
 #[derive(Debug, Default, Deserialize)]

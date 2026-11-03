@@ -57,7 +57,7 @@ use crate::store::Store;
 
 pub use classes::{ClassModel, Classes, check_class};
 pub use grants::{Grant, token};
-pub use models::{AvailableClass, AvailableModel, AvailableModels, UpstreamError};
+pub use models::{AvailableClass, AvailableModel, AvailableModels, ModelThinking, UpstreamError};
 #[cfg(test)]
 pub(crate) use oauth::testing as oauth_testing;
 pub use oauth::{
@@ -101,6 +101,9 @@ pub struct Router {
     upstreams: RwLock<Vec<Upstream>>,
     /// The model classes; replaced when they are edited while the server runs.
     classes: RwLock<Classes>,
+    /// The reasoning level names of the models whose endpoints take names other than Pi-Bolt's, by model name;
+    /// replaced when they are edited while the server runs.
+    model_thinking: RwLock<ModelThinking>,
     /// The most tokens all runs may use in a day, if limited; replaced when the budget is edited.
     day_budget: RwLock<Option<i64>>,
     grants: RwLock<HashMap<String, Grant>>,
@@ -124,6 +127,7 @@ impl Router {
             store,
             upstreams: RwLock::new(upstreams),
             classes: RwLock::new(Classes::new()),
+            model_thinking: RwLock::new(ModelThinking::new()),
             day_budget: RwLock::new(None),
             grants: RwLock::new(HashMap::new()),
             mcp: RwLock::new(HashMap::new()),

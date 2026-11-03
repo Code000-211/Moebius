@@ -47,12 +47,30 @@ a request naming any other model goes to that model alone.
 `GET /v1/models/available` lists the classes beside the models (see the [desktop
 API](desktop-api.md#get-v1modelsavailable)), with the protocols the upstreams list any of their models under.
 
+## Reasoning level names
+
+The router sends the `reasoning_effort` of a request to the upstream unchanged: it asks nothing of the value and
+changes none. Who asks for a level is the harness, and Pi-Bolt sends the name of the level it was given, which an
+endpoint that names them differently does not take.
+
+An OpenAI endpoint of Moebius's own kind says which reasoning levels each of its models takes, in
+`data[].capabilities.reasoning_efforts` of the list the router asks for the pickers (below); the server asks every
+upstream that list as it starts and every hour after. For every level whose own name the endpoint does not take,
+Moebius writes the name to send into the run's `models.json` beside the model (see
+[Pi-Bolt's model configuration](harness-configuration.md#what-a-run-is-given)): the name at that level's place in the
+endpoint's list, or the last of the list when it is shorter, so that a level harder than any the endpoint names asks
+for the hardest it has. An endpoint that lists nothing is given nothing, and the harness sends the level's own name.
+`[router.model_thinking]` (see [configuration](configuration.md#routermodel_thinking)) writes the names of a model by
+hand and is what a run is given when it names the model, whatever the endpoint says.
+
 ## Listing models
 
 The desktop API's `GET /v1/models/available` (see the [desktop API](desktop-api.md#get-v1modelsavailable)) is answered by
 the router. It asks each upstream, once even if it is configured twice, which models it serves: for `openai`,
 `GET <base_url>/v1/models`; for `anthropic`, `GET <base_url>/v1/models?limit=1000` with `anthropic-version: 2023-06-01`. Both
-read `data[].id`, and send the upstream's key as for a request (`Authorization: Bearer` or `x-api-key`). An upstream has
+read `data[].id`, and an `openai` list also reads `data[].capabilities.reasoning_efforts`, the reasoning level names of
+[Reasoning level names](#reasoning-level-names). They send the upstream's key as for a request (`Authorization: Bearer`
+or `x-api-key`). An upstream has
 10 seconds to answer. The answer is kept for 5 minutes, and is dropped when the upstreams are edited. With
 `decision=true` the decision model's endpoint, which is not an upstream, is asked the same way as an `openai` upstream at
 its `url`, so `GET <url>/models` whatever the url ends in, with its key, every time.

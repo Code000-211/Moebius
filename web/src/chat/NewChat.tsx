@@ -11,12 +11,13 @@ import { useNavigate } from "react-router";
 import { startChat } from "../api/calls/chat";
 import { keys } from "../api/keys";
 import type { Snapshot } from "../api/types/board";
-import { type NewChat as NewChatBody, THINKING_LEVELS } from "../api/types/chat";
+import type { NewChat as NewChatBody } from "../api/types/chat";
 import { type PillOption, PillSelect } from "../ui/chat/PillSelect";
 import { Tag } from "../ui/chat/Tag";
 import { Empty } from "../ui/page/Empty";
 import { Composer } from "./Composer";
 import { draftKey, readDraft, saveDraft } from "./drafts";
+import { levelChoices } from "./levels";
 import { Starters } from "./Starters";
 import { useChoices } from "./useChoices";
 
@@ -101,9 +102,10 @@ export function NewChat({ snapshot }: { snapshot: Snapshot | undefined }) {
     { value: "", label: chosen?.model || "Server default", inherited: true },
     ...choices.models.map((id) => ({ value: id, label: id })),
   ];
+  // Only the levels the model's endpoint takes; the agent's own is what the first row stands for.
   const levelOptions: PillOption[] = [
     { value: "", label: chosen?.thinking || "Not set", inherited: true },
-    ...THINKING_LEVELS.map((level) => ({ value: level, label: level })),
+    ...levelChoices(choices.available, model || chosen?.model || "", thinking),
   ];
 
   // Only what changes what the person is about to do: where the agent will work, and what it does with what it builds.

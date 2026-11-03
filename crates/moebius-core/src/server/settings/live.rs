@@ -230,6 +230,7 @@ impl Live {
         running.board_tick = new.board_tick;
         running.upstreams = new.upstreams.clone();
         running.classes = new.classes.clone();
+        running.model_thinking = new.model_thinking.clone();
         // The agents of a server with a harness configuration repository come from the repository.
         let own_agents = self.started.harness_url.is_none() && new.harness_url.is_none();
         if own_agents {
@@ -242,6 +243,9 @@ impl Live {
             targets.router.set_day_budget(new.day_tokens);
             targets.router.set_upstreams(upstreams);
             targets.router.set_classes(new.classes.clone());
+            targets
+                .router
+                .set_model_thinking(new.model_thinking.clone());
             if own_agents {
                 targets
                     .agents
@@ -328,6 +332,13 @@ mod tests {
             ),
             "router.classes" => (json!({"fast": ["a", "b"]}), |s| {
                 format!("{:?} {:?}", s.live.get().classes, s.router.classes())
+            }),
+            "router.model_thinking" => (json!({"qwen-local": {"high": "xhigh"}}), |s| {
+                format!(
+                    "{:?} {:?}",
+                    s.live.get().model_thinking,
+                    s.router.thinking_map("qwen-local")
+                )
             }),
             "agents" => (json!({"Coder": {"model": "live-model"}}), |s| {
                 format!("{:?}", s.harness.agents.read().unwrap().agents)

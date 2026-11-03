@@ -236,6 +236,29 @@ the router, so it cannot name a class.
 |---|---|---|---|
 | `router.classes.<name>` | array | none | The models of the class `<name>` (letters, digits, `-` and `_`), first tried first, such as `router.classes.fast` or `router.classes.strong`. Each is a model's name as the upstream knows it, or a table `{ model = "...", day_tokens = N }` whose `day_tokens` (at least 1) is the most tokens (input plus output) that model may use in a day of the server's local time, counted over all its usage, whatever asked for it; a model at or above it is passed over. An empty list, a model without a name or a table with another key refuses the file. |
 
+### `[router.model_thinking]`
+
+An endpoint says which reasoning levels its models take when it is one of Moebius's own kind, and Moebius works out the
+name to send for each level from that list on its own (see [router](router.md#reasoning-level-names)). This table is for
+an endpoint that does not say: it sometimes names its reasoning levels differently from Pi-Bolt, and answers nothing at
+all for a level it was never told the name of. Each key of this table is a model, exactly as an agent's `model`, a class
+entry or a chat names it, and its table gives the value to send to the endpoint for each level. Moebius writes the table
+into the run's `models.json` as that model's `thinkingLevelMap` instead of the names it heard, so the harness sends the
+value instead of the name of the level; the router passes what it is given to the upstream unchanged. A model neither
+the table nor its endpoint names is given nothing, and Pi-Bolt sends the name of the level itself, which it does for
+every level up to `high`. An agent on `claude-code` is not given a reasoning level, so the table of its model has no
+effect.
+
+| Key | Type | Default | Meaning and validation |
+|---|---|---|---|
+| `router.model_thinking.<model>` | table | none | The value to send for each reasoning level of `<model>`, such as `router.model_thinking."qwen3.8-max" = { high = "xhigh", xhigh = "xhigh" }`. A model whose name is not one key of TOML (letters, digits, `-` and `_`) is written between quotes. Each key is one of the seven levels Pi-Bolt takes (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`) and each value is what the endpoint takes for it; a level besides those, an empty value or a model without a name refuses the file. |
+
+```toml
+# The endpoint of qwen3.8-max takes xhigh and has nothing for max.
+[router.model_thinking]
+"qwen3.8-max" = { high = "xhigh", xhigh = "xhigh" }
+```
+
 ## `[pi_bolt]`
 
 | Key | Type | Default | Meaning and validation |
