@@ -4,7 +4,7 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, MutexGuard};
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -290,8 +290,8 @@ impl App {
     }
 
     /// A person changes the model or the reasoning level of the chat `run_id` (see `ChatSettings`); what is not given
-    /// stays. The chat must be waiting, or have ended because its agent went away: while its agent works the answer is a
-    /// conflict, and a chat that ended any other way is ended for good. The change is kept as a `settings_changed`
+    /// stays. The chat must be waiting, or have ended because its agent went away: while its agent works the answer is
+    /// a conflict, and a chat that ended any other way is ended for good. The change is kept as a `settings_changed`
     /// event, so that the next message is answered with it: the chat's agent is told at once when it is up (see
     /// [`Runs::change_chat`]), and starts with what is stored when it is made again for the message (see
     /// [`App::wake_chat`]). `served` are the protocols the router's upstreams list `model` under.
@@ -384,7 +384,7 @@ impl App {
         message: &str,
         context: Option<&str>,
     ) -> Result<Run> {
-        let run = self.chat(run_id)?;
+        self.chat(run_id)?;
         if message.trim().is_empty() {
             return Err(AppError::Invalid("a message cannot be blank".into()));
         }
@@ -393,10 +393,15 @@ impl App {
                 "chat {run_id} is in its terminal: close it to write to the chat"
             )));
         }
-        if run.ended_at.is_some() {
-            return self.wake_chat(runs, &run, message, context);
+        let turn = self.chat_turns.lock().unwrap_or_else(|e| e.into_inner());
+        // Read under the lock, so that two messages to an ended chat do not both take it up.
+        let run = self.chat(run_id)?;
+        if self.is_waking(run_id) {
+            return Err(Self::waking_conflict(run_id));
         }
-        let _turn = self.chat_turns.lock().unwrap_or_else(|e| e.into_inner());
+        if run.ended_at.is_some() {
+            return self.wake_chat(runs, turn, &run, message, context);
+        }
         // Stored first, so that it comes before the agent's records of its answer.
         self.record_run_event(run_id, "said", &json!({ "message": redact(message) }))?;
         // The chat works from now on, before its agent says so, so that its worktree is not offered meanwhile.
@@ -407,13 +412,16 @@ impl App {
         Ok(run)
     }
 
-    /// A person writes to the ended chat `run`, which ended because its agent went away: the agent starts again in the
-    /// chat's own place and on its own branch, told what was said in the chat before, and the chat works from now on.
-    /// What the person wrote is the message it answers, told first where they are when `context` is given. When the
-    /// agent cannot start again the chat is left as it was, and why it cannot is the error.
+    /// A person writes to the ended chat `run`, which ended because its agent went away (a person pressing Stop or the
+    /// server stopping alike): the agent starts again in the chat's own place and on its own branch, told what was said
+    /// in the chat before, and the chat works from now on. What the person wrote is the message it answers, told first
+    /// where they are when `context` is given. `turn` is the hold on `chat_turns`, kept until the chat is taken up and
+    /// let go before its agent starts, so that other chats are not kept waiting. When the agent cannot start again the
+    /// chat is left as it was, and why it cannot is the error.
     fn wake_chat(
         self: &Arc<Self>,
         runs: &dyn Runs,
+        turn: MutexGuard<'_, ()>,
         run: &Run,
         message: &str,
         context: Option<&str>,
@@ -427,15 +435,35 @@ impl App {
                 "chat {run_id} is a grilling, whose issues are already read: start a new grilling"
             )));
         }
-        let _turn = self.chat_turns.lock().unwrap_or_else(|e| e.into_inner());
+        // What can be told beforehand is, so that a message that cannot be answered is not kept in the chat.
+        self.check_chat_branch(run)
+            .map_err(|why| AppError::Invalid(format!("chat {run_id} cannot start again: {why}")))?;
         let told = continues_prompt(&self.conversation_of(run_id)?, message);
         // Stored first, so that it comes before the agent's records of its answer.
         self.record_run_event(run_id, "said", &json!({ "message": redact(message) }))?;
         // The chat works from now on and is no longer ended, before its agent says so.
-        self.store.reopen_chat(run_id)?;
-        if let Err(e) = runs.wake(self, run_id, &with_context(context, &told)) {
+        let reopened = self.store.reopen_chat(run_id)?;
+        if reopened {
+            // Until the agent is registered with the harness, a message, a stop or an end cannot reach it.
+            self.waking
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .insert(run_id);
+        }
+        drop(turn);
+        if !reopened {
+            return Err(AppError::Invalid(format!("chat {run_id} has ended")));
+        }
+        let woken = runs.wake(self, run_id, &with_context(context, &told));
+        if woken.is_err() {
             // As it was: ended because its agent went away, its worktree taken away again with it.
             let _ = self.store.set_run_status(run_id, "stopped");
+        }
+        self.waking
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&run_id);
+        if let Err(e) = woken {
             return Err(AppError::Invalid(format!(
                 "chat {run_id} cannot start again: {e}"
             )));
@@ -443,11 +471,49 @@ impl App {
         self.run(run_id)
     }
 
+    /// Whether the chat `run_id` is being woken: its agent is starting and cannot be reached yet.
+    pub(super) fn is_waking(&self, run_id: i64) -> bool {
+        self.waking
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains(&run_id)
+    }
+
+    /// What a message, a stop or an end to the chat `run_id` gets while it is being woken.
+    pub(super) fn waking_conflict(run_id: i64) -> AppError {
+        AppError::Conflict(format!("chat {run_id} is starting; try again in a moment"))
+    }
+
+    /// Whether the branch of the stopped chat `run`, which its agent is started on again, is still there.
+    fn check_chat_branch(&self, run: &Run) -> std::result::Result<(), String> {
+        let clone = if let Some(repository) = run.repository_id {
+            PathBuf::from(self.repository(repository).map_err(|e| e.to_string())?.path)
+        } else if run.harness_repository {
+            self.harness_repo()
+                .map_err(|e| e.to_string())?
+                .path()
+                .to_path_buf()
+        } else {
+            return Ok(());
+        };
+        if self.repos.chat_branch_exists(&clone, run.id) {
+            Ok(())
+        } else {
+            Err(format!(
+                "the chat's branch moebius/chat-{} is gone: start a new chat to continue from what was said",
+                run.id
+            ))
+        }
+    }
+
     /// A person ends a chat that has not ended. It ends as `succeeded` once its agent has shut down and its work is
     /// committed and, if there is any, offered as a change (see `offer_chat_change`).
     pub fn end_chat(&self, runs: &dyn Runs, run_id: i64) -> Result<Run> {
         let run = self.running_chat(run_id)?;
         if !runs.end(run_id) {
+            if self.is_waking(run_id) {
+                return Err(Self::waking_conflict(run_id));
+            }
             return Err(AppError::Invalid(format!("chat {run_id} has ended")));
         }
         // A chat in its terminal interface ends once the interface has closed.
@@ -583,7 +649,189 @@ impl App {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::mpsc::{Receiver, Sender, channel};
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    use moebius_plugin_api::Host;
+
     use super::asks;
+    use crate::app::{App, AppError, ChatSettings};
+    use crate::board::{AgentInfo, CardRuns, ChatRuns, ImproveRuns, StartError, Variant};
+    use crate::decide::Actor;
+    use crate::harness::remote::RunnerInfo;
+    use crate::store::{Card, Run, Store};
+
+    /// A harness whose agents are never up: only `wake` does anything, and it blocks until it is let go.
+    struct SlowWake {
+        entered: Mutex<Sender<()>>,
+        release: Mutex<Receiver<Result<(), String>>>,
+    }
+
+    impl CardRuns for SlowWake {
+        fn start(
+            &self,
+            _: &Arc<App>,
+            _: &Card,
+            _: &str,
+            _: (&str, Option<&str>),
+            _: Variant,
+        ) -> Result<Run, StartError> {
+            unimplemented!()
+        }
+        fn has_agent(&self, _: &str) -> bool {
+            false
+        }
+        fn runners(&self) -> Vec<RunnerInfo> {
+            Vec::new()
+        }
+        fn agents(&self) -> Vec<AgentInfo> {
+            Vec::new()
+        }
+        fn token_budget(&self, _: &str) -> Option<i64> {
+            None
+        }
+        fn steer(&self, _: i64, _: &str) -> bool {
+            false
+        }
+        fn stop(&self, _: i64) -> bool {
+            false
+        }
+    }
+
+    impl ChatRuns for SlowWake {
+        fn tui(&self, _: &Arc<App>, _: i64) -> Result<std::process::Command, String> {
+            unimplemented!()
+        }
+        fn close_tui(&self, _: &Arc<App>, _: i64) {}
+        fn start_chat(
+            &self,
+            _: &Arc<App>,
+            _: &str,
+            _: (Option<&crate::store::Repository>, bool),
+            _: Option<&str>,
+            _: Option<&str>,
+            _: &str,
+            _: &ChatSettings,
+        ) -> Result<Run, StartError> {
+            unimplemented!()
+        }
+        fn change_chat(&self, _: &Arc<App>, _: i64) -> Result<(), String> {
+            Ok(())
+        }
+        fn say(&self, _: i64, _: &str) -> bool {
+            false
+        }
+        fn wake(&self, app: &Arc<App>, run_id: i64, _: &str) -> Result<(), String> {
+            self.entered.lock().unwrap().send(()).unwrap();
+            let outcome = self.release.lock().unwrap().recv().unwrap();
+            if outcome.is_ok() {
+                app.store.set_run_status(run_id, "running").unwrap();
+            }
+            outcome
+        }
+        fn end(&self, _: i64) -> bool {
+            false
+        }
+    }
+
+    impl ImproveRuns for SlowWake {
+        fn start_retro(
+            &self,
+            _: &Arc<App>,
+            _: &std::path::Path,
+            _: &str,
+            _: &str,
+            _: &std::collections::BTreeMap<String, String>,
+        ) -> Result<Run, StartError> {
+            unimplemented!()
+        }
+        fn start_research(
+            &self,
+            _: &Arc<App>,
+            _: &crate::store::Repository,
+            _: &str,
+            _: &str,
+        ) -> Result<Run, StartError> {
+            unimplemented!()
+        }
+        fn start_trial(
+            &self,
+            _: &Arc<App>,
+            _: &Card,
+            _: &str,
+            _: crate::config::AgentConfig,
+            _: i64,
+            _: &str,
+        ) -> Result<Run, StartError> {
+            unimplemented!()
+        }
+    }
+
+    fn said(app: &App, run_id: i64) -> usize {
+        app.store
+            .events(run_id)
+            .unwrap()
+            .iter()
+            .filter(|event| event.kind == "said")
+            .count()
+    }
+
+    #[test]
+    fn a_chat_being_woken_answers_a_message_a_stop_and_an_end_with_a_conflict() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(Store::in_memory(&dir.path().join("blobs")).unwrap());
+        let host = Arc::new(Host::new(Duration::from_secs(1)));
+        let app = Arc::new(App::new(store, host, &dir.path().join("data")));
+        let (entered, waiting) = channel();
+        let (release, released) = channel();
+        let runs = Arc::new(SlowWake {
+            entered: Mutex::new(entered),
+            release: Mutex::new(released),
+        });
+        let chat = app.store.add_run(None, "Coder", "fake", "chat").unwrap();
+        app.store.set_run_status(chat.id, "stopped").unwrap();
+
+        let waker = {
+            let (app, runs) = (app.clone(), runs.clone());
+            std::thread::spawn(move || app.say_in_chat(&*runs, chat.id, "Wake up", None))
+        };
+        waiting.recv().unwrap();
+        // The chat is reopened, and its agent is not up yet.
+        assert_eq!(said(&app, chat.id), 1);
+        let conflict = |error: AppError| {
+            assert!(
+                matches!(&error, AppError::Conflict(why) if why.contains("is starting")),
+                "{error}"
+            );
+        };
+        conflict(app.say_in_chat(&*runs, chat.id, "Hello", None).unwrap_err());
+        conflict(
+            app.stop_run(&Actor::Person, &*runs, chat.id, "")
+                .unwrap_err(),
+        );
+        conflict(app.end_chat(&*runs, chat.id).unwrap_err());
+        assert_eq!(said(&app, chat.id), 1);
+
+        release.send(Ok(())).unwrap();
+        waker.join().unwrap().unwrap();
+        // Up now: a message takes the normal path (this fake's agent refuses it, which is not a conflict).
+        let why = app.say_in_chat(&*runs, chat.id, "Hello", None).unwrap_err();
+        assert!(matches!(why, AppError::Invalid(_)), "{why}");
+
+        // A wake that fails lets go as well, and leaves the chat stopped.
+        app.store.set_run_status(chat.id, "stopped").unwrap();
+        let waker = {
+            let (app, runs) = (app.clone(), runs.clone());
+            std::thread::spawn(move || app.say_in_chat(&*runs, chat.id, "Again", None))
+        };
+        waiting.recv().unwrap();
+        conflict(app.say_in_chat(&*runs, chat.id, "Hello", None).unwrap_err());
+        release.send(Err("no room".into())).unwrap();
+        assert!(waker.join().unwrap().is_err());
+        assert!(!app.is_waking(chat.id));
+        assert_eq!(app.run(chat.id).unwrap().status, "stopped");
+    }
 
     #[test]
     fn an_answer_asks_when_its_last_line_ends_in_a_question() {

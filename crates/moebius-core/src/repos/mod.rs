@@ -321,15 +321,35 @@ impl Repos {
         git(clone, &["branch", "-D", "--quiet", &branch]).map(drop)
     }
 
+    /// Whether the chat `run_id` still has its branch `moebius/chat-<id>` in `clone`.
+    pub fn chat_branch_exists(&self, clone: &Path, run_id: i64) -> bool {
+        let branch = format!("refs/heads/moebius/chat-{run_id}");
+        git(clone, &["rev-parse", "--verify", "--quiet", &branch]).is_ok()
+    }
+
     /// Creates the worktree of the chat `run_id` again, on the branch `moebius/chat-<id>` it already has, once the
     /// worktree that went with it was removed when its agent went away. The branch is taken as it stands, so what the
-    /// chat left behind is back where its agent expects it.
+    /// chat left behind is back where its agent expects it. A registration or a directory left over from before is
+    /// cleared away first; a chat whose branch is gone cannot be taken up again.
     pub fn reuse_chat_worktree(&self, name: &str, clone: &Path, run_id: i64) -> Result<Worktree> {
         let branch = format!("moebius/chat-{run_id}");
         let path = self.worktrees.join(name).join(format!("chat-{run_id}"));
-        std::fs::create_dir_all(path.parent().expect("worktrees have a parent"))?;
         let target = path.to_string_lossy().into_owned();
         let _held = self.hold_worktrees();
+        if !self.chat_branch_exists(clone, run_id) {
+            return Err(GitError::Failed {
+                args: format!("worktree add {target} {branch}"),
+                stderr: format!(
+                    "the chat's branch {branch} is gone: start a new chat to continue from what was said"
+                ),
+            });
+        }
+        git(clone, &["worktree", "prune"])?;
+        if path.exists() {
+            std::fs::remove_dir_all(&path)?;
+            git(clone, &["worktree", "prune"])?;
+        }
+        std::fs::create_dir_all(path.parent().expect("worktrees have a parent"))?;
         git(clone, &["worktree", "add", "--quiet", &target, &branch])?;
         Ok(Worktree { path, branch })
     }

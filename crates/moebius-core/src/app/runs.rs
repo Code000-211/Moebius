@@ -42,6 +42,9 @@ impl App {
     pub fn stop_run(&self, by: &Actor, runs: &dyn Runs, run_id: i64, reason: &str) -> Result<Run> {
         let run = self.run(run_id)?;
         if !runs.stop(run_id) {
+            if self.is_waking(run_id) {
+                return Err(Self::waking_conflict(run_id));
+            }
             return Err(AppError::Invalid(format!("run {run_id} is not running")));
         }
         // A chat in its terminal interface stops once the interface has closed.

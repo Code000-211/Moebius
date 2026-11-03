@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   type AvailableModels,
-  listedLevels,
+  listedModel,
   offeredLevels,
   sentLevel,
   THINKING_LEVELS,
@@ -15,68 +15,61 @@ const available = (over: Partial<AvailableModels>): AvailableModels => ({
   ...over,
 });
 
-describe("listedLevels", () => {
-  it("reads the levels a model lists", () => {
-    const listed = available({
-      models: [
-        { id: "one", protocol: "openai", upstream: "u", levels: ["low", "xhigh"] },
-        { id: "two", protocol: "openai", upstream: "u" },
-      ],
-    });
-    expect(listedLevels(listed, "one")).toEqual(["low", "xhigh"]);
-    expect(listedLevels(listed, "two")).toBeUndefined();
-    expect(listedLevels(listed, "")).toBeUndefined();
-    expect(listedLevels(undefined, "one")).toBeUndefined();
+describe("listedModel", () => {
+  const listed = available({
+    models: [
+      { id: "one", protocol: "openai", upstream: "u", levels: ["low", "xhigh"] },
+      { id: "two", protocol: "openai", upstream: "u" },
+    ],
+    classes: [{ name: "strong", models: ["one", "two"], protocols: ["openai"] }],
   });
 
-  it("joins the levels of the models of a class", () => {
-    const listed = available({
-      models: [
-        { id: "one", protocol: "openai", upstream: "u", levels: ["low", "medium"] },
-        { id: "two", protocol: "openai", upstream: "u", levels: ["medium", "xhigh"] },
-        { id: "three", protocol: "anthropic", upstream: "u" },
-      ],
-      classes: [
-        { name: "strong", models: ["one", "two", "three"], protocols: ["openai"] },
-        { name: "quiet", models: ["three"], protocols: ["anthropic"] },
-      ],
-    });
-    expect(listedLevels(listed, "strong")).toEqual(["low", "medium", "xhigh"]);
-    expect(listedLevels(listed, "quiet")).toBeUndefined();
+  it("finds the model by its id", () => {
+    expect(listedModel(listed, "one")?.levels).toEqual(["low", "xhigh"]);
+    expect(listedModel(listed, "")).toBeUndefined();
+    expect(listedModel(undefined, "one")).toBeUndefined();
+  });
+
+  it("knows nothing of a model class, which is offered every level by its own name", () => {
+    const strong = listedModel(listed, "strong");
+    expect(strong).toBeUndefined();
+    expect(offeredLevels(strong)).toEqual([...THINKING_LEVELS]);
+    expect(sentLevel(strong, "max")).toBe("max");
   });
 });
 
 describe("offeredLevels", () => {
   it("keeps every level of a model that does not say", () => {
     expect(offeredLevels(undefined)).toEqual([...THINKING_LEVELS]);
-    expect(offeredLevels([])).toEqual([...THINKING_LEVELS]);
+    expect(offeredLevels({ id: "a", protocol: "openai", upstream: "u" })).toEqual([
+      ...THINKING_LEVELS,
+    ]);
   });
 
-  it("keeps only the levels an endpoint names", () => {
-    // No `high` and no `max` here, so neither is offered, and `none` is the quietest level Moebius calls `off`.
-    expect(offeredLevels(["none", "minimal", "low", "medium", "xhigh"])).toEqual([
-      "off",
-      "minimal",
-      "low",
-      "medium",
-      "xhigh",
-    ]);
-    expect(offeredLevels(["medium", "max"])).toEqual(["medium", "max"]);
-    // A name that is not one of Moebius's levels is not offered, though it is still what a level is sent as.
-    expect(offeredLevels(["quiet", "loud", "medium"])).toEqual(["medium"]);
+  it("offers what the server says, overrides included", () => {
+    const model = {
+      id: "a",
+      protocol: "openai",
+      upstream: "u",
+      thinking_levels: ["off", "medium", "max"],
+    };
+    expect(offeredLevels(model)).toEqual(["off", "medium", "max"]);
   });
 });
 
 describe("sentLevel", () => {
-  it("names what an endpoint is asked for", () => {
-    const levels = ["none", "minimal", "low", "medium", "xhigh"];
-    expect(sentLevel(levels, "low")).toBe("low");
-    expect(sentLevel(levels, "off")).toBe("none");
-    // The endpoint has nothing for the two hardest, so both ask it for its hardest.
-    expect(sentLevel(levels, "high")).toBe("xhigh");
-    expect(sentLevel(levels, "max")).toBe("xhigh");
-    // An endpoint that says nothing is sent the name of the level.
+  const model = {
+    id: "a",
+    protocol: "openai",
+    upstream: "u",
+    thinking: { off: "none", high: "xhigh", max: "xhigh" },
+  };
+
+  it("names what the server sends, not what the page works out", () => {
+    expect(sentLevel(model, "off")).toBe("none");
+    expect(sentLevel(model, "max")).toBe("xhigh");
+    // A level the server renames nowhere goes out by its own name.
+    expect(sentLevel(model, "low")).toBe("low");
     expect(sentLevel(undefined, "max")).toBe("max");
-    expect(sentLevel([], "max")).toBe("max");
   });
 });

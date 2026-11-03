@@ -62,12 +62,19 @@ export function afterToggle(state: ScrollState): ScrollState {
 }
 
 /**
- * How many turns arrived above the one that was first: `was` is the key of the turn at the top of the list before the
- * conversation grew, and the answer is where that turn is now. `null` says the turn is gone, which is a different
- * conversation rather than an older page of this one, and the list starts counting from zero again.
+ * How many turns arrived above the one that was first: `was` is the `seq` where the turn at the top of the list began
+ * before the conversation grew, and the answer is where the turn holding it is now. A turn is found by the events it
+ * holds and not by its name, because a page that opened in the middle of an answer starts with a turn that has no
+ * message of the person yet, and the page above it gives that turn a head and a new name. `null` says nothing before
+ * `was` is held, which is a different conversation rather than an older page of this one, and the list starts counting
+ * from zero again.
  */
-export function prepended(turns: readonly { key: string }[], was: string | null): number | null {
+export function prepended(turns: readonly { from: number }[], was: number | null): number | null {
   if (was === null) return 0;
-  const at = turns.findIndex((turn) => turn.key === was);
+  let at = -1;
+  for (let place = 0; place < turns.length; place += 1) {
+    if ((turns[place]?.from ?? Number.MAX_SAFE_INTEGER) > was) break;
+    at = place;
+  }
   return at < 0 ? null : at;
 }

@@ -70,6 +70,10 @@ export interface AvailableModel {
   upstream: string;
   /** The reasoning level names its endpoint takes, easiest first; absent when its upstream does not say. */
   levels?: string[];
+  /** The reasoning levels to offer for it; absent when every level is. The server's, overrides included. */
+  thinking_levels?: string[];
+  /** What each reasoning level it has no own name for is sent as; absent when none is renamed. */
+  thinking?: Record<string, string>;
 }
 
 export interface AvailableClass {
@@ -96,45 +100,24 @@ export interface Skill {
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 /**
- * The reasoning level names `model` was heard taking: its own when the upstream lists them, the union of the models of
- * the class it names, or nothing when neither is known.
+ * The model `id` names, as the first upstream that lists it gives it, or nothing for a model class, a model nobody
+ * lists or an empty id: such a model is offered every level and is sent them by their own names.
  */
-export function listedLevels(
+export function listedModel(
   available: AvailableModels | undefined,
-  model: string,
-): string[] | undefined {
-  if (!available || model === "") return undefined;
-  const ofItsOwn = available.models
-    .filter((each) => each.id === model)
-    .flatMap((each) => each.levels ?? []);
-  if (ofItsOwn.length > 0) return [...new Set(ofItsOwn)];
-  const named = available.classes.find((each) => each.name === model);
-  if (!named) return undefined;
-  const ofItsModels = available.models
-    .filter((each) => named.models.includes(each.id))
-    .flatMap((each) => each.levels ?? []);
-  return ofItsModels.length > 0 ? [...new Set(ofItsModels)] : undefined;
+  id: string,
+): AvailableModel | undefined {
+  if (!available || id === "") return undefined;
+  return available.models.find((each) => each.id === id);
 }
 
-/**
- * The levels to offer for a model whose endpoint lists `levels`: only the ones it names, with `none` for the quietest
- * level understood as Moebius's `off`. A model whose upstream says nothing is offered every level, which is what it is
- * sent.
- */
-export function offeredLevels(levels: string[] | undefined): string[] {
-  if (!levels || levels.length === 0) return [...THINKING_LEVELS];
-  const named = new Set(levels.map((level) => (level === "none" ? "off" : level)));
-  return THINKING_LEVELS.filter((level) => named.has(level));
+/** The levels to offer for `model`: the ones the server says, or every level when it says none. */
+export function offeredLevels(model: AvailableModel | undefined): string[] {
+  const offered = model?.thinking_levels;
+  return offered && offered.length > 0 ? [...offered] : [...THINKING_LEVELS];
 }
 
-/**
- * The name `level` goes out as to an endpoint that lists `levels`: its own when the endpoint takes that name, or the
- * name at that level's place in the list, or the last of the list when it is shorter, which is how a level the
- * endpoint has no name for still asks it for the hardest level it has.
- */
-export function sentLevel(levels: string[] | undefined, level: string): string {
-  if (!levels || levels.length === 0 || levels.includes(level)) return level;
-  const place = (THINKING_LEVELS as readonly string[]).indexOf(level);
-  if (place < 0) return level;
-  return levels[place] ?? levels.at(-1) ?? level;
+/** The name `level` goes out as for `model`, as the server's own rule has it. */
+export function sentLevel(model: AvailableModel | undefined, level: string): string {
+  return model?.thinking?.[level] ?? level;
 }

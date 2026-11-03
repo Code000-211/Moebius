@@ -34,6 +34,13 @@ pub struct AvailableModel {
     /// which is what an Anthropic endpoint and most OpenAI ones do.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub levels: Vec<String>,
+    /// The Moebius reasoning levels to offer for it; empty when every level is. Filled in as the answer is given.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub thinking_levels: Vec<String>,
+    /// The value a run sends for each reasoning level whose own name the model does not take: what
+    /// `[router.model_thinking]` gives, or else what its listed `levels` give. Filled in as the answer is given.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub thinking: BTreeMap<String, String>,
 }
 
 /// A model an upstream listed, with the reasoning level names its endpoint takes.
@@ -87,28 +94,29 @@ impl Router {
             .unwrap_or_else(|p| p.into_inner()) = maps;
     }
 
-    /// The reasoning level names `model`'s endpoint was last heard taking, from the list kept for the pickers; empty
-    /// before the upstreams have been asked, and for an endpoint that does not name them.
+    /// The reasoning level names `model`'s endpoint was last heard taking, from the last time its upstream answered,
+    /// however long ago; empty before the upstreams have been asked, and for an endpoint that does not name them.
+    /// When two upstreams serve the model, the first in the configuration is the one heard.
     pub fn model_levels(&self, model: &str) -> Vec<String> {
-        let kept = self
-            .available
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .clone();
-        kept.and_then(|(_, listed)| {
-            listed
-                .models
-                .into_iter()
-                .find(|m| m.id == model)
-                .map(|m| m.levels)
-        })
-        .unwrap_or_default()
+        let upstreams = self.upstreams.read().unwrap_or_else(|p| p.into_inner());
+        let kept = self.levels.lock().unwrap_or_else(|p| p.into_inner());
+        upstreams
+            .iter()
+            .find_map(|u| kept.get(&upstream_key(u))?.get(model))
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// The value to send for each reasoning level of `model`: what `[router.model_thinking]` gives it when it names
-    /// the model, or the names its own endpoint lists; none when neither is known, or when it takes the levels' own
-    /// names.
+    /// the model, or the names its own endpoint lists; none when neither is known, when it takes the levels' own
+    /// names, or when `model` is a model class (a class is answered by whichever of its models is picked, so no one
+    /// map is right for it).
     pub fn thinking_map(&self, model: &str) -> Option<BTreeMap<String, String>> {
+        self.thinking_map_for(model, &self.model_levels(model))
+    }
+
+    /// [`Router::thinking_map`] for a model whose listed `levels` are known.
+    fn thinking_map_for(&self, model: &str, levels: &[String]) -> Option<BTreeMap<String, String>> {
         let given = self
             .model_thinking
             .read()
@@ -116,9 +124,48 @@ impl Router {
             .get(model)
             .cloned();
         given.or_else(|| {
-            let map = thinking_map_of(&self.model_levels(model));
+            let map = thinking_map_of(levels);
             (!map.is_empty()).then_some(map)
         })
+    }
+
+    /// The Moebius reasoning levels to offer for `model` with its listed `levels`: only the ones its endpoint names
+    /// (`none` for `off`) and the ones `[router.model_thinking]` gives a value; empty when every level is offered,
+    /// which is when nothing is known of the model's levels.
+    fn offered_levels(&self, model: &str, levels: &[String]) -> Vec<String> {
+        if levels.is_empty() {
+            return Vec::new();
+        }
+        let given = self
+            .model_thinking
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(model)
+            .cloned()
+            .unwrap_or_default();
+        THINKING_LEVELS
+            .iter()
+            .filter(|level| {
+                let own = if **level == "off" { "none" } else { level };
+                levels.iter().any(|named| named == *level || named == own)
+                    || given.contains_key(**level)
+            })
+            .map(|level| (*level).to_string())
+            .collect()
+    }
+
+    /// Asks the upstreams which models they serve, once as it starts, then every `period`, and again as soon as the
+    /// upstreams are edited, so that a run's `models.json` has the level names its model's endpoint takes without
+    /// anyone opening the Models page. Never returns.
+    pub async fn keep_levels(&self, period: Duration) {
+        let mut interval = tokio::time::interval(period);
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {}
+                () = self.upstreams_changed.notified() => {}
+            }
+            self.listed_models(true).await;
+        }
     }
 
     /// The models the upstreams serve, asked of all of them at once. The answer is kept for five minutes unless
@@ -126,6 +173,14 @@ impl Router {
     /// the router's at the time of asking.
     pub async fn available_models(&self, refresh: bool) -> AvailableModels {
         let mut answer = self.listed_models(refresh).await;
+        // The levels are the kept ones, but what they come to depends on `[router.model_thinking]`, which may have
+        // been edited since the list was made.
+        for model in &mut answer.models {
+            model.thinking_levels = self.offered_levels(&model.id, &model.levels);
+            model.thinking = self
+                .thinking_map_for(&model.id, &model.levels)
+                .unwrap_or_default();
+        }
         answer.classes = self
             .classes()
             .into_iter()
@@ -174,14 +229,29 @@ impl Router {
         let mut answer = AvailableModels::default();
         for (upstream, result) in upstreams.iter().zip(asked.await) {
             match result {
-                Ok(listed) => answer
-                    .models
-                    .extend(listed.into_iter().map(|m| AvailableModel {
-                        id: m.id,
-                        levels: m.levels,
-                        protocol: upstream.protocol,
-                        upstream: without_credentials(&upstream.base_url),
-                    })),
+                Ok(listed) => {
+                    // Only an upstream that answered changes what is known of its levels.
+                    self.levels
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .insert(
+                            upstream_key(upstream),
+                            listed
+                                .iter()
+                                .map(|m| (m.id.clone(), m.levels.clone()))
+                                .collect(),
+                        );
+                    answer
+                        .models
+                        .extend(listed.into_iter().map(|m| AvailableModel {
+                            id: m.id,
+                            levels: m.levels,
+                            thinking_levels: Vec::new(),
+                            thinking: BTreeMap::new(),
+                            protocol: upstream.protocol,
+                            upstream: without_credentials(&upstream.base_url),
+                        }));
+                }
                 Err(message) => answer.errors.push(UpstreamError {
                     upstream: without_credentials(&upstream.base_url),
                     message,
@@ -310,20 +380,56 @@ impl Router {
     }
 }
 
+/// What `upstream` is known by in the levels learned of it: its protocol and base URL.
+pub(super) fn upstream_key(upstream: &Upstream) -> String {
+    format!("{} {}", upstream.protocol.name(), upstream.base_url)
+}
+
+/// How hard a reasoning level name asks, `none` and `off` being the same quietest; none for a name that is not one
+/// of the known levels.
+fn rank(name: &str) -> Option<usize> {
+    match name {
+        "none" => Some(0),
+        _ => THINKING_LEVELS.iter().position(|level| *level == name),
+    }
+}
+
 /// The name to send to an endpoint that takes `levels`, for each reasoning level whose own name the endpoint does not
-/// take: the name at that level's place in the endpoint's list, or the last of the list when it is shorter, so that a
-/// level harder than any the endpoint names asks for the hardest it has. Nothing is given for a level the endpoint
+/// take: the listed name nearest to it in how hard it asks (the harder one when two are as near, so that a request
+/// for effort is not answered with less than it names), `off` going to `none` or `off` when the endpoint has one and
+/// to its quietest name otherwise. A level harder than any the endpoint names asks for the hardest it has. The names
+/// of a list none of which is a known level are taken by place instead. Nothing is given for a level the endpoint
 /// takes by its own name, nor for any level of an endpoint that lists none; the harness sends those names themselves.
 fn thinking_map_of(levels: &[String]) -> BTreeMap<String, String> {
     let mut map = BTreeMap::new();
     let Some(last) = levels.last() else {
         return map;
     };
+    let known: Vec<(usize, &String)> = levels
+        .iter()
+        .filter_map(|named| Some((rank(named)?, named)))
+        .collect();
     for (place, level) in THINKING_LEVELS.iter().enumerate() {
         if levels.iter().any(|named| named == level) {
             continue;
         }
-        let takes = levels.get(place).unwrap_or(last);
+        let takes = if known.is_empty() {
+            levels.get(place).unwrap_or(last)
+        } else if place == 0 {
+            // `off` is only ever the quietest name: `none`, or else whatever the endpoint has least.
+            known
+                .iter()
+                .min_by_key(|(rank, _)| *rank)
+                .map(|(_, named)| *named)
+                .unwrap_or(last)
+        } else {
+            // Another level never goes to `none`, which turns reasoning off, unless that is all there is.
+            let asking = known.iter().filter(|(rank, _)| *rank > 0);
+            let nearest = asking
+                .min_by_key(|(rank, _)| (rank.abs_diff(place), usize::MAX - rank))
+                .or_else(|| known.first());
+            nearest.map(|(_, named)| *named).unwrap_or(last)
+        };
         map.insert((*level).to_string(), takes.clone());
     }
     map
@@ -333,6 +439,7 @@ fn thinking_map_of(levels: &[String]) -> BTreeMap<String, String> {
 mod tests {
     use std::sync::Arc;
 
+    use axum::response::IntoResponse;
     use serde_json::json;
 
     use super::*;
@@ -431,18 +538,199 @@ mod tests {
         );
     }
 
+    fn names(listed: &[&str]) -> Vec<String> {
+        listed.iter().map(|name| name.to_string()).collect()
+    }
+
     #[test]
-    fn a_shorter_list_than_the_levels_sends_its_hardest_for_everything_above() {
-        let levels = ["low", "high"]
-            .into_iter()
-            .map(str::to_string)
-            .collect::<Vec<String>>();
-        let map = thinking_map_of(&levels);
+    fn a_shorter_list_than_the_levels_sends_its_nearest_name_and_its_hardest_for_everything_above()
+    {
+        let map = thinking_map_of(&names(&["low", "high"]));
         assert_eq!(map["off"], "low");
-        assert_eq!(map["minimal"], "high");
+        assert_eq!(map["minimal"], "low");
         assert!(!map.contains_key("high"), "it takes the name itself");
         assert_eq!(map["xhigh"], "high");
         assert_eq!(map["max"], "high");
+    }
+
+    #[test]
+    fn a_list_that_does_not_start_at_the_bottom_is_mapped_by_how_hard_each_name_asks() {
+        let map = thinking_map_of(&names(&["low", "medium", "high"]));
+        assert_eq!(map["off"], "low");
+        assert_eq!(map["minimal"], "low");
+        assert_eq!(map["xhigh"], "high");
+        assert_eq!(map["max"], "high");
+        assert_eq!(map.len(), 4);
+    }
+
+    #[test]
+    fn none_is_the_quietest_wherever_the_list_has_it() {
+        let map = thinking_map_of(&names(&["low", "medium", "high", "none"]));
+        assert_eq!(map["off"], "none");
+        assert_eq!(map["minimal"], "low", "reasoning is not turned off for it");
+    }
+
+    #[test]
+    fn names_that_are_not_known_levels_are_taken_by_place() {
+        let map = thinking_map_of(&names(&["quiet", "loud"]));
+        assert_eq!(map["off"], "quiet");
+        assert_eq!(map["minimal"], "loud");
+        assert_eq!(map["max"], "loud");
+    }
+
+    /// An OpenAI upstream that lists `one-model` with `levels` until it is told to fail.
+    async fn upstream_that_can_fail(
+        levels: Value,
+    ) -> (
+        Router,
+        Arc<std::sync::atomic::AtomicBool>,
+        tempfile::TempDir,
+    ) {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let failing = Arc::new(AtomicBool::new(false));
+        let answers = json!({
+            "data": [{ "id": "one-model", "capabilities": { "reasoning_efforts": levels } }]
+        });
+        let app = axum::Router::new().route(
+            "/v1/models",
+            axum::routing::get({
+                let failing = failing.clone();
+                move || {
+                    let answers = answers.clone();
+                    let failing = failing.clone();
+                    async move {
+                        if failing.load(Ordering::SeqCst) {
+                            (axum::http::StatusCode::BAD_GATEWAY, "down").into_response()
+                        } else {
+                            axum::Json(answers).into_response()
+                        }
+                    }
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await });
+        let dir = tempfile::tempdir().unwrap();
+        let router = Router::new(
+            Arc::new(Store::in_memory(dir.path()).unwrap()),
+            vec![Upstream {
+                protocol: Protocol::OpenAi,
+                base_url: base,
+                api_key: None,
+                oauth: None,
+            }],
+        );
+        (router, failing, dir)
+    }
+
+    #[tokio::test]
+    async fn a_failed_ask_keeps_the_levels_learned_before() {
+        use std::sync::atomic::Ordering;
+        let (router, failing, _dir) =
+            upstream_that_can_fail(json!(["none", "low", "medium", "xhigh"])).await;
+        router.available_models(true).await;
+        let before = router.thinking_map("one-model").unwrap();
+        failing.store(true, Ordering::SeqCst);
+        let again = router.available_models(true).await;
+        assert!(again.models.is_empty() && !again.errors.is_empty());
+        assert_eq!(router.thinking_map("one-model").unwrap(), before);
+        assert_eq!(router.model_levels("one-model").len(), 4);
+    }
+
+    #[tokio::test]
+    async fn editing_the_upstreams_keeps_the_levels_of_those_that_stay_and_asks_again() {
+        let (router, _failing, _dir) =
+            upstream_that_can_fail(json!(["none", "low", "xhigh"])).await;
+        router.available_models(true).await;
+        let upstreams = router.upstreams.read().unwrap().clone();
+        router.set_upstreams(upstreams.clone());
+        assert_eq!(router.model_levels("one-model").len(), 3);
+        // The edit woke the loop that asks again; its permit is there to be taken at once.
+        router.upstreams_changed.notified().await;
+        let moved = Upstream {
+            base_url: "http://127.0.0.1:9".to_string(),
+            ..upstreams[0].clone()
+        };
+        router.set_upstreams(vec![moved]);
+        assert!(router.model_levels("one-model").is_empty());
+        assert_eq!(router.thinking_map("one-model"), None);
+    }
+
+    #[tokio::test]
+    async fn the_upstreams_are_asked_when_the_loop_starts_and_when_they_are_edited() {
+        let (router, _failing, _dir) =
+            upstream_that_can_fail(json!(["none", "low", "xhigh"])).await;
+        let router = Arc::new(router);
+        let looping = tokio::spawn({
+            let router = router.clone();
+            async move { router.keep_levels(Duration::from_secs(3600)).await }
+        });
+        // Nobody asked for the list: the loop did.
+        while router.model_levels("one-model").is_empty() {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        // Editing the upstreams to another address with the same model: the loop asks that one too.
+        let first = router.upstreams.read().unwrap()[0].clone();
+        router.set_upstreams(vec![Upstream {
+            base_url: format!("{}/", first.base_url),
+            ..first
+        }]);
+        assert!(router.model_levels("one-model").is_empty());
+        while router.model_levels("one-model").is_empty() {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        looping.abort();
+    }
+
+    #[tokio::test]
+    async fn the_answer_gives_the_effective_names_and_the_levels_to_offer() {
+        let (router, _store, _dir) =
+            upstream_that(json!(["none", "minimal", "low", "medium", "xhigh"])).await;
+        let answer = router.available_models(true).await;
+        let model = &answer.models[0];
+        assert_eq!(
+            model.thinking_levels,
+            ["off", "minimal", "low", "medium", "xhigh"]
+        );
+        assert_eq!(model.thinking["high"], "xhigh");
+        assert_eq!(model.thinking["off"], "none");
+        // An override is the map, and makes the level it names valid; the kept answer does not hide the edit.
+        router.set_model_thinking(BTreeMap::from([(
+            "one-model".to_string(),
+            BTreeMap::from([("max".to_string(), "xhigh".to_string())]),
+        )]));
+        let answer = router.available_models(false).await;
+        let model = &answer.models[0];
+        assert_eq!(
+            model.thinking,
+            BTreeMap::from([("max".to_string(), "xhigh".to_string())])
+        );
+        assert_eq!(
+            model.thinking_levels,
+            ["off", "minimal", "low", "medium", "xhigh", "max"]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_model_class_is_given_no_map_whatever_its_models_list() {
+        let (router, _store, _dir) = upstream_that(json!(["none", "low", "xhigh"])).await;
+        router.set_classes(
+            [(
+                "strong".to_string(),
+                vec![crate::router::ClassModel {
+                    model: "one-model".to_string(),
+                    day_tokens: None,
+                }],
+            )]
+            .into_iter()
+            .collect(),
+        );
+        let answer = router.available_models(true).await;
+        assert!(router.thinking_map("one-model").is_some());
+        assert_eq!(router.thinking_map("strong"), None);
+        assert!(router.model_levels("strong").is_empty());
+        assert_eq!(answer.classes[0].name, "strong");
     }
 
     #[tokio::test]

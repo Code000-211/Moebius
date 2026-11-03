@@ -125,6 +125,9 @@ pub struct App {
     /// Held while a message is given to a chat's agent or a chat's work is committed to be offered, so that the agent
     /// does not start on a message while its worktree is committed.
     chat_turns: Mutex<()>,
+    /// The chats being woken: reopened, their agent not yet registered with the harness (see `wake_chat`). Entered
+    /// under `chat_turns`, so that a message, a stop or an end arriving meanwhile can tell.
+    waking: Mutex<BTreeSet<i64>>,
     /// The terminals open on each run.
     pub terminals: Arc<Slots>,
     /// Why each waiting card waits, as its column script last said (`moebius.wait`, `ask`, `stuck`). Not stored: a
@@ -159,6 +162,7 @@ impl App {
             replaying: AtomicBool::new(false),
             run_events: Mutex::default(),
             chat_turns: Mutex::default(),
+            waking: Mutex::default(),
             terminals: Arc::default(),
             waiting: Mutex::default(),
             forges,

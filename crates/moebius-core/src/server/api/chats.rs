@@ -585,6 +585,30 @@ mod tests {
         assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists());
         assert!(!app.data_dir.join(format!("chats/{}", waiting.id)).exists());
         assert_eq!(stop(waiting.id).await.status(), 422);
+        // A chat whose agent went away takes a model and a level for the agent made again.
+        let chosen = |id: i64| {
+            post(
+                &state,
+                &addr,
+                format!("/v1/chats/{id}/settings"),
+                serde_json::json!({ "thinking": "high" }),
+            )
+        };
+        assert_eq!(chosen(waiting.id).await.status(), 200);
+        // A chat that was ended is ended for good.
+        let ended = chat(&state, &addr, "Hello", None).await;
+        let end = post(
+            &state,
+            &addr,
+            format!("/v1/chats/{}/end", ended.id),
+            serde_json::json!({}),
+        );
+        assert_eq!(end.await.status(), 200);
+        until("the chat succeeded", || {
+            status(app, ended.id) == "succeeded"
+        })
+        .await;
+        assert_eq!(chosen(ended.id).await.status(), 422);
         // What is written to a chat whose agent went away takes it up again, on the record a person is reading.
         let taken = say(&state, &addr, waiting.id, "Hello?").await;
         assert_eq!(taken.status(), 200);
@@ -594,7 +618,7 @@ mod tests {
             "the chat a person wrote to, not a new one"
         );
         assert_eq!(again.ended_at, None, "the chat is no longer ended");
-        assert_eq!(app.chats(false).unwrap().len(), 1, "no second chat");
+        assert_eq!(app.chats(false).unwrap().len(), 2, "no third chat");
         until("the chat's place is back", || {
             app.data_dir.join(format!("chats/{}", waiting.id)).is_dir()
         })

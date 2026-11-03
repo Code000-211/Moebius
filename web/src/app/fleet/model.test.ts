@@ -12,6 +12,7 @@ import {
   thoughtSeconds,
   tokensText,
   working,
+  workStartedAt,
 } from "./model";
 
 const card = (id: number, number: number, run: CardRun | null, tokens = 0): Card => ({
@@ -155,6 +156,24 @@ describe("how a tile tells its run", () => {
     // The time whatever came after the last step arrived, and none when the steps are the end of it.
     expect(afterSteps([text(0), thought(100), thought(105), text(109)])).toBe(109);
     expect(afterSteps([text(0), thought(100)])).toBeNull();
+  });
+
+  it("measures the work from the start of the run when only its newest messages are held", () => {
+    const person = (at: number): Entry => ({
+      at,
+      seq: at,
+      kind: "person",
+      said: "said",
+      message: "m",
+    });
+    // Everything is held: the first message is where the work began.
+    expect(workStartedAt([person(300), person(400)], false, 100)).toBe(300);
+    // A window of a long run begins long after the run did, so its first message would understate the work.
+    expect(workStartedAt([person(300), person(400)], true, 100)).toBe(100);
+    expect(workStartedAt([person(300)], true, 0)).toBeNull();
+    // Nothing read yet says nothing of its own.
+    expect(workStartedAt([], false, 100)).toBe(100);
+    expect(workStartedAt([], false, 0)).toBeNull();
   });
 
   it("knows a run that waits for the person is not thinking", () => {

@@ -168,11 +168,11 @@ export function ThreadView({
    * so the number falls as turns are added and that turn keeps its place. Once the turn it counted from is gone, what
    * arrived is another conversation, and the count starts again.
    */
-  const [anchor, setAnchor] = useState({ base: FIRST_INDEX, first: null as string | null });
+  const [anchor, setAnchor] = useState({ base: FIRST_INDEX, first: null as number | null });
   const lastGesture = useRef<number | null>(null);
   const repins = useRef(0);
 
-  const first = turns[0]?.key ?? null;
+  const first = turns[0]?.from ?? null;
 
   const toggle = useCallback((key: string) => {
     // What is opened is read where it is, so the list lets go of its end rather than scrolling the new text away.
@@ -245,8 +245,8 @@ export function ThreadView({
     [onScroll],
   );
 
-  if (first !== null && first !== anchor.first) {
-    const above = prepended(turns, anchor.first);
+  if (first !== anchor.first) {
+    const above = first === null ? null : prepended(turns, anchor.first);
     setAnchor(above === null ? { base: FIRST_INDEX, first } : { base: anchor.base - above, first });
   }
 

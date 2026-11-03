@@ -117,6 +117,12 @@ pub struct Router {
     client: reqwest::Client,
     /// The last list of available models and when it was made.
     available: Mutex<Option<(Instant, AvailableModels)>>,
+    /// The reasoning level names each model of each upstream was last heard taking, by upstream and then model. Only
+    /// an upstream that answered updates its entry, so a failed ask keeps what was learned; editing the upstreams
+    /// drops those no longer there.
+    levels: Mutex<HashMap<String, BTreeMap<String, Vec<String>>>>,
+    /// Woken when the upstreams are edited, so that they are asked again at once.
+    upstreams_changed: tokio::sync::Notify,
     /// The tokens and logins of the upstreams that log in with OAuth.
     oauth: oauth::Logins,
 }
@@ -135,6 +141,8 @@ impl Router {
             checker: OnceLock::new(),
             client: reqwest::Client::new(),
             available: Mutex::new(None),
+            levels: Mutex::new(HashMap::new()),
+            upstreams_changed: tokio::sync::Notify::new(),
             oauth: oauth::Logins::default(),
         }
     }
@@ -144,10 +152,17 @@ impl Router {
         let _ = self.checker.set(checker);
     }
 
-    /// Replaces the upstreams; the next request goes to the new ones.
+    /// Replaces the upstreams; the next request goes to the new ones. The levels learned of an upstream that stays are
+    /// kept, and [`Router::keep_levels`] is told to ask the upstreams again.
     pub fn set_upstreams(&self, upstreams: Vec<Upstream>) {
+        let staying: Vec<String> = upstreams.iter().map(models::upstream_key).collect();
+        self.levels
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .retain(|key, _| staying.contains(key));
         *self.upstreams.write().unwrap_or_else(|p| p.into_inner()) = upstreams;
         *self.available.lock().unwrap_or_else(|p| p.into_inner()) = None;
+        self.upstreams_changed.notify_one();
     }
 
     pub fn routes(self: Arc<Self>) -> Routes {

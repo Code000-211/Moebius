@@ -30,6 +30,12 @@ export type Block =
 
 export interface Turn {
   key: string;
+  /**
+   * The `seq` of the first entry of the turn. When a page that opened mid-answer is joined by the page above it, the
+   * turn at the top takes in the beginning of its answer and is named for an earlier event, but this number still
+   * places it, which is what the list anchors to.
+   */
+  from: number;
   head: PersonEntry | null;
   blocks: Block[];
 }
@@ -94,7 +100,7 @@ export function groupTurns(entries: Entry[], working: boolean): Turn[] {
   let current: Turn | null = null;
   const turn = (seq: number): Turn => {
     if (!current) {
-      current = { key: `turn-${seq}`, head: null, blocks: [] };
+      current = { key: `turn-${seq}`, from: seq, head: null, blocks: [] };
       turns.push(current);
     }
     return current;
@@ -104,7 +110,7 @@ export function groupTurns(entries: Entry[], working: boolean): Turn[] {
     const entry = entries[index] as Entry;
     switch (entry.kind) {
       case "person":
-        current = { key: `turn-${entry.seq}`, head: entry, blocks: [] };
+        current = { key: `turn-${entry.seq}`, from: entry.seq, head: entry, blocks: [] };
         turns.push(current);
         break;
       case "text":

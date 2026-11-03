@@ -95,19 +95,27 @@ describe("afterSend", () => {
 });
 
 describe("prepended", () => {
-  const turns = (keys: string[]) => keys.map((key) => ({ key }));
+  const turns = (froms: number[]) => froms.map((from) => ({ from }));
 
   it("says how many turns came above the one being read", () => {
-    // The page above arrived: the turn that was at the top is now two down, so the list counts from two lower.
-    expect(prepended(turns(["a", "b", "c", "d"]), "c")).toBe(2);
-    expect(prepended(turns(["a", "b", "c"]), "a")).toBe(0);
+    // The page above arrived: the turn that began at 30 is now two down, so the list counts from two lower.
+    expect(prepended(turns([5, 12, 30, 41]), 30)).toBe(2);
+    expect(prepended(turns([30, 41, 50]), 30)).toBe(0);
   });
 
   it("says nothing when there was no turn to anchor to", () => {
-    expect(prepended(turns(["a"]), null)).toBe(0);
+    expect(prepended(turns([1]), null)).toBe(0);
   });
 
-  it("says when the turn is gone, which is another conversation", () => {
-    expect(prepended(turns(["x", "y"]), "a")).toBeNull();
+  it("finds the turn that took in the beginning of the one at the top", () => {
+    // The top turn began mid-answer at 50; the page above gave it a head at 30 and it now holds 50.
+    expect(prepended(turns([10, 30, 60]), 50)).toBe(1);
+    // ...also when that was the only turn.
+    expect(prepended(turns([10, 30]), 50)).toBe(1);
+  });
+
+  it("says when nothing before it is held, which is another conversation", () => {
+    expect(prepended(turns([70, 80]), 50)).toBeNull();
+    expect(prepended([], 50)).toBeNull();
   });
 });

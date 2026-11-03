@@ -269,6 +269,12 @@ never reaches the server. A server that cannot be started or reached leaves out 
 `mcp_error` run event; the other servers still serve. The servers of a run are stopped when the run ends. A run of an
 agent without servers has no `mcp.json` and no MCP support, and no agent is given a server of another agent.
 
+A run's `<run-dir>/agent/models.json` names the router as the `moebius` provider with the agent's model, marked as one
+that reasons when the agent's reasoning level is not `off`. When the model's endpoint names the reasoning levels
+differently, the model also has a `thinkingLevelMap`, the value to send for every level whose own name the endpoint does
+not take (see [the router](router.md#reasoning-level-names)); a model whose endpoint takes the levels' own names, and a
+model class, has none, and the harness sends the level's name.
+
 `mcp.json` and `models.json` (which both hold the run's token) can be read only by the server's user (mode `0600`).
 A stdio server runs with the Moebius server's environment and its own `env`, and works in the run's worktree, so it can
 read and change what the agent works on: give a run only servers you trust.

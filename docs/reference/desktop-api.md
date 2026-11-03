@@ -516,7 +516,8 @@ newest events, and `before` returns those with a `seq` below it; each is answere
 it asks for the `seq` of its first event. `limit` (default 500, at most 5000, at least 1) is the most either returns.
 
 Response: an array of `{"seq": number, "kind": string, "data": object, "at": number}`, oldest first, where `kind` and
-`data` are those of the `run_event` (below). Errors: `404` no such run.
+`data` are those of the `run_event` (below). Errors: `404` no such run; `422` more than one of `after` (above 0),
+`before` and `tail` is given.
 
 ### `GET /v1/cards/{id}/runs`
 
@@ -696,10 +697,10 @@ person"), and a person decides with retry.
 Request: `{"reason": "..."}`; `reason` is optional, but send `{}` without one.
 
 Response: the `Run`, as it was when the request was made (still `running`). Errors: `404` no such run; `422` the run is not
-running.
+running; `409` the run is a chat whose agent is starting after a message woke it (try again in a moment).
 
 A chat that is stopped, also while it waits, ends as `stopped`; what it left in its repository's worktree is committed
-on its branch first.
+on its branch first. A message written to it afterwards starts its agent again (see `POST /v1/chats/{id}/messages`).
 
 ### `GET /v1/runs/{id}/terminal`
 
@@ -1169,7 +1170,9 @@ the Models screen's decision model. Response:
   "models": [
     {"id": "claude-sonnet-4-5", "protocol": "anthropic", "upstream": "https://api.anthropic.com"},
     {"id": "qwen-local", "protocol": "openai", "upstream": "http://127.0.0.1:8080",
-     "levels": ["none", "minimal", "low", "medium", "xhigh"]}
+     "levels": ["none", "minimal", "low", "medium", "xhigh"],
+     "thinking_levels": ["off", "minimal", "low", "medium", "xhigh"],
+     "thinking": {"off": "none", "high": "xhigh", "max": "xhigh"}}
   ],
   "errors": [{"upstream": "https://api.example.com", "message": "401"}],
   "classes": [{"name": "strong", "models": ["claude-sonnet-4-5", "qwen-local"], "protocols": ["anthropic"]}],
@@ -1180,7 +1183,13 @@ the Models screen's decision model. Response:
 - `models` are sorted by `protocol`, then `id`; the same model of the same upstream is listed once. Each may carry
   `levels`, the reasoning level names its endpoint said it takes, easiest first (see
   [the router](router.md#reasoning-level-names)); a model whose upstream does not say has no `levels` at all, and takes
-  the level names themselves.
+  the level names themselves. Two more fields are the server's own working-out, so that a client does not repeat it:
+  `thinking_levels`, the Moebius reasoning levels to offer for the model (only the ones its endpoint names, and the ones
+  `[router.model_thinking]` gives a value; absent when every level is offered), and `thinking`, the value a run sends
+  for each level whose own name the model does not take (`[router.model_thinking]` when it names the model, else
+  worked out from `levels`; absent when nothing is renamed). A level not in `thinking` is sent by its own name. Both are
+  worked out as the answer is given, so an edit of `[router.model_thinking]` shows at once. A model class has neither,
+  and takes every level by its own name. When two upstreams list the same id, a client uses the first.
 - `classes` are the model classes of `[router.classes]` by name (see [the router](router.md#model-classes)), which may be
   named wherever a model is: each with its models, first tried first, and the protocols `models` lists any of them
   under (empty when none is listed). They are the router's as the request is answered, never kept.
@@ -1500,18 +1509,32 @@ prompt: when the agent is waiting it answers at once; when it is working the mes
 the current turn (a follow-up). To change what a working agent is doing, steer it with `POST /v1/runs/{id}/steer`.
 
 A chat that ended because its agent went away (`status` `stopped`) is taken up again by the message, so that a person
-carries on in the chat they are reading rather than starting a new one: the same `Run` is no longer ended (`ended_at`
-null, `status` `running`), its worktree is made again on the branch it already has (for a chat with no repository, its
-empty directory is simply made again), and its agent starts on a prompt that holds what was said in the chat before — at
-most the last 20 000 characters of it — and then the message. A chat that ended any other
-way (`succeeded`, `failed`) is ended for good and is continued by a new chat (`POST /v1/chats` with `continues`).
+carries on in the chat they are reading rather than starting a new one. A chat is `stopped` when the server stopped its
+agent, when its agent exited, and when a person pressed Stop (`POST /v1/runs/{id}/stop`): a message written to it
+starts an agent again in every case, so Stop does not keep a chat from being written to. The same `Run` is no longer
+ended (`ended_at` null, `status` `running`), its worktree is made again on the branch it already has (for a chat with
+no repository, its empty directory is simply made again; a directory or registration left over is cleared away), and
+its agent starts on a prompt that holds what was said in the chat before — at most the last 20 000 characters of it —
+and then the message. The agent has a run token of its own; the old one stays withdrawn. Two messages written at once to
+a stopped chat start one agent, not two. Events: the chat publishes `run_started` again, and `run_ended` a second time
+when the woken agent goes away, for the same run id; a client reads the latest of them as the chat's state. A chat that
+ended any other way (`succeeded`, `failed`) is ended for good and is continued by a new chat (`POST /v1/chats` with
+`continues`), as is a grilling, whose issues are already read (`422`). `422` also when the chat cannot start again
+(its branch is gone, or git cannot make its worktree): the chat stays `stopped`, and the error says why; when the branch
+is gone the message is not kept, but a message whose agent fails to start after the message was stored stays in the
+chat, so a retry repeats it.
+
+While a stopped chat is being taken up, from the moment it is `running` until its agent is up, the chat answers a
+message with `409` (`chat N is starting; try again in a moment`) and records nothing, so the message can be sent again
+a moment later.
 
 Request: `{"message": "...", "context": "..."}`; `message` is required and must not be blank. `context` is optional and
 works as in `POST /v1/chats`: the agent is told it before the message (secrets removed, at most 4 000 characters), and
 the `said` event holds only the message.
 
 Response: the `Run`. Errors: `404` no such run; `422` the run is not a chat, the chat has ended for good, its agent
-cannot start again, it is the Grilling partner (its issues are already read), or the message is blank.
+cannot start again, it is the Grilling partner (its issues are already read), or the message is blank; `409` the chat
+is in its terminal, or its agent is starting (see above).
 
 The chat is `running` from the request on, before the agent says it has started, until the agent has answered.
 
@@ -1538,8 +1561,8 @@ The change is stored as a `settings_changed` run event holding what the chat now
   leave it.
 
 Response: the `Run`. Errors: `404` no such run; `409` the chat's agent is working; `422` the run is not a chat, the chat
-ended for good (`succeeded` or `failed`), `model` is blank or `thinking` is not one of `off`, `minimal`, `low`, `medium`,
-`high`, `xhigh` and `max`.
+ended for good (`succeeded` or `failed`), `model` is blank or `thinking` is not one of `off`, `minimal`, `low`,
+`medium`, `high`, `xhigh` and `max`.
 
 ### `POST /v1/chats/{id}/offer`
 
@@ -1620,7 +1643,7 @@ The chat ends as `succeeded`, which publishes `run_ended`; the change is offered
 Request: `{}`.
 
 Response: the `Run`, as it was when the request was made. Errors: `404` no such run; `422` the run is not a chat or has
-ended.
+ended; `409` the chat's agent is starting after a message woke it (try again in a moment).
 
 ### `GET /v1/automations`
 

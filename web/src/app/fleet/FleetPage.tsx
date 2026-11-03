@@ -37,6 +37,7 @@ import {
   tokensText,
   type Work,
   working,
+  workStartedAt,
 } from "./model";
 
 export function FleetPage() {
@@ -125,10 +126,10 @@ function Row({ work, now }: { work: Work; now: number }) {
   const about = [work.repository, work.tokens === null ? "" : tokensText(work.tokens)]
     .filter((part) => part !== "")
     .join(" · ");
-  const first = thread.entries.find((entry) => entry.kind === "person" || entry.kind === "tool");
+  const began = workStartedAt(thread.entries, thread.hasOlder, startedAt);
   const lastAt = thread.entries.at(-1)?.at ?? now;
   const stops = work.status === "waiting" ? lastAt : now;
-  const worked = first ? elapsed(stops - first.at) : null;
+  const worked = began === null ? null : elapsed(stops - began);
   return (
     <button
       type="button"

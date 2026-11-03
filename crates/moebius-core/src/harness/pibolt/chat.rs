@@ -212,9 +212,11 @@ mod tests {
     use crate::app::AppError;
     use crate::board::{CardRuns, ChatRuns};
     use crate::decide::Actor;
+    use crate::harness::pibolt::GRILLING_AGENT;
     use crate::harness::pibolt::testing::{
         argv_and_stdin, flag, setup, wait_for, wait_for_run, wait_until_ended,
     };
+    use crate::repos::git;
     use crate::router::Protocol;
 
     fn wait_until_ended_after_end(app: &App, pi: &PiBolt, run_id: i64) {
@@ -675,5 +677,184 @@ mod tests {
         assert_eq!(run.status, "succeeded", "the chat stays as it ended");
         assert!(run.ended_at.is_some());
         assert!(lock(&pi.live).is_empty(), "nothing was started again");
+    }
+
+    /// A chat in the repository `repo` whose agent has answered and then went away, so that it ended as `stopped`.
+    fn stopped_repo_chat(app: &Arc<App>, pi: &PiBolt, repo: i64) -> Run {
+        let repository = app.repository(repo).unwrap();
+        let run = pi
+            .start_chat(
+                app,
+                "Coder",
+                (Some(&repository), false),
+                Some("Hello"),
+                Some("Hello"),
+                "chat",
+                &ChatSettings::default(),
+            )
+            .unwrap();
+        wait_for_run(app, run.id, "the agent answers", |run| {
+            run.status == "waiting"
+        });
+        assert!(pi.stop(run.id));
+        let ended = wait_until_ended(app, run.id);
+        assert_eq!(ended.status, "stopped");
+        ended
+    }
+
+    fn said_count(app: &App, run_id: i64) -> usize {
+        app.store
+            .events(run_id)
+            .unwrap()
+            .iter()
+            .filter(|event| event.kind == "said")
+            .count()
+    }
+
+    #[test]
+    fn two_messages_at_once_to_a_chat_whose_agent_went_away_take_it_up_once() {
+        let (_dir, app, pi, repo) = setup();
+        let ended = stopped_repo_chat(&app, &pi, repo);
+        let together = std::sync::Barrier::new(2);
+        let results: Vec<_> = std::thread::scope(|scope| {
+            let handles: Vec<_> = ["First", "Second"]
+                .into_iter()
+                .map(|message| {
+                    let (app, pi, together) = (&app, &pi, &together);
+                    scope.spawn(move || {
+                        together.wait();
+                        app.say_in_chat(pi, ended.id, message, None)
+                    })
+                })
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+        assert!(results.iter().any(|result| result.is_ok()), "{results:?}");
+        wait_for_run(&app, ended.id, "the agent answers", |run| {
+            run.status == "waiting"
+        });
+        assert_eq!(lock(&pi.live).len(), 1, "one agent for the chat");
+        assert_ne!(app.run(ended.id).unwrap().status, "stopped");
+        assert_eq!(pi.router.token_count(), 1, "one token for one agent");
+        assert!(pi.stop(ended.id));
+        wait_until_ended(&app, ended.id);
+    }
+
+    #[test]
+    fn a_chat_taken_up_again_has_a_token_of_its_own() {
+        let (_dir, app, pi, repo) = setup();
+        let ended = stopped_repo_chat(&app, &pi, repo);
+        let token_of = || {
+            let path = app
+                .data_dir
+                .join(format!("runs/{}/agent/env.json", ended.id));
+            let env: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+            env["MOEBIUS_RUN_TOKEN"].as_str().unwrap().to_string()
+        };
+        let old = token_of();
+        app.say_in_chat(&pi, ended.id, "Carry on", None).unwrap();
+        wait_for_run(&app, ended.id, "the agent answers", |run| {
+            run.status == "waiting"
+        });
+        wait_for("the new agent wrote its environment", || token_of() != old);
+        assert_eq!(pi.router.token_count(), 1, "the old token was withdrawn");
+        assert!(pi.stop(ended.id));
+        wait_until_ended(&app, ended.id);
+    }
+
+    #[test]
+    fn a_chat_that_cannot_start_again_stays_stopped_and_keeps_nothing_running() {
+        let (_dir, app, pi, repo) = setup();
+        let ended = stopped_repo_chat(&app, &pi, repo);
+        let clone = std::path::PathBuf::from(app.repository(repo).unwrap().path);
+
+        // Its branch is gone: said before anything is stored, and nothing is started.
+        git(
+            &clone,
+            &["branch", "-D", &format!("moebius/chat-{}", ended.id)],
+        )
+        .unwrap();
+        let said = said_count(&app, ended.id);
+        let why = app
+            .say_in_chat(&pi, ended.id, "Carry on", None)
+            .unwrap_err();
+        assert!(matches!(why, AppError::Invalid(_)), "{why}");
+        assert!(format!("{why}").contains("branch"), "{why}");
+        assert!(format!("{why}").contains("gone"), "{why}");
+        assert_eq!(said_count(&app, ended.id), said, "the message was not kept");
+        let run = app.run(ended.id).unwrap();
+        assert_eq!(run.status, "stopped");
+        assert!(run.ended_at.is_some());
+        assert!(lock(&pi.live).is_empty());
+    }
+
+    #[test]
+    fn a_chat_whose_worktree_cannot_be_made_again_ends_as_it_was() {
+        let (_dir, app, pi, repo) = setup();
+        let ended = stopped_repo_chat(&app, &pi, repo);
+        let clone = std::path::PathBuf::from(app.repository(repo).unwrap().path);
+        // The branch is checked out in the clone itself, so git refuses a second place for it.
+        git(
+            &clone,
+            &["checkout", "--quiet", &format!("moebius/chat-{}", ended.id)],
+        )
+        .unwrap();
+        let why = app
+            .say_in_chat(&pi, ended.id, "Carry on", None)
+            .unwrap_err();
+        assert!(matches!(why, AppError::Invalid(_)), "{why}");
+        assert!(format!("{why}").contains("cannot start again"), "{why}");
+        let run = app.run(ended.id).unwrap();
+        assert_eq!(run.status, "stopped");
+        assert!(run.ended_at.is_some());
+        assert!(lock(&pi.live).is_empty());
+        assert_eq!(pi.router.token_count(), 0, "no token is left");
+    }
+
+    #[test]
+    fn a_worktree_left_over_does_not_keep_a_chat_from_starting_again() {
+        let (_dir, app, pi, repo) = setup();
+        let ended = stopped_repo_chat(&app, &pi, repo);
+        // A directory in the chat's place, as a crash leaves it.
+        let place = app
+            .data_dir
+            .join(format!("worktrees/demo/chat-{}", ended.id));
+        std::fs::create_dir_all(&place).unwrap();
+        std::fs::write(place.join("stale.txt"), "left\n").unwrap();
+        app.say_in_chat(&pi, ended.id, "Carry on", None).unwrap();
+        wait_for_run(&app, ended.id, "the agent answers", |run| {
+            run.status == "waiting"
+        });
+        assert!(!place.join("stale.txt").exists());
+        assert!(pi.stop(ended.id));
+        wait_until_ended(&app, ended.id);
+    }
+
+    #[test]
+    fn a_grilling_whose_agent_went_away_is_not_taken_up_again() {
+        let (_dir, app, pi, repo) = setup();
+        let run = app
+            .start_chat(
+                &pi,
+                Some(GRILLING_AGENT),
+                Some(repo),
+                false,
+                None,
+                None,
+                None,
+                None,
+                (None, None, &[][..]),
+            )
+            .unwrap();
+        wait_for_run(&app, run.id, "the agent is up", |run| {
+            run.status == "waiting"
+        });
+        assert!(pi.stop(run.id));
+        wait_until_ended(&app, run.id);
+        let why = app.say_in_chat(&pi, run.id, "More", None).unwrap_err();
+        assert!(format!("{why}").contains("grilling"), "{why}");
+        assert_eq!(app.run(run.id).unwrap().status, "stopped");
+        assert!(lock(&pi.live).is_empty());
     }
 }

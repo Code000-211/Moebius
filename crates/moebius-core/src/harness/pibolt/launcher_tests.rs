@@ -370,6 +370,43 @@ fn a_chat_given_another_model_is_asked_of_the_launcher_again() {
 }
 
 #[test]
+fn a_chat_taken_up_again_is_asked_of_the_launcher_again() {
+    let (dir, app, mut pi, _repo) = setup();
+    let seen = with_launcher(&mut pi, dir.path(), Mode::Wrap);
+    let chat = crate::board::ChatRuns::start_chat(
+        &pi,
+        &app,
+        "Coder",
+        (None, false),
+        None,
+        None,
+        "chat",
+        &crate::app::ChatSettings::default(),
+    )
+    .unwrap();
+    wait_for("the chat waits", || {
+        app.run(chat.id).unwrap().status == "waiting"
+    });
+    assert!(crate::board::CardRuns::stop(&pi, chat.id));
+    assert_eq!(wait_until_ended(&app, chat.id).status, "stopped");
+    assert_eq!(lock(&seen).len(), 1);
+
+    app.say_in_chat(&pi, chat.id, "Carry on", None).unwrap();
+    // The agent made again is wrapped like the first, never started bare.
+    assert_eq!(lock(&seen).len(), 2);
+    wait_for("the second Pi is wrapped", || {
+        let marks = marker(dir.path());
+        marks.first().map(String::as_str) == Some("wrapped")
+            && marks.iter().filter(|m| *m == "wrapped").count() == 2
+    });
+    wait_for("the chat waits", || {
+        app.run(chat.id).unwrap().status == "waiting"
+    });
+    assert!(crate::board::ChatRuns::end(&pi, chat.id));
+    wait_until_ended(&app, chat.id);
+}
+
+#[test]
 fn a_launcher_that_fails_hangs_or_garbles_fails_the_run_and_pi_never_starts() {
     for mode in [Mode::Fails, Mode::Hangs, Mode::Garbles] {
         let (dir, app, mut pi, repo) = setup();

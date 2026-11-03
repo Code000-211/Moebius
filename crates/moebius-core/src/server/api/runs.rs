@@ -12,6 +12,7 @@ use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
 
 use super::{ApiError, ApiState, Reason, blocking};
+use crate::app::AppError;
 use crate::decide::Actor;
 use crate::store::{Event, Run};
 
@@ -97,6 +98,11 @@ async fn run_events(
     let (after, before, tail) = (query.after, query.before, query.tail);
     blocking(&state.app, move |app| {
         app.run(id)?;
+        if usize::from(after > 0) + usize::from(before.is_some()) + usize::from(tail) > 1 {
+            return Err(AppError::Invalid(
+                "give only one of after, before and tail".into(),
+            ));
+        }
         let events = if tail {
             app.store.events_tail(id, limit)?
         } else if let Some(before) = before {
@@ -312,6 +318,21 @@ mod tests {
         )
         .await;
         assert!(none.is_empty());
+
+        // A page is read one way: combining after, before and tail is refused instead of silently picking one.
+        for query in [
+            "after=1&before=5",
+            "after=1&tail=true",
+            "before=5&tail=true",
+        ] {
+            let response = reqwest::Client::new()
+                .get(format!("http://{addr}/v1/runs/{}/events?{query}", run.id))
+                .bearer_auth(&*state.token)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), 422, "{query}");
+        }
     }
 
     // Unix only: the fake Pi is a Python script started by its `#!` line.

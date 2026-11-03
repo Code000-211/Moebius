@@ -227,6 +227,7 @@ export class Conversation {
   /** The `seq` of the event being folded; what an entry drawn from it is named by. */
   private seq = 0;
   private newest = 0;
+  private oldest = 0;
   /** The error of the model that the turn showed already, so that `agent_end`, which repeats it, adds none. */
   private modelError: string | null = null;
 
@@ -237,9 +238,7 @@ export class Conversation {
 
   /** The lowest `seq` held; 0 when none. What a page of older events is asked to stop below. */
   get oldestSeq(): number {
-    let seq = 0;
-    for (const event of this.events.values()) seq = seq === 0 || event.seq < seq ? event.seq : seq;
-    return seq;
+    return this.oldest;
   }
 
   /** The time of the newest event, Unix seconds; 0 when none. */
@@ -249,7 +248,11 @@ export class Conversation {
     return at;
   }
 
-  /** The entries, in order. The array is new on every call; an entry that did not change is the same object. */
+  /**
+   * The entries, in order. The array is new on every call. An entry is the same object as before until an event lands
+   * among those already folded and the log is folded again; the entries are then new objects, equal to the old ones
+   * where nothing changed, and nothing may rely on their identity.
+   */
   entries(): Entry[] {
     return this.list.slice();
   }
@@ -261,7 +264,7 @@ export class Conversation {
    */
   push(event: RunEvent): void {
     if (this.events.has(event.seq)) return;
-    this.events.set(event.seq, event);
+    this.hold(event);
     if (event.seq <= this.newest) {
       this.rebuild();
       return;
@@ -292,7 +295,7 @@ export class Conversation {
         }
         continue;
       }
-      this.events.set(event.seq, event);
+      this.hold(event);
       fresh.push(event);
       if (event.seq <= this.newest) again = true;
     }
@@ -306,6 +309,12 @@ export class Conversation {
       this.apply(event);
       this.newest = event.seq;
     }
+  }
+
+  /** Keeps a new event, and the lowest `seq` with it, so that asking for it costs nothing. */
+  private hold(event: RunEvent): void {
+    this.events.set(event.seq, event);
+    if (this.oldest === 0 || event.seq < this.oldest) this.oldest = event.seq;
   }
 
   /** Draws every event held again, in the order their `seq`s give them. */

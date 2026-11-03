@@ -183,17 +183,22 @@ describe("the chat page", () => {
       expect.soft(spilled, "no row's words fall outside its own box").toBe(0);
 
       // And the last row is read in full: the menu's own padding is below it, not cut off by an inner box.
-      await menu.evaluate((element) => {
-        element.scrollTop = element.scrollHeight;
-      });
-      const gap = await Promise.all([
-        menu.evaluate((element) => element.getBoundingClientRect().bottom),
-        page
-          .getByTestId("chat-row")
-          .last()
-          .evaluate((element) => element.getBoundingClientRect().bottom),
-      ]);
-      expect(gap[0] - gap[1]).toBeGreaterThanOrEqual(7);
+      // The scroll and the rows it brings settle over a few frames, so the gap is read until it holds.
+      await expect
+        .poll(async () => {
+          await menu.evaluate((element) => {
+            element.scrollTop = element.scrollHeight;
+          });
+          const [menuBottom, rowBottom] = await Promise.all([
+            menu.evaluate((element) => element.getBoundingClientRect().bottom),
+            page
+              .getByTestId("chat-row")
+              .last()
+              .evaluate((element) => element.getBoundingClientRect().bottom),
+          ]);
+          return menuBottom - rowBottom;
+        })
+        .toBeGreaterThanOrEqual(7);
     },
   );
 
@@ -211,7 +216,10 @@ describe("the chat page", () => {
 describe("a chat longer than the page opens with", () => {
   it.skipIf(usesRealServer)("opens at its end and reads what is above from its top", async () => {
     await open("/chat");
-    // Three hundred messages, which is a good deal more than the window the page opens with.
+    // Three hundred messages, which is a good deal more than the window the page opens with. Each answer comes in two
+    // pieces, the log holds three events per message and one more at its end, so the page the chat opens with (the
+    // newest five hundred events) begins with the second piece of an answer: its first piece, and the question, are on
+    // the page above.
     const events: Array<[string, Record<string, unknown>]> = [];
     for (let n = 1; n <= 300; n++) {
       events.push(["said", { message: `Question ${n}` }]);
@@ -219,14 +227,21 @@ describe("a chat longer than the page opens with", () => {
         "message_update",
         { assistantMessageEvent: { type: "text_delta", delta: `Answer ${n}. ` } },
       ]);
+      events.push([
+        "message_update",
+        { assistantMessageEvent: { type: "text_delta", delta: `And more ${n}.` } },
+      ]);
     }
+    events.push(["noted", {}]);
     const id = fake().seed({ title: "Long", answered: 300, seen: 300, events });
     await page.goto(`${server.url}/chat/${id}`);
-    await page.getByText("Answer 300.").waitFor();
+    await page.getByText("And more 300.").waitFor();
 
-    // The chat was read from its end and nowhere else: one request, for the newest events.
-    expect(fake().reads).toHaveLength(1);
-    expect(fake().reads[0]?.tail).toBe("true");
+    // The chat was read from its end and nowhere else: one request for the newest events. (A connection that flips
+    // may read what it missed after the last event, which is not a read of the history.)
+    const history = () => fake().reads.filter((read) => read.after === undefined);
+    expect(history()).toHaveLength(1);
+    expect(history()[0]?.tail).toBe("true");
     // And the beginning is not on the page, because it was never read. What is above it is offered from its top.
     expect(await page.getByText("Question 1", { exact: true }).count()).toBe(0);
     await page.getByTestId("load-older").waitFor();
@@ -235,11 +250,14 @@ describe("a chat longer than the page opens with", () => {
     await thread().hover();
     await page.mouse.wheel(0, -2_000);
     await page.mouse.wheel(0, -100_000);
-    await expect.poll(() => fake().reads.length).toBe(2);
+    await expect.poll(() => history().length).toBe(2);
     // The page above stops below the oldest message held, and the conversation does not move down to make room
-    // for what arrives there: the turn being read stays where it was.
-    expect(Number(fake().reads[1]?.before)).toBeGreaterThan(1);
+    // for what arrives there: the turn being read stays where it was, although the turn at the top of the list
+    // took in the beginning of its answer from this page and changed its name.
+    expect(Number(history()[1]?.before)).toBeGreaterThan(1);
     await expect.poll(() => distanceFromEnd(thread())).toBeGreaterThan(1_000);
+    // The turn at the top is still in view, and the answer the pages cut in two reads as one under its question.
+    await page.getByText("Answer 134. And more 134.").waitFor();
     // The chat begins with what that page brought, so the top of the conversation now holds its first message, the
     // offer is gone, and scrolling there again asks for nothing.
     await page.mouse.wheel(0, -100_000);
@@ -731,6 +749,27 @@ describe("the floating chat", () => {
       await window.waitFor({ state: "detached" });
       await page.goto(`${server.url}/chat`);
       await page.getByRole("button", { name: "Chats (0)" }).waitFor();
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "says why a conversation could not be read instead of drawing bars for ever",
+    async () => {
+      await open("/inbox");
+      await page.getByRole("button", { name: "Open the floating chat" }).click();
+      const window = page.getByRole("dialog", { name: "Floating chat" });
+      // Reading the events of the chat fails; starting it and saying things to it does not.
+      await page.route(/\/v1\/runs\/\d+\/events/, (route) =>
+        route.fulfill({ status: 500, contentType: "text/plain", body: "the store is unavailable" }),
+      );
+      await window.getByRole("textbox", { name: "Message" }).fill("What is this page?");
+      await window.getByRole("textbox", { name: "Message" }).press("Enter");
+      await window.getByRole("alert").waitFor();
+      // The reason replaces the bars, which are for a read that is still on its way.
+      expect(await window.getByTestId("thread-loading").count()).toBe(0);
+      expect(await window.getByRole("status").filter({ hasText: "Reading the chat" }).count()).toBe(
+        0,
+      );
     },
   );
 

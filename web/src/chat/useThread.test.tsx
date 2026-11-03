@@ -52,7 +52,7 @@ vi.mock("../api/calls/chat", () => ({
   },
 }));
 
-const { useThread } = await import("./useThread");
+const { MAX_FIRST_PAGES, useThread } = await import("./useThread");
 
 /** A piece of an answer, as the server stores it: the `seq` is what orders the chat, `at` is the server's clock. */
 function event(seq: number, text = `piece ${seq}`, at = 1_700_000_000 + seq): RunEvent {
@@ -67,6 +67,11 @@ function event(seq: number, text = `piece ${seq}`, at = 1_700_000_000 + seq): Ru
 /** A message of the person, which the conversation shows as an entry of its own. */
 function said(seq: number): RunEvent {
   return { seq, kind: "said", data: { message: `go ${seq}` }, at: 1_700_000_000 + seq };
+}
+
+/** A page of `PAGE` pieces of one answer, which fold into a single entry however many there are. */
+function pieces(from: number): RunEvent[] {
+  return Array.from({ length: PAGE }, (_, place) => event(from + place));
 }
 
 /** A page as full as one comes, so the page knows there was more where it came from. */
@@ -96,7 +101,7 @@ describe("opening a chat", () => {
     expect(api.backwards).toEqual([null]);
   });
 
-  it("keeps reading until the window has enough messages, and says there is more above", async () => {
+  it("stops at one page when its messages fill the window, and says there is more above", async () => {
     // A page full of events that are each a message of the person: the window is counted in messages, not events.
     api.tails = [fullPage(41)];
     const { result } = renderHook(() => useThread(7));
@@ -105,6 +110,95 @@ describe("opening a chat", () => {
     expect(api.backwards).toEqual([null]);
     expect(result.current.hasOlder).toBe(true);
     expect(result.current.entries).toHaveLength(PAGE);
+  });
+
+  it("keeps reading pages until the window holds enough entries", async () => {
+    // Full pages whose events fold into one entry: the window is counted in entries, so one page is not enough and
+    // each one is asked for below the one before it, until a short page says the log has run out.
+    api.tails = [pieces(201), pieces(101), [said(100)]];
+    const { result } = renderHook(() => useThread(7));
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    expect(api.backwards).toEqual([null, 201, 101]);
+    expect(result.current.hasOlder).toBe(false);
+    expect(result.current.entries[0]).toMatchObject({ kind: "person", message: "go 100" });
+  });
+
+  it("stops after a number of pages and leaves the rest above the window", async () => {
+    api.tails = Array.from({ length: MAX_FIRST_PAGES + 5 }, (_, place) =>
+      pieces(10_000 - PAGE * (place + 1) + 1),
+    );
+    const { result } = renderHook(() => useThread(7));
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    expect(api.backwards).toHaveLength(MAX_FIRST_PAGES);
+    expect(result.current.hasOlder).toBe(true);
+  });
+
+  it("asks for what is above the oldest event held, not the first one the stream brought", async () => {
+    let answer: (events: RunEvent[]) => void = () => {};
+    const slow = new Promise<RunEvent[]>((resolve) => {
+      answer = resolve;
+    });
+    api.tails = [slow, [said(40)]];
+    const { result } = renderHook(() => useThread(7));
+    await waitFor(() => expect(api.backwards).toEqual([null]));
+    // The stream brings an event while the end of the chat is still being read; it is newer than anything the read
+    // will bring, and must not be taken for the oldest.
+    act(() =>
+      live.listener?.({
+        kind: "run_event",
+        data: { run: 7, seq: 200, kind: "said", data: { message: "live" } },
+      }),
+    );
+    await act(async () => {
+      answer(fullPage(41));
+      await slow;
+    });
+    await waitFor(() => expect(result.current.hasOlder).toBe(true));
+    act(() => result.current.loadOlder());
+    await waitFor(() => expect(result.current.hasOlder).toBe(false));
+    expect(api.backwards).toEqual([null, 41]);
+  });
+
+  it("reads the end of the chat again when the first read failed and the stream went on", async () => {
+    api.tails = [new Error("cannot reach the server"), [said(3), said(4)]];
+    api.pages = [[]];
+    const { result, rerender } = renderHook(() => useThread(7));
+    await waitFor(() => expect(result.current.error).toBe("cannot reach the server"));
+    // The answer goes on while the history could not be read: the page still says it could not read it.
+    act(() =>
+      live.listener?.({
+        kind: "run_event",
+        data: { run: 7, seq: 5, kind: "said", data: { message: "live" } },
+      }),
+    );
+    await waitFor(() => expect(result.current.lastSeq).toBe(5));
+    expect(result.current.loaded).toBe(false);
+    expect(result.current.error).toBe("cannot reach the server");
+    // The socket connects again. Reading only after seq 5 would call the chat read with its history out of reach.
+    live.connection = "reconnecting";
+    rerender();
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    expect(api.backwards).toEqual([null, 5]);
+    expect(result.current.entries.map((entry) => entry.seq)).toEqual([3, 4, 5]);
+    expect(result.current.error).toBeNull();
+    // And what the stream may have missed is read after it.
+    await waitFor(() => expect(api.asked).toEqual([5]));
+  });
+
+  it("offers the messages above again after a read of them failed", async () => {
+    api.tails = [fullPage(41), new Error("cannot reach the server"), [said(40)]];
+    const { result } = renderHook(() => useThread(7));
+    await waitFor(() => expect(result.current.hasOlder).toBe(true));
+    act(() => result.current.loadOlder());
+    await waitFor(() => expect(result.current.error).toBe("cannot reach the server"));
+    // What was read stays, and the way to ask again is still there.
+    expect(result.current.olderLoading).toBe(false);
+    expect(result.current.hasOlder).toBe(true);
+    expect(result.current.entries).toHaveLength(PAGE);
+    act(() => result.current.loadOlder());
+    await waitFor(() => expect(result.current.hasOlder).toBe(false));
+    expect(result.current.error).toBeNull();
+    expect(api.backwards).toEqual([null, 41, 41]);
   });
 
   it("reads the messages above when the top of the conversation is reached", async () => {
@@ -213,6 +307,31 @@ describe("following a chat", () => {
     await waitFor(() => expect(result.current.error).toBe("cannot reach the server"));
     // The conversation stays; the page shows the reason above it.
     expect(result.current.loaded).toBe(true);
+    expect(result.current.entries.at(-1)).toMatchObject({ text: "piece 1piece 2" });
+  });
+
+  it("does not let a read that failed late overwrite one that came after it", async () => {
+    api.tails = [[event(1)]];
+    let fail: (reason: Error) => void = () => {};
+    const slow = new Promise<RunEvent[]>((_resolve, reject) => {
+      fail = reject;
+    });
+    api.pages = [slow, [event(2)]];
+    const { result, rerender } = renderHook(() => useThread(7));
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    // The socket connects twice: the first read is slow and the second is quick.
+    live.connection = "reconnecting";
+    rerender();
+    await waitFor(() => expect(api.asked).toEqual([1]));
+    live.connection = "online";
+    rerender();
+    await waitFor(() => expect(result.current.lastSeq).toBe(2));
+    // Now the first one fails. It is the older read, so it says nothing to the page.
+    await act(async () => {
+      fail(new Error("timed out"));
+      await slow.catch(() => {});
+    });
+    expect(result.current.error).toBeNull();
     expect(result.current.entries.at(-1)).toMatchObject({ text: "piece 1piece 2" });
   });
 

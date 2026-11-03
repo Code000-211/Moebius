@@ -1,6 +1,7 @@
 /**
- * The run, terminal, diff and port parts of the fake server. Two runs of the card `#1` of the fake board (`fake/board.ts`)
- * are there from the start: run 1000, which is running with a worktree and events, and run 1001, which has ended. The
+ * The run, terminal, diff and port parts of the fake server. Three runs of the card `#1` of the fake board
+ * (`fake/board.ts`) are there from the start: run 1000, which is running with a worktree and events, run 1001, which
+ * has ended, and run 1002, which is open but waiting between turns. The
  * routes keep to docs/reference/desktop-api.md: `GET /v1/runs/{id}` and `/events`, `POST /v1/runs/{id}/steer` (a
  * `steered` event, 422 for a blank message or a run that is not running), `GET /v1/runs/{id}/diff` and
  * `GET /v1/changes/{id}/diff`, `GET /v1/ports`. The terminals speak the server's protocol exactly: binary messages
@@ -186,6 +187,22 @@ export function createFakeRuns(
       started_at: NOW - 5000,
       ended_at: NOW - 4000,
       summary: "Done.",
+      repository_id: null,
+      harness_repository: false,
+      origin: "chat",
+      runner: null,
+    },
+    {
+      id: 1002,
+      card_id: 1,
+      agent: "Coder",
+      harness: "pi-bolt",
+      purpose: "code",
+      status: "waiting",
+      worktree: null,
+      started_at: NOW - 300,
+      ended_at: null,
+      summary: null,
       repository_id: null,
       harness_repository: false,
       origin: "chat",

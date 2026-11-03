@@ -162,3 +162,18 @@ export function latestSteps(entries: readonly Entry[]): Entry[] {
   while (before >= 0 && isStep(entries[before] as Entry)) before -= 1;
   return entries.slice(before + 1, end);
 }
+
+/**
+ * When the work of a run began, or null when that is not known. The entries held are only the newest window of a long
+ * run, so their first message or tool call is the start of the run only while nothing is held above them; otherwise
+ * the start the run itself reports is the one to measure from, or a length taken from the window would be too short.
+ */
+export function workStartedAt(
+  entries: readonly Entry[],
+  hasOlder: boolean,
+  startedAt: number,
+): number | null {
+  if (hasOlder) return startedAt > 0 ? startedAt : null;
+  const first = entries.find((entry) => entry.kind === "person" || entry.kind === "tool");
+  return first?.at ?? (startedAt > 0 ? startedAt : null);
+}

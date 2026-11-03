@@ -5,6 +5,7 @@
  * rather than drawn — and the region has the shape the page will fill, the number of rows or lanes it will have.
  */
 import { cleanup, render, screen } from "@testing-library/react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
 import { Reading, SkeletonBoard, SkeletonCard, SkeletonList, SkeletonThread } from "./Skeleton";
 
@@ -22,6 +23,16 @@ describe("a placeholder for a page being read", () => {
     expect(region.textContent).toBe("Reading the skills");
     // The message is the only text in the region; the rows are drawn, not written.
     for (const bar of bars()) expect(bar.textContent).toBe("");
+  });
+
+  it("is drawn empty and given its words after it is on the page, so they are announced", () => {
+    // What is on the page before any effect has run holds no text; a live region inserted holding text is not
+    // reliably spoken.
+    const first = renderToStaticMarkup(<SkeletonList rows={1} message="Reading the skills" />);
+    expect(first).toContain('role="status"');
+    expect(first).not.toContain("Reading the skills");
+    render(<SkeletonList rows={1} message="Reading the skills" />);
+    expect(screen.getByRole("status").textContent).toBe("Reading the skills");
   });
 
   it("draws the rows the list will have, and no more words than that", () => {

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { Entry, ToolCall } from "./conversation";
+import type { RunEvent } from "../api/types/chat";
+import { Conversation, type Entry, type ToolCall } from "./conversation";
+import { prepended } from "./follow";
 import { groupTurns, stepViews } from "./turns";
 
 /** Entries are named by the event that started them, so a test gives each one the next `seq`. */
@@ -100,6 +102,42 @@ describe("groupTurns", () => {
     expect(after).toHaveLength(3);
     expect(after[1]?.key).toBe(before[0]?.key);
     expect(after[1]?.blocks[0]?.key).toBe(before[0]?.blocks[0]?.key);
+  });
+
+  it("places a turn by what it holds when the page above joins an answer cut in two", () => {
+    // A page opened in the middle of an answer: its first event is a piece of text, so the top turn has no head.
+    const piece = (n: number, delta: string): RunEvent => ({
+      seq: n,
+      kind: "message_update",
+      data: { assistantMessageEvent: { type: "text_delta", delta } },
+      at: n,
+    });
+    const said = (n: number, message: string): RunEvent => ({
+      seq: n,
+      kind: "said",
+      data: { message },
+      at: n,
+    });
+    const chat = new Conversation();
+    chat.backfill([piece(5, "second half. "), said(6, "next")]);
+    const before = groupTurns(chat.entries(), false);
+    expect(before.map((turn) => turn.head)).toEqual([null, expect.anything()]);
+    const top = before[0]?.from ?? 0;
+
+    // The page above holds the question and the start of the answer: the top turn is now headed and named for it, but
+    // it is still the turn that held what was at the top, and the one before it is all that arrived above it.
+    chat.backfill([
+      said(1, "earlier"),
+      piece(2, "ok. "),
+      said(3, "question"),
+      piece(4, "first half, "),
+    ]);
+    const after = groupTurns(chat.entries(), false);
+    expect(after).toHaveLength(3);
+    expect(after[1]?.head?.seq).toBe(3);
+    expect(after[1]?.blocks[0]).toMatchObject({ kind: "text", text: "first half, second half. " });
+    expect(after[1]?.key).not.toBe(before[0]?.key);
+    expect(prepended(after, top)).toBe(1);
   });
 
   it("shows errors as blocks of their own", () => {

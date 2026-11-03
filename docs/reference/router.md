@@ -55,11 +55,26 @@ endpoint that names them differently does not take.
 
 An OpenAI endpoint of Moebius's own kind says which reasoning levels each of its models takes, in
 `data[].capabilities.reasoning_efforts` of the list the router asks for the pickers (below); the server asks every
-upstream that list as it starts and every hour after. For every level whose own name the endpoint does not take,
-Moebius writes the name to send into the run's `models.json` beside the model (see
-[Pi-Bolt's model configuration](harness-configuration.md#what-a-run-is-given)): the name at that level's place in the
-endpoint's list, or the last of the list when it is shorter, so that a level harder than any the endpoint names asks
-for the hardest it has. An endpoint that lists nothing is given nothing, and the harness sends the level's own name.
+upstream that list as it starts, every hour after, and as soon as `router.upstreams` is edited. What an upstream said
+is kept until it answers again: an ask that fails (a timeout, an error status) changes nothing that was learned of it,
+and editing the upstreams forgets only those no longer in the list. A run begun in the first moments after the server
+starts, before any upstream has answered, is written without the names, as for an endpoint that lists none.
+
+For every level whose own name the endpoint does not take, Moebius writes the name to send into the run's `models.json`
+beside the model (see [Pi-Bolt's model configuration](harness-configuration.md#what-a-run-is-given)). The names of the
+levels, easiest first, are `none` or `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; a level goes to the
+listed name nearest to it by that order, the harder one when two are as near, so that a level harder than any the
+endpoint names asks for the hardest it has. `off` goes to `none` (or `off`) when the endpoint lists one and to its
+quietest name otherwise; no other level goes to `none`. A list none of whose names is one of those is taken by place,
+the name at the level's place in the list or its last. An endpoint that lists nothing is given nothing, and the harness
+sends the level's own name.
+
+The names are those of concrete models. A model class (see [Model classes](#model-classes)) is answered by whichever of
+its models is picked at the request, so no one map is right for it: it has no map, every level is offered for it, and
+the harness sends the level's own name, which the router passes on as it came. To rename levels for a class's models,
+name the models in `[router.model_thinking]`; it applies to a request that names the model itself. When two upstreams
+list a model of the same id, the first in `router.upstreams` is the one whose levels are used.
+
 `[router.model_thinking]` (see [configuration](configuration.md#routermodel_thinking)) writes the names of a model by
 hand and is what a run is given when it names the model, whatever the endpoint says.
 

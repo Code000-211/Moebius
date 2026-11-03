@@ -12,7 +12,7 @@ import { startChat } from "../../api/calls/chat";
 import { deleteAgent, saveAgent } from "../../api/calls/harness";
 import { availableModels, saveSettings } from "../../api/calls/models";
 import { keys } from "../../api/keys";
-import { type AvailableModels, listedLevels, offeredLevels } from "../../api/types/chat";
+import { type AvailableModels, listedModel, offeredLevels } from "../../api/types/chat";
 import type { AgentDetail, McpServer, Runner, SkillListed } from "../../api/types/harness";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
@@ -232,7 +232,7 @@ export function AgentEditor(props: EditorProps) {
   const choices = modelChoices(available);
   const builtIn = form.builtIn;
   const skillsOffered = (skills ?? []).filter((skill) => !skill.built_in);
-  const levels = [NOT_SET, ...offeredLevels(listedLevels(available, form.model))];
+  const levels = [NOT_SET, ...offeredLevels(listedModel(available, form.model))];
   if (form.thinking !== null && !levels.includes(form.thinking)) levels.push(form.thinking);
   const places = [THIS_SERVER, ...runners.map((runner) => runner.name)];
   if (form.runner !== null && !places.includes(form.runner)) places.push(form.runner);

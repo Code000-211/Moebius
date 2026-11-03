@@ -19,6 +19,13 @@ import { Conversation, type Entry } from "./conversation";
 /** How many entries the window holds before the read stops and leaves the rest of the chat above it. */
 export const MESSAGE_WINDOW = 64;
 
+/**
+ * The most pages the first read fetches before it shows what it has. A chat whose events fold into few entries — a
+ * very long answer streamed in thousands of pieces — would otherwise be read to its beginning before anything is
+ * drawn as loaded; the rest waits for `loadOlder` like any other part above the window.
+ */
+export const MAX_FIRST_PAGES = 20;
+
 export interface Thread {
   entries: Entry[];
   /** The highest `seq` the page holds; 0 when none. */
@@ -48,6 +55,8 @@ interface Reading {
   olderLoading: boolean;
   /** Whether the stream missed events while the first read was still going, to be read when it ends. */
   missed: boolean;
+  /** Why the latest read failed; kept for events of the stream to publish while nothing has been read. */
+  error: string | null;
 }
 
 const EMPTY: Thread = {
@@ -87,6 +96,7 @@ export function useThread(id: number | null): Thread {
   const publish = (error: string | null) => {
     const current = conversation.current;
     if (!current) return;
+    current.error = error;
     setThread({
       entries: current.value.entries(),
       lastSeq: current.value.lastSeq,
@@ -113,6 +123,14 @@ export function useThread(id: number | null): Thread {
       current.missed = true;
       return;
     }
+    if (!current.loaded) {
+      // The first read failed, and the stream has brought events since: reading only after them would call the chat
+      // read with its history out of reach, so the end of the chat is read again — below what the stream brought —
+      // and what was missed is read once it has.
+      current.missed = true;
+      readEnd(current);
+      return;
+    }
     const read = ++latestRead.current;
     const after = current.value.lastSeq;
     runEvents(current.id, after)
@@ -136,7 +154,9 @@ export function useThread(id: number | null): Thread {
   function readEnd(current: Reading): void {
     const read = ++latestRead.current;
     current.reading = true;
+    let pages = 0;
     const page = () => {
+      pages += 1;
       const below = current.value.oldestSeq;
       olderEvents(current.id, below === 0 ? null : below)
         .then((events) => {
@@ -145,7 +165,11 @@ export function useThread(id: number | null): Thread {
           // A page that came back full says there was more where it came from, which is all a person needs to be
           // told: the events themselves say how far back they go.
           current.older = events.length >= EVENT_PAGE;
-          if (current.older && current.value.entries().length < MESSAGE_WINDOW) {
+          if (
+            current.older &&
+            pages < MAX_FIRST_PAGES &&
+            current.value.entries().length < MESSAGE_WINDOW
+          ) {
             publish(null);
             page();
             return;
@@ -213,6 +237,7 @@ export function useThread(id: number | null): Thread {
         reading: false,
         olderLoading: false,
         missed: false,
+        error: null,
       };
       setThread({ ...EMPTY, loadOlder: loadOlderNow });
       readEnd(conversation.current);
@@ -237,7 +262,9 @@ export function useThread(id: number | null): Thread {
     if (frame.current !== null) return;
     frame.current = requestAnimationFrame(() => {
       frame.current = null;
-      publish(null);
+      // A chat that could not be read yet keeps saying so while the stream brings events: they are not the history.
+      const current = conversation.current;
+      if (current) publish(current.loaded ? null : current.error);
     });
   });
 

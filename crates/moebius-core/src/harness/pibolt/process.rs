@@ -115,8 +115,8 @@ impl PiBolt {
     /// Writes the agent directory `agent_dir`: `models.json` with the router as the `moebius` provider, and, if the agent
     /// has MCP servers, `mcp.json` with the MCP gateway, which is told the servers the run's token may use (without it
     /// Pi connects to none). Both hold the run's token, so only the server's user can read them. The model is marked as
-    /// one that reasons when the agent has a reasoning level other than `off`, without which Pi would turn the level off,
-    /// and is given the level names of `[router.model_thinking]` when its endpoint takes any.
+    /// one that reasons when the agent has a reasoning level other than `off`, without which Pi would turn the level
+    /// off, and is given the level names of `[router.model_thinking]` when its endpoint takes any.
     pub(super) fn write_agent_dir(
         &self,
         agent_dir: PathBuf,

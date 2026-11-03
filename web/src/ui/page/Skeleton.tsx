@@ -12,14 +12,15 @@
  * The bars carry no words. A sentence that is about to be replaced by a different sentence is a promise nothing can
  * keep, and the shape of it is the same promise kept quietly. The one thing still worth saying out loud is that the
  * page is being read, so a placeholder is a `role="status"` region whose message is spoken rather than drawn — the same
- * message the spinner used to show. The bars themselves are hidden from a screen reader: they are the shape of writing,
- * not writing.
+ * message the spinner used to show. The region is drawn empty and given its message right after it is mounted, because
+ * a live region is announced when its text changes and not reliably when it is inserted already holding text. The
+ * bars themselves are hidden from a screen reader: they are the shape of writing, not writing.
  *
  * The fill is the hairline token, the tenth of the text colour that a divider is drawn with, so a bar reads as a line
  * that has not been drawn yet rather than as a control that cannot be used. It works in either theme and adds no colour
  * of its own to the standard.
  */
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { cn } from "../lib/cn";
 
 /** The widths the lines of one block are drawn at, so several bars do not read as one long word. */
@@ -53,9 +54,13 @@ export function Reading({
   children: ReactNode;
   className?: string;
 }) {
+  // A live region is announced when its text changes, not when it is inserted holding text, so it is drawn empty and
+  // given its words once it is on the page.
+  const [said, setSaid] = useState("");
+  useEffect(() => setSaid(message ?? ""), [message]);
   return (
     <div role={message ? "status" : undefined} className={className}>
-      {message && <span className="sr-only">{message}</span>}
+      {message && <span className="sr-only">{said}</span>}
       {children}
     </div>
   );

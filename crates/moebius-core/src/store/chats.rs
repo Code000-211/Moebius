@@ -51,13 +51,14 @@ impl Store {
     }
 
     /// Picks up a chat that ended when its agent went away: it works from now on and is no longer ended, so that what
-    /// the person writes next belongs to it again.
-    pub fn reopen_chat(&self, id: i64) -> Result<()> {
-        self.conn().execute(
-            "UPDATE runs SET status = 'running', ended_at = NULL WHERE id = ?1",
+    /// the person writes next belongs to it again. Only a chat that is stopped is picked up; false when it was not,
+    /// because another message got there first.
+    pub fn reopen_chat(&self, id: i64) -> Result<bool> {
+        let changed = self.conn().execute(
+            "UPDATE runs SET status = 'running', ended_at = NULL WHERE id = ?1 AND status = 'stopped'",
             [id],
         )?;
-        Ok(())
+        Ok(changed == 1)
     }
 
     pub fn set_run_repository(&self, id: i64, repository_id: i64) -> Result<()> {

@@ -583,6 +583,74 @@ fn a_chat_on_claude_code_waits_between_messages_resumes_its_session_for_another_
     assert_eq!(shown.unwrap(), "written");
 }
 
+#[test]
+fn a_chat_on_claude_code_whose_agent_went_away_is_taken_up_again_with_what_was_said() {
+    let s = setup();
+    let repository = s.app.repository(s.repo).unwrap();
+    let run = s
+        .claude
+        .start_chat(
+            &s.app,
+            "Coder",
+            (Some(&repository), false),
+            Some("Hello"),
+            Some("Hello"),
+            "chat",
+            &ChatSettings::default(),
+        )
+        .unwrap();
+    wait_for_run(&s.app, run.id, "the agent answers", |run| {
+        run.status == "waiting"
+    });
+    s.app
+        .say_in_chat(&s.claude, run.id, "[write notes.txt] Again", None)
+        .unwrap();
+    wait_for_run(&s.app, run.id, "the agent answers again", |run| {
+        run.status == "waiting"
+            && s.app
+                .store
+                .events(run.id)
+                .unwrap()
+                .iter()
+                .filter(|e| e.kind == "agent_settled")
+                .count()
+                == 2
+    });
+    assert!(s.claude.stop(run.id));
+    let ended = wait_until_ended(&s.app, run.id);
+    assert_eq!(ended.status, "stopped");
+
+    let again = s
+        .app
+        .say_in_chat(&s.claude, run.id, "Carry on", None)
+        .unwrap();
+    assert_eq!(again.id, run.id, "the same chat");
+    assert_eq!(again.ended_at, None);
+    wait_for_run(&s.app, run.id, "the agent answers", |run| {
+        run.status == "waiting"
+            && s.app
+                .store
+                .events(run.id)
+                .unwrap()
+                .iter()
+                .filter(|e| e.kind == "agent_settled")
+                .count()
+                == 3
+    });
+    // The new Claude Code was told what was said, on a session of its own.
+    let argv: Vec<String> = serde_json::from_str(&written(&s.app, run.id, "argv.json")).unwrap();
+    assert!(argv.contains(&"--session-id".to_string()), "{argv:?}");
+    assert!(!argv.contains(&"--resume".to_string()), "{argv:?}");
+    let told = written(&s.app, run.id, "stdin.jsonl");
+    assert!(
+        told.contains("This chat continues an earlier one"),
+        "{told}"
+    );
+    assert!(told.contains("Carry on"), "{told}");
+    assert!(s.claude.stop(run.id));
+    wait_until_ended(&s.app, run.id);
+}
+
 /// An Anthropic upstream that answers every request with a text and a call of `bash`.
 async fn upstream_calling_bash() -> String {
     use axum::routing::post;

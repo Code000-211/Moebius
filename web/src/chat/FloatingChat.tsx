@@ -17,6 +17,7 @@ import { chats as readChats, say, startChat } from "../api/calls/chat";
 import { keys } from "../api/keys";
 import { Tag } from "../ui/chat/Tag";
 import { Button } from "../ui/components/Button";
+import { Notice } from "../ui/page/Notice";
 import { Composer } from "./Composer";
 import { isOpen, isWorking, statusTag, takesMessage } from "./format";
 import { pageContext } from "./pageContext";
@@ -186,21 +187,26 @@ export function FloatingChat() {
         </Button>
       </header>
       <div className="min-h-0 flex-1" data-testid="floating-conversation">
-        <ThreadView
-          entries={chatId === null ? [] : thread.entries}
-          working={working}
-          sent={sent}
-          // A chat that has not been started yet is empty, not still being read: it gets the starters, not bars.
-          loading={chatId !== null && !thread.loaded}
-          loadingMessage="Reading the chat"
-          hasOlder={chatId !== null && thread.hasOlder}
-          olderLoading={thread.olderLoading}
-          loadOlder={thread.loadOlder}
-          empty="Ask the agent about this page, or start from one of these. It is told where you are."
-          // The starters are for the moment before anything is written; once a message is on its way they are in the way.
-          emptyAction={message.trim() === "" ? <Starters onPick={write} /> : undefined}
-          compact
-        />
+        {/* A conversation already read stays on screen: a failed read shows its reason above it, not instead of it,
+            and a read that never succeeded shows the reason where the bars would have been. */}
+        {chatId !== null && thread.error ? <Notice tone="error">{thread.error}</Notice> : null}
+        {chatId !== null && thread.error && !thread.loaded ? null : (
+          <ThreadView
+            entries={chatId === null ? [] : thread.entries}
+            working={working}
+            sent={sent}
+            // A chat that has not been started yet is empty, not still being read: it gets the starters, not bars.
+            loading={chatId !== null && !thread.loaded}
+            loadingMessage="Reading the chat"
+            hasOlder={chatId !== null && thread.hasOlder}
+            olderLoading={thread.olderLoading}
+            loadOlder={thread.loadOlder}
+            empty="Ask the agent about this page, or start from one of these. It is told where you are."
+            // The starters are for the moment before anything is written; once a message is on its way they are in the way.
+            emptyAction={message.trim() === "" ? <Starters onPick={write} /> : undefined}
+            compact
+          />
+        )}
       </div>
       <Composer
         value={message}

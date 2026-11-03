@@ -25,6 +25,17 @@ describe("a conversation that is still being read", () => {
       expect(bar.textContent).toBe("");
   });
 
+  it("keeps the turns already read when the thread is read again", () => {
+    // A read that is repeated while the words are on the screen is a refresh: the bars are for the first read only.
+    const said: Entry = { at: 1, seq: 1, kind: "person", said: "said", message: "Hello there" };
+    const { rerender } = render(
+      <ThreadView {...nothing} entries={[said]} loading loadingMessage="Reading the chat" />,
+    );
+    expect(screen.queryByTestId("thread-loading")).toBeNull();
+    rerender(<ThreadView {...nothing} entries={[said]} loadingMessage="Reading the chat" />);
+    expect(screen.queryByTestId("thread-loading")).toBeNull();
+  });
+
   it("says the empty place once the events have been read", () => {
     render(<ThreadView {...nothing} empty="Start with one of these." />);
     expect(screen.queryByTestId("thread-loading")).toBeNull();

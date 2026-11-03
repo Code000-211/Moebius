@@ -344,3 +344,59 @@ async fn a_chat_in_the_harness_configuration_needs_a_harness_repository_and_no_r
         .await;
     assert_eq!(status, 422, "{body}");
 }
+
+#[tokio::test]
+async fn a_chat_in_the_harness_configuration_whose_agent_went_away_is_taken_up_again_on_its_branch()
+{
+    let dir = tempfile::tempdir().unwrap();
+    let origin = harness_origin(dir.path());
+    let server = server(dir.path(), &origin);
+    let api = Api::start(&server).await;
+
+    let chat = harness_chat(&api, &server, &skill_message()).await;
+    let worktree = PathBuf::from(
+        server
+            .app
+            .store
+            .run(chat)
+            .unwrap()
+            .unwrap()
+            .worktree
+            .unwrap(),
+    );
+    let (status, body) = api
+        .call(
+            reqwest::Method::POST,
+            &format!("/v1/runs/{chat}/stop"),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(status, 200, "{body}");
+    let ended = wait_for(&server, chat, |run| run.ended_at.is_some()).await;
+    assert_eq!(ended.status, "stopped");
+    assert!(!worktree.exists(), "the worktree went with the agent");
+
+    let (status, body) = api
+        .call(
+            reqwest::Method::POST,
+            &format!("/v1/chats/{chat}/messages"),
+            Some(json!({ "message": "Carry on" })),
+        )
+        .await;
+    assert_eq!(status, 200, "{body}");
+    let run = wait_for(&server, chat, |run| run.status == "waiting").await;
+    assert_eq!((run.ended_at, run.harness_repository), (None, true));
+    assert!(
+        worktree.join("skills/testing/SKILL.md").is_file(),
+        "the branch is back where its agent left it"
+    );
+    let (status, body) = api
+        .call(
+            reqwest::Method::POST,
+            &format!("/v1/runs/{chat}/stop"),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(status, 200, "{body}");
+    wait_for(&server, chat, |run| run.ended_at.is_some()).await;
+}
