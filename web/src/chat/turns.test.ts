@@ -2,8 +2,16 @@ import { describe, expect, it } from "vitest";
 import type { Entry, ToolCall } from "./conversation";
 import { groupTurns, stepViews } from "./turns";
 
+/** Entries are named by the event that started them, so a test gives each one the next `seq`. */
+let next = 0;
+const seq = () => {
+  next += 1;
+  return next;
+};
+
 const call = (id: string, tool: string, input: ToolCall["input"], refusedCall = false): Entry => ({
   at: 0,
+  seq: seq(),
   kind: "tool",
   call: {
     id,
@@ -16,11 +24,25 @@ const call = (id: string, tool: string, input: ToolCall["input"], refusedCall = 
   },
 });
 const read = (id: string, path: string) => call(id, "read", { type: "read", path });
-const text = (value: string): Entry => ({ at: 0, kind: "text", text: value });
-const person = (message: string): Entry => ({ at: 0, kind: "person", said: "said", message });
-const thinking = (value: string): Entry => ({ at: 0, kind: "thinking", text: value });
+const text = (value: string): Entry => ({ at: 0, seq: seq(), kind: "text", text: value });
+const person = (message: string): Entry => ({
+  at: 0,
+  seq: seq(),
+  kind: "person",
+  said: "said",
+  message,
+});
+const thinking = (value: string): Entry => ({
+  at: 0,
+  seq: seq(),
+  kind: "thinking",
+  text: value,
+});
 /** The same entry, arrived at `when`, so a test can space a conversation out in time. */
 const at = (entry: Entry, when: number): Entry => ({ ...entry, at: when });
+/** The same entry with more of the answer on it, as the conversation replaces one that is still streaming. */
+const grown = (entry: Entry, more: string): Entry =>
+  entry.kind === "text" ? { ...entry, text: entry.text + more } : entry;
 /** The entries of a block of steps, numbered as the conversation numbers them. */
 const indexed = (entries: Entry[]) => entries.map((entry, index) => ({ index, entry }));
 
@@ -43,7 +65,7 @@ describe("groupTurns", () => {
     const turns = groupTurns(
       [
         person("go"),
-        { at: 0, kind: "thinking", text: "hm" },
+        thinking("hm"),
         call("a", "bash", { type: "command", command: "ls" }),
         text("Done."),
         call("b", "bash", { type: "command", command: "pwd" }),
@@ -65,16 +87,24 @@ describe("groupTurns", () => {
     });
   });
 
-  it("keeps the keys of earlier turns when the conversation grows", () => {
-    const before = groupTurns([person("hi"), text("a")], false);
-    const after = groupTurns([person("hi"), text("ab"), person("more")], false);
-    expect(after[0]?.key).toBe(before[0]?.key);
-    expect(after[0]?.blocks[0]?.key).toBe(before[0]?.blocks[0]?.key);
+  it("keeps the keys of a turn when the conversation grows above it as well as below", () => {
+    const greeting = person("hi");
+    const answer = text("a");
+    const before = groupTurns([greeting, answer], false);
+    // The answer arrived in full, and a page of older messages came in above it. A turn is named by what it is, not by
+    // how many came before it, so what a person had opened stays open and the list keeps its place.
+    const after = groupTurns(
+      [person("what came before"), greeting, grown(answer, "b"), person("more")],
+      false,
+    );
+    expect(after).toHaveLength(3);
+    expect(after[1]?.key).toBe(before[0]?.key);
+    expect(after[1]?.blocks[0]?.key).toBe(before[0]?.blocks[0]?.key);
   });
 
   it("shows errors as blocks of their own", () => {
     const turns = groupTurns(
-      [person("hi"), { at: 0, kind: "error", source: "model", message: "401" }],
+      [person("hi"), { at: 0, seq: seq(), kind: "error", source: "model", message: "401" }],
       false,
     );
     expect(turns[0]?.blocks).toMatchObject([{ kind: "error", source: "model", message: "401" }]);

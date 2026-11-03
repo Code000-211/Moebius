@@ -11,6 +11,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
 import { type RawData, type WebSocket, WebSocketServer } from "ws";
+import { eventPage } from "./events";
 
 const NOW = Math.floor(Date.now() / 1000);
 
@@ -237,10 +238,7 @@ export function createFakeRuns(
         });
       }
       if (method === "GET" && one[2] === "/events") {
-        const after = Number(url.searchParams.get("after") ?? 0);
-        const limit = Number(url.searchParams.get("limit") ?? 500);
-        const page = (events.get(id) ?? []).filter((event) => event.seq > after).slice(0, limit);
-        return reply(response, 200, page);
+        return reply(response, 200, eventPage(events.get(id) ?? [], url.searchParams));
       }
       if (method === "POST" && one[2] === "/steer") {
         const body = JSON.parse((await readBody(request)) || "{}") as Record<string, unknown>;

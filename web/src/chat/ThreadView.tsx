@@ -14,15 +14,17 @@ import {
 } from "react";
 import { type ScrollerProps, Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { Turn } from "../ui/chat/Turn";
+import { Button } from "../ui/components/Button";
 import { Empty } from "../ui/page/Empty";
 import { useScrollFades } from "../ui/page/ScrollFades";
-import { SkeletonThread } from "../ui/page/Skeleton";
+import { Reading, Skeleton, SkeletonThread } from "../ui/page/Skeleton";
 import type { Entry } from "./conversation";
 import {
   afterScroll,
   afterSend,
   afterToggle,
   byPerson,
+  prepended,
   type ScrollState,
   shouldRepin,
 } from "./follow";
@@ -36,23 +38,73 @@ import { groupTurns } from "./turns";
  */
 function FadedScroller({ children, style, ref, ...rest }: ScrollerProps) {
   const fades = useScrollFades<HTMLDivElement>();
+  const given = useRef(ref);
+  given.current = ref;
+  const hold = useCallback(
+    (element: HTMLDivElement | null) => {
+      fades.box.current = element;
+      const target = given.current;
+      if (typeof target === "function") target(element);
+      else if (target) target.current = element;
+    },
+    [fades.box],
+  );
   return (
-    <div
-      {...rest}
-      ref={(element) => {
-        fades.box.current = element;
-        if (typeof ref === "function") ref(element);
-        else if (ref) ref.current = element;
-      }}
-      onScroll={fades.measure}
-      style={{ ...style, ...fades.style }}
-    >
+    <div {...rest} ref={hold} onScroll={fades.measure} style={{ ...style, ...fades.style }}>
       {children}
     </div>
   );
 }
 
-const COMPONENTS = { Scroller: FadedScroller };
+/**
+ * What the row above the oldest turn can say: whether the chat goes on above what is drawn, and how to read it. It
+ * comes to the list as its context, so the components of the list are named once rather than rebuilt each render.
+ */
+interface Older {
+  hasOlder: boolean;
+  olderLoading: boolean;
+  loadOlder?: () => void;
+}
+
+/**
+ * Where the list of turns starts counting. It counts down as turns arrive above what is drawn, and a chat has no
+ * known length, so it starts far from zero: a list whose count goes below zero stops working altogether.
+ */
+const FIRST_INDEX = 1_000_000;
+
+/**
+ * The row above the oldest turn: it says the chat goes on past what is drawn, and reads the rest. While that is on its
+ * way it draws the shape of a turn, which is what is coming.
+ */
+function OlderRow({ context }: { context: Older }) {
+  if (!context.hasOlder) return null;
+  return (
+    <div className="flex min-h-14 items-center justify-center px-4 pb-3" data-testid="older">
+      {context.olderLoading ? (
+        <Reading
+          message="Reading earlier messages"
+          className="flex w-full max-w-prose flex-col gap-2"
+        >
+          <Skeleton className="h-4 w-1/4" />
+          <Skeleton className="w-full" />
+          <Skeleton className="w-3/4" />
+        </Reading>
+      ) : (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => context.loadOlder?.()}
+          data-testid="load-older"
+        >
+          Load earlier messages
+        </Button>
+      )}
+    </div>
+  );
+}
+
+const COMPONENTS = { Scroller: FadedScroller, Header: OlderRow };
 
 interface ThreadViewProps {
   entries: Entry[];
@@ -78,6 +130,12 @@ interface ThreadViewProps {
    * the empty place sits on the dock's own surface instead of in a card inside it.
    */
   compact?: boolean;
+  /** Whether the chat goes on above the oldest turn drawn. A long one opens at its end; the rest is read from here. */
+  hasOlder?: boolean;
+  /** Whether the messages above are being read. */
+  olderLoading?: boolean;
+  /** Reads the messages above the oldest turn drawn. */
+  loadOlder?: () => void;
 }
 
 export function ThreadView({
@@ -90,6 +148,9 @@ export function ThreadView({
   emptyTitle = "Nothing said yet",
   emptyAction,
   compact = false,
+  hasOlder = false,
+  olderLoading = false,
+  loadOlder,
 }: ThreadViewProps) {
   // An answer arrives piece by piece, and the person may be typing while it does: the words shown trail the events by
   // a render rather than cutting the keystroke off, and a long conversation groups once per batch instead of per piece.
@@ -101,8 +162,17 @@ export function ThreadView({
   /** Takes the listeners of the scroller currently held, so attaching a new one leaves nothing behind. */
   const leave = useRef<(() => void) | null>(null);
   const state = useRef<ScrollState>({ follow: true, top: 0 });
+  /**
+   * Where the list starts counting from, and the turn it counted from before. Older turns arrive above what is drawn,
+   * and a list that counted from zero would move the turn a person is reading down by exactly what was added over it,
+   * so the number falls as turns are added and that turn keeps its place. Once the turn it counted from is gone, what
+   * arrived is another conversation, and the count starts again.
+   */
+  const [anchor, setAnchor] = useState({ base: FIRST_INDEX, first: null as string | null });
   const lastGesture = useRef<number | null>(null);
   const repins = useRef(0);
+
+  const first = turns[0]?.key ?? null;
 
   const toggle = useCallback((key: string) => {
     // What is opened is read where it is, so the list lets go of its end rather than scrolling the new text away.
@@ -175,6 +245,18 @@ export function ThreadView({
     [onScroll],
   );
 
+  if (first !== null && first !== anchor.first) {
+    const above = prepended(turns, anchor.first);
+    setAnchor(above === null ? { base: FIRST_INDEX, first } : { base: anchor.base - above, first });
+  }
+
+  // Reaching the top of the list is how a person asks for what is above it. The list opens at its end, so its top is
+  // only reached by someone who scrolled up: following an answer is never interrupted by a page nobody asked for.
+  const reachedStart = useCallback(() => {
+    if (state.current.follow) return;
+    loadOlder?.();
+  }, [loadOlder]);
+
   // A message just sent is followed to the end, wherever the person had scrolled.
   // biome-ignore lint/correctness/useExhaustiveDependencies: it runs when `sent` counts one more message
   useEffect(() => {
@@ -212,6 +294,9 @@ export function ThreadView({
       scrollerRef={attach}
       totalListHeightChanged={toEnd}
       computeItemKey={(_, turn) => turn.key}
+      firstItemIndex={anchor.base}
+      startReached={reachedStart}
+      context={{ hasOlder, olderLoading, loadOlder }}
       increaseViewportBy={400}
       components={COMPONENTS}
       data-testid="thread"

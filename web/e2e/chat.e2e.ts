@@ -208,6 +208,49 @@ describe("the chat page", () => {
   });
 });
 
+describe("a chat longer than the page opens with", () => {
+  it.skipIf(usesRealServer)("opens at its end and reads what is above from its top", async () => {
+    await open("/chat");
+    // Three hundred messages, which is a good deal more than the window the page opens with.
+    const events: Array<[string, Record<string, unknown>]> = [];
+    for (let n = 1; n <= 300; n++) {
+      events.push(["said", { message: `Question ${n}` }]);
+      events.push([
+        "message_update",
+        { assistantMessageEvent: { type: "text_delta", delta: `Answer ${n}. ` } },
+      ]);
+    }
+    const id = fake().seed({ title: "Long", answered: 300, seen: 300, events });
+    await page.goto(`${server.url}/chat/${id}`);
+    await page.getByText("Answer 300.").waitFor();
+
+    // The chat was read from its end and nowhere else: one request, for the newest events.
+    expect(fake().reads).toHaveLength(1);
+    expect(fake().reads[0]?.tail).toBe("true");
+    // And the beginning is not on the page, because it was never read. What is above it is offered from its top.
+    expect(await page.getByText("Question 1", { exact: true }).count()).toBe(0);
+    await page.getByTestId("load-older").waitFor();
+
+    // The person scrolls up. Reaching the top of the conversation asks for what is above it.
+    await thread().hover();
+    await page.mouse.wheel(0, -2_000);
+    await page.mouse.wheel(0, -100_000);
+    await expect.poll(() => fake().reads.length).toBe(2);
+    // The page above stops below the oldest message held, and the conversation does not move down to make room
+    // for what arrives there: the turn being read stays where it was.
+    expect(Number(fake().reads[1]?.before)).toBeGreaterThan(1);
+    await expect.poll(() => distanceFromEnd(thread())).toBeGreaterThan(1_000);
+    // The chat begins with what that page brought, so the top of the conversation now holds its first message, the
+    // offer is gone, and scrolling there again asks for nothing.
+    await page.mouse.wheel(0, -100_000);
+    await page.getByText("Question 1", { exact: true }).waitFor();
+    await page.getByTestId("older").waitFor({ state: "detached" });
+    await expect
+      .poll(() => fake().reads.filter((read) => read.before !== undefined).length)
+      .toBe(1);
+  });
+});
+
 describe("an answer that streams in", () => {
   it.skipIf(usesRealServer)("is followed to its end unless the person scrolled up", async () => {
     await open("/chat");

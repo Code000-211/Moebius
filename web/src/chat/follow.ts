@@ -60,3 +60,14 @@ export function afterSend(state: ScrollState): ScrollState {
 export function afterToggle(state: ScrollState): ScrollState {
   return { ...state, follow: false };
 }
+
+/**
+ * How many turns arrived above the one that was first: `was` is the key of the turn at the top of the list before the
+ * conversation grew, and the answer is where that turn is now. `null` says the turn is gone, which is a different
+ * conversation rather than an older page of this one, and the list starts counting from zero again.
+ */
+export function prepended(turns: readonly { key: string }[], was: string | null): number | null {
+  if (was === null) return 0;
+  const at = turns.findIndex((turn) => turn.key === was);
+  return at < 0 ? null : at;
+}
