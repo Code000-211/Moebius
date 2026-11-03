@@ -90,8 +90,12 @@ describe("the inbox", () => {
   it("loads for a real server and for the fake", async () => {
     await open("/inbox");
     await page.getByRole("heading", { name: "Inbox", level: 1 }).waitFor();
-    await page.getByText(usesRealServer ? "Nothing needs you." : /things need you/).waitFor();
-    if (usesRealServer) await page.getByText("Everything runs on its own.").waitFor();
+    if (usesRealServer) {
+      await page.getByRole("heading", { name: "All caught up" }).waitFor();
+      await page.getByText(/Nothing is waiting on you\./).waitFor();
+    } else {
+      await page.getByText(/things need you/).waitFor();
+    }
   });
 
   it.skipIf(usesRealServer)(
@@ -389,7 +393,8 @@ describe("projects", () => {
   it("adds a repository, opens its board, lists it and removes it", async () => {
     await open("/projects");
     await page.getByRole("heading", { name: "Projects", level: 1 }).waitFor();
-    await page.getByRole("link", { name: "Add a repository" }).click();
+    // With no repository yet the empty page offers the link too; the header's is the one every page has.
+    await page.locator("header").getByRole("link", { name: "Add a repository" }).click();
     await page.waitForURL("**/projects/new");
     const add = page.getByRole("button", { name: "Add", exact: true });
     expect(await add.isDisabled()).toBe(true);

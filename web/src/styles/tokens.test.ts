@@ -10,11 +10,12 @@
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const css = readFileSync(new URL("./theme.css", import.meta.url), "utf8");
 const tailwind = readFileSync(new URL("./tailwind.css", import.meta.url), "utf8");
-const srcRoot = new URL("..", import.meta.url).pathname;
+const srcRoot = fileURLToPath(new URL("..", import.meta.url));
 
 /** The radii the standard allows: cards and sheets, controls, small pieces, pills. */
 const RADII = new Set(["16px", "12px", "8px", "999px"]);
