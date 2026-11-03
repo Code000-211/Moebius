@@ -11,12 +11,12 @@ import { useSearchParams } from "react-router";
 import { snapshot as readSnapshot } from "../../api/calls/board";
 import { keys } from "../../api/keys";
 import { Button } from "../../ui/components/Button";
-import { Loader } from "../../ui/components/Loader";
 import { useNow } from "../../ui/lib/useNow";
 import { Chip } from "../../ui/page/Chip";
 import { Empty } from "../../ui/page/Empty";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
+import { SkeletonList } from "../../ui/page/Skeleton";
 import { ItemCard } from "./ItemCard";
 import { chipName, count, type Filters, kindsOf, STUCK, shown, summary } from "./model";
 
@@ -34,7 +34,13 @@ export function InboxPage() {
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => readSnapshot() });
   const [params, setParams] = useSearchParams();
   const now = useNow();
-  if (data.isPending) return <Loader message="Reading the inbox" className="py-8" />;
+  if (data.isPending)
+    return (
+      <>
+        <PageHeader title="Inbox" />
+        <SkeletonList rows={3} message="Reading the inbox" />
+      </>
+    );
   if (data.isError) {
     return (
       <>

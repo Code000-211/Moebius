@@ -211,6 +211,40 @@ describe("the shell", () => {
   });
 });
 
+describe("a page that is still being read", () => {
+  it("shows the shape of what is coming while the server answers", async () => {
+    await fresh();
+    // The answer is held rather than slowed, so the test waits on the page and not on the clock.
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let asked = 0;
+    await page.route("**/v1/snapshot", async (route) => {
+      asked += 1;
+      await held;
+      await route.continue();
+    });
+    try {
+      await page.goto(server.loginUrl);
+      // The page stands while it is read, heading and all, rather than being a spinner in an empty window.
+      await page.getByRole("heading", { name: "Inbox", level: 1 }).waitFor();
+      const shape = page.getByRole("status").filter({ hasText: "Reading the inbox" });
+      await shape.waitFor();
+      // The state is still said, in words nobody has to look at, and the rows are drawn rather than written.
+      expect(await shape.locator("[aria-hidden='true']").count()).toBeGreaterThan(3);
+      expect(await page.locator(".animate-spin").count()).toBe(0);
+    } finally {
+      release();
+    }
+    // The shape gives way to what it stood for.
+    expect(asked).toBeGreaterThan(0);
+    await page.getByRole("status").filter({ hasText: "Reading the inbox" }).waitFor({
+      state: "detached",
+    });
+  });
+});
+
 describe("the command bar", () => {
   it("opens with Ctrl+K, filters the pages and opens the one chosen", async () => {
     await fresh();

@@ -18,12 +18,12 @@ import { thinkingLabel } from "../../ui/chat/ChatCollapsedThinking";
 import { ToolStatusDot } from "../../ui/chat/ToolStatusDot";
 import { toolStatus } from "../../ui/chat/Turn";
 import { Button } from "../../ui/components/Button";
-import { Loader } from "../../ui/components/Loader";
 import { cn } from "../../ui/lib/cn";
 import { useNow } from "../../ui/lib/useNow";
 import { Empty } from "../../ui/page/Empty";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
+import { SkeletonList } from "../../ui/page/Skeleton";
 import { Status } from "../../ui/page/Status";
 import {
   afterSteps,
@@ -44,7 +44,12 @@ export function FleetPage() {
   // How long a run has been going is said in seconds, so this page's clock ticks faster than the rest.
   const now = useNow(5_000);
   if (data.isPending || chats.isPending) {
-    return <Loader message="Reading the fleet" className="py-8" />;
+    return (
+      <>
+        <PageHeader title="Fleet" />
+        <SkeletonList rows={2} message="Reading the fleet" />
+      </>
+    );
   }
   // A page that could not be read says so. Falling through to the empty state would claim that no agent is working,
   // which is the opposite of what happened, so the failure comes first and carries the way back.

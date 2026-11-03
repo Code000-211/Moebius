@@ -19,7 +19,6 @@ import { keys } from "../../api/keys";
 import type { Proposal, ReportError, RetroView } from "../../api/types/improve";
 import { Tag } from "../../ui/chat/Tag";
 import { Button } from "../../ui/components/Button";
-import { Loader } from "../../ui/components/Loader";
 import { dayName } from "../../ui/lib/format";
 import { Box } from "../../ui/page/Box";
 import { Empty } from "../../ui/page/Empty";
@@ -27,6 +26,7 @@ import { ListCard, ListDetail } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
 import { Body, PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
+import { SkeletonCard, SkeletonList } from "../../ui/page/Skeleton";
 import { Lessons } from "./Lessons";
 import {
   cardsLine,
@@ -75,7 +75,10 @@ export function RetroPage() {
         }
       />
       {list.isPending ? (
-        <Loader message="Reading the Retros" className="py-8" />
+        <ListDetail
+          list={<SkeletonList rows={4} message="Reading the Retros" />}
+          detail={<SkeletonCard lines={4} />}
+        />
       ) : list.isError ? (
         // A read that failed is not a server that has run no Retro yet.
         <ReadFailed
@@ -126,7 +129,7 @@ export function RetroPage() {
                   }
                 />
               ) : opened.isPending ? (
-                <Loader message="Reading the Retro" className="py-8" />
+                <SkeletonCard lines={5} message="Reading the Retro" />
               ) : opened.error ? (
                 <Notice tone="error">
                   {sayError(opened.error, "Could not read the Retro. Try again.")}

@@ -15,11 +15,11 @@ import { keys } from "../../api/keys";
 import type { ServerSettings } from "../../api/types/settings";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
-import { Loader } from "../../ui/components/Loader";
 import { Box } from "../../ui/page/Box";
 import { Field, Select } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 import { Body, PageHeader } from "../../ui/page/PageHeader";
+import { Reading, SkeletonCard } from "../../ui/page/Skeleton";
 import { Appearance } from "./Appearance";
 import type { Form } from "./fields";
 import {
@@ -44,7 +44,10 @@ export function SettingsPage() {
     return (
       <>
         {header}
-        <Loader message="Reading the settings" className="py-8" />
+        <Reading message="Reading the settings" className="grid items-start gap-6 xl:grid-cols-2">
+          <SkeletonCard lines={4} />
+          <SkeletonCard lines={4} />
+        </Reading>
       </>
     );
   }

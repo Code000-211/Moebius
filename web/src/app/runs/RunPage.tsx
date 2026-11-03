@@ -22,10 +22,10 @@ import { Changes } from "../../diff/Changes";
 import { useServerEvents } from "../../live/LiveProvider";
 import { Terminal } from "../../terminal/LazyTerminal";
 import { Button } from "../../ui/components/Button";
-import { Loader } from "../../ui/components/Loader";
 import { cn } from "../../ui/lib/cn";
 import { Empty } from "../../ui/page/Empty";
 import { PageHeader } from "../../ui/page/PageHeader";
+import { SkeletonCard } from "../../ui/page/Skeleton";
 import { Status, type Tone } from "../../ui/page/Status";
 import { TabPanel, Tabs } from "../../ui/page/Tabs";
 
@@ -95,7 +95,13 @@ function OpenRun({ id }: { id: number }) {
   });
   useEffect(() => () => clearTimeout(refresh.current), []);
 
-  if (run.isPending) return <Loader message="Reading the run" className="py-8" />;
+  if (run.isPending)
+    return (
+      <>
+        <PageHeader title={`Run ${id}`} />
+        <SkeletonCard lines={5} message="Reading the run" />
+      </>
+    );
   if (run.isError || !run.data) {
     const missing = isApiError(run.error) && run.error.status === 404;
     return (

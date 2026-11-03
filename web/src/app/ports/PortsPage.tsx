@@ -9,12 +9,12 @@ import { Link } from "react-router";
 import { ports as readPorts } from "../../api/calls/runs";
 import { keys } from "../../api/keys";
 import { CopyButton } from "../../ui/chat/CopyButton";
-import { Loader } from "../../ui/components/Loader";
 import { cn } from "../../ui/lib/cn";
 import { Empty } from "../../ui/page/Empty";
 import { CELL, Table } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
+import { SkeletonLines } from "../../ui/page/Skeleton";
 import { forwardCommand, owner, ownerPath } from "./ports";
 
 export function PortsPage() {
@@ -32,7 +32,7 @@ export function PortsPage() {
           </>
         }
       />
-      {ports.isPending && <Loader message="Reading the ports" className="py-8" />}
+      {ports.isPending && <SkeletonLines lines={4} message="Reading the ports" />}
       {ports.isError && <Notice tone="error">Cannot read the ports. Try again.</Notice>}
       {ports.data && ports.data.length === 0 && (
         <div data-testid="no-ports">

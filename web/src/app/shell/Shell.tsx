@@ -6,9 +6,9 @@ import { Suspense, useEffect, useState } from "react";
 import { Outlet, useLocation } from "react-router";
 import { FloatingChat } from "../../chat/FloatingChat";
 import { useConnection, useReconnect } from "../../live/LiveProvider";
-import { Loader } from "../../ui/components/Loader";
 import { isShortcut } from "../../ui/lib/shortcuts";
 import { PageBoundary } from "../../ui/page/PageBoundary";
+import { SkeletonCard } from "../../ui/page/Skeleton";
 import { readFlag, writeFlag } from "../storage";
 import { CommandBar } from "./CommandBar";
 import { ConnectionBanner } from "./ConnectionBanner";
@@ -61,7 +61,7 @@ export function Shell({ unreachable, onRetry }: { unreachable: boolean; onRetry:
           {/* A page is fetched when it opens, so the shell holds the space it needs while it arrives, and says so
               when it does not: the page is the thing that is missing, not the app around it. */}
           <PageBoundary resetKey={location.pathname}>
-            <Suspense fallback={<Loader message="Opening the page" className="py-8" />}>
+            <Suspense fallback={<SkeletonCard lines={4} message="Opening the page" />}>
               <Outlet />
             </Suspense>
           </PageBoundary>

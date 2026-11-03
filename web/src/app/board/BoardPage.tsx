@@ -26,12 +26,12 @@ import {
   KanbanProvider,
 } from "../../ui/components/KanbanBoard";
 import { KanbanCardContent } from "../../ui/components/KanbanCardContent";
-import { Loader } from "../../ui/components/Loader";
 import { Empty } from "../../ui/page/Empty";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { ScrollFades } from "../../ui/page/ScrollFades";
+import { SkeletonBoard } from "../../ui/page/Skeleton";
 import { boardPath } from "../pages";
 import { ColumnMark } from "./ColumnMark";
 import { Dock } from "./Dock";
@@ -100,7 +100,13 @@ export function BoardPage() {
     [board, inbox, filters],
   );
 
-  if (data.isPending) return <Loader message="Reading the board" className="py-8" />;
+  if (data.isPending)
+    return (
+      <>
+        <PageHeader title="Board" />
+        <SkeletonBoard message="Reading the board" />
+      </>
+    );
   // A read that failed is not a board that does not exist, and the page that says so would send the person off to
   // choose a project that is already chosen.
   if (data.isError) {
