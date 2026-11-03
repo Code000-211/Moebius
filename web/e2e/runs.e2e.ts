@@ -135,7 +135,9 @@ describe("the run view", () => {
 
   it.skipIf(usesRealServer)("cannot steer or open a shell in a run that has ended", async () => {
     await open("/runs/1001");
-    await page.getByTestId("run-hint").getByText("This run has ended.").waitFor();
+    // Nothing under the conversation says the run is over: its own tag in the title row does, as it does for every run.
+    await page.getByRole("heading", { name: "Run 1001" }).waitFor();
+    expect(await page.getByTestId("run-hint").count()).toBe(0);
     expect(await tab("Terminal").count()).toBe(0);
     expect(await page.getByRole("textbox", { name: "Message" }).count()).toBe(0);
   });
