@@ -52,6 +52,20 @@ export const keys = {
   availableDecision: ["models", "decision"] as const,
   providers: ["providers"] as const,
   plugins: ["plugins"] as const,
+  /** Everything the package sheet and the Plugins page read about packages: `package_*` events make it stale. */
+  packages: ["packages"] as const,
+  /** The prefixes of the lists under `packages`, for reading them again without what a package opened in the sheet read. */
+  packagesSearch: ["packages", "search"] as const,
+  packagesInfo: ["packages", "info"] as const,
+  piSearchAll: ["packages", "pi", "search"] as const,
+  packageSearch: (query: string) => ["packages", "search", query] as const,
+  packagesInstalled: ["packages", "installed"] as const,
+  packageInfo: (name: string) => ["packages", "info", name] as const,
+  piSearch: (query: string, type: string | null) =>
+    ["packages", "pi", "search", query, type] as const,
+  piInstalled: ["packages", "pi", "installed"] as const,
+  /** Apart from `packages`: reading a Pi package fetches it from npm, so only a change of its source reads it again. */
+  piInfo: (source: string) => ["pi-package", source] as const,
   rules: ["rules"] as const,
   automations: ["automations"] as const,
   firings: (automation: number) => ["automations", "firings", automation] as const,

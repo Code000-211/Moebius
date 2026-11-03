@@ -1,7 +1,8 @@
 /**
  * The editor of one agent (the desktop app's A1 Bento workbench): the head with Save and Delete, the settings row, the
  * instructions (written, or asked of the Moebius agent), what a built-in agent brings itself, and the skills, MCP
- * servers and extensions the agent is given. A save is `PUT /v1/agents/{name}`, a commit in the harness configuration
+ * servers and extensions the agent is given (Browse Pi packages opens the package sheet on the pi.dev catalog, for this
+ * agent). A save is `PUT /v1/agents/{name}`, a commit in the harness configuration
  * repository; a server without one keeps its agents in `moebius.toml`, where the same editor saves
  * `agents.<name>` with `PUT /v1/settings` and has paths in place of the repository's skills and MCP servers.
  */
@@ -14,6 +15,7 @@ import { availableModels, saveSettings } from "../../api/calls/models";
 import { keys } from "../../api/keys";
 import { type AvailableModels, listedModel, offeredLevels } from "../../api/types/chat";
 import type { AgentDetail, McpServer, Runner, SkillListed } from "../../api/types/harness";
+import { usePackageSheet } from "../../packages/PackageSheetContext";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
 import { Box } from "../../ui/page/Box";
@@ -91,6 +93,7 @@ function Paths({
   addLabel,
   paths,
   onChange,
+  browse,
 }: {
   heading: string;
   aside: string;
@@ -99,6 +102,8 @@ function Paths({
   addLabel: string;
   paths: string[];
   onChange: (paths: string[]) => void;
+  /** A way to find the files in a catalog instead of typing their path. */
+  browse?: { label: string; onClick: () => void };
 }) {
   const [typed, setTyped] = useState("");
   const add = () => {
@@ -140,6 +145,11 @@ function Paths({
         >
           {addLabel}
         </Button>
+        {browse && (
+          <Button variant="secondary" size="sm" onClick={browse.onClick}>
+            {browse.label}
+          </Button>
+        )}
       </div>
     </Box>
   );
@@ -148,6 +158,7 @@ function Paths({
 export function AgentEditor(props: EditorProps) {
   const { inFile, skills, mcp, runners, available, saved, onSaved } = props;
   const queryClient = useQueryClient();
+  const packages = usePackageSheet();
   const [form, setForm] = useState<AgentForm>(props.initial);
   // What the server has, so that Save says whether it has anything to send even when the editor reopened on a draft.
   const [baseline, setBaseline] = useState<AgentForm>(props.stored);
@@ -633,6 +644,11 @@ export function AgentEditor(props: EditorProps) {
             addLabel="Add extension"
             paths={form.extensions}
             onChange={(extensions) => change({ extensions })}
+            browse={{
+              label: "Browse Pi packages",
+              // A package is named for an agent that exists; a new one has no files to name it in yet.
+              onClick: () => packages.open("pi", form.exists ? form.name : null),
+            }}
           />
         </div>
       </div>

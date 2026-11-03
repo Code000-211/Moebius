@@ -889,11 +889,16 @@ async fn the_nightly_check_puts_one_inbox_item_per_package_with_a_newer_version(
             }
         }
     };
+    let mut events = app.bus.subscribe();
     assert!(check().await.is_empty());
     assert!(app.store.inbox().unwrap().is_empty());
+    assert!(events.try_recv().is_err());
 
     publish_tools(&env.registry, "1.1.0", LOG_1_1);
     let found = check().await;
+    let event = events.try_recv().unwrap();
+    assert_eq!(event.kind, "extension_update_available");
+    assert_eq!(event.data, json!({"name": "pi-tools", "version": "1.1.0"}));
     assert_eq!(found.len(), 1);
     assert_eq!(
         (
@@ -911,6 +916,7 @@ async fn the_nightly_check_puts_one_inbox_item_per_package_with_a_newer_version(
     assert_eq!(inbox[0].data["to"], "1.1.0");
     // Checking again adds nothing; a newer version replaces the item.
     check().await;
+    assert!(events.try_recv().is_err());
     assert_eq!(app.store.inbox().unwrap().len(), 1);
     publish_tools(&env.registry, "1.2.0", LOG_1_1);
     check().await;

@@ -56,7 +56,9 @@ export function InboxPage() {
   }
   const snapshot = data.data;
   const repository = params.get("repository");
+  const change = params.get("change");
   const filters: Filters = {
+    change: change !== null && /^\d+$/.test(change) ? Number(change) : null,
     kind: params.get("kind"),
     repository: repository !== null && /^\d+$/.test(repository) ? Number(repository) : null,
   };
@@ -86,6 +88,13 @@ export function InboxPage() {
         }
       />
       <search aria-label="Filter the inbox" className="mb-6 flex flex-col gap-4">
+        {filters.change != null && (
+          <FilterRow label="Change">
+            <Chip selected onClick={() => setFilter({ change: null })}>
+              {`Only change ${filters.change}`}
+            </Chip>
+          </FilterRow>
+        )}
         <FilterRow label="Kind">
           <Chip selected={filters.kind === null} onClick={() => setFilter({ kind: null })}>
             All <span className="tabular-nums">{count(snapshot, null, filters.repository)}</span>
@@ -140,7 +149,7 @@ export function InboxPage() {
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => setFilter({ kind: null, repository: null })}
+                onClick={() => setFilter({ kind: null, repository: null, change: null })}
               >
                 Show everything
               </Button>

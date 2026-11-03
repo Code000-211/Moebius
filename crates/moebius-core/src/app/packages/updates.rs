@@ -1,6 +1,6 @@
 //! The nightly check of the installed Pi packages for newer versions: from `retro_at` on, once a day, a
 //! `extension_update` item in the inbox for each package that has one (once per version), resolved when the package is
-//! current again or an update is proposed.
+//! current again or an update is proposed. Each new item is announced as `extension_update_available`.
 
 use serde_json::json;
 
@@ -74,6 +74,10 @@ impl App {
             &format!("{} {} -> {to}", locked.name, locked.version),
             &json!({ "package": locked.name, "from": locked.version, "to": to, "source": locked.source }),
         )?;
+        self.bus.publish(Event::ExtensionUpdateAvailable {
+            name: locked.name.clone(),
+            version: to.to_string(),
+        });
         Ok(())
     }
 

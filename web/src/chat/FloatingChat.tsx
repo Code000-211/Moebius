@@ -9,9 +9,9 @@
  * A chat whose agent went away is taken up again with what was said in it, as on the Chat page; one the agent ended
  * is left behind, and the next message starts a new conversation.
  */
-import { ArrowSquareOutIcon, ChatCircleDotsIcon, MinusIcon, PlusIcon } from "@phosphor-icons/react";
+import { ArrowSquareOutIcon, ChatCircleDotsIcon, PlusIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { snapshot as readSnapshot } from "../api/calls/board";
 import { markSeen, chats as readChats, say, startChat } from "../api/calls/chat";
@@ -20,6 +20,8 @@ import type { Chat } from "../api/types/chat";
 import { Tag } from "../ui/chat/Tag";
 import { Button } from "../ui/components/Button";
 import { Notice } from "../ui/page/Notice";
+import { SheetFrame, SheetOpener, useSheetBehaviour } from "../ui/page/Sheet";
+import { useSheetSlot } from "../ui/page/SheetSlot";
 import { Composer } from "./Composer";
 import { isOpen, isWorking, statusTag, takesMessage } from "./format";
 import { pageContext } from "./pageContext";
@@ -35,7 +37,9 @@ export function FloatingChat() {
   const location = useLocation();
   const snapshot = useQuery({ queryKey: keys.snapshot, queryFn: () => readSnapshot() });
   const chats = useQuery({ queryKey: keys.chats, queryFn: readChats });
-  const [shown, setShown] = useState(false);
+  // The chat and the package sheet share one slot, so showing this one minimises the other (which keeps its state).
+  const slot = useSheetSlot();
+  const shown = slot.active === "chat";
   const [chatId, setChatId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
@@ -44,8 +48,6 @@ export function FloatingChat() {
   // The thread is read for as long as the chat it belongs to is remembered, not only while the sheet is shown:
   // minimising it and opening it again finds the conversation where it was, not an empty box refilled from the server.
   const thread = useThread(chatId);
-  const opener = useRef<HTMLButtonElement>(null);
-  const openedOnce = useRef(false);
   // What the composer holds right now, which the closure of a send cannot see: what is typed while an answer is on its
   // way is the next question, not something to clear away with the one that was sent.
   const held = useRef(message);
@@ -70,25 +72,10 @@ export function FloatingChat() {
   // gone: the next message takes the chat up again rather than starting a new one.
   const tag = chat ? statusTag(chat.status, chat.asks) : null;
 
-  // Escape closes the sheet wherever the focus is on the page. Once it closes, the focus goes back to the button that
-  // opened it, so a keyboard does not lose its place.
-  useEffect(() => {
-    if (!shown) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      // A control that took the key itself — a menu or a dialog over this sheet — closes first, and the sheet stays.
-      if (event.key === "Escape" && !event.defaultPrevented) setShown(false);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [shown]);
-
-  useEffect(() => {
-    if (shown) openedOnce.current = true;
-    else if (openedOnce.current) {
-      openedOnce.current = false;
-      opener.current?.focus();
-    }
-  }, [shown]);
+  // Escape and the minimise control hide the sheet, and the focus goes back to the button that opened it.
+  const { hide: release, show: take } = slot;
+  const hide = useCallback(() => release("chat"), [release]);
+  const opener = useSheetBehaviour(shown, hide);
 
   // Marks the conversation read once an answer is held, not at every streamed piece of it, and only while the sheet is
   // open. An answer that arrived after it was minimised is still unread, which is what the Chat page's count is for.
@@ -140,39 +127,30 @@ export function FloatingChat() {
 
   if (!shown) {
     return (
-      <Button
-        type="button"
-        variant="primary"
-        ref={opener}
-        aria-label="Open the floating chat"
+      <SheetOpener
+        openerRef={opener}
+        label="Open the floating chat"
         title="Ask the agent about this page"
-        onClick={() => setShown(true)}
-        className="fixed right-6 bottom-6 z-sheet size-12 rounded-full p-0"
-      >
-        <ChatCircleDotsIcon aria-hidden="true" className="size-5" weight="fill" />
-      </Button>
+        onOpen={() => take("chat")}
+        icon={<ChatCircleDotsIcon aria-hidden="true" className="size-5" weight="fill" />}
+        className="right-6"
+      />
     );
   }
 
   return (
-    <section
-      role="dialog"
-      aria-label="Floating chat"
-      className="fixed top-6 right-6 bottom-6 z-sheet flex w-96 max-w-full flex-col gap-3 rounded-card bg-surface p-3 shadow-raised"
-    >
-      <header className="flex items-center gap-2">
-        <div className="min-w-0 flex-1 px-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="m-0 min-w-0 break-words text-base font-semibold text-text">
-              Moebius agent
-            </h2>
-            {tag && <Tag tone={tag.tone}>{tag.label}</Tag>}
-          </div>
-          <p className="m-0 min-w-0 break-words text-xs text-secondary">viewing {where.name}</p>
-        </div>
-        {/* Both belong to a conversation that exists: nothing is left behind, and nowhere else to open, when this is
-            one nobody has spoken in yet. */}
-        {chatId !== null && (
+    <SheetFrame
+      label="Floating chat"
+      title="Moebius agent"
+      tag={tag && <Tag tone={tag.tone}>{tag.label}</Tag>}
+      line={`viewing ${where.name}`}
+      minimiseLabel="Minimise the floating chat"
+      onMinimise={hide}
+      className="top-6 right-6 bottom-24 w-96"
+      // Both belong to a conversation that exists: nothing is left behind, and nowhere else to open, when this is
+      // one nobody has spoken in yet.
+      actions={
+        chatId !== null && (
           <>
             <Button
               type="button"
@@ -188,27 +166,14 @@ export function FloatingChat() {
               <PlusIcon aria-hidden="true" className="size-5" weight="bold" />
             </Button>
             <Button asChild variant="ghost" size="icon" title="Open in Chat">
-              <Link
-                to={`/chat/${chatId}`}
-                aria-label="Open in Chat"
-                onClick={() => setShown(false)}
-              >
+              <Link to={`/chat/${chatId}`} aria-label="Open in Chat" onClick={hide}>
                 <ArrowSquareOutIcon aria-hidden="true" className="size-5" weight="bold" />
               </Link>
             </Button>
           </>
-        )}
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label="Minimise the floating chat"
-          title="Minimise the floating chat"
-          onClick={() => setShown(false)}
-        >
-          <MinusIcon aria-hidden="true" className="size-5" weight="bold" />
-        </Button>
-      </header>
+        )
+      }
+    >
       <div className="min-h-0 flex-1" data-testid="floating-conversation">
         {/* A conversation already read stays on screen: a failed read shows its reason above it, not instead of it,
             and a read that never succeeded shows the reason where the bars would have been. */}
@@ -242,6 +207,6 @@ export function FloatingChat() {
         autoFocus
         compact
       />
-    </section>
+    </SheetFrame>
   );
 }

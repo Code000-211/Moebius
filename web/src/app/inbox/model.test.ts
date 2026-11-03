@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Board, Card, Change, InboxItem, Snapshot } from "../../api/types/board";
 import type { Proposal } from "../../api/types/improve";
 import {
+  changeOf,
   chatOf,
   chipName,
   confirmable,
@@ -266,6 +267,14 @@ describe("the filters", () => {
     ).toEqual([2, 3]);
     expect(shown(snapshot, { kind: null, repository: 2 }).map((each) => each.id)).toEqual([1, 5]);
     expect(shown(snapshot, { kind: "stuck", repository: 1 })).toEqual([]);
+  });
+
+  it("narrows to the items about one change, where the package sheet's link lands", () => {
+    // The items 2 and 3 are the ready_to_merge ones; each names its change.
+    const only = shown(snapshot, { kind: null, repository: null, change: 2 });
+    expect(only.length).toBe(1);
+    expect(changeOf(only[0] as InboxItem)).toBe(2);
+    expect(shown(snapshot, { kind: null, repository: null, change: 999 })).toEqual([]);
   });
 
   it("counts a chip against the other filter", () => {

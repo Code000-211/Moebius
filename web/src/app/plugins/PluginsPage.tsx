@@ -2,13 +2,15 @@
  * The Plugins page: what the plugin host loaded (`GET /v1/plugins`), which answer the decisions. It only shows: each
  * plugin's version, kinds, whether it runs in the server or as its own process and in what state, and the kinds of
  * decision it answers; and for plugins in their own process the program, how often it was started again, why it last
- * stopped and where its log is. Nothing here is editable: plugins are named in moebius.toml.
+ * stopped and where its log is. The plugins are named in moebius.toml, or installed from the registries: the page lists
+ * the installed packages and opens the package sheet on them ("Browse packages").
  */
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { plugins as readPlugins } from "../../api/calls/models";
 import { keys } from "../../api/keys";
 import type { PluginProcess } from "../../api/types/models";
+import { usePackageSheet } from "../../packages/PackageSheetContext";
 import { Button } from "../../ui/components/Button";
 import { plural } from "../../ui/lib/format";
 import { Box } from "../../ui/page/Box";
@@ -17,6 +19,7 @@ import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { SkeletonCard } from "../../ui/page/Skeleton";
 import { Status, type Tone } from "../../ui/page/Status";
+import { InstalledPackages } from "./InstalledPackages";
 
 /**
  * How a plugin runs: built into the server, or as its own process in a state, coloured by whether it takes calls.
@@ -78,11 +81,17 @@ function PluginRow({
 }
 
 export function PluginsPage() {
+  const sheet = usePackageSheet();
+  const browse = (
+    <Button variant="secondary" size="sm" onClick={() => sheet.open("moebius")}>
+      Browse packages
+    </Button>
+  );
   const plugins = useQuery({ queryKey: keys.plugins, queryFn: readPlugins });
   if (plugins.isPending) {
     return (
       <>
-        <PageHeader title="Plugins" />
+        <PageHeader title="Plugins" actions={browse} />
         <SkeletonCard lines={4} message="Reading the plugins" />
       </>
     );
@@ -90,7 +99,7 @@ export function PluginsPage() {
   if (plugins.isError) {
     return (
       <>
-        <PageHeader title="Plugins" />
+        <PageHeader title="Plugins" actions={browse} />
         <Notice
           tone="error"
           action={
@@ -117,9 +126,11 @@ export function PluginsPage() {
     <>
       <PageHeader
         title="Plugins"
+        actions={browse}
         context={`${plural(loaded.length, "plugin", "plugins")} loaded; a call into one is refused after ${limit} s.`}
       />
       <div className="flex flex-col gap-8">
+        <InstalledPackages onBrowse={() => sheet.open("moebius")} />
         <Box title="Loaded plugins" className="flex flex-col gap-6">
           {loaded.length === 0 ? (
             <Empty

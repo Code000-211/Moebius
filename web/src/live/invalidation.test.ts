@@ -166,3 +166,30 @@ describe("applyConnected", () => {
     expect(stale(queryClient, keys.session)).toBe(false);
   });
 });
+
+describe("the package events", () => {
+  it.each([
+    "package_installed",
+    "package_removed",
+    "package_update_available",
+    "extension_update_available",
+    "package_check_error",
+  ])("makes what the sheet and the Plugins page read stale on %s", (kind) => {
+    const keysStale = invalidates({ kind, data: {} });
+    expect(keysStale).toContainEqual(keys.packages);
+    expect(keysStale).toContainEqual(keys.plugins);
+  });
+
+  it.each(["package_update_available", "extension_update_available"])(
+    "reads the snapshot again on %s, since the update waits in the inbox",
+    (kind) => {
+      expect(invalidates({ kind, data: {} })).toContainEqual(keys.snapshot);
+    },
+  );
+
+  it("does not react to the history entries of a card that are named like inbox items", () => {
+    expect(
+      invalidates({ kind: "inbox_added", data: { kind: "extension_update" } }),
+    ).not.toContainEqual(keys.packages);
+  });
+});

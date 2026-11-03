@@ -8,7 +8,7 @@
  */
 import { MagnifyingGlassIcon, XIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { type KeyboardEvent, type RefObject, useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, type RefObject, useMemo, useRef, useState } from "react";
 import { filePaths, searchFiles } from "../../api/calls/projects";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
@@ -17,25 +17,13 @@ import { IconButton } from "../../ui/components/IconButton";
 import { Input } from "../../ui/components/Input";
 import { cn } from "../../ui/lib/cn";
 import { plural } from "../../ui/lib/format";
+import { useSettled } from "../../ui/lib/useSettled";
 import { Empty } from "../../ui/page/Empty";
 import { Notice } from "../../ui/page/Notice";
 import { rank } from "./fuzzy";
 
 /** How many paths "Go to file" lists. */
 const SHOWN = 12;
-
-/** How long the typing waits before the search runs, in ms: a word arrives inside it, a letter does not. */
-const SETTLE = 250;
-
-/** `value` once it has not changed for `SETTLE`, so typing costs one search and not one per keystroke. */
-function useSettled(value: string): string {
-  const [settled, setSettled] = useState(value);
-  useEffect(() => {
-    const timer = setTimeout(() => setSettled(value), SETTLE);
-    return () => clearTimeout(timer);
-  }, [value]);
-  return settled;
-}
 
 /** A search bar: a field with a magnifier in front of it, and an X that empties it while there is something to empty. */
 function SearchBar({

@@ -311,9 +311,14 @@ export function trialsOf(item: InboxItem, key: "trials" | "regression"): Trial[]
 export interface Filters {
   kind: string | null;
   repository: number | null;
+  /** Only the items about this change: where a link from the package sheet lands. */
+  change?: number | null;
 }
 
-export const NO_FILTERS: Filters = { kind: null, repository: null };
+export const NO_FILTERS: Filters = { kind: null, repository: null, change: null };
+
+const inChange = (filters: Filters, item: InboxItem) =>
+  filters.change == null || changeOf(item) === filters.change;
 
 const inKind = (filters: Filters, item: InboxItem) =>
   filters.kind === null || filters.kind === item.kind;
@@ -324,7 +329,12 @@ const inRepository = (snapshot: Snapshot, repository: number | null, item: Inbox
 /** The items the filters let through, newest first. */
 export function shown(snapshot: Snapshot, filters: Filters): InboxItem[] {
   return snapshot.inbox
-    .filter((item) => inKind(filters, item) && inRepository(snapshot, filters.repository, item))
+    .filter(
+      (item) =>
+        inKind(filters, item) &&
+        inChange(filters, item) &&
+        inRepository(snapshot, filters.repository, item),
+    )
     .sort((a, b) => b.at - a.at || b.id - a.id);
 }
 

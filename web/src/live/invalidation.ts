@@ -3,7 +3,7 @@
  * event, so an event that changes what the snapshot shows invalidates it; `card_waiting` is also patched in place,
  * which shows the reason at once. What is read about one card (history, runs) goes stale with the snapshot, and the
  * column scripts with `script_changed`. A new page that reads something the events change adds its key to `keys.ts` and a
- * line to `invalidates` below (the pages of Rules, Automations, Retro, Experiments and Decision model are in `improvePages`). Events are not replayed, so when the socket connects all that is shown is read again.
+ * line to `invalidates` below (the package sheet is in `packagePages`; the pages of Rules, Automations, Retro, Experiments and Decision model are in `improvePages`). Events are not replayed, so when the socket connects all that is shown is read again.
  */
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import { keys } from "../api/keys";
@@ -63,6 +63,7 @@ export function invalidates(event: ServerEvent): QueryKey[] {
   }
   if (listChanged(event)) stale.push(keys.chats);
   stale.push(...improvePages(event));
+  stale.push(...packagePages(event));
   return stale;
 }
 
@@ -86,6 +87,25 @@ function improvePages(event: ServerEvent): QueryKey[] {
     case "file_changed":
       // Only the rules file of a repository is read by these pages.
       return String(event.data.path) === ".moebius/rules.md" ? [keys.rules] : [];
+    default:
+      return [];
+  }
+}
+
+/**
+ * What the package sheet and the Plugins page read, by the events that change it: a package installed, updated or
+ * removed, an update the nightly check found (for a Pi package it is an inbox item, which the snapshot holds and
+ * the sheet reads to mark the package), and a registry it could not read.
+ */
+function packagePages(event: ServerEvent): QueryKey[] {
+  switch (event.kind) {
+    case "package_installed":
+    case "package_removed":
+    case "package_check_error":
+      return [keys.packages, keys.plugins];
+    case "package_update_available":
+    case "extension_update_available":
+      return [keys.packages, keys.plugins, keys.snapshot];
     default:
       return [];
   }

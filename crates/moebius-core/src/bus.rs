@@ -175,6 +175,11 @@ pub enum Event {
         name: String,
         version: String,
     },
+    /// The nightly check found a newer version of an installed Pi package; it is in the inbox as `extension_update`.
+    ExtensionUpdateAvailable {
+        name: String,
+        version: String,
+    },
     PackageCheckError {
         /// The registry that could not be read; empty when the check itself failed.
         registry: String,
@@ -539,6 +544,13 @@ mod tests {
                     version: "1.1.0".into(),
                 },
                 json!({"kind": "package_update_available", "data": {"name": "gate", "version": "1.1.0"}}),
+            ),
+            (
+                Event::ExtensionUpdateAvailable {
+                    name: "pi-tools".into(),
+                    version: "1.1.0".into(),
+                },
+                json!({"kind": "extension_update_available", "data": {"name": "pi-tools", "version": "1.1.0"}}),
             ),
             (
                 Event::PackageCheckError {

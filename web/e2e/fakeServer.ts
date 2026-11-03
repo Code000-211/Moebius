@@ -12,6 +12,7 @@ import { extname, join, normalize, resolve } from "node:path";
 import { type WebSocket, WebSocketServer } from "ws";
 import { type BoardFake, createBoardFake } from "./fake/board";
 import { createFakeChat, type FakeChat } from "./fake/chat";
+import { createPackagesFake, type PackagesFake } from "./fake/packages";
 import { createPagesAFake, type PagesAFake } from "./fake/pages-a";
 import { createPagesBFake, type PagesBFake } from "./fake/pages-b";
 import { createPagesCFake, type PagesCFake } from "./fake/pages-c";
@@ -57,6 +58,8 @@ export interface FakeServer {
   pagesB: PagesBFake;
   /** Rules, automations, Retro, research, the decision model and the column scripts (e2e/fake/pages-c.ts). */
   pagesC: PagesCFake;
+  /** The package managers: the Moebius registries and the pi.dev catalog (e2e/fake/packages.ts). */
+  packages: PackagesFake;
 }
 
 function cookieOf(request: IncomingMessage): string | undefined {
@@ -98,6 +101,7 @@ export async function startFakeServer(): Promise<FakeServer> {
   const pagesA = createPagesAFake(broadcast, board);
   const pagesB = createPagesBFake();
   const pagesC = createPagesCFake(broadcast);
+  const packages = createPackagesFake(broadcast, pagesA);
   let port = 0;
 
   const signedIn = (request: IncomingMessage) => {
@@ -135,6 +139,7 @@ export async function startFakeServer(): Promise<FakeServer> {
       return response.end();
     }
     // Answers only once a test of its pages has called use(), so the Settings page's fake keeps /v1/settings otherwise.
+    if (await packages.handle(request, response, path)) return;
     if (await pagesB.handle(request, response, path)) return;
     // Rules, automations, Retro, research, the decision model and the column scripts: one rules file is a file of a repository, which pages A would answer.
     if (await pagesC.handle(request, response, path)) return;
@@ -208,6 +213,7 @@ export async function startFakeServer(): Promise<FakeServer> {
     pagesA,
     pagesB,
     pagesC,
+    packages,
     broadcast,
     async stop() {
       for (const ws of sockets) ws.terminate();
