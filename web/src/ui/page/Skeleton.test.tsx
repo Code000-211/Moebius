@@ -6,7 +6,7 @@
  */
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { Reading, SkeletonBoard, SkeletonCard, SkeletonList } from "./Skeleton";
+import { Reading, SkeletonBoard, SkeletonCard, SkeletonList, SkeletonThread } from "./Skeleton";
 
 afterEach(cleanup);
 
@@ -50,6 +50,15 @@ describe("a placeholder for a page being read", () => {
     expect(screen.getByRole("status").textContent).toBe("Reading the rules");
     // Two boxes, one sentence: the shape has no announcement of its own to add.
     expect(document.querySelectorAll(".shadow-card")).toHaveLength(2);
+  });
+
+  it("draws a conversation as turns, not as rows", () => {
+    render(<SkeletonThread turns={2} message="Reading the chat" />);
+    const region = screen.getByRole("status");
+    // A person's message is a band of the sunken colour, and an answer is text on a measure with no box of its own.
+    expect(region.querySelectorAll(".bg-sunken")).toHaveLength(2);
+    expect(region.querySelectorAll(".max-w-prose")).toHaveLength(2);
+    expect(region.querySelectorAll(".shadow-card")).toHaveLength(0);
   });
 
   it("says nothing when it is only the shape inside a place already announced", () => {

@@ -226,9 +226,9 @@ function OpenRun({ id }: { id: number }) {
                   entries={thread.entries}
                   working={isWorking(data.status)}
                   sent={sent}
-                  empty={
-                    thread.loaded ? "Nothing has happened in this run yet." : "Reading the run"
-                  }
+                  loading={!thread.loaded}
+                  loadingMessage="Reading the run"
+                  empty="Nothing has happened in this run yet."
                 />
               </div>
             )}

@@ -139,6 +139,48 @@ export function SkeletonLines({
   );
 }
 
+/**
+ * A conversation on its way: the person's message in its band and the agent's answer as text under it, twice over.
+ * The turns of a chat are read from their end, so what arrives has to look like turns at once — a page that fills with
+ * rows of a list instead reads as a different page being replaced.
+ */
+export function SkeletonThread({
+  turns = 2,
+  message,
+  className,
+}: {
+  turns?: number;
+  message?: string;
+  className?: string;
+}) {
+  return (
+    <Reading message={message} className={cn("flex flex-col gap-6", className)}>
+      {Array.from({ length: turns }, (_, place) => (
+        <div
+          // biome-ignore lint/suspicious/noArrayIndexKey: the turns of a placeholder draw the same every time, in order
+          key={place}
+          className="flex min-w-0 flex-col gap-4"
+        >
+          {/* The person's message, in the band of the sunken colour it is always written in. */}
+          <div className="w-full rounded-control bg-sunken">
+            <div className="flex min-h-10 items-center gap-3 px-4">
+              <Skeleton className="size-4" />
+              <Skeleton className="h-4 w-16" />
+            </div>
+            <div className="flex flex-col gap-2 px-4 pb-4">
+              <Skeleton className="w-1/2" />
+            </div>
+          </div>
+          {/* The answer: body text on a readable measure, and no box around it. */}
+          <div className="flex max-w-prose flex-col gap-2">
+            <Lines lines={3} />
+          </div>
+        </div>
+      ))}
+    </Reading>
+  );
+}
+
 /** The lanes of a board, with the room the cards will take up left empty in each of them. */
 export function SkeletonBoard({
   columns = 4,
