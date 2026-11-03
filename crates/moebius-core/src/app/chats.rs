@@ -1,5 +1,6 @@
 //! Chats: a person starting one with an agent, in a repository, the harness configuration repository or nowhere,
-//! writing to it, changing its model and reasoning, ending it and continuing it later, and the list of chats.
+//! writing to it (a chat whose agent went away is taken up again by the next message), changing its model and
+//! reasoning, ending it and continuing it later, and the list of chats.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -146,6 +147,15 @@ const CONVERSATION_LIMIT: usize = 20_000;
 /// How many characters of where a person is in the app a chat's agent is told with a message, at most.
 const CONTEXT_LIMIT: usize = 4_000;
 
+/// What a chat's agent is told before the person's message when the chat takes up a conversation that had ended: what
+/// was said in it, which the person already sees.
+fn continues_prompt(earlier: &str, message: &str) -> String {
+    format!(
+        "This chat continues an earlier one, which ended. What was said in it:\n\n{earlier}\n\n\
+         The person now writes:\n\n{message}"
+    )
+}
+
 /// The prompt a chat's agent answers: `message`, after `context`, where the person who wrote it is in the app, with
 /// its secrets redacted and cut to [`CONTEXT_LIMIT`] characters. Without a context, or with a blank one, the message.
 fn with_context(context: Option<&str>, message: &str) -> String {
@@ -255,10 +265,7 @@ impl App {
         // The agent is also told what was said before, when the chat continues an ended one.
         let prompt = message.map(|message| {
             let told = match &conversation {
-                Some(earlier) => format!(
-                    "This chat continues an earlier one, which ended. What was said in it:\n\n{earlier}\n\n\
-                     The person now writes:\n\n{message}"
-                ),
+                Some(earlier) => continues_prompt(earlier, message),
                 None => message.to_string(),
             };
             with_context(context, &told)
@@ -286,24 +293,35 @@ impl App {
     }
 
     /// A person changes the model or the reasoning level of the chat `run_id` (see `ChatSettings`); what is not given
-    /// stays. The chat must be waiting: while its agent works the answer is a conflict. The change is kept as a
-    /// `settings_changed` event and told to the chat's Pi (see [`Runs::change_chat`]), so that the next message is
-    /// answered with it. `served` are the protocols the router's upstreams list `model` under.
+    /// stays. The chat must be waiting, or have ended because its agent went away: while its agent works the answer is a
+    /// conflict, and a chat that ended any other way is ended for good. The change is kept as a `settings_changed`
+    /// event, so that the next message is answered with it: the chat's agent is told at once when it is up (see
+    /// [`Runs::change_chat`]), and starts with what is stored when it is made again for the message (see
+    /// [`App::wake_chat`]). `served` are the protocols the router's upstreams list `model` under.
     pub fn change_chat_settings(
         self: &Arc<Self>,
         runs: &dyn Runs,
         run_id: i64,
         (model, thinking, served): (Option<&str>, Option<&str>, &[Protocol]),
     ) -> Result<Run> {
-        let run = self.running_chat(run_id)?;
+        let run = self.chat(run_id)?;
         check_settings(model, thinking)?;
         let _turn = self.chat_turns.lock().unwrap_or_else(|e| e.into_inner());
         let run = self.run(run.id)?;
-        if run.status != "waiting" {
-            return Err(AppError::Conflict(format!(
-                "chat {run_id} is {}: its model and reasoning change once the agent has answered",
-                run.status
-            )));
+        if run.status != "waiting" && run.status != "stopped" {
+            // A chat whose agent went away is not ended for good: the agent made again for the next message starts on
+            // what is stored, so such a chat is given its settings too.
+            return Err(if run.ended_at.is_some() {
+                AppError::Invalid(format!(
+                    "chat {run_id} ended {}; its model and reasoning cannot change",
+                    run.status
+                ))
+            } else {
+                AppError::Conflict(format!(
+                    "chat {run_id} is {}: its model and reasoning change once the agent has answered",
+                    run.status
+                ))
+            });
         }
         let mut settings = self.chat_settings(run_id)?;
         if let Some(model) = model {
@@ -314,7 +332,10 @@ impl App {
             settings.thinking = Some(thinking.to_string());
         }
         self.record_run_event(run_id, "settings_changed", &json!(settings))?;
-        runs.change_chat(self, run_id).map_err(AppError::Invalid)?;
+        // Only a chat whose agent is up has an agent to tell.
+        if run.status == "waiting" {
+            runs.change_chat(self, run_id).map_err(AppError::Invalid)?;
+        }
         self.run(run_id)
     }
 
@@ -354,16 +375,19 @@ impl App {
         Ok(text[start..].to_string())
     }
 
-    /// A person writes to a chat that has not ended: the chat keeps the message as a `said` event, and the agent
-    /// answers it when it is done with what it is doing, told first where the person is when `context` is given.
+    /// A person writes to a chat. While its agent is up, the chat keeps the message as a `said` event, and the agent
+    /// answers it when it is done with what it is doing, told first where the person is when `context` is given. A chat
+    /// that ended because its agent went away is taken up again with what was said in it (see [`App::wake_chat`]), so
+    /// that the person carries on in the chat they are reading instead of starting a new one. A chat that ended any
+    /// other way is ended for good: it is continued by a new chat (see [`App::start_chat`]).
     pub fn say_in_chat(
-        &self,
+        self: &Arc<Self>,
         runs: &dyn Runs,
         run_id: i64,
         message: &str,
         context: Option<&str>,
     ) -> Result<Run> {
-        let run = self.running_chat(run_id)?;
+        let run = self.chat(run_id)?;
         if message.trim().is_empty() {
             return Err(AppError::Invalid("a message cannot be blank".into()));
         }
@@ -371,6 +395,9 @@ impl App {
             return Err(AppError::Conflict(format!(
                 "chat {run_id} is in its terminal: close it to write to the chat"
             )));
+        }
+        if run.ended_at.is_some() {
+            return self.wake_chat(runs, &run, message, context);
         }
         let _turn = self.chat_turns.lock().unwrap_or_else(|e| e.into_inner());
         // Stored first, so that it comes before the agent's records of its answer.
@@ -381,6 +408,42 @@ impl App {
             return Err(AppError::Invalid(format!("chat {run_id} has ended")));
         }
         Ok(run)
+    }
+
+    /// A person writes to the ended chat `run`, which ended because its agent went away: the agent starts again in the
+    /// chat's own place and on its own branch, told what was said in the chat before, and the chat works from now on.
+    /// What the person wrote is the message it answers, told first where they are when `context` is given. When the
+    /// agent cannot start again the chat is left as it was, and why it cannot is the error.
+    fn wake_chat(
+        self: &Arc<Self>,
+        runs: &dyn Runs,
+        run: &Run,
+        message: &str,
+        context: Option<&str>,
+    ) -> Result<Run> {
+        let run_id = run.id;
+        if run.status != "stopped" {
+            return Err(AppError::Invalid(format!("chat {run_id} has ended")));
+        }
+        if run.agent == crate::harness::pibolt::GRILLING_AGENT {
+            return Err(AppError::Invalid(format!(
+                "chat {run_id} is a grilling, whose issues are already read: start a new grilling"
+            )));
+        }
+        let _turn = self.chat_turns.lock().unwrap_or_else(|e| e.into_inner());
+        let told = continues_prompt(&self.conversation_of(run_id)?, message);
+        // Stored first, so that it comes before the agent's records of its answer.
+        self.record_run_event(run_id, "said", &json!({ "message": redact(message) }))?;
+        // The chat works from now on and is no longer ended, before its agent says so.
+        self.store.reopen_chat(run_id)?;
+        if let Err(e) = runs.wake(self, run_id, &with_context(context, &told)) {
+            // As it was: ended because its agent went away, its worktree taken away again with it.
+            let _ = self.store.set_run_status(run_id, "stopped");
+            return Err(AppError::Invalid(format!(
+                "chat {run_id} cannot start again: {e}"
+            )));
+        }
+        self.run(run_id)
     }
 
     /// A person ends a chat that has not ended. It ends as `succeeded` once its agent has shut down and its work is

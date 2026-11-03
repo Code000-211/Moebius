@@ -571,8 +571,39 @@ describe("an open chat", () => {
     );
   });
 
+  /**
+   * A chat whose agent went away is not a chat you can only read: the next message answers on the model and level
+   * chosen here, so the choice stays where the conversation is, and stays changeable while nobody is working.
+   */
   it.skipIf(usesRealServer)(
-    "stops after asking, and writes to an ended chat in a new one",
+    "keeps the model and reasoning choices after its agent goes away",
+    async () => {
+      await open("/chat");
+      const id = fake().seed({ title: "Hi", events: [["said", { message: "Hi" }]] });
+      await page.goto(`${server.url}/chat/${id}`);
+      const stopped = await context.request.post(`${server.url}/v1/chats/${id}/stop`, {
+        headers: { "X-Moebius": "1" },
+      });
+      expect(stopped.ok(), await stopped.text()).toBe(true);
+      await page.getByText("Agent disconnected", { exact: true }).first().waitFor();
+
+      await page.getByRole("button", { name: /^Model: / }).click();
+      await page.getByRole("menuitemradio", { name: "fake-small" }).click();
+      await page.getByRole("button", { name: "Model: fake-small" }).waitFor();
+      expect(fake().chats[0]?.model).toBe("fake-small");
+
+      await page.getByRole("button", { name: /^Reasoning: / }).click();
+      await page.getByRole("menuitemradio", { name: "high", exact: true }).click();
+      await page.getByRole("button", { name: "Reasoning: high" }).waitFor();
+      expect(fake().chats[0]?.thinking).toBe("high");
+      // Choosing is not answering: the chat waits for its next message with them.
+      expect(fake().chats[0]?.status).toBe("stopped");
+      expect(fake().said).toEqual([]);
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "stops after asking, and its next message takes the same chat up again",
     async () => {
       await open("/chat");
       fake().autoAnswer = false;
@@ -586,16 +617,23 @@ describe("an open chat", () => {
       await page.getByRole("button", { name: "Stop" }).click();
       await page.getByRole("button", { name: "Stop chat" }).click();
       await page.getByTestId("chat-title").waitFor();
-      // The tag carries the state in words and the empty field carries the way on; nothing is added under it.
+      // The tag carries the state in words, and the field still takes a message: the way on is this chat, not a new
+      // one, so nothing about the composer says otherwise.
       await page.getByText("Agent disconnected", { exact: true }).first().waitFor();
-      expect(await page.getByText("This chat has ended").count()).toBe(0);
-      const field = page.getByRole("textbox", { name: "Message" });
-      expect(await field.getAttribute("placeholder")).toBe(
-        "Moebius disconnected. Start a new chat to continue.",
-      );
-      // The button beside the field is where the way on is offered: an ended chat's message starts a new chat.
-      expect(await page.getByRole("button", { name: "Continue" }).count()).toBe(1);
+      expect(await field().getAttribute("placeholder")).toBe("Write to Moebius");
+      expect(await page.getByRole("button", { name: "Continue" }).count()).toBe(0);
       expect(fake().chats[0]?.status).toBe("stopped");
+
+      // Writing goes to the chat that is open: it is taken up again, on the record already on screen.
+      fake().autoAnswer = true;
+      const chatUrl = page.url();
+      await say("Carry on");
+      await page.getByText("You said: Carry on").waitFor();
+      expect(page.url()).toBe(chatUrl);
+      expect(fake().chats.length).toBe(1);
+      expect(fake().chats[0]?.status).toBe("waiting");
+      await page.getByTestId("chat-title").waitFor();
+      expect(await page.getByText("Agent disconnected", { exact: true }).count()).toBe(0);
     },
   );
 });
@@ -663,6 +701,41 @@ describe("the floating chat", () => {
     expect(fake().started[0]).toMatchObject({ repository: 1 });
     expect(String(fake().started[0]?.context)).toContain("Repository: demo (id 1)");
   });
+
+  /**
+   * The agent of the floating chat going away is not the end of the conversation: the sheet says so in the words the
+   * Chat page uses, and the next message goes back to that chat instead of opening a second one nobody asked for.
+   */
+  it.skipIf(usesRealServer)(
+    "takes a chat whose agent went away up again instead of starting a new one",
+    async () => {
+      await open("/inbox");
+      await page.getByRole("button", { name: "Open the floating chat" }).click();
+      const window = page.getByRole("dialog", { name: "Floating chat" });
+      const field = window.getByRole("textbox", { name: "Message" });
+      await field.fill("First question");
+      await field.press("Enter");
+      await window.getByText("You said: First question").first().waitFor();
+      const run = fake().chats[0]?.id as number;
+
+      const stopped = await context.request.post(`${server.url}/v1/chats/${run}/stop`, {
+        headers: { "X-Moebius": "1" },
+      });
+      expect(stopped.ok(), await stopped.text()).toBe(true);
+      await window.getByText("Agent disconnected", { exact: true }).first().waitFor();
+
+      await field.fill("Carry on");
+      await field.press("Enter");
+      await window.getByText("You said: Carry on").first().waitFor();
+
+      expect(fake().started).toHaveLength(1);
+      expect(fake().chats).toHaveLength(1);
+      expect(fake().said.at(-1)?.body.message).toBe("Carry on");
+      expect(fake().chats[0]?.status).toBe("waiting");
+      // The sheet no longer says the agent is gone: it answered.
+      await window.getByText("Agent disconnected", { exact: true }).waitFor({ state: "detached" });
+    },
+  );
 
   it("opens in the real server too, with the page's text", async () => {
     await open("/inbox");
