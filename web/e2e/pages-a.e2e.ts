@@ -796,6 +796,33 @@ describe("the fleet", () => {
     },
   );
 
+  /**
+   * A step of a run is one line in a tile, the way a conversation shows it: a long command is read by its end, so the
+   * line keeps that end and fades the beginning it has no room for, rather than turning the step into a paragraph.
+   */
+  it.skipIf(usesRealServer)(
+    "keeps a long command on one line and fades the part that is out of view",
+    async () => {
+      await open("/fleet");
+      const command = `grep -rn "review_conflicts" ${"crates/moebius-core/src/board/".repeat(8)} | head -12`;
+      const chat = server.chat?.seed({
+        status: "running",
+        title: "Look for the review gate",
+      }) as number;
+      server.chat?.toolCall(chat, { id: "c1", tool: "bash", args: { command }, output: "" });
+      const tile = page.getByTestId("fleet-tile").filter({ hasText: "Look for the review gate" });
+      const line = tile.getByText("bash", { exact: true }).locator("xpath=following-sibling::*[1]");
+      await line.getByText(command, { exact: true }).waitFor();
+
+      // One line of words, faded where it ran out, and the whole command still reachable.
+      expect((await line.boundingBox())?.height ?? 0).toBeLessThan(30);
+      expect(await line.evaluate((el) => getComputedStyle(el).maskImage)).toContain(
+        "linear-gradient",
+      );
+      expect(await line.getAttribute("title")).toBe(command);
+    },
+  );
+
   it.skipIf(usesRealServer)(
     "shows that a question waits for the person, and drops a chat that ended",
     async () => {
