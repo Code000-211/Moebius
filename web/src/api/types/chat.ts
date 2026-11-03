@@ -117,10 +117,24 @@ export function listedLevels(
 }
 
 /**
- * The levels to offer for a model whose endpoint lists `levels`: the ones it names itself, and the ones it has a place
- * in its list for, hardest last. A model whose upstream says nothing is offered every level, which is what it is sent.
+ * The levels to offer for a model whose endpoint lists `levels`: only the ones it names, with `none` for the quietest
+ * level understood as Moebius's `off`. A model whose upstream says nothing is offered every level, which is what it is
+ * sent.
  */
 export function offeredLevels(levels: string[] | undefined): string[] {
   if (!levels || levels.length === 0) return [...THINKING_LEVELS];
-  return THINKING_LEVELS.filter((level, place) => levels.includes(level) || place < levels.length);
+  const named = new Set(levels.map((level) => (level === "none" ? "off" : level)));
+  return THINKING_LEVELS.filter((level) => named.has(level));
+}
+
+/**
+ * The name `level` goes out as to an endpoint that lists `levels`: its own when the endpoint takes that name, or the
+ * name at that level's place in the list, or the last of the list when it is shorter, which is how a level the
+ * endpoint has no name for still asks it for the hardest level it has.
+ */
+export function sentLevel(levels: string[] | undefined, level: string): string {
+  if (!levels || levels.length === 0 || levels.includes(level)) return level;
+  const place = (THINKING_LEVELS as readonly string[]).indexOf(level);
+  if (place < 0) return level;
+  return levels[place] ?? levels.at(-1) ?? level;
 }
