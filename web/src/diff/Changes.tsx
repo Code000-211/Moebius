@@ -11,9 +11,9 @@ import { changeDiff, runDiff } from "../api/calls/runs";
 import { keys } from "../api/keys";
 import { Button } from "../ui/components/Button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/components/Dialog";
-import { Loader } from "../ui/components/Loader";
 import { plural } from "../ui/lib/format";
 import { Notice } from "../ui/page/Notice";
+import { SkeletonLines } from "../ui/page/Skeleton";
 import { Delta } from "./Delta";
 import { parseUnifiedDiff, totals } from "./parse";
 
@@ -59,7 +59,7 @@ function DiffReadFailed({
 
 export function Changes({ of }: { of: DiffOf }) {
   const query = useDiff(of);
-  if (query.isPending) return <Loader message="Reading the changes" />;
+  if (query.isPending) return <SkeletonLines lines={10} message="Reading the changes" />;
   if (query.isError) {
     return (
       <DiffReadFailed
@@ -70,7 +70,7 @@ export function Changes({ of }: { of: DiffOf }) {
     );
   }
   return (
-    <Suspense fallback={<Loader message="Reading the changes" />}>
+    <Suspense fallback={<SkeletonLines lines={10} message="Reading the changes" />}>
       <DiffView diff={query.data.diff} truncated={query.data.truncated} />
     </Suspense>
   );
@@ -91,7 +91,14 @@ export function ChangesCard({ of }: { of: { change: number } }) {
     const files = parseUnifiedDiff(diff);
     return { files: files.length, ...totals(files) };
   }, [query.data]);
-  if (query.isPending) return <Loader message="Reading the changes" />;
+  if (query.isPending)
+    return (
+      <SkeletonLines
+        lines={1}
+        message="Reading the changes"
+        className="min-h-10 justify-center rounded-control bg-sunken px-3"
+      />
+    );
   if (query.isError || headline === null) {
     return (
       <DiffReadFailed

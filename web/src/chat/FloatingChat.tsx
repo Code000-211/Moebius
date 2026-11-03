@@ -190,6 +190,9 @@ export function FloatingChat() {
           entries={chatId === null ? [] : thread.entries}
           working={working}
           sent={sent}
+          // A chat that has not been started yet is empty, not still being read: it gets the starters, not bars.
+          loading={chatId !== null && !thread.loaded}
+          loadingMessage="Reading the chat"
           empty="Ask the agent about this page, or start from one of these. It is told where you are."
           // The starters are for the moment before anything is written; once a message is on its way they are in the way.
           emptyAction={message.trim() === "" ? <Starters onPick={write} /> : undefined}

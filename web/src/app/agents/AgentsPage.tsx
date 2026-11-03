@@ -26,11 +26,11 @@ import type { Agent } from "../../api/types/chat";
 import type { AgentDetail } from "../../api/types/harness";
 import type { TagTone } from "../../ui/chat/Tag";
 import { Button } from "../../ui/components/Button";
-import { Loader } from "../../ui/components/Loader";
 import { Empty } from "../../ui/page/Empty";
 import { chosenOrFirst, ListCard, ListDetail } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
+import { SkeletonCard, SkeletonList } from "../../ui/page/Skeleton";
 import { useDrafts } from "../harness/form";
 import { HarnessSetup } from "../harness/HarnessSetup";
 import { AgentEditor, type Saved } from "./AgentEditor";
@@ -153,7 +153,7 @@ export function AgentsPage() {
       <ListDetail
         list={
           agents.isPending ? (
-            <Loader message="Reading the agents" className="py-8" />
+            <SkeletonList rows={4} message="Reading the agents" />
           ) : agents.isError ? (
             <Notice
               tone="error"
@@ -286,13 +286,14 @@ function ChosenAgent({
   let opened: AgentDetail | null = null;
   let broken: string | undefined;
   if (shared.inFile) {
-    if (settings.isPending || (builtIn && detail.isPending)) return <Reading />;
+    if (settings.isPending || (builtIn && detail.isPending))
+      return <SkeletonCard lines={4} message="Reading the agent" />;
     if (settings.isError)
       return <Broken name={name} message={settings.error.message} {...shared} />;
     opened = fromFile(name, settings.data) ?? { name };
     if (detail.data?.built_in) opened = { ...opened, built_in: detail.data.built_in };
   } else {
-    if (detail.isPending) return <Reading />;
+    if (detail.isPending) return <SkeletonCard lines={4} message="Reading the agent" />;
     if (detail.isError) {
       // The Moebius agent is there without files; saving it makes them.
       if (builtIn && isApiError(detail.error) && detail.error.status === 404) opened = { name };
@@ -309,8 +310,4 @@ function ChosenAgent({
 function Broken({ name, message, ...shared }: Shared & { name: string; message: string }) {
   const stored = { ...blankForm(name), exists: true };
   return <AgentEditor {...shared} initial={stored} stored={stored} broken={message} />;
-}
-
-function Reading() {
-  return <p className="m-0 text-base text-secondary">Reading the agent</p>;
 }

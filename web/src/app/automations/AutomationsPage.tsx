@@ -29,7 +29,6 @@ import type { TagTone } from "../../ui/chat/Tag";
 import { Tag } from "../../ui/chat/Tag";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
-import { Loader } from "../../ui/components/Loader";
 import { ago } from "../../ui/lib/format";
 import { useNow } from "../../ui/lib/useNow";
 import { Box } from "../../ui/page/Box";
@@ -38,6 +37,7 @@ import { Field, Select, TextArea } from "../../ui/page/Field";
 import { ListCard, ListDetail } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
 import { Body, PageHeader } from "../../ui/page/PageHeader";
+import { SkeletonCard, SkeletonLines, SkeletonList } from "../../ui/page/Skeleton";
 import { Switch } from "../../ui/page/Switch";
 import {
   type Form,
@@ -107,7 +107,10 @@ export function AutomationsPage() {
     return (
       <>
         {header}
-        <Loader message="Reading the automations" className="py-8" />
+        <ListDetail
+          list={<SkeletonList rows={4} message="Reading the automations" />}
+          detail={<SkeletonCard lines={4} />}
+        />
       </>
     );
   }
@@ -443,7 +446,7 @@ function Editor({
 
       <Box title="Past runs" className="min-w-0">
         {id !== null && past.isPending ? (
-          <Loader message="Reading the past runs" className="py-8" />
+          <SkeletonLines lines={3} message="Reading the past runs" />
         ) : past.data && past.data.length > 0 ? (
           <ul className="m-0 flex list-none flex-col gap-2 p-0">
             {past.data.map((firing) => (

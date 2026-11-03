@@ -12,10 +12,10 @@ import { readFile, saveFile } from "../../api/calls/projects";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import { Button } from "../../ui/components/Button";
-import { Loader } from "../../ui/components/Loader";
 import { cn } from "../../ui/lib/cn";
 import { CONTROL } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
+import { SkeletonLines } from "../../ui/page/Skeleton";
 import { lineStart, notEditable } from "./model";
 
 /** The column the editor and the word about its file stand in: the head row, then the file or what stands in for it. */
@@ -79,7 +79,7 @@ export function FileEditor({
     onLineShown();
   }, [line, saved]);
 
-  if (file.isPending) return <Loader message="Reading the file" className="py-8" />;
+  if (file.isPending) return <SkeletonLines lines={12} message="Reading the file" />;
   if (file.isError) {
     return (
       <div className={COLUMN}>

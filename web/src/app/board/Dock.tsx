@@ -24,6 +24,7 @@ import { ago } from "../../ui/lib/format";
 import { useNow } from "../../ui/lib/useNow";
 import { Field } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
+import { SkeletonLines } from "../../ui/page/Skeleton";
 import { Status, type Tone } from "../../ui/page/Status";
 import type { Decision } from "./decisions";
 import {
@@ -177,7 +178,7 @@ function QueryText({
   query: { isPending: boolean; error: unknown };
   empty?: string;
 }) {
-  if (query.isPending) return <p className="m-0 text-sm text-secondary">Reading</p>;
+  if (query.isPending) return <SkeletonLines lines={1} message="Reading" />;
   if (query.error) {
     return (
       <Notice tone="error">

@@ -10,12 +10,12 @@ import { plugins as readPlugins } from "../../api/calls/models";
 import { keys } from "../../api/keys";
 import type { PluginProcess } from "../../api/types/models";
 import { Button } from "../../ui/components/Button";
-import { Loader } from "../../ui/components/Loader";
 import { plural } from "../../ui/lib/format";
 import { Box } from "../../ui/page/Box";
 import { Empty } from "../../ui/page/Empty";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
+import { SkeletonCard } from "../../ui/page/Skeleton";
 import { Status, type Tone } from "../../ui/page/Status";
 
 /**
@@ -83,7 +83,7 @@ export function PluginsPage() {
     return (
       <>
         <PageHeader title="Plugins" />
-        <Loader message="Reading the plugins" className="py-8" />
+        <SkeletonCard lines={4} message="Reading the plugins" />
       </>
     );
   }

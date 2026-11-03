@@ -12,9 +12,9 @@ import { deleteScript, saveScript, script } from "../../api/calls/board";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import { Button } from "../../ui/components/Button";
-import { Loader } from "../../ui/components/Loader";
 import { Notice as NoticeLine } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
+import { SkeletonLines } from "../../ui/page/Skeleton";
 import { boardPath } from "../pages";
 import { type ScriptProblem, scriptProblem } from "./scriptError";
 
@@ -41,7 +41,7 @@ export function ScriptPage() {
           </Button>
         }
       />
-      {source.isPending && <Loader message="Reading the script" className="py-8" />}
+      {source.isPending && <SkeletonLines lines={8} message="Reading the script" />}
       {source.error && (
         <NoticeLine tone="error">
           {isApiError(source.error)
@@ -136,7 +136,7 @@ function Editor({
       <p className="m-0 text-sm text-secondary">
         <span className="font-mono">{path}</span> · {own ? "this repository's own" : "built in"}
       </p>
-      <Suspense fallback={<Loader message="Opening the editor" className="py-8" />}>
+      <Suspense fallback={<SkeletonLines lines={10} message="Opening the editor" />}>
         <CodeEditor
           label={`Script of ${column}`}
           value={text}

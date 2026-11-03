@@ -12,12 +12,12 @@ import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { UsageReport } from "../../api/types/usage";
 import { Button } from "../../ui/components/Button";
-import { Loader } from "../../ui/components/Loader";
 import { cn } from "../../ui/lib/cn";
 import { Box } from "../../ui/page/Box";
 import { Chip } from "../../ui/page/Chip";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
+import { Reading, SkeletonCard } from "../../ui/page/Skeleton";
 import { Status } from "../../ui/page/Status";
 import { AgentsBox, LensBox, ModelsBox, TimeBox, WaitsBox } from "./Boxes";
 import { short } from "./figures";
@@ -115,7 +115,14 @@ export function UsagePage() {
           {sayError(report.error, "Could not read the usage. Try again.")}
         </Notice>
       ) : !data ? (
-        <Loader message="Reading usage" className="py-8" />
+        <Reading message="Reading usage" className="flex flex-col gap-4">
+          <SkeletonCard lines={1} />
+          <div className="grid gap-4 sm:grid-cols-3">
+            {[0, 1, 2].map((tile) => (
+              <SkeletonCard key={tile} lines={2} />
+            ))}
+          </div>
+        </Reading>
       ) : (
         <div className="flex flex-col gap-4" data-window={data.days_in_window}>
           <WindowBox report={data} />

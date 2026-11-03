@@ -435,8 +435,9 @@ export function OpenChat({
             entries={thread.entries}
             working={working}
             sent={sent}
+            loading={!thread.loaded}
+            loadingMessage="Reading the chat"
             empty={thread.loaded ? "Start with one of these, or write your own." : undefined}
-            emptyTitle={thread.loaded ? "Nothing said yet" : "Reading the chat"}
             // The starters are for the moment before anything is written; once a message is on its way they are in
             // the way, and picking one would replace what was typed.
             emptyAction={

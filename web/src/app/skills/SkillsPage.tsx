@@ -16,11 +16,11 @@ import { useSearchParams } from "react-router";
 import { skill as readSkill, skillList } from "../../api/calls/harness";
 import { keys } from "../../api/keys";
 import { Button } from "../../ui/components/Button";
-import { Loader } from "../../ui/components/Loader";
 import { Empty } from "../../ui/page/Empty";
 import { chosenOrFirst, ListCard, ListDetail } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
+import { SkeletonCard, SkeletonList } from "../../ui/page/Skeleton";
 import { useDrafts } from "../harness/form";
 import { HarnessSetup, WHY_MUTED } from "../harness/HarnessSetup";
 import { ImportPanel } from "../harness/ImportPanel";
@@ -94,7 +94,12 @@ export function SkillsPage() {
           </div>
         }
       />
-      {skills.isPending && <Loader message="Reading the skills" className="py-8" />}
+      {skills.isPending && (
+        <ListDetail
+          list={<SkeletonList rows={4} message="Reading the skills" />}
+          detail={<SkeletonCard lines={4} />}
+        />
+      )}
       {skills.isError && (
         <Notice
           tone="error"

@@ -16,11 +16,11 @@ import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import { Tag, type TagTone } from "../../ui/chat/Tag";
 import { Button } from "../../ui/components/Button";
-import { Loader } from "../../ui/components/Loader";
 import { Box } from "../../ui/page/Box";
 import { Field, TextArea } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 import { Body, PageHeader } from "../../ui/page/PageHeader";
+import { Reading, SkeletonCard } from "../../ui/page/Skeleton";
 import { agentRequest, refusalsLabel } from "./file";
 import { RuleList } from "./RuleList";
 
@@ -48,7 +48,10 @@ export function RulesPage() {
     return (
       <>
         {header}
-        <Loader message="Reading the rules" className="py-8" />
+        <Reading message="Reading the rules" className="flex flex-col gap-6">
+          <SkeletonCard lines={2} />
+          <SkeletonCard lines={5} />
+        </Reading>
       </>
     );
   }

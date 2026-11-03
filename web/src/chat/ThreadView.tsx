@@ -16,6 +16,7 @@ import { type ScrollerProps, Virtuoso, type VirtuosoHandle } from "react-virtuos
 import { Turn } from "../ui/chat/Turn";
 import { Empty } from "../ui/page/Empty";
 import { useScrollFades } from "../ui/page/ScrollFades";
+import { SkeletonThread } from "../ui/page/Skeleton";
 import type { Entry } from "./conversation";
 import {
   afterScroll,
@@ -59,6 +60,13 @@ interface ThreadViewProps {
   working: boolean;
   /** How many messages the person has sent from this page; a new one follows the conversation again. */
   sent: number;
+  /**
+   * The events are still being read, so the empty place is not yet a fact about the chat: the turns that are coming
+   * are drawn as bars instead, so the page fills in place rather than showing a card that is about to be thrown away.
+   */
+  loading?: boolean;
+  /** What is being read while `loading`, said once out loud: "Reading the chat". */
+  loadingMessage?: string;
   /** What belongs here while it is empty, said in a sentence. Leave it out while the page is still loading. */
   empty?: string;
   /** What the empty place is called; "Nothing said yet" unless the page says otherwise. */
@@ -76,6 +84,8 @@ export function ThreadView({
   entries,
   working,
   sent,
+  loading = false,
+  loadingMessage,
   empty,
   emptyTitle = "Nothing said yet",
   emptyAction,
@@ -181,6 +191,13 @@ export function ThreadView({
   }, [turns]);
 
   if (turns.length === 0) {
+    if (loading) {
+      return (
+        <div className="p-4" data-testid="thread-loading">
+          <SkeletonThread message={loadingMessage} />
+        </div>
+      );
+    }
     return (
       <div className="p-4" data-testid="empty-thread">
         <Empty title={emptyTitle} body={empty} action={emptyAction} plain={compact} />

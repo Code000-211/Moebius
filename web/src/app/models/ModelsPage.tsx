@@ -26,7 +26,6 @@ import type { AvailableModels } from "../../api/types/chat";
 import type { UpstreamOAuth } from "../../api/types/models";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
-import { Loader } from "../../ui/components/Loader";
 import { plural } from "../../ui/lib/format";
 import { Box } from "../../ui/page/Box";
 import { Empty } from "../../ui/page/Empty";
@@ -34,6 +33,7 @@ import { Field, Select } from "../../ui/page/Field";
 import { CELL, Table } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
+import { SkeletonCard } from "../../ui/page/Skeleton";
 import { Status } from "../../ui/page/Status";
 import { decisionChoices, modelChoices } from "../agents/model";
 import { Answered, couldNotAsk, ModelField } from "../harness/ModelField";
@@ -112,7 +112,7 @@ export function ModelsPage() {
     return (
       <>
         <PageHeader title="Models" />
-        <Loader message="Reading the models" className="py-8" />
+        <SkeletonCard lines={6} message="Reading the models" />
       </>
     );
   }

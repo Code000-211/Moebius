@@ -12,11 +12,11 @@ import { removeRepository } from "../../api/calls/projects";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import { Button } from "../../ui/components/Button";
-import { Loader } from "../../ui/components/Loader";
 import { Empty } from "../../ui/page/Empty";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
+import { SkeletonList } from "../../ui/page/Skeleton";
 import { boardPath } from "../pages";
 import { cardsText, forgeTag } from "./model";
 
@@ -40,7 +40,13 @@ export function ProjectsPage() {
     },
   });
 
-  if (data.isPending) return <Loader message="Reading the projects" className="py-8" />;
+  if (data.isPending)
+    return (
+      <>
+        <PageHeader title="Projects" />
+        <SkeletonList rows={3} message="Reading the projects" />
+      </>
+    );
   // A read that failed is not a server with no repository: the empty state below would say there is nothing to open.
   if (data.isError) {
     return (

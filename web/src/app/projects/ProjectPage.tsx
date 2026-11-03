@@ -15,7 +15,6 @@ import { keys } from "../../api/keys";
 import type { Repository } from "../../api/types/board";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
-import { Loader } from "../../ui/components/Loader";
 import { Tooltip } from "../../ui/components/Tooltip";
 import { cn } from "../../ui/lib/cn";
 import { Box } from "../../ui/page/Box";
@@ -24,6 +23,7 @@ import { Field } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
+import { SkeletonCard } from "../../ui/page/Skeleton";
 import { boardPath } from "../pages";
 import { FilesPanel } from "./FilesPanel";
 import { forgeTag, logins, onForge } from "./model";
@@ -31,7 +31,13 @@ import { forgeTag, logins, onForge } from "./model";
 export function ProjectPage() {
   const { id } = useParams();
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => readSnapshot() });
-  if (data.isPending) return <Loader message="Reading the project" className="py-8" />;
+  if (data.isPending)
+    return (
+      <>
+        <PageHeader title="Project" />
+        <SkeletonCard lines={4} message="Reading the project" />
+      </>
+    );
   const board = data.data?.boards.find((each) => String(each.repository.id) === id);
   // A read that failed is not a repository that has gone: saying so comes before the page that says it is not here.
   if (data.isError) {

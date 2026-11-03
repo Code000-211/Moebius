@@ -23,13 +23,13 @@ import {
 import { keys } from "../../api/keys";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
-import { Loader } from "../../ui/components/Loader";
 import { Box } from "../../ui/page/Box";
 import { Empty } from "../../ui/page/Empty";
 import { Field, Select, TextArea } from "../../ui/page/Field";
 import { chosenOrFirst, ListCard, ListDetail } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
+import { SkeletonCard, SkeletonList } from "../../ui/page/Skeleton";
 import { Committed, EditorHead, useDraft, useDrafts } from "../harness/form";
 import { HarnessSetup, WHY_MUTED } from "../harness/HarnessSetup";
 import { ImportPanel } from "../harness/ImportPanel";
@@ -110,7 +110,12 @@ export function McpPage() {
           </div>
         }
       />
-      {skills.isPending && <Loader message="Reading the MCP servers" className="py-8" />}
+      {skills.isPending && (
+        <ListDetail
+          list={<SkeletonList rows={4} message="Reading the MCP servers" />}
+          detail={<SkeletonCard lines={4} />}
+        />
+      )}
       {skills.isError && (
         <Notice
           tone="error"
@@ -135,7 +140,7 @@ export function McpPage() {
           <ListDetail
             list={
               servers.isPending ? (
-                <Loader message="Reading the servers" className="py-8" />
+                <SkeletonList rows={4} message="Reading the servers" />
               ) : servers.isError ? (
                 <Notice
                   tone="error"

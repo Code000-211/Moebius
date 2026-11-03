@@ -20,7 +20,6 @@ import { Tag } from "../../ui/chat/Tag";
 import { Button } from "../../ui/components/Button";
 import { IconButton } from "../../ui/components/IconButton";
 import { Input } from "../../ui/components/Input";
-import { Loader } from "../../ui/components/Loader";
 import { plural } from "../../ui/lib/format";
 import { Box } from "../../ui/page/Box";
 import { Chip } from "../../ui/page/Chip";
@@ -29,6 +28,7 @@ import { Field } from "../../ui/page/Field";
 import { CELL, ListCard, ListDetail, Table } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
 import { Body, PageHeader } from "../../ui/page/PageHeader";
+import { SkeletonCard } from "../../ui/page/Skeleton";
 import {
   actions,
   briefOf,
@@ -98,7 +98,7 @@ export function ExperimentsPage() {
     return (
       <>
         {header}
-        <Loader message="Reading the research" className="py-8" />
+        <SkeletonCard lines={4} message="Reading the research" />
       </>
     );
   }

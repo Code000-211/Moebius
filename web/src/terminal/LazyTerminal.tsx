@@ -4,13 +4,21 @@
  * component that holds xterm, [`Terminal`](./Terminal.tsx), is only ever imported here.
  */
 import { type ComponentProps, lazy, Suspense } from "react";
-import { Loader } from "../ui/components/Loader";
+import { SkeletonLines } from "../ui/page/Skeleton";
 
 const TerminalPane = lazy(() => import("./Terminal").then((all) => ({ default: all.Terminal })));
 
 export function Terminal(props: ComponentProps<typeof TerminalPane>) {
   return (
-    <Suspense fallback={<Loader message="Opening the terminal" className="min-h-0 flex-1" />}>
+    <Suspense
+      fallback={
+        <SkeletonLines
+          lines={12}
+          message="Opening the terminal"
+          className="min-h-0 flex-1 content-start"
+        />
+      }
+    >
       <TerminalPane {...props} />
     </Suspense>
   );

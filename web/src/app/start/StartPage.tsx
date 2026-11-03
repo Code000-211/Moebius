@@ -14,11 +14,11 @@ import { sayError } from "../../api/errorText";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import { Button } from "../../ui/components/Button";
-import { Loader } from "../../ui/components/Loader";
 import { cn } from "../../ui/lib/cn";
 import { Box } from "../../ui/page/Box";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
+import { SkeletonCard } from "../../ui/page/Skeleton";
 import { Status } from "../../ui/page/Status";
 import { context, fix } from "./model";
 
@@ -67,7 +67,7 @@ export function StartPage() {
         {setUp.isSuccess && (
           <Notice tone="ok">Set up. The server restarts and the page reconnects by itself.</Notice>
         )}
-        {answer.isPending && <Loader message="Reading the steps" className="py-8" />}
+        {answer.isPending && <SkeletonCard lines={4} message="Reading the steps" />}
         {answer.data && (
           <>
             {answer.data.warnings.map((warning) => (
