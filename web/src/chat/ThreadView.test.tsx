@@ -51,7 +51,9 @@ function said(seq: number, message = `go ${seq}`): Entry {
 }
 
 describe("a conversation with more chat above it", () => {
-  it("offers the messages above the oldest turn, and reads them when pressed", () => {
+  it("says nothing above the oldest turn while its own read is going well", () => {
+    // Scrolling to the top of the conversation is what reads the rest, so the row offers no button for it: a step in
+    // the middle of a gesture that already asked for the same thing is a step nobody asked for.
     const loadOlder = vi.fn();
     render(
       <ThreadView
@@ -62,10 +64,8 @@ describe("a conversation with more chat above it", () => {
         loadOlder={loadOlder}
       />,
     );
-    const row = screen.getByTestId("older");
-    expect(row.textContent).toContain("Load earlier messages");
-    fireEvent.click(screen.getByTestId("load-older"));
-    expect(loadOlder).toHaveBeenCalledOnce();
+    expect(screen.queryByTestId("older")).toBeNull();
+    expect(loadOlder).not.toHaveBeenCalled();
   });
 
   it("draws the shape of what is above while it is being read", () => {
@@ -81,13 +81,39 @@ describe("a conversation with more chat above it", () => {
     );
     const row = screen.getByTestId("older");
     expect(row.textContent).toBe("Reading earlier messages");
-    expect(screen.queryByTestId("load-older")).toBeNull();
     for (const bar of row.querySelectorAll("[aria-hidden='true']"))
       expect(bar.textContent).toBe("");
   });
 
-  it("says nothing above a conversation that begins where it is drawn", () => {
-    render(<ThreadView entries={[said(1)]} working={false} sent={0} />);
+  it("gives the reason a page above could not be read, and asks again", () => {
+    const loadOlder = vi.fn();
+    render(
+      <ThreadView
+        entries={[said(1)]}
+        working={false}
+        sent={0}
+        hasOlder
+        olderError="cannot reach the server"
+        loadOlder={loadOlder}
+      />,
+    );
+    const row = screen.getByTestId("older");
+    expect(row.textContent).toContain("cannot reach the server");
+    fireEvent.click(screen.getByTestId("retry-older"));
+    expect(loadOlder).toHaveBeenCalledOnce();
+  });
+
+  it("asks again only while there is something above to ask for", () => {
+    // A chat that begins where it is drawn has nothing to bring, so the retry would change nothing and is not drawn.
+    render(
+      <ThreadView
+        entries={[said(1)]}
+        working={false}
+        sent={0}
+        olderError="cannot reach the server"
+        loadOlder={() => {}}
+      />,
+    );
     expect(screen.queryByTestId("older")).toBeNull();
   });
 });

@@ -230,6 +230,7 @@ function OpenRun({ id }: { id: number }) {
                   loadingMessage="Reading the run"
                   hasOlder={thread.hasOlder}
                   olderLoading={thread.olderLoading}
+                  olderError={thread.olderError}
                   loadOlder={thread.loadOlder}
                   empty="Nothing has happened in this run yet."
                 />

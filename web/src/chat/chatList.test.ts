@@ -91,13 +91,14 @@ describe("recentChat", () => {
     expect(recentChat(chats)?.id).toBe(9);
   });
 
-  it("never takes a chat of the floating assistant, even when it is the newest", () => {
+  it("takes the newest chat wherever it was started", () => {
+    // A conversation begun in the floating window is on the Chat page like any other, so it is the one to open.
     const chats = [
       chat({ id: 3, started_at: 100 }),
       chat({ id: 9, started_at: 400, origin: "assistant" }),
     ];
-    expect(recentChat(chats)?.id).toBe(3);
-    expect(recentChat([chat({ id: 9, origin: "assistant" })])).toBeNull();
+    expect(recentChat(chats)?.id).toBe(9);
+    expect(recentChat([chat({ id: 9, origin: "assistant" })])?.id).toBe(9);
   });
 
   it("is null when there is nothing to open", () => {

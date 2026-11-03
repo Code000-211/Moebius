@@ -17,19 +17,15 @@ export function seqToMark(chat: Chat | undefined, lastSeq: number): number | nul
   return lastSeq;
 }
 
-/** How many chats have an answer the person has not read; the chats of the floating window never count. */
+/**
+ * How many chats have an answer the person has not read. A conversation started in the floating window counts like
+ * any other: it is the same chat, listed on the Chat page, and reading it in either place marks it read.
+ */
 export function unreadCount(chats: Chat[]): number {
-  return chats.filter((chat) => chat.origin !== "assistant" && chat.answered > chat.seen).length;
+  return chats.filter((chat) => chat.answered > chat.seen).length;
 }
 
-/** How many chats of the Chat page wait for an answer to a question their agent asked. */
+/** How many of the listed chats wait for an answer to a question their agent asked. */
 export function askingCount(chats: Chat[]): number {
-  return chats.filter(
-    (chat) => chat.origin !== "assistant" && chat.status === "waiting" && chat.asks,
-  ).length;
-}
-
-/** The chats the page lists: all but those of the floating window, unless one is open here. */
-export function listedChats(chats: Chat[], open: number | null): Chat[] {
-  return chats.filter((chat) => chat.origin !== "assistant" || chat.id === open);
+  return chats.filter((chat) => chat.status === "waiting" && chat.asks).length;
 }

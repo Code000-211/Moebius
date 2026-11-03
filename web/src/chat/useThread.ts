@@ -38,6 +38,8 @@ export interface Thread {
   hasOlder: boolean;
   /** Whether the page above the ones drawn is being read. */
   olderLoading: boolean;
+  /** Why that page could not be read, if it could not. Cleared by the next read of it. */
+  olderError: string | null;
   /** Reads the events above what is drawn. Does nothing when there are none, or while one is on its way. */
   loadOlder: () => void;
 }
@@ -53,10 +55,22 @@ interface Reading {
   reading: boolean;
   /** Whether the page above the ones held is being read. */
   olderLoading: boolean;
+  /** Why that page could not be read, if it could not. */
+  olderError: string | null;
   /** Whether the stream missed events while the first read was still going, to be read when it ends. */
   missed: boolean;
   /** Why the latest read failed; kept for events of the stream to publish while nothing has been read. */
   error: string | null;
+}
+
+/**
+ * Whether the chat goes on above what is now held. A page as full as one comes says there was more where it came
+ * from, and the first event of a run settles the question either way: once it is held, nothing is above it, however
+ * full the page that brought it was. Guessing from the page alone leaves a chat that happens to be exactly one page
+ * long offering a page above it that is not there.
+ */
+function moreAbove(events: RunEvent[], oldestSeq: number): boolean {
+  return events.length >= EVENT_PAGE && oldestSeq > 1;
 }
 
 const EMPTY: Thread = {
@@ -66,6 +80,7 @@ const EMPTY: Thread = {
   error: null,
   hasOlder: false,
   olderLoading: false,
+  olderError: null,
   // A chat that is not open has nothing above its first message.
   loadOlder: () => {},
 };
@@ -104,6 +119,7 @@ export function useThread(id: number | null): Thread {
       error,
       hasOlder: current.older,
       olderLoading: current.olderLoading,
+      olderError: current.olderError,
       loadOlder: () => loadOlder(current),
     });
   };
@@ -162,9 +178,7 @@ export function useThread(id: number | null): Thread {
         .then((events) => {
           if (conversation.current !== current || read !== latestRead.current) return;
           current.value.backfill(events);
-          // A page that came back full says there was more where it came from, which is all a person needs to be
-          // told: the events themselves say how far back they go.
-          current.older = events.length >= EVENT_PAGE;
+          current.older = moreAbove(events, current.value.oldestSeq);
           if (
             current.older &&
             pages < MAX_FIRST_PAGES &&
@@ -198,19 +212,23 @@ export function useThread(id: number | null): Thread {
   function loadOlder(current: Reading): void {
     if (!current.older || current.reading || current.olderLoading) return;
     current.olderLoading = true;
+    current.olderError = null;
     publish(null);
     olderEvents(current.id, current.value.oldestSeq)
       .then((events) => {
         if (conversation.current !== current) return;
         current.value.backfill(events);
-        current.older = events.length >= EVENT_PAGE;
+        current.older = moreAbove(events, current.value.oldestSeq);
         current.olderLoading = false;
         publish(null);
       })
       .catch((e: unknown) => {
         if (conversation.current !== current) return;
         current.olderLoading = false;
-        publish(reason(e));
+        // The conversation on the screen is fine, so this does not join the page's own error: it belongs to the row
+        // above the oldest turn, which is where the person is looking and where asking again is a button.
+        current.olderError = reason(e);
+        publish(null);
       });
   }
 
@@ -236,6 +254,7 @@ export function useThread(id: number | null): Thread {
         older: false,
         reading: false,
         olderLoading: false,
+        olderError: null,
         missed: false,
         error: null,
       };
