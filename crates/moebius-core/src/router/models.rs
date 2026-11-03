@@ -1,7 +1,9 @@
 //! The models the upstreams serve, asked of all of them at once for the pickers of the desktop app and kept for a
 //! while, without a key or a password in the answer, the model classes the router serves besides them, and the
-//! reasoning level names of the models whose endpoints take names other than Pi-Bolt's (`[router.model_thinking]`),
-//! which a run's `models.json` is given so that its harness can ask for a level the endpoint would not take.
+//! reasoning level names of each model: the names its endpoint says it takes, or the ones `[router.model_thinking]`
+//! gives it when it does not say. A run's `models.json` is given the name to send for every level whose own name the
+//! endpoint does not take, so that its harness can ask for a level the endpoint would not take: `xhigh` of an endpoint
+//! whose hardest level is named so, or the hardest an endpoint has when it has no name for a level at all.
 
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
@@ -10,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::{Protocol, Router, Upstream};
+use crate::config::THINKING_LEVELS;
 use crate::server::setup::without_credentials;
 
 /// The reasoning level names by model: for each reasoning level of a model, the value its endpoint takes.
@@ -27,6 +30,16 @@ pub struct AvailableModel {
     pub protocol: Protocol,
     /// The base URL of the upstream that serves it.
     pub upstream: String,
+    /// The reasoning level names its endpoint said it takes, easiest first; empty when the upstream does not say,
+    /// which is what an Anthropic endpoint and most OpenAI ones do.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub levels: Vec<String>,
+}
+
+/// A model an upstream listed, with the reasoning level names its endpoint takes.
+struct Listed {
+    id: String,
+    levels: Vec<String>,
 }
 
 /// An upstream that could not say which models it serves.
@@ -74,14 +87,38 @@ impl Router {
             .unwrap_or_else(|p| p.into_inner()) = maps;
     }
 
-    /// The value to send for each reasoning level of `model`, when its endpoint takes names other than the levels'
-    /// own; none when it takes the levels themselves.
+    /// The reasoning level names `model`'s endpoint was last heard taking, from the list kept for the pickers; empty
+    /// before the upstreams have been asked, and for an endpoint that does not name them.
+    pub fn model_levels(&self, model: &str) -> Vec<String> {
+        let kept = self
+            .available
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone();
+        kept.and_then(|(_, listed)| {
+            listed
+                .models
+                .into_iter()
+                .find(|m| m.id == model)
+                .map(|m| m.levels)
+        })
+        .unwrap_or_default()
+    }
+
+    /// The value to send for each reasoning level of `model`: what `[router.model_thinking]` gives it when it names
+    /// the model, or the names its own endpoint lists; none when neither is known, or when it takes the levels' own
+    /// names.
     pub fn thinking_map(&self, model: &str) -> Option<BTreeMap<String, String>> {
-        self.model_thinking
+        let given = self
+            .model_thinking
             .read()
             .unwrap_or_else(|p| p.into_inner())
             .get(model)
-            .cloned()
+            .cloned();
+        given.or_else(|| {
+            let map = thinking_map_of(&self.model_levels(model));
+            (!map.is_empty()).then_some(map)
+        })
     }
 
     /// The models the upstreams serve, asked of all of them at once. The answer is kept for five minutes unless
@@ -131,14 +168,17 @@ impl Router {
             seen.push(u.clone());
             new
         });
-        let asked = futures_util::future::join_all(upstreams.iter().map(|u| self.list_models(u)));
+        let asked = futures_util::future::join_all(
+            upstreams.iter().map(|u| self.listed_at(u, "/v1/models")),
+        );
         let mut answer = AvailableModels::default();
         for (upstream, result) in upstreams.iter().zip(asked.await) {
             match result {
-                Ok(ids) => answer
+                Ok(listed) => answer
                     .models
-                    .extend(ids.into_iter().map(|id| AvailableModel {
-                        id,
+                    .extend(listed.into_iter().map(|m| AvailableModel {
+                        id: m.id,
+                        levels: m.levels,
                         protocol: upstream.protocol,
                         upstream: without_credentials(&upstream.base_url),
                     })),
@@ -165,30 +205,39 @@ impl Router {
         base_url: &str,
         key: Option<String>,
     ) -> Result<Vec<String>, String> {
-        self.list_models_at(
-            &Upstream {
-                protocol: Protocol::OpenAi,
-                base_url: base_url.to_string(),
-                api_key: key,
-                oauth: None,
-            },
-            "/models",
-        )
-        .await
+        Ok(self
+            .listed_at(
+                &Upstream {
+                    protocol: Protocol::OpenAi,
+                    base_url: base_url.to_string(),
+                    api_key: key,
+                    oauth: None,
+                },
+                "/models",
+            )
+            .await?
+            .into_iter()
+            .map(|listed| listed.id)
+            .collect())
     }
 
     /// The ids of the models one upstream lists, or a short message saying why not.
     pub(super) async fn list_models(&self, upstream: &Upstream) -> Result<Vec<String>, String> {
-        self.list_models_at(upstream, "/v1/models").await
+        Ok(self
+            .listed_at(upstream, "/v1/models")
+            .await?
+            .into_iter()
+            .map(|listed| listed.id)
+            .collect())
     }
 
     /// [`Router::list_models`], where an `openai` upstream's list is at `openai_path` after its base url: a router
     /// upstream's base has no `/v1`, the decision model's url is asked at `/models` whatever it ends in.
-    async fn list_models_at(
+    async fn listed_at(
         &self,
         upstream: &Upstream,
         openai_path: &str,
-    ) -> Result<Vec<String>, String> {
+    ) -> Result<Vec<Listed>, String> {
         if let Some(needs) = upstream.oauth.as_ref().and_then(|oauth| oauth.needs()) {
             return Err(format!("needs {needs}"));
         }
@@ -197,7 +246,11 @@ impl Router {
             self.access_token(oauth).await?;
             return Ok(super::responses::MODELS
                 .iter()
-                .map(|id| id.to_string())
+                .map(|id| Listed {
+                    id: (*id).to_string(),
+                    // The subscription's own models: Pi-Bolt knows their levels, and the backend is not asked.
+                    levels: Vec::new(),
+                })
                 .collect());
         }
         let base = upstream.base_url.trim_end_matches('/');
@@ -238,17 +291,159 @@ impl Router {
             .ok_or_else(|| "the answer has no model list".to_string())?;
         Ok(data
             .iter()
-            .filter_map(|m| m["id"].as_str().map(str::to_string))
+            .filter_map(|model| {
+                let id = model["id"].as_str()?.to_string();
+                // An endpoint of this server's own kind names the reasoning levels its chat template takes.
+                let levels = model["capabilities"]["reasoning_efforts"]
+                    .as_array()
+                    .map(|named| {
+                        named
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_string)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                Some(Listed { id, levels })
+            })
             .collect())
     }
+}
+
+/// The name to send to an endpoint that takes `levels`, for each reasoning level whose own name the endpoint does not
+/// take: the name at that level's place in the endpoint's list, or the last of the list when it is shorter, so that a
+/// level harder than any the endpoint names asks for the hardest it has. Nothing is given for a level the endpoint
+/// takes by its own name, nor for any level of an endpoint that lists none; the harness sends those names themselves.
+fn thinking_map_of(levels: &[String]) -> BTreeMap<String, String> {
+    let mut map = BTreeMap::new();
+    let Some(last) = levels.last() else {
+        return map;
+    };
+    for (place, level) in THINKING_LEVELS.iter().enumerate() {
+        if levels.iter().any(|named| named == level) {
+            continue;
+        }
+        let takes = levels.get(place).unwrap_or(last);
+        map.insert((*level).to_string(), takes.clone());
+    }
+    map
 }
 
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
+    use serde_json::json;
+
     use super::*;
     use crate::store::Store;
+
+    /// An OpenAI upstream whose one model names the reasoning levels its endpoint takes.
+    async fn upstream_that(levels: Value) -> (Router, Arc<Store>, tempfile::TempDir) {
+        let answers = json!({
+            "data": [{ "id": "one-model", "capabilities": { "reasoning_efforts": levels } }]
+        });
+        let app = axum::Router::new().route(
+            "/v1/models",
+            axum::routing::get(move || {
+                let answers = answers.clone();
+                async move { axum::Json(answers) }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await });
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(Store::in_memory(dir.path()).unwrap());
+        let router = Router::new(
+            store.clone(),
+            vec![Upstream {
+                protocol: Protocol::OpenAi,
+                base_url: base,
+                api_key: None,
+                oauth: None,
+            }],
+        );
+        (router, store, dir)
+    }
+
+    #[tokio::test]
+    async fn the_levels_an_endpoint_lists_are_kept_and_send_their_names() {
+        let (router, _store, _dir) =
+            upstream_that(json!(["none", "minimal", "low", "medium", "xhigh"])).await;
+        let listed = router.available_models(true).await;
+        assert_eq!(
+            listed.models[0].levels,
+            ["none", "minimal", "low", "medium", "xhigh"]
+        );
+        assert_eq!(router.model_levels("one-model"), listed.models[0].levels);
+        // The endpoint has no name of its own for these three, so each takes the name at its place, or the hardest.
+        assert_eq!(
+            router.thinking_map("one-model").unwrap(),
+            [
+                ("off".to_string(), "none".to_string()),
+                ("high".to_string(), "xhigh".to_string()),
+                ("max".to_string(), "xhigh".to_string()),
+            ]
+            .into_iter()
+            .collect::<BTreeMap<String, String>>()
+        );
+        assert_eq!(router.thinking_map("another-model"), None);
+    }
+
+    #[tokio::test]
+    async fn an_endpoint_that_takes_the_level_names_is_given_no_map() {
+        let (router, _store, _dir) = upstream_that(json!([
+            "off", "minimal", "low", "medium", "high", "xhigh", "max"
+        ]))
+        .await;
+        router.available_models(true).await;
+        assert_eq!(router.thinking_map("one-model"), None);
+    }
+
+    #[tokio::test]
+    async fn an_endpoint_that_does_not_say_is_given_no_map() {
+        let (router, _store, _dir) = upstream_that(Value::Null).await;
+        router.available_models(true).await;
+        assert!(router.model_levels("one-model").is_empty());
+        assert_eq!(router.thinking_map("one-model"), None);
+    }
+
+    #[tokio::test]
+    async fn the_names_written_in_the_configuration_win() {
+        let (router, _store, _dir) = upstream_that(json!(["low", "medium"])).await;
+        router.set_model_thinking(
+            [(
+                "one-model".to_string(),
+                [("high".to_string(), "medium".to_string())]
+                    .into_iter()
+                    .collect(),
+            )]
+            .into_iter()
+            .collect(),
+        );
+        router.available_models(true).await;
+        assert_eq!(
+            router.thinking_map("one-model").unwrap(),
+            [("high".to_string(), "medium".to_string())]
+                .into_iter()
+                .collect::<BTreeMap<String, String>>()
+        );
+    }
+
+    #[test]
+    fn a_shorter_list_than_the_levels_sends_its_hardest_for_everything_above() {
+        let levels = ["low", "high"]
+            .into_iter()
+            .map(str::to_string)
+            .collect::<Vec<String>>();
+        let map = thinking_map_of(&levels);
+        assert_eq!(map["off"], "low");
+        assert_eq!(map["minimal"], "high");
+        assert!(!map.contains_key("high"), "it takes the name itself");
+        assert_eq!(map["xhigh"], "high");
+        assert_eq!(map["max"], "high");
+    }
 
     #[tokio::test]
     async fn the_decision_models_url_is_asked_at_models_whatever_it_ends_in() {

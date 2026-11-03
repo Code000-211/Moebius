@@ -1,6 +1,7 @@
 //! The loops that keep the server going: the board's tick, which runs every card's column script, the polls of GitHub,
 //! GitLab and Forgejo, and, every 30 seconds, the refresh of the clones of repositories without a forge and of the harness configuration
-//! repository. `serve` runs them, and the schedule (`schedule`), side by side until it stops.
+//! repository, and the hour's ask of the upstreams for the reasoning level names their models take. `serve` runs them,
+//! and the schedule (`schedule`), side by side until it stops.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -180,6 +181,20 @@ pub(super) async fn refresh(server: Arc<Server>) {
         server.refresh_harness_repository();
     })
     .await
+}
+
+/// How often the upstreams are asked again which reasoning levels their models take.
+const LEVELS_REFRESH: Duration = Duration::from_secs(60 * 60);
+
+/// Asks the upstreams which models they serve and which reasoning levels each takes, once as the server starts and
+/// then every [`LEVELS_REFRESH`], so that a run's `models.json` has the names its model's endpoint takes even when no
+/// person has opened the Models page since the server came up.
+pub(super) async fn levels(server: Arc<Server>) {
+    let mut interval = interval(LEVELS_REFRESH);
+    loop {
+        interval.tick().await;
+        server.router.available_models(true).await;
+    }
 }
 
 /// Does `work` every `period` on a thread that may block, one at a time, until the future is dropped.

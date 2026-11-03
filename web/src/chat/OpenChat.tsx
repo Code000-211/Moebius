@@ -23,7 +23,7 @@ import {
 import { sayError } from "../api/errorText";
 import { keys } from "../api/keys";
 import type { Snapshot } from "../api/types/board";
-import { type Chat, THINKING_LEVELS } from "../api/types/chat";
+import { type Chat, listedLevels, offeredLevels } from "../api/types/chat";
 import { Terminal } from "../terminal/LazyTerminal";
 import { type PillOption, PillSelect } from "../ui/chat/PillSelect";
 import { Tag } from "../ui/chat/Tag";
@@ -414,10 +414,10 @@ export function OpenChat({
     ...(model && !choices.models.includes(model) ? [{ value: model, label: model }] : []),
     ...choices.models.map((value) => ({ value, label: value })),
   ];
-  const levelOptions: PillOption[] = THINKING_LEVELS.map((level) => ({
-    value: level,
-    label: level,
-  }));
+  // A model whose endpoint names fewer levels is offered only those it takes.
+  const levelOptions: PillOption[] = offeredLevels(
+    listedLevels(choices.available, model ?? ""),
+  ).map((level) => ({ value: level, label: level }));
   // Nothing is said under the composer for a chat that has ended: its own tag in the header already says so, and
   // writing to it is the ordinary thing the composer does.
   const hint = notice

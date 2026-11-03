@@ -36,6 +36,7 @@ export function useChoices() {
   return {
     agents: chatAgents(agents.data ?? []),
     models: modelChoices(models.data),
+    available: models.data,
     hasHarness: (skills.data?.length ?? 0) > 0,
     loaded: agents.isSuccess,
   };

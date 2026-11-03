@@ -238,14 +238,16 @@ the router, so it cannot name a class.
 
 ### `[router.model_thinking]`
 
-An endpoint sometimes names its reasoning levels differently from Pi-Bolt: a local server may take `xhigh` where Pi-Bolt
-sends `high`, and it answers nothing at all for a level it was never told the name of. Each key of this table is a
-model, exactly as an agent's `model`, a class entry or a chat names it, and its table gives the value to send to the
-endpoint for each level. Moebius writes the table into the run's `models.json` as that model's `thinkingLevelMap`, so
-the harness sends the value instead of the name of the level; the router passes what it is given to the upstream
-unchanged (see [router](router.md#reasoning-level-names)). A model the table does not name is given nothing, and Pi-Bolt
-sends the name of the level itself, which it does for every level up to `high`. An agent on `claude-code` is not given a
-reasoning level, so the table of its model has no effect.
+An endpoint says which reasoning levels its models take when it is one of Moebius's own kind, and Moebius works out the
+name to send for each level from that list on its own (see [router](router.md#reasoning-level-names)). This table is for
+an endpoint that does not say: it sometimes names its reasoning levels differently from Pi-Bolt, and answers nothing at
+all for a level it was never told the name of. Each key of this table is a model, exactly as an agent's `model`, a class
+entry or a chat names it, and its table gives the value to send to the endpoint for each level. Moebius writes the table
+into the run's `models.json` as that model's `thinkingLevelMap` instead of the names it heard, so the harness sends the
+value instead of the name of the level; the router passes what it is given to the upstream unchanged. A model neither
+the table nor its endpoint names is given nothing, and Pi-Bolt sends the name of the level itself, which it does for
+every level up to `high`. An agent on `claude-code` is not given a reasoning level, so the table of its model has no
+effect.
 
 | Key | Type | Default | Meaning and validation |
 |---|---|---|---|

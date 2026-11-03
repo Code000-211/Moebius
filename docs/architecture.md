@@ -452,7 +452,7 @@ At the top:
 | `router/grants.rs` | The runs' tokens and what each allows: the card's, the run's and the day's token budgets, the MCP servers the gateway gives the run, and which tokens' answers are checked. |
 | `router/calls/mod.rs` | The check of the tool calls in the answers to a harness without a bridge (Claude Code): each call through `decide("tool_call")`, a refused one replaced by a text naming the rule; whole answers, and the secrets of tool results in requests. |
 | `router/calls/stream.rs` | A streamed answer checked as it passes: a tool call's events held back until the call is complete and decided. |
-| `router/models.rs` | The models the upstreams serve and the model classes, for the pickers of the desktop app, and the reasoning level names of the models whose endpoints take names other than Pi-Bolt's (`[router.model_thinking]`), which a run's `models.json` is given. |
+| `router/models.rs` | The models the upstreams serve and the model classes, for the pickers of the desktop app, and the reasoning level names of each model: what its endpoint lists, or what `[router.model_thinking]` gives it, which a run's `models.json` is given. |
 | `router/oauth/mod.rs` | The OAuth login of an upstream: its `oauth` table, the warning confirmed before a login, the access token refreshed before it expires and the refresh token kept in `secrets.toml`. |
 | `router/oauth/device.rs` | The device authorization grant: the code the person enters at the provider, and the token URL polled until it is confirmed. |
 | `router/oauth/code.rs` | An authorization code with PKCE, the browser sent back to a loopback listener. |
@@ -491,7 +491,7 @@ At the top:
 |---|---|
 | `server/mod.rs` | Wires everything from the configuration and serves the desktop API, the router and the loops. |
 | `server/leftovers.rs` | What a server that stopped left going, ended at the next start: its runs failed and their worktrees removed, its Retros, research and trials set back. |
-| `server/loops.rs` | The board's tick, the polls of GitHub, GitLab and Forgejo (also at once when a webhook wakes one), and the refresh of the clones every 30 seconds. |
+| `server/loops.rs` | The board's tick, the polls of GitHub, GitLab and Forgejo (also at once when a webhook wakes one), the refresh of the clones every 30 seconds, and the hour's ask of the upstreams for the reasoning level names their models take. |
 | `server/plugins.rs` | Starting the plugins in their own process that `[[plugins]]` names, with their standard error in `<data_dir>/plugins/<name>.log`, redacted. |
 | `server/packages/mod.rs` | The package manager: the errors, the registries' catalog, the choice of a version, and search, info, list, install, update and remove (see `docs/reference/packages.md`). |
 | `server/packages/version.rs` | Versions and the ranges of Moebius versions a package works with. |

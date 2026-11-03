@@ -1164,14 +1164,21 @@ the Models screen's decision model. Response:
 
 ```json
 {
-  "models": [{"id": "claude-sonnet-4-5", "protocol": "anthropic", "upstream": "https://api.anthropic.com"}],
+  "models": [
+    {"id": "claude-sonnet-4-5", "protocol": "anthropic", "upstream": "https://api.anthropic.com"},
+    {"id": "qwen-local", "protocol": "openai", "upstream": "http://127.0.0.1:8080",
+     "levels": ["none", "minimal", "low", "medium", "xhigh"]}
+  ],
   "errors": [{"upstream": "https://api.example.com", "message": "401"}],
   "classes": [{"name": "strong", "models": ["claude-sonnet-4-5", "qwen-local"], "protocols": ["anthropic"]}],
   "decision_models": ["moebius-decider"]
 }
 ```
 
-- `models` are sorted by `protocol`, then `id`; the same model of the same upstream is listed once.
+- `models` are sorted by `protocol`, then `id`; the same model of the same upstream is listed once. Each may carry
+  `levels`, the reasoning level names its endpoint said it takes, easiest first (see
+  [the router](router.md#reasoning-level-names)); a model whose upstream does not say has no `levels` at all, and takes
+  the level names themselves.
 - `classes` are the model classes of `[router.classes]` by name (see [the router](router.md#model-classes)), which may be
   named wherever a model is: each with its models, first tried first, and the protocols `models` lists any of them
   under (empty when none is listed). They are the router's as the request is answered, never kept.
