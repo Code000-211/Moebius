@@ -5,7 +5,7 @@
  * this one. Once an answer is held its events are marked read, once per answer.
  */
 
-import { PencilSimpleIcon } from "@phosphor-icons/react";
+import { ArrowClockwiseIcon, PencilSimpleIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
@@ -37,7 +37,7 @@ import { FadedLine } from "../ui/page/FadedLine";
 import { Notice } from "../ui/page/Notice";
 import { Composer } from "./Composer";
 import { draftKey, readDraft, saveDraft } from "./drafts";
-import { endedHint, isOpen, isWorking, statusTag, takesMessage } from "./format";
+import { agentGone, endedHint, isOpen, isWorking, statusTag, takesMessage } from "./format";
 import { levelChoices } from "./levels";
 import { offeredChange, placeName } from "./places";
 import { seqToMark } from "./readMarkers";
@@ -354,7 +354,7 @@ export function OpenChat({
   // A chat whose agent went away still takes a message: that chat is taken up again, told what was said in it, so the
   // person goes on where they are rather than in a new chat.
   const writesHere = takesMessage(chat.status);
-  const gone = chat.status === "stopped";
+  const gone = agentGone(chat.status);
 
   // Pi-Bolt's own terminal interface takes the place of the conversation; the top bar's button brings it back.
   if (open && params.get("terminal") === "1") {
@@ -369,9 +369,12 @@ export function OpenChat({
     );
   }
 
-  async function send() {
-    const text = message.trim();
-    if (text === "" || sending || !chat) return;
+  /**
+   * Sends `text`, which is what the field holds unless the caller names another message. The failure banner sends
+   * nothing: to a chat whose agent went away that asks it to answer what it was answering, and puts no new words in it.
+   */
+  async function send(text = message.trim()) {
+    if (sending || !chat) return;
     setSending(true);
     onNotice(null);
     setSent((n) => n + 1);
@@ -441,6 +444,24 @@ export function OpenChat({
             olderLoading={thread.olderLoading}
             olderError={thread.olderError}
             loadOlder={thread.loadOlder}
+            // The banner that says what went wrong is where the person is already looking, so it is where going
+            // through the same message again is offered — the agent is made again in this chat, told what was said.
+            retryAction={
+              gone ? (
+                <Button
+                  size="sm"
+                  variant="danger"
+                  // The banner is the error's own fill, so the button of it needs its border to read as a button.
+                  className="ring-1 ring-error-border ring-inset"
+                  onClick={() => void send("")}
+                  disabled={sending}
+                  title="Starts the agent again in this chat, to answer what it was answering"
+                >
+                  <ArrowClockwiseIcon aria-hidden="true" className="size-4" />
+                  Retry
+                </Button>
+              ) : undefined
+            }
             empty={thread.loaded ? "Start with one of these, or write your own." : undefined}
             // The starters are for the moment before anything is written; once a message is on its way they are in
             // the way, and picking one would replace what was typed.

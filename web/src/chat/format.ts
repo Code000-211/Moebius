@@ -31,10 +31,17 @@ export function statusTag(status: string, asks: boolean): { label: string; tone:
  */
 export function endedHint(status: string, agent: string): string {
   const gone: Record<string, string> = {
-    failed: `${agent} stopped answering`,
     succeeded: `${agent} ended this chat`,
   };
   return `${gone[status] ?? "This chat has ended"}. Start a new chat to continue.`;
+}
+
+/**
+ * Whether the chat's agent went away — `stopped` between turns, `failed` in the middle of one — leaving the chat that
+ * the next message takes up again rather than ended for good.
+ */
+export function agentGone(status: string): boolean {
+  return status === "stopped" || status === "failed";
 }
 
 /** Whether a chat can still be written to. */
@@ -47,7 +54,7 @@ export function isOpen(status: string): boolean {
  * the chat is taken up again, told what was said in it, rather than being left behind for a new chat.
  */
 export function takesMessage(status: string): boolean {
-  return isOpen(status) || status === "stopped";
+  return isOpen(status) || agentGone(status);
 }
 
 /** Whether the chat's agent is at work. */

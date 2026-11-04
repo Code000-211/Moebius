@@ -51,11 +51,11 @@ impl Store {
     }
 
     /// Picks up a chat that ended when its agent went away: it works from now on and is no longer ended, so that what
-    /// the person writes next belongs to it again. Only a chat that is stopped is picked up; false when it was not,
-    /// because another message got there first.
+    /// the person writes next belongs to it again. Only a chat that is stopped or failed is picked up; false when it
+    /// was not, because another message got there first.
     pub fn reopen_chat(&self, id: i64) -> Result<bool> {
         let changed = self.conn().execute(
-            "UPDATE runs SET status = 'running', ended_at = NULL WHERE id = ?1 AND status = 'stopped'",
+            "UPDATE runs SET status = 'running', ended_at = NULL WHERE id = ?1 AND status IN ('stopped', 'failed')",
             [id],
         )?;
         Ok(changed == 1)

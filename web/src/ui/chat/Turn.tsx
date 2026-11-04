@@ -8,6 +8,7 @@
  * worked with, and keeps that text on the colour of code rather than in a box of its own colours.
  */
 import { CircleNotchIcon } from "@phosphor-icons/react";
+import type { ReactNode } from "react";
 import {
   inputPath,
   inputSummary,
@@ -196,10 +197,13 @@ function BlockView({
   block,
   isOpen,
   onToggle,
+  retry,
 }: {
   block: Block;
   isOpen: (key: string) => boolean;
   onToggle: (key: string) => void;
+  /** What to press to have the failed turn answered again; only the turn that ended the chat has one. */
+  retry?: ReactNode;
 }) {
   switch (block.kind) {
     case "text":
@@ -221,7 +225,9 @@ function BlockView({
         <ChatErrorMessage
           title={block.source === "model" ? "The model returned an error" : "The run failed"}
           content={block.message}
-          actions={<CopyButton text={block.message} label="Copy error" />}
+          // Where the block offers the way back, that is the one thing to press there; taking its words away is
+          // beside the point, and Copy has nowhere else the person looks for it.
+          actions={retry ?? <CopyButton text={block.message} label="Copy error" />}
         />
       );
     case "mcpError":
@@ -263,16 +269,18 @@ interface TurnProps {
   onToggle: (key: string) => void;
   /** A tighter rhythm between the blocks and the rows, for the floating chat's dock. */
   compact?: boolean;
+  /** Offered on the block that went wrong: what to press to have it answered again. */
+  retry?: ReactNode;
 }
 
-export function Turn({ turn, unfolded, onToggle, compact = false }: TurnProps) {
+export function Turn({ turn, unfolded, onToggle, compact = false, retry }: TurnProps) {
   const isOpen = (key: string) => unfolded.has(key);
   const head = turn.head;
   // A turn is written on the canvas rather than stacked in boxes: the person's message is a band of the sunken
   // colour, and what the agent did, answered and got wrong is the text and the rows under it, in the order it came. A
   // card of its own would put a second shadow inside the chat, which is itself a card on the page or a sheet over it.
   const view = (block: Block) => (
-    <BlockView key={block.key} block={block} isOpen={isOpen} onToggle={onToggle} />
+    <BlockView key={block.key} block={block} isOpen={isOpen} onToggle={onToggle} retry={retry} />
   );
   return (
     <div data-testid="turn" className={cn("flex min-w-0 flex-col", compact ? "gap-3" : "gap-4")}>

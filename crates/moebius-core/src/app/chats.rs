@@ -153,6 +153,15 @@ fn continues_prompt(earlier: &str, message: &str) -> String {
     )
 }
 
+/// The prompt for an agent made again to answer what it was already answering, asked nothing new: what its chat
+/// holds, and the ask to finish it.
+fn resumed_prompt(earlier: &str) -> String {
+    format!(
+        "This chat went no further because its agent went away while it was going on. What was said and done in it:\n\n\
+         {earlier}\n\nAnswer the last thing the person asked now, taking up where you left off."
+    )
+}
+
 /// The prompt a chat's agent answers: `message`, after `context`, where the person who wrote it is in the app, with
 /// its secrets redacted and cut to [`CONTEXT_LIMIT`] characters. Without a context, or with a blank one, the message.
 fn with_context(context: Option<&str>, message: &str) -> String {
@@ -305,7 +314,7 @@ impl App {
         check_settings(model, thinking)?;
         let _turn = self.chat_turns.lock().unwrap_or_else(|e| e.into_inner());
         let run = self.run(run.id)?;
-        if run.status != "waiting" && run.status != "stopped" {
+        if run.status != "waiting" && !Self::agent_gone(&run.status) {
             // A chat whose agent went away is not ended for good: the agent made again for the next message starts on
             // what is stored, so such a chat is given its settings too.
             return Err(if run.ended_at.is_some() {
@@ -385,9 +394,6 @@ impl App {
         context: Option<&str>,
     ) -> Result<Run> {
         self.chat(run_id)?;
-        if message.trim().is_empty() {
-            return Err(AppError::Invalid("a message cannot be blank".into()));
-        }
         if self.terminals.is_open(tui_key(run_id)) {
             return Err(AppError::Conflict(format!(
                 "chat {run_id} is in its terminal: close it to write to the chat"
@@ -400,7 +406,12 @@ impl App {
             return Err(Self::waking_conflict(run_id));
         }
         if run.ended_at.is_some() {
+            // A chat whose agent went away is written to even with nothing in it, which asks its agent to answer what
+            // it was already answering: what a person presses Retry for.
             return self.wake_chat(runs, turn, &run, message, context);
+        }
+        if message.trim().is_empty() {
+            return Err(AppError::Invalid("a message cannot be blank".into()));
         }
         // Stored first, so that it comes before the agent's records of its answer.
         self.record_run_event(run_id, "said", &json!({ "message": redact(message) }))?;
@@ -412,10 +423,18 @@ impl App {
         Ok(run)
     }
 
-    /// A person writes to the ended chat `run`, which ended because its agent went away (a person pressing Stop or the
-    /// server stopping alike): the agent starts again in the chat's own place and on its own branch, told what was said
+    /// Whether the ended chat `status` only means its agent went away, so that the next message takes it up again:
+    /// `stopped` went away between turns, `failed` in the middle of one. A chat that ended any other way is ended for
+    /// good.
+    fn agent_gone(status: &str) -> bool {
+        status == "stopped" || status == "failed"
+    }
+
+    /// A person writes to the ended chat `run`, whose agent went away (a person pressing Stop, the server stopping, or
+    /// the run failing alike): the agent starts again in the chat's own place and on its own branch, told what was said
     /// in the chat before, and the chat works from now on. What the person wrote is the message it answers, told first
-    /// where they are when `context` is given. `turn` is the hold on `chat_turns`, kept until the chat is taken up and
+    /// where they are when `context` is given; when they wrote nothing, it is asked to answer the last thing again and
+    /// nothing new is stored in the chat. `turn` is the hold on `chat_turns`, kept until the chat is taken up and
     /// let go before its agent starts, so that other chats are not kept waiting. When the agent cannot start again the
     /// chat is left as it was, and why it cannot is the error.
     fn wake_chat(
@@ -427,7 +446,7 @@ impl App {
         context: Option<&str>,
     ) -> Result<Run> {
         let run_id = run.id;
-        if run.status != "stopped" {
+        if !Self::agent_gone(&run.status) {
             return Err(AppError::Invalid(format!("chat {run_id} has ended")));
         }
         if run.agent == crate::harness::pibolt::GRILLING_AGENT {
@@ -438,10 +457,20 @@ impl App {
         // What can be told beforehand is, so that a message that cannot be answered is not kept in the chat.
         self.check_chat_branch(run)
             .map_err(|why| AppError::Invalid(format!("chat {run_id} cannot start again: {why}")))?;
-        let told = continues_prompt(&self.conversation_of(run_id)?, message);
-        // Stored first, so that it comes before the agent's records of its answer.
-        self.record_run_event(run_id, "said", &json!({ "message": redact(message) }))?;
+        let asked = message.trim();
+        let conversation = self.conversation_of(run_id)?;
+        let told = if asked.is_empty() {
+            resumed_prompt(&conversation)
+        } else {
+            continues_prompt(&conversation, message)
+        };
+        // Stored first, so that it comes before the agent's records of its answer. Nothing is stored when nothing new
+        // was asked: the chat goes on with the words it already holds.
+        if !asked.is_empty() {
+            self.record_run_event(run_id, "said", &json!({ "message": redact(message) }))?;
+        }
         // The chat works from now on and is no longer ended, before its agent says so.
+        let was = run.status.clone();
         let reopened = self.store.reopen_chat(run_id)?;
         if reopened {
             // Until the agent is registered with the harness, a message, a stop or an end cannot reach it.
@@ -457,7 +486,7 @@ impl App {
         let woken = runs.wake(self, run_id, &with_context(context, &told));
         if woken.is_err() {
             // As it was: ended because its agent went away, its worktree taken away again with it.
-            let _ = self.store.set_run_status(run_id, "stopped");
+            let _ = self.store.set_run_status(run_id, &was);
         }
         self.waking
             .lock()
@@ -831,6 +860,57 @@ mod tests {
         assert!(waker.join().unwrap().is_err());
         assert!(!app.is_waking(chat.id));
         assert_eq!(app.run(chat.id).unwrap().status, "stopped");
+    }
+
+    #[test]
+    fn a_chat_that_failed_is_taken_up_again_by_the_next_message() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(Store::in_memory(&dir.path().join("blobs")).unwrap());
+        let host = Arc::new(Host::new(Duration::from_secs(1)));
+        let app = Arc::new(App::new(store, host, &dir.path().join("data")));
+        let (entered, waiting) = channel();
+        let (release, released) = channel();
+        let runs = Arc::new(SlowWake {
+            entered: Mutex::new(entered),
+            release: Mutex::new(released),
+        });
+        let chat = app.store.add_run(None, "Coder", "fake", "chat").unwrap();
+        app.store.set_run_status(chat.id, "failed").unwrap();
+
+        let wake = |app: &Arc<App>, runs: &Arc<SlowWake>| {
+            let (app, runs) = (app.clone(), runs.clone());
+            std::thread::spawn(move || app.say_in_chat(&*runs, chat.id, "Try again", None))
+        };
+
+        // A wake that fails leaves the chat failed, as it was, so that the next message tries again.
+        let waker = wake(&app, &runs);
+        waiting.recv().unwrap();
+        release.send(Err("no room".into())).unwrap();
+        assert!(waker.join().unwrap().is_err());
+        assert_eq!(app.run(chat.id).unwrap().status, "failed");
+        assert_eq!(said(&app, chat.id), 1);
+
+        let waker = wake(&app, &runs);
+        waiting.recv().unwrap();
+        release.send(Ok(())).unwrap();
+        waker.join().unwrap().unwrap();
+        let woken = app.run(chat.id).unwrap();
+        assert_eq!(woken.status, "running");
+        assert!(woken.ended_at.is_none());
+        assert_eq!(said(&app, chat.id), 2);
+
+        // Writing nothing to a chat whose agent went away asks it to answer what it was answering, and puts no new
+        // words in the chat.
+        app.store.set_run_status(chat.id, "failed").unwrap();
+        let waker = {
+            let (app, runs) = (app.clone(), runs.clone());
+            std::thread::spawn(move || app.say_in_chat(&*runs, chat.id, "", None))
+        };
+        waiting.recv().unwrap();
+        release.send(Ok(())).unwrap();
+        waker.join().unwrap().unwrap();
+        assert_eq!(app.run(chat.id).unwrap().status, "running");
+        assert_eq!(said(&app, chat.id), 2);
     }
 
     #[test]
