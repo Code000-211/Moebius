@@ -999,13 +999,20 @@ describe("deleting a chat", () => {
       await page.goto(`${server.url}/chat/${id}`);
       await page.getByRole("button", { name: /^Chats \(1\)/ }).focus();
       await page.keyboard.press("Enter");
+      // The list opens after the key; arrows pressed before it is drawn move nothing.
+      await page.getByTestId("delete-chat-row").waitFor();
       const focusedIsDelete = () =>
         page.evaluate(
           () => document.activeElement?.getAttribute("data-testid") === "delete-chat-row",
         );
-      for (let i = 0; i < 4 && !(await focusedIsDelete()); i++)
-        await page.keyboard.press("ArrowDown");
-      expect(await focusedIsDelete()).toBe(true);
+      // The menu takes the focus a moment after it opens, and does not wrap round at its end, so a key more than
+      // needed stays on the last item: pressed until the focus is on Delete.
+      await expect
+        .poll(async () => {
+          if (!(await focusedIsDelete())) await page.keyboard.press("ArrowDown");
+          return focusedIsDelete();
+        })
+        .toBe(true);
       await page.keyboard.press("Enter");
       await dialog().waitFor();
       await dialog().getByRole("button", { name: "Delete" }).click();
