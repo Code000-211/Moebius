@@ -24,6 +24,7 @@ import { Field, TextArea } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 import { Status } from "../../ui/page/Status";
 import { type Action, perform, working } from "./actions";
+import { DeleteGrilling } from "./DeleteGrilling";
 import {
   APPROVE_ISSUE,
   CHANGE_CLOSED,
@@ -192,8 +193,10 @@ export function ItemCard({
         ),
       );
       buttons.push(plain("Dismiss", () => act({ kind: "dismissGrilling", grilling })));
+      buttons.push(<DeleteGrilling key="delete" grilling={grilling} />);
     } else if (item.kind === GRILLING_REPORT && grilling !== null) {
       buttons.push(primary("Dismiss", { kind: "dismissGrilling", grilling }));
+      buttons.push(<DeleteGrilling key="delete" grilling={grilling} />);
     }
     return <div className="flex flex-wrap gap-2">{buttons}</div>;
   };

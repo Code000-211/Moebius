@@ -1,5 +1,6 @@
 //! The chats and what grilling chats ended in: `chats` lists them, `chat` starts one, writes to it, offers its
-//! changes and ends it; `grillings` lists the grillings, `grilling` shows, confirms and dismisses one.
+//! changes, ends it and deletes it; `grillings` lists the grillings, `grilling` shows, confirms, dismisses and deletes
+//! one.
 
 use clap::Subcommand;
 use serde_json::{Map, Value, json};
@@ -36,6 +37,13 @@ pub enum ChatCommand {
     },
     /// End a chat.
     End { id: i64 },
+    /// Delete a chat with its changes, inbox items, worktree and branch; stopped first if it is going.
+    Delete {
+        id: i64,
+        /// Why; recorded with the decision.
+        #[arg(long)]
+        reason: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -52,6 +60,13 @@ pub enum GrillingCommand {
     Dismiss {
         id: i64,
     },
+    /// Delete a grilling with its chat; the issues it filed stay.
+    Delete {
+        id: i64,
+        /// Why; recorded with the decision.
+        #[arg(long)]
+        reason: Option<String>,
+    },
 }
 
 /// `chats`.
@@ -62,7 +77,7 @@ pub fn chats() -> Plan {
     ))
 }
 
-/// `chat start`, `say`, `offer` and `end`.
+/// `chat start`, `say`, `offer`, `end` and `delete`.
 pub fn chat(command: &ChatCommand) -> Plan {
     let request = match command {
         ChatCommand::Start {
@@ -92,6 +107,7 @@ pub fn chat(command: &ChatCommand) -> Plan {
             Request::post(format!("/v1/chats/{id}/offer"), json!({ "reason": reason }))
         }
         ChatCommand::End { id } => Request::post(format!("/v1/chats/{id}/end"), json!({})),
+        ChatCommand::Delete { id, reason } => delete(format!("/v1/chats/{id}"), reason),
     };
     Ok((request, Show::Object))
 }
@@ -104,7 +120,7 @@ pub fn grillings() -> Plan {
     ))
 }
 
-/// `grilling show`, `confirm` and `dismiss`; `confirm` without `--issues` reads the proposed issues first.
+/// `grilling show`, `confirm`, `dismiss` and `delete`; `confirm` without `--issues` reads the proposed issues first.
 pub fn grilling(
     command: &GrillingCommand,
     get: &mut dyn FnMut(&str) -> Result<Value, String>,
@@ -124,8 +140,17 @@ pub fn grilling(
         GrillingCommand::Dismiss { id } => {
             Request::post(format!("/v1/grillings/{id}/dismiss"), json!({}))
         }
+        GrillingCommand::Delete { id, reason } => delete(format!("/v1/grillings/{id}"), reason),
     };
     Ok((request, Show::Object))
+}
+
+/// A delete of `path`, with the person's reason if they gave one.
+pub(super) fn delete(path: String, reason: &Option<String>) -> Request {
+    Request::delete_with(
+        path,
+        reason.clone().map(|reason| json!({ "reason": reason })),
+    )
 }
 
 /// A message given as an argument, or `-` for standard input.

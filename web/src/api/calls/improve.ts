@@ -69,6 +69,16 @@ export function actOnResearch(research: number, action: ResearchAction): Promise
   return post<Research>(`/v1/research/${research}/${action}`, {});
 }
 
+/** Deletes a research with its experiments, runs and lever branches; the server stops it first when it runs. */
+export async function deleteResearch(research: number): Promise<void> {
+  await del<unknown>(`/v1/research/${research}`);
+}
+
+/** Deletes a training-set export with its files on the server. */
+export async function deleteExport(id: number): Promise<void> {
+  await del<unknown>(`/v1/exports/${id}`);
+}
+
 /** How well the decision model agrees with the recorded choices, and its takeovers. */
 export function shadowing(): Promise<Shadowing> {
   return get<Shadowing>("/v1/decision-model");

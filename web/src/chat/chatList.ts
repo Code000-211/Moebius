@@ -11,6 +11,7 @@ export function applyChatEvent(chats: Chat[], event: ServerEvent): Chat[] {
   const data = event.data;
   const run = data.run;
   if (typeof run !== "number") return chats;
+  if (event.kind === "chat_deleted") return chats.filter((chat) => chat.id !== run);
   if (event.kind === "run_ended" && typeof data.status === "string") {
     return replace(chats, run, (chat) => ({ ...chat, status: data.status as Chat["status"] }));
   }
@@ -73,6 +74,7 @@ export function listChanged(event: ServerEvent): boolean {
     event.kind === "run_ended" ||
     event.kind === "change_offered" ||
     event.kind === "change_updated" ||
-    event.kind === "chat_renamed"
+    event.kind === "chat_renamed" ||
+    event.kind === "chat_deleted"
   );
 }

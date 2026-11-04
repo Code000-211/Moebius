@@ -10,8 +10,9 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::app::{App, PERSON};
+use crate::app::{App, AppError, PERSON};
 use crate::blobs::redact_json;
+use crate::bus::Event;
 use crate::decide::{Actor, Question};
 use crate::store::{self, Judgement, Store, StoreError};
 
@@ -293,6 +294,24 @@ pub fn list(data_dir: &Path) -> Vec<Export> {
         .collect();
     found.sort_by_key(|e| std::cmp::Reverse(e.id));
     found
+}
+
+/// A person deletes the export `id`: its directory under the data directory, with its files. Recorded as a
+/// `delete_export` decision and announced as `export_deleted`.
+pub fn delete(app: &App, by: &Actor, id: i64, reason: &str) -> Result<Export, AppError> {
+    let export = list(&app.data_dir)
+        .into_iter()
+        .find(|export| export.id == id)
+        .ok_or_else(|| AppError::NotFound(format!("export {id}")))?;
+    std::fs::remove_dir_all(exports_dir(&app.data_dir).join(id.to_string()))?;
+    let kinds: Vec<&str> = export.kinds.iter().map(|c| c.kind.as_str()).collect();
+    let context = BTreeMap::from([
+        ("export".to_string(), id.to_string()),
+        ("kinds".to_string(), kinds.join(",")),
+    ]);
+    app.record_action(by, "delete_export", None, None, context, reason)?;
+    app.bus.publish(Event::ExportDeleted { export: id });
+    Ok(export)
 }
 
 /// The file of `kind` in export `id`, if there is one.

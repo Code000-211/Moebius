@@ -18,6 +18,7 @@ mod cards;
 mod changes;
 mod chats;
 mod checks;
+mod deletions;
 mod diffs;
 mod localize;
 mod packages;
@@ -56,6 +57,7 @@ pub use board::{BoardFacts, CardFacts};
 pub use cards::HistoryEntry;
 pub use chats::{ASSISTANT_ORIGIN, CHAT_ORIGIN, Chat, ChatSettings};
 pub(crate) use checks::tail;
+pub(crate) use deletions::list;
 pub use diffs::Diff;
 pub use reproduce::{Reproduction, TestRun};
 pub use whereabouts::{ClientInfo, OFFICIAL_REPOSITORY, ServerInfo};
@@ -106,6 +108,22 @@ pub type Result<T> = std::result::Result<T, AppError>;
 
 pub use stopping::CardStopWaits;
 
+/// Held by the thread of a research while it goes (see [`App::researching`]).
+pub(crate) struct Researching {
+    app: Arc<App>,
+    id: i64,
+}
+
+impl Drop for Researching {
+    fn drop(&mut self) {
+        self.app
+            .researching
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&self.id);
+    }
+}
+
 pub struct App {
     pub store: Arc<Store>,
     pub bus: Bus,
@@ -137,6 +155,8 @@ pub struct App {
     /// The chats being woken: reopened, their agent not yet registered with the harness (see `wake_chat`). Entered
     /// under `chat_turns`, so that a message, a stop or an end arriving meanwhile can tell.
     waking: Mutex<BTreeSet<i64>>,
+    /// The research whose thread is going (see `research::start`): a research is deleted only once its thread is done.
+    researching: Mutex<BTreeSet<i64>>,
     /// The terminals open on each run.
     pub terminals: Arc<Slots>,
     /// Why each waiting card waits, as its column script last said (`moebius.wait`, `ask`, `stuck`). Not stored: a
@@ -173,12 +193,27 @@ impl App {
             run_events: Mutex::default(),
             chat_turns: Mutex::default(),
             waking: Mutex::default(),
+            researching: Mutex::default(),
             terminals: Arc::default(),
             waiting: Mutex::default(),
             forges,
             harness_repo: OnceLock::new(),
             whereabouts: Default::default(),
         }
+    }
+
+    /// Notes that the thread of the research `id` is going, or that it is being deleted; the returned guard says it is
+    /// done when dropped. None when something already holds the research, which is how a start and a delete exclude
+    /// each other.
+    pub(crate) fn researching(self: &Arc<Self>, id: i64) -> Option<Researching> {
+        self.researching
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(id)
+            .then(|| Researching {
+                app: self.clone(),
+                id,
+            })
     }
 
     /// Tells the core which clone is the harness configuration repository, where chats can work.

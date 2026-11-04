@@ -1161,3 +1161,20 @@ describe("settings", () => {
     },
   );
 });
+
+describe("deleting a grilling from the inbox", () => {
+  it.skipIf(usesRealServer)("asks once, then the grilling leaves the inbox", async () => {
+    await open("/inbox");
+    const grilling = item("A report from a grilling");
+    await grilling.getByRole("button", { name: "Delete" }).click();
+    const dialog = page.getByRole("dialog", { name: "Delete this grilling?" });
+    await dialog.getByText(/Issues it already filed stay/).waitFor();
+    await dialog.getByRole("button", { name: "Keep" }).click();
+    await dialog.waitFor({ state: "detached" });
+    expect(fake().requests.some((r) => r.method === "DELETE")).toBe(false);
+    await grilling.getByRole("button", { name: "Delete" }).click();
+    await dialog.getByRole("button", { name: "Delete" }).click();
+    await grilling.waitFor({ state: "detached" });
+    expect(fake().requests.at(-1)).toMatchObject({ method: "DELETE", path: "/v1/grillings/8" });
+  });
+});

@@ -8,6 +8,8 @@
 //! - `GET /v1/judgements/kinds`: the counts of the stored judgements per kind. `POST /v1/exports` `{kinds?}` writes the
 //!   training-set export a person asks for and records the decision; `GET /v1/exports` lists the exports; `GET
 //!   /v1/exports/{id}/{file}` downloads a file (`<kind>.jsonl`) of one (see [`crate::improve::export`]).
+//! - `DELETE /v1/research/{id}`, `/v1/exports/{id}` and `/v1/replays/{id}`: a person deletes a research with its
+//!   experiments, an export with its files, or a replay; none is for an agent's token.
 //! - `POST /v1/retros` `{date?}`, `GET /v1/retros` and `GET /v1/retros/{date}`: the Retro of a day (see
 //!   [`crate::improve::retro`]). `GET /v1/proposals`, `POST /v1/proposals/{id}/trial`, `/merge` and `/dismiss`: its
 //!   proposals, tried, merged or dismissed (see [`crate::improve::trial`] and, for those that change Moebius's own
@@ -25,10 +27,10 @@ use axum::Router;
 use axum::extract::{Path as UrlPath, Query, State};
 use axum::http::header;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use serde::{Deserialize, Serialize};
 
-use super::{ApiError, ApiState, Reason, blocking, harness_repo};
+use super::{ApiError, ApiState, Reason, blocking, harness_repo, person_only};
 use crate::app::AppError;
 use crate::decide::Actor;
 use crate::decide::model;
@@ -51,7 +53,9 @@ pub(super) fn routes() -> Router<ApiState> {
         .route("/v1/judgements/kinds", get(judgement_kinds))
         .route("/v1/judgements/{id}/replay", post(replay_judgement))
         .route("/v1/replays", get(replays))
+        .route("/v1/replays/{id}", delete(delete_replay))
         .route("/v1/exports", get(exports).post(start_export))
+        .route("/v1/exports/{id}", delete(delete_export))
         .route("/v1/exports/{id}/{file}", get(download_export))
         .route("/v1/retros", get(retros).post(start_retro))
         .route("/v1/retros/{date}", get(get_retro))
@@ -65,7 +69,10 @@ pub(super) fn routes() -> Router<ApiState> {
         .route("/v1/takeovers/{id}/dismiss", post(dismiss_takeover))
         .route("/v1/takeovers/{id}/release", post(release_takeover))
         .route("/v1/research", get(researches).post(create_research))
-        .route("/v1/research/{id}", get(get_research).put(edit_research))
+        .route(
+            "/v1/research/{id}",
+            get(get_research).put(edit_research).delete(delete_research),
+        )
         .route("/v1/research/{id}/confirm", post(confirm_research))
         .route("/v1/research/{id}/start", post(start_research))
         .route("/v1/research/{id}/stop", post(stop_research))
@@ -363,6 +370,43 @@ async fn stop_research(
     blocking(&state.app, move |app| research::stop(app, &*runs, id)).await
 }
 
+async fn delete_research(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    body: Option<axum::Json<Reason>>,
+) -> Result<axum::Json<crate::store::Research>, ApiError> {
+    person_only(&by)?;
+    let reason = body.map(|body| body.0.reason).unwrap_or_default();
+    let runs = state.runs.clone();
+    blocking(&state.app, move |app| {
+        research::delete(app, &*runs, &by, id, &reason)
+    })
+    .await
+}
+
+async fn delete_export(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    body: Option<axum::Json<Reason>>,
+) -> Result<axum::Json<Export>, ApiError> {
+    person_only(&by)?;
+    let reason = body.map(|body| body.0.reason).unwrap_or_default();
+    blocking(&state.app, move |app| export::delete(app, &by, id, &reason)).await
+}
+
+async fn delete_replay(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    body: Option<axum::Json<Reason>>,
+) -> Result<axum::Json<Replay>, ApiError> {
+    person_only(&by)?;
+    let reason = body.map(|body| body.0.reason).unwrap_or_default();
+    blocking(&state.app, move |app| replay::delete(app, &by, id, &reason)).await
+}
+
 async fn replay_judgement(
     State(state): State<ApiState>,
     UrlPath(id): UrlPath<i64>,
@@ -538,6 +582,164 @@ async fn usage(
 mod tests {
     use super::*;
     use crate::server::api::testing::{get, start};
+    use crate::store::Replay;
+
+    async fn delete(state: &ApiState, addr: &str, path: &str) -> reqwest::Response {
+        reqwest::Client::new()
+            .delete(format!("http://{addr}{path}"))
+            .bearer_auth(&*state.token)
+            .json(&serde_json::json!({ "reason": "not needed" }))
+            .send()
+            .await
+            .unwrap()
+    }
+
+    fn judge(app: &crate::app::App, kind: &str, run: Option<i64>) -> crate::store::Judgement {
+        app.store
+            .add_judgement(&crate::store::NewJudgement {
+                kind: kind.into(),
+                choice: "refuse".into(),
+                decider: "person".into(),
+                run_id: run,
+                ..Default::default()
+            })
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn deleting_an_export_removes_its_files_only_and_records_and_announces_it() {
+        let (_dir, state, addr) = start().await;
+        let app = &state.app;
+        judge(app, "merge", None);
+        let made = |n: usize| {
+            let post = crate::server::api::testing::post(
+                &state,
+                &addr,
+                "/v1/exports".into(),
+                serde_json::json!({}),
+            );
+            async move {
+                let made = post.await;
+                assert_eq!(made.status(), 200, "export {n}");
+                made.json::<Export>().await.unwrap()
+            }
+        };
+        let (doomed, kept) = (made(1).await, made(2).await);
+        let exports = app.data_dir.join("exports");
+        assert!(
+            exports
+                .join(doomed.id.to_string())
+                .join("merge.jsonl")
+                .is_file()
+        );
+        let judgements = app
+            .store
+            .judgements_page(None, None, None, 100)
+            .unwrap()
+            .len();
+        let mut events = app.bus.subscribe();
+
+        let path = format!("/v1/exports/{}", doomed.id);
+        let deleted = delete(&state, &addr, &path).await;
+        assert_eq!(deleted.status(), 200);
+        assert_eq!(deleted.json::<Export>().await.unwrap(), doomed);
+        assert!(!exports.join(doomed.id.to_string()).exists());
+        assert!(
+            exports
+                .join(kept.id.to_string())
+                .join("merge.jsonl")
+                .is_file()
+        );
+        let listed: Vec<Export> = get(&state, &addr, "/v1/exports").await;
+        assert_eq!(listed, std::slice::from_ref(&kept));
+        // The decision is recorded (on top of the judgements there were), and announced.
+        let recorded = app
+            .store
+            .judgements_page(None, None, Some("delete_export"), 10)
+            .unwrap();
+        assert_eq!(recorded.len(), 1);
+        assert_eq!(recorded[0].reason, "not needed");
+        assert_eq!(
+            app.store
+                .judgements_page(None, None, None, 100)
+                .unwrap()
+                .len(),
+            judgements + 1
+        );
+        let event = events.try_recv().unwrap();
+        assert_eq!(
+            (event.kind.as_str(), event.data),
+            ("export_deleted", serde_json::json!({ "export": doomed.id }))
+        );
+        assert_eq!(delete(&state, &addr, &path).await.status(), 404);
+    }
+
+    #[tokio::test]
+    async fn deleting_a_replay_removes_it_and_its_copy_and_the_schedule_does_not_make_it_again() {
+        let (_dir, state, addr) = start().await;
+        let app = &state.app;
+        let run = app.store.add_run(None, "Coder", "test", "code").unwrap();
+        let (doomed, kept) = (
+            judge(app, "tool_call", Some(run.id)),
+            judge(app, "tool_call", Some(run.id)),
+        );
+        for judgement in [&doomed, &kept] {
+            app.store
+                .set_outcome(judgement.id, "replayed: exit 0; no file changed")
+                .unwrap();
+            app.store
+                .add_replay(Replay {
+                    id: 0,
+                    judgement: judgement.id,
+                    run: run.id,
+                    exit: Some(0),
+                    timed_out: false,
+                    output: String::new(),
+                    created: vec![],
+                    changed: vec![],
+                    deleted: vec![],
+                    at: 0,
+                })
+                .unwrap();
+        }
+        let copy = app.data_dir.join("replays").join(doomed.id.to_string());
+        std::fs::create_dir_all(&copy).unwrap();
+        std::fs::write(copy.join("left-over"), "x").unwrap();
+        let replays: Vec<Replay> = get(&state, &addr, "/v1/replays").await;
+        let id = replays
+            .iter()
+            .find(|r| r.judgement == doomed.id)
+            .unwrap()
+            .id;
+        let mut events = app.bus.subscribe();
+
+        let path = format!("/v1/replays/{id}");
+        assert_eq!(delete(&state, &addr, &path).await.status(), 200);
+        let left: Vec<Replay> = get(&state, &addr, "/v1/replays").await;
+        assert_eq!(
+            left.iter().map(|r| r.judgement).collect::<Vec<_>>(),
+            [kept.id]
+        );
+        assert!(!copy.exists());
+        // The judgement keeps its outcome, and is not due to be replayed again.
+        let judgement = app.store.judgement(doomed.id).unwrap().unwrap();
+        assert_eq!(
+            judgement.outcome.as_deref(),
+            Some("replayed: exit 0; no file changed")
+        );
+        assert!(app.store.replay_candidates(0).unwrap().is_empty());
+        let recorded = app
+            .store
+            .judgements_page(None, None, Some("delete_replay"), 10)
+            .unwrap();
+        assert_eq!(recorded.len(), 1);
+        let event = events.try_recv().unwrap();
+        assert_eq!(
+            (event.kind.as_str(), event.data),
+            ("replay_deleted", serde_json::json!({ "replay": id }))
+        );
+        assert_eq!(delete(&state, &addr, &path).await.status(), 404);
+    }
 
     #[tokio::test]
     async fn usage_is_read_by_window_with_the_models_agents_activities_and_tool_waits() {

@@ -598,6 +598,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         /^\/v1\/webhooks\/[a-z]+\/secret$/.test(path) ||
         /^\/v1\/repositories\/\d+(\/(tree|files|search)(\/.*)?)?$/.test(path) ||
         /^\/v1\/(proposals|takeovers|grillings)\/\d+\/(merge|dismiss|confirm)$/.test(path) ||
+        /^\/v1\/grillings\/\d+$/.test(path) ||
         path === "/v1/changes/9/merge" ||
         path === "/v1/runs/1";
       if (!mine) return false;
@@ -770,6 +771,18 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         return false;
       }
 
+      const deleting = /^\/v1\/grillings\/(\d+)$/.exec(path);
+      if (deleting && method === "DELETE") {
+        // A grilling is deleted with its inbox item, whether it was answered or not.
+        const id = Number(deleting[1]);
+        const at = inbox.findIndex(
+          (each) => each.kind.startsWith("grilling_") && each.data.grilling === id,
+        );
+        if (at < 0) return fail(response, 404, "grilling not found");
+        inbox.splice(at, 1);
+        send({ kind: "grilling_deleted", data: { grilling: id } });
+        return ok(response, { id });
+      }
       const decision =
         /^\/v1\/(proposals|takeovers|grillings)\/(\d+)\/(merge|dismiss|confirm)$/.exec(path);
       if (decision && method === "POST") {

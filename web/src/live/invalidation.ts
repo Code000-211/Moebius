@@ -31,6 +31,9 @@ const SNAPSHOT_KINDS = new Set([
   "run_started",
   "run_ended",
   "grilling_ended",
+  "chat_deleted",
+  "research_deleted",
+  "grilling_deleted",
   "proposal_status",
   "takeover_proposed",
   "takeover_status",
@@ -78,7 +81,10 @@ function improvePages(event: ServerEvent): QueryKey[] {
       return [keys.retros, keys.lessons, keys.rules, keys.proposals];
     case "research_status":
     case "experiment_done":
+    case "research_deleted":
       return [keys.research];
+    case "export_deleted":
+      return [keys.exports];
     case "takeover_proposed":
     case "takeover_status":
       return [["decision-model"]];

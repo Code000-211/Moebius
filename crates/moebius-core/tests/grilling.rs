@@ -595,3 +595,106 @@ async fn creating_an_issue_on_a_github_repository_opens_it_and_the_card_moves_on
     assert_eq!(local["number"], 1);
     assert_eq!(fake.opened.lock().unwrap().len(), 1);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn deleting_a_grilling_takes_out_its_record_and_chat_and_leaves_the_cards() {
+    let dir = tempfile::tempdir().unwrap();
+    let (server, repo) = server(dir.path());
+    let app = &server.app;
+    let clone = PathBuf::from(app.store.repository(repo).unwrap().unwrap().path);
+    let api = Api::start(&server).await;
+    let first = api
+        .grill(&server, repo, &[("issues.json", TWO_ISSUES)])
+        .await;
+    let second = api
+        .grill(
+            &server,
+            repo,
+            &[("report.md", "# Findings\n\nIt depends.\n")],
+        )
+        .await;
+    let grillings = api.get("/v1/grillings").await.1;
+    let (kept, doomed) = (
+        grillings[0]["id"].as_i64().unwrap(),
+        grillings[1]["id"].as_i64().unwrap(),
+    );
+    assert_eq!(grillings[1]["run_id"], first);
+    // The first one's issues were confirmed: they are cards, which deleting the grilling leaves alone.
+    let confirm = json!({ "issues": [{ "title": "Add the export button" }] });
+    let (status, _) = api
+        .post(&format!("/v1/grillings/{doomed}/confirm"), confirm)
+        .await;
+    assert_eq!(status, 200);
+    assert_eq!(app.store.cards(repo).unwrap().len(), 1);
+    let mut events = app.bus.subscribe();
+
+    let (status, deleted) = api
+        .call(
+            reqwest::Method::DELETE,
+            &format!("/v1/grillings/{doomed}"),
+            Some(json!({ "reason": "no longer needed" })),
+        )
+        .await;
+    assert_eq!(status, 200, "{deleted}");
+    assert_eq!(deleted["id"], doomed);
+    assert!(app.store.grilling(doomed).unwrap().is_none());
+    assert!(app.store.run(first).unwrap().is_none());
+    assert!(app.store.events(first).unwrap().is_empty());
+    assert!(!app.repos.chat_branch_exists(&clone, first));
+    assert_eq!(app.store.cards(repo).unwrap().len(), 1);
+    // The other grilling, its chat and its inbox item are as they were.
+    assert!(app.store.grilling(kept).unwrap().is_some());
+    assert!(app.store.run(second).unwrap().is_some());
+    assert_eq!(item_kinds(&server), ["grilling_report"]);
+    let recorded = app
+        .store
+        .judgements_page(None, None, Some("delete_grilling"), 10)
+        .unwrap();
+    assert_eq!(
+        (recorded.len(), recorded[0].decider.as_str()),
+        (1, "person")
+    );
+    let mut announced = vec![];
+    while let Ok(event) = events.try_recv() {
+        if event.kind.ends_with("_deleted") {
+            announced.push((event.kind, event.data));
+        }
+    }
+    assert_eq!(
+        announced,
+        [
+            (
+                "grilling_deleted".to_string(),
+                json!({ "grilling": doomed })
+            ),
+            ("chat_deleted".to_string(), json!({ "run": first })),
+        ]
+    );
+    let (status, _) = api
+        .call(
+            reqwest::Method::DELETE,
+            &format!("/v1/grillings/{doomed}"),
+            None,
+        )
+        .await;
+    assert_eq!(status, 404);
+
+    // Deleting the chat of the other grilling deletes the grilling and its inbox item with it.
+    let (status, _) = api
+        .call(
+            reqwest::Method::DELETE,
+            &format!("/v1/chats/{second}"),
+            None,
+        )
+        .await;
+    assert_eq!(status, 200);
+    assert!(app.store.grilling(kept).unwrap().is_none());
+    assert!(item_kinds(&server).is_empty());
+    let mut announced = vec![];
+    while let Ok(event) = events.try_recv() {
+        if event.kind.ends_with("_deleted") {
+            announced.push(event.kind);
+        }
+    }
+    assert_eq!(announced, ["grilling_deleted", "chat_deleted"]);
+}

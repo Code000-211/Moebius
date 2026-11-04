@@ -886,6 +886,34 @@ describe("the floating chat", () => {
     },
   );
 
+  it.skipIf(usesRealServer)(
+    "starts fresh when its chat is deleted elsewhere, and the next message starts a new chat",
+    async () => {
+      await open("/inbox");
+      await page.getByRole("button", { name: "Open the floating chat" }).click();
+      const window = page.getByRole("dialog", { name: "Floating chat" });
+      const field = window.getByRole("textbox", { name: "Message" });
+      await field.fill("First question");
+      await field.press("Enter");
+      await window.getByText("You said: First question").first().waitFor();
+      const run = fake().chats[0]?.id as number;
+
+      const deleted = await context.request.delete(`${server.url}/v1/chats/${run}`, {
+        headers: { "X-Moebius": "1" },
+      });
+      expect(deleted.ok(), await deleted.text()).toBe(true);
+      // The sheet forgets the conversation: nothing to leave or open any more.
+      await window.getByRole("button", { name: "New conversation" }).waitFor({ state: "detached" });
+      await window.getByText("You said: First question").waitFor({ state: "detached" });
+
+      await field.fill("Second question");
+      await field.press("Enter");
+      await window.getByText("You said: Second question").first().waitFor();
+      expect(fake().started).toHaveLength(2);
+      expect(fake().said).toHaveLength(0);
+    },
+  );
+
   it("opens in the real server too, with the page's text", async () => {
     await open("/inbox");
     await page.getByRole("button", { name: "Open the floating chat" }).click();
@@ -909,4 +937,120 @@ describe("the floating chat", () => {
     // Nothing was sent, and no chat was started by pressing a suggestion.
     expect(await window.getByText(/You said:/).count()).toBe(0);
   });
+});
+
+describe("deleting a chat", () => {
+  const dialog = () => page.getByRole("dialog", { name: "Delete this chat?" });
+
+  it.skipIf(usesRealServer)(
+    "asks once from the top bar, says that a chat that works is stopped first, and leaves the deleted chat's page",
+    async () => {
+      await open("/chat");
+      const kept = fake().seed({ status: "waiting", title: "Keep this one" });
+      const going = fake().seed({ status: "running", title: "Still at work" });
+      await page.goto(`${server.url}/chat/${going}`);
+      await page
+        .getByRole("heading", { name: "Still at work" })
+        .or(page.getByText("Still at work").first())
+        .waitFor();
+      await page.getByRole("button", { name: "Delete", exact: true }).click();
+      await dialog()
+        .getByText(/It is working now, so it is stopped first\./)
+        .waitFor();
+      // Keeping it sends nothing.
+      await dialog().getByRole("button", { name: "Keep" }).click();
+      await dialog().waitFor({ state: "detached" });
+      expect(fake().deleted).toEqual([]);
+
+      await page.getByRole("button", { name: "Delete", exact: true }).click();
+      await dialog().getByRole("button", { name: "Delete" }).click();
+      await page.waitForURL(`${server.url}/chat`);
+      expect(fake().deleted).toEqual([going]);
+      // The list is updated and the other chat stays.
+      await page.getByRole("button", { name: /^Chats \(1\)/ }).click();
+      await page.getByTestId("chat-row").filter({ hasText: "Keep this one" }).waitFor();
+      expect(await page.getByTestId("chat-row").count()).toBe(1);
+      expect(kept).toBeGreaterThan(0);
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "deletes a chat from its row in the list, which the list drops at once, and stays on the chat that is open",
+    async () => {
+      await open("/chat");
+      const open_ = fake().seed({ status: "waiting", title: "Open chat" });
+      const other = fake().seed({ status: "waiting", title: "Chat to delete" });
+      await page.goto(`${server.url}/chat/${open_}`);
+      await page.getByRole("button", { name: /^Chats \(2\)/ }).click();
+      await page.getByRole("menuitem", { name: "Delete chat Chat to delete" }).click();
+      await dialog().getByRole("button", { name: "Delete" }).click();
+      await dialog().waitFor({ state: "detached" });
+      expect(fake().deleted).toEqual([other]);
+      expect(new URL(page.url()).pathname).toBe(`/chat/${open_}`);
+      await page.getByRole("button", { name: /^Chats \(1\)/ }).waitFor();
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "reaches the Delete of a row with the arrow keys and asks with Enter",
+    async () => {
+      await open("/chat");
+      const id = fake().seed({ status: "waiting", title: "By keyboard" });
+      await page.goto(`${server.url}/chat/${id}`);
+      await page.getByRole("button", { name: /^Chats \(1\)/ }).focus();
+      await page.keyboard.press("Enter");
+      const focusedIsDelete = () =>
+        page.evaluate(
+          () => document.activeElement?.getAttribute("data-testid") === "delete-chat-row",
+        );
+      for (let i = 0; i < 4 && !(await focusedIsDelete()); i++)
+        await page.keyboard.press("ArrowDown");
+      expect(await focusedIsDelete()).toBe(true);
+      await page.keyboard.press("Enter");
+      await dialog().waitFor();
+      await dialog().getByRole("button", { name: "Delete" }).click();
+      await page.waitForURL(`${server.url}/chat`);
+      expect(fake().deleted).toEqual([id]);
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "leaves a chat that another client deleted, when the event arrives",
+    async () => {
+      await open("/chat");
+      const id = fake().seed({ status: "waiting", title: "Doomed" });
+      const other = fake().seed({ status: "waiting", title: "Survivor" });
+      await page.goto(`${server.url}/chat/${id}`);
+      await page.getByRole("button", { name: /^Chats \(2\)/ }).waitFor();
+      await page.evaluate(
+        (chat) => fetch(`/v1/chats/${chat}`, { method: "DELETE", headers: { "X-Moebius": "1" } }),
+        id,
+      );
+      await page.waitForURL(`${server.url}/chat`);
+      await page.getByRole("button", { name: /^Chats \(1\)/ }).waitFor();
+      expect(other).toBeGreaterThan(0);
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "shows the server's refusal in the dialog and keeps the chat",
+    async () => {
+      await open("/chat");
+      const id = fake().seed({ status: "waiting", title: "Refused" });
+      await page.goto(`${server.url}/chat/${id}`);
+      await page.route("**/v1/chats/*", (route) =>
+        route.request().method() === "DELETE"
+          ? route.fulfill({
+              status: 409,
+              contentType: "text/plain",
+              body: "chat is still stopping",
+            })
+          : route.continue(),
+      );
+      await page.getByRole("button", { name: "Delete", exact: true }).click();
+      await dialog().getByRole("button", { name: "Delete" }).click();
+      await dialog().getByRole("alert").filter({ hasText: "chat is still stopping" }).waitFor();
+      expect(new URL(page.url()).pathname).toBe(`/chat/${id}`);
+    },
+  );
 });

@@ -1,14 +1,14 @@
 /**
  * The bar on top of the chat column (the desktop app's CH3-D): "Chats" with a quiet count, which drops down the list
  * of chats, then
- * the title of the chat, its actions on the right, and the way to a new one. The list is newest first, with the chosen
+ * the title of the chat, its actions on the right, and the way to a new one. Each row of the list has its Delete, which asks once. The list is newest first, with the chosen
  * chat marked, and which have answers the person has not read, and it scrolls once — the menu's own surface. A dot beside the word says that one of them waits on
  * you, because that is a fact about the list rather than about the chat on screen. It is a row of controls over the
  * canvas rather than a panel of its own, and every control in it is the shared `Button`, at the size the header
  * of every other page uses, so the row of controls under a title is the same row wherever it is met.
  */
 import { CaretDownIcon, PlusIcon } from "@phosphor-icons/react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { Link } from "react-router";
 import type { Chat } from "../api/types/chat";
 import { Tag } from "../ui/chat/Tag";
@@ -23,6 +23,7 @@ import {
 import { StatusDot } from "../ui/components/StatusDot";
 import { cn } from "../ui/lib/cn";
 import { ago, plural } from "../ui/lib/format";
+import { DeleteChat } from "./DeleteChat";
 import { statusTag } from "./format";
 
 interface ChatTopBarProps {
@@ -95,13 +96,16 @@ export function ChatTopBar({
 }: ChatTopBarProps) {
   // One chat waiting on an answer is said by a dot beside the switcher, not by a pill beside the title: the title
   // already says what the open chat is doing, and the rows inside name each one that asks.
+  const [menuOpen, setMenuOpen] = useState(false);
+  /** The chat whose delete is being asked about, from a row of the list. */
+  const [deleting, setDeleting] = useState<Chat | null>(null);
   const said =
     asking > 0
       ? `Chats (${chats.length}). ${plural(asking, "chat asks you", "chats ask you")}`
       : `Chats (${chats.length})`;
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-2">
-      <DropdownMenu>
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger className={TRIGGER} aria-label={said}>
           {asking > 0 && <StatusDot color="var(--attention)" />}
           Chats
@@ -123,19 +127,39 @@ export function ChatTopBar({
               </p>
             )}
             {chats.map((chat) => (
-              <ChatRow
-                key={chat.id}
-                chat={chat}
-                now={now}
-                place={places(chat)}
-                chosen={chat.id === openId}
-              />
+              <div key={chat.id} className="flex items-center gap-1">
+                <div className="min-w-0 flex-1">
+                  <ChatRow chat={chat} now={now} place={places(chat)} chosen={chat.id === openId} />
+                </div>
+                {/* A menu item, so the arrow keys reach it and Enter asks the question. */}
+                <DropdownMenuItem
+                  aria-label={`Delete chat ${chat.title || chat.id}`}
+                  data-testid="delete-chat-row"
+                  className="min-h-0 shrink-0 bg-error-fill text-error-text hover:bg-error-border/60 data-[highlighted]:bg-error-border/60"
+                  onSelect={() => {
+                    setMenuOpen(false);
+                    setDeleting(chat);
+                  }}
+                >
+                  Delete
+                </DropdownMenuItem>
+              </div>
             ))}
           </div>
         </DropdownMenuContent>
       </DropdownMenu>
       <div className="flex min-w-0 flex-1 items-center gap-2">{title}</div>
       {actions}
+      {deleting && (
+        <DeleteChat
+          chat={deleting}
+          open
+          onOpenChange={(open) => {
+            if (!open) setDeleting(null);
+          }}
+          openId={openId}
+        />
+      )}
       <Button asChild variant="primary">
         <Link to="/chat">
           <PlusIcon className="size-4" weight="bold" aria-hidden="true" />

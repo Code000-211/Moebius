@@ -1,5 +1,5 @@
 /** The calls about chats: the list, starting one, writing to it, its events, and the choices a new chat offers. */
-import { get, post } from "../http";
+import { del, get, post } from "../http";
 import type { Change } from "../types/board";
 import type { Run } from "../types/cards";
 import type { Agent, AvailableModels, Chat, NewChat, RunEvent, Skill } from "../types/chat";
@@ -45,6 +45,11 @@ export function changeChatSettings(
 /** Names a chat, in place of the title taken from its first message; an empty name gives that title back. */
 export function nameChat(chat: number, title: string): Promise<Chat> {
   return post<Chat>(`/v1/chats/${chat}/title`, { title });
+}
+
+/** Deletes a chat with its changes, inbox items and branch; the server stops it first when it is going. */
+export async function deleteChat(chat: number): Promise<void> {
+  await del<unknown>(`/v1/chats/${chat}`);
 }
 
 /** Says that the person has read the chat up to the event `seq`. */

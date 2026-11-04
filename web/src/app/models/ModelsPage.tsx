@@ -37,6 +37,7 @@ import { SkeletonCard } from "../../ui/page/Skeleton";
 import { Status } from "../../ui/page/Status";
 import { decisionChoices, modelChoices } from "../agents/model";
 import { Answered, couldNotAsk, ModelField } from "../harness/ModelField";
+import { DeleteKey } from "./DeleteKey";
 import { LoginRow, type LoginStep } from "./LoginRow";
 import {
   blankUpstream,
@@ -718,6 +719,9 @@ function KeyField({
               />
             )}
           </Field>
+        )}
+        {choice.mode === "typed" && stored && choice.stored !== null && (
+          <DeleteKey name={choice.stored} />
         )}
       </div>
       {choice.mode === "none" && (

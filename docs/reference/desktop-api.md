@@ -636,6 +636,14 @@ with the reason.
 The stored replays, newest first, at most 1000. Query: `judgement` returns the replay of that judgement, `run` those of
 that run's calls. Response: an array of `Replay`.
 
+### `DELETE /v1/replays/{id}`
+
+A person deletes a replay: its record, and whatever of its copy is left under `<data_dir>/replays/`. The judgement it
+replayed keeps its outcome (`replayed: ...`), and the schedule does not replay that judgement again; `POST
+/v1/judgements/{id}/replay` still can. The decision is recorded (kind `delete_replay`, decider `person`, context: `replay`,
+`judgement` and `run`) and announced as `replay_deleted`. Request: `{"reason": string}` (optional). Response: the
+deleted `Replay`. Errors: `403` for an agent's run token (only a person deletes); `404` no such replay.
+
 ### `GET /v1/judgements/kinds`
 
 What the store holds now, per kind of judgement, kinds in alphabetical order. Response: an array of `KindCounts`:
@@ -661,6 +669,13 @@ decision. Errors: `422` a kind has no judgements (no file is written for any kin
 ### `GET /v1/exports`
 
 The exports made through the API, newest first. Response: an array of `Export`.
+
+### `DELETE /v1/exports/{id}`
+
+A person deletes an export: its directory `<data_dir>/exports/<id>/` with all its files. The decision is recorded (kind
+`delete_export`, decider `person`, context: `export` the id and `kinds` joined by commas) and announced as
+`export_deleted`. Request: `{"reason": string}` (optional). Response: the deleted `Export`. Errors: `403` for an agent's
+run token; `404` no such export.
 
 ### `GET /v1/exports/{id}/{file}`
 
@@ -702,7 +717,7 @@ Response:
 - `models` holds each model used in the window, the one with the most tokens first: tokens, calls (one per model call),
   input tokens (part of the tokens) and cached tokens (part of the input tokens).
 - `agents` holds each agent whose runs used tokens in the window, the one with the most tokens first: calls, tokens,
-  input tokens, cached tokens and model time. Usage that belongs to no run is counted under the agent `No run`.
+  input tokens, cached tokens and model time. Usage that belongs to no run is counted under the agent `No run`. The usage of a deleted chat, research run or other deleted run belongs to no run from then on, so the per-agent view moves it to `No run`; the totals do not change.
 - `activities` holds what the model did with its time in the window, the activity with the most model time first: the
   `activity` is a tool's name, `answering` or `unknown`. A model call that asked for `n` tools gives each of them `1/n`
   of its duration and of its output tokens (the remainder of a division, whole milliseconds or tokens, goes to the first
@@ -1676,6 +1691,30 @@ time, including after it ended: the name belongs to the chat, not to its run.
 Response: the `Chat` as `GET /v1/chats` shows it, with its new `title`. Errors: `404` no such run; `422` the run is not
 a chat.
 
+### `DELETE /v1/chats/{id}`
+
+A person deletes a chat, also one of the floating assistant. A chat that has not ended is stopped first, as `POST
+/v1/runs/{id}/stop` stops a run, and the deletion waits for it to end (`409` if it does not within a minute: try
+again). Then everything that belongs to the chat is deleted, and nothing else:
+
+- the chat's run, its events and its read marker;
+- the changes the chat offered (those on its branch `moebius/chat-<run id>`, also one already published or merged) and
+  their inbox items (only the change record goes: a pull request already published on the forge stays open there, for a
+  person to close);
+- the grillings the chat ended in, with their inbox items (issues a grilling filed stay on the forge and as cards);
+- its worktree, or empty directory, and its branch `moebius/chat-<run id>` in the repository's clone, or in the harness
+  configuration repository's for a chat there; a branch pushed to a forge stays there.
+
+The chat's `usage` rows and the judgements made in it stay, with `run` null from now on: usage is a history of spend,
+so the totals of `GET /v1/usage` do not change, and the judgements are what the decision model and the training export
+learn from. Its replays are deleted with it.
+
+The decision is recorded (kind `delete_chat`, decider `person`, context: `chat` the id, `title`, `agent`, `events` the
+number deleted, `changes` the ids of the changes, `inbox_items`, `grillings` and `usage_kept`) and announced as
+`chat_deleted`, and as `grilling_deleted` for each grilling. Request: `{"reason": string}` (optional). Response: the
+chat's `Run` as it was. Errors: `403` for an agent's run token (only a person deletes); `404` no such chat, also a run
+that is not a chat; `409` the chat is being started again, or does not end.
+
 ### `POST /v1/chats/{id}/end`
 
 The desktop app offers no way to end a chat (its work is offered with `POST /v1/chats/{id}/offer`, and a chat that waits
@@ -1991,6 +2030,14 @@ A person dismisses the proposal of a `proposed` grilling, or reads the report of
 inbox item is resolved and the status becomes `dismissed`. Nothing is made. Request: `{}`. Response: the `Grilling`. Errors:
 `404` no such grilling; `422` it is not `proposed` or `reported`.
 
+### `DELETE /v1/grillings/{id}`
+
+A person deletes a grilling: its record, its inbox item and its chat, with everything `DELETE /v1/chats/{id}` deletes.
+The issues it filed stay on the forge and as cards. The decision is recorded (kind `delete_grilling`, decider `person`,
+context: `grilling`, `chat`, `status` and `inbox_items`) and announced as `grilling_deleted` and `chat_deleted`. Request:
+`{"reason": string}` (optional). Response: the deleted `Grilling`. Errors: `403` for an agent's run token; `404` no such
+grilling; `409` as for a chat.
+
 ### `POST /v1/research`
 
 Stores a brief for a research as a draft (see [the Autoresearcher](harness-configuration.md#autoresearch)). Nothing runs
@@ -2062,6 +2109,17 @@ A person stops a research that has not ended: the status becomes `stopped` and a
 like `POST /v1/runs/{id}/stop` does. Experiments done stay, and so do the lever branches in the repository's clone. Request:
 `{}`. Response: the `ResearchView`. Errors: `404` no such research; `409` it has ended already.
 
+### `DELETE /v1/research/{id}`
+
+A person deletes a research brief in any status. A research that is running is stopped first, and the deletion waits for
+its runs and its thread to end (`409` if they do not within a minute: try again). Then it deletes the research, its
+experiments, its runs with their events, the changes offered for its kept levers with their inbox items, its lever
+branches `research/<id>-*` in the repository's clone and the worktrees of its runs. The `usage` rows of its runs stay,
+with `run` null from now on, as for a chat. The decision is recorded (kind `delete_research`, decider `person`, context:
+`research`, `repository`, `goal`, `status`, `experiments`, `runs`, `changes`, `branches` and `usage_kept`) and announced
+as `research_deleted`. Request: `{"reason": string}` (optional). Response: the deleted research (as it was stored).
+Errors: `403` for an agent's run token; `404` no such research; `409` as above.
+
 ## Events
 
 `GET /v1/events` sends one JSON object per message: `{"kind": "<kind>", "data": ...}`. These are all the kinds.
@@ -2079,6 +2137,7 @@ like `POST /v1/runs/{id}/stop` does. Experiments done stay, and so do the lever 
 | `card_moved` | A card moved to another column. | `{"card": id, "from": column, "to": column}` |
 | `card_waiting` | The reason a card waits changed: set, replaced, or cleared because the card moved or its script did not wait. Not sent when it stays the same. | `{"card": id, "reason": string or null}` |
 | `chat_renamed` | A chat was given a name, or its name was cleared, through the API. | `{"run": id, "title": string}` (the title the list of chats shows now) |
+| `chat_deleted` | A chat was deleted through the API, with its changes and inbox items, or deleted with its grilling. Read the snapshot again. | `{"run": id}` |
 | `change_offered` | A card's change, the work of a chat or a kept lever of a research was offered to a person to merge. | The `Change` (`card_id` is null for a chat's or a lever's). |
 | `change_updated` | A change was published or published again, its checks started or ended, or the checks or review of its pull request changed. | The `Change`. |
 | `change_merged` | A change was merged, here or on its forge. | `{"change": id, "commit": sha or null}` |
@@ -2104,9 +2163,13 @@ like `POST /v1/runs/{id}/stop` does. Experiments done stay, and so do the lever 
 | `takeover_proposed` | The decision model earned a takeover proposal for a kind, which is in the inbox. | `{"takeover": id, "kind": string, "agreement": number}` |
 | `takeover_status` | A takeover was merged, dismissed or released. | `{"takeover": id, "status": string}` (the statuses above) |
 | `research_status` | A research was stored, its brief was edited, or it was confirmed, started, stopped or ended. | `{"research": id, "status": string}` (the statuses above) |
+| `research_deleted` | A research was deleted through the API, with its experiments and their changes. Read the snapshot again. | `{"research": id}` |
 | `experiment_done` | An experiment of a research ended and was stored. | `{"research": id, "lever": the lever's branch, "value": number or null, "kept": boolean}` |
 | `automation_fired` | An automation fired, by its schedule or `POST /v1/automations/{id}/run`. | `{"automation": id, "firing": id, "status": "started" \| "skipped" \| "failed", "run": id or null}` |
 | `grilling_ended` | A grilling chat ended and its result was stored. | `{"grilling": id, "status": "proposed" \| "reported" \| "empty"}` |
+| `grilling_deleted` | A grilling was deleted through the API, or its chat was. | `{"grilling": id}` |
+| `export_deleted` | A training-set export was deleted through the API. | `{"export": id}` |
+| `replay_deleted` | A replay was deleted through the API. | `{"replay": id}` |
 | `port_opened` | The server noticed a port that a run, chat or terminal listens on (looked for every 3 seconds while a run or terminal exists). | `{"port": integer, "pid": integer, "process": string, "kind": "run" \| "chat" \| "terminal", "run": id or null}` (as `GET /v1/ports`) |
 | `port_closed` | A port that was listed is no longer listened on, or its run or terminal is gone. | The same as `port_opened`, for the port as it was. |
 | `lagged` | This client fell too far behind (more than 1024 events) and lost the oldest. | `{"missed": number}` |

@@ -76,6 +76,33 @@ pub fn replay(app: &App, id: i64, limit: Duration) -> Result<Replay> {
     replay_judgement(app, &judgement, limit)
 }
 
+/// A person deletes the replay `id`: its record and whatever of its copy is left on disk. The judgement it replayed
+/// keeps its outcome, and the schedule does not replay it again. Recorded as a `delete_replay` decision and announced
+/// as `replay_deleted`.
+pub fn delete(app: &App, by: &crate::decide::Actor, id: i64, reason: &str) -> Result<Replay> {
+    let replay = app
+        .store
+        .replays(None, None, i64::MAX)?
+        .into_iter()
+        .find(|replay| replay.id == id)
+        .ok_or_else(|| AppError::NotFound(format!("replay {id}")))?;
+    let directory = app.data_dir.join("replays");
+    let name = replay.judgement.to_string();
+    let _ = std::fs::remove_dir_all(directory.join(&name));
+    let _ = std::fs::remove_file(directory.join(format!("{name}.log")));
+    let _ = std::fs::remove_file(directory.join(format!("{name}.tar")));
+    app.store.delete_replay(id)?;
+    let context = [
+        ("replay".to_string(), id.to_string()),
+        ("judgement".to_string(), replay.judgement.to_string()),
+        ("run".to_string(), replay.run.to_string()),
+    ]
+    .into();
+    app.record_action(by, "delete_replay", None, None, context, reason)?;
+    app.bus.publish(Event::ReplayDeleted { replay: id });
+    Ok(replay)
+}
+
 /// The refused calls the schedule would replay, at most `count`: the oldest of the last week that have no replay and can
 /// be replayed.
 pub fn due(app: &App, count: usize) -> Result<Vec<Judgement>> {

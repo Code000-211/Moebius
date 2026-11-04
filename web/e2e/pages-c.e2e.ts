@@ -547,7 +547,8 @@ describe("the Experiments page", () => {
       await failed.getByText("Failed", { exact: true }).waitFor();
       await failed.getByText("—").first().waitFor();
       // A finished research has no buttons.
-      expect(await brief.getByRole("button").count()).toBe(0);
+      // Only the delete is left.
+      expect(await brief.getByRole("button").allTextContents()).toEqual(["Delete"]);
     },
   );
 
@@ -566,7 +567,8 @@ describe("the Experiments page", () => {
     await brief.getByRole("button", { name: "Stop", exact: true }).click();
     await brief.getByText("Stopped", { exact: true }).waitFor();
     expect(lastRequest()).toMatchObject({ method: "POST", path: "/v1/research/2/stop" });
-    expect(await brief.getByRole("button").count()).toBe(0);
+    // Only the delete is left.
+    expect(await brief.getByRole("button").allTextContents()).toEqual(["Delete"]);
   });
 
   it.skipIf(usesRealServer)("edits the brief of a draft in place", async () => {
@@ -825,5 +827,71 @@ describe("the pages that put a list beside a detail", () => {
     await read("/experiments", "Experiments");
     await columnsScrollEach(page);
     await scrollbarsAreQuiet(page);
+  });
+});
+
+describe("deleting a research brief and an export", () => {
+  it.skipIf(usesRealServer)(
+    "asks once, says that a running brief is stopped first, and moves on to the next brief",
+    async () => {
+      await fresh();
+      fake().research.find((each) => each.id === 1)?.status;
+      await open("/experiments", "Experiments");
+      await page.getByRole("button", { name: /Cut the clean build time/ }).click();
+      await region("Brief").getByText("Cut the clean build time of the host").waitFor();
+      await region("Brief").getByRole("button", { name: "Delete" }).click();
+      const dialog = page.getByRole("dialog", { name: "Delete this brief?" });
+      await dialog.getByText(/removed with its experiments/).waitFor();
+      expect(await dialog.getByText(/stopped first/).count()).toBe(0);
+      await dialog.getByRole("button", { name: "Keep" }).click();
+      await dialog.waitFor({ state: "detached" });
+      expect(fake().requests.filter((r) => r.method === "DELETE")).toEqual([]);
+
+      await region("Brief").getByRole("button", { name: "Delete" }).click();
+      await dialog.getByRole("button", { name: "Delete" }).click();
+      await dialog.waitFor({ state: "detached" });
+      await page
+        .getByRole("button", { name: /Cut the clean build time/ })
+        .waitFor({ state: "detached" });
+      expect(lastRequest()).toMatchObject({ method: "DELETE", path: "/v1/research/1" });
+      // The other brief is what the page shows now.
+      await region("Brief").getByText("Make the host build faster").waitFor();
+    },
+  );
+
+  it.skipIf(usesRealServer)("says that a brief that is running is stopped first", async () => {
+    await fresh();
+    const running = fake().research.find((each) => each.id === 2);
+    if (running) running.status = "running";
+    await open("/experiments", "Experiments");
+    await region("Brief").getByRole("button", { name: "Delete" }).click();
+    await page
+      .getByRole("dialog", { name: "Delete this brief?" })
+      .getByText(/It is running now, so it is stopped first\./)
+      .waitFor();
+  });
+
+  it.skipIf(usesRealServer)("drops a brief another client deleted, live", async () => {
+    await fresh();
+    await open("/experiments", "Experiments");
+    await page.getByRole("button", { name: /Make the host build faster/ }).waitFor();
+    await page.evaluate(() =>
+      fetch("/v1/research/2", { method: "DELETE", headers: { "X-Moebius": "1" } }),
+    );
+    await page
+      .getByRole("button", { name: /Make the host build faster/ })
+      .waitFor({ state: "detached" });
+  });
+
+  it.skipIf(usesRealServer)("deletes an export from its row after asking", async () => {
+    await fresh();
+    await open("/decision-model", "Decisions");
+    const row = region("Exports").getByRole("row").filter({ hasText: "#1" });
+    await row.waitFor();
+    await row.getByRole("button", { name: "Delete export 1" }).click();
+    const dialog = page.getByRole("dialog", { name: "Delete export #1?" });
+    await dialog.getByRole("button", { name: "Delete" }).click();
+    await row.waitFor({ state: "detached" });
+    expect(lastRequest()).toMatchObject({ method: "DELETE", path: "/v1/exports/1" });
   });
 });

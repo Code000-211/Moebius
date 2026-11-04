@@ -4,13 +4,15 @@
  * (`/chat/:id`).
  */
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import { useParams } from "react-router";
+import { useEffect, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router";
 import { snapshot as readSnapshot } from "../api/calls/board";
 import { chats as readChats } from "../api/calls/chat";
 import { keys } from "../api/keys";
+import { Button } from "../ui/components/Button";
 import { useNow } from "../ui/lib/useNow";
 import { ChatTopBar } from "./ChatTopBar";
+import { DeleteChat } from "./DeleteChat";
 import { NewChat } from "./NewChat";
 import { ChatActions, ChatTitle, OpenChat } from "./OpenChat";
 import { placeName } from "./places";
@@ -32,6 +34,17 @@ export function ChatPage() {
   const all = chats.data ?? [];
   const open = openId === null ? undefined : all.find((chat) => chat.id === openId);
 
+  // A chat that was in the list and is not any more was deleted (here, or by another client): its page is left for
+  // the Chat page's start. A chat the list has not caught up with yet was never in it, so it is not taken for one.
+  const navigate = useNavigate();
+  const listed = useRef(new Set<number>());
+  for (const chat of all) listed.current.add(chat.id);
+  const gone = openId !== null && chats.data !== undefined && !open && listed.current.has(openId);
+  useEffect(() => {
+    if (gone) void navigate("/chat", { replace: true });
+  }, [gone, navigate]);
+  const [deleting, setDeleting] = useState(false);
+
   return (
     <div className="mx-auto flex h-full w-full max-w-3xl flex-col gap-4" data-testid="chat-page">
       <ChatTopBar
@@ -49,7 +62,17 @@ export function ChatPage() {
             </span>
           )
         }
-        actions={open ? <ChatActions chat={open} onNotice={setNotice} /> : null}
+        actions={
+          open ? (
+            <>
+              <ChatActions chat={open} onNotice={setNotice} />
+              <Button variant="danger" onClick={() => setDeleting(true)}>
+                Delete
+              </Button>
+              <DeleteChat chat={open} open={deleting} onOpenChange={setDeleting} openId={openId} />
+            </>
+          ) : null
+        }
       />
       {openId === null ? (
         <NewChat snapshot={snapshot.data} />

@@ -3,7 +3,7 @@
  * the plugins, and the keys of `moebius.toml` (`crates/moebius-desktop/src/client/calls/server.rs`). An API key goes to
  * `storeSecret` once and is never read back.
  */
-import { get, post, put } from "../http";
+import { del, get, post, put } from "../http";
 import type { AvailableModels } from "../types/chat";
 import type {
   Login,
@@ -61,6 +61,11 @@ export function saveSettings(
 /** Stores an API key under `name` on the server only. */
 export async function storeSecret(name: string, key: string): Promise<void> {
   await put<unknown>(`/v1/secrets/${encodeURIComponent(name)}`, { value: key });
+}
+
+/** Removes the key stored under `name`. */
+export async function deleteSecret(name: string): Promise<void> {
+  await del<unknown>(`/v1/secrets/${encodeURIComponent(name)}`);
 }
 
 /** Asks the server to restart, which it answers before it does. */

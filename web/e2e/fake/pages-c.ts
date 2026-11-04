@@ -519,11 +519,13 @@ export function createPagesCFake(
       /^\/v1\/(automations|lessons|research|takeovers(?=\/\d+\/release$))\/(\d+)(?:\/(\w+))?$/.exec(
         path,
       );
+    const oneExport = /^\/v1\/exports\/(\d+)$/.exec(path);
     const retroDay = /^\/v1\/retros\/(\d{4}-\d{2}-\d{2})$/.exec(path);
     const known =
       rules ||
       script ||
       one ||
+      oneExport ||
       retroDay ||
       [
         "/v1/automations",
@@ -705,6 +707,14 @@ export function createPagesCFake(
       return reply(response, 200, made);
     }
 
+    if (oneExport && method === "DELETE") {
+      const at = exports.findIndex((each) => each.id === Number(oneExport[1]));
+      if (at < 0) return reply(response, 404, "no such export");
+      const [gone] = exports.splice(at, 1);
+      broadcast({ kind: "export_deleted", data: { export: Number(oneExport[1]) } });
+      return reply(response, 200, gone);
+    }
+
     if (one) {
       const [, collection, idText, action] = one;
       const id = Number(idText);
@@ -774,6 +784,16 @@ export function createPagesCFake(
       if (collection === "research") {
         const item = research.find((each) => each.id === id);
         if (!item) return reply(response, 404, "no such research");
+        if (!action && method === "DELETE") {
+          // A research that runs is stopped first, as the server does.
+          if (item.status === "running") {
+            item.status = "stopped";
+            broadcast({ kind: "research_status", data: { research: id, status: "stopped" } });
+          }
+          research.splice(research.indexOf(item), 1);
+          broadcast({ kind: "research_deleted", data: { research: id } });
+          return reply(response, 200, item);
+        }
         if (!action && method === "PUT") {
           if (item.status !== "draft") return reply(response, 409, "only a draft can be edited");
           const problem = checkedBrief(body);

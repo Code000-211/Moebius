@@ -59,6 +59,17 @@ export function FloatingChat() {
   };
 
   const chat = chats.data?.find((each) => each.id === chatId);
+  // A chat that was in the list and is not any more was deleted (here, or by another client): the sheet starts fresh,
+  // since a message to it would only be refused. One the list has not caught up with yet was never in it.
+  const listed = useRef(new Set<number>());
+  for (const each of chats.data ?? []) listed.current.add(each.id);
+  const gone =
+    chatId !== null && chats.data !== undefined && chat === undefined && listed.current.has(chatId);
+  useEffect(() => {
+    if (!gone) return;
+    setChatId(null);
+    setError(null);
+  }, [gone]);
   // A chat that was just started is not in the list yet, so while its record is on the way the message still goes to
   // it rather than opening a second chat.
   const writesHere = chat ? takesMessage(chat.status) : chatId !== null;

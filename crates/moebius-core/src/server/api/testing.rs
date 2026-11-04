@@ -232,3 +232,22 @@ pub(super) async fn end(state: &ApiState, addr: &str, run_id: i64) -> reqwest::R
     )
     .await
 }
+
+/// The run token of a run of the Moebius agent, which acts as an agent: what an agent's request carries.
+pub(super) fn agent_token(state: &ApiState) -> String {
+    let run = state
+        .app
+        .store
+        .add_run(
+            None,
+            crate::harness::pibolt::MOEBIUS_AGENT,
+            "pi-bolt",
+            "chat",
+        )
+        .unwrap();
+    state.router.issue_token(crate::router::Grant {
+        run_id: run.id,
+        card_id: None,
+        budget: None,
+    })
+}

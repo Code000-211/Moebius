@@ -400,3 +400,51 @@ async fn a_chat_in_the_harness_configuration_whose_agent_went_away_is_taken_up_a
     assert_eq!(status, 200, "{body}");
     wait_for(&server, chat, |run| run.ended_at.is_some()).await;
 }
+
+#[tokio::test]
+async fn deleting_a_chat_in_the_harness_configuration_removes_its_branch_and_change_from_the_clone()
+{
+    let dir = tempfile::tempdir().unwrap();
+    let origin = harness_origin(dir.path());
+    let server = server(dir.path(), &origin);
+    let api = Api::start(&server).await;
+    let clone = dir.path().join(".moebius/harness");
+    let start = head(&clone);
+
+    let chat = harness_chat(&api, &server, &skill_message()).await;
+    let other = harness_chat(&api, &server, &skill_message()).await;
+    end_chat(&api, &server, chat).await;
+    end_chat(&api, &server, other).await;
+    assert_eq!(server.app.store.harness_changes().unwrap().len(), 2);
+    let branch = format!("moebius/chat-{chat}");
+    assert!(
+        git(&clone, &["branch", "--list", &branch])
+            .unwrap()
+            .contains(&branch)
+    );
+
+    let (status, body) = api
+        .call(
+            reqwest::Method::DELETE,
+            &format!("/v1/chats/{chat}"),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(status, 200, "{body}");
+    assert!(server.app.store.run(chat).unwrap().is_none());
+    assert_eq!(git(&clone, &["branch", "--list", &branch]).unwrap(), "");
+    // The other chat's change, inbox item and branch stay, and the default branch has not moved.
+    let changes = server.app.store.harness_changes().unwrap();
+    assert_eq!(changes.len(), 1);
+    assert_eq!(changes[0].branch, format!("moebius/chat-{other}"));
+    assert_eq!(server.app.store.inbox().unwrap().len(), 1);
+    assert!(
+        git(
+            &clone,
+            &["branch", "--list", &format!("moebius/chat-{other}")]
+        )
+        .unwrap()
+        .contains("chat-")
+    );
+    assert_eq!(head(&clone), start);
+}

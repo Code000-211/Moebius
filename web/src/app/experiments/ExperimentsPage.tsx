@@ -29,6 +29,7 @@ import { CELL, ListCard, ListDetail, Table } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
 import { Body, PageHeader } from "../../ui/page/PageHeader";
 import { SkeletonCard } from "../../ui/page/Skeleton";
+import { DeleteBrief } from "./DeleteBrief";
 import {
   actions,
   briefOf,
@@ -221,6 +222,7 @@ export function ExperimentsPage() {
                     repository={repositoryName(chosen)}
                     busy={answered.isPending}
                     onEdit={() => setEditing(true)}
+                    onDeleted={() => setPicked(null)}
                     onAct={(action) => answered.mutate(() => actOnResearch(chosen.id, action))}
                   />
                 )}
@@ -409,12 +411,14 @@ function BriefBox({
   repository,
   busy,
   onEdit,
+  onDeleted,
   onAct,
 }: {
   research: Research;
   repository: string;
   busy: boolean;
   onEdit: () => void;
+  onDeleted: () => void;
   onAct: (action: "confirm" | "start" | "stop") => void;
 }) {
   const status = statusTag(research.status);
@@ -447,21 +451,20 @@ function BriefBox({
           {research.measure}
         </span>
         {research.reason && <Body>{research.reason}</Body>}
-        {possible.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {possible.map(({ label, action, primary }) => (
-              <Button
-                key={label}
-                size="sm"
-                variant={primary ? "primary" : "secondary"}
-                disabled={busy}
-                onClick={() => onAct(action)}
-              >
-                {label}
-              </Button>
-            ))}
-          </div>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {possible.map(({ label, action, primary }) => (
+            <Button
+              key={label}
+              size="sm"
+              variant={primary ? "primary" : "secondary"}
+              disabled={busy}
+              onClick={() => onAct(action)}
+            >
+              {label}
+            </Button>
+          ))}
+          <DeleteBrief research={research} onDeleted={onDeleted} />
+        </div>
       </div>
     </Box>
   );

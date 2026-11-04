@@ -64,6 +64,20 @@ describe("applyChatEvent", () => {
   });
 });
 
+describe("a chat that was deleted", () => {
+  it("leaves the list at once, and the others stay", () => {
+    const list = [chat(), { ...chat(), id: 4 }];
+    expect(
+      applyChatEvent(list, { kind: "chat_deleted", data: { run: 7 } }).map((c) => c.id),
+    ).toEqual([4]);
+    expect(applyChatEvent(list, { kind: "chat_deleted", data: { run: 99 } })).toEqual(list);
+  });
+
+  it("makes the list read again", () => {
+    expect(listChanged({ kind: "chat_deleted", data: { run: 3 } })).toBe(true);
+  });
+});
+
 describe("listChanged", () => {
   it("is true for a chat started, ended or offered", () => {
     expect(listChanged({ kind: "run_started", data: {} })).toBe(true);

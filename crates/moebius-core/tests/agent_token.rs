@@ -240,3 +240,50 @@ async fn the_moebius_agent_may_block_and_unblock_a_card_but_only_a_person_delete
     assert_eq!(f.send(Method::DELETE, &card_path, &person, None).await, 200);
     assert_eq!(store.card(card.id).unwrap(), None);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn deleting_chats_research_grillings_exports_and_replays_stays_with_a_person() {
+    let f = Fixture::start().await;
+    let (_, token) = f.run("Moebius");
+    let store = &f.server.app.store;
+    let (chat, _) = f.run("Coder");
+    let (grilled, _) = f.run("Grilling-partner");
+    for run in [chat, grilled] {
+        store.set_run_status(run, "stopped").unwrap();
+    }
+    let repo = store
+        .add_repository("demo", "/tmp/demo", "none", "main")
+        .unwrap();
+    let research = store
+        .add_research(repo.id, "goal", "cat x", "lower", 1)
+        .unwrap();
+    let grilling = store
+        .add_grilling(grilled, repo.id, &[], None, "empty", "")
+        .unwrap();
+    let paths = [
+        format!("/v1/chats/{chat}"),
+        format!("/v1/research/{}", research.id),
+        format!("/v1/grillings/{}", grilling.id),
+        "/v1/exports/1".to_string(),
+        "/v1/replays/1".to_string(),
+    ];
+    for path in &paths {
+        assert_eq!(
+            f.send(Method::DELETE, path, &token, None).await,
+            403,
+            "{path}"
+        );
+    }
+    assert!(store.run(chat).unwrap().is_some());
+    assert!(store.research(research.id).unwrap().is_some());
+    assert!(store.grilling(grilling.id).unwrap().is_some());
+    // A person's request reaches the thing: the chat and the others are deleted, the missing are not found.
+    let person = f.server.token.to_string();
+    for (path, status) in paths.iter().zip([200, 200, 200, 404, 404]) {
+        assert_eq!(
+            f.send(Method::DELETE, path, &person, None).await,
+            status,
+            "{path}"
+        );
+    }
+}

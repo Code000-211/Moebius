@@ -24,6 +24,7 @@ import { CELL, Table } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
 import { Body, PageHeader } from "../../ui/page/PageHeader";
 import { Status } from "../../ui/page/Status";
+import { DeleteExport } from "./DeleteExport";
 
 import {
   agreementLine,
@@ -157,7 +158,7 @@ export function DecisionModelPage() {
           ) : exportList.length === 0 ? (
             <Body>No export has been made yet.</Body>
           ) : (
-            <Table head={["Export", "When", "Judgements", "Held out", "Types"]}>
+            <Table head={["Export", "When", "Judgements", "Held out", "Types", "Delete"]}>
               {exportList.map((each) => (
                 <tr key={each.id}>
                   <td className={`${CELL} font-mono text-sm font-semibold text-text tabular-nums`}>
@@ -167,6 +168,9 @@ export function DecisionModelPage() {
                   <td className={NUMBER}>{judgements(each.kinds)}</td>
                   <td className={NUMBER}>{each.kinds.reduce((sum, k) => sum + k.held_out, 0)}</td>
                   <td className={CELL}>{each.kinds.map((k) => k.kind).join(", ")}</td>
+                  <td className={CELL}>
+                    <DeleteExport id={each.id} />
+                  </td>
                 </tr>
               ))}
             </Table>

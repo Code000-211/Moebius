@@ -210,3 +210,19 @@ describe("the package events", () => {
     ).not.toContainEqual(keys.packages);
   });
 });
+
+describe("what a delete makes stale", () => {
+  it("reads the lists the deleted thing was shown in, and the snapshot for the changes and inbox items it took", () => {
+    const stale = (kind: string, data: Record<string, unknown>) => invalidates({ kind, data });
+    expect(stale("chat_deleted", { run: 3 })).toEqual(
+      expect.arrayContaining([keys.snapshot, keys.chats]),
+    );
+    expect(stale("research_deleted", { research: 2 })).toEqual(
+      expect.arrayContaining([keys.snapshot, keys.research]),
+    );
+    expect(stale("grilling_deleted", { grilling: 2 })).toContain(keys.snapshot);
+    expect(stale("export_deleted", { export: 1 })).toContain(keys.exports);
+    // A replay is shown nowhere in the app.
+    expect(stale("replay_deleted", { replay: 1 })).toEqual([]);
+  });
+});

@@ -942,6 +942,12 @@ export function createPagesBFake(): PagesBFake {
       secrets[name] = value;
       return send(response, 200, Object.keys(secrets));
     }
+    if (secretRoute && method === "DELETE") {
+      const name = decodeURIComponent(secretRoute[1] as string);
+      if (!(name in secrets)) return send(response, 404, `secret ${name} not found`);
+      delete secrets[name];
+      return send(response, 200, Object.keys(secrets));
+    }
     // A route this fake does not know (the chat's and the board's are answered elsewhere).
     return send(response, 404, "no such route");
   }

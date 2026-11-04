@@ -689,3 +689,52 @@ async fn open_starts_the_browser_in_app_mode_on_an_address_that_signs_in_once() 
     assert_eq!(sign_in(code.clone()).await, 204);
     assert_eq!(sign_in(code).await, 401);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_person_deletes_a_chat_a_research_and_a_grilling() {
+    let s = start().await;
+    let store = &s.server.app.store;
+    let repo = store
+        .add_repository("demo", "/tmp/demo", "none", "main")
+        .unwrap();
+    let chat = store.add_run(None, "Coder", "pi-bolt", "chat").unwrap();
+    let grilled = store
+        .add_run(None, "Grilling-partner", "pi-bolt", "chat")
+        .unwrap();
+    for run in [&chat, &grilled] {
+        store.set_run_status(run.id, "stopped").unwrap();
+    }
+    let research = store
+        .add_research(repo.id, "goal", "cat x", "lower", 1)
+        .unwrap();
+    let grilling = store
+        .add_grilling(grilled.id, repo.id, &[], None, "empty", "")
+        .unwrap();
+
+    let deleted = json_out(
+        &s.run(&[
+            "--json",
+            "chat",
+            "delete",
+            &chat.id.to_string(),
+            "--reason",
+            "tidy",
+        ])
+        .await,
+    );
+    assert_eq!(deleted["id"], chat.id);
+    assert!(store.run(chat.id).unwrap().is_none());
+    out(&s
+        .run(&["research", "delete", &research.id.to_string()])
+        .await);
+    assert!(store.research(research.id).unwrap().is_none());
+    out(&s
+        .run(&["grilling", "delete", &grilling.id.to_string()])
+        .await);
+    assert!(store.grilling(grilling.id).unwrap().is_none());
+    assert!(store.run(grilled.id).unwrap().is_none());
+    // A thing that is gone is not found.
+    let again = s.run(&["chat", "delete", &chat.id.to_string()]).await;
+    assert!(!again.status.success());
+    assert!(String::from_utf8_lossy(&again.stderr).contains("not found"));
+}

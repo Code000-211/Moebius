@@ -70,6 +70,10 @@ pub enum Event {
         run: i64,
         title: String,
     },
+    /// A person deleted a chat; its changes and inbox items went with it.
+    ChatDeleted {
+        run: i64,
+    },
     ChangeUpdated(Change),
     ChangeOffered(Change),
     ChangeMerged {
@@ -127,6 +131,10 @@ pub enum Event {
         research: i64,
         status: String,
     },
+    /// A person deleted a research brief with its experiments.
+    ResearchDeleted {
+        research: i64,
+    },
     ExperimentDone {
         research: i64,
         lever: String,
@@ -150,6 +158,18 @@ pub enum Event {
     GrillingEnded {
         grilling: i64,
         status: String,
+    },
+    /// A person deleted a grilling, or the chat it came from.
+    GrillingDeleted {
+        grilling: i64,
+    },
+    /// A person deleted a training-set export.
+    ExportDeleted {
+        export: i64,
+    },
+    /// A person deleted a replay.
+    ReplayDeleted {
+        replay: i64,
     },
     ForgeError {
         repository: String,
@@ -353,6 +373,26 @@ mod tests {
                     title: "Plan".into(),
                 },
                 json!({"kind": "chat_renamed", "data": {"run": 4, "title": "Plan"}}),
+            ),
+            (
+                Event::ChatDeleted { run: 4 },
+                json!({"kind": "chat_deleted", "data": {"run": 4}}),
+            ),
+            (
+                Event::ResearchDeleted { research: 3 },
+                json!({"kind": "research_deleted", "data": {"research": 3}}),
+            ),
+            (
+                Event::GrillingDeleted { grilling: 2 },
+                json!({"kind": "grilling_deleted", "data": {"grilling": 2}}),
+            ),
+            (
+                Event::ExportDeleted { export: 5 },
+                json!({"kind": "export_deleted", "data": {"export": 5}}),
+            ),
+            (
+                Event::ReplayDeleted { replay: 6 },
+                json!({"kind": "replay_deleted", "data": {"replay": 6}}),
             ),
             (
                 Event::ChangeUpdated(change.clone()),

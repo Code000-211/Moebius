@@ -99,7 +99,7 @@ echo '{"set": {"board.round_limit": 7}}' | moebius api PUT /v1/settings --body -
 ```
 
 Every route is reachable this way, including those without a command: `/v1/health`, `/v1/events` (a WebSocket, not
-for `api`), `/v1/runs/...`, `/v1/judgements...`, `/v1/replays`, `/v1/exports...`, `/v1/skills`, `/v1/mcp-servers`, `/v1/repositories/{id}/scripts/{column}`,
+for `api`), `/v1/runs/...`, `/v1/judgements...`, `/v1/replays`, `DELETE /v1/replays/{id}`, `/v1/exports...`, `DELETE /v1/exports/{id}`, `/v1/skills`, `/v1/mcp-servers`, `/v1/repositories/{id}/scripts/{column}`,
 `/v1/models`, `/v1/plugins`, `/v1/proposals/{id}/trial`, `DELETE /v1/secrets/{name}`.
 
 ## Commands
@@ -120,6 +120,7 @@ takes a repository's name.
 | `chat say <id> <message>` | `POST /v1/chats/{id}/messages` | The run. `-` reads standard input. |
 | `chat offer <id> [--reason <text>]` | `POST /v1/chats/{id}/offer` | The change. |
 | `chat end <id>` | `POST /v1/chats/{id}/end` | The run. |
+| `chat delete <id> [--reason <why>]` | `DELETE /v1/chats/{id}` | The chat's run, as it was. Stops the chat if it is going, then deletes it with its events, changes, inbox items, worktree and branch; only a person may (an agent's token gets `403`). |
 | `automation list` | `GET /v1/automations` | Table `id name schedule agent enabled next_firing` (`next_firing` in Unix seconds). |
 | `automation save --name <n> --schedule <cron> --prompt <text\|-> [--agent <name>] [--repository <id> \| --harness] [--off] [--id <id>]` | `POST /v1/automations`, or `PUT /v1/automations/{id}` with `--id` | The automation. Without `--agent` its chats are with the Moebius agent; `--off` saves it switched off; `-` as the prompt reads standard input. Replaces the whole automation, as the route does. |
 | `automation run <id>` | `POST /v1/automations/{id}/run` | The firing: `started` with its chat's `run_id`, or `skipped` or `failed` with the reason. |
@@ -154,10 +155,12 @@ takes a repository's name.
 | `research <id>` | `GET /v1/research/{id}` | The research. |
 | `research new --repository <id> --goal <text> --measure <command> --better <lower\|higher> --token-budget <n>` | `POST /v1/research` | The research, a draft. |
 | `research confirm <id>`, `research start <id>`, `research stop <id>` | `POST /v1/research/{id}/confirm`, `/start`, `/stop` | The research. |
+| `research delete <id> [--reason <why>]` | `DELETE /v1/research/{id}` | The research as it was. Stops it if it is running, then deletes it with its experiments, runs, changes and lever branches; a person only. |
 | `grillings` | `GET /v1/grillings` | Table `id status repository reason`. |
 | `grilling show <id>` | `GET /v1/grillings/{id}` | The grilling. |
 | `grilling confirm <id> [--issues <file\|->]` | `POST /v1/grillings/{id}/confirm` | The grilling. Without `--issues` the proposed issues are read first (`GET /v1/grillings/{id}`) and confirmed as they are; the file is a JSON array of `{"title", "body", "blocked_by"}`. |
 | `grilling dismiss <id>` | `POST /v1/grillings/{id}/dismiss` | The grilling. |
+| `grilling delete <id> [--reason <why>]` | `DELETE /v1/grillings/{id}` | The grilling as it was. Deletes it with its chat; the issues it filed stay. A person only. |
 | `usage [--days <n>]` | `GET /v1/usage?days=<n>` | The window's totals, then the agents and the models. |
 | `doctor` | `GET /v1/start` | One line for each step of [the first start](desktop-api.md#get-v1start), `ok` or `missing` with what is missing, such as `missing  upstream: Add an upstream on the Models page.` After the steps, a line `warning  <text>` for each of the answer's `warnings`, such as an upstream that logs in with OAuth. The exit status is 1 while a step is missing (a warning does not change it), so that a script can wait for a ready server. |
 | `web` | `POST /v1/session/codes` | The line `Open the web app: <url>`, where the address signs a browser in once with a one-time code that lasts 10 minutes. The server prints the same kind of line when it starts. To get a window instead of a line, use [`open`](#open---browser-path). |

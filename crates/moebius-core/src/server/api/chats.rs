@@ -9,6 +9,8 @@
 //!   what a chat's worktree changes as a change without ending the chat. `POST /v1/chats/{id}/end`: ends a chat.
 //!   `POST /v1/chats/{id}/seen` `{seq}`: a person has read a chat that far. `POST /v1/chats/{id}/title` `{title}`:
 //!   names a chat, in place of the title taken from its first message.
+//! - `DELETE /v1/chats/{id}`: a person deletes a chat (see [`crate::app::App::delete_chat`]); `DELETE
+//!   /v1/grillings/{id}` deletes a grilling with its chat. Neither is for an agent's token.
 //! - `GET /v1/grillings` and `GET /v1/grillings/{id}`: what grilling chats ended in. `POST /v1/grillings/{id}/confirm`
 //!   `{issues: [{title, body, blocked_by}]}` makes a card of each issue the person kept; `POST
 //!   /v1/grillings/{id}/dismiss` drops the proposal or the report (see [`crate::harness::grilling`]).
@@ -19,7 +21,7 @@ use axum::extract::{Path as UrlPath, Query, State};
 use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
 
-use super::{ApiError, ApiState, Reason, blocking};
+use super::{ApiError, ApiState, Reason, blocking, person_only};
 use crate::app::Chat;
 use crate::decide::Actor;
 use crate::harness::grilling;
@@ -29,6 +31,7 @@ use crate::store::{Change, Grilling, GrillingIssue, Run};
 pub(super) fn routes() -> Router<ApiState> {
     Router::new()
         .route("/v1/chats", get(chats).post(start_chat))
+        .route("/v1/chats/{id}", axum::routing::delete(delete_chat))
         .route("/v1/chats/{id}/messages", post(say_in_chat))
         .route("/v1/chats/{id}/offer", post(offer_chat_changes))
         .route("/v1/chats/{id}/end", post(end_chat))
@@ -36,7 +39,10 @@ pub(super) fn routes() -> Router<ApiState> {
         .route("/v1/chats/{id}/settings", post(change_chat_settings))
         .route("/v1/chats/{id}/title", post(rename_chat))
         .route("/v1/grillings", get(grillings))
-        .route("/v1/grillings/{id}", get(get_grilling))
+        .route(
+            "/v1/grillings/{id}",
+            get(get_grilling).delete(delete_grilling),
+        )
         .route("/v1/grillings/{id}/confirm", post(confirm_grilling))
         .route("/v1/grillings/{id}/dismiss", post(dismiss_grilling))
 }
@@ -131,6 +137,36 @@ async fn confirm_grilling(
 ) -> Result<axum::Json<Grilling>, ApiError> {
     blocking(&state.app, move |app| {
         grilling::confirm(app, &by, id, confirmed.issues)
+    })
+    .await
+}
+
+async fn delete_grilling(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    body: Option<axum::Json<Reason>>,
+) -> Result<axum::Json<Grilling>, ApiError> {
+    person_only(&by)?;
+    let reason = body.map(|body| body.0.reason).unwrap_or_default();
+    let runs = state.runs.clone();
+    blocking(&state.app, move |app| {
+        grilling::delete(app, &by, &*runs, id, &reason)
+    })
+    .await
+}
+
+async fn delete_chat(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    body: Option<axum::Json<Reason>>,
+) -> Result<axum::Json<Run>, ApiError> {
+    person_only(&by)?;
+    let reason = body.map(|body| body.0.reason).unwrap_or_default();
+    let runs = state.runs.clone();
+    blocking(&state.app, move |app| {
+        app.delete_chat(&by, &*runs, id, &reason)
     })
     .await
 }
@@ -274,7 +310,7 @@ mod tests {
     use crate::repos::git;
     use crate::server::api::ApiState;
     use crate::server::api::testing::{
-        chat, end, get, kinds, origin, post, say, start, status, until,
+        agent_token, chat, end, get, kinds, origin, post, say, start, status, until,
     };
     use crate::store::Event;
 
@@ -413,6 +449,220 @@ mod tests {
             kinds(app, run.id).iter().filter(|k| *k == "said").count(),
             1
         );
+    }
+
+    async fn delete(state: &ApiState, addr: &str, path: &str) -> reqwest::Response {
+        reqwest::Client::new()
+            .delete(format!("http://{addr}{path}"))
+            .bearer_auth(&*state.token)
+            .json(&serde_json::json!({ "reason": "tidying up" }))
+            .send()
+            .await
+            .unwrap()
+    }
+
+    /// The events of kind `kind` the bus has published so far.
+    fn published(
+        events: &mut tokio::sync::broadcast::Receiver<crate::bus::AppEvent>,
+        kind: &str,
+    ) -> Vec<serde_json::Value> {
+        let mut found = Vec::new();
+        while let Ok(event) = events.try_recv() {
+            if event.kind == kind {
+                found.push(event.data);
+            }
+        }
+        found
+    }
+
+    fn spend(app: &crate::app::App, run: i64) {
+        app.store
+            .add_usage(&crate::store::Usage {
+                run_id: Some(run),
+                model: "big".into(),
+                input_tokens: 100,
+                output_tokens: 10,
+                cached_tokens: 0,
+                duration_ms: 5,
+                tools: vec![],
+            })
+            .unwrap();
+    }
+
+    // Unix only: the fake Pi is a Python script started by its `#!` line.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn deleting_a_chat_takes_out_all_of_it_and_nothing_else() {
+        let (dir, state, addr) = start().await;
+        let app = &state.app;
+        let repo = app
+            .add_repository("demo", origin(dir.path()).to_str().unwrap())
+            .unwrap();
+        let clone = std::path::PathBuf::from(&repo.path);
+        let write = "Write a script [write .moebius/ready.luau]";
+        let doomed = chat(&state, &addr, write, Some(repo.id)).await;
+        let kept = chat(&state, &addr, write, Some(repo.id)).await;
+        for run in [&doomed, &kept] {
+            assert_eq!(end(&state, &addr, run.id).await.status(), 200);
+            until("the chat ends", || status(app, run.id) == "succeeded").await;
+            spend(app, run.id);
+        }
+        let decision = app
+            .store
+            .add_judgement(&crate::store::NewJudgement {
+                kind: "tool_call".into(),
+                choice: "allow".into(),
+                decider: "rules".into(),
+                run_id: Some(doomed.id),
+                ..Default::default()
+            })
+            .unwrap();
+        app.store.set_seen_seq(doomed.id, 3).unwrap();
+        assert_eq!(app.store.changes(repo.id).unwrap().len(), 2);
+        assert_eq!(app.store.inbox().unwrap().len(), 2);
+        assert!(app.repos.chat_branch_exists(&clone, doomed.id));
+        let tokens = app.store.usage_totals(1).unwrap().tokens;
+        let kept_events = app.store.events(kept.id).unwrap().len();
+        let mut events = app.bus.subscribe();
+
+        let deleted = delete(&state, &addr, &format!("/v1/chats/{}", doomed.id)).await;
+        assert_eq!(deleted.status(), 200);
+
+        // The chat, its events and read marker, its change and inbox item, and its branch are gone.
+        assert!(app.store.run(doomed.id).unwrap().is_none());
+        assert!(app.store.events(doomed.id).unwrap().is_empty());
+        let changes = app.store.changes(repo.id).unwrap();
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].branch, kept.branch());
+        let inbox = app.store.inbox().unwrap();
+        assert_eq!(inbox.len(), 1);
+        assert_eq!(inbox[0].data["change"], changes[0].id);
+        assert!(!app.repos.chat_branch_exists(&clone, doomed.id));
+        assert!(
+            !git(&clone, &["worktree", "list"])
+                .unwrap()
+                .contains(&doomed.branch())
+        );
+        // The other chat is as it was.
+        assert!(app.repos.chat_branch_exists(&clone, kept.id));
+        assert_eq!(app.store.events(kept.id).unwrap().len(), kept_events);
+        let listed: Vec<Chat> = get(&state, &addr, "/v1/chats").await;
+        assert_eq!(listed.iter().map(|c| c.id).collect::<Vec<_>>(), [kept.id]);
+        // Spend and decisions are history: they stay, without the chat.
+        assert_eq!(app.store.usage_totals(1).unwrap().tokens, tokens);
+        assert_eq!(app.store.usage_for_run(doomed.id).unwrap().len(), 0);
+        let still = app.store.judgement(decision.id).unwrap().unwrap();
+        assert_eq!(still.run_id, None);
+
+        // Recorded and announced.
+        let recorded = app
+            .store
+            .judgements_page(None, None, Some("delete_chat"), 10)
+            .unwrap();
+        assert_eq!(recorded.len(), 1);
+        assert_eq!(
+            (
+                recorded[0].choice.as_str(),
+                recorded[0].decider.as_str(),
+                recorded[0].reason.as_str()
+            ),
+            ("delete_chat", "person", "tidying up")
+        );
+        assert_eq!(
+            published(&mut events, "chat_deleted"),
+            [serde_json::json!({ "run": doomed.id })]
+        );
+
+        // No such chat, twice over: it is gone, and a run that is no chat is none.
+        assert_eq!(
+            delete(&state, &addr, &format!("/v1/chats/{}", doomed.id))
+                .await
+                .status(),
+            404
+        );
+        let coder = app.store.add_run(None, "Coder", "test", "code").unwrap();
+        assert_eq!(
+            delete(&state, &addr, &format!("/v1/chats/{}", coder.id))
+                .await
+                .status(),
+            404
+        );
+        assert!(app.store.run(coder.id).unwrap().is_some());
+    }
+
+    // Unix only: the fake Pi is a Python script started by its `#!` line.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_chat_that_is_going_is_stopped_before_it_is_deleted() {
+        let (_dir, state, addr) = start().await;
+        let app = &state.app;
+        let mut events = app.bus.subscribe();
+        // A chat that waits for the next message, and one in the middle of an answer that does not come.
+        let waiting = chat(&state, &addr, "Hello", None).await;
+        let started = post(
+            &state,
+            &addr,
+            "/v1/chats".into(),
+            serde_json::json!({ "agent": "Coder", "message": "Wait [hang]" }),
+        )
+        .await;
+        let working: Run = started.json().await.unwrap();
+        until("the agent is at work", || {
+            kinds(app, working.id).iter().any(|k| k == "agent_start")
+        })
+        .await;
+        assert!(
+            app.store
+                .run(working.id)
+                .unwrap()
+                .unwrap()
+                .ended_at
+                .is_none()
+        );
+        let empty = app.data_dir.join(format!("chats/{}", working.id));
+        assert!(empty.is_dir());
+
+        for run in [&working, &waiting] {
+            let deleted = delete(&state, &addr, &format!("/v1/chats/{}", run.id)).await;
+            assert_eq!(deleted.status(), 200);
+            assert!(app.store.run(run.id).unwrap().is_none());
+        }
+        assert!(!empty.exists());
+        // Each was stopped, and ended, before it was deleted.
+        let mut seen = Vec::new();
+        while let Ok(event) = events.try_recv() {
+            if event.kind == "run_ended" || event.kind == "chat_deleted" {
+                seen.push((event.kind.clone(), event.data["run"].clone()));
+            }
+        }
+        for run in [&working, &waiting] {
+            let at = |kind: &str| seen.iter().position(|(k, r)| k == kind && *r == run.id);
+            let (ended, deleted) = (at("run_ended"), at("chat_deleted"));
+            assert!(ended.is_some(), "chat {} ended", run.id);
+            assert!(deleted.is_some(), "chat {} was announced deleted", run.id);
+            assert!(
+                ended < deleted,
+                "chat {} ended before it was deleted",
+                run.id
+            );
+        }
+    }
+
+    // Unix only: the fake Pi is a Python script started by its `#!` line.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_agent_may_not_delete_a_chat() {
+        let (_dir, state, addr) = start().await;
+        let run = chat(&state, &addr, "Hello", None).await;
+        let agent = agent_token(&state);
+        let response = reqwest::Client::new()
+            .delete(format!("http://{addr}/v1/chats/{}", run.id))
+            .bearer_auth(agent)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 403);
+        assert!(state.app.store.run(run.id).unwrap().is_some());
     }
 
     async fn offer(state: &ApiState, addr: &str, run_id: i64) -> reqwest::Response {

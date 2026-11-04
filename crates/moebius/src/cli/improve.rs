@@ -56,6 +56,13 @@ pub enum ResearchCommand {
     Start { id: i64 },
     /// Stop a research.
     Stop { id: i64 },
+    /// Delete a research with its experiments, runs and lever branches; stopped first if it is running.
+    Delete {
+        id: i64,
+        /// Why; recorded with the decision.
+        #[arg(long)]
+        reason: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -121,7 +128,7 @@ pub fn proposal(command: &ProposalCommand) -> Plan {
     ))
 }
 
-/// `research`, `research <id>`, and `research new`, `confirm`, `start` and `stop`.
+/// `research`, `research <id>`, and `research new`, `confirm`, `start`, `stop` and `delete`.
 pub fn research(id: Option<i64>, command: Option<&ResearchCommand>) -> Plan {
     let (id, action) = match command {
         None => {
@@ -152,6 +159,10 @@ pub fn research(id: Option<i64>, command: Option<&ResearchCommand>) -> Plan {
         Some(ResearchCommand::Confirm { id }) => (id, "confirm"),
         Some(ResearchCommand::Start { id }) => (id, "start"),
         Some(ResearchCommand::Stop { id }) => (id, "stop"),
+        Some(ResearchCommand::Delete { id, reason }) => {
+            let request = super::chats::delete(format!("/v1/research/{id}"), reason);
+            return Ok((request, Show::Object));
+        }
     };
     Ok((
         Request::post(format!("/v1/research/{id}/{action}"), json!({})),

@@ -31,6 +31,7 @@
 
 mod brief;
 mod measure;
+mod remove;
 mod rounds;
 
 use serde::{Deserialize, Serialize};
@@ -41,6 +42,7 @@ use crate::store::{Experiment, Repository, Research};
 
 pub use brief::{Brief, NewResearch, confirm, create, edit, stop};
 pub use measure::{MEASURE_LIMIT, judge, parse_measurement, percent, spent};
+pub use remove::delete;
 pub use rounds::{on_schedule, start};
 
 /// How much better than the baseline a measurement must be, as a share of the baseline, for the lever to be kept.

@@ -505,3 +505,145 @@ async fn a_research_a_server_left_running_goes_back_to_confirmed_and_keeps_what_
         ("confirmed", Some(100.0))
     );
 }
+
+#[tokio::test]
+async fn deleting_a_research_takes_out_its_experiments_runs_changes_and_branches_and_nothing_else()
+{
+    let dir = tempfile::tempdir().unwrap();
+    let (server, repo) = server(dir.path());
+    let app = &server.app;
+    let clone = PathBuf::from(app.store.repository(repo).unwrap().unwrap().path);
+    let api = Api::start(&server).await;
+    let goal = "Make the score smaller. [lever research/1-down score 80]";
+    let id = api.confirmed(repo, goal, "cat score", 1_000_000).await;
+    // Another research stays as it is, with its own lever branch.
+    let other = api.confirmed(repo, "Another", "cat score", 1_000).await;
+    git(
+        &clone,
+        &["branch", &format!("research/{other}-idea"), "main"],
+    )
+    .unwrap();
+    let mut events = app.bus.subscribe();
+    api.post(&format!("/v1/research/{id}/start"), json!({}))
+        .await;
+    assert_eq!(ended(&mut events, id).await.0, "done");
+    let runs = app.store.runs_of_research(id).unwrap();
+    assert!(!runs.is_empty());
+    app.store
+        .add_usage(&Usage {
+            run_id: Some(runs[0].id),
+            model: "big".into(),
+            input_tokens: 100,
+            output_tokens: 10,
+            cached_tokens: 0,
+            duration_ms: 5,
+            tools: vec![],
+        })
+        .unwrap();
+    let tokens = app.store.usage_totals(1).unwrap().tokens;
+    assert_eq!(app.store.changes(repo).unwrap().len(), 1);
+    assert!(
+        git(&clone, &["branch", "--list", "research/1-*"])
+            .unwrap()
+            .contains("research/1-down")
+    );
+
+    let (status, deleted) = api
+        .call(
+            reqwest::Method::DELETE,
+            &format!("/v1/research/{id}"),
+            Some(json!({ "reason": "done with it" })),
+        )
+        .await;
+    assert_eq!(status, 200, "{deleted}");
+    assert_eq!(deleted["id"], id);
+
+    // The research, its experiments, runs, change, inbox item and lever branch are gone.
+    assert!(app.store.research(id).unwrap().is_none());
+    assert!(app.store.experiments(id).unwrap().is_empty());
+    for run in &runs {
+        assert!(app.store.run(run.id).unwrap().is_none());
+        assert!(app.store.events(run.id).unwrap().is_empty());
+    }
+    assert!(app.store.changes(repo).unwrap().is_empty());
+    assert!(app.store.inbox().unwrap().is_empty());
+    assert_eq!(
+        git(&clone, &["branch", "--list", "research/1-*"]).unwrap(),
+        ""
+    );
+    assert_eq!(
+        git(&clone, &["worktree", "list", "--porcelain"])
+            .unwrap()
+            .matches("worktree ")
+            .count(),
+        1
+    );
+    // The other research and its branch stay; the spend stays.
+    assert!(app.store.research(other).unwrap().is_some());
+    assert!(
+        git(&clone, &["branch", "--list", "research/2-*"])
+            .unwrap()
+            .contains("research/2-idea")
+    );
+    assert_eq!(app.store.usage_totals(1).unwrap().tokens, tokens);
+    // Recorded and announced.
+    let recorded = app
+        .store
+        .judgements_page(None, None, Some("delete_research"), 10)
+        .unwrap();
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(
+        (recorded[0].decider.as_str(), recorded[0].reason.as_str()),
+        ("person", "done with it")
+    );
+    let mut announced = vec![];
+    while let Ok(event) = events.try_recv() {
+        if event.kind == "research_deleted" {
+            announced.push(event.data);
+        }
+    }
+    assert_eq!(announced, [json!({ "research": id })]);
+    let (status, _) = api
+        .call(reqwest::Method::DELETE, &format!("/v1/research/{id}"), None)
+        .await;
+    assert_eq!(status, 404);
+}
+
+#[tokio::test]
+async fn a_research_that_is_running_is_stopped_before_it_is_deleted() {
+    let dir = tempfile::tempdir().unwrap();
+    let (server, repo) = server(dir.path());
+    let app = &server.app;
+    let api = Api::start(&server).await;
+    let id = api
+        .confirmed(repo, "wait [hang]", "cat score", 1_000_000)
+        .await;
+    let mut events = app.bus.subscribe();
+    api.post(&format!("/v1/research/{id}/start"), json!({}))
+        .await;
+    let run = wait_for("the Autoresearcher's run", || {
+        app.store
+            .runs_of_research(id)
+            .unwrap()
+            .first()
+            .map(|run| run.id)
+    });
+    assert!(app.store.run(run).unwrap().unwrap().ended_at.is_none());
+
+    let (status, deleted) = api
+        .call(reqwest::Method::DELETE, &format!("/v1/research/{id}"), None)
+        .await;
+    assert_eq!(status, 200, "{deleted}");
+    assert!(app.store.research(id).unwrap().is_none());
+    assert!(app.store.run(run).unwrap().is_none());
+    let mut kinds = vec![];
+    while let Ok(event) = events.try_recv() {
+        kinds.push((event.kind.clone(), event.data.clone()));
+    }
+    // It was stopped, then its run ended, then it was deleted; nothing was stored for it after.
+    let position = |kind: &str| kinds.iter().position(|(k, _)| k == kind);
+    assert!(position("research_status").unwrap() < position("run_ended").unwrap());
+    assert!(position("run_ended").unwrap() < position("research_deleted").unwrap());
+    assert!(app.store.researches().unwrap().iter().all(|r| r.id != id));
+    assert!(!kinds.iter().any(|(k, _)| k == "experiment_done"));
+}

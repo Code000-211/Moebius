@@ -321,6 +321,15 @@ impl Repos {
         git(clone, &["branch", "-D", "--quiet", &branch]).map(drop)
     }
 
+    /// Deletes the local branch `branch` of `clone`, if it has one and no worktree holds it.
+    pub fn delete_branch(&self, clone: &Path, branch: &str) -> Result<()> {
+        let reference = format!("refs/heads/{branch}");
+        if git(clone, &["rev-parse", "--verify", "--quiet", &reference]).is_err() {
+            return Ok(());
+        }
+        git(clone, &["branch", "-D", "--quiet", branch]).map(drop)
+    }
+
     /// Whether the chat `run_id` still has its branch `moebius/chat-<id>` in `clone`.
     pub fn chat_branch_exists(&self, clone: &Path, run_id: i64) -> bool {
         let branch = format!("refs/heads/moebius/chat-{run_id}");

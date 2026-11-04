@@ -429,6 +429,7 @@ At the top:
 | `app/automations/mod.rs` | Automations: saving and listing them with their next firing, firing one (a chat with origin `automation`, or a skipped or failed firing), and the check once a minute that ends their answered chats and fires those that came due. |
 | `app/automations/cron.rs` | A schedule: a cron expression of five fields in the server's local time, parsed, and the next minute it comes due. |
 | `app/chats.rs` | Chats: starting one, continuing an ended one, writing to it, its model and reasoning, ending it, and the list of chats. |
+| `app/deletions.rs` | Deleting a chat: a chat that is going is stopped, then it is taken out of the store with its changes, inbox items and grillings, and its worktree and branch are removed; also the stop-and-wait that research and grillings share. |
 | `app/diffs.rs` | What a change or a run changed, as a unified diff (secrets removed, cut at 2 MB) for a client to draw. |
 | `app/changes.rs` | Changes: a card's work published through the forge, offered with a chat's work in the inbox, rejected or merged, and what the forge says became of them. |
 | `app/checks.rs` | How a change's checks stand, and a repository's own checks (`.moebius/checks`) run in a throwaway worktree with a time limit and a cleared environment. |
@@ -485,6 +486,7 @@ At the top:
 | `store/events.rs` | A run's events, in order, redacted before they are stored. |
 | `store/automations.rs` | Automations, their firings with the status of each chat, and the server's local minute. |
 | `store/chats.rs` | Chats: where they were started, what they work in and how far a person has read them. |
+| `store/deletions.rs` | Deleting a chat, a research or a replay from the store in one transaction each; usage and judgements stay, without a run. |
 | `store/localize.rs` | The search index of `localize`: a repository's files in an FTS5 table of their own, split into words for ranking by BM25, and the commit it was made from. |
 | `store/judgements.rs` | Judgements at decision points, their outcomes, and the refusals counted by rule. |
 | `store/replays.rs` | Replays of refused tool calls and the refusals still to replay. |
@@ -693,6 +695,7 @@ At the top:
 | `improve/replay/outcome.rs` | A replay made and recorded: the call run in the copy, the sentence that becomes the judgement's outcome, and the replay stored and published, or why it could not be run. |
 | `improve/research/mod.rs` | Autoresearch: what the API shows of a research, and the lookups its parts share. |
 | `improve/research/brief.rs` | A research's brief: stored as a draft, written anew while it is one, confirmed as a recorded decision, and a research stopped. |
+| `improve/research/remove.rs` | Deleting a research: stopped first if it runs, then its experiments, runs, changes, lever branches and worktrees. |
 | `improve/research/measure.rs` | A brief's measure run in a fresh worktree with a cleared environment and a time limit, the last number it printed, and whether a lever beats the baseline by enough to be kept. |
 | `improve/research/rounds.rs` | The thread that drives a research: its baseline, the Autoresearcher's rounds, each new lever measured and kept or offered, and the schedule's start of the oldest confirmed research. |
 | `improve/export.rs` | The training-set export: judgements with their contexts and outcomes as JSON Lines per kind, the held-out tenth, the exports a person started in the app. |

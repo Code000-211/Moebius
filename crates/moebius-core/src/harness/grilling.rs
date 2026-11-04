@@ -242,6 +242,30 @@ pub fn dismiss(app: &App, id: i64) -> Result<Grilling> {
     view(app, id)
 }
 
+/// A person deletes a grilling: its record, its chat (stopped first if it were going), and the chat's worktree and
+/// branch. The issues it filed stay on the forge and as cards. Recorded as a `delete_grilling` decision and announced
+/// as `grilling_deleted` and `chat_deleted`.
+pub fn delete(
+    app: &App,
+    by: &Actor,
+    runs: &dyn crate::board::Runs,
+    id: i64,
+    reason: &str,
+) -> Result<Grilling> {
+    let grilling = view(app, id)?;
+    let (_, removed) = app.remove_chat(runs, grilling.run_id)?;
+    let context = [
+        ("grilling".to_string(), id.to_string()),
+        ("chat".to_string(), grilling.run_id.to_string()),
+        ("status".to_string(), grilling.status.clone()),
+        ("inbox_items".to_string(), removed.inbox_items.to_string()),
+    ]
+    .into();
+    app.record_action(by, "delete_grilling", None, None, context, reason)?;
+    app.announce_chat_deleted(grilling.run_id, &removed);
+    Ok(grilling)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

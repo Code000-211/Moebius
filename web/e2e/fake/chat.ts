@@ -51,6 +51,8 @@ export interface FakeChat {
   readonly chats: FakeChatRecord[];
   /** The bodies of `POST /v1/chats`, as received. */
   readonly started: Array<Record<string, unknown>>;
+  /** The ids of the chats `DELETE /v1/chats/{id}` deleted, in order. */
+  readonly deleted: number[];
   /** The bodies of `POST /v1/chats/{id}/messages`, as received. */
   readonly said: Array<{ chat: number; body: Record<string, unknown> }>;
   /** The `seq` of each `POST /v1/chats/{id}/seen`, as received. */
@@ -140,6 +142,7 @@ export function createFakeChat(
   const chats: FakeChatRecord[] = [];
   const events = new Map<number, StoredEvent[]>();
   const started: Array<Record<string, unknown>> = [];
+  const deleted: number[] = [];
   const said: Array<{ chat: number; body: Record<string, unknown> }> = [];
   const seen: Array<{ chat: number; seq: number }> = [];
   const reads: Array<Record<string, string>> = [];
@@ -169,6 +172,7 @@ export function createFakeChat(
   const fake: FakeChat = {
     chats,
     started,
+    deleted,
     said,
     seen,
     reads,
@@ -327,6 +331,24 @@ export function createFakeChat(
           fake.emit(id, "said", { message });
           answer(id, message);
         }
+        return reply(response, 200, run(chat));
+      }
+
+      const deleting = /^\/v1\/chats\/(\d+)$/.exec(path);
+      if (deleting && method === "DELETE") {
+        const id = Number(deleting[1]);
+        const chat = find(id);
+        if (!chat) return reply(response, 404, "chat not found");
+        deleted.push(id);
+        // A chat that is going is stopped first, then deleted.
+        if (chat.ended_at === null) {
+          chat.status = "stopped";
+          chat.ended_at = NOW();
+          broadcast({ kind: "run_ended", data: { run: id, status: "stopped" } });
+        }
+        chats.splice(chats.indexOf(chat), 1);
+        events.delete(id);
+        broadcast({ kind: "chat_deleted", data: { run: id } });
         return reply(response, 200, run(chat));
       }
 

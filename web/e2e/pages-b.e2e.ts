@@ -598,6 +598,34 @@ describe("the Models page", () => {
     },
   );
 
+  it.skipIf(usesRealServer)(
+    "deletes a stored key after asking, and the field asks for a key again",
+    async () => {
+      await open("/models");
+      await page.getByRole("button", { name: "Add provider" }).click();
+      const row = page.getByTestId("upstream").nth(3);
+      await row.getByLabel("Base URL").fill("https://api.new.example");
+      await pickOption(page, row.getByLabel("Key of provider 4: where it comes from"), "Typed key");
+      await row.getByLabel("Key of provider 4: the key").fill("sk-secret-123");
+      await save().click();
+      await page.getByText("Saved.", { exact: true }).waitFor();
+      expect(fake().secrets["upstream-1"]).toBe("sk-secret-123");
+
+      const stored = page.getByTestId("upstream").nth(3);
+      await stored.getByRole("button", { name: "Delete stored key" }).click();
+      const dialog = page.getByRole("dialog", { name: "Delete the stored key upstream-1?" });
+      await dialog.getByRole("button", { name: "Keep" }).click();
+      await dialog.waitFor({ state: "detached" });
+      expect(fake().secrets["upstream-1"]).toBe("sk-secret-123");
+      await stored.getByRole("button", { name: "Delete stored key" }).click();
+      await dialog.getByRole("button", { name: "Delete" }).click();
+      await dialog.waitFor({ state: "detached" });
+      expect(fake().secrets["upstream-1"]).toBeUndefined();
+      const field = stored.getByLabel("Key of provider 4: the key");
+      expect(await field.getAttribute("placeholder")).toBe("Paste the key");
+    },
+  );
+
   it.skipIf(usesRealServer)("says when nothing changed and what the server refused", async () => {
     await open("/models");
     await page.getByTestId("upstream").nth(0).waitFor();

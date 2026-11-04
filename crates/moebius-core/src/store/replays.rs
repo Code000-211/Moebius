@@ -26,11 +26,13 @@ pub struct Replay {
 }
 
 impl Store {
-    /// The refused tool calls no outcome and no replay is known for, made since `since`, oldest first.
+    /// The refused tool calls no replay is stored for and whose outcome does not say they were replayed (a replay that a
+    /// person deleted is not made again), made since `since`, oldest first.
     pub fn replay_candidates(&self, since: i64) -> Result<Vec<Judgement>> {
         self.judgements_query(
             "WHERE kind = 'tool_call' AND choice = 'refuse' AND run_id IS NOT NULL
                AND at >= ?1 AND NOT EXISTS (SELECT 1 FROM replays WHERE judgement_id = judgements.id)
+               AND COALESCE(outcome, '') NOT LIKE 'replayed: %'
              ORDER BY id",
             [since],
         )

@@ -27,7 +27,7 @@ fn is_running(app: &App, id: i64) -> bool {
 }
 
 /// The lever branches of research `id` in the clone, by name.
-fn lever_branches(repository: &Repository, id: i64) -> Result<Vec<String>> {
+pub(super) fn lever_branches(repository: &Repository, id: i64) -> Result<Vec<String>> {
     let pattern = format!("refs/heads/research/{id}-*");
     let listed = git(
         Path::new(&repository.path),
@@ -238,6 +238,13 @@ pub fn start(
     limit: Duration,
 ) -> Result<ResearchView> {
     let research = find(app, id)?;
+    // Taken before the research is marked running and let go when the thread is done, so that a research is not
+    // deleted under it, nor started while it is being deleted.
+    let Some(going) = app.researching(id) else {
+        return Err(AppError::Conflict(format!(
+            "research {id} is being started or deleted"
+        )));
+    };
     if !app.store.start_research(id)? {
         return Err(AppError::Conflict(if research.status == "confirmed" {
             "another research is running".to_string()
@@ -249,7 +256,10 @@ pub fn start(
     let (thread_app, thread_runs) = (app.clone(), runs.clone());
     let started = std::thread::Builder::new()
         .name(format!("research {id}"))
-        .spawn(move || run(&thread_app, &thread_runs, id, limit));
+        .spawn(move || {
+            let _going = going;
+            run(&thread_app, &thread_runs, id, limit);
+        });
     if let Err(e) = started {
         app.store.move_research(id, &["running"], "confirmed", "")?;
         publish_status(app, id, "confirmed");
