@@ -5,6 +5,9 @@
 //! - `POST /v1/repositories/{id}/issues` `{title, body}`: creates an issue, which becomes a card in the backlog.
 //! - `PUT /v1/cards/{id}` `{title, body}`: changes a card's title and body, and its issue on a forge.
 //! - `POST /v1/cards/{id}/approve` `{reason}`: a person approves an outside issue; its card moves to ready.
+//! - `POST /v1/cards/{id}/block` `{reason}` and `POST /v1/cards/{id}/unblock` `{reason}`: a person or the Moebius agent
+//!   holds a card, which stops its runs and keeps the board from working on it, or releases it.
+//! - `DELETE /v1/cards/{id}`: a person deletes a card with everything stored for it.
 //! - `POST /v1/changes/{id}/merge` `{reason}`: a person merges a change; its card moves to done.
 //! - `POST /v1/changes/{id}/reject` `{reason}`: a person sends a change waiting to be merged back to coding.
 //! - `GET /v1/changes/{id}/diff`: what a change changes, as a unified diff.
@@ -20,7 +23,7 @@ use axum::extract::{Path as UrlPath, State};
 use axum::routing::{get, post, put};
 use serde::{Deserialize, Serialize};
 
-use super::{ApiError, ApiState, Reason, blocking};
+use super::{ApiError, ApiState, Reason, blocking, person_only};
 use crate::app::{App, BoardFacts, HistoryEntry, PERSON};
 use crate::board::latest_review;
 use crate::decide::Actor;
@@ -31,8 +34,10 @@ pub(super) fn routes() -> Router<ApiState> {
     Router::new()
         .route("/v1/snapshot", get(snapshot))
         .route("/v1/repositories/{id}/issues", post(create_issue))
-        .route("/v1/cards/{id}", put(edit_card))
+        .route("/v1/cards/{id}", put(edit_card).delete(delete_card))
         .route("/v1/cards/{id}/approve", post(approve_issue))
+        .route("/v1/cards/{id}/block", post(block_card))
+        .route("/v1/cards/{id}/unblock", post(unblock_card))
         .route("/v1/cards/{id}/retry", post(retry_card))
         .route("/v1/changes/{id}/merge", post(merge_change))
         .route("/v1/changes/{id}/reject", post(reject_change))
@@ -247,6 +252,45 @@ async fn edit_card(
 ) -> Result<axum::Json<Card>, ApiError> {
     blocking(&state.app, move |app| {
         app.edit_card(&by, id, &edited.title, &edited.body, &edited.reason)
+    })
+    .await
+}
+
+async fn block_card(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    body: Option<axum::Json<Reason>>,
+) -> Result<axum::Json<Card>, ApiError> {
+    let reason = body.map(|body| body.0.reason).unwrap_or_default();
+    let runs = state.runs.clone();
+    blocking(&state.app, move |app| {
+        app.block_card(&by, &*runs, id, Some(&reason))
+    })
+    .await
+}
+
+async fn unblock_card(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    body: Option<axum::Json<Reason>>,
+) -> Result<axum::Json<Card>, ApiError> {
+    let reason = body.map(|body| body.0.reason).unwrap_or_default();
+    blocking(&state.app, move |app| app.unblock_card(&by, id, &reason)).await
+}
+
+async fn delete_card(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    body: Option<axum::Json<Reason>>,
+) -> Result<axum::Json<Card>, ApiError> {
+    person_only(&by)?;
+    let reason = body.map(|body| body.0.reason).unwrap_or_default();
+    let runs = state.runs.clone();
+    blocking(&state.app, move |app| {
+        app.delete_card(&by, &*runs, id, &reason)
     })
     .await
 }
@@ -893,5 +937,258 @@ mod tests {
         assert_eq!(settled.data["picked"], runs[1]);
         assert_eq!(settled.data["runs"], serde_json::json!(runs));
         assert_eq!(settled.data["reason"], "The only attempt that passed.");
+    }
+
+    /// A request with the server's token, as the person.
+    fn request(
+        state: &ApiState,
+        addr: &str,
+        method: reqwest::Method,
+        path: String,
+        body: Option<serde_json::Value>,
+    ) -> impl std::future::Future<Output = reqwest::Response> {
+        let mut request = reqwest::Client::new()
+            .request(method, format!("http://{addr}{path}"))
+            .bearer_auth(&*state.token);
+        if let Some(body) = body {
+            request = request.json(&body);
+        }
+        async move { request.send().await.unwrap() }
+    }
+
+    #[tokio::test]
+    async fn a_card_is_held_and_released_with_its_reason_and_the_errors_are_told() {
+        let (_dir, state, addr) = start().await;
+        let app = &state.app;
+        let card = app.store.cards(1).unwrap().pop().unwrap();
+        let mut events = app.bus.subscribe();
+        let send = |action: &str, body: Option<serde_json::Value>| {
+            request(
+                &state,
+                &addr,
+                reqwest::Method::POST,
+                format!("/v1/cards/{}/{action}", card.id),
+                body,
+            )
+        };
+
+        // Nothing to release, and no such card.
+        assert_eq!(send("unblock", None).await.status(), 409);
+        let missing = request(
+            &state,
+            &addr,
+            reqwest::Method::POST,
+            "/v1/cards/99/block".into(),
+            None,
+        )
+        .await;
+        assert_eq!(missing.status(), 404);
+
+        let blocked = send(
+            "block",
+            Some(serde_json::json!({ "reason": "  wait for the design " })),
+        )
+        .await;
+        assert_eq!(blocked.status(), 200);
+        let blocked: Card = blocked.json().await.unwrap();
+        let held = blocked.held.clone().unwrap();
+        assert_eq!(
+            (held.by.as_str(), held.reason.as_deref()),
+            ("person", Some("wait for the design"))
+        );
+        // The snapshot shows it, on the card the board shows.
+        let snapshot: Snapshot = get(&state, &addr, "/v1/snapshot").await;
+        let shown = &snapshot.boards[0].cards[0];
+        assert_eq!(shown.card.held, Some(held.clone()));
+        assert_eq!(send("block", None).await.status(), 409);
+
+        let judgements = app.store.judgements("block_card").unwrap();
+        assert_eq!(judgements.len(), 1);
+        assert_eq!(
+            (
+                judgements[0].decider.as_str(),
+                judgements[0].card_id,
+                judgements[0].reason.as_str()
+            ),
+            ("person", Some(card.id), "wait for the design")
+        );
+        let context: serde_json::Value =
+            serde_json::from_str(&app.store.blobs().get(&judgements[0].context[0]).unwrap())
+                .unwrap();
+        assert_eq!(context["reason"], "wait for the design");
+
+        // Released without a body, it is a card like any other again.
+        let released = send("unblock", None).await;
+        assert_eq!(released.status(), 200);
+        let released: Card = released.json().await.unwrap();
+        assert_eq!(released.held, None);
+        assert_eq!(app.store.judgements("unblock_card").unwrap().len(), 1);
+        assert_eq!(send("unblock", None).await.status(), 409);
+
+        let mut updated = 0;
+        while let Ok(event) = events.try_recv() {
+            if event.kind == "card_updated" {
+                assert_eq!(event.data["id"], card.id);
+                updated += 1;
+            }
+        }
+        assert_eq!(
+            updated, 2,
+            "one card_updated for the block, one for the release"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_person_deletes_a_card_and_every_client_is_told() {
+        let (_dir, state, addr) = start().await;
+        let app = &state.app;
+        let card = app.store.cards(1).unwrap().pop().unwrap();
+        let other = app
+            .store
+            .add_card(card.repository_id, "Other", "", "leon", "Backlog")
+            .unwrap();
+        let mut events = app.bus.subscribe();
+        let delete = |id: i64| {
+            request(
+                &state,
+                &addr,
+                reqwest::Method::DELETE,
+                format!("/v1/cards/{id}"),
+                None,
+            )
+        };
+        assert_eq!(delete(99).await.status(), 404);
+        let deleted = delete(card.id).await;
+        assert_eq!(deleted.status(), 200);
+        let deleted: Card = deleted.json().await.unwrap();
+        assert_eq!(deleted.id, card.id);
+        assert_eq!(delete(card.id).await.status(), 404);
+
+        let snapshot: Snapshot = get(&state, &addr, "/v1/snapshot").await;
+        let left: Vec<i64> = snapshot.boards[0].cards.iter().map(|c| c.card.id).collect();
+        assert_eq!(left, [other.id]);
+        let judgements = app.store.judgements("delete_card").unwrap();
+        assert_eq!(judgements.len(), 1);
+        assert_eq!(
+            (judgements[0].decider.as_str(), judgements[0].card_id),
+            ("person", None)
+        );
+        let context: serde_json::Value =
+            serde_json::from_str(&app.store.blobs().get(&judgements[0].context[0]).unwrap())
+                .unwrap();
+        assert_eq!(
+            (context["title"].as_str(), context["number"].as_str()),
+            (Some("First"), Some("1"))
+        );
+        let mut deleted_events = Vec::new();
+        while let Ok(event) = events.try_recv() {
+            if event.kind == "card_deleted" {
+                deleted_events.push(event.data);
+            }
+        }
+        assert_eq!(deleted_events, [serde_json::json!({ "card": card.id })]);
+    }
+
+    // Unix only: the fake Pi is a Python script started by its `#!` line.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn blocking_a_card_stops_its_run_and_deleting_one_waits_for_its_run_to_end() {
+        use crate::board::{Engine, Limits, Workflow};
+        use std::sync::Arc;
+
+        let (dir, state, addr) = start().await;
+        let app = state.app.clone();
+        let repo = app
+            .add_repository("demo", origin(dir.path()).to_str().unwrap())
+            .unwrap();
+        let engine = Arc::new(Engine::new(
+            app.clone(),
+            state.runs.clone(),
+            Workflow::default(),
+            Limits::default(),
+        ));
+        let settle = |id: i64| {
+            let engine = engine.clone();
+            async move {
+                tokio::task::spawn_blocking(move || engine.settle(id).unwrap())
+                    .await
+                    .unwrap()
+            }
+        };
+        let work = |title: &str| app.create_issue(repo.id, title, "", PERSON).unwrap();
+        let post_to = |id: i64, action: &str| {
+            request(
+                &state,
+                &addr,
+                reqwest::Method::POST,
+                format!("/v1/cards/{id}/{action}"),
+                Some(serde_json::json!({ "reason": "not now" })),
+            )
+        };
+
+        // A Coder is working on the card, and waits for a person.
+        let blocked = work("Please [hang] one");
+        settle(blocked.id).await;
+        let run = app.store.runs_for_card(blocked.id).unwrap().pop().unwrap();
+        until("Pi takes the prompt", || {
+            app.store.events(run.id).unwrap().len() >= 2
+        })
+        .await;
+        assert_eq!(post_to(blocked.id, "block").await.status(), 200);
+        until("the run ends", || {
+            app.store.run(run.id).unwrap().unwrap().status == "stopped"
+        })
+        .await;
+        assert_eq!(app.store.judgements("stop").unwrap().len(), 1);
+
+        // The board starts nothing for a held card and leaves it where it was.
+        let before = app.card(blocked.id).unwrap().column;
+        let step = settle(blocked.id).await;
+        assert_eq!(
+            (step.moved, step.started_run, step.waiting),
+            (None, None, None)
+        );
+        assert_eq!(app.store.runs_for_card(blocked.id).unwrap().len(), 1);
+        assert_eq!(app.card(blocked.id).unwrap().column, before);
+        assert!(app.store.inbox().unwrap().is_empty());
+
+        // Released, its script runs again; the run the block stopped is no reason to call the card stuck, so it starts
+        // another one.
+        assert_eq!(post_to(blocked.id, "unblock").await.status(), 200);
+        let step = settle(blocked.id).await;
+        assert_eq!(step.waiting.as_deref(), Some("coding"));
+        assert_eq!(app.store.runs_for_card(blocked.id).unwrap().len(), 2);
+        assert!(app.store.inbox().unwrap().is_empty());
+
+        // A card with a run that is going is deleted once its run has ended, with its worktree and branch.
+        let doomed = work("Please [hang] two");
+        settle(doomed.id).await;
+        let run = app.store.runs_for_card(doomed.id).unwrap().pop().unwrap();
+        until("Pi takes the prompt", || {
+            app.store.events(run.id).unwrap().len() >= 2
+        })
+        .await;
+        let clone = std::path::PathBuf::from(&repo.path);
+        let worktree = std::path::PathBuf::from(run.worktree.clone().unwrap());
+        assert!(worktree.is_dir());
+        let branch = format!("moebius/run-{}", run.id);
+        assert!(git(&clone, &["rev-parse", "--verify", &branch]).is_ok());
+
+        let deleted = request(
+            &state,
+            &addr,
+            reqwest::Method::DELETE,
+            format!("/v1/cards/{}", doomed.id),
+            None,
+        )
+        .await;
+        assert_eq!(deleted.status(), 200);
+        assert_eq!(app.store.card(doomed.id).unwrap(), None);
+        assert_eq!(app.store.run(run.id).unwrap(), None);
+        assert!(!worktree.exists());
+        assert!(git(&clone, &["rev-parse", "--verify", &branch]).is_err());
+        // Without a forge there is no issue to leave behind, and the other card is untouched.
+        assert!(!app.store.card_was_deleted(repo.id, doomed.number).unwrap());
+        assert!(app.store.card(blocked.id).unwrap().is_some());
     }
 }

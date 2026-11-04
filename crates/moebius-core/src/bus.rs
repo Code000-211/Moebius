@@ -54,6 +54,9 @@ pub enum Event {
     },
     CardAdded(Card),
     CardUpdated(Card),
+    CardDeleted {
+        card: i64,
+    },
     CardMoved {
         card: i64,
         from: String,
@@ -239,6 +242,7 @@ mod tests {
             note: None,
             retried_after: None,
             confirmed: false,
+            held: None,
         }
     }
 
@@ -323,6 +327,10 @@ mod tests {
             (
                 Event::CardUpdated(card.clone()),
                 json!({"kind": "card_updated", "data": card.clone()}),
+            ),
+            (
+                Event::CardDeleted { card: 7 },
+                json!({"kind": "card_deleted", "data": {"card": 7}}),
             ),
             (
                 Event::CardMoved {

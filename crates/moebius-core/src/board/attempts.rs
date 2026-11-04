@@ -69,14 +69,16 @@ impl Engine {
                                 .then(|| models[index % models.len()].as_str()),
                             runner: runner.as_deref(),
                         };
-                        let run = runs
-                            .start(
-                                &app,
-                                &card_copy,
-                                &agent,
-                                ("attempt", note.as_deref()),
-                                variant,
-                            )
+                        let run = super::may_start(&app, &card_copy)
+                            .and_then(|()| {
+                                runs.start(
+                                    &app,
+                                    &card_copy,
+                                    &agent,
+                                    ("attempt", note.as_deref()),
+                                    variant,
+                                )
+                            })
                             .map_err(|e| e.to_string());
                         let recorded = run.and_then(|run| {
                             let group = started.first().copied().unwrap_or(run.id);
@@ -296,6 +298,25 @@ mod tests {
         assert_eq!(attempts.len(), 4);
         assert_eq!(attempts[3].model, None);
         assert_eq!(attempts[3].group_id, attempts[3].run_id);
+    }
+
+    #[test]
+    fn a_card_held_after_the_tick_looked_gets_no_run_from_either_starter() {
+        let harness = Arc::new(FakeHarness::default());
+        let (_dir, app, engine, repo) = setup_with_harness(None, harness.clone());
+        let card = app.create_issue(repo, "Work", "", PERSON).unwrap();
+        // The script sees the card as it was before the hold.
+        assert!(app.store.hold_card(card.id, PERSON, None).unwrap());
+        for source in [
+            r#"moebius.start_run("Coder", "code")"#,
+            r#"moebius.start_runs("Coder", 2)"#,
+        ] {
+            let Err(error) = run(&engine, &card, source) else {
+                panic!("a run was started for a held card");
+            };
+            assert!(error.contains("held"), "{error}");
+        }
+        assert!(app.store.runs_for_card(card.id).unwrap().is_empty());
     }
 
     #[test]

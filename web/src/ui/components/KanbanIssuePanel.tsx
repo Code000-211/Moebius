@@ -3,8 +3,9 @@
 // and attachments are gone); it keeps the frame — the header with the number, the copy-link and close buttons, Escape
 // to close, the scrolling body — and takes its sections as children; it is a drawer beside the board, so it is as tall
 // as the box that holds it, separating its sections with space instead of rules, labelling its controls, and fading
-// the edges its body cuts off. Where it stands the full height of the window it is flush to its three edges and part
-// of the page rather than a sheet over it, so it has no radius, no shadow, and one hairline where it meets the board.
+// the edges its body cuts off; the page's menu for the card stands beside the close control. Where it stands the
+// full height of the window it is flush to its three edges and part of the page rather than a sheet over it, so it has
+// no radius, no shadow, and one hairline where it meets the board.
 import { LinkIcon, XIcon } from "@phosphor-icons/react";
 import { type KeyboardEvent, type ReactNode, useId } from "react";
 import { cn } from "../lib/cn";
@@ -20,6 +21,8 @@ export interface KanbanIssuePanelProps {
   title: string;
   /** What sits beside the number, such as the card's status. */
   status?: ReactNode;
+  /** The card's menu, beside the way out of the sheet. */
+  menu?: ReactNode;
   onClose: () => void;
   /** Copies the address of the card; the button shows only with it. */
   onCopyLink?: () => void;
@@ -33,6 +36,7 @@ export function KanbanIssuePanel({
   issueUrl,
   title,
   status,
+  menu,
   onClose,
   onCopyLink,
   className,
@@ -102,6 +106,7 @@ export function KanbanIssuePanel({
         </div>
         <div className="flex items-center gap-2">
           {status}
+          {menu}
           <IconButton icon={XIcon} aria-label="Close the inspector" onClick={onClose} />
         </div>
       </div>

@@ -1,12 +1,14 @@
 //! The store: records in SQLite and large content in the blob store (see `docs/spec.md`, section 3.1).
 //!
-//! This module opens the database, migrates its schema and holds what every kind of record shares: the connection,
-//! the clock and the helpers that read rows. Each kind of record has a module of its own, with its types and the
-//! methods of `Store` that read and write it: `cards` (repositories, cards, dependencies and moves), `changes`, `runs`,
-//! `events` (a run's events), `chats`, `judgements`, `replays`, `inbox`, `grillings`, `shadows` (the decision model's
-//! shadows and takeovers), `usage`, `found` (what the Retro collects), `retros` (Retros, proposals and trials),
-//! `lessons` (what the Retro learned from earlier cards), `attempts` (the runs a hard card gets in one go and which was picked), `research` (research, its runs and experiments) and
-//! `automations` (automations, their firings and the local clock). Every public type is re-exported here, as `store::Card` and the like.
+//! This module opens the database, migrates its schema and holds what every kind of record shares: the connection, the
+//! clock and the helpers that read rows. Each kind of record has a module of its own, with its types and the methods of
+//! `Store` that read and write it: `cards` (repositories, cards, holds, dependencies, moves and the numbers of deleted
+//! cards), `changes`, `runs`, `events` (a run's events), `chats`, `judgements`, `replays`, `inbox`, `grillings`,
+//! `shadows` (the decision model's shadows and takeovers), `usage`, `found` (what the Retro collects), `retros`
+//! (Retros, proposals and trials), `lessons` (what the Retro learned from earlier cards), `attempts` (the runs a hard
+//! card gets in one go and which was picked), `research` (research, its runs and experiments) and `automations`
+//! (automations, their firings and the local clock). Every public type is re-exported here, as `store::Card` and the
+//! like.
 
 mod attempts;
 mod automations;
@@ -37,7 +39,7 @@ use crate::blobs::BlobStore;
 
 pub use attempts::Attempt;
 pub use automations::{Automation, Firing, NewAutomation};
-pub use cards::{Card, CardMove, Repository};
+pub use cards::{Card, CardMove, Held, Repository};
 pub use changes::Change;
 pub use events::Event;
 pub use found::Found;
@@ -400,6 +402,17 @@ UPDATE cards SET column_name = 'Not started' WHERE column_name = 'Ready';
 UPDATE card_moves SET from_column = 'Not started' WHERE from_column = 'Ready';
 UPDATE card_moves SET to_column = 'Not started' WHERE to_column = 'Ready';
 "#,
+    r#"
+ALTER TABLE cards ADD COLUMN held_by TEXT;
+ALTER TABLE cards ADD COLUMN held_reason TEXT;
+ALTER TABLE cards ADD COLUMN held_at INTEGER;
+CREATE TABLE deleted_cards (
+    repository_id INTEGER NOT NULL REFERENCES repositories(id),
+    number INTEGER NOT NULL,
+    at INTEGER NOT NULL,
+    PRIMARY KEY (repository_id, number)
+);
+"#,
 ];
 
 pub fn now() -> i64 {
@@ -640,6 +653,43 @@ mod tests {
                 ("Not started".to_string(), "In progress".to_string())
             ]
         );
+    }
+
+    /// Holding a card and remembering deleted ones came after cards were stored: the cards already there are not held,
+    /// and no number is deleted.
+    #[test]
+    fn cards_stored_before_holds_are_not_held() {
+        let dir = tempfile::tempdir().unwrap();
+        {
+            let conn = Connection::open(dir.path().join("moebius.sqlite")).unwrap();
+            let holds = MIGRATIONS
+                .iter()
+                .position(|sql| sql.contains("ADD COLUMN held_by"))
+                .expect("a migration adds holds");
+            for sql in &MIGRATIONS[..holds] {
+                conn.execute_batch(sql).unwrap();
+            }
+            conn.pragma_update(None, "user_version", holds as i64)
+                .unwrap();
+            conn.execute(
+                "INSERT INTO repositories (name, path, forge, default_branch) VALUES ('old', '/srv/old', 'none', 'main')",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO cards (repository_id, number, title, body, author, column_name, created_at) VALUES (1, 1, 'Ship it', '', 'person', 'Backlog', 1)",
+                [],
+            )
+            .unwrap();
+        }
+        let s = Store::open(dir.path()).unwrap();
+        assert_eq!(s.schema_version().unwrap(), MIGRATIONS.len());
+        let card = s.cards(1).unwrap().pop().unwrap();
+        assert_eq!((card.title.as_str(), card.held), ("Ship it", None));
+        assert!(!s.card_was_deleted(1, 1).unwrap());
+        assert!(s.hold_card(card.id, "person", None).unwrap());
+        assert!(s.delete_card(card.id, true).unwrap());
+        assert!(s.card_was_deleted(1, 1).unwrap());
     }
 
     #[test]

@@ -452,6 +452,24 @@ mod tests {
     use crate::repos::git;
     use std::collections::BTreeMap;
 
+    #[test]
+    fn a_card_held_after_the_board_looked_gets_a_run_that_is_undone_not_launched() {
+        let (_dir, app, pi, repo) = setup();
+        let card = app.create_issue(repo, "Please", "", "person").unwrap();
+        // The card the starter holds is as it was before the hold.
+        assert!(app.store.hold_card(card.id, "person", None).unwrap());
+        let error = pi
+            .start(&app, &card, "Coder", ("code", None), Variant::default())
+            .unwrap_err();
+        assert!(matches!(error, crate::board::StartError::Held), "{error}");
+        let runs = app.store.runs_for_card(card.id).unwrap();
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].status, "stopped");
+        assert!(runs[0].ended_at.is_some());
+        assert!(!lock(&pi.live).contains_key(&runs[0].id));
+        assert!(!Path::new(runs[0].worktree.as_deref().unwrap_or("/nonexistent")).exists());
+    }
+
     // Linux only: whether the fake's `sleep` runs is read from `/proc`.
     #[cfg(target_os = "linux")]
     #[test]

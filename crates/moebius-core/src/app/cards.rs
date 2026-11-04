@@ -50,10 +50,15 @@ impl HistoryEntry {
 impl App {
     /// Brings the cards of `repository` in line with its issues on its forge: open issues get a card in the backlog,
     /// changed titles and bodies are copied, closed issues move their card to done, and "blocked by #n" in a body
-    /// becomes the card's dependencies. A closed issue without a card is not worth one.
+    /// becomes the card's dependencies. A closed issue without a card is not worth one, and neither is one whose card a
+    /// person deleted.
     pub fn sync_issues(&self, repository: &Repository, issues: &[Issue]) -> Result<()> {
         for issue in issues {
             let body = issue.body.as_str();
+            // A card a person deleted is not made again; the issue stays on the forge.
+            if self.store.card_was_deleted(repository.id, issue.number)? {
+                continue;
+            }
             let card = match self.store.card_by_number(repository.id, issue.number)? {
                 Some(card) => {
                     if card.title != issue.title || card.body != body {

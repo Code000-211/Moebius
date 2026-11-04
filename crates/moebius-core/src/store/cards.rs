@@ -1,5 +1,6 @@
 //! Repositories and their cards: a repository Moebius works in, the cards of its issues, the issues that block a card,
-//! and the moves of a card from column to column.
+//! the moves of a card from column to column, whether a person or the Moebius agent holds a card, and the numbers of
+//! the issues whose cards were deleted.
 
 use std::collections::BTreeSet;
 
@@ -61,6 +62,18 @@ pub struct Card {
     pub retried_after: Option<i64>,
     /// Whether the card was made from a grilling a person confirmed, which needs no approval.
     pub confirmed: bool,
+    /// Set while a person or the Moebius agent holds the card: the board runs no script for it and starts no run.
+    #[serde(default)]
+    pub held: Option<Held>,
+}
+
+/// Why and by whom a card is held (blocked), and since when.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Held {
+    pub reason: Option<String>,
+    /// `person`, or `agent:<name>` for the Moebius agent.
+    pub by: String,
+    pub at: i64,
 }
 
 /// A move of a card from one column to another, with the card's note at the time.
@@ -70,6 +83,37 @@ pub struct CardMove {
     pub to: String,
     pub note: Option<String>,
     pub at: i64,
+}
+
+/// The statements that delete what is stored for some cards and their runs, before the runs, the changes and the cards
+/// themselves (see [`card_records_last`]): each argument is a query for ids that uses the statement's one parameter.
+/// `judgements` are those of the cards and their runs. Whatever points at a run, a change or a judgement goes first.
+fn card_statements(cards: &str, runs: &str, judgements: &str) -> Vec<String> {
+    vec![
+        format!("DELETE FROM lesson_uses WHERE card_id IN ({cards})"),
+        format!("DELETE FROM events WHERE run_id IN ({runs})"),
+        format!("DELETE FROM usage WHERE run_id IN ({runs})"),
+        format!("DELETE FROM replays WHERE judgement_id IN ({judgements}) OR run_id IN ({runs})"),
+        format!("DELETE FROM shadows WHERE judgement_id IN ({judgements})"),
+        format!("DELETE FROM judgements WHERE id IN ({judgements})"),
+        format!("DELETE FROM inbox_items WHERE card_id IN ({cards})"),
+        format!("DELETE FROM dependencies WHERE card_id IN ({cards})"),
+        format!("DELETE FROM card_moves WHERE card_id IN ({cards})"),
+        format!("DELETE FROM attempts WHERE run_id IN ({runs}) OR card_id IN ({cards})"),
+        format!("DELETE FROM trials WHERE run_id IN ({runs}) OR card_id IN ({cards})"),
+        format!("DELETE FROM research_runs WHERE run_id IN ({runs})"),
+        format!("DELETE FROM firings WHERE run_id IN ({runs})"),
+        format!("UPDATE retros SET run_id = NULL WHERE run_id IN ({runs})"),
+    ]
+}
+
+/// The last statements of removing cards: their runs, their changes and the cards.
+fn card_records_last(runs: &str, changes: &str, cards: &str) -> Vec<String> {
+    vec![
+        format!("DELETE FROM runs WHERE id IN ({runs})"),
+        format!("DELETE FROM changes WHERE id IN ({changes})"),
+        format!("DELETE FROM cards WHERE id IN ({cards})"),
+    ]
 }
 
 impl Store {
@@ -208,37 +252,20 @@ impl Store {
             format!("SELECT id FROM judgements WHERE run_id IN ({runs}) OR card_id IN ({cards})");
         let research = "SELECT id FROM research WHERE repository_id = ?1";
         let proposals = "SELECT id FROM proposals WHERE repository_id = ?1";
-        let statements = [
-            format!("DELETE FROM lesson_uses WHERE card_id IN ({cards})"),
-            format!("DELETE FROM events WHERE run_id IN ({runs})"),
-            format!("DELETE FROM usage WHERE run_id IN ({runs})"),
-            format!(
-                "DELETE FROM replays WHERE judgement_id IN ({judgements}) OR run_id IN ({runs})"
-            ),
-            format!("DELETE FROM shadows WHERE judgement_id IN ({judgements})"),
-            format!("DELETE FROM judgements WHERE id IN ({judgements})"),
-            format!("DELETE FROM inbox_items WHERE card_id IN ({cards})"),
+        let mut statements = card_statements(cards, &runs, &judgements);
+        statements.extend([
             format!(
                 "DELETE FROM inbox_items WHERE card_id IS NULL AND (\
                  (kind = 'ready_to_merge' AND json_extract(data, '$.change') IN ({changes})) \
                  OR (kind IN ('grilling_issues', 'grilling_report') AND json_extract(data, '$.grilling') IN (SELECT id FROM grillings WHERE repository_id = ?1 OR run_id IN ({runs}))) \
                  OR (kind = 'proposal' AND json_extract(data, '$.proposal') IN ({proposals})))"
             ),
-            format!("DELETE FROM dependencies WHERE card_id IN ({cards})"),
-            format!("DELETE FROM card_moves WHERE card_id IN ({cards})"),
-            format!("DELETE FROM attempts WHERE run_id IN ({runs}) OR card_id IN ({cards})"),
-            format!(
-                "DELETE FROM trials WHERE proposal_id IN ({proposals}) OR run_id IN ({runs}) OR card_id IN ({cards})"
-            ),
-            format!(
-                "DELETE FROM research_runs WHERE research_id IN ({research}) OR run_id IN ({runs})"
-            ),
-            format!(
-                "DELETE FROM firings WHERE run_id IN ({runs}) OR automation_id IN (SELECT id FROM automations WHERE repository_id = ?1)"
-            ),
+            format!("DELETE FROM trials WHERE proposal_id IN ({proposals})"),
+            format!("DELETE FROM research_runs WHERE research_id IN ({research})"),
+            "DELETE FROM firings WHERE automation_id IN (SELECT id FROM automations WHERE repository_id = ?1)"
+                .to_string(),
             format!("UPDATE proposals SET change_id = NULL WHERE change_id IN ({changes})"),
             format!("DELETE FROM proposals WHERE id IN ({proposals})"),
-            format!("UPDATE retros SET run_id = NULL WHERE run_id IN ({runs})"),
             format!(
                 "DELETE FROM experiments WHERE research_id IN ({research}) OR change_id IN ({changes})"
             ),
@@ -247,11 +274,10 @@ impl Store {
             "DELETE FROM automations WHERE repository_id = ?1".to_string(),
             "DELETE FROM localize_indexed WHERE repository_id = ?1".to_string(),
             "DELETE FROM lessons WHERE repository_id = ?1".to_string(),
-            format!("DELETE FROM runs WHERE id IN ({runs})"),
-            format!("DELETE FROM changes WHERE id IN ({changes})"),
-            format!("DELETE FROM cards WHERE id IN ({cards})"),
-            "DELETE FROM repositories WHERE id = ?1".to_string(),
-        ];
+            "DELETE FROM deleted_cards WHERE repository_id = ?1".to_string(),
+        ]);
+        statements.extend(card_records_last(&runs, &changes, cards));
+        statements.push("DELETE FROM repositories WHERE id = ?1".to_string());
         for statement in &statements {
             tx.execute(statement, [id])?;
         }
@@ -261,6 +287,62 @@ impl Store {
         )?;
         tx.commit()?;
         Ok(true)
+    }
+
+    /// Removes one card and everything stored for it, as `delete_repository` does for each of a repository's cards:
+    /// its runs with their events, usage and replays, its changes, inbox items, dependencies, moves, attempts, trials
+    /// and judgements, and the uses of lessons for it. The worktrees and branches on disk belong to the caller. With
+    /// `remember` the card's number is kept as deleted, so that the poll does not make a card for its issue again.
+    /// Says whether such a card was stored.
+    pub fn delete_card(&self, id: i64, remember: bool) -> Result<bool> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let Some((repository_id, number)) = tx
+            .query_row(
+                "SELECT repository_id, number FROM cards WHERE id = ?1",
+                [id],
+                |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
+            )
+            .optional()?
+        else {
+            return Ok(false);
+        };
+        let cards = "SELECT id FROM cards WHERE id = ?1";
+        let runs = "SELECT id FROM runs WHERE card_id = ?1";
+        let changes = "SELECT id FROM changes WHERE card_id = ?1";
+        let judgements =
+            format!("SELECT id FROM judgements WHERE run_id IN ({runs}) OR card_id = ?1");
+        let mut statements = card_statements(cards, runs, &judgements);
+        // A proposal of the Retro or an experiment may name the card's change; the change goes, they stay.
+        statements.extend([
+            format!("UPDATE proposals SET change_id = NULL WHERE change_id IN ({changes})"),
+            format!("UPDATE experiments SET change_id = NULL WHERE change_id IN ({changes})"),
+        ]);
+        statements.extend(card_records_last(runs, changes, cards));
+        for statement in &statements {
+            tx.execute(statement, [id])?;
+        }
+        if remember {
+            tx.execute(
+                "INSERT OR REPLACE INTO deleted_cards (repository_id, number, at) VALUES (?1, ?2, ?3)",
+                params![repository_id, number, now()],
+            )?;
+        }
+        tx.commit()?;
+        Ok(true)
+    }
+
+    /// Whether the card of issue `number` was deleted, so that the poll must not make it again.
+    pub fn card_was_deleted(&self, repository_id: i64, number: i64) -> Result<bool> {
+        Ok(self
+            .conn()
+            .query_row(
+                "SELECT 1 FROM deleted_cards WHERE repository_id = ?1 AND number = ?2",
+                [repository_id, number],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some())
     }
 
     /// Adds a card with the next number in its repository.
@@ -322,12 +404,13 @@ impl Store {
             note: None,
             retried_after: None,
             confirmed: false,
+            held: None,
         })
     }
 
     fn cards_where(&self, clause: &str, params: impl rusqlite::Params) -> Result<Vec<Card>> {
         self.rows(&format!(
-            "SELECT id, repository_id, number, title, body, author, column_name, created_at, note, retried_after, confirmed FROM cards WHERE {clause} ORDER BY id"
+            "SELECT id, repository_id, number, title, body, author, column_name, created_at, note, retried_after, confirmed, held_by, held_reason, held_at FROM cards WHERE {clause} ORDER BY id"
         ), params, |r| {
             Ok(Card {
                 id: r.get(0)?,
@@ -341,6 +424,13 @@ impl Store {
                 note: r.get(8)?,
                 retried_after: r.get(9)?,
                 confirmed: r.get(10)?,
+                held: r.get::<_, Option<String>>(11)?.map(|by| {
+                    Ok::<_, rusqlite::Error>(Held {
+                        by,
+                        reason: r.get(12)?,
+                        at: r.get::<_, Option<i64>>(13)?.unwrap_or(0),
+                    })
+                }).transpose()?,
             })
         })
     }
@@ -457,6 +547,26 @@ impl Store {
             [id],
         )?;
         Ok(())
+    }
+
+    /// Holds a card for `by` (`person`, or `agent:<name>`), with a `reason` if there is one; the board then leaves it
+    /// alone. Says whether it did: a card that is held already is left as it is.
+    pub fn hold_card(&self, id: i64, by: &str, reason: Option<&str>) -> Result<bool> {
+        let reason = reason.map(crate::blobs::redact);
+        let held = self.conn().execute(
+            "UPDATE cards SET held_by = ?1, held_reason = ?2, held_at = ?3 WHERE id = ?4 AND held_by IS NULL",
+            params![by, reason, now(), id],
+        )?;
+        Ok(held > 0)
+    }
+
+    /// Releases a held card. Says whether it was held.
+    pub fn release_card(&self, id: i64) -> Result<bool> {
+        let released = self.conn().execute(
+            "UPDATE cards SET held_by = NULL, held_reason = NULL, held_at = NULL WHERE id = ?1 AND held_by IS NOT NULL",
+            [id],
+        )?;
+        Ok(released > 0)
     }
 
     /// Moves a card and records the move, with the card's note as it is now.
@@ -676,5 +786,188 @@ mod tests {
             s.card(other.id).unwrap().map(|c| c.title),
             Some("Other".into())
         );
+    }
+
+    /// The number of rows in `table`.
+    fn rows_in(s: &Store, table: &str) -> i64 {
+        s.conn()
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+            .unwrap()
+    }
+
+    /// Everything a card can have stored for it, and for a second card whose records must stay.
+    fn card_with_records(s: &Store, repo: i64, number: i64) -> (Card, i64) {
+        use crate::store::{NewJudgement, NewLesson, Usage};
+        let card = s
+            .add_numbered_card(repo, number, "Work", "body", "leon", "In progress")
+            .unwrap();
+        s.set_dependencies(card.id, &BTreeSet::from([9])).unwrap();
+        s.move_card(card.id, "In review").unwrap();
+        let run = s
+            .add_run(Some(card.id), "Coder", "pi-bolt", "code")
+            .unwrap();
+        s.append_event(run.id, "agent_start", &serde_json::json!({}))
+            .unwrap();
+        s.add_usage(&Usage {
+            run_id: Some(run.id),
+            model: "m".into(),
+            input_tokens: 1,
+            output_tokens: 1,
+            cached_tokens: 0,
+            duration_ms: 1,
+            tools: vec![],
+        })
+        .unwrap();
+        s.add_attempt(run.id, card.id, 1, None).unwrap();
+        s.add_change(
+            repo,
+            Some(card.id),
+            &format!("moebius/card-{number}"),
+            None,
+            "abc",
+        )
+        .unwrap();
+        s.add_inbox_item("stuck", Some(card.id), "Work", &serde_json::json!({}))
+            .unwrap();
+        for (run_id, card_id) in [(Some(run.id), Some(card.id)), (None, Some(card.id))] {
+            s.add_judgement(&NewJudgement {
+                kind: "tool_call".into(),
+                choice: "allow".into(),
+                decider: "person".into(),
+                run_id,
+                card_id,
+                ..NewJudgement::default()
+            })
+            .unwrap();
+        }
+        let lesson = s
+            .add_lesson(&NewLesson {
+                repository_id: repo,
+                kind: "pitfall".into(),
+                situation: format!("situation {number}"),
+                lesson: "lesson".into(),
+                advice: "advice".into(),
+                cards: vec![],
+                retro_date: None,
+            })
+            .unwrap()
+            .unwrap();
+        s.note_lessons_used(&[lesson.id], Some(card.id)).unwrap();
+        s.add_retro("2026-01-01", &serde_json::json!({}), "reported")
+            .ok();
+        s.add_proposal("2026-01-01", "moebius/proposal", "Try", "", &[], &[card.id])
+            .unwrap();
+        let proposal = s.proposals(None).unwrap().pop().unwrap().id;
+        s.add_trial(
+            proposal,
+            Some(card.id),
+            Some(run.id),
+            "positive",
+            "",
+            &serde_json::json!({}),
+        )
+        .unwrap();
+        (card, run.id)
+    }
+
+    const CARD_TABLES: [&str; 12] = [
+        "cards",
+        "runs",
+        "events",
+        "usage",
+        "attempts",
+        "changes",
+        "inbox_items",
+        "judgements",
+        "lesson_uses",
+        "dependencies",
+        "card_moves",
+        "trials",
+    ];
+
+    #[test]
+    fn deleting_a_card_takes_all_it_has_and_nothing_of_another_card() {
+        let (_dir, s) = store();
+        let repo = s
+            .add_github_repository("widgets", "/srv/widgets", "main", "acme/widgets", &[])
+            .unwrap();
+        let (doomed, doomed_run) = card_with_records(&s, repo.id, 1);
+        let alone: Vec<i64> = CARD_TABLES.iter().map(|t| rows_in(&s, t)).collect();
+        assert!(alone.iter().all(|n| *n > 0), "{alone:?}");
+        let (kept, _) = card_with_records(&s, repo.id, 2);
+
+        assert!(s.delete_card(doomed.id, true).unwrap());
+        assert!(!s.delete_card(doomed.id, true).unwrap());
+        assert_eq!(s.card(doomed.id).unwrap(), None);
+        assert_eq!(s.run(doomed_run).unwrap(), None);
+        // Only the second card's records are left: as many rows as the first card alone had.
+        let left: Vec<i64> = CARD_TABLES.iter().map(|t| rows_in(&s, t)).collect();
+        assert_eq!(left, alone);
+        assert_eq!(
+            s.cards(repo.id)
+                .unwrap()
+                .iter()
+                .map(|c| c.id)
+                .collect::<Vec<_>>(),
+            [kept.id]
+        );
+        assert_eq!(s.runs_for_card(kept.id).unwrap().len(), 1);
+        assert_eq!(s.dependencies(kept.id).unwrap(), [9]);
+        // Its number is remembered; the other card's is not.
+        assert!(s.card_was_deleted(repo.id, 1).unwrap());
+        assert!(!s.card_was_deleted(repo.id, 2).unwrap());
+    }
+
+    #[test]
+    fn a_card_deleted_without_remembering_its_number_may_come_again() {
+        let (_dir, s) = store();
+        let repo = s
+            .add_repository("demo", "/tmp/demo", "none", "main")
+            .unwrap();
+        let card = s.add_card(repo.id, "Work", "", "leon", "Backlog").unwrap();
+        assert!(s.delete_card(card.id, false).unwrap());
+        assert!(!s.card_was_deleted(repo.id, card.number).unwrap());
+        // Removing the repository takes the remembered numbers with it.
+        let forge = s
+            .add_github_repository("widgets", "/srv/widgets", "main", "acme/widgets", &[])
+            .unwrap();
+        let other = s
+            .add_numbered_card(forge.id, 5, "Work", "", "leon", "Backlog")
+            .unwrap();
+        assert!(s.delete_card(other.id, true).unwrap());
+        assert!(s.card_was_deleted(forge.id, 5).unwrap());
+        assert!(s.delete_repository(forge.id).unwrap());
+        assert_eq!(rows_in(&s, "deleted_cards"), 0);
+    }
+
+    #[test]
+    fn a_hold_is_set_once_released_once_and_survives_a_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let (repo, card) = {
+            let s = Store::open(dir.path()).unwrap();
+            let repo = s
+                .add_repository("demo", "/tmp/demo", "none", "main")
+                .unwrap();
+            let card = s.add_card(repo.id, "Work", "", "leon", "Backlog").unwrap();
+            assert_eq!(card.held, None);
+            assert!(
+                s.hold_card(card.id, "person", Some("wait for the design"))
+                    .unwrap()
+            );
+            // Held already: the first hold stays.
+            assert!(!s.hold_card(card.id, "agent:Moebius", None).unwrap());
+            (repo, card)
+        };
+        let s = Store::open(dir.path()).unwrap();
+        let held = s.card(card.id).unwrap().unwrap().held.unwrap();
+        assert_eq!(
+            (held.by.as_str(), held.reason.as_deref()),
+            ("person", Some("wait for the design"))
+        );
+        assert!(held.at > 0);
+        assert_eq!(s.cards(repo.id).unwrap()[0].held, Some(held));
+        assert!(s.release_card(card.id).unwrap());
+        assert!(!s.release_card(card.id).unwrap());
+        assert_eq!(s.card(card.id).unwrap().unwrap().held, None);
     }
 }

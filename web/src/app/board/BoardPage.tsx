@@ -33,6 +33,8 @@ import { ReadFailed } from "../../ui/page/ReadFailed";
 import { ScrollFades } from "../../ui/page/ScrollFades";
 import { SkeletonBoard } from "../../ui/page/Skeleton";
 import { boardPath } from "../pages";
+import { BlockDialog, DeleteDialog } from "./CardDialogs";
+import { CardMenu } from "./CardMenu";
 import { ColumnMark } from "./ColumnMark";
 import { Dock } from "./Dock";
 import { type Decision, useDecisions } from "./decisions";
@@ -69,6 +71,13 @@ const COLUMN_EMPTY: Record<string, string> = {
   Done: "A card arrives here once its change is merged.",
 };
 
+/** What the menus of the cards of a board do. */
+type CardMenuActions = {
+  onBlock: (card: Card) => void;
+  onUnblock: (card: Card) => void;
+  onDelete: (card: Card) => void;
+};
+
 const ANY_COLUMN = "A card arrives when the column's script moves one in.";
 
 export function BoardPage() {
@@ -82,6 +91,9 @@ export function BoardPage() {
   // The card a send-back needs a reason for, not a count: a count stays raised once it is raised, so every card
   // opened afterwards found the reason form waiting for it.
   const [rejectFor, setRejectFor] = useState<number | null>(null);
+  // The card a menu asked to block or to delete, until the question is answered.
+  const [blocking, setBlocking] = useState<Card | null>(null);
+  const [deleting, setDeleting] = useState<Card | null>(null);
 
   const board = data.data?.boards.find((b) => String(b.repository.id) === id);
   const inbox = data.data?.inbox ?? [];
@@ -146,6 +158,11 @@ export function BoardPage() {
       { replace: true },
     );
   const inspected = inspectedCard(board, inbox, params.get("card"));
+  const menu = {
+    onBlock: setBlocking,
+    onUnblock: (card: Card) => decide({ kind: "unblock", card: card.id, number: card.number }),
+    onDelete: setDeleting,
+  };
   function onDragEnd(result: DropResult) {
     // A decision is on its way: the buttons are disabled for the same moment, and a drag is another way to ask for one.
     if (pending) return;
@@ -247,6 +264,7 @@ export function BoardPage() {
                   busy={pending}
                   inspectedId={inspected?.id}
                   onSelect={(card) => setQuery({ card: String(card.id) })}
+                  menu={menu}
                 />
               ))}
             </KanbanProvider>
@@ -267,6 +285,7 @@ export function BoardPage() {
                 askFor={rejectFor}
                 onAskAnswered={() => setRejectFor(null)}
                 onDecide={decide}
+                menu={menu}
                 onClose={() => {
                   setQuery({ card: "none" });
                   setRejectFor(null);
@@ -280,6 +299,21 @@ export function BoardPage() {
         repository={board.repository.id}
         open={terminalOpen}
         onOpenChange={setTerminalOpen}
+      />
+      <BlockDialog
+        card={blocking}
+        onClose={() => setBlocking(null)}
+        onDone={(text) => setNotice({ tone: "ok", text })}
+      />
+      <DeleteDialog
+        card={deleting}
+        repository={board.repository}
+        onClose={() => setDeleting(null)}
+        onDone={(card, text) => {
+          // A card's id can be given again once it is gone, so a dock that was open on it is closed for good.
+          if (params.get("card") === String(card.id)) setQuery({ card: "none" });
+          setNotice({ tone: "ok", text });
+        }}
       />
       <NewIssueDialog
         repository={board.repository.id}
@@ -301,6 +335,7 @@ function BoardColumn({
   busy,
   inspectedId,
   onSelect,
+  menu,
 }: {
   board: Board;
   inbox: InboxItem[];
@@ -311,6 +346,7 @@ function BoardColumn({
   busy: boolean;
   inspectedId: number | undefined;
   onSelect: (card: Card) => void;
+  menu: CardMenuActions;
 }) {
   return (
     <KanbanBoard name={name}>
@@ -341,6 +377,7 @@ function BoardColumn({
                 card={card}
                 cards={cards}
                 onOpen={() => onSelect(card)}
+                menu={menu}
               />
             </KanbanCard>
           );
@@ -360,6 +397,7 @@ function CardContent({
   card,
   cards,
   onOpen,
+  menu,
 }: {
   board: Board;
   inbox: InboxItem[];
@@ -367,6 +405,8 @@ function CardContent({
   cards: Card[];
   /** Opens the card; left out on the drag overlay, where the card is only a picture of itself. */
   onOpen?: () => void;
+  /** What the card's menu does; left out on the drag overlay, with the menu itself. */
+  menu?: CardMenuActions;
 }) {
   const status = cardStatus(card, inboxOf(inbox, card), board);
   const change = changeOf(board, card);
@@ -393,6 +433,7 @@ function CardContent({
       isLoading={status === "live"}
       muted={card.column === "Done"}
       onOpen={onOpen}
+      menu={menu && <CardMenu card={card} {...menu} />}
     />
   );
 }

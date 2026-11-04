@@ -103,6 +103,7 @@ impl Engine {
                     Option<String>,
                 )| {
                     let run = outside_script(&clock, || {
+                        super::may_start(&app, &card_copy)?;
                         runs.start(
                             &app,
                             &card_copy,

@@ -3,7 +3,8 @@
  * real server sends (docs/reference/desktop-api.md: the snapshot, `Card`, `Change`, `Run`, the history, the script of a
  * column, and the decisions). The state is kept per server and changes the way the real one does: approving, merging,
  * sending back, retrying and creating an issue move cards, resolve inbox items and send the events the real server
- * sends. A test can also move a card as the board engine would (`moveCard`) and make the next request to a route fail
+ * sends; blocking stops the card's run and holds the card, unblocking releases it, and deleting takes the card, its
+ * changes and its inbox items and sends `card_deleted`. A test can also move a card as the board engine would (`moveCard`) and make the next request to a route fail
  * (`refuseNext`), to see the page answer.
  */
 
@@ -30,6 +31,8 @@ interface FakeCard {
   blocked_by: number[];
   refusals: number;
   change: { id: number; state: string; checks: string; review_verdict: string | null } | null;
+  /** Set while a person or the Moebius agent holds the card. */
+  held: { reason: string | null; by: string; at: number } | null;
 }
 
 interface FakeChange {
@@ -110,6 +113,7 @@ function card(id: number, extra: Partial<FakeCard>): FakeCard {
     blocked_by: [],
     refusals: 0,
     change: null,
+    held: null,
     ...extra,
   };
 }
@@ -284,7 +288,31 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
     const retry = /^\/v1\/cards\/(\d+)\/retry$/.exec(path);
     const merge = /^\/v1\/changes\/(\d+)\/merge$/.exec(path);
     const reject = /^\/v1\/changes\/(\d+)\/reject$/.exec(path);
+    const block = /^\/v1\/cards\/(\d+)\/block$/.exec(path);
+    const unblock = /^\/v1\/cards\/(\d+)\/unblock$/.exec(path);
     if (method !== "POST") return undefined;
+    if (block) {
+      const target = find(Number(block[1]));
+      if (!target) return fail(404, `card ${block[1]} not found`);
+      if (target.held) return fail(409, `card ${target.id} is held already`);
+      const reason = ((body as { reason?: string } | undefined)?.reason ?? "").trim();
+      target.held = { reason: reason === "" ? null : reason, by: "person", at: ++clock };
+      if (target.run && (target.run.status === "running" || target.run.status === "starting")) {
+        const stopped = target.run;
+        target.run = { ...stopped, status: "stopped" };
+        send({ kind: "run_ended", data: { run: stopped.id, status: "stopped" } });
+      }
+      send({ kind: "card_updated", data: view(target) });
+      return ok(view(target));
+    }
+    if (unblock) {
+      const target = find(Number(unblock[1]));
+      if (!target) return fail(404, `card ${unblock[1]} not found`);
+      if (!target.held) return fail(409, `card ${target.id} is not held`);
+      target.held = null;
+      send({ kind: "card_updated", data: view(target) });
+      return ok(view(target));
+    }
     if (approve) {
       const target = find(Number(approve[1]));
       if (!target) return fail(404, "no such card");
@@ -374,6 +402,7 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
       const known =
         path === "/v1/repositories/1/issues" ||
         /^\/v1\/(cards|changes)\/\d+\//.test(path) ||
+        /^\/v1\/cards\/\d+$/.test(path) ||
         /^\/v1\/repositories\/1\/scripts\//.test(path);
       if (!known) return undefined;
       if (method !== "GET") requests.push({ method, path, body });
@@ -395,6 +424,22 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
         cards = [...cards, made];
         send({ kind: "card_added", data: view(made) });
         return ok(view(made));
+      }
+      const removed = /^\/v1\/cards\/(\d+)$/.exec(path);
+      if (removed && method === "DELETE") {
+        const target = find(Number(removed[1]));
+        if (!target) return fail(404, `card ${removed[1]} not found`);
+        cards = cards.filter((c) => c.id !== target.id);
+        for (const gone of changes.filter((c) => c.card_id === target.id)) {
+          changes.splice(changes.indexOf(gone), 1);
+        }
+        for (const item of inbox.filter((i) => i.card_id === target.id)) {
+          inbox.splice(inbox.indexOf(item), 1);
+        }
+        history.delete(target.id);
+        runs.delete(target.id);
+        send({ kind: "card_deleted", data: { card: target.id } });
+        return ok(view(target));
       }
       const history$ = /^\/v1\/cards\/(\d+)\/history$/.exec(path);
       if (history$ && method === "GET") {

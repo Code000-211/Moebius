@@ -72,7 +72,9 @@ GitLab, such as `group/project`, or the repository on Forgejo as `owner/repo`, o
 
 `Card`: `id`, `repository_id`, `number`, `title`, `body`, `author`, `column`, `created_at`, `note` (why the card was sent
 back to coding, or null), `retried_after` (the id of the card's latest run when a person last retried it, or null) and
-`confirmed` (true for a card made from a confirmed grilling, which needs no approval).
+`confirmed` (true for a card made from a confirmed grilling, which needs no approval) and `held` (null, or `{"reason":
+string or null, "by": "person" or "agent:Moebius", "at": number}` while a person or the Moebius agent holds the card; see
+`POST /v1/cards/{id}/block`).
 `Run`: `id`, `card_id` (null for a chat), `agent`, `harness`, `purpose` (`code`, `review`, other purposes of column scripts,
 `chat`, `retro`, the Retro analyst's run, `trial`, the trial of a proposal on a card, or `research`, a round of the Autoresearcher), `status` (`starting`, `running`, `waiting`, `succeeded`, `failed` or `stopped`; `waiting` is a chat waiting for
 the person's next message), `worktree`, `started_at`, `ended_at`, `summary`, `repository_id` (the repository a chat
@@ -439,6 +441,40 @@ the card's id; its context has `title`, `body`, `previous_title` and `previous_b
 sent. A title and body that change nothing record nothing. Response: the `Card`. Errors: `404` no such card; `422` the
 title is blank; `500` the forge refused the change, and then the card is as it was and nothing is recorded.
 
+### `POST /v1/cards/{id}/block`
+
+A person, or the Moebius agent, holds a card, so that work on it stops and stays stopped. The card's `held` is set to
+`{"reason", "by", "at"}` (`by` is `person` or `agent:Moebius`), the card's runs that have not ended are stopped with the
+stop of `POST /v1/runs/{id}/stop` (each recorded as a `stop` decision), and the reason it waited for is cleared. A run
+the board is still starting cannot be stopped until its harness has registered it, so the block keeps trying for up to
+10 seconds; if a run still cannot be stopped by then the card is released again, nothing is recorded and the answer is
+`409`. The card stays in its column. The board engine then calls no column script for it and starts no run for it, so a script can
+neither move it nor start work on it, until `POST /v1/cards/{id}/unblock`. A held card is still moved by what a person
+does to it (approving, merging, editing) and by its issue closing on the forge. `held` is in the `Card`, in the snapshot
+and, as `card.held`, in [column scripts](column-scripts.md); it is kept when the server restarts.
+
+The decision is recorded (kind `block_card`, choice `block_card`, decider `person` or `agent:Moebius`, the card's id; its
+context has `title` and `reason`) and the event `card_updated` is sent.
+
+Request: `{"reason": string}`; `reason` is optional, is trimmed, and is shown to whoever sees the card held. A body is
+not required.
+
+Response: the `Card`. Errors: `404` no such card; `409` the card is held already, or a run could not be stopped in time
+(the card is not held then).
+
+### `POST /v1/cards/{id}/unblock`
+
+A person, or the Moebius agent, releases a held card: its `held` is null again and the next tick of the board treats it
+like any other card. If the block stopped the card's latest run, the card starts afresh, as after a retry
+(`POST /v1/cards/{id}/retry`): that run counts toward no limit and is no reason to call the card stuck, so the default
+scripts carry on with it. A run a person stopped before the block still waits for a retry. The decision is recorded (kind
+`unblock_card`, the card's id; its context has `title`, `reason`, `held_reason` and `held_by`) and the event
+`card_updated` is sent.
+
+Request: `{"reason": string}`; `reason` is optional and is kept with the decision. A body is not required.
+
+Response: the `Card`. Errors: `404` no such card; `409` the card is not held.
+
 ### `POST /v1/cards/{id}/approve`
 
 A person approves an issue that waits in the backlog: the decision is recorded (kind `approve_issue`, decider `person`),
@@ -447,6 +483,31 @@ the card's inbox items are resolved, and the card moves to `Not started`.
 Request: `{"reason": "..."}`; `reason` is optional.
 
 Response: the `Card`. Errors: `404` no such card; `422` the card is not in `Backlog`.
+
+### `DELETE /v1/cards/{id}`
+
+A person removes a card, as removing a repository removes each of its cards: its runs with their transcripts, usage and
+replays, its changes, inbox items, dependencies and moves, its attempts, trials and judgements, and the uses of lessons
+for it; and, in the repository's clone, its worktrees that are left and its `moebius/` branches (`moebius/run-<id>` of
+each run, the branch of its change `moebius/card-<number>` and its trial branches). A run that is going is stopped first
+and the card is deleted once it has ended; if it has not ended after 30 seconds nothing is removed and the card is
+released again. A card whose
+number other cards name as a blocker leaves them waiting, as for any issue without a card.
+
+The issue is not touched. On a repository with a forge the card's number is remembered as deleted, so the poll never makes
+a card for that issue again, open or closed; the issue stays open on GitHub, GitLab or Forgejo, and so does its pull or
+merge request. A card made by Moebius itself, in a repository without a forge, is simply gone and its number may be given
+again. Removing the repository forgets the numbers.
+
+The decision is recorded (kind `delete_card`, decider `person`; it belongs to no card, since there is none any more, and
+its context has `title`, `number` and `repository`) and the event `card_deleted` is sent.
+
+Only a person may delete a card: the Moebius agent's run token gets `403`.
+
+Request: `{"reason": string}`; `reason` is optional and is kept with the decision. A body is not required.
+
+Response: the `Card`, as it last was. Errors: `403` the request is the Moebius agent's; `404` no such card; `409` a run of
+the card has not ended after being stopped.
 
 ### `POST /v1/changes/{id}/merge`
 
@@ -2013,7 +2074,8 @@ like `POST /v1/runs/{id}/stop` does. Experiments done stay, and so do the lever 
 | `file_changed` | A file of a repository was saved through the API. | `{"repository": id, "path": string}` |
 | `script_changed` | A column's script was saved or removed for a repository, through the API. | `{"repository": id, "column": string, "path": string}` |
 | `card_added` | An issue became a card: created through the API or found on GitHub, GitLab or Forgejo. | The `Card`. |
-| `card_updated` | The title or body of a card changed: edited through the API, or changed on GitHub, GitLab or Forgejo. | The `Card`. |
+| `card_updated` | The title or body of a card changed: edited through the API, or changed on GitHub, GitLab or Forgejo; or it was held or released (`held`). | The `Card`. |
+| `card_deleted` | A card was deleted through the API, with everything stored for it. A client drops it, and closes what shows it. | `{"card": id}` |
 | `card_moved` | A card moved to another column. | `{"card": id, "from": column, "to": column}` |
 | `card_waiting` | The reason a card waits changed: set, replaced, or cleared because the card moved or its script did not wait. Not sent when it stays the same. | `{"card": id, "reason": string or null}` |
 | `chat_renamed` | A chat was given a name, or its name was cleared, through the API. | `{"run": id, "title": string}` (the title the list of chats shows now) |

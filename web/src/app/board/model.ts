@@ -4,7 +4,7 @@
  * words and links of a card. `screens/board.rs` of the desktop app is the model: the columns, the order, the ten cards
  * of Done and the card the dock shows without a choice are the same.
  */
-import type { Board, Card, Change, InboxItem, Repository } from "../../api/types/board";
+import type { Board, Card, Change, Held, InboxItem, Repository } from "../../api/types/board";
 import type { HistoryEntry, Run } from "../../api/types/cards";
 import { plural } from "../../ui/lib/format";
 import type { Tone } from "../../ui/page/Status";
@@ -63,19 +63,44 @@ export function isLive(card: Card): boolean {
   return card.run?.status === "starting" || card.run?.status === "running";
 }
 
-export type CardStatus = "live" | "needs-you" | "stuck" | "blocked" | "waiting" | "idle";
+/**
+ * `held` is a card a person or the Moebius agent blocked: the board works on nothing for it. `blocked` is a card that
+ * waits for the issues it depends on. They are two states and have two words, "Blocked" and "Waiting on issues".
+ */
+export type CardStatus = "held" | "live" | "needs-you" | "stuck" | "blocked" | "waiting" | "idle";
 
 export const STATUS_LABELS: Record<CardStatus, string> = {
+  held: "Blocked",
   live: "Live",
   "needs-you": "Your turn",
   stuck: "Stuck",
-  blocked: "Blocked",
+  blocked: "Waiting on issues",
   waiting: "Waiting",
   idle: "Idle",
 };
 
-/** What a card is doing, the first that applies: a run going, a person asked, stuck, blocked, waiting, or nothing. */
+/** Whether a person or the Moebius agent holds the card, so that the board leaves it alone. */
+export function isHeld(card: Card): boolean {
+  return card.held !== undefined && card.held !== null;
+}
+
+/**
+ * Who held a card, in words: "you" cannot be said, because the server does not know which person it was, so a card
+ * a person held was held "by a person".
+ */
+export function heldBy(held: Held): string {
+  return held.by.startsWith("agent:") ? `by ${held.by.slice("agent:".length)}` : "by a person";
+}
+
+/** The line a held card is told by: why it was blocked and by whom, or only by whom when no reason was given. */
+export function heldLine(held: Held): string {
+  const reason = held.reason?.trim() ?? "";
+  return reason === "" ? `Blocked ${heldBy(held)}` : `${reason} (blocked ${heldBy(held)})`;
+}
+
+/** What a card is doing, the first that applies: held, a run going, a person asked, stuck, waiting on issues, or nothing. */
 export function cardStatus(card: Card, item: InboxItem | undefined, board: Board): CardStatus {
+  if (isHeld(card)) return "held";
   if (isLive(card)) return "live";
   if (item?.kind === STUCK) return "stuck";
   if (item) return "needs-you";
@@ -146,7 +171,8 @@ export function groupByColumn(
 
 /**
  * The card the dock shows. A card chosen with `selected` (a card id, or "none" for a dock closed on purpose) wins;
- * without a choice it is the first live card, else the first that waits for a person, else the first not done.
+ * a chosen card that is not on the board — it was deleted — leaves the dock closed; without a choice it is the first
+ * live card, else the first that waits for a person, else the first not done.
  */
 export function inspectedCard(
   board: Board,
@@ -155,8 +181,7 @@ export function inspectedCard(
 ): Card | undefined {
   if (selected === "none") return undefined;
   if (selected !== null) {
-    const chosen = board.cards.find((card) => String(card.id) === selected);
-    if (chosen) return chosen;
+    return board.cards.find((card) => String(card.id) === selected);
   }
   return (
     board.cards.find(isLive) ??
@@ -222,6 +247,12 @@ export function dropRule(card: Card, to: string, item: InboxItem | undefined): D
     case CHANGE_CLOSED:
       return { kind: "refused", reason: "This card is stuck: drop it on In progress to retry it." };
     default:
+      if (isHeld(card)) {
+        return {
+          kind: "refused",
+          reason: "This card is blocked. Unblock it from its menu and the board moves it again.",
+        };
+      }
       return {
         kind: "refused",
         reason: `Nobody decides this card now. The board moves it from ${card.column} when the column's script says so.`,
@@ -254,6 +285,35 @@ export function cardDetail(card: Card, roundLimit: number): string | null {
     return plural(card.rounds, "round", "rounds");
   }
   return null;
+}
+
+/** The forge a repository's issues live on, as a person says it; null without one. */
+export function forgeName(repository: Repository): string | null {
+  switch (repository.forge) {
+    case "github":
+      return "GitHub";
+    case "gitlab":
+      return "GitLab";
+    case "forgejo":
+      return "Forgejo";
+    default:
+      return null;
+  }
+}
+
+/**
+ * What deleting a card does, in two sentences for the question that asks first: what goes, and — on a forge — that the
+ * issue stays open there and is not made a card again.
+ */
+export function deleteWords(repository: Repository): { removes: string; keeps: string | null } {
+  const forge = forgeName(repository);
+  return {
+    removes:
+      "Its runs and their transcripts, changes, history and inbox items are deleted, and so are its worktrees and branches in the clone. A run that is going is stopped first. Cards waiting on this one keep waiting.",
+    keeps: forge
+      ? `The issue stays open on ${forge}, and Moebius does not make a card of it again. An open pull request or a pushed branch on ${forge} stays too.`
+      : null,
+  };
 }
 
 /** The address of a card's issue on its forge; only GitHub's address is known (the others' hosts are not). */
@@ -335,19 +395,22 @@ export interface CardBadge {
   name: string;
   /** The state the pill's colour stands for, in the names of the shared pill (`ui/page/Status`). */
   tone: Tone;
+  /** More about the state, for a tooltip; the word is the state and carries it without. */
+  hint?: string;
 }
 
-/** The badges of a card: what runs, what stops it, how its change stands, who it waits for. What it cost is the dock's, not the card's. */
+/** The badges of a card: whether it is blocked, what runs, what stops it, how its change stands, who it waits for. What it cost is the dock's, not the card's. */
 export function cardBadges(card: Card, status: CardStatus, next: boolean): CardBadge[] {
   const badges: CardBadge[] = [];
+  if (card.held) badges.push({ name: "Blocked", tone: "error", hint: heldLine(card.held) });
   if (status === "live") badges.push({ name: "Live", tone: "progress" });
   if (card.blocked_by.length > 0) {
     const numbers = card.blocked_by.map((n) => `#${n}`);
     const name =
       numbers.length <= 2
-        ? `Blocked by ${numbers.join(", ")}`
-        : `Blocked by ${numbers[0]} and ${numbers.length - 1} more`;
-    badges.push({ name, tone: "error" });
+        ? `Waiting on ${numbers.join(", ")}`
+        : `Waiting on ${numbers[0]} and ${numbers.length - 1} more`;
+    badges.push({ name, tone: "attention" });
   }
   if (card.refusals > 0) {
     badges.push({
@@ -372,9 +435,9 @@ export function cardBadges(card: Card, status: CardStatus, next: boolean): CardB
   return badges;
 }
 
-/** The card the board starts next: the first in Not started that nothing blocks. */
+/** The card the board starts next: the first in Not started that nothing blocks and nobody holds. */
 export function nextCard(cards: readonly Card[]): number | undefined {
-  return cards.find((card) => card.blocked_by.length === 0)?.id;
+  return cards.find((card) => card.blocked_by.length === 0 && !isHeld(card))?.id;
 }
 
 /**

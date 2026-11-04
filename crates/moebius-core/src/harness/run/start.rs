@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use super::lifecycle::{RunningRun, card_run, detached_run, launch_or_undo};
+use super::lifecycle::{RunningRun, card_run, detached_run, launch_or_undo, undo_unlaunched};
 use super::prompts::{prompt_for, run_prompt};
 use crate::app::App;
 use crate::board::{StartError, Variant};
@@ -102,6 +102,11 @@ fn run_card(
     launch: Launch,
 ) -> Result<Run, StartError> {
     let running = card_run(app, routing, card, (agent, config), purpose, worktree)?;
+    // The run exists now, so a block that comes in from here on finds it; one that came in before is seen here.
+    if let Err(e) = crate::board::may_start(app, card) {
+        undo_unlaunched(app, routing.0, &running);
+        return Err(e);
+    }
     launch_or_undo(app, routing.0, running, |run| {
         launch(Launching {
             config,

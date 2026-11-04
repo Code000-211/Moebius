@@ -181,6 +181,17 @@ like the iced app and does not know anything the API does not say.
     `POST /v1/runs/{id}/stop` (`App::steer_run`, `App::stop_run`) go through the harness (`CardRuns::steer`, `CardRuns::stop`,
     which `ApiState` holds), a steer also leaving a `steered` run event. A stopped run ends `stopped` and
     `card.stopped` makes the scripts mark the card stuck instead of starting another run.
+12aa. **A person, or the agent, holds a card, and a person deletes one.** `POST /v1/cards/{id}/block` (`App::block_card`)
+    sets `cards.held_by`, `held_reason` and `held_at` (`Card::held`) and stops the card's runs that have not ended with
+    `App::stop_run` (a run still starting is tried again for a few seconds; `board::may_start` makes every starter,
+    and the harness once the run is recorded, refuse a card held meanwhile); `Engine::tick` returns at once for a held card, before its script is found or called, so nothing
+    moves it or starts a run until `POST /v1/cards/{id}/unblock` (`App::unblock_card`) clears the columns (and, when the block stopped the card's latest run, starts it afresh as a retry does). Both are
+    decisions (`block_card`, `unblock_card`) and publish `card_updated`. `DELETE /v1/cards/{id}` (`App::delete_card`,
+    for a person only) holds the card, stops its runs and waits for them to end, removes its worktrees and `moebius/`
+    branches from the clone (`Repos::remove_card_work`), then `Store::delete_card` removes every record of the card in
+    one transaction (the statements it shares with `Store::delete_repository`). On a forge the card's number goes
+    into `deleted_cards`, which `App::sync_issues` consults so that the poll never makes the card again. It records
+    `delete_card` and publishes `card_deleted`.
 12b. **A person chats.** A chat is a run without a card and with purpose `chat`. `POST /v1/chats` (`App::start_chat`)
     calls `PiBolt::start_chat`: the run (`Store::add_run` with no card, and `Store::set_run_repository` when it works
     in a repository) gets a worktree on `moebius/chat-<id>` from the repository's base ref (`Repos::add_chat_worktree`),
@@ -413,6 +424,7 @@ At the top:
 | `app/mod.rs` | `App`: the store, bus, repositories, forges and decisions put together, its errors and the lookups every operation shares; every change to a card is published on the bus. |
 | `app/repositories.rs` | Adding a repository (a path, a URL or GitHub), whom a GitHub repository trusts, and whether a card's issue is trusted. |
 | `app/cards.rs` | Cards and their issues: kept in line with the forge's issues, created, edited, approved, retried and moved; why a card waits, what blocks it, its history. |
+| `app/stopping.rs` | Holding (blocking), releasing and deleting a card, which stops its runs and, for a delete, removes what it left in the clone. |
 | `app/runs.rs` | A person's hand in a run: steering, stopping, a shell in its worktree, a chat's terminal interface, and a shell on the server. |
 | `app/automations/mod.rs` | Automations: saving and listing them with their next firing, firing one (a chat with origin `automation`, or a skipped or failed firing), and the check once a minute that ends their answered chats and fires those that came due. |
 | `app/automations/cron.rs` | A schedule: a cron expression of five fields in the server's local time, parsed, and the next minute it comes due. |
@@ -466,7 +478,7 @@ At the top:
 | Module | What it is for |
 |---|---|
 | `store/mod.rs` | The store: opening the SQLite database, its migrations, the connection and the server's local clock, the helpers that read rows, and every record type re-exported as `store::<Type>`. |
-| `store/cards.rs` | Repositories, their cards, the issues that block a card and the moves of a card between columns. |
+| `store/cards.rs` | Repositories, their cards, whether a card is held, the issues that block a card, the moves of a card between columns, deleting a card or a repository with all it has, and the numbers of deleted cards. |
 | `store/changes.rs` | Changes: a branch offered for merging, with its pull request, checks and review. |
 | `store/attempts.rs` | Attempts: the runs a card was tried with at once, how each fared, which was picked and why, and the rounds of which none passed. |
 | `store/runs.rs` | Runs: an agent's work in a harness, from its start to its end. |
@@ -507,7 +519,7 @@ At the top:
 | `server/fake_gitlab.rs` | For the tests only: a fake GitLab with one project, a server that polls it, and the tests of the GitLab forge through it. |
 | `server/fake_forgejo.rs` | For the tests only: a fake Forgejo with one repository, a server that polls it, and the tests of the Forgejo forge through it. |
 | `server/api/mod.rs` | The desktop API: the state it needs, the token check, the router that merges the routes of its parts, how a failure becomes a status, and `GET /v1/health`. |
-| `server/api/cards.rs` | The snapshot of every board, issues, cards and their changes (edit, approve, retry, merge, reject), a card's runs and history. |
+| `server/api/cards.rs` | The snapshot of every board, issues, cards and their changes (edit, approve, block, unblock, delete, retry, merge, reject), a card's runs and history. |
 | `server/api/repositories.rs` | Adding and editing repositories, and their column scripts and files. |
 | `server/api/runs.rs` | A run and its events in pages, steering and stopping it. |
 | `server/api/automations.rs` | Automations: list, add, read, replace, delete, run now, and their firings. |
@@ -559,7 +571,7 @@ At the top:
 | Module | What it is for |
 |---|---|
 | `board/mod.rs` | What the board folder holds, and the paths the rest of the server uses. |
-| `board/engine.rs` | The board engine: runs the script of a card's column (`tick`, `settle`) and applies what it did. |
+| `board/engine.rs` | The board engine: runs the script of a card's column (`tick`, which skips a held card, and `settle`) and applies what it did. |
 | `board/api.rs` | The `moebius` table, the functions a script acts through. |
 | `board/review.rs` | The review along two axes: the findings with evidence of the Standards and Spec runs read into one verdict. |
 | `board/attempts.rs` | `moebius.start_runs`, `moebius.check_attempt` and `moebius.settle_attempts`, and the `card.attempts` and `card.selection` fields. |

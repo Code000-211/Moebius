@@ -187,3 +187,56 @@ async fn the_apps_report_stays_with_a_person_and_the_agent_reads_it() {
     assert_eq!(f.send(Method::GET, "/v1/client", &token, None).await, 200);
     assert_eq!(f.send(Method::GET, "/v1/server", &token, None).await, 200);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_moebius_agent_may_block_and_unblock_a_card_but_only_a_person_deletes_one() {
+    let f = Fixture::start().await;
+    let store = &f.server.app.store;
+    let repository = store
+        .add_repository("demo", "/srv/demo", "none", "main")
+        .unwrap();
+    let card = store
+        .add_card(repository.id, "Work", "", "leon", "Backlog")
+        .unwrap();
+    let (run, token) = f.run("Moebius");
+    let (_, coder) = f.run("Coder");
+    let card_path = format!("/v1/cards/{}", card.id);
+
+    let block = json!({ "reason": "needs a design" });
+    assert_eq!(
+        f.send(
+            Method::POST,
+            &format!("{card_path}/block"),
+            &token,
+            Some(block)
+        )
+        .await,
+        200
+    );
+    let held = store.card(card.id).unwrap().unwrap().held.unwrap();
+    assert_eq!(
+        (held.by.as_str(), held.reason.as_deref()),
+        ("agent:Moebius", Some("needs a design"))
+    );
+    let blocks = store.judgements("block_card").unwrap();
+    assert_eq!(
+        (blocks[0].decider.as_str(), blocks[0].run_id),
+        ("agent:Moebius", Some(run))
+    );
+    assert_eq!(
+        f.send(Method::POST, &format!("{card_path}/unblock"), &token, None)
+            .await,
+        200
+    );
+    assert_eq!(store.card(card.id).unwrap().unwrap().held, None);
+    assert_eq!(store.judgements("unblock_card").unwrap().len(), 1);
+
+    // Deleting stays with a person; another agent's token is no token at all.
+    assert_eq!(f.send(Method::DELETE, &card_path, &token, None).await, 403);
+    assert_eq!(f.send(Method::DELETE, &card_path, &coder, None).await, 401);
+    assert!(store.card(card.id).unwrap().is_some());
+    assert!(store.judgements("delete_card").unwrap().is_empty());
+    let person = f.server.token.to_string();
+    assert_eq!(f.send(Method::DELETE, &card_path, &person, None).await, 200);
+    assert_eq!(store.card(card.id).unwrap(), None);
+}

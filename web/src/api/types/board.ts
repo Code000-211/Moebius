@@ -30,6 +30,14 @@ export interface CardChange {
   review_verdict: "approve" | "changes" | null;
 }
 
+/** Why and by whom a card is held (blocked), and since when. */
+export interface Held {
+  reason: string | null;
+  /** `person`, or `agent:Moebius` for the Moebius agent. */
+  by: string;
+  at: number;
+}
+
 export interface Card {
   id: number;
   repository_id: number;
@@ -51,6 +59,8 @@ export interface Card {
   confirmed?: boolean;
   /** The latest group of attempts of a card that was tried several times at once; absent without one. */
   attempts?: CardAttempt[];
+  /** Set while a person or the Moebius agent holds the card: the board runs nothing for it. */
+  held?: Held | null;
 }
 
 export interface CardAttempt {

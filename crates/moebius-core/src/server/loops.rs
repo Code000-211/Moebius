@@ -12,7 +12,7 @@ use tokio::time::{Interval, MissedTickBehavior};
 
 use super::Server;
 use super::webhooks::{Wake, Webhooks};
-use crate::app::columns;
+use crate::app::{AppError, columns};
 use crate::bus::Event;
 use crate::repos::poll;
 
@@ -39,17 +39,32 @@ impl Server {
                 {
                     continue;
                 }
-                if let Err(e) = self.engine.settle(card.id) {
-                    // Kept as the card's waiting reason until a script runs cleanly again.
-                    let reason = format!("script error: {e}");
-                    self.app.set_waiting(card.id, Some(reason));
-                    self.app.bus.publish(Event::BoardError {
-                        card: card.id,
-                        message: e.to_string(),
-                    });
-                }
+                self.settle_card(card.id);
             }
         }
+    }
+
+    /// Runs the script of one card until it stays where it is. A script that fails is reported on the bus and kept as
+    /// the card's waiting reason until a script runs cleanly again; a card that was deleted or held since the tick
+    /// began is left alone, since there is nothing to report for it.
+    fn settle_card(&self, card_id: i64) {
+        let Err(e) = self.engine.settle(card_id) else {
+            return;
+        };
+        match self.app.card(card_id) {
+            Err(AppError::NotFound(_)) => {
+                self.app.set_waiting(card_id, None);
+                return;
+            }
+            Ok(card) if card.held.is_some() => return,
+            _ => {}
+        }
+        let reason = format!("script error: {e}");
+        self.app.set_waiting(card_id, Some(reason));
+        self.app.bus.publish(Event::BoardError {
+            card: card_id,
+            message: e.to_string(),
+        });
     }
 
     /// Polls every GitHub repository once (see `poll`).
@@ -323,6 +338,78 @@ mod tests {
         assert_eq!(
             (outside.title.as_str(), outside.column.as_str()),
             ("Better title", "Backlog")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_card_deleted_during_a_tick_is_skipped_without_a_waiting_reason_or_a_board_error() {
+        use crate::decide::Actor;
+        use crate::server::fake_github::IdleRuns;
+
+        let f = Fixture::new().await;
+        f.fake
+            .set_issues("\"v1\"", vec![issue(1, "open", "leon", "Do it.")]);
+        f.server.poll_github().await;
+        let app = &f.server.app;
+        let card = f.card(1).unwrap();
+        app.delete_card(&Actor::Person, &IdleRuns, card.id, "")
+            .unwrap();
+        // What a tick that was already going left behind.
+        app.set_waiting(card.id, Some("script error: old".into()));
+        let mut events = app.bus.subscribe();
+
+        // The tick had listed the card before it was deleted.
+        f.server.settle_card(card.id);
+        assert!(app.waiting(std::slice::from_ref(&card)).is_empty());
+        while let Ok(event) = events.try_recv() {
+            assert_ne!(event.kind, "board_error");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_deleted_card_is_not_made_again_by_the_poll_and_its_issue_is_left_open() {
+        use crate::decide::Actor;
+        use crate::server::fake_github::IdleRuns;
+
+        let f = Fixture::new().await;
+        f.fake.set_issues(
+            "\"v1\"",
+            vec![
+                issue(1, "open", "leon", "Do it."),
+                issue(2, "open", "leon", "Do it too."),
+            ],
+        );
+        f.server.poll_github().await;
+        let app = &f.server.app;
+        let doomed = f.card(1).unwrap();
+        let kept_id = f.card(2).unwrap().id;
+        app.delete_card(&Actor::Person, &IdleRuns, doomed.id, "not wanted")
+            .unwrap();
+        assert!(f.card(1).is_none());
+
+        // The issue changes and is still open on the forge: the poll leaves it be, and still keeps the other card up.
+        let mut renamed = issue(1, "open", "leon", "Do it, please.");
+        renamed["title"] = json!("Renamed");
+        let mut other = issue(2, "open", "leon", "Do it too.");
+        other["title"] = json!("Other");
+        f.fake.set_issues("\"v2\"", vec![renamed, other]);
+        f.server.poll_github().await;
+        assert!(f.card(1).is_none(), "the deleted card did not come back");
+        assert_eq!(app.card(kept_id).unwrap().title, "Other");
+        assert_eq!(app.store.cards(f.repository.id).unwrap().len(), 1);
+        // A new issue is a new card.
+        f.fake.set_issues(
+            "\"v3\"",
+            vec![
+                issue(3, "open", "leon", "New."),
+                issue(1, "closed", "leon", ""),
+            ],
+        );
+        f.server.poll_github().await;
+        assert!(f.card(3).is_some());
+        assert!(
+            f.card(1).is_none(),
+            "a closed issue does not bring it back either"
         );
     }
 

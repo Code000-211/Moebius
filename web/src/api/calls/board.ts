@@ -45,6 +45,21 @@ export function retry(card: number): Promise<Card> {
   return post<Card>(`/v1/cards/${card}/retry`, {});
 }
 
+/** Holds a card: its runs are stopped and the board works on nothing for it until it is released. */
+export function block(card: number, reason: string): Promise<Card> {
+  return post<Card>(`/v1/cards/${card}/block`, { reason });
+}
+
+/** Releases a held card. */
+export function unblock(card: number): Promise<Card> {
+  return post<Card>(`/v1/cards/${card}/unblock`, {});
+}
+
+/** Deletes a card with everything stored for it; its issue on a forge stays. */
+export function deleteCard(card: number): Promise<Card> {
+  return del<Card>(`/v1/cards/${card}`);
+}
+
 /** The script a column runs for a repository. The column's name may have spaces. */
 export function script(repository: number, column: string): Promise<ScriptDetail> {
   return get<ScriptDetail>(`/v1/repositories/${repository}/scripts/${encodeURIComponent(column)}`);

@@ -60,6 +60,7 @@ end
 | `card.rounds` | number | How many runs with purpose `code` the card has had since it was last retried, whatever their status (a running one counts), and how many rounds of attempts of which none passed (see Attempts). |
 | `card.reviews` | number | How many review rounds the card has had since it was last retried, whatever their status: the runs with purpose `review` and those with purpose `review-standards` (one per round of the two-axis review). |
 | `card.tokens` | number | The input and output tokens the card's runs used since it was last retried (cached tokens are not added; the teacher's count too). |
+| `card.held` | table or nil | Set while a person or the Moebius agent holds the card (`POST /v1/cards/{id}/block` in `desktop-api.md`): `held.reason` (string or nil), `held.by` (`person` or `agent:Moebius`) and `held.at` (Unix seconds). Read-only. The engine skips a held card before its script is called, so a script never runs for one and sees `card.held` only as nil; the dry run of `check-script` makes up a card that is not held. |
 | `card.stopped` | boolean | True when the card's latest run was stopped by a person and the card has not been retried since. |
 | `card.review` | table or nil | The latest review of the card's work: the newest `review` run that `succeeded` after the card's latest `code` run, or a `review-spec` run that `succeeded` after a `review-standards` run that `succeeded` (the two axes of one round). nil when there is none, so a new `code` run clears it. |
 | `card.review.verdict` | string | `approve` or `changes`. Read from the review run's summary (see below). |
@@ -99,7 +100,7 @@ The verdict of a review is read from the end of the summary of a `review` run. A
 without such a line, or with any other word, is `changes`: work that was not reviewed is not approved. A `changes` verdict
 with no findings before it has the findings `The review asked for changes but gave no findings.`
 
-Only `card.run`, `card.run.summary`, `card.review`, `card.selection`, `card.note`, `card.change` and its `pull_request`, `failed_checks`, `check_output` and `conflict`, and `model` and `result` of an attempt, can be nil. Check them before you read their fields.
+Only `card.held`, `card.run`, `card.run.summary`, `card.review`, `card.selection`, `card.note`, `card.change` and its `pull_request`, `failed_checks`, `check_output` and `conflict`, and `model` and `result` of an attempt, can be nil. Check them before you read their fields.
 
 ## The `moebius` table
 

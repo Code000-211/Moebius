@@ -7,6 +7,7 @@
 //! - `card.note`: why the card went back to coding, if it did and no `code` run has succeeded since.
 //! - `card.change`: the card's open change: its checks, the failing ones and whether it still merges cleanly.
 //! - `card.test_first`: whether the card's repository works test first (see `app::reproduce`).
+//! - `card.held`: set while a person or the Moebius agent holds the card; a script never sees a held card's tick.
 //! - `card.stopped`: whether a person stopped the card's latest run and has not retried the card since.
 //! - `card.rounds`, `card.reviews`, `card.tokens`: the `code` runs (and rounds of attempts of which none passed),
 //!   review rounds and tokens of the card since it was last retried.
@@ -99,6 +100,13 @@ impl Engine {
         t.set("change", change_table(&self.app, lua, card.id)?)?;
         t.set("trusted", self.app.is_trusted(card))?;
         t.set("confirmed", card.confirmed)?;
+        if let Some(held) = &card.held {
+            let h = lua.create_table()?;
+            h.set("reason", held.reason.as_deref())?;
+            h.set("by", held.by.as_str())?;
+            h.set("at", held.at)?;
+            t.set("held", h)?;
+        }
         let repository = self
             .app
             .store

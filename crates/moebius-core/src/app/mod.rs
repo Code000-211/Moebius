@@ -3,10 +3,13 @@
 //!
 //! This module holds `App` itself, its errors and the lookups every operation shares; the operations are grouped by
 //! what they act on: `repositories` adds and edits repositories, `cards` keeps cards in line with their issues and
-//! moves them, `runs` is a person's hand in a running run (steering, stopping, shells), `chats` starts and carries on
-//! chats, `changes` publishes, offers and merges changes, `checks` runs a repository's own checks on them,
-//! `packages` proposes installing, updating and removing Pi packages as changes of the harness configuration repository, `localize` gives a code run the files its issue is likely to touch and records what came of it, `reproduce` runs a change's reproduction test for a repository that works test first, `whereabouts` knows where the server and the app run, and `automations` keeps
-//! the automations and starts their chats when their schedules come due.
+//! moves them, `stopping` holds, releases and deletes a card, `runs` is a person's hand in a running run (steering,
+//! stopping, shells), `chats` starts and carries on chats, `changes` publishes, offers and merges changes, `checks`
+//! runs a repository's own checks on them, `packages` proposes installing, updating and removing Pi packages as changes
+//! of the harness configuration repository, `localize` gives a code run the files its issue is likely to touch and
+//! records what came of it, `reproduce` runs a change's reproduction test for a repository that works test first,
+//! `whereabouts` knows where the server and the app run, and `automations` keeps the automations and starts their chats
+//! when their schedules come due.
 
 mod attempts;
 mod automations;
@@ -21,6 +24,7 @@ mod packages;
 mod repositories;
 mod reproduce;
 mod runs;
+mod stopping;
 mod whereabouts;
 
 pub use packages::{
@@ -100,6 +104,8 @@ pub enum AppError {
 
 pub type Result<T> = std::result::Result<T, AppError>;
 
+pub use stopping::CardStopWaits;
+
 pub struct App {
     pub store: Arc<Store>,
     pub bus: Bus,
@@ -108,6 +114,9 @@ pub struct App {
     pub data_dir: PathBuf,
     /// How long a repository's own checks may run.
     pub checks_timeout: Duration,
+    /// How long blocking a card waits for a run that is still starting to be stoppable, and how long deleting one waits
+    /// for its runs to end (see `stopping`).
+    pub card_stop_waits: CardStopWaits,
     /// Whether code runs are given a hint of the files that are likely relevant, and how many (see `localize`).
     pub localize: LocalizeConfig,
     /// Where Pi packages are found and fetched from (see `packages`).
@@ -154,6 +163,7 @@ impl App {
             repos,
             data_dir: data_dir.to_path_buf(),
             checks_timeout: Duration::from_secs(1800),
+            card_stop_waits: CardStopWaits::default(),
             localize: LocalizeConfig::default(),
             packages: PackagesConfig::default(),
             checking: Mutex::default(),

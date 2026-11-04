@@ -40,6 +40,7 @@ Add `--json` to any command to read fields (`"$MOEBIUS" board --json`). For anyt
 | A repository added | `"$MOEBIUS" repo add <name> <url>` (`--github owner/repo` for GitHub, `--gitlab group/project` for GitLab, `--forgejo owner/repo` for Codeberg or another Forgejo) |
 | An issue (a card in the backlog) | `"$MOEBIUS" issue create <repository id> "<title>" --body "..."` |
 | A card's title or body changed (on GitHub the issue too; "blocked by #n" in the body sets its blockers) | `"$MOEBIUS" api PUT /v1/cards/<id> --body '{"title": "...", "body": "...", "reason": "..."}'` |
+| Work on a card stopped and kept stopped (its runs are stopped, the board does nothing with it), or let go again | `"$MOEBIUS" api POST /v1/cards/<id>/block --body '{"reason": "..."}'`, `"$MOEBIUS" api POST /v1/cards/<id>/unblock --body '{}'` |
 | The logins a repository on a forge trusts | `"$MOEBIUS" api PUT /v1/repositories/<id> --body '{"trusted": ["leon"], "reason": "..."}'` (the whole list) |
 | A draft's brief changed before it is confirmed | `"$MOEBIUS" api PUT /v1/research/<id> --body '{"goal": "...", "measure": "...", "better": "lower", "token_budget": <n>}'` |
 | A research brief | `"$MOEBIUS" research new --repository <id> --goal "..." --measure "<command>" --better lower --token-budget <n>`, then `"$MOEBIUS" research confirm <id>` once the person agrees |
@@ -63,7 +64,7 @@ figure, say which command it came from.
 - `moebius: the server answered 4xx: ...` names the problem; read the message before you try anything else.
 - Merging, rejecting, dismissing, stopping and restarting are hard to undo: do them only when the person asked for
   exactly that.
-- `secrets set` and the terminals answer 403 for you: storing a key is for the person.
+- `secrets set`, the terminals and `DELETE /v1/cards/<id>` answer 403 for you: storing a key and deleting a card are for the person.
 - A card that does not move: its `waiting` reason in `"$MOEBIUS" card <id>` says why; a script error starts with
   `script error:`.
 

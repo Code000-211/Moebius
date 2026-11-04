@@ -13,6 +13,7 @@ import {
   describeHistory,
   dropRule,
   groupByColumn,
+  heldLine,
   inboxOf,
   inspectedCard,
   issueUrl,
@@ -44,6 +45,9 @@ function card(id: number, extra: Partial<Card> = {}): Card {
     ...extra,
   };
 }
+
+/** A card held by a person with a reason. */
+const held = { reason: "wait for the design", by: "person", at: 1 };
 
 function board(cards: Card[], extra: Partial<Board> = {}): Board {
   return {
@@ -120,6 +124,7 @@ describe("groupByColumn", () => {
     expect(numbers({ agent: "Reviewer" })).toEqual([2]);
     expect(numbers({ status: "live" })).toEqual([1]);
     expect(numbers({ status: "blocked" })).toEqual([3]);
+    expect(numbers({ status: "held" })).toEqual([]);
     expect(numbers({ status: "live", agent: "Reviewer" })).toEqual([]);
   });
 
@@ -141,6 +146,7 @@ const run = running;
 describe("cardStatus", () => {
   it("takes the first that applies", () => {
     const b = board([card(1)], { waiting: { "1": "waiting for CI" } });
+    expect(cardStatus(card(1, { run, held }), item("stuck", 1), b)).toBe("held");
     expect(cardStatus(card(1, { run }), item("stuck", 1), b)).toBe("live");
     expect(cardStatus(card(1), item("stuck", 1), b)).toBe("stuck");
     expect(cardStatus(card(1), item("ready_to_merge", 1), b)).toBe("needs-you");
@@ -183,7 +189,8 @@ describe("inspectedCard", () => {
   it("obeys a choice, and none when the dock was closed", () => {
     expect(inspectedCard(b, [], "4")?.id).toBe(4);
     expect(inspectedCard(b, [], "none")).toBeUndefined();
-    expect(inspectedCard(b, [], "99")?.id).toBe(3);
+    // A card that is gone — deleted, in this tab or in another — leaves the dock closed rather than opening another.
+    expect(inspectedCard(b, [], "99")).toBeUndefined();
   });
 });
 
@@ -238,6 +245,16 @@ describe("dropRule", () => {
     expect(drop.kind === "refused" && drop.reason).toContain("script");
     expect(dropRule(c, "Not started", undefined)).toEqual({ kind: "none" });
   });
+
+  it("says a blocked card moves again once it is unblocked", () => {
+    const drop = dropRule(card(1, { column: "Not started", held }), "Done", undefined);
+    expect(drop.kind === "refused" && drop.reason).toContain("Unblock it");
+    // What waits for a person is still theirs to decide while the card is blocked.
+    const waiting = item("approve_issue", 1);
+    expect(dropRule(card(1, { column: "Backlog", held }), "Not started", waiting)).toEqual({
+      kind: "approve",
+    });
+  });
 });
 
 describe("the words and links of a card", () => {
@@ -278,7 +295,7 @@ describe("the words and links of a card", () => {
     // The word and the state that colours it, in the order the desktop board draws them; the tones are the shared
     // pill's (`ui/page/Status`), where a fact that is not a state is `neutral`.
     expect(cardBadges(c, "needs-you", true)).toEqual([
-      { name: "Blocked by #2 and 2 more", tone: "error" },
+      { name: "Waiting on #2 and 2 more", tone: "attention" },
       { name: "1 rule broken", tone: "error" },
       { name: "CI failed", tone: "error" },
       { name: "Your turn", tone: "attention" },
@@ -289,9 +306,28 @@ describe("the words and links of a card", () => {
     ]);
   });
 
-  it("starts with the first card of Not started that nothing blocks", () => {
+  it("starts with the first card of Not started that nothing blocks and nobody holds", () => {
     expect(nextCard([card(1, { blocked_by: [9] }), card(2), card(3)])).toBe(2);
     expect(nextCard([card(1, { blocked_by: [9] })])).toBeUndefined();
+    expect(nextCard([card(1, { held }), card(2), card(3)])).toBe(2);
+    expect(nextCard([card(1, { held })])).toBeUndefined();
+  });
+
+  it("says a held card is Blocked first, apart from the card that waits on issues", () => {
+    const c = card(1, { column: "Not started", held, blocked_by: [4] });
+    expect(cardBadges(c, "held", false)).toEqual([
+      { name: "Blocked", tone: "error", hint: "wait for the design (blocked by a person)" },
+      { name: "Waiting on #4", tone: "attention" },
+    ]);
+    expect(cardBadges(card(2, { blocked_by: [4] }), "blocked", false)).toEqual([
+      { name: "Waiting on #4", tone: "attention" },
+    ]);
+  });
+
+  it("tells who held a card and why", () => {
+    expect(heldLine(held)).toBe("wait for the design (blocked by a person)");
+    expect(heldLine({ reason: null, by: "agent:Moebius", at: 1 })).toBe("Blocked by Moebius");
+    expect(heldLine({ reason: "  ", by: "person", at: 1 })).toBe("Blocked by a person");
   });
 
   it("finds the change of a card: its open one, else the latest", () => {

@@ -390,6 +390,19 @@ pub(in crate::harness) fn woken_chat(
     })
 }
 
+/// Undoes what was set up for the run `running` that was not launched because its card was held meanwhile: its token
+/// is revoked, its worktree removed, and it ends as `stopped`, as a run a person stopped does.
+pub(in crate::harness) fn undo_unlaunched(app: &App, router: &Router, running: &RunningRun) {
+    router.revoke_token(&running.token);
+    running.remove_worktree(app);
+    let _ = app.store.append_event(
+        running.id,
+        "moebius_error",
+        &json!({ "message": "the card was blocked before the run started" }),
+    );
+    let _ = app.store.set_run_status(running.id, "stopped");
+}
+
 /// Starts the process of the run `running` with `launch` and returns the run; when the process cannot be started, what
 /// was set up for the run is undone (its token revoked, its worktree removed) and the run has failed.
 pub(in crate::harness) fn launch_or_undo(

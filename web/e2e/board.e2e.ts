@@ -1,7 +1,8 @@
 /**
  * The board page in a real browser: its columns and cards, cards that move when the server moves them, the decisions
  * (approve, merge, send back, retry), dragging only where a person may move a card and the reason when a drop is
- * refused, the dock (a long title, the history, the runs, the script), the filters and a new issue. The fake server
+ * refused, the dock (a long title, the history, the runs, the script), the filters, a new issue, and blocking,
+ * unblocking and deleting a card from the menu of a board card and of the dock. The fake server
  * (`fake/board.ts`) has the data; against a real server (MOEBIUS_E2E_SERVER) the tests that need that data are skipped
  * and the board of a new repository is used. Every wait is on something the page shows, never on time.
  */
@@ -173,7 +174,7 @@ describe("the board page", () => {
       await ready.getByText("Your turn").waitFor();
       await ready.getByText("2 rounds", { exact: true }).waitFor();
 
-      await card(4).getByText("Blocked by #3").waitFor();
+      await card(4).getByText("Waiting on #3").waitFor();
       await card(3).getByText("Next").waitFor();
       await card(6).getByText("Stuck").waitFor();
       await card(2).getByText("Your turn").waitFor();
@@ -268,6 +269,15 @@ describe("live data", () => {
     broadcast(fake().moveCard(3, "In review"));
     await dock().getByText("demo · In review · by person").waitFor();
   });
+
+  it.skipIf(usesRealServer)("names the dock's two waiting rows by what each one is", async () => {
+    await fresh();
+    await openBoard();
+    await page.goto(`${server.url}/board/1?card=4`);
+    await dock().getByText("Why it waits", { exact: true }).waitFor();
+    await dock().getByText("Waiting on", { exact: true }).waitFor();
+    expect(await dock().getByText("Waiting", { exact: true }).count()).toBe(0);
+  });
 });
 
 describe("the decisions", () => {
@@ -339,6 +349,206 @@ describe("the decisions", () => {
     // The card did not move, and the buttons are there to try again.
     await column("Ready to merge").getByTestId("card-5").waitFor();
     await dock().getByRole("button", { name: "Merge" }).waitFor();
+  });
+});
+
+describe("blocking, unblocking and deleting a card", () => {
+  /** The ⋯ button of a card of the board, or of the dock (which stands beside the board). */
+  const menuOf = (where: Locator, number: number) =>
+    where.getByRole("button", { name: `More actions for #${number}` });
+  const item = (name: string) => page.getByRole("menuitem", { name, exact: true });
+  const asking = (title: string) => page.getByRole("dialog", { name: title });
+
+  it.skipIf(usesRealServer)(
+    "blocks a card from its menu with a reason, and unblocks it from the same menu",
+    async () => {
+      await fresh();
+      await openBoard();
+      // A card that waits on an issue says so in its own words, apart from the one a person blocks.
+      await card(4).getByText("Waiting on #3").waitFor();
+      await menuOf(card(3), 3).click();
+      await item("Block…").click();
+      const dialog = asking("Block #3");
+      await dialog.getByLabel("Reason").fill("wait for the design");
+      await dialog.getByRole("button", { name: "Block", exact: true }).click();
+      await status("Blocked #3. Its runs are stopped.").waitFor();
+      await asking("Block #3").waitFor({ state: "detached" });
+      expect(fake().requests.at(-1)).toMatchObject({
+        method: "POST",
+        path: "/v1/cards/3/block",
+        body: { reason: "wait for the design" },
+      });
+      // It stays in its column, tagged, and its reason is in the tag's tooltip.
+      const tag = column("Not started").getByTestId("card-3").getByText("Blocked", { exact: true });
+      await tag.waitFor();
+      await tag.hover();
+      await page
+        .getByRole("tooltip")
+        .filter({ hasText: "wait for the design (blocked by a person)" })
+        .first()
+        .waitFor();
+      // The card that waits on issues is a different state: it is not called blocked.
+      expect(await card(4).getByText("Blocked", { exact: true }).count()).toBe(0);
+
+      await menuOf(card(3), 3).click();
+      expect(await item("Block…").count()).toBe(0);
+      await item("Unblock").click();
+      await status("Unblocked #3.").waitFor();
+      await tag.waitFor({ state: "detached" });
+      expect(fake().requests.at(-1)).toMatchObject({ method: "POST", path: "/v1/cards/3/unblock" });
+      await menuOf(card(3), 3).click();
+      await item("Block…").waitFor();
+    },
+  );
+
+  it.skipIf(usesRealServer)("stops the run of a card that is blocked", async () => {
+    await fresh();
+    await openBoard();
+    await card(1).getByText("Live", { exact: true }).waitFor();
+    await menuOf(card(1), 1).click();
+    await item("Block…").click();
+    await asking("Block #1").getByRole("button", { name: "Block", exact: true }).click();
+    await status("Blocked #1").waitFor();
+    await card(1).getByText("Blocked", { exact: true }).waitFor();
+    // The run was stopped, so the card is no longer live.
+    await card(1).getByText("Live", { exact: true }).waitFor({ state: "detached" });
+    expect(fake().requests.at(-1)).toMatchObject({ body: { reason: "" } });
+  });
+
+  it.skipIf(usesRealServer)("blocks from the menu of the dock and shows why there", async () => {
+    await fresh();
+    await openBoard();
+    await card(3).click();
+    await dock().getByText("demo · Not started · by person").waitFor();
+    await menuOf(dock(), 3).click();
+    await item("Block…").click();
+    await asking("Block #3").getByLabel("Reason").fill("needs a design");
+    await asking("Block #3").getByRole("button", { name: "Block", exact: true }).click();
+    await status("Blocked #3").waitFor();
+    await dock().getByText("needs a design (blocked by a person)").waitFor();
+    await dock().getByText("Blocked", { exact: true }).first().waitFor();
+    await menuOf(dock(), 3).click();
+    await item("Unblock").click();
+    await status("Unblocked #3.").waitFor();
+    await dock().getByText("needs a design (blocked by a person)").waitFor({ state: "detached" });
+  });
+
+  it.skipIf(usesRealServer)("keeps the dialog open with what the server refused", async () => {
+    await fresh();
+    await openBoard();
+    fake().refuseNext("POST", "/v1/cards/3/block", 409, "card 3 is held already");
+    await menuOf(card(3), 3).click();
+    await item("Block…").click();
+    await asking("Block #3").getByLabel("Reason").fill("later");
+    await asking("Block #3").getByRole("button", { name: "Block", exact: true }).click();
+    await asking("Block #3")
+      .getByRole("alert")
+      .filter({ hasText: "card 3 is held already" })
+      .waitFor();
+    expect(await asking("Block #3").getByLabel("Reason").inputValue()).toBe("later");
+    await asking("Block #3").getByRole("button", { name: "Cancel" }).click();
+    await asking("Block #3").waitFor({ state: "detached" });
+  });
+
+  it.skipIf(usesRealServer)(
+    "reaches the menu with the keyboard and keeps its keys from the card",
+    async () => {
+      await fresh();
+      await openBoard();
+      await menuOf(card(3), 3).focus();
+      await page.keyboard.press("Enter");
+      await item("Block…").waitFor();
+      // Escape closes the menu and gives the focus back to its button.
+      await page.keyboard.press("Escape");
+      await item("Block…").waitFor({ state: "detached" });
+      expect(await menuOf(card(3), 3).evaluate((el) => el === document.activeElement)).toBe(true);
+      await page.keyboard.press("Enter");
+      await page.keyboard.press("Enter");
+      await asking("Block #3").waitFor();
+      // Enter in the menu was not the card's own Enter, which opens the card in the dock.
+      expect(page.url()).not.toContain("card=3");
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "deletes a card from its menu after saying what goes and that its issue stays",
+    async () => {
+      await fresh();
+      await openBoard();
+      await menuOf(card(3), 3).click();
+      await item("Delete…").click();
+      const dialog = asking("Delete #3");
+      await dialog.getByText("Document the API").waitFor();
+      await dialog.getByText("worktrees and branches in the clone").waitFor();
+      await dialog.getByText("The issue stays open on GitHub").waitFor();
+      // Asking again is the only way to go on: nothing was sent yet.
+      expect(fake().requests.some((r) => r.method === "DELETE")).toBe(false);
+      await dialog.getByRole("button", { name: "Delete card" }).click();
+      await status("Deleted #3.").waitFor();
+      await card(3).waitFor({ state: "detached" });
+      expect(fake().requests.at(-1)).toMatchObject({ method: "DELETE", path: "/v1/cards/3" });
+      // The card that waited on it is left waiting, as for any issue that has no card.
+      await card(4).getByText("Waiting on #3").waitFor();
+    },
+  );
+
+  it.skipIf(usesRealServer)("deletes the card of the dock, and the dock closes", async () => {
+    await fresh();
+    await openBoard();
+    await card(3).click();
+    await dock().getByText("demo · Not started · by person").waitFor();
+    await menuOf(dock(), 3).click();
+    await item("Delete…").click();
+    await asking("Delete #3").getByRole("button", { name: "Delete card" }).click();
+    await status("Deleted #3.").waitFor();
+    await card(3).waitFor({ state: "detached" });
+    // The dock does not open another card in its place.
+    await dock().waitFor({ state: "detached" });
+  });
+
+  it.skipIf(usesRealServer)("does not delete when the person leaves the question", async () => {
+    await fresh();
+    await openBoard();
+    await menuOf(card(3), 3).click();
+    await item("Delete…").click();
+    await asking("Delete #3").getByRole("button", { name: "Cancel" }).click();
+    await asking("Delete #3").waitFor({ state: "detached" });
+    await card(3).waitFor();
+    expect(fake().requests.some((r) => r.method === "DELETE")).toBe(false);
+  });
+
+  it.skipIf(usesRealServer)(
+    "drops a card another client deleted, and closes its dock",
+    async () => {
+      await fresh();
+      await openBoard();
+      await card(3).click();
+      await dock().getByText("demo · Not started · by person").waitFor();
+      const removed = await context.request.delete(`${server.url}/v1/cards/3`, {
+        headers: { "X-Moebius": "1" },
+      });
+      expect(removed.ok()).toBe(true);
+      await card(3).waitFor({ state: "detached" });
+      await dock().waitFor({ state: "detached" });
+    },
+  );
+
+  it.skipIf(usesRealServer)("shows a card that another client blocked", async () => {
+    await fresh();
+    await openBoard();
+    const blocked = await context.request.post(`${server.url}/v1/cards/3/block`, {
+      headers: { "X-Moebius": "1" },
+      data: { reason: "paused elsewhere" },
+    });
+    expect(blocked.ok()).toBe(true);
+    await card(3).getByText("Blocked", { exact: true }).waitFor();
+    await card(3).getByText("Next").waitFor({ state: "detached" });
+    // The status filter tells a blocked card from one that waits on issues.
+    const filters = page.getByRole("search", { name: "Filter the cards" });
+    await pickOption(page, filters.getByLabel("Status"), "Blocked");
+    await page.waitForURL("**status=held");
+    await card(3).waitFor();
+    expect(await page.getByTestId(/^card-/).count()).toBe(1);
   });
 });
 
@@ -593,7 +803,7 @@ describe("the filters", () => {
     await card(2).waitFor();
     await card(5).waitFor();
 
-    await pick(filters, "Status", "Blocked");
+    await pick(filters, "Status", "Waiting on issues");
     await shownIs(1);
     await card(4).waitFor();
 

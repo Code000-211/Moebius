@@ -19,6 +19,7 @@ const SNAPSHOT_KINDS = new Set([
   "repository_removed",
   "card_added",
   "card_updated",
+  "card_deleted",
   "card_moved",
   "card_waiting",
   "change_offered",

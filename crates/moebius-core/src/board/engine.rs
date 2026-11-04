@@ -1,6 +1,6 @@
-//! The engine: runs the script of a card's column once (`tick`) or until the card stays where it is (`settle`), and
-//! applies what the script did: the column it moves the card to, with the note it gives, and why the card waits. The
-//! script of a column is the repository's override, or the built-in one (see `workflow`).
+//! The engine: runs the script of a card's column once (`tick`, which skips a held card) or until the card stays where
+//! it is (`settle`), and applies what the script did: the column it moves the card to, with the note it gives, and why
+//! the card waits. The script of a column is the repository's override, or the built-in one (see `workflow`).
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -96,9 +96,13 @@ impl Engine {
             })
     }
 
-    /// Runs the script of the card's column once and applies what it did.
+    /// Runs the script of the card's column once and applies what it did. A held card has no script run: it stays
+    /// where it is, and nothing starts for it, until a person or the Moebius agent releases it.
     pub fn tick(&self, card_id: i64) -> Result<Step, BoardError> {
         let card = self.app.card(card_id)?;
+        if card.held.is_some() {
+            return Ok(Step::default());
+        }
         let column = self
             .workflow
             .columns
@@ -414,5 +418,55 @@ mod tests {
         let step = engine.settle(card.id).unwrap();
         assert_eq!(app.card(card.id).unwrap().column, "Not started");
         assert_eq!(step.waiting.as_deref(), Some("waiting for #99"));
+    }
+
+    #[test]
+    fn a_held_card_is_skipped_before_its_script_is_called_and_ticks_again_once_released() {
+        let (_dir, app, engine, repo) = setup();
+        let clone = std::path::PathBuf::from(&app.store.repository(repo).unwrap().unwrap().path);
+        std::fs::create_dir_all(clone.join(".moebius")).unwrap();
+        // A script that fails whenever it is called, and would move the card on if it did not.
+        std::fs::write(
+            clone.join(".moebius/backlog.luau"),
+            "function on_card(card) moebius.move('Done') error('the script was called') end",
+        )
+        .unwrap();
+        git(&clone, &["add", "."]).unwrap();
+        git(&clone, &["commit", "--quiet", "-m", "a script"]).unwrap();
+        let card = app.create_issue(repo, "Held", "", PERSON).unwrap();
+        assert!(app.store.hold_card(card.id, PERSON, Some("later")).unwrap());
+
+        for _ in 0..2 {
+            assert_eq!(engine.tick(card.id).unwrap(), super::Step::default());
+            assert_eq!(engine.settle(card.id).unwrap(), super::Step::default());
+        }
+        assert_eq!(app.card(card.id).unwrap().column, "Backlog");
+        assert!(app.store.runs_for_card(card.id).unwrap().is_empty());
+
+        assert!(app.store.release_card(card.id).unwrap());
+        let error = engine.tick(card.id).unwrap_err().to_string();
+        assert!(error.contains("the script was called"), "{error}");
+    }
+
+    #[test]
+    fn a_script_reads_who_holds_a_card_and_why() {
+        let (_dir, app, engine, repo) = setup();
+        let card = app.create_issue(repo, "Held", "", PERSON).unwrap();
+        let lua = mlua::Lua::new();
+        assert!(
+            !engine
+                .card_table(&lua, &card)
+                .unwrap()
+                .contains_key("held")
+                .unwrap()
+        );
+        app.store
+            .hold_card(card.id, "agent:Moebius", Some("needs a design"))
+            .unwrap();
+        let card = app.card(card.id).unwrap();
+        let held: mlua::Table = engine.card_table(&lua, &card).unwrap().get("held").unwrap();
+        assert_eq!(held.get::<String>("by").unwrap(), "agent:Moebius");
+        assert_eq!(held.get::<String>("reason").unwrap(), "needs a design");
+        assert_eq!(held.get::<i64>("at").unwrap(), card.held.unwrap().at);
     }
 }

@@ -60,6 +60,7 @@ fn made_up_card(lua: &Lua, column: &str, title: &str, author: &str) -> mlua::Res
     t.set("column", column)?;
     t.set("trusted", author == PERSON)?;
     t.set("confirmed", false)?;
+    t.set("held", mlua::Value::Nil)?;
     t.set("test_first", false)?;
     t.set("blocked_by", lua.create_table()?)?;
     t.set("rounds", 0)?;

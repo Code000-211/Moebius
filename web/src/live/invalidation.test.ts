@@ -58,7 +58,15 @@ const stale = (queryClient: QueryClient, key: readonly unknown[]) =>
 
 describe("invalidates", () => {
   it("reads the snapshot again for the kinds that change it", () => {
-    for (const kind of ["card_moved", "card_added", "change_updated", "run_started", "run_ended"]) {
+    for (const kind of [
+      "card_moved",
+      "card_added",
+      "card_updated",
+      "card_deleted",
+      "change_updated",
+      "run_started",
+      "run_ended",
+    ]) {
       expect(invalidates({ kind, data: {} })).toContainEqual(keys.snapshot);
     }
   });
@@ -128,6 +136,15 @@ describe("applyEvent", () => {
       data: { card: 7, from: "Backlog", to: "Not started" },
     });
     expect(stale(queryClient, keys.snapshot)).toBe(true);
+    expect(stale(queryClient, keys.health)).toBe(false);
+  });
+
+  it("makes the snapshot and what is read about the card stale when a card is deleted", () => {
+    const queryClient = client();
+    queryClient.setQueryData(keys.history(7), []);
+    applyEvent(queryClient, { kind: "card_deleted", data: { card: 7 } });
+    expect(stale(queryClient, keys.snapshot)).toBe(true);
+    expect(stale(queryClient, keys.history(7))).toBe(true);
     expect(stale(queryClient, keys.health)).toBe(false);
   });
 

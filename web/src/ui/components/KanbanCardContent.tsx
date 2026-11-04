@@ -1,15 +1,18 @@
 // From BloopAI/vibe-kanban packages/ui/src/components/KanbanCardContent.tsx (Apache-2.0), changed: no i18n; the card
 // shows what a Moebius card has — the state of its run and its change in words, its title, the agent and the round,
 // the rounds it has left of the most it gets, and the links to its issue and its pull request — in place of priority,
-// assignees, tags, relationships and the description preview; the "more actions" button is gone (the dock has the
-// actions); both links are 40px targets and only the issue number is monospaced; the state words are the shared
-// `Status` pill, and the card is opened by its title being a button, so the card itself stays a group the links sit in.
+// assignees, tags, relationships and the description preview; the "more actions" button is a slot (`menu`) the page
+// fills with its own menu, beside the title, and a state word may carry a hint, shown in a tooltip; both links are 40px
+// targets and only the issue number is monospaced; the state words are the shared `Status` pill, and the card is
+// opened by its title being a button, so the card itself stays a group the links sit in.
 
+import type { ReactNode } from "react";
 import { cn } from "../lib/cn";
 import { FadedClamp } from "../page/FadedClamp";
 import { Status, type Tone } from "../page/Status";
 import { PrBadge, type PrBadgeStatus } from "./PrBadge";
 import { RunningDots } from "./RunningDots";
+import { Tooltip } from "./Tooltip";
 
 export interface KanbanPullRequest {
   number: number;
@@ -18,7 +21,12 @@ export interface KanbanPullRequest {
 }
 
 /** A word of a card and the state its colour stands for, in the names of the shared pill (`page/Status`). */
-type CardLabel = { name: string; tone?: Tone };
+type CardLabel = {
+  name: string;
+  tone?: Tone;
+  /** More about the state, in a tooltip; it supplements the word and carries nothing the card needs. */
+  hint?: string;
+};
 
 export type KanbanCardContentProps = {
   /** The card's number as it is written, such as `#12`. */
@@ -43,6 +51,8 @@ export type KanbanCardContentProps = {
    * overlay, which only shows what is under the pointer — the title stays the text it is.
    */
   onOpen?: () => void;
+  /** The card's menu, beside its title; left out on the drag overlay, which is only a picture of the card. */
+  menu?: ReactNode;
   className?: string;
 };
 
@@ -58,6 +68,7 @@ export function KanbanCardContent({
   isLoading = false,
   muted = false,
   onOpen,
+  menu,
   className,
 }: KanbanCardContentProps) {
   return (
@@ -66,42 +77,55 @@ export function KanbanCardContent({
       {(isLoading || badges.length > 0) && (
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           {isLoading && <RunningDots />}
-          {badges.map((badge) => (
-            <Status key={badge.name} tone={badge.tone}>
-              {badge.name}
-            </Status>
-          ))}
+          {badges.map((badge) =>
+            badge.hint ? (
+              <Tooltip key={badge.name} content={badge.hint} side="bottom">
+                {/* Focusable, so that the hint is reachable without a pointer. */}
+                {/* biome-ignore lint/a11y/noNoninteractiveTabindex: the pill carries a hint a keyboard should reach */}
+                <span tabIndex={0} className="inline-flex rounded-full">
+                  <Status tone={badge.tone}>{badge.name}</Status>
+                </span>
+              </Tooltip>
+            ) : (
+              <Status key={badge.name} tone={badge.tone}>
+                {badge.name}
+              </Status>
+            ),
+          )}
         </div>
       )}
 
-      {/* Row 2: the title, wrapped, however long, and the control that opens the card */}
-      {onOpen ? (
-        <button
-          type="button"
-          onClick={(e) => {
-            // The card answers a click on itself as well; this one is the title's, and opens the card once.
-            e.stopPropagation();
-            onOpen();
-          }}
-          className={cn(
-            // The title keeps the 40px a control is asked to have and takes back the slack inside it, so the line of
-            // type sits the row's own gap from the state above it and the body below it rather than a gap and a half.
-            "-my-2 flex min-h-10 w-full appearance-none items-center rounded-control bg-transparent p-0 text-left text-base font-semibold [overflow-wrap:anywhere]",
-            muted ? "text-secondary" : "text-text",
-          )}
-        >
-          {title}
-        </button>
-      ) : (
-        <span
-          className={cn(
-            "text-base font-semibold [overflow-wrap:anywhere]",
-            muted ? "text-secondary" : "text-text",
-          )}
-        >
-          {title}
-        </span>
-      )}
+      {/* Row 2: the title, wrapped, however long, and the control that opens the card, with the card's menu */}
+      <div className="flex min-w-0 items-start gap-2">
+        {onOpen ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              // The card answers a click on itself as well; this one is the title's, and opens the card once.
+              e.stopPropagation();
+              onOpen();
+            }}
+            className={cn(
+              // The title keeps the 40px a control is asked to have and takes back the slack inside it, so the line of
+              // type sits the row's own gap from the state above it and the body below it rather than a gap and a half.
+              "-my-2 flex min-h-10 min-w-0 flex-1 appearance-none items-center rounded-control bg-transparent p-0 text-left text-base font-semibold [overflow-wrap:anywhere]",
+              muted ? "text-secondary" : "text-text",
+            )}
+          >
+            {title}
+          </button>
+        ) : (
+          <span
+            className={cn(
+              "min-w-0 flex-1 text-base font-semibold [overflow-wrap:anywhere]",
+              muted ? "text-secondary" : "text-text",
+            )}
+          >
+            {title}
+          </span>
+        )}
+        {menu && <div className="-mr-2 -my-2 shrink-0">{menu}</div>}
+      </div>
 
       {/* Row 3: what the issue asks for, three lines of it, the whole of it a click away */}
       {preview && preview.trim() !== "" && (

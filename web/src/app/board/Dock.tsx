@@ -26,12 +26,14 @@ import { Field } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 import { SkeletonLines } from "../../ui/page/Skeleton";
 import { Status, type Tone } from "../../ui/page/Status";
+import { CardMenu } from "./CardMenu";
 import type { Decision } from "./decisions";
 import {
   type CardStatus,
   cardStatus,
   changeWorktree,
   describeHistory,
+  heldLine,
   issueUrl,
   STATUS_LABELS,
   tokens,
@@ -39,10 +41,11 @@ import {
 } from "./model";
 
 const STATUS_TONE: Record<CardStatus, Tone> = {
+  held: "error",
   live: "progress",
   "needs-you": "attention",
   stuck: "error",
-  blocked: "error",
+  blocked: "attention",
   waiting: "attention",
   idle: "neutral",
 };
@@ -198,6 +201,7 @@ export function Dock({
   askFor,
   onAskAnswered,
   onDecide,
+  menu,
   onClose,
 }: {
   board: Board;
@@ -208,6 +212,12 @@ export function Dock({
   askFor: number | null;
   onAskAnswered: () => void;
   onDecide: (decision: Decision) => void;
+  /** What the card's menu does. */
+  menu: {
+    onBlock: (card: Card) => void;
+    onUnblock: (card: Card) => void;
+    onDelete: (card: Card) => void;
+  };
   onClose: () => void;
 }) {
   const repository = board.repository;
@@ -231,6 +241,7 @@ export function Dock({
       issueUrl={issueUrl(repository, card)}
       title={card.title}
       status={<Status tone={STATUS_TONE[status]}>{STATUS_LABELS[status]}</Status>}
+      menu={<CardMenu card={card} {...menu} />}
       onClose={onClose}
     >
       <p className="m-0 -mt-2 px-4 pb-6 text-sm text-secondary">
@@ -279,12 +290,13 @@ export function Dock({
               "No run has started"
             )}
           </Row>
-          <Row label="Waiting">{waitingLine(wait, card.refusals)}</Row>
+          {card.held && <Row label="Blocked">{heldLine(card.held)}</Row>}
+          <Row label="Why it waits">{waitingLine(wait, card.refusals)}</Row>
           {card.change && (
             <Row label="Checks">{CHECKS[card.change.checks] ?? card.change.checks}</Row>
           )}
           {card.blocked_by.length > 0 && (
-            <Row label="Blocked by">{card.blocked_by.map((n) => `#${n}`).join(", ")}</Row>
+            <Row label="Waiting on">{card.blocked_by.map((n) => `#${n}`).join(", ")}</Row>
           )}
           <Row label="Cost">
             <span className="tabular-nums">{tokens(card.tokens)}</span>

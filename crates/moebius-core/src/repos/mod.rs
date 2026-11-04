@@ -405,6 +405,49 @@ impl Repos {
         git(clone, &["worktree", "prune"]).map(drop)
     }
 
+    /// Removes what a deleted card left in the clone: its worktrees that are still there, and its `moebius/` branches,
+    /// which are `branches` and the trial branches of the card. A worktree or branch that is gone already is no
+    /// failure.
+    pub fn remove_card_work(
+        &self,
+        clone: &Path,
+        card: i64,
+        worktrees: &[PathBuf],
+        branches: &std::collections::BTreeSet<String>,
+    ) -> Result<()> {
+        if !clone.is_dir() {
+            return Ok(());
+        }
+        let _held = self.hold_worktrees();
+        for worktree in worktrees {
+            let target = worktree.to_string_lossy().into_owned();
+            // Not a worktree any more, or never made: nothing to take away.
+            let _ = git(clone, &["worktree", "remove", "--force", &target]);
+            if worktree.starts_with(&self.worktrees) && worktree.exists() {
+                std::fs::remove_dir_all(worktree)?;
+            }
+        }
+        git(clone, &["worktree", "prune"])?;
+        let trial_end = format!("-card-{card}");
+        let listed = git(
+            clone,
+            &[
+                "for-each-ref",
+                "--format=%(refname:short)",
+                "refs/heads/moebius/",
+            ],
+        )?;
+        for branch in listed.lines().map(str::trim).filter(|b| !b.is_empty()) {
+            let trial = branch
+                .strip_prefix("moebius/trial-")
+                .is_some_and(|rest| rest.ends_with(&trial_end));
+            if trial || branches.contains(branch) {
+                git(clone, &["branch", "-D", "--quiet", branch])?;
+            }
+        }
+        Ok(())
+    }
+
     /// Points `branch` at `rev`, creating it if need be.
     pub fn point_branch(&self, clone: &Path, branch: &str, rev: &str) -> Result<()> {
         git(clone, &["branch", "--force", branch, rev]).map(drop)

@@ -97,6 +97,21 @@ pub enum StartError {
     /// The run could not be recorded.
     #[error("{0}")]
     Store(String),
+    /// The card was held (blocked) or deleted while the run was being started; nothing was started.
+    #[error("the card is held")]
+    Held,
+}
+
+/// Whether `card` may still get a run: false once it is held, or gone. The card is read again, since the one a script
+/// or a starting run holds is as it was when the board's tick began. Every starter asks this right before it starts a
+/// run, and the harness again once the run is recorded, so a hold that comes in between is seen by either that or the
+/// block, which looks for runs after it holds.
+pub fn may_start(app: &App, card: &Card) -> Result<(), StartError> {
+    match app.card(card.id) {
+        Ok(now) if now.held.is_none() => Ok(()),
+        Ok(_) | Err(crate::app::AppError::NotFound(_)) => Err(StartError::Held),
+        Err(e) => Err(StartError::Store(e.to_string())),
+    }
 }
 
 /// What the board engine needs of a harness: runs of cards. The real ones drive a harness (Pi-Bolt, Claude Code);

@@ -9,7 +9,7 @@ use serde_json::json;
 
 use super::{App, AppError, PERSON, Result};
 use crate::blobs::redact;
-use crate::board::{Runs, Tui};
+use crate::board::{CardRuns, Runs, Tui};
 use crate::decide::Actor;
 use crate::harness::terminal::{MAX_PER_RUN, SERVER, Slot, repository_key, tui_key};
 use crate::store::Run;
@@ -39,7 +39,13 @@ impl App {
 
     /// A person stops a running run. It ends as `stopped` once its agent has settled, and its card then waits in the
     /// inbox as stuck.
-    pub fn stop_run(&self, by: &Actor, runs: &dyn Runs, run_id: i64, reason: &str) -> Result<Run> {
+    pub fn stop_run(
+        &self,
+        by: &Actor,
+        runs: &dyn CardRuns,
+        run_id: i64,
+        reason: &str,
+    ) -> Result<Run> {
         let run = self.run(run_id)?;
         if !runs.stop(run_id) {
             if self.is_waking(run_id) {
