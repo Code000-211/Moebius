@@ -115,5 +115,5 @@ starts with a doc comment saying what it is for and how it fits in.
 
 ## Commits
 
-One commit per issue, imperative subject, a body that says what and why, then `Closes #<n>` and the session's
-attribution trailers. Never put a model name in a commit, code or comment.
+One commit per issue, imperative subject, a body that says what and why, then `Closes #<n>`. Never put a model name
+in a commit, code or comment.
