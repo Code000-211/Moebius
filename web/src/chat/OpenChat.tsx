@@ -316,7 +316,9 @@ export function OpenChat({
   // Marks the chat read once an answer is held, not at every streamed piece of it.
   // biome-ignore lint/correctness/useExhaustiveDependencies: it runs when the answer, the marker or the events move
   useEffect(() => {
-    const seq = seqToMark(chat, thread.lastSeq);
+    // What this page marked counts as seen, even when a read of the list from before the mark says otherwise.
+    const held = chat && { ...chat, seen: Math.max(chat.seen, marked.current) };
+    const seq = seqToMark(held, thread.lastSeq);
     if (seq === null || seq <= marked.current) return;
     marked.current = seq;
     queryClient.setQueryData<Chat[]>(keys.chats, (held) =>

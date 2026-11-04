@@ -93,8 +93,11 @@ export function FloatingChat() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: it runs when the answer, the marker or the events move
   useEffect(() => {
     if (!shown || chatId === null) return;
-    const seq = seqToMark(chat, thread.lastSeq);
-    if (seq === null || (marked.current.id === chatId && seq <= marked.current.seq)) return;
+    // What the sheet marked counts as seen, even when a read of the list from before the mark says otherwise.
+    const before = marked.current.id === chatId ? marked.current.seq : 0;
+    const held = chat && { ...chat, seen: Math.max(chat.seen, before) };
+    const seq = seqToMark(held, thread.lastSeq);
+    if (seq === null || seq <= before) return;
     marked.current = { id: chatId, seq };
     queryClient.setQueryData<Chat[]>(keys.chats, (held) =>
       held?.map((each) =>
