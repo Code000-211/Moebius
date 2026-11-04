@@ -121,8 +121,8 @@ fn request(runner: Option<&str>) -> LaunchRequest {
             ("PROVIDER_KEY".to_string(), "secret".to_string()),
         ]),
         dir: "/data/worktrees/run-7".into(),
-        read_only: vec!["/data/runs/7/agent".into()],
-        read_write: vec!["/data/worktrees/run-7".into()],
+        read_only: vec!["/data/runs/7/bridge.ts".into()],
+        read_write: vec!["/data/worktrees/run-7".into(), "/data/runs/7/agent".into()],
         urls: Urls {
             router: "http://127.0.0.1:7172".into(),
             gateway: "http://127.0.0.1:7172/mcp".into(),

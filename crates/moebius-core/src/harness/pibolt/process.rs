@@ -321,15 +321,21 @@ impl PiBolt {
         command: &mut Command,
     ) -> Result<Option<(UrlsInside, Arc<Launched>)>, String> {
         let remote = run.remote.as_ref().map(|remote| remote.runner());
-        let mut read_only = vec![
-            place.agent_dir.to_path_buf(),
-            place.lens.to_path_buf(),
-            place.bridge.to_path_buf(),
-        ];
+        let mut read_only = vec![place.lens.to_path_buf(), place.bridge.to_path_buf()];
         read_only.extend(spot.agent.extensions.iter().cloned());
         read_only.extend(spot.agent.skills.iter().cloned());
-        let mut read_write = vec![place.worktree.to_path_buf(), place.sessions.to_path_buf()];
+        // Pi keeps its credential store in its agent directory, where it writes `auth.json` and a lock beside it, so
+        // that directory is one it writes and not one it only reads.
+        let mut read_write = vec![
+            place.worktree.to_path_buf(),
+            place.agent_dir.to_path_buf(),
+            place.sessions.to_path_buf(),
+        ];
         if remote.is_none() {
+            // A launcher grants the paths it is told, and one that does not exist yet cannot be granted: Pi makes its
+            // own sessions directory only when nothing wraps it, so it is made here for both cases.
+            std::fs::create_dir_all(place.sessions)
+                .map_err(|e| format!("cannot make the sessions directory of the run: {e}"))?;
             // Pi's temporary files go to a directory of the run, which only it can write, not to the shared one.
             let tmp = spot.run_dir.join("tmp");
             std::fs::create_dir_all(&tmp)

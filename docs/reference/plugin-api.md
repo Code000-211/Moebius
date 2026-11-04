@@ -221,8 +221,8 @@ a chat's Pi is started again). The parameters are a `LaunchRequest`:
 | `args` | array of strings | Its arguments. |
 | `env` | map of string to string | Its complete environment, the run token (`MOEBIUS_RUN_TOKEN`) included: not the server's, but the few variables every program needs and those Moebius sets. With a launcher, `TMPDIR`, `TEMP` and `TMP` name a directory of the run (`<data_dir>/runs/<id>/tmp`) instead of the shared one. |
 | `dir` | string | The working directory: the run's worktree, or an empty directory for a chat without a repository. |
-| `read_only` | array of strings | Paths the process needs to read: its agent directory (`models.json`, `mcp.json`), the lens and bridge extensions, and the agent's own extensions and skills. They may be files or directories. |
-| `read_write` | array of strings | Paths it needs to read and write: the worktree, its sessions directory, and the run's temporary directory. |
+| `read_only` | array of strings | Paths the process needs to read: the lens and bridge extensions, and the agent's own extensions and skills. They may be files or directories. |
+| `read_write` | array of strings | Paths it needs to read and write: the worktree, its agent directory (which holds the credential store of its harness), its sessions directory, and the run's temporary directory. |
 | `urls` | object | `router`, `gateway` and `check`: the addresses the process must reach as the server reaches them, such as `http://127.0.0.1:7172`, `http://127.0.0.1:7172/mcp` and `http://127.0.0.1:7172` (the tool-call check the bridge asks, `MOEBIUS_CHECK_URL`). |
 | `clone` | string or `null` | The clone of the repository the worktree belongs to, whose git directory the worktree's git uses; `null` without a repository. |
 | `runner` | string or `null` | The name of the `[[runners]]` machine when the run goes there over SSH, else `null`. |
@@ -314,7 +314,7 @@ A launcher in its own process is a `[[plugins]]` entry with `launches = true`, s
 
 ```json
 < {"type":"manifest","manifest":{"name":"box-run","version":"0.1.0","kinds":["launcher"]}}
-> {"type":"call","id":1,"call":{"kind":"launcher","method":"launch","params":{"run":{"id":7,"purpose":"code","agent":"Coder","chat":false,"card":3},"program":"pi-bolt","args":["--mode","rpc"],"env":{"PATH":"/usr/bin"},"dir":"/data/worktrees/run-7","read_only":["/data/runs/7/agent"],"read_write":["/data/worktrees/run-7"],"urls":{"router":"http://127.0.0.1:7172","gateway":"http://127.0.0.1:7172/mcp","check":"http://127.0.0.1:7172"},"clone":"/data/repos/demo","runner":null}}}
+> {"type":"call","id":1,"call":{"kind":"launcher","method":"launch","params":{"run":{"id":7,"purpose":"code","agent":"Coder","chat":false,"card":3},"program":"pi-bolt","args":["--mode","rpc"],"env":{"PATH":"/usr/bin"},"dir":"/data/worktrees/run-7","read_only":["/data/runs/7/bridge.ts"],"read_write":["/data/worktrees/run-7","/data/runs/7/agent","/data/runs/7/sessions"],"urls":{"router":"http://127.0.0.1:7172","gateway":"http://127.0.0.1:7172/mcp","check":"http://127.0.0.1:7172"},"clone":"/data/repos/demo","runner":null}}}
 < {"type":"reply","id":1,"result":{"answer":"unchanged"}}
 > {"type":"call","id":2,"call":{"kind":"launcher","method":"leftovers","params":{"running":[]}}}
 < {"type":"reply","id":2,"result":{"cleanup":[],"remove":["/tmp/run-3.profile"]}}

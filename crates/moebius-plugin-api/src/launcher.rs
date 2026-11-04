@@ -59,9 +59,10 @@ pub struct LaunchRequest {
     pub env: BTreeMap<String, String>,
     /// The working directory: the run's worktree.
     pub dir: String,
-    /// Paths the process needs to read: its agent directory and extensions.
+    /// Paths the process needs to read: the lens and the bridge, and the agent's own extensions and skills.
     pub read_only: Vec<String>,
-    /// Paths the process needs to read and write: the worktree and the run's temporary directory.
+    /// Paths the process needs to read and write: the worktree, its agent directory, its sessions directory and the
+    /// run's temporary directory.
     pub read_write: Vec<String>,
     pub urls: Urls,
     /// The clone of the repository that the worktree belongs to, whose git directory the worktree's git uses; none
@@ -253,8 +254,8 @@ mod tests {
             args: vec!["--mode".into(), "rpc".into()],
             env: BTreeMap::from([("PATH".to_string(), "/bin".to_string())]),
             dir: "/work".into(),
-            read_only: vec!["/agent".into()],
-            read_write: vec!["/work".into()],
+            read_only: vec![],
+            read_write: vec!["/work".into(), "/agent".into()],
             urls: Urls {
                 router: "http://127.0.0.1:1".into(),
                 gateway: "http://127.0.0.1:1/mcp".into(),
