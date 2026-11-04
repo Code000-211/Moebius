@@ -148,6 +148,11 @@ interface ThreadViewProps {
   olderError?: string | null;
   /** Reads the messages above the oldest turn drawn. */
   loadOlder?: () => void;
+  /**
+   * Offered on the turn that went wrong: what to press to have it answered again. Only the last turn gets it — the
+   * chat has one end, and an older failure was answered past.
+   */
+  retryAction?: ReactNode;
 }
 
 export function ThreadView({
@@ -164,6 +169,7 @@ export function ThreadView({
   olderLoading = false,
   olderError = null,
   loadOlder,
+  retryAction,
 }: ThreadViewProps) {
   // An answer arrives piece by piece, and the person may be typing while it does: the words shown trail the events by
   // a render rather than cutting the keystroke off, and a long conversation groups once per batch instead of per piece.
@@ -186,6 +192,7 @@ export function ThreadView({
   const repins = useRef(0);
 
   const first = turns[0]?.from ?? null;
+  const lastKey = turns[turns.length - 1]?.key ?? null;
 
   const toggle = useCallback((key: string) => {
     // What is opened is read where it is, so the list lets go of its end rather than scrolling the new text away.
@@ -316,7 +323,13 @@ export function ThreadView({
       style={{ height: "100%" }}
       itemContent={(_, turn) => (
         <div className={compact ? "pb-3" : "pb-6"}>
-          <Turn turn={turn} unfolded={unfolded} onToggle={toggle} compact={compact} />
+          <Turn
+            turn={turn}
+            unfolded={unfolded}
+            onToggle={toggle}
+            compact={compact}
+            retry={turn.key === lastKey ? retryAction : undefined}
+          />
         </div>
       )}
     />

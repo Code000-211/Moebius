@@ -346,8 +346,10 @@ export function createFakeChat(
           case "/messages": {
             said.push({ chat: id, body });
             const message = typeof body.message === "string" ? body.message : "";
-            if (message.trim() === "") return reply(response, 422, "the message is blank");
-            if (chat.status === "stopped") {
+            const gone = chat.status === "stopped" || chat.status === "failed";
+            // A chat whose agent went away takes a blank message: it asks for the last thing to be answered again.
+            if (message.trim() === "" && !gone) return reply(response, 422, "the message is blank");
+            if (gone) {
               // A chat whose agent went away is taken up again by the message, on the record it already has.
               chat.status = "running";
               chat.ended_at = null;
@@ -356,7 +358,8 @@ export function createFakeChat(
               return reply(response, 422, "the chat has ended");
             }
             chat.status = "running";
-            fake.emit(id, "said", { message });
+            // Nothing new was asked, so nothing new is stored: the agent answers what the chat already holds.
+            if (message.trim() !== "") fake.emit(id, "said", { message });
             answer(id, message);
             return reply(response, 200, run(chat));
           }
@@ -366,7 +369,7 @@ export function createFakeChat(
             return reply(response, 200, {});
           case "/settings":
             // A chat whose agent went away has no agent to tell, but keeps the choice for the agent made again.
-            if (chat.status !== "waiting" && chat.status !== "stopped")
+            if (chat.status !== "waiting" && chat.status !== "stopped" && chat.status !== "failed")
               return reply(response, 409, "the agent is working");
             if (typeof body.model === "string") chat.model = body.model;
             if (typeof body.thinking === "string") chat.thinking = body.thinking;

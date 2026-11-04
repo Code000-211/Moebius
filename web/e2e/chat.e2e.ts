@@ -478,6 +478,29 @@ describe("what the agent does", () => {
       .getByText("cannot start pi-bolt: not found")
       .waitFor();
   });
+
+  it.skipIf(usesRealServer)("takes a chat that failed up again with the next message", async () => {
+    await open("/chat");
+    const id = fake().seed({
+      title: "Broken",
+      status: "failed",
+      events: [
+        ["said", { message: "Broken" }],
+        ["moebius_error", { message: "the server stopped while the run was going" }],
+      ],
+    });
+    await page.goto(`${server.url}/chat/${id}`);
+    // The banner that says what went wrong offers to go through the last message again, in the same chat.
+    const alert = page.getByRole("alert").filter({ hasText: "The run failed" });
+    const retry = alert.getByRole("button", { name: "Retry" });
+    await retry.waitFor();
+    fake().autoAnswer = false;
+    await retry.click();
+    // Nothing new is asked and nothing new is said: the agent is made again to answer what the chat already holds.
+    expect(fake().said).toEqual([{ chat: id, body: { message: "" } }]);
+    await expect.poll(() => fake().chats.find((chat) => chat.id === id)?.status).toBe("running");
+    expect(await page.getByTestId("person-message").filter({ hasText: "Broken" }).count()).toBe(1);
+  });
 });
 
 describe("copying", () => {

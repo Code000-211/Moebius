@@ -29,7 +29,8 @@ describe("statusTag", () => {
       true,
       false,
     ]);
-    expect([takesMessage("starting"), takesMessage("failed")]).toEqual([true, false]);
+    // A run that failed lost its agent in the middle of a turn, which is the same thing as losing it between two.
+    expect([takesMessage("starting"), takesMessage("failed")]).toEqual([true, true]);
   });
 });
 

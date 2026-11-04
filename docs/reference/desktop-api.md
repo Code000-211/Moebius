@@ -1508,33 +1508,37 @@ A person writes to a chat. The message is stored as a `said` run event (secrets 
 prompt: when the agent is waiting it answers at once; when it is working the message is delivered when it is done with
 the current turn (a follow-up). To change what a working agent is doing, steer it with `POST /v1/runs/{id}/steer`.
 
-A chat that ended because its agent went away (`status` `stopped`) is taken up again by the message, so that a person
-carries on in the chat they are reading rather than starting a new one. A chat is `stopped` when the server stopped its
-agent, when its agent exited, and when a person pressed Stop (`POST /v1/runs/{id}/stop`): a message written to it
-starts an agent again in every case, so Stop does not keep a chat from being written to. The same `Run` is no longer
+A chat that ended because its agent went away is taken up again by the message, so that a person carries on in the chat
+they are reading rather than starting a new one. The agent went away between turns (`status` `stopped`) when the server
+stopped it, when it exited, and when a person pressed Stop (`POST /v1/runs/{id}/stop`); it went away in the middle of a
+turn (`status` `failed`) when the server stopped while it was answering, or when the agent or the model failed. A
+message written to such a chat starts an agent again in every case, so neither Stop nor a failed run keeps a chat from
+being written to. The same `Run` is no longer
 ended (`ended_at` null, `status` `running`), its worktree is made again on the branch it already has (for a chat with
 no repository, its empty directory is simply made again; a directory or registration left over is cleared away), and
 its agent starts on a prompt that holds what was said in the chat before — at most the last 20 000 characters of it —
 and then the message. The agent has a run token of its own; the old one stays withdrawn. Two messages written at once to
-a stopped chat start one agent, not two. Events: the chat publishes `run_started` again, and `run_ended` a second time
+such a chat start one agent, not two. Events: the chat publishes `run_started` again, and `run_ended` a second time
 when the woken agent goes away, for the same run id; a client reads the latest of them as the chat's state. A chat that
-ended any other way (`succeeded`, `failed`) is ended for good and is continued by a new chat (`POST /v1/chats` with
+ended any other way (`succeeded`) is ended for good and is continued by a new chat (`POST /v1/chats` with
 `continues`), as is a grilling, whose issues are already read (`422`). `422` also when the chat cannot start again
-(its branch is gone, or git cannot make its worktree): the chat stays `stopped`, and the error says why; when the branch
+(its branch is gone, or git cannot make its worktree): the chat stays as it ended, and the error says why; when the branch
 is gone the message is not kept, but a message whose agent fails to start after the message was stored stays in the
-chat, so a retry repeats it.
+chat, so a retry repeats it. A blank message to such a chat is the same ask with no new words: its agent starts on what
+the chat already holds and no `said` event is written.
 
-While a stopped chat is being taken up, from the moment it is `running` until its agent is up, the chat answers a
+While such a chat is being taken up, from the moment it is `running` until its agent is up, the chat answers a
 message with `409` (`chat N is starting; try again in a moment`) and records nothing, so the message can be sent again
 a moment later.
 
-Request: `{"message": "...", "context": "..."}`; `message` is required and must not be blank. `context` is optional and
-works as in `POST /v1/chats`: the agent is told it before the message (secrets removed, at most 4 000 characters), and
-the `said` event holds only the message.
+Request: `{"message": "...", "context": "..."}`; `message` is required and must not be blank, except for a chat whose
+agent went away: a blank one to such a chat asks its agent to answer the last thing said again and stores nothing in the
+chat, which is what a Retry asks for. `context` is optional and works as in `POST /v1/chats`: the agent is told it
+before the message (secrets removed, at most 4 000 characters), and the `said` event holds only the message.
 
 Response: the `Run`. Errors: `404` no such run; `422` the run is not a chat, the chat has ended for good, its agent
-cannot start again, it is the Grilling partner (its issues are already read), or the message is blank; `409` the chat
-is in its terminal, or its agent is starting (see above).
+cannot start again, it is the Grilling partner (its issues are already read), or the message is blank when the chat
+could still take one; `409` the chat is in its terminal, or its agent is starting (see above).
 
 The chat is `running` from the request on, before the agent says it has started, until the agent has answered.
 
@@ -1542,8 +1546,8 @@ The chat is `running` from the request on, before the agent says it has started,
 
 Changes the model or the reasoning level a chat runs with, in place of its agent's (see `POST /v1/chats`):
 `{"model": "...", "thinking": "..."}`, each optional and kept as it was when not given. The agent answers the next
-message with them. The chat must be `waiting`, between turns, or `stopped`, its agent gone: while its agent works the
-answer is `409`, and a chat that ended any other way is ended for good.
+message with them. The chat must be `waiting`, between turns, or ended with its agent gone (`stopped` or `failed`): while its agent works
+the answer is `409`, and a chat that ended any other way is ended for good.
 
 The change is stored as a `settings_changed` run event holding what the chat now runs with, `{"model", "protocol",
 "thinking"}` (each null while the agent's is used; `protocol` is `openai` or `anthropic`, chosen as in
@@ -1556,12 +1560,12 @@ The change is stored as a `settings_changed` run event holding what the chat now
   on the same session and the new `--model` and `--thinking`; the chat stays `waiting` and keeps its conversation.
 - A chat whose Pi was ended after waiting long, or whose terminal is open, has no Pi to tell: its Pi is started with
   the new settings when the next message comes or the terminal closes.
-- A chat whose agent went away (`stopped`) has none to tell either: the agent its next message makes (see
+- A chat whose agent went away (`stopped` or `failed`) has none to tell either: the agent its next message makes (see
   `POST /v1/chats/{id}/messages`) starts with the new settings, so a person leaves a chat on a better model as they
   leave it.
 
 Response: the `Run`. Errors: `404` no such run; `409` the chat's agent is working; `422` the run is not a chat, the chat
-ended for good (`succeeded` or `failed`), `model` is blank or `thinking` is not one of `off`, `minimal`, `low`,
+ended for good (`succeeded`), `model` is blank or `thinking` is not one of `off`, `minimal`, `low`,
 `medium`, `high`, `xhigh` and `max`.
 
 ### `POST /v1/chats/{id}/offer`
