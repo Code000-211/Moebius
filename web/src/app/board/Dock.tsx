@@ -221,6 +221,8 @@ export function Dock({
   // its own.
   const now = useNow();
   const wait = board.waiting[String(card.id)];
+  // The worktree of the run the card names, whose runs are read for the list below anyway.
+  const worktree = (runs.data ?? []).find((run) => run.id === card.run?.id)?.worktree ?? null;
 
   return (
     <KanbanIssuePanel
@@ -246,7 +248,7 @@ export function Dock({
           waiting behind the runs that made it. */}
       {card.change && (
         <KanbanIssueSection title="Changes">
-          <ChangesCard of={{ change: card.change.id }} />
+          <ChangesCard of={{ change: card.change.id }} worktree={worktree} />
         </KanbanIssueSection>
       )}
 

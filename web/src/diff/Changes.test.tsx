@@ -17,12 +17,12 @@ const { ChangesCard } = await import("./Changes");
 
 afterEach(cleanup);
 
-function show() {
+function show(worktree?: string) {
   render(
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      <ChangesCard of={{ change: 3 }} />
+      <ChangesCard of={{ change: 3 }} worktree={worktree} />
     </QueryClientProvider>,
   );
 }
@@ -40,5 +40,11 @@ describe("the changes of a card", () => {
     api.diff = "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1,1 +1,1 @@\n-a\n+b\n";
     show();
     expect(await screen.findByTestId("diff-card")).toBeTruthy();
+  });
+
+  it("names the worktree the change was made in", async () => {
+    api.diff = "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1,1 +1,1 @@\n-a\n+b\n";
+    show("/srv/wt/moebius/run-28");
+    expect(await screen.findByText("run-28")).toBeTruthy();
   });
 });
