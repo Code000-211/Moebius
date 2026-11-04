@@ -548,7 +548,8 @@ describe("blocking, unblocking and deleting a card", () => {
     await pickOption(page, filters.getByLabel("Status"), "Blocked");
     await page.waitForURL("**status=held");
     await card(3).waitFor();
-    expect(await page.getByTestId(/^card-/).count()).toBe(1);
+    // The address changes before the board is drawn again with the filter.
+    await expect.poll(() => page.getByTestId(/^card-/).count()).toBe(1);
   });
 });
 
