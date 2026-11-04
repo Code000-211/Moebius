@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Board, Card, Change, InboxItem } from "../../api/types/board";
+import type { Run } from "../../api/types/cards";
 import {
   agentsOf,
   boardColumns,
@@ -7,6 +8,7 @@ import {
   cardDetail,
   cardStatus,
   changeOf,
+  changeWorktree,
   DONE_SHOWN,
   describeHistory,
   dropRule,
@@ -346,5 +348,63 @@ describe("the words and links of a card", () => {
     );
     expect(d("inbox_added", { item: 1, kind: "stuck", title: "Stuck" })).toBe("Asked you: Stuck");
     expect(d("something_new", {})).toBe("something new");
+  });
+});
+
+describe("the worktree a card's change was made in", () => {
+  function run(id: number, purpose: string, status: Run["status"], worktree: string | null): Run {
+    return {
+      id,
+      card_id: 1,
+      agent: "coder",
+      harness: "pi-bolt",
+      purpose,
+      status,
+      worktree,
+      started_at: 0,
+      ended_at: null,
+      summary: null,
+      repository_id: 1,
+      harness_repository: false,
+      origin: "card",
+      runner: null,
+      title: null,
+    };
+  }
+
+  it("is the code run's, not a later review run's", () => {
+    const runs = [run(1, "code", "waiting", "/wt/code"), run(2, "review", "running", "/wt/review")];
+    expect(changeWorktree(card(1), runs)).toBe("/wt/code");
+  });
+
+  it("is the picked attempt's", () => {
+    const attempts = [
+      {
+        run: 3,
+        model: null,
+        status: "waiting",
+        result: "failed",
+        output: "",
+        picked: false,
+        reason: null,
+      },
+      {
+        run: 4,
+        model: null,
+        status: "waiting",
+        result: "passed",
+        output: "",
+        picked: true,
+        reason: null,
+      },
+    ] as Card["attempts"];
+    const runs = [run(3, "code", "waiting", "/wt/a"), run(4, "code", "waiting", "/wt/b")];
+    expect(changeWorktree(card(1, { attempts }), runs)).toBe("/wt/b");
+  });
+
+  it("is none without a worktree or once the run is over", () => {
+    expect(changeWorktree(card(1), [run(1, "code", "running", null)])).toBeNull();
+    expect(changeWorktree(card(1), [run(1, "code", "succeeded", "/wt/gone")])).toBeNull();
+    expect(changeWorktree(card(1), [])).toBeNull();
   });
 });

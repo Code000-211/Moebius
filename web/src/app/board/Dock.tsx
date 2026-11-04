@@ -30,6 +30,7 @@ import type { Decision } from "./decisions";
 import {
   type CardStatus,
   cardStatus,
+  changeWorktree,
   describeHistory,
   issueUrl,
   STATUS_LABELS,
@@ -221,8 +222,8 @@ export function Dock({
   // its own.
   const now = useNow();
   const wait = board.waiting[String(card.id)];
-  // The worktree of the run the card names, whose runs are read for the list below anyway.
-  const worktree = (runs.data ?? []).find((run) => run.id === card.run?.id)?.worktree ?? null;
+  // The worktree of the run that made the change, from the runs read for the list below anyway.
+  const worktree = changeWorktree(card, runs.data ?? []);
 
   return (
     <KanbanIssuePanel

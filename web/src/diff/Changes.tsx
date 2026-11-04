@@ -12,6 +12,7 @@ import { keys } from "../api/keys";
 import { Button } from "../ui/components/Button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/components/Dialog";
 import { fileName, plural } from "../ui/lib/format";
+import { FadedLine } from "../ui/page/FadedLine";
 import { Notice } from "../ui/page/Notice";
 import { SkeletonLines } from "../ui/page/Skeleton";
 import { Delta } from "./Delta";
@@ -132,14 +133,18 @@ export function ChangesCard({
         onClick={() => setOpen(true)}
         className="flex min-h-10 w-full items-center gap-3 rounded-control bg-sunken px-3 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
       >
-        <span className="min-w-0 flex-1 text-sm text-secondary tabular-nums">
+        <span
+          className={`text-sm text-secondary tabular-nums ${worktree ? "shrink-0" : "min-w-0 flex-1"}`}
+        >
           {`${plural(headline.files, "file", "files")} · `}
           <Delta additions={headline.additions} deletions={headline.deletions} />
         </span>
         {worktree && (
-          <span className="min-w-0 truncate text-sm text-secondary" title={worktree}>
-            {fileName(worktree)}
-          </span>
+          <FadedLine
+            text={fileName(worktree)}
+            title={worktree}
+            className="flex-1 text-sm text-secondary"
+          />
         )}
         <ArrowsOutIcon className="size-4 shrink-0 text-secondary" aria-hidden="true" />
       </button>

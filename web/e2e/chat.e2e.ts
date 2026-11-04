@@ -497,9 +497,11 @@ describe("what the agent does", () => {
     fake().autoAnswer = false;
     await retry.click();
     // Nothing new is asked and nothing new is said: the agent is made again to answer what the chat already holds.
-    expect(fake().said).toEqual([{ chat: id, body: { message: "" } }]);
+    await expect.poll(() => fake().said).toEqual([{ chat: id, body: { message: "" } }]);
     await expect.poll(() => fake().chats.find((chat) => chat.id === id)?.status).toBe("running");
-    expect(await page.getByTestId("person-message").filter({ hasText: "Broken" }).count()).toBe(1);
+    await expect
+      .poll(() => page.getByTestId("person-message").filter({ hasText: "Broken" }).count())
+      .toBe(1);
   });
 });
 

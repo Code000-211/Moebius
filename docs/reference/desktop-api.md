@@ -1511,7 +1511,7 @@ the current turn (a follow-up). To change what a working agent is doing, steer i
 A chat that ended because its agent went away is taken up again by the message, so that a person carries on in the chat
 they are reading rather than starting a new one. The agent went away between turns (`status` `stopped`) when the server
 stopped it, when it exited, and when a person pressed Stop (`POST /v1/runs/{id}/stop`); it went away in the middle of a
-turn (`status` `failed`) when the server stopped while it was answering, or when the agent or the model failed. A
+turn (`status` `failed`) when the agent's process failed, or the server stopped while it was answering. A
 message written to such a chat starts an agent again in every case, so neither Stop nor a failed run keeps a chat from
 being written to. The same `Run` is no longer
 ended (`ended_at` null, `status` `running`), its worktree is made again on the branch it already has (for a chat with
@@ -1525,20 +1525,24 @@ ended any other way (`succeeded`) is ended for good and is continued by a new ch
 (its branch is gone, or git cannot make its worktree): the chat stays as it ended, and the error says why; when the branch
 is gone the message is not kept, but a message whose agent fails to start after the message was stored stays in the
 chat, so a retry repeats it. A blank message to such a chat is the same ask with no new words: its agent starts on what
-the chat already holds and no `said` event is written.
+the chat already holds and no `said` event is written. It is told what was said in the chat and the final answers, and
+that work it had begun and not committed may be lost, because a failed turn commits nothing and its worktree is removed:
+it checks the state of the branch before going on. A chat with nothing said in it has nothing to answer again, and a blank
+message to it is refused (`422`). A failure that is permanent (a launcher refusing to start the agent, a missing model)
+fails again on each Retry, and adds a `moebius_error` event each time.
 
 While such a chat is being taken up, from the moment it is `running` until its agent is up, the chat answers a
 message with `409` (`chat N is starting; try again in a moment`) and records nothing, so the message can be sent again
 a moment later.
 
-Request: `{"message": "...", "context": "..."}`; `message` is required and must not be blank, except for a chat whose
-agent went away: a blank one to such a chat asks its agent to answer the last thing said again and stores nothing in the
+Request: `{"message": "...", "context": "..."}`; `message` is required. A blank message is refused unless the chat's
+agent went away (`stopped` or `failed`); a blank one to such a chat asks its agent to answer the last thing said again and stores nothing in the
 chat, which is what a Retry asks for. `context` is optional and works as in `POST /v1/chats`: the agent is told it
 before the message (secrets removed, at most 4 000 characters), and the `said` event holds only the message.
 
 Response: the `Run`. Errors: `404` no such run; `422` the run is not a chat, the chat has ended for good, its agent
-cannot start again, it is the Grilling partner (its issues are already read), or the message is blank when the chat
-could still take one; `409` the chat is in its terminal, or its agent is starting (see above).
+cannot start again, it is the Grilling partner (its issues are already read), the message is blank and the chat
+is not one whose agent went away, or it is blank and nothing was said in the chat; `409` the chat is in its terminal, or its agent is starting (see above).
 
 The chat is `running` from the request on, before the agent says it has started, until the agent has answered.
 

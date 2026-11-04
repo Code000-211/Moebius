@@ -202,7 +202,7 @@ function BlockView({
   block: Block;
   isOpen: (key: string) => boolean;
   onToggle: (key: string) => void;
-  /** What to press to have the failed turn answered again; only the turn that ended the chat has one. */
+  /** What to press to have the failed turn answered again; only the last error of the turn has one. */
   retry?: ReactNode;
 }) {
   switch (block.kind) {
@@ -225,9 +225,17 @@ function BlockView({
         <ChatErrorMessage
           title={block.source === "model" ? "The model returned an error" : "The run failed"}
           content={block.message}
-          // Where the block offers the way back, that is the one thing to press there; taking its words away is
-          // beside the point, and Copy has nowhere else the person looks for it.
-          actions={retry ?? <CopyButton text={block.message} label="Copy error" />}
+          // The way back sits beside Copy: taking the words away is still worth doing when going again.
+          actions={
+            retry ? (
+              <div className="flex items-center gap-2">
+                {retry}
+                <CopyButton text={block.message} label="Copy error" />
+              </div>
+            ) : (
+              <CopyButton text={block.message} label="Copy error" />
+            )
+          }
         />
       );
     case "mcpError":
@@ -269,7 +277,7 @@ interface TurnProps {
   onToggle: (key: string) => void;
   /** A tighter rhythm between the blocks and the rows, for the floating chat's dock. */
   compact?: boolean;
-  /** Offered on the block that went wrong: what to press to have it answered again. */
+  /** Offered on the last block of the turn that went wrong: what to press to have it answered again. */
   retry?: ReactNode;
 }
 
@@ -279,8 +287,16 @@ export function Turn({ turn, unfolded, onToggle, compact = false, retry }: TurnP
   // A turn is written on the canvas rather than stacked in boxes: the person's message is a band of the sunken
   // colour, and what the agent did, answered and got wrong is the text and the rows under it, in the order it came. A
   // card of its own would put a second shadow inside the chat, which is itself a card on the page or a sheet over it.
+  // Going again answers the whole turn once, so only its last error offers it.
+  const lastError = turn.blocks.findLast((block) => block.kind === "error")?.key;
   const view = (block: Block) => (
-    <BlockView key={block.key} block={block} isOpen={isOpen} onToggle={onToggle} retry={retry} />
+    <BlockView
+      key={block.key}
+      block={block}
+      isOpen={isOpen}
+      onToggle={onToggle}
+      retry={block.key === lastError ? retry : undefined}
+    />
   );
   return (
     <div data-testid="turn" className={cn("flex min-w-0 flex-col", compact ? "gap-3" : "gap-4")}>

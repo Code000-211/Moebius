@@ -455,7 +455,6 @@ export function OpenChat({
                   className="ring-1 ring-error-border ring-inset"
                   onClick={() => void send("")}
                   disabled={sending}
-                  title="Starts the agent again in this chat, to answer what it was answering"
                 >
                   <ArrowClockwiseIcon aria-hidden="true" className="size-4" />
                   Retry

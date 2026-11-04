@@ -5,7 +5,7 @@
  * of Done and the card the dock shows without a choice are the same.
  */
 import type { Board, Card, Change, InboxItem, Repository } from "../../api/types/board";
-import type { HistoryEntry } from "../../api/types/cards";
+import type { HistoryEntry, Run } from "../../api/types/cards";
 import { plural } from "../../ui/lib/format";
 import type { Tone } from "../../ui/page/Status";
 
@@ -375,4 +375,23 @@ export function cardBadges(card: Card, status: CardStatus, next: boolean): CardB
 /** The card the board starts next: the first in Not started that nothing blocks. */
 export function nextCard(cards: readonly Card[]): number | undefined {
   return cards.find((card) => card.blocked_by.length === 0)?.id;
+}
+
+/**
+ * The worktree the card's change was made in, or null. It is the worktree of the run that made the change: the picked
+ * attempt when the card was tried several times at once, else the latest `code` run that is not an attempt. A later
+ * review run is not it. A worktree exists only while its run is starting, running or waiting, so a finished run names
+ * none, because its directory is gone.
+ */
+export function changeWorktree(card: Card, runs: Run[]): string | null {
+  const attempts = card.attempts ?? [];
+  const picked = attempts.find((attempt) => attempt.picked)?.run;
+  const isAttempt = new Set(attempts.map((attempt) => attempt.run));
+  const made =
+    picked !== undefined
+      ? runs.find((run) => run.id === picked)
+      : runs.findLast((run) => run.purpose === "code" && !isAttempt.has(run.id));
+  const live =
+    made?.status === "starting" || made?.status === "running" || made?.status === "waiting";
+  return live ? (made?.worktree ?? null) : null;
 }

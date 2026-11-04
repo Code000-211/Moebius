@@ -47,4 +47,11 @@ describe("the changes of a card", () => {
     show("/srv/wt/moebius/run-28");
     expect(await screen.findByText("run-28")).toBeTruthy();
   });
+
+  it("names no worktree when none is given", async () => {
+    api.diff = "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1,1 +1,1 @@\n-a\n+b\n";
+    show();
+    await screen.findByTestId("diff-card");
+    expect(screen.queryByText("run-28")).toBeNull();
+  });
 });

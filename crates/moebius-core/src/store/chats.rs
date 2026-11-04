@@ -93,6 +93,32 @@ mod tests {
     use crate::store::{MIGRATIONS, Store};
 
     #[test]
+    fn only_a_chat_that_is_stopped_or_failed_is_reopened() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = Store::in_memory(&dir.path().join("blobs")).unwrap();
+        for (status, reopened) in [
+            ("stopped", true),
+            ("failed", true),
+            ("succeeded", false),
+            ("running", false),
+            ("waiting", false),
+        ] {
+            let run = s.add_run(None, "Coder", "fake", "chat").unwrap();
+            s.set_run_status(run.id, status).unwrap();
+            assert_eq!(s.reopen_chat(run.id).unwrap(), reopened, "{status}");
+            let after = s.run(run.id).unwrap().unwrap();
+            if reopened {
+                assert_eq!(after.status, "running");
+                assert!(after.ended_at.is_none());
+            } else {
+                assert_eq!(after.status, status, "left as it was");
+            }
+            // Reopened once: a second message finds it taken.
+            assert!(!s.reopen_chat(run.id).unwrap() || !reopened);
+        }
+    }
+
+    #[test]
     fn a_chat_keeps_where_it_was_started_and_one_from_before_was_started_on_the_chat_page() {
         let dir = tempfile::tempdir().unwrap();
         let before = MIGRATIONS.len() - 1;

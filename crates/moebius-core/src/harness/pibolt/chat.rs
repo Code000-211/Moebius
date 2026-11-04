@@ -741,6 +741,36 @@ mod tests {
     }
 
     #[test]
+    fn two_blank_messages_at_once_to_a_failed_chat_start_one_agent() {
+        let (_dir, app, pi, repo) = setup();
+        let ended = stopped_repo_chat(&app, &pi, repo);
+        // The run failed in the middle of a turn, with the words it was answering in the chat.
+        app.store.set_run_status(ended.id, "failed").unwrap();
+        let together = std::sync::Barrier::new(2);
+        let results: Vec<_> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..2)
+                .map(|_| {
+                    let (app, pi, together) = (&app, &pi, &together);
+                    scope.spawn(move || {
+                        together.wait();
+                        app.say_in_chat(pi, ended.id, "", None)
+                    })
+                })
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+        assert!(results.iter().any(|result| result.is_ok()), "{results:?}");
+        wait_for_run(&app, ended.id, "the agent answers", |run| {
+            run.status == "waiting"
+        });
+        assert_eq!(lock(&pi.live).len(), 1, "one agent for the chat");
+        assert_eq!(pi.router.token_count(), 1, "one token for one agent");
+        assert_eq!(said_count(&app, ended.id), 1, "nothing new was said");
+        assert!(pi.stop(ended.id));
+        wait_until_ended(&app, ended.id);
+    }
+
+    #[test]
     fn a_chat_taken_up_again_has_a_token_of_its_own() {
         let (_dir, app, pi, repo) = setup();
         let ended = stopped_repo_chat(&app, &pi, repo);

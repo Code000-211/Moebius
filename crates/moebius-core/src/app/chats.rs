@@ -154,11 +154,15 @@ fn continues_prompt(earlier: &str, message: &str) -> String {
 }
 
 /// The prompt for an agent made again to answer what it was already answering, asked nothing new: what its chat
-/// holds, and the ask to finish it.
+/// holds, and the ask to answer it again. The chat holds only what was said and the final answers: work the agent had
+/// begun and not committed is gone with its worktree, so the agent is told to look at the branch before going on.
 fn resumed_prompt(earlier: &str) -> String {
     format!(
-        "This chat went no further because its agent went away while it was going on. What was said and done in it:\n\n\
-         {earlier}\n\nAnswer the last thing the person asked now, taking up where you left off."
+        "This chat went no further because its agent went away while it was going on. What was said in it, and the \
+         final answers given:\n\n{earlier}\n\n\
+         Work you had begun and not committed may be lost, and the record above does not show what you did. Check the \
+         state of the branch (its log, its files and its changes) before going on, then answer the last thing the \
+         person asked."
     )
 }
 
@@ -454,11 +458,16 @@ impl App {
                 "chat {run_id} is a grilling, whose issues are already read: start a new grilling"
             )));
         }
+        let asked = message.trim();
+        let conversation = self.conversation_of(run_id)?;
+        if asked.is_empty() && conversation.trim().is_empty() {
+            return Err(AppError::Invalid(
+                "there is nothing in this chat to answer again".into(),
+            ));
+        }
         // What can be told beforehand is, so that a message that cannot be answered is not kept in the chat.
         self.check_chat_branch(run)
             .map_err(|why| AppError::Invalid(format!("chat {run_id} cannot start again: {why}")))?;
-        let asked = message.trim();
-        let conversation = self.conversation_of(run_id)?;
         let told = if asked.is_empty() {
             resumed_prompt(&conversation)
         } else {
@@ -911,6 +920,74 @@ mod tests {
         waker.join().unwrap().unwrap();
         assert_eq!(app.run(chat.id).unwrap().status, "running");
         assert_eq!(said(&app, chat.id), 2);
+    }
+
+    #[test]
+    fn a_blank_message_is_refused_unless_the_chat_agent_went_away_with_words_in_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(Store::in_memory(&dir.path().join("blobs")).unwrap());
+        let host = Arc::new(Host::new(Duration::from_secs(1)));
+        let app = Arc::new(App::new(store, host, &dir.path().join("data")));
+        let (entered, waiting) = channel();
+        let (release, released) = channel();
+        let runs = Arc::new(SlowWake {
+            entered: Mutex::new(entered),
+            release: Mutex::new(released),
+        });
+        let refused = |app: &Arc<App>, id: i64| {
+            let error = app.say_in_chat(&*runs, id, "  ", None).unwrap_err();
+            assert!(matches!(error, AppError::Invalid(_)), "{error}");
+            format!("{error}")
+        };
+
+        // Running, waiting and ended for good: nothing to answer again, and nothing is stored or reopened.
+        for status in ["running", "waiting", "succeeded"] {
+            let chat = app.store.add_run(None, "Coder", "fake", "chat").unwrap();
+            app.store.set_run_status(chat.id, status).unwrap();
+            refused(&app, chat.id);
+            assert_eq!(app.run(chat.id).unwrap().status, status);
+            assert_eq!(said(&app, chat.id), 0);
+        }
+
+        // A grilling is not taken up again, with words or without.
+        let grilling = app
+            .store
+            .add_run(None, crate::harness::pibolt::GRILLING_AGENT, "fake", "chat")
+            .unwrap();
+        app.store.set_run_status(grilling.id, "failed").unwrap();
+        assert!(refused(&app, grilling.id).contains("grilling"));
+        assert_eq!(app.run(grilling.id).unwrap().status, "failed");
+
+        // A chat whose agent went away before anything was said has nothing to answer again, and stays as it was.
+        let empty = app.store.add_run(None, "Coder", "fake", "chat").unwrap();
+        app.store.set_run_status(empty.id, "failed").unwrap();
+        assert!(refused(&app, empty.id).contains("nothing in this chat to answer again"));
+        assert_eq!(app.run(empty.id).unwrap().status, "failed");
+
+        // With words in it, a failed chat is woken by a blank message, and meanwhile answers one with a conflict.
+        let chat = app.store.add_run(None, "Coder", "fake", "chat").unwrap();
+        app.record_run_event(chat.id, "said", &serde_json::json!({ "message": "Hello" }))
+            .unwrap();
+        app.store.set_run_status(chat.id, "failed").unwrap();
+        let waker = {
+            let (app, runs) = (app.clone(), runs.clone());
+            std::thread::spawn(move || app.say_in_chat(&*runs, chat.id, " ", None))
+        };
+        waiting.recv().unwrap();
+        let error = app.say_in_chat(&*runs, chat.id, " ", None).unwrap_err();
+        assert!(matches!(error, AppError::Conflict(_)), "{error}");
+        release.send(Ok(())).unwrap();
+        waker.join().unwrap().unwrap();
+        assert_eq!(app.run(chat.id).unwrap().status, "running");
+        assert_eq!(said(&app, chat.id), 1);
+    }
+
+    #[test]
+    fn the_prompt_of_an_agent_made_again_warns_that_uncommitted_work_may_be_gone() {
+        let told = super::resumed_prompt("Person: Hello");
+        assert!(told.contains("Person: Hello"));
+        assert!(told.contains("may be lost"), "{told}");
+        assert!(told.contains("Check the state of the branch"), "{told}");
     }
 
     #[test]

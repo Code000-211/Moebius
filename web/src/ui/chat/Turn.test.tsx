@@ -39,8 +39,23 @@ describe("a turn that ended in a failure", () => {
     const alert = screen.getByRole("alert");
     expect(alert.textContent).toContain("the server stopped");
     expect(within(alert).getByRole("button", { name: "Retry" })).toBeTruthy();
-    // The way back is the one thing to press there, so the block carries no Copy of its own.
-    expect(within(alert).queryByRole("button", { name: "Copy error" })).toBeNull();
+    // Copy stays beside the way back.
+    expect(within(alert).getByRole("button", { name: "Copy error" })).toBeTruthy();
+  });
+
+  it("gives the way back to the last error of the turn only", () => {
+    const twice: Entry[] = [
+      ...failedTurn(),
+      { at: 3, seq: 3, kind: "error", source: "model", message: "the model said no" },
+    ];
+    render(<Turn turn={turnOf(twice)} {...folding} retry={<button type="button">Retry</button>} />);
+    const alerts = screen.getAllByRole("alert");
+    expect(alerts).toHaveLength(2);
+    expect(within(alerts[0] as HTMLElement).queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(within(alerts[1] as HTMLElement).getByRole("button", { name: "Retry" })).toBeTruthy();
+    for (const alert of alerts) {
+      expect(within(alert).getByRole("button", { name: "Copy error" })).toBeTruthy();
+    }
   });
 
   it("says only what went wrong where there is nothing to press", () => {
