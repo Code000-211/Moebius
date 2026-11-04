@@ -85,6 +85,18 @@ describe("listChanged", () => {
     expect(listChanged({ kind: "run_event", data: {} })).toBe(false);
   });
 
+  it("is true for an answer held, so a chat started a moment before has its answer in the list", () => {
+    expect(
+      listChanged({ kind: "run_event", data: { run: 7, seq: 4, kind: "agent_settled" } }),
+    ).toBe(true);
+    expect(
+      listChanged({ kind: "run_event", data: { run: 7, seq: 4, kind: "moebius_error" } }),
+    ).toBe(true);
+    expect(
+      listChanged({ kind: "run_event", data: { run: 7, seq: 3, kind: "message_update" } }),
+    ).toBe(false);
+  });
+
   it("is true for a chat renamed, so every client shows the new title", () => {
     expect(listChanged({ kind: "chat_renamed", data: { run: 7, title: "New" } })).toBe(true);
   });

@@ -67,8 +67,15 @@ export function recentChat(chats: Chat[]): Chat | null {
   return newest;
 }
 
-/** Whether an event is one of a chat's runs worth reading the list again for: a chat started, ended, renamed or offered. */
+/**
+ * Whether an event is one of a chat's runs worth reading the list again for: a chat started, ended, renamed or offered,
+ * or an answer held. An answer is put into the list at once (see `applyChatEvent`), but a chat that was just started
+ * may not be in the list yet, or a read from before the answer may still be on its way; read again, the list has it.
+ */
 export function listChanged(event: ServerEvent): boolean {
+  if (event.kind === "run_event") {
+    return event.data.kind === "agent_settled" || event.data.kind === "moebius_error";
+  }
   return (
     event.kind === "run_started" ||
     event.kind === "run_ended" ||
