@@ -33,8 +33,8 @@ export interface AgentSettings {
   /** Left out when it is the defaults. */
   tool_output?: ToolOutput;
   runner?: string;
-  /** Left out when true. */
-  engineering_skills?: boolean;
+  /** Left out when true (the defaults of the agent's name); false is none; a list is exactly those skills. */
+  engineering_skills?: boolean | string[];
 }
 
 export interface BuiltInSkill {

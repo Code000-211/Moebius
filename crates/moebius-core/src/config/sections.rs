@@ -376,15 +376,75 @@ pub struct AgentConfig {
     /// The runner (`[[runners]]`) the agent's runs go to; without one they run on the server.
     #[serde(default)]
     pub runner: Option<String>,
-    /// Whether the agent is given the engineering skills Moebius brings for it, with `moebius-autonomous` (see
-    /// `harness::skill::engineering`). Only the Coder, the Reviewer and the Grilling partner have any.
-    #[serde(default = "default_true")]
-    pub engineering_skills: bool,
+    /// The engineering skills the agent is given (see [`EngineeringSkills`]).
+    #[serde(default)]
+    pub engineering_skills: EngineeringSkills,
 }
 
-/// The default of the keys that are on unless they are turned off.
-pub(crate) fn default_true() -> bool {
-    true
+/// Which of the engineering skills Moebius brings an agent is given: `true` (the default) the ones its name has by
+/// default (see `harness::skill::engineering`), `false` none, or a list of their names, exactly those. Only the names of
+/// the engineering skills and `moebius-autonomous` are accepted; anything else is an error of the agent.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum EngineeringSkills {
+    /// The defaults for the agent's name: the Coder's, the Reviewer's or the Grilling partner's, none for another name.
+    #[default]
+    Default,
+    /// None.
+    Off,
+    /// Exactly these.
+    Only(Vec<String>),
+}
+
+impl EngineeringSkills {
+    /// Whether this is the default, which files leave out.
+    pub fn is_default(&self) -> bool {
+        *self == Self::Default
+    }
+}
+
+impl<'de> Deserialize<'de> for EngineeringSkills {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Written {
+            Flag(bool),
+            Names(Vec<String>),
+        }
+        match Written::deserialize(deserializer).map_err(|_| {
+            serde::de::Error::custom(
+                "engineering_skills must be true, false or a list of skill names",
+            )
+        })? {
+            Written::Flag(true) => Ok(Self::Default),
+            Written::Flag(false) => Ok(Self::Off),
+            Written::Names(names) => {
+                let known = crate::harness::skill::engineering_skill_names();
+                if let Some(bad) = names.iter().find(|name| !known.contains(&name.as_str())) {
+                    return Err(serde::de::Error::custom(format!(
+                        "{bad} is not an engineering skill (one of {})",
+                        known.join(", ")
+                    )));
+                }
+                let mut unique: Vec<String> = vec![];
+                for name in names {
+                    if !unique.contains(&name) {
+                        unique.push(name);
+                    }
+                }
+                Ok(Self::Only(unique))
+            }
+        }
+    }
+}
+
+impl Serialize for EngineeringSkills {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Default => serializer.serialize_bool(true),
+            Self::Off => serializer.serialize_bool(false),
+            Self::Only(names) => names.serialize(serializer),
+        }
+    }
 }
 
 /// How the outputs of an agent's tools are kept small before the model reads them: older ones hidden (by the bridge),

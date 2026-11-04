@@ -895,12 +895,14 @@ integer}`; `busy` is how many runs go on the machine now. Nothing secret (the ke
 ### `GET /v1/agents`
 
 The agents the server can run, for choosing one to chat with: the Moebius agent first and the Grilling partner second,
-then the others by name. A built-in agent takes its model from its own `[agents.<name>]` or from `[agents.Coder]`; with
-neither its `model` is empty, and a chat with it runs on the `model` it is started with. Response: an array of `{"name": string, "model":
+then the others by name, the Coder and the Reviewer among them whether or not they have files. A built-in agent takes its
+model from its own `[agents.<name>]` or from `[agents.Coder]`; with neither its `model` is empty (always so for a Coder
+without a model: it needs one, and a card that starts it fails with a clear error), and a chat with it runs on the `model`
+it is started with. Response: an array of `{"name": string, "model":
 string, "protocol": "openai" or "anthropic", "thinking": string, "token_budget": integer, "harness": "pi-bolt" or
 "claude-code", "built_in": boolean, "error": string}`; `harness` is the harness the agent runs on;
 `thinking` and `token_budget` are the agent's, left out when its configuration does not set them; `built_in` is true for the Moebius
-agent and the `Grilling-partner`, which Moebius brings itself. `error` is left out unless the agent's files in the [harness
+agent, the `Grilling-partner`, the `Coder` and the `Reviewer`, which Moebius brings itself. `error` is left out unless the agent's files in the [harness
 configuration](harness-configuration.md) are broken: such an agent has an empty `model`, cannot be run, and `error` says
 why (the built-in agents still run, on the Coder's model). Instructions, skills, extensions and anything secret are not
 included.
@@ -909,15 +911,17 @@ included.
 
 An agent of the harness configuration repository, as its files say: `{"name": string, "settings": {"model", "protocol",
 "thinking", "token_budget", "harness", "runner", "skills", "extensions", "mcp", "tool_output", "engineering_skills"}, "instructions": string}` (`thinking`,
-`token_budget`, `harness` and `runner` are left out when not set; no `harness` is `pi-bolt`, no `runner` is the server itself; `tool_output` is left out when it is the defaults; `engineering_skills` is left out when it is `true`, and `false` gives the agent none of the [engineering skills](harness-configuration.md#engineering-skills) of the Coder, the Reviewer and the Grilling partner). The files hold no secrets and are returned in full. Errors: `404` no such agent; `422` its files
+`token_budget`, `harness` and `runner` are left out when not set; no `harness` is `pi-bolt`, no `runner` is the server itself; `tool_output` is left out when it is the defaults; `engineering_skills` is left out when it is `true` (the engineering skills of the agent's name, if it has any), is `false` for none, and is a list of names (`tdd`, `diagnosing-bugs`, `code-review`, `grilling`, `to-tickets`, `moebius-autonomous`) for exactly those: see [engineering skills](harness-configuration.md#engineering-skills). A `PUT` with any other name is refused with `422`, and so is a file with one). The files hold no secrets and are returned in full. Errors: `404` no such agent; `422` its files
 are broken (the message says how), or the server has no `[harness]` and its agents are in `moebius.toml`.
 
-A built-in agent (`Moebius`, `Grilling-partner`, `Retro-analyst`, `Autoresearcher`) also has `"built_in":
+A built-in agent (`Moebius`, `Grilling-partner`, `Coder`, `Reviewer`, `Retro-analyst`, `Autoresearcher`) also has `"built_in":
 {"instructions": string, "skills": [{"name": string, "description": string}], "engineering_skills": [...]}`: the instructions it is always given
-before its own, `engineering_skills` the skills of the same shape it is given besides unless its `engineering_skills` is `false` (the Grilling partner's `grilling`, `to-tickets` and `moebius-autonomous`; empty for the others), and the built-in skills it always has before its own, which nobody can change. The Moebius agent's are
-the `moebius` skill and the task skills `moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions`, `moebius-plugins` and `moebius-report`; the others have the `moebius` skill. A built-in agent is answered
+before its own, `engineering_skills` the skills of the same shape it is given besides by default, that is while its `engineering_skills` is not `false` or a list of its own (the Grilling partner's `grilling`, `to-tickets` and `moebius-autonomous`, the Coder's `tdd`, `diagnosing-bugs` and `moebius-autonomous`, the Reviewer's `code-review` and `moebius-autonomous`; empty for the others), and the built-in skills it always has before its own, which nobody can change. The Moebius agent's are
+the `moebius` skill and the task skills `moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions`, `moebius-plugins` and `moebius-report`; the Coder and the Reviewer have none; the others have the `moebius` skill. A built-in agent is answered
 without files (then `settings` and `instructions` are left out) and without `[harness]`. `PUT` saves only the agent's
-files and answers without `built_in`.
+files and answers without `built_in`. A new agent that starts from an existing one (the Agents page, `moebius agent save
+--template`) is read with this route and saved with `PUT`: for the Coder or the Reviewer the copy's instructions are
+the built-in ones followed by the agent's own, since the copy is not built in.
 
 ### `PUT /v1/agents/{name}`
 

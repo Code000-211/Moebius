@@ -265,7 +265,7 @@ mod tests {
             token_budget: None,
             harness: HarnessKind::PiBolt,
             tool_output: Default::default(),
-            engineering_skills: true,
+            engineering_skills: Default::default(),
             runner: None,
         };
         let claude = AgentConfig {

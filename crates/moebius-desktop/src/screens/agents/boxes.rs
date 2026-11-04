@@ -181,7 +181,7 @@ fn settings_row<'a>(
     let engineering = ENGINEERING_AGENTS.contains(&editor.name.as_str()).then(|| {
         let given = pick_list(
             ENGINEERING.map(String::from).to_vec(),
-            Some(ENGINEERING[usize::from(!editor.engineering_skills)].to_string()),
+            Some(ENGINEERING[usize::from(!editor.engineering_skills.given())].to_string()),
             move |choice| message(Message::EngineeringChosen(choice)),
         )
         .text_size(theme::BODY)

@@ -17,22 +17,30 @@ use crate::store::{Card, Run, Store};
 /// a `review` run changes nothing and ends with the next of `answers`, or an approval when there are none left.
 #[derive(Default)]
 pub(super) struct FakeHarness {
-    pub(super) reviewer: bool,
+    /// Whether the Reviewer is missing, so that the default workflow offers a change at once. The real Reviewer is built
+    /// in; this is for the tests that are not about review.
+    pub(super) unreviewed: bool,
     pub(super) answers: Mutex<VecDeque<String>>,
     /// The note of each run started, in order.
     pub(super) notes: Mutex<Vec<Option<String>>>,
     /// Files, as path and text, that each `code` run also commits.
     pub(super) files: Vec<(&'static str, &'static str)>,
-    /// Other agents that exist besides the Coder and the Reviewer.
+    /// Other agents that exist besides the Coder and the Reviewer, which are built in.
     pub(super) agents: Vec<&'static str>,
     /// The model each run was started with.
     pub(super) models: Mutex<Vec<Option<String>>>,
 }
 
 impl FakeHarness {
+    pub(super) fn without_review() -> Self {
+        Self {
+            unreviewed: true,
+            ..Self::default()
+        }
+    }
+
     pub(super) fn with_reviewer(answers: &[&str]) -> Self {
         Self {
-            reviewer: true,
             answers: Mutex::new(answers.iter().map(|a| a.to_string()).collect()),
             ..Self::default()
         }
@@ -91,7 +99,7 @@ impl CardRuns for FakeHarness {
     }
 
     fn has_agent(&self, name: &str) -> bool {
-        name == "Coder" || (self.reviewer && name == "Reviewer") || self.agents.contains(&name)
+        name == "Coder" || (!self.unreviewed && name == "Reviewer") || self.agents.contains(&name)
     }
 
     fn runners(&self) -> Vec<RunnerInfo> {
@@ -117,6 +125,11 @@ impl CardRuns for FakeHarness {
 
 pub(super) fn setup() -> (tempfile::TempDir, Arc<App>, Engine, i64) {
     setup_with(None)
+}
+
+/// A setup whose harness has no Reviewer, for the tests of what comes after a review.
+pub(super) fn setup_unreviewed() -> (tempfile::TempDir, Arc<App>, Engine, i64) {
+    setup_with_harness(None, Arc::new(FakeHarness::without_review()))
 }
 
 /// A setup whose forge for repositories without one is `forge`, if given.

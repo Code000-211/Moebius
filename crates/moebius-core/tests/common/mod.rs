@@ -90,12 +90,19 @@ pub async fn recorded_upstream(
     format!("http://{addr}")
 }
 
+/// A `review.luau` that offers the change without a review.
+const NO_REVIEW: &str = "function on_card(card)\n  local run = card.run\n  if run ~= nil and (run.status == 'starting' or run.status == 'running') then\n    moebius.wait('coding')\n    return\n  end\n  moebius.publish_change()\n  moebius.offer_change()\nend\n";
+
 /// A git repository with one commit, standing in for the forge's remote.
 pub fn origin(dir: &Path) -> PathBuf {
     let origin = dir.join("origin");
     std::fs::create_dir_all(&origin).unwrap();
     git(&origin, &["init", "--quiet", "-b", "main"]).unwrap();
     std::fs::write(origin.join("README.md"), "A demo repository.\n").unwrap();
+    // These tests are about the run of the Coder, not about its review, which the built-in Reviewer would do: the
+    // repository's `review.luau` offers the change at once.
+    std::fs::create_dir_all(origin.join(".moebius")).unwrap();
+    std::fs::write(origin.join(".moebius/review.luau"), NO_REVIEW).unwrap();
     git(&origin, &["add", "."]).unwrap();
     git(&origin, &["commit", "--quiet", "-m", "first"]).unwrap();
     origin

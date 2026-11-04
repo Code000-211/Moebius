@@ -1,13 +1,14 @@
-//! The agents Moebius brings itself (the Moebius agent, the Grilling partner, the Retro analyst and the
-//! Autoresearcher), with their instructions and skills, and the agent a run uses: its configuration, or for a built-in
+//! The agents Moebius brings itself (the Moebius agent, the Grilling partner, the Coder, the Reviewer, the Retro analyst
+//! and the Autoresearcher), with their instructions and skills, and the agent a run uses: its configuration, or for a built-in
 //! agent without one the Coder's model, with the built-in instructions and skills before its own.
 
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use super::coding_agents::{CODER_INSTRUCTIONS, REVIEWER_INSTRUCTIONS};
 use crate::app::{App, ChatSettings};
 use crate::board::AgentInfo;
-use crate::config::{AgentConfig, AgentSet, HarnessKind};
+use crate::config::{AgentConfig, AgentSet, EngineeringSkills};
 use crate::harness::skill;
 use crate::router::Protocol;
 
@@ -16,6 +17,12 @@ pub const MOEBIUS_AGENT: &str = "Moebius";
 
 /// The name of the bundled agent that grills a person's idea until the work is clear.
 pub const GRILLING_AGENT: &str = "Grilling-partner";
+
+/// The name of the bundled agent that makes the change a card asks for. Its model must be configured.
+pub const CODER_AGENT: &str = "Coder";
+
+/// The name of the bundled agent that reviews a change. Without a model of its own it takes the Coder's.
+pub const REVIEWER_AGENT: &str = "Reviewer";
 
 /// The name of the bundled agent that turns a Retro's report into proposals. Agent names allow no spaces.
 pub const RETRO_AGENT: &str = "Retro-analyst";
@@ -126,7 +133,8 @@ pub fn built_in_agent(name: &str) -> Option<BuiltInAgent> {
     })
 }
 
-/// The built-in skills of a built-in agent: the reference library, and for the Moebius agent the task skills after it.
+/// The built-in skills of a built-in agent: the reference library (not for the Coder and the Reviewer), and for the
+/// Moebius agent the task skills after it.
 /// The engineering skills of the Grilling partner (see [`engineering_skills`]) are not among them.
 fn built_in_skills(name: &str) -> impl Iterator<Item = &'static skill::BuiltIn> {
     let tasks: &[skill::BuiltIn] = if name == MOEBIUS_AGENT {
@@ -134,12 +142,14 @@ fn built_in_skills(name: &str) -> impl Iterator<Item = &'static skill::BuiltIn> 
     } else {
         &[]
     };
-    std::iter::once(&skill::MOEBIUS).chain(tasks)
+    // The Coder and the Reviewer work from the engineering skills alone.
+    let library = (name != CODER_AGENT && name != REVIEWER_AGENT).then_some(&skill::MOEBIUS);
+    library.into_iter().chain(tasks)
 }
 
-/// The skills Moebius brings for the agent `name` besides its built-in ones: the engineering skills it has, then
-/// `moebius-autonomous`. Only the Coder, the Reviewer and the Grilling partner have any.
-fn engineering_skills(name: &str) -> Vec<&'static skill::BuiltIn> {
+/// The skills Moebius brings by default for the agent `name` besides its built-in ones: the engineering skills it has,
+/// then `moebius-autonomous`. Only the Coder, the Reviewer and the Grilling partner have any.
+pub(super) fn engineering_skills(name: &str) -> Vec<&'static skill::BuiltIn> {
     let mut skills = skill::engineering(name);
     if !skills.is_empty() {
         skills.push(&skill::AUTONOMOUS);
@@ -147,11 +157,33 @@ fn engineering_skills(name: &str) -> Vec<&'static skill::BuiltIn> {
     skills
 }
 
+/// The engineering skills the agent `name` is given with the setting `chosen`: the defaults of its name, none, or
+/// exactly the skills the list names (in the order of the list).
+pub fn engineering_skills_for(
+    name: &str,
+    chosen: &EngineeringSkills,
+) -> Vec<&'static skill::BuiltIn> {
+    match chosen {
+        EngineeringSkills::Default => engineering_skills(name),
+        EngineeringSkills::Off => vec![],
+        EngineeringSkills::Only(names) => names
+            .iter()
+            .filter_map(|skill_name| {
+                skill::vendored(skill_name).or_else(|| {
+                    (skill_name == skill::AUTONOMOUS.name).then_some(&skill::AUTONOMOUS)
+                })
+            })
+            .collect(),
+    }
+}
+
 /// The instructions of a built-in agent, which exists without configuration.
 fn built_in_instructions(name: &str) -> Option<&'static str> {
     match name {
         MOEBIUS_AGENT => Some(MOEBIUS_INSTRUCTIONS),
         GRILLING_AGENT => Some(GRILLING_INSTRUCTIONS),
+        CODER_AGENT => Some(CODER_INSTRUCTIONS),
+        REVIEWER_AGENT => Some(REVIEWER_INSTRUCTIONS),
         RETRO_AGENT => Some(RETRO_INSTRUCTIONS),
         AUTORESEARCHER_AGENT => Some(AUTORESEARCHER_INSTRUCTIONS),
         _ => None,
@@ -191,9 +223,15 @@ pub(crate) fn tell_where_moebius_runs(
     agent
 }
 
-/// Whether `set` has the agent `name`, or Moebius brings it.
+/// Whether `set` has the agent `name`, or Moebius brings it: the Moebius agent, the Grilling partner, the Coder and the
+/// Reviewer exist always, so the default workflow sends every card to review. A person who wants none changes the
+/// workflow script.
 pub fn has_agent(set: &AgentSet, name: &str) -> bool {
-    name == MOEBIUS_AGENT || name == GRILLING_AGENT || set.agents.contains_key(name)
+    name == MOEBIUS_AGENT
+        || name == GRILLING_AGENT
+        || name == CODER_AGENT
+        || name == REVIEWER_AGENT
+        || set.agents.contains_key(name)
 }
 
 /// The agent `name` of `set` as a run uses it, whatever its harness; the built-in skills are in `data_dir`. The Moebius
@@ -216,7 +254,7 @@ fn model_only(model: &str, protocol: Option<Protocol>) -> AgentConfig {
         token_budget: None,
         harness: Default::default(),
         tool_output: Default::default(),
-        engineering_skills: true,
+        engineering_skills: EngineeringSkills::Default,
         runner: None,
     }
 }
@@ -252,11 +290,25 @@ fn resolve_with(
             token_budget: None,
             harness: coder.harness,
             tool_output: coder.tool_output,
-            engineering_skills: coder.engineering_skills,
-            runner: None,
+            // The agent only borrows the Coder's model and harness: it keeps the skill defaults of its own name,
+            // whatever the Coder's `engineering_skills` says.
+            engineering_skills: EngineeringSkills::Default,
+            // A Reviewer reviews where the Coder coded; the other built-in agents run on the server.
+            runner: if name == REVIEWER_AGENT {
+                coder.runner.clone()
+            } else {
+                None
+            },
         },
-        (None, None) => fallback.ok_or_else(|| {
-            format!("the {name} agent needs a model: configure [agents.{name}] or [agents.Coder]")
+        (None, None) => fallback.ok_or_else(|| match (set.errors.get(name), name) {
+            (Some(error), _) => format!("the agent {name} cannot be used: {error}"),
+            (None, CODER_AGENT) => {
+                "the Coder agent needs a model: configure [agents.Coder] or agents/Coder.toml"
+                    .into()
+            }
+            _ => format!(
+                "the {name} agent needs a model: configure [agents.{name}] or [agents.Coder]"
+            ),
         })?,
     };
     agent.instructions = Some(match agent.instructions {
@@ -274,12 +326,9 @@ fn resolve_with(
 /// repository with the name of one replaces it. A skill that its author hides from the model's list is named in the
 /// instructions with where it is, so that the agent can read it.
 fn give_engineering_skills(set: &AgentSet, data_dir: &Path, name: &str, agent: &mut AgentConfig) {
-    if !agent.engineering_skills {
-        return;
-    }
     let mut hidden = vec![];
     let mut given = vec![];
-    for built_in in engineering_skills(name) {
+    for built_in in engineering_skills_for(name, &agent.engineering_skills) {
         let path = set
             .skill_overrides
             .get(built_in.name)
@@ -309,12 +358,19 @@ fn give_engineering_skills(set: &AgentSet, data_dir: &Path, name: &str, agent: &
 }
 
 /// The agents of `set` as the API lists them: the built-in chat agents first, the Moebius agent and the Grilling
-/// partner, then the agents by name, those whose files are broken among them with their error. A built-in agent with
-/// a broken file still runs, on the Coder's model; one without a model of its own or of the Coder is listed with an
-/// empty model, and a chat with it runs on the model it is given.
+/// partner, then the agents by name, the Coder and the Reviewer always among them, those whose files are broken with
+/// their error. A built-in agent with a broken file still runs, on the Coder's model; one without a model of its own
+/// or of the Coder (the Coder itself has no other to take) is listed with an empty model, and a chat with it runs on
+/// the model it is given.
 pub fn agent_list(set: &AgentSet) -> Vec<AgentInfo> {
-    let built_in = [MOEBIUS_AGENT, GRILLING_AGENT].into_iter().map(|name| {
-        match set.agents.get(name).or_else(|| set.agents.get("Coder")) {
+    let info = |name: &str| {
+        let built_in = [MOEBIUS_AGENT, GRILLING_AGENT, CODER_AGENT, REVIEWER_AGENT].contains(&name);
+        let agent = set
+            .agents
+            .get(name)
+            .or_else(|| built_in.then(|| set.agents.get(CODER_AGENT)).flatten());
+        let error = set.errors.get(name).cloned();
+        match agent {
             Some(agent) => AgentInfo {
                 name: name.into(),
                 model: agent.model.clone(),
@@ -322,8 +378,8 @@ pub fn agent_list(set: &AgentSet) -> Vec<AgentInfo> {
                 thinking: agent.thinking.clone(),
                 token_budget: agent.token_budget,
                 harness: agent.harness,
-                built_in: true,
-                error: set.errors.get(name).cloned(),
+                built_in,
+                error,
             },
             None => AgentInfo {
                 name: name.into(),
@@ -332,48 +388,30 @@ pub fn agent_list(set: &AgentSet) -> Vec<AgentInfo> {
                 thinking: None,
                 token_budget: None,
                 harness: Default::default(),
-                built_in: true,
-                error: set.errors.get(name).cloned(),
+                built_in,
+                error,
             },
         }
-    });
-    let own = |name: &String| name != MOEBIUS_AGENT && name != GRILLING_AGENT;
-    let configured = set
+    };
+    let first = [MOEBIUS_AGENT, GRILLING_AGENT];
+    let mut names: Vec<&str> = set
         .agents
-        .iter()
-        .filter(|(name, _)| own(name))
-        .map(|(name, agent)| AgentInfo {
-            name: name.clone(),
-            model: agent.model.clone(),
-            protocol: agent.protocol,
-            thinking: agent.thinking.clone(),
-            token_budget: agent.token_budget,
-            harness: agent.harness,
-            built_in: false,
-            error: None,
-        });
-    let broken = set
-        .errors
-        .iter()
-        .filter(|(name, _)| own(name))
-        .map(|(name, error)| AgentInfo {
-            name: name.clone(),
-            model: String::new(),
-            protocol: Protocol::OpenAi,
-            thinking: None,
-            token_budget: None,
-            harness: HarnessKind::PiBolt,
-            built_in: false,
-            error: Some(error.clone()),
-        });
-    let mut agents: Vec<AgentInfo> = configured.chain(broken).collect();
-    agents.sort_by(|a, b| a.name.cmp(&b.name));
-    built_in.chain(agents).collect()
+        .keys()
+        .chain(set.errors.keys())
+        .map(String::as_str)
+        .chain([CODER_AGENT, REVIEWER_AGENT])
+        .filter(|name| !first.contains(name))
+        .collect();
+    names.sort_unstable();
+    names.dedup();
+    first.into_iter().chain(names).map(info).collect()
 }
 
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+
+    use crate::config::HarnessKind;
 
     use super::*;
 
@@ -389,7 +427,7 @@ mod tests {
             token_budget: None,
             harness: HarnessKind::PiBolt,
             tool_output: Default::default(),
-            engineering_skills: true,
+            engineering_skills: EngineeringSkills::Default,
             runner: None,
         }
     }
@@ -455,11 +493,14 @@ mod tests {
         assert!(
             instructions.ends_with("read /data/skills/to-tickets/SKILL.md when you need them.")
         );
+        // The Coder and the Reviewer have their instructions built in, and no reference library.
+        let coder_instructions = coder.instructions.unwrap();
+        assert!(coder_instructions.starts_with("You are the Coder."));
         assert!(
-            resolve(&set(), data, "Coder")
-                .unwrap()
+            reviewer
                 .instructions
-                .is_none()
+                .unwrap()
+                .starts_with("You are the Reviewer.")
         );
 
         // The built-in agents list them for the desktop app.
@@ -479,12 +520,104 @@ mod tests {
     }
 
     #[test]
+    fn the_coder_and_the_reviewer_exist_without_configuration_and_need_a_model() {
+        let data = Path::new("/data");
+        let empty = AgentSet::default();
+        // The Coder has no other agent to take a model from: it says what is missing.
+        let error = resolve(&empty, data, "Coder").unwrap_err();
+        assert!(error.contains("needs a model"), "{error}");
+        let error = resolve(&empty, data, "Reviewer").unwrap_err();
+        assert!(error.contains("needs a model"), "{error}");
+        assert!(has_agent(&empty, "Coder"));
+        // The Reviewer exists too, so the default workflow sends every card to review.
+        assert!(has_agent(&empty, "Reviewer"));
+
+        // With only a Coder, the Reviewer takes its model, and the instructions are built in.
+        let only_coder = AgentSet {
+            agents: BTreeMap::from([("Coder".to_string(), agent(&[]))]),
+            ..AgentSet::default()
+        };
+        let reviewer = resolve(&only_coder, data, "Reviewer").unwrap();
+        assert_eq!(reviewer.model, "m");
+        assert!(
+            reviewer
+                .instructions
+                .as_deref()
+                .unwrap()
+                .starts_with("You are the Reviewer.")
+        );
+        assert_eq!(
+            skills(&reviewer),
+            [
+                "/data/skills/code-review",
+                "/data/skills/moebius-autonomous"
+            ]
+        );
+    }
+
+    #[test]
+    fn an_agents_own_instructions_come_after_the_built_in_ones() {
+        let mut own = agent(&[]);
+        own.instructions = Some("Prefer small scripts.".into());
+        let set = AgentSet {
+            agents: BTreeMap::from([("Coder".to_string(), own)]),
+            ..AgentSet::default()
+        };
+        let coder = resolve(&set, Path::new("/data"), "Coder").unwrap();
+        let text = coder.instructions.unwrap();
+        assert!(text.starts_with("You are the Coder."));
+        assert!(text.contains("\n\nPrefer small scripts."));
+    }
+
+    #[test]
+    fn the_list_always_has_the_coder_and_the_reviewer_as_built_in() {
+        let names = |list: &[AgentInfo]| -> Vec<(String, String, bool)> {
+            list.iter()
+                .map(|a| (a.name.clone(), a.model.clone(), a.built_in))
+                .collect()
+        };
+        let listed = names(&agent_list(&AgentSet::default()));
+        assert_eq!(
+            listed,
+            [
+                ("Moebius".to_string(), String::new(), true),
+                ("Grilling-partner".to_string(), String::new(), true),
+                ("Coder".to_string(), String::new(), true),
+                ("Reviewer".to_string(), String::new(), true),
+            ]
+        );
+        let listed = names(&agent_list(&set()));
+        assert_eq!(listed[2], ("Coder".to_string(), "m".to_string(), true));
+        assert_eq!(listed[3], ("Planner".to_string(), "m".to_string(), false));
+        assert_eq!(listed[4], ("Reviewer".to_string(), "m".to_string(), true));
+    }
+
+    #[test]
+    fn a_reviewer_that_takes_the_coders_model_takes_its_runner_too() {
+        let data = Path::new("/data");
+        let mut coder = agent(&[]);
+        coder.runner = Some("gpu-box".into());
+        let mut set = AgentSet {
+            agents: BTreeMap::from([("Coder".to_string(), coder)]),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve(&set, data, "Reviewer").unwrap().runner.as_deref(),
+            Some("gpu-box")
+        );
+        // Not another built-in agent, and not a Reviewer with a configuration of its own.
+        assert_eq!(resolve(&set, data, RETRO_AGENT).unwrap().runner, None);
+        set.agents.insert("Reviewer".into(), agent(&[]));
+        assert_eq!(resolve(&set, data, "Reviewer").unwrap().runner, None);
+    }
+
+    #[test]
     fn turning_the_engineering_skills_off_leaves_the_agent_its_own() {
         let data = Path::new("/data");
         let mut off = set();
         for name in ["Coder", GRILLING_AGENT] {
             let mut agent = agent(&["/own/house-style"]);
-            agent.engineering_skills = false;
+            agent.engineering_skills = EngineeringSkills::Off;
             off.agents.insert(name.into(), agent);
         }
         let coder = resolve(&off, data, "Coder").unwrap();
@@ -495,6 +628,108 @@ mod tests {
             ["/data/skills/moebius", "/own/house-style"]
         );
         assert!(!grilling.instructions.unwrap().contains("to-tickets"));
+    }
+
+    fn only(names: &[&str]) -> EngineeringSkills {
+        EngineeringSkills::Only(names.iter().map(|n| n.to_string()).collect())
+    }
+
+    #[test]
+    fn a_list_gives_an_agent_exactly_those_engineering_skills_whatever_its_name() {
+        let data = Path::new("/data");
+        let mut set = set();
+        // A copy of the Coder under another name has the Coder's skills, as the list a copy is written with.
+        let mut fast = agent(&["/own/house-style"]);
+        fast.engineering_skills = only(&["tdd", "diagnosing-bugs", "moebius-autonomous"]);
+        set.agents.insert("Coder-fast".into(), fast);
+        let mut small = agent(&[]);
+        small.engineering_skills = only(&["code-review", "tdd"]);
+        set.agents.insert("Planner".into(), small);
+        // The Coder itself with a list has only that.
+        let mut narrow = agent(&[]);
+        narrow.engineering_skills = only(&["tdd"]);
+        set.agents.insert("Coder".into(), narrow);
+
+        let fast = resolve(&set, data, "Coder-fast").unwrap();
+        assert_eq!(
+            skills(&fast),
+            [
+                "/data/skills/tdd",
+                "/data/skills/diagnosing-bugs",
+                "/data/skills/moebius-autonomous",
+                "/own/house-style"
+            ]
+        );
+        // Exactly the list: no moebius-autonomous that it does not name.
+        let small = resolve(&set, data, "Planner").unwrap();
+        assert_eq!(
+            skills(&small),
+            ["/data/skills/code-review", "/data/skills/tdd"]
+        );
+        assert_eq!(
+            skills(&resolve(&set, data, "Coder").unwrap()),
+            ["/data/skills/tdd"]
+        );
+        // The Reviewer without a setting of its own keeps its defaults, not the Coder's list.
+        let reviewer = resolve(&set, data, "Reviewer").unwrap();
+        assert_eq!(
+            skills(&reviewer),
+            [
+                "/data/skills/code-review",
+                "/data/skills/moebius-autonomous"
+            ]
+        );
+        // Nor does it follow the Coder in turning its skills off.
+        let mut off = set.clone();
+        off.agents.get_mut("Coder").unwrap().engineering_skills = EngineeringSkills::Off;
+        assert_eq!(
+            skills(&resolve(&off, data, "Reviewer").unwrap()),
+            [
+                "/data/skills/code-review",
+                "/data/skills/moebius-autonomous"
+            ]
+        );
+        // A skill of the harness repository with the name of one replaces it for every agent that has it.
+        set.skill_overrides
+            .insert("tdd".into(), "/harness/skills/tdd".into());
+        assert_eq!(
+            skills(&resolve(&set, data, "Coder-fast").unwrap())[0],
+            "/harness/skills/tdd"
+        );
+        assert_eq!(
+            skills(&resolve(&set, data, "Planner").unwrap()),
+            ["/data/skills/code-review", "/harness/skills/tdd"]
+        );
+    }
+
+    #[test]
+    fn true_gives_the_defaults_of_the_name_false_none_and_a_list_its_own() {
+        let data = Path::new("/data");
+        let given = |name: &str, chosen: EngineeringSkills| {
+            let mut agent = agent(&[]);
+            agent.engineering_skills = chosen;
+            let set = AgentSet {
+                agents: BTreeMap::from([(name.to_string(), agent)]),
+                ..AgentSet::default()
+            };
+            skills(&resolve(&set, data, name).unwrap())
+        };
+        assert_eq!(
+            given("Planner", EngineeringSkills::Default),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            given("Reviewer", EngineeringSkills::Default),
+            [
+                "/data/skills/code-review",
+                "/data/skills/moebius-autonomous"
+            ]
+        );
+        assert!(given("Reviewer", EngineeringSkills::Off).is_empty());
+        assert_eq!(
+            given("Reviewer", only(&["grilling"])),
+            ["/data/skills/grilling"]
+        );
     }
 
     #[test]

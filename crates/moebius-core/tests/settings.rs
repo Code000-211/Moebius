@@ -266,16 +266,19 @@ async fn board_limits_budgets_and_agents_apply_without_a_restart() {
         std::time::Duration::from_millis(100)
     );
 
-    // Removing the agent takes it away again.
+    // Removing the agent takes its settings away again; the built-in Coder stays, now without a model.
     let (status, _) = f.change(json!({}), json!(["agents.Coder"])).await;
     assert_eq!(status, 200);
     let agents: Value = serde_json::from_str(&f.get("/v1/agents").await.1).unwrap();
-    assert!(
-        agents
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|a| a["name"] != "Coder")
+    let coder = agents
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["name"] == "Coder")
+        .unwrap();
+    assert_eq!(
+        (coder["model"].as_str(), coder["built_in"].as_bool()),
+        (Some(""), Some(true))
     );
 }
 

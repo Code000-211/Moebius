@@ -90,7 +90,7 @@ pub(super) fn setup_with(pi: &Path, claude: &Path, localizing: bool) -> Setup {
         token_budget: None,
         harness: Default::default(),
         tool_output: Default::default(),
-        engineering_skills: true,
+        engineering_skills: Default::default(),
         runner: None,
     };
     let pi_bolt = PiBolt::new(

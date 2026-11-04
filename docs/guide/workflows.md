@@ -21,7 +21,7 @@ Backlog -> Not started -> In progress -> In review -> Ready to merge -> Done
 | `Backlog` | `backlog.luau` | Moves a trusted card, or one made from a confirmed grilling, to `Not started`. Any other card waits in the inbox as `approve_issue` until a person approves it. |
 | `Not started` | `ready.luau` | Waits while issues block the card, while the daily token budget is spent and while the run limit is reached. Then moves the card to `In progress`. |
 | `In progress` | `code.luau` | Starts a run of the agent `Coder` for each round, waits while it goes, and moves the card to `In review` when a round has succeeded. |
-| `In review` | `review.luau` | Publishes the change, waits for its checks, sends the card back when they fail or the change conflicts, has the agent `Reviewer` read it along two axes, Standards and Spec (when there is one) and offers the change to a person. |
+| `In review` | `review.luau` | Publishes the change, waits for its checks, sends the card back when they fail or the change conflicts, has the built-in agent `Reviewer` read it along two axes, Standards and Spec, and offers the change to a person. |
 | `Ready to merge` | `merge.luau` | Waits for a person to merge. Sends the card back when the change no longer merges cleanly. |
 | `Done` | `done.luau` | Records how every decision made for the card ended. |
 
@@ -86,7 +86,8 @@ progress too.
    failing checks or the end of the output.
 4. A change that does not merge cleanly into the default branch sends the card back with a note that names the
    conflicting files and says to merge the default branch into the branch and resolve them.
-5. Without an agent `Reviewer` the change is offered now. With one, two review runs read the change in worktrees on the
+5. The agent `Reviewer` is built in, so every change is reviewed (a person who wants none changes this script, as
+   below). Two review runs read the change in worktrees on the
    code branch (nothing they change is kept): **Standards** (purpose `review-standards`: does the change follow
    `CONTRIBUTING.md`, `CLAUDE.md`, `AGENTS.md`, the rubric in `.moebius/review.md` if there is one, and a fixed list of
    code smells that are only ever judgement calls) and then **Spec** (purpose `review-spec`: what the issue asked that
@@ -137,8 +138,8 @@ A test that runs says more than a reviewer's opinion. A repository turns it on b
 4. A change that says it is untestable goes on to the review, and the reviewer is given the reason to judge.
 
 The file formats and the functions behind this are in the [column script reference](../reference/column-scripts.md#test-first).
-A repository can also write its own gate. This `review.luau` reviews by the reproduction test alone, without a
-Reviewer, and offers a change that says it is untestable for the person to judge when they merge:
+A repository can also write its own gate. This `review.luau` reviews by the reproduction test alone, without the
+built-in Reviewer, and offers a change that says it is untestable for the person to judge when they merge:
 
 <!-- script: review.luau -->
 ```luau
@@ -266,7 +267,7 @@ local function candidates(passed)
   return table.concat(lines, "\n")
 end
 
--- Among attempts that all passed, the Reviewer picks one; without a Reviewer, or when it picks none of them, the first.
+-- Among attempts that all passed, the Reviewer (built in, so always there) picks one; when it picks none of them, the first.
 local function choose(card, passed)
   local selection = card.selection
   if selection == nil then
@@ -402,7 +403,7 @@ On GitHub a person can also merge the pull request there; the poll notices and t
 |---|---|
 | An issue from outside does not start. | The card stays in `Backlog` with an `approve_issue` item in the inbox. A person approves it. |
 | A card sits in `Not started`. | `waiting` in the snapshot says why: blockers, the daily budget or the run limit. |
-| The Coder cannot be started. | A `board_error` event with `no agent named Coder`. Add `[agents.Coder]` to `moebius.toml`. |
+| The Coder cannot be started. | A `board_error` event with `the Coder agent needs a model`. Give the Coder a model: `[agents.Coder]` with a `model` in `moebius.toml`, or `agents/Coder.toml` in the harness repository. |
 | A run fails. | The run's status is `failed`, and its events include a `moebius_error` that says why (`GET /v1/runs/{id}/events`). The next tick starts another round until a limit is reached. |
 | A card is stuck. | An inbox item `stuck` with the reason. `POST /v1/cards/{id}/retry` gives it a fresh start. |
 | A tool call of the agent was refused. | A `tool_check` run event with `decision` `refuse` (see [Rules](rules.md)). The run goes on. |

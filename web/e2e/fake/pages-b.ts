@@ -344,62 +344,59 @@ export function createPagesBFake(): PagesBFake {
     return SHORT(commits);
   };
 
-  /** The agents the server lists: the built-in ones first, then the others by name. */
+  /** The agents the server lists: the Moebius agent and the Grilling partner first, then the others by name, the Coder
+   * and the Reviewer always among them, built in, whether or not they have files. */
   function agentList(): Obj[] {
-    const builtIn = ["Moebius", "Grilling-partner"].map((name) => {
+    const settingsOf = (name: string): Obj | undefined => {
       const own = fake.harness ? agents[name] : (file.agents as Obj | undefined)?.[name];
-      const settings =
-        (fake.harness ? (own as FakeAgent | undefined)?.settings : (own as Obj | undefined)) ?? {};
-      return {
-        name,
-        model: String(settings.model ?? (fake.harness ? "fake-coder" : "fake-coder")),
-        protocol: String(settings.protocol ?? "openai"),
-        harness: "pi-bolt",
-        built_in: true,
-      };
+      return fake.harness ? (own as FakeAgent | undefined)?.settings : (own as Obj | undefined);
+    };
+    const entry = (name: string, settings: Obj | undefined, builtIn: boolean): Obj => ({
+      name,
+      model: String(settings?.model ?? ""),
+      protocol: String(settings?.protocol ?? "openai"),
+      ...(settings?.thinking ? { thinking: settings.thinking } : {}),
+      ...(settings?.token_budget ? { token_budget: settings.token_budget } : {}),
+      harness: String(settings?.harness ?? "pi-bolt"),
+      built_in: builtIn,
     });
-    const others = fake.harness
-      ? Object.entries(agents)
-          .filter(([name]) => name !== "Moebius" && name !== "Grilling-partner")
-          .map(([name, agent]) =>
-            agent.broken
-              ? {
-                  name,
-                  model: "",
-                  protocol: "openai",
-                  harness: "pi-bolt",
-                  built_in: false,
-                  error: agent.broken,
-                }
-              : {
-                  name,
-                  model: agent.settings.model,
-                  protocol: agent.settings.protocol,
-                  ...(agent.settings.thinking ? { thinking: agent.settings.thinking } : {}),
-                  ...(agent.settings.token_budget
-                    ? { token_budget: agent.settings.token_budget }
-                    : {}),
-                  harness: agent.settings.harness ?? "pi-bolt",
-                  built_in: false,
-                },
-          )
-      : Object.entries((file.agents as Obj | undefined) ?? {})
-          .filter(([name]) => name !== "Moebius" && name !== "Grilling-partner")
-          .map(([name, table]) => ({
-            name,
-            model: (table as Obj).model,
-            protocol: (table as Obj).protocol ?? "openai",
-            harness: "pi-bolt",
-            built_in: false,
-          }));
-    return [...builtIn, ...others.sort((a, b) => String(a.name).localeCompare(String(b.name)))];
+    const first = ["Moebius", "Grilling-partner"].map((name) =>
+      entry(name, settingsOf(name) ?? settingsOf("Coder") ?? { model: "fake-coder" }, true),
+    );
+    const names = new Set<string>(["Coder", "Reviewer"]);
+    for (const name of Object.keys(fake.harness ? agents : ((file.agents as Obj) ?? {})))
+      names.add(name);
+    const others = [...names]
+      .filter((name) => name !== "Moebius" && name !== "Grilling-partner")
+      .map((name) => {
+        const builtIn = name === "Coder" || name === "Reviewer";
+        const broken = fake.harness ? agents[name]?.broken : undefined;
+        if (broken) {
+          return { ...entry(name, undefined, false), error: broken };
+        }
+        // The Reviewer without a model of its own takes the Coder's; the Coder has no one to take from.
+        const settings =
+          settingsOf(name) ?? (name === "Reviewer" ? settingsOf("Coder") : undefined);
+        return entry(name, settings, builtIn);
+      });
+    return [...first, ...others.sort((a, b) => String(a.name).localeCompare(String(b.name)))];
   }
 
   function builtInPart(name: string): Obj {
+    // The Coder and the Reviewer have no reference library, only the engineering skills.
+    const coding = name === "Coder" || name === "Reviewer";
     return {
-      instructions: `You are the ${name} agent. Moebius brings these instructions.`,
-      skills: BUILT_IN_SKILLS,
-      engineering_skills: [],
+      instructions: `You are the ${name}${coding ? "." : " agent."} Moebius brings these instructions.`,
+      skills: coding ? [] : BUILT_IN_SKILLS,
+      engineering_skills:
+        (
+          { Coder: ["tdd", "diagnosing-bugs"], Reviewer: ["code-review"] } as Record<
+            string,
+            string[]
+          >
+        )[name]
+          ?.concat("moebius-autonomous")
+          .map((skill) => ({ name: skill, description: `The ${skill} skill.` })) ?? [],
     };
   }
 
@@ -535,7 +532,11 @@ export function createPagesBFake(): PagesBFake {
     const agentRoute = /^\/v1\/agents\/([^/]+)$/.exec(path);
     if (agentRoute) {
       const name = decodeURIComponent(agentRoute[1] as string);
-      const builtIn = name === "Moebius" || name === "Grilling-partner";
+      const builtIn =
+        name === "Moebius" ||
+        name === "Grilling-partner" ||
+        name === "Coder" ||
+        name === "Reviewer";
       if (method === "GET") {
         if (builtIn) {
           const own = agents[name];

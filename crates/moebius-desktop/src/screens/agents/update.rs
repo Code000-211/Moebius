@@ -5,7 +5,7 @@ use iced::Task;
 use iced::widget::text_editor;
 
 use crate::app::Message as AppMessage;
-use crate::client::{AgentDetail, Client, ClientError};
+use crate::client::{AgentDetail, Client, ClientError, EngineeringSkills};
 use crate::screens::live::say;
 use crate::settings::Settings;
 use crate::widgets::form::PROTOCOLS;
@@ -163,7 +163,14 @@ impl Agents {
             Message::MaxBytesEdited(bytes) => editor.max_bytes = bytes,
             Message::CompressChosen(choice) => editor.compress = choice == COMPRESS[0],
             Message::EngineeringChosen(choice) => {
-                editor.engineering_skills = choice == ENGINEERING[0]
+                // Choosing "Given" again leaves a list of skills as it is.
+                if (choice == ENGINEERING[0]) != editor.engineering_skills.given() {
+                    editor.engineering_skills = if choice == ENGINEERING[0] {
+                        EngineeringSkills::default()
+                    } else {
+                        EngineeringSkills::Flag(false)
+                    };
+                }
             }
             Message::Instructions(action) => editor.instructions.perform(action),
             Message::InstructionsByAgent(by_agent) => editor.by_agent = by_agent,

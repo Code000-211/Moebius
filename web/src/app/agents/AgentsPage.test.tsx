@@ -15,8 +15,21 @@ const ROUTES: Record<string, unknown> = {
   "/v1/models": { upstreams: [], agents: [], teacher: null, decision_model: null },
   "/v1/models/available": { models: [], errors: [], classes: [], decision_models: [] },
   "/v1/agents": [
-    { name: "Coder", model: "fake-small", protocol: "openai", harness: "pi-bolt" },
-    { name: "Reviewer", model: "fake-small", protocol: "openai", harness: "pi-bolt" },
+    {
+      name: "Moebius",
+      model: "fake-small",
+      protocol: "openai",
+      harness: "pi-bolt",
+      built_in: true,
+    },
+    { name: "Coder", model: "fake-small", protocol: "openai", harness: "pi-bolt", built_in: false },
+    {
+      name: "Reviewer",
+      model: "fake-small",
+      protocol: "openai",
+      harness: "pi-bolt",
+      built_in: false,
+    },
   ],
   "/v1/agents/Coder": {
     name: "Coder",
@@ -30,19 +43,27 @@ const ROUTES: Record<string, unknown> = {
   },
 };
 
-function show() {
+/** The requests that were not reads, as `[method, path, body]`. */
+let writes: Array<[string, string, unknown]> = [];
+
+function show(start = "/agents?agent=Coder", routes: Record<string, unknown> = ROUTES) {
+  writes = [];
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (path: string) => ({
-      ok: true,
-      status: 200,
-      text: async () => JSON.stringify(ROUTES[path.split("?")[0] ?? path] ?? []),
-    })),
+    vi.fn(async (path: string, init?: { method?: string; body?: string }) => {
+      const route = path.split("?")[0] ?? path;
+      if (init?.method && init.method !== "GET") {
+        const body = init.body ? JSON.parse(init.body) : undefined;
+        writes.push([init.method, route, body]);
+        return { ok: true, status: 200, text: async () => JSON.stringify({ name: "x", ...body }) };
+      }
+      return { ok: true, status: 200, text: async () => JSON.stringify(routes[route] ?? []) };
+    }),
   );
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={["/agents?agent=Coder"]}>
+      <MemoryRouter initialEntries={[start]}>
         <AgentsPage />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -106,5 +127,92 @@ describe("what a page that cannot be read says", () => {
     expect(screen.getByRole("button", { name: "New agent" }).hasAttribute("disabled")).toBe(true);
     // An empty list would be the opposite of what happened.
     expect(screen.queryByText("No agents yet")).toBeNull();
+  });
+});
+
+describe("a new agent", () => {
+  const routes: Record<string, unknown> = {
+    ...ROUTES,
+    "/v1/agents": [
+      { name: "Moebius", model: "m", protocol: "openai", harness: "pi-bolt", built_in: true },
+      { name: "Coder", model: "", protocol: "openai", harness: "pi-bolt", built_in: true },
+      { name: "Reviewer", model: "fast", protocol: "openai", harness: "pi-bolt", built_in: true },
+      { name: "Fast", model: "small", protocol: "openai", harness: "pi-bolt", built_in: false },
+    ],
+    "/v1/agents/Coder": {
+      name: "Coder",
+      built_in: {
+        instructions: "You are the Coder.",
+        skills: [],
+        engineering_skills: ["tdd", "diagnosing-bugs", "moebius-autonomous"].map((name) => ({
+          name,
+          description: "",
+        })),
+      },
+    },
+    "/v1/agents/Fast": {
+      name: "Fast",
+      settings: { model: "small", protocol: "openai", skills: [], extensions: [], mcp: ["docs"] },
+      instructions: "Be brief.",
+    },
+  };
+
+  /** The New agent button, once the page has read the harness configuration and it is on. */
+  async function newAgent() {
+    const button = (await screen.findByRole("button", { name: "New agent" })) as HTMLButtonElement;
+    await vi.waitFor(() => expect(button.disabled).toBe(false));
+    fireEvent.click(button);
+  }
+
+  it("first asks for blank or an existing agent, and starts blank", async () => {
+    show("/agents", routes);
+    await newAgent();
+    expect(await screen.findByRole("button", { name: "Blank" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "From an existing agent" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    const name = await screen.findByLabelText("Name of the new agent");
+    expect((name as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText("Model") as HTMLInputElement).value).toBe("");
+  });
+
+  it("copies a built-in agent's instructions to a new name and saves it with the usual PUT", async () => {
+    show("/agents", routes);
+    await newAgent();
+    fireEvent.click(await screen.findByRole("button", { name: "From an existing agent" }));
+    // The Coder is the first agent on offer, and is the one chosen (which agents are offered is `copyable`'s test).
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(await screen.findByDisplayValue("You are the Coder.")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Name of the new agent"), {
+      target: { value: "Quick" },
+    });
+    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "qwen-local" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await vi.waitFor(() => expect(writes).toHaveLength(1));
+    expect(writes[0]?.[0]).toBe("PUT");
+    expect(writes[0]?.[1]).toBe("/v1/agents/Quick");
+    expect(writes[0]?.[2]).toMatchObject({
+      // The copy has the Coder's engineering skills as a list of its own, since its name is another.
+      settings: {
+        model: "qwen-local",
+        engineering_skills: ["tdd", "diagnosing-bugs", "moebius-autonomous"],
+      },
+      instructions: "You are the Coder.",
+    });
+  });
+
+  it("copies an agent's settings and refuses a name that is taken", async () => {
+    show("/agents?new=1&from=Fast", routes);
+    expect(await screen.findByDisplayValue("small")).toBeTruthy();
+    expect(screen.getByDisplayValue("Be brief.")).toBeTruthy();
+    const name = screen.getByLabelText("Name of the new agent");
+    fireEvent.change(name, { target: { value: "Fast" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText(/An agent named Fast exists/)).toBeTruthy();
+    expect(writes).toEqual([]);
+    // The built-in Coder is taken too, though it has no files.
+    fireEvent.change(name, { target: { value: "Coder" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText(/An agent named Coder exists/)).toBeTruthy();
+    expect(writes).toEqual([]);
   });
 });

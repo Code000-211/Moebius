@@ -5,6 +5,7 @@
 //! (`process`) and how they read its output into run events (`reader`).
 
 mod agents;
+mod coding_agents;
 mod end;
 mod lifecycle;
 mod prompts;
@@ -16,7 +17,8 @@ pub(in crate::harness) mod testing;
 mod tests;
 
 pub use agents::{
-    AUTORESEARCHER_AGENT, BuiltInAgent, GRILLING_AGENT, MOEBIUS_AGENT, RETRO_AGENT, built_in_agent,
+    AUTORESEARCHER_AGENT, BuiltInAgent, CODER_AGENT, GRILLING_AGENT, MOEBIUS_AGENT, RETRO_AGENT,
+    REVIEWER_AGENT, built_in_agent,
 };
 pub(crate) use agents::{
     agent_list, chat_agent, has_agent, resolve as resolve_agent, tell_where_moebius_runs,

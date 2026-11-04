@@ -10,7 +10,7 @@ use super::HarnessRepo;
 use crate::app::{App, AppError, Result};
 use crate::bus::Event;
 use crate::config::{
-    AgentConfig, AgentSet, HarnessKind, ToolOutput, default_protocol, default_true,
+    AgentConfig, AgentSet, EngineeringSkills, HarnessKind, ToolOutput, default_protocol,
     valid_agent_name,
 };
 use crate::harness::mcp::{McpServer, parse_file};
@@ -47,13 +47,9 @@ pub struct AgentSettings {
     /// The runner (`[[runners]]` of `moebius.toml`) the agent's runs go to; left out for the server itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runner: Option<String>,
-    /// Whether it is given the engineering skills Moebius brings for it; on unless the file says `false`.
-    #[serde(default = "default_true", skip_serializing_if = "is_true")]
-    pub engineering_skills: bool,
-}
-
-fn is_true(value: &bool) -> bool {
-    *value
+    /// The engineering skills it is given: `true` (left out) the defaults of its name, `false` none, or a list of names.
+    #[serde(default, skip_serializing_if = "EngineeringSkills::is_default")]
+    pub engineering_skills: EngineeringSkills,
 }
 
 /// An agent as the API takes and gives it: its settings and its instructions (`agents/<name>.md`, empty without).
@@ -270,7 +266,7 @@ pub(super) fn agent_config(
         token_budget: settings.token_budget,
         harness: settings.harness,
         tool_output: settings.tool_output,
-        engineering_skills: settings.engineering_skills,
+        engineering_skills: settings.engineering_skills.clone(),
         runner: settings.runner.clone(),
     }
 }

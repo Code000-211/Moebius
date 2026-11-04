@@ -68,8 +68,66 @@ packages.lock          what each vendored package was fetched as
 ```
 
 Nothing else is read. The Moebius agent stays built in: `agents/Moebius.toml` configures it as `[agents.Moebius]` does, and
-`agents/Moebius.md` is added after its built-in instructions (see [configuration](configuration.md)). So does the
-`Grilling-partner` (see [Grilling](#grilling)).
+`agents/Moebius.md` is added after its built-in instructions (see [configuration](configuration.md)). So do the
+`Grilling-partner` (see [Grilling](#grilling)), the `Coder` and the `Reviewer` (see [The Coder and the
+Reviewer](#the-coder-and-the-reviewer)).
+
+### The Coder and the Reviewer
+
+The agents the default workflow starts exist without any file: Moebius brings the `Coder` and the `Reviewer` with their
+instructions and their [engineering skills](#engineering-skills), and `agents/Coder.toml`, `agents/Coder.md` (or
+`[agents.Coder]`) and the same for the Reviewer add what a person sets on top, as for the Moebius agent: the built-in
+instructions come first and the agent's own after them, the built-in skills are the engineering skills alone (no
+`moebius` skill), and the settings are the person's own. They are listed by `GET /v1/agents` as built in whether or not
+they have files, and a new agent can be started as a copy of either (see [`agent save --template`](cli.md)).
+
+The model is the one thing Moebius cannot choose. A configured agent has its own. The Reviewer without one takes the
+Coder's model, protocol, harness and `runner`, so it reviews where the Coder coded (the other built-in agents take the
+model, protocol and harness, and run on the server). The Coder without one has no other to take it from, so it is listed with an
+empty model, the Agents page says it needs one, and a card that starts it fails closed with a `board_error` that says
+`the Coder agent needs a model`; a chat with it runs on the model the chat is given. Nothing is guessed from the models
+the router can serve.
+
+The `Reviewer` is the review agent of the default workflow: it exists always, like the Coder (`moebius.has_agent("Reviewer")`
+is true on every server), so a card goes to review out of the box, on the Coder's model unless the Reviewer has its own.
+A person who wants no review changes the column's script (`.moebius/review.luau` of the repository, see the
+[workflows guide](../guide/workflows.md)), for example to `moebius.offer_change()` at once.
+The instructions complement what each run's prompt says (the issue, the checks, the `FINDING` format) and do not repeat
+it. The parts that fit only a card (the issue as the spec, the summary, the `FINDING` format) start with "When you work
+on a card", so in a chat with either agent they do not hold it to a card's rules; it follows what the person asks, with
+the same care (tests, checks, the worktree). The Reviewer's two review runs each limit it to one axis in their prompt,
+and the instructions tell it that the prompt's scope and format win. The skills are named "when you have it", since
+`engineering_skills` can remove them. The Coder's:
+
+> You are the Coder. You turn one issue into a change that is ready to be reviewed and merged.
+>
+> When you work on a card, the issue is the spec. Do what it asks and nothing else: no cleanup of code you pass by, no feature it does not name, no refactoring it does not need. If something near it looks wrong, say so in your summary and leave it. When the issue is unclear, take the reading that is the smallest and the easiest to undo, and say in the summary which reading you took. In a chat, do what the person asks, with the same care as below: tests, checks, and staying in your worktree.
+>
+> Before you change anything, read the repository's CLAUDE.md, AGENTS.md and CONTRIBUTING.md, whichever of them exist, and follow them: its layout, its style, its tests, its commit messages. What they say wins over your habits.
+>
+> Work test first, with the tdd skill when you have it: write the test that shows what is asked, see it fail for the right reason, make it pass, and then tidy. For a bug, use the diagnosing-bugs skill when you have it to find the cause before you fix it, and let the test you write be the one that fails without the fix. Follow the skill's rules about where tests go and what a good test is. Nobody answers a question in a run, so where a skill tells you to ask, read the moebius-autonomous skill when you have it: decide, and write the decision and its reason in your summary.
+>
+> Before you finish, run the checks the repository has, those its documentation names (format, lint, type check, the tests), and fix what they report. Do not weaken a test, a check or a lint rule to make it pass. If a check fails for a reason that has nothing to do with your change, say so in the summary instead of fixing it.
+>
+> Commit in small steps, each a change that stands on its own, with a message whose subject says what the change does in the imperative and whose body says why, as the repository's own history does. Do not commit generated files, secrets or build output.
+>
+> Stay inside your worktree. Do not read or write files outside it, do not touch other branches, other worktrees or the repository's own clone, and do not push unless the person you are chatting with asks you to. Do not install anything on the machine that the repository does not already ask for.
+>
+> When you work on a card, end with the summary the run's prompt asks for: what you changed and why, how you tested it, what you decided without being able to ask, and anything you saw but left alone. In a chat, say the same in your last message.
+
+The Reviewer's:
+
+> You are the Reviewer. You judge a change that someone else made for an issue, and you decide whether it can be merged. You read; you do not change the change.
+>
+> When you work on a card, review the change against two things: the issue, and the repository's standards. If the run's prompt limits the review to one of them, report only on that one: the scope and the format of the prompt win over this text. Against the issue, ask whether it does what was asked and nothing more, whether it is correct, and whether every behaviour it adds has a test that would fail without it. Against the standards, read the repository's CLAUDE.md, AGENTS.md and CONTRIBUTING.md, whichever of them exist, and check the change follows them. Read the whole change and the code around it before you judge a line; a hunk alone can mislead you.
+>
+> Use the code-review skill for how to look at a change. Where a run's prompt tells you how to report, that wins over the report headings of the skill. Nobody answers a question in a run, so read the moebius-autonomous skill for what to do where the skill tells you to ask: decide, and say what you decided.
+>
+> You change no source file, make no commit and touch no branch. You may run the repository's tests and checks to see whether the change holds up; the build output they leave is fine. In a chat, answer what the person asks about a change, with the same care and the same limits.
+>
+> When you work on a card, report each problem in exactly the format the run's prompt asks for: a line `FINDING blocking: <what is wrong>` or `FINDING judgement: <what is doubtful>`, then a line `EVIDENCE: <the lines of the diff, or the line of the issue, that show it>`. Blocking is only for what is wrong: a bug, a missing or failing test, something the issue asks for that is not done, a rule of the repository that the change breaks. Judgement is for what is doubtful and a person should look at: a choice that may be right, a risk, a smell. Style that the repository's tooling enforces is neither. Never invent a finding to look thorough, never repeat a finding, and never report one you cannot back with evidence; a change with no problems gets no findings and an approval.
+>
+> When you work on a card, end the way the run's prompt says, with its last line and nothing after it.
 
 ## `agents/<name>.toml`
 
@@ -86,7 +144,7 @@ Nothing else is read. The Moebius agent stays built in: `agents/Moebius.toml` co
 | `skills` | array of strings | `[]` | Names of directories under `skills/` that hold a `SKILL.md`, or `pkg:<package>[/<path>]` for the skills of a vendored package (see [Packages](#packages)). Each is given to Pi-Bolt as `--skill`. A name that is not there is an error. |
 | `extensions` | array of strings | `[]` | Paths of files in the repository, relative to its root and without `..`, or `pkg:<package>[/<path>]` for the extensions of a vendored package (see [Packages](#packages)). Each is given to Pi-Bolt as `--extension`, before the lens and the bridge. A path that is not a file, and a `pkg:` name that does not resolve, is an error. |
 | `tool_output` | table | the defaults | `hide_after_turns`, `max_lines`, `max_bytes` and `compress`, as `agents.<name>.tool_output` in [configuration](configuration.md); a key left out has its default. Pi-Bolt runs only. |
-| `engineering_skills` | boolean | `true` | Whether the agent is given the engineering skills Moebius brings for it (see [Engineering skills](#engineering-skills)); written only when it is `false`. Only the `Coder`, the `Reviewer` and the `Grilling-partner` have any. |
+| `engineering_skills` | boolean or array of strings | `true` | The engineering skills the agent is given (see [Engineering skills](#engineering-skills)): `true` the defaults of its name (the `Coder`'s, the `Reviewer`'s and the `Grilling-partner`'s, none for another name), `false` none, a list of names exactly those. Only the names of the engineering skills and `moebius-autonomous` are accepted (`tdd`, `diagnosing-bugs`, `code-review`, `grilling`, `to-tickets`, `moebius-autonomous`); any other name, or any other value, is an error of the agent. Written only when it is not `true`. |
 | `mcp` | array of strings | `[]` | Names of servers in `mcp.toml`. A run of the agent is given exactly these servers. A name that is not there, a server that cannot be used (see [`mcp.toml`](#mcptoml)), or any name while `mcp.toml` cannot be read, is an error. |
 
 The instructions are not a key: they are the text of `agents/<name>.md`, given to Pi-Bolt as `--append-system-prompt`.
@@ -108,7 +166,7 @@ A skill as Pi-Bolt documents it: a directory with a `SKILL.md` and whatever else
 `SKILL.md` is not a skill. An agent that names a skill that is missing is left out with an error. A run is given exactly
 its agent's skills, in the order of the `skills` key, and no skill Pi-Bolt would find on its own. The Moebius agent has
 its built-in skills first, the `moebius` skill and the task skills `moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions`, `moebius-plugins` and `moebius-report`, then those of
-`agents/Moebius.toml`. The other built-in agents have the `moebius` skill first. A directory of `skills/` with the name
+`agents/Moebius.toml`. The other built-in agents have the `moebius` skill first, except the Coder and the Reviewer, which have none of the reference library. A directory of `skills/` with the name
 of a built-in skill is ignored, except for the engineering skills below.
 
 ### Engineering skills
@@ -126,15 +184,23 @@ built-in skills when the server starts, and given to a run before the agent's ow
 | `Reviewer` | `code-review`, `moebius-autonomous` |
 | `Grilling-partner` | `grilling`, `to-tickets`, `moebius-autonomous` (in front of the `moebius` skill) |
 
-An agent with any other name has none. This holds on both harnesses (Claude Code gets them as skills of its run's
+That is what `engineering_skills = true` means, the default: the skills go with the agent's name. Any agent can be given
+others, by name, with a list: `engineering_skills = ["tdd", "diagnosing-bugs", "moebius-autonomous"]` gives the agent
+exactly those skills, in that order, and nothing else (`moebius-autonomous` only when the list has it, so name it
+beside any skill that asks a question of the user). An agent with another name has none by default. This holds on both harnesses (Claude Code gets them as skills of its run's
 configuration directory). `to-tickets` asks not to be offered to the model on its own, so the Grilling partner is told in
 its instructions where its `SKILL.md` is.
 
 - **Turn them off** for an agent with `engineering_skills = false` in its `agents/<name>.toml` (or its
   `[agents.<name>]` table); the app has the setting on the agent's page, and `agent save` has `--no-engineering-skills`.
   It turns off the five skills and the adapter together; the `moebius` skill stays on the Grilling partner.
+- **Choose them** with a list of names, as above; the app has a toggle for each skill on the agent's page, and `agent
+  save` has `--engineering-skill <name>`, given again for more. A copy of an agent (see [`agent save
+  --template`](cli.md)) takes over everything, so it is written with the engineering skills the source has, as an
+  explicit list: `Coder-fast`, copied from the Coder, has `tdd`, `diagnosing-bugs` and `moebius-autonomous` whatever its
+  name. The `Reviewer` without a configuration of its own, which only borrows the Coder's model, harness and `runner`, keeps the skill defaults of its own name (`code-review`, `moebius-autonomous`) whatever the Coder's `engineering_skills` says, a list or `false`.
 - **Replace one** with a skill of your own: a directory `skills/<name>/` of this repository with a `SKILL.md` and the
-  name of the skill (`tdd`, `diagnosing-bugs`, `code-review`, `grilling` or `to-tickets`) takes its place for every agent that has it, with all its files. These
+  name of the skill (`tdd`, `diagnosing-bugs`, `code-review`, `grilling` or `to-tickets`) takes its place for every agent that has it (by default or by its list), with all its files. These
   names, unlike `moebius` and the `moebius-` skills, are not reserved. `moebius-autonomous` cannot be replaced.
 - **Update them from upstream**: the Skills page shows each one as built in with the source and the commit it was copied
   at, and "Update from upstream" asks the Moebius agent to import that skill from the repository with the Skills import,
@@ -348,7 +414,7 @@ model providers' keys are read from the environment by the router, so the files 
 as they are.
 
 - `GET /v1/agents/{name}` answers `{"name", "settings", "instructions"}`, where `settings` has the keys of the table above
-  (`protocol` always, `skills`, `extensions` and `mcp` always, `thinking` and `token_budget` when set, `tool_output` when it is not the defaults, `engineering_skills` when it is `false`) and `instructions`
+  (`protocol` always, `skills`, `extensions` and `mcp` always, `thinking` and `token_budget` when set, `tool_output` when it is not the defaults, `engineering_skills` when it is `false` or a list) and `instructions`
   is the text of the `.md` file, empty without one.
 - `PUT /v1/agents/{name}` takes `{"settings": {...}, "instructions": "..."}` (`instructions` may be left out) and
   is checked as a file read is. It writes `agents/<name>.toml` (the file is written again from the settings, so comments

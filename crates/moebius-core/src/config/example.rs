@@ -223,7 +223,7 @@ program = "claude"
 # runner = "gpu-box"                      # a [[runners]] name; without it the agent's runs go on the server
 # instructions = "Keep changes small and run the tests."
 # token_budget = 2000000
-# engineering_skills = true               # false: not given the engineering skills Moebius brings (Coder, Reviewer, Grilling-partner)
+# engineering_skills = true               # false: none; or a list, ["tdd", "moebius-autonomous"]: exactly those (default: those of the name Coder, Reviewer, Grilling-partner)
 # How the outputs of its tools are kept small before the model reads them:
 # [agents.Coder.tool_output]
 # hide_after_turns = 10                   # outputs of older turns are hidden behind a placeholder; 0 keeps them all

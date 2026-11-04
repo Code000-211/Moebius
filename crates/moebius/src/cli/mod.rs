@@ -218,7 +218,7 @@ impl Operate {
             Automation { command } => automations::automation(command),
             Runners => agents::runners(),
             Agents => agents::agents(),
-            Agent { command } => agents::agent(command),
+            Agent { command } => agents::agent(command, get),
             Rules { command } => rules::rules(command.as_ref()),
             Pkg { command } => packages::pkg(command, get),
             Ext { command } => ext::ext(command),
@@ -430,11 +430,17 @@ pub(crate) mod tests {
 
     /// The plan of the command line `args`, which must not need to look anything up.
     pub fn plan(args: &[&str]) -> Result<(Request, Show), String> {
+        plan_with(args, &mut |_| Err("no lookup expected".into()))
+    }
+
+    /// The plan of the command line `args`, which may look routes up with `get`.
+    pub fn plan_with(
+        args: &[&str],
+        get: &mut dyn FnMut(&str) -> Result<Value, String>,
+    ) -> Result<(Request, Show), String> {
         let probe = Probe::try_parse_from(std::iter::once("moebius").chain(args.iter().copied()))
             .map_err(|e| e.to_string())?;
-        probe
-            .command
-            .plan(&mut |_| Err("no lookup expected".into()))
+        probe.command.plan(get)
     }
 
     #[test]

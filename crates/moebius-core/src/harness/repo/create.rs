@@ -117,7 +117,7 @@ fn fill(
             mcp: vec![],
             harness: agent.harness,
             tool_output: agent.tool_output,
-            engineering_skills: agent.engineering_skills,
+            engineering_skills: agent.engineering_skills.clone(),
             runner: agent.runner.clone(),
         };
         let settings = toml::to_string(&settings)

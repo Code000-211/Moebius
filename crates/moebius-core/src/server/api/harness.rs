@@ -308,6 +308,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_coder_and_the_reviewer_are_built_in_agents_without_configuration() {
+        let (_dir, state, addr) = start_with(BTreeMap::new()).await;
+        for (name, skill) in [("Coder", "tdd"), ("Reviewer", "code-review")] {
+            let shown: serde_json::Value = get(&state, &addr, &format!("/v1/agents/{name}")).await;
+            // No files, and the built-in part: the instructions, no reference library, the engineering skills.
+            assert!(shown.get("settings").is_none(), "{shown}");
+            let instructions = shown["built_in"]["instructions"].as_str().unwrap();
+            assert!(
+                instructions.starts_with(&format!("You are the {name}.")),
+                "{instructions}"
+            );
+            assert!(instructions.contains(skill));
+            assert_eq!(shown["built_in"]["skills"], serde_json::json!([]));
+            let engineering: Vec<&str> = shown["built_in"]["engineering_skills"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|s| s["name"].as_str().unwrap())
+                .collect();
+            assert!(engineering.contains(&skill) && engineering.contains(&"moebius-autonomous"));
+        }
+    }
+
+    #[tokio::test]
     async fn a_built_in_agent_shows_its_built_in_instructions_and_skills_without_a_harness_repository()
      {
         let (_dir, state, addr) = start().await;
@@ -456,7 +480,7 @@ mod tests {
     async fn agents_cannot_be_edited_without_a_harness_repository() {
         let (_dir, state, addr) = start().await;
         let client = reqwest::Client::new();
-        let url = format!("http://{addr}/v1/agents/Coder");
+        let url = format!("http://{addr}/v1/agents/Planner");
         let body = serde_json::json!({ "settings": { "model": "m" } });
         let responses = [
             client.get(&url),
@@ -564,8 +588,8 @@ mod tests {
             serde_json::json!([
                 { "name": "Moebius", "model": "big", "protocol": "openai", "harness": "pi-bolt", "built_in": true },
                 { "name": "Grilling-partner", "model": "big", "protocol": "openai", "harness": "pi-bolt", "built_in": true },
-                { "name": "Coder", "model": "big", "protocol": "openai", "harness": "pi-bolt", "built_in": false },
-                { "name": "Reviewer", "model": "fast", "protocol": "anthropic", "harness": "pi-bolt", "built_in": false },
+                { "name": "Coder", "model": "big", "protocol": "openai", "harness": "pi-bolt", "built_in": true },
+                { "name": "Reviewer", "model": "fast", "protocol": "anthropic", "harness": "pi-bolt", "built_in": true },
             ])
         );
 
@@ -577,6 +601,8 @@ mod tests {
             serde_json::json!([
                 { "name": "Moebius", "model": "", "protocol": "openai", "harness": "pi-bolt", "built_in": true },
                 { "name": "Grilling-partner", "model": "", "protocol": "openai", "harness": "pi-bolt", "built_in": true },
+                { "name": "Coder", "model": "", "protocol": "openai", "harness": "pi-bolt", "built_in": true },
+                { "name": "Reviewer", "model": "", "protocol": "openai", "harness": "pi-bolt", "built_in": true },
             ])
         );
     }

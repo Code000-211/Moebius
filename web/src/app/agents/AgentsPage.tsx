@@ -34,13 +34,15 @@ import { SkeletonCard, SkeletonList } from "../../ui/page/Skeleton";
 import { useDrafts } from "../harness/form";
 import { HarnessSetup } from "../harness/HarnessSetup";
 import { AgentEditor, type Saved } from "./AgentEditor";
-import { type AgentForm, blankForm, formOf, fromFile } from "./model";
+import { type AgentForm, blankForm, copyable, formOf, fromFile } from "./model";
+import { NewAgentChoice, NewAgentEditor } from "./NewAgent";
 
 const harnessName = (harness: string) =>
   harness === "pi-bolt" ? "Pi-Bolt" : harness === "claude-code" ? "Claude Code" : harness;
 
 function cardLine(agent: Agent): string {
   if (agent.error) return agent.error;
+  if (agent.model === "") return "Needs a model";
   const base = `${agent.model} · ${agent.protocol}`;
   return agent.harness === "claude-code" ? `${base} · ${harnessName(agent.harness)}` : base;
 }
@@ -49,6 +51,7 @@ function cardTags(agent: Agent): Array<{ label: string; tone: TagTone }> {
   const tags: Array<{ label: string; tone: TagTone }> = [];
   if (agent.built_in) tags.push({ label: "Built in", tone: "plain" });
   if (agent.error) tags.push({ label: "Broken", tone: "error" });
+  else if (agent.model === "") tags.push({ label: "Needs a model", tone: "attention" });
   return tags;
 }
 
@@ -69,6 +72,9 @@ export function AgentsPage() {
 
   const chosen = params.get("agent");
   const creating = params.get("new") === "1";
+  // A new agent starts blank (`blank=1`) or from an existing agent (`from=`); with neither, the choice is shown.
+  const startsFrom = params.get("from");
+  const startsBlank = params.get("blank") === "1";
   const select = (changes: Record<string, string | null>) =>
     setParams(
       (current) => {
@@ -103,9 +109,8 @@ export function AgentsPage() {
       : undefined;
   const startNew = () => {
     setSaved(null);
-    select({ new: "1", agent: null });
+    select({ new: "1", agent: null, from: null, blank: null });
   };
-  const newForm = blankForm("", true);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -183,7 +188,7 @@ export function AgentsPage() {
                   editable
                     ? () => {
                         setSaved(null);
-                        select({ agent: agent.name, new: null });
+                        select({ agent: agent.name, new: null, from: null, blank: null });
                       }
                     : undefined
                 }
@@ -192,11 +197,19 @@ export function AgentsPage() {
           )
         }
         detail={
-          creating ? (
-            <AgentEditor
-              key="new"
-              initial={drafts.take(NEW, () => null) ?? newForm}
-              stored={newForm}
+          creating && !startsBlank && startsFrom === null ? (
+            <NewAgentChoice
+              key="choice"
+              agents={copyable(agents.data ?? [])}
+              onBlank={() => select({ blank: "1" })}
+              onFrom={(name) => select({ from: name })}
+            />
+          ) : creating ? (
+            <NewAgentEditor
+              key={`new-${startsFrom ?? ""}`}
+              from={startsBlank ? null : startsFrom}
+              agents={agents.data ?? []}
+              draft={drafts.take(NEW, () => null)}
               drafts={newDraft}
               inFile={inFile}
               skills={skills.isError ? null : (skills.data ?? [])}
@@ -207,11 +220,11 @@ export function AgentsPage() {
               onSaved={setSaved}
               onNamed={(name) => {
                 drafts.drop(NEW);
-                select({ agent: name, new: null });
+                select({ agent: name, new: null, from: null, blank: null });
               }}
               onDeleted={() => {
                 drafts.drop(NEW);
-                select({ agent: null, new: null });
+                select({ agent: null, new: null, from: null, blank: null });
               }}
             />
           ) : picked !== null && editable ? (
@@ -230,8 +243,8 @@ export function AgentsPage() {
               available={available.data}
               saved={saved}
               onSaved={setSaved}
-              onNamed={(name) => select({ agent: name, new: null })}
-              onDeleted={() => select({ agent: null, new: null })}
+              onNamed={(name) => select({ agent: name, new: null, from: null, blank: null })}
+              onDeleted={() => select({ agent: null, new: null, from: null, blank: null })}
             />
           ) : none ? (
             <Empty

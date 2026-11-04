@@ -152,6 +152,9 @@ describe("the Agents page", () => {
     async () => {
       await open("/agents");
       await page.getByRole("button", { name: "New agent" }).click();
+      // One plain choice first: blank, or an existing agent.
+      await page.getByRole("button", { name: "From an existing agent" }).waitFor();
+      await page.getByRole("button", { name: "Continue" }).click();
       await page.getByLabel("Name of the new agent").fill("Tester");
       await save().click();
       await page.getByText("Enter the model.").waitFor();
@@ -171,6 +174,86 @@ describe("the Agents page", () => {
       expect(fake().agents.Tester).toBeUndefined();
     },
   );
+
+  it.skipIf(usesRealServer)(
+    "starts a new agent from an existing one, under a new name that is not taken",
+    async () => {
+      await open("/agents");
+      await page.getByRole("button", { name: "New agent" }).click();
+      await page.getByRole("button", { name: "From an existing agent" }).click();
+      await pickOption(page, page.getByLabel("Start from"), "Reviewer");
+      await page.getByRole("button", { name: "Continue" }).click();
+      // Everything of the Reviewer is copied, with the name left to type.
+      const name = page.getByLabel("Name of the new agent");
+      expect(await name.inputValue()).toBe("");
+      expect(await showing(page.getByLabel("Model", { exact: true }))).toBe("fake-small");
+      expect(await showing(page.getByLabel("Protocol"))).toBe("anthropic");
+      // A name that exists is refused, a built-in one among them.
+      await name.fill("Coder");
+      await save().click();
+      await page.getByText("An agent named Coder exists.").waitFor();
+      expect(requests("PUT", "/v1/agents/Coder")).toHaveLength(0);
+      await name.fill("Reviewer2");
+      await save().click();
+      await page.getByText("Saved as commit").waitFor();
+      expect(sent("PUT", "/v1/agents/Reviewer2")).toMatchObject({
+        settings: { model: "fake-small", protocol: "anthropic" },
+        // The Reviewer is built in: its built-in instructions come first, and are the copy's own.
+        instructions: expect.stringMatching(/^You are the Reviewer\.[\s\S]*Review kindly\.$/),
+      });
+      await card("Reviewer2").waitFor();
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "copies the built-in Coder with its built-in instructions, and says it needs a model",
+    async () => {
+      // The Coder without files is built in, and has no model until a person gives it one.
+      await open("/agents", (f) => {
+        delete f.agents.Coder;
+      });
+      const coder = page
+        .getByTestId("list-card")
+        .filter({ has: page.getByText("Coder", { exact: true }) });
+      await coder.waitFor();
+      expect(await coder.textContent()).toContain("Built in");
+      expect(await coder.textContent()).toContain("Needs a model");
+      await page.getByRole("button", { name: "New agent" }).click();
+      await page.getByRole("button", { name: "From an existing agent" }).click();
+      await pickOption(page, page.getByLabel("Start from"), "Coder");
+      await page.getByRole("button", { name: "Continue" }).click();
+      const instructions = page.getByRole("textbox", { name: "Instructions", exact: true });
+      expect(await instructions.inputValue()).toContain("You are the Coder.");
+      await page.getByLabel("Name of the new agent").fill("Quick");
+      await save().click();
+      await page.getByText("Enter the model.").waitFor();
+      await pickOption(page, page.getByLabel("Model", { exact: true }), "fake-small");
+      await save().click();
+      await page.getByText("Saved as commit").waitFor();
+      expect(sent("PUT", "/v1/agents/Quick")).toMatchObject({
+        // Its engineering skills are the Coder's, as a list of its own.
+        settings: {
+          model: "fake-small",
+          engineering_skills: ["tdd", "diagnosing-bugs", "moebius-autonomous"],
+        },
+        instructions: expect.stringContaining("You are the Coder."),
+      });
+    },
+  );
+
+  it.skipIf(usesRealServer)("chooses the engineering skills of any agent", async () => {
+    await open("/agents?agent=Reviewer");
+    const chip = (name: string) => page.getByRole("button", { name, exact: true });
+    await chip("tdd").waitFor();
+    // The Reviewer has its defaults until a skill is chosen, then exactly the chosen ones.
+    await chip("code-review").click();
+    await chip("tdd").click();
+    await save().click();
+    await page.getByText("Saved as commit").waitFor();
+    expect(requests("PUT", "/v1/agents/Reviewer")[0]?.body).toMatchObject({
+      settings: { engineering_skills: ["moebius-autonomous", "tdd"] },
+    });
+  });
 
   it.skipIf(usesRealServer)("shows what a built-in agent brings, read only", async () => {
     await open("/agents?agent=Moebius");

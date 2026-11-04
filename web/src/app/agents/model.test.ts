@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { ServerSettings } from "../../api/types/models";
 import {
+  type AgentRequest,
   addPath,
   agentRequest,
   blankForm,
+  copyable,
+  copyOf,
   decisionChoices,
+  engineeringOf,
   fileTable,
   formOf,
   fromFile,
@@ -33,7 +37,7 @@ describe("what a save sends", () => {
       budget: " 2000000 ",
       runner: "box",
       hideAfter: "0",
-      engineeringSkills: false,
+      engineeringSkills: [] as string[],
     };
     const request = agentRequest(form);
     expect(request).toMatchObject({
@@ -85,7 +89,7 @@ describe("opening an agent", () => {
       budget: "5",
       hideAfter: "1",
       compress: false,
-      engineeringSkills: false,
+      engineeringSkills: [],
       mcp: ["docs"],
     });
   });
@@ -184,5 +188,147 @@ describe("the choices of a Model field", () => {
     expect(decisionChoices(listed, "http://d")).toEqual([
       { id: "decider", protocol: "openai", upstream: "http://d", class: false },
     ]);
+  });
+});
+
+describe("starting from an existing agent", () => {
+  const entry = (name: string, built_in: boolean, model = "m") =>
+    ({ name, model, protocol: "openai", harness: "pi-bolt", built_in }) as const;
+
+  it("offers the Coder and the Reviewer and the person's own agents, not the others Moebius runs", () => {
+    const names = copyable([
+      entry("Moebius", true),
+      entry("Grilling-partner", true),
+      entry("Coder", true, ""),
+      entry("Reviewer", true),
+      entry("Fast", false),
+      { ...entry("Broken", false), error: "bad" },
+    ]).map((agent) => agent.name);
+    expect(names).toEqual(["Coder", "Reviewer", "Fast"]);
+  });
+
+  it("copies every setting of an agent of the person's own under a name still to be typed", () => {
+    const form = copyOf(
+      {
+        name: "Fast",
+        settings: {
+          model: "small",
+          protocol: "anthropic",
+          thinking: "low",
+          token_budget: 5,
+          harness: "claude-code",
+          runner: "box",
+          skills: ["a"],
+          extensions: ["extensions/x.ts"],
+          mcp: ["docs"],
+          engineering_skills: false,
+          tool_output: { hide_after_turns: 0, max_lines: 1, max_bytes: 2, compress: false },
+        },
+        instructions: "Be brief.",
+      },
+      undefined,
+    );
+    expect(form).toMatchObject({
+      name: "",
+      naming: true,
+      exists: false,
+      builtIn: null,
+      model: "small",
+      protocol: "anthropic",
+      thinking: "low",
+      budget: "5",
+      harness: "claude-code",
+      runner: "box",
+      skills: ["a"],
+      extensions: ["extensions/x.ts"],
+      mcp: ["docs"],
+      engineeringSkills: [],
+      hideAfter: "0",
+      compress: false,
+      instructions: "Be brief.",
+    });
+  });
+
+  it("copies a built-in agent with the settings it runs with and its built-in instructions as its own", () => {
+    const built = { instructions: "You are the Coder.", skills: [] };
+    const form = copyOf(
+      { name: "Coder", built_in: built },
+      { ...entry("Coder", true, "big"), protocol: "anthropic", thinking: "high" },
+    );
+    expect(form).toMatchObject({
+      name: "",
+      naming: true,
+      builtIn: null,
+      model: "big",
+      protocol: "anthropic",
+      thinking: "high",
+      instructions: "You are the Coder.",
+    });
+    // Its own instructions come after the built-in ones.
+    const own = copyOf(
+      {
+        name: "Coder",
+        built_in: built,
+        settings: { model: "m", protocol: "openai", skills: [], extensions: [], mcp: [] },
+        instructions: "Prefer small scripts.",
+      },
+      entry("Coder", true),
+    );
+    expect(own.instructions).toBe("You are the Coder.\n\nPrefer small scripts.");
+  });
+
+  it("gives a copy the engineering skills its source has, as a list of its own", () => {
+    const built = {
+      instructions: "You are the Coder.",
+      skills: [],
+      engineering_skills: ["tdd", "diagnosing-bugs", "moebius-autonomous"].map((name) => ({
+        name,
+        description: "",
+      })),
+    };
+    const copy = copyOf({ name: "Coder", built_in: built }, entry("Coder", true, "big"));
+    expect(copy.engineeringSkills).toEqual(["tdd", "diagnosing-bugs", "moebius-autonomous"]);
+    const request = agentRequest({ ...copy, name: "Coder-fast", model: "small" });
+    expect(request).toMatchObject({
+      settings: { engineering_skills: ["tdd", "diagnosing-bugs", "moebius-autonomous"] },
+    });
+    // A list of the source's own is kept, and an agent with no engineering skills stays without.
+    const own = copyOf(
+      {
+        name: "Coder",
+        built_in: built,
+        settings: {
+          model: "m",
+          protocol: "openai",
+          skills: [],
+          extensions: [],
+          mcp: [],
+          engineering_skills: ["tdd"],
+        },
+      },
+      undefined,
+    );
+    expect(own.engineeringSkills).toEqual(["tdd"]);
+    expect(copyOf({ name: "Fast" }, entry("Fast", false, "m")).engineeringSkills).toBeNull();
+  });
+
+  it("reads and writes the engineering skills as the default, none or a list", () => {
+    const settings = { model: "m", protocol: "openai", skills: [], extensions: [], mcp: [] };
+    const form = (engineering_skills?: boolean | string[]) =>
+      formOf({ name: "Planner", settings: { ...settings, engineering_skills } });
+    expect(form().engineeringSkills).toBeNull();
+    expect(form(true).engineeringSkills).toBeNull();
+    expect(form(false).engineeringSkills).toEqual([]);
+    expect(form(["tdd"]).engineeringSkills).toEqual(["tdd"]);
+    const sent = (engineeringSkills: string[] | null) =>
+      (agentRequest({ ...form(), engineeringSkills }) as AgentRequest).settings.engineering_skills;
+    expect(sent(null)).toBeUndefined();
+    expect(sent([])).toBe(false);
+    expect(sent(["tdd", "moebius-autonomous"])).toEqual(["tdd", "moebius-autonomous"]);
+    expect(engineeringOf({ ...form(), name: "Reviewer" })).toEqual([
+      "code-review",
+      "moebius-autonomous",
+    ]);
+    expect(engineeringOf({ ...form(["tdd"]), name: "Reviewer" })).toEqual(["tdd"]);
   });
 });

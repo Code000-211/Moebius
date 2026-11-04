@@ -97,7 +97,7 @@ mod tests {
 
     use crate::app::{App, PERSON};
     use crate::board::Limits;
-    use crate::board::testing::{FakeHarness, column, setup, setup_with_harness};
+    use crate::board::testing::{FakeHarness, column, setup_unreviewed, setup_with_harness};
     use crate::repos::git;
     use crate::store::Card;
 
@@ -237,7 +237,6 @@ mod tests {
     #[test]
     fn an_axis_with_an_agent_of_its_own_is_reviewed_by_it() {
         let harness = Arc::new(FakeHarness {
-            reviewer: true,
             agents: vec!["Spec"],
             ..FakeHarness::default()
         });
@@ -301,7 +300,7 @@ mod tests {
 
     #[test]
     fn a_rejected_change_goes_back_to_coding_with_the_reason_and_stays_the_same_change() {
-        let harness = Arc::new(FakeHarness::default());
+        let harness = Arc::new(FakeHarness::without_review());
         let (_dir, app, engine, repo) = setup_with_harness(None, harness.clone());
         let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
         engine.settle(card.id).unwrap();
@@ -338,7 +337,7 @@ mod tests {
 
     #[test]
     fn the_reason_of_a_rejection_is_redacted_in_the_note_and_the_judgement() {
-        let harness = Arc::new(FakeHarness::default());
+        let harness = Arc::new(FakeHarness::without_review());
         let (_dir, app, engine, repo) = setup_with_harness(None, harness);
         let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
         engine.settle(card.id).unwrap();
@@ -399,7 +398,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn failing_checks_send_the_card_back_with_their_output_and_passing_ones_let_it_on() {
-        let harness = Arc::new(FakeHarness::default());
+        let harness = Arc::new(FakeHarness::without_review());
         let (dir, app, engine, repo) = setup_with_harness(None, harness.clone());
         let count = dir.path().join("count.txt");
         let checks = format!(
@@ -463,7 +462,7 @@ mod tests {
 
     #[test]
     fn a_repository_without_checks_has_none_and_the_card_goes_on() {
-        let (_dir, app, engine, repo) = setup();
+        let (_dir, app, engine, repo) = setup_unreviewed();
         let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
         engine.settle(card.id).unwrap();
         engine.settle(card.id).unwrap();
@@ -479,6 +478,7 @@ mod tests {
     fn the_checks_are_read_from_the_default_branch_not_from_the_change() {
         let harness = Arc::new(FakeHarness {
             files: vec![(".moebius/checks", "exit 1\n")],
+            unreviewed: true,
             ..FakeHarness::default()
         });
         let (_dir, app, engine, repo) = setup_with_harness(None, harness);
@@ -519,7 +519,7 @@ mod tests {
 
     #[test]
     fn a_conflict_that_appears_while_the_change_waits_to_be_merged_sends_it_back() {
-        let (_dir, app, engine, repo) = setup();
+        let (_dir, app, engine, repo) = setup_unreviewed();
         let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
         engine.settle(card.id).unwrap();
         engine.settle(card.id).unwrap();
@@ -564,7 +564,7 @@ mod tests {
     ) {
         let harness = Arc::new(FakeHarness {
             files,
-            reviewer,
+            unreviewed: !reviewer,
             ..FakeHarness::default()
         });
         let (dir, app, engine, repo) = setup_with_harness(None, harness.clone());
@@ -666,7 +666,7 @@ mod tests {
 
     #[test]
     fn without_test_first_the_reproduction_test_is_not_asked_for() {
-        let (_dir, app, engine, repo) = setup();
+        let (_dir, app, engine, repo) = setup_unreviewed();
         let card = app.create_issue(repo, "Fix a bug", "", PERSON).unwrap();
         engine.settle(card.id).unwrap();
         engine.settle(card.id).unwrap();

@@ -205,17 +205,22 @@ mod tests {
         assert!(step.started_run.is_some());
         assert_eq!(step.waiting.as_deref(), Some("coding"));
 
-        // The run has succeeded: its change is offered and waits for a person.
+        // The run has succeeded: the built-in Reviewer reviews the change, with no setting to make.
+        let step = engine.settle(card.id).unwrap();
+        assert_eq!(app.card(card.id).unwrap().column, "In review");
+        assert!(step.started_run.is_some());
+
+        // Both axes approve (one run each), so its change is offered and waits for a person.
+        engine.settle(card.id).unwrap();
         let step = engine.settle(card.id).unwrap();
         assert_eq!(app.card(card.id).unwrap().column, "Ready to merge");
         assert_eq!(
             step.waiting.as_deref(),
             Some("waiting for a person to merge")
         );
-
-        // This server has no Reviewer, so the change was offered without a review run.
         let runs = app.store.runs_for_card(card.id).unwrap();
-        assert_eq!(runs.len(), 1);
+        let agents: Vec<_> = runs.iter().map(|r| r.agent.as_str()).collect();
+        assert_eq!(agents, ["Coder", "Reviewer", "Reviewer"]);
         assert_eq!(runs[0].summary.as_deref(), Some("Done."));
         let change = app.store.changes(repo).unwrap().pop().unwrap();
         assert_eq!(change.branch, "moebius/card-1");

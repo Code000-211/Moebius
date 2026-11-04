@@ -72,7 +72,7 @@ mod tests {
 
     use crate::app::{App, PERSON};
     use crate::board::engine::Effects;
-    use crate::board::testing::{FakeHarness, engine_with, setup, setup_with};
+    use crate::board::testing::{FakeHarness, engine_with, setup, setup_with_harness};
     use crate::board::{CardRuns, Engine, Limits, StartError, Step, Variant, Workflow};
     use crate::store::{Card, Run};
 
@@ -173,7 +173,10 @@ mod tests {
 
     #[test]
     fn time_spent_offering_a_change_does_not_count_against_the_script() {
-        let (_dir, app, engine, repo) = setup_with(Some(Box::new(SlowForge)));
+        let (_dir, app, engine, repo) = setup_with_harness(
+            Some(Box::new(SlowForge)),
+            Arc::new(FakeHarness::without_review()),
+        );
         let card = app.create_issue(repo, "Slow", "", PERSON).unwrap();
         engine.settle(card.id).unwrap();
         engine.settle(card.id).unwrap();

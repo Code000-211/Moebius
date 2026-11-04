@@ -3,7 +3,7 @@
  * fields), how an agent of `moebius.toml` is read from the server's settings and written back as a table, and the
  * choices of the Model field. It follows `crates/moebius-desktop/src/screens/agents/editor.rs`.
  */
-import type { AvailableClass, AvailableModel, AvailableModels } from "../../api/types/chat";
+import type { Agent, AvailableClass, AvailableModel, AvailableModels } from "../../api/types/chat";
 import {
   type AgentDetail,
   type AgentSettings,
@@ -19,8 +19,37 @@ export const HARNESSES = ["pi-bolt", "claude-code"] as const;
 export const NOT_SET = "Not set";
 /** What the Runner list says for the server itself. */
 export const THIS_SERVER = "This server";
-/** The agents Moebius brings engineering skills for. */
-export const ENGINEERING_AGENTS = ["Coder", "Reviewer", "Grilling-partner"];
+/** The engineering skills Moebius brings, which any agent can be given, with what each is for. */
+export const ENGINEERING_SKILLS = [
+  { name: "tdd", line: "Work test first: red, green, refactor." },
+  { name: "diagnosing-bugs", line: "Reproduce a bug, find its cause and fix that." },
+  { name: "code-review", line: "Review a change against the issue and the standards." },
+  { name: "grilling", line: "Question an idea until the work is clear." },
+  { name: "to-tickets", line: "Cut the work into small issues." },
+  {
+    name: "moebius-autonomous",
+    line: "How to use the others with no person to ask.",
+  },
+];
+
+/** The engineering skills an agent of this name is given when its setting is left at the default. */
+export function engineeringDefaults(name: string): string[] {
+  switch (name) {
+    case "Coder":
+      return ["tdd", "diagnosing-bugs", "moebius-autonomous"];
+    case "Reviewer":
+      return ["code-review", "moebius-autonomous"];
+    case "Grilling-partner":
+      return ["grilling", "to-tickets", "moebius-autonomous"];
+    default:
+      return [];
+  }
+}
+
+/** The engineering skills the agent has: its list, or the defaults of its name while the list is not its own. */
+export function engineeringOf(form: AgentForm): string[] {
+  return form.engineeringSkills ?? engineeringDefaults(form.name);
+}
 
 /** What the editor holds: every field as the person sees it. */
 export interface AgentForm {
@@ -39,7 +68,8 @@ export interface AgentForm {
   maxLines: string;
   maxBytes: string;
   compress: boolean;
-  engineeringSkills: boolean;
+  /** The engineering skills it is given, exactly; null leaves them at the defaults of its name. */
+  engineeringSkills: string[] | null;
   instructions: string;
   skills: string[];
   mcp: string[];
@@ -69,7 +99,7 @@ export function blankForm(name: string, naming = false): AgentForm {
     thinking: null,
     budget: "",
     ...toolOutputFields(DEFAULT_TOOL_OUTPUT),
-    engineeringSkills: true,
+    engineeringSkills: null,
     instructions: "",
     skills: [],
     mcp: [],
@@ -94,12 +124,56 @@ export function formOf(detail: AgentDetail): AgentForm {
     thinking: settings.thinking ?? null,
     budget: settings.token_budget === undefined ? "" : String(settings.token_budget),
     ...toolOutputFields(settings.tool_output ?? DEFAULT_TOOL_OUTPUT),
-    engineeringSkills: settings.engineering_skills ?? true,
+    engineeringSkills: Array.isArray(settings.engineering_skills)
+      ? settings.engineering_skills
+      : settings.engineering_skills === false
+        ? []
+        : null,
     instructions: detail.instructions ?? "",
     skills: settings.skills ?? [],
     mcp: settings.mcp ?? [],
     extensions: settings.extensions ?? [],
   };
+}
+
+/** The built-in agents a new agent can start from; the others Moebius runs for itself are no template. */
+const COPYABLE_BUILT_IN = ["Coder", "Reviewer"];
+
+/** The agents a new agent can start from: the Coder and the Reviewer, which always exist, and the person's own. */
+export function copyable(agents: Agent[]): Agent[] {
+  return agents.filter(
+    (agent) =>
+      agent.error === undefined && (!agent.built_in || COPYABLE_BUILT_IN.includes(agent.name)),
+  );
+}
+
+/**
+ * The editor of a new agent that starts from the agent `detail` describes: all its settings and instructions, under a
+ * name still to be typed, and not built in. A built-in agent's own settings are those it runs with (`listed`, from
+ * `GET /v1/agents`) when it has no files, and its instructions are the built-in ones followed by its own, which the
+ * copy keeps as its own.
+ */
+export function copyOf(detail: AgentDetail, listed: Agent | undefined): AgentForm {
+  const form = formOf({ ...detail, built_in: undefined });
+  if (!detail.settings && listed) {
+    form.model = listed.model;
+    form.protocol = listed.protocol;
+    form.harness = listed.harness;
+    form.thinking = listed.thinking ?? null;
+    form.budget = listed.token_budget === undefined ? "" : String(listed.token_budget);
+  }
+  // The copy has another name, so it is given the skills the source has as a list of its own.
+  if (form.engineeringSkills === null) {
+    const given =
+      detail.built_in?.engineering_skills?.map((skill) => skill.name) ??
+      engineeringDefaults(detail.name);
+    if (given.length > 0) form.engineeringSkills = given;
+  }
+  const own = detail.instructions ?? "";
+  const builtIn = detail.built_in?.instructions;
+  form.instructions =
+    builtIn === undefined ? own : own.trim() === "" ? builtIn : `${builtIn}\n\n${own}`;
+  return { ...form, name: "", naming: true, exists: false, builtIn: null };
 }
 
 export interface AgentRequest {
@@ -146,7 +220,10 @@ export function agentRequest(form: AgentForm): AgentRequest | string {
   if (form.harness !== HARNESSES[0]) settings.harness = form.harness;
   if (form.runner !== null) settings.runner = form.runner;
   if (!sameToolOutput(toolOutput, DEFAULT_TOOL_OUTPUT)) settings.tool_output = toolOutput;
-  if (!form.engineeringSkills) settings.engineering_skills = false;
+  if (form.engineeringSkills !== null) {
+    settings.engineering_skills =
+      form.engineeringSkills.length === 0 ? false : form.engineeringSkills;
+  }
   // The file is not given a second final line break.
   const instructions = form.instructions.endsWith("\n")
     ? form.instructions.slice(0, -1)
@@ -210,6 +287,9 @@ export function fromFile(name: string, server: ServerSettings): AgentDetail | nu
     settings.tool_output = { ...DEFAULT_TOOL_OUTPUT, ...(output as Partial<ToolOutput>) };
   }
   if (table.engineering_skills === false) settings.engineering_skills = false;
+  if (Array.isArray(table.engineering_skills)) {
+    settings.engineering_skills = table.engineering_skills.filter((v) => typeof v === "string");
+  }
   return { name, settings, instructions: text("instructions") ?? "" };
 }
 
@@ -222,7 +302,9 @@ export function fileTable(settings: AgentSettings, instructions: string): Record
   if (instructions.trim() !== "") table.instructions = instructions;
   if (settings.token_budget !== undefined) table.token_budget = settings.token_budget;
   if (settings.tool_output) table.tool_output = settings.tool_output;
-  if (settings.engineering_skills === false) table.engineering_skills = false;
+  if (settings.engineering_skills !== undefined && settings.engineering_skills !== true) {
+    table.engineering_skills = settings.engineering_skills;
+  }
   if (settings.skills.length > 0) table.skills = settings.skills;
   if (settings.extensions.length > 0) table.extensions = settings.extensions;
   return table;

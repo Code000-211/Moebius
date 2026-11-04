@@ -624,9 +624,13 @@ mod tests {
                 .unwrap()
                 .starts_with("moebius-run-")
         );
+        // The agent's own instructions come after the built-in ones of the Coder.
+        let system = argv
+            .windows(2)
+            .find(|w| w[0] == "--append-system-prompt")
+            .unwrap();
         assert!(
-            argv.windows(2)
-                .any(|w| w == ["--append-system-prompt", "Be brief."])
+            system[1].starts_with("You are the Coder.") && system[1].ends_with("\n\nBe brief.")
         );
         let models: Value =
             serde_json::from_slice(&std::fs::read(run_dir.join("agent/models.json")).unwrap())

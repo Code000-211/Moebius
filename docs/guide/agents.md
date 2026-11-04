@@ -116,10 +116,14 @@ says what to do where a skill asks the user: decide, and put the decision and th
 card's issue is the spec; there is no tracker to publish to and no setup skill to run (the Grilling partner writes
 `.moebius/grilling/issues.json` as before).
 
-- They apply to agents with these names, on both harnesses, in addition to the agent's own `skills`. Nothing is needed to
+- By default they go with these names, on both harnesses, in addition to the agent's own `skills`. Nothing is needed to
   get them.
 - To go without them, set `engineering_skills = false` on the agent (in `agents/<name>.toml` or `[agents.<name>]`; the
-  Agents page has the setting for these three agents, `"$MOEBIUS" agent save` the flag `--no-engineering-skills`).
+  Agents page has a toggle for each skill, `"$MOEBIUS" agent save` the flag `--no-engineering-skills`).
+- Any agent can be given any of them, by name: `engineering_skills = ["tdd", "diagnosing-bugs",
+  "moebius-autonomous"]` gives the agent exactly those (`"$MOEBIUS" agent save --engineering-skill tdd ...`). A copy of
+  the Coder under another name is written with that list, so it works the same; name `moebius-autonomous` with any
+  skill that asks the user a question. Only these six names are accepted, anything else is an error of the agent.
 - The Skills page lists them as built in, with the repository and the commit they were copied from. To change one, or to
   take a newer version, save a skill of the same name in the harness configuration repository: it replaces the built-in
   copy for every agent that has it. "Update from upstream" on the skill's page starts a chat with the Moebius agent that
@@ -390,18 +394,27 @@ budget of the agent chosen at that moment.
 
 ### The Coder
 
-The agent named `Coder` must exist, or every card stops in `In progress` with a `board_error` saying
-`no agent named Coder`. A round is a `code` run in a worktree of its own. Its prompt is the issue (its number, title
+The agent named `Coder` is built in: it exists without a file, with instructions of its own (see [The Coder and the
+Reviewer](../reference/harness-configuration.md#the-coder-and-the-reviewer)) and the engineering skills `tdd`,
+`diagnosing-bugs` and `moebius-autonomous`. What it lacks is a model, which only you can choose: give it one in the
+Agents page, with `moebius agent save Coder --model <m>`, or in `[agents.Coder]`, or every card stops in `In progress` with
+a `board_error` saying `the Coder agent needs a model`. Whatever you write in its `agents/Coder.md` or `instructions` comes
+after the built-in instructions. A round is a `code` run in a worktree of its own. Its prompt is the issue (its number, title
 and body), then: make the change, run what checks the repository has, stop when the issue is done, and Moebius commits what is
 left in the worktree. After a send-back it ends with `Notes from the last round:` and the reason.
 
-Moebius does the commit. A `code` run whose worktree has nothing uncommitted when the agent stops has failed with
-`the agent changed nothing`, even if the agent made a commit of its own. So do not tell the Coder to commit.
+Moebius commits what is left uncommitted in the worktree. A `code` run that leaves nothing uncommitted and made no
+commit of its own has failed with `the agent changed nothing`; a commit of the agent's own counts as a change, so the
+built-in instructions have the Coder commit in small steps.
 
 ### The Reviewer
 
-The agent named `Reviewer` is optional. With it, every change is reviewed before it is offered, along two axes that are
-two runs of a round; without it changes are offered unreviewed. The **Standards** run checks the change against the
+The agent named `Reviewer` is built in too, with instructions that fit the two review runs below (read only, findings with
+evidence, no invented findings) and the engineering skills `code-review` and `moebius-autonomous`. It is the review
+agent of the board, so reviews need no setup: every change is reviewed before it is offered, along two axes that are two
+runs of a round, on the Coder's model unless the Reviewer has a `model` of its own (`moebius agent save Reviewer --model
+<m>`, the Agents page, or an `[agents.Reviewer]` table). A person who wants changes offered unreviewed changes the
+workflow script instead (see the [workflows guide](workflows.md)). The **Standards** run checks the change against the
 repository's own rules (`CONTRIBUTING.md`, `CLAUDE.md`, `AGENTS.md` and an optional rubric `.moebius/review.md`) and a
 fixed baseline of code smells, which are always judgement calls ("Possible Feature Envy"). The **Spec** run checks it
 against the issue. Both are told to read the change on its branch and not to edit files, to report each finding as
@@ -431,6 +444,21 @@ purposes is prompted like `code`. A
 fourth argument names the `[[runners]]` machine the run goes to in place of the agent's own `runner`:
 `moebius.start_run(agent, purpose, note, "gpu-box")`.
 
+## Start a new agent from an existing one
+
+The Agents page's **New agent** first asks one thing: start blank, or start from an existing agent. From an existing
+agent lists the Coder and the Reviewer, which always exist, and your own agents (not the Moebius agent, the Grilling
+partner or the other agents Moebius runs for itself). The editor opens with everything copied, model, protocol, harness,
+reasoning, skills, extensions, MCP servers and instructions, under a name you type; a name that is taken is refused. Copying
+the Coder or the Reviewer copies the settings it runs with and its built-in instructions as the new agent's own, since a
+copy is not built in. Edit the text where it names a skill the copy does not have: only the agents named `Coder`,
+`Reviewer` and `Grilling-partner` are given the engineering skills. The command line does the same:
+
+```sh
+moebius agent save Quick --template Coder --model qwen-coder     # the Coder's instructions, a model of its own
+moebius agent save Fast2 --template Fast --thinking low          # a copy of your agent Fast, one setting changed
+```
+
 ## Chat with an agent
 
 A chat is a run without a card: you write, the agent answers, and you can go on, steer and stop. Any agent in
@@ -442,6 +470,11 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/
 curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
   -d '{"message": "Write a ready.luau that starts a card only when nothing blocks it.", "repository": 1}' $API/v1/chats
 ```
+
+The Coder and the Reviewer can be chatted with, and have the same built-in instructions as in a run. What they say about
+a card (the issue is the spec, the summary the run's prompt asks for, the `FINDING` format, one axis of a review) holds
+only "when you work on a card"; in a chat the agent does what you ask, with the same care: tests, the repository's
+checks, staying in its worktree. The Coder does not push in a chat either, unless you ask it to.
 
 With `repository` the agent works in a new worktree on the branch `moebius/chat-<run id>`. The chats list says how many
 files the worktree changes (`changed_files`). To offer them, without ending the chat, use `POST /v1/chats/{id}/offer` (the

@@ -13,7 +13,7 @@ import { startChat } from "../../api/calls/chat";
 import { deleteAgent, saveAgent } from "../../api/calls/harness";
 import { availableModels, saveSettings } from "../../api/calls/models";
 import { keys } from "../../api/keys";
-import { type AvailableModels, listedModel, offeredLevels } from "../../api/types/chat";
+import { type Agent, type AvailableModels, listedModel, offeredLevels } from "../../api/types/chat";
 import type { AgentDetail, McpServer, Runner, SkillListed } from "../../api/types/harness";
 import { usePackageSheet } from "../../packages/PackageSheetContext";
 import { Button } from "../../ui/components/Button";
@@ -29,7 +29,8 @@ import {
   type AgentForm,
   addPath,
   agentRequest,
-  ENGINEERING_AGENTS,
+  ENGINEERING_SKILLS,
+  engineeringOf,
   fileTable,
   HARNESSES,
   modelChoices,
@@ -41,7 +42,6 @@ import {
 } from "./model";
 
 const COMPRESS = ["Compressed", "As they are"];
-const ENGINEERING = ["Given", "Not given"];
 
 /** What the page says of the last save: the commit it made (none when nothing changed), or that moebius.toml was written. */
 export type Saved = { name: string; commit: string | null } | { name: string; written: true };
@@ -196,6 +196,13 @@ export function AgentEditor(props: EditorProps) {
       const request = agentRequest(form);
       if (typeof request === "string") throw new Error(request);
       const { name, settings, instructions } = request;
+      // A new agent never replaces one that exists; the Coder and the Reviewer always do.
+      if (form.naming) {
+        const listed = queryClient.getQueryData<Agent[]>(keys.agents) ?? [];
+        if (listed.some((agent) => agent.name === name)) {
+          throw new Error(`An agent named ${name} exists. Give the new agent another name.`);
+        }
+      }
       if (inFile) {
         await saveSettings({ [`agents.${name}`]: fileTable(settings, instructions) }, []);
         return { name, written: true };
@@ -242,6 +249,7 @@ export function AgentEditor(props: EditorProps) {
 
   const choices = modelChoices(available);
   const builtIn = form.builtIn;
+  const engineering = engineeringOf(form);
   const skillsOffered = (skills ?? []).filter((skill) => !skill.built_in);
   const levels = [NOT_SET, ...offeredLevels(listedModel(available, form.model))];
   if (form.thinking !== null && !levels.includes(form.thinking)) levels.push(form.thinking);
@@ -412,18 +420,6 @@ export function AgentEditor(props: EditorProps) {
                 </Field>
               </>
             )}
-            {ENGINEERING_AGENTS.includes(form.name) && (
-              <Field label="Engineering skills">
-                {(id) => (
-                  <Select
-                    id={id}
-                    options={ENGINEERING}
-                    value={ENGINEERING[form.engineeringSkills ? 0 : 1] as string}
-                    onChange={(choice) => change({ engineeringSkills: choice === ENGINEERING[0] })}
-                  />
-                )}
-              </Field>
-            )}
           </div>
           <ModelNote
             available={available}
@@ -531,6 +527,28 @@ export function AgentEditor(props: EditorProps) {
               </Box>
             </>
           )}
+          <Box
+            title="Engineering skills"
+            aside={`${engineering.length} of ${ENGINEERING_SKILLS.length}`}
+            className="flex flex-col gap-3"
+          >
+            {ENGINEERING_SKILLS.map((skill) => (
+              <Item
+                key={skill.name}
+                name={
+                  <div>
+                    <Chip
+                      selected={engineering.includes(skill.name)}
+                      onClick={() => change({ engineeringSkills: toggle(engineering, skill.name) })}
+                    >
+                      {skill.name}
+                    </Chip>
+                  </div>
+                }
+                line={skill.line}
+              />
+            ))}
+          </Box>
           {instructions}
         </div>
         <div className="flex min-w-0 flex-col gap-8">

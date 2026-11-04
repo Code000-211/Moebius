@@ -48,18 +48,36 @@ pub struct AgentSettings {
     /// The runner its runs go to; the server itself when none is given.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runner: Option<String>,
-    /// Whether it is given the engineering skills Moebius brings for it (only the Coder, the Reviewer and the Grilling
-    /// partner have any).
-    #[serde(default = "yes", skip_serializing_if = "is_yes")]
-    pub engineering_skills: bool,
+    /// The engineering skills Moebius brings that it is given (see [`EngineeringSkills`]).
+    #[serde(default, skip_serializing_if = "EngineeringSkills::is_default")]
+    pub engineering_skills: EngineeringSkills,
 }
 
-fn yes() -> bool {
-    true
+/// The `engineering_skills` of an agent as the API has it: `true` (the skills of its name), `false` (none), or a list of
+/// the names of exactly the skills it is given.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum EngineeringSkills {
+    Flag(bool),
+    Only(Vec<String>),
 }
 
-fn is_yes(value: &bool) -> bool {
-    *value
+impl Default for EngineeringSkills {
+    fn default() -> Self {
+        Self::Flag(true)
+    }
+}
+
+impl EngineeringSkills {
+    /// Whether this is the default, which the API leaves out.
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// Whether the agent is given any; a list the page does not edit is kept as it is.
+    pub fn given(&self) -> bool {
+        *self != Self::Flag(false)
+    }
 }
 
 /// A runner an agent can name, as `GET /v1/runners` lists it.
@@ -279,4 +297,25 @@ pub struct McpServerDetail {
 pub struct Upload {
     pub id: String,
     pub path: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::EngineeringSkills;
+
+    #[test]
+    fn the_engineering_skills_are_true_false_or_a_list_that_is_kept() {
+        let read =
+            |value: serde_json::Value| serde_json::from_value::<EngineeringSkills>(value).unwrap();
+        assert_eq!(read(json!(true)), EngineeringSkills::default());
+        assert!(!read(json!(false)).given());
+        let list = read(json!(["tdd", "moebius-autonomous"]));
+        assert!(list.given());
+        assert_eq!(
+            serde_json::to_value(&list).unwrap(),
+            json!(["tdd", "moebius-autonomous"])
+        );
+    }
 }

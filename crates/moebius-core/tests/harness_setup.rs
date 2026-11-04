@@ -166,7 +166,7 @@ async fn the_agents_and_rules_move_into_a_new_repository_that_the_restarted_serv
             mcp: vec![],
             harness: Default::default(),
             tool_output: Default::default(),
-            engineering_skills: true,
+            engineering_skills: Default::default(),
             runner: None,
         },
         instructions: String::new(),

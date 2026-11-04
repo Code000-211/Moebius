@@ -147,5 +147,11 @@ async fn old_outputs_are_hidden_and_long_ones_cut_while_the_events_keep_them() {
     let clone = std::path::PathBuf::from(repo["path"].as_str().unwrap());
     let files = git(&clone, &["ls-tree", "-r", "--name-only", &change.branch]).unwrap();
     assert!(files.contains("hello.txt"), "{files}");
-    assert!(!files.contains(".moebius"), "{files}");
+    // Only the repository's own script, which the origin of these tests holds, is under `.moebius/`.
+    assert!(
+        !files
+            .replace(".moebius/review.luau", "")
+            .contains(".moebius"),
+        "{files}"
+    );
 }

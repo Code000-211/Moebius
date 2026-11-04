@@ -228,6 +228,15 @@ pub fn engineering(agent: &str) -> Vec<&'static BuiltIn> {
     names.iter().filter_map(|name| vendored(name)).collect()
 }
 
+/// The names an agent's `engineering_skills` list may hold: the engineering skills and the adapter that goes with them.
+pub fn engineering_skill_names() -> Vec<&'static str> {
+    VENDORED
+        .iter()
+        .map(|skill| skill.name)
+        .chain(std::iter::once(AUTONOMOUS.name))
+        .collect()
+}
+
 /// Whether the page of a skill hides it from the model's list of skills (`disable-model-invocation: true`), so that the
 /// agent must be told where it is.
 pub fn hidden_from_model(page: &str) -> bool {

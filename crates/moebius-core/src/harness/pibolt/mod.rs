@@ -62,7 +62,8 @@ use crate::store::{Card, Repository, Run};
 use tui::Follower;
 
 pub use crate::harness::run::{
-    AUTORESEARCHER_AGENT, BuiltInAgent, GRILLING_AGENT, MOEBIUS_AGENT, RETRO_AGENT, built_in_agent,
+    AUTORESEARCHER_AGENT, BuiltInAgent, CODER_AGENT, GRILLING_AGENT, MOEBIUS_AGENT, RETRO_AGENT,
+    REVIEWER_AGENT, built_in_agent,
 };
 use crate::harness::run::{
     Launching, RunningRun, launch_or_undo, start_card, start_detached, start_trial, woken_chat,

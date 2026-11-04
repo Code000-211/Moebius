@@ -71,9 +71,16 @@ fn an_agent_defined_only_in_the_repository_runs_with_its_model_and_instructions(
     let argv = argv_of_a_run(&server, dir.path(), &card, "Coder");
     assert!(argv.windows(2).any(|w| w == ["--model", "coder-model"]));
     assert!(argv.windows(2).any(|w| w == ["--thinking", "low"]));
+    // The Coder is built in: its instructions come first, the repository's own after them.
+    let system = argv
+        .windows(2)
+        .find(|w| w[0] == "--append-system-prompt")
+        .unwrap();
+    assert!(system[1].starts_with("You are the Coder."), "{}", system[1]);
     assert!(
-        argv.windows(2)
-            .any(|w| w == ["--append-system-prompt", "Keep changes small."])
+        system[1].ends_with("\n\nKeep changes small."),
+        "{}",
+        system[1]
     );
     let clone = dir.path().join(".moebius/harness");
     let skill = clone.join("skills/house-style");
@@ -221,12 +228,23 @@ async fn a_built_in_agent_is_read_with_its_built_in_part_and_its_own_files() {
             .contains("moebius-configure")
     );
 
-    // An agent of the person's has no built-in part.
+    // The Coder is built in too, and has its own files besides.
     let (_, body) = api
         .call(reqwest::Method::GET, "/v1/agents/Coder", None)
         .await;
     let read: Value = serde_json::from_str(&body).unwrap();
-    assert!(read.get("built_in").is_none(), "{read}");
+    assert_eq!(read["settings"]["model"], "coder-model");
+    assert!(
+        read["built_in"]["instructions"]
+            .as_str()
+            .unwrap()
+            .starts_with("You are the Coder.")
+    );
+    // An agent of the person's has no built-in part.
+    let (_, body) = api
+        .call(reqwest::Method::GET, "/v1/agents/Token", None)
+        .await;
+    assert!(!body.contains("built_in"), "{body}");
 }
 
 #[test]

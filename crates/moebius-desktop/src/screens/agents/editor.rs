@@ -4,7 +4,8 @@
 use iced::widget::text_editor;
 
 use crate::client::{
-    AgentDetail, AgentSettings, BuiltInAgent, ClientError, ServerSettings, ToolOutput,
+    AgentDetail, AgentSettings, BuiltInAgent, ClientError, EngineeringSkills, ServerSettings,
+    ToolOutput,
 };
 use crate::widgets::form::{HARNESSES, PROTOCOLS};
 
@@ -32,8 +33,8 @@ pub(super) struct Editor {
     pub(super) max_lines: String,
     pub(super) max_bytes: String,
     pub(super) compress: bool,
-    /// Whether the agent is given the engineering skills Moebius brings for it.
-    pub(super) engineering_skills: bool,
+    /// The engineering skills the agent is given; a list is kept as it is, the web app edits it.
+    pub(super) engineering_skills: EngineeringSkills,
     pub(super) instructions: text_editor::Content,
     /// Whether the Moebius agent writes the instructions from `wish`.
     pub(super) by_agent: bool,
@@ -73,7 +74,7 @@ impl Editor {
             max_lines: String::new(),
             max_bytes: String::new(),
             compress: true,
-            engineering_skills: true,
+            engineering_skills: EngineeringSkills::default(),
             instructions: text_editor::Content::new(),
             by_agent: false,
             wish: text_editor::Content::new(),
@@ -181,7 +182,7 @@ impl Editor {
                 max_bytes,
                 compress: self.compress,
             },
-            engineering_skills: self.engineering_skills,
+            engineering_skills: self.engineering_skills.clone(),
             runner: self.runner.clone(),
         };
         let mut instructions = self.instructions.text();
@@ -251,8 +252,8 @@ pub(super) fn from_file(name: &str, server: &ServerSettings) -> Result<AgentDeta
                 .unwrap_or_default(),
             engineering_skills: table
                 .get("engineering_skills")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(true),
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default(),
         }),
         instructions: text("instructions").unwrap_or_default(),
         built_in: None,
@@ -283,8 +284,11 @@ pub(super) fn file_table(agent: &AgentSettings, instructions: &str) -> serde_jso
     if !agent.tool_output.is_default() {
         table.insert("tool_output".into(), serde_json::json!(agent.tool_output));
     }
-    if !agent.engineering_skills {
-        table.insert("engineering_skills".into(), false.into());
+    if !agent.engineering_skills.is_default() {
+        table.insert(
+            "engineering_skills".into(),
+            serde_json::json!(agent.engineering_skills),
+        );
     }
     for (key, paths) in [("skills", &agent.skills), ("extensions", &agent.extensions)] {
         if !paths.is_empty() {

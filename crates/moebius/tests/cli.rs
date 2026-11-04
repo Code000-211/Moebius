@@ -389,6 +389,92 @@ async fn doctor_warns_of_an_upstream_that_logs_in_with_oauth() {
     assert!(last.contains("may break the provider's terms"), "{text}");
 }
 
+/// `agent save --template` copies an existing agent, the built-in Coder included, to a new name.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_is_saved_as_a_copy_of_an_existing_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let harness = dir.path().join("harness");
+    moebius_core::harness::repo::create(&harness, &Default::default(), None).unwrap();
+    let text = format!(
+        "[board]\ntick_ms = 100\n[router]\nlisten = \"127.0.0.1:0\"\n[harness]\nurl = {:?}\n",
+        harness.display().to_string()
+    );
+    let s = start_in(dir, &text).await;
+    let coder = json_out(&s.run(&["api", "GET", "/v1/agents/Coder"]).await);
+    let built_in = coder["built_in"]["instructions"].as_str().unwrap();
+    assert!(built_in.starts_with("You are the Coder."));
+
+    // The Coder has no files and no model yet: the copy needs one, and has the built-in instructions as its own.
+    let output = s
+        .run(&["agent", "save", "Quick", "--template", "Coder"])
+        .await;
+    assert!(!output.status.success());
+    out(&s
+        .run(&[
+            "agent",
+            "save",
+            "Quick",
+            "--template",
+            "Coder",
+            "--model",
+            "m",
+        ])
+        .await);
+    let quick = json_out(&s.run(&["agent", "show", "Quick", "--json"]).await);
+    assert_eq!(quick["settings"]["model"], "m");
+    assert_eq!(quick["instructions"], built_in);
+    assert!(quick.get("built_in").is_none(), "{quick}");
+    // The copy takes the Coder's engineering skills with it, as its own list.
+    assert_eq!(
+        quick["settings"]["engineering_skills"],
+        json!(["tdd", "diagnosing-bugs", "moebius-autonomous"])
+    );
+    let output = s
+        .run(&[
+            "agent",
+            "save",
+            "Bad",
+            "--model",
+            "m",
+            "--engineering-skill",
+            "not-a-skill",
+        ])
+        .await;
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("not an engineering skill"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // An agent of the person's own is copied whole.
+    out(&s
+        .run(&[
+            "agent",
+            "save",
+            "Second",
+            "--template",
+            "Quick",
+            "--thinking",
+            "low",
+        ])
+        .await);
+    let second = json_out(&s.run(&["agent", "show", "Second", "--json"]).await);
+    assert_eq!(second["settings"]["model"], "m");
+    assert_eq!(second["settings"]["thinking"], "low");
+    assert_eq!(second["instructions"], built_in);
+
+    let output = s
+        .run(&["agent", "save", "X", "--model", "m", "--template", "Nobody"])
+        .await;
+    assert!(!output.status.success());
+    let error = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        error.contains("no agent named Nobody to start from"),
+        "{error}"
+    );
+}
+
 // `/bin/true` stands in for Pi-Bolt, and Windows has no such program.
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
@@ -407,7 +493,7 @@ async fn doctor_succeeds_when_everything_is_in_place() {
         token_budget: None,
         harness: Default::default(),
         tool_output: Default::default(),
-        engineering_skills: true,
+        engineering_skills: Default::default(),
         runner: None,
     };
     moebius_core::harness::repo::create(&harness, &[("Coder".to_string(), coder)].into(), None)

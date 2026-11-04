@@ -22,10 +22,19 @@ and are recorded as yours.
 Write the instructions to a file first (`coder.md`, outside the worktree's tracked files or delete it after) and pass
 it with `--instructions`; `-` reads standard input. Keep `--thinking`, `--token-budget`, `--harness`, every `--skill`, `--mcp` and
 `--extension` the agent had, and its `tool_output` (`--hide-outputs-after`, `--output-lines`, `--output-bytes`,
-`--no-compress`; left out, each is its default) and `--no-engineering-skills` if it had `engineering_skills = false`, unless the person asked to change them. `--harness claude-code` runs the agent on Claude
+`--no-compress`; left out, each is its default) and `--no-engineering-skills` if it had `engineering_skills = false` (or one `--engineering-skill <name>` for each name of its `engineering_skills` list), unless the person asked to change them. `--harness claude-code` runs the agent on Claude
 Code, which needs `--protocol anthropic` and no extensions. These commands need a harness configuration
 repository; without one the agents are the `agents` tables of `moebius.toml` (see Settings below). The built-in agents
-(`Moebius`, `Grilling-partner`) keep their built-in instructions and skills; what you save is added after them.
+(`Moebius`, `Grilling-partner`, `Coder`, `Reviewer`) keep their built-in instructions and skills; what you save is added after
+them. The Coder and the Reviewer exist without a file, with good instructions of their own (they work test first and
+review read only), so to set up the agents of the default workflow give each a model and leave `--instructions` out, unless
+the person wants their own words added: `"$MOEBIUS" agent save Coder --model qwen-coder`. The Coder needs a model (a card
+fails without one); the Reviewer without a model takes the Coder's, and reviews begin once it is saved.
+
+To make a new agent like an existing one (the Coder and the Reviewer included, not the other built-in agents), start from
+it: `"$MOEBIUS" agent save Quick --template Coder --model qwen-coder` copies its settings and instructions under the new
+name (a flag you give changes what is copied; a built-in agent's instructions become the copy's own). Check
+`"$MOEBIUS" agents` first: a name that exists is replaced.
 
 ## Rules
 

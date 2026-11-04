@@ -53,7 +53,7 @@ fn agent(model: &str) -> AgentConfig {
         token_budget: None,
         harness: Default::default(),
         tool_output: Default::default(),
-        engineering_skills: true,
+        engineering_skills: Default::default(),
         runner: None,
     }
 }

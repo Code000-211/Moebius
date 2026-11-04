@@ -75,7 +75,7 @@ fn setup_with(router: Option<(Arc<Router>, String)>) -> Setup {
         token_budget: None,
         harness: HarnessKind::ClaudeCode,
         tool_output: Default::default(),
-        engineering_skills: true,
+        engineering_skills: Default::default(),
         runner: None,
     };
     let (router, url) = router.unwrap_or_else(|| {
@@ -177,11 +177,16 @@ fn a_code_run_on_claude_code_is_given_the_agent_and_the_router_and_commits_its_w
         ["--input-format", "stream-json"],
         ["--output-format", "stream-json"],
         ["--model", "claude-test"],
-        ["--append-system-prompt", "Be brief."],
         ["--permission-mode", "bypassPermissions"],
     ] {
         assert!(argv.windows(2).any(|w| w == pair), "{pair:?} in {argv:?}");
     }
+    // The agent's own instructions come after the built-in ones of the Coder.
+    let system = argv
+        .windows(2)
+        .find(|w| w[0] == "--append-system-prompt")
+        .unwrap();
+    assert!(system[1].starts_with("You are the Coder.") && system[1].ends_with("\n\nBe brief."));
     assert!(argv.contains(&"-p".to_string()) && argv.contains(&"--verbose".to_string()));
     assert!(argv.contains(&"--session-id".to_string()));
     assert!(!argv.contains(&"--mcp-config".to_string()), "{argv:?}");
@@ -718,6 +723,56 @@ async fn the_router_refuses_a_tool_call_of_claude_code_before_it_sees_it() {
     assert_eq!(check.data["tool_call_id"], "toolu_9");
 }
 
+/// An agent with a list of engineering skills gets exactly those in its run's configuration directory, whatever its name:
+/// a copy of the Coder has the Coder's.
+#[cfg(unix)] // The skills are links, which the test reads with `symlink_metadata`.
+#[test]
+fn a_code_run_on_claude_code_is_given_exactly_the_engineering_skills_a_list_names() {
+    let s = setup();
+    {
+        let mut agents = s.claude.agents.write().unwrap();
+        let mut copy = agents.agents["Coder"].clone();
+        copy.skills.clear();
+        copy.engineering_skills = crate::config::EngineeringSkills::Only(vec![
+            "tdd".into(),
+            "diagnosing-bugs".into(),
+            "moebius-autonomous".into(),
+        ]);
+        agents.agents.insert("Coder-fast".into(), copy);
+        let mut review = agents.agents["Coder"].clone();
+        review.skills.clear();
+        review.engineering_skills =
+            crate::config::EngineeringSkills::Only(vec!["code-review".into()]);
+        agents.agents.insert("Planner".into(), review);
+    }
+    let card = s
+        .app
+        .create_issue(s.repo, "Write done.txt", "", "person")
+        .unwrap();
+    let linked = |agent: &str| {
+        let run = s
+            .claude
+            .start(&s.app, &card, agent, ("code", None), Variant::default())
+            .unwrap();
+        wait_until_ended(&s.app, run.id);
+        let dir = s
+            .app
+            .data_dir
+            .join(format!("runs/{}/claude/skills", run.id));
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    };
+    assert_eq!(
+        linked("Coder-fast"),
+        ["diagnosing-bugs", "moebius-autonomous", "tdd"]
+    );
+    assert_eq!(linked("Planner"), ["code-review"]);
+}
+
 /// A server whose Coder goes to the runner `box`, whose "machine" is the directory `remote` and whose `ssh` is the
 /// fake one of `testdata`.
 #[cfg(unix)] // The fake `ssh` runs the command in `sh`.
@@ -742,7 +797,7 @@ fn with_runner() -> (Setup, PathBuf) {
         let coder = agents.agents.get_mut("Coder").unwrap();
         coder.runner = Some("box".into());
         // The built-in skills are not written to the data directory by this test, and `tar` cannot ship a dangling link.
-        coder.engineering_skills = false;
+        coder.engineering_skills = crate::config::EngineeringSkills::Off;
     }
     (s, remote)
 }

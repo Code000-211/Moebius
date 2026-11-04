@@ -38,7 +38,13 @@ async fn editing_an_agent_is_a_commit_on_the_harness_repository_and_a_bad_edit_i
 
     let coder = client.agent("Coder").await.unwrap();
     assert_eq!(coder.instructions, "Keep changes small.\n");
-    assert!(coder.built_in.is_none());
+    // The Coder is built in too: its own instructions come after the built-in ones.
+    let coder_built_in = coder.built_in.as_ref().expect("the Coder is built in");
+    assert!(
+        coder_built_in
+            .instructions
+            .starts_with("You are the Coder.")
+    );
     let moebius = client.agent("Moebius").await.unwrap();
     assert!(moebius.settings.is_none());
     let built_in = moebius.built_in.expect("the Moebius agent is built in");

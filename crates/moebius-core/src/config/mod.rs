@@ -24,13 +24,13 @@ use crate::router::{Classes, ModelThinking, check_class};
 
 pub use example::EXAMPLE;
 pub use registries::{DEFAULT_REGISTRY, DEFAULT_REGISTRY_URL, RegistryConfig};
+pub(crate) use sections::default_protocol;
 pub use sections::{
-    AgentConfig, AgentSet, DecisionModelConfig, ForgejoConfig, GitHubConfig, GitLabConfig,
-    HarnessKind, LocalizeConfig, MAX_LOCALIZE_FILES, PLUGIN_TIME_LIMIT_SECONDS, PackagesConfig,
-    PluginConfig, RunnerConfig, THINKING_LEVELS, TeacherConfig, TimeOfDay, TokenSource, ToolOutput,
-    UpstreamConfig, valid_agent_name,
+    AgentConfig, AgentSet, DecisionModelConfig, EngineeringSkills, ForgejoConfig, GitHubConfig,
+    GitLabConfig, HarnessKind, LocalizeConfig, MAX_LOCALIZE_FILES, PLUGIN_TIME_LIMIT_SECONDS,
+    PackagesConfig, PluginConfig, RunnerConfig, THINKING_LEVELS, TeacherConfig, TimeOfDay,
+    TokenSource, ToolOutput, UpstreamConfig, valid_agent_name,
 };
-pub(crate) use sections::{default_protocol, default_true};
 
 /// Why a configuration could not be read.
 #[derive(Debug, thiserror::Error)]
@@ -683,6 +683,42 @@ mod tests {
             parse("[agents.Coder]\nmodel = \"m\"\n[agents.Coder.tool_output]\nlines = 5\n")
                 .is_err()
         );
+    }
+
+    #[test]
+    fn an_agents_engineering_skills_are_true_false_or_a_list_of_their_names() {
+        let skills = |value: &str| {
+            parse(&format!(
+                "[agents.Coder]\nmodel = \"m\"\nengineering_skills = {value}\n"
+            ))
+        };
+        let default = parse("[agents.Coder]\nmodel = \"m\"\n").unwrap();
+        assert_eq!(
+            default.agents["Coder"].engineering_skills,
+            EngineeringSkills::Default
+        );
+        assert_eq!(
+            skills("true").unwrap().agents["Coder"].engineering_skills,
+            EngineeringSkills::Default
+        );
+        assert_eq!(
+            skills("false").unwrap().agents["Coder"].engineering_skills,
+            EngineeringSkills::Off
+        );
+        assert_eq!(
+            skills("[\"tdd\", \"moebius-autonomous\", \"tdd\"]")
+                .unwrap()
+                .agents["Coder"]
+                .engineering_skills,
+            EngineeringSkills::Only(vec!["tdd".into(), "moebius-autonomous".into()])
+        );
+        let error = skills("[\"tdd\", \"moebius\"]").unwrap_err().to_string();
+        assert!(
+            error.contains("moebius is not an engineering skill"),
+            "{error}"
+        );
+        let error = skills("\"yes\"").unwrap_err().to_string();
+        assert!(error.contains("true, false or a list"), "{error}");
     }
 
     #[test]
