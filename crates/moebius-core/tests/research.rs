@@ -15,7 +15,7 @@ use moebius_core::improve::research;
 use moebius_core::repos::git;
 use moebius_core::server::Server;
 use moebius_core::server::api::{self, ApiState};
-use moebius_core::store::Usage;
+use moebius_core::store::{Budget, BudgetKind, Usage};
 use serde_json::{Value, json};
 
 /// A repository whose `score` file holds 100.
@@ -97,10 +97,21 @@ impl Api {
         self.call(reqwest::Method::GET, path, None).await
     }
 
-    /// Stores a brief for the repository and confirms it; returns the research's id.
+    /// Stores a brief with a budget in tokens, given as `token_budget`, and confirms it; returns the research's id.
     async fn confirmed(&self, repository: i64, goal: &str, measure: &str, budget: i64) -> i64 {
         let brief = json!({ "repository": repository, "goal": goal, "measure": measure,
                             "better": "lower", "token_budget": budget });
+        self.confirmed_brief(brief).await
+    }
+
+    /// Stores a brief with a `budget` and confirms it; returns the research's id.
+    async fn confirmed_with(&self, repository: i64, goal: &str, budget: Value) -> i64 {
+        let brief = json!({ "repository": repository, "goal": goal, "measure": "cat score",
+                            "better": "lower", "budget": budget });
+        self.confirmed_brief(brief).await
+    }
+
+    async fn confirmed_brief(&self, brief: Value) -> i64 {
         let (status, created) = self.post("/v1/research", brief).await;
         assert_eq!(status, 200, "{created}");
         assert_eq!(created["status"], "draft");
@@ -150,6 +161,13 @@ fn wait_for<T>(what: &str, mut found: impl FnMut() -> Option<T>) -> T {
         }
         assert!(Instant::now() < deadline, "{what} did not happen");
         std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn tokens(amount: i64) -> Budget {
+    Budget {
+        kind: BudgetKind::Tokens,
+        amount,
     }
 }
 
@@ -309,6 +327,14 @@ async fn a_brief_is_checked_and_only_a_confirmed_one_starts() {
         json!({ "measure": "" }),
         json!({ "better": "smaller" }),
         json!({ "token_budget": 0 }),
+        json!({ "token_budget": null, "budget": { "kind": "tokens", "amount": 0 } }),
+        json!({ "token_budget": null, "budget": { "kind": "experiments", "amount": 0 } }),
+        json!({ "token_budget": null, "budget": { "kind": "experiments", "amount": -3 } }),
+        json!({ "token_budget": null, "budget": { "kind": "experiments", "amount": 2.5 } }),
+        json!({ "token_budget": null, "budget": { "kind": "minutes", "amount": 5 } }),
+        json!({ "token_budget": null }),
+        // Both ways to give the budget at once.
+        json!({ "budget": { "kind": "experiments", "amount": 5 } }),
     ] {
         let (status, body) = api.post("/v1/research", brief(bad.clone())).await;
         assert_eq!(status, 422, "{bad} {body}");
@@ -322,6 +348,11 @@ async fn a_brief_is_checked_and_only_a_confirmed_one_starts() {
 
     let (_, draft) = api.post("/v1/research", brief(json!({}))).await;
     let id = draft["id"].as_i64().unwrap();
+    // `token_budget` is the budget in tokens.
+    assert_eq!(draft["budget"], json!({ "kind": "tokens", "amount": 10 }));
+    assert_eq!(draft["token_budget"], 10);
+    assert_eq!(draft["used"], json!({ "experiments": 0, "tokens": 0 }));
+    assert_eq!(draft["limit_reached"], Value::Null);
     assert_eq!(draft["baseline"], Value::Null);
     assert_eq!(draft["experiments"], json!([]));
     let (status, _) = api
@@ -459,7 +490,144 @@ async fn a_research_whose_runs_used_the_budget_is_spent_before_the_next_round() 
     let (_, research) = api.get(&format!("/v1/research/{id}")).await;
     assert_eq!(research["tokens"], 1000);
     assert_eq!(research["baseline"], 100.0);
+    assert_eq!(
+        research["used"],
+        json!({ "experiments": 0, "tokens": 1000 })
+    );
+    assert_eq!(research["limit_reached"], "tokens");
+    assert_eq!(
+        research["budget"],
+        json!({ "kind": "tokens", "amount": 1000 })
+    );
     assert_eq!(store.runs_of_research(id).unwrap().len(), 1);
+}
+
+/// The experiments of a research, as (branch, value).
+fn measured(research: &Value) -> Vec<(String, f64)> {
+    research["experiments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| {
+            (
+                e["branch"].as_str().unwrap().to_string(),
+                e["value"].as_f64().unwrap(),
+            )
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn a_budget_in_experiments_stops_after_that_many_even_in_the_middle_of_a_round() {
+    let dir = tempfile::tempdir().unwrap();
+    let (server, repo) = server(dir.path());
+    let clone = PathBuf::from(server.app.store.repository(repo).unwrap().unwrap().path);
+    let api = Api::start(&server).await;
+    // One round proposes three levers; only two may be measured.
+    let goal = "Make it smaller. [lever research/1-a score 90] [lever research/1-b score 80] [lever research/1-c score 70]";
+    let id = api
+        .confirmed_with(repo, goal, json!({ "kind": "experiments", "amount": 2 }))
+        .await;
+    let mut events = server.app.bus.subscribe();
+    api.post(&format!("/v1/research/{id}/start"), json!({}))
+        .await;
+    let (status, _) = ended(&mut events, id).await;
+    assert_eq!(status, "spent");
+
+    let (_, research) = api.get(&format!("/v1/research/{id}")).await;
+    assert_eq!(
+        measured(&research),
+        [
+            ("research/1-a".to_string(), 90.0),
+            ("research/1-b".to_string(), 80.0)
+        ]
+    );
+    assert_eq!(
+        research["budget"],
+        json!({ "kind": "experiments", "amount": 2 })
+    );
+    assert_eq!(research["used"]["experiments"], 2);
+    assert_eq!(research["limit_reached"], "experiments");
+    assert_eq!(research["token_budget"], 0);
+    assert!(
+        research["reason"]
+            .as_str()
+            .unwrap()
+            .contains("2 experiments"),
+        "{research}"
+    );
+    // The lever that was not measured is left as it is, with no experiment, and one round was enough.
+    let branches = git(&clone, &["branch", "--list", "research/1-*"]).unwrap();
+    assert!(branches.contains("research/1-c"), "{branches}");
+    assert_eq!(server.app.store.runs_of_research(id).unwrap().len(), 1);
+    // The Autoresearcher was told how many experiments there are.
+    let run = server.app.store.runs_of_research(id).unwrap()[0].id;
+    let told = prompt_of(dir.path(), run);
+    assert!(told.contains("at most 2 more experiments"), "{told}");
+}
+
+#[tokio::test]
+async fn a_budget_in_experiments_that_a_round_uses_up_exactly_makes_the_research_spent_not_done() {
+    let dir = tempfile::tempdir().unwrap();
+    let (server, repo) = server(dir.path());
+    let api = Api::start(&server).await;
+    let goal = "Make it smaller. [lever research/1-a score 90] [lever research/1-b score 80]";
+    let id = api
+        .confirmed_with(repo, goal, json!({ "kind": "experiments", "amount": 2 }))
+        .await;
+    let mut events = server.app.bus.subscribe();
+    api.post(&format!("/v1/research/{id}/start"), json!({}))
+        .await;
+    let (status, _) = ended(&mut events, id).await;
+    assert_eq!(status, "spent");
+    let (_, research) = api.get(&format!("/v1/research/{id}")).await;
+    assert_eq!(measured(&research).len(), 2);
+    assert_eq!(research["used"]["experiments"], 2);
+    assert_eq!(server.app.store.runs_of_research(id).unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn a_budget_in_experiments_larger_than_the_levers_ends_done_and_a_tokens_budget_is_not_told()
+{
+    let dir = tempfile::tempdir().unwrap();
+    let (server, repo) = server(dir.path());
+    let api = Api::start(&server).await;
+    let goal = "Make it smaller. [lever research/1-a score 90]";
+    let id = api
+        .confirmed_with(repo, goal, json!({ "kind": "experiments", "amount": 5 }))
+        .await;
+    let mut events = server.app.bus.subscribe();
+    api.post(&format!("/v1/research/{id}/start"), json!({}))
+        .await;
+    let (status, _) = ended(&mut events, id).await;
+    assert_eq!(status, "done");
+    let (_, research) = api.get(&format!("/v1/research/{id}")).await;
+    assert_eq!(research["limit_reached"], Value::Null);
+    assert_eq!(research["used"]["experiments"], 1);
+    // The second round is told what is left, counting the experiment of the first.
+    let runs = server.app.store.runs_of_research(id).unwrap();
+    assert!(prompt_of(dir.path(), runs[0].id).contains("at most 5 more"));
+    assert!(prompt_of(dir.path(), runs[1].id).contains("at most 4 more"));
+}
+
+#[tokio::test]
+async fn a_budget_in_tokens_does_not_limit_the_experiments() {
+    let dir = tempfile::tempdir().unwrap();
+    let (server, repo) = server(dir.path());
+    let api = Api::start(&server).await;
+    let goal = "Make it smaller. [lever research/1-a score 90] [lever research/1-b score 80] [lever research/1-c score 70]";
+    let id = api
+        .confirmed_with(repo, goal, json!({ "kind": "tokens", "amount": 1000000 }))
+        .await;
+    let mut events = server.app.bus.subscribe();
+    api.post(&format!("/v1/research/{id}/start"), json!({}))
+        .await;
+    let (status, _) = ended(&mut events, id).await;
+    assert_eq!(status, "done");
+    let (_, research) = api.get(&format!("/v1/research/{id}")).await;
+    assert_eq!(measured(&research).len(), 3);
+    let run = server.app.store.runs_of_research(id).unwrap()[0].id;
+    assert!(!prompt_of(dir.path(), run).contains("more experiments"));
 }
 
 #[tokio::test]
@@ -491,7 +659,7 @@ async fn a_research_a_server_left_running_goes_back_to_confirmed_and_keeps_what_
     let (server, repo) = server(dir.path());
     let store = &server.app.store;
     let research = store
-        .add_research(repo, "goal", "cat score", "lower", 10)
+        .add_research(repo, "goal", "cat score", "lower", tokens(10))
         .unwrap();
     store
         .move_research(research.id, &["draft"], "confirmed", "")

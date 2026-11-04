@@ -17,7 +17,7 @@
 //! - `GET /v1/decision-model`: whether a decision model is configured, how well it agrees per kind and its takeovers.
 //!   `GET /v1/takeovers`: the takeovers. `POST /v1/takeovers/{id}/merge`, `/dismiss` and `/release` `{reason}`: a person
 //!   lets the model take a kind over, refuses, or hands a kind back (see [`crate::decide::model`]).
-//! - `POST /v1/research` `{repository, goal, measure, better, token_budget}`: stores a brief as a draft. `GET
+//! - `POST /v1/research` `{repository, goal, measure, better, budget}`: stores a brief as a draft. `GET
 //!   /v1/research` and `GET /v1/research/{id}`: research with its baseline and experiments. `PUT /v1/research/{id}`
 //!   writes the brief of a draft anew. `POST /v1/research/{id}/confirm`, `/start` and `/stop`: a person confirms the
 //!   brief, starts a confirmed research now, or stops it (see [`crate::improve::research`]).

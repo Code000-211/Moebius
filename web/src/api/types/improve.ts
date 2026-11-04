@@ -104,13 +104,26 @@ export type ResearchStatus =
 
 export type Better = "lower" | "higher";
 
+/** What a research's budget counts. */
+export type BudgetKind = "experiments" | "tokens";
+
+/** The limit of a research: a number of experiments or of tokens. */
+export interface Budget {
+  kind: BudgetKind;
+  amount: number;
+}
+
 export interface Research {
   id: number;
   repository_id: number;
   goal: string;
   measure: string;
   better: Better;
-  token_budget: number;
+  budget: Budget;
+  /** What has been used of the budget so far, whichever its kind is. */
+  used?: { experiments: number; tokens: number };
+  /** For a spent research, the limit it reached. */
+  limit_reached?: BudgetKind | null;
   status: ResearchStatus;
   baseline: number | null;
   reason?: string;
@@ -124,7 +137,7 @@ export interface Brief {
   goal: string;
   measure: string;
   better: Better;
-  token_budget: number;
+  budget: Budget;
 }
 
 /** What the server holds of one kind of judgement. */

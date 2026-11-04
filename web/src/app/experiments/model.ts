@@ -5,11 +5,28 @@
  */
 
 import type { ResearchAction } from "../../api/calls/improve";
-import type { Better, Brief, Experiment, Research, ResearchStatus } from "../../api/types/improve";
+import type {
+  Better,
+  Brief,
+  Budget,
+  BudgetKind,
+  Experiment,
+  Research,
+  ResearchStatus,
+} from "../../api/types/improve";
 import type { TagTone } from "../../ui/chat/Tag";
+import { short } from "../usage/figures";
 
 /** The tokens a new brief starts with. */
 export const DEFAULT_BUDGET = "200000";
+
+/** The experiments a brief starts with once its budget is counted in experiments. */
+export const DEFAULT_EXPERIMENTS = "10";
+
+/** The amount a new budget of this kind starts with. */
+export function defaultAmount(kind: BudgetKind): string {
+  return kind === "experiments" ? DEFAULT_EXPERIMENTS : DEFAULT_BUDGET;
+}
 
 /**
  * The word for a research's status and the hue that echoes it. A hue is only for what it means: a brief that waits
@@ -61,11 +78,28 @@ export interface Form {
   goal: string;
   measure: string;
   better: Better;
+  /** What the budget counts. */
+  kind: BudgetKind;
+  /** The amount of the budget, as it was typed. */
   budget: string;
 }
 
 export function emptyForm(repository: number | null = null): Form {
-  return { repository, goal: "", measure: "", better: "lower", budget: DEFAULT_BUDGET };
+  return {
+    repository,
+    goal: "",
+    measure: "",
+    better: "lower",
+    kind: "tokens",
+    budget: DEFAULT_BUDGET,
+  };
+}
+
+/** The form with another kind of budget: an amount still at the default of the kind before becomes that of the new one. */
+export function withKind(form: Form, kind: BudgetKind): Form {
+  if (form.kind === kind) return form;
+  const untouched = form.budget.trim() === defaultAmount(form.kind);
+  return { ...form, kind, budget: untouched ? defaultAmount(kind) : form.budget };
 }
 
 export function formOf(research: Research): Form {
@@ -74,11 +108,12 @@ export function formOf(research: Research): Form {
     goal: research.goal,
     measure: research.measure,
     better: research.better === "higher" ? "higher" : "lower",
-    budget: String(research.token_budget),
+    kind: research.budget.kind,
+    budget: String(research.budget.amount),
   };
 }
 
-/** The token budget, if what was typed is a number above 0. */
+/** The amount of the budget, if what was typed is a whole number above 0. */
 export function budgetOf(form: Form): number | null {
   const budget = Number(form.budget.trim());
   return form.budget.trim() !== "" && Number.isInteger(budget) && budget > 0 ? budget : null;
@@ -115,8 +150,26 @@ export function briefOf(form: Form): Brief | null {
     goal: form.goal.trim(),
     measure: form.measure.trim(),
     better: form.better,
-    token_budget: budget,
+    budget: { kind: form.kind, amount: budget },
   };
+}
+
+/** What a research has used of its budget: `4 of 10 experiments` or `120k of 500k tokens`. */
+export function usage(research: Pick<Research, "budget" | "used" | "tokens">): string {
+  const { kind, amount } = research.budget;
+  if (kind === "experiments") {
+    return `${research.used?.experiments ?? 0} of ${amount} experiments`;
+  }
+  return `${short(research.used?.tokens ?? research.tokens ?? 0)} of ${short(amount)} tokens`;
+}
+
+/** The limit a spent research reached, in words; none for a research that is not spent. */
+export function limitReached(research: Pick<Research, "limit_reached" | "budget">): string | null {
+  if (!research.limit_reached) return null;
+  const budget: Budget = research.budget;
+  return research.limit_reached === "experiments"
+    ? `The limit of ${budget.amount} experiments was reached.`
+    : `The limit of ${short(budget.amount)} tokens was reached.`;
 }
 
 /** The buttons a research's status allows: a draft is confirmed or dropped, a confirmed one started or dropped, a running one stopped. */

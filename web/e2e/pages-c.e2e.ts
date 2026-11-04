@@ -502,13 +502,13 @@ describe("the Experiments page", () => {
     await page.getByLabel("What should get better").fill("Make the tests faster");
     await page.getByLabel("Measurement").fill("echo 12");
     await page.getByRole("button", { name: "Higher is better" }).click();
-    expect(await page.getByLabel("Token budget").inputValue()).toBe("200000");
+    expect(await page.getByLabel("Tokens", { exact: true }).inputValue()).toBe("200000");
     await store.click();
     const card = page.getByRole("button", { name: /Make the tests faster/ });
     await card.getByText("Draft").waitFor();
     await region("Brief").getByText("Make the tests faster").waitFor();
     await region("Brief")
-      .getByText(/Higher is better · 0 of 200000 tokens used/)
+      .getByText(/Higher is better · 0 of 200k tokens/)
       .waitFor();
     await region("Baseline").getByText("Not measured yet.").waitFor();
     await region("Experiments").getByText("No lever has been tried yet.").waitFor();
@@ -530,7 +530,7 @@ describe("the Experiments page", () => {
       await done.click();
       const brief = region("Brief");
       await brief.getByText("./bench/build.sh").waitFor();
-      await brief.getByText("demo · Lower is better · 211400 of 500000 tokens used").waitFor();
+      await brief.getByText("demo · Lower is better · 211k of 500k tokens").waitFor();
       await region("Baseline").getByText("372", { exact: true }).waitFor();
       const levers = region("Experiments");
       const kept = levers.getByRole("row").filter({ hasText: "Split the host crate in two" });
@@ -577,9 +577,9 @@ describe("the Experiments page", () => {
     const brief = region("Brief");
     await brief.getByRole("button", { name: "Edit the brief" }).click();
     await brief.getByLabel("What should get better").fill("Make the release build faster");
-    await brief.getByLabel("Token budget").fill("0");
+    await brief.getByLabel("Tokens", { exact: true }).fill("0");
     expect(await brief.getByRole("button", { name: "Save", exact: true }).isDisabled()).toBe(true);
-    await brief.getByLabel("Token budget").fill("300000");
+    await brief.getByLabel("Tokens", { exact: true }).fill("300000");
     await brief.getByRole("button", { name: "Save", exact: true }).click();
     await brief.getByText("Make the release build faster").waitFor();
     expect(lastRequest()).toMatchObject({
@@ -589,11 +589,49 @@ describe("the Experiments page", () => {
         goal: "Make the release build faster",
         measure: "cargo build --release 2>&1 | tail -1",
         better: "lower",
-        token_budget: 300000,
+        budget: { kind: "tokens", amount: 300000 },
       },
     });
-    await brief.getByText(/0 of 300000 tokens used/).waitFor();
+    await brief.getByText(/0 of 300k tokens/).waitFor();
   });
+
+  it.skipIf(usesRealServer)(
+    "stores a brief limited by experiments, and changes a draft to it",
+    async () => {
+      await fresh();
+      await repository();
+      await open("/experiments", "Experiments");
+      await page.getByRole("button", { name: "New brief" }).click();
+      await page.getByLabel("What should get better").fill("Make the tests faster");
+      await page.getByLabel("Measurement").fill("echo 12");
+      // The choice is Tokens until Experiments is chosen, and the amount starts at the default of the kind.
+      expect(await page.getByLabel("Tokens", { exact: true }).inputValue()).toBe("200000");
+      await page.getByRole("button", { name: "Experiments", exact: true }).click();
+      expect(await page.getByLabel("Experiments", { exact: true }).inputValue()).toBe("10");
+      await page.getByLabel("Experiments", { exact: true }).fill("7");
+      await page.getByRole("button", { name: "Store the brief" }).click();
+      await region("Brief")
+        .getByText(/Lower is better · 0 of 7 experiments/)
+        .waitFor();
+      expect(lastRequest()).toMatchObject({
+        method: "POST",
+        path: "/v1/research",
+        body: { budget: { kind: "experiments", amount: 7 } },
+      });
+      // The draft is changed to tokens again.
+      const brief = region("Brief");
+      await brief.getByRole("button", { name: "Edit the brief" }).click();
+      expect(await brief.getByLabel("Experiments", { exact: true }).inputValue()).toBe("7");
+      await brief.getByRole("button", { name: "Tokens", exact: true }).click();
+      await brief.getByLabel("Tokens", { exact: true }).fill("90000");
+      await brief.getByRole("button", { name: "Save", exact: true }).click();
+      await brief.getByText(/0 of 90k tokens/).waitFor();
+      expect(lastRequest()).toMatchObject({
+        method: "PUT",
+        body: { budget: { kind: "tokens", amount: 90000 } },
+      });
+    },
+  );
 
   it.skipIf(usesRealServer)("shows what the server refuses", async () => {
     await fresh();

@@ -51,7 +51,7 @@ pub use judgements::{Judgement, NewJudgement};
 pub use lessons::{Lesson, NewLesson};
 pub use localize::IndexedFile;
 pub use replays::Replay;
-pub use research::{Experiment, Research};
+pub use research::{Budget, BudgetKind, Experiment, Research};
 pub use retros::{OwnEdits, Proposal, Retro, Trial};
 pub use runs::Run;
 pub use shadows::{NewShadow, ShadowStats, ShadowedOutcome, Takeover};
@@ -415,6 +415,10 @@ CREATE TABLE deleted_cards (
     PRIMARY KEY (repository_id, number)
 );
 "#,
+    r#"
+ALTER TABLE research RENAME COLUMN token_budget TO budget_amount;
+ALTER TABLE research ADD COLUMN budget_kind TEXT NOT NULL DEFAULT 'tokens';
+"#,
 ];
 
 pub fn now() -> i64 {
@@ -692,6 +696,39 @@ mod tests {
         assert!(s.hold_card(card.id, "person", None).unwrap());
         assert!(s.delete_card(card.id, true).unwrap());
         assert!(s.card_was_deleted(1, 1).unwrap());
+    }
+
+    /// A brief stored before the budget could be experiments has a token budget; after the migration it is read as
+    /// a budget of that many tokens.
+    #[test]
+    fn an_old_research_brief_is_read_as_a_budget_in_tokens() {
+        let dir = tempfile::tempdir().unwrap();
+        {
+            let conn = Connection::open(dir.path().join("moebius.sqlite")).unwrap();
+            let migrate = MIGRATIONS
+                .iter()
+                .position(|sql| sql.contains("RENAME COLUMN token_budget TO budget_amount"))
+                .expect("a migration renames the column");
+            for sql in &MIGRATIONS[..migrate] {
+                conn.execute_batch(sql).unwrap();
+            }
+            conn.pragma_update(None, "user_version", migrate as i64)
+                .unwrap();
+            conn.execute_batch(
+                "INSERT INTO repositories (name, path, forge, default_branch) VALUES ('old', '/srv/old', 'none', 'main');
+                 INSERT INTO research (repository_id, goal, measure, better, token_budget, at) VALUES (1, 'g', 'm', 'lower', 5000, 1);",
+            )
+            .unwrap();
+        }
+        let s = Store::open(dir.path()).unwrap();
+        let old = s.research(1).unwrap().unwrap();
+        assert_eq!(
+            old.budget,
+            Budget {
+                kind: BudgetKind::Tokens,
+                amount: 5000
+            }
+        );
     }
 
     #[test]

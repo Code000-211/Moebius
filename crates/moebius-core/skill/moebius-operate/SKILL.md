@@ -42,8 +42,8 @@ Add `--json` to any command to read fields (`"$MOEBIUS" board --json`). For anyt
 | A card's title or body changed (on GitHub the issue too; "blocked by #n" in the body sets its blockers) | `"$MOEBIUS" api PUT /v1/cards/<id> --body '{"title": "...", "body": "...", "reason": "..."}'` |
 | Work on a card stopped and kept stopped (its runs are stopped, the board does nothing with it), or let go again | `"$MOEBIUS" api POST /v1/cards/<id>/block --body '{"reason": "..."}'`, `"$MOEBIUS" api POST /v1/cards/<id>/unblock --body '{}'` |
 | The logins a repository on a forge trusts | `"$MOEBIUS" api PUT /v1/repositories/<id> --body '{"trusted": ["leon"], "reason": "..."}'` (the whole list) |
-| A draft's brief changed before it is confirmed | `"$MOEBIUS" api PUT /v1/research/<id> --body '{"goal": "...", "measure": "...", "better": "lower", "token_budget": <n>}'` |
-| A research brief | `"$MOEBIUS" research new --repository <id> --goal "..." --measure "<command>" --better lower --token-budget <n>`, then `"$MOEBIUS" research confirm <id>` once the person agrees |
+| A draft's brief changed before it is confirmed | `"$MOEBIUS" api PUT /v1/research/<id> --body '{"goal": "...", "measure": "...", "better": "lower", "budget": {"kind": "experiments", "amount": <n>}}'` |
+| A research brief | `"$MOEBIUS" research new --repository <id> --goal "..." --measure "<command>" --better lower --experiments <n>` (or `--tokens <n>`), then `"$MOEBIUS" research confirm <id>` once the person agrees |
 | A grilling's issues made into cards | `"$MOEBIUS" grilling confirm <id>`; or `"$MOEBIUS" grilling dismiss <id>` |
 | A Retro proposal decided | `"$MOEBIUS" proposal merge <id>` or `"$MOEBIUS" proposal dismiss <id>` |
 | Recurring work on a schedule (an automation) | `"$MOEBIUS" automation save --name "..." --schedule "0 8 * * 1-5" --prompt "..." --agent <name> --repository <id>` (cron in the server's local time; `--harness` for the harness configuration, `--id <id>` to replace one, `--off` to keep it off), then `"$MOEBIUS" automation run <id>` to try it once |

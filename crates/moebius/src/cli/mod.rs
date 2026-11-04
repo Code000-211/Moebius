@@ -531,6 +531,34 @@ pub(crate) mod tests {
         assert_eq!(route(&["research"]).1, "/v1/research");
         assert_eq!(route(&["research", "2"]).1, "/v1/research/2");
         assert_eq!(route(&["research", "stop", "2"]).1, "/v1/research/2/stop");
+        let new = |budget: &[&str]| {
+            let mut words = vec![
+                "research",
+                "new",
+                "--repository",
+                "1",
+                "--goal",
+                "g",
+                "--measure",
+                "m",
+                "--better",
+                "lower",
+            ];
+            words.extend(budget);
+            route(&words).2.unwrap()["budget"].clone()
+        };
+        assert_eq!(
+            new(&["--experiments", "10"]),
+            json!({"kind": "experiments", "amount": 10})
+        );
+        assert_eq!(
+            new(&["--tokens", "500"]),
+            json!({"kind": "tokens", "amount": 500})
+        );
+        assert_eq!(
+            new(&["--token-budget", "7"]),
+            json!({"kind": "tokens", "amount": 7})
+        );
         assert_eq!(route(&["server", "restart"]).1, "/v1/server/restart");
         assert_eq!(route(&["agent", "delete", "Old"]).0, "DELETE");
     }

@@ -5,6 +5,33 @@ use serde::{Deserialize, Serialize};
 
 use super::{Result, Run, Store, now};
 
+/// What a research's budget counts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BudgetKind {
+    /// Levers measured against the baseline.
+    Experiments,
+    /// Tokens the research's runs use.
+    Tokens,
+}
+
+impl BudgetKind {
+    /// The word the store and the API use for it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            BudgetKind::Experiments => "experiments",
+            BudgetKind::Tokens => "tokens",
+        }
+    }
+}
+
+/// The limit of a research (see `research`): a number of experiments, or of tokens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Budget {
+    pub kind: BudgetKind,
+    pub amount: i64,
+}
+
 /// A research (see `research`): a brief a person confirms, and what became of it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Research {
@@ -15,8 +42,9 @@ pub struct Research {
     pub measure: String,
     /// `lower` or `higher`: which way the measurement should move.
     pub better: String,
-    /// The tokens its research runs may use, checked before each round.
-    pub token_budget: i64,
+    /// How many experiments may be measured, or how many tokens its research runs may use (checked before each
+    /// round).
+    pub budget: Budget,
     /// `draft`, `confirmed`, `running`, `done`, `spent`, `stopped` or `failed`.
     pub status: String,
     /// The measurement of the repository as it is; none until it was measured.
@@ -53,12 +81,12 @@ impl Store {
         goal: &str,
         measure: &str,
         better: &str,
-        token_budget: i64,
+        budget: Budget,
     ) -> Result<Research> {
         let conn = self.conn();
         conn.execute(
-            "INSERT INTO research (repository_id, goal, measure, better, token_budget, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![repository_id, goal, measure, better, token_budget, now()],
+            "INSERT INTO research (repository_id, goal, measure, better, budget_kind, budget_amount, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![repository_id, goal, measure, better, budget.kind.as_str(), budget.amount, now()],
         )?;
         let id = conn.last_insert_rowid();
         drop(conn);
@@ -67,7 +95,7 @@ impl Store {
 
     fn research_where(&self, clause: &str, param: rusqlite::types::Value) -> Result<Vec<Research>> {
         self.rows(&format!(
-            "SELECT id, repository_id, goal, measure, better, token_budget, status, baseline, reason, at
+            "SELECT id, repository_id, goal, measure, better, budget_kind, budget_amount, status, baseline, reason, at
              FROM research WHERE {clause} ORDER BY id DESC"
         ), [param], |r| {
             Ok(Research {
@@ -76,11 +104,17 @@ impl Store {
                 goal: r.get(2)?,
                 measure: r.get(3)?,
                 better: r.get(4)?,
-                token_budget: r.get(5)?,
-                status: r.get(6)?,
-                baseline: r.get(7)?,
-                reason: r.get(8)?,
-                at: r.get(9)?,
+                budget: Budget {
+                    kind: match r.get::<_, String>(5)?.as_str() {
+                        "experiments" => BudgetKind::Experiments,
+                        _ => BudgetKind::Tokens,
+                    },
+                    amount: r.get(6)?,
+                },
+                status: r.get(7)?,
+                baseline: r.get(8)?,
+                reason: r.get(9)?,
+                at: r.get(10)?,
             })
         })
     }
@@ -113,12 +147,12 @@ impl Store {
         goal: &str,
         measure: &str,
         better: &str,
-        token_budget: i64,
+        budget: Budget,
     ) -> Result<bool> {
         Ok(self.conn().execute(
-            "UPDATE research SET goal = ?1, measure = ?2, better = ?3, token_budget = ?4
-             WHERE id = ?5 AND status = 'draft'",
-            params![goal, measure, better, token_budget, id],
+            "UPDATE research SET goal = ?1, measure = ?2, better = ?3, budget_kind = ?4, budget_amount = ?5
+             WHERE id = ?6 AND status = 'draft'",
+            params![goal, measure, better, budget.kind.as_str(), budget.amount, id],
         )? == 1)
     }
 
@@ -228,6 +262,7 @@ impl Store {
 
 #[cfg(test)]
 mod tests {
+    use super::{Budget, BudgetKind};
     use crate::store::test_store as store;
 
     #[test]
@@ -237,9 +272,18 @@ mod tests {
             .add_repository("demo", "/tmp/demo", "main", "none")
             .unwrap();
         let [a, b] = [1, 2].map(|_| {
-            s.add_research(repo.id, "goal", "echo 1", "lower", 10)
-                .unwrap()
-                .id
+            s.add_research(
+                repo.id,
+                "goal",
+                "echo 1",
+                "lower",
+                Budget {
+                    kind: BudgetKind::Tokens,
+                    amount: 10,
+                },
+            )
+            .unwrap()
+            .id
         });
         assert!(!s.start_research(a).unwrap());
         for id in [a, b] {

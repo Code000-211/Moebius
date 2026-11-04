@@ -2041,21 +2041,33 @@ grilling; `409` as for a chat.
 ### `POST /v1/research`
 
 Stores a brief for a research as a draft (see [the Autoresearcher](harness-configuration.md#autoresearch)). Nothing runs
-until a person confirms it. Request: `{"repository": id, "goal": string, "measure": string, "better": "lower" | "higher",
-"token_budget": number}`. `measure` is a shell command; it runs in a worktree of the repository with the environment
-cleared (`PATH` and `HOME` only), and its result is the last number it prints on standard output; an exit status other
-than 0, running longer than 10 minutes, or printing no number means the measurement failed. `better` says which way the
-number should move. `token_budget` is the most tokens (input plus output) the research's runs may use, more than 0.
-Response: the `ResearchView`. Errors: `404` no such repository; `422` a blank `goal` or `measure`, another `better`, or a
-budget that is not more than 0.
+until a person confirms it. Request: `{"repository": id, "goal": string, "measure": string, "better": "lower" |
+"higher", "budget": {"kind": "experiments" | "tokens", "amount": number}}`. `measure` is a shell command; it runs in a
+worktree of the repository with the environment cleared (`PATH` and `HOME` only), and its result is the last number it
+prints on standard output; an exit status other than 0, running longer than 10 minutes, or printing no number means the
+measurement failed. `better` says which way the number should move. `budget` limits the research, by experiments or by
+tokens; `amount` is a whole number of more than 0. With `"kind": "experiments"` at most `amount` experiments are
+measured against the baseline (an experiment is one lever branch measured, the event `experiment_done`; the baseline
+does not count). No experiment starts once the count is reached, even in the middle of a round: the levers proposed and
+not measured are left as branches and are not offered, and the research is `spent`. The Autoresearcher is told how many
+are left. With `"kind": "tokens"` the tokens (input plus output) of the research's runs are compared with `amount`
+before each round, and a round may run over. `token_budget` (a number) is still accepted instead of `budget`, as the
+kind `tokens`; a request that gives both, or neither, is refused. Response: the `ResearchView`. Errors: `404` no such
+repository; `422` a blank `goal` or `measure`, another `better`, another `kind`, an `amount` that is not a whole number
+of more than 0, or both `budget` and `token_budget` (or neither).
 
-`ResearchView`: `id`, `repository_id`, `goal`, `measure`, `better`, `token_budget`, `status`, `baseline` (the measurement
-of the repository as it is, or null until it is measured), `reason` (why the research ended; empty before), `at`, `tokens`
-(used by its runs so far) and `experiments` (array of `Experiment`, the first first: one for each lever).
+`ResearchView`: `id`, `repository_id`, `goal`, `measure`, `better`, `budget` (`{"kind": "experiments" | "tokens",
+"amount": number}`), `used` (`{"experiments": number, "tokens": number}`: the experiments measured and the tokens its
+runs have used so far, whichever the kind is), `limit_reached` (for a `spent` research the kind of the limit it reached,
+`"experiments"` or `"tokens"`; null for another status), `token_budget` (kept for older clients: the amount when the
+kind is `tokens`, otherwise 0), `status`, `baseline` (the measurement of the repository as it is, or null until it is
+measured), `reason` (why the research ended; empty before), `at`, `tokens` (the same as `used.tokens`) and `experiments`
+(array of `Experiment`, the first first: one for each lever).
 
 `status` of a research: `draft` (stored, not confirmed), `confirmed` (waits for the trial window or for `start`),
-`running`, `done` (a round proposed no more levers), `spent` (its runs used the budget), `stopped` (a person stopped it) or
-`failed` (the baseline could not be measured, or the Autoresearcher's run failed; `reason` says which).
+`running`, `done` (a round proposed no more levers), `spent` (it used its budget: as many experiments measured, or its
+runs used as many tokens), `stopped` (a person stopped it) or `failed` (the baseline could not be measured, or the
+Autoresearcher's run failed; `reason` says which).
 
 `Experiment`: `id`, `research_id`, `branch` (`research/<research id>-<name>`, the lever), `title` (the subject of the
 lever's commit), `value` (what the measure printed on the branch; null when the measurement failed), `checks` (true or
@@ -2074,10 +2086,11 @@ One research as the `ResearchView`. Errors: `404` no such research.
 ### `PUT /v1/research/{id}`
 
 A person, or the Moebius agent, writes the brief of a draft anew before it is confirmed. Request: `{"goal": string,
-"measure": string, "better": "lower" | "higher", "token_budget": number, "reason": string}`; `reason` is optional and is
+"measure": string, "better": "lower" | "higher", "budget": {"kind": "experiments" | "tokens", "amount": number},
+"reason": string}` (or `token_budget` instead of `budget`); `reason` is optional and is
 kept with the decision; the brief is checked as for `POST /v1/research`. The decision is recorded (kind
 `edit_research`, decider `person` or `agent:Moebius`; its context has `repository`, `goal`, `measure`, `better`,
-`token_budget` and each of the four as before, `previous_goal` and so on) and the event `research_status` is sent with
+`budget_kind` and `budget_amount`, and each of the five as before, `previous_goal`, `previous_budget_kind` and so on) and the event `research_status` is sent with
 the status `draft`. A brief that changes nothing records nothing. Response: the `ResearchView`. Errors: `404` no such
 research; `409` it is not a draft; `422` as for `POST /v1/research`.
 

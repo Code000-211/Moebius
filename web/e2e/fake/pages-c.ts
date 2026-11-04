@@ -398,7 +398,9 @@ export function createPagesCFake(
       goal: "Make the host build faster",
       measure: "cargo build --release 2>&1 | tail -1",
       better: "lower",
-      token_budget: 200_000,
+      budget: { kind: "tokens", amount: 200_000 },
+      used: { experiments: 0, tokens: 0 },
+      limit_reached: null,
       status: "draft",
       baseline: null,
       reason: "",
@@ -412,7 +414,9 @@ export function createPagesCFake(
       goal: "Cut the clean build time of the host",
       measure: "./bench/build.sh",
       better: "lower",
-      token_budget: 500_000,
+      budget: { kind: "tokens", amount: 500_000 },
+      used: { experiments: 2, tokens: 211_400 },
+      limit_reached: null,
       status: "done",
       baseline: 372,
       reason: "a round proposed no more levers",
@@ -459,8 +463,16 @@ export function createPagesCFake(
     if (typeof body.goal !== "string" || body.goal.trim() === "") return "the goal is blank";
     if (typeof body.measure !== "string" || body.measure.trim() === "")
       return "the measure is blank";
-    if (typeof body.token_budget !== "number" || body.token_budget <= 0) {
-      return "the token budget must be more than 0";
+    const budget = body.budget as { kind?: unknown; amount?: unknown } | undefined;
+    if (!budget || (budget.kind !== "experiments" && budget.kind !== "tokens")) {
+      return "the budget is experiments or tokens";
+    }
+    if (
+      typeof budget.amount !== "number" ||
+      !Number.isInteger(budget.amount) ||
+      budget.amount <= 0
+    ) {
+      return `the budget in ${budget.kind} must be more than 0`;
     }
     return null;
   };
@@ -684,7 +696,9 @@ export function createPagesCFake(
         goal: String(body.goal).trim(),
         measure: String(body.measure).trim(),
         better: body.better === "higher" ? "higher" : "lower",
-        token_budget: body.token_budget,
+        budget: body.budget,
+        used: { experiments: 0, tokens: 0 },
+        limit_reached: null,
         status: "draft",
         baseline: null,
         reason: "",
@@ -802,7 +816,7 @@ export function createPagesCFake(
             goal: String(body.goal).trim(),
             measure: String(body.measure).trim(),
             better: body.better,
-            token_budget: body.token_budget,
+            budget: body.budget,
           });
           broadcast({ kind: "research_status", data: { research: id, status: item.status } });
           return reply(response, 200, item);

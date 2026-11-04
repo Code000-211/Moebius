@@ -255,7 +255,16 @@ async fn deleting_chats_research_grillings_exports_and_replays_stays_with_a_pers
         .add_repository("demo", "/tmp/demo", "none", "main")
         .unwrap();
     let research = store
-        .add_research(repo.id, "goal", "cat x", "lower", 1)
+        .add_research(
+            repo.id,
+            "goal",
+            "cat x",
+            "lower",
+            moebius_core::store::Budget {
+                kind: moebius_core::store::BudgetKind::Tokens,
+                amount: 1,
+            },
+        )
         .unwrap();
     let grilling = store
         .add_grilling(grilled, repo.id, &[], None, "empty", "")

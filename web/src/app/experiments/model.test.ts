@@ -6,10 +6,14 @@ import {
   budgetOf,
   change,
   emptyForm,
+  formOf,
+  limitReached,
   number,
   result,
   SUGGESTED_BRIEFS,
   statusTag,
+  usage,
+  withKind,
 } from "./model";
 
 describe("the numbers", () => {
@@ -57,9 +61,67 @@ describe("a brief", () => {
       goal: "Faster",
       measure: "cat score",
       better: "higher",
-      token_budget: 1000,
+      budget: { kind: "tokens", amount: 1000 },
     });
     expect(budgetOf(emptyForm())).toBe(200_000);
+  });
+
+  it("is limited by experiments or by tokens, and the amount follows the kind while it is the default", () => {
+    const form = { ...emptyForm(1), goal: "Faster", measure: "cat score" };
+    expect(form.kind).toBe("tokens");
+    expect(form.budget).toBe("200000");
+    const experiments = withKind(form, "experiments");
+    expect(experiments).toMatchObject({ kind: "experiments", budget: "10" });
+    expect(briefOf(experiments)?.budget).toEqual({ kind: "experiments", amount: 10 });
+    expect(briefOf({ ...experiments, budget: "0" })).toBeNull();
+    expect(briefOf({ ...experiments, budget: "2.5" })).toBeNull();
+    expect(withKind(experiments, "tokens")).toMatchObject({ kind: "tokens", budget: "200000" });
+    // An amount that was typed stays.
+    expect(withKind({ ...form, budget: "5000" }, "experiments").budget).toBe("5000");
+    expect(withKind(form, "tokens")).toBe(form);
+  });
+
+  it("is edited with the kind and amount it has", () => {
+    const research = {
+      id: 1,
+      repository_id: 2,
+      goal: "g",
+      measure: "m",
+      better: "higher",
+      budget: { kind: "experiments", amount: 4 },
+      status: "draft",
+      baseline: null,
+    } as const;
+    expect(formOf(research)).toMatchObject({ kind: "experiments", budget: "4", better: "higher" });
+  });
+
+  it("says how much of the budget is used, in the unit of its kind", () => {
+    const budget = (kind: "experiments" | "tokens", amount: number) => ({ kind, amount });
+    expect(
+      usage({
+        budget: budget("experiments", 10),
+        used: { experiments: 4, tokens: 90_000 },
+      }),
+    ).toBe("4 of 10 experiments");
+    expect(
+      usage({
+        budget: budget("tokens", 500_000),
+        used: { experiments: 4, tokens: 120_000 },
+      }),
+    ).toBe("120k of 500k tokens");
+    expect(usage({ budget: budget("tokens", 500_000) })).toBe("0 of 500k tokens");
+    expect(usage({ budget: budget("tokens", 500_000), tokens: 1_500 })).toBe("1.5k of 500k tokens");
+  });
+
+  it("names the limit a spent research reached", () => {
+    const budget = (kind: "experiments" | "tokens", amount: number) => ({ kind, amount });
+    expect(limitReached({ budget: budget("experiments", 10), limit_reached: "experiments" })).toBe(
+      "The limit of 10 experiments was reached.",
+    );
+    expect(limitReached({ budget: budget("tokens", 500_000), limit_reached: "tokens" })).toBe(
+      "The limit of 500k tokens was reached.",
+    );
+    expect(limitReached({ budget: budget("tokens", 500_000), limit_reached: null })).toBeNull();
   });
 
   it("starts from any of the points the empty page offers", () => {

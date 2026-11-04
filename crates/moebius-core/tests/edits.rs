@@ -422,6 +422,55 @@ async fn the_brief_of_a_draft_is_written_anew_until_it_is_confirmed() {
     );
     assert_eq!(setup.deciders("edit_research"), ["person"]);
 
+    // The budget changes to experiments; the decision records it and the one before. Both ways at once is refused.
+    let (status, why) = setup
+        .put(
+            &route,
+            json!({ "goal": "Faster builds", "measure": "echo 2", "better": "lower",
+                    "budget": { "kind": "experiments", "amount": 8 }, "token_budget": 5000 }),
+        )
+        .await;
+    assert_eq!(status, 422, "{why}");
+    let (status, edited) = setup
+        .put(
+            &route,
+            json!({ "goal": "Faster builds", "measure": "echo 2", "better": "lower",
+                    "budget": { "kind": "experiments", "amount": 8 } }),
+        )
+        .await;
+    assert_eq!(status, 200, "{edited}");
+    assert_eq!(
+        edited["budget"],
+        json!({ "kind": "experiments", "amount": 8 })
+    );
+    let decision = setup
+        .server
+        .app
+        .store
+        .judgements("edit_research")
+        .unwrap()
+        .pop()
+        .unwrap();
+    let context: serde_json::Value = serde_json::from_str(
+        &setup
+            .server
+            .app
+            .store
+            .blobs()
+            .get(&decision.context[0])
+            .unwrap(),
+    )
+    .unwrap();
+    let context = context.to_string();
+    for expected in [
+        r#""budget_kind":"experiments""#,
+        r#""budget_amount":"8""#,
+        r#""previous_budget_kind":"tokens""#,
+        r#""previous_budget_amount":"5000""#,
+    ] {
+        assert!(context.contains(expected), "{expected} {context}");
+    }
+
     let (status, why) = setup
         .put(
             &route,
@@ -448,7 +497,7 @@ async fn the_brief_of_a_draft_is_written_anew_until_it_is_confirmed() {
         )
         .await;
     assert_eq!(status, 404);
-    assert_eq!(setup.deciders("edit_research"), ["person"]);
+    assert_eq!(setup.deciders("edit_research"), ["person", "person"]);
 }
 
 #[tokio::test]

@@ -7,6 +7,7 @@ use super::{ResearchView, find, publish_status, repository_of, view};
 use crate::app::{App, AppError, Result};
 use crate::board::Runs;
 use crate::decide::{Actor, Question};
+use crate::store::{Budget, BudgetKind};
 
 /// The body of `POST /v1/research`.
 #[derive(Debug, Clone, Deserialize)]
@@ -15,7 +16,12 @@ pub struct NewResearch {
     pub goal: String,
     pub measure: String,
     pub better: String,
-    pub token_budget: i64,
+    /// The limit: experiments or tokens. Either this or `token_budget`.
+    #[serde(default)]
+    pub budget: Option<Budget>,
+    /// The limit in tokens, as it was before `budget`. Either this or `budget`.
+    #[serde(default)]
+    pub token_budget: Option<i64>,
 }
 
 /// The body of `PUT /v1/research/{id}`: the brief of a draft, written anew.
@@ -24,15 +30,44 @@ pub struct Brief {
     pub goal: String,
     pub measure: String,
     pub better: String,
-    pub token_budget: i64,
+    /// The limit: experiments or tokens. Either this or `token_budget`.
+    #[serde(default)]
+    pub budget: Option<Budget>,
+    /// The limit in tokens, as it was before `budget`. Either this or `budget`.
+    #[serde(default)]
+    pub token_budget: Option<i64>,
     /// Why the brief changes, kept with the decision.
     #[serde(default)]
     pub reason: String,
 }
 
-/// Refuses a brief without a goal or a measure, with a direction other than `lower` or `higher`, or with a budget
-/// that is not more than 0.
-fn check_brief(goal: &str, measure: &str, better: &str, token_budget: i64) -> Result<()> {
+/// The budget a request asks for: `budget`, or `token_budget` as the kind tokens; refused when it gives both or
+/// neither, or an amount that is not more than 0.
+fn budget_of(budget: Option<Budget>, token_budget: Option<i64>) -> Result<Budget> {
+    let budget = match (budget, token_budget) {
+        (Some(_), Some(_)) => {
+            return Err(AppError::Invalid(
+                "give budget or token_budget, not both".into(),
+            ));
+        }
+        (Some(budget), None) => budget,
+        (None, Some(amount)) => Budget {
+            kind: BudgetKind::Tokens,
+            amount,
+        },
+        (None, None) => return Err(AppError::Invalid("a research needs a budget".into())),
+    };
+    if budget.amount <= 0 {
+        return Err(AppError::Invalid(format!(
+            "the budget in {} must be more than 0",
+            budget.kind.as_str()
+        )));
+    }
+    Ok(budget)
+}
+
+/// Refuses a brief without a goal or a measure, or with a direction other than `lower` or `higher`.
+fn check_brief(goal: &str, measure: &str, better: &str) -> Result<()> {
     let invalid = |why: &str| Err(AppError::Invalid(why.into()));
     if goal.trim().is_empty() {
         return invalid("a research needs a goal");
@@ -42,9 +77,6 @@ fn check_brief(goal: &str, measure: &str, better: &str, token_budget: i64) -> Re
     }
     if !matches!(better, "lower" | "higher") {
         return invalid("better is lower or higher");
-    }
-    if token_budget <= 0 {
-        return invalid("the token budget must be more than 0");
     }
     Ok(())
 }
@@ -78,17 +110,14 @@ fn question<const N: usize>(
 
 /// Stores a brief as a draft.
 pub fn create(app: &App, new: NewResearch) -> Result<ResearchView> {
-    check_brief(&new.goal, &new.measure, &new.better, new.token_budget)?;
+    check_brief(&new.goal, &new.measure, &new.better)?;
+    let budget = budget_of(new.budget, new.token_budget)?;
     app.store
         .repository(new.repository)?
         .ok_or_else(|| AppError::NotFound(format!("repository {}", new.repository)))?;
-    let research = app.store.add_research(
-        new.repository,
-        &new.goal,
-        &new.measure,
-        &new.better,
-        new.token_budget,
-    )?;
+    let research =
+        app.store
+            .add_research(new.repository, &new.goal, &new.measure, &new.better, budget)?;
     publish_status(app, research.id, &research.status);
     view(app, research.id)
 }
@@ -99,20 +128,21 @@ pub fn edit(app: &App, by: &Actor, id: i64, brief: &Brief) -> Result<ResearchVie
     let research = find(app, id)?;
     check_draft(id, &research.status)?;
     let (goal, measure) = (brief.goal.trim(), brief.measure.trim());
-    check_brief(goal, measure, &brief.better, brief.token_budget)?;
-    let unchanged = (goal, measure, brief.better.as_str(), brief.token_budget)
+    check_brief(goal, measure, &brief.better)?;
+    let budget = budget_of(brief.budget, brief.token_budget)?;
+    let unchanged = (goal, measure, brief.better.as_str(), budget)
         == (
             research.goal.as_str(),
             research.measure.as_str(),
             research.better.as_str(),
-            research.token_budget,
+            research.budget,
         );
     if unchanged {
         return view(app, id);
     }
     if !app
         .store
-        .set_research_brief(id, goal, measure, &brief.better, brief.token_budget)?
+        .set_research_brief(id, goal, measure, &brief.better, budget)?
     {
         return Err(AppError::Conflict(format!(
             "research {id} is not a draft any more"
@@ -131,11 +161,16 @@ pub fn edit(app: &App, by: &Actor, id: i64, brief: &Brief) -> Result<ResearchVie
             ("goal", goal.to_string()),
             ("measure", measure.to_string()),
             ("better", brief.better.clone()),
-            ("token_budget", brief.token_budget.to_string()),
+            ("budget_kind", budget.kind.as_str().to_string()),
+            ("budget_amount", budget.amount.to_string()),
             ("previous_goal", research.goal),
             ("previous_measure", research.measure),
             ("previous_better", research.better),
-            ("previous_token_budget", research.token_budget.to_string()),
+            (
+                "previous_budget_kind",
+                research.budget.kind.as_str().to_string(),
+            ),
+            ("previous_budget_amount", research.budget.amount.to_string()),
         ],
     );
     app.decisions
@@ -157,7 +192,8 @@ pub fn confirm(app: &App, by: &Actor, id: i64) -> Result<ResearchView> {
             ("goal", research.goal),
             ("measure", research.measure),
             ("better", research.better),
-            ("token_budget", research.token_budget.to_string()),
+            ("budget_kind", research.budget.kind.as_str().to_string()),
+            ("budget_amount", research.budget.amount.to_string()),
         ],
     );
     app.decisions.record_by(by, &asked, "confirm", "")?;

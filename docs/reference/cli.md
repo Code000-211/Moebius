@@ -153,7 +153,7 @@ takes a repository's name.
 | `proposal dismiss <id> [--reason <text>]` | `POST /v1/proposals/{id}/dismiss` | The proposal. |
 | `research` | `GET /v1/research` | Table `id status repository goal`. |
 | `research <id>` | `GET /v1/research/{id}` | The research. |
-| `research new --repository <id> --goal <text> --measure <command> --better <lower\|higher> --token-budget <n>` | `POST /v1/research` | The research, a draft. |
+| `research new --repository <id> --goal <text> --measure <command> --better <lower\|higher> (--experiments <n> \| --tokens <n>)` | `POST /v1/research` | The research, a draft. The budget is `--experiments` or `--tokens`; `--token-budget <n>` is the old name of `--tokens`. |
 | `research confirm <id>`, `research start <id>`, `research stop <id>` | `POST /v1/research/{id}/confirm`, `/start`, `/stop` | The research. |
 | `research delete <id> [--reason <why>]` | `DELETE /v1/research/{id}` | The research as it was. Stops it if it is running, then deletes it with its experiments, runs, changes and lever branches; a person only. |
 | `grillings` | `GET /v1/grillings` | Table `id status repository reason`. |

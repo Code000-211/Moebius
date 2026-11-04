@@ -34,7 +34,8 @@ pub enum ProposalCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum ResearchCommand {
-    /// Store a brief as a draft.
+    /// Store a brief as a draft. Its budget is a number of experiments or of tokens.
+    #[command(group(clap::ArgGroup::new("budget").required(true).args(["experiments", "tokens", "token_budget"])))]
     New {
         /// The id of the repository.
         #[arg(long)]
@@ -47,8 +48,15 @@ pub enum ResearchCommand {
         /// `lower` or `higher`.
         #[arg(long)]
         better: String,
+        /// Measure at most this many experiments against the baseline.
         #[arg(long)]
-        token_budget: i64,
+        experiments: Option<i64>,
+        /// Let the research's runs use at most this many tokens.
+        #[arg(long)]
+        tokens: Option<i64>,
+        /// The same as `--tokens`, as it was called before the budget could be experiments.
+        #[arg(long)]
+        token_budget: Option<i64>,
     },
     /// Confirm a draft.
     Confirm { id: i64 },
@@ -145,14 +153,20 @@ pub fn research(id: Option<i64>, command: Option<&ResearchCommand>) -> Plan {
             goal,
             measure,
             better,
+            experiments,
+            tokens,
             token_budget,
         }) => {
+            let budget = match (experiments, tokens.or(*token_budget)) {
+                (Some(amount), _) => json!({ "kind": "experiments", "amount": amount }),
+                (None, amount) => json!({ "kind": "tokens", "amount": amount }),
+            };
             let brief = json!({
                 "repository": repository,
                 "goal": goal,
                 "measure": measure,
                 "better": better,
-                "token_budget": token_budget,
+                "budget": budget,
             });
             return Ok((Request::post("/v1/research", brief), Show::Object));
         }

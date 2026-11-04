@@ -5,9 +5,9 @@
 You have a number that a command can measure, such as the time a benchmark takes, the size of a build, the count of
 warnings or the score of a test suite, and you want it to go down or up. You give Moebius the goal and the command; it
 measures the repository as it is, lets the Autoresearcher propose changes (levers), measures each one on a branch of its
-own and offers the ones that really improve the number as changes you merge. It ends when its token budget is spent,
-when the agent has no lever left, or when you stop it. The exact routes and fields are in
-[`docs/reference/desktop-api.md`](../reference/desktop-api.md), the agent in
+own and offers the ones that really improve the number as changes you merge. It ends when its budget (a number of
+experiments, or of tokens) is spent, when the agent has no lever left, or when you stop it. The exact routes and fields
+are in [`docs/reference/desktop-api.md`](../reference/desktop-api.md), the agent in
 [`docs/reference/harness-configuration.md`](../reference/harness-configuration.md#autoresearch).
 
 ## The rules of the measure
@@ -34,11 +34,13 @@ minutes.
    cat src/*.rs | wc -l
    ```
 
-2. Store the brief. `better` is `lower` or `higher`; `token_budget` is the most tokens the Autoresearcher's runs may
-   use in all, checked before each round (a round may run over):
+2. Store the brief. `better` is `lower` or `higher`; `budget` is either `{"kind": "experiments", "amount": 10}`, at most
+   that many levers measured against the baseline (none starts after that, even in the middle of a round), or
+   `{"kind": "tokens", "amount": 500000}`, the most tokens the Autoresearcher's runs may use in all, checked before each
+   round (a round may run over):
 
    ```sh
-   curl -s -X POST -H "$AUTH" -H "$JSON" -d '{"repository": 1, "goal": "Make the program smaller without losing features.", "measure": "cat src/*.rs | wc -l", "better": "lower", "token_budget": 500000}' $API/v1/research
+   curl -s -X POST -H "$AUTH" -H "$JSON" -d '{"repository": 1, "goal": "Make the program smaller without losing features.", "measure": "cat src/*.rs | wc -l", "better": "lower", "budget": {"kind": "experiments", "amount": 10}}' $API/v1/research
    ```
 
 3. Read the brief back (`GET /v1/research/{id}`), change it while it is a draft (`PUT /v1/research/{id}` with the same
@@ -78,7 +80,7 @@ minutes.
 | Status | Why |
 |---|---|
 | `done` | A round of the Autoresearcher left no new lever branch. |
-| `spent` | Its runs used the whole `token_budget`. |
+| `spent` | It measured as many experiments as its budget, or its runs used as many tokens as its budget; `limit_reached` says which. |
 | `stopped` | A person stopped it. |
 | `failed` | The baseline could not be measured, or the Autoresearcher's run failed; `reason` says which. |
 

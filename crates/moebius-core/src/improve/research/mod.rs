@@ -1,10 +1,10 @@
 //! Autoresearch (spec 7, ADR 0001): from a brief a person confirms, a baseline is measured, then the Autoresearcher
 //! proposes levers and an experiment runs for each; every lever kept becomes its own change.
 //!
-//! A brief is a repository, a goal, a `measure` command and which way is `better` (`lower` or `higher`), and a token
-//! budget. The measure is a shell command that runs in a fresh worktree with the environment cleared (`PATH` only,
-//! `HOME` the worktree) and a time limit; its result is the last number it prints on standard output, and an exit
-//! status other than 0, a time out or no number means the measurement failed.
+//! A brief is a repository, a goal, a `measure` command and which way is `better` (`lower` or `higher`), and a budget:
+//! a number of experiments or of tokens. The measure is a shell command that runs in a fresh worktree with the
+//! environment cleared (`PATH` only, `HOME` the worktree) and a time limit; its result is the last number it prints on
+//! standard output, and an exit status other than 0, a time out or no number means the measurement failed.
 //!
 //! A research is `draft` until a person confirms it, then `confirmed`. The schedule asks [`on_schedule`] once a minute,
 //! and inside the trial window, when no proposal is being tried and no other research is running, the oldest confirmed
@@ -18,8 +18,10 @@
 //! 3. An experiment for each new branch: the measure on the branch, then the repository's own checks. The lever is
 //!    kept when the measurement is better than the baseline by more than [`MARGIN`] and the checks pass or there are
 //!    none. A kept lever is offered like a chat's change: a change without a card, and a `ready_to_merge` inbox item.
-//! 4. Before each round the tokens of the research's runs are compared with the budget; a research that has used it up
-//!    is `spent`. A round may run over.
+//! 4. A budget in tokens is compared with the tokens of the research's runs before each round; a research that has
+//!    used it up is `spent`, and a round may run over. A budget in experiments counts the experiments measured (the
+//!    baseline is not one): none starts once the count is reached, even in the middle of a round, and the research is
+//!    `spent`; the levers not measured stay as branches.
 //!
 //! A person stops a research with `POST /v1/research/{id}/stop`: it is `stopped` and its running run is stopped. The
 //! branches of the levers stay in the repository's clone. A server that starts again sends the `running` research back
@@ -38,7 +40,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::app::{App, AppError, Result};
 use crate::bus::Event;
-use crate::store::{Experiment, Repository, Research};
+use crate::store::{BudgetKind, Experiment, Repository, Research};
 
 pub use brief::{Brief, NewResearch, confirm, create, edit, stop};
 pub use measure::{MEASURE_LIMIT, judge, parse_measurement, percent, spent};
@@ -55,8 +57,22 @@ pub struct ResearchView {
     pub research: Research,
     /// The tokens its research runs have used so far.
     pub tokens: i64,
+    /// What has been used of the budget so far.
+    pub used: Used,
+    /// The limit a `spent` research reached; none for another status.
+    pub limit_reached: Option<BudgetKind>,
+    /// The tokens of the budget, kept for clients from before the budget could be experiments: the amount when the
+    /// budget is in tokens, otherwise 0.
+    pub token_budget: i64,
     /// The experiments, the first first: one for each lever.
     pub experiments: Vec<Experiment>,
+}
+
+/// What a research has used: the experiments measured against the baseline and the tokens of its runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Used {
+    pub experiments: i64,
+    pub tokens: i64,
 }
 
 /// The research `id`, or `NotFound`.
@@ -76,9 +92,20 @@ fn repository_of(app: &App, research: &Research) -> Result<Repository> {
 /// The research `id` with its experiments and the tokens it has used.
 pub fn view(app: &App, id: i64) -> Result<ResearchView> {
     let research = find(app, id)?;
+    let tokens = app.store.research_tokens(id)?;
+    let experiments = app.store.experiments(id)?;
     Ok(ResearchView {
-        tokens: app.store.research_tokens(id)?,
-        experiments: app.store.experiments(id)?,
+        tokens,
+        used: Used {
+            experiments: experiments.len() as i64,
+            tokens,
+        },
+        limit_reached: (research.status == "spent").then_some(research.budget.kind),
+        token_budget: match research.budget.kind {
+            BudgetKind::Tokens => research.budget.amount,
+            BudgetKind::Experiments => 0,
+        },
+        experiments,
         research,
     })
 }

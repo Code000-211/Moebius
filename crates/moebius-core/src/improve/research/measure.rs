@@ -11,7 +11,7 @@ use regex::Regex;
 use super::MARGIN;
 use crate::app::{App, tail};
 use crate::improve::replay::run_apart;
-use crate::store::Repository;
+use crate::store::{Budget, BudgetKind, Repository};
 
 /// How long a measure may run before it is killed.
 pub const MEASURE_LIMIT: Duration = Duration::from_secs(10 * 60);
@@ -63,9 +63,13 @@ pub fn judge(baseline: f64, value: f64, better: &str, checks: Option<bool>) -> (
     )
 }
 
-/// Whether the tokens used have reached the budget.
-pub fn spent(tokens: i64, budget: i64) -> bool {
-    tokens >= budget
+/// Whether what has been used (`experiments` measured, `tokens` spent) has reached the budget.
+pub fn spent(budget: Budget, experiments: i64, tokens: i64) -> bool {
+    let used = match budget.kind {
+        BudgetKind::Experiments => experiments,
+        BudgetKind::Tokens => tokens,
+    };
+    used >= budget.amount
 }
 
 /// The last `count` bytes of the file, or what there is of it, without reading the rest.
@@ -247,10 +251,25 @@ mod tests {
 
     #[test]
     fn the_budget_is_spent_when_the_tokens_reach_it() {
-        assert!(!spent(0, 1000));
-        assert!(!spent(999, 1000));
-        assert!(spent(1000, 1000));
-        assert!(spent(5000, 1000));
+        let tokens = |amount| Budget {
+            kind: BudgetKind::Tokens,
+            amount,
+        };
+        assert!(!spent(tokens(1000), 50, 0));
+        assert!(!spent(tokens(1000), 50, 999));
+        assert!(spent(tokens(1000), 0, 1000));
+        assert!(spent(tokens(1000), 0, 5000));
+    }
+
+    #[test]
+    fn the_experiments_are_spent_when_as_many_were_measured_whatever_the_tokens() {
+        let experiments = Budget {
+            kind: BudgetKind::Experiments,
+            amount: 3,
+        };
+        assert!(!spent(experiments, 2, 1_000_000));
+        assert!(spent(experiments, 3, 0));
+        assert!(spent(experiments, 4, 0));
     }
 
     #[test]

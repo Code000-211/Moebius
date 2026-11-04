@@ -587,6 +587,10 @@ instructions. It works with or without a harness configuration repository (witho
 - Each lever is a branch `research/<research id>-<short-name>` made from the default branch, with one commit whose message
   says what the lever is. A branch without a commit beyond the default branch is ignored. A branch the research has an
   experiment for is not tried again, so a round that leaves no new branch ends the research.
+- A research is limited by its brief's budget, a number of experiments or of tokens. With a budget in experiments the
+  prompt of a round says how many experiments are left (the built-in instructions ask for no more levers than that), and
+  no experiment starts once they are used, even in the middle of a round; with a budget in tokens the tokens of the
+  research's runs are compared with it before each round.
 - Each experiment runs the measure and, if the measurement succeeded, the repository's own checks (see [the
   trials](#the-trials)), each in a fresh worktree of the branch. The branches stay in the clone, kept or not.
 

@@ -705,7 +705,16 @@ async fn a_person_deletes_a_chat_a_research_and_a_grilling() {
         store.set_run_status(run.id, "stopped").unwrap();
     }
     let research = store
-        .add_research(repo.id, "goal", "cat x", "lower", 1)
+        .add_research(
+            repo.id,
+            "goal",
+            "cat x",
+            "lower",
+            moebius_core::store::Budget {
+                kind: moebius_core::store::BudgetKind::Tokens,
+                amount: 1,
+            },
+        )
         .unwrap();
     let grilling = store
         .add_grilling(grilled.id, repo.id, &[], None, "empty", "")

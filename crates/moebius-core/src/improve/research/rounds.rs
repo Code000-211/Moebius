@@ -15,7 +15,7 @@ use crate::config::TimeOfDay;
 use crate::improve::retro::wait_for_end;
 use crate::improve::trial::in_window;
 use crate::repos::git;
-use crate::store::{Experiment, Repository, Research};
+use crate::store::{BudgetKind, Experiment, Repository, Research};
 
 /// Whether research `id` is still running: a person may have stopped it.
 fn is_running(app: &App, id: i64) -> bool {
@@ -38,6 +38,14 @@ pub(super) fn lever_branches(repository: &Repository, id: i64) -> Result<Vec<Str
 
 /// What the Autoresearcher is told in a round.
 fn prompt(research: &Research, baseline: f64, experiments: &[Experiment]) -> String {
+    let left = match research.budget.kind {
+        BudgetKind::Experiments => format!(
+            "Moebius measures at most {} more experiments of this research, so propose no more than that many levers, \
+             the most promising first.\n\n",
+            (research.budget.amount - experiments.len() as i64).max(0)
+        ),
+        BudgetKind::Tokens => String::new(),
+    };
     let done = if experiments.is_empty() {
         "none yet".to_string()
     } else {
@@ -64,7 +72,7 @@ fn prompt(research: &Research, baseline: f64, experiments: &[Experiment]) -> Str
          research/{id}-<short-name> from the current commit, with one commit whose message says what the lever is. \
          Commit with `git -c user.name=Autoresearcher -c user.email=autoresearcher@localhost commit`. Moebius \
          measures every branch and keeps those that are better than the baseline by more than {margin} %.\n\n\
-         The experiments so far:\n{done}\n",
+         {left}The experiments so far:\n{done}\n",
         id = research.id,
         goal = research.goal,
         measure = research.measure,
@@ -132,6 +140,29 @@ fn try_lever(
 /// How a driven research ended: its status and why. None when a person stopped it.
 type Ended = Option<(&'static str, String)>;
 
+/// Why the research has used up its budget, or none while it has not; `experiments` have been measured.
+fn spent_reason(app: &App, research: &Research, experiments: i64) -> Result<Option<String>> {
+    let tokens = app.store.research_tokens(research.id)?;
+    let budget = research.budget;
+    if !spent(budget, experiments, tokens) {
+        return Ok(None);
+    }
+    Ok(Some(match budget.kind {
+        BudgetKind::Experiments => {
+            format!(
+                "{experiments} experiments were measured of the budget of {}",
+                budget.amount
+            )
+        }
+        BudgetKind::Tokens => {
+            format!(
+                "its runs used {tokens} tokens of the budget of {}",
+                budget.amount
+            )
+        }
+    }))
+}
+
 /// Measures the baseline if need be, then runs rounds until the research ends.
 fn drive(app: &Arc<App>, runs: &Arc<dyn Runs>, id: i64, limit: Duration) -> Result<Ended> {
     let research = find(app, id)?;
@@ -156,15 +187,10 @@ fn drive(app: &Arc<App>, runs: &Arc<dyn Runs>, id: i64, limit: Duration) -> Resu
         if !is_running(app, id) {
             return Ok(None);
         }
-        let tokens = app.store.research_tokens(id)?;
-        if spent(tokens, research.token_budget) {
-            let reason = format!(
-                "its runs used {tokens} tokens of the budget of {}",
-                research.token_budget
-            );
+        let experiments = app.store.experiments(id)?;
+        if let Some(reason) = spent_reason(app, &research, experiments.len() as i64)? {
             return Ok(Some(("spent", reason)));
         }
-        let experiments = app.store.experiments(id)?;
         let mut ended = app.bus.subscribe();
         let run = match runs.start_research(
             app,
@@ -210,6 +236,13 @@ fn drive(app: &Arc<App>, runs: &Arc<dyn Runs>, id: i64, limit: Duration) -> Resu
         for branch in levers {
             if !is_running(app, id) {
                 return Ok(None);
+            }
+            // Only an experiments budget can run out in the middle of a round; the levers left stay as branches.
+            if research.budget.kind == BudgetKind::Experiments {
+                let done = app.store.experiments(id)?.len() as i64;
+                if let Some(reason) = spent_reason(app, &research, done)? {
+                    return Ok(Some(("spent", reason)));
+                }
             }
             try_lever(app, &repository, &research, baseline, &branch, limit)?;
         }

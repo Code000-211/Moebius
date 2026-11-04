@@ -34,14 +34,17 @@ import {
   actions,
   briefOf,
   change,
-  DEFAULT_BUDGET,
+  defaultAmount,
   emptyForm,
   type Form,
   formOf,
+  limitReached,
   number,
   result,
   SUGGESTED_BRIEFS,
   statusTag,
+  usage,
+  withKind,
 } from "./model";
 import { Region } from "./parts";
 
@@ -285,17 +288,38 @@ function BriefFields({ form, onChange }: { form: Form; onChange: (form: Form) =>
             </Chip>
           </div>
         </fieldset>
+        <fieldset className="m-0 min-w-0 border-0 p-0">
+          <legend className="m-0 mb-2 p-0 text-sm font-semibold text-secondary">Limited by</legend>
+          <div className="flex flex-wrap gap-2">
+            <Chip
+              selected={form.kind === "experiments"}
+              onClick={() => onChange(withKind(form, "experiments"))}
+            >
+              Experiments
+            </Chip>
+            <Chip
+              selected={form.kind === "tokens"}
+              onClick={() => onChange(withKind(form, "tokens"))}
+            >
+              Tokens
+            </Chip>
+          </div>
+        </fieldset>
         <Field
-          label="Token budget"
-          hint="What the research may spend before it stops."
-          className="min-w-0"
+          label={form.kind === "experiments" ? "Experiments" : "Tokens"}
+          hint={
+            form.kind === "experiments"
+              ? "The most levers measured against the baseline before it stops."
+              : "What the research may spend before it stops."
+          }
+          className="min-w-0 md:col-span-2"
         >
           {(id) => (
             <Input
               id={id}
               inputMode="numeric"
               className="tabular-nums"
-              placeholder={DEFAULT_BUDGET}
+              placeholder={defaultAmount(form.kind)}
               value={form.budget}
               onChange={(event) => onChange({ ...form, budget: event.target.value })}
             />
@@ -443,13 +467,13 @@ function BriefBox({
         <div className="flex flex-wrap items-center gap-2">
           <Tag tone={status.tone}>{status.label}</Tag>
           <span className="text-sm text-secondary tabular-nums">
-            {repository} · {direction} · {research.tokens ?? 0} of {research.token_budget} tokens
-            used
+            {repository} · {direction} · {usage(research)}
           </span>
         </div>
         <span className="min-w-0 break-words rounded-control bg-sunken px-3 py-2 font-mono text-sm text-text">
           {research.measure}
         </span>
+        {limitReached(research) && <Body>{limitReached(research)}</Body>}
         {research.reason && <Body>{research.reason}</Body>}
         <div className="flex flex-wrap gap-2">
           {possible.map(({ label, action, primary }) => (

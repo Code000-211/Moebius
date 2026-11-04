@@ -248,7 +248,7 @@ failure anywhere starts the run without a hint (Agentless, AutoCodeRover).
   when a key needs it, and offers a `.moebius/` change on its repository through the forge; dismissing changes nothing.
 - **Autoresearch**: starts from a brief a person confirms; measures a baseline, then the Autoresearcher finds levers (code and
   profiles, its own history, papers and the web) and runs an experiment for each; every lever kept becomes its own change.
-  Ends when the brief's token budget is spent or a person stops it.
+  Ends when the brief's budget (experiments or tokens) is spent or a person stops it.
 - **Replays** in the trial window: a sample of refused, reversible tool calls is run in a throwaway copy of the worktree;
   the result becomes the judgement's outcome.
 - **Shadowing**: a trained decision model (outside the first version) decides alongside the teacher model; a kind of decision
