@@ -63,7 +63,13 @@ export function invalidates(event: ServerEvent): QueryKey[] {
   const stale: QueryKey[] = [];
   if (SNAPSHOT_KINDS.has(event.kind)) stale.push(keys.snapshot, keys.cards);
   if (event.kind === "script_changed") stale.push(keys.scripts, keys.projectSettingsAll);
-  if (event.kind === "project_settings_changed") stale.push(keys.projectSettingsAll);
+  if (event.kind === "project_settings_changed") {
+    stale.push(keys.projectSettingsAll);
+    // The plugins' settings of a repository are files of its settings (`plugins/<plugin>`).
+    if (String(event.data.file).startsWith("plugins/")) {
+      stale.push(keys.pluginProjectSettings(Number(event.data.repository)));
+    }
+  }
   // A repository's settings tell which `.moebius/` files are left, so they are read again with its files.
   if (event.kind === "repository_added" || event.kind === "repository_removed") {
     stale.push(keys.start);

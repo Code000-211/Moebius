@@ -1,7 +1,9 @@
 //! The settings of plugins: each plugin may declare, in its manifest, settings a person gives for each repository
 //! (`project_settings`, a sandbox's Dockerfile, say), which the web app shows on the repository's page, and settings for
 //! the whole server (`app_settings`), which it shows on the Settings page. The values are kept in the store by plugin
-//! name (`store::plugin_settings`); the launcher gets its app settings and those of a run's repository in its launch
+//! name (`store::plugin_settings`) for the server, and for a repository as files of its project settings,
+//! `repos/<repository name>/plugins/<plugin>/<key>` in the harness configuration repository, committed as the other
+//! project settings are (`harness::repo`); the launcher gets its app settings and those of a run's repository in its launch
 //! request (see `harness::launch`). Only a person changes them, and each save is recorded as an
 //! `edit_project_settings` or `edit_app_settings` decision. A plugin may bring its own page for them (`settings_ui` of
 //! its manifest), which the web app loads from [`App::settings_ui`] and draws in place of the fields; the values are
@@ -13,6 +15,7 @@ use moebius_plugin_api::{Manifest, PluginSetting, SettingInput};
 use serde::Serialize;
 
 use super::{App, AppError, Result};
+use crate::bus::Event;
 use crate::decide::Actor;
 
 /// The longest value a setting takes, in bytes: room for any Dockerfile.
@@ -143,22 +146,41 @@ impl App {
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect();
         if self.stored(scope, plugin)? != kept {
-            let mut context = BTreeMap::from([
+            if let Some(repository) = &repository {
+                let context = BTreeMap::from([
+                    ("plugin".into(), plugin.to_string()),
+                    (
+                        "keys".into(),
+                        kept.keys().cloned().collect::<Vec<_>>().join(", "),
+                    ),
+                    ("reason".into(), reason.trim().to_string()),
+                ]);
+                let message = format!("Update the {plugin} settings of {}", repository.name);
+                let commit = self.project_harness_repo()?.save_project_plugin_settings(
+                    self,
+                    by,
+                    (&repository.name, plugin),
+                    &kept,
+                    ("edit_project_settings", &message),
+                    context,
+                )?;
+                if commit.is_some() {
+                    self.bus.publish(Event::ProjectSettingsChanged {
+                        repository: repository.id,
+                        file: format!("plugins/{plugin}"),
+                    });
+                }
+                return self.plugin_settings(scope, manifest);
+            }
+            let context = BTreeMap::from([
                 ("plugin".into(), plugin.to_string()),
                 (
                     "keys".into(),
                     kept.keys().cloned().collect::<Vec<_>>().join(", "),
                 ),
             ]);
-            if let Some(repository) = &repository {
-                context.insert("repository".into(), repository.name.clone());
-            }
-            let kind = format!("edit_{}_settings", scope.name());
-            self.record_action(by, &kind, None, None, context, reason)?;
-            match scope {
-                Scope::App => self.store.set_app_settings(plugin, &kept)?,
-                Scope::Project(id) => self.store.set_project_settings(id, plugin, &kept)?,
-            }
+            self.record_action(by, "edit_app_settings", None, None, context, reason)?;
+            self.store.set_app_settings(plugin, &kept)?;
         }
         self.plugin_settings(scope, manifest)
     }
@@ -189,7 +211,7 @@ impl App {
     fn stored(&self, scope: Scope, plugin: &str) -> Result<BTreeMap<String, String>> {
         Ok(match scope {
             Scope::App => self.store.app_settings(plugin)?,
-            Scope::Project(id) => self.store.project_settings(id, plugin)?,
+            Scope::Project(id) => self.project_plugin_settings(&self.repository(id)?, plugin),
         })
     }
 
@@ -301,8 +323,13 @@ mod tests {
         let mut host = Host::new(Duration::from_secs(30));
         host.add(Boxed);
         host.add(Drawn);
-        let app = App::new(store, Arc::new(host), dir.path());
+        let app = App::new(store, Arc::new(host), &dir.path().join("data"));
+        crate::harness::repo::testing::use_harness(&app, dir.path());
         (dir, app, repo.id)
+    }
+
+    fn stored(app: &App, repo: i64) -> BTreeMap<String, String> {
+        app.project_plugin_settings(&app.repository(repo).unwrap(), "box")
     }
 
     #[test]
@@ -325,7 +352,13 @@ mod tests {
             .unwrap();
         assert_eq!(saved.settings[0].value, "FROM debian\n");
         assert_eq!(saved.settings[1].value, "");
-        assert_eq!(app.store.project_settings(repo, "box").unwrap(), values);
+        assert_eq!(stored(&app, repo), values);
+        // It is a file of the project's settings, a commit of the harness configuration repository.
+        let file = app.harness_repo().unwrap().project_dir("demo");
+        assert_eq!(
+            std::fs::read_to_string(file.join("plugins/box/dockerfile")).unwrap(),
+            "FROM debian\n"
+        );
         let kinds: Vec<String> = app
             .store
             .judgements("edit_project_settings")
@@ -346,6 +379,33 @@ mod tests {
             app.store.judgements("edit_project_settings").unwrap().len(),
             1
         );
+    }
+
+    #[test]
+    fn a_server_without_a_harness_repository_has_no_project_settings_of_plugins() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(Store::in_memory(&dir.path().join("blobs")).unwrap());
+        let repo = store
+            .add_repository("demo", "/srv/demo", "none", "main")
+            .unwrap();
+        let mut host = Host::new(Duration::from_secs(30));
+        host.add(Boxed);
+        let app = App::new(store, Arc::new(host), dir.path());
+        assert!(
+            app.plugin_project_settings(repo.id).unwrap().plugins[0]
+                .settings
+                .iter()
+                .all(|s| s.value.is_empty())
+        );
+        let values = BTreeMap::from([("dockerfile".to_string(), "FROM debian\n".to_string())]);
+        assert!(matches!(
+            app.save_plugin_settings(&Actor::Person, Scope::Project(repo.id), "box", &values, ""),
+            Err(AppError::Conflict(_))
+        ));
+        // The server's own settings do not need it.
+        let registry = BTreeMap::from([("registry".to_string(), "quay.io".to_string())]);
+        app.save_plugin_settings(&Actor::Person, Scope::App, "box", &registry, "")
+            .unwrap();
     }
 
     #[test]
@@ -389,7 +449,7 @@ mod tests {
             save(&agent, "box", "dockerfile", "FROM scratch"),
             Err(AppError::Forbidden(_))
         ));
-        assert!(app.store.project_settings(repo, "box").unwrap().is_empty());
+        assert!(stored(&app, repo).is_empty());
         assert!(matches!(
             app.plugin_project_settings(repo + 1),
             Err(AppError::NotFound(_))
@@ -410,7 +470,7 @@ mod tests {
             .unwrap();
         assert_eq!(saved.settings[0].value, "quay.io");
         assert_eq!(app.store.app_settings("box").unwrap(), values);
-        assert!(app.store.project_settings(repo, "box").unwrap().is_empty());
+        assert!(stored(&app, repo).is_empty());
         assert_eq!(app.store.judgements("edit_app_settings").unwrap().len(), 1);
         assert!(
             app.store

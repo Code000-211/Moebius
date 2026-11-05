@@ -1,5 +1,6 @@
 //! A project's settings in the clone: the files of `repos/<repository name>/` that say how Moebius works on one
-//! repository (its rules, review notes, lint plan, checks, test-first switch and column scripts). They are read from
+//! repository (its rules, review notes, lint plan, checks, test-first switch and column scripts, and the settings
+//! plugins ask for in `plugins/<plugin>/<key>`). They are read from
 //! the clone's default branch, which is checked out, and a person's or an agent's edit is a commit on that branch
 //! pushed to `origin`, like the other edits of the harness configuration repository (see `edits`).
 
@@ -15,6 +16,10 @@ use crate::repos::files::writable;
 
 /// The directory of the clone that holds the settings of all projects.
 pub const DIR: &str = "repos";
+
+/// The directory of a project's settings that holds what plugins ask for, a folder for each plugin with a file for each
+/// of its settings.
+pub const PLUGINS_DIR: &str = "plugins";
 
 /// The files of a project that are not column scripts: the repository's rules, notes for the reviewer, the lens's lint
 /// plan, the checks of a repository without a forge, the test-first switch and the hint of files for code runs.
@@ -43,8 +48,8 @@ fn reserved_name(name: &str) -> bool {
         })
 }
 
-/// Whether `name` can name a project's directory: a repository name, which is letters, digits and `-_.` and does not
-/// start with a dot.
+/// Whether `name` can name a directory or file of a project's settings (a repository, a plugin or a setting's key):
+/// letters, digits and `-_.`, not starting with a dot, and not a device name of Windows.
 fn valid_project(name: &str) -> bool {
     !name.is_empty()
         && !name.starts_with('.')
@@ -76,6 +81,98 @@ impl HarnessRepo {
             }
         }
         std::fs::read_to_string(path).ok()
+    }
+
+    /// The values the plugin `plugin` has for the project `name`, by key: the files of `repos/<name>/plugins/<plugin>/`,
+    /// as the default branch has them. An empty file is no value; a link, a directory or a name that is not a key is not
+    /// read.
+    pub fn project_plugin_settings(&self, name: &str, plugin: &str) -> BTreeMap<String, String> {
+        let mut values = BTreeMap::new();
+        if !valid_project(name) || !valid_project(plugin) {
+            return values;
+        }
+        let mut dir = self.path.clone();
+        for part in [DIR, name, PLUGINS_DIR, plugin] {
+            dir.push(part);
+            match dir.symlink_metadata() {
+                Ok(meta) if !meta.file_type().is_symlink() => {}
+                _ => return values,
+            }
+        }
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            return values;
+        };
+        for entry in entries.flatten() {
+            let key = entry.file_name().to_string_lossy().into_owned();
+            let is_file = entry.file_type().is_ok_and(|kind| kind.is_file());
+            if !is_file || !valid_project(&key) {
+                continue;
+            }
+            if let Ok(value) = std::fs::read_to_string(entry.path())
+                && !value.is_empty()
+            {
+                values.insert(key, value);
+            }
+        }
+        values
+    }
+
+    /// A person makes `values` the settings plugin `plugin` has for the project `name`, in place of all it had: one
+    /// file for each value under `repos/<name>/plugins/<plugin>/`, an empty value or a key left out removing its
+    /// file. One commit on the default branch, pushed to `origin`, recorded as a decision of `kind` with `context`.
+    /// The short id of the commit is given; values that change nothing make no commit.
+    pub fn save_project_plugin_settings(
+        &self,
+        app: &App,
+        by: &Actor,
+        (name, plugin): (&str, &str),
+        values: &BTreeMap<String, String>,
+        (kind, message): (&str, &str),
+        mut context: BTreeMap<String, String>,
+    ) -> Result<Option<String>> {
+        let mut read_at = self.lock();
+        if reserved_name(name) {
+            return Err(AppError::Invalid(format!(
+                "{name:?} is a device name on Windows, which cannot make the directory repos/{name}/; rename the \
+                 repository to keep its settings"
+            )));
+        }
+        if !valid_project(name) {
+            return Err(AppError::Invalid(format!(
+                "{name:?} is not a repository name"
+            )));
+        }
+        for part in std::iter::once(plugin).chain(values.keys().map(String::as_str)) {
+            if !valid_project(part) {
+                return Err(AppError::Invalid(format!(
+                    "{part:?} cannot be the name of a file of a project's settings (letters, digits, - _ and .)"
+                )));
+            }
+        }
+        let folder = format!("{DIR}/{name}/{PLUGINS_DIR}/{plugin}");
+        context.insert("repository".into(), name.into());
+        context.insert("path".into(), folder.clone());
+        let edit = Edit {
+            kind,
+            files: &folder,
+            message,
+        };
+        let write = || {
+            let target = writable(&self.path, &format!("{folder}/x"))?;
+            let dir = target.parent().expect("the file is in the folder");
+            for entry in std::fs::read_dir(dir)?.flatten() {
+                let key = entry.file_name().to_string_lossy().into_owned();
+                let is_dir = entry.file_type().is_ok_and(|kind| kind.is_dir());
+                if !is_dir && values.get(&key).is_none_or(|value| value.is_empty()) {
+                    remove_if_there(&entry.path())?;
+                }
+            }
+            for (key, value) in values.iter().filter(|(_, value)| !value.is_empty()) {
+                std::fs::write(writable(&self.path, &format!("{folder}/{key}"))?, value)?;
+            }
+            Ok(())
+        };
+        self.commit(app, by, &mut read_at, &edit, context, write)
     }
 
     /// A person or agent writes the project's `file` (`Some(text)`) or removes it (`None`): committed on the default

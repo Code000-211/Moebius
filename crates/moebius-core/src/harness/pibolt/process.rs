@@ -71,12 +71,7 @@ fn launch_repository(
         return Ok(None);
     };
     let repository = app.repository(id).map_err(|e| e.to_string())?;
-    let settings = app.store.project_settings(id, launcher).map_err(|e| {
-        format!(
-            "cannot read the launcher's settings of {}: {e}",
-            repository.name
-        )
-    })?;
+    let settings = app.project_plugin_settings(&repository, launcher);
     Ok(Some((repository.name, settings)))
 }
 
