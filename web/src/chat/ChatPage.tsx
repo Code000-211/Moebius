@@ -15,7 +15,7 @@ import { keys } from "../api/keys";
 import { writeFlag } from "../app/storage";
 import { Button } from "../ui/components/Button";
 import { useNow } from "../ui/lib/useNow";
-import { ChatList } from "./ChatList";
+import { ChatList } from "./ChatColumn";
 import { ChatTopBar } from "./ChatTopBar";
 import { DeleteChat } from "./DeleteChat";
 import { NewChat } from "./NewChat";
