@@ -4,13 +4,16 @@
 import { cn } from "../lib/cn";
 
 export interface StatusDotProps {
+  /** For a test to find the mark by. */
+  "data-testid"?: string;
   /** A status colour of the theme, such as `var(--complete)`. */
   color: string;
   className?: string;
 }
 
-export const StatusDot = ({ color, className }: StatusDotProps) => (
+export const StatusDot = ({ color, className, "data-testid": testId }: StatusDotProps) => (
   <span
+    data-testid={testId}
     aria-hidden="true"
     className={cn("size-2 shrink-0 rounded-full", className)}
     style={{ backgroundColor: color }}

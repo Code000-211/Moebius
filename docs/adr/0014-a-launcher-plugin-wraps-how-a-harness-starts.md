@@ -1,5 +1,9 @@
 # A launcher plugin wraps how a harness process starts
 
+Amended 2026-11-05: the agent directory is read-write, not read-only as the first launcher's paragraph below says,
+because Pi keeps its credential store there; the request's `read_write` names it and the sessions and temporary
+directories.
+
 Runs are the part of Moebius that does what no one wrote down: an agent runs as the server's user, in the server's file
 system, with a model's idea of what to type. The guard sees what a tool call says, not what it does. A sandbox the
 kernel enforces makes the boundary real, but which sandbox is right differs by machine and by need (nono on a laptop, a

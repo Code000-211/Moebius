@@ -227,7 +227,8 @@ a chat's Pi is started again). The parameters are a `LaunchRequest`:
 | `clone` | string or `null` | The clone of the repository the worktree belongs to, whose git directory the worktree's git uses; `null` without a repository. |
 | `runner` | string or `null` | The name of the `[[runners]]` machine when the run goes there over SSH, else `null`. |
 
-The paths and URLs name what exists when the process starts. The agent directory is written before the call and written
+The paths and URLs name what exists when the process starts. The agent directory, the sessions directory and the
+temporary directory (the last two for a run on this machine) are made before the call, and the agent directory is written
 again if the answer names other addresses.
 
 The result is a `LaunchAnswer`, told apart by `answer`:
@@ -314,7 +315,7 @@ A launcher in its own process is a `[[plugins]]` entry with `launches = true`, s
 
 ```json
 < {"type":"manifest","manifest":{"name":"box-run","version":"0.1.0","kinds":["launcher"]}}
-> {"type":"call","id":1,"call":{"kind":"launcher","method":"launch","params":{"run":{"id":7,"purpose":"code","agent":"Coder","chat":false,"card":3},"program":"pi-bolt","args":["--mode","rpc"],"env":{"PATH":"/usr/bin"},"dir":"/data/worktrees/run-7","read_only":["/data/runs/7/bridge.ts"],"read_write":["/data/worktrees/run-7","/data/runs/7/agent","/data/runs/7/sessions"],"urls":{"router":"http://127.0.0.1:7172","gateway":"http://127.0.0.1:7172/mcp","check":"http://127.0.0.1:7172"},"clone":"/data/repos/demo","runner":null}}}
+> {"type":"call","id":1,"call":{"kind":"launcher","method":"launch","params":{"run":{"id":7,"purpose":"code","agent":"Coder","chat":false,"card":3},"program":"pi-bolt","args":["--mode","rpc"],"env":{"PATH":"/usr/bin"},"dir":"/data/worktrees/run-7","read_only":["/data/runs/7/moebius-bridge.ts"],"read_write":["/data/worktrees/run-7","/data/runs/7/agent","/data/runs/7/sessions"],"urls":{"router":"http://127.0.0.1:7172","gateway":"http://127.0.0.1:7172/mcp","check":"http://127.0.0.1:7172"},"clone":"/data/repos/demo","runner":null}}}
 < {"type":"reply","id":1,"result":{"answer":"unchanged"}}
 > {"type":"call","id":2,"call":{"kind":"launcher","method":"leftovers","params":{"running":[]}}}
 < {"type":"reply","id":2,"result":{"cleanup":[],"remove":["/tmp/run-3.profile"]}}

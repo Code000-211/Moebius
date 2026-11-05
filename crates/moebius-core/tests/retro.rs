@@ -388,6 +388,8 @@ async fn a_retro_that_failed_is_analysed_again_on_its_stored_report() {
     assert_eq!(status, 200, "{retro}");
     assert_eq!(retro["status"], "analysing");
     assert_eq!(retro["warnings"], json!([]));
+    // The failed Retro never had a run, and now it has the analyst's.
+    assert!(retro["run_id"].is_i64(), "{retro}");
     // The analyst is given the report of the day that failed, not a new one.
     assert_eq!(retro["report"], json!(report));
     assert_eq!(done(&mut events).await["status"], "proposed");
@@ -409,6 +411,121 @@ async fn a_retro_that_failed_is_analysed_again_on_its_stored_report() {
         )
         .await;
     assert_eq!(status, 404);
+}
+
+/// What a server that stopped while the analyst was going leaves behind: the day's Retro, `failed`, with its report.
+fn a_failed_retro(server: &Server, day: &str) -> Value {
+    let store = &server.app.store;
+    let report = moebius_core::improve::retro::report(store, day).unwrap();
+    let report = serde_json::to_value(&report).unwrap();
+    store.add_retro(day, &report, "analysing").unwrap();
+    store
+        .fail_analysing_retros("the server stopped while the analyst was going")
+        .unwrap();
+    report
+}
+
+fn retry_path(day: &str) -> String {
+    format!("/v1/retros/{day}/retry")
+}
+
+/// Stops the analyst's run, which hangs until it is told to end, and waits for the end of the Retro.
+async fn stop_analyst(
+    api: &Api,
+    events: &mut tokio::sync::broadcast::Receiver<AppEvent>,
+    run: &Value,
+) -> Value {
+    let (status, stopped) = api
+        .call(
+            reqwest::Method::POST,
+            &format!("/v1/runs/{run}/stop"),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(status, 200, "{stopped}");
+    done(events).await
+}
+
+/// Without `[harness]` there is no analyst to start: the retry is refused and the Retro stays failed.
+#[tokio::test]
+async fn a_retro_cannot_be_retried_without_a_harness_repository() {
+    let dir = tempfile::tempdir().unwrap();
+    let server = server(dir.path(), None);
+    let day = server.app.store.today().unwrap();
+    a_bad_day(&server, "stalled");
+    a_failed_retro(&server, &day);
+    let api = Api::start(&server).await;
+    let (status, error) = api
+        .call(reqwest::Method::POST, &retry_path(&day), Some(json!({})))
+        .await;
+    assert_eq!(status, 422, "{error}");
+    assert!(error.to_string().contains("[harness]"), "{error}");
+    let retro = server.app.store.retro(&day).unwrap().unwrap();
+    assert_eq!(retro.status, "failed");
+    assert_eq!(retro.warnings.len(), 1);
+}
+
+/// An analyst that fails again leaves the day failed with the new reason, and the next retry makes a run of its own.
+#[tokio::test]
+async fn a_retry_that_fails_again_says_why_and_can_be_retried_with_a_new_run() {
+    let (_dir, _origin, server, day) = bad_day_server(|_| "[hang]".to_string());
+    a_failed_retro(&server, &day);
+    let api = Api::start(&server).await;
+    let mut events = server.app.bus.subscribe();
+
+    let (status, first) = api
+        .call(reqwest::Method::POST, &retry_path(&day), Some(json!({})))
+        .await;
+    assert_eq!(status, 200, "{first}");
+    assert_eq!(first["status"], "analysing");
+    assert_eq!(first["warnings"], json!([]));
+    let first_run = first["run_id"].clone();
+    assert!(first_run.is_i64(), "{first}");
+    let ended = stop_analyst(&api, &mut events, &first_run).await;
+    assert_eq!(ended["status"], "failed", "{ended}");
+    let retro = server.app.store.retro(&day).unwrap().unwrap();
+    assert_eq!(retro.status, "failed");
+    assert_eq!(retro.warnings.len(), 1, "{:?}", retro.warnings);
+    assert!(
+        retro.warnings[0].starts_with("the analyst's run stopped"),
+        "{:?}",
+        retro.warnings
+    );
+
+    // Another retry is another run, and the reason of the last one is gone while it goes.
+    let (status, second) = api
+        .call(reqwest::Method::POST, &retry_path(&day), Some(json!({})))
+        .await;
+    assert_eq!(status, 200, "{second}");
+    assert_eq!(second["status"], "analysing");
+    assert_eq!(second["warnings"], json!([]));
+    assert!(second["run_id"].is_i64(), "{second}");
+    assert_ne!(second["run_id"], first_run);
+    stop_analyst(&api, &mut events, &second["run_id"]).await;
+}
+
+/// Two retries at once start one analyst: the one that finds the day no longer failed is refused.
+#[tokio::test]
+async fn two_retries_at_once_start_one_analyst() {
+    let (_dir, _origin, server, day) = bad_day_server(|_| "[hang]".to_string());
+    a_failed_retro(&server, &day);
+    let api = Api::start(&server).await;
+    let mut events = server.app.bus.subscribe();
+
+    let path = retry_path(&day);
+    let ((a, a_body), (b, b_body)) = tokio::join!(
+        api.call(reqwest::Method::POST, &path, Some(json!({}))),
+        api.call(reqwest::Method::POST, &path, Some(json!({}))),
+    );
+    let mut statuses = [a, b];
+    statuses.sort();
+    assert_eq!(statuses, [200, 422], "{a_body} {b_body}");
+    let started = if a == 200 { a_body } else { b_body };
+    assert_eq!(started["status"], "analysing");
+    // Only the two runs of the bad day and one analyst exist.
+    assert!(server.app.store.run(3).unwrap().is_some());
+    assert!(server.app.store.run(4).unwrap().is_none());
+    stop_analyst(&api, &mut events, &started["run_id"]).await;
 }
 
 /// The fake analyst's directive to make the branch `proposal/<day>-<name>` with one commit that writes `file` with

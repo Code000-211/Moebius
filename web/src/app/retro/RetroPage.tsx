@@ -174,28 +174,28 @@ function Day({ view, wanted }: { view: RetroView; wanted: string | null }) {
           className="min-w-0"
         >
           <div className="flex flex-col gap-4">
-            {warnings.map((warning) => (
-              <div
-                key={warning}
-                className="flex items-center gap-4 rounded-control bg-attention-fill p-4 text-attention-text"
-              >
-                <WarningCircleIcon className="size-4 shrink-0" aria-hidden="true" />
-                <p className="m-0 min-w-0 flex-1 break-words text-base">{warning}</p>
-                {view.status === "failed" ? (
-                  // The banner is the warning's own fill, so the button of it needs its border to read as a button.
-                  <Button
-                    size="sm"
-                    variant="attention"
-                    className="ring-1 ring-attention-border ring-inset"
-                    disabled={retry.isPending}
-                    onClick={() => retry.mutate(view.date)}
-                  >
-                    <ArrowClockwiseIcon className="size-4" aria-hidden="true" />
-                    {retry.isPending ? "Running" : "Retry"}
-                  </Button>
-                ) : null}
+            {/* One banner for what was left out, with the one Retry beside it: the retry runs the whole day, not a warning. */}
+            <div className="flex items-center gap-4 rounded-control bg-attention-fill p-4 text-attention-text">
+              <WarningCircleIcon className="size-4 shrink-0" aria-hidden="true" />
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
+                {warnings.map((warning) => (
+                  <p key={warning} className="m-0 min-w-0 break-words text-base">
+                    {warning}
+                  </p>
+                ))}
               </div>
-            ))}
+              {view.status === "failed" ? (
+                <Button
+                  size="sm"
+                  variant="attention"
+                  disabled={retry.isPending}
+                  onClick={() => retry.mutate(view.date)}
+                >
+                  <ArrowClockwiseIcon className="size-4" aria-hidden="true" />
+                  {retry.isPending ? "Running" : "Retry"}
+                </Button>
+              ) : null}
+            </div>
             {retry.error && (
               <Notice tone="error">
                 {sayError(retry.error, "Could not run the Retro again. Try again.")}

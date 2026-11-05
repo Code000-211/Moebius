@@ -1,7 +1,9 @@
 /**
  * The Chat page (the desktop app's CH3-D): the column of chats beside one column a page title wide on the open canvas,
  * with the top bar that shows and hides that column and starts a new chat, and under it the form of a new chat
- * (`/chat`) or the chat chosen (`/chat/:id`).
+ * (`/chat`) or the chat chosen (`/chat/:id`). Whether the list is shown or hidden is remembered per browser; with
+ * nothing remembered it is shown from a wide screen (`lg`) and hidden below it, where it would lie over the chat, and
+ * choosing a chat there hides it again.
  */
 import { TrashIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
@@ -10,7 +12,7 @@ import { useNavigate, useParams } from "react-router";
 import { snapshot as readSnapshot } from "../api/calls/board";
 import { chats as readChats } from "../api/calls/chat";
 import { keys } from "../api/keys";
-import { readFlag, writeFlag } from "../app/storage";
+import { writeFlag } from "../app/storage";
 import { Button } from "../ui/components/Button";
 import { useNow } from "../ui/lib/useNow";
 import { ChatList } from "./ChatList";
@@ -23,6 +25,22 @@ import { placeName } from "./places";
 /** Whether the column of chats is hidden, kept per browser like the shell's own sidebar. */
 const COLLAPSED_KEY = "moebius.chatlist.collapsed";
 
+/** The widest screens, where the column sits beside the chat: Tailwind's `lg`. */
+function isWide(): boolean {
+  return typeof matchMedia !== "function" || matchMedia("(min-width: 1024px)").matches;
+}
+
+/** What was chosen for the list in this browser, else shown only where it fits beside the chat. */
+function initialListOpen(): boolean {
+  try {
+    const stored = window.localStorage.getItem(COLLAPSED_KEY);
+    if (stored !== null) return stored !== "1";
+  } catch {
+    // Nothing is remembered; the screen decides.
+  }
+  return isWide();
+}
+
 export function ChatPage() {
   const params = useParams();
   const openId = params.id !== undefined && /^\d+$/.test(params.id) ? Number(params.id) : null;
@@ -30,7 +48,7 @@ export function ChatPage() {
   const snapshot = useQuery({ queryKey: keys.snapshot, queryFn: () => readSnapshot() });
   const now = useNow();
   const [notice, setNotice] = useState<string | null>(null);
-  const [listOpen, setListOpen] = useState(() => !readFlag(COLLAPSED_KEY));
+  const [listOpen, setListOpen] = useState(initialListOpen);
 
   // A notice belongs to the chat it was said in.
   // biome-ignore lint/correctness/useExhaustiveDependencies: it runs when another chat is opened
@@ -56,6 +74,11 @@ export function ChatPage() {
     setListOpen(!listOpen);
   }
 
+  // Where the column lies over the chat, choosing a chat is done with the column: it is put away, not remembered.
+  function chosen() {
+    if (!isWide()) setListOpen(false);
+  }
+
   return (
     <div className="relative mx-auto flex h-full w-full max-w-5xl gap-4" data-testid="chat-page">
       {listOpen && (
@@ -65,6 +88,7 @@ export function ChatPage() {
           now={now}
           places={(chat) => placeName(snapshot.data, chat)}
           onCollapse={toggleList}
+          onChoose={chosen}
         />
       )}
       <div className="mx-auto flex h-full w-full min-w-0 max-w-3xl flex-col gap-4">

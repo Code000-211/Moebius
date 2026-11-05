@@ -1816,7 +1816,8 @@ are `GET /v1/runs/{id}/events`) and that chat's status. Errors: `404` no such au
 
 Runs the Retro of a day now: the day's errors are collected into a report and, when the day had errors and `[harness]`
 is configured, the Retro analyst starts (see [harness configuration](harness-configuration.md#the-retro)). The analysis
-goes on after the response, which has the status `analysing`; its end is the event `retro_done`. Without `[harness]`, or
+goes on after the response, which has the status `analysing`; its end is the event `retro_done`. When the analyst cannot be
+started at all, the response is still `200`, with the status `failed` and the reason in `warnings`, and `retro_done` is sent. Without `[harness]`, or
 without errors, no run is made and the Retro is `reported` at once. The server does this by itself once a day, at
 `retro_at` (see [configuration](configuration.md)).
 
@@ -1824,8 +1825,8 @@ Request: `{}` for today, or `{"date": "YYYY-MM-DD"}` for a local day. Response: 
 a Retro already; `422` the date is not a date.
 
 `RetroView`: `date`, `status` (`reported`: the report is all there is; `analysing`: the analyst is running; `proposed`: it
-ran and its proposals are stored, there may be none; `failed`: its run failed or was stopped, or the server stopped
-meanwhile), `run_id` (the analyst's run, or null), `warnings` (array of strings: the branches left out and why, or why it
+ran and its proposals are stored, there may be none; `failed`: its run failed or was stopped, the server stopped
+meanwhile, or storing its proposals failed), `run_id` (the analyst's run, or null), `warnings` (array of strings: the branches left out and why, or why it
 failed), `at`, `report` and `proposals` (array of `Proposal`).
 
 `report`: `{"date", "errors": [...], "merged": [...]}`; `merged` are the cards that reached Done that day after one code
@@ -1881,11 +1882,13 @@ One Retro as the `RetroView`. Errors: `404` the day has none.
 
 Runs the analysis of a day whose Retro `failed` again (its run failed or was stopped, or the server stopped while the
 analyst was going): the report stored for the day is kept as it is, the analyst starts again on it, and the `warnings`
-that said why it failed are cleared. The analysis goes on after the response, which has the status `analysing`; its end
-is the event `retro_done`, and a run that fails again leaves the day `failed` with the new reason. Nothing retries by
+that said why it failed and its `run_id` are cleared. The analysis goes on after the response, which has the status
+`analysing`; its end is the event `retro_done`, and a run that fails again leaves the day `failed` with the new reason.
+As with `POST /v1/retros`, an analyst that cannot be started at all gives a `200` with the status `failed` and the
+reason in `warnings`. Of two retries at once only one starts an analyst; the other is refused. Nothing retries by
 itself: the nightly schedule only ever looks for a day that has no Retro.
 
-Request: `{}`. Response: the `RetroView`. Errors: `404` the day has no Retro; `422` its Retro is not `failed`, or
+Request: `{}`. Response: the `RetroView`. Errors: `404` the day has no Retro; `422` its Retro is not `failed` (or another retry took it first), or
 `[harness]` is no longer configured.
 
 ### `GET /v1/lessons`

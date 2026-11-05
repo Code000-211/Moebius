@@ -749,6 +749,23 @@ describe("the dock", () => {
     expect(tile.x + tile.width).toBeLessThanOrEqual(lane.x + lane.width);
   });
 
+  it.skipIf(usesRealServer)("gives the card drawer a column of its own from 1024px", async () => {
+    await fresh();
+    await openBoard();
+    await page.setViewportSize({ width: 1024, height: 800 });
+    await card(3).click();
+    await page.waitForURL("**/board/1?card=3");
+    await dock().getByRole("heading", { name: "Document the API" }).waitFor();
+    const box = await dock().boundingBox();
+    expect(box, "the drawer is drawn").not.toBeNull();
+    // Beside the board, against the right edge, rather than stacked under the whole board.
+    expect(box?.x).toBeGreaterThanOrEqual(1024 - 384 - 1);
+    expect(box?.y).toBeLessThan(100);
+    // Below 1024px it stacks again.
+    await page.setViewportSize({ width: 900, height: 800 });
+    await expect.poll(async () => (await dock().boundingBox())?.x ?? 9999).toBeLessThan(900 - 384);
+  });
+
   it.skipIf(usesRealServer)("keeps the chosen card in the address, and closes", async () => {
     await fresh();
     await openBoard();

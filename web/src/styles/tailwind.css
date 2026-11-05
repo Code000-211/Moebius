@@ -45,6 +45,7 @@
   --color-attention-text: var(--attention-text);
   --color-attention-fill: var(--attention-fill);
   --color-attention-border: var(--attention-border);
+  --color-attention-hover: var(--attention-hover);
   --color-complete: var(--complete);
   --color-complete-text: var(--complete-text);
   --color-complete-fill: var(--complete-fill);
@@ -53,6 +54,7 @@
   --color-error-text: var(--error-text);
   --color-error-fill: var(--error-fill);
   --color-error-border: var(--error-border);
+  --color-error-hover: var(--error-hover);
   --color-on-ink: var(--on-ink);
   --color-cat-1: var(--cat-1);
   --color-cat-2: var(--cat-2);

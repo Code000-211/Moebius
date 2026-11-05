@@ -111,6 +111,18 @@ impl Store {
         Ok(())
     }
 
+    /// Takes a failed Retro back to `analysing` for another analysis: its reasons and its run are cleared. True when
+    /// this call did it; false when the day has no Retro or it is not `failed`, as when another retry got there first,
+    /// so of two retries at once only one starts an analyst.
+    pub fn claim_failed_retro(&self, date: &str) -> Result<bool> {
+        let claimed = self.conn().execute(
+            "UPDATE retros SET status = 'analysing', warnings = '[]', run_id = NULL
+             WHERE date = ?1 AND status = 'failed'",
+            [date],
+        )?;
+        Ok(claimed == 1)
+    }
+
     /// Fails the Retros whose analysis the last server did not see through.
     pub fn fail_analysing_retros(&self, why: &str) -> Result<()> {
         self.conn().execute(

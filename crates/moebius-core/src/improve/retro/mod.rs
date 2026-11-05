@@ -250,7 +250,12 @@ pub fn retry(
             "the Retro of {day} cannot analyse without [harness]"
         )));
     };
-    app.store.finish_retro(day, "analysing", &[])?;
+    // The claim is one statement, so of two retries at once only one goes on to start an analyst.
+    if !app.store.claim_failed_retro(day)? {
+        return Err(AppError::Invalid(format!(
+            "the Retro of {day} is no longer failed"
+        )));
+    }
     if let Err(why) = launch(app, (runs, live), repo, &report) {
         app.store.finish_retro(day, "failed", &[why])?;
         publish_done(app, day)?;

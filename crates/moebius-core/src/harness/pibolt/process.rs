@@ -333,7 +333,7 @@ impl PiBolt {
         ];
         if remote.is_none() {
             // A launcher grants the paths it is told, and one that does not exist yet cannot be granted: Pi makes its
-            // own sessions directory only when nothing wraps it, so it is made here for both cases.
+            // own sessions directory only when nothing wraps it, so a local run has it made here, before the launcher is called.
             std::fs::create_dir_all(place.sessions)
                 .map_err(|e| format!("cannot make the sessions directory of the run: {e}"))?;
             // Pi's temporary files go to a directory of the run, which only it can write, not to the shared one.

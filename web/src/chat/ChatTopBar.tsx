@@ -40,13 +40,7 @@ export function ChatTopBar({ chats, listOpen, onToggleList, title, actions }: Ch
       {/* Only while the column is out of the way: with it on the screen the heading at its top says the same, and a
           button that repeats the heading beside it is one control too many. */}
       {listOpen ? null : (
-        <Button
-          variant="secondary"
-          aria-label={said}
-          aria-expanded={listOpen}
-          aria-controls="chat-list"
-          onClick={onToggleList}
-        >
+        <Button variant="secondary" aria-label={said} onClick={onToggleList}>
           {asking > 0 && <StatusDot color="var(--attention)" />}
           Chats
           <span className="text-sm font-normal tabular-nums text-secondary">{chats.length}</span>

@@ -166,11 +166,11 @@ describe("the chat page", () => {
       const nested = await menu.evaluate(
         (element) =>
           [...element.querySelectorAll("*")].filter((child) => {
-            // A name that fades out or stops at a line hides the rest of itself on purpose; only a box built to be
-            // scrolled answers with a scrollbar of its own.
+            // A name that fades out hides the rest of itself on purpose: that is the one-line box of a `FadedLine`,
+            // which clips and does not wrap. Any other box that overflows without a scrollbar of its own is a row
+            // that was squeezed.
             const style = getComputedStyle(child);
-            if (style.webkitLineClamp !== "none") return false;
-            if (style.maskImage !== "none" || style.webkitMaskImage !== "none") return false;
+            if (style.overflowX === "hidden" && style.whiteSpace === "nowrap") return false;
             return (
               child.scrollHeight > child.clientHeight + 1 ||
               child.scrollWidth > child.clientWidth + 1
@@ -238,7 +238,7 @@ describe("the chat page", () => {
     // The list says the same thing with a dot rather than a word, and keeps the word in the row's own name.
     const row = page.getByTestId("chat-row").filter({ hasText: "Done" });
     expect.soft(await row.getAttribute("data-unread")).toBe("true");
-    expect.soft(await row.locator("span.rounded-full").count()).toBe(1);
+    expect.soft(await row.getByTestId("unread-dot").count()).toBe(1);
     await page.getByRole("link", { name: /New answers/ }).waitFor();
   });
 });
@@ -702,9 +702,8 @@ describe("an open chat", () => {
         headers: { "X-Moebius": "1" },
       });
       expect(stopped.ok(), await stopped.text()).toBe(true);
-      await expect
-        .poll(() => page.getByTestId("chat-title").getAttribute("data-status"))
-        .toBe("stopped");
+      // The actions of a chat that is up (its Terminal) are gone once its agent went away.
+      await page.getByRole("button", { name: "Terminal" }).waitFor({ state: "detached" });
 
       await page.getByRole("button", { name: /^Model: / }).click();
       await page.getByRole("menuitemradio", { name: "fake-small" }).click();
@@ -738,9 +737,7 @@ describe("an open chat", () => {
       await page.getByTestId("chat-title").waitFor();
       // The field still takes a message: the way on is this chat, not a new one, so nothing about the composer says
       // otherwise.
-      await expect
-        .poll(() => page.getByTestId("chat-title").getAttribute("data-status"))
-        .toBe("stopped");
+      await page.getByRole("button", { name: "Terminal" }).waitFor({ state: "detached" });
       expect(await field().getAttribute("placeholder")).toBe("Write to Moebius");
       expect(await page.getByRole("button", { name: "Continue" }).count()).toBe(0);
       expect(fake().chats[0]?.status).toBe("stopped");
@@ -754,10 +751,9 @@ describe("an open chat", () => {
       expect(fake().chats.length).toBe(1);
       expect(fake().chats[0]?.status).toBe("waiting");
       await page.getByTestId("chat-title").waitFor();
-      // The tag is gone again, and so is the state: the chat answered.
-      await expect
-        .poll(() => page.getByTestId("chat-title").getAttribute("data-status"))
-        .toBe("waiting");
+      // The chat is up again: its Terminal is back and can be pressed.
+      await page.getByRole("button", { name: "Terminal" }).waitFor();
+      expect(await page.getByRole("button", { name: "Terminal" }).isEnabled()).toBe(true);
     },
   );
 });
@@ -907,9 +903,12 @@ describe("the floating chat", () => {
         headers: { "X-Moebius": "1" },
       });
       expect(stopped.ok(), await stopped.text()).toBe(true);
-      // The sheet has no word for it any more, so the server is asked whether the agent went away before the next
-      // message is written into the same chat.
+      // The sheet has no word for it, and must not invent one: the agent going away is nothing to report, and the
+      // field still takes a message.
       await expect.poll(() => fake().chats[0]?.status).toBe("stopped");
+      expect(await window.getByText("Agent disconnected").count()).toBe(0);
+      expect(await page.getByText("Agent disconnected").count()).toBe(0);
+      expect(await field.isEnabled()).toBe(true);
 
       await field.fill("Carry on");
       await field.press("Enter");
@@ -1097,6 +1096,83 @@ describe("deleting a chat", () => {
       await dialog().getByRole("button", { name: "Delete" }).click();
       await dialog().getByRole("alert").filter({ hasText: "chat is still stopping" }).waitFor();
       expect(new URL(page.url()).pathname).toBe(`/chat/${id}`);
+    },
+  );
+});
+
+/** Signs a new context in with `options`, runs `init` in every page of it before the app does, and goes to `path`. */
+async function openWith(
+  path: string,
+  options: Parameters<Browser["newContext"]>[0],
+  init?: () => void,
+) {
+  server = await startServer();
+  context = await browser.newContext(options);
+  page = await context.newPage();
+  await page.goto(server.loginUrl);
+  await page.getByRole("navigation", { name: "Pages" }).waitFor();
+  if (init) await context.addInitScript(init);
+  await page.goto(`${server.url}${path}`);
+}
+
+describe("the column of chats", () => {
+  it("stays hidden after a reload once it was hidden", async () => {
+    await open("/chat");
+    await page.getByRole("button", { name: "Hide the list of chats" }).click();
+    await page.getByRole("button", { name: /^Chats \(/ }).waitFor();
+    await page.reload();
+    await page.getByTestId("chat-page").waitFor();
+    await page.getByRole("button", { name: /^Chats \(/ }).waitFor();
+    expect(await page.getByRole("button", { name: "Hide the list of chats" }).count()).toBe(0);
+  });
+
+  it("still shows the page when the browser lets it keep nothing", async () => {
+    await openWith("/chat", undefined, () => {
+      const refuse = () => {
+        throw new DOMException("blocked", "SecurityError");
+      };
+      Storage.prototype.getItem = refuse;
+      Storage.prototype.setItem = refuse;
+    });
+    await page.getByTestId("chat-page").waitFor();
+    await field().waitFor();
+    // Wide, so the column is shown, and hiding it works for the visit even though it cannot be remembered.
+    await page.getByRole("button", { name: "Hide the list of chats" }).click();
+    await page.getByRole("button", { name: /^Chats \(/ }).waitFor();
+  });
+
+  it.skipIf(usesRealServer)(
+    "starts hidden on a phone, leaves the composer usable and puts itself away when a chat is chosen",
+    async () => {
+      await openWith("/chat", { viewport: { width: 390, height: 844 }, hasTouch: true });
+      const id = fake().seed({
+        title: "Older chat",
+        events: [["said", { message: "Older chat" }]],
+      });
+      await page.reload();
+      await page.getByTestId("chat-page").waitFor();
+      await field().waitFor();
+      expect(await page.getByRole("button", { name: "Hide the list of chats" }).count()).toBe(0);
+      const sideways = await page.evaluate(
+        () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      );
+      expect(sideways, "the page scrolls sideways").toBe(false);
+      await say("Hello from a phone");
+      await page.getByText("You said: Hello from a phone").first().waitFor();
+
+      // Opened by hand the column lies over the chat, with its Delete in reach without hovering, and choosing a chat
+      // puts it away again.
+      await page.getByRole("button", { name: /^Chats \(/ }).click();
+      await page.getByTestId("chat-list-rows").waitFor();
+      await page.getByRole("button", { name: /^Delete chat Older chat/ }).waitFor();
+      expect(
+        await page.getByRole("button", { name: /^Delete chat Older chat/ }).isVisible(),
+        "the Delete of a row shows on a screen that cannot hover",
+      ).toBe(true);
+      await page.getByTestId("chat-row").filter({ hasText: "Older chat" }).click();
+      await page.waitForURL(`**/chat/${id}`);
+      await page.getByTestId("chat-list-rows").waitFor({ state: "detached" });
+      await field().waitFor();
     },
   );
 });

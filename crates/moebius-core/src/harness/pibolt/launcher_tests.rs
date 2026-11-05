@@ -65,6 +65,22 @@ impl Plugin for Fake {
         let request: LaunchRequest = serde_json::from_value(call.params)
             .map_err(|e| PluginError::BadParams(e.to_string()))?;
         lock(&self.seen).push(request.clone());
+        // A sandbox makes its rules from what exists when it is called, so every path it is to write, the worktree
+        // apart, must be there now and not only after the run: a missing one fails the launch. A run on a runner has
+        // its paths on the runner, not here.
+        let local = request.runner.is_none();
+        for path in request
+            .read_write
+            .iter()
+            .filter(|p| local && **p != request.dir)
+        {
+            if !Path::new(path).is_dir() {
+                return Err(PluginError::Failed(format!(
+                    "{} does not exist when the launcher is called",
+                    path
+                )));
+            }
+        }
         let answer = match self.mode {
             Mode::Unchanged => LaunchAnswer::Unchanged {
                 note: Some("not this one".into()),
@@ -186,15 +202,13 @@ fn an_unchanged_answer_starts_pi_as_without_a_launcher() {
     // The worktree and the agent directory are read and written (Pi writes its credential store there); the lens, the
     // bridge and the agent's extensions only read.
     assert!(request.read_write.contains(&request.dir));
-    // A sandbox makes its rules from what is there, so the directories of the run it is told to write are made before
-    // the call. The worktree is gone once the run has ended, so only these three are checked.
+    // The directories of the run it is told to write are named, and the fake launcher failed the run, so it would not
+    // have succeeded, had one not existed when it was called.
     for name in ["agent", "sessions", "tmp"] {
-        let path = request
-            .read_write
-            .iter()
-            .find(|p| p.ends_with(name))
-            .unwrap_or_else(|| panic!("the request does not name {name}"));
-        assert!(std::path::Path::new(path).is_dir(), "{path} was not made");
+        assert!(
+            request.read_write.iter().any(|p| p.ends_with(name)),
+            "the request does not name {name}"
+        );
     }
     assert!(
         request

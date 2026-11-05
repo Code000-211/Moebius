@@ -179,6 +179,40 @@ describe("groupTurns", () => {
       { kind: "error" },
     ]);
   });
+
+  it("does not take an unreachable MCP server for an answer to a failure", () => {
+    const failure: Entry = {
+      at: 0,
+      seq: seq(),
+      kind: "error",
+      source: "run",
+      message: "the server stopped while the run was going",
+    };
+    const unreachable: Entry = {
+      at: 0,
+      seq: seq(),
+      kind: "mcpError",
+      server: "docs",
+      message: "connection refused",
+    };
+    expect(groupTurns([person("hi"), failure, unreachable], false)[0]?.blocks).toMatchObject([
+      { kind: "error" },
+      { kind: "mcpError" },
+    ]);
+  });
+
+  it("keeps a failure the person has written after but nothing has answered yet", () => {
+    const failure: Entry = {
+      at: 0,
+      seq: seq(),
+      kind: "error",
+      source: "run",
+      message: "the server stopped while the run was going",
+    };
+    const turns = groupTurns([person("hi"), failure, person("again")], false);
+    expect(turns[0]?.blocks).toMatchObject([{ kind: "error" }]);
+    expect(turns[1]?.blocks).toEqual([]);
+  });
 });
 
 describe("stepViews", () => {

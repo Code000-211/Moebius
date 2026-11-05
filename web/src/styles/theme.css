@@ -55,6 +55,7 @@
   --attention-text: #f7b84b;
   --attention-fill: #3a3123;
   --attention-border: #66502c;
+  --attention-hover: #4c3d27;
   --complete: #34c58a;
   --complete-text: #34c58a;
   --complete-fill: #1e332b;
@@ -63,6 +64,7 @@
   --error-text: #ff6369;
   --error-fill: #3b2527;
   --error-border: #693336;
+  --error-hover: #44282a;
 
   /* The label of a control filled with the ink colour, and the ring of a focused one. */
   --on-ink: #121212;
@@ -191,6 +193,7 @@
   --attention-text: #8a5a06;
   --attention-fill: #f4ecdd;
   --attention-border: #e6d1ad;
+  --attention-hover: #eee1ca;
   --complete: #1fa971;
   --complete-text: #0b6f46;
   --complete-fill: #ddede7;
@@ -199,6 +202,7 @@
   --error-text: #bd282d;
   --error-fill: #f9e3e4;
   --error-border: #f1bcbe;
+  --error-hover: #f7dbdc;
 
   --on-ink: #fbfaf8;
   --focus: #111111;

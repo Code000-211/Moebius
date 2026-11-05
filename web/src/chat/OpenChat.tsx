@@ -104,11 +104,7 @@ export function ChatTitle({ chat, onNotice }: { chat: Chat; onNotice: (notice: s
           data-testid="chat-title-field"
         />
       ) : (
-        <span
-          className="group flex min-w-0 flex-1 items-center gap-1"
-          data-testid="chat-title"
-          data-status={chat.status}
-        >
+        <span className="group flex min-w-0 flex-1 items-center gap-1" data-testid="chat-title">
           <FadedLine
             text={name}
             keep="head"

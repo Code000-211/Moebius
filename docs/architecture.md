@@ -234,7 +234,7 @@ like the iced app and does not know anything the API does not say.
     `/moebius/lessons` (`lessons::tool`). `server/schedule.rs` retires the lessons not retrieved for 60 days, and
     `trial::card::run_trial` those given to a negative trial run.
 12c. **The Retro.** Once a minute `server/schedule.rs` asks `retro::on_schedule`, which starts today's Retro when `retro_at` has passed
-    and the `retros` table has no row for the day (`retro::due`); `POST /v1/retros` calls `retro::start` too. `retro::report`
+    and the `retros` table has no row for the day (`retro::due`); `POST /v1/retros` calls `retro::start` too, and `POST /v1/retros/{date}/retry` calls `retro::retry`, which claims a `failed` day with `Store::claim_failed_retro` and analyses its stored report again. `retro::report`
     reads the day's errors from the store, one `Store` function per source (failed and refused tool calls, failed and stopped
     runs, steering, cards sent back from review), into the stored report. With errors and a harness repository,
     `ImproveRuns::start_retro` (`PiBolt::start_retro`) starts a `retro` run of the built-in `Retro-analyst` in a detached worktree of
