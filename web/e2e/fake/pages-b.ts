@@ -285,8 +285,9 @@ export function createPagesBFake(): PagesBFake {
     async handle(request, response, path) {
       const method = request.method ?? "GET";
       const url = new URL(request.url ?? "/", "http://x");
+      // `/v1/plugins` alone: the plugins' settings are the Settings page's, in pages-a.
       const mine =
-        /^\/v1\/(runners|agents|skills|mcp-servers|uploads|models|plugins|settings|secrets|harness|server\/restart)/.test(
+        /^\/v1\/(runners|agents|skills|mcp-servers|uploads|models|plugins(?!\/)|settings|secrets|harness|server\/restart)/.test(
           path,
         ) && !(path === "/v1/server");
       if (!mine) return false;

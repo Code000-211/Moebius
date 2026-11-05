@@ -284,6 +284,8 @@ mod tests {
                 name: "refuser".into(),
                 version: "0".into(),
                 kinds: vec![Kind::Decider],
+                project_settings: Vec::new(),
+                app_settings: Vec::new(),
             }
         }
         fn call(&self, call: Call) -> std::result::Result<Value, PluginError> {
@@ -303,6 +305,8 @@ mod tests {
                 name: "broken".into(),
                 version: "0".into(),
                 kinds: vec![Kind::Decider],
+                project_settings: Vec::new(),
+                app_settings: Vec::new(),
             }
         }
         fn call(&self, _: Call) -> std::result::Result<Value, PluginError> {

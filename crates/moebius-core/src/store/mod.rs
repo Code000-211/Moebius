@@ -6,9 +6,10 @@
 //! cards), `issues` (parents, labels, claims and comments of issues), `changes`, `runs`, `events` (a run's events), `chats`, `judgements`, `replays`, `inbox`, `grillings`,
 //! `shadows` (the decision model's shadows and takeovers), `usage`, `found` (what the Retro collects), `retros`
 //! (Retros, proposals and trials), `lessons` (what the Retro learned from earlier cards), `attempts` (the runs a hard
-//! card gets in one go and which was picked), `research` (research, its runs and experiments) and `automations`
-//! (automations, their firings and the local clock). Every public type is re-exported here, as `store::Card` and the
-//! like.
+//! card gets in one go and which was picked), `research` (research, its runs and experiments), `automations`
+//! (automations, their firings and the local clock) and `plugin_settings` (what plugins keep for each repository
+//! and for the server).
+//! Every public type is re-exported here, as `store::Card` and the like.
 
 mod attempts;
 mod automations;
@@ -24,6 +25,7 @@ mod issues;
 mod judgements;
 mod lessons;
 mod localize;
+mod plugin_settings;
 mod replays;
 mod research;
 mod retros;
@@ -422,6 +424,8 @@ ALTER TABLE research RENAME COLUMN token_budget TO budget_amount;
 ALTER TABLE research ADD COLUMN budget_kind TEXT NOT NULL DEFAULT 'tokens';
 "#,
     issues::SCHEMA,
+    plugin_settings::PROJECT_SCHEMA,
+    plugin_settings::APP_SCHEMA,
 ];
 
 pub fn now() -> i64 {

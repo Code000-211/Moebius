@@ -104,6 +104,8 @@ impl Plugin for Guard {
             name: NAME.into(),
             version: env!("CARGO_PKG_VERSION").into(),
             kinds: vec![Kind::Decider],
+            project_settings: Vec::new(),
+            app_settings: Vec::new(),
         }
     }
 

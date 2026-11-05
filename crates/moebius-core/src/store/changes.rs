@@ -245,8 +245,12 @@ mod tests {
     #[test]
     fn a_change_may_belong_to_no_repository_and_the_migration_keeps_the_changes_it_had() {
         let dir = tempfile::tempdir().unwrap();
-        // Before the migration that lets a change belong to no repository, the one before the chats' origin.
-        let before = MIGRATIONS.len() - 2;
+        // The schema as it was before the cards' holds, which the rows below are written for; found by its text, so
+        // that migrations added later do not move it.
+        let before = MIGRATIONS
+            .iter()
+            .position(|sql| sql.contains("ADD COLUMN held_by"))
+            .unwrap();
         {
             let conn = Connection::open(dir.path().join("moebius.sqlite")).unwrap();
             conn.pragma_update(None, "foreign_keys", true).unwrap();

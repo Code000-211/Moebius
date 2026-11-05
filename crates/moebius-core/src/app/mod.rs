@@ -9,8 +9,8 @@
 //! of the harness configuration repository, `localize` gives a code run the files its issue is likely to touch and
 //! records what came of it, `reproduce` runs a change's reproduction test for a repository that works test first,
 //! `projects` reads a project's settings from the harness configuration repository,
-//! `whereabouts` knows where the server and the app run, and `automations` keeps the automations and starts their chats
-//! when their schedules come due.
+//! `whereabouts` knows where the server and the app run, `automations` keeps the automations and starts their chats
+//! when their schedules come due, and `plugin_settings` keeps what plugins ask of each repository and of the server.
 
 mod attempts;
 mod automations;
@@ -25,6 +25,7 @@ mod issues;
 mod localize;
 mod packages;
 mod projects;
+pub mod plugin_settings;
 mod repositories;
 mod reproduce;
 mod runs;

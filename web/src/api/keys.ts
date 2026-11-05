@@ -22,6 +22,8 @@ export const keys = {
     ["files", repository, "search", query, regex] as const,
   /** The settings of a repository's project; `project_settings_changed` makes all of them stale. */
   projectSettingsAll: ["project-settings"] as const,
+  /** What the plugins ask of one repository, with its values. */
+  pluginProjectSettings: (repository: number) => ["plugin-project-settings", repository] as const,
   projectSettings: (repository: number) => ["project-settings", repository] as const,
   snapshot: ["snapshot"] as const,
   /** Everything read about one card (its history and its runs) starts with this, so an event can make it all stale. */
@@ -56,6 +58,8 @@ export const keys = {
   availableDecision: ["models", "decision"] as const,
   providers: ["providers"] as const,
   plugins: ["plugins"] as const,
+  /** What the plugins ask of the whole server, with its values. */
+  appSettings: ["plugins", "app-settings"] as const,
   /** Everything the package sheet and the Plugins page read about packages: `package_*` events make it stale. */
   packages: ["packages"] as const,
   /** The prefixes of the lists under `packages`, for reading them again without what a package opened in the sheet read. */

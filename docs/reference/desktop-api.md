@@ -340,7 +340,7 @@ or has other characters.
 A person, or the Moebius agent, removes a repository from Moebius: the repository with every card of its board and what
 belongs to them (their runs and their transcripts, usage, judgements, replay shadows, inbox and dependencies), its
 changes, its chats and grillings, the open inbox items that name its changes (`ready_to_merge`), grillings
-(`grilling_issues`, `grilling_report`) or proposals (`proposal`) without belonging to a card, its lessons, its research, its automations and its localize index; and its clone and
+(`grilling_issues`, `grilling_report`) or proposals (`proposal`) without belonging to a card, its lessons, its research, its automations, its localize index and its plugins' project settings; and its clone and
 worktrees under the server's data directory. The decision is recorded (kind `delete_repository`, decider `person` or
 `agent:Moebius`; its context has `repository`) and the event `repository_removed` is sent.
 
@@ -447,6 +447,35 @@ any case and with any extension), for which no `repos/<name>/` directory can be 
 Removes the file from the project, committed and pushed the same way (`Remove <file> of <repository>`, same kinds); with
 `test-first` it turns test first off. Optional body `{"reason": string}`. Response: the file as `PUT` answers it, now with
 `exists` false. Errors: `404` no such repository or the project has no such file; otherwise as for `PUT`.
+
+### `GET /v1/repositories/{id}/plugin-settings`
+
+The project settings of the repository: what each plugin asks of every repository in its manifest
+([`project_settings`](plugin-api.md#plugin-settings)), with the value this repository has. Only plugins added to the
+server that declare some are listed, by name; the web app shows them on the repository's page. Response:
+`{"repository": number, "plugins": [{"plugin": string, "version": string, "settings": [{"key": string, "label": string,
+"description": string, "input": "line" or "code", "language": string or missing, "value": string}]}]}`, `value` empty
+when the repository has none. A plugin that is not running is left out, but its values are kept and come back with it.
+Errors: `404` no such repository.
+
+```json
+{"repository": 1, "plugins": [{"plugin": "podman-sandbox", "version": "0.2.0", "settings": [{"key": "dockerfile", "label": "Dockerfile", "description": "The image of the runs of this repository.", "input": "code", "language": "dockerfile", "value": "FROM docker.io/library/node:24-bookworm\n"}]}]}
+```
+
+### `PUT /v1/repositories/{id}/plugin-settings/{plugin}`
+
+A person replaces the values of one plugin's project settings for the repository. Request: `{"values": {string:
+string}, "reason": string}`; `values` holds every setting by key, a key left out or an empty value being no value, and
+`reason`, optional, is kept with the decision. A key the plugin does not declare is refused, as is a value over 256 KiB
+and a line break in a setting whose `input` is `line`. The decision is recorded (kind `edit_project_settings`, decider
+`person`; its context has `repository`, `plugin` and `keys`, the keys that now have a value, joined with `, `; not the
+values). Values that change nothing record nothing. A launcher gets the new values at the next launch. Response: the
+plugin's entry as `GET` answers it. Errors: `403` the Moebius agent asked: a launcher's settings say what a run may do,
+so only a person changes them; `404` no such repository, or no plugin of that name with project settings is running;
+`422` a key, a value too long or a line break, as above.
+
+The values are kept as written, without redaction, and handed to the plugin: they are not a place for keys and
+tokens.
 
 ### `GET /v1/repositories/{id}/tree`
 
@@ -1492,6 +1521,22 @@ the Models screen's decision model. Response:
 - An upstream that cannot be asked is in `errors` with a short `message`: an HTTP status such as `401`, `timed out`,
   `could not connect`, `the answer is not JSON` or `the answer has no model list`. It does not fail the request.
 - No key is in the answer. A user name and password in an upstream's URL are removed.
+
+### `GET /v1/plugins/settings`
+
+The app settings of the server: what each plugin asks of the whole server in its manifest
+([`app_settings`](plugin-api.md#plugin-settings)), with the value the server has. Only plugins added to the server that
+declare some are listed, by name; the web app shows them on the Settings page. Response: `{"plugins": [...]}`, each
+entry as in [`GET /v1/repositories/{id}/plugin-settings`](#get-v1repositoriesidplugin-settings). A plugin that is not running is left
+out, but its values are kept and come back with it.
+
+### `PUT /v1/plugins/{plugin}/settings`
+
+A person replaces the values of one plugin's app settings, as
+[`PUT /v1/repositories/{id}/plugin-settings/{plugin}`](#put-v1repositoriesidplugin-settingsplugin) does for a repository, with the
+same request, checks and errors (but for `404`: no plugin of that name with app settings is running). The decision has
+the kind `edit_app_settings`, and its context has `plugin` and `keys`. A launcher gets the new values at the next launch.
+Response: the plugin's entry as `GET` answers it.
 
 ### `GET /v1/start`
 

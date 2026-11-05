@@ -1,6 +1,7 @@
 /**
- * A code editor over CodeMirror 6 (MIT) with Lua highlighting, for the column scripts (Luau is Lua with types, and the
- * highlighting of Lua serves it). Written for Moebius, not copied. It is controlled by `value` and `onChange`, and can
+ * A code editor over CodeMirror 6 (MIT), for the column scripts, highlighted as Lua by default (Luau is Lua with types,
+ * and the highlighting of Lua serves it), and for the files plugins ask of a project, such as a Dockerfile, in the
+ * language they name. Written for Moebius, not copied. It is controlled by `value` and `onChange`, and can
  * mark one line as wrong (`problem`) with a gutter marker, an underline and the message on hover. The editor is heavy,
  * so a page loads this module lazily (`React.lazy`) and the main bundle does not grow.
  */
@@ -12,7 +13,11 @@ import {
   StreamLanguage,
   syntaxHighlighting,
 } from "@codemirror/language";
+import { dockerFile } from "@codemirror/legacy-modes/mode/dockerfile";
 import { lua } from "@codemirror/legacy-modes/mode/lua";
+import { shell } from "@codemirror/legacy-modes/mode/shell";
+import { toml } from "@codemirror/legacy-modes/mode/toml";
+import { yaml } from "@codemirror/legacy-modes/mode/yaml";
 import { lintGutter, setDiagnostics } from "@codemirror/lint";
 import { EditorState } from "@codemirror/state";
 import {
@@ -25,6 +30,9 @@ import {
 } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { useEffect, useRef } from "react";
+
+/** The languages the editor highlights, by the name a plugin gives them; any other is plain text. */
+const LANGUAGES = { dockerfile: dockerFile, lua, shell, toml, yaml } as const;
 
 export interface CodeProblem {
   /** The line the check named, counted from 1. */
@@ -107,18 +115,21 @@ export default function CodeEditor({
   onChange,
   problem,
   label,
+  language = "lua",
 }: {
   value: string;
   onChange: (text: string) => void;
   problem?: CodeProblem | null;
   /** Names the editor for a screen reader. */
   label: string;
+  /** What to highlight the text as: `lua`, `dockerfile`, `shell`, `toml` or `yaml`; any other is plain text. */
+  language?: string;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   // The editor is made once, with the text it is first given; `value` after that is applied by the effect below.
-  const first = useRef({ value, label });
+  const first = useRef({ value, label, language });
   onChangeRef.current = onChange;
 
   useEffect(() => {
@@ -136,7 +147,9 @@ export default function CodeEditor({
           indentOnInput(),
           bracketMatching(),
           lintGutter(),
-          StreamLanguage.define(lua),
+          ...(Object.hasOwn(LANGUAGES, first.current.language)
+            ? [StreamLanguage.define(LANGUAGES[first.current.language as keyof typeof LANGUAGES])]
+            : []),
           syntaxHighlighting(highlight),
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
           theme,

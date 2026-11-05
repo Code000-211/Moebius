@@ -3,8 +3,8 @@
  * real server sends (docs/reference/desktop-api.md). It sits in front of the board's fake: it answers the snapshot
  * itself, adding to the board's what the pages need (more repositories, the repository's edited trusted logins, the
  * inbox items of proposals, takeovers and grillings, a change of the harness repository), and the routes of the
- * repositories' files, the usage, the settings with their restart, the webhooks, the first-start steps and the
- * decisions of the inbox. The state changes the way the real server's does, and the events it sends are the real ones.
+ * repositories' files and plugin settings (one sandbox plugin, with a repository's and the server's settings), the usage, the settings with their restart, the
+ * webhooks, the first-start steps and the decisions of the inbox. The state changes the way the real server's does, and the events it sends are the real ones.
  * A test can make the next request to a route fail with the server's own sentence (`refuseNext`).
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -205,6 +205,47 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
   let repositories: Repository[] = [];
   const removed = new Set<number>();
   const trusted = new Map<number, string[]>();
+  /** The values of the sandbox plugin's app settings. */
+  let appValues: Record<string, string> = {};
+  const appSettings = () => ({
+    plugin: "podman-sandbox",
+    version: "0.2.0",
+    settings: [
+      {
+        key: "registry",
+        label: "Registry",
+        description: "Where the base images of the Dockerfiles come from.",
+        input: "line",
+        value: appValues.registry ?? "",
+      },
+    ],
+  });
+  /** The values of the sandbox plugin's project settings, by repository. */
+  const pluginValues = new Map<number, Record<string, string>>();
+  const pluginSettings = (id: number) => {
+    const values = pluginValues.get(id) ?? {};
+    return {
+      plugin: "podman-sandbox",
+      version: "0.2.0",
+      settings: [
+        {
+          key: "dockerfile",
+          label: "Dockerfile",
+          description: "The image of this repository's runs, built by the plugin before a run.",
+          input: "code",
+          language: "dockerfile",
+          value: values.dockerfile ?? "",
+        },
+        {
+          key: "network",
+          label: "Network",
+          description: "moebius or internet.",
+          input: "line",
+          value: values.network ?? "",
+        },
+      ],
+    };
+  };
   let nextRepository = 2;
 
   const inbox: InboxItem[] = [];
@@ -609,6 +650,8 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         path === "/v1/start" ||
         path === "/v1/usage" ||
         path === "/v1/settings" ||
+        path === "/v1/plugins/settings" ||
+        path === "/v1/plugins/podman-sandbox/settings" ||
         path === "/v1/proposals" ||
         path === "/v1/server" ||
         path === "/v1/server/restart" ||
@@ -618,7 +661,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         path === "/v1/harness/setup" ||
         path === "/v1/repositories" ||
         /^\/v1\/webhooks\/[a-z]+\/secret$/.test(path) ||
-        /^\/v1\/repositories\/\d+(\/(tree|files|search|settings)(\/.*)?)?$/.test(path) ||
+        /^\/v1\/repositories\/\d+(\/(tree|files|search|settings|plugin-settings)(\/.*)?)?$/.test(path) ||
         /^\/v1\/(proposals|takeovers|grillings)\/\d+\/(merge|dismiss|confirm)$/.test(path) ||
         /^\/v1\/grillings\/\d+$/.test(path) ||
         path === "/v1/changes/9/merge" ||
@@ -664,6 +707,14 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         });
       }
       if (path === "/v1/settings" && method === "GET") return ok(response, settingsView());
+      if (path === "/v1/plugins/settings") return ok(response, { plugins: [appSettings()] });
+      if (path === "/v1/plugins/podman-sandbox/settings" && method === "PUT") {
+        const values = (body.values ?? {}) as Record<string, string>;
+        const unknown = Object.keys(values).find((key) => key !== "registry");
+        if (unknown) return fail(response, 422, `podman-sandbox has no setting "${unknown}"`);
+        appValues = values;
+        return ok(response, appSettings());
+      }
       if (path === "/v1/settings" && method === "PUT") {
         const problem = validateSettings(body);
         if (problem) return fail(response, 422, problem);
@@ -723,7 +774,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         return ok(response, made.repository);
       }
       const repository =
-        /^\/v1\/repositories\/(\d+)(?:\/(tree|files|search|settings)(\/.*)?)?$/.exec(path);
+        /^\/v1\/repositories\/(\d+)(?:\/(tree|files|search|settings|plugin-settings)(\/.*)?)?$/.exec(path);
       if (repository) {
         const id = Number(repository[1]);
         const all = [
@@ -809,6 +860,20 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
             send({ kind: "file_changed", data: { repository: id, path: file } });
             return ok(response, { path: file, size: body.text.length, text: body.text });
           }
+        }
+        if (part === "plugin-settings" && !repository[3] && method === "GET") {
+          return ok(response, { repository: id, plugins: [pluginSettings(id)] });
+        }
+        if (part === "plugin-settings" && repository[3] === "/podman-sandbox" && method === "PUT") {
+          const values = (body.values ?? {}) as Record<string, string>;
+          const known = ["dockerfile", "network"];
+          const unknown = Object.keys(values).find((key) => !known.includes(key));
+          if (unknown) return fail(response, 422, `podman-sandbox has no setting "${unknown}"`);
+          if ((values.network ?? "").includes("\n")) {
+            return fail(response, 422, "Network is one line");
+          }
+          pluginValues.set(id, values);
+          return ok(response, pluginSettings(id));
         }
         if (part === "search" && method === "GET") {
           const result = search(

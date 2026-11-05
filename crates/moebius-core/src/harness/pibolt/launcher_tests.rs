@@ -2,6 +2,7 @@
 //! cleanup commands and the addresses it names, a launcher that fails, hangs or garbles fails the run without Pi
 //! having started, and the same holds for a launcher in its own process.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -54,6 +55,8 @@ impl Plugin for Fake {
             name: "box".into(),
             version: "0".into(),
             kinds: vec![Kind::Launcher],
+            project_settings: Vec::new(),
+            app_settings: Vec::new(),
         }
     }
 
@@ -159,6 +162,16 @@ fn json_file(path: &Path) -> Value {
 fn an_unchanged_answer_starts_pi_as_without_a_launcher() {
     let (dir, app, mut pi, repo) = setup();
     let seen = with_launcher(&mut pi, dir.path(), Mode::Unchanged);
+    // The launcher's project settings of the repository, and another plugin's, which it is not given.
+    let settings = BTreeMap::from([("image".to_string(), "FROM debian".to_string())]);
+    app.store
+        .set_project_settings(repo, "box", &settings)
+        .unwrap();
+    app.store
+        .set_project_settings(repo, "other", &BTreeMap::from([("x".into(), "y".into())]))
+        .unwrap();
+    let server = BTreeMap::from([("network".to_string(), "internet".to_string())]);
+    app.store.set_app_settings("box", &server).unwrap();
     let card = app
         .create_issue(repo, "Write done.txt", "", "person")
         .unwrap();
@@ -199,6 +212,9 @@ fn an_unchanged_answer_starts_pi_as_without_a_launcher() {
     assert_eq!(request.urls.check, "http://127.0.0.1:9");
     assert_eq!(request.runner, None);
     assert!(request.clone.is_some());
+    assert_eq!(request.repository.as_deref(), Some("demo"));
+    assert_eq!(request.project_settings, settings);
+    assert_eq!(request.app_settings, server);
     // The worktree and the agent directory are read and written (Pi writes its credential store there); the lens, the
     // bridge and the agent's extensions only read.
     assert!(request.read_write.contains(&request.dir));
@@ -483,6 +499,9 @@ fn a_chat_is_told_to_the_launcher_as_one_and_has_no_terminal_interface() {
     .unwrap();
     assert!(lock(&seen)[0].run.chat);
     assert_eq!(lock(&seen)[0].run.purpose, "chat");
+    // A chat in an empty directory has no repository and so no settings.
+    assert_eq!(lock(&seen)[0].repository, None);
+    assert!(lock(&seen)[0].project_settings.is_empty());
     // The terminal interface would be a Pi outside the launcher.
     let tui = crate::board::ChatRuns::tui(&pi, &app, chat.id);
     assert!(tui.unwrap_err().contains("launcher"));

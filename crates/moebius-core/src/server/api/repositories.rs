@@ -14,6 +14,9 @@
 //!   files of the project's settings there (see [`crate::repos::settings`]).
 //! - `GET /v1/repositories/{id}/tree?path=` and `GET` and `PUT /v1/repositories/{id}/files/{path}`: the files on the
 //!   default branch, read and committed (see [`crate::repos::files`]).
+//! - `GET /v1/repositories/{id}/plugin-settings` and `PUT /v1/repositories/{id}/plugin-settings/{plugin}` `{values, reason}`: the
+//!   settings plugins ask of the repository and the values it has, changed by a person (see
+//!   [`crate::app::plugin_settings`]).
 //! - `GET /v1/repositories/{id}/files?query=` and `GET /v1/repositories/{id}/search?q=&regex=&limit=`: the paths of the
 //!   default branch for "Go to file", and a full-text search over it (see [`crate::repos::search`]).
 
@@ -25,6 +28,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{ApiError, ApiState, Reason, blocking};
 use crate::app::AppError;
+use crate::app::plugin_settings::{PluginProjectSettings, PluginSettings, Scope};
 use crate::board::scripts::{self, NewScript, ScriptView};
 use crate::decide::Actor;
 use crate::repos::files::{self, FileView, NewFile, Tree};
@@ -48,6 +52,11 @@ pub(super) fn routes() -> Router<ApiState> {
         .route(
             "/v1/repositories/{id}/settings/{file}",
             put(put_setting).delete(delete_setting),
+        )
+        .route("/v1/repositories/{id}/plugin-settings", get(get_plugin_settings))
+        .route(
+            "/v1/repositories/{id}/plugin-settings/{plugin}",
+            put(put_plugin_settings),
         )
         .route("/v1/repositories/{id}/tree", get(get_tree))
         .route("/v1/repositories/{id}/files", get(get_paths))
@@ -136,6 +145,33 @@ async fn delete_repository(
     let reason = body.map(|body| body.0.reason).unwrap_or_default();
     blocking(&state.app, move |app| {
         app.remove_repository(&by, id, &reason)
+    })
+    .await
+}
+
+/// The body of `PUT /v1/repositories/{id}/plugin-settings/{plugin}`: every value of the plugin's settings, by key.
+#[derive(Debug, Deserialize)]
+pub(super) struct NewSettings {
+    pub(super) values: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    pub(super) reason: String,
+}
+
+async fn get_plugin_settings(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+) -> Result<axum::Json<PluginProjectSettings>, ApiError> {
+    blocking(&state.app, move |app| app.plugin_project_settings(id)).await
+}
+
+async fn put_plugin_settings(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath((id, plugin)): UrlPath<(i64, String)>,
+    axum::Json(new): axum::Json<NewSettings>,
+) -> Result<axum::Json<PluginSettings>, ApiError> {
+    blocking(&state.app, move |app| {
+        app.save_plugin_settings(&by, Scope::Project(id), &plugin, &new.values, &new.reason)
     })
     .await
 }

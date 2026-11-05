@@ -5,6 +5,7 @@
 //! something the core cannot use is an error, so the run fails: a configured launcher is never skipped. Without a
 //! launcher the harnesses do not come here at all.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -25,6 +26,9 @@ pub struct Launcher {
     plugin: String,
 }
 
+/// The repository a run works in, by name, and the launcher's project settings for it, by key.
+pub(crate) type RunRepository = (String, BTreeMap<String, String>);
+
 /// What a harness tells the launcher about the process it is about to start.
 pub(crate) struct Ask<'a> {
     pub(crate) run: LaunchRun,
@@ -35,6 +39,10 @@ pub(crate) struct Ask<'a> {
     pub(crate) clone: Option<&'a Path>,
     /// The runner when the run is not on the server.
     pub(crate) runner: Option<&'a str>,
+    /// The repository the run works in, by name, and the launcher's project settings for it.
+    pub(crate) repository: Option<RunRepository>,
+    /// The launcher's app settings, by key.
+    pub(crate) app_settings: BTreeMap<String, String>,
     /// The file the process's standard error goes to, which also gets a line when a stop or cleanup command fails.
     pub(crate) log: &'a Path,
 }
@@ -60,6 +68,11 @@ impl Launcher {
             host,
             plugin: plugin.into(),
         }
+    }
+
+    /// The launcher's name, which its project settings are kept under.
+    pub(crate) fn plugin(&self) -> &str {
+        &self.plugin
     }
 
     /// Asks the launcher how to start `command` (the process as the harness would start it). `Err` with why when the
@@ -238,6 +251,7 @@ impl Launched {
 /// The request for the process `ask` describes, which `command` would start.
 fn request(ask: Ask, command: &Command) -> LaunchRequest {
     let text = |path: &Path| path.to_string_lossy().into_owned();
+    let repository = ask.repository;
     LaunchRequest {
         run: ask.run,
         program: command.get_program().to_string_lossy().into_owned(),
@@ -260,6 +274,9 @@ fn request(ask: Ask, command: &Command) -> LaunchRequest {
         urls: ask.urls,
         clone: ask.clone.map(text),
         runner: ask.runner.map(String::from),
+        repository: repository.as_ref().map(|(name, _)| name.clone()),
+        project_settings: repository.map(|(_, values)| values).unwrap_or_default(),
+        app_settings: ask.app_settings,
     }
 }
 
@@ -325,6 +342,8 @@ mod tests {
                 name: "box".into(),
                 version: "0".into(),
                 kinds: vec![Kind::Launcher],
+                project_settings: Vec::new(),
+                app_settings: Vec::new(),
             }
         }
 
@@ -377,6 +396,8 @@ mod tests {
             },
             clone: None,
             runner,
+            repository: None,
+            app_settings: BTreeMap::new(),
             log,
         }
     }

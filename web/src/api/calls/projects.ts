@@ -1,9 +1,14 @@
-/** The calls about repositories: adding, the trusted logins, removing, reading and writing their files, and their settings. */
+/**
+ * The calls about repositories: adding, the trusted logins, removing, reading and writing their files, their settings, and
+ * the settings plugins ask of them.
+ */
 import { del, get, post, put } from "../http";
 import type { Repository } from "../types/board";
 import type {
   FileDetail,
   NewRepository,
+  PluginProjectSettings,
+  PluginSettings,
   ProjectSettings,
   Search,
   SettingFile,
@@ -23,6 +28,23 @@ export function editTrusted(repository: number, trusted: string[]): Promise<Repo
 /** Removes a repository with its cards, changes, chats and clone; the server refuses while one of its runs goes on. */
 export function removeRepository(repository: number): Promise<Repository> {
   return del<Repository>(`/v1/repositories/${repository}`);
+}
+
+/** What each running plugin asks of the repository, with the values it has. */
+export function pluginProjectSettings(repository: number): Promise<PluginProjectSettings> {
+  return get<PluginProjectSettings>(`/v1/repositories/${repository}/plugin-settings`);
+}
+
+/** Replaces every value of one plugin's settings for the repository; an empty value is none. */
+export function savePluginProjectSettings(
+  repository: number,
+  plugin: string,
+  values: Record<string, string>,
+): Promise<PluginSettings> {
+  return put<PluginSettings>(
+    `/v1/repositories/${repository}/plugin-settings/${encodeURIComponent(plugin)}`,
+    { values },
+  );
 }
 
 /** The path of a repository's file or directory in an address: each part is encoded, the slashes stay. */
