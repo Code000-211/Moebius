@@ -46,6 +46,7 @@ back here for the exact page it names:
 | A Pi extension | `guide/extensions.md`, `reference/bridge-protocol.md` | A file in a harness chat, named in the agent's `extensions` | The guide's way to load it; the bridge stays last |
 | A plugin (a decider in Rust) | `guide/plugins.md`, `reference/plugin-api.md` | A Rust crate in the chat's repository | `cargo test`, and `cargo run` of its example |
 | A setting, a model, an upstream | `reference/configuration.md` | `"$MOEBIUS" settings set <key>=<value>` | `"$MOEBIUS" settings`; it says when a restart is needed |
+| A plugin's settings, such as the Dockerfile a sandbox builds its runs from | `reference/plugin-api.md` (Plugin settings), `reference/desktop-api.md` | Nothing you save: only the person saves them (`PUT` gives you `403`). Read them with `"$MOEBIUS" api GET /v1/repositories/<id>/plugin-settings`, then give the person the text and the page and field to put it in. Never a file of the repository | The `GET` again, once the person has saved |
 | A repository, an issue, a card moved on | `guide/workflows.md`, `reference/desktop-api.md` | `"$MOEBIUS" repo add`, `issue create`, `inbox act` | `"$MOEBIUS" board` |
 | A number improved, or an idea turned into issues | `guide/autoresearch.md`, `guide/grilling.md` | `"$MOEBIUS" research new ...`, or a grilling chat | `"$MOEBIUS" research <id>` |
 | Something only the desktop API can do | `guide/desktop-api.md`, `reference/desktop-api.md` | `"$MOEBIUS" api <METHOD> <route> --body <json>` | The answer, and reading the state again |

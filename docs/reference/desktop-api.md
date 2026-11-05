@@ -456,7 +456,8 @@ server that declare some are listed, by name; the web app shows them on the repo
 `{"repository": number, "plugins": [{"plugin": string, "version": string, "settings": [{"key": string, "label": string,
 "description": string, "input": "line" or "code", "language": string or missing, "value": string}], "ui": boolean}]}`,
 `value` empty when the repository has none, and `ui` true when the plugin brings its own page for its settings
-([`GET /v1/plugins/{plugin}/settings-ui`](#get-v1pluginspluginsettings-ui)). A plugin that is not running is left out, but its values are kept and come back with it.
+([`GET /v1/plugins/{plugin}/settings-ui`](#get-v1pluginspluginsettings-ui)). A plugin that is not running is left out, but its values are kept and come back with it. A server without `[harness]`
+has no values.
 Errors: `404` no such repository.
 
 ```json
@@ -470,9 +471,9 @@ string}, "reason": string}`; `values` holds every setting by key, a key left out
 `reason`, optional, is kept with the decision. A key the plugin does not declare is refused, as is a value over 256 KiB
 and a line break in a setting whose `input` is `line`. The decision is recorded (kind `edit_project_settings`, decider
 `person`; its context has `repository`, `plugin` and `keys`, the keys that now have a value, joined with `, `; not the
-values). Values that change nothing record nothing. A launcher gets the new values at the next launch. Response: the
+values). Values that change nothing record nothing. The values are the files `plugins/<plugin>/<key>` of the repository's [project settings](harness-configuration.md#project-settings), saved as one commit pushed to `origin` (the decision's context also has `change` and `path`), and the event `project_settings_changed` is sent with `file` `plugins/<plugin>`. A launcher gets the new values at the next launch. Response: the
 plugin's entry as `GET` answers it. Errors: `403` the Moebius agent asked: a launcher's settings say what a run may do,
-so only a person changes them; `404` no such repository, or no plugin of that name with project settings is running;
+so only a person changes them; `404` no such repository, or no plugin of that name with project settings is running; `409` the server has no `[harness]` (the values are files of its repository), or `origin` refused the push;
 `422` a key, a value too long or a line break, as above.
 
 The values are kept as written, without redaction, and handed to the plugin: they are not a place for keys and

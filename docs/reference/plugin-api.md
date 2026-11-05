@@ -47,7 +47,7 @@ A plugin may ask a person for settings in two scopes, each declared in its manif
 
 | Scope | Manifest field | Where the web app shows it | Kept by | Routes | A launcher gets it as |
 |---|---|---|---|---|---|
-| Each repository, such as the Dockerfile a sandbox builds its runs' image from | `project_settings` | The repository's page (`/projects/<id>`), under the plugin's name | repository, plugin name and key | [`GET` and `PUT /v1/repositories/{id}/plugin-settings`](desktop-api.md#get-v1repositoriesidplugin-settings) | `project_settings` of the run's repository |
+| Each repository, such as the Dockerfile a sandbox builds its runs' image from | `project_settings` | The repository's page (`/projects/<id>`), under the plugin's name | the repository's [project settings](harness-configuration.md#project-settings), a file `plugins/<plugin>/<key>` each (a server without `[harness]` has none) | [`GET` and `PUT /v1/repositories/{id}/plugin-settings`](desktop-api.md#get-v1repositoriesidplugin-settings) | `project_settings` of the run's repository |
 | The whole server, such as a registry every image comes from | `app_settings` | The Settings page (`/settings`), under the plugin's name | plugin name and key | [`GET /v1/plugins/settings` and `PUT /v1/plugins/{plugin}/settings`](desktop-api.md#get-v1pluginssettings) | `app_settings` |
 
 A launcher gets both in every [`LaunchRequest`](#the-method-launch); no other kind is handed them yet. Both scopes

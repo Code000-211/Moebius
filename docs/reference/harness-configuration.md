@@ -383,6 +383,8 @@ that name cannot be made there, so saving a file is refused with `422` on every 
 | `localize` | Turns the hint of likely files for code runs on or off for the project, and says how many files (see [configuration](configuration.md#localize)). |
 | `<file>.luau` | The script of a column in place of the built-in one: `backlog`, `ready` (for `Not started`), `code`, `review`, `merge` and `done` (see [column scripts](column-scripts.md#repository-overrides)). |
 
+| `plugins/<plugin>/<key>` | The value of one setting that a plugin asks of every repository in its manifest ([`project_settings`](plugin-api.md#plugin-settings)), such as the Dockerfile of a sandbox: the file's text is the value, and an empty or missing file is no value. A person saves them with the repository's page or [`PUT /v1/repositories/{id}/plugin-settings/{plugin}`](desktop-api.md#put-v1repositoriesidplugin-settingsplugin), one commit for all of a plugin's keys. The Retro and packages do not propose them. Plugin and key are letters, digits, `-`, `_` and `.`. |
+
 A change to these files that a package or the Retro proposes is a branch of this repository like any other, merged by a
 person (see [Packages](#packages) and [Proposals for Moebius itself](#proposals-for-moebius-itself)). The Retro's proposals
 may change only `rules.md` and the column scripts of a project, never `checks`, which the server runs as a command.

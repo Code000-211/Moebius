@@ -71,6 +71,23 @@ first on, `DELETE` turns it off) and `localize`. A repository's own `.moebius/` 
 Build the body with `jq -n --rawfile text ready.luau '{text: $text}' > body.json` and pass `--body body.json`. The server
 checks the script again and refuses it with the check's message. How to write the script: the `moebius-workflows` skill.
 
+## A plugin's settings (a sandbox's Dockerfile, a registry)
+
+A plugin may ask for settings of its own: for each repository (shown on the repository's page in the web app, under
+the plugin's name; kept as the files `repos/<name>/plugins/<plugin>/<key>` of its project settings) and for the whole server (the Settings page). The image of a sandbox plugin's runs, such as its
+Dockerfile, is one of these. It is not a file of the repository, so never create or edit a `Dockerfile` in the
+repository or its worktree to answer such a request. Read what the plugin asks for:
+
+```sh
+"$MOEBIUS" api GET /v1/repositories/1/plugin-settings   # each plugin's settings for this repository: key, label, description, value
+"$MOEBIUS" api GET /v1/plugins/settings                 # the server's
+```
+
+Only a person saves them (`PUT /v1/repositories/{id}/plugin-settings/{plugin}` and `PUT /v1/plugins/{plugin}/settings`
+refuse you with `403`, because a launcher's settings say what a run may do). So help by reading the current value,
+writing the text the person should enter (a Dockerfile, a registry) in your answer or in a file outside the
+repository, and telling them which page and field to put it in.
+
 ## A file of a repository
 
 A project's own settings (`rules.md`, `review.md`, `lint.toml`, `checks`, `test-first`, `localize` and the column

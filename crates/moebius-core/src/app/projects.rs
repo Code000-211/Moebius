@@ -3,6 +3,7 @@
 //! A server without that repository has no settings for any project. A repository whose default branch still has a
 //! `.moebius/` folder is told about once: nothing in it is read.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use super::App;
@@ -31,6 +32,19 @@ impl App {
         self.harness_repo
             .get()?
             .project_file(&repository.name, file)
+    }
+
+    /// The values plugin `plugin` has for the project `repository`, by key, from the files of its settings; none when
+    /// the server has no harness configuration repository.
+    pub fn project_plugin_settings(
+        &self,
+        repository: &Repository,
+        plugin: &str,
+    ) -> BTreeMap<String, String> {
+        self.harness_repo
+            .get()
+            .map(|repo| repo.project_plugin_settings(&repository.name, plugin))
+            .unwrap_or_default()
     }
 
     /// The text of `file` in the settings of the project the run works in: its card's repository, or else the one the

@@ -165,12 +165,22 @@ fn an_unchanged_answer_starts_pi_as_without_a_launcher() {
     let seen = with_launcher(&mut pi, dir.path(), Mode::Unchanged);
     // The launcher's project settings of the repository, and another plugin's, which it is not given.
     let settings = BTreeMap::from([("image".to_string(), "FROM debian".to_string())]);
-    app.store
-        .set_project_settings(repo, "box", &settings)
-        .unwrap();
-    app.store
-        .set_project_settings(repo, "other", &BTreeMap::from([("x".into(), "y".into())]))
-        .unwrap();
+    let harness = crate::harness::repo::testing::use_harness(&app, dir.path());
+    for (plugin, values) in [
+        ("box", settings.clone()),
+        ("other", BTreeMap::from([("x".into(), "y".into())])),
+    ] {
+        harness
+            .save_project_plugin_settings(
+                &app,
+                &crate::decide::Actor::Person,
+                ("demo", plugin),
+                &values,
+                ("edit_project_settings", "Put settings"),
+                Default::default(),
+            )
+            .unwrap();
+    }
     let server = BTreeMap::from([("network".to_string(), "internet".to_string())]);
     app.store.set_app_settings("box", &server).unwrap();
     let card = app
