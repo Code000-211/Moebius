@@ -2,8 +2,9 @@ import type { TagTone } from "../ui/chat/Tag";
 
 /**
  * The label of a chat's status for its tag, and the state the tag is coloured by; none for a chat that waits without
- * asking. Work under way takes the hue of work in progress, a question takes the one of attention, and a chat that is
- * over takes none — the word says it.
+ * asking, and none for one whose agent went away — the next message starts that agent again in the same chat, so
+ * there is nothing to warn about. Work under way takes the hue of work in progress, a question takes the one of
+ * attention, and a chat that is over takes none — the word says it.
  */
 export function statusTag(status: string, asks: boolean): { label: string; tone: TagTone } | null {
   switch (status) {
@@ -17,8 +18,9 @@ export function statusTag(status: string, asks: boolean): { label: string; tone:
       return { label: "Ended", tone: "plain" };
     case "failed":
       return { label: "Failed", tone: "error" };
+    // The next message starts this agent again in this chat, so there is nothing to warn about (see `takesMessage`).
     case "stopped":
-      return { label: "Agent disconnected", tone: "plain" };
+      return null;
     default:
       return { label: status, tone: "plain" };
   }

@@ -10,7 +10,8 @@ describe("statusTag", () => {
   });
 
   it("says what a chat whose agent is gone is tagged", () => {
-    expect(statusTag("stopped", false)).toEqual({ label: "Agent disconnected", tone: "plain" });
+    // The agent going away is not worth a word of its own: the next message starts it again in this chat.
+    expect(statusTag("stopped", false)).toBeNull();
   });
 
   it("knows which chats take messages and which work", () => {

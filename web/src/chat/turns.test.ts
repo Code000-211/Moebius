@@ -147,6 +147,38 @@ describe("groupTurns", () => {
     );
     expect(turns[0]?.blocks).toMatchObject([{ kind: "error", source: "model", message: "401" }]);
   });
+
+  it("says a failure only while it is the end of the chat", () => {
+    const failure = (): Entry => ({
+      at: 0,
+      seq: seq(),
+      kind: "error",
+      source: "run",
+      message: "the server stopped while the run was going",
+    });
+    // The retry or the next message answered it, so the failure gives up its place to what came after.
+    expect(
+      groupTurns([person("hi"), failure(), text("Answered.")], false)[0]?.blocks,
+    ).toMatchObject([{ kind: "text" }]);
+    // The agent working again is the retry going: there is nothing to report until it says how it went.
+    expect(groupTurns([person("hi"), failure()], true)[0]?.blocks).toEqual([]);
+    // The failure that ends the chat is the thing the person has to be told.
+    expect(groupTurns([person("hi"), failure()], false)[0]?.blocks).toMatchObject([
+      { kind: "error" },
+    ]);
+    // Errors in a row at the end all stand: the last of them is where the chat ended.
+    const again: Entry = {
+      at: 0,
+      seq: seq(),
+      kind: "error",
+      source: "model",
+      message: "the model said no",
+    };
+    expect(groupTurns([person("hi"), failure(), again], false)[0]?.blocks).toMatchObject([
+      { kind: "error" },
+      { kind: "error" },
+    ]);
+  });
 });
 
 describe("stepViews", () => {

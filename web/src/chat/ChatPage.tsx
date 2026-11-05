@@ -1,22 +1,27 @@
 /**
- * The Chat page (the desktop app's CH3-D): one column a page title wide on the open canvas, with the top bar that drops
- * down the list of chats and starts a new one, and under it the form of a new chat (`/chat`) or the chat chosen
- * (`/chat/:id`).
+ * The Chat page (the desktop app's CH3-D): the column of chats beside one column a page title wide on the open canvas,
+ * with the top bar that shows and hides that column and starts a new chat, and under it the form of a new chat
+ * (`/chat`) or the chat chosen (`/chat/:id`).
  */
+import { TrashIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { snapshot as readSnapshot } from "../api/calls/board";
 import { chats as readChats } from "../api/calls/chat";
 import { keys } from "../api/keys";
+import { readFlag, writeFlag } from "../app/storage";
 import { Button } from "../ui/components/Button";
 import { useNow } from "../ui/lib/useNow";
+import { ChatList } from "./ChatList";
 import { ChatTopBar } from "./ChatTopBar";
 import { DeleteChat } from "./DeleteChat";
 import { NewChat } from "./NewChat";
 import { ChatActions, ChatTitle, OpenChat } from "./OpenChat";
 import { placeName } from "./places";
-import { askingCount } from "./readMarkers";
+
+/** Whether the column of chats is hidden, kept per browser like the shell's own sidebar. */
+const COLLAPSED_KEY = "moebius.chatlist.collapsed";
 
 export function ChatPage() {
   const params = useParams();
@@ -25,6 +30,7 @@ export function ChatPage() {
   const snapshot = useQuery({ queryKey: keys.snapshot, queryFn: () => readSnapshot() });
   const now = useNow();
   const [notice, setNotice] = useState<string | null>(null);
+  const [listOpen, setListOpen] = useState(() => !readFlag(COLLAPSED_KEY));
 
   // A notice belongs to the chat it was said in.
   // biome-ignore lint/correctness/useExhaustiveDependencies: it runs when another chat is opened
@@ -45,46 +51,74 @@ export function ChatPage() {
   }, [gone, navigate]);
   const [deleting, setDeleting] = useState(false);
 
+  function toggleList() {
+    writeFlag(COLLAPSED_KEY, listOpen);
+    setListOpen(!listOpen);
+  }
+
   return (
-    <div className="mx-auto flex h-full w-full max-w-3xl flex-col gap-4" data-testid="chat-page">
-      <ChatTopBar
-        chats={all}
-        openId={openId}
-        now={now}
-        places={(chat) => placeName(snapshot.data, chat)}
-        asking={askingCount(all)}
-        title={
-          open ? (
-            <ChatTitle chat={open} onNotice={setNotice} />
-          ) : (
-            <span className="text-base font-semibold text-text">
-              {openId === null ? "New chat" : ""}
-            </span>
-          )
-        }
-        actions={
-          open ? (
-            <>
-              <ChatActions chat={open} onNotice={setNotice} />
-              <Button variant="danger" onClick={() => setDeleting(true)}>
-                Delete
-              </Button>
-              <DeleteChat chat={open} open={deleting} onOpenChange={setDeleting} openId={openId} />
-            </>
-          ) : null
-        }
-      />
-      {openId === null ? (
-        <NewChat snapshot={snapshot.data} />
-      ) : (
-        <OpenChat
-          key={openId}
-          id={openId}
-          snapshot={snapshot.data}
-          notice={notice}
-          onNotice={setNotice}
+    <div className="relative mx-auto flex h-full w-full max-w-5xl gap-4" data-testid="chat-page">
+      {listOpen && (
+        <ChatList
+          chats={all}
+          openId={openId}
+          now={now}
+          places={(chat) => placeName(snapshot.data, chat)}
+          onCollapse={toggleList}
         />
       )}
+      <div className="mx-auto flex h-full w-full min-w-0 max-w-3xl flex-col gap-4">
+        <ChatTopBar
+          chats={all}
+          listOpen={listOpen}
+          onToggleList={toggleList}
+          title={
+            open ? (
+              <ChatTitle chat={open} onNotice={setNotice} />
+            ) : (
+              <span className="text-base font-semibold text-text">
+                {openId === null ? "New chat" : ""}
+              </span>
+            )
+          }
+          actions={
+            open ? (
+              <>
+                <ChatActions chat={open} onNotice={setNotice} />
+                {/* The dialog asks and says what it will do, so the bar needs no word of its own: a trashcan in the
+                    colours of a destructive action, in a row of controls, is the house way of making room for the
+                    title. */}
+                <Button
+                  variant="danger"
+                  size="icon"
+                  aria-label="Delete this chat"
+                  title="Delete this chat"
+                  onClick={() => setDeleting(true)}
+                >
+                  <TrashIcon aria-hidden="true" className="size-5" weight="bold" />
+                </Button>
+                <DeleteChat
+                  chat={open}
+                  open={deleting}
+                  onOpenChange={setDeleting}
+                  openId={openId}
+                />
+              </>
+            ) : null
+          }
+        />
+        {openId === null ? (
+          <NewChat snapshot={snapshot.data} />
+        ) : (
+          <OpenChat
+            key={openId}
+            id={openId}
+            snapshot={snapshot.data}
+            notice={notice}
+            onNotice={setNotice}
+          />
+        )}
+      </div>
     </div>
   );
 }

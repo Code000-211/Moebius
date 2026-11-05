@@ -28,7 +28,7 @@ const buttonVariants = cva(
         primary: "bg-text text-on-ink hover:bg-text/85",
         secondary: "bg-sunken text-text hover:bg-hover",
         ghost: "bg-transparent text-secondary hover:bg-hover hover:text-text",
-        danger: "bg-error-fill text-error-text hover:bg-error-border/60",
+        danger: "bg-error-fill text-error-text hover:bg-error-border",
         icon: "bg-transparent text-secondary hover:bg-hover hover:text-text",
       },
       size: {

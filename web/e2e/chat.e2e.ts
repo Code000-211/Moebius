@@ -73,7 +73,13 @@ function distanceFromEnd(list: Locator): Promise<number> {
 describe("the chat page", () => {
   it("loads, lists the chats and offers a new one", async () => {
     await open("/chat");
+    // The column of chats says its own count, so the switcher is only there once the column is out of the way, and
+    // brings it back again.
+    await page.getByRole("heading", { name: /^Chats\b/ }).waitFor();
+    await page.getByRole("button", { name: "Hide the list of chats" }).click();
     await page.getByRole("button", { name: /^Chats \(\d+\)/ }).waitFor();
+    await page.getByRole("button", { name: /^Chats \(\d+\)/ }).click();
+    await page.getByRole("heading", { name: /^Chats\b/ }).waitFor();
     await page.getByRole("link", { name: "New" }).waitFor();
     await page.getByRole("button", { name: /^Agent: / }).waitFor();
     await field().waitFor();
@@ -92,7 +98,6 @@ describe("the chat page", () => {
         events: [["said", { message: "Newer chat" }]],
       });
       await page.reload();
-      await page.getByRole("button", { name: "Chats (2)" }).click();
       const rows = page.getByTestId("chat-row");
       await rows.first().waitFor();
       expect(await rows.allInnerTexts()).toEqual([
@@ -130,7 +135,6 @@ describe("the chat page", () => {
       const again = page.getByTestId("chat-title");
       await again.waitFor();
       expect.soft(await words(again), "a reload still says it").toContain(named);
-      await page.getByRole("button", { name: "Chats (1)" }).click();
       const rows = page.getByTestId("chat-row");
       await rows.first().waitFor();
       expect.soft(await words(rows.first()), "and the list of chats says it too").toContain(named);
@@ -148,13 +152,12 @@ describe("the chat page", () => {
         });
       }
       await page.reload();
-      await page.getByRole("button", { name: "Chats (14)" }).click();
-      const menu = page.getByRole("menu");
+      const menu = page.getByTestId("chat-list-rows");
       await menu.waitFor();
       expect
         .soft(
           await menu.evaluate((element) => element.scrollHeight > element.clientHeight),
-          "the menu itself scrolls",
+          "the list itself scrolls",
         )
         .toBe(true);
 
@@ -162,13 +165,19 @@ describe("the chat page", () => {
       // fixed height shrinks the rows it holds, leaving their words outside the row's own fill.
       const nested = await menu.evaluate(
         (element) =>
-          [...element.querySelectorAll("*")].filter(
-            (child) =>
+          [...element.querySelectorAll("*")].filter((child) => {
+            // A name that fades out or stops at a line hides the rest of itself on purpose; only a box built to be
+            // scrolled answers with a scrollbar of its own.
+            const style = getComputedStyle(child);
+            if (style.webkitLineClamp !== "none") return false;
+            if (style.maskImage !== "none" || style.webkitMaskImage !== "none") return false;
+            return (
               child.scrollHeight > child.clientHeight + 1 ||
-              child.scrollWidth > child.clientWidth + 1,
-          ).length,
+              child.scrollWidth > child.clientWidth + 1
+            );
+          }).length,
       );
-      expect.soft(nested, "nothing inside the menu scrolls as well").toBe(0);
+      expect.soft(nested, "nothing inside the list scrolls as well").toBe(0);
       const spilled = await page
         .getByTestId("chat-row")
         .evaluateAll(
@@ -182,7 +191,7 @@ describe("the chat page", () => {
         );
       expect.soft(spilled, "no row's words fall outside its own box").toBe(0);
 
-      // And the last row is read in full: the menu's own padding is below it, not cut off by an inner box.
+      // And the last row is read in full: the list's own padding is below it, not cut off by an inner box.
       // The scroll and the rows it brings settle over a few frames, so the gap is read until it holds.
       await expect
         .poll(async () => {
@@ -202,6 +211,21 @@ describe("the chat page", () => {
     },
   );
 
+  it.skipIf(usesRealServer)(
+    "offers the ways to begin in an empty chat whatever became of its agent",
+    async () => {
+      await open("/chat");
+      // An automation's chat that ended without saying anything is the one place the promise is easy to break: the
+      // field there starts a new chat rather than writing to this one.
+      const id = fake().seed({ status: "succeeded", title: "Ended before anything was said" });
+      await page.goto(`${server.url}/chat/${id}`);
+      const starters = page.getByTestId("chat-starters");
+      await starters.waitFor();
+      await starters.getByRole("button", { name: "What is on the board right now?" }).click();
+      expect(await field().inputValue()).toBe("What is on the board right now?");
+    },
+  );
+
   it.skipIf(usesRealServer)("shows the sidebar's count of unread chats", async () => {
     await open("/chat");
     fake().seed({ title: "Done", answered: 5, seen: 0, events: [["said", { message: "Done" }]] });
@@ -210,6 +234,12 @@ describe("the chat page", () => {
       .getByRole("navigation", { name: "Pages" })
       .getByRole("link", { name: "Chat 1" })
       .waitFor();
+
+    // The list says the same thing with a dot rather than a word, and keeps the word in the row's own name.
+    const row = page.getByTestId("chat-row").filter({ hasText: "Done" });
+    expect.soft(await row.getAttribute("data-unread")).toBe("true");
+    expect.soft(await row.locator("span.rounded-full").count()).toBe(1);
+    await page.getByRole("link", { name: /New answers/ }).waitFor();
   });
 });
 
@@ -672,7 +702,9 @@ describe("an open chat", () => {
         headers: { "X-Moebius": "1" },
       });
       expect(stopped.ok(), await stopped.text()).toBe(true);
-      await page.getByText("Agent disconnected", { exact: true }).first().waitFor();
+      await expect
+        .poll(() => page.getByTestId("chat-title").getAttribute("data-status"))
+        .toBe("stopped");
 
       await page.getByRole("button", { name: /^Model: / }).click();
       await page.getByRole("menuitemradio", { name: "fake-small" }).click();
@@ -704,9 +736,11 @@ describe("an open chat", () => {
       await page.getByRole("button", { name: "Stop" }).click();
       await page.getByRole("button", { name: "Stop chat" }).click();
       await page.getByTestId("chat-title").waitFor();
-      // The tag carries the state in words, and the field still takes a message: the way on is this chat, not a new
-      // one, so nothing about the composer says otherwise.
-      await page.getByText("Agent disconnected", { exact: true }).first().waitFor();
+      // The field still takes a message: the way on is this chat, not a new one, so nothing about the composer says
+      // otherwise.
+      await expect
+        .poll(() => page.getByTestId("chat-title").getAttribute("data-status"))
+        .toBe("stopped");
       expect(await field().getAttribute("placeholder")).toBe("Write to Moebius");
       expect(await page.getByRole("button", { name: "Continue" }).count()).toBe(0);
       expect(fake().chats[0]?.status).toBe("stopped");
@@ -720,7 +754,10 @@ describe("an open chat", () => {
       expect(fake().chats.length).toBe(1);
       expect(fake().chats[0]?.status).toBe("waiting");
       await page.getByTestId("chat-title").waitFor();
-      expect(await page.getByText("Agent disconnected", { exact: true }).count()).toBe(0);
+      // The tag is gone again, and so is the state: the chat answered.
+      await expect
+        .poll(() => page.getByTestId("chat-title").getAttribute("data-status"))
+        .toBe("waiting");
     },
   );
 });
@@ -779,7 +816,6 @@ describe("the floating chat", () => {
       await window.getByRole("button", { name: "Minimise the floating chat" }).click();
       await window.waitFor({ state: "detached" });
       await page.goto(`${server.url}/chat`);
-      await page.getByRole("button", { name: "Chats (1)" }).click();
       await page.getByTestId("chat-row").filter({ hasText: "What is this page?" }).waitFor();
     },
   );
@@ -871,7 +907,9 @@ describe("the floating chat", () => {
         headers: { "X-Moebius": "1" },
       });
       expect(stopped.ok(), await stopped.text()).toBe(true);
-      await window.getByText("Agent disconnected", { exact: true }).first().waitFor();
+      // The sheet has no word for it any more, so the server is asked whether the agent went away before the next
+      // message is written into the same chat.
+      await expect.poll(() => fake().chats[0]?.status).toBe("stopped");
 
       await field.fill("Carry on");
       await field.press("Enter");
@@ -881,8 +919,7 @@ describe("the floating chat", () => {
       expect(fake().chats).toHaveLength(1);
       expect(fake().said.at(-1)?.body.message).toBe("Carry on");
       expect(fake().chats[0]?.status).toBe("waiting");
-      // The sheet no longer says the agent is gone: it answered.
-      await window.getByText("Agent disconnected", { exact: true }).waitFor({ state: "detached" });
+      // The sheet took the next message on the chat that was already there, and its agent came back.
     },
   );
 
@@ -953,7 +990,7 @@ describe("deleting a chat", () => {
         .getByRole("heading", { name: "Still at work" })
         .or(page.getByText("Still at work").first())
         .waitFor();
-      await page.getByRole("button", { name: "Delete", exact: true }).click();
+      await page.getByRole("button", { name: "Delete this chat", exact: true }).click();
       await dialog()
         .getByText(/It is working now, so it is stopped first\./)
         .waitFor();
@@ -962,12 +999,11 @@ describe("deleting a chat", () => {
       await dialog().waitFor({ state: "detached" });
       expect(fake().deleted).toEqual([]);
 
-      await page.getByRole("button", { name: "Delete", exact: true }).click();
+      await page.getByRole("button", { name: "Delete this chat", exact: true }).click();
       await dialog().getByRole("button", { name: "Delete" }).click();
       await page.waitForURL(`${server.url}/chat`);
       expect(fake().deleted).toEqual([going]);
       // The list is updated and the other chat stays.
-      await page.getByRole("button", { name: /^Chats \(1\)/ }).click();
       await page.getByTestId("chat-row").filter({ hasText: "Keep this one" }).waitFor();
       expect(await page.getByTestId("chat-row").count()).toBe(1);
       expect(kept).toBeGreaterThan(0);
@@ -981,38 +1017,41 @@ describe("deleting a chat", () => {
       const open_ = fake().seed({ status: "waiting", title: "Open chat" });
       const other = fake().seed({ status: "waiting", title: "Chat to delete" });
       await page.goto(`${server.url}/chat/${open_}`);
-      await page.getByRole("button", { name: /^Chats \(2\)/ }).click();
-      await page.getByRole("menuitem", { name: "Delete chat Chat to delete" }).click();
+      await page.getByTestId("chat-row").filter({ hasText: "Chat to delete" }).hover();
+      await page.getByRole("button", { name: "Delete chat Chat to delete" }).click();
       await dialog().getByRole("button", { name: "Delete" }).click();
       await dialog().waitFor({ state: "detached" });
       expect(fake().deleted).toEqual([other]);
       expect(new URL(page.url()).pathname).toBe(`/chat/${open_}`);
-      await page.getByRole("button", { name: /^Chats \(1\)/ }).waitFor();
+      // The heading says how many there are; the rows are the count it is read from.
+      await expect.poll(() => page.getByTestId("chat-row").count()).toBe(1);
     },
   );
 
   it.skipIf(usesRealServer)(
-    "reaches the Delete of a row with the arrow keys and asks with Enter",
+    "reaches the Delete of a row with Tab and asks with Enter",
     async () => {
       await open("/chat");
       const id = fake().seed({ status: "waiting", title: "By keyboard" });
       await page.goto(`${server.url}/chat/${id}`);
-      await page.getByRole("button", { name: /^Chats \(1\)/ }).focus();
-      await page.keyboard.press("Enter");
-      // The list opens after the key; arrows pressed before it is drawn move nothing.
-      await page.getByTestId("delete-chat-row").waitFor();
-      const focusedIsDelete = () =>
-        page.evaluate(
-          () => document.activeElement?.getAttribute("data-testid") === "delete-chat-row",
-        );
-      // The menu takes the focus a moment after it opens, and does not wrap round at its end, so a key more than
-      // needed stays on the last item: pressed until the focus is on Delete.
+      await page.getByTestId("chat-row").waitFor();
+      const trash = page.getByRole("button", { name: "Delete chat By keyboard" });
+      const inSight = () => trash.evaluate((element) => getComputedStyle(element).opacity);
+      expect.soft(await inSight(), "the chat on screen shows no Delete of its own").toBe("0");
+      // The Delete of a row is the control after its chat, so one key reaches it.
+      await page.getByTestId("chat-row").focus();
+      expect.soft(await inSight(), "the row holding the focus is no reason to show it").toBe("0");
+      await page.keyboard.press("Tab");
       await expect
-        .poll(async () => {
-          if (!(await focusedIsDelete())) await page.keyboard.press("ArrowDown");
-          return focusedIsDelete();
-        })
+        .poll(async () =>
+          page.evaluate(
+            () => document.activeElement?.getAttribute("aria-label") === "Delete chat By keyboard",
+          ),
+        )
         .toBe(true);
+      await expect
+        .poll(inSight, { message: "the keyboard reaching the Delete brings it out" })
+        .toBe("1");
       await page.keyboard.press("Enter");
       await dialog().waitFor();
       await dialog().getByRole("button", { name: "Delete" }).click();
@@ -1028,13 +1067,13 @@ describe("deleting a chat", () => {
       const id = fake().seed({ status: "waiting", title: "Doomed" });
       const other = fake().seed({ status: "waiting", title: "Survivor" });
       await page.goto(`${server.url}/chat/${id}`);
-      await page.getByRole("button", { name: /^Chats \(2\)/ }).waitFor();
+      await expect.poll(() => page.getByTestId("chat-row").count()).toBe(2);
       await page.evaluate(
         (chat) => fetch(`/v1/chats/${chat}`, { method: "DELETE", headers: { "X-Moebius": "1" } }),
         id,
       );
       await page.waitForURL(`${server.url}/chat`);
-      await page.getByRole("button", { name: /^Chats \(1\)/ }).waitFor();
+      await expect.poll(() => page.getByTestId("chat-row").count()).toBe(1);
       expect(other).toBeGreaterThan(0);
     },
   );
@@ -1054,7 +1093,7 @@ describe("deleting a chat", () => {
             })
           : route.continue(),
       );
-      await page.getByRole("button", { name: "Delete", exact: true }).click();
+      await page.getByRole("button", { name: "Delete this chat", exact: true }).click();
       await dialog().getByRole("button", { name: "Delete" }).click();
       await dialog().getByRole("alert").filter({ hasText: "chat is still stopping" }).waitFor();
       expect(new URL(page.url()).pathname).toBe(`/chat/${id}`);
