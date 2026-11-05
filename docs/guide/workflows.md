@@ -68,7 +68,7 @@ or `done.luau` (see [column scripts](column-scripts.md)), nothing changes for yo
 
 Each round is a `code` run of the agent `Coder` in a new worktree, on a branch `moebius/run-<id>`. The branch starts at
 the branch of the card's latest successful `code` run, so each round builds on the last; the first round starts at the
-default branch. The prompt is the issue, what to do, and after a send-back the notes of the last round under the
+default branch. The prompt is the issue with its comments, what to do, and after a send-back the notes of the last round under the
 heading `Notes from the last round:`. When the run ends, Moebius commits what the agent left in the worktree. A round
 that changed nothing has failed. When a round has succeeded and the card has no note, the card moves to `In review`.
 

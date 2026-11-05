@@ -81,7 +81,7 @@ like the iced app and does not know anything the API does not say.
    card's latest successful `code` run (`Store::code_branch`), or from the default branch when it has none
    (`Repos::add_worktree`), issues the run's token (`Router::issue_token`, carrying the agent's budget), writes the run's
    agent directory and the bridge to `<data_dir>/runs/<id>/`, spawns Pi-Bolt (`PiBolt::launch`), sets the run `running`,
-   publishes `run_started` and sends the prompt (`prompt_for`, `harness/run/prompts.rs`: the issue, the instructions for the run's purpose, and
+   publishes `run_started` and sends the prompt (`prompt_for`, `harness/run/prompts.rs`: the issue with its comments, the instructions for the run's purpose, and
    the note if there is one). The server's `Runs` is `Harnesses` (`harness/pick.rs`), which hands the run to the harness
    the agent's `harness` names: an agent on `claude-code` is started by `ClaudeCode::start` the same way (`card_run`
    makes the run, worktree and token for both), with a checked token (`Router::issue_checked_token`), so that the router
@@ -657,7 +657,7 @@ At the top:
 | `harness/run/mod.rs` | The life of a run, the same for every harness: what the folder holds and re-exports. |
 | `harness/run/agents.rs` | The built-in agents (the Moebius agent, the Grilling partner, the Coder, the Reviewer, the Retro analyst, the Autoresearcher) with their instructions and skills, and the agent a run uses, on either harness. |
 | `harness/run/coding_agents.rs` | The built-in instructions of the Coder and the Reviewer, which complement the per-run prompts of `prompts.rs`. |
-| `harness/run/prompts.rs` | What a run of a card is told: the issue, the instructions of its purpose, the files likely to matter, the lessons of earlier cards and the notes of the last round. |
+| `harness/run/prompts.rs` | What a run of a card is told: the issue and its comments, the instructions of its purpose, the files likely to matter, the lessons of earlier cards and the notes of the last round. |
 | `harness/run/lifecycle.rs` | Making a run, its worktree and its token (`card_run`, `detached_run`, `chat_run`), undoing them when its process cannot be started (`launch_or_undo`), and `RunningRun`, which commits what the agent left and removes the worktree. |
 | `harness/run/start.rs` | Starting a run: the harness is asked only to start its process (`Launching`, `Launch`) in the run `lifecycle` made. |
 | `harness/run/end.rs` | Ending a run: its records kept as its events and summary (`keep`), and its end (`finish`). |

@@ -1,9 +1,13 @@
 //! What a run of a card is told: the issue, the instructions of its purpose (`code`, the review axes, the choice between
-//! attempts), the files likely to be relevant, the lessons of earlier cards, the rule of red then green in a repository
+//! attempts), the issue's comments, the files likely to be relevant, the lessons of earlier cards, the rule of red then green in a repository
 //! that works test first, and the notes of the last round. The same for every harness.
 
 use crate::app::App;
+use crate::blobs::redact;
 use crate::store::Card;
+
+/// The most characters of an issue's comments a run is told; older comments are left out first.
+const COMMENTS_LIMIT: usize = 8_000;
 
 /// What a `code` run is told after the issue.
 const CODE_PROMPT: &str = "You are in a git worktree on the issue's own branch. Make the change, run what checks the \
@@ -88,6 +92,63 @@ fn review_notes(app: &App, card: &Card) -> Option<String> {
         .filter(|notes| !notes.trim().is_empty())
 }
 
+/// The comments of the card's issue, newest kept first when they are too long, with their authors, or none when it has
+/// none. A run cannot look them up, so they come with the issue.
+fn comments_section(app: &App, card: &Card) -> Option<String> {
+    let comments = app.store.comments(card.id).ok()?;
+    let mut kept = Vec::new();
+    let mut length = 0;
+    for comment in comments.iter().rev() {
+        let author = match comment.author.strip_prefix("agent:") {
+            Some(agent) => format!("the agent {agent}"),
+            None if comment.author == "person" => "a person".to_string(),
+            None => comment.author.clone(),
+        };
+        let text = format!("{author} wrote:\n{}\n", redact(comment.body.trim()));
+        length += text.chars().count();
+        if length > COMMENTS_LIMIT && !kept.is_empty() {
+            break;
+        }
+        kept.push(text);
+    }
+    if kept.is_empty() {
+        return None;
+    }
+    kept.reverse();
+    let left_out = comments.len() - kept.len();
+    let mut section = String::from("Comments on the issue, oldest first:\n");
+    if left_out > 0 {
+        section.push_str(&format!("({left_out} older comments are left out)\n"));
+    }
+    for text in kept {
+        section.push('\n');
+        section.push_str(&text);
+    }
+    Some(section)
+}
+
+/// Where the issue lives and what that means for a run: it has no way to look the issue up, so it is told not to try.
+fn tracker_note(app: &App, card: &Card) -> String {
+    let forge = app
+        .store
+        .repository(card.repository_id)
+        .ok()
+        .flatten()
+        .map(|repository| repository.forge)
+        .unwrap_or_default();
+    let kept = match forge.as_str() {
+        "" | "none" => {
+            "The issues of this repository are kept by Moebius itself, not on a forge".to_string()
+        }
+        forge => format!("The issues of this repository are kept on {forge}"),
+    };
+    format!(
+        "{kept}, and the issue above with its comments is all of it that you are given. Do not look for it with `gh` \
+         or another tracker's command line: this run has no login for one. If something the issue leaves out matters, \
+         say so in your summary."
+    )
+}
+
 fn prompt_with(
     app: &App,
     card: &Card,
@@ -100,6 +161,10 @@ fn prompt_with(
         prompt.push('\n');
         prompt.push_str(&card.body);
         prompt.push('\n');
+    }
+    if let Some(comments) = comments_section(app, card) {
+        prompt.push('\n');
+        prompt.push_str(&comments);
     }
     prompt.push('\n');
     let base = || {
@@ -125,7 +190,11 @@ fn prompt_with(
             prompt.push_str(FINDINGS_FORMAT);
         }
         "review-select" => prompt.push_str(&SELECT_PROMPT.replace("{base}", &base())),
-        _ => prompt.push_str(CODE_PROMPT),
+        _ => {
+            prompt.push_str(CODE_PROMPT);
+            prompt.push(' ');
+            prompt.push_str(&tracker_note(app, card));
+        }
     }
     prompt.push('\n');
     if let Some(hint) = hint {
@@ -158,4 +227,90 @@ fn prompt_with(
         prompt.push('\n');
     }
     prompt
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use moebius_plugin_api::Host;
+
+    use super::*;
+    use crate::store::Store;
+
+    fn setup(forge: &str) -> (tempfile::TempDir, App, Card) {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(Store::in_memory(&dir.path().join("blobs")).unwrap());
+        let repo = store
+            .add_repository("demo", "/srv/demo", forge, "main")
+            .unwrap();
+        let card = store
+            .add_card(repo.id, "Fix it", "The body.", "person", "Not started")
+            .unwrap();
+        let app = App::new(
+            store,
+            Arc::new(Host::new(Duration::from_secs(1))),
+            dir.path(),
+        );
+        (dir, app, card)
+    }
+
+    #[test]
+    fn a_run_is_told_the_comments_of_its_issue_with_their_authors() {
+        let (_dir, app, card) = setup("none");
+        for (author, body) in [
+            ("person", "Use the old API."),
+            ("agent:Moebius", "Noted."),
+            ("sam", "Key sk-ant-abcdefghijklmnopqrstu is wrong."),
+        ] {
+            app.store
+                .add_comment(card.id, author, body, None, None)
+                .unwrap();
+        }
+        let prompt = prompt_for(&app, &card, "code", None);
+        let at = |text: &str| {
+            prompt
+                .find(text)
+                .unwrap_or_else(|| panic!("{text}: {prompt}"))
+        };
+        assert!(at("The body.") < at("Comments on the issue, oldest first:"));
+        assert!(at("a person wrote:\nUse the old API.") < at("the agent Moebius wrote:\nNoted."));
+        assert!(at("the agent Moebius wrote") < at("sam wrote:"));
+        assert!(at("sam wrote:") < at("You are in a git worktree"));
+        assert!(!prompt.contains("sk-ant-abcdefghijklmnopqrstu"), "{prompt}");
+        // An issue without comments has no heading for them.
+        let (_dir, app, card) = setup("none");
+        assert!(!prompt_for(&app, &card, "code", None).contains("Comments on the issue"));
+    }
+
+    #[test]
+    fn comments_too_long_to_tell_leave_the_oldest_out() {
+        let (_dir, app, card) = setup("none");
+        for n in 0..5 {
+            let body = format!("comment {n} {}", "x".repeat(3_000));
+            app.store
+                .add_comment(card.id, "person", &body, None, None)
+                .unwrap();
+        }
+        let prompt = prompt_for(&app, &card, "code", None);
+        assert!(prompt.contains("comment 4 ") && !prompt.contains("comment 0 "));
+        assert!(prompt.contains("older comments are left out"), "{prompt}");
+    }
+
+    #[test]
+    fn a_code_run_is_told_where_its_issue_lives_and_not_to_look_for_it() {
+        let (_dir, app, card) = setup("none");
+        let prompt = prompt_for(&app, &card, "code", None);
+        assert!(
+            prompt.contains("kept by Moebius itself, not on a forge"),
+            "{prompt}"
+        );
+        assert!(prompt.contains("Do not look for it with `gh`"), "{prompt}");
+        let (_dir, app, card) = setup("forgejo");
+        let prompt = prompt_for(&app, &card, "code", None);
+        assert!(prompt.contains("kept on forgejo"), "{prompt}");
+        // A review is not told: it reads the change, not the tracker.
+        assert!(!prompt_for(&app, &card, "review", None).contains("Do not look for it"));
+    }
 }
