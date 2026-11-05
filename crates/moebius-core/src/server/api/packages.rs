@@ -120,7 +120,7 @@ async fn remove(
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     use std::sync::{Arc, Mutex, RwLock};
 
     use axum::response::IntoResponse;
@@ -349,6 +349,29 @@ mod tests {
                 card_id: None,
                 budget: None,
             })
+        }
+
+        /// Gives the server a harness configuration repository, which a package's files are proposed to, and returns its
+        /// clone.
+        async fn with_harness(&mut self) -> PathBuf {
+            let origin = self.dir.path().join("harness-origin");
+            crate::harness::repo::create(&origin, &BTreeMap::new(), None).unwrap();
+            let clone = self.dir.path().join("harness-clone");
+            let repo = HarnessRepo::open(
+                &self.state.app,
+                origin.to_str().unwrap(),
+                &clone,
+                vec![],
+                Arc::new(RwLock::new(AgentSet::default())),
+            )
+            .unwrap();
+            let repo = Arc::new(repo);
+            self.state.app.set_harness_repo(repo.clone());
+            self.state.harness_repo = Some(repo);
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            self.addr = format!("127.0.0.1:{}", listener.local_addr().unwrap().port());
+            tokio::spawn(serve(listener, self.state.clone()));
+            clone
         }
 
         fn config_text(&self) -> String {
@@ -789,8 +812,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_workflow_and_rules_are_proposed_as_changes_a_person_merges() {
-        let fx = Fx::new().await;
+    async fn a_workflow_and_rules_are_proposed_as_changes_of_the_harness_repository_a_person_merges()
+     {
+        let mut fx = Fx::new().await;
+        let clone = fx.with_harness().await;
         let repo = fx
             .state
             .app
@@ -809,7 +834,15 @@ mod tests {
             "Intro.\n\n## no-secrets\nNever print secrets.\n",
         );
         fx.publish(&[workflow, rules]);
-        let clone = Path::new(&repo.path);
+        let default = fx
+            .state
+            .harness_repo
+            .as_ref()
+            .unwrap()
+            .default_branch()
+            .unwrap();
+        let clone = clone.as_path();
+        let _ = &repo;
 
         // Without a repository named, a server with two repositories cannot tell which (here there is one more).
         fx.state
@@ -832,13 +865,24 @@ mod tests {
             .await;
         assert_eq!(status, 200, "{done}");
         let change = done["change"].as_i64().unwrap();
-        // The files are on a branch, offered in the inbox; the default branch has none of them until it is merged.
+        // The files are on a branch of the harness configuration repository, offered in the inbox; its default branch
+        // has none of them until it is merged.
         let branch = "moebius/package-review-flow";
         assert_eq!(
-            git(clone, &["show", &format!("{branch}:.moebius/Review.luau")]).unwrap(),
+            git(
+                clone,
+                &["show", &format!("{branch}:repos/demo/Review.luau")]
+            )
+            .unwrap(),
             "-- the review column"
         );
-        assert!(git(clone, &["show", "main:.moebius/Review.luau"]).is_err());
+        assert!(
+            git(
+                clone,
+                &["show", &format!("{default}:repos/demo/Review.luau")]
+            )
+            .is_err()
+        );
         let inbox = fx.state.app.store.inbox().unwrap();
         assert!(
             inbox
@@ -857,7 +901,7 @@ mod tests {
         assert_eq!(
             git(
                 clone,
-                &["show", "moebius/package-careful:.moebius/rules.md"]
+                &["show", "moebius/package-careful:repos/demo/rules.md"]
             )
             .unwrap(),
             "## no-secrets\nNever print secrets."
@@ -891,11 +935,23 @@ mod tests {
         assert_eq!(status, 200, "{updated}");
         assert_eq!(updated["version"], "1.1.0");
         assert_eq!(
-            git(clone, &["show", &format!("{branch}:.moebius/Check.luau")]).unwrap(),
+            git(clone, &["show", &format!("{branch}:repos/demo/Check.luau")]).unwrap(),
             "-- the check column"
         );
-        assert!(git(clone, &["show", &format!("{branch}:.moebius/Review.luau")]).is_err());
-        assert!(git(clone, &["show", "main:.moebius/Review.luau"]).is_ok());
+        assert!(
+            git(
+                clone,
+                &["show", &format!("{branch}:repos/demo/Review.luau")]
+            )
+            .is_err()
+        );
+        assert!(
+            git(
+                clone,
+                &["show", &format!("{default}:repos/demo/Review.luau")]
+            )
+            .is_ok()
+        );
         fx.state
             .app
             .merge_change(
@@ -918,8 +974,14 @@ mod tests {
             .await;
         assert_eq!(status, 200, "{removed}");
         assert!(removed["change"].as_i64().is_some());
-        assert!(git(clone, &["show", &format!("{branch}:.moebius/Check.luau")]).is_err());
-        assert!(git(clone, &["show", "main:.moebius/Check.luau"]).is_ok());
+        assert!(git(clone, &["show", &format!("{branch}:repos/demo/Check.luau")]).is_err());
+        assert!(
+            git(
+                clone,
+                &["show", &format!("{default}:repos/demo/Check.luau")]
+            )
+            .is_ok()
+        );
         assert!(!fx.lock().contains("review-flow"));
     }
 
@@ -943,21 +1005,7 @@ mod tests {
                 .contains("harness configuration repository")
         );
 
-        let origin = fx.dir.path().join("harness-origin");
-        crate::harness::repo::create(&origin, &BTreeMap::new(), None).unwrap();
-        let clone = fx.dir.path().join("harness-clone");
-        let repo = HarnessRepo::open(
-            &fx.state.app,
-            origin.to_str().unwrap(),
-            &clone,
-            vec![],
-            Arc::new(RwLock::new(AgentSet::default())),
-        )
-        .unwrap();
-        fx.state.harness_repo = Some(Arc::new(repo));
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        fx.addr = format!("127.0.0.1:{}", listener.local_addr().unwrap().port());
-        tokio::spawn(serve(listener, fx.state.clone()));
+        let clone = fx.with_harness().await;
 
         let (status, done) = fx.install(json!({"name": "tdd"})).await;
         assert_eq!(status, 200, "{done}");
@@ -1069,7 +1117,8 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn installing_updating_and_removing_a_plugin_are_for_a_person_only() {
-        let fx = Fx::new().await;
+        let mut fx = Fx::new().await;
+        fx.with_harness().await;
         let flow = fx.files_package("review-flow", "workflow", "Review.luau", "-- review\n");
         fx.publish(&[fx.gate("1.0.0", ">=0.1"), flow]);
         let token = fx.agent_token();

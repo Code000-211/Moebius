@@ -69,8 +69,8 @@ like the iced app and does not know anything the API does not say.
    `forge_error`.
 2. **The board ticks.** The loop in `Server::serve` calls `Server::tick` on a blocking thread every `board.tick_ms`.
    For each card it calls `Engine::settle`, which calls `Engine::tick` until a script stops moving the card.
-   `Engine::tick` finds the script for the card's column: the repository's `.moebius/<script>` read with
-   `git show` on its default branch, else the built-in one from `workflow/` (`Engine::script`). `Engine::run_script`
+   `Engine::tick` finds the script for the card's column: the project's `<script>` file, read by
+   `App::project_file` from `repos/<repository name>/` of the harness configuration repository's clone, else the built-in one from `workflow/` (`Engine::script`). `Engine::run_script`
    runs it in a fresh sandboxed Luau state with `card_table` and the `moebius` table, and applies the effects.
 3. **Backlog to Not started.** `backlog.luau` moves a trusted card on (`App::is_trusted`), and one made from a confirmed grilling (`card.confirmed`). Others get an `approve_issue` inbox
    item (`moebius.ask`) until a person calls `POST /v1/cards/{id}/approve` (`App::approve_issue`), which records a
@@ -138,7 +138,7 @@ like the iced app and does not know anything the API does not say.
     pull request's head commit (`poll::poll_requests`, which reads them
     as a `poll::Request` through the client's `Polled::request`, then `App::record_change_status`), with the head they
     are for and the failing ones. Without
-    a forge, `moebius.run_checks` calls `App::run_checks`: if `.moebius/checks` exists on the default branch, a thread
+    a forge, `moebius.run_checks` calls `App::run_checks`: if the project has a `checks` file, a thread
     runs it with `sh -c` in a throwaway worktree of the change's commit (`App::check_change`, `execute`) with the time
     limit `checks.timeout_seconds`, and records `success` or `failure` with the end of the output, redacted
     (`Store::set_local_checks`). `App::checks_of` gives scripts `card.change.checks`: checks for another commit than the
@@ -244,7 +244,7 @@ like the iced app and does not know anything the API does not say.
     `proposal/<date>-*` branches, which are stored in `proposals` with the cards of their `Cards:` line, and `retro_done`
     is published. Before that, `HarnessRepo::take_own_branches` reads and deletes the branches that change only files
     under `moebius/`, the analyst's proposals for Moebius's own configuration (what it is told about them is
-    `own::brief`); `own::store` checks each (a `moebius.toml` change through `Live::preview`, a `.moebius/` change with
+    `own::brief`); `own::store` checks each (a `moebius.toml` change through `Live::preview`, a project-settings change with
     the rules check and `check_script`) and stores it in `proposals` as `settings` or `repository` with its diff
     (`own::unified`), `untried`, with a `proposal` inbox item at once. They are never tried: `trial::merge` hands them
     to `own::merge`, which saves a `settings` one with `Live::save` (the merge's route then restarts the server when a
@@ -259,7 +259,7 @@ like the iced app and does not know anything the API does not say.
     trial is stored in `trials`, its branch and worktrees are removed (`trial_done`), and the proposal becomes `positive`,
     `negative` or `untried` (`proposal_status`). Before that, unless the own trials made it negative or `[regression]`
     turns the gate off, `trial::regression` tries it the same way (`run_trial`) on the regression set of each repository of
-    its cards: the latest merged cards (`Store::merged_card_changes`), those whose change touches `.moebius/reproduce`
+    its cards: the latest merged cards (`Store::merged_card_changes`), those whose code runs name a reproduction test (`REPRODUCE:` in the summary)
     first, each from the commit its first code run started at (`Store::run_base`, recorded by `PiBolt::start_card_run`),
     stopping at the first that fails; these trials are stored with `regression` set. A positive or untried one gets a `proposal` inbox item; `trial::merge`
     (`HarnessRepo::merge_proposal`) or `trial::dismiss` ends it. `Store::runs_for_card` and the Retro's sources leave trial
@@ -285,7 +285,7 @@ like the iced app and does not know anything the API does not say.
     start sends `running` research back to `confirmed`. `trial::on_schedule` waits while a research runs.
 12g. **Grilling.** A grilling is a chat (12b) with the built-in agent `Grilling-partner` (`pibolt::GRILLING_AGENT`);
     `App::start_chat` refuses it without a repository. `Reader::end` treats it differently from other chats: nothing is
-    committed, and before the worktree is removed `grilling::conclude` reads `.moebius/grilling/issues.json` or `report.md`
+    committed (the folder `.moebius/` is ignored by git in its worktree, `grilling::ignore_result_folder`), and before the worktree is removed `grilling::conclude` reads `.moebius/grilling/issues.json` or `report.md`
     (`grilling::read_result`), stores a row of `grillings` (`proposed`, `reported` or `empty`), adds the inbox item
     `grilling_issues` or `grilling_report` and publishes `grilling_ended`; `offer_chat_change` is not called.
     `POST /v1/grillings/{id}/confirm` calls `grilling::confirm`: `grilling::creation_order` puts blockers first, and
@@ -432,14 +432,15 @@ At the top:
 | `app/deletions.rs` | Deleting a chat: a chat that is going is stopped, then it is taken out of the store with its changes, inbox items and grillings, and its worktree and branch are removed; also the stop-and-wait that research and grillings share. |
 | `app/diffs.rs` | What a change or a run changed, as a unified diff (secrets removed, cut at 2 MB) for a client to draw. |
 | `app/changes.rs` | Changes: a card's work published through the forge, offered with a chat's work in the inbox, rejected or merged, and what the forge says became of them. |
-| `app/checks.rs` | How a change's checks stand, and a repository's own checks (`.moebius/checks`) run in a throwaway worktree with a time limit and a cleared environment. |
+| `app/checks.rs` | How a change's checks stand, and a repository's own checks (the project's `checks`) run in a throwaway worktree with a time limit and a cleared environment. |
 | `app/board.rs` | What a board shows of a card, worked out once for the snapshot and the scripts: rounds, latest run, and the batched reads of a whole board. |
 | `app/attempts.rs` | Attempts: judging each attempt of a hard card by the repository's checks and its reproduction test on a thread of its own, settling a round (one picked, or none passed), and reading a selection run's pick. |
+| `app/projects.rs` | A project's settings read from the harness configuration repository (`App::project_file`), and the notice, once for each repository, that its default branch still has a `.moebius/` folder, which is not read. |
 | `app/localize.rs` | The hint of files a code run is given, whether a repository wants it, and the outcome recorded from the files the card's change touched at the end of a code run and on merge. |
 | `app/packages/mod.rs` | Pi packages as the API offers them: the catalog search, a package's info, the installed packages, and the branches that install, update and remove one offered as changes. |
 | `app/packages/updates.rs` | The nightly check of the installed packages for newer versions, and the `extension_update` inbox items. |
 | `app/whereabouts.rs` | Where Moebius runs: what the server found about itself at start, what the desktop app reported about itself, and the "Where Moebius runs" section of the Moebius agent's instructions built from both (with the official repository). In memory only. |
-| `app/reproduce.rs` | Test first: a repository's opt-in (`.moebius/test-first`), what a change names in `.moebius/reproduce`, and the runs of that reproduction test on the change and on the commit it starts from with the test's files added. |
+| `app/reproduce.rs` | Test first: a repository's opt-in (the project's `test-first`), what a run names in the `REPRODUCE:` lines of its summary, and the runs of that reproduction test on the change and on the commit it starts from with the test's files added. |
 
 `config/`, `moebius.toml`:
 
@@ -565,6 +566,7 @@ At the top:
 | `repos/poll/github.rs` | What GitHub answers, read for the poll: issues, a pull request with its check runs and latest review. |
 | `repos/poll/gitlab.rs` | What GitLab answers, read for the poll: issues, a merge request with its latest pipeline, failed jobs and approvals. |
 | `repos/poll/forgejo.rs` | What Forgejo answers, read for the poll: issues, a pull request with the statuses of its head commit and its latest review. |
+| `repos/settings.rs` | A project's settings other than the column scripts, for `GET /v1/repositories/{id}/settings` and its `PUT` and `DELETE` per file: listed, checked and committed to the harness configuration repository, with the `.moebius/` files still on the default branch. |
 | `repos/files.rs` | A repository's files on its default branch, read and committed (the Files sidebar and editor tabs of a project). |
 | `repos/search.rs` | A repository's default branch searched for the project page: the list of its paths for "Go to file", and a full-text search with `git grep`. |
 
@@ -584,7 +586,7 @@ At the top:
 | `board/runs.rs` | What the engine needs of a harness (`Runs`), and the agents it lists. |
 | `board/testing.rs` | For the tests only: a fake harness and a store with a repository and a card. |
 | `board/dry_run.rs` | `check_script`: a script run once against a made-up card, for `moebius check-script`. |
-| `board/scripts.rs` | Editing a column's script: the script in force, saved as a commit in the repository. |
+| `board/scripts.rs` | Editing a column's script: the script in force, saved as a commit in the harness configuration repository. |
 
 `decide/`, every decision on the way:
 
@@ -645,6 +647,7 @@ At the top:
 | `harness/repo/mod.rs` | The harness configuration repository's clone: opened, refreshed, and its agents read again when it changes. |
 | `harness/repo/read.rs` | Reading the agents, skills and MCP servers from it, each agent checked as a run uses it. |
 | `harness/repo/offer.rs` | Files written on a branch of the default branch and offered as a change in the inbox; the package manager proposes skills with it. |
+| `harness/repo/projects.rs` | A project's settings, the files of `repos/<repository name>/`: read from the clone, and written or removed as commits like any edit. |
 | `harness/repo/edits.rs` | A person's edits of agents, skills, MCP servers and rules, as commits pushed to its origin. |
 | `harness/repo/skill_files.rs` | A skill's other files, beside its `SKILL.md`: read, and written or deleted as commits like any edit. |
 | `harness/repo/packages.rs` | The Pi packages in the clone: the lock of the default branch, the agents that name a package, the branch that installs, updates or removes one (made in a throwaway worktree), and its file diff. |
@@ -658,14 +661,14 @@ At the top:
 | `harness/packages/resolve.rs` | The `pkg:` names of an agent's `extensions` and `skills`, resolved from `packages.lock` to files. |
 | `harness/repo/branches.rs` | Its branches: the Retro's proposals and chats' branches checked, pushed, merged or dismissed, the Retro's branches for Moebius's own configuration read and deleted, and a trial's worktree of a branch. |
 | `harness/repo/create.rs` | `create`: a new repository from the agents and rules of `moebius.toml` (`POST /v1/harness/setup`, `moebius init`). |
-| `harness/output/mod.rs` | Keeping a tool's output small where it is made: compressed, cut to the agent's budget (head and tail), and the whole saved to `.moebius/out/<n>.txt` of the worktree, which git ignores. |
+| `harness/output/mod.rs` | Keeping a tool's output small where it is made: compressed, cut to the agent's budget (head and tail), and the whole saved to `<n>.txt` in the `out` folder of the run's directory, outside the worktree. |
 | `harness/output/compress.rs` | The compressors: escape codes, progress bars and repeated lines, and the noise of `cargo test`, `pytest`, `go test`, `jest`/`vitest` and cargo builds; only known noise is removed. |
 | `harness/mcp.rs` | The MCP servers of `mcp.toml`, checked when read, their `${NAME}` values filled in, and the `mcp.json` that names the MCP gateway for a run of an agent that names them. |
 | `harness/gateway/mod.rs` | The MCP gateway, `POST /mcp` on the router's listener: a run's servers bundled as one MCP server, every tool call checked, its result cleaned of secrets and recorded as an `mcp_call` run event. |
 | `harness/gateway/upstream.rs` | One server of a run as the gateway reaches it: a stdio child process or a remote server over streamable HTTP, initialized and its tools listed. |
 | `harness/skill.rs` | The built-in skills, bundled with `include_str!` and written to `<data_dir>/skills/<name>/` at start: the `moebius` skill (the guide and the references) and the task skills of the Moebius agent (`moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions`, `moebius-plugins` and `moebius-report`, in `crates/moebius-core/skill/<name>/SKILL.md`), and the engineering skills copied unchanged from Matt Pocock's skills (`crates/moebius-core/skill/vendor/mattpocock/`, MIT, pinned to a commit) that the Coder, the Reviewer and the Grilling partner are given with `moebius-autonomous`, which says what to do where the skills ask a person. |
 | `harness/lens/mod.rs` | The lens, fast lint and type feedback after an agent's edits: what the folder holds, the extension it writes into each run (`bridge/moebius-lens.ts`) and the plan it hands to it. |
-| `harness/lens/plan.rs` | What the lens checks in a worktree: `.moebius/lint.toml` read and checked, or the common tools detected from the repository's files, as the JSON plan in `MOEBIUS_LENS`; globs turned into regular expressions. |
+| `harness/lens/plan.rs` | What the lens checks in a worktree: the project's `lint.toml` checked, or the common tools detected from the repository's files, as the JSON plan in `MOEBIUS_LENS`; globs turned into regular expressions. |
 | `harness/lens/decider.rs` | The `lens` decider, a compiled-in plugin that answers `lint_report` (errors always, warnings on touched lines up to a limit) and `deep_check` (run when code was touched), and what makes a file code, documentation or configuration. |
 | `harness/lens/report.rs` | The lens's endpoints on the router's listener (`/moebius/lens/report`, `/deep`, `/deep-result`): each new finding and the end-of-turn check go through `decide`, outcomes are filled in (`fixed`, `ignored`, what the deep check found), and the time of each check is stored as a `lens_check` run event. |
 | `harness/grilling.rs` | The Grilling partner's end: the issues or report it left in its worktree, confirming the issues as cards (on GitHub opened there first) and dismissing. |
@@ -685,7 +688,7 @@ At the top:
 | `improve/trial/regression.rs` | The regression set of a repository (its latest merged cards, those with a reproduction test first) and the trials of a proposal on it. |
 | `improve/trial/schedule.rs` | Trying a proposal on a thread of its own, card after card, each trial stored and published, its status and inbox item; and the schedule's start inside the trial window. |
 | `improve/trial/decision.rs` | A person's merge or dismissal of a positive or untried proposal. |
-| `improve/own/mod.rs` | The Retro's proposals for Moebius's own configuration (`moebius.toml` and a repository's `.moebius/`): the keys and files it may change, and what the analyst is told about them. |
+| `improve/own/mod.rs` | The Retro's proposals for Moebius's own configuration (`moebius.toml` and a project's settings): the keys and files it may change, and what the analyst is told about them. |
 | `improve/own/read.rs` | The analyst's branches for Moebius's own configuration checked, stored with their diff and put in the inbox. |
 | `improve/own/apply.rs` | A person's merge of such a proposal, saved through the settings code or offered as a change on the repository, or its dismissal. |
 | `improve/own/diff.rs` | A unified diff of a file's text before and after, as a person reads such a proposal. |

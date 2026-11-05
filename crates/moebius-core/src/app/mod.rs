@@ -8,6 +8,7 @@
 //! runs a repository's own checks on them, `packages` proposes installing, updating and removing Pi packages as changes
 //! of the harness configuration repository, `localize` gives a code run the files its issue is likely to touch and
 //! records what came of it, `reproduce` runs a change's reproduction test for a repository that works test first,
+//! `projects` reads a project's settings from the harness configuration repository,
 //! `whereabouts` knows where the server and the app run, and `automations` keeps the automations and starts their chats
 //! when their schedules come due.
 
@@ -22,6 +23,7 @@ mod deletions;
 mod diffs;
 mod localize;
 mod packages;
+mod projects;
 mod repositories;
 mod reproduce;
 mod runs;
@@ -59,7 +61,7 @@ pub use chats::{ASSISTANT_ORIGIN, CHAT_ORIGIN, Chat, ChatSettings};
 pub(crate) use checks::tail;
 pub(crate) use deletions::list;
 pub use diffs::Diff;
-pub use reproduce::{Reproduction, TestRun};
+pub use reproduce::{Reproduction, TestRun, parse as parse_reproduction};
 pub use whereabouts::{ClientInfo, OFFICIAL_REPOSITORY, ServerInfo};
 
 /// The columns of the default workflow (spec 6).
@@ -143,6 +145,8 @@ pub struct App {
     checking: Mutex<BTreeSet<(i64, String)>>,
     /// The attempts being judged now (see `attempts`).
     judging: Mutex<BTreeSet<i64>>,
+    /// The repositories already told to move their `.moebius/` folder (see `projects`).
+    moved_told: Mutex<BTreeSet<i64>>,
     /// The runs of reproduction tests, going or ended (see `reproduce`).
     tests: Mutex<HashMap<reproduce::TestKey, TestRun>>,
     /// Whether the schedule's replays are going now (see `replay::start_due`).
@@ -188,6 +192,7 @@ impl App {
             packages: PackagesConfig::default(),
             checking: Mutex::default(),
             judging: Mutex::default(),
+            moved_told: Mutex::default(),
             tests: Mutex::default(),
             replaying: AtomicBool::new(false),
             run_events: Mutex::default(),

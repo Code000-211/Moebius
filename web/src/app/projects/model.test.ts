@@ -5,6 +5,7 @@ import {
   addFailure,
   cardsText,
   EMPTY_FORM,
+  firstLine,
   forgeTag,
   lineStart,
   logins,
@@ -204,5 +205,13 @@ describe("go to file", () => {
     expect(rank("main", paths, 10)[0]).toBe("src/main.rs");
     expect(rank("zzz", paths, 10)).toEqual([]);
     expect(rank("", paths, 2)).toHaveLength(2);
+  });
+});
+
+describe("firstLine", () => {
+  it("is the first line that says something, cut short", () => {
+    expect(firstLine("\n\nPrefer small functions.\nMore.\n")).toBe("Prefer small functions.");
+    expect(firstLine("")).toBe("(empty)");
+    expect(firstLine("x".repeat(100))).toBe(`${"x".repeat(79)}…`);
   });
 });

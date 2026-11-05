@@ -2,7 +2,7 @@
 //! cards merged in the past and is positive only when none of them fails where it passed before.
 //!
 //! The regression set of a repository is a fixed sample of its merged cards: the latest `size` of them, among the
-//! latest `LOOKBACK` merged changes, those whose change adds or changes a reproduction test (`.moebius/reproduce`)
+//! latest `LOOKBACK` merged changes, those whose code runs name a reproduction test in their summaries (`REPRODUCE:`)
 //! first. It changes only as new cards merge. A card is in it only when its first code run recorded the commit it
 //! started at, which is where its trial starts, so that the task is the one the card had. The proposal's own cards are
 //! left out. A regression trial is the card's task run by the agent of its last code run with the definition from the
@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use super::card::{Task, Tried, run_tokens, run_trial};
 use super::verdict::Original;
-use crate::app::{App, Result};
+use crate::app::{App, Result, parse_reproduction};
 use crate::board::Runs;
 use crate::harness::repo::HarnessRepo;
 use crate::repos::git;
@@ -25,9 +25,6 @@ use crate::store::{Card, Proposal, Repository};
 /// How many of a repository's latest merged changes the regression set is chosen from.
 const LOOKBACK: usize = 50;
 
-/// The file of a change that holds its reproduction test; a card whose change adds or changes it is preferred.
-const REPRODUCE: &str = ".moebius/reproduce";
-
 /// A card of the regression set, with what its trial needs.
 struct Member {
     card: Card,
@@ -35,19 +32,14 @@ struct Member {
     agent: String,
     /// The commit the card's first code run started at.
     base: String,
-    /// Whether the card's change adds or changes its reproduction test.
+    /// Whether one of the card's code runs names a reproduction test.
     reproduce: bool,
     /// The card's code runs together, which passed.
     original: Original,
 }
 
 /// The card of a merged change as a member of the regression set, if it can be one.
-fn member(
-    app: &App,
-    repository: &Repository,
-    card_id: i64,
-    head: Option<&str>,
-) -> Result<Option<Member>> {
+fn member(app: &App, repository: &Repository, card_id: i64) -> Result<Option<Member>> {
     let store = &app.store;
     let Some(card) = store.card(card_id)? else {
         return Ok(None);
@@ -67,12 +59,11 @@ fn member(
     if git(clone, &["cat-file", "-e", &format!("{base}^{{commit}}")]).is_err() {
         return Ok(None);
     }
-    let reproduce = head.is_some_and(|head| {
-        git(
-            clone,
-            &["diff", "--name-only", &base, head, "--", REPRODUCE],
-        )
-        .is_ok_and(|changed| !changed.trim().is_empty())
+    let reproduce = code_runs.iter().any(|run| {
+        run.summary
+            .as_deref()
+            .and_then(parse_reproduction)
+            .is_some()
     });
     let mut tokens = 0;
     for run in &code_runs {
@@ -102,7 +93,7 @@ fn set(app: &App, repository: &Repository, size: usize, leave_out: &[i64]) -> Re
         if leave_out.contains(&card) || !seen.insert(card) {
             continue;
         }
-        if let Some(member) = member(app, repository, card, change.head.as_deref())? {
+        if let Some(member) = member(app, repository, card)? {
             members.push(member);
         }
     }

@@ -2,9 +2,9 @@
 //! (`decide::check`) passes each text the bridge reports through `shrink` before the model reads it. With the agent's
 //! `tool_output.compress`, escape codes, progress bars and repeated lines go and a well-known command's output is
 //! compressed (`compress`); above the agent's budget (`max_lines`, `max_bytes`) only its head and tail are kept. When
-//! lines are left out, the whole output is saved to `.moebius/out/<n>.txt` in the run's worktree, which the agent can
-//! read in ranges and which is never committed, and the text says so. Hiding the outputs of older turns is the bridge's
-//! part (`bridge/moebius-bridge.ts`).
+//! lines are left out, the whole output is saved to `<n>.txt` in the `out` folder of the run's own directory, outside
+//! its worktree, which the agent can read in ranges and which is never committed, and the text says where. Hiding the
+//! outputs of older turns is the bridge's part (`bridge/moebius-bridge.ts`).
 
 mod compress;
 
@@ -13,8 +13,13 @@ use std::path::Path;
 
 use crate::config::ToolOutput;
 
-/// Where the whole outputs are saved, relative to the worktree.
-pub const OUT_DIR: &str = ".moebius/out";
+/// The folder of a run's own directory (`<data_dir>/runs/<run id>`) where the whole outputs are saved.
+pub const OUT_DIR: &str = "out";
+
+/// Removes the whole outputs saved for the run `run_id` under `data_dir`, when the run ends and its worktree goes.
+pub fn remove_saved(data_dir: &Path, run_id: i64) {
+    let _ = std::fs::remove_dir_all(data_dir.join("runs").join(run_id.to_string()).join(OUT_DIR));
+}
 
 /// A text made smaller, and what was done to it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,7 +32,7 @@ pub struct Shrunk {
     pub bytes_after: usize,
     pub lines_before: usize,
     pub lines_after: usize,
-    /// Where the whole output was saved, relative to the worktree, if it was.
+    /// Where the whole output was saved (the full path of the file), if it was.
     pub saved: Option<String>,
 }
 
@@ -37,7 +42,7 @@ pub fn shrink(
     text: &str,
     command: Option<&str>,
     limits: &ToolOutput,
-    worktree: Option<&Path>,
+    out: Option<&Path>,
 ) -> Option<Shrunk> {
     let mut steps = vec![];
     let mut notes = vec![];
@@ -81,7 +86,7 @@ pub fn shrink(
         return None;
     }
     let saved = left_out
-        .then(|| worktree.and_then(|w| save(w, text)))
+        .then(|| out.and_then(|out| save(out, text)))
         .flatten();
     let whole = match &saved {
         Some(path) => format!("; the full output is in {path}"),
@@ -198,26 +203,39 @@ fn thousands(n: usize) -> String {
     out
 }
 
-/// Saves `text` as the next free `.moebius/out/<n>.txt` of `worktree` and returns that path, relative to the
-/// worktree; `None` when it cannot be written. The directory ignores itself in git, so nothing in it is committed.
-fn save(worktree: &Path, text: &str) -> Option<String> {
-    let dir = worktree.join(OUT_DIR);
-    std::fs::create_dir_all(&dir).ok()?;
-    std::fs::write(dir.join(".gitignore"), "*\n").ok()?;
+/// Saves `text` as the next free `<n>.txt` of the folder `dir` and returns that path; `None` when it cannot be written.
+fn save(dir: &Path, text: &str) -> Option<String> {
+    std::fs::create_dir_all(dir).ok()?;
     (1..10_000).find_map(|n| {
+        let path = dir.join(format!("{n}.txt"));
         let mut file = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
-            .open(dir.join(format!("{n}.txt")))
+            .open(&path)
             .ok()?;
         file.write_all(text.as_bytes()).ok()?;
-        Some(format!("{OUT_DIR}/{n}.txt"))
+        Some(path.display().to_string())
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_saved_outputs_of_a_run_are_removed_and_its_other_files_are_not() {
+        let dir = tempfile::tempdir().unwrap();
+        let run = dir.path().join("runs").join("7");
+        let out = run.join(OUT_DIR);
+        let saved = save(&out, "whole").unwrap();
+        assert!(Path::new(&saved).is_file());
+        std::fs::write(run.join("stderr.log"), "x").unwrap();
+        remove_saved(dir.path(), 7);
+        assert!(!out.exists());
+        assert!(run.join("stderr.log").is_file());
+        // A run that saved nothing is fine.
+        remove_saved(dir.path(), 8);
+    }
 
     fn limits(max_lines: u32, max_bytes: u32, compress: bool) -> ToolOutput {
         ToolOutput {
@@ -259,19 +277,23 @@ mod tests {
         assert_eq!((lines[0], lines[99]), ("line 1", "line 100"));
         assert_eq!(
             lines[100],
-            "[1,840 lines left out; the full output is in .moebius/out/1.txt]"
+            format!(
+                "[1,840 lines left out; the full output is in {}]",
+                dir.path().join("1.txt").display()
+            )
         );
         assert_eq!((lines[101], lines[200]), ("line 1941", "line 2040"));
-        assert_eq!(shrunk.saved.as_deref(), Some(".moebius/out/1.txt"));
+        let first = dir.path().join("1.txt").display().to_string();
+        assert_eq!(shrunk.saved.as_deref(), Some(first.as_str()));
         assert_eq!(shrunk.steps, ["budget"]);
         assert_eq!((shrunk.lines_before, shrunk.lines_after), (2040, 201));
         assert_eq!(shrunk.bytes_before, text.len());
         assert_eq!(shrunk.bytes_after, shrunk.text.len());
-        let out = dir.path().join(OUT_DIR);
-        assert_eq!(std::fs::read_to_string(out.join("1.txt")).unwrap(), text);
+        assert_eq!(std::fs::read_to_string(&first).unwrap(), text);
         // The next one gets the next number.
         let again = shrink(&text, None, &limits(200, 0, true), Some(dir.path())).unwrap();
-        assert_eq!(again.saved.as_deref(), Some(".moebius/out/2.txt"));
+        let second = dir.path().join("2.txt").display().to_string();
+        assert_eq!(again.saved.as_deref(), Some(second.as_str()));
     }
 
     #[test]
@@ -314,9 +336,10 @@ mod tests {
         .unwrap();
         assert_eq!(shrunk.steps, ["cargo-test"]);
         assert!(
-            shrunk.text.trim_end().ends_with(
-                "passing tests left out; test binaries passed whole: 1 (40 passed, 0 ignored); the full output is in .moebius/out/1.txt]"
-            ),
+            shrunk.text.trim_end().ends_with(&format!(
+                "passing tests left out; test binaries passed whole: 1 (40 passed, 0 ignored); the full output is in {}]",
+                dir.path().join("1.txt").display()
+            )),
             "{}",
             shrunk.text
         );

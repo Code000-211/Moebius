@@ -153,8 +153,8 @@ mod tests {
     #[test]
     fn a_new_file_and_added_lines_have_empty_ranges() {
         assert_eq!(
-            unified(".moebius/rules.md", "", "# Rules\n"),
-            "--- /dev/null\n+++ b/.moebius/rules.md\n@@ -0,0 +1,1 @@\n+# Rules\n"
+            unified("repos/demo/rules.md", "", "# Rules\n"),
+            "--- /dev/null\n+++ b/repos/demo/rules.md\n@@ -0,0 +1,1 @@\n+# Rules\n"
         );
         assert_eq!(
             unified("f", "a\n", "a\nb\n"),

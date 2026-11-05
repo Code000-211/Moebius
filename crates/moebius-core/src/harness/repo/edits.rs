@@ -9,12 +9,13 @@ use super::{
     AgentDefinition, AgentSettings, AgentView, HarnessRepo, McpServerView, SkillText, SkillView,
 };
 use crate::app::{App, AppError, Result};
+use crate::blobs::redact;
 use crate::config::valid_agent_name;
 use crate::decide::Actor;
 use crate::decide::rules;
 use crate::harness::mcp::{self, McpServer};
 use crate::harness::skill;
-use crate::repos::git;
+use crate::repos::{GitError, git};
 
 impl HarnessRepo {
     /// A person adds or changes the agent `name`: the definition is validated as a file read is, committed on the
@@ -161,13 +162,29 @@ impl HarnessRepo {
         let header = app.git_auth(&self.url).map_err(undo)?;
         self.repos
             .push(&self.path, &branch, header.as_deref())
-            .map_err(|e| undo(e.into()))?;
+            .map_err(|e| undo(redacted(e)))?;
         let head = git(&self.path, &["rev-parse", "HEAD"])?;
         let short = git(&self.path, &["rev-parse", "--short", "HEAD"])?;
         self.read(app, read_at, head);
         context.insert("change".into(), message.into());
-        app.record_action(by, kind, None, None, context, "")?;
+        let reason = context.get("reason").cloned().unwrap_or_default();
+        app.record_action(by, kind, None, None, context, &reason)?;
         Ok(Some(short))
+    }
+}
+
+/// A push that `origin` refused, or any other failure of git while pushing, as a conflict with the keys in its message
+/// redacted, since the forge's refusal may quote one.
+fn redacted(error: GitError) -> AppError {
+    match error {
+        GitError::Failed { args, stderr } => AppError::Conflict(
+            GitError::Failed {
+                args,
+                stderr: redact(&stderr),
+            }
+            .to_string(),
+        ),
+        other => AppError::Git(other),
     }
 }
 
@@ -371,7 +388,7 @@ fn read_mcp_toml(file: &Path) -> Result<String> {
     }
 }
 
-fn remove_if_there(file: &Path) -> Result<()> {
+pub(super) fn remove_if_there(file: &Path) -> Result<()> {
     match std::fs::remove_file(file) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
         _ => Ok(()),

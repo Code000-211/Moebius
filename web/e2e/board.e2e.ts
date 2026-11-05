@@ -110,6 +110,17 @@ describe("the board page", () => {
     await page.getByRole("search", { name: "Filter the cards" }).waitFor();
   });
 
+  it("says on the board that a .moebius folder the repository still has is not read", async () => {
+    // Only the fake server has a repository with one (see `fake/pages-a.ts`).
+    if (usesRealServer) return;
+    await fresh();
+    await openBoard();
+    const notice = page.getByRole("alert").filter({ hasText: "still has a .moebius folder" });
+    await notice.waitFor();
+    expect(await notice.textContent()).toContain(".moebius/old.luau");
+    await notice.getByRole("link", { name: "Project settings" }).waitFor();
+  });
+
   it("makes a card from a new issue", async () => {
     await fresh();
     await openBoard();
@@ -703,7 +714,7 @@ describe("the dock", () => {
       await dock().getByText("Run 1 started: Coder, code").waitFor();
       const run = dock().getByRole("link", { name: "Run 1", exact: true });
       expect(await run.getAttribute("href")).toBe("/runs/1");
-      await dock().getByText(".moebius/code.luau · built in").waitFor();
+      await dock().getByText("repos/demo/code.luau · built in").waitFor();
       await dock().getByText('moebius.wait("nothing to do in In progress")').waitFor();
       await dock().getByText("Coder · code", { exact: true }).waitFor();
       // The state is said once, by the pill beside the title — the run line does not repeat it.

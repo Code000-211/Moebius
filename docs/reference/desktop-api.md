@@ -346,32 +346,68 @@ issue (no card is made).
 
 ### `GET /v1/repositories/{id}/scripts/{column}`
 
-The script a column runs for a repository: the repository's own `.moebius/<file>.luau` on its default branch (see
-[column scripts](column-scripts.md#repository-overrides)), or the built-in one. `{column}` is the column's name as the
+The script a column runs for a repository: the project's own `<file>.luau`, a file of `repos/<repository name>/` in the
+harness configuration repository (see [column scripts](column-scripts.md#repository-overrides)), or the built-in one. `{column}` is the column's name as the
 board shows it, in any case and URL-encoded (`In%20progress`); `Ready`, the old name of `Not started`, finds that column too. Response: `{"column": string, "path": string, "source":
-"repository" or "built-in", "text": string}`. `path` is where the repository keeps its own script for the column
-(`.moebius/ready.luau` for `Not started`; the files are `backlog`, `ready`, `code` for `In progress`, `review`, `merge` and
+"repository" or "built-in", "text": string}`. `path` is where the project keeps its own script for the column, from the root of the harness configuration repository
+(`repos/demo/ready.luau` for `Not started` of the repository `demo`; the files are `backlog`, `ready`, `code` for `In progress`, `review`, `merge` and
 `done`), whichever `source` is. Errors: `404` no such repository or column.
 
 ### `PUT /v1/repositories/{id}/scripts/{column}`
 
 A person, or the Moebius agent, replaces the column's script for the repository. Request: `{"text": string, "reason":
 string}`; `reason` is optional and is kept with the decision. The script is checked as `moebius check-script` checks it,
-in the column, against a made-up card, and refused when the check fails. Then `.moebius/<file>.luau` is committed
-(`Change the <Column> column's script`) on the default branch of Moebius's clone; for a repository on GitHub the clone
-is first brought up to date with `origin` and the branch is pushed with the installation's token. The decision is
-recorded (kind `edit_script`, decider `person` or `agent:Moebius`; its context has `repository`, `column`, `path`, `text`
-and `change`) and the event `script_changed` is sent. Text that changes nothing makes no commit and no decision. Response:
-the script as `GET` answers it, now with `source` `repository`. Errors: `404` no such repository or column; `409` the
-clone cannot be brought up to date or the push is refused: the commit is undone and the message is git's, with keys
-redacted; `422` the check failed, and the message is the check's (it starts with the script's file name).
+in the column, against a made-up card, and refused when the check fails. Then `repos/<repository name>/<file>.luau` is
+committed (`Change the <Column> column's script of <repository>`) on the default branch of the harness configuration
+repository's clone and pushed to its `origin`, as an edit of an agent is. The decision is recorded (kind `edit_script`,
+decider `person` or `agent:Moebius`; its context has `repository`, `column`, `path`, `text`, `change` and, when given,
+`reason`) and the event `script_changed` is sent. Text that changes nothing makes no commit and no decision. Response:
+the script as `GET` answers it, now with `source` `repository`. Errors: `404` no such repository or column; `409` the server has
+no `[harness]`, or its push is refused or its clone cannot be brought up to date: the commit is undone and the message is
+git's, with keys redacted; `422` the check failed, and the message is the check's (it starts with the script's file
+name); `500` any other failure of git or the store.
 
 ### `DELETE /v1/repositories/{id}/scripts/{column}`
 
-Removes the repository's own script for the column, committed and pushed the same way (`Use the built-in script for the
-<Column> column`, kind `edit_script`), so the column runs the built-in script again. Response: the script as `GET`
+Removes the project's own script for the column, committed and pushed the same way (`Use the built-in script for the
+<Column> column of <repository>`, kind `edit_script`), so the column runs the built-in script again. Response: the script as `GET`
 answers it, now the built-in one. Errors: `404` no such repository or column, or the repository has no script of its own
-for the column; `409` as for `PUT`.
+for the column; `409` and `500` as for `PUT`.
+
+### `GET /v1/repositories/{id}/settings`
+
+The settings of the repository's project: the files of `repos/<repository name>/` in the harness configuration
+repository other than the column scripts (see [harness configuration](harness-configuration.md#project-settings)).
+Response: `{"path": string, "editable": bool, "files": [{"file": string, "exists": bool, "text": string}], "scripts":
+[string], "leftover": [string]}`. `path` is where they are (`repos/demo`). `editable` is false when the server has no
+`[harness]`, where nothing can be saved and no project has any file. `files` has an entry for each of `rules.md`,
+`review.md`, `lint.toml`, `checks`, `test-first` and `localize`, in that order, with the file's text (empty when it does
+not exist; a `test-first` that exists is empty and turns test first on). `scripts` lists the column scripts the project
+has, such as `ready.luau`. `leftover` lists the files of a `.moebius/` folder that the repository's default branch still
+has, which are not read: move them to the settings. Errors: `404` no such repository.
+
+### `PUT /v1/repositories/{id}/settings/{file}`
+
+A person, or the Moebius agent, writes one of the files `rules.md`, `review.md`, `lint.toml`, `checks`, `test-first`
+and `localize` of the project. Request: `{"text": string, "reason": string}`; `reason` is optional and is kept with the
+decision. A final new line is added to a text without one. `rules.md` is checked as `PUT /v1/rules` checks the server's
+(a `## ` line needs a name and no name may be given twice) and `lint.toml` must be a lint file the lens can use; text that
+fails is refused with `422` and a message that starts with the file's name, and nothing is committed. Otherwise the file
+is committed (`Update <file> of <repository>`) on the default branch of the harness configuration repository's clone and
+pushed to its `origin`. The decision is recorded (kind `edit_repository_rules` for `rules.md`, else `edit_project_file`,
+decider `person` or `agent:Moebius`; its context has `repository`, `path`, `text`, `change` and, when given, `reason`)
+and the event `project_settings_changed` is sent. Text that changes nothing makes no commit and no decision. Response: `{"file",
+"exists", "text", "commit"}`, where `commit` is the short id of the commit, left out when nothing changed. Errors: `404`
+no such repository; `409` and `500` as for `PUT /v1/repositories/{id}/scripts/{column}` (`409` also when the server has
+no `[harness]`); `422` the file is not one of the six (column scripts have their own route), the text fails its check,
+or the repository's name is a device name of Windows (`con`, `nul`, `aux`, `prn`, `com1` to `com9`, `lpt1` to `lpt9`, in
+any case and with any extension), for which no `repos/<name>/` directory can be made.
+
+### `DELETE /v1/repositories/{id}/settings/{file}`
+
+Removes the file from the project, committed and pushed the same way (`Remove <file> of <repository>`, same kinds); with
+`test-first` it turns test first off. Optional body `{"reason": string}`. Response: the file as `PUT` answers it, now with
+`exists` false. Errors: `404` no such repository or the project has no such file; otherwise as for `PUT`.
 
 ### `GET /v1/repositories/{id}/tree`
 
@@ -421,11 +457,6 @@ Response: the file as `GET` answers it. Errors: `404` no such repository; `409` 
 brought up to date or the push is refused, the commit is undone and the message is git's, with keys redacted; `422` the
 path is empty, absolute, climbs out with `..`, names `.git` (in any case, or as `.git.`, `.git `, `GIT~1`), is a directory, or goes through a symbolic link in the
 clone.
-
-The repository's own rules, `.moebius/rules.md`, are checked first as `PUT /v1/rules` checks the server's: a `## `
-line needs a name and no name may be given twice. Text that fails is refused with `422` and a message that starts with
-`.moebius/rules.md: ` and says which line; nothing is committed. Saved, the decision has the kind
-`edit_repository_rules` instead of `edit_file`, with the text in its context.
 
 ### `PUT /v1/cards/{id}`
 
@@ -931,13 +962,13 @@ string}`, the shape `GET` answers without `name`; `settings.model` is required a
 default branch and pushed to `origin`; the decision is recorded (kind `edit_agent`, decider `person`), and the agent is
 used from then on. Response: the agent as `GET` answers it, with `commit`, the short id of the commit the edit made (left
 out when the edit changed nothing and so made no commit). Errors: `422` an invalid name or settings (the message says
-what), or no `[harness]`; `500` git failed, such as a push that `origin` refused, and then nothing changed (see [harness
-configuration](harness-configuration.md)).
+what), or no `[harness]`; `409` a push that `origin` refused, and then nothing changed and the message is git's, with keys
+redacted (see [harness configuration](harness-configuration.md)); `500` any other failure of git.
 
 ### `DELETE /v1/agents/{name}`
 
 A person deletes an agent of the harness configuration repository, committed and pushed the same way (kind `edit_agent`).
-Response: `null`. Errors: `404` no such agent; `422` no `[harness]`; `500` as for `PUT`.
+Response: `null`. Errors: `404` no such agent; `422` no `[harness]`; `409` and `500` as for `PUT`.
 
 ### `GET /v1/rules`
 
@@ -965,10 +996,11 @@ The rules page: what the guard refuses and why. Response:
   empty and there are no rules). `editable` is true exactly when `source` is `harness`. `text` is the file's text (empty
   when it does not exist), `rules` the rules as the parser reads them. `error` is `null` unless the file cannot be used:
   it cannot be read, a `## ` line has no name, or a name is repeated (the repeat is dropped by the parser).
-- `repositories`: every repository, in the order of their ids, with the `.moebius/rules.md` on its default branch,
-  each with `repository` (its name), `repository_id` (to save the file with `PUT
-  /v1/repositories/{id}/files/.moebius/rules.md`), its text (without the final new line), its rules and `error` as for `prose`. A repository without the file has
-  an empty `text` and no rules, so that a client can add its first rule.
+- `repositories`: every repository, in the order of their ids, with the `rules.md` of its project (see [harness
+  configuration](harness-configuration.md#project-settings)), each with `repository` (its name), `repository_id` (to save
+  the file with `PUT /v1/repositories/{id}/settings/rules.md`), its text (without the final new line), its rules and
+  `error` as for `prose`. A repository without the file, or a server without `[harness]`, has an empty `text` and no
+  rules, so that a client can add its first rule.
 - `refusals`: for each rule name, the number of `tool_call` judgements in the last 7 days that refused a call because of
   it, from the reason `<rule>: <why>` of a built-in pattern or of a rule in prose. A refusal that names no rule (the
   teacher failing, no teacher, a rules file that cannot be read) is not counted. A rule with no refusals is left out.
@@ -982,7 +1014,7 @@ it is committed on the default branch with the message `Update the rules` and pu
 recorded (kind `edit_rules`, decider `person`, the text in its context, and `file` for a `rules_file`). Every tool call reads the file afresh, so the next one is
 checked against the new rules. Response: the same as `GET /v1/rules` after the change, with `commit`, the short id of the
 commit (left out when the text changed nothing, and always for a `rules_file`). Errors: `422` the text is not fit to be saved (the message says which line);
-`500` git failed, such as a push that `origin` refused, and then nothing changed and no decision was recorded (see
+`409` a push that `origin` refused, and then nothing changed and no decision was recorded; `500` any other failure of git (see
 [harness configuration](harness-configuration.md)).
 
 ### `GET /v1/skills`
@@ -1010,13 +1042,13 @@ files are left as they are. The edit is committed (`Add the skill <name>` or `Up
 branch and pushed to `origin`, the decision is recorded (kind `edit_skill`, decider `person`), and the agents are read
 again. Response: the skill as `GET` answers it, with `commit`, the short id of the commit (left out when nothing
 changed). Errors: `409` no `[harness]`, or the skill is built in (`moebius` or a task skill) and read only; `422` an invalid
-name or description; `500` as for `PUT /v1/agents/{name}`.
+name or description; `409` and `500` as for `PUT /v1/agents/{name}`.
 
 ### `DELETE /v1/skills/{name}`
 
 A person deletes a skill and its directory, committed and pushed the same way (`Delete the skill <name>`, kind
 `edit_skill`). Response: `null`. Errors: `404` no such skill; `409` no `[harness]`, the skill is built in, or an agent
-names it (the message names the agents); `500` as for `PUT`.
+names it (the message names the agents); `409` and `500` as for `PUT`.
 
 ### `GET /v1/skills/{name}/files/{*path}`
 
@@ -1035,7 +1067,7 @@ new. Request: `{"text": string}`; unknown keys are refused. The skill must exist
 the default branch and pushed to `origin`, and the decision is recorded (kind `edit_skill`, its context `skill`, `file`
 and `text`). Text that changes nothing makes no commit and no decision. Response: the skill as `GET /v1/skills/{name}`
 answers it, with `commit` (left out when nothing changed). Errors: `404` no such skill; `409` no `[harness]`, or the
-skill is built in; `422` the path, as for `GET`, or it is a directory; `500` as for `PUT /v1/agents/{name}`.
+skill is built in; `422` the path, as for `GET`, or it is a directory; `409` and `500` as for `PUT /v1/agents/{name}`.
 
 ```sh
 jq -Rs '{text: .}' < fill.py > body.json
@@ -1047,7 +1079,7 @@ jq -Rs '{text: .}' < fill.py > body.json
 A person, or the Moebius agent, deletes one of a skill's other files, and the directories it leaves empty, committed and
 pushed the same way (`Delete <path> of the skill <name>`, kind `edit_skill`). Response: the skill as `PUT` answers it.
 Errors: `404` no such skill or file; `409` no `[harness]`, or the skill is built in; `422` the path, as for `GET`; `500`
-as for `PUT`.
+as for `PUT` (a refused push is a `409` too).
 
 ### `GET /v1/mcp-servers`
 
@@ -1071,13 +1103,13 @@ that belong to it, and `${NAME}` only for a `NAME` in `mcp_env` of `[harness]`. 
 rewritten, keeping the file's other tables and comments, committed (`Add the MCP server <name>` or `Update the MCP
 server <name>`) and pushed, the decision is recorded (kind `edit_mcp_server`, decider `person`), and the agents are read
 again. Response: the server as `GET` answers it, with `commit`. Errors: `409` no `[harness]`; `422` the server would not
-read, with the reason; `500` as for `PUT /v1/agents/{name}`.
+read, with the reason; `409` and `500` as for `PUT /v1/agents/{name}`.
 
 ### `DELETE /v1/mcp-servers/{name}`
 
 A person deletes a server from `mcp.toml`, committed and pushed the same way (`Delete the MCP server <name>`, kind
 `edit_mcp_server`). Response: `null`. Errors: `404` no such server; `409` no `[harness]`, or an agent names the server
-(the message names the agents); `500` as for `PUT`.
+(the message names the agents); `409` and `500` as for `PUT`.
 
 ### `GET /v1/extensions/search`
 
@@ -1846,11 +1878,11 @@ errors it addresses, from the `Cards: 48, 50` line that ends its commit message;
 (array of `Trial`, oldest first), `diff`, `edits`, `repository`, `change` and `at`.
 
 `kind` of a proposal: `harness` (a change to the harness configuration, on its branch), `settings` (a change to
-`moebius.toml`) or `repository` (a change to a repository's own rules or column scripts in its `.moebius/`); see
+`moebius.toml`) or `repository` (a change to a project's own rules or column scripts, the files of `repos/<repository name>/` in the harness configuration repository); see
 [the Retro](harness-configuration.md#the-retro). For `settings` and `repository`, `diff` is a unified diff of what it
 changes, `edits` is what it sets and removes (`{"set", "remove"}`, as `PUT /v1/settings` takes it) or the new text of
-each file (`{"files": {".moebius/<file>": text}}`), `repository` is the repository's id for `repository` (else null),
-and `change` is the id of the change a merged `repository` proposal was offered as (else null). A `harness` proposal has
+each file (`{"files": {"repos/<repository name>/<file>": text}}`), `repository` is the repository's id for `repository` (else null),
+and `change` is the id of the change of the harness configuration repository a merged `repository` proposal was offered as (else null). A `harness` proposal has
 an empty `diff`, `edits` `{}` and both null.
 
 `status` of a proposal: `open` (not tried yet), `trying` (its trials are going on), `positive` (every trial was positive),
@@ -1943,9 +1975,9 @@ A `settings` proposal is merged by saving its `edits` to `moebius.toml` as `PUT 
 with `422`, and nothing written, when the result is not a valid configuration), which records `edit_settings` too; when
 the file then has a key the running server only uses after a restart, the server restarts shortly after the response,
 as after `POST /v1/server/restart`. A `repository` proposal is merged by committing its files on the branch
-`moebius/proposal-<id>` of the repository's clone, from its default branch, and offering that branch as a change
-through the repository's forge (a pull request on GitHub), with a `ready_to_merge` inbox item; the change then merges as
-any change does, and `change` names it. Both record the decision as a `harness` proposal does, with the proposal's
+`moebius/proposal-<id>` of the harness configuration repository's clone, from its default branch, and offering that
+branch as a change of that repository, with a `ready_to_merge` inbox item; the change then merges as any change of it
+does (`422` when the server has no `[harness]`), and `change` names it. Both record the decision as a `harness` proposal does, with the proposal's
 `kind` and `diff` in its context.
 
 ### `POST /v1/proposals/{id}/dismiss`
@@ -2161,7 +2193,9 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `repository_updated` | The logins a repository on a forge trusts were changed through the API. | The `Repository`. |
 | `repository_removed` | A repository was removed through the API. | The `Repository`. |
 | `file_changed` | A file of a repository was saved through the API. | `{"repository": id, "path": string}` |
-| `script_changed` | A column's script was saved or removed for a repository, through the API. | `{"repository": id, "column": string, "path": string}` |
+| `script_changed` | A column's script was saved or removed for a repository's project, through the API. | `{"repository": id, "column": string, "path": string (from the root of the harness configuration repository)}` |
+| `project_settings_changed` | A file of a project's settings other than a column's script was saved or removed, through the API. | `{"repository": id, "file": string}` |
+| `settings_moved` | The default branch of a repository still has a `.moebius/` folder, which is not read any more; said once for each repository while the server runs. | `{"repository": the repository's name, "message": string}` |
 | `card_added` | An issue became a card: created through the API or found on GitHub, GitLab or Forgejo. | The `Card`. |
 | `card_updated` | The title or body of a card changed: edited through the API, or changed on GitHub, GitLab or Forgejo; or it was held or released (`held`). | The `Card`. |
 | `card_deleted` | A card was deleted through the API, with everything stored for it. A client drops it, and closes what shows it. | `{"card": id}` |
@@ -2216,7 +2250,7 @@ A `run_event`'s source is told by its inner `kind`:
   "bytes_after", "lines_before", "lines_after", "saved"}`. See the [bridge protocol](bridge-protocol.md#post-moebiusresult).
 - `lens_check`: one check of the lens after an edit or before the run settled, `{"file", "tool_call_id", "phase": "syntax" |
   "lint" | "deep", "tool", "ms", "skipped", "findings", "shown"}`: how long the check took, why it did not run when it
-  did not (`over budget`, `not installed`, or why `.moebius/lint.toml` cannot be read), how many problems it found and how
+  did not (`over budget`, `not installed`, or why `lint.toml` cannot be read), how many problems it found and how
   many the agent was told about; `file` and `tool_call_id` are null for `deep`. See [the lens](bridge-protocol.md#the-lens).
 - `mcp_error`: an MCP server of the run's agent could not be started or reached, `{"server", "message"}`; its tools are
   left out.

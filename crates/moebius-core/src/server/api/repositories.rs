@@ -9,7 +9,9 @@
 //! - `DELETE /v1/repositories/{id}`: removes the repository with its cards, changes, chats and the rest, and deletes
 //!   its clone. Refused with `409` while one of its runs is still going.
 //! - `GET`, `PUT` and `DELETE /v1/repositories/{id}/scripts/{column}`: the script in force for a column, written or
-//!   removed as a commit (see [`crate::board::scripts`]).
+//!   removed as a commit in the harness configuration repository (see [`crate::board::scripts`]).
+//! - `GET /v1/repositories/{id}/settings` and `PUT` and `DELETE /v1/repositories/{id}/settings/{file}`: the other
+//!   files of the project's settings there (see [`crate::repos::settings`]).
 //! - `GET /v1/repositories/{id}/tree?path=` and `GET` and `PUT /v1/repositories/{id}/files/{path}`: the files on the
 //!   default branch, read and committed (see [`crate::repos::files`]).
 //! - `GET /v1/repositories/{id}/files?query=` and `GET /v1/repositories/{id}/search?q=&regex=&limit=`: the paths of the
@@ -27,6 +29,7 @@ use crate::board::scripts::{self, NewScript, ScriptView};
 use crate::decide::Actor;
 use crate::repos::files::{self, FileView, NewFile, Tree};
 use crate::repos::search::{self, Found, Paths, Search};
+use crate::repos::settings::{self, NewSetting, SettingFile, Settings};
 use crate::store::Repository;
 
 /// The routes of the repositories, their scripts and their files.
@@ -40,6 +43,11 @@ pub(super) fn routes() -> Router<ApiState> {
         .route(
             "/v1/repositories/{id}/scripts/{column}",
             get(get_script).put(put_script).delete(delete_script),
+        )
+        .route("/v1/repositories/{id}/settings", get(get_settings))
+        .route(
+            "/v1/repositories/{id}/settings/{file}",
+            put(put_setting).delete(delete_setting),
         )
         .route("/v1/repositories/{id}/tree", get(get_tree))
         .route("/v1/repositories/{id}/files", get(get_paths))
@@ -158,6 +166,38 @@ async fn delete_script(
 ) -> Result<axum::Json<ScriptView>, ApiError> {
     blocking(&state.app, move |app| {
         scripts::delete_script(app, &by, id, &column)
+    })
+    .await
+}
+
+async fn get_settings(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+) -> Result<axum::Json<Settings>, ApiError> {
+    blocking(&state.app, move |app| settings::settings(app, id)).await
+}
+
+async fn put_setting(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath((id, file)): UrlPath<(i64, String)>,
+    axum::Json(new): axum::Json<NewSetting>,
+) -> Result<axum::Json<SettingFile>, ApiError> {
+    blocking(&state.app, move |app| {
+        settings::save(app, &by, id, &file, &new)
+    })
+    .await
+}
+
+async fn delete_setting(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath((id, file)): UrlPath<(i64, String)>,
+    body: Option<axum::Json<Reason>>,
+) -> Result<axum::Json<SettingFile>, ApiError> {
+    let reason = body.map(|body| body.0.reason).unwrap_or_default();
+    blocking(&state.app, move |app| {
+        settings::remove(app, &by, id, &file, &reason)
     })
     .await
 }

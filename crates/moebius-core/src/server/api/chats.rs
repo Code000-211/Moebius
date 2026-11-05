@@ -499,7 +499,7 @@ mod tests {
             .add_repository("demo", origin(dir.path()).to_str().unwrap())
             .unwrap();
         let clone = std::path::PathBuf::from(&repo.path);
-        let write = "Write a script [write .moebius/ready.luau]";
+        let write = "Write a script [write scripts/ready.luau]";
         let doomed = chat(&state, &addr, write, Some(repo.id)).await;
         let kept = chat(&state, &addr, write, Some(repo.id)).await;
         for run in [&doomed, &kept] {
@@ -1182,7 +1182,7 @@ mod tests {
             .unwrap();
         let clone = std::path::PathBuf::from(&repo.path);
         let mut events = app.bus.subscribe();
-        let write = "Write a script [write .moebius/ready.luau]";
+        let write = "Write a script [write scripts/ready.luau]";
         let started = serde_json::json!({ "message": write, "repository": repo.id });
         let run: Run = post(&state, &addr, "/v1/chats".into(), started)
             .await
@@ -1236,7 +1236,7 @@ mod tests {
         .await;
         assert_eq!(merged.status(), 200);
         assert_eq!(
-            git(&clone, &["show", "main:.moebius/ready.luau"]).unwrap(),
+            git(&clone, &["show", "main:scripts/ready.luau"]).unwrap(),
             "written"
         );
         assert_eq!(

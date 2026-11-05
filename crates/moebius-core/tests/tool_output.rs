@@ -101,14 +101,6 @@ async fn old_outputs_are_hidden_and_long_ones_cut_while_the_events_keep_them() {
     assert!(result_of(&requests[1], "call_1").contains("40"));
     assert!(!result_of(&requests[1], "call_1").contains("output hidden"));
     // The long output came cut to the budget, with where the whole is.
-    let long = result_of(last, "call_7");
-    assert!(
-        long.contains("lines left out; the full output is in .moebius/out/1.txt"),
-        "{long}"
-    );
-    assert!(!long.contains("\\n500\\n"), "{long}");
-
-    // The run's events keep every output whole, and what the cut saved.
     let run = server
         .app
         .store
@@ -116,6 +108,24 @@ async fn old_outputs_are_hidden_and_long_ones_cut_while_the_events_keep_them() {
         .unwrap()
         .pop()
         .unwrap();
+    // It is in the run's own directory, outside the worktree.
+    let saved = server
+        .app
+        .data_dir
+        .join(format!("runs/{}/out/1.txt", run.id));
+    let long = result_of(last, "call_7");
+    assert!(
+        long.contains(&format!(
+            "lines left out; the full output is in {}",
+            saved.display()
+        )),
+        "{long}"
+    );
+    assert!(!long.contains("\\n500\\n"), "{long}");
+    // The whole output was there while the run went (the result's own test reads it); it goes with the run.
+    assert!(!saved.exists());
+
+    // The run's events keep every output whole, and what the cut saved.
     let events = server.app.store.events(run.id).unwrap();
     let first = events
         .iter()
@@ -134,7 +144,7 @@ async fn old_outputs_are_hidden_and_long_ones_cut_while_the_events_keep_them() {
             .contains(&json!("budget"))
     );
     assert!(cut.data["bytes_after"].as_i64() < cut.data["bytes_before"].as_i64());
-    assert_eq!(cut.data["saved"], ".moebius/out/1.txt");
+    assert_eq!(cut.data["saved"], saved.display().to_string());
 
     // The saved output is the run's scratch, not part of the change.
     let change = server
@@ -147,11 +157,5 @@ async fn old_outputs_are_hidden_and_long_ones_cut_while_the_events_keep_them() {
     let clone = std::path::PathBuf::from(repo["path"].as_str().unwrap());
     let files = git(&clone, &["ls-tree", "-r", "--name-only", &change.branch]).unwrap();
     assert!(files.contains("hello.txt"), "{files}");
-    // Only the repository's own script, which the origin of these tests holds, is under `.moebius/`.
-    assert!(
-        !files
-            .replace(".moebius/review.luau", "")
-            .contains(".moebius"),
-        "{files}"
-    );
+    assert!(!files.contains(".moebius"), "{files}");
 }

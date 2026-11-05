@@ -20,8 +20,8 @@ run_limit = 3
 retro_at = "23:30"
 
 # Rules every run must follow, as Markdown with one section per rule (a heading `## name` and its text); relative paths
-# are inside this file's directory, and the desktop app edits the file. A repository adds its own in .moebius/rules.md
-# but cannot replace these. While the file does not exist, only the built-in rules apply. Not allowed together with
+# are inside this file's directory, and the desktop app edits the file. A project adds its own in repos/<repository name>/rules.md of
+# the harness configuration repository but cannot replace these. While the file does not exist, only the built-in rules apply. Not allowed together with
 # [harness], whose repository holds rules.md.
 # rules_file = "rules.md"
 
@@ -31,7 +31,7 @@ start = "00:00"
 end = "06:00"
 
 # Each proposal of the Retro is also tried on a regression set of each repository its cards belong to: the latest `size`
-# merged cards, those with a reproduction test (.moebius/reproduce) first. It is positive only when none of them fails
+# merged cards, those whose runs named a reproduction test (REPRODUCE: in their summaries) first. It is positive only when none of them fails
 # where it passed before. This adds at most `size` trial runs per repository to a proposal. With gate = false the
 # regression set is not tried.
 [regression]
@@ -40,8 +40,8 @@ gate = true
 
 # A code run is told which files are likely relevant to its issue, as a hint and not a limit: the decision point
 # `localize` ranks at most `files` (1 to 10) of the repository's files, first by Moebius's own search over them. With
-# `enabled` false no run is told. A repository can turn it on or off for itself, and name its own number of files, in
-# the file .moebius/localize on its default branch.
+# `enabled` false no run is told. A project can turn it on or off for itself, and name its own number of files, in
+# the file localize of its settings (repos/<repository name>/ of the harness configuration repository).
 [localize]
 enabled = true
 files = 10
@@ -61,7 +61,8 @@ round_limit = 5
 # [budgets]
 # day_tokens = 20000000
 
-# A repository without a forge names its own checks in .moebius/checks on its default branch: a command run in a
+# A repository without a forge names its own checks in the file checks of its project's settings
+# (repos/<repository name>/ of the harness configuration repository): a command run in a
 # worktree of the change before it is reviewed. They are stopped after timeout_seconds (at least 1) and then fail.
 [checks]
 timeout_seconds = 1800

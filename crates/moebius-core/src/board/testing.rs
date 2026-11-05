@@ -25,6 +25,8 @@ pub(super) struct FakeHarness {
     pub(super) notes: Mutex<Vec<Option<String>>>,
     /// Files, as path and text, that each `code` run also commits.
     pub(super) files: Vec<(&'static str, &'static str)>,
+    /// The summary each `code` run ends with; `Done.` when it is left empty.
+    pub(super) summary: &'static str,
     /// Other agents that exist besides the Coder and the Reviewer, which are built in.
     pub(super) agents: Vec<&'static str>,
     /// The model each run was started with.
@@ -86,7 +88,12 @@ impl CardRuns for FakeHarness {
             }
             git(&wt.path, &["add", "."]).unwrap();
             git(&wt.path, &["commit", "--quiet", "-m", &card.title]).unwrap();
-            store.set_run_summary(run.id, "Done.").unwrap();
+            let summary = if self.summary.is_empty() {
+                "Done."
+            } else {
+                self.summary
+            };
+            store.set_run_summary(run.id, summary).unwrap();
         } else {
             let answer = self.answers.lock().unwrap().pop_front();
             store
@@ -157,6 +164,8 @@ pub(super) fn setup_with_harness(
         app.add_forge(forge);
     }
     let app = Arc::new(app);
+    // The project settings of the tests (`repos/demo/`) are files of a harness configuration repository.
+    crate::harness::repo::testing::use_harness(&app, dir.path());
     let repo = app
         .add_repository("demo", origin.to_str().unwrap())
         .unwrap();

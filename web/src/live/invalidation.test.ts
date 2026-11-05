@@ -73,7 +73,10 @@ describe("invalidates", () => {
 
   it("makes what is read about a card stale with the snapshot, and the scripts with their own event", () => {
     expect(invalidates({ kind: "card_moved", data: {} })).toContainEqual(keys.cards);
-    expect(invalidates({ kind: "script_changed", data: {} })).toEqual([keys.scripts]);
+    expect(invalidates({ kind: "script_changed", data: {} })).toEqual([
+      keys.scripts,
+      keys.projectSettingsAll,
+    ]);
     const queryClient = client();
     queryClient.setQueryData(keys.history(7), []);
     queryClient.setQueryData(keys.cardRuns(7), []);

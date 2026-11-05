@@ -1,7 +1,8 @@
 //! Rules (spec 5, ADR 0007): the things a run must not do, each with a short name and prose. They come from
 //! `rules.md` files, Markdown with one `## <name>` section per rule; text before the first heading is ignored.
 //!
-//! The server's rules file comes first, then the repository's `.moebius/rules.md` on its default branch. A repository
+//! The server's rules file comes first, then the project's `rules.md` in the harness configuration repository
+//! (`repos/<repository name>/rules.md`). A repository
 //! may add rules but not weaken them: one named like a server rule is dropped, so the server's text stands.
 
 use std::collections::{BTreeMap, HashSet};
@@ -11,8 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::app::App;
 use crate::decide::guard;
-use crate::repos::git;
-use crate::store::{Repository, now};
+use crate::store::now;
 
 /// One rule: what it is called and what it says.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -85,11 +85,12 @@ pub struct RulesError {
     source: std::io::Error,
 }
 
-/// The rules that apply to a run: the server's, then those the repository adds, each name once. An unset or missing
-/// file gives no rules; a server file that exists but cannot be read is an error, so that nothing runs unchecked.
+/// The rules that apply to a run: the server's, then those the project's `rules.md` (`project`, its text) adds, each
+/// name once. An unset or missing file gives no rules; a server file that exists but cannot be read is an error, so
+/// that nothing runs unchecked.
 pub fn applicable(
     server_file: Option<&Path>,
-    repository: Option<&Repository>,
+    project: Option<&str>,
 ) -> Result<Vec<Rule>, RulesError> {
     let mut rules = Vec::new();
     if let Some(path) = server_file {
@@ -104,13 +105,10 @@ pub fn applicable(
             }
         }
     }
-    if let Some(repository) = repository {
-        let spec = format!("{}:.moebius/rules.md", repository.base_ref());
-        if let Ok(text) = git(Path::new(&repository.path), &["show", &spec]) {
-            for rule in parse(&text) {
-                if rules.iter().all(|known| known.name != rule.name) {
-                    rules.push(rule);
-                }
+    if let Some(text) = project {
+        for rule in parse(text) {
+            if rules.iter().all(|known| known.name != rule.name) {
+                rules.push(rule);
             }
         }
     }
@@ -139,11 +137,11 @@ pub struct Prose {
     pub error: Option<String>,
 }
 
-/// A repository's own `.moebius/rules.md` on its default branch; empty when it has none.
+/// A project's own `rules.md` in the harness configuration repository; empty when it has none.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepositoryRules {
     pub repository: String,
-    /// The repository's id, for `PUT /v1/repositories/{id}/files/.moebius/rules.md`.
+    /// The repository's id, for `PUT /v1/repositories/{id}/settings/rules.md`.
     pub repository_id: i64,
     pub text: String,
     pub rules: Vec<Rule>,
@@ -155,7 +153,7 @@ pub struct RepositoryRules {
 pub struct View {
     pub patterns: Vec<Pattern>,
     pub prose: Prose,
-    /// Every repository, with its `.moebius/rules.md` if it has one.
+    /// Every repository, with its project's `rules.md` if it has one.
     pub repositories: Vec<RepositoryRules>,
     /// The tool calls refused in the last 7 days, by the name of the rule that refused them.
     pub refusals: BTreeMap<String, i64>,
@@ -228,8 +226,11 @@ pub fn view(app: &App, file: Option<&Path>, harness: bool) -> crate::app::Result
         .repositories()?
         .iter()
         .map(|repository| {
-            let spec = format!("{}:.moebius/rules.md", repository.base_ref());
-            let text = git(Path::new(&repository.path), &["show", &spec]).unwrap_or_default();
+            let text = app
+                .project_file(repository, "rules.md")
+                .unwrap_or_default()
+                .trim_end()
+                .to_string();
             RepositoryRules {
                 repository: repository.name.clone(),
                 repository_id: repository.id,
@@ -312,57 +313,15 @@ mod tests {
         assert_eq!(parse(&to_markdown(&rules)), rules);
     }
 
-    fn repository(dir: &Path, rules: Option<&str>) -> Repository {
-        git(dir, &["init", "--quiet", "-b", "main"]).unwrap();
-        if let Some(rules) = rules {
-            std::fs::create_dir_all(dir.join(".moebius")).unwrap();
-            std::fs::write(dir.join(".moebius/rules.md"), rules).unwrap();
-            git(dir, &["add", "."]).unwrap();
-        }
-        git(
-            dir,
-            &[
-                "-c",
-                "user.name=t",
-                "-c",
-                "user.email=t@t",
-                "commit",
-                "--quiet",
-                "--allow-empty",
-                "-m",
-                "first",
-            ],
-        )
-        .unwrap();
-        Repository {
-            id: 1,
-            name: "demo".into(),
-            path: dir.to_str().unwrap().into(),
-            forge: "none".into(),
-            default_branch: "main".into(),
-            github: None,
-            trusted: vec![],
-            project: None,
-        }
-    }
-
     #[test]
-    fn a_repository_adds_rules_from_its_default_branch_but_cannot_replace_a_servers() {
+    fn a_project_adds_rules_but_cannot_replace_a_servers() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("rules.md");
         std::fs::write(&file, "## no-secrets\nNever print secrets.\n").unwrap();
-        let clone = dir.path().join("clone");
-        std::fs::create_dir(&clone).unwrap();
-        let repository = repository(
-            &clone,
-            Some(
-                "## no-secrets\nPrinting secrets is fine.\n\n## small-diffs\nKeep changes small.\n",
-            ),
-        );
-        // A working-tree edit that is not committed is not read.
-        std::fs::write(clone.join(".moebius/rules.md"), "## sneaky\nx\n").unwrap();
+        let project =
+            "## no-secrets\nPrinting secrets is fine.\n\n## small-diffs\nKeep changes small.\n";
 
-        let rules = applicable(Some(&file), Some(&repository)).unwrap();
+        let rules = applicable(Some(&file), Some(project)).unwrap();
         assert_eq!(
             rules,
             vec![
@@ -375,14 +334,9 @@ mod tests {
     #[test]
     fn missing_files_give_no_rules() {
         let dir = tempfile::tempdir().unwrap();
-        let repository = repository(dir.path(), None);
         assert!(applicable(None, None).unwrap().is_empty());
         let missing = dir.path().join("nope.md");
-        assert!(
-            applicable(Some(&missing), Some(&repository))
-                .unwrap()
-                .is_empty()
-        );
+        assert!(applicable(Some(&missing), None).unwrap().is_empty());
     }
 
     #[test]
@@ -405,11 +359,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("rules.md");
         std::fs::write(&file, "## a\nserver\n## a\nagain\n").unwrap();
-        let clone = dir.path().join("clone");
-        std::fs::create_dir(&clone).unwrap();
-        let repository = repository(&clone, Some("## c\none\n## c\ntwo\n## a\nmine\n"));
+        let project = "## c\none\n## c\ntwo\n## a\nmine\n";
         assert_eq!(
-            applicable(Some(&file), Some(&repository)).unwrap(),
+            applicable(Some(&file), Some(project)).unwrap(),
             vec![rule("a", "server"), rule("c", "one")]
         );
     }

@@ -34,13 +34,13 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
   to a provider" on the Models page adds the upstream and logs in; a code login can be finished by pasting the code or
   the address the browser ended on.
 - The **MCP gateway**, skills and agents managed in the desktop app and kept in the harness configuration repository.
-- The **default workflow** (section 6), with Luau scripts behind the columns and repository overrides in `.moebius/`.
+- The **default workflow** (section 6), with Luau scripts behind the columns and project overrides in the settings of the harness configuration repository (`repos/<repository name>/`).
 - **Rules** checked on every tool call: fixed patterns and the teacher model; nothing waits for a person.
 - **Judgements** recorded at every decision point, in full, with export of a training set.
 - **Localizing** the files of a card before its code run, as a decision point the decision model can learn (section 6).
 - The **lens**: fast lint and type feedback after an agent's own edits. A Pi extension loaded next to the bridge runs, per
   edit within a time budget, a syntax check and the repository's fast linter on the one file (`ruff`, `rustfmt --check`,
-  `gofmt -l`, `shellcheck`, `biome`/`oxlint`, or what `.moebius/lint.toml` names) and appends only the problems the edit
+  `gofmt -l`, `shellcheck`, `biome`/`oxlint`, or what the project's `lint.toml` names) and appends only the problems the edit
   made new; before the run settles it runs the slow type check once (`tsc`, `pyright`, `cargo check`, `go vet`) and tells the
   agent in one message. Which findings are shown (`lint_report`) and whether the type check runs (`deep_check`) are decision
   points, judged with their outcomes and open to shadowing and takeover; the time of each check is a run event that Usage
@@ -156,7 +156,7 @@ steer, stop) go through the same record.
 | Git forge (none) | For a repository without a forge: issues and changes live in Moebius; merging happens in the desktop app. |
 | Pi-Bolt harness | Starts `pi-bolt --mode rpc` per run with the agent's model, thinking level, instructions (`--append-system-prompt`), skills (`--skill`) and extensions; maps Pi's events to run events. |
 | Claude Code harness | Starts `claude -p --input-format stream-json --output-format stream-json --verbose` per run with the router as `ANTHROPIC_BASE_URL`, the run's token as its key, the agent's model, instructions, skills and MCP servers; maps its records to the same run events. |
-| Bridge (Pi-Bolt) | A Pi extension (`crates/moebius-core/bridge/moebius-bridge.ts`) that Moebius loads into every run with `--extension`: on `tool_call` asks the core and blocks with the rule on refusal; on `tool_result` reports the result, which the server cleans of secrets and keeps small where it is made (compressed by command, cut to the agent's `tool_output` budget, the whole saved in `.moebius/out/`); on `context` hides the outputs of tool calls older than the agent's window from the model's request; answers extension UI questions through `decide`. The lens (`moebius-lens.ts`) is loaded just before it. |
+| Bridge (Pi-Bolt) | A Pi extension (`crates/moebius-core/bridge/moebius-bridge.ts`) that Moebius loads into every run with `--extension`: on `tool_call` asks the core and blocks with the rule on refusal; on `tool_result` reports the result, which the server cleans of secrets and keeps small where it is made (compressed by command, cut to the agent's `tool_output` budget, the whole saved in the `out` folder of the run's own directory, outside its worktree); on `context` hides the outputs of tool calls older than the agent's window from the model's request; answers extension UI questions through `decide`. The lens (`moebius-lens.ts`) is loaded just before it. |
 | Router | OpenAI- and Anthropic-compatible endpoints for the harnesses; upstreams with API keys, OAuth logins and local servers; model classes (`[router.classes]`: a name such as `strong` for an ordered list of models, which an agent, the teacher or a chat names instead of a model, falling back to the next upstream or model when one fails before it answers, and passing over a model whose day's tokens are spent); reports usage per call, with the class beside the model; refuses calls over budget; checks the tool calls in the answers to a harness without a bridge. |
 | MCP gateway | One MCP server for every harness, bundling the MCP servers enabled for the run's agent: served as `POST /mcp` (streamable HTTP) on the router's listener with the run's token, it starts the agent's stdio servers and connects to its remote ones, lists their tools as `<server>__<tool>`, checks every call through `decide("tool_call")`, removes secrets from the results and records each call as a run event. A run's `mcp.json` names only the gateway. The live view and the chat transcript show a call as `<server> · <tool>` with the check's decision and the result, folded into Pi's own call of the tool, and an `mcp_error` as an error; refused calls count with the card's refusals. |
 | Guard deciders | Fixed patterns (destructive commands, secrets, paths a rule forbids), then the teacher model for rules in prose. |
@@ -169,8 +169,10 @@ steer, stop) go through the same record.
 - The **harness configuration** is a git repository the server clones. It holds `agents/<name>.toml` (harness, model, thinking
   level, token budget, skills, MCP servers, extensions), `agents/<name>.md` (instructions), `skills/`, `rules.md` and
   `mcp.toml`. Changes made in the desktop app are commits to it; proposals are branches on it.
-- A repository can add rules in `.moebius/rules.md` and override columns in `.moebius/`; both are read from its default branch
-  only.
+- A project (a repository the server works on) has settings in the harness configuration repository, `repos/<repository
+  name>/`: it can add rules in `rules.md` and override columns with `<column>.luau`, and it has `review.md`, `lint.toml`,
+  `checks`, `test-first` and `localize`. A repository no longer keeps a `.moebius/` folder on its default branch: nothing
+  is read from there, and the server says once that a default branch still has one.
 - Default agents: Coder, Reviewer, Moebius, Grilling partner, Autoresearcher, Retro analyst.
 - A **chat** is an interactive run without a card: the person writes, the agent answers, and the chat can be continued,
   steered and stopped. The Moebius agent is a new chat's default; what it builds is offered as a change to merge.
@@ -190,15 +192,15 @@ A card that reaches its round limit (default 5) or its token budget stops and go
 
 The review has two axes, run one after the other by the `Reviewer` (or by agents named `Standards` and `Spec`, which can
 be another model): **Standards** checks the change against `CONTRIBUTING.md`, `CLAUDE.md`, `AGENTS.md`, an optional
-`.moebius/review.md` rubric and a fixed baseline of code smells that are only ever judgement calls, **Spec** checks it
+`review.md` rubric of the project and a fixed baseline of code smells that are only ever judgement calls, **Spec** checks it
 against the issue (missing, not asked for, looks wrong). Every finding is `blocking` or `judgement` and quotes the hunk
 or the line of the issue; a finding without evidence is dropped, since a reviewer told to find everything produces many
 unfounded findings (CR-Bench). Only blocking findings send the card back; judgement calls go to the person with the
 offered change. It is the default review because the two axes keep one from masking the other, and findings that must
 cite evidence cost the Coder fewer wasted rounds.
 
-A repository can work **test first** (a file `.moebius/test-first` on its default branch). The Coder then writes a test
-that reproduces the issue and names it in `.moebius/reproduce`, committed with the change, and `review.luau` lets the
+A repository can work **test first** (a file `test-first` in its project's settings). The Coder then writes a test
+that reproduces the issue and names it in the `REPRODUCE:` lines at the end of its summary, stored with the run, and `review.luau` lets the
 change on only when that test fails on the commit the change starts from (with the test's files added) and passes on
 the change, both run like the repository's checks; a change that cannot be tested says why there, and the Reviewer
 judges the reason. Tests generated from the issue and used as a gate raise the precision of offered changes the most of
@@ -224,7 +226,7 @@ repository that is made again when the default branch moves), boosted for the pa
 literally and for the files earlier cards with similar issues changed. When the card's change is known, at the end of each
 code run and on merge, the judgement's outcome is the files it touched with the recall at ten and the precision of the
 list; the decision model shadows the kind and may take it over when its recall beats the baseline's. The hint is on or off
-for the server (`[localize]`) and for a repository (`.moebius/localize`), which also say how many files it names; a
+for the server (`[localize]`) and for a project (its `localize` file), which also say how many files it names; a
 failure anywhere starts the run without a hint (Agentless, AutoCodeRover).
 
 ## 7. Self-improvement
@@ -245,7 +247,7 @@ failure anywhere starts the run without a hint (Agentless, AutoCodeRover).
 - **Proposals for Moebius itself**: the Retro may also propose a change to `moebius.toml` (limits, budgets, windows, the
   teacher) or to a repository's own rules and column scripts. These are not tried: each goes to the inbox at once as a
   diff with the Retro's reason. Merging saves a `moebius.toml` change through the settings code, restarting the server
-  when a key needs it, and offers a `.moebius/` change on its repository through the forge; dismissing changes nothing.
+  when a key needs it, and offers a change to a project's settings as a change of the harness configuration repository; dismissing changes nothing.
 - **Autoresearch**: starts from a brief a person confirms; measures a baseline, then the Autoresearcher finds levers (code and
   profiles, its own history, papers and the web) and runs an experiment for each; every lever kept becomes its own change.
   Ends when the brief's budget (experiments or tokens) is spent or a person stops it.
@@ -285,7 +287,7 @@ Native, GPU-rendered, written in Rust with iced (ADR 0003, ADR 0011), built to [
 
 - Nothing on the server is reachable from the internet; the app authenticates with a token.
 - Provider keys live in the router only; harnesses never see them.
-- Scripts, rules and the repository's own checks (`.moebius/checks`) come only from a repository's default branch and from the harness configuration repository, never from the change being checked.
+- Scripts, rules and a repository's own checks come only from the harness configuration repository, never from the change being checked.
 - Outside issues never start work without a person's approval; trusted authors are configured per repository.
 - Secrets are removed from tool output before the model sees it and before anything is stored.
 - Shell commands from scripts run only where the configuration allows them.

@@ -499,6 +499,28 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
     };
   }
 
+  /** The settings of each repository's project: the files it has, by name. The first one has a review note. */
+  const projectFiles = new Map<number, Map<string, string>>([
+    [1, new Map([["review.md", "Prefer small functions.\n"]])],
+  ]);
+  const SETTING_NAMES = ["rules.md", "review.md", "lint.toml", "checks", "test-first", "localize"];
+  const projectFilesOf = (id: number) => {
+    const found = projectFiles.get(id) ?? new Map<string, string>();
+    projectFiles.set(id, found);
+    return found;
+  };
+  const projectSettingsView = (own: Map<string, string>, id: number) => ({
+    path: `repos/${id === 1 ? "demo" : `repository-${id}`}`,
+    editable: true,
+    files: SETTING_NAMES.map((file) => ({
+      file,
+      exists: own.has(file),
+      text: own.get(file) ?? "",
+    })),
+    scripts: [],
+    leftover: id === 1 ? [".moebius/old.luau"] : [],
+  });
+
   function tree(directory: string) {
     const names = new Map<string, "dir" | "file">();
     const all = [...Object.keys(FILES), "logo.png", "data.bin"];
@@ -596,7 +618,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         path === "/v1/harness/setup" ||
         path === "/v1/repositories" ||
         /^\/v1\/webhooks\/[a-z]+\/secret$/.test(path) ||
-        /^\/v1\/repositories\/\d+(\/(tree|files|search)(\/.*)?)?$/.test(path) ||
+        /^\/v1\/repositories\/\d+(\/(tree|files|search|settings)(\/.*)?)?$/.test(path) ||
         /^\/v1\/(proposals|takeovers|grillings)\/\d+\/(merge|dismiss|confirm)$/.test(path) ||
         /^\/v1\/grillings\/\d+$/.test(path) ||
         path === "/v1/changes/9/merge" ||
@@ -700,7 +722,8 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         send({ kind: "repository_added", data: made.repository });
         return ok(response, made.repository);
       }
-      const repository = /^\/v1\/repositories\/(\d+)(?:\/(tree|files|search)(\/.*)?)?$/.exec(path);
+      const repository =
+        /^\/v1\/repositories\/(\d+)(?:\/(tree|files|search|settings)(\/.*)?)?$/.exec(path);
       if (repository) {
         const id = Number(repository[1]);
         const all = [
@@ -733,6 +756,32 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
           const view = repositoryView(found);
           send({ kind: "repository_removed", data: view });
           return ok(response, view);
+        }
+        if (part === "settings") {
+          const mine = projectFilesOf(id);
+          if (!repository[3]) {
+            if (method !== "GET") return false;
+            return ok(response, projectSettingsView(mine, id));
+          }
+          const name = repository[3].slice(1);
+          if (!SETTING_NAMES.includes(name)) {
+            return fail(response, 422, `${name} is not a file of a project's settings`);
+          }
+          if (method === "PUT") {
+            const text = String(body.text ?? "");
+            if (name === "lint.toml" && /^\s*unknown\s*=/m.test(text)) {
+              return fail(response, 422, "lint.toml: unknown field `unknown`");
+            }
+            mine.set(name, text);
+            send({ kind: "project_settings_changed", data: { repository: id, file: name } });
+            return ok(response, { file: name, exists: true, text, commit: "a1b2c3d" });
+          }
+          if (method === "DELETE") {
+            if (!mine.delete(name)) return fail(response, 404, `${name} of the project`);
+            send({ kind: "project_settings_changed", data: { repository: id, file: name } });
+            return ok(response, { file: name, exists: false, text: "", commit: "a1b2c3d" });
+          }
+          return false;
         }
         if (part === "tree" && method === "GET") {
           const directory = url.searchParams.get("path") ?? "";

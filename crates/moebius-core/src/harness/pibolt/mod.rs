@@ -422,7 +422,8 @@ impl ChatRuns for PiBolt {
     }
 }
 
-/// The directory of the run `run_id`, which holds its agent directory, sessions, bridge and the log of Pi's stderr.
+/// The directory of the run `run_id`, which holds its agent directory, sessions, bridge, the log of Pi's stderr and
+/// the whole outputs of its tools (`out`).
 fn run_dir(app: &App, run_id: i64) -> PathBuf {
     app.data_dir.join("runs").join(run_id.to_string())
 }

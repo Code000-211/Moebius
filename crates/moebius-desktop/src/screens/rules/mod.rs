@@ -3,8 +3,8 @@
 //! in place into an editor of the rule's name and text with Save, Cancel and Delete (which asks first). Under the last
 //! rule an empty "New rule" card with a pencil adds one. A save puts the rule's `## name` section back into its file
 //! (or appends it, or drops it) and saves the whole file: the server's with `PUT /v1/rules`, which the server checks
-//! and commits, a repository's `.moebius/rules.md` with `PUT /v1/repositories/{id}/files/.moebius/rules.md`, a commit
-//! on its default branch that the server checks first. "Let the Moebius agent write them" asks the Moebius agent
+//! and commits, a project's `rules.md` with `PUT /v1/repositories/{id}/settings/rules.md`, a commit
+//! in the harness configuration repository that the server checks first. "Let the Moebius agent write them" asks the Moebius agent
 //! instead, in the floating chat.
 //!
 //! `file` puts a rule back into its file's text, `update` has how a message changes the page, `view` the boxes of the

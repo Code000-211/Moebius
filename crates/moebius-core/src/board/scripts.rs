@@ -1,11 +1,10 @@
-//! Editing a column's script from the board. A repository overrides a column's built-in script with
-//! `.moebius/<file>.luau` on its default branch (see [`crate::board`]); this module reads that file, and changes it
-//! the way [`crate::repos::files`] changes any file: a commit on the default branch of Moebius's clone, pushed to `origin` for
-//! a repository on a forge, undone when the push fails. A script is checked the way `moebius check-script` checks it
-//! before it is committed. Every change is recorded as a decision of the person or agent who made it.
+//! Editing a column's script from the board. A project overrides a column's built-in script with `<file>.luau` in its
+//! settings, `repos/<repository name>/` of the harness configuration repository (see [`crate::board`]); this module
+//! reads that file, and changes it as the other edits of that repository are made: a commit on its default branch,
+//! pushed to `origin`, undone when the push fails. A script is checked the way `moebius check-script` checks it before
+//! it is committed. Every change is recorded as a decision of the person or agent who made it.
 
 use std::collections::BTreeMap;
-use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
@@ -13,7 +12,6 @@ use crate::app::{App, AppError, PERSON, Result};
 use crate::board::{self, Column};
 use crate::bus::Event;
 use crate::decide::Actor;
-use crate::repos::files::{self, Change};
 use crate::store::Repository;
 
 /// The kind of the decision recorded for a change to a script.
@@ -23,9 +21,9 @@ const KIND: &str = "edit_script";
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScriptView {
     pub column: String,
-    /// Where the repository keeps its own script for the column.
+    /// Where the project keeps its own script for the column, from the root of the harness configuration repository.
     pub path: String,
-    /// `repository` when the repository has its own script, `built-in` when the column runs the one in the server.
+    /// `repository` when the project has a script of its own, `built-in` when the column runs the one in the server.
     pub source: String,
     pub text: String,
 }
@@ -43,11 +41,11 @@ fn column_of(column: &str) -> Result<Column> {
     board::column_named(column).ok_or_else(|| AppError::NotFound(format!("column {column}")))
 }
 
-fn path_of(column: &Column) -> String {
-    format!(".moebius/{}", column.script)
+fn path_of(repository: &Repository, column: &Column) -> String {
+    format!("repos/{}/{}", repository.name, column.script)
 }
 
-/// A script ends with a newline, as files do; the clone's `git show` has it trimmed.
+/// A script ends with a newline, as files do.
 fn with_newline(mut text: String) -> String {
     if !text.is_empty() && !text.ends_with('\n') {
         text.push('\n');
@@ -55,8 +53,8 @@ fn with_newline(mut text: String) -> String {
     text
 }
 
-fn view(repository: &Repository, column: &Column) -> Result<ScriptView> {
-    let (source, text) = match board::repository_script(repository, &column.script) {
+fn view(app: &App, repository: &Repository, column: &Column) -> Result<ScriptView> {
+    let (source, text) = match board::repository_script(app, repository, &column.script) {
         Some(text) => ("repository", with_newline(text)),
         None => {
             let text = board::built_in_script(&column.script)
@@ -66,20 +64,21 @@ fn view(repository: &Repository, column: &Column) -> Result<ScriptView> {
     };
     Ok(ScriptView {
         column: column.name.clone(),
-        path: path_of(column),
+        path: path_of(repository, column),
         source: source.into(),
         text,
     })
 }
 
-/// The script of `column` in repository `id`: its own on the default branch, or the built-in one.
+/// The script of `column` in repository `id`: the project's own, or the built-in one.
 pub fn script(app: &App, id: i64, column: &str) -> Result<ScriptView> {
     let repository = app.repository(id)?;
-    view(&repository, &column_of(column)?)
+    view(app, &repository, &column_of(column)?)
 }
 
-/// Replaces the repository's script for `column` with `new.text`: refused with `Invalid` when the check fails,
-/// committed and, on a forge, pushed otherwise. Text that changes nothing makes no commit.
+/// Replaces the project's script for `column` with `new.text`: refused with `Invalid` when the check fails or the
+/// server has no harness configuration repository, committed there and pushed otherwise. Text that changes nothing
+/// makes no commit.
 pub fn save_script(
     app: &App,
     by: &Actor,
@@ -98,77 +97,78 @@ pub fn save_script(
         PERSON,
     )
     .map_err(AppError::Invalid)?;
-    let path = path_of(&column);
-    let message = format!("Change the {} column's script", column.name);
-    let clone = Path::new(&repository.path);
-    let write = || Ok(std::fs::write(files::writable(clone, &path)?, &text)?);
+    let message = format!(
+        "Change the {} column's script of {}",
+        column.name, repository.name
+    );
     let context = BTreeMap::from([("text".to_string(), text.clone())]);
     edit(
         app,
         by,
         &repository,
         &column,
-        &message,
-        &new.reason,
+        Some(&text),
+        (&message, &new.reason),
         context,
-        write,
     )?;
-    view(&repository, &column)
+    view(app, &repository, &column)
 }
 
-/// Removes the repository's script for `column`, so the column runs the built-in one again.
+/// Removes the project's script for `column`, so the column runs the built-in one again.
 pub fn delete_script(app: &App, by: &Actor, id: i64, column: &str) -> Result<ScriptView> {
     let repository = app.repository(id)?;
     let column = column_of(column)?;
-    if board::repository_script(&repository, &column.script).is_none() {
+    if board::repository_script(app, &repository, &column.script).is_none() {
         return Err(AppError::NotFound(format!(
             "a script of its own for the {} column in {}",
             column.name, repository.name
         )));
     }
-    let path = path_of(&column);
-    let message = format!("Use the built-in script for the {} column", column.name);
-    let clone = Path::new(&repository.path);
-    let write = || Ok(std::fs::remove_file(files::writable(clone, &path)?)?);
+    let message = format!(
+        "Use the built-in script for the {} column of {}",
+        column.name, repository.name
+    );
     edit(
         app,
         by,
         &repository,
         &column,
-        &message,
-        "",
+        None,
+        (&message, ""),
         BTreeMap::new(),
-        write,
     )?;
-    view(&repository, &column)
+    view(app, &repository, &column)
 }
 
-/// Commits the change `write` does to the column's file through [`files::commit`], recorded as an `edit_script`
-/// decision and announced as `script_changed`.
-#[allow(clippy::too_many_arguments)]
+/// Commits the change to the column's file (`text`, or its removal) in the harness configuration repository, recorded
+/// as an `edit_script` decision and announced as `script_changed` once it is through.
 fn edit(
     app: &App,
     by: &Actor,
     repository: &Repository,
     column: &Column,
-    message: &str,
-    reason: &str,
+    text: Option<&str>,
+    (message, reason): (&str, &str),
     mut context: BTreeMap<String, String>,
-    write: impl FnOnce() -> Result<()>,
 ) -> Result<()> {
-    let path = path_of(column);
     context.insert("column".into(), column.name.clone());
-    let change = Change {
-        kind: KIND,
-        path: &path,
-        message,
-        reason,
+    if !reason.trim().is_empty() {
+        context.insert("reason".into(), reason.trim().into());
+    }
+    let commit = app.project_harness_repo()?.save_project_file(
+        app,
+        by,
+        (&repository.name, &column.script),
+        text,
+        (KIND, message),
         context,
-        event: Event::ScriptChanged {
+    )?;
+    if commit.is_some() {
+        app.bus.publish(Event::ScriptChanged {
             repository: repository.id,
             column: column.name.clone(),
-            path: path.to_string(),
-        },
-    };
-    files::commit(app, by, repository, &change, write)
+            path: path_of(repository, column),
+        });
+    }
+    Ok(())
 }

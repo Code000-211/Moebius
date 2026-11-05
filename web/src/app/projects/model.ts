@@ -223,3 +223,33 @@ export function lineStart(text: string, line: number): number {
   }
   return offset;
 }
+
+/** The files of a project's settings that the settings panel edits as text, with what each is for. */
+export const SETTING_FILES: { file: string; label: string; hint: string }[] = [
+  {
+    file: "review.md",
+    label: "Review notes",
+    hint: "What the Standards review should also check, in Markdown.",
+  },
+  {
+    file: "lint.toml",
+    label: "Lint plan",
+    hint: "What the lens checks after an agent's edits (TOML); without it the common tools are detected.",
+  },
+  {
+    file: "checks",
+    label: "Checks",
+    hint: "The command that checks a change of a repository without a forge, run with sh.",
+  },
+  {
+    file: "localize",
+    label: "Files hint",
+    hint: "Lines `on`, `off` and `files <n>` for the hint of likely files.",
+  },
+];
+
+/** The first line of a file's text that says something, cut short, as the settings panel shows what a file holds. */
+export function firstLine(text: string): string {
+  const line = text.split("\n").find((each) => each.trim() !== "") ?? "(empty)";
+  return line.length > 80 ? `${line.slice(0, 79)}…` : line;
+}

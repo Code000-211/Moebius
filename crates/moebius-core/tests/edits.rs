@@ -501,17 +501,23 @@ async fn the_brief_of_a_draft_is_written_anew_until_it_is_confirmed() {
 }
 
 #[tokio::test]
-async fn a_repositorys_own_rules_are_checked_before_they_are_committed() {
+async fn a_projects_own_rules_are_checked_before_they_are_committed_in_the_harness_repository() {
     let dir = tempfile::tempdir().unwrap();
-    let setup = Setup::start(dir.path(), "").await;
+    let harness = dir.path().join("harness");
+    moebius_core::harness::repo::create(&harness, &Default::default(), None).unwrap();
+    let setup = Setup::start(
+        dir.path(),
+        &format!("[harness]\nurl = {:?}\n", harness.display().to_string()),
+    )
+    .await;
     let repo = setup
         .server
         .app
         .add_repository("demo", source(dir.path()).to_str().unwrap())
         .unwrap();
-    let clone = Path::new(&repo.path);
+    let clone = setup.server.harness_repo.as_ref().unwrap().path();
     let before = git(clone, &["rev-parse", "HEAD"]).unwrap();
-    let route = format!("/v1/repositories/{}/files/.moebius/rules.md", repo.id);
+    let route = format!("/v1/repositories/{}/settings/rules.md", repo.id);
 
     let (status, why) = setup
         .put(
@@ -525,12 +531,22 @@ async fn a_repositorys_own_rules_are_checked_before_they_are_committed() {
         "the check says why: {why}"
     );
     assert_eq!(git(clone, &["rev-parse", "HEAD"]).unwrap(), before);
-    assert!(!clone.join(".moebius/rules.md").exists());
+    assert!(!clone.join("repos/demo/rules.md").exists());
 
     let text = "## small-diffs\nKeep changes small.\n";
     let (status, saved) = setup.put(&route, json!({ "text": text })).await;
     assert_eq!(status, 200, "{saved}");
+    assert_eq!(saved["exists"], true);
     assert_ne!(git(clone, &["rev-parse", "HEAD"]).unwrap(), before);
+    assert_eq!(
+        git(clone, &["show", "HEAD:repos/demo/rules.md"]).unwrap(),
+        text.trim_end()
+    );
+    // The commit is pushed to the harness configuration repository's origin too.
+    assert_eq!(
+        git(&harness, &["rev-parse", "HEAD"]).unwrap(),
+        git(clone, &["rev-parse", "HEAD"]).unwrap()
+    );
     assert_eq!(setup.deciders("edit_repository_rules"), ["person"]);
     assert!(setup.deciders("edit_file").is_empty());
 

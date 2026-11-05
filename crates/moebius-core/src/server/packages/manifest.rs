@@ -110,7 +110,7 @@ pub struct PackageFile {
     /// Where it is in the package's directory of the registry (manifest only; informative in the index).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
-    /// Where it goes: under `.moebius/` of a repository for a workflow, under `skills/` of the harness configuration
+    /// Where it goes: under `repos/<repository name>/` of the harness configuration repository for a workflow, under `skills/` of the harness configuration
     /// repository for skills; the name of the rules package's one file is free (`rules.md` by convention).
     pub to: String,
     #[serde(default)]

@@ -26,7 +26,7 @@ pub struct Retro {
 pub struct Proposal {
     pub id: i64,
     /// `harness` (a branch of the harness configuration repository), `settings` (a change to `moebius.toml`) or
-    /// `repository` (a change to a repository's `.moebius/` files).
+    /// `repository` (a change to a project's settings files).
     pub kind: String,
     pub retro_date: String,
     pub branch: String,

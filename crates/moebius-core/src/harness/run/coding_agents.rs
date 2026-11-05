@@ -31,7 +31,8 @@ Commit in small steps, each a change that stands on its own, with a message whos
 the imperative and whose body says why, as the repository's own history does. Do not commit generated files, secrets or \
 build output.
 
-Stay inside your worktree. Do not read or write files outside it, do not touch other branches, other worktrees or the \
+Stay inside your worktree. Do not read or write files outside it, except to read the full output of a command that a \
+result says was saved to a file; do not touch other branches, other worktrees or the \
 repository's own clone, and do not push unless the person you are chatting with asks you to. Do not install anything on \
 the machine that the repository does not already ask for.
 

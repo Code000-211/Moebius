@@ -55,7 +55,7 @@ end
 | `card.column` | string | The column the card is in. |
 | `card.confirmed` | boolean | True for a card made from a grilling a person confirmed (see `desktop-api.md`, grillings); the person has decided on it, so it needs no approval. |
 | `card.trusted` | boolean | True when the issue may move on without approval: it was made by a person in the desktop app on a repository without a forge, or its author is one of the repository's trusted GitHub logins (compared without regard to case). |
-| `card.test_first` | boolean | True when the card's repository works test first: its default branch has a file `.moebius/test-first`. See Test first. |
+| `card.test_first` | boolean | True when the card's repository works test first: its project has a `test-first` file in its settings. See Test first. |
 | `card.blocked_by` | table (array of numbers) | The issue numbers the card is blocked by that are not done yet. A number counts as not done when it has no card or its card is not in `Done`. Empty (never nil) when nothing blocks the card. The numbers come from "blocked by #12" lines in the issue's body on GitHub. |
 | `card.rounds` | number | How many runs with purpose `code` the card has had since it was last retried, whatever their status (a running one counts), and how many rounds of attempts of which none passed (see Attempts). |
 | `card.reviews` | number | How many review rounds the card has had since it was last retried, whatever their status: the runs with purpose `review` and those with purpose `review-standards` (one per round of the two-axis review). |
@@ -74,7 +74,7 @@ end
 | `card.change.pull_request` | number or nil | The number of the pull request on GitHub. |
 | `card.change.checks` | string | `pending`, `success`, `failure` or `none`, for the change's current commit. See Checks and conflicts. |
 | `card.change.failed_checks` | string or nil | On GitHub, the failing check runs, one per line; nil unless `checks` is `failure`. |
-| `card.change.check_output` | string or nil | Without a forge, the end of the output of the repository's `.moebius/checks`, once they ended for the current commit. |
+| `card.change.check_output` | string or nil | Without a forge, the end of the output of the project's `checks`, once they ended for the current commit. |
 | `card.change.conflict` | string or nil | The files that conflict with `card.change.base`, one per line; nil when the change merges cleanly. |
 | `card.attempts` | table (array) | The card's attempts that have not been settled, oldest first; empty (never nil) when it has none. See Attempts. |
 | `card.attempts[i].run` | number | The attempt's run id; its branch is `moebius/run-<run>`. |
@@ -142,7 +142,7 @@ string; the default workflow uses `code`, `review-standards` and `review-spec`, 
 `review` and `review-standards` runs as `card.reviews`. A `code` run gets the prompt for making the change and commits what the agent leaves; it fails when
 the agent changed nothing. A `review` run gets the prompt for reviewing the change on its branch and ending with
 the verdict line; a `review-standards` run the prompt for the standards axis (the repository's `CONTRIBUTING.md`,
-`CLAUDE.md`, `AGENTS.md` and the optional rubric `.moebius/review.md`, and the fixed smell baseline, always judgement
+`CLAUDE.md`, `AGENTS.md` and the project's optional rubric `review.md`, which the prompt carries, and the fixed smell baseline, always judgement
 calls) and a `review-spec` run the prompt for the spec axis (what the issue asked that is missing, not asked for or
 looks wrong), both asking for findings with evidence; nothing it changes is kept, and changing nothing is no failure. Any other purpose is prompted like
 `code`. `note` is optional text (a string or nil) added to the end of the prompt under the heading `Notes from the
@@ -183,15 +183,15 @@ The time this call takes does not count against the time limit.
 `moebius.run_checks()` returns the card's change as a table like `card.change`.
 : Starts the repository's own checks (see Checks and conflicts) on the change's current commit, unless they already ran
 or are running for it. It returns at once; the returned `checks` is `pending` while they run. It does nothing, and
-`checks` stays as it is, on a repository with a forge, or without `.moebius/checks` on its default branch. Raises an
+`checks` stays as it is, on a repository with a forge, or without a `checks` file in the project's settings. Raises an
 error `the card has no change to check` before the change is published. The time this call takes does not count
 against the time limit.
 
 `moebius.reproduction()` returns a table or nil.
-: What the card's change says of its reproduction test in `.moebius/reproduce` (see Test first), read from the change's
-latest commit: `command` (a string) and `files` (an array of strings) for a test, or `untestable` (a string, the
-reason) and an empty `files` for a change that cannot be tested this way. nil when the change has no such file, or has
-it exactly as the commit the change starts from has it (a file an earlier change left says nothing about this one).
+: What the card's code runs say of the reproduction test of its change (see Test first), read from the `REPRODUCE:`
+lines of the summary of the card's latest succeeded `code` run that has any: `command` (a string) and `files` (an array of strings) for a test, or `untestable` (a string, the
+reason) and an empty `files` for a change that cannot be tested this way. nil when no succeeded `code` run of the card
+names a test.
 Raises an error `the card has no change to test` before the change is published. The time this call takes does not
 count against the time limit.
 
@@ -226,9 +226,9 @@ a run`). The time this call takes does not count against the time limit.
 : Judges the attempt `run` (a number from `card.attempts`) against what the card is held to, as `moebius.run_test` does
 a test: on a thread of its own, answering at once with `status` `pending` while it goes, then `passed` or `failed`
 with the same answer on every later call, and `output`, why it failed. An attempt whose run did not succeed has failed
-(`The run failed.`) without more. Otherwise the repository's own checks (`.moebius/checks` on the default branch, run
+(`The run failed.`) without more. Otherwise the repository's own checks (the project's `checks`, run
 on the attempt's commit as for a change; none on a repository with a forge) must succeed, and when `card.test_first`
-the attempt's `.moebius/reproduce` must name a test that fails on the commit the attempt starts from, with the test's
+the attempt's summary must name a test with `REPRODUCE:` lines that fails on the commit the attempt starts from, with the test's
 files added, and passes on the attempt, or say `untestable: <why>`; a reason is judged by the review later. The result
 is stored with the attempt (`card.attempts[i].result`) and published as the event `attempt_judged`. Raises an error
 `run <n> is not an attempt` for another run. The time this call takes does not count against the time limit.
@@ -330,7 +330,7 @@ configuration and no repository, and it stores and starts nothing.
 
 | Option | Default | Meaning |
 |---|---|---|
-| `<file>` | required | The script, such as `.moebius/ready.luau`. |
+| `<file>` | required | The script, such as `ready.luau` (the file name in a project's settings). |
 | `--column` | `Backlog` | The column the card is in: one of the six columns, spelled as in the table at the top (`Ready` for `Not started` too). |
 | `--title` | `A card to check the script with` | The card's `title`. |
 | `--author` | `person` | The card's `author`. `card.trusted` is true only for `person`, as on a repository without a forge. |
@@ -374,24 +374,21 @@ its blockers, its tokens) is not made up, so a script that reads them must also 
 
 ## Repository overrides
 
-A repository replaces the script of a column by committing a file `.moebius/<script>` (for example
-`.moebius/ready.luau`) to its default branch. The server reads it with `git show <ref>:.moebius/<script>` on every run
-of the script:
+A project replaces the script of a column by having a file `<script>` (for example `ready.luau`) in its settings, the
+files of `repos/<repository name>/` in the [harness configuration repository](harness-configuration.md#project-settings).
+Nothing is read from a repository's own `.moebius/` any more. The server reads the file on every run of the script:
 
-- `<ref>` is the default branch of the clone for a repository without a forge, and `origin/<default branch>` for a
-  repository on GitHub, which the poll keeps up to date. Moebius fetches the source repository of a clone without a
-  forge every 30 seconds and fast-forwards the clone's default branch when it can; it cannot once a change merged
-  here puts the branch ahead of the source.
-- Only committed content counts. A change in the working tree of the clone is not read, and neither is any other
-  branch.
-- If the file does not exist, the built-in script runs.
+- It is read from the default branch of the harness configuration repository's clone, which the server fetches every 30
+  seconds and fast-forwards. A change in another branch is not read.
+- If the file does not exist, or the server has no harness configuration repository (`[harness]`), the built-in script
+  runs.
 - An override replaces a whole script. There is no way to call the built-in one from it.
 
-A script from a repository runs with the same sandbox and limits as a built-in one.
+A script from a project runs with the same sandbox and limits as a built-in one.
 
 The desktop API reads, saves and removes an override: `GET`, `PUT` and `DELETE` of
 [`/v1/repositories/{id}/scripts/{column}`](desktop-api.md#get-v1repositoriesidscriptscolumn). A save checks the script
-like `moebius check-script`, commits it to the default branch of the clone and, on GitHub, pushes it.
+like `moebius check-script`, commits it to the harness configuration repository and pushes it to its `origin`.
 
 ## Checks and conflicts
 
@@ -406,8 +403,8 @@ time opens the pull request; later it updates it with a push. Without a forge th
   (the checks have not started yet), and then `none`, so that a repository without CI does not wait for ever.
   `card.change.failed_checks` lists the failing check runs, one per line: the name, how it ended, what it says and
   where to read more, such as `lint: failure, 3 warnings (https://ci.example/runs/1)`.
-- Without a forge, a repository may have a file `.moebius/checks` on its default branch: a shell command. It is read
-  from the default branch, never from the change, so that the change cannot decide how it is checked. `moebius.run_checks()`
+- Without a forge, a project may have a file `checks` in its settings: a shell command. It is read from the settings,
+  never from the change, so that the change cannot decide how it is checked. `moebius.run_checks()`
   runs it with `sh -c` in a throwaway worktree of the change's commit, on a thread of its own, and stops it after
   `checks.timeout_seconds` (see the [configuration](configuration.md)). While it runs `checks` is `pending`, then
   `success` (exit status 0) or `failure`, and `card.change.check_output` holds the last 4 KB of its output, standard
@@ -451,27 +448,28 @@ card page show which attempts passed, which was picked and why.
 
 ## Test first
 
-A repository works test first when its default branch has a file `.moebius/test-first` (its content does not matter);
+A repository works test first when its project has a file `test-first` in its settings (its content does not matter);
 `card.test_first` is then true. The Coder's prompt then tells it to write a test that reproduces the issue before it
-changes any code, see it fail, make the change and see it pass, and to name the test in `.moebius/reproduce`, committed
-with the change:
+changes any code, see it fail, make the change and see it pass, and to name the test at the end of the final summary of
+every run, in lines the server reads:
 
 ```
-# Lines that are empty or start with # are skipped.
-cargo test --test issue_42
-tests/issue_42.rs
+REPRODUCE: cargo test --test issue_42
+REPRODUCE-FILE: tests/issue_42.rs
 ```
 
-The first line is the command that runs only the reproduction test; every further line is a file, relative to the
-repository's root, that holds it. A change that cannot be tested this way, such as one of the documentation or the
-configuration only, has the single line `untestable: <why>` instead (more lines after it belong to the reason).
+The `REPRODUCE:` line is the command that runs only the reproduction test; each `REPRODUCE-FILE:` line in the same block of lines (up to a blank line, above or below the `REPRODUCE:` line; those under an
+earlier `REPRODUCE:` line are that line's) is a file, relative to the repository's root, that holds it. The last `REPRODUCE:` line of a summary counts. A change that
+cannot be tested this way, such as one of the documentation or the configuration only, has the single line
+`REPRODUCE: untestable: <why>` instead. Backticks around the command or a path are ignored. The summary is stored with
+the run, so the test is stored with the attempt or the `code` run that made the change, and no file of the change names it.
 
-`moebius.reproduction()` reads the file. The default `review.luau` then runs the command with
+`moebius.reproduction()` reads the lines. The default `review.luau` then runs the command with
 `moebius.run_test_at_base(command, files)`, where it must fail, and with `moebius.run_test(command)`, where it must pass.
-Until both have ended the card waits with `running the reproduction test`. When either does not hold, or the change has
-no `.moebius/reproduce`, the card goes back to `In progress` with a note that starts `Test first:` and says which did
-not hold, with the output. A change that says it is untestable goes on to the review, whose run is given the reason to
-judge. All of this comes after the checks and conflicts and before the review.
+Until both have ended the card waits with `running the reproduction test`. When either does not hold, or no succeeded
+`code` run of the card names a test, the card goes back to `In progress` with a note that starts `Test first:` and says
+which did not hold, with the output. A change that says it is untestable goes on to the review, whose run is given the
+reason to judge. All of this comes after the checks and conflicts and before the review.
 
 ## The default workflow
 

@@ -468,6 +468,29 @@ mod tests {
     }
 
     #[test]
+    fn the_saved_outputs_of_the_run_may_be_read_but_not_written() {
+        // The whole output of a tool is saved in the run's own directory, outside the worktree, and the result names it.
+        let saved = "/srv/.moebius/runs/7/out/1.txt";
+        assert_eq!(broken("read", json!({ "path": saved })), None);
+        for command in [
+            format!("sed -n 100,200p {saved}"),
+            format!("tail -n 50 {saved}"),
+            format!("grep -n FAILED {saved}"),
+            format!("head -c 2000 {saved}"),
+        ] {
+            assert_eq!(bash(&command), None, "{command}");
+        }
+        assert_eq!(
+            broken("write", json!({ "path": saved })),
+            Some("stay-in-the-worktree")
+        );
+        assert_eq!(
+            bash(&format!("echo x > {saved}")),
+            Some("stay-in-the-worktree")
+        );
+    }
+
+    #[test]
     fn a_run_without_a_worktree_may_not_write() {
         let call = ToolCall {
             tool: "write",

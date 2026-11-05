@@ -1,6 +1,6 @@
 //! The harness configuration repository (spec 5): a git repository the server clones to `<data_dir>/harness`. It holds
-//! `agents/<name>.toml` (settings) and `agents/<name>.md` (instructions), `skills/<name>/SKILL.md`, `rules.md` and
-//! `mcp.toml`; the format is in `docs/reference/harness-configuration.md`.
+//! `agents/<name>.toml` (settings) and `agents/<name>.md` (instructions), `skills/<name>/SKILL.md`, `rules.md`,
+//! `mcp.toml` and `repos/<name>/` (the settings of a project); the format is in `docs/reference/harness-configuration.md`.
 //!
 //! The agents are read from the clone's default branch when the server starts and after each refresh that changes it.
 //! An agent whose files are broken is left out with its error, so the others go on. An edit through the API is a commit
@@ -9,7 +9,8 @@
 //!
 //! This module holds the clone itself: opening and refreshing it. `read` reads the agents, skills, MCP servers and
 //! rules from it, `edits` makes a person's edits commits pushed to `origin`, `branches` checks, proposes and merges
-//! the branches of the Retro, chats and trials, `create` makes a new repository, `skill_files` reads and edits a
+//! the branches of the Retro, chats and trials, `projects` reads and edits the settings of a project (`repos/<name>/`),
+//! `create` makes a new repository, `skill_files` reads and edits a
 //! skill's files beside its `SKILL.md`, `offer` offers files written on a branch as a change, and `packages` makes the
 //! branches that install, update and remove Pi packages.
 
@@ -18,6 +19,7 @@ mod create;
 mod edits;
 mod offer;
 mod packages;
+mod projects;
 mod read;
 mod skill_files;
 
@@ -31,6 +33,9 @@ use crate::repos::{Repos, git};
 pub use branches::{OwnBranch, Proposed};
 pub use create::{SET_UP_MESSAGE, create};
 pub use packages::{PERSON_ONLY, PackageDiff, add_to_agent, remove_from_agents};
+#[cfg(test)]
+pub(crate) use projects::testing;
+pub use projects::{FILES as PROJECT_FILES, is_project_file};
 use read::Layout;
 pub use read::{
     AgentDefinition, AgentSettings, AgentView, McpServerInfo, McpServerView, SkillInfo,

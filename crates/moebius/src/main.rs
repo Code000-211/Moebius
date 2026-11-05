@@ -57,7 +57,7 @@ enum Command {
     },
     /// Run a column script once against a made-up card and print what it did, or the error (exit status 1).
     CheckScript {
-        /// The script, such as `.moebius/ready.luau`.
+        /// The script, such as `ready.luau`.
         file: PathBuf,
         /// The column the made-up card is in.
         #[arg(long, default_value = "Backlog")]

@@ -105,7 +105,7 @@ describe("the Rules page", () => {
     await prose.getByText("Do not copy dependencies into the tree.").waitFor();
     await region("demo").getByText("keep-migrations").waitFor();
     await region("demo")
-      .getByText("Saved as a commit on the default branch (.moebius/rules.md).")
+      .getByText("Saved as a commit in the harness configuration repository (repos/demo/rules.md).")
       .waitFor();
   });
 
@@ -183,7 +183,7 @@ describe("the Rules page", () => {
     await box.getByText("Saved.", { exact: true }).waitFor();
     expect(lastRequest()).toMatchObject({
       method: "PUT",
-      path: "/v1/repositories/1/files/.moebius/rules.md",
+      path: "/v1/repositories/1/settings/rules.md",
       body: { text: "## keep-migrations\nDo not edit a migration that exists, ever.\n" },
     });
     // A refusal names the file.
@@ -191,7 +191,7 @@ describe("the Rules page", () => {
     await box.getByLabel("Rule name").fill("keep-migrations");
     await box.getByLabel("Rule text").fill("Twice.");
     await box.getByRole("button", { name: "Save", exact: true }).click();
-    await alert('.moebius/rules.md: line 4: the rule "keep-migrations" is named twice').waitFor();
+    await alert('rules.md: line 4: the rule "keep-migrations" is named twice').waitFor();
   });
 
   it.skipIf(usesRealServer)("asks the Moebius agent to write the rules", async () => {

@@ -40,7 +40,7 @@ pub struct Report {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Proposal {
     pub id: i64,
-    /// `harness`, `settings` (a change to `moebius.toml`) or `repository` (a change to a repository's `.moebius/`).
+    /// `harness`, `settings` (a change to `moebius.toml`) or `repository` (a change to a project's settings in the harness configuration repository).
     #[serde(default = "harness")]
     pub kind: String,
     pub branch: String,

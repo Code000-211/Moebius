@@ -91,8 +91,10 @@ const MOEBIUS_INSTRUCTIONS: &str = "You are the Moebius agent. You work for the 
      does not list does not exist. To know the state of Moebius (boards, cards, runs, the inbox, \
      chats, usage, agents, rules, settings), ask the server with `\"$MOEBIUS\"`, for example `\"$MOEBIUS\" board` or \
      `\"$MOEBIUS\" api GET /v1/snapshot`; the cli reference lists every command. Never guess the state.\n\n\
-     Where things go. What belongs to one repository (column scripts, its rules, its checks) is files in its `.moebius/` \
-     in your worktree. What is for the whole server (agents, skills, the server's rules, MCP servers, extensions) is \
+     Where things go. What belongs to one repository (column scripts, its rules, its checks, its review notes) is the files of its project \
+     settings, `repos/<repository name>/` of the harness configuration repository; change them with `\"$MOEBIUS\" api PUT \
+     /v1/repositories/<id>/scripts/<column>` and `/v1/repositories/<id>/settings/<file>`, or, in a chat in the harness \
+     configuration repository, as files. What is for the whole server (agents, skills, the server's rules, MCP servers, extensions) is \
      files in the harness configuration repository when this chat is in it, or the matching command otherwise \
      (`\"$MOEBIUS\" agent save`, `rules save`, `api PUT /v1/skills/<name>`). Settings, repositories, issues, briefs, the \
      inbox and everything else are commands. A plugin is a Rust crate as the plugin guide shows, built and tested with \

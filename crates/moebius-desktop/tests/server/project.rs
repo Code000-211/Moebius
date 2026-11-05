@@ -10,7 +10,7 @@ use moebius_desktop::app::{App, Message, Page};
 use moebius_desktop::client::{Client, ClientError, NewRepository, Snapshot};
 use moebius_desktop::screens::repositories;
 
-use crate::fixtures::{origin, settle, shown, start, start_with_fake_pi};
+use crate::fixtures::{origin, settle, shown, start, start_with_fake_pi, use_harness};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_client_adds_a_repository_from_a_bare_clone_and_creates_an_issue_on_it() {
@@ -79,7 +79,9 @@ async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_ask
     use moebius_desktop::widgets::script_editor;
 
     let dir = tempfile::tempdir().unwrap();
-    let (settings, _) = start_with_fake_pi(dir.path()).await;
+    let (settings, server) = start_with_fake_pi(dir.path()).await;
+    // The script is a file of the repository's settings, in the harness configuration repository.
+    let clone = use_harness(&server, dir.path());
     let client = Client::new(settings.clone());
     let repository = client
         .add_repository(&NewRepository {
@@ -97,7 +99,6 @@ async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_ask
         settings.clone(),
         client.snapshot().await.unwrap(),
     ))));
-    let clone = std::path::PathBuf::from(&repository.path);
     let edit = |app: &mut App, text: &str| {
         let _ = app.update(Message::Script(script_editor::Message::Text(
             Action::SelectAll,
@@ -119,7 +120,7 @@ async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_ask
     let messages: Vec<_> = ui.into_messages().collect();
     let task = app.update(messages.into_iter().next().unwrap());
     settle(&mut app, task).await;
-    assert!(shown(&app, ".moebius/ready.luau"));
+    assert!(shown(&app, "repos/demo/ready.luau"));
     assert!(shown(&app, "Built in"));
 
     // A script that fails the check is refused with the server's message and nothing is committed.
@@ -138,16 +139,19 @@ async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_ask
         panic!("{refusal:?}")
     };
     assert!(shown(&app, &message), "{message}");
-    assert!(!clone.join(".moebius").exists());
+    assert!(!clone.join("repos").exists());
 
     // A good one is committed and the editor says the script is the repository's.
     edit(&mut app, "function on_card(card) moebius.wait('held') end");
     let task = app.update(Message::Script(script_editor::Message::Save));
     settle(&mut app, task).await;
     assert!(shown(&app, "Repository"));
-    assert!(shown(&app, "Committed to the default branch."));
+    assert!(shown(
+        &app,
+        "Committed to the harness configuration repository."
+    ));
     assert_eq!(
-        std::fs::read_to_string(clone.join(".moebius/ready.luau")).unwrap(),
+        std::fs::read_to_string(clone.join("repos/demo/ready.luau")).unwrap(),
         "function on_card(card) moebius.wait('held') end\n"
     );
     assert_eq!(
@@ -181,7 +185,7 @@ async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_ask
     );
     assert_eq!(
         chats[0].title,
-        "About the Not started column's script (.moebius/ready.luau):"
+        "About the Not started column's script (repos/demo/ready.luau):"
     );
     // The agent was told where the person is (the fake Pi answers with its prompt); the chat shows only the message.
     let answer = loop {
@@ -196,7 +200,7 @@ async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_ask
             assert_eq!(said.len(), 1);
             assert_eq!(
                 said[0].data["message"],
-                "About the Not started column's script (.moebius/ready.luau):"
+                "About the Not started column's script (repos/demo/ready.luau):"
             );
             break answered;
         }
@@ -205,9 +209,9 @@ async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_ask
     assert!(
         answer.contains("[Where the person is in the Moebius app.")
             && answer
-                .contains("Editing the script of the Not started column (.moebius/ready.luau)")
+                .contains("Editing the script of the Not started column (repos/demo/ready.luau)")
             && answer.contains("moebius.wait('held')")
-            && answer.ends_with("About the Not started column's script (.moebius/ready.luau):"),
+            && answer.ends_with("About the Not started column's script (repos/demo/ready.luau):"),
         "{answer}"
     );
 
@@ -216,7 +220,7 @@ async fn the_script_editor_reads_saves_refuses_and_gives_back_and_the_bubble_ask
     settle(&mut app, task).await;
     let task = app.update(Message::Script(script_editor::Message::UseBuiltIn));
     settle(&mut app, task).await;
-    assert!(!clone.join(".moebius/ready.luau").exists());
+    assert!(!clone.join("repos/demo/ready.luau").exists());
     assert_eq!(
         client
             .script(repository.id, "Not started")

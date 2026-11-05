@@ -26,7 +26,8 @@ learns the state of a server from the server itself:
   brief, an item of the inbox). Its runs get the server's address and their own run token, which the desktop API accepts
   for the Moebius agent, so every decision it makes is recorded as `agent:Moebius` with the chat's run. It cannot store
   an API key or open a shell in a worktree or on the server.
-- It builds files: in a repository, what belongs to that repository (its `.moebius/`); in the harness configuration
+- It builds files: what belongs to a repository (its rules, scripts, checks) goes through the API into its
+  settings, `repos/<repository name>/` of the harness configuration repository; in a chat in the harness configuration
   repository (see [Build an extension or skill in a chat](#build-an-extension-or-skill-in-a-chat)), agents, skills,
   extensions, MCP servers and the server's rules. It tries a column script with `moebius check-script` and a plugin with
   `cargo test`. The person offers the files as a change between its answers ("Offer changes" in the desktop app,
@@ -41,7 +42,7 @@ try the result. Pi shows the agent each skill's description and the agent reads 
 | `moebius` | The guide and the references: every command, route, `card` field, script function and configuration key. |
 | `moebius-operate` | Reading the state and acting on it: board, cards, inbox, chats, usage, repositories, issues, research, grillings. |
 | `moebius-configure` | Agents, rules, a column's script through the API, settings, skills and MCP servers. |
-| `moebius-workflows` | Column scripts and whole workflows in a repository's `.moebius/`. |
+| `moebius-workflows` | Column scripts and whole workflows in a repository's settings. |
 | `moebius-extensions` | Pi extensions. |
 | `moebius-plugins` | Decider plugins in Rust. |
 | `moebius-report` | Sending a fix or a problem in Moebius itself to its official repository, after the person says yes. |
@@ -387,7 +388,7 @@ function on_card(card)
 end
 ```
 
-Commit it as `.moebius/code.luau` (see [Column scripts](column-scripts.md)). A card is stuck when its tokens reach the
+Save it as the repository's `code.luau` (see [Column scripts](column-scripts.md)). A card is stuck when its tokens reach the
 budget of the agent chosen at that moment.
 
 ## What the default workflow expects of the agents
@@ -415,7 +416,7 @@ agent of the board, so reviews need no setup: every change is reviewed before it
 runs of a round, on the Coder's model unless the Reviewer has a `model` of its own (`moebius agent save Reviewer --model
 <m>`, the Agents page, or an `[agents.Reviewer]` table). A person who wants changes offered unreviewed changes the
 workflow script instead (see the [workflows guide](workflows.md)). The **Standards** run checks the change against the
-repository's own rules (`CONTRIBUTING.md`, `CLAUDE.md`, `AGENTS.md` and an optional rubric `.moebius/review.md`) and a
+repository's own rules (`CONTRIBUTING.md`, `CLAUDE.md`, `AGENTS.md` and the optional rubric `review.md` of the repository's settings) and a
 fixed baseline of code smells, which are always judgement calls ("Possible Feature Envy"). The **Spec** run checks it
 against the issue. Both are told to read the change on its branch and not to edit files, to report each finding as
 `FINDING blocking: <text>` or `FINDING judgement: <text>` and an `EVIDENCE:` line quoting the hunk or the line of the
@@ -592,8 +593,8 @@ Claude Code has no bridge, and the table has no effect there):
   model, by `[bash {"command":"cargo test"}: output hidden: 312 lines]`. Errors are kept. The run's events and Pi's
   session keep every output.
 - One result is at most `max_lines` lines (200) and `max_bytes` bytes (16384). Above that the model reads its head and
-  tail around `[1,840 lines left out; the full output is in .moebius/out/3.txt]`; the agent can read that file in
-  ranges. `.moebius/out/` is never committed.
+  tail around `[1,840 lines left out; the full output is in /srv/.moebius/runs/7/out/3.txt]`; the agent can read that file
+  in ranges. It is in the run's own directory, outside its worktree, so it is never committed.
 - With `compress` (on), escape codes, progress bars and repeated lines go, and the output of `cargo test`, `pytest`,
   `go test`, `jest` and `vitest` is cut to the failing tests and the summary, a cargo build's to its errors and warnings.
   Nothing that is not known to be noise is removed.

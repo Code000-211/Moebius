@@ -2,14 +2,17 @@
 //! to work on, and a running server with one Coder agent. Each test file uses some of it.
 #![allow(dead_code)]
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use axum::http::header;
 use axum::response::IntoResponse;
 use axum::routing::post;
-use moebius_core::config::Config;
+use moebius_core::app::App;
+use moebius_core::config::{AgentSet, Config};
+use moebius_core::harness::repo::HarnessRepo;
 use moebius_core::repos::git;
 use moebius_core::server::Server;
 use serde_json::{Value, json};
@@ -90,8 +93,33 @@ pub async fn recorded_upstream(
     format!("http://{addr}")
 }
 
-/// A `review.luau` that offers the change without a review.
+/// A `review.luau` that offers the change without a review. A project's script is a file of the settings
+/// (`repos/demo/review.luau`) of the harness configuration repository.
 const NO_REVIEW: &str = "function on_card(card)\n  local run = card.run\n  if run ~= nil and (run.status == 'starting' or run.status == 'running') then\n    moebius.wait('coding')\n    return\n  end\n  moebius.publish_change()\n  moebius.offer_change()\nend\n";
+
+/// A harness configuration repository for `app`, made in `dir`, so that the settings of its projects can be read.
+pub fn use_harness(app: &App, dir: &Path) -> Arc<HarnessRepo> {
+    let origin = dir.join("harness-origin");
+    moebius_core::harness::repo::create(&origin, &BTreeMap::new(), None).unwrap();
+    let repo = HarnessRepo::open(
+        app,
+        origin.to_str().unwrap(),
+        &dir.join("harness-clone"),
+        vec![],
+        Arc::new(RwLock::new(AgentSet::default())),
+    )
+    .unwrap();
+    let repo = Arc::new(repo);
+    app.set_harness_repo(repo.clone());
+    repo
+}
+
+/// Puts `text` in the clone of the harness configuration repository as the project's `file`, where it is read at once.
+pub fn put_project(repo: &HarnessRepo, project: &str, file: &str, text: &str) {
+    let dir = repo.project_dir(project);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(file), text).unwrap();
+}
 
 /// A git repository with one commit, standing in for the forge's remote.
 pub fn origin(dir: &Path) -> PathBuf {
@@ -99,10 +127,6 @@ pub fn origin(dir: &Path) -> PathBuf {
     std::fs::create_dir_all(&origin).unwrap();
     git(&origin, &["init", "--quiet", "-b", "main"]).unwrap();
     std::fs::write(origin.join("README.md"), "A demo repository.\n").unwrap();
-    // These tests are about the run of the Coder, not about its review, which the built-in Reviewer would do: the
-    // repository's `review.luau` offers the change at once.
-    std::fs::create_dir_all(origin.join(".moebius")).unwrap();
-    std::fs::write(origin.join(".moebius/review.luau"), NO_REVIEW).unwrap();
     git(&origin, &["add", "."]).unwrap();
     git(&origin, &["commit", "--quiet", "-m", "first"]).unwrap();
     origin
@@ -151,7 +175,25 @@ pub async fn start_harness(
     start_from(dir, pi_bolt, upstream, &harness, None).await
 }
 
-/// Starts a server with the configuration `more` after the keys every test sets.
+/// The harness configuration repository `dir/harness` for the agents the `[agents.*]` tables of `agents` name. These
+/// tests are about the run of the Coder, not about its review, which the built-in Reviewer would do: the project
+/// `demo` has a `review.luau` that offers the change at once. Returns the configuration that names it.
+fn harness_for(dir: &Path, base: &str, agents: &str) -> String {
+    let parsed = Config::parse(&format!("{base}{agents}"), dir, &dir.join("moebius.toml")).unwrap();
+    let repository = dir.join("harness");
+    moebius_core::harness::repo::create(&repository, &parsed.agents, None).unwrap();
+    std::fs::create_dir_all(repository.join("repos/demo")).unwrap();
+    std::fs::write(repository.join("repos/demo/review.luau"), NO_REVIEW).unwrap();
+    git(&repository, &["add", "-A"]).unwrap();
+    git(&repository, &["commit", "--quiet", "-m", "A project"]).unwrap();
+    format!(
+        "{base}[harness]\nurl = {:?}\n",
+        repository.display().to_string()
+    )
+}
+
+/// Starts a server with the configuration `more` after the keys every test sets. Without a `[harness]` in `more`, the
+/// agents of `more` are the ones of a harness configuration repository made for the server.
 async fn start_from(
     dir: &Path,
     pi_bolt: &std::ffi::OsStr,
@@ -159,12 +201,17 @@ async fn start_from(
     more: &str,
     moebius: Option<&Path>,
 ) -> Started {
-    let config_text = format!(
+    let base = format!(
         "[board]\ntick_ms = 100\n[router]\nlisten = \"127.0.0.1:0\"\n\
          [[router.upstreams]]\nprotocol = \"openai\"\nbase_url = \"{upstream}\"\n\
-         [pi_bolt]\nprogram = {pi_bolt:?}\n{more}",
+         [pi_bolt]\nprogram = {pi_bolt:?}\n",
         pi_bolt = pi_bolt.to_string_lossy()
     );
+    let config_text = if more.contains("[harness]") {
+        format!("{base}{more}")
+    } else {
+        harness_for(dir, &base, more)
+    };
     let mut config = Config::parse(&config_text, dir, &dir.join("moebius.toml")).unwrap();
     if let Some(moebius) = moebius {
         config.moebius = moebius.to_path_buf();
@@ -185,6 +232,17 @@ async fn start_from(
 }
 
 impl Started {
+    /// Puts `text` as the project's `file` in the clone of the harness configuration repository, where it is read at
+    /// once.
+    pub fn put_project(&self, project: &str, file: &str, text: &str) {
+        put_project(
+            self.server.harness_repo.as_ref().expect("a harness"),
+            project,
+            file,
+            text,
+        );
+    }
+
     /// POSTs `body` to the desktop API as the server's owner.
     pub async fn post(&self, path: &str, body: Value) -> reqwest::Response {
         self.client

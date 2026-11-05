@@ -20,6 +20,9 @@ export const keys = {
   filePaths: (repository: number) => ["files", repository, "paths"] as const,
   fileSearch: (repository: number, query: string, regex: boolean) =>
     ["files", repository, "search", query, regex] as const,
+  /** The settings of a repository's project; `project_settings_changed` makes all of them stale. */
+  projectSettingsAll: ["project-settings"] as const,
+  projectSettings: (repository: number) => ["project-settings", repository] as const,
   snapshot: ["snapshot"] as const,
   /** Everything read about one card (its history and its runs) starts with this, so an event can make it all stale. */
   cards: ["card"] as const,

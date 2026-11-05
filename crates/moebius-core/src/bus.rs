@@ -109,6 +109,16 @@ pub enum Event {
         repository: i64,
         path: String,
     },
+    /// A file of a project's settings other than a column's script was written or removed.
+    ProjectSettingsChanged {
+        repository: i64,
+        file: String,
+    },
+    /// The default branch of a repository still has a `.moebius/` folder, which is no longer read.
+    SettingsMoved {
+        repository: String,
+        message: String,
+    },
     TakeoverProposed {
         takeover: i64,
         kind: String,
@@ -456,9 +466,23 @@ mod tests {
                 Event::ScriptChanged {
                     repository: 2,
                     column: "Not started".into(),
-                    path: ".moebius/ready.luau".into(),
+                    path: "repos/demo/ready.luau".into(),
                 },
-                json!({"kind": "script_changed", "data": {"repository": 2, "column": "Not started", "path": ".moebius/ready.luau"}}),
+                json!({"kind": "script_changed", "data": {"repository": 2, "column": "Not started", "path": "repos/demo/ready.luau"}}),
+            ),
+            (
+                Event::ProjectSettingsChanged {
+                    repository: 2,
+                    file: "rules.md".into(),
+                },
+                json!({"kind": "project_settings_changed", "data": {"repository": 2, "file": "rules.md"}}),
+            ),
+            (
+                Event::SettingsMoved {
+                    repository: "demo".into(),
+                    message: "moved".into(),
+                },
+                json!({"kind": "settings_moved", "data": {"repository": "demo", "message": "moved"}}),
             ),
             (
                 Event::FileChanged {

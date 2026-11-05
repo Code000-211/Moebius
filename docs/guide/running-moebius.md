@@ -127,6 +127,11 @@ the server in WSL (see [On Windows](#on-windows)). Every key named here is in th
    systemctl --user restart moebius
    ```
 
+   A repository's own `.moebius/` folder is not read any more (since the release that moved a repository's rules, review
+   notes, lint plan, checks, test-first switch and column scripts to `repos/<repository name>/` of the harness
+   configuration repository). Move its files there, with the same names; the server tells you once, in its log, which
+   repository still has one. See "Moving from `.moebius/`" in [column scripts](column-scripts.md#where-the-file-goes).
+
 6. Back up. Everything Moebius keeps is in the data directory (`.moebius/` next to `moebius.toml`, unless `data_dir`
    says otherwise): the store, the blobs, the clones, the token and the keys of `secrets.toml`. Stop the server so that
    the store is not copied halfway, copy the directory and `moebius.toml`, and start the server again. Keep the copy
@@ -243,7 +248,7 @@ step 3.
 
 `moebius.exe serve` also builds and starts on Windows itself, but that is not tested, and these parts need Linux or WSL:
 
-- A repository's own checks (`.moebius/checks`), replays of refused calls and research measures run `sh` and `bash`.
+- A repository's own checks (the `checks` file of its settings), replays of refused calls and research measures run `sh` and `bash`.
   Without them they fail and say so.
 - Files that hold secrets (`secrets.toml`, the token, a run's settings) keep the permissions of their folder instead of
   being readable by their owner only; under your profile that is you and the administrators.

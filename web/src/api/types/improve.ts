@@ -38,7 +38,7 @@ export type ProposalStatus =
   | "merged"
   | "dismissed";
 
-/** A change the Retro proposes: to the harness configuration, to `moebius.toml` or to a repository's `.moebius/`. */
+/** A change the Retro proposes: to the harness configuration, to `moebius.toml` or to a project's settings (`repos/<name>/` of the harness configuration repository). */
 export interface Proposal {
   id: number;
   kind?: "harness" | "settings" | "repository";

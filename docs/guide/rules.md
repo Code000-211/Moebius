@@ -34,12 +34,13 @@ variables. Rules in prose are for what the patterns cannot see.
      file does not exist there are no server rules. With a harness
      configuration repository (`[harness]`, see [Agents](agents.md#in-a-harness-configuration-repository)) the rules are
      its `rules.md` instead, and `rules_file` is an error.
-   - The runs of one repository: `.moebius/rules.md`, committed to its default branch. Where to commit is the same as for
-     [column scripts](column-scripts.md): push to GitHub, or commit to the source repository (or, once Moebius has merged a change there, to the clone) for a repository without a forge.
+   - The runs of one repository: `rules.md` in its settings, `repos/<repository name>/rules.md` of the harness
+     configuration repository. Where to commit is the same as for [column scripts](column-scripts.md): that repository's
+     default branch, or `PUT /v1/repositories/{id}/settings/rules.md`. A server without `[harness]` has none.
 3. If any prose rule applies, configure a `[teacher]`. Without one, every tool call is refused (see below).
 4. Both files are read again for every tool call, so there is nothing to restart.
 
-A repository can add rules but cannot weaken the server's: a repository rule with the same name as a server rule is
+A repository's settings can add rules but cannot weaken the server's: a repository rule with the same name as a server rule is
 dropped, and the server's text stands. When a name is repeated within one file, the first rule of that name stands.
 
 ### Change the server's rules in the desktop app
@@ -55,8 +56,8 @@ refusal of the server (a name given twice, say) stays in red in the card. "Let t
 the heading, asks for what should be allowed or forbidden and starts a chat in which the Moebius agent reads the rules,
 changes them in prose without weakening any and saves them with `"$MOEBIUS" rules save <file>`.
 Every repository has a box with its own rules as the same cards and its own "Add a rule" card. Saving commits
-`.moebius/rules.md` on the repository's default branch (pushed for a repository on GitHub) with `PUT
-/v1/repositories/{id}/files/.moebius/rules.md`; the server checks the file first as it checks its own rules (every
+`repos/<repository name>/rules.md` to the harness configuration repository (and pushes it) with `PUT
+/v1/repositories/{id}/settings/rules.md`; the server checks the file first as it checks its own rules (every
 `## ` line has a name, no name twice) and refuses it with the line that is wrong.
 The same is `GET` and `PUT /v1/rules`, see the [desktop API](../reference/desktop-api.md).
 

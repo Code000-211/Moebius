@@ -133,7 +133,7 @@ impl Rules {
                 match place {
                     Place::Server => client.save_rules(&file).await.map(|view| view.commit),
                     Place::Repository(id) => client
-                        .save_file(id, ".moebius/rules.md", &file)
+                        .save_setting(id, "rules.md", &file)
                         .await
                         .map(|_| None),
                 }

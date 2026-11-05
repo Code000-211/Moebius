@@ -112,6 +112,23 @@ async fn other_agents_and_revoked_tokens_are_refused() {
     let f = Fixture::start().await;
     let (_, coder) = f.run("Coder");
     assert_eq!(f.send(Method::GET, "/v1/health", &coder, None).await, 401);
+    // Neither can another agent's token read or write the settings and scripts of a project.
+    for (method, path, body) in [
+        (Method::GET, "/v1/repositories/1/settings", None),
+        (
+            Method::PUT,
+            "/v1/repositories/1/settings/rules.md",
+            Some(json!({ "text": "## x\ny\n" })),
+        ),
+        (Method::DELETE, "/v1/repositories/1/settings/checks", None),
+        (
+            Method::PUT,
+            "/v1/repositories/1/scripts/Backlog",
+            Some(json!({ "text": "" })),
+        ),
+    ] {
+        assert_eq!(f.send(method, path, &coder, body).await, 401, "{path}");
+    }
     let (_, moebius) = f.run("Moebius");
     assert_eq!(f.send(Method::GET, "/v1/health", &moebius, None).await, 200);
     f.server.router.revoke_token(&moebius);

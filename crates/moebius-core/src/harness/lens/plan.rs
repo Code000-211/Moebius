@@ -1,5 +1,5 @@
-//! What the lens checks in a worktree: the repository's `.moebius/lint.toml`, or, without checks in it, what the
-//! repository's files say about its tools. The result is the [`Plan`] that is handed to the extension as JSON (the
+//! What the lens checks in a worktree: the project's `lint.toml` (see `app::projects`), or, without checks in it, what
+//! the repository's files say about its tools. The result is the [`Plan`] that is handed to the extension as JSON (the
 //! `MOEBIUS_LENS` variable); the extension runs the commands, this module only decides which, for which files.
 
 use std::path::Path;
@@ -7,8 +7,8 @@ use std::path::Path;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-/// The file of a repository that configures the lens, relative to the worktree.
-pub const LINT_FILE: &str = ".moebius/lint.toml";
+/// The name of the project's file that configures the lens, as an error names it.
+const LINT_FILE: &str = "lint.toml";
 
 /// How long the per-edit checks of one edit may take together, in milliseconds.
 const BUDGET_MS: u64 = 1500;
@@ -42,7 +42,7 @@ pub enum Severity {
     Error,
 }
 
-/// One entry of `.moebius/lint.toml`: for the files a glob names, the per-edit command and the end-of-turn command.
+/// One entry of `lint.toml`: for the files a glob names, the per-edit command and the end-of-turn command.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CheckFile {
@@ -59,7 +59,7 @@ struct CheckFile {
     severity: Severity,
 }
 
-/// `.moebius/lint.toml`.
+/// `lint.toml`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct LintFile {
@@ -114,7 +114,7 @@ pub struct Plan {
     /// Whether the built-in syntax checks run for files without a `syntax` command of their own.
     pub syntax: bool,
     pub checks: Vec<Check>,
-    /// Why `.moebius/lint.toml` cannot be used, when it cannot; the lens then does nothing but say so.
+    /// Why `lint.toml` cannot be used, when it cannot; the lens then does nothing but say so.
     pub error: Option<String>,
 }
 
@@ -131,16 +131,16 @@ impl Plan {
         }
     }
 
-    /// The plan for the worktree at `root`.
-    pub fn for_worktree(root: &Path) -> Self {
-        let Ok(text) = std::fs::read_to_string(root.join(LINT_FILE)) else {
+    /// The plan for the worktree at `root`, given the text of the project's `lint.toml` if it has one.
+    pub fn for_worktree(root: &Path, lint: Option<&str>) -> Self {
+        let Some(text) = lint else {
             return Self {
                 enabled: true,
                 checks: detect(root),
                 ..Self::off()
             };
         };
-        match parse(&text) {
+        match parse(text) {
             Ok(file) if !file.enabled => Self::off(),
             Ok(file) => {
                 let detected = file.check.is_empty();
@@ -165,6 +165,11 @@ impl Plan {
             },
         }
     }
+}
+
+/// Why `text` is not fit to be saved as a project's `lint.toml`, if it is not.
+pub fn check_text(text: &str) -> Result<(), String> {
+    parse(text).map(drop)
 }
 
 fn parse(text: &str) -> Result<LintFile, String> {
@@ -418,15 +423,10 @@ mod tests {
     #[test]
     fn a_file_names_the_checks_and_the_limits() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir(dir.path().join(".moebius")).unwrap();
-        std::fs::write(
-            dir.path().join(LINT_FILE),
-            "budget_ms = 500\nmax_lines = 3\ndeep_timeout_seconds = 9\n\
+        let lint = "budget_ms = 500\nmax_lines = 3\ndeep_timeout_seconds = 9\n\
              [[check]]\nglob = \"*.py\"\nedit = \"./tools/lint {file}\"\ndeep = \"./tools/types {files}\"\n\
-             severity = \"error\"\n",
-        )
-        .unwrap();
-        let plan = Plan::for_worktree(dir.path());
+             severity = \"error\"\n";
+        let plan = Plan::for_worktree(dir.path(), Some(lint));
         assert_eq!(
             (plan.budget_ms, plan.max_lines, plan.deep_timeout_ms),
             (500, 3, 9000)
@@ -443,10 +443,8 @@ mod tests {
     #[test]
     fn a_file_without_checks_leaves_the_detection_and_a_bad_one_is_reported() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir(dir.path().join(".moebius")).unwrap();
         std::fs::write(dir.path().join("go.mod"), "module x\n").unwrap();
-        std::fs::write(dir.path().join(LINT_FILE), "max_lines = 4\n").unwrap();
-        let plan = Plan::for_worktree(dir.path());
+        let plan = Plan::for_worktree(dir.path(), Some("max_lines = 4\n"));
         assert_eq!(plan.max_lines, 4);
         assert!(plan.checks.iter().any(|c| c.name == "gofmt"));
 
@@ -457,9 +455,9 @@ mod tests {
             "[[check]]\nglob = \"*.x\"\nedit = \"\"\n",
             "[[check]]\nglob = \"*.x\"\nedit = \"x\"\npattern = \"(\"\n",
         ] {
-            std::fs::write(dir.path().join(LINT_FILE), bad).unwrap();
-            let plan = Plan::for_worktree(dir.path());
+            let plan = Plan::for_worktree(dir.path(), Some(bad));
             assert!(plan.checks.is_empty(), "{bad}");
+            assert!(check_text(bad).is_err(), "{bad}");
             assert!(
                 plan.error.as_deref().unwrap().starts_with(LINT_FILE),
                 "{bad}: {:?}",
@@ -467,8 +465,7 @@ mod tests {
             );
         }
 
-        std::fs::write(dir.path().join(LINT_FILE), "enabled = false\n").unwrap();
-        let plan = Plan::for_worktree(dir.path());
+        let plan = Plan::for_worktree(dir.path(), Some("enabled = false\n"));
         assert!(!plan.enabled && plan.checks.is_empty() && plan.error.is_none());
     }
 
@@ -476,7 +473,7 @@ mod tests {
     fn the_repositorys_files_say_which_tools_to_use() {
         let dir = tempfile::tempdir().unwrap();
         let names = |dir: &Path| -> Vec<String> {
-            Plan::for_worktree(dir)
+            Plan::for_worktree(dir, None)
                 .checks
                 .into_iter()
                 .map(|c| c.name)
@@ -497,7 +494,7 @@ mod tests {
         .unwrap();
         std::fs::write(dir.path().join("tsconfig.json"), "{}").unwrap();
         std::fs::write(dir.path().join("biome.json"), "{}").unwrap();
-        let plan = Plan::for_worktree(dir.path());
+        let plan = Plan::for_worktree(dir.path(), None);
         let names: Vec<_> = plan.checks.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(
             names,

@@ -75,6 +75,7 @@ pub(super) fn setup_with(pi: &Path, claude: &Path, localizing: bool) -> Setup {
             .route(crate::decide::localize::KIND, crate::decide::localize::KIND);
     }
     let app = Arc::new(app);
+    crate::harness::repo::testing::use_harness(&app, dir.path());
     let repo = app
         .add_repository("demo", origin.to_str().unwrap())
         .unwrap();

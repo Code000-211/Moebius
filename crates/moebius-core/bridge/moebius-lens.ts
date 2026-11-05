@@ -1,6 +1,6 @@
 // The Moebius lens for Pi-Bolt (issue 114): the agent sees its own mistakes at once. Moebius loads this file into each run
-// with `--extension`, before the bridge, and sets MOEBIUS_LENS (the plan: what to run, from the repository's
-// `.moebius/lint.toml` or detected), MOEBIUS_CHECK_URL and MOEBIUS_RUN_TOKEN for the Pi process. Without a plan it
+// with `--extension`, before the bridge, and sets MOEBIUS_LENS (the plan: what to run, from the project's
+// `lint.toml` or detected), MOEBIUS_CHECK_URL and MOEBIUS_RUN_TOKEN for the Pi process. Without a plan it
 // does nothing.
 // After an edit of a file (the `edit` and `write` tools), within a time budget, it runs a syntax check and the
 // repository's fast linter on that file alone, and appends to the tool's result only the problems that are new: the
@@ -633,7 +633,7 @@ export default function (pi: ExtensionAPI) {
 	// A plan that could not be read is said once, in the run's events.
 	if (plan.error) {
 		void ask("report", {
-			file: ".moebius/lint.toml",
+			file: "lint.toml",
 			edit: { tool: "lens", first_line: 1, last_line: 1, excerpt: "" },
 			max_lines: plan.max_lines,
 			findings: [],

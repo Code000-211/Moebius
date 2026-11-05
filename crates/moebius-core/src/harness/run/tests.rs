@@ -306,7 +306,6 @@ fn the_review_axes_are_told_their_rules_and_how_to_report_findings() {
     let standards = prompt_for(&setup.app, &card, "review-standards", None);
     assert!(standards.contains("You are the reviewer"), "{standards}");
     for word in [
-        ".moebius/review.md",
         "CONTRIBUTING.md",
         "Possible <smell>",
         "Feature Envy",
@@ -315,7 +314,16 @@ fn the_review_axes_are_told_their_rules_and_how_to_report_findings() {
     ] {
         assert!(standards.contains(word), "{word}: {standards}");
     }
+    // The project's review notes are told to the standards axis, in the prompt itself.
+    assert!(
+        !standards.contains("review notes of this repository"),
+        "{standards}"
+    );
+    crate::harness::repo::testing::put(&setup.app, "demo", "review.md", "Use British spelling.\n");
+    let standards = prompt_for(&setup.app, &card, "review-standards", None);
+    assert!(standards.contains("Use British spelling."), "{standards}");
     let spec = prompt_for(&setup.app, &card, "review-spec", None);
+    assert!(!spec.contains("British"), "{spec}");
     assert!(spec.contains("what the issue asks"), "{spec}");
     assert!(spec.contains("FINDING blocking"), "{spec}");
     assert!(!spec.contains("Feature Envy"), "{spec}");
@@ -330,22 +338,11 @@ fn a_code_run_in_a_repository_that_works_test_first_is_told_red_then_green() {
         .unwrap();
     assert!(!prompt_for(&setup.app, &card, "code", None).contains("red, then green"));
 
-    let clone = PathBuf::from(
-        &setup
-            .app
-            .store
-            .repository(setup.repo)
-            .unwrap()
-            .unwrap()
-            .path,
-    );
-    std::fs::create_dir_all(clone.join(".moebius")).unwrap();
-    std::fs::write(clone.join(".moebius/test-first"), "").unwrap();
-    git(&clone, &["add", "."]).unwrap();
-    git(&clone, &["commit", "--quiet", "-m", "test first"]).unwrap();
+    crate::harness::repo::testing::put(&setup.app, "demo", "test-first", "");
     let prompt = prompt_for(&setup.app, &card, "code", None);
     assert!(prompt.contains("red, then green"), "{prompt}");
-    assert!(prompt.contains("`.moebius/reproduce`"), "{prompt}");
+    assert!(prompt.contains("`REPRODUCE: <the command"), "{prompt}");
+    assert!(!prompt.contains(".moebius"), "{prompt}");
     assert!(!prompt_for(&setup.app, &card, "review", None).contains("red, then green"));
 }
 
@@ -483,9 +480,9 @@ fn a_repository_can_turn_the_hint_off_for_its_own_workflow() {
     assert!(run_prompt(&setup.app, &card, "code", None).contains("- README.md"));
     // Only a code run asks.
     assert!(!run_prompt(&setup.app, &card, "review", None).contains("likely relevant"));
-    commit_files(&setup, &[(".moebius/localize", "# nothing here\noff\n")]);
+    crate::harness::repo::testing::put(&setup.app, "demo", "localize", "# nothing here\noff\n");
     assert!(!run_prompt(&setup.app, &card, "code", None).contains("likely relevant"));
-    commit_files(&setup, &[(".moebius/localize", "on\nfiles 1\n")]);
+    crate::harness::repo::testing::put(&setup.app, "demo", "localize", "on\nfiles 1\n");
     let prompt = run_prompt(&setup.app, &card, "code", None);
     assert_eq!(prompt.matches("\n- ").count(), 1, "{prompt}");
     // Two hints were asked for and recorded, and the one that was not asked for left no judgement.

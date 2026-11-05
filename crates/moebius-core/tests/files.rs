@@ -557,55 +557,6 @@ async fn a_link_that_origin_adds_does_not_lead_a_save_out_of_the_clone() {
     assert_eq!(git(&clone, &["status", "--porcelain"]).unwrap(), "");
 }
 
-/// The same for a column script, which is written below `.moebius`: a link there leads out of the clone neither for a
-/// save nor for a delete.
-#[cfg(unix)]
-#[tokio::test]
-async fn a_link_that_origin_adds_does_not_lead_a_script_out_of_the_clone() {
-    let dir = tempfile::tempdir().unwrap();
-    let setup = Setup::start(dir.path()).await;
-    let app = &setup.server.app;
-    let (id, clone, origin) = on_a_forge(dir.path(), app);
-    let outside = dir.path().join("outside");
-    std::fs::create_dir_all(&outside).unwrap();
-    let column = moebius_core::board::column_named("ready").unwrap();
-    let text = moebius_core::board::built_in_script(&column.script).unwrap();
-    std::fs::write(outside.join(&column.script), "keep\n").unwrap();
-
-    let other = dir.path().join("other");
-    git(
-        dir.path(),
-        &["clone", "--quiet", origin.to_str().unwrap(), "other"],
-    )
-    .unwrap();
-    std::os::unix::fs::symlink(&outside, other.join(".moebius")).unwrap();
-    git(&other, &["add", "."]).unwrap();
-    git(&other, &["commit", "--quiet", "-m", "link"]).unwrap();
-    git(&other, &["push", "--quiet", "origin", "main"]).unwrap();
-    assert!(!clone.join(".moebius").exists());
-
-    let route = format!("/v1/repositories/{id}/scripts/ready");
-    let token = setup.token.clone();
-    let (status, message) = setup
-        .call(
-            &token,
-            reqwest::Method::PUT,
-            &route,
-            Some(json!({ "text": text })),
-        )
-        .await;
-    assert_eq!(status, 422, "{message}");
-    assert_eq!(
-        std::fs::read_to_string(outside.join(&column.script)).unwrap(),
-        "keep\n"
-    );
-    let (status, message) = setup
-        .call(&token, reqwest::Method::DELETE, &route, None)
-        .await;
-    assert!(status >= 400, "{message}");
-    assert!(outside.join(&column.script).exists());
-}
-
 /// A save that fails does not take a commit that landed meanwhile (a merge in the same clone) with it.
 #[cfg(unix)] // The failing commit is a hook, which is a shell script.
 #[tokio::test]

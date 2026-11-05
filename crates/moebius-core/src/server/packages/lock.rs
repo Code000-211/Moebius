@@ -44,7 +44,7 @@ pub struct Locked {
     /// Every file with its URL and sha256: where it was proposed to go, relative to its folder.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub files: Vec<LockedFile>,
-    /// The rules a rules package added to the repository's `.moebius/rules.md`.
+    /// The rules a rules package added to the project's `rules.md`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub rules: Vec<String>,
 }

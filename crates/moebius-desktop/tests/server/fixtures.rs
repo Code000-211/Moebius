@@ -177,3 +177,24 @@ pub fn shown(app: &App, text: &str) -> bool {
     .find(text)
     .is_ok()
 }
+
+/// Gives `server` a harness configuration repository made in `dir`, where a repository's settings (its column scripts,
+/// say) are kept; returns the path of its clone.
+pub fn use_harness(server: &Server, dir: &Path) -> std::path::PathBuf {
+    use std::collections::BTreeMap;
+    use std::sync::RwLock;
+
+    let origin = dir.join("harness-origin");
+    moebius_core::harness::repo::create(&origin, &BTreeMap::new(), None).unwrap();
+    let clone = dir.join("harness-clone");
+    let repo = moebius_core::harness::repo::HarnessRepo::open(
+        &server.app,
+        origin.to_str().unwrap(),
+        &clone,
+        vec![],
+        Arc::new(RwLock::new(moebius_core::config::AgentSet::default())),
+    )
+    .unwrap();
+    server.app.set_harness_repo(Arc::new(repo));
+    clone
+}

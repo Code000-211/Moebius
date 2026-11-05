@@ -358,11 +358,34 @@ fn is_configuration(file: &str) -> bool {
         .iter()
         .any(|dir| file.starts_with(dir))
         || matches!(file, "rules.md" | "mcp.toml" | "packages.lock")
+        || is_project_path(file)
+}
+
+/// Whether `file` is `repos/<name>/<file>` with a file of a project's settings that a proposal may change: only the
+/// rules and the column scripts (see `improve::own::files`), never `checks`, which the server runs as a command.
+fn is_project_path(file: &str) -> bool {
+    file.strip_prefix("repos/")
+        .and_then(|rest| rest.split_once('/'))
+        .is_some_and(|(name, file)| {
+            !name.is_empty() && crate::improve::own::files().iter().any(|own| own == file)
+        })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_proposal_may_change_only_the_rules_and_scripts_of_a_project() {
+        for file in ["rules.md", "ready.luau", "code.luau"] {
+            assert!(is_configuration(&format!("repos/app/{file}")), "{file}");
+        }
+        for file in ["checks", "test-first", "lint.toml", "review.md", "localize"] {
+            assert!(!is_configuration(&format!("repos/app/{file}")), "{file}");
+        }
+        assert!(!is_configuration("repos//rules.md"));
+        assert!(!is_configuration("repos/rules.md"));
+    }
 
     #[test]
     fn the_cards_are_the_last_line_of_a_commit_message() {

@@ -70,6 +70,30 @@ pub fn creation_order(issues: &[GrillingIssue]) -> std::result::Result<Vec<usize
     Ok(order)
 }
 
+/// Makes git ignore `.moebius/` in the grilling's `worktree`, so that the files the agent writes there are not noise in
+/// its `git status`. The line goes into the `info/exclude` file git names for the worktree, which a clone shares among
+/// its worktrees; nothing of a repository is read from a `.moebius/` folder any more, so ignoring it hides no setting.
+pub fn ignore_result_folder(worktree: &Path) -> std::io::Result<()> {
+    use std::io::Write;
+
+    let named = crate::repos::git(worktree, &["rev-parse", "--git-path", "info/exclude"])
+        .map_err(std::io::Error::other)?;
+    let file = worktree.join(named);
+    if std::fs::read_to_string(&file).is_ok_and(|text| text.lines().any(|l| l == ".moebius/")) {
+        return Ok(());
+    }
+    if let Some(parent) = file.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    writeln!(
+        std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(file)?,
+        ".moebius/"
+    )
+}
+
 /// Reads the result the agent left in `worktree`. `issues.json` decides when it is there; else `report.md`.
 pub fn read_result(worktree: &Path) -> Outcome {
     let directory = worktree.join(".moebius").join("grilling");
@@ -287,6 +311,26 @@ mod tests {
             std::fs::write(grilling.join(name), text).unwrap();
         }
         dir
+    }
+
+    #[test]
+    fn the_result_folder_is_ignored_by_git_in_the_worktree() {
+        use crate::repos::git;
+
+        let dir = tempfile::tempdir().unwrap();
+        git(dir.path(), &["init", "--quiet", "-b", "main"]).unwrap();
+        std::fs::create_dir_all(dir.path().join(".moebius/grilling")).unwrap();
+        std::fs::write(dir.path().join(".moebius/grilling/report.md"), "x").unwrap();
+        assert!(
+            git(dir.path(), &["status", "--porcelain"])
+                .unwrap()
+                .contains(".moebius")
+        );
+        ignore_result_folder(dir.path()).unwrap();
+        ignore_result_folder(dir.path()).unwrap();
+        assert_eq!(git(dir.path(), &["status", "--porcelain"]).unwrap(), "");
+        let exclude = std::fs::read_to_string(dir.path().join(".git/info/exclude")).unwrap();
+        assert_eq!(exclude.matches(".moebius/").count(), 1);
     }
 
     #[test]

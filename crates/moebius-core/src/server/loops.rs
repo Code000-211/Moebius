@@ -189,11 +189,12 @@ async fn poll_every(
 }
 
 /// Refreshes the clones of repositories without a forge and of the harness configuration repository every
-/// [`PLAIN_REFRESH`] until the future is dropped.
+/// [`PLAIN_REFRESH`] until the future is dropped, and tells each repository that still has a `.moebius/` folder, once.
 pub(super) async fn refresh(server: Arc<Server>) {
     every(server, PLAIN_REFRESH, |server| {
         server.refresh_plain_repositories();
         server.refresh_harness_repository();
+        server.app.warn_about_old_settings();
     })
     .await
 }
@@ -615,12 +616,9 @@ mod tests {
             .app
             .create_issue(plain.id, "Anything", "", "person")
             .unwrap();
-        let clone = Path::new(&plain.path);
+        crate::harness::repo::testing::use_harness(&f.server.app, f._dir.path());
         let override_with = |script: &str| {
-            std::fs::create_dir_all(clone.join(".moebius")).unwrap();
-            std::fs::write(clone.join(".moebius/backlog.luau"), script).unwrap();
-            git(clone, &["add", "."]).unwrap();
-            git(clone, &["commit", "--quiet", "-m", "override"]).unwrap();
+            crate::harness::repo::testing::put(&f.server.app, "plain", "backlog.luau", script)
         };
         let waiting = || f.server.app.waiting(std::slice::from_ref(&card));
 
@@ -650,15 +648,13 @@ mod tests {
             .create_issue(plain.id, "Anything", "", "person")
             .unwrap();
         // The script of Done fails whenever it runs, so a settle shows as the card's waiting reason.
-        let clone = Path::new(&plain.path);
-        std::fs::create_dir_all(clone.join(".moebius")).unwrap();
-        std::fs::write(
-            clone.join(".moebius/done.luau"),
+        crate::harness::repo::testing::use_harness(&f.server.app, f._dir.path());
+        crate::harness::repo::testing::put(
+            &f.server.app,
+            "plain",
+            "done.luau",
             "function on_card(card) error('boom') end",
-        )
-        .unwrap();
-        git(clone, &["add", "."]).unwrap();
-        git(clone, &["commit", "--quiet", "-m", "override"]).unwrap();
+        );
         f.server
             .app
             .store

@@ -8,7 +8,6 @@ use std::sync::{Arc, Mutex};
 use axum::http::HeaderMap;
 use axum::routing::post;
 use moebius_core::config::Config;
-use moebius_core::repos::git;
 use moebius_core::router::{Grant, Protocol};
 use moebius_core::server::Server;
 use serde_json::{Value, json};
@@ -205,15 +204,13 @@ async fn board_limits_budgets_and_agents_apply_without_a_restart() {
         .create_issue(plain.id, "Anything", "", "person")
         .unwrap();
     // The card's script tells the limits it is given.
-    let clone = Path::new(&plain.path);
-    std::fs::create_dir_all(clone.join(".moebius")).unwrap();
-    std::fs::write(
-        clone.join(".moebius/backlog.luau"),
+    let settings = common::use_harness(&f.server.app, f.dir.path());
+    common::put_project(
+        &settings,
+        "plain",
+        "backlog.luau",
         "function on_card(card)\n  moebius.wait('limits ' .. moebius.round_limit .. ' ' .. moebius.run_limit .. ' ' .. tostring(moebius.day_budget))\nend\n",
-    )
-    .unwrap();
-    git(clone, &["add", "."]).unwrap();
-    git(clone, &["commit", "--quiet", "-m", "script"]).unwrap();
+    );
     let waiting = || {
         f.server
             .app

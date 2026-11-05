@@ -45,12 +45,19 @@ name (a flag you give changes what is copied; a built-in agent's instructions be
 
 Start from the text `"$MOEBIUS" rules --json` gives (`prose.text`), add or sharpen rules, and save the whole file. Never
 remove or loosen a rule to make something pass; if a rule is in the way, tell the person. One `## name` heading per
-rule, a name without spaces, never twice. One repository's rules are `.moebius/rules.md` on its default branch; save
-the whole file as a commit there (the server checks it first and answers 422 with the wrong line):
+rule, a name without spaces, never twice. One repository's rules are the `rules.md` of its settings (`repos/<repository name>/` of the harness
+configuration repository); save the whole file as a commit there (the server checks it first and answers 422 with the
+wrong line):
 
 ```sh
-"$MOEBIUS" api PUT /v1/repositories/1/files/.moebius/rules.md --body '{"text": "## small-diffs\nKeep changes small.\n", "reason": "..."}'
+"$MOEBIUS" api GET /v1/repositories/1/settings        # every file of the settings, its text, and any leftover .moebius/ files
+"$MOEBIUS" api PUT /v1/repositories/1/settings/rules.md --body '{"text": "## small-diffs\nKeep changes small.\n", "reason": "..."}'
 ```
+
+The other files of the settings are saved the same way: `review.md` (notes for the Standards review), `lint.toml`
+(what the lens checks), `checks` (the checks of a repository without a forge), `test-first` (an empty text turns test
+first on, `DELETE` turns it off) and `localize`. A repository's own `.moebius/` folder is not read; if `settings` lists
+`leftover` files, offer to move them to the settings.
 
 ## A column's script in one repository
 
@@ -65,6 +72,10 @@ Build the body with `jq -n --rawfile text ready.luau '{text: $text}' > body.json
 checks the script again and refuses it with the check's message. How to write the script: the `moebius-workflows` skill.
 
 ## A file of a repository
+
+A project's own settings (`rules.md`, `review.md`, `lint.toml`, `checks`, `test-first`, `localize` and the column
+scripts) are not files of the repository: change them with the settings and scripts routes above, never with
+`/files/`, and never in a `.moebius/` folder, which is not read.
 
 When the person asks you to change a file of a repository right on its default branch (often the file open in the
 Editor of the project page, which your context names with the cursor's line), read and write it through the server:

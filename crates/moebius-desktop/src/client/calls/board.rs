@@ -208,6 +208,22 @@ impl Client {
         self.put(&file_path(repository, path), body).await
     }
 
+    /// Writes a file of a repository's settings (such as its `rules.md`); the server commits it in the harness
+    /// configuration repository.
+    pub async fn save_setting(
+        &self,
+        repository: i64,
+        file: &str,
+        text: &str,
+    ) -> Result<serde_json::Value, ClientError> {
+        let body = serde_json::json!({ "text": text });
+        self.put(
+            &format!("/v1/repositories/{repository}/settings/{file}"),
+            body,
+        )
+        .await
+    }
+
     /// The script a column runs for a repository.
     pub async fn script(&self, repository: i64, column: &str) -> Result<ScriptDetail, ClientError> {
         self.get(&script_path(repository, column)).await

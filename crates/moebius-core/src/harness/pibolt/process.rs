@@ -36,6 +36,8 @@ pub(super) struct Place<'a> {
     pub(super) bridge: &'a Path,
     pub(super) token: &'a str,
     pub(super) operates: bool,
+    /// The text of the project's `lint.toml`, if it has one.
+    pub(super) lint: Option<&'a str>,
 }
 
 /// Where a run's Pi is started from, for the launcher: the agent's name, its card, its definition, the run's directory
@@ -67,7 +69,7 @@ impl PiBolt {
             // What the lens checks after the agent's edits (see `harness::lens`).
             .env(
                 "MOEBIUS_LENS",
-                crate::harness::lens::plan_json(place.worktree),
+                crate::harness::lens::plan_json(place.worktree, place.lint),
             );
         if let (true, Some(url)) = (place.operates, self.api_url.get()) {
             // The Moebius agent operates Moebius with `$MOEBIUS`, as the run itself: its token is accepted by the
@@ -219,6 +221,7 @@ impl PiBolt {
         let stored = app.store.run(run.id).map_err(|e| e.to_string())?;
         let operates = stored.as_ref().is_some_and(|s| s.agent == MOEBIUS_AGENT);
         let sessions = run_dir.join("sessions");
+        let lint = app.run_project_file(run.id, "lint.toml");
         let place = Place {
             worktree: &run.worktree,
             agent_dir: &agent_dir,
@@ -228,6 +231,7 @@ impl PiBolt {
             bridge: &bridge,
             token: &run.token,
             operates,
+            lint: lint.as_deref(),
         };
         let mut command = self.command(agent, &place, false);
         let mut launched = None;
@@ -344,6 +348,12 @@ impl PiBolt {
                 command.env(name, &tmp);
             }
             read_write.push(tmp);
+            // The server writes the whole outputs of tools here (see `harness::output`) and the agent reads them, so
+            // it is granted to read only; it has to exist for a launcher to grant it.
+            let out = spot.run_dir.join(crate::harness::output::OUT_DIR);
+            std::fs::create_dir_all(&out)
+                .map_err(|e| format!("cannot make the output directory of the run: {e}"))?;
+            read_only.push(out);
         }
         let ask = Ask {
             run: LaunchRun {

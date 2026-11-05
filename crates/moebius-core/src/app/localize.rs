@@ -3,7 +3,7 @@
 //! card's change is known: at the end of each code run and when the change is merged.
 //!
 //! Whether the hint is asked for is the server's `[localize]` table, which a repository overrides in
-//! `.moebius/localize` on its default branch. Anything that fails leaves the run without a hint.
+//! the project's `localize` file. Anything that fails leaves the run without a hint.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -16,13 +16,13 @@ use crate::decide::model::localize as model;
 use crate::repos::{git, git_bytes};
 use crate::store::{Card, Change, Repository};
 
-/// The file on a repository's default branch that turns the hint on or off for it and says how many files it names.
-const SETTINGS: &str = ".moebius/localize";
+/// The file of a project's settings that turns the hint on or off for it and says how many files it names.
+const SETTINGS: &str = "localize";
 
 /// How many of the files that best match the issue a decider with no index of its own is shown.
 const CANDIDATES: usize = 100;
 
-/// Reads `.moebius/localize` over `base`: lines that are empty or start with `#` are skipped, `on` and `off` turn the
+/// Reads the project's `localize` file over `base`: lines that are empty or start with `#` are skipped, `on` and `off` turn the
 /// hint on and off, and `files <n>` (1 to [`MAX_LOCALIZE_FILES`]) says how many files it names. A line that says
 /// anything else is ignored.
 fn read_settings(text: &str, base: LocalizeConfig) -> LocalizeConfig {
@@ -67,10 +67,9 @@ fn touched_since(dir: &Path, base: &str) -> Option<Vec<String>> {
 impl App {
     /// How the hint is asked for in `repository`: the server's settings with the repository's own over them.
     pub fn localize_for(&self, repository: &Repository) -> LocalizeConfig {
-        let spec = format!("{}:{SETTINGS}", repository.base_ref());
-        match git(Path::new(&repository.path), &["show", &spec]) {
-            Ok(text) => read_settings(&text, self.localize),
-            Err(_) => self.localize,
+        match self.project_file(repository, SETTINGS) {
+            Some(text) => read_settings(&text, self.localize),
+            None => self.localize,
         }
     }
 

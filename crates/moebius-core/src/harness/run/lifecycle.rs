@@ -177,10 +177,11 @@ impl RunningRun {
         }
     }
 
-    /// Closes the terminals open on the run, then removes the worktree, or the chat's empty directory, and what the
-    /// run left on its runner.
+    /// Closes the terminals open on the run, then removes the worktree, or the chat's empty directory, the whole
+    /// outputs of its tools that were saved and what the run left on its runner.
     pub(in crate::harness) fn remove_worktree(&self, app: &App) {
         app.terminals.close(self.id);
+        crate::harness::output::remove_saved(&app.data_dir, self.id);
         if let Some(remote) = &self.remote {
             remote.cleanup();
         }
@@ -303,6 +304,10 @@ pub(in crate::harness) fn chat_run(
                     worktree.map_err(|e| e.to_string())
                 })
                 .map_err(|e| StartError::WorktreeFailed(fail(app, run.id, e)))?;
+            if agent == crate::harness::pibolt::GRILLING_AGENT {
+                // The agent writes its result in `.moebius/grilling/` of the worktree, which is never committed.
+                let _ = crate::harness::grilling::ignore_result_folder(&made.path);
+            }
             let start = head(app, run.id, &made.path)?;
             (Some(clone), made.path, start)
         }

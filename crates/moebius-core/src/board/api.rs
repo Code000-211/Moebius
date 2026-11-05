@@ -11,7 +11,7 @@
 //! - `moebius.publish_change() -> change`: publishes the card's latest successful `code` run on the branch of its
 //!   change (once per commit) and returns the change, as `card.change` is.
 //! - `moebius.run_checks() -> change`: starts the repository's own checks on the change, if it has any.
-//! - `moebius.reproduction() -> table`: what the change names in `.moebius/reproduce`, for test first.
+//! - `moebius.reproduction() -> table`: what the card's runs name in their summaries as the reproduction test, for test first.
 //! - `moebius.run_test(command) -> test`, `moebius.run_test_at_base(command, files) -> test`: run the change's
 //!   reproduction test on the change, or on the commit it was made from with the test's files added.
 //! - `moebius.offer_change(judgements)`: publishes the change and offers it to a person; the card moves to "Ready to

@@ -1,6 +1,6 @@
 ---
 name: moebius-workflows
-description: Write or change Moebius column scripts (Luau) and whole workflows in a repository's .moebius/ directory. Use it when the person wants cards of a repository treated differently - held back, approved first, started with another agent, given up sooner, checked or reviewed another way - or asks for a column script, a workflow, .moebius/checks or .moebius/rules.md.
+description: Write or change Moebius column scripts (Luau) and whole workflows in a repository's settings (repos/<repository name>/ of the harness configuration repository). Use it when the person wants cards of a repository treated differently - held back, approved first, started with another agent, given up sooner, checked or reviewed another way - or asks for a column script, a workflow, the checks or the rules of a repository.
 ---
 
 # Column scripts and workflows
@@ -10,34 +10,37 @@ it is offered.
 
 ## What a workflow is
 
-Every board has six columns, each run by one Luau script; a repository replaces a column's script with its own file:
+Every board has six columns, each run by one Luau script; a repository replaces a column's script with a file of its
+settings, `repos/<repository name>/` of the harness configuration repository (never a `.moebius/` folder in the
+repository: Moebius reads none):
 
-| Column | File in the repository |
+| Column | File in the repository's settings |
 |---|---|
-| `Backlog` | `.moebius/backlog.luau` |
-| `Not started` | `.moebius/ready.luau` |
-| `In progress` | `.moebius/code.luau` |
-| `In review` | `.moebius/review.luau` |
-| `Ready to merge` | `.moebius/merge.luau` |
-| `Done` | `.moebius/done.luau` |
+| `Backlog` | `backlog.luau` |
+| `Not started` | `ready.luau` |
+| `In progress` | `code.luau` |
+| `In review` | `review.luau` |
+| `Ready to merge` | `merge.luau` |
+| `Done` | `done.luau` |
 
-A whole workflow is a set of these files, plus `.moebius/checks` (the command that checks a change, without a forge) and
-`.moebius/rules.md` (rules for this repository's runs). Moebius reads them from the default branch, so they work once
-the person merges your change.
+A whole workflow is a set of these files, plus `checks` (the command that checks a change, without a forge) and
+`rules.md` (rules for this repository's runs). Moebius reads them from the default branch of the harness configuration
+repository, and your saves through the API are commits there, so they work at once.
 
 ## Steps
 
 1. Get the script the column runs now; an override replaces the whole script, so start from it:
    `"$MOEBIUS" api GET /v1/repositories/<id>/scripts/Not%20started --json` gives its `text` (the repository id is in
    `"$MOEBIUS" repos`).
-2. Write `.moebius/<file>.luau` in your worktree with the one change. Keep `function on_card(card)`; keep what the
+2. Write the script to a scratch file in your worktree (such as `ready.luau`) with the one change. Keep `function on_card(card)`; keep what the
    default does that the person did not ask to change (blockers, budgets, the run limit, the round limit).
 3. Check every path:
-   `"$MOEBIUS" check-script .moebius/ready.luau --column "Not started"`, again with `--title "[large] ..."` or
+   `"$MOEBIUS" check-script ready.luau --column "Not started"`, again with `--title "[large] ..."` or
    `--author someone` for the other branches. It prints what the script did (`moved the card to In progress`,
    `waited: ...`) or the error, with exit status 1.
-4. Leave the file in the worktree; it is offered as a change when the person offers the chat's changes, after your
-   answer, or the chat ends. In a chat without the repository, save it with `"$MOEBIUS" api PUT /v1/repositories/<id>/scripts/Not%20started` instead (see the `moebius-configure` skill).
+4. Save it: `jq -Rs '{text: .}' < ready.luau > body.json` and `"$MOEBIUS" api PUT /v1/repositories/<id>/scripts/Not%20started
+   --body body.json` (see the `moebius-configure` skill). The server checks it again, commits it to the harness
+   configuration repository and uses it from the next tick. Do not leave the file in the worktree: nothing reads it there.
 
 ## What a script can use
 
@@ -82,8 +85,8 @@ function on_card(card)
 end
 ```
 
-Try both paths: `"$MOEBIUS" check-script .moebius/ready.luau --column "Not started"` and
-`"$MOEBIUS" check-script .moebius/ready.luau --column "Not started" --title "[large] Rewrite the parser"`.
+Try both paths: `"$MOEBIUS" check-script ready.luau --column "Not started"` and
+`"$MOEBIUS" check-script ready.luau --column "Not started" --title "[large] Rewrite the parser"`.
 
 ## What can go wrong
 

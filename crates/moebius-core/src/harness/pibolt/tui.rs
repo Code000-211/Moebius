@@ -57,6 +57,7 @@ impl PiBolt {
             }
         }
         let sessions = run_dir.join("sessions");
+        let lint = app.run_project_file(run_id, "lint.toml");
         let place = Place {
             worktree: &run.worktree,
             agent_dir: &agent_dir,
@@ -66,6 +67,7 @@ impl PiBolt {
             bridge: &run_dir.join("moebius-bridge.ts"),
             token: &run.token,
             operates: stored.agent == MOEBIUS_AGENT,
+            lint: lint.as_deref(),
         };
         let command = self.command(&config, &place, true);
         let follower = Follower::start(app.clone(), run_id, sessions);

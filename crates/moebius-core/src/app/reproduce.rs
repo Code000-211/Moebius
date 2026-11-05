@@ -1,9 +1,10 @@
-//! Test first: a repository opts in with a file `.moebius/test-first` on its default branch, and the Coder then names
-//! the test that reproduces the issue in `.moebius/reproduce`, committed with the change. The review script runs that
-//! test on the change and on the commit the change was made from with the test's files added, each in a throwaway
-//! worktree with the time limit and cleared environment of the repository's checks (see `checks`); the change goes
-//! on only when it fails there and passes here. A run goes on a thread of its own, and its result is kept in memory
-//! for the change's commit, so a script asks again on each tick until it has ended.
+//! Test first: a project opts in with a file `test-first` in its settings, and the Coder then names the test that
+//! reproduces the issue in the end of its summary, in lines `REPRODUCE: <command>` and `REPRODUCE-FILE: <path>`. The
+//! summary is stored with the run, so the attempt or code run that made a change is also where its test is named. The
+//! review script runs that test on the change and on the commit the change was made from with the test's files added,
+//! each in a throwaway worktree with the time limit and cleared environment of the repository's checks (see
+//! `checks`); the change goes on only when it fails there and passes here. A run goes on a thread of its own, and its
+//! result is kept in memory for the change's commit, so a script asks again on each tick until it has ended.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -12,13 +13,10 @@ use super::{App, AppError, Result};
 use crate::repos::git;
 use crate::store::Repository;
 
-/// The file on the default branch that turns test first on.
-const TEST_FIRST: &str = ".moebius/test-first";
+/// The file of a project's settings that turns test first on.
+const TEST_FIRST: &str = "test-first";
 
-/// The file in the change that names its reproduction test.
-const REPRODUCE: &str = ".moebius/reproduce";
-
-/// What a change says of its reproduction test in `.moebius/reproduce`.
+/// What a run says of its reproduction test in its summary.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reproduction {
     /// The command that runs the test, and the files of the change that hold it.
@@ -27,25 +25,52 @@ pub enum Reproduction {
     Untestable(String),
 }
 
-/// Reads `.moebius/reproduce`: lines that are empty or start with `#` are skipped. A first line `untestable: <why>`
-/// says why the change has no test; otherwise the first line is the command and every further line a file. None for a
-/// file that says nothing.
-fn parse(text: &str) -> Option<Reproduction> {
-    let mut lines = text
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty() && !line.starts_with('#'));
-    let first = lines.next()?;
+/// `text` without the spaces and backticks around it that a summary may put there.
+fn bare(text: &str) -> &str {
+    text.trim().trim_matches('`').trim()
+}
+
+/// Reads the reproduction test a run names in its summary: the last line that starts with `REPRODUCE:` is the command,
+/// or `untestable: <why>` for a change that has no test, and the lines `REPRODUCE-FILE: <path>` of its block (up to a
+/// blank line, above or below it; those under an earlier `REPRODUCE:` line of the block are that line's) are the files,
+/// relative to the repository's root, that hold the test. None for a summary with no such line.
+pub fn parse(summary: &str) -> Option<Reproduction> {
+    let lines: Vec<&str> = summary.lines().map(str::trim).collect();
+    let at = lines
+        .iter()
+        .rposition(|line| line.starts_with("REPRODUCE:"))?;
+    let first = bare(&lines[at]["REPRODUCE:".len()..]);
     if let Some(why) = first.strip_prefix("untestable:") {
-        let why = std::iter::once(why.trim())
-            .chain(lines)
-            .collect::<Vec<_>>()
-            .join("\n");
         return Some(Reproduction::Untestable(why.trim().to_string()));
+    }
+    if first.is_empty() {
+        return None;
+    }
+    let start = lines[..at]
+        .iter()
+        .rposition(|line| line.is_empty())
+        .map_or(0, |blank| blank + 1);
+    let end = lines[at..]
+        .iter()
+        .position(|line| line.is_empty())
+        .map_or(lines.len(), |blank| at + blank);
+    // A file belongs to the `REPRODUCE:` line above it in the block, or to the first one below it when none is above.
+    let first_line = (start..end).find(|&i| lines[i].starts_with("REPRODUCE:"));
+    let mut owner = None;
+    let mut files = Vec::new();
+    for (index, line) in lines.iter().enumerate().take(end).skip(start) {
+        if line.starts_with("REPRODUCE:") {
+            owner = Some(index);
+        } else if let Some(file) = line.strip_prefix("REPRODUCE-FILE:")
+            && owner.or(first_line) == Some(at)
+            && !bare(file).is_empty()
+        {
+            files.push(bare(file).to_string());
+        }
     }
     Some(Reproduction::Test {
         command: first.to_string(),
-        files: lines.map(String::from).collect(),
+        files,
     })
 }
 
@@ -62,18 +87,27 @@ pub struct TestRun {
 pub(super) type TestKey = (i64, String, String, Option<Vec<String>>);
 
 impl App {
-    /// Whether the repository works test first: its default branch has `.moebius/test-first`.
+    /// Whether the repository works test first: its project has a `test-first` file.
     pub fn test_first(&self, repository: &Repository) -> bool {
-        let spec = format!("{}:{TEST_FIRST}", repository.base_ref());
-        git(Path::new(&repository.path), &["cat-file", "-e", &spec]).is_ok()
+        self.project_file(repository, TEST_FIRST).is_some()
     }
 
-    /// What the card's open change says of its reproduction test, from `.moebius/reproduce` of its latest commit. None
-    /// when the change has none, or has the file as the commit it was made from has it: a file left by an earlier
-    /// change says nothing about this one.
+    /// What the card's open change says of its reproduction test: what the latest succeeded `code` run of the card
+    /// that names one says in its summary. None when no run of the card does. Raises `Invalid` before the change is
+    /// published.
     pub fn reproduction(&self, card_id: i64) -> Result<Option<Reproduction>> {
-        let (_, repository, head, base) = self.change_and_base(card_id)?;
-        Ok(reproduction_at(Path::new(&repository.path), &head, &base))
+        self.change_and_base(card_id)?;
+        let runs = self.store.runs_for_card(card_id)?;
+        Ok(runs
+            .iter()
+            .rev()
+            .filter(|run| run.purpose == "code" && run.status == "succeeded")
+            .find_map(|run| parse(run.summary.as_deref()?)))
+    }
+
+    /// What the run `run_id` (an attempt) says of its reproduction test in its summary.
+    pub(super) fn reproduction_of_run(&self, run_id: i64) -> Result<Option<Reproduction>> {
+        Ok(self.run(run_id)?.summary.as_deref().and_then(parse))
     }
 
     /// Runs `command` on the card's open change, or with `files` on the commit the change was made from with those
@@ -173,16 +207,6 @@ impl App {
     }
 }
 
-/// What the commit `head` says of its reproduction test in `.moebius/reproduce`, none when it has no such file or has it
-/// as `base`, the commit it was made from, has it.
-pub(super) fn reproduction_at(clone: &Path, head: &str, base: &str) -> Option<Reproduction> {
-    let text = git(clone, &["show", &format!("{head}:{REPRODUCE}")]).ok()?;
-    if git(clone, &["show", &format!("{base}:{REPRODUCE}")]).is_ok_and(|before| before == text) {
-        return None;
-    }
-    parse(&text)
-}
-
 /// The name of the worktree and log of one test: the command and the files are in it as a short hash, as two tests of one
 /// commit may run at the same time and must not share a worktree.
 fn test_name(change: i64, head: &str, command: &str, files: &Option<Vec<String>>) -> String {
@@ -251,21 +275,48 @@ mod tests {
     }
 
     #[test]
-    fn the_reproduce_file_names_a_command_and_its_files_or_why_there_is_none() {
+    fn a_summary_names_a_command_and_its_files_or_why_there_is_none() {
         assert_eq!(
-            parse("# the test\ncargo test --test issue_7\n\ntests/issue_7.rs\n"),
+            parse(
+                "Fixed it.\n\nREPRODUCE: cargo test --test issue_7\nREPRODUCE-FILE: tests/issue_7.rs\n\
+                 REPRODUCE-FILE: `tests/helper.rs`\n"
+            ),
             Some(Reproduction::Test {
                 command: "cargo test --test issue_7".into(),
-                files: vec!["tests/issue_7.rs".into()],
+                files: vec!["tests/issue_7.rs".into(), "tests/helper.rs".into()],
             })
         );
         assert_eq!(
-            parse("untestable: only the README changes\nso nothing runs\n"),
-            Some(Reproduction::Untestable(
-                "only the README changes\nso nothing runs".into()
-            ))
+            parse("REPRODUCE: `sh t.sh`\n"),
+            Some(Reproduction::Test {
+                command: "sh t.sh".into(),
+                files: vec![],
+            })
         );
-        assert_eq!(parse("# nothing\n\n"), None);
+        assert_eq!(
+            parse("Done.\nREPRODUCE: untestable: only the README changes\n"),
+            Some(Reproduction::Untestable("only the README changes".into()))
+        );
+        // The last REPRODUCE line stands, and only the files after it.
+        assert_eq!(
+            parse("REPRODUCE: a\nREPRODUCE-FILE: x\nREPRODUCE: b\nREPRODUCE-FILE: y\n"),
+            Some(Reproduction::Test {
+                command: "b".into(),
+                files: vec!["y".into()],
+            })
+        );
+        // The files may come before the line, in the same block.
+        assert_eq!(
+            parse(
+                "Notes.\nREPRODUCE-FILE: tests/old.rs\n\nREPRODUCE-FILE: t.rs\nREPRODUCE: sh t.sh\nREPRODUCE-FILE: u.rs\n\nREPRODUCE-FILE: z.rs\n"
+            ),
+            Some(Reproduction::Test {
+                command: "sh t.sh".into(),
+                files: vec!["t.rs".into(), "u.rs".into()],
+            })
+        );
+        assert_eq!(parse("Fixed it.\n"), None);
+        assert_eq!(parse("REPRODUCE:   \n"), None);
     }
 
     // Unix only: the test is a shell command.

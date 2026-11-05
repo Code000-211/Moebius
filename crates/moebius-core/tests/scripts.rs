@@ -1,5 +1,5 @@
-//! Editing a column's script from the board: reading the built-in or the repository's script, saving one as a commit
-//! on the default branch (pushed for a repository on a forge), refusing one that fails the check, and going back to
+//! Editing a column's script from the board: reading the built-in or the project's script, saving one as a commit in
+//! the harness configuration repository (pushed to its origin), refusing one that fails the check, and going back to
 //! the built-in script.
 
 use std::path::{Path, PathBuf};
@@ -40,8 +40,21 @@ struct Setup {
 }
 
 impl Setup {
+    /// The clone of the harness configuration repository, where the scripts are committed.
+    fn clone_path(&self) -> PathBuf {
+        self.server
+            .harness_repo
+            .as_ref()
+            .unwrap()
+            .path()
+            .to_path_buf()
+    }
+
     async fn start(dir: &Path) -> Self {
-        let config = Config::parse("", dir, &dir.join("moebius.toml")).unwrap();
+        let harness = dir.join("harness");
+        moebius_core::harness::repo::create(&harness, &Default::default(), None).unwrap();
+        let text = format!("[harness]\nurl = {:?}\n", harness.display().to_string());
+        let config = Config::parse(&text, dir, &dir.join("moebius.toml")).unwrap();
         let server = Server::new(config, "127.0.0.1:1".parse().unwrap()).unwrap();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let api = format!("http://{}", listener.local_addr().unwrap());
@@ -133,12 +146,12 @@ async fn a_script_is_read_saved_used_and_given_back() {
     let repo = app
         .add_repository("demo", source(dir.path()).to_str().unwrap())
         .unwrap();
-    let clone = PathBuf::from(&repo.path);
+    let clone = setup.clone_path();
 
     let (status, view) = setup.get(repo.id, "Not started").await;
     assert_eq!(status, 200, "{view}");
     assert_eq!(view["column"], "Not started");
-    assert_eq!(view["path"], ".moebius/ready.luau");
+    assert_eq!(view["path"], "repos/demo/ready.luau");
     assert_eq!(view["source"], "built-in");
     assert!(view["text"].as_str().unwrap().contains("on_card"));
 
@@ -148,10 +161,10 @@ async fn a_script_is_read_saved_used_and_given_back() {
     assert_eq!(view["text"], HOLD);
     assert_eq!(
         git(&clone, &["log", "-1", "--format=%s"]).unwrap(),
-        "Change the Not started column's script"
+        "Change the Not started column's script of demo"
     );
     assert_eq!(
-        std::fs::read_to_string(clone.join(".moebius/ready.luau")).unwrap(),
+        std::fs::read_to_string(clone.join("repos/demo/ready.luau")).unwrap(),
         HOLD
     );
     // A column is found by its name in any case.
@@ -177,7 +190,7 @@ async fn a_script_is_read_saved_used_and_given_back() {
     let (status, view) = setup.delete(repo.id, "Not started").await;
     assert_eq!(status, 200, "{view}");
     assert_eq!(view["source"], "built-in");
-    assert!(!clone.join(".moebius/ready.luau").exists());
+    assert!(!clone.join("repos/demo/ready.luau").exists());
     assert_eq!(
         setup.get(repo.id, "Not started").await.1["source"],
         "built-in"
@@ -199,7 +212,7 @@ async fn ready_names_the_not_started_column_in_the_scripts_route() {
     let (status, view) = setup.get(repo.id, "Ready").await;
     assert_eq!(status, 200, "{view}");
     assert_eq!(view["column"], "Not started");
-    assert_eq!(view["path"], ".moebius/ready.luau");
+    assert_eq!(view["path"], "repos/demo/ready.luau");
     let (_, built_in) = setup.get(repo.id, "Not started").await;
     assert_eq!(view, built_in);
 }
@@ -213,7 +226,7 @@ async fn a_script_that_fails_the_check_is_refused_and_nothing_is_committed() {
         .app
         .add_repository("demo", source(dir.path()).to_str().unwrap())
         .unwrap();
-    let clone = PathBuf::from(&repo.path);
+    let clone = setup.clone_path();
     let before = head(&clone);
 
     for text in [
@@ -228,7 +241,7 @@ async fn a_script_that_fails_the_check_is_refused_and_nothing_is_committed() {
         );
     }
     assert_eq!(head(&clone), before);
-    assert!(!clone.join(".moebius").exists());
+    assert!(!clone.join("repos").exists());
     assert_eq!(git(&clone, &["status", "--porcelain"]).unwrap(), "");
     assert!(
         setup
@@ -257,7 +270,7 @@ async fn an_unknown_column_or_repository_is_not_found() {
     // A column is found by the name the board shows.
     assert_eq!(
         setup.get(repo.id, "In%20progress").await.1["path"],
-        ".moebius/code.luau"
+        "repos/demo/code.luau"
     );
 }
 
@@ -280,56 +293,28 @@ async fn the_moebius_agent_may_edit_a_script_and_the_decision_says_so() {
     assert_eq!(decisions[0].decider, "agent:Moebius");
 }
 
-/// A bare `origin` that `source` has been pushed to, and a repository on a forge whose clone of it Moebius keeps.
-fn on_a_forge(dir: &Path, app: &moebius_core::app::App) -> (i64, PathBuf, PathBuf) {
-    let origin = dir.join("origin.git");
-    git(
-        dir,
-        &["init", "--quiet", "--bare", "-b", "main", "origin.git"],
-    )
-    .unwrap();
-    git(
-        &source(dir),
-        &["push", "--quiet", origin.to_str().unwrap(), "main"],
-    )
-    .unwrap();
-    let clone = dir.join("forge-clone");
-    git(
-        dir,
-        &["clone", "--quiet", origin.to_str().unwrap(), "forge-clone"],
-    )
-    .unwrap();
-    let repo = app
-        .store
-        .add_github_repository(
-            "hosted",
-            clone.to_str().unwrap(),
-            "main",
-            "acme/hosted",
-            &[],
-        )
-        .unwrap();
-    (repo.id, clone, origin)
-}
-
 #[tokio::test]
-async fn on_a_forge_a_script_is_pushed_and_a_refused_push_undoes_the_commit() {
+async fn a_script_is_pushed_and_a_refused_push_undoes_the_commit() {
     let dir = tempfile::tempdir().unwrap();
     let setup = Setup::start(dir.path()).await;
     let app = &setup.server.app;
-    let (id, clone, origin) = on_a_forge(dir.path(), app);
+    let repo = app
+        .add_repository("demo", source(dir.path()).to_str().unwrap())
+        .unwrap();
+    let clone = setup.clone_path();
+    let origin = dir.path().join("harness");
 
-    let (status, view) = setup.put(id, "Not started", HOLD).await;
+    let (status, view) = setup.put(repo.id, "Not started", HOLD).await;
     assert_eq!(status, 200, "{view}");
     assert_eq!(view["source"], "repository");
     assert_eq!(head(&clone), git(&origin, &["rev-parse", "main"]).unwrap());
     assert_eq!(
-        git(&origin, &["show", "main:.moebius/ready.luau"]).unwrap(),
+        git(&origin, &["show", "main:repos/demo/ready.luau"]).unwrap(),
         HOLD.trim()
     );
 
-    // The forge refuses the next push.
-    let hook = origin.join("hooks/pre-receive");
+    // The origin refuses the next push.
+    let hook = origin.join(".git/hooks/pre-receive");
     std::fs::write(
         &hook,
         "#!/bin/sh\necho 'protected branch, key sk-abcdefghijklmnopqrstuvwxyz123456' >&2\nexit 1\n",
@@ -341,21 +326,21 @@ async fn on_a_forge_a_script_is_pushed_and_a_refused_push_undoes_the_commit() {
         std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
     let before = head(&clone);
-    let (status, message) = setup.put(id, "Backlog", HOLD).await;
+    let (status, message) = setup.put(repo.id, "Backlog", HOLD).await;
     assert_eq!(status, 409, "{message}");
-    let message = message.as_str().unwrap();
+    let message = message.to_string();
     assert!(message.contains("protected branch"), "{message}");
     assert!(
         !message.contains("sk-abcdefghijklmnopqrstuvwxyz123456"),
         "{message}"
     );
     assert_eq!(head(&clone), before);
-    assert!(!clone.join(".moebius/backlog.luau").exists());
-    assert_eq!(setup.get(id, "Backlog").await.1["source"], "built-in");
+    assert!(!clone.join("repos/demo/backlog.luau").exists());
+    assert_eq!(setup.get(repo.id, "Backlog").await.1["source"], "built-in");
 
-    let (status, message) = setup.delete(id, "Not started").await;
+    let (status, message) = setup.delete(repo.id, "Not started").await;
     assert_eq!(status, 409, "{message}");
     assert_eq!(head(&clone), before);
-    assert!(clone.join(".moebius/ready.luau").exists());
+    assert!(clone.join("repos/demo/ready.luau").exists());
     assert_eq!(app.store.judgements("edit_script").unwrap().len(), 1);
 }

@@ -458,7 +458,7 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
         if (!file) return fail(404, "no such column");
         return ok({
           column,
-          path: `.moebius/${file}.luau`,
+          path: `repos/demo/${file}.luau`,
           source: "built-in",
           text: `-- The ${column} column\nmoebius.wait("nothing to do in ${column}")\n`,
         });

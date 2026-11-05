@@ -24,7 +24,7 @@ export interface ProseRules {
   error: string | null;
 }
 
-/** The `.moebius/rules.md` of a repository's default branch. */
+/** The `rules.md` of a repository's project (`repos/<name>/` of the harness configuration repository). */
 export interface RepositoryRules {
   repository: string;
   repository_id: number;

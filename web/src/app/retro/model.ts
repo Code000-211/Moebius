@@ -90,7 +90,7 @@ export function proposalTag(status: ProposalStatus): TagSpec {
 /** What a proposal for Moebius's own configuration changes, as its tag says it; none for one of the harness. */
 export function ownKind(kind: Proposal["kind"]): string | null {
   if (kind === "settings") return "moebius.toml";
-  if (kind === "repository") return ".moebius/";
+  if (kind === "repository") return "repos/";
   return null;
 }
 

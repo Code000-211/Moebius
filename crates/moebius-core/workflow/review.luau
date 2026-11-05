@@ -37,8 +37,9 @@ end
 local function reproduction()
   local test = moebius.reproduction()
   if test == nil then
-    return "fails", "Test first: the change names no reproduction test. Write `.moebius/reproduce`: the command "
-      .. "that runs the test on its first line and the files that hold it on the next ones, or `untestable: <why>`."
+    return "fails", "Test first: the change names no reproduction test. Name it at the end of your "
+      .. "summary: a line `REPRODUCE: <the command that runs the test>` and a line `REPRODUCE-FILE: <path>` for each "
+      .. "file that holds it, or `REPRODUCE: untestable: <why>`."
   end
   if test.untestable ~= nil then
     return "untestable", test.untestable

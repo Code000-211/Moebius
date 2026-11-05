@@ -4,8 +4,8 @@
  * (`http://<addr>/?login=<code>`) and for the token file. Needs the server of issue #143 (browser sign-in and the
  * embedded app); an older binary never prints the link and the start fails with what it printed.
  */
-import { type ChildProcess, spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { type ChildProcess, execFileSync, spawn } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -42,9 +42,29 @@ export async function startRealServer(binary: string): Promise<RunningServer> {
   const directory = mkdtempSync(join(tmpdir(), "moebius-e2e-"));
   const port = await freePort();
   const routerPort = await freePort();
+  // A repository's settings (its column scripts, rules, checks) are files of the harness configuration repository, so
+  // the server has one; it takes pushes to its checked-out branch, as the one `moebius init` makes does.
+  const harness = join(directory, "harness");
+  const git = (...args: string[]) => execFileSync("git", args, { cwd: harness, stdio: "ignore" });
+  mkdirSync(harness);
+  git("init", "--quiet", "-b", "main");
+  git("config", "receive.denyCurrentBranch", "updateInstead");
+  writeFileSync(join(harness, "README.md"), "The harness configuration of an end-to-end test.\n");
+  git("add", "-A");
+  git(
+    "-c",
+    "user.name=test",
+    "-c",
+    "user.email=test@example.com",
+    "commit",
+    "--quiet",
+    "-m",
+    "Start",
+  );
   writeFileSync(
     join(directory, "moebius.toml"),
-    `listen = "127.0.0.1:${port}"\n\n[router]\nlisten = "127.0.0.1:${routerPort}"\n`,
+    `listen = "127.0.0.1:${port}"\n\n[router]\nlisten = "127.0.0.1:${routerPort}"\n\n` +
+      `[harness]\nurl = ${JSON.stringify(harness)}\n`,
   );
   const child: ChildProcess = spawn(binary, ["serve"], {
     cwd: directory,

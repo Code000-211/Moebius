@@ -77,7 +77,7 @@ impl Engine {
         limits.day_budget = day_budget;
     }
 
-    /// The script for `column`: the repository's override on its default branch, or the built-in one.
+    /// The script for `column`: the project's override, or the built-in one.
     fn script(&self, card: &Card, column: &Column) -> Result<String, BoardError> {
         let repository = self
             .app
@@ -85,7 +85,7 @@ impl Engine {
             .repository(card.repository_id)
             .map_err(AppError::from)?
             .ok_or_else(|| AppError::NotFound(format!("repository {}", card.repository_id)))?;
-        if let Some(source) = repository_script(&repository, &column.script) {
+        if let Some(source) = repository_script(&self.app, &repository, &column.script) {
             return Ok(source);
         }
         built_in_script(&column.script)
@@ -192,7 +192,6 @@ mod tests {
 
     use crate::app::{PERSON, columns};
     use crate::board::testing::setup;
-    use crate::repos::git;
 
     #[test]
     fn the_default_workflow_moves_a_card_from_backlog_to_done() {
@@ -357,37 +356,30 @@ mod tests {
     #[test]
     fn a_repository_script_that_moves_a_card_to_ready_moves_it_to_not_started() {
         let (_dir, app, engine, repo) = setup();
-        let clone = std::path::PathBuf::from(&app.store.repository(repo).unwrap().unwrap().path);
-        std::fs::create_dir_all(clone.join(".moebius")).unwrap();
-        std::fs::write(
-            clone.join(".moebius/backlog.luau"),
+        let put =
+            |file: &str, text: &str| crate::harness::repo::testing::put(&app, "demo", file, text);
+        put(
+            "backlog.luau",
             "function on_card(card) moebius.move('Ready') end",
-        )
-        .unwrap();
-        std::fs::write(
-            clone.join(".moebius/ready.luau"),
+        );
+        put(
+            "ready.luau",
             "function on_card(card) moebius.wait('held') end",
-        )
-        .unwrap();
-        git(&clone, &["add", "."]).unwrap();
-        git(&clone, &["commit", "--quiet", "-m", "old names"]).unwrap();
+        );
         let card = app.create_issue(repo, "Old script", "", PERSON).unwrap();
         engine.settle(card.id).unwrap();
         assert_eq!(app.card(card.id).unwrap().column, "Not started");
     }
 
     #[test]
-    fn a_repository_overrides_a_script_on_its_default_branch() {
+    fn a_project_overrides_a_script_in_its_settings() {
         let (_dir, app, engine, repo) = setup();
-        let clone = std::path::PathBuf::from(&app.store.repository(repo).unwrap().unwrap().path);
-        std::fs::create_dir_all(clone.join(".moebius")).unwrap();
-        std::fs::write(
-            clone.join(".moebius/ready.luau"),
+        crate::harness::repo::testing::put(
+            &app,
+            "demo",
+            "ready.luau",
             "function on_card(card) moebius.wait('held by the repository') end",
-        )
-        .unwrap();
-        git(&clone, &["add", "."]).unwrap();
-        git(&clone, &["commit", "--quiet", "-m", "hold"]).unwrap();
+        );
         let card = app.create_issue(repo, "Held", "", PERSON).unwrap();
         let step = engine.settle(card.id).unwrap();
         assert_eq!(app.card(card.id).unwrap().column, "Not started");
@@ -428,16 +420,13 @@ mod tests {
     #[test]
     fn a_held_card_is_skipped_before_its_script_is_called_and_ticks_again_once_released() {
         let (_dir, app, engine, repo) = setup();
-        let clone = std::path::PathBuf::from(&app.store.repository(repo).unwrap().unwrap().path);
-        std::fs::create_dir_all(clone.join(".moebius")).unwrap();
         // A script that fails whenever it is called, and would move the card on if it did not.
-        std::fs::write(
-            clone.join(".moebius/backlog.luau"),
+        crate::harness::repo::testing::put(
+            &app,
+            "demo",
+            "backlog.luau",
             "function on_card(card) moebius.move('Done') error('the script was called') end",
-        )
-        .unwrap();
-        git(&clone, &["add", "."]).unwrap();
-        git(&clone, &["commit", "--quiet", "-m", "a script"]).unwrap();
+        );
         let card = app.create_issue(repo, "Held", "", PERSON).unwrap();
         assert!(app.store.hold_card(card.id, PERSON, Some("later")).unwrap());
 

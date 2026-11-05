@@ -69,7 +69,7 @@ Never write an API key, a token or a password into a file. Read it from the envi
 Do not add a crate to Cargo.toml unless the issue names it.
 `,
   });
-  await put("/v1/repositories/1/files/.moebius/rules.md", {
+  await put("/v1/repositories/1/settings/rules.md", {
     text: "## migrations-are-forward-only\nDo not edit a migration that has been merged. Add a new one.",
   });
 }

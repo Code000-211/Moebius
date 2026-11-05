@@ -27,8 +27,8 @@ const FINDINGS_FORMAT: &str = "Your run covers this one axis only, so do not use
 const STANDARDS_PROMPT: &str = "You are the reviewer of the standards. You are in a git worktree on the branch that \
      holds the change for this issue. Look only at whether the change follows the repository's standards, not at \
      whether it does what the issue asks. See the change with `git diff {base}...HEAD`. The standards are written in \
-     CONTRIBUTING.md, CLAUDE.md, AGENTS.md and .moebius/review.md, whichever of them exist: read them first, and \
-     quote the rule each blocking finding breaks. Skip what the repository's tooling enforces. Besides those, look \
+     CONTRIBUTING.md, CLAUDE.md and AGENTS.md, whichever of them exist, and in the review notes below when there \
+     are any: read them first, and quote the rule each blocking finding breaks. Skip what the repository's tooling enforces. Besides those, look \
      for these smells, each only ever a judgement call that begins \"Possible <smell>\" and is dropped when a \
      repository standard allows it: Mysterious Name (a name that does not say what it holds: rename it); Duplicated \
      Code (the same logic in more than one hunk: extract it); Feature Envy (a method that uses another object's data \
@@ -59,11 +59,12 @@ const SELECT_PROMPT: &str = "Several attempts were made at this issue, each on a
 /// What a `code` run is told in a repository that works test first (see `app::reproduce`).
 const TEST_FIRST_PROMPT: &str = "This repository works test first: red, then green. Before you change any code, write \
      a test that reproduces the issue, in a file of its own, and run it to see it fail. Then make the change and run \
-     it again to see it pass. Write the file `.moebius/reproduce`: its first line is the command that runs only that \
-     test, and each further line names a file that holds the test. Moebius runs the command on the commit your change \
-     starts from with those files added, where it must fail, and on your change, where it must pass; otherwise the \
-     card comes back to you. If the issue cannot be tested this way, as for documentation or configuration only, \
-     write the single line `untestable: <why>` in that file instead; the reviewer judges the reason.";
+     it again to see it pass. Name the test in your final summary, in the lines `REPRODUCE: <the command that runs only \
+     that test>` and, one for each file that holds the test, `REPRODUCE-FILE: <its path from the repository's \
+     root>`, in every run's summary. Moebius runs the command on the commit your change starts from with those \
+     files added, where it must fail, and on your change, where it must pass; otherwise the card comes back to you. \
+     If the issue cannot be tested this way, as for documentation or configuration only, write the single line \
+     `REPRODUCE: untestable: <why>` instead; the reviewer judges the reason.";
 
 /// The prompt for a run of `card` that the card's board starts: as [`prompt_for`], and a `code` run is also given the
 /// files that are likely relevant (see `App::localize_hint`), when there is such a hint.
@@ -78,6 +79,13 @@ pub(crate) fn run_prompt(app: &App, card: &Card, purpose: &str, note: Option<&st
 /// test first is told the rule of red, then green.
 pub(crate) fn prompt_for(app: &App, card: &Card, purpose: &str, note: Option<&str>) -> String {
     prompt_with(app, card, purpose, note, None)
+}
+
+/// The text of the project's `review.md`, the repository's own notes for its reviews, when it has any.
+fn review_notes(app: &App, card: &Card) -> Option<String> {
+    let repository = app.store.repository(card.repository_id).ok().flatten()?;
+    app.project_file(&repository, "review.md")
+        .filter(|notes| !notes.trim().is_empty())
 }
 
 fn prompt_with(
@@ -107,6 +115,10 @@ fn prompt_with(
         "review-standards" => {
             prompt.push_str(&STANDARDS_PROMPT.replace("{base}", &base()));
             prompt.push_str(FINDINGS_FORMAT);
+            if let Some(notes) = review_notes(app, card) {
+                prompt.push_str("\n\nThe review notes of this repository's project:\n\n");
+                prompt.push_str(notes.trim());
+            }
         }
         "review-spec" => {
             prompt.push_str(&SPEC_PROMPT.replace("{base}", &base()));

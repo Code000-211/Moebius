@@ -140,9 +140,10 @@ impl Rules {
             "No rule of its own.",
         ));
         content = self.with_notice(content, place);
-        content = content.push(page::body(
-            "Saved as a commit on the default branch (.moebius/rules.md).",
-        ));
+        content = content.push(page::body(format!(
+            "Saved as a commit in the harness configuration repository (repos/{}/rules.md).",
+            repository.repository
+        )));
         boxed(
             &repository.repository,
             aside("Added to the server's rules; cannot weaken them"),

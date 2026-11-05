@@ -56,7 +56,7 @@ describe("the tags", () => {
     expect(proposalTag("untried").tone).toBe("attention");
     expect(proposalTag("open").label).toBe("Open");
     expect(ownKind("settings")).toBe("moebius.toml");
-    expect(ownKind("repository")).toBe(".moebius/");
+    expect(ownKind("repository")).toBe("repos/");
     expect(ownKind("harness")).toBeNull();
     expect(ownKind(undefined)).toBeNull();
   });

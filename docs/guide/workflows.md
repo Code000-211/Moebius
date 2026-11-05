@@ -79,8 +79,8 @@ progress too.
 2. The checks run. On GitHub they are the check runs of the pull request, found by the poll, on GitLab the latest
    pipeline of the merge request's head commit, on Forgejo the commit statuses of the pull request's head commit (such
    as those Forgejo Actions reports); a repository with none
-   gets `none` two minutes after the publish. Without a forge they are the command in `.moebius/checks` on the default
-   branch, run in a throwaway worktree of the change and stopped after `checks.timeout_seconds`; without that file
+   gets `none` two minutes after the publish. Without a forge they are the command in the `checks` file of the repository's settings,
+   run in a throwaway worktree of the change and stopped after `checks.timeout_seconds`; without that file
    there are none. While they are pending the card waits with `waiting for the checks`.
 3. Failing checks send the card back to `In progress` with a note that starts `The checks failed:` and gives the
    failing checks or the end of the output.
@@ -89,7 +89,7 @@ progress too.
 5. The agent `Reviewer` is built in, so every change is reviewed (a person who wants none changes this script, as
    below). Two review runs read the change in worktrees on the
    code branch (nothing they change is kept): **Standards** (purpose `review-standards`: does the change follow
-   `CONTRIBUTING.md`, `CLAUDE.md`, `AGENTS.md`, the rubric in `.moebius/review.md` if there is one, and a fixed list of
+   `CONTRIBUTING.md`, `CLAUDE.md`, `AGENTS.md`, the rubric in the `review.md` of its settings if there is one, and a fixed list of
    code smells that are only ever judgement calls) and then **Spec** (purpose `review-spec`: what the issue asked that
    is missing, what was not asked for, what looks wrong). Each ends with findings, every one a `FINDING blocking:` or
    `FINDING judgement:` line followed by an `EVIDENCE:` line that quotes the hunk or the line of the issue, and a last
@@ -112,8 +112,8 @@ branch.
 
 Localizing before repairing is a strong, cheap step. Before each `code` run Moebius asks the decision point `localize`
 which files the card's change is likely to touch, and the run is given the answer under "Files that are likely relevant
-(a hint, not a limit)", told to verify it. A repository settles this for its own workflow in a file `.moebius/localize`
-on its default branch, over the `[localize]` table of the server: `off` gives its runs no hint, and `files 5` names at
+(a hint, not a limit)", told to verify it. A repository settles this for its own workflow in the file `localize` of its settings,
+over the `[localize]` table of the server: `off` gives its runs no hint, and `files 5` names at
 most five. When the card's change is known, each hint is judged by the files the change touched; the desktop app shows
 how many of the hinted files they were. The rules are in the [decision model reference](../reference/decision-model.md#localize).
 
@@ -121,14 +121,14 @@ how many of the hinted files they were. The rules are in the [decision model ref
 
 Tests generated from the issue and used as a gate are the review step with the best evidence: in a study on SWE-bench
 Verified they raised the share of correct changes among those let through from 61% to 92% (Otter, arXiv 2502.05368).
-A test that runs says more than a reviewer's opinion. A repository turns it on by committing an empty file
-`.moebius/test-first` to its default branch. Then:
+A test that runs says more than a reviewer's opinion. A repository turns it on by having an empty file
+`test-first` in its settings (`PUT /v1/repositories/{id}/settings/test-first`). Then:
 
 1. The Coder is told the rule of red, then green: before it changes any code it writes a test that reproduces the issue
-   in a file of its own and sees it fail, then makes the change and sees it pass. It names the test in
-   `.moebius/reproduce`, committed with the change: the command that runs only that test on the first line, the files
-   that hold the test on the next ones. A change that cannot be tested this way (documentation, configuration) writes
-   the single line `untestable: <why>` instead.
+   in a file of its own and sees it fail, then makes the change and sees it pass. It names the test at the
+   end of its summary, which is stored with the run: a line `REPRODUCE: <the command that runs only that test>` and a
+   line `REPRODUCE-FILE: <path>` for each file that holds the test. A change that cannot be tested this way
+   (documentation, configuration) writes the single line `REPRODUCE: untestable: <why>` instead.
 2. In review, after the checks and the conflict check, Moebius runs the command twice, each in a throwaway worktree
    with the time limit and cleared environment of the repository's checks: on the commit the change starts from with
    the test's files added, where it must fail, and on the change, where it must pass. The card waits with
@@ -161,7 +161,7 @@ function on_card(card)
 
   local test = moebius.reproduction()
   if test == nil then
-    moebius.move("In progress", "Name the test that reproduces the issue in .moebius/reproduce.")
+    moebius.move("In progress", "Name the test that reproduces the issue in a REPRODUCE line of your summary.")
     return
   end
   if test.untestable ~= nil then
@@ -345,7 +345,7 @@ What happens, in order:
    for a first round). Each is told what a `code` run is told, test-first rule included. They show in the card's
    history, and in the live view as the card's attempts.
 2. When an attempt has succeeded, `moebius.check_attempt(run)` judges it in a throwaway worktree: the repository's
-   own checks (`.moebius/checks`, without a forge) must pass, and in a repository that works test first the
+   own checks (the `checks` file of its settings, without a forge) must pass, and in a repository that works test first the
    reproduction test the attempt names must fail on the commit it starts from and pass on the attempt, as for a change
    (see [Test first](#test-first)). An attempt whose run failed has failed too, and the output of what did not hold is
    kept with it.

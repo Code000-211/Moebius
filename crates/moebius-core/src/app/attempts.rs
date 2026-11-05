@@ -1,6 +1,6 @@
 //! Attempts: a hard card's several runs in one go (see `store::Attempt`). Each attempt that succeeded is judged on a
-//! thread of its own against what the card is held to: the repository's own checks (`.moebius/checks`) and, in a
-//! repository that works test first, the reproduction test the attempt names in `.moebius/reproduce`, which must fail on
+//! thread of its own against what the card is held to: the repository's own checks (the project's `checks`) and, in a
+//! repository that works test first, the reproduction test the attempt names in its summary, which must fail on
 //! the commit the attempt starts from and pass on the attempt (see `reproduce`). Among the attempts that pass, a script
 //! has one picked, by a selection run or because only one passed; the picked attempt becomes the card's `code` run and
 //! the others keep their branches. The reasons are kept with the attempts and shown in the card's history.
@@ -8,7 +8,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use super::reproduce::{Reproduction, add_files, reproduction_at};
+use super::reproduce::{Reproduction, add_files};
 use super::{App, AppError, Result};
 use crate::bus::Event;
 use crate::repos::git;
@@ -138,10 +138,10 @@ impl App {
             return Ok((true, String::new()));
         }
         let base = git(clone, &["merge-base", &repository.base_ref(), &head])?;
-        match reproduction_at(clone, &head, &base) {
+        match self.reproduction_of_run(run_id)? {
             None => Ok((
                 false,
-                "Test first: the attempt names no reproduction test in .moebius/reproduce.".into(),
+                "Test first: the attempt names no reproduction test: its summary has no REPRODUCE line.".into(),
             )),
             // The review judges the reason, as it does for a change.
             Some(Reproduction::Untestable(why)) => Ok((true, format!("Untestable: {why}"))),
@@ -257,13 +257,17 @@ mod judging_tests {
     use super::*;
     use crate::store::Store;
 
-    /// A test-first repository and an attempt of one of its cards that committed `files`, ended as `status`.
-    fn attempt(files: &[(&str, &str)], status: &str) -> (tempfile::TempDir, Arc<App>, i64) {
+    /// A test-first repository and an attempt of one of its cards that committed `files`, ended as `status` with
+    /// `summary`.
+    fn attempt(
+        files: &[(&str, &str)],
+        summary: &str,
+        status: &str,
+    ) -> (tempfile::TempDir, Arc<App>, i64) {
         let dir = tempfile::tempdir().unwrap();
         let origin = dir.path().join("origin");
-        std::fs::create_dir_all(origin.join(".moebius")).unwrap();
+        std::fs::create_dir_all(&origin).unwrap();
         git(&origin, &["init", "--quiet", "-b", "main"]).unwrap();
-        std::fs::write(origin.join(".moebius/test-first"), "").unwrap();
         std::fs::write(origin.join("README.md"), "hello\n").unwrap();
         git(&origin, &["add", "."]).unwrap();
         git(&origin, &["commit", "--quiet", "-m", "first"]).unwrap();
@@ -273,6 +277,8 @@ mod judging_tests {
             Arc::new(Host::new(Duration::from_secs(5))),
             &dir.path().join("data"),
         ));
+        crate::harness::repo::testing::use_harness(&app, dir.path());
+        crate::harness::repo::testing::put(&app, "demo", "test-first", "");
         let repo = app
             .add_repository("demo", origin.to_str().unwrap())
             .unwrap();
@@ -301,9 +307,13 @@ mod judging_tests {
         )
         .unwrap();
         app.repos.remove_worktree(clone, &worktree.path).unwrap();
+        app.store.set_run_summary(run.id, summary).unwrap();
         app.store.set_run_status(run.id, status).unwrap();
         (dir, app, run.id)
     }
+
+    /// The end of a summary that names the test of the attempts above.
+    const REPRODUCE: &str = "Done.\nREPRODUCE: sh issue.sh\nREPRODUCE-FILE: issue.sh\n";
 
     /// Asks until the attempt is judged.
     fn judged(app: &Arc<App>, run: i64) -> AttemptCheck {
@@ -320,12 +330,8 @@ mod judging_tests {
 
     #[test]
     fn an_attempt_whose_test_fails_before_and_passes_after_has_passed() {
-        let files = [
-            (".moebius/reproduce", "sh issue.sh\nissue.sh\n"),
-            ("issue.sh", "test -f fixed.txt\n"),
-            ("fixed.txt", "yes\n"),
-        ];
-        let (_dir, app, run) = attempt(&files, "succeeded");
+        let files = [("issue.sh", "test -f fixed.txt\n"), ("fixed.txt", "yes\n")];
+        let (_dir, app, run) = attempt(&files, REPRODUCE, "succeeded");
         let check = judged(&app, run);
         assert_eq!(check.status, "passed", "{}", check.output);
         // The result is kept and the same answer comes again, with an event for the first time.
@@ -337,11 +343,8 @@ mod judging_tests {
 
     #[test]
     fn an_attempt_whose_test_passes_without_the_fix_has_failed() {
-        let files = [
-            (".moebius/reproduce", "sh issue.sh\nissue.sh\n"),
-            ("issue.sh", "true\n"),
-        ];
-        let (_dir, app, run) = attempt(&files, "succeeded");
+        let files = [("issue.sh", "true\n")];
+        let (_dir, app, run) = attempt(&files, REPRODUCE, "succeeded");
         let check = judged(&app, run);
         assert_eq!(check.status, "failed");
         assert!(
@@ -353,11 +356,8 @@ mod judging_tests {
 
     #[test]
     fn an_attempt_whose_test_fails_on_the_attempt_has_failed() {
-        let files = [
-            (".moebius/reproduce", "sh issue.sh\nissue.sh\n"),
-            ("issue.sh", "test -f fixed.txt\n"),
-        ];
-        let (_dir, app, run) = attempt(&files, "succeeded");
+        let files = [("issue.sh", "test -f fixed.txt\n")];
+        let (_dir, app, run) = attempt(&files, REPRODUCE, "succeeded");
         let check = judged(&app, run);
         assert_eq!(check.status, "failed");
         assert!(
@@ -369,7 +369,7 @@ mod judging_tests {
 
     #[test]
     fn an_attempt_without_a_test_fails_unless_it_says_it_cannot_be_tested() {
-        let (_dir, app, run) = attempt(&[("notes.txt", "x\n")], "succeeded");
+        let (_dir, app, run) = attempt(&[("notes.txt", "x\n")], "Done.", "succeeded");
         let check = judged(&app, run);
         assert_eq!(check.status, "failed");
         assert!(
@@ -378,14 +378,14 @@ mod judging_tests {
             check.output
         );
 
-        let untestable = [(".moebius/reproduce", "untestable: only the docs change\n")];
-        let (_dir, app, run) = attempt(&untestable, "succeeded");
+        let untestable = "Done.\nREPRODUCE: untestable: only the docs change\n";
+        let (_dir, app, run) = attempt(&[], untestable, "succeeded");
         assert_eq!(judged(&app, run).status, "passed");
     }
 
     #[test]
     fn an_attempt_whose_run_did_not_succeed_has_failed_and_a_run_that_is_no_attempt_is_refused() {
-        let (_dir, app, run) = attempt(&[], "failed");
+        let (_dir, app, run) = attempt(&[], "Done.", "failed");
         let check = app.check_attempt(run).unwrap();
         assert_eq!(
             (check.status, check.output.as_str()),
@@ -396,7 +396,7 @@ mod judging_tests {
             Some("failed")
         );
 
-        let (_dir, app, run) = attempt(&[], "running");
+        let (_dir, app, run) = attempt(&[], "Done.", "running");
         assert_eq!(app.check_attempt(run).unwrap().status, "pending");
         let card = app.store.attempt(run).unwrap().unwrap().card_id;
         let other = app.store.add_run(Some(card), "Coder", "x", "code").unwrap();
@@ -405,7 +405,7 @@ mod judging_tests {
 
     #[test]
     fn only_an_attempt_that_passed_can_be_picked_and_the_pick_settles_the_round() {
-        let (_dir, app, run) = attempt(&[], "succeeded");
+        let (_dir, app, run) = attempt(&[], "Done.", "succeeded");
         let card = app.store.attempt(run).unwrap().unwrap().card_id;
         assert!(
             app.settle_attempts(card, Some(run), "why").is_err(),

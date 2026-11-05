@@ -99,7 +99,7 @@ echo '{"set": {"board.round_limit": 7}}' | moebius api PUT /v1/settings --body -
 ```
 
 Every route is reachable this way, including those without a command: `/v1/health`, `/v1/events` (a WebSocket, not
-for `api`), `/v1/runs/...`, `/v1/judgements...`, `/v1/replays`, `DELETE /v1/replays/{id}`, `/v1/exports...`, `DELETE /v1/exports/{id}`, `/v1/skills`, `/v1/mcp-servers`, `/v1/repositories/{id}/scripts/{column}`,
+for `api`), `/v1/runs/...`, `/v1/judgements...`, `/v1/replays`, `DELETE /v1/replays/{id}`, `/v1/exports...`, `DELETE /v1/exports/{id}`, `/v1/skills`, `/v1/mcp-servers`, `/v1/repositories/{id}/scripts/{column}`, `/v1/repositories/{id}/settings`, `/v1/repositories/{id}/settings/{file}`,
 `/v1/models`, `/v1/plugins`, `/v1/proposals/{id}/trial`, `DELETE /v1/secrets/{name}`.
 
 ## Commands

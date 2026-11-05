@@ -1,4 +1,6 @@
-//! The examples in `examples/` work: the column script runs as a repository override and the rules parse.
+//! The examples in `examples/` work: the column script runs as a project's override and the rules parse.
+
+mod common;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -60,18 +62,20 @@ impl CardRuns for IdleRuns {
     }
 }
 
-/// A repository whose default branch carries `script` as `.moebius/ready.luau`, and an engine over it.
+/// A project whose settings carry `script` as `ready.luau`, and an engine over it.
 fn engine_with_ready_script(script: &str) -> (tempfile::TempDir, Arc<App>, Engine, i64) {
     let dir = tempfile::tempdir().unwrap();
     let origin: PathBuf = dir.path().join("origin");
-    std::fs::create_dir_all(origin.join(".moebius")).unwrap();
+    std::fs::create_dir_all(&origin).unwrap();
     git(&origin, &["init", "--quiet", "-b", "main"]).unwrap();
-    std::fs::write(origin.join(".moebius/ready.luau"), script).unwrap();
+    std::fs::write(origin.join("README.md"), "hello\n").unwrap();
     git(&origin, &["add", "."]).unwrap();
-    git(&origin, &["commit", "--quiet", "-m", "scripts"]).unwrap();
+    git(&origin, &["commit", "--quiet", "-m", "first"]).unwrap();
     let store = Arc::new(Store::in_memory(&dir.path().join("blobs")).unwrap());
     let host = Arc::new(Host::new(Duration::from_secs(1)));
     let app = Arc::new(App::new(store, host, &dir.path().join("data")));
+    let harness = common::use_harness(&app, dir.path());
+    common::put_project(&harness, "demo", "ready.luau", script);
     let repository = app
         .add_repository("demo", origin.to_str().unwrap())
         .unwrap();

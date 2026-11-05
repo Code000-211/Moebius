@@ -126,7 +126,10 @@ fn tool_call_question(
     ) {
         context.insert("builtin_refusal".into(), refusal);
     }
-    match rules::applicable(rules_file, repository.as_ref()) {
+    let project = repository
+        .as_ref()
+        .and_then(|repository| app.project_file(repository, "rules.md"));
+    match rules::applicable(rules_file, project.as_deref()) {
         Ok(rules) => context.insert("rules".into(), rules::to_markdown(&rules)),
         Err(error) => context.insert("rules_error".into(), error.to_string()),
     };
@@ -340,28 +343,13 @@ mod tests {
     }
 
     #[test]
-    fn a_chat_in_a_repository_gets_the_repositorys_rules() {
+    fn a_chat_in_a_repository_gets_the_projects_rules() {
         let f = fixture(None, false, None);
         let dir = f._dir.path().join("repo");
         std::fs::create_dir(&dir).unwrap();
         crate::repos::git(&dir, &["init", "--quiet", "-b", "main"]).unwrap();
-        std::fs::create_dir(dir.join(".moebius")).unwrap();
-        std::fs::write(dir.join(".moebius/rules.md"), "## be-kind\nBe kind.\n").unwrap();
-        crate::repos::git(&dir, &["add", "."]).unwrap();
-        crate::repos::git(
-            &dir,
-            &[
-                "-c",
-                "user.name=t",
-                "-c",
-                "user.email=t@t",
-                "commit",
-                "--quiet",
-                "-m",
-                "rules",
-            ],
-        )
-        .unwrap();
+        crate::harness::repo::testing::use_harness(&f.app, f._dir.path());
+        crate::harness::repo::testing::put(&f.app, "chatty", "rules.md", "## be-kind\nBe kind.\n");
         let repo = f
             .app
             .store

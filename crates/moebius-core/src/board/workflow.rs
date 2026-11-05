@@ -1,10 +1,8 @@
 //! The columns of a board and the default workflow (spec 6): its scripts, built into the server from `workflow/`, and
-//! the scripts a repository puts in its `.moebius/` on its default branch in their place.
+//! the scripts a project has in its settings (`repos/<repository name>/` of the harness configuration repository) in
+//! their place.
 
-use std::path::Path;
-
-use crate::app::columns;
-use crate::repos::git;
+use crate::app::{App, columns};
 use crate::store::Repository;
 
 /// A column and the script behind it.
@@ -57,16 +55,15 @@ pub fn built_in_script(file: &str) -> Option<&'static str> {
         .map(|(_, source)| *source)
 }
 
-/// The script file a repository has for `file` on its default branch, if it overrides the built-in one.
-pub fn repository_script(repository: &Repository, file: &str) -> Option<String> {
-    let spec = format!("{}:.moebius/{file}", repository.base_ref());
-    git(Path::new(&repository.path), &["show", &spec]).ok()
+/// The script file the project of `repository` has for `file`, if it overrides the built-in one.
+pub fn repository_script(app: &App, repository: &Repository, file: &str) -> Option<String> {
+    app.project_file(repository, file)
 }
 
 impl Default for Workflow {
     fn default() -> Self {
-        // The script file of a column keeps the name it was first given, so a repository that wrote
-        // `.moebius/ready.luau` still overrides the column now called "Not started".
+        // The script file of a column keeps the name it was first given, so a project that wrote
+        // `ready.luau` still overrides the column now called "Not started".
         let columns = [
             (columns::BACKLOG, "backlog.luau"),
             (columns::NOT_STARTED, "ready.luau"),
@@ -373,6 +370,11 @@ mod tests {
         git(&clone, &["commit", "--quiet", "-m", path]).unwrap();
     }
 
+    /// Writes `text` as `file` of the settings of the project `demo`.
+    fn setting(app: &App, file: &str, text: &str) {
+        crate::harness::repo::testing::put(app, "demo", file, text);
+    }
+
     /// Waits until the repository's checks of the card's change have ended.
     fn wait_for_checks(app: &App, card: &Card) {
         let give_up = Instant::now() + Duration::from_secs(60);
@@ -405,7 +407,7 @@ mod tests {
             "echo x >> {}\necho 'boom: 3 tests failed'\nexit 1\n",
             count.display()
         );
-        commit_to_base(&app, repo, ".moebius/checks", &checks);
+        setting(&app, "checks", &checks);
         let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
 
         engine.settle(card.id).unwrap();
@@ -448,7 +450,7 @@ mod tests {
         assert_eq!(leftovers, 0, "the checks' worktree is removed");
 
         // The repository fixes its checks; the second round's commit is published on the same branch and checked.
-        commit_to_base(&app, repo, ".moebius/checks", "ls run-*.txt\n");
+        setting(&app, "checks", "ls run-*.txt\n");
         engine.tick(card.id).unwrap();
         engine.tick(card.id).unwrap();
         wait_for_checks(&app, &card);
@@ -475,14 +477,14 @@ mod tests {
     // Unix only: the repository's checks run with `sh`.
     #[cfg(unix)]
     #[test]
-    fn the_checks_are_read_from_the_default_branch_not_from_the_change() {
+    fn the_checks_are_the_projects_settings_not_a_file_of_the_change() {
         let harness = Arc::new(FakeHarness {
             files: vec![(".moebius/checks", "exit 1\n")],
             unreviewed: true,
             ..FakeHarness::default()
         });
         let (_dir, app, engine, repo) = setup_with_harness(None, harness);
-        commit_to_base(&app, repo, ".moebius/checks", "exit 0\n");
+        setting(&app, "checks", "exit 0\n");
         let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
         engine.settle(card.id).unwrap();
         engine.tick(card.id).unwrap();
@@ -538,6 +540,9 @@ mod tests {
         assert!(app.store.inbox().unwrap().is_empty());
     }
 
+    /// The end of a summary that names the reproduction test of the tests below.
+    const REPRODUCE: &str = "Done.\nREPRODUCE: sh tests/repro.sh\nREPRODUCE-FILE: tests/repro.sh\n";
+
     /// Ticks the card until it no longer waits for its reproduction test.
     fn settle_test(engine: &crate::board::Engine, card: &Card) -> crate::board::Step {
         let give_up = Instant::now() + Duration::from_secs(60);
@@ -551,9 +556,11 @@ mod tests {
         }
     }
 
-    /// A card of a repository that works test first, whose every round commits `files`, coded and moved to review.
+    /// A card of a repository that works test first, whose every round commits `files` and ends with `summary`, coded
+    /// and moved to review.
     fn test_first_card(
         files: Vec<(&'static str, &'static str)>,
+        summary: &'static str,
         reviewer: bool,
     ) -> (
         tempfile::TempDir,
@@ -564,11 +571,12 @@ mod tests {
     ) {
         let harness = Arc::new(FakeHarness {
             files,
+            summary,
             unreviewed: !reviewer,
             ..FakeHarness::default()
         });
         let (dir, app, engine, repo) = setup_with_harness(None, harness.clone());
-        commit_to_base(&app, repo, ".moebius/test-first", "");
+        setting(&app, "test-first", "");
         let card = app.create_issue(repo, "Fix a bug", "", PERSON).unwrap();
         engine.settle(card.id).unwrap();
         engine.tick(card.id).unwrap();
@@ -581,13 +589,8 @@ mod tests {
     #[test]
     fn test_first_a_test_that_fails_at_the_base_and_passes_on_the_change_lets_the_card_on() {
         // The test looks for the file each round adds, which the base commit does not have.
-        let (_dir, app, engine, card, _) = test_first_card(
-            vec![
-                (".moebius/reproduce", "sh tests/repro.sh\ntests/repro.sh\n"),
-                ("tests/repro.sh", "ls run-*.txt\n"),
-            ],
-            false,
-        );
+        let (_dir, app, engine, card, _) =
+            test_first_card(vec![("tests/repro.sh", "ls run-*.txt\n")], REPRODUCE, false);
         let step = engine.tick(card.id).unwrap();
         assert_eq!(
             step.waiting.as_deref(),
@@ -607,10 +610,8 @@ mod tests {
     #[test]
     fn test_first_a_test_that_does_not_fail_at_the_base_sends_the_card_back_saying_so() {
         let (_dir, app, engine, card, harness) = test_first_card(
-            vec![
-                (".moebius/reproduce", "sh tests/repro.sh\ntests/repro.sh\n"),
-                ("tests/repro.sh", "echo always fine\n"),
-            ],
+            vec![("tests/repro.sh", "echo always fine\n")],
+            REPRODUCE,
             false,
         );
         settle_test(&engine, &card);
@@ -635,7 +636,7 @@ mod tests {
     #[test]
     fn test_first_a_change_without_a_reproduction_test_goes_back_and_one_that_cannot_be_tested_is_judged()
      {
-        let (_dir, app, engine, card, _) = test_first_card(vec![], false);
+        let (_dir, app, engine, card, _) = test_first_card(vec![], "Done.", false);
         engine.tick(card.id).unwrap();
         assert_eq!(column(&app, &card), "In progress");
         assert!(
@@ -645,10 +646,8 @@ mod tests {
         );
 
         let (_dir, app, engine, card, harness) = test_first_card(
-            vec![(
-                ".moebius/reproduce",
-                "untestable: only the README changes\n",
-            )],
+            vec![],
+            "Done.\nREPRODUCE: untestable: only the README changes\n",
             true,
         );
         let step = engine.tick(card.id).unwrap();

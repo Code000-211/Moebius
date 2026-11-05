@@ -11,10 +11,7 @@ export function saveRules(text: string): Promise<SavedRules> {
   return put<SavedRules>("/v1/rules", { text });
 }
 
-/** Writes `.moebius/rules.md` of a repository, a commit on its default branch that the server checks first. */
+/** Writes the `rules.md` of a repository's project, a commit in the harness configuration repository that the server checks first. */
 export async function saveRepositoryRules(repository: number, text: string): Promise<void> {
-  await put<unknown>(`/v1/repositories/${repository}/files/.moebius/rules.md`, {
-    text,
-    message: "Update the rules",
-  });
+  await put<unknown>(`/v1/repositories/${repository}/settings/rules.md`, { text });
 }

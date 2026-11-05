@@ -35,10 +35,11 @@ describe("the events of the Rules, Automations, Retro, Experiments and Decision 
     expect(keys.firings(3).slice(0, 1)).toEqual(keys.automations);
   });
 
-  it("make the rules stale when the rules file of a repository is saved, and no other file", () => {
-    const saved = (path: string) =>
-      invalidates({ kind: "file_changed", data: { repository: 1, path } });
-    expect(saved(".moebius/rules.md")).toContainEqual(keys.rules);
-    expect(saved("src/main.rs")).not.toContainEqual(keys.rules);
+  it("make the rules stale when the rules file of a project is saved, and no other file", () => {
+    const saved = (file: string) =>
+      invalidates({ kind: "project_settings_changed", data: { repository: 1, file } });
+    expect(saved("rules.md")).toContainEqual(keys.rules);
+    expect(saved("checks")).not.toContainEqual(keys.rules);
+    expect(saved("checks")).toContainEqual(keys.projectSettingsAll);
   });
 });

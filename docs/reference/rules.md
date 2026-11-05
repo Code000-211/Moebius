@@ -33,15 +33,16 @@ allowed and, where it is not obvious, why. [`examples/rules.md`](../../examples/
 Two files, read afresh for every tool call:
 
 1. The server's file, named by `rules_file` in the configuration (by default `rules.md` next to `moebius.toml`), or the `rules.md` of the [harness configuration](harness-configuration.md) when `[harness]` is set. A missing file means no server rules.
-2. The repository's `.moebius/rules.md` on its default branch, read with `git show <ref>:.moebius/rules.md`. `<ref>` is
-   the default branch of the clone for a repository without a forge and `origin/<default branch>` for a GitHub
-   repository. A file that is not committed to that branch is not read. The repository is the one of the run's card or, for a run without a card (a chat or a research run), the one the run
-   works in. A run with neither has no repository rules.
+2. The project's `rules.md`, the file `repos/<repository name>/rules.md` of the harness configuration repository (see
+   [harness configuration](harness-configuration.md#project-settings)), read from the default branch of its clone. A file
+   that is not committed to that branch is not read, and a server without `[harness]` has no project rules. A repository's
+   own `.moebius/rules.md` is not read. The repository is the one of the run's card or, for a run without a card (a chat or a research run), the one the run
+   works in. A run with neither has no project rules.
 
-The server's rules come first, then the repository's. A repository adds rules and cannot weaken the server's: a rule in
-the repository's file whose name equals the name of a rule already listed (compared exactly, case included) is dropped,
+The server's rules come first, then the project's. A project adds rules and cannot weaken the server's: a rule in
+the project's file whose name equals the name of a rule already listed (compared exactly, case included) is dropped,
 and the first one stands. The same goes for a name repeated within either file: the first rule of that name stands. A file
-that is missing gives no rules, and so does a repository file that cannot be read (it is not committed, or git fails).
+that is missing gives no rules, and so does a project file that cannot be read.
 A server file that exists but cannot be read (permissions, a directory, text that is not UTF-8) is different: nothing
 could be checked against it, so the question carries a `rules_error` instead of `rules` and the guard refuses every
 tool call, with the reason `the rules cannot be read, so no call is allowed: <why>` and the decider `guard/patterns`.
@@ -55,7 +56,7 @@ A person changes the server's rules in the desktop app's Rules page, which uses 
 `rules.md`, pushed to `origin`; without one it replaces the `rules_file`. Either way the decision is recorded (kind
 `edit_rules`). A text is refused
 with `422` when a `## ` line has no name or a name is given twice; the parser would drop such a rule without a word. A
-repository's `.moebius/rules.md` is changed by a change to the repository. The
+project's `rules.md` is edited with `PUT /v1/repositories/{id}/settings/rules.md`, a commit in the same repository. The
 page also counts, for each rule name, the calls refused in the last 7 days.
 
 ## How a call is checked

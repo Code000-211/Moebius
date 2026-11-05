@@ -1,7 +1,8 @@
 //! Workflow, rules and skills packages: nothing is installed at once, the files are proposed as a change that a person
-//! merges. Workflows go to a repository's `.moebius/` (and rules are added to its `.moebius/rules.md`), skills to the
-//! harness configuration repository. An update proposes the new files and the deletion of those the new version no
-//! longer has; a removal proposes deleting what the lock says was proposed.
+//! merges, always as a change of the harness configuration repository. Workflows go to a project's settings,
+//! `repos/<repository name>/` (and rules are added to its `rules.md`), skills to `skills/`. An update proposes the new
+//! files and the deletion of those the new version no longer has; a removal proposes deleting what the lock says was
+//! proposed.
 
 use std::path::Path;
 
@@ -11,21 +12,20 @@ use super::{Chosen, Locked, Outcome, PackageError, Packages, Result, download};
 use crate::app::AppError;
 use crate::bus::Event;
 use crate::decide::{Actor, rules};
-use crate::repos::{commit_all, git};
 use crate::store::{Change, Repository};
 
-/// Where the files of a package go.
-enum Target {
-    Repository(Repository),
-    Harness,
+/// Where the files of a package go in the harness configuration repository: skills at its root, the others in the
+/// settings of a project.
+struct Target {
+    project: Option<Repository>,
 }
 
 impl Target {
-    /// Where `to` of a package file of `kind` lands, from the root of the target's repository.
-    fn path(kind: &str, to: &str) -> String {
-        match kind {
-            "skills" => format!("skills/{to}"),
-            _ => format!(".moebius/{to}"),
+    /// Where `to` of a package file lands, from the root of the harness configuration repository.
+    fn path(&self, to: &str) -> String {
+        match &self.project {
+            Some(project) => format!("repos/{}/{to}", project.name),
+            None => format!("skills/{to}"),
         }
     }
 }
@@ -47,73 +47,35 @@ impl Packages<'_> {
     }
 
     fn target(&self, kind: &str, repository: Option<&str>) -> Result<Target> {
-        if kind == "skills" {
-            self.harness.map(|_| Target::Harness).ok_or_else(|| {
-                PackageError::Refused(
-                    "skills go to the harness configuration repository, and this server has none"
-                        .into(),
-                )
-            })
-        } else {
-            Ok(Target::Repository(self.repository_for(repository)?))
+        if self.harness.is_none() {
+            return Err(PackageError::Refused(
+                "the files of a package go to the harness configuration repository, and this server has none"
+                    .into(),
+            ));
         }
+        let project = match kind {
+            "skills" => None,
+            _ => Some(self.repository_for(repository)?),
+        };
+        Ok(Target { project })
     }
 
-    /// Offers `write`, a change to a worktree of the target's default branch, as the change `title`.
+    /// Offers `write`, a change to a worktree of the harness configuration repository's default branch, as the change
+    /// `title`.
     fn offer(
         &self,
-        target: &Target,
         branch: &str,
         title: &str,
         body: &str,
         write: impl FnOnce(&Path) -> Result<()>,
     ) -> Result<Change> {
-        let app = self.app;
         let message = format!("{title}\n\n{body}");
-        match target {
-            Target::Harness => {
-                let harness = self.harness.expect("skills have a harness repository");
-                Ok(
-                    harness.offer_files(app, branch, message.trim(), |worktree| {
-                        write(worktree).map_err(into_app)
-                    })?,
-                )
-            }
-            Target::Repository(repository) => {
-                if let Ok(forge) = app.forge(repository) {
-                    let _ = forge.refresh(repository);
-                }
-                let clone = Path::new(&repository.path);
-                let name = branch.replace('/', "-");
-                let worktree = app.repos.add_detached_worktree(
-                    &repository.name,
-                    clone,
-                    &name,
-                    &repository.base_ref(),
-                )?;
-                let committed = (|| -> Result<String> {
-                    write(&worktree)?;
-                    if !commit_all(&worktree, message.trim())? {
-                        return Err(PackageError::Refused(format!(
-                            "the files are in {} already",
-                            repository.name
-                        )));
-                    }
-                    Ok(git(&worktree, &["rev-parse", "HEAD"])?)
-                })();
-                let _ = app.repos.remove_worktree(clone, &worktree);
-                let head = committed?;
-                app.repos.point_branch(clone, branch, &head)?;
-                let body = format!("{body}\n\nMade by Moebius.");
-                match app.offer_branch_change(repository, branch, title, body.trim()) {
-                    Ok(change) => Ok(change),
-                    Err(e) => {
-                        let _ = git(clone, &["branch", "-D", "--quiet", branch]);
-                        Err(e.into())
-                    }
-                }
-            }
-        }
+        let harness = self.harness.expect("a target needs a harness repository");
+        Ok(
+            harness.offer_files(self.app, branch, message.trim(), |worktree| {
+                write(worktree).map_err(into_app)
+            })?,
+        )
     }
 
     /// Proposes the files of `chosen`, replacing those of `previous` when it is an update.
@@ -140,7 +102,7 @@ impl Packages<'_> {
         let mut names = Vec::new();
         let write = |worktree: &Path| -> Result<()> {
             if package.kind == "rules" {
-                let file = worktree.join(".moebius/rules.md");
+                let file = worktree.join(target.path("rules.md"));
                 let current = std::fs::read_to_string(&file).unwrap_or_default();
                 let old: &[String] = previous.map_or(&[], |p| &p.rules);
                 let (text, added) = merge_rules(&current, old, &files[0].1)?;
@@ -148,11 +110,11 @@ impl Packages<'_> {
                 return write_file(&file, &text);
             }
             for (file, text) in &files {
-                write_file(&worktree.join(Target::path(&package.kind, &file.to)), text)?;
+                write_file(&worktree.join(target.path(&file.to)), text)?;
             }
             for old in previous.iter().flat_map(|p| &p.files) {
                 if !package.files.iter().any(|f| f.to == old.to) {
-                    remove_file(&worktree.join(Target::path(&package.kind, &old.to)))?;
+                    remove_file(&worktree.join(target.path(&old.to)))?;
                 }
             }
             Ok(())
@@ -162,7 +124,7 @@ impl Packages<'_> {
         let listing: Vec<String> = package
             .files
             .iter()
-            .map(|f| format!("- {}", Target::path(&package.kind, &f.to)))
+            .map(|f| format!("- {}", target.path(&f.to)))
             .collect();
         let body = format!(
             "{} {} ({}) from the registry {}:\n\n{}",
@@ -173,7 +135,7 @@ impl Packages<'_> {
             listing.join("\n")
         );
         let branch = format!("moebius/package-{}", package.name);
-        let change = self.offer(&target, &branch, &title, &body, write)?;
+        let change = self.offer(&branch, &title, &body, write)?;
         let first = package
             .files
             .first()
@@ -187,10 +149,7 @@ impl Packages<'_> {
             url,
             sha256,
             program: None,
-            repository: match &target {
-                Target::Repository(r) => Some(r.name.clone()),
-                Target::Harness => None,
-            },
+            repository: target.project.as_ref().map(|r| r.name.clone()),
             change: Some(change.id),
             files: package.files.iter().map(locked_file).collect(),
             rules: names,
@@ -213,12 +172,12 @@ impl Packages<'_> {
         let target = self.target(&locked.kind, locked.repository.as_deref())?;
         let write = |worktree: &Path| -> Result<()> {
             if locked.kind == "rules" {
-                let file = worktree.join(".moebius/rules.md");
+                let file = worktree.join(target.path("rules.md"));
                 let current = std::fs::read_to_string(&file).unwrap_or_default();
                 return write_file(&file, &without_rules(&current, &locked.rules));
             }
             for old in &locked.files {
-                remove_file(&worktree.join(Target::path(&locked.kind, &old.to)))?;
+                remove_file(&worktree.join(target.path(&old.to)))?;
             }
             Ok(())
         };
@@ -228,7 +187,7 @@ impl Packages<'_> {
             locked.name, locked.version
         );
         let branch = format!("moebius/package-{}", locked.name);
-        let change = self.offer(&target, &branch, &title, &body, write)?;
+        let change = self.offer(&branch, &title, &body, write)?;
         let mut lock = self.read_lock()?;
         lock.remove(&locked.name);
         lock.write(&self.data_dir())?;
@@ -328,7 +287,7 @@ fn merge_rules(current: &str, old: &[String], fragment: &str) -> Result<(String,
     let kept = without_rules(current, old);
     if let Some(name) = names.iter().find(|n| rule_names(&kept).contains(n)) {
         return Err(PackageError::Refused(format!(
-            "a rule named {name} is in .moebius/rules.md already"
+            "a rule named {name} is in the project's rules.md already"
         )));
     }
     // What comes before the first rule of the fragment is its introduction, which is not added.

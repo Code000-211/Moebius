@@ -151,7 +151,7 @@ async fn an_edit_through_the_api_is_a_commit_that_is_pushed_and_a_failed_push_un
     let (status, body) = api
         .call(reqwest::Method::PUT, "/v1/agents/Coder", Some(edit))
         .await;
-    assert_eq!(status, 500);
+    assert_eq!(status, 409);
     assert!(body.contains("closed for edits"), "{body}");
     assert_eq!(head(&clone), added);
     assert_eq!(git(&clone, &["status", "--porcelain"]).unwrap(), "");
@@ -162,7 +162,7 @@ async fn an_edit_through_the_api_is_a_commit_that_is_pushed_and_a_failed_push_un
     let (status, _) = api
         .call(reqwest::Method::DELETE, "/v1/agents/Fresh", None)
         .await;
-    assert_eq!(status, 500);
+    assert_eq!(status, 409);
     assert_eq!(head(&clone), added);
     assert!(clone.join("agents/Fresh.toml").is_file());
     // Neither edit happened, so neither is a judgement.
@@ -324,7 +324,7 @@ async fn skills_are_edited_as_commits_and_an_agent_is_given_a_new_skill() {
         (Method::DELETE, "/v1/skills/unused", None),
     ] {
         let (status, text) = api.call(method, path, body).await;
-        assert_eq!(status, 500, "{path}");
+        assert_eq!(status, 409, "{path}");
         assert!(text.contains("closed for edits"), "{text}");
     }
     assert_eq!(head(&clone), before);
@@ -489,7 +489,7 @@ async fn mcp_servers_are_edited_as_commits_that_keep_the_rest_of_the_file() {
         (Method::DELETE, None),
     ] {
         let (status, text) = api.call(method, "/v1/mcp-servers/unused", body).await;
-        assert_eq!(status, 500);
+        assert_eq!(status, 409);
         assert!(text.contains("closed for edits"), "{text}");
     }
     assert_eq!(head(&clone), before);

@@ -31,6 +31,7 @@ pub(super) fn end_runs_of_a_previous_server(app: &App, runners: &Runners) -> Res
         }
     }
     for run in runs {
+        crate::harness::output::remove_saved(&app.data_dir, run.id);
         let Some(worktree) = run.worktree else {
             continue;
         };
@@ -123,6 +124,10 @@ mod tests {
             .set_run_worktree(run.id, &worktree.path.to_string_lossy())
             .unwrap();
         first.app.store.set_run_status(run.id, "running").unwrap();
+        // The whole outputs the run saved are not kept.
+        let saved = first.app.data_dir.join(format!("runs/{}/out", run.id));
+        std::fs::create_dir_all(&saved).unwrap();
+        std::fs::write(saved.join("1.txt"), "whole").unwrap();
         let chat = first
             .app
             .store
@@ -143,6 +148,7 @@ mod tests {
         assert_eq!(run.status, "failed");
         assert!(second.app.store.active_runs().unwrap().is_empty());
         assert!(!worktree.path.exists());
+        assert!(!saved.exists());
         assert!(!empty.exists());
         assert_eq!(
             second.app.store.run(chat.id).unwrap().unwrap().status,

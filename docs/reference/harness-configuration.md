@@ -1,6 +1,7 @@
 # Harness configuration
 
-The harness configuration is a git repository that holds the agents, their skills, the server's rules and the MCP servers.
+The harness configuration is a git repository that holds the agents, their skills, the server's rules, the MCP servers
+and the settings of each project (a repository the server works on).
 This page is for whoever sets it up or edits it, by hand or through the desktop API: it lists every file and key. The code
 is in `crates/moebius-core/src/harness/repo/`.
 
@@ -65,6 +66,7 @@ mcp.toml               the MCP servers
 extensions/...         any files an agent's extensions name
 packages/<name>/       a vendored Pi package with its production dependencies (see Packages)
 packages.lock          what each vendored package was fetched as
+repos/<repository>/... the settings of one project (see Project settings)
 ```
 
 Nothing else is read. The Moebius agent stays built in: `agents/Moebius.toml` configures it as `[agents.Moebius]` does, and
@@ -90,7 +92,7 @@ the router can serve.
 
 The `Reviewer` is the review agent of the default workflow: it exists always, like the Coder (`moebius.has_agent("Reviewer")`
 is true on every server), so a card goes to review out of the box, on the Coder's model unless the Reviewer has its own.
-A person who wants no review changes the column's script (`.moebius/review.luau` of the repository, see the
+A person who wants no review changes the column's script (`review.luau` of the project's settings, see the
 [workflows guide](../guide/workflows.md)), for example to `moebius.offer_change()` at once.
 The instructions complement what each run's prompt says (the issue, the checks, the `FINDING` format) and do not repeat
 it. The parts that fit only a card (the issue as the spec, the summary, the `FINDING` format) start with "When you work
@@ -111,7 +113,7 @@ and the instructions tell it that the prompt's scope and format win. The skills 
 >
 > Commit in small steps, each a change that stands on its own, with a message whose subject says what the change does in the imperative and whose body says why, as the repository's own history does. Do not commit generated files, secrets or build output.
 >
-> Stay inside your worktree. Do not read or write files outside it, do not touch other branches, other worktrees or the repository's own clone, and do not push unless the person you are chatting with asks you to. Do not install anything on the machine that the repository does not already ask for.
+> Stay inside your worktree. Do not read or write files outside it, except to read the full output of a command that a result says was saved to a file; do not touch other branches, other worktrees or the repository's own clone, and do not push unless the person you are chatting with asks you to. Do not install anything on the machine that the repository does not already ask for.
 >
 > When you work on a card, end with the summary the run's prompt asks for: what you changed and why, how you tested it, what you decided without being able to ask, and anything you saw but left alone. In a chat, say the same in your last message.
 
@@ -278,7 +280,7 @@ package with a newer version (see [the desktop API](desktop-api.md#get-v1extensi
 ## `rules.md`
 
 The server's rules, in the format of [rules](rules.md): one `## name` section per rule. It replaces `rules_file`, and has
-the same precedence over a repository's `.moebius/rules.md`: the server's rules come first and a repository cannot
+the same precedence over a project's `repos/<repository>/rules.md`: the server's rules come first and a project cannot
 weaken them. Like `rules_file` it is read afresh for every tool call, from the clone's working tree, which is the
 default branch. Without the file there are no server rules.
 
@@ -345,10 +347,37 @@ model class, has none, and the harness sends the level's name.
 A stdio server runs with the Moebius server's environment and its own `env`, and works in the run's worktree, so it can
 read and change what the agent works on: give a run only servers you trust.
 
-## `.moebius/lint.toml`
+## Project settings
 
-Not part of the harness configuration repository: a file of the *project* an agent works on, committed to it like
-`.moebius/checks`. It tells the [lens](bridge-protocol.md#the-lens) what to run after the agent's edits in the run's
+A project is a repository the server works on, and its settings are the files of `repos/<repository name>/`, the
+repository's name as `GET /v1/snapshot` shows it. They replaced the `.moebius/` folder that a repository used to keep on
+its default branch: nothing is read from a repository's `.moebius/` any more. A repository whose default branch still
+has one is told so once while the server runs, in the log and as the event `settings_moved`, and
+`GET /v1/repositories/{id}/settings` lists its files as `leftover`; Moebius imports nothing, so move the files by hand
+(`git mv .moebius/<file>` becomes a commit of `repos/<name>/<file>` here). Every file is optional, and a server without
+`[harness]` has no project settings at all. They are read afresh when they are used, from the clone's default branch, and
+an edit through the API is a commit pushed to `origin`, like any other edit of this repository. A file that is a symbolic
+link in the clone is not read, and not written. A repository whose name is a device name of Windows (`con`, `prn`, `aux`,
+`nul`, `com1` to `com9`, `lpt1` to `lpt9`, in any case, with or without an extension) has no settings: a directory of
+that name cannot be made there, so saving a file is refused with `422` on every system.
+
+| File | Meaning |
+|---|---|
+| `rules.md` | The project's own rules, in the format of [rules](rules.md). They are added after the server's rules, which a project cannot weaken. |
+| `review.md` | Notes for the reviews of the project's changes, given to the Standards review run in its prompt (the files the repository itself keeps, such as `CONTRIBUTING.md`, are read by the reviewer from the worktree). |
+| `lint.toml` | What the lens checks after an agent's edits (below). |
+| `checks` | The command that checks a change of a repository without a forge (see [column scripts](column-scripts.md#checks-and-conflicts)). |
+| `test-first` | Its presence turns test first on (content ignored; see [column scripts](column-scripts.md#test-first)). |
+| `localize` | Turns the hint of likely files for code runs on or off for the project, and says how many files (see [configuration](configuration.md#localize)). |
+| `<file>.luau` | The script of a column in place of the built-in one: `backlog`, `ready` (for `Not started`), `code`, `review`, `merge` and `done` (see [column scripts](column-scripts.md#repository-overrides)). |
+
+A change to these files that a package or the Retro proposes is a branch of this repository like any other, merged by a
+person (see [Packages](#packages) and [Proposals for Moebius itself](#proposals-for-moebius-itself)). The Retro's proposals
+may change only `rules.md` and the column scripts of a project, never `checks`, which the server runs as a command.
+
+### `lint.toml`
+
+The file that tells the [lens](bridge-protocol.md#the-lens) what to run after the agent's edits in the run's
 worktree. Without the file, or with no `[[check]]` in it, the lens detects the common tools from the repository's files.
 
 ```toml
@@ -356,7 +385,7 @@ budget_ms = 1500            # all per-edit checks of one edit together; a check 
 max_lines = 10              # the most findings an edit's result or the end-of-turn message carries
 deep_timeout_seconds = 120  # each end-of-turn command
 syntax = true               # the built-in syntax checks (JSON, Python, shell); false turns them off
-enabled = true              # false turns the lens off for this repository
+enabled = true              # false turns the lens off for this project
 
 [[check]]
 glob = "**/*.py"                                  # or globs = ["*.py", "*.pyi"]
@@ -502,7 +531,7 @@ configured, the built-in agent `Retro-analyst` turns the report into proposals. 
 - Each proposal is a branch `proposal/<date>-<short-name>` made from the default branch, with one commit whose message is
   the proposal: the subject is its title, the body says what changes and which errors it addresses, and the last line is
   `Cards: 48, 50`, the `card` of each error of the report that it addresses (numbers that are not ids are ignored). It
-  changes only harness configuration files (`agents/`, `skills/`, `extensions/`, `packages/`, `packages.lock`, `rules.md`, `mcp.toml`).
+  changes only harness configuration files (`agents/`, `skills/`, `extensions/`, `packages/`, `packages.lock`, `rules.md`, `mcp.toml`, and the files of a project's settings, `repos/<repository>/<file>`).
 - When the run has succeeded, Moebius lists the `proposal/<date>-*` branches of the clone. A branch that changes
   nothing, changes another file, or breaks an agent that could be used on the default branch is left out, with a warning
   in the Retro. The others are pushed to `origin` and stored as proposals (`GET /v1/proposals`), with the agents whose files
@@ -511,7 +540,7 @@ configured, the built-in agent `Retro-analyst` turns the report into proposals. 
 ### Proposals for Moebius itself
 
 Some errors are better avoided by Moebius's own configuration than by the harness configuration. The analyst may also
-propose a change to `moebius.toml` or to a repository's own rules and column scripts. It states one the same way, as a
+propose a change to `moebius.toml` or to a project's own rules and column scripts. It states one the same way, as a
 branch `proposal/<date>-<short-name>` with one commit whose message is the proposal, but the commit adds only files under
 `moebius/`, which is not harness configuration:
 
@@ -520,10 +549,10 @@ branch `proposal/<date>-<short-name>` with one commit whose message is the propo
   `run_limit`, `retro_at`, `trial_window.start`, `trial_window.end`, `board.round_limit`, `budgets.day_tokens`,
   `checks.timeout_seconds`, `teacher.model`, `teacher.protocol` and `teacher.timeout_seconds`; the analyst is told
   their values now. The file must still be a valid [configuration](configuration.md) with the change.
-- **A change to a repository's `.moebius/`** adds only files `moebius/repositories/<repository>/.moebius/<file>`, each
+- **A change to a project's settings** adds only files `moebius/repositories/<repository>/<file>`, each
   the whole new text of that file, all for one repository. The files are `rules.md` and the column scripts
   (`backlog.luau`, `ready.luau`, `code.luau`, `review.luau`, `merge.luau`, `done.luau`); rules must be fit to save (see
-  [rules](rules.md)) and a script must pass `moebius check-script`. The analyst is told the files that the repositories
+  [rules](rules.md)) and a script must pass `moebius check-script`. The analyst is told the files that the projects
   of the report's cards have now.
 
 When the run has succeeded, these branches are read first and then deleted from the clone; they are never pushed. A
@@ -535,9 +564,10 @@ Nothing is applied without a person:
 
 - Merging a `settings` proposal saves the change to `moebius.toml` through the same code as `PUT /v1/settings`; the
   live keys take effect at once, and when a key needs a restart the server restarts.
-- Merging a `repository` proposal commits its files on the branch `moebius/proposal-<id>` of the repository, from its
-  default branch, and offers it as a change through the repository's forge (a pull request on GitHub). The change is in
-  the inbox, ready to merge, and merges as any change does.
+- Merging a `repository` proposal commits its files, as `repos/<repository>/<file>`, on the branch
+  `moebius/proposal-<id>` of the harness configuration repository, from its default branch, and offers it as a change of
+  that repository. The change is in the inbox, ready to merge, and a person merges it as any change of this repository
+  (the files are on its default branch, and in use, only then).
 - Dismissing one changes nothing.
 
 ### The trials
@@ -555,8 +585,8 @@ proposal's branch, the run cannot start) is `failed`.
   servers) is read from the proposal's branch, in a throwaway worktree of the harness clone, not from the default branch.
   Like a `code` run it fails when it changes nothing. A trial run is no part of the card's own history: the card's runs,
   rounds and tokens do not count it, and the next Retro's report leaves its errors out.
-- **The checks.** When the run succeeded and the repository has no forge, its own checks (`.moebius/checks` on the
-  default branch) run on what the run made.
+- **The checks.** When the run succeeded and the repository has no forge, its own checks (the project's `checks`) run on
+  what the run made.
 - **The comparison** is with the card's first code run, the one its errors happened in. A trial is **positive** when all of
   these hold, else **negative**, with the reasons that do not:
   - the run succeeded;
@@ -583,7 +613,7 @@ proposal's branch, the run cannot start) is `failed`.
 A proposal that fixes its own cards may still break what worked before, and changes to skills and instructions often
 help nothing or harm, so each is measured on past work as well. The regression set of a repository is a fixed sample of
 the cards merged there: the latest `regression.size` (default 5; see [configuration](configuration.md#regression)), chosen
-among the latest 50 merged changes, the cards whose change adds or changes a reproduction test (`.moebius/reproduce`)
+among the latest 50 merged changes, the cards whose code runs name a reproduction test (`REPRODUCE:` in their summaries)
 first, latest first among equals. It changes only as new cards merge. A card is in it only when its first code run
 recorded the commit it started at; the proposal's own cards are left out.
 

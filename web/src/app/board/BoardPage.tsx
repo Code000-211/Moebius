@@ -11,8 +11,9 @@
 import { PlusIcon, TerminalWindowIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { snapshot } from "../../api/calls/board";
+import { readSettings } from "../../api/calls/projects";
 import { keys } from "../../api/keys";
 import type { Board, Card, InboxItem } from "../../api/types/board";
 import { Button } from "../../ui/components/Button";
@@ -79,6 +80,34 @@ type CardMenuActions = {
 };
 
 const ANY_COLUMN = "A card arrives when the column's script moves one in.";
+
+/**
+ * Said on the board of a repository whose default branch still has a `.moebius/` folder: nothing in it is read any
+ * more, so its rules, checks and scripts do not apply until they are moved into the project's settings.
+ */
+function LeftoverNotice({ repository }: { repository: number }) {
+  const settings = useQuery({
+    queryKey: keys.projectSettings(repository),
+    queryFn: () => readSettings(repository),
+  });
+  const leftover = settings.data?.leftover ?? [];
+  if (leftover.length === 0) return null;
+  return (
+    <Notice
+      tone="error"
+      className="mb-4"
+      action={
+        <Link className="underline" to={`/projects/${repository}`}>
+          Project settings
+        </Link>
+      }
+    >
+      <span className="font-semibold">This repository still has a .moebius folder. </span>
+      Nothing in it is read any more, so its rules, checks and scripts do not apply (
+      {leftover.join(", ")}). Move them into the project's settings.
+    </Notice>
+  );
+}
 
 export function BoardPage() {
   const { id } = useParams();
@@ -238,6 +267,7 @@ export function BoardPage() {
             filters={filters}
             onChange={(next) => setQuery({ ...next })}
           />
+          <LeftoverNotice repository={board.repository.id} />
           {notice && (
             <Notice
               tone={notice.tone}

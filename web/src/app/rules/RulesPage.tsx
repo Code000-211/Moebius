@@ -2,7 +2,7 @@
  * The Rules page: the built-in patterns and what each refused this week, the server's rules in prose and the rules
  * each repository adds. The rules are cards that grow into editors (`RuleList`); "Write with agent" asks the
  * Moebius agent in a chat instead. The server's rules are saved with `PUT /v1/rules`, a repository's with
- * `PUT /v1/repositories/{id}/files/.moebius/rules.md`; the server checks both and says which line is wrong.
+ * `PUT /v1/repositories/{id}/settings/rules.md`; the server checks both and says which line is wrong.
  *
  * The page reads from what cannot be changed to what a person can: the patterns first, then the server's own rules,
  * then one box per repository.
@@ -179,7 +179,10 @@ export function RulesPage() {
                   return undefined;
                 }}
               />
-              <Body>Saved as a commit on the default branch (.moebius/rules.md).</Body>
+              <Body>
+                Saved as a commit in the harness configuration repository (repos/
+                {repository.repository}/rules.md).
+              </Body>
             </div>
           </Box>
         ))}

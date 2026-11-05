@@ -53,7 +53,7 @@ a bridge of any harness.
 Before the bridge, Moebius loads a second extension of its own, the lens (`crates/moebius-core/bridge/moebius-lens.ts`).
 After the agent edits a file it appends to the tool's result the lint and syntax problems that edit made new, and
 before the run settles it runs the slow type check once. You do not write or load it; you tell it what to run for your
-repository in `.moebius/lint.toml` (see [harness configuration](../reference/harness-configuration.md#moebiuslinttoml)),
+repository in the project's `lint.toml` of the harness configuration repository (see [harness configuration](../reference/harness-configuration.md#linttoml)),
 or leave that out and it detects ruff, rustfmt and cargo, gofmt and go vet, biome, oxlint, tsc, pyright and
 shellcheck. Your own extensions run before it, so it sees the file as your handlers left it. The
 [bridge protocol](../reference/bridge-protocol.md#the-lens) says what it does and which decisions are Moebius's.

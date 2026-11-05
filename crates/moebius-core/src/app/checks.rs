@@ -1,4 +1,4 @@
-//! A change's checks: how they stand for its current commit, and a repository's own checks (`.moebius/checks`) run
+//! A change's checks: how they stand for its current commit, and a repository's own checks (the project's `checks` file) run
 //! on a change, or on a trial's commit, in a throwaway worktree with a time limit and a cleared environment. A
 //! change's reproduction test (see `reproduce`) runs the same way.
 
@@ -11,7 +11,6 @@ use std::time::{Duration, Instant};
 use super::{App, AppError, Result};
 use crate::blobs::redact;
 use crate::bus::Event;
-use crate::repos::git;
 use crate::store::{Change, Repository, now};
 
 /// How long after a publish a change without checks for its commit is taken to be waiting for them; after that, the
@@ -44,7 +43,7 @@ impl App {
         })
     }
 
-    /// Runs the repository's own checks, the command in `.moebius/checks` on its default branch (never on the change's,
+    /// Runs the repository's own checks, the command in the project's `checks` file (never in the change's repository,
     /// so that its author cannot change them), on the card's change. They run on a thread of their own, in a throwaway
     /// worktree; meanwhile the change's checks are `pending`. Does nothing for a repository on a forge, which has its
     /// own checks, or without that file, or when the checks already ran or are running for the change's commit.
@@ -95,14 +94,13 @@ impl App {
         Ok(change)
     }
 
-    /// The repository's own checks: the command in `.moebius/checks` on its default branch. None for a repository on a
-    /// forge, which has its own checks, and for one without that file.
+    /// The repository's own checks: the command in the project's `checks` file. None for a repository on a forge, which
+    /// has its own checks, and for one without that file.
     pub(super) fn checks_script(&self, repository: &Repository) -> Option<String> {
         if repository.forge != "none" {
             return None;
         }
-        let spec = format!("{}:.moebius/checks", repository.base_ref());
-        git(Path::new(&repository.path), &["show", &spec]).ok()
+        self.project_file(repository, "checks")
     }
 
     /// Runs `script` on the commit `rev` in a throwaway worktree named `name` and returns whether it succeeded and the

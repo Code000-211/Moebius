@@ -100,7 +100,7 @@ start is empty, so nothing starts.
 
 The regression gate of the trials (see [the regression set](harness-configuration.md#the-regression-set)). Besides the
 cards whose errors it addresses, a proposal is tried on the regression set of each repository of its cards: the latest
-`size` cards merged there, those whose change adds a reproduction test (`.moebius/reproduce`) first. It is positive only
+`size` cards merged there, those whose runs named a reproduction test (`REPRODUCE:` in their summaries) first. It is positive only
 when none of them fails where it passed before. The regression trials run one after the other on the proposal's thread,
 like its other trials, and stop at the first that fails, so a proposal adds at most `size` runs for each repository of its
 cards; one proposal is tried at a time, and only when the board has a run to spare.
@@ -120,10 +120,10 @@ The hint a `code` run is given: the files of the repository that its issue is li
 | `localize.enabled` | boolean | `true` | Whether a run is given the hint. With `false` it starts without, and no judgement of `localize` is recorded. |
 | `localize.files` | integer | `10` | How many files the hint names at most, from 1 to 10. |
 
-A repository decides for itself in the file `.moebius/localize` on its default branch (as `.moebius/test-first` turns test
-first on), over these keys: lines that are empty or start with `#` are skipped, `on` and `off` turn the hint on and off,
-and `files <n>` (1 to 10) says how many files it names. A line that says anything else is ignored. The default branch is
-the repository's workflow: a repository that wants no hint for its coding writes `off` there.
+A project decides for itself in the file `localize` of its settings (as `test-first` there turns test first on; see
+[harness configuration](harness-configuration.md#project-settings)), over these keys: lines that are empty or start with `#` are skipped, `on` and `off` turn the hint on and off,
+and `files <n>` (1 to 10) says how many files it names. A line that says anything else is ignored. A project that wants no hint for its
+coding writes `off` there.
 
 ## `[packages]`
 
@@ -151,7 +151,7 @@ Token budgets that are not an agent's own (see `agents.<name>.token_budget`). Th
 
 ## `[checks]`
 
-A repository without a forge may name its own checks in `.moebius/checks` on its default branch, see
+A repository without a forge may name its own checks in the file `checks` of its project's settings, see
 [column scripts](column-scripts.md). The same limit holds for the reproduction test of a repository that works test
 first, on any forge. Both run with the server's environment cleared but for `PATH`, `HOME`, `USER`, `LANG` and
 `TMPDIR`.
@@ -429,15 +429,16 @@ A name is made of letters, digits, `-` and `_` and must not be empty, else the f
 | `agents.<name>.token_budget` | integer | none | The most tokens (input plus output, summed over all runs of the card, teacher included) a card may use. A model request over it is answered with HTTP 429 `budget_exceeded`, and the default scripts mark a card that reached it stuck instead of starting a run. Tokens used before the card's latest retry do not count. Without it there is no limit. A chat has no card, so its budget is the tokens of the chat's own run. Scripts read it as `moebius.agent_budget(name)`. |
 | `agents.<name>.engineering_skills` | boolean or array of strings | `true` | The engineering skills the agent is given, before its own `skills`. `true`: those of its name, with the skill `moebius-autonomous` that says how to use them without a person to ask: for the `Coder` `tdd` and `diagnosing-bugs`, for the `Reviewer` `code-review`, for the `Grilling-partner` `grilling` and `to-tickets`, none for another name. `false`: none. A list of names (`tdd`, `diagnosing-bugs`, `code-review`, `grilling`, `to-tickets`, `moebius-autonomous`): exactly those, under any name; another name is an error. See [Engineering skills](harness-configuration.md#engineering-skills). |
 | `agents.<name>.tool_output.hide_after_turns` | integer | `10` | The output of a tool call older than this many turns (model responses) is replaced, in the requests to the model, by a placeholder: `[<tool> <input>: output hidden: <n> lines]`. Errors are never hidden, and the session and the run's events keep every output. `0` keeps every output. The bridge does it, through Pi's `context` hook. |
-| `agents.<name>.tool_output.max_lines` | integer | `200` | The most lines of one tool result the model reads. Above it (or above `max_bytes`), the result's head and tail are kept, half the budget each, around `[<n> lines left out; the full output is in .moebius/out/<k>.txt]`. `0` is no limit. |
+| `agents.<name>.tool_output.max_lines` | integer | `200` | The most lines of one tool result the model reads. Above it (or above `max_bytes`), the result's head and tail are kept, half the budget each, around `[<n> lines left out; the full output is in <data_dir>/runs/<id>/out/<k>.txt]`. `0` is no limit. |
 | `agents.<name>.tool_output.max_bytes` | integer | `16384` | The most bytes of one tool result, as `max_lines`. A result whose lines are each too long keeps its first and last bytes and says how many bytes were left out. `0` is no limit. |
 | `agents.<name>.tool_output.compress` | boolean | `true` | Whether escape codes and progress bars are removed from every result, runs of the same line folded into one with `(×<n>)`, and the output of well-known commands compressed: `cargo test`, `pytest`, `go test`, `jest` and `vitest` (also as `npm test`) to their failures and summary, cargo's builds to their errors and warnings with repeats folded. A compressor only removes lines it knows to be noise, so no error message and no failing test's output is lost. |
 
 The `tool_output` table keeps what the model reads of tools small (Pi-Bolt already shows at most 2000 lines or 50 KB of
 a `bash` or `read` result; these budgets are tighter). It applies to Pi-Bolt runs only: the bridge does it, and an agent
 with `harness = "claude-code"` has no bridge, so its table is accepted and has no effect. When lines are left out, the whole output, without secrets, is in
-`.moebius/out/<k>.txt` of the run's worktree, which the agent can read in ranges; that directory ignores itself in git,
-so it is never part of the change, and it goes with the worktree. Each result made smaller is a `tool_output` run event
+`<k>.txt` in the `out` folder of the run's own directory (`<data_dir>/runs/<run id>/out/`), outside its worktree, which
+the agent can read in ranges (the text names the full path); it is never part of the change, and it is removed when the run ends. A run on a runner (`runner`) has nothing saved
+and the text names no path. Each result made smaller is a `tool_output` run event
 (see the [bridge protocol](bridge-protocol.md)), and `GET /v1/usage` adds up what they saved.
 
 ```toml

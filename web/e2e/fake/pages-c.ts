@@ -525,7 +525,7 @@ export function createPagesCFake(
 
   async function handle(request: IncomingMessage, response: ServerResponse, path: string) {
     const method = request.method ?? "GET";
-    const rules = path === "/v1/rules" || path === "/v1/repositories/1/files/.moebius/rules.md";
+    const rules = path === "/v1/rules" || path === "/v1/repositories/1/settings/rules.md";
     const script = /^\/v1\/repositories\/1\/scripts\/(.+)$/.exec(path);
     const one =
       /^\/v1\/(automations|lessons|research|takeovers(?=\/\d+\/release$))\/(\d+)(?:\/(\w+))?$/.exec(
@@ -570,7 +570,7 @@ export function createPagesCFake(
       const text = String(body.text ?? "");
       const parsed = parseRules(text);
       if (typeof parsed === "string") {
-        return reply(response, 422, path === "/v1/rules" ? parsed : `.moebius/rules.md: ${parsed}`);
+        return reply(response, 422, path === "/v1/rules" ? parsed : `rules.md: ${parsed}`);
       }
       const final = text === "" || text.endsWith("\n") ? text : `${text}\n`;
       if (path === "/v1/rules") {
@@ -579,7 +579,7 @@ export function createPagesCFake(
         return reply(response, 200, { ...rulesView(), ...(changed ? { commit: "a1b2c3d" } : {}) });
       }
       repositoryText = text.trimEnd();
-      return reply(response, 200, { path: ".moebius/rules.md", text });
+      return reply(response, 200, { file: "rules.md", exists: true, text });
     }
 
     if (script) {
@@ -590,7 +590,7 @@ export function createPagesCFake(
         const own = scripts.get(column.toLowerCase());
         return {
           column,
-          path: `.moebius/${file}.luau`,
+          path: `repos/demo/${file}.luau`,
           source: own === undefined ? "built-in" : "repository",
           text: own ?? `-- The ${column} column\nmoebius.wait("nothing to do in ${column}")\n`,
         };

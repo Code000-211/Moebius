@@ -187,11 +187,11 @@ pub struct ProseRules {
     pub error: Option<String>,
 }
 
-/// A repository's own `.moebius/rules.md`.
+/// A project's own `rules.md`, in the harness configuration repository.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct RepositoryRules {
     pub repository: String,
-    /// The repository's id, to save its `.moebius/rules.md` with.
+    /// The repository's id, to save its `rules.md` with.
     #[serde(default)]
     pub repository_id: i64,
     #[serde(default)]

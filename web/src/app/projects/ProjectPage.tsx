@@ -1,7 +1,7 @@
 /**
  * The page of one repository (`/projects/:id`; the desktop app's `screens/project`): where it is and what it trusts,
- * with the logins of a repository on a forge to edit, and its files on the default branch, which can be read, edited
- * and saved as a commit. The two parts are borderless cards grouped by space. The board of the repository is its own
+ * with the logins of a repository on a forge to edit, the settings Moebius keeps for it, and its files on the default
+ * branch, which can be read, edited and saved as a commit. The three parts are borderless cards grouped by space. The board of the repository is its own
  * page.
  */
 import { ArrowLeftIcon } from "@phosphor-icons/react";
@@ -27,6 +27,7 @@ import { SkeletonCard } from "../../ui/page/Skeleton";
 import { boardPath } from "../pages";
 import { FilesPanel } from "./FilesPanel";
 import { forgeTag, logins, onForge } from "./model";
+import { SettingsPanel } from "./SettingsPanel";
 
 export function ProjectPage() {
   const { id } = useParams();
@@ -106,6 +107,7 @@ export function ProjectPage() {
           )}
         </Box>
         <FilesPanel repository={repository.id} />
+        <SettingsPanel repository={repository.id} />
       </div>
     </>
   );

@@ -1,8 +1,8 @@
 //! A repository's files from the desktop app's project page: listing a directory and reading a file as they are on the
-//! default branch (the same `base_ref` column scripts are read from), and changing a file with a commit on the default
+//! default branch, and changing a file with a commit on the default
 //! branch of Moebius's clone, pushed to `origin` for a repository on a forge. A push that fails undoes the commit, so
 //! the clone never drifts from `origin`, and every change is recorded as a decision of the person or agent who made
-//! it. [`crate::board::scripts`] commits a column's script the same way, through [`commit`].
+//! it.
 
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
@@ -18,12 +18,6 @@ use crate::store::Repository;
 
 /// The kind of the decision recorded for a change to a file.
 const KIND: &str = "edit_file";
-
-/// A repository's own rules, which are checked as the server's are before they are saved.
-const RULES: &str = ".moebius/rules.md";
-
-/// The kind of the decision recorded for a change to a repository's own rules.
-const RULES_KIND: &str = "edit_repository_rules";
 
 /// The largest file, in bytes, that is read as text; a larger one is answered with its size only.
 pub const TEXT_LIMIT: u64 = 1024 * 1024;
@@ -183,9 +177,7 @@ fn read(repository: &Repository, path: &str) -> Result<FileView> {
 }
 
 /// Replaces the file at `path` of repository `id` with `new.text`, as a commit on the default branch, pushed on a
-/// forge. Text that changes nothing makes no commit. The repository's own rules (`.moebius/rules.md`) are refused with
-/// `Invalid` when they are not fit to be saved, as `PUT /v1/rules` refuses the server's, and recorded as
-/// `edit_repository_rules` with their text.
+/// forge. Text that changes nothing makes no commit.
 pub fn save_file(app: &App, by: &Actor, id: i64, path: &str, new: &NewFile) -> Result<FileView> {
     let repository = app.repository(id)?;
     let path = inside(path)?;
@@ -193,16 +185,6 @@ pub fn save_file(app: &App, by: &Actor, id: i64, path: &str, new: &NewFile) -> R
         return Err(AppError::Invalid("a file needs a path".into()));
     }
     let clone = Path::new(&repository.path);
-    let (kind, context) = if path == RULES {
-        crate::decide::rules::check(&new.text)
-            .map_err(|why| AppError::Invalid(format!("{RULES}: {why}")))?;
-        (
-            RULES_KIND,
-            BTreeMap::from([("text".to_string(), new.text.clone())]),
-        )
-    } else {
-        (KIND, BTreeMap::new())
-    };
     let message = match new.message.as_deref().map(str::trim) {
         Some(message) if !message.is_empty() => message.to_string(),
         _ => format!("Update {path}"),
@@ -218,11 +200,11 @@ pub fn save_file(app: &App, by: &Actor, id: i64, path: &str, new: &NewFile) -> R
         by,
         &repository,
         &Change {
-            kind,
+            kind: KIND,
             path: &path,
             message: &message,
             reason: &new.reason,
-            context,
+            context: BTreeMap::new(),
             event: Event::FileChanged {
                 repository: repository.id,
                 path: path.clone(),

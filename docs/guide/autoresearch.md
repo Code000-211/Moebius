@@ -23,7 +23,7 @@ minutes.
 - It must be repeatable: a noisy number makes levers look better or worse than they are. Make the command run a benchmark
   several times and print the median, if need be.
 - A lever is kept when the number is better than the baseline in the direction you gave by **more than 1 %** of the
-  baseline, and the repository's own checks pass (`.moebius/checks` for a repository without a forge) or there are none.
+  baseline, and the repository's own checks pass (the `checks` file of its settings for a repository without a forge) or there are none.
 
 ## The steps
 

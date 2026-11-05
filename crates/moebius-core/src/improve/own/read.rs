@@ -10,9 +10,8 @@ use crate::app::{App, PERSON, Result};
 use crate::board::{Workflow, check_script};
 use crate::bus::Event;
 use crate::harness::repo::OwnBranch;
-use crate::repos::git_bytes;
 use crate::server::settings::{Changes, Live};
-use crate::store::{OwnEdits, Repository};
+use crate::store::OwnEdits;
 
 /// The file of a branch that changes `moebius.toml`.
 const SETTINGS_FILE: &str = "settings.json";
@@ -60,7 +59,7 @@ pub fn store(app: &App, live: &Live, day: &str, branches: &[OwnBranch]) -> Resul
     Ok(warnings)
 }
 
-/// What the branch proposes, checked: a change to `moebius.toml` or to one repository's `.moebius/` files.
+/// What the branch proposes, checked: a change to `moebius.toml` or to one project's settings files.
 fn edits_of(app: &App, live: &Live, branch: &OwnBranch) -> std::result::Result<OwnEdits, String> {
     if branch.files.contains_key(SETTINGS_FILE) {
         if branch.files.len() > 1 {
@@ -110,7 +109,7 @@ fn strip_url_credentials(text: &str) -> String {
     CREDENTIALS.replace_all(text, "$1").into_owned()
 }
 
-/// A change to the `.moebius/` files of one repository: each file one of [`files`], rules that can be saved and
+/// A change to the settings files of one project: each file one of [`files`], rules that can be saved and
 /// scripts that pass the check of `moebius check-script`.
 fn repository(
     app: &App,
@@ -121,10 +120,10 @@ fn repository(
     for (path, text) in branch_files {
         let Some((repository, file)) = path
             .strip_prefix(REPOSITORIES)
-            .and_then(|rest| rest.split_once("/.moebius/"))
+            .and_then(|rest| rest.split_once('/'))
         else {
             return Err(format!(
-                "moebius/{path} is neither moebius/{SETTINGS_FILE} nor a file of moebius/{REPOSITORIES}<name>/.moebius/"
+                "moebius/{path} is neither moebius/{SETTINGS_FILE} nor a file of moebius/{REPOSITORIES}<name>/"
             ));
         };
         if name.is_some_and(|name| name != repository) {
@@ -133,11 +132,11 @@ fn repository(
         name = Some(repository);
         if !files().iter().any(|f| f == file) {
             return Err(format!(
-                ".moebius/{file} is not a file the Retro may change; the files are {}",
+                "{file} is not a file the Retro may change; the files are {}",
                 files().join(", ")
             ));
         }
-        check(file, text).map_err(|why| format!(".moebius/{file}: {why}"))?;
+        check(file, text).map_err(|why| format!("{file}: {why}"))?;
         texts.insert(file, text);
     }
     let name = name.ok_or("it changes nothing")?;
@@ -151,8 +150,8 @@ fn repository(
     let mut diff = String::new();
     let mut edits = serde_json::Map::new();
     for (file, text) in texts {
-        let before = current(&repository, file);
-        let path = format!(".moebius/{file}");
+        let before = app.project_file(&repository, file).unwrap_or_default();
+        let path = format!("repos/{}/{file}", repository.name);
         diff += &unified(&path, &before, text);
         edits.insert(path, Value::String(text.clone()));
     }
@@ -167,15 +166,7 @@ fn repository(
     })
 }
 
-/// The text of `.moebius/<file>` on the repository's default branch, as it is; empty when it has none.
-fn current(repository: &Repository, file: &str) -> String {
-    let spec = format!("{}:.moebius/{file}", repository.base_ref());
-    git_bytes(std::path::Path::new(&repository.path), &["show", &spec])
-        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-        .unwrap_or_default()
-}
-
-/// Whether the text of `.moebius/<file>` could be saved: rules as `PUT /v1/rules` takes them, a column's script as
+/// Whether the text of the project's `<file>` could be saved: rules as `PUT /v1/rules` takes them, a column's script as
 /// `moebius check-script` checks it.
 fn check(file: &str, text: &str) -> std::result::Result<(), String> {
     if file == "rules.md" {

@@ -5,6 +5,8 @@
 //! so these tests run on Unix only.
 #![cfg(unix)]
 
+mod common;
+
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -63,11 +65,9 @@ fn agent(model: &str) -> AgentConfig {
 fn setup(models: &str) -> Setup {
     let dir = tempfile::tempdir().unwrap();
     let origin = dir.path().join("origin");
-    std::fs::create_dir_all(origin.join(".moebius")).unwrap();
+    std::fs::create_dir_all(&origin).unwrap();
     git(&origin, &["init", "--quiet", "-b", "main"]).unwrap();
     std::fs::write(origin.join("README.md"), "hello\n").unwrap();
-    std::fs::write(origin.join(".moebius/checks"), "grep -q good attempt.txt\n").unwrap();
-    std::fs::write(origin.join(".moebius/code.luau"), guide_script(models)).unwrap();
     git(&origin, &["add", "."]).unwrap();
     git(&origin, &["commit", "--quiet", "-m", "first"]).unwrap();
 
@@ -77,6 +77,9 @@ fn setup(models: &str) -> Setup {
         Arc::new(Host::new(Duration::from_secs(5))),
         &dir.path().join("data"),
     ));
+    let harness = common::use_harness(&app, dir.path());
+    common::put_project(&harness, "demo", "checks", "grep -q good attempt.txt\n");
+    common::put_project(&harness, "demo", "code.luau", &guide_script(models));
     let repository = app
         .add_repository("demo", origin.to_str().unwrap())
         .unwrap();

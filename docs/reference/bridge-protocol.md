@@ -93,10 +93,14 @@ made (the server side is `crates/moebius-core/src/harness/output/`):
    tests' output stay. A note at the end says how many lines were left out and what they were. Last, each run of the
    same line becomes one line followed by `(×<n>)`.
 2. Above `max_lines` or `max_bytes`, the head and the tail are kept, half the budget each, around
-   `[1,840 lines left out; the full output is in .moebius/out/3.txt]`.
-3. When lines were left out by 1 or 2, the whole text (without secrets) is written to the next free
-   `.moebius/out/<n>.txt` of the run's worktree, which the agent can read in ranges; the directory holds a `.gitignore`
-   of `*`, so it is never committed.
+   `[1,840 lines left out; the full output is in /srv/.moebius/runs/7/out/3.txt]`.
+3. When lines were left out by 1 or 2, the whole text (without secrets) is written to the next free `<n>.txt` in the
+   `out` folder of the run's own directory (`<data_dir>/runs/<run id>/out/`), outside the worktree, so it is never
+   committed. The server writes it and the agent reads it in ranges, by the full path the text names: the check of a
+   tool call refuses only writes outside the worktree, so a read of that folder is allowed, and a launcher is asked to
+   grant it for reading (see the [plugin API](plugin-api.md#launchers)). The folder is removed when the run ends (and
+   when the server finds the run unended at its next start). A run on a runner cannot read the server's files, so
+   nothing is saved for it: its text says how many lines were left out and names no path, and `saved` is `null`.
 4. Each text made smaller is stored as a `tool_output` run event: `{"tool", "tool_call_id", "steps", "bytes_before",
    "bytes_after", "lines_before", "lines_after", "saved"}`, where `steps` lists what was done (`clean`, the compressor's
    name such as `cargo-test`, `fold`, `budget`) and `saved` is the path of step 3 or `null`. `GET /v1/usage` adds them
@@ -198,7 +202,7 @@ is told (through `decide`) and stores the time each check took. The server side 
 - **After an edit** (the `edit` and `write` tools, when the call did not fail): within the budget (`budget_ms`, default
   1500, for all the checks of the one edit together, run in parallel), a syntax check of the file and the repository's
   fast linter on that file alone. The built-in syntax checks are a JSON parser for `.json`, `python3` for `.py` and
-  `bash -n` for `.sh` and `.bash`; `syntax = false` in `.moebius/lint.toml` turns them off. A command that is not
+  `bash -n` for `.sh` and `.bash`; `syntax = false` in the project's `lint.toml` turns them off. A command that is not
   finished by the end of the budget is killed and skipped, and the result says so once per tool and run. A program that is
   not installed is skipped for the rest of the run, silently apart from the `lens_check` event.
 - **Only new problems.** Before the first edit of a file in the run, the extension runs the same checks on the file as it
@@ -226,11 +230,11 @@ is told (through `decide`) and stores the time each check took. The server side 
 
 ### The plan
 
-The plan in `MOEBIUS_LENS` is read by the server from the worktree when it starts Pi, from `.moebius/lint.toml` or, without
-`[[check]]` entries in it, detected from the repository's files (see [harness configuration](harness-configuration.md#moebiuslinttoml)).
+The plan in `MOEBIUS_LENS` is read by the server when it starts Pi, from the project's `lint.toml` (in the harness configuration repository) or, without
+`[[check]]` entries in it, detected from the repository's files (see [harness configuration](harness-configuration.md#linttoml)).
 It is JSON: `{"enabled", "budget_ms", "max_lines", "deep_timeout_ms", "syntax", "checks": [{"name", "files", "edit",
 "deep", "syntax", "format", "pattern", "severity"}], "error"}`, where `files` is a regular expression over the path
-from the worktree, and `error` says why `.moebius/lint.toml` could not be read (the lens then does nothing but report
+from the worktree, and `error` says why `lint.toml` could not be read (the lens then does nothing but report
 it as a `lens_check` event).
 
 ### Endpoints

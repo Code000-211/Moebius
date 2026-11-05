@@ -27,20 +27,19 @@ fn result_of(request: &Value, id: &str) -> String {
         .unwrap_or_else(|| panic!("no result of {id} in {request:#}"))
 }
 
-/// A repository whose files are checked by the fake tools in `testdata`.
+/// The `lint.toml` of the project `demo`, whose files are checked by the fake tools in `testdata`.
+fn lint_toml() -> String {
+    let testdata = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata");
+    format!(
+        "budget_ms = 700\nmax_lines = 5\n[[check]]\nglob = \"*.fake\"\nedit = \"{0}/fake-lint {{file}}\"\n\
+         deep = \"{0}/fake-types {{files}}\"\n",
+        testdata.display()
+    )
+}
+
+/// A repository whose files are checked by the fake tools of the project's `lint.toml`.
 fn origin_with_lint(dir: &std::path::Path) -> std::path::PathBuf {
     let origin = common::origin(dir);
-    let testdata = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata");
-    std::fs::create_dir_all(origin.join(".moebius")).unwrap();
-    std::fs::write(
-        origin.join(".moebius/lint.toml"),
-        format!(
-            "budget_ms = 700\nmax_lines = 5\n[[check]]\nglob = \"*.fake\"\nedit = \"{0}/fake-lint {{file}}\"\n\
-             deep = \"{0}/fake-types {{files}}\"\n",
-            testdata.display()
-        ),
-    )
-    .unwrap();
     std::fs::write(
         origin.join("a.fake"),
         "line one\nWARN old warning\nline three\n",
@@ -93,6 +92,7 @@ async fn the_agent_is_told_new_problems_at_once_and_the_slow_check_once_at_the_e
     let requests = Arc::new(Mutex::new(Vec::new()));
     let upstream = recorded_upstream(requests.clone(), answer).await;
     let started = start(dir.path(), &pi_bolt, &upstream).await;
+    started.put_project("demo", "lint.toml", &lint_toml());
     let server = &started.server;
     let (_, card) = started.add_issue(&origin, "Edit a.fake", "Please.").await;
     let card_id = card["id"].as_i64().unwrap();
@@ -225,16 +225,11 @@ async fn the_deep_check_that_names_a_package_runs_once_for_each_changed_package(
     let dir = tempfile::tempdir().unwrap();
     let origin = common::origin(dir.path());
     let testdata = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata");
-    std::fs::create_dir_all(origin.join(".moebius")).unwrap();
-    std::fs::write(
-        origin.join(".moebius/lint.toml"),
-        format!(
-            "budget_ms = 700\nmax_lines = 5\n[[check]]\nglob = \"*.fake\"\n\
-             deep = \"{0}/fake-manifests {{manifest}}\"\n",
-            testdata.display()
-        ),
-    )
-    .unwrap();
+    let lint = format!(
+        "budget_ms = 700\nmax_lines = 5\n[[check]]\nglob = \"*.fake\"\n\
+         deep = \"{0}/fake-manifests {{manifest}}\"\n",
+        testdata.display()
+    );
     for manifest in ["Cargo.toml", "crates/x/Cargo.toml", "crates/y/Cargo.toml"] {
         let path = origin.join(manifest);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -272,6 +267,7 @@ async fn the_deep_check_that_names_a_package_runs_once_for_each_changed_package(
     let requests = Arc::new(Mutex::new(Vec::new()));
     let upstream = recorded_upstream(requests.clone(), answer).await;
     let started = start(dir.path(), &pi_bolt, &upstream).await;
+    started.put_project("demo", "lint.toml", &lint);
     let (_, card) = started
         .add_issue(&origin, "Edit two crates", "Please.")
         .await;

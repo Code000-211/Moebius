@@ -1,5 +1,5 @@
 -- A Not started script: like the default, but a card whose title contains "[large]" starts only when no run is going,
--- so that it has the machine to itself. Install it as `.moebius/ready.luau` on the default branch.
+-- so that it has the machine to itself. Install it as `ready.luau` in the project's settings (`repos/<repository name>/` of the harness configuration repository).
 function on_card(card)
   if #card.blocked_by > 0 then
     local numbers = {}

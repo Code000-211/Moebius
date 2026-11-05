@@ -1,7 +1,7 @@
 //! The guide in `docs/guide/` works. Every fenced block that claims to be something is checked:
 //!
 //! - ```` ```luau ```` blocks are complete column scripts. Each has a marker line right before it,
-//!   `<!-- script: ready.luau -->`, naming the script it replaces. The test commits it as that repository override and
+//!   `<!-- script: ready.luau -->`, naming the script it replaces. The test puts it in a project's settings as that override and
 //!   runs it against a card in that script's column; it must not fail. A marker `<!-- script: ready.luau; test: key -->`
 //!   also runs the scenario `key` below, which checks what the script does.
 //! - ```` ```toml ```` blocks are `moebius.toml` snippets and must pass `Config::parse`, unless marked `<!-- skip -->`.
@@ -13,6 +13,8 @@
 //!   indentation.
 //! - `curl` commands in ```` ```sh ```` blocks must name a route of the desktop API with the method they use.
 //! - Links to files in the repository must point at files that exist.
+
+mod common;
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -468,7 +470,7 @@ impl Plugin for StartGate {
     }
 }
 
-/// A repository whose default branch carries `source` as `.moebius/<script>`, and an engine over it.
+/// A project whose settings carry `source` as the file `<script>`, and an engine over it.
 struct Fixture {
     _dir: tempfile::TempDir,
     app: Arc<App>,
@@ -481,17 +483,19 @@ impl Fixture {
     fn new(script: &str, source: &str, agents: &[&str]) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let origin = dir.path().join("origin");
-        std::fs::create_dir_all(origin.join(".moebius")).unwrap();
+        std::fs::create_dir_all(&origin).unwrap();
         git(&origin, &["init", "--quiet", "-b", "main"]).unwrap();
-        std::fs::write(origin.join(".moebius").join(script), source).unwrap();
+        std::fs::write(origin.join("README.md"), "hello\n").unwrap();
         git(&origin, &["add", "."]).unwrap();
-        git(&origin, &["commit", "--quiet", "-m", "scripts"]).unwrap();
+        git(&origin, &["commit", "--quiet", "-m", "first"]).unwrap();
         let store = Arc::new(Store::in_memory(&dir.path().join("blobs")).unwrap());
         let mut host = Host::new(Duration::from_secs(5));
         host.add(StartGate);
         let app = App::new(store, Arc::new(host), &dir.path().join("data"));
         app.decisions.route("start_card", "start-gate");
         let app = Arc::new(app);
+        let settings = common::use_harness(&app, dir.path());
+        common::put_project(&settings, "demo", script, source);
         let repository = app
             .add_repository("demo", origin.to_str().unwrap())
             .unwrap()

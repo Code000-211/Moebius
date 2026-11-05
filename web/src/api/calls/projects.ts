@@ -1,7 +1,14 @@
-/** The calls about repositories: adding, the trusted logins, removing, and reading and writing their files. */
+/** The calls about repositories: adding, the trusted logins, removing, reading and writing their files, and their settings. */
 import { del, get, post, put } from "../http";
 import type { Repository } from "../types/board";
-import type { FileDetail, NewRepository, Search, Tree } from "../types/projects";
+import type {
+  FileDetail,
+  NewRepository,
+  ProjectSettings,
+  Search,
+  SettingFile,
+  Tree,
+} from "../types/projects";
 
 /** Clones a repository into the server's data directory. */
 export function addRepository(repository: NewRepository): Promise<Repository> {
@@ -48,4 +55,19 @@ export function searchFiles(repository: number, query: string, regex: boolean): 
   return get<Search>(
     `/v1/repositories/${repository}/search?q=${encodeURIComponent(query)}${regex ? "&regex=true" : ""}`,
   );
+}
+
+/** The settings of a repository's project: the files of `repos/<name>/` in the harness configuration repository. */
+export function readSettings(repository: number): Promise<ProjectSettings> {
+  return get<ProjectSettings>(`/v1/repositories/${repository}/settings`);
+}
+
+/** Saves one file of the settings, a commit in the harness configuration repository that the server checks first. */
+export function saveSetting(repository: number, file: string, text: string): Promise<SettingFile> {
+  return put<SettingFile>(`/v1/repositories/${repository}/settings/${file}`, { text });
+}
+
+/** Removes one file of the settings. */
+export function removeSetting(repository: number, file: string): Promise<SettingFile> {
+  return del<SettingFile>(`/v1/repositories/${repository}/settings/${file}`);
 }

@@ -2,7 +2,7 @@
  * What the server's events do to the TanStack Query cache. The reference says the snapshot is read again on every
  * event, so an event that changes what the snapshot shows invalidates it; `card_waiting` is also patched in place,
  * which shows the reason at once. What is read about one card (history, runs) goes stale with the snapshot, and the
- * column scripts with `script_changed`. A new page that reads something the events change adds its key to `keys.ts` and a
+ * column scripts with `script_changed`, and a project's settings with `project_settings_changed`. A new page that reads something the events change adds its key to `keys.ts` and a
  * line to `invalidates` below (the package sheet is in `packagePages`; the pages of Rules, Automations, Retro, Experiments and Decision model are in `improvePages`). Events are not replayed, so when the socket connects all that is shown is read again.
  */
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
@@ -54,7 +54,9 @@ export function invalidates(event: ServerEvent): QueryKey[] {
   if (event.kind === "lagged") return [[]];
   const stale: QueryKey[] = [];
   if (SNAPSHOT_KINDS.has(event.kind)) stale.push(keys.snapshot, keys.cards);
-  if (event.kind === "script_changed") stale.push(keys.scripts);
+  if (event.kind === "script_changed") stale.push(keys.scripts, keys.projectSettingsAll);
+  if (event.kind === "project_settings_changed") stale.push(keys.projectSettingsAll);
+  // A repository's settings tell which `.moebius/` files are left, so they are read again with its files.
   if (event.kind === "repository_added" || event.kind === "repository_removed") {
     stale.push(keys.start);
   }
@@ -91,9 +93,9 @@ function improvePages(event: ServerEvent): QueryKey[] {
     case "automation_fired":
     case "run_ended":
       return [keys.automations];
-    case "file_changed":
-      // Only the rules file of a repository is read by these pages.
-      return String(event.data.path) === ".moebius/rules.md" ? [keys.rules] : [];
+    case "project_settings_changed":
+      // Only the rules file of a project is read by these pages.
+      return String(event.data.file) === "rules.md" ? [keys.rules] : [];
     default:
       return [];
   }

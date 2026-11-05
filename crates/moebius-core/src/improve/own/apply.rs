@@ -1,20 +1,18 @@
 //! A person's decision about a proposal for Moebius's own configuration: merged, which saves a `settings` proposal
-//! through the settings code and offers a `repository` proposal as a change on the repository, or dismissed, which
-//! changes nothing. Both are recorded as decisions of the kind `merge_proposal`.
+//! through the settings code and offers a `repository` proposal as a change of the harness configuration repository,
+//! or dismissed, which changes nothing. Both are recorded as decisions of the kind `merge_proposal`.
 
 use std::collections::BTreeMap;
-use std::path::Path;
 
 use super::{REPOSITORY, SETTINGS};
 use crate::app::{App, AppError, Result};
 use crate::decide::{Actor, Question};
-use crate::repos::{commit_all, git};
 use crate::server::settings::{Changes, Live};
 use crate::store::Proposal;
 
 /// A person merges the proposal: a `settings` one is saved to `moebius.toml` as `PUT /v1/settings` saves a change, a
-/// `repository` one is committed on the branch `moebius/proposal-<id>` of the repository's clone and offered as a
-/// change through its forge. What fails changes nothing and records nothing.
+/// `repository` one is committed on the branch `moebius/proposal-<id>` of the harness configuration repository's
+/// clone, in the files of `repos/<name>/`, and offered there as a change for a person to merge. What fails changes nothing and records nothing.
 pub fn merge(app: &App, by: &Actor, live: &Live, proposal: &Proposal, reason: &str) -> Result<()> {
     match proposal.kind.as_str() {
         SETTINGS => {
@@ -38,24 +36,20 @@ pub fn dismiss(app: &App, by: &Actor, proposal: &Proposal, reason: &str) -> Resu
     record(app, by, proposal, "dismiss", reason)
 }
 
-/// Commits the proposal's files on a new branch from the repository's default branch and offers the branch as a
-/// change. The branch is removed again when that fails.
+/// Commits the proposal's files, the project's files of `repos/<name>/`, on a new branch of the harness configuration
+/// repository and offers the branch as a change there (see `HarnessRepo::offer_files`).
 fn offer(app: &App, proposal: &Proposal) -> Result<()> {
     let id = proposal
         .repository
         .ok_or_else(|| AppError::Invalid(format!("proposal {} has no repository", proposal.id)))?;
     let repository = app.repository(id)?;
-    // Best effort: the change should start from the forge's latest default branch.
-    if let Ok(forge) = app.forge(&repository) {
-        let _ = forge.refresh(&repository);
-    }
-    let clone = Path::new(&repository.path);
-    let name = format!("proposal-{}", proposal.id);
-    let branch = format!("moebius/{name}");
-    let worktree =
-        app.repos
-            .add_detached_worktree(&repository.name, clone, &name, &repository.base_ref())?;
-    let committed = (|| -> Result<String> {
+    let harness = app.harness_repo()?;
+    let branch = format!("moebius/proposal-{}", proposal.id);
+    let message = format!(
+        "{}\n\n{}\n\nProposed by the Retro of {}.",
+        proposal.title, proposal.body, proposal.retro_date
+    );
+    let change = harness.offer_files(app, &branch, message.trim(), |worktree| {
         for (path, text) in proposal.edits["files"].as_object().into_iter().flatten() {
             let file = worktree.join(path);
             if let Some(parent) = file.parent() {
@@ -63,29 +57,16 @@ fn offer(app: &App, proposal: &Proposal) -> Result<()> {
             }
             std::fs::write(file, text.as_str().unwrap_or_default())?;
         }
-        let message = format!("{}\n\n{}", proposal.title, proposal.body);
-        if !commit_all(&worktree, message.trim())? {
-            return Err(AppError::Invalid(format!(
-                "proposal {} changes nothing in {} any more",
-                proposal.id, repository.name
-            )));
-        }
-        Ok(git(&worktree, &["rev-parse", "HEAD"])?)
-    })();
-    let _ = app.repos.remove_worktree(clone, &worktree);
-    let head = committed?;
-    app.repos.point_branch(clone, &branch, &head)?;
-    let body = format!(
-        "{}\n\nProposed by the Retro of {}.\n\nMade by Moebius.",
-        proposal.body, proposal.retro_date
-    );
-    match app.offer_branch_change(&repository, &branch, &proposal.title, body.trim_start()) {
-        Ok(change) => Ok(app.store.set_proposal_change(proposal.id, change.id)?),
-        Err(e) => {
-            let _ = git(clone, &["branch", "-D", "--quiet", &branch]);
-            Err(e)
-        }
-    }
+        Ok(())
+    });
+    let change = change.map_err(|e| match e {
+        AppError::Invalid(_) => AppError::Invalid(format!(
+            "proposal {} changes nothing in {} any more",
+            proposal.id, repository.name
+        )),
+        other => other,
+    })?;
+    Ok(app.store.set_proposal_change(proposal.id, change.id)?)
 }
 
 fn record(app: &App, by: &Actor, proposal: &Proposal, choice: &str, reason: &str) -> Result<()> {

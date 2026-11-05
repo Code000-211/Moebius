@@ -183,7 +183,7 @@ async fn a_skills_other_files_are_read_written_and_deleted_as_commits() {
             Some(json!({"text": "x"})),
         )
         .await;
-    assert_eq!(status, 500, "{body}");
+    assert_eq!(status, 409, "{body}");
     assert_eq!(head(&clone), before);
     assert!(!clone.join("skills/house-style/new").exists());
     assert_eq!(git(&clone, &["status", "--porcelain"]).unwrap(), "");

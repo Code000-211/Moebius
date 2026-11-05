@@ -74,7 +74,7 @@ fn the_rules_page_lists_the_patterns_the_rules_and_what_they_refused() {
             "no-vendoring",
             "radiance",
             "keep-migrations",
-            "Saved as a commit on the default branch (.moebius/rules.md).",
+            "Saved as a commit in the harness configuration repository (repos/radiance/rules.md).",
         ],
         Size::new(1440.0, 1300.0),
     );

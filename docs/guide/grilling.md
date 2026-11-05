@@ -75,4 +75,4 @@ model.
 - **Confirming fails on GitHub.** The status goes back to `proposed`, so you can confirm again; issues that were already
   opened stay open on GitHub, so close them first to avoid doubles.
 - **The cards stay in the Backlog.** Check that the card says `confirmed` in the snapshot, and that the repository has no
-  `.moebius/backlog.luau` of its own that ignores `card.confirmed`.
+  `backlog.luau` of its own in its settings that ignores `card.confirmed`.

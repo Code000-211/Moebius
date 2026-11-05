@@ -286,7 +286,7 @@ impl ScriptEditor {
             );
         } else if self.saved {
             content = content.push(
-                text("Committed to the default branch.")
+                text("Committed to the harness configuration repository.")
                     .size(theme::CONTEXT)
                     .font(theme::MONO)
                     .color(theme::ONLINE_TEXT),

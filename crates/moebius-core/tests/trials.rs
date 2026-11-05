@@ -38,6 +38,8 @@ fn harness_origin(dir: &Path) -> PathBuf {
     git(&work, &["init", "--quiet", "-b", "main"]).unwrap();
     write(&work, "agents/Coder.toml", "model = \"coder-model\"\n");
     write(&work, "agents/Coder.md", "Keep changes small.\n");
+    // The checks of the project `demo` want `done.txt`, which the fake Pi writes when it works.
+    write(&work, "repos/demo/checks", "test -f done.txt\n");
     commit_all(&work, "Start");
     let bare = dir.join("harness.git");
     git(
@@ -49,13 +51,12 @@ fn harness_origin(dir: &Path) -> PathBuf {
     bare
 }
 
-/// A repository whose checks want `done.txt`, which the fake Pi writes when it works.
+/// A repository to work on.
 fn source(dir: &Path) -> PathBuf {
     let source = dir.join("source");
     std::fs::create_dir_all(&source).unwrap();
     git(&source, &["init", "--quiet", "-b", "main"]).unwrap();
     write(&source, "README.md", "hello\n");
-    write(&source, ".moebius/checks", "test -f done.txt\n");
     commit_all(&source, "first");
     source
 }
@@ -684,7 +685,7 @@ async fn trials_start_in_the_window_only_one_at_a_time_and_a_server_start_reopen
 }
 
 /// A card of the repository `repo` whose code run succeeded and whose change was merged; with `reproduce`, the change
-/// also adds a reproduction test. Returns the card's id.
+/// also names a reproduction test in its summary. Returns the card's id.
 fn a_merged_card(server: &Server, repo: i64, title: &str, reproduce: bool) -> i64 {
     let app = &server.app;
     let card = app.create_issue(repo, title, "", PERSON).unwrap();
@@ -696,33 +697,11 @@ fn a_merged_card(server: &Server, repo: i64, title: &str, reproduce: bool) -> i6
     let run = app.store.run(run.id).unwrap().unwrap();
     assert_eq!(run.status, "succeeded");
     let clone = PathBuf::from(&app.store.repository(repo).unwrap().unwrap().path);
-    let mut head = git(&clone, &["rev-parse", &run.branch()]).unwrap();
+    let head = git(&clone, &["rev-parse", &run.branch()]).unwrap();
     if reproduce {
-        let work = clone.with_file_name(format!("reproduce-{}", card.id));
-        let target = work.to_str().unwrap();
-        git(
-            &clone,
-            &["worktree", "add", "--quiet", "--detach", target, &head],
-        )
-        .unwrap();
-        write(&work, ".moebius/reproduce", "test -f done.txt\n");
-        git(&work, &["add", "-A"]).unwrap();
-        git(
-            &work,
-            &[
-                "-c",
-                "user.name=t",
-                "-c",
-                "user.email=t@t",
-                "commit",
-                "--quiet",
-                "-m",
-                "reproduce",
-            ],
-        )
-        .unwrap();
-        head = git(&work, &["rev-parse", "HEAD"]).unwrap();
-        git(&clone, &["worktree", "remove", "--force", target]).unwrap();
+        app.store
+            .set_run_summary(run.id, "Done.\nREPRODUCE: test -f done.txt\n")
+            .unwrap();
     }
     let change = app
         .store

@@ -18,7 +18,7 @@ back here for the exact page it names:
 |---|---|
 | What is going on, and acting on it: board, cards, inbox, chats, usage, repositories, issues, research, grillings | `moebius-operate` |
 | Agents, rules, a column's script through the API, settings, skills, MCP servers | `moebius-configure` |
-| Column scripts and whole workflows in a repository's `.moebius/` | `moebius-workflows` |
+| Column scripts and whole workflows in a repository's settings | `moebius-workflows` |
 | Pi extensions | `moebius-extensions` |
 | Decider plugins in Rust | `moebius-plugins` |
 | A fix or a problem in Moebius itself, sent to its official repository (only when the person says yes) | `moebius-report` |
@@ -38,9 +38,9 @@ back here for the exact page it names:
 | The person wants | Read | Where it goes | Try it |
 |---|---|---|---|
 | To know what is going on, what is stuck, what is missing, what it costs | `reference/cli.md`, `reference/desktop-api.md` | Nothing: you answer | Read it from the server, and say where each figure comes from |
-| A column to behave differently in one repository | `guide/column-scripts.md`, `reference/column-scripts.md` | `.moebius/<column>.luau` in the chat's repository | `"$MOEBIUS" check-script .moebius/<column>.luau --column <Column>` |
-| A workflow of their own | `guide/workflows.md` | `.moebius/` of the repository | `check-script` for every script |
-| Something forbidden to every run, or to one repository's runs | `guide/rules.md`, `reference/rules.md` | The server's rules: `"$MOEBIUS" rules save <file>`, or `rules.md` in a harness chat. One repository's: `.moebius/rules.md` | Read them back with `"$MOEBIUS" rules`; the rules parser's refusal names what is wrong |
+| A column to behave differently in one repository | `guide/column-scripts.md`, `reference/column-scripts.md` | `"$MOEBIUS" api PUT /v1/repositories/<id>/scripts/<Column>` (the repository's settings) | `"$MOEBIUS" check-script <column>.luau --column <Column>` on a scratch file first |
+| A workflow of their own | `guide/workflows.md` | The repository's settings, one `PUT` for each script | `check-script` for every script |
+| Something forbidden to every run, or to one repository's runs | `guide/rules.md`, `reference/rules.md` | The server's rules: `"$MOEBIUS" rules save <file>`, or `rules.md` in a harness chat. One repository's: `"$MOEBIUS" api PUT /v1/repositories/<id>/settings/rules.md` | Read them back with `"$MOEBIUS" rules`; the rules parser's refusal names what is wrong |
 | An agent set up or changed | `guide/agents.md`, `reference/harness-configuration.md` | `"$MOEBIUS" agent save <name> ...`, or `agents/<name>.toml` and `.md` in a harness chat | `"$MOEBIUS" agent show <name>` |
 | A skill or an MCP server | `reference/harness-configuration.md` | `"$MOEBIUS" api PUT /v1/skills/<name>` or `/v1/mcp-servers/<name>`, or the files in a harness chat | Read it back with `api GET`; an agent that names it gets it in its next run |
 | A Pi extension | `guide/extensions.md`, `reference/bridge-protocol.md` | A file in a harness chat, named in the agent's `extensions` | The guide's way to load it; the bridge stays last |
@@ -68,7 +68,8 @@ server. Commands act at once.
    server.
 5. A refused tool call names its rule. Respect it: find another way, or tell the person.
 6. Do not commit or push in a worktree: what you leave there is offered as a change, which the person merges.
-   Moebius reads a repository's `.moebius/` from its default branch, so it takes effect once the change is merged.
+   A repository's settings (its scripts, rules, checks) are not files of the repository: they are saved through the API,
+   as commits of the harness configuration repository, and take effect at once.
 7. End with what you made or found, how you tried it, what you could not check, and what the person has to do now
    (merge the change, store a key, restart the server), if anything. Answer in the person's language, and keep it
    short.

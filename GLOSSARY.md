@@ -41,8 +41,14 @@ _Avoid_: profile, persona, role, bot
 
 **Harness configuration**:
 Everything that shapes how a harness works apart from its own code (the agents, and the instructions, skills, extensions
-and settings they draw on), kept in a git repository of its own.
+and settings they draw on, and the settings of each project), kept in a git repository of its own.
 _Avoid_: harness config, setup, profile
+
+**Project settings**:
+What Moebius keeps for one repository: its rules, review notes, lint plan, checks, test-first switch, hint settings and
+column scripts, the files of `repos/<repository name>/` in the harness configuration. The repository itself holds none of
+it: there is no `.moebius/` folder in a repository.
+_Avoid_: repository config, `.moebius`
 
 **Pi package**:
 A Pi package: one unit of extensions, skills, prompt templates and themes in Pi's own format, found in the pi.dev catalog (the npm

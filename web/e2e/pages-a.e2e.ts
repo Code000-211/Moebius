@@ -525,6 +525,37 @@ describe("projects", () => {
     await page.getByTestId("trusted").getByText("Trusts leon, mona").waitFor();
   });
 
+  it.skipIf(usesRealServer)(
+    "edits a file of the project's settings, is refused one, and turns test first on",
+    async () => {
+      await open("/projects/1");
+      await page.getByText("This repository still has a .moebius folder.").waitFor();
+      await page.getByTestId("setting-review.md").getByText("Prefer small functions.").waitFor();
+      await page.getByRole("button", { name: "Edit review notes" }).click();
+      await page.getByLabel("Review notes").fill("Prefer small functions.\nName things well.\n");
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await page.getByTestId("setting-review.md").getByText("Prefer small functions.").waitFor();
+      expect(lastBody(fake().requests, "PUT", "/v1/repositories/1/settings/review.md")).toEqual({
+        text: "Prefer small functions.\nName things well.\n",
+      });
+
+      // A refusal says that nothing was committed, and the text stays to be corrected.
+      await page.getByRole("button", { name: "Edit lint plan" }).click();
+      await page.getByLabel("Lint plan").fill("unknown = 1\n");
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await alert("Nothing was committed. lint.toml: unknown field `unknown`").waitFor();
+      expect(await page.getByLabel("Lint plan").inputValue()).toBe("unknown = 1\n");
+      await page.getByRole("button", { name: "Cancel" }).click();
+
+      await page.getByTestId("test-first").getByText("Does not work test first").waitFor();
+      await page.getByRole("button", { name: "Turn test first on" }).click();
+      await page.getByTestId("test-first").getByText("Works test first").waitFor();
+      expect(lastBody(fake().requests, "PUT", "/v1/repositories/1/settings/test-first")).toEqual({
+        text: "",
+      });
+    },
+  );
+
   it.skipIf(usesRealServer)("browses the files, edits one and saves it as a commit", async () => {
     await open("/projects/1");
     const tree = page.getByRole("list", { name: "Files" });

@@ -17,7 +17,9 @@ const NEW_MCP_TOML: &str = "# The MCP servers agents can name, one table each (s
 /// The `README.md` of a new repository.
 const NEW_README: &str = "# Harness configuration\n\nThe agents, skills, MCP servers and rules of a Moebius server: \
 agents/<name>.toml and agents/<name>.md, skills/<name>/SKILL.md, extensions/, mcp.toml and rules.md. The server clones \
-this repository; an edit in the app is a commit here. The format is docs/reference/harness-configuration.md of Moebius.\n";
+this repository; an edit in the app is a commit here. The settings of each repository Moebius works on (rules, review \
+notes, lint plan, checks, test-first, column scripts) are the files of repos/<repository name>/. The format is \
+docs/reference/harness-configuration.md of Moebius.\n";
 
 /// The message of the first commit of a new repository.
 pub const SET_UP_MESSAGE: &str = "Set up the harness configuration repository";

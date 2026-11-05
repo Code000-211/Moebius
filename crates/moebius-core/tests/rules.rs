@@ -1,4 +1,4 @@
-//! The rules page: what the API shows of the built-in patterns, the rules in prose, a repository's own rules and the
+//! The rules page: what the API shows of the built-in patterns, the rules in prose, a project's own rules and the
 //! week's refusals, and the edit of the harness configuration repository's `rules.md` as a commit.
 
 use std::collections::BTreeMap;
@@ -29,6 +29,12 @@ fn harness_origin(dir: &Path) -> PathBuf {
     std::fs::create_dir_all(&work).unwrap();
     git(&work, &["init", "--quiet", "-b", "main"]).unwrap();
     write(&work, "agents/Coder.toml", "model = \"coder-model\"\n");
+    // The project `demo` has rules of its own.
+    write(
+        &work,
+        "repos/demo/rules.md",
+        "## small-diffs\nKeep changes small.\n",
+    );
     write(
         &work,
         "rules.md",
@@ -45,17 +51,12 @@ fn harness_origin(dir: &Path) -> PathBuf {
     bare
 }
 
-/// A repository with rules of its own on its default branch.
+/// A repository to work on.
 fn source(dir: &Path) -> PathBuf {
     let source = dir.join("source");
     std::fs::create_dir_all(&source).unwrap();
     git(&source, &["init", "--quiet", "-b", "main"]).unwrap();
     write(&source, "README.md", "hello\n");
-    write(
-        &source,
-        ".moebius/rules.md",
-        "## small-diffs\nKeep changes small.\n",
-    );
     commit_all(&source, "first");
     source
 }
@@ -395,7 +396,7 @@ async fn a_failed_push_undoes_the_edit_and_records_no_decision() {
             Some(json!({ "text": "## new\nNew rule.\n" })),
         )
         .await;
-    assert_eq!(status, 500);
+    assert_eq!(status, 409);
     assert!(
         body.as_str().unwrap().contains("closed for edits"),
         "{body}"

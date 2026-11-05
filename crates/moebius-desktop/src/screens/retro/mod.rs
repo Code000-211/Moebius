@@ -383,7 +383,7 @@ fn trial(trial: &Trial) -> Element<'_, AppMessage> {
 pub fn own_kind(kind: &str) -> Option<&'static str> {
     match kind {
         "settings" => Some("moebius.toml"),
-        "repository" => Some(".moebius/"),
+        "repository" => Some("repos/"),
         _ => None,
     }
 }
