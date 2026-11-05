@@ -380,7 +380,15 @@ mod tests {
             .collect();
         assert_eq!(
             engineering,
-            ["grilling", "to-tickets", "moebius-autonomous"]
+            [
+                "grilling",
+                "to-tickets",
+                "wayfinder",
+                "domain-modeling",
+                "research",
+                "prototype",
+                "moebius-autonomous"
+            ]
         );
         assert!(
             moebius["built_in"]["engineering_skills"]

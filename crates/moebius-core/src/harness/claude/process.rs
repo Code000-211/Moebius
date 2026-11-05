@@ -18,7 +18,7 @@ use crate::bus::Event;
 use crate::config::AgentConfig;
 use crate::harness::mcp;
 use crate::harness::remote::Local;
-use crate::harness::run::{MOEBIUS_AGENT, RunningRun, keep};
+use crate::harness::run::{RunningRun, keep, operates};
 use crate::store::Card;
 
 /// A new session id for Claude Code's `--session-id`: a random UUID.
@@ -50,6 +50,10 @@ pub(super) struct Place<'a> {
     pub(super) token: &'a str,
     /// Whether it operates Moebius with the desktop API, as the Moebius agent does.
     pub(super) operates: bool,
+    /// The run's id, which `$MOEBIUS_RUN` names for an agent that operates Moebius, as the name of its claims.
+    pub(super) run: i64,
+    /// The repository the run works in, which `$MOEBIUS_REPOSITORY` names for an agent that operates Moebius.
+    pub(super) repository: Option<i64>,
 }
 
 impl ClaudeCode {
@@ -73,7 +77,11 @@ impl ClaudeCode {
         if let (true, Some(url)) = (place.operates, self.api_url.get()) {
             command
                 .env("MOEBIUS_URL", url)
-                .env("MOEBIUS_TOKEN", place.token);
+                .env("MOEBIUS_TOKEN", place.token)
+                .env("MOEBIUS_RUN", place.run.to_string());
+            if let Some(repository) = place.repository {
+                command.env("MOEBIUS_REPOSITORY", repository.to_string());
+            }
         }
         command
             .args(["-p", "--input-format", "stream-json"])
@@ -178,11 +186,9 @@ impl ClaudeCode {
             .append(true)
             .open(run_dir.join("stderr.log"))
             .map_err(|e| e.to_string())?;
-        let operates = app
-            .store
-            .run(run.id)
-            .map_err(|e| e.to_string())?
-            .is_some_and(|stored| stored.agent == MOEBIUS_AGENT);
+        let stored = app.store.run(run.id).map_err(|e| e.to_string())?;
+        let operates = stored.as_ref().is_some_and(|s| operates(&s.agent));
+        let repository = stored.as_ref().and_then(|s| s.repository_id);
         let place = Place {
             worktree: &run.worktree,
             config_dir: &config_dir,
@@ -191,6 +197,8 @@ impl ClaudeCode {
             resumes,
             token: &run.token,
             operates,
+            run: run.id,
+            repository,
         };
         let mut command = self.command(agent, &place);
         if let Some(remote) = &remote {

@@ -29,7 +29,9 @@
 //!
 //! Every request to `/v1/` but a forge's webhook delivery and the sign-in of a browser carries
 //! `Authorization: Bearer <token>`: the server's token, or the run token of a run of the Moebius agent, which acts as
-//! that agent (`PUT /v1/secrets/{name}` and the terminal stay with a person); or the `moebius_session` cookie of a
+//! that agent (`PUT /v1/secrets/{name}` and the terminal stay with a person), or the run token of a run of the Grilling
+//! partner, which is accepted for the routes of the issue tracker only (see [`issue_tracker_route`]) and within its chat's
+//! repository and the cards with a `wayfinder:*` label (see `scope`); or the `moebius_session` cookie of a
 //! browser that signed in, which acts as a person. Anything else is answered with 401.
 
 mod automations;
@@ -46,6 +48,7 @@ mod ports;
 mod repositories;
 mod rules;
 mod runs;
+mod scope;
 mod session;
 mod settings;
 mod terminals;
@@ -83,7 +86,7 @@ use serde::{Deserialize, Serialize};
 use crate::app::{App, AppError};
 use crate::board::Runs;
 use crate::decide::Actor;
-use crate::harness::pibolt::MOEBIUS_AGENT;
+use crate::harness::pibolt::{GRILLING_AGENT, MOEBIUS_AGENT};
 use crate::harness::repo::HarnessRepo;
 use crate::repos::GitError;
 use crate::repos::forge::ForgeError;
@@ -235,7 +238,12 @@ enum Via {
 /// Who the request is and how it proved it: a person with the server's token or with the cookie of a session, or the
 /// run of the Moebius agent whose unrevoked run token it is. A bearer token that is not valid is refused even with a
 /// valid cookie.
-fn identify(state: &ApiState, headers: &axum::http::HeaderMap) -> Option<(Actor, Via)> {
+fn identify(
+    state: &ApiState,
+    headers: &axum::http::HeaderMap,
+    method: &axum::http::Method,
+    path: &str,
+) -> Option<(Actor, Via)> {
     let given = headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
@@ -244,7 +252,7 @@ fn identify(state: &ApiState, headers: &axum::http::HeaderMap) -> Option<(Actor,
         Some(token) if same(token.as_bytes(), state.token.as_bytes()) => {
             Some((Actor::Person, Via::Bearer))
         }
-        Some(_) => agent_of(state, headers).map(|actor| (actor, Via::Bearer)),
+        Some(_) => agent_of(state, headers, method, path).map(|actor| (actor, Via::Bearer)),
         None => session::cookie_of(headers)
             .filter(|id| state.sessions.has(id))
             .map(|_| (Actor::Person, Via::Cookie)),
@@ -259,7 +267,7 @@ async fn authenticate(State(state): State<ApiState>, mut request: Request, next:
     if path != "/v1" && !path.starts_with("/v1/") {
         return next.run(request).await;
     }
-    match identify(&state, request.headers()) {
+    match identify(&state, request.headers(), request.method(), path) {
         Some((actor, via)) => {
             if via == Via::Cookie && !same_site(&request) {
                 return (StatusCode::FORBIDDEN, "cross-site request refused").into_response();
@@ -298,14 +306,45 @@ fn same_site(request: &Request) -> bool {
     }
 }
 
-/// The Moebius agent's run that the run token in `headers` belongs to; none for any other token.
-fn agent_of(state: &ApiState, headers: &axum::http::HeaderMap) -> Option<Actor> {
+/// The run that the run token in `headers` belongs to, when it may make this request: a run of the Moebius agent may
+/// make any, a run of the Grilling partner the routes of the issue tracker (see [`issue_tracker_route`]); none for any
+/// other token.
+fn agent_of(
+    state: &ApiState,
+    headers: &axum::http::HeaderMap,
+    method: &axum::http::Method,
+    path: &str,
+) -> Option<Actor> {
     let grant = state.router.grant(headers)?;
     let run = state.app.store.run(grant.run_id).ok()??;
-    (run.agent == MOEBIUS_AGENT).then_some(Actor::Agent {
+    let allowed = run.agent == MOEBIUS_AGENT
+        || (run.agent == GRILLING_AGENT && issue_tracker_route(method, path));
+    allowed.then_some(Actor::Agent {
         name: run.agent,
         run: run.id,
     })
+}
+
+/// Whether the request is one `"$MOEBIUS" issue` makes besides deleting: create and list the issues of a repository, read
+/// and edit one, set its parent, labels, blockers and claim, comment on it, close and reopen it. A planning session of
+/// the Grilling partner keeps a wayfinder map with these and nothing else.
+fn issue_tracker_route(method: &axum::http::Method, path: &str) -> bool {
+    use axum::http::Method;
+    let parts: Vec<&str> = path.trim_end_matches('/').split('/').skip(1).collect();
+    let numeric = |part: &str| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit());
+    match (parts.as_slice(), method) {
+        (["v1", "repositories", id, "issues"], &Method::GET | &Method::POST) => numeric(id),
+        (["v1", "cards", id], &Method::GET | &Method::PUT) => numeric(id),
+        (["v1", "cards", id, "parent" | "labels"], &Method::PUT) => numeric(id),
+        (["v1", "cards", id, "blockers"], &Method::POST) => numeric(id),
+        (["v1", "cards", id, "blockers", number], &Method::DELETE) => {
+            numeric(id) && numeric(number)
+        }
+        (["v1", "cards", id, "claim"], &Method::POST | &Method::DELETE) => numeric(id),
+        (["v1", "cards", id, "close" | "reopen"], &Method::POST) => numeric(id),
+        (["v1", "cards", id, "comments"], &Method::GET | &Method::POST) => numeric(id),
+        _ => false,
+    }
 }
 
 /// Refuses an agent what only a person may do.

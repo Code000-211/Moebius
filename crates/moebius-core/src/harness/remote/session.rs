@@ -22,7 +22,13 @@ const TUNNEL_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// The environment variables of a run that name the server's own services, which the runner cannot reach: only the
 /// router is tunnelled.
-const NOT_TUNNELLED: [&str; 3] = ["MOEBIUS", "MOEBIUS_URL", "MOEBIUS_TOKEN"];
+const NOT_TUNNELLED: [&str; 5] = [
+    "MOEBIUS",
+    "MOEBIUS_URL",
+    "MOEBIUS_TOKEN",
+    "MOEBIUS_RUN",
+    "MOEBIUS_REPOSITORY",
+];
 
 /// What is local about a run: its worktree, its directory under the data directory, and the router's base URL.
 pub(in crate::harness) struct Local<'a> {

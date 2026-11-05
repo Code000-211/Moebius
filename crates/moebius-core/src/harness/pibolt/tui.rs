@@ -12,8 +12,9 @@ use std::time::Duration;
 use serde_json::{Value, json};
 
 use super::process::Place;
-use super::{Closing, MOEBIUS_AGENT, Paused, PiBolt, lock, run_dir};
+use super::{Closing, Paused, PiBolt, lock, run_dir};
 use crate::app::App;
+use crate::harness::run::operates;
 use crate::harness::run::{finish, keep};
 
 impl PiBolt {
@@ -66,7 +67,9 @@ impl PiBolt {
             lens: &run_dir.join("moebius-lens.ts"),
             bridge: &run_dir.join("moebius-bridge.ts"),
             token: &run.token,
-            operates: stored.agent == MOEBIUS_AGENT,
+            operates: operates(&stored.agent),
+            run: run_id,
+            repository: stored.repository_id,
             lint: lint.as_deref(),
         };
         let command = self.command(&config, &place, true);

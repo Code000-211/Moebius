@@ -189,7 +189,8 @@ fn with_cookie(status: StatusCode, cookie: &str) -> Response {
 }
 
 async fn status(State(state): State<ApiState>, headers: HeaderMap) -> Response {
-    match identify(&state, &headers) {
+    // The sign-in status is no route of the issue tracker, which is all a Grilling partner's token may reach.
+    match identify(&state, &headers, &axum::http::Method::GET, "/v1/session") {
         Some(_) => axum::Json(serde_json::json!({ "signed_in": true })).into_response(),
         None => unauthorized().into_response(),
     }

@@ -26,6 +26,10 @@ export const ENGINEERING_SKILLS = [
   { name: "code-review", line: "Review a change against the issue and the standards." },
   { name: "grilling", line: "Question an idea until the work is clear." },
   { name: "to-tickets", line: "Cut the work into small issues." },
+  { name: "wayfinder", line: "Plan a big piece of work as a map of decision tickets." },
+  { name: "domain-modeling", line: "Sharpen the glossary and record decisions." },
+  { name: "research", line: "Investigate a question against primary sources." },
+  { name: "prototype", line: "Build a throwaway prototype to answer a design question." },
   {
     name: "moebius-autonomous",
     line: "How to use the others with no person to ask.",
@@ -40,7 +44,15 @@ export function engineeringDefaults(name: string): string[] {
     case "Reviewer":
       return ["code-review", "moebius-autonomous"];
     case "Grilling-partner":
-      return ["grilling", "to-tickets", "moebius-autonomous"];
+      return [
+        "grilling",
+        "to-tickets",
+        "wayfinder",
+        "domain-modeling",
+        "research",
+        "prototype",
+        "moebius-autonomous",
+      ];
     default:
       return [];
   }

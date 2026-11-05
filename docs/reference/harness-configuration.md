@@ -146,7 +146,7 @@ The Reviewer's:
 | `skills` | array of strings | `[]` | Names of directories under `skills/` that hold a `SKILL.md`, or `pkg:<package>[/<path>]` for the skills of a vendored package (see [Packages](#packages)). Each is given to Pi-Bolt as `--skill`. A name that is not there is an error. |
 | `extensions` | array of strings | `[]` | Paths of files in the repository, relative to its root and without `..`, or `pkg:<package>[/<path>]` for the extensions of a vendored package (see [Packages](#packages)). Each is given to Pi-Bolt as `--extension`, before the lens and the bridge. A path that is not a file, and a `pkg:` name that does not resolve, is an error. |
 | `tool_output` | table | the defaults | `hide_after_turns`, `max_lines`, `max_bytes` and `compress`, as `agents.<name>.tool_output` in [configuration](configuration.md); a key left out has its default. Pi-Bolt runs only. |
-| `engineering_skills` | boolean or array of strings | `true` | The engineering skills the agent is given (see [Engineering skills](#engineering-skills)): `true` the defaults of its name (the `Coder`'s, the `Reviewer`'s and the `Grilling-partner`'s, none for another name), `false` none, a list of names exactly those. Only the names of the engineering skills and `moebius-autonomous` are accepted (`tdd`, `diagnosing-bugs`, `code-review`, `grilling`, `to-tickets`, `moebius-autonomous`); any other name, or any other value, is an error of the agent. Written only when it is not `true`. |
+| `engineering_skills` | boolean or array of strings | `true` | The engineering skills the agent is given (see [Engineering skills](#engineering-skills)): `true` the defaults of its name (the `Coder`'s, the `Reviewer`'s and the `Grilling-partner`'s, none for another name), `false` none, a list of names exactly those. Only the names of the engineering skills and `moebius-autonomous` are accepted (`tdd`, `diagnosing-bugs`, `code-review`, `grilling`, `to-tickets`, `wayfinder`, `domain-modeling`, `research`, `prototype`, `moebius-autonomous`); any other name, or any other value, is an error of the agent. Written only when it is not `true`. |
 | `mcp` | array of strings | `[]` | Names of servers in `mcp.toml`. A run of the agent is given exactly these servers. A name that is not there, a server that cannot be used (see [`mcp.toml`](#mcptoml)), or any name while `mcp.toml` cannot be read, is an error. |
 
 The instructions are not a key: they are the text of `agents/<name>.md`, given to Pi-Bolt as `--append-system-prompt`.
@@ -173,36 +173,48 @@ of a built-in skill is ignored, except for the engineering skills below.
 
 ### Engineering skills
 
-Moebius brings five skills from [Matt Pocock's skills](https://github.com/mattpocock/skills) (MIT license), copied
+Moebius brings nine skills from [Matt Pocock's skills](https://github.com/mattpocock/skills) (MIT license), copied
 unchanged at a pinned commit (`crates/moebius-core/skill/vendor/mattpocock/` in the source, with the license), and the
 small skill `moebius-autonomous`. The skills are written for work with a person: the adapter says what to do where one
 asks the user (decide, and give the decision and its reason in the run's summary), that the card's issue is the spec and
-the tracker, and that the setup skill is never run. They are written to `<data_dir>/skills/<name>/` with the other
+the tracker (the Grilling partner's `wayfinder` keeps its map on Moebius's own issues instead, see below), and that the
+setup skill is never run. They are written to `<data_dir>/skills/<name>/` with the other
 built-in skills when the server starts, and given to a run before the agent's own `skills`:
 
 | Agent | Skills |
 |---|---|
 | `Coder` | `tdd`, `diagnosing-bugs`, `moebius-autonomous` |
 | `Reviewer` | `code-review`, `moebius-autonomous` |
-| `Grilling-partner` | `grilling`, `to-tickets`, `moebius-autonomous` (in front of the `moebius` skill) |
+| `Grilling-partner` | `grilling`, `to-tickets`, `wayfinder`, `domain-modeling`, `research`, `prototype`, `moebius-autonomous` (in front of the `moebius` skill) |
 
 That is what `engineering_skills = true` means, the default: the skills go with the agent's name. Any agent can be given
 others, by name, with a list: `engineering_skills = ["tdd", "diagnosing-bugs", "moebius-autonomous"]` gives the agent
 exactly those skills, in that order, and nothing else (`moebius-autonomous` only when the list has it, so name it
 beside any skill that asks a question of the user). An agent with another name has none by default. This holds on both harnesses (Claude Code gets them as skills of its run's
-configuration directory). `to-tickets` asks not to be offered to the model on its own, so the Grilling partner is told in
-its instructions where its `SKILL.md` is.
+configuration directory). `to-tickets` and `wayfinder` ask not to be offered to the model on its own (`disable-model-invocation: true`), so the
+Grilling partner is told in its instructions where their `SKILL.md` is, and that a message that starts with `/` and the
+name of one (`/wayfinder`) asks it to follow that skill.
+
+`wayfinder` plans work too big for one session as a map on the issue tracker, and `domain-modeling`, `research` and
+`prototype` are the skills its tickets call. Moebius has no tracker configuration for it: the map is an issue labelled
+`wayfinder:map` with its tickets as sub-issues labelled `wayfinder:research`, `wayfinder:prototype`, `wayfinder:grilling`
+or `wayfinder:task`, blocking edges between them, a claim for a session at work, and a comment, closing and a line of
+the map's body as the answer. The Grilling partner keeps it with `"$MOEBIUS" issue` (its run has `MOEBIUS_URL`,
+`MOEBIUS_TOKEN` and `MOEBIUS_REPOSITORY`, and the desktop API accepts its token for the routes of the
+[issue tracker](desktop-api.md#the-issue-tracker) but deleting an issue), as `moebius-autonomous` says. The default
+`ready.luau` never starts the Coder on an issue with a `wayfinder:` label (see [column scripts](column-scripts.md)); the
+Grilling partner's session closes it.
 
 - **Turn them off** for an agent with `engineering_skills = false` in its `agents/<name>.toml` (or its
   `[agents.<name>]` table); the app has the setting on the agent's page, and `agent save` has `--no-engineering-skills`.
-  It turns off the five skills and the adapter together; the `moebius` skill stays on the Grilling partner.
+  It turns off the nine skills and the adapter together; the `moebius` skill stays on the Grilling partner.
 - **Choose them** with a list of names, as above; the app has a toggle for each skill on the agent's page, and `agent
   save` has `--engineering-skill <name>`, given again for more. A copy of an agent (see [`agent save
   --template`](cli.md)) takes over everything, so it is written with the engineering skills the source has, as an
   explicit list: `Coder-fast`, copied from the Coder, has `tdd`, `diagnosing-bugs` and `moebius-autonomous` whatever its
   name. The `Reviewer` without a configuration of its own, which only borrows the Coder's model, harness and `runner`, keeps the skill defaults of its own name (`code-review`, `moebius-autonomous`) whatever the Coder's `engineering_skills` says, a list or `false`.
 - **Replace one** with a skill of your own: a directory `skills/<name>/` of this repository with a `SKILL.md` and the
-  name of the skill (`tdd`, `diagnosing-bugs`, `code-review`, `grilling` or `to-tickets`) takes its place for every agent that has it (by default or by its list), with all its files. These
+  name of the skill (`tdd`, `diagnosing-bugs`, `code-review`, `grilling`, `to-tickets`, `wayfinder`, `domain-modeling`, `research` or `prototype`) takes its place for every agent that has it (by default or by its list), with all its files. These
   names, unlike `moebius` and the `moebius-` skills, are not reserved. `moebius-autonomous` cannot be replaced.
 - **Update them from upstream**: the Skills page shows each one as built in with the source and the commit it was copied
   at, and "Update from upstream" asks the Moebius agent to import that skill from the repository with the Skills import,
@@ -694,7 +706,7 @@ instructions. It works with or without a harness configuration repository (witho
 
 A grilling (see `POST /v1/grillings/{id}/confirm` in the [desktop API](desktop-api.md)) is a chat with the built-in agent
 `Grilling-partner`, which grills a person's idea until the work is clear. Like the Moebius agent it is built in: its
-instructions are built in, it has the `moebius` skill and the engineering skills `grilling` and `to-tickets` with `moebius-autonomous` (see [Engineering skills](#engineering-skills)), and its model comes from `agents/Grilling-partner.toml` (or
+instructions are built in, it has the `moebius` skill and the engineering skills `grilling`, `to-tickets`, `wayfinder`, `domain-modeling`, `research` and `prototype` with `moebius-autonomous` (see [Engineering skills](#engineering-skills)), and its model comes from `agents/Grilling-partner.toml` (or
 `[agents.Grilling-partner]`) or else from the Coder. `agents/Grilling-partner.md` is added after the built-in instructions;
 `agents/Grilling-partner.toml` may set its model, skills and the rest. It is listed by `GET /v1/agents` after the Moebius
 agent, and a chat with it needs a repository.

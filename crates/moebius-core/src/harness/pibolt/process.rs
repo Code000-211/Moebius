@@ -12,7 +12,7 @@ use std::time::Instant;
 use serde_json::{Value, json};
 
 use super::reader::Reader;
-use super::{BRIDGE, LENS, Live, MOEBIUS_AGENT, PiBolt, kill_process, lock, run_dir, send};
+use super::{BRIDGE, LENS, Live, PiBolt, kill_process, lock, run_dir, send};
 use crate::app::App;
 use crate::bus::Event;
 use crate::config::AgentConfig;
@@ -20,6 +20,7 @@ use crate::harness::launch::{Ask, Launched, Launcher, Unstarted, Wrapping};
 use crate::harness::mcp;
 use crate::harness::remote::Local;
 use crate::harness::run::RunningRun;
+use crate::harness::run::operates;
 use crate::router::Protocol;
 use crate::store::Card;
 use moebius_plugin_api::{LaunchRun, Urls, UrlsInside};
@@ -36,6 +37,10 @@ pub(super) struct Place<'a> {
     pub(super) bridge: &'a Path,
     pub(super) token: &'a str,
     pub(super) operates: bool,
+    /// The run's id, which `$MOEBIUS_RUN` names for an agent that operates Moebius, as the name of its claims.
+    pub(super) run: i64,
+    /// The repository the run works in, which `$MOEBIUS_REPOSITORY` names for an agent that operates Moebius.
+    pub(super) repository: Option<i64>,
     /// The text of the project's `lint.toml`, if it has one.
     pub(super) lint: Option<&'a str>,
 }
@@ -72,11 +77,15 @@ impl PiBolt {
                 crate::harness::lens::plan_json(place.worktree, place.lint),
             );
         if let (true, Some(url)) = (place.operates, self.api_url.get()) {
-            // The Moebius agent operates Moebius with `$MOEBIUS`, as the run itself: its token is accepted by the
-            // desktop API.
+            // The Moebius agent and the Grilling partner operate Moebius with `$MOEBIUS`, as the run itself: its token
+            // is accepted by the desktop API.
             command
                 .env("MOEBIUS_URL", url)
-                .env("MOEBIUS_TOKEN", place.token);
+                .env("MOEBIUS_TOKEN", place.token)
+                .env("MOEBIUS_RUN", place.run.to_string());
+            if let Some(repository) = place.repository {
+                command.env("MOEBIUS_REPOSITORY", repository.to_string());
+            }
         }
         if !interactive {
             command.args(["--mode", "rpc"]);
@@ -219,7 +228,8 @@ impl PiBolt {
             .open(&log)
             .map_err(|e| e.to_string())?;
         let stored = app.store.run(run.id).map_err(|e| e.to_string())?;
-        let operates = stored.as_ref().is_some_and(|s| s.agent == MOEBIUS_AGENT);
+        let operates = stored.as_ref().is_some_and(|s| operates(&s.agent));
+        let repository = stored.as_ref().and_then(|s| s.repository_id);
         let sessions = run_dir.join("sessions");
         let lint = app.run_project_file(run.id, "lint.toml");
         let place = Place {
@@ -231,6 +241,8 @@ impl PiBolt {
             bridge: &bridge,
             token: &run.token,
             operates,
+            run: run.id,
+            repository,
             lint: lint.as_deref(),
         };
         let mut command = self.command(agent, &place, false);
@@ -552,6 +564,58 @@ mod tests {
             crate::harness::pibolt::testing::processes_with_env(&marker).is_empty(),
             "an orphaned Pi runs"
         );
+    }
+
+    #[test]
+    fn the_moebius_agent_and_the_grilling_partner_are_given_the_api_and_no_other_agent_is() {
+        let (_dir, _app, pi, _repo) = setup();
+        pi.api_url.set("http://127.0.0.1:7".into()).unwrap();
+        let agent = pi.agent_set().agents["Coder"].clone();
+        let env = |name: &str, repository: Option<i64>| {
+            let place = Place {
+                worktree: Path::new("/work"),
+                agent_dir: Path::new("/agent"),
+                sessions: Path::new("/sessions"),
+                continues: false,
+                lens: Path::new("/lens.ts"),
+                bridge: Path::new("/bridge.ts"),
+                token: "run-token",
+                operates: crate::harness::run::operates(name),
+                run: 12,
+                repository,
+                lint: None,
+            };
+            let command = pi.command(&agent, &place, false);
+            command
+                .get_envs()
+                .filter_map(|(k, v)| {
+                    let (k, v) = (k.to_str()?, v?.to_str()?);
+                    k.starts_with("MOEBIUS")
+                        .then(|| (k.to_string(), v.to_string()))
+                })
+                .collect::<BTreeMap<_, _>>()
+        };
+        for name in ["Moebius", "Grilling-partner"] {
+            let given = env(name, Some(3));
+            assert_eq!(given["MOEBIUS_URL"], "http://127.0.0.1:7", "{name}");
+            assert_eq!(given["MOEBIUS_TOKEN"], "run-token", "{name}");
+            assert_eq!(given["MOEBIUS_REPOSITORY"], "3", "{name}");
+            assert_eq!(given["MOEBIUS_RUN"], "12", "{name}");
+            assert!(given.contains_key("MOEBIUS"), "{name}");
+        }
+        assert!(!env("Moebius", None).contains_key("MOEBIUS_REPOSITORY"));
+        for name in ["Coder", "Reviewer", "Retro-analyst"] {
+            let given = env(name, Some(3));
+            assert!(
+                given.contains_key("MOEBIUS") && !given.contains_key("MOEBIUS_TOKEN"),
+                "{name}"
+            );
+            assert!(
+                !given.contains_key("MOEBIUS_URL")
+                    && !given.contains_key("MOEBIUS_REPOSITORY")
+                    && !given.contains_key("MOEBIUS_RUN")
+            );
+        }
     }
 
     #[test]

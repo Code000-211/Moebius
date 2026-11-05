@@ -21,7 +21,7 @@ pub use agents::{
     REVIEWER_AGENT, built_in_agent,
 };
 pub(crate) use agents::{
-    agent_list, chat_agent, has_agent, resolve as resolve_agent, tell_where_moebius_runs,
+    agent_list, chat_agent, has_agent, operates, resolve as resolve_agent, tell_where_moebius_runs,
 };
 pub(crate) use end::final_answer;
 pub(in crate::harness) use end::{finish, keep};

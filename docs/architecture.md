@@ -75,7 +75,7 @@ like the iced app and does not know anything the API does not say.
 3. **Backlog to Not started.** `backlog.luau` moves a trusted card on (`App::is_trusted`), and one made from a confirmed grilling (`card.confirmed`). Others get an `approve_issue` inbox
    item (`moebius.ask`) until a person calls `POST /v1/cards/{id}/approve` (`App::approve_issue`), which records a
    judgement by `person` and moves the card to `Not started`.
-4. **Not started to In progress.** `ready.luau` waits for blockers and for a free run slot, then moves the card.
+4. **Not started to In progress.** `ready.luau` waits for blockers and for a free run slot (and never starts an issue labelled `wayfinder:...`, a question), then moves the card.
 5. **A run starts.** `code.luau` calls `moebius.start_run("Coder", "code", note)`, which calls `PiBolt::start` (the
    `Runs` trait). It stores the run (`Store::add_run`), makes a worktree on branch `moebius/run-<id>` from the branch of the
    card's latest successful `code` run (`Store::code_branch`), or from the default branch when it has none
@@ -566,6 +566,7 @@ At the top:
 | `server/api/packages.rs` | The package manager's routes: search, list, info, install, update and remove. |
 | `server/api/ports.rs` | `GET /v1/ports` and the WebSocket tunnel to a port of the server's loopback address. |
 | `server/api/terminals.rs` | The terminal WebSockets: a shell in a run's worktree or on the server, and Pi's terminal interface of a chat. |
+| `server/api/scope.rs` | What a Grilling partner's run token reaches in the issue tracker: its chat's repository and the cards with a `wayfinder:` label. |
 | `server/api/session.rs` | Signing in from a browser: the sessions in memory, the one-time login codes, and `/v1/session` and `/v1/session/codes`. |
 | `server/api/web.rs` | The web app embedded from `web/dist` and served at `/` without a token, with `index.html` for any path that is no file, or a page that says it was not built. |
 | `server/api/events.rs` | The event WebSocket `GET /v1/events`. |

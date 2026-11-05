@@ -225,6 +225,13 @@ pub(crate) fn tell_where_moebius_runs(
     agent
 }
 
+/// Whether the runs of the agent `name` operate Moebius with `"$MOEBIUS"` and the desktop API, as the run itself: the
+/// Moebius agent, and the Grilling partner, which keeps a wayfinder map on the issue tracker (the API accepts its token
+/// for the issue routes only, see `server::api`).
+pub(crate) fn operates(name: &str) -> bool {
+    name == MOEBIUS_AGENT || name == GRILLING_AGENT
+}
+
 /// Whether `set` has the agent `name`, or Moebius brings it: the Moebius agent, the Grilling partner, the Coder and the
 /// Reviewer exist always, so the default workflow sends every card to review. A person who wants none changes the
 /// workflow script.
@@ -326,7 +333,7 @@ fn resolve_with(
 /// Adds the engineering skills Moebius brings for the agent `name` (see [`engineering_skills`]) to `agent`'s skills,
 /// before the agent's own, unless it turns them off or already names the skill. A skill of the harness configuration
 /// repository with the name of one replaces it. A skill that its author hides from the model's list is named in the
-/// instructions with where it is, so that the agent can read it.
+/// instructions with where it is, so that the agent can read it, and what a message that starts with its name means.
 fn give_engineering_skills(set: &AgentSet, data_dir: &Path, name: &str, agent: &mut AgentConfig) {
     let mut hidden = vec![];
     let mut given = vec![];
@@ -349,7 +356,8 @@ fn give_engineering_skills(set: &AgentSet, data_dir: &Path, name: &str, agent: &
         let files: Vec<_> = hidden.iter().map(|p| p.display().to_string()).collect();
         let note = format!(
             "Skills that are not in your list of skills, because their author hides them from the model, are still \
-             yours: read {} when you need them.",
+             yours: read {} when you need them, and when a message starts with `/` and the name of one (such as \
+             `/wayfinder`), read that skill and follow it.",
             files.join(" and ")
         );
         agent.instructions = Some(match agent.instructions.take() {
@@ -486,6 +494,10 @@ mod tests {
             [
                 "/data/skills/grilling",
                 "/data/skills/to-tickets",
+                "/data/skills/wayfinder",
+                "/data/skills/domain-modeling",
+                "/data/skills/research",
+                "/data/skills/prototype",
                 "/data/skills/moebius-autonomous",
                 "/data/skills/moebius"
             ]
@@ -493,7 +505,8 @@ mod tests {
         let instructions = grilling.instructions.unwrap().replace('\\', "/");
         assert!(instructions.starts_with("You are the Grilling partner."));
         assert!(
-            instructions.ends_with("read /data/skills/to-tickets/SKILL.md when you need them.")
+            instructions.contains("read /data/skills/to-tickets/SKILL.md and /data/skills/wayfinder/SKILL.md when you need them")
+                && instructions.contains("`/wayfinder`")
         );
         // The Coder and the Reviewer have their instructions built in, and no reference library.
         let coder_instructions = coder.instructions.unwrap();
@@ -512,7 +525,18 @@ mod tests {
             .iter()
             .map(|s| &s.name[..])
             .collect();
-        assert_eq!(names, ["grilling", "to-tickets", "moebius-autonomous"]);
+        assert_eq!(
+            names,
+            [
+                "grilling",
+                "to-tickets",
+                "wayfinder",
+                "domain-modeling",
+                "research",
+                "prototype",
+                "moebius-autonomous"
+            ]
+        );
         assert!(
             built_in_agent(MOEBIUS_AGENT)
                 .unwrap()

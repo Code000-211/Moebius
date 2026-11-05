@@ -25,7 +25,7 @@ use axum::extract::{Path as UrlPath, State};
 use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
 
-use super::{ApiError, ApiState, Reason, blocking, person_only};
+use super::{ApiError, ApiState, Reason, blocking, person_only, scope};
 use crate::app::{App, BoardFacts, HistoryEntry};
 use crate::board::latest_review;
 use crate::decide::Actor;
@@ -268,10 +268,16 @@ async fn snapshot(State(state): State<ApiState>) -> Result<axum::Json<Snapshot>,
 
 async fn create_issue(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     axum::Json(issue): axum::Json<NewIssue>,
 ) -> Result<axum::Json<CreatedIssue>, ApiError> {
     blocking(&state.app, move |app| {
+        scope::repository(app, &by, id)?;
+        scope::labels(app, &by, &issue.labels)?;
+        for number in issue.parent.iter().chain(&issue.blocked_by) {
+            scope::related(app, &by, id, *number)?;
+        }
         let (card, warnings) = app.create_tracked_issue(
             id,
             &issue.title,
@@ -292,6 +298,7 @@ async fn edit_card(
     axum::Json(edited): axum::Json<EditedCard>,
 ) -> Result<axum::Json<Card>, ApiError> {
     blocking(&state.app, move |app| {
+        scope::card(app, &by, id, true)?;
         app.edit_card(&by, id, &edited.title, &edited.body, &edited.reason)
     })
     .await

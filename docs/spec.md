@@ -53,7 +53,7 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
 - **Chat** with any agent, and the **Moebius agent**, which knows Moebius from the guide (`docs/guide/`) and builds
   column scripts, rules, agents and extensions on request, offered as changes.
 - **Engineering skills** from Matt Pocock's skills (MIT) by default for the Coder (`tdd`, `diagnosing-bugs`), the Reviewer
-  (`code-review`) and the Grilling partner (`grilling`, `to-tickets`), copied unchanged at a pinned commit and loaded with
+  (`code-review`) and the Grilling partner (`grilling`, `to-tickets`, `wayfinder` with `domain-modeling`, `research` and `prototype`), copied unchanged at a pinned commit and loaded with
   `moebius-autonomous`, which says what to do where they ask a person. An agent turns them off with
   `engineering_skills = false` or chooses its own with a list of names, and a skill of the harness configuration repository with the same name replaces one.
 - **Grilling** (a chat with the Grilling partner) that ends in issues a person confirms, or in a research report.

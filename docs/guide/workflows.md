@@ -19,7 +19,7 @@ Backlog -> Not started -> In progress -> In review -> Ready to merge -> Done
 | Column | Script | What it does |
 |---|---|---|
 | `Backlog` | `backlog.luau` | Moves a trusted card, or one made from a confirmed grilling, to `Not started`. Any other card waits in the inbox as `approve_issue` until a person approves it. |
-| `Not started` | `ready.luau` | Waits while issues block the card, while the daily token budget is spent and while the run limit is reached. Then moves the card to `In progress`. |
+| `Not started` | `ready.luau` | Waits while the issue is labelled `wayfinder:...` (a question, see [wayfinder](grilling.md#plan-a-big-piece-of-work-with-wayfinder)), while issues block the card, while the daily token budget is spent and while the run limit is reached. Then moves the card to `In progress`. |
 | `In progress` | `code.luau` | Starts a run of the agent `Coder` for each round, waits while it goes, and moves the card to `In review` when a round has succeeded. |
 | `In review` | `review.luau` | Publishes the change, waits for its checks, sends the card back when they fail or the change conflicts, has the built-in agent `Reviewer` read it along two axes, Standards and Spec, and offers the change to a person. |
 | `Ready to merge` | `merge.luau` | Waits for a person to merge. Sends the card back when the change no longer merges cleanly. |
@@ -46,7 +46,9 @@ a person (see below).
 
 ### Not started
 
-In this order: for a card with sub-issues that has no run and no change of its own, `waiting for sub-issues #3, #4` while one
+In this order: `a wayfinder question, not a task: it stays until the wayfinder session closes it` for an issue with a label
+that starts `wayfinder:` (the map of a wayfinding and its tickets are questions to decide, not work for the Coder, and
+the session that works them closes them; no sub-issue count closes the map for it); for a card with sub-issues that has no run and no change of its own, `waiting for sub-issues #3, #4` while one
 is open (such a card starts no work of its own, and once every sub-issue is closed the card closes its issue and goes to
 `Done`; a card that already has a run or a change goes on as any other card, whatever sub-issues it has); `waiting for #12, #13` while
 issues block the card (the numbers come from `blocked by #n` lines in the body of an issue on a forge, from the forge's own

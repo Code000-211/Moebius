@@ -57,7 +57,7 @@ the route each one calls and what it writes, is in the [command line reference](
 
 In a chat with the Moebius agent, its runs have `MOEBIUS_URL` and `MOEBIUS_TOKEN` set by the server, the token being the
 chat's own run token. It calls the same commands as `"$MOEBIUS" board` through its `bash` tool, so the guard checks each
-call like any other. The desktop API accepts that token only for the Moebius agent and records every decision it makes
+call like any other. The desktop API accepts that token for the Moebius agent (and, for the `issue` commands but deleting, for the Grilling partner) and records every decision it makes
 as `agent:Moebius` with the chat's run, so you can tell its decisions from yours in the judgements. It cannot store a
 key (`secrets set`) or open a shell in a worktree or on the server.
 

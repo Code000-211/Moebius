@@ -63,8 +63,8 @@ pub struct SaveAgent {
     /// Grilling partner have any).
     #[arg(long)]
     no_engineering_skills: bool,
-    /// An engineering skill the agent is given (tdd, diagnosing-bugs, code-review, grilling, to-tickets or
-    /// moebius-autonomous); give it again for more. The agent has exactly these, not the defaults of its name.
+    /// An engineering skill the agent is given (tdd, diagnosing-bugs, code-review, grilling, to-tickets, wayfinder,
+    /// domain-modeling, research, prototype or moebius-autonomous); give it again for more. The agent has exactly these, not the defaults of its name.
     #[arg(long = "engineering-skill", conflicts_with = "no_engineering_skills")]
     engineering_skills: Vec<String>,
     /// A file with the agent's instructions, or `-` for standard input.

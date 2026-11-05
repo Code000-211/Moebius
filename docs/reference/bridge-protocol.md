@@ -156,8 +156,10 @@ The harness starts every Pi-Bolt run (and every Claude Code run) with a cleared 
 | `MOEBIUS_CHECK_URL` | The router's base URL, such as `http://127.0.0.1:7172`, without a trailing slash. The client appends `/moebius/check` and `/moebius/result`. |
 | `MOEBIUS_RUN_TOKEN` | The run's token, of the form `moebius-run-<48 hex digits>`. |
 | `MOEBIUS_TOOL_OUTPUT` | The agent's `tool_output` as JSON, such as `{"hide_after_turns":10,"max_lines":200,"max_bytes":16384,"compress":true}`. The bridge hides older outputs by it and sends it with each result. |
-| `MOEBIUS_URL` | Only for a run of the Moebius agent: the desktop API's base URL, such as `http://127.0.0.1:7171` (a server that listens on all interfaces is given as `127.0.0.1`). The `moebius` binary the agent runs as `$MOEBIUS` connects there (see [the command line](cli.md)). |
-| `MOEBIUS_TOKEN` | Only for a run of the Moebius agent: the run's own token, the same as `MOEBIUS_RUN_TOKEN`, which the desktop API accepts while the run lasts (see [the desktop API](desktop-api.md#authentication)). |
+| `MOEBIUS_REPOSITORY` | Only for a run of the Moebius agent or the Grilling partner in a repository: its id, which `"$MOEBIUS" issue create` and `issue list` take. |
+| `MOEBIUS_RUN` | Only for a run of the Moebius agent or the Grilling partner: the run's id, which the agent names its claims by (`"$MOEBIUS" issue claim <id> --as "wayfinder-$MOEBIUS_RUN"`). |
+| `MOEBIUS_URL` | Only for a run of the Moebius agent or the Grilling partner: the desktop API's base URL, such as `http://127.0.0.1:7171` (a server that listens on all interfaces is given as `127.0.0.1`). The `moebius` binary the agent runs as `$MOEBIUS` connects there (see [the command line](cli.md)). |
+| `MOEBIUS_TOKEN` | Only for a run of the Moebius agent or the Grilling partner (the desktop API accepts the latter's for the issue tracker only): the run's own token, the same as `MOEBIUS_RUN_TOKEN`, which the desktop API accepts while the run lasts (see [the desktop API](desktop-api.md#authentication)). |
 | `MOEBIUS_LENS` | The lens's plan as JSON (see [the lens](#the-lens)). Only for Pi-Bolt; absent or `enabled: false` makes the lens do nothing. |
 | `PI_CODING_AGENT_DIR` | The run's own agent directory, `<data_dir>/runs/<id>/agent`, which holds `models.json` that makes the router the `moebius` provider. |
 

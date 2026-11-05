@@ -146,6 +146,10 @@ async fn the_skills_and_mcp_servers_an_agent_can_name_are_listed_without_secrets
             "code-review",
             "grilling",
             "to-tickets",
+            "wayfinder",
+            "domain-modeling",
+            "research",
+            "prototype",
             "house-style"
         ]
     );
@@ -154,12 +158,12 @@ async fn the_skills_and_mcp_servers_an_agent_can_name_are_listed_without_secrets
         assert!(skill["description"].as_str().unwrap().contains("Use it"));
     }
     // The engineering skills are built in too, and say where they came from.
-    for skill in &skills.as_array().unwrap()[8..13] {
+    for skill in &skills.as_array().unwrap()[8..17] {
         assert_eq!(skill["built_in"], true);
         assert!(skill["source"]["commit"].is_string(), "{skill}");
     }
     assert_eq!(
-        skills[13],
+        skills[17],
         json!({"name": "house-style", "description": "Write plainly.", "built_in": false})
     );
 

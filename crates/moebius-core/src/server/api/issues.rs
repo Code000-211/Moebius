@@ -19,7 +19,7 @@ use axum::extract::{Path as UrlPath, Query, State};
 use axum::routing::{get, post, put};
 use serde::{Deserialize, Serialize};
 
-use super::{ApiError, ApiState, Reason, blocking};
+use super::{ApiError, ApiState, Reason, blocking, scope};
 use crate::app::{IssueQuery, IssueView};
 use crate::decide::Actor;
 use crate::store::{Card, Comment};
@@ -73,48 +73,83 @@ pub struct NewComment {
 
 pub(super) async fn list_issues(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     Query(query): Query<IssueQuery>,
 ) -> Result<axum::Json<Vec<IssueView>>, ApiError> {
-    blocking(&state.app, move |app| app.issues(id, &query)).await
+    blocking(&state.app, move |app| {
+        scope::repository(app, &by, id)?;
+        app.issues(id, &query)
+    })
+    .await
 }
 
 pub(super) async fn show_issue(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
 ) -> Result<axum::Json<IssueView>, ApiError> {
-    blocking(&state.app, move |app| app.issue(id)).await
+    blocking(&state.app, move |app| {
+        scope::card(app, &by, id, false)?;
+        app.issue(id)
+    })
+    .await
 }
 
 async fn set_parent(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     axum::Json(new): axum::Json<NewParent>,
 ) -> Result<axum::Json<Card>, ApiError> {
-    blocking(&state.app, move |app| app.set_parent(id, new.parent)).await
+    blocking(&state.app, move |app| {
+        scope::card(app, &by, id, true)?;
+        if let Some(parent) = new.parent {
+            scope::related(app, &by, scope::repository_of_card(app, id)?, parent)?;
+        }
+        app.set_parent(id, new.parent)
+    })
+    .await
 }
 
 async fn set_labels(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     axum::Json(new): axum::Json<NewLabels>,
 ) -> Result<axum::Json<Card>, ApiError> {
-    blocking(&state.app, move |app| app.set_labels(id, &new.labels)).await
+    blocking(&state.app, move |app| {
+        scope::card(app, &by, id, true)?;
+        scope::labels(app, &by, &new.labels)?;
+        app.set_labels(id, &new.labels)
+    })
+    .await
 }
 
 async fn add_blocker(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     axum::Json(new): axum::Json<NewBlocker>,
 ) -> Result<axum::Json<Vec<i64>>, ApiError> {
-    blocking(&state.app, move |app| app.add_blocker(id, new.blocker)).await
+    blocking(&state.app, move |app| {
+        scope::card(app, &by, id, true)?;
+        scope::related(app, &by, scope::repository_of_card(app, id)?, new.blocker)?;
+        app.add_blocker(id, new.blocker)
+    })
+    .await
 }
 
 async fn remove_blocker(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath((id, number)): UrlPath<(i64, i64)>,
 ) -> Result<axum::Json<Vec<i64>>, ApiError> {
-    blocking(&state.app, move |app| app.remove_blocker(id, number)).await
+    blocking(&state.app, move |app| {
+        scope::card(app, &by, id, true)?;
+        app.remove_blocker(id, number)
+    })
+    .await
 }
 
 async fn claim(
@@ -125,6 +160,7 @@ async fn claim(
 ) -> Result<axum::Json<Card>, ApiError> {
     let claimer = body.and_then(|body| body.0.by);
     blocking(&state.app, move |app| {
+        scope::card(app, &by, id, true)?;
         app.claim_issue(&by, id, claimer.as_deref())
     })
     .await
@@ -138,6 +174,7 @@ async fn release(
 ) -> Result<axum::Json<Card>, ApiError> {
     let claimer = body.and_then(|body| body.0.by);
     blocking(&state.app, move |app| {
+        scope::card(app, &by, id, true)?;
         app.release_issue(&by, id, claimer.as_deref())
     })
     .await
@@ -150,7 +187,11 @@ async fn close(
     body: Option<axum::Json<Reason>>,
 ) -> Result<axum::Json<Card>, ApiError> {
     let reason = body.map(|body| body.0.reason).unwrap_or_default();
-    blocking(&state.app, move |app| app.close_issue(&by, id, &reason)).await
+    blocking(&state.app, move |app| {
+        scope::card(app, &by, id, true)?;
+        app.close_issue(&by, id, &reason)
+    })
+    .await
 }
 
 async fn reopen(
@@ -160,14 +201,23 @@ async fn reopen(
     body: Option<axum::Json<Reason>>,
 ) -> Result<axum::Json<Card>, ApiError> {
     let reason = body.map(|body| body.0.reason).unwrap_or_default();
-    blocking(&state.app, move |app| app.reopen_issue(&by, id, &reason)).await
+    blocking(&state.app, move |app| {
+        scope::card(app, &by, id, true)?;
+        app.reopen_issue(&by, id, &reason)
+    })
+    .await
 }
 
 async fn comments(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
 ) -> Result<axum::Json<Vec<Comment>>, ApiError> {
-    blocking(&state.app, move |app| app.comments(id)).await
+    blocking(&state.app, move |app| {
+        scope::card(app, &by, id, false)?;
+        app.comments(id)
+    })
+    .await
 }
 
 async fn comment(
@@ -176,7 +226,11 @@ async fn comment(
     UrlPath(id): UrlPath<i64>,
     axum::Json(new): axum::Json<NewComment>,
 ) -> Result<axum::Json<Comment>, ApiError> {
-    blocking(&state.app, move |app| app.comment_issue(&by, id, &new.body)).await
+    blocking(&state.app, move |app| {
+        scope::card(app, &by, id, true)?;
+        app.comment_issue(&by, id, &new.body)
+    })
+    .await
 }
 
 #[cfg(test)]

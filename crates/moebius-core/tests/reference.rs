@@ -310,6 +310,13 @@ fn every_link_in_the_documentation_leads_somewhere() {
     }
     let mut broken = Vec::new();
     for page in pages {
+        // The skills copied unchanged from upstream (the folders under `vendor/mattpocock`) have example links (a
+        // glossary of a made-up package, a template for a map's decisions) that are not meant to lead anywhere;
+        // Moebius's own README of that folder is checked.
+        let vendor = root.join("crates/moebius-core/skill/vendor/mattpocock");
+        if page.starts_with(&vendor) && page != vendor.join("README.md") {
+            continue;
+        }
         let text = std::fs::read_to_string(&page).unwrap();
         for (_, rest) in text.match_indices("](").map(|(i, _)| text.split_at(i + 2)) {
             let Some(target) = rest.split(')').next() else {

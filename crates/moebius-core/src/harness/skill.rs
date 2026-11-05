@@ -4,7 +4,7 @@
 //! task skills (`moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions`, `moebius-plugins`, `moebius-report`)
 //! are one `SKILL.md` each with the steps of one kind of task, and only the Moebius agent has them. The engineering
 //! skills are copied unchanged from Matt Pocock's skills (`skill/vendor/mattpocock/`) and given to the Coder, the
-//! Reviewer and the Grilling partner, with `moebius-autonomous`, which says what to do where they assume a person.
+//! Reviewer and the Grilling partner (which also has `wayfinder` and the skills it calls), with `moebius-autonomous`, which says what to do where they assume a person.
 //! Unlike the others they are not reserved names: a skill of the harness configuration repository with the same name
 //! replaces the copy, which is how a person updates or changes one.
 
@@ -29,7 +29,7 @@ pub struct BuiltIn {
 pub const VENDORED_URL: &str = "https://github.com/mattpocock/skills";
 
 /// The commit of [`VENDORED_URL`] they were copied at, as `skill/vendor/mattpocock/README.md` says.
-pub const VENDORED_COMMIT: &str = "59db609eb1e18aaf59b63284d0e52255aff0c63c";
+pub const VENDORED_COMMIT: &str = "4ae2317ddb22b046e26455e4f9c9b3aaaf62212d";
 
 /// A built-in skill as an agent's page shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -136,7 +136,7 @@ pub const AUTONOMOUS: BuiltIn = BuiltIn {
 const VENDORED_LICENSE: &str = include_str!("../../skill/vendor/mattpocock/LICENSE");
 
 /// The engineering skills, as they are upstream.
-pub const VENDORED: [BuiltIn; 5] = [
+pub const VENDORED: [BuiltIn; 9] = [
     BuiltIn {
         name: "tdd",
         files: &[
@@ -201,6 +201,62 @@ pub const VENDORED: [BuiltIn; 5] = [
             ("LICENSE", VENDORED_LICENSE),
         ],
     },
+    BuiltIn {
+        name: "wayfinder",
+        files: &[
+            (
+                "SKILL.md",
+                include_str!("../../skill/vendor/mattpocock/wayfinder/SKILL.md"),
+            ),
+            ("LICENSE", VENDORED_LICENSE),
+        ],
+    },
+    BuiltIn {
+        name: "domain-modeling",
+        files: &[
+            (
+                "SKILL.md",
+                include_str!("../../skill/vendor/mattpocock/domain-modeling/SKILL.md"),
+            ),
+            (
+                "GLOSSARY-FORMAT.md",
+                include_str!("../../skill/vendor/mattpocock/domain-modeling/GLOSSARY-FORMAT.md"),
+            ),
+            (
+                "ADR-FORMAT.md",
+                include_str!("../../skill/vendor/mattpocock/domain-modeling/ADR-FORMAT.md"),
+            ),
+            ("LICENSE", VENDORED_LICENSE),
+        ],
+    },
+    BuiltIn {
+        name: "research",
+        files: &[
+            (
+                "SKILL.md",
+                include_str!("../../skill/vendor/mattpocock/research/SKILL.md"),
+            ),
+            ("LICENSE", VENDORED_LICENSE),
+        ],
+    },
+    BuiltIn {
+        name: "prototype",
+        files: &[
+            (
+                "SKILL.md",
+                include_str!("../../skill/vendor/mattpocock/prototype/SKILL.md"),
+            ),
+            (
+                "UI.md",
+                include_str!("../../skill/vendor/mattpocock/prototype/UI.md"),
+            ),
+            (
+                "LOGIC.md",
+                include_str!("../../skill/vendor/mattpocock/prototype/LOGIC.md"),
+            ),
+            ("LICENSE", VENDORED_LICENSE),
+        ],
+    },
 ];
 
 /// Every reserved built-in skill: the reference library first, then the task skills and the adapter of the
@@ -222,7 +278,14 @@ pub fn engineering(agent: &str) -> Vec<&'static BuiltIn> {
     let names: &[&str] = match agent {
         "Coder" => &["tdd", "diagnosing-bugs"],
         "Reviewer" => &["code-review"],
-        "Grilling-partner" => &["grilling", "to-tickets"],
+        "Grilling-partner" => &[
+            "grilling",
+            "to-tickets",
+            "wayfinder",
+            "domain-modeling",
+            "research",
+            "prototype",
+        ],
         _ => return vec![],
     };
     names.iter().filter_map(|name| vendored(name)).collect()
@@ -603,7 +666,7 @@ mod tests {
         assert!(readme.contains(VENDORED_COMMIT));
         assert!(readme.contains(VENDORED_URL));
         assert!(VENDORED_LICENSE.starts_with("MIT License"));
-        assert_eq!(VENDORED.len(), 5);
+        assert_eq!(VENDORED.len(), 9);
         for skill in &VENDORED {
             assert!(readme.contains(&format!("| `{}` |", skill.name)));
             let frontmatter = skill.page().split("\n---\n").next().unwrap();
@@ -622,6 +685,16 @@ mod tests {
         }
         assert_eq!(VENDORED[0].files(), ["tests.md", "mocking.md", "LICENSE"]);
         assert!(hidden_from_model(vendored("to-tickets").unwrap().page()));
+        assert!(hidden_from_model(vendored("wayfinder").unwrap().page()));
+        assert!(!hidden_from_model(vendored("research").unwrap().page()));
+        assert_eq!(
+            vendored("domain-modeling").unwrap().files(),
+            ["GLOSSARY-FORMAT.md", "ADR-FORMAT.md", "LICENSE"]
+        );
+        assert_eq!(
+            vendored("prototype").unwrap().files(),
+            ["UI.md", "LOGIC.md", "LICENSE"]
+        );
         assert!(!hidden_from_model(vendored("tdd").unwrap().page()));
     }
 
@@ -635,7 +708,17 @@ mod tests {
         };
         assert_eq!(names("Coder"), ["tdd", "diagnosing-bugs"]);
         assert_eq!(names("Reviewer"), ["code-review"]);
-        assert_eq!(names("Grilling-partner"), ["grilling", "to-tickets"]);
+        assert_eq!(
+            names("Grilling-partner"),
+            [
+                "grilling",
+                "to-tickets",
+                "wayfinder",
+                "domain-modeling",
+                "research",
+                "prototype"
+            ]
+        );
         assert!(names("Moebius").is_empty() && names("Planner").is_empty());
     }
 
@@ -650,6 +733,10 @@ mod tests {
             "issues.json",
             "setup-matt-pocock-skills",
             "merge-base",
+            "wayfinder:map",
+            "issue claim",
+            "issue blocker add",
+            "--unblocked",
         ] {
             assert!(page.contains(needed), "{needed}");
         }

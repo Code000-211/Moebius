@@ -597,6 +597,49 @@ mod tests {
     }
 
     #[test]
+    fn a_wayfinder_map_and_its_tickets_are_questions_that_the_default_workflow_never_starts() {
+        let (_dir, app, engine, repo) = setup();
+        let map = app.create_issue(repo, "Map", "", PERSON).unwrap();
+        let ticket = app.create_issue(repo, "Ticket", "", PERSON).unwrap();
+        let task = app.create_issue(repo, "Task", "", PERSON).unwrap();
+        app.set_parent(ticket.id, Some(map.number)).unwrap();
+        app.set_labels(map.id, &["wayfinder:map".to_string()])
+            .unwrap();
+        app.set_labels(ticket.id, &["bug".into(), "Wayfinder:Research".into()])
+            .unwrap();
+        // The prefix is matched in any case (the ticket above); a label that only starts like it is no wayfinder label.
+        app.set_labels(task.id, &["wayfinder".to_string()]).unwrap();
+        for card in [&map, &ticket, &task] {
+            app.move_card(card.id, columns::NOT_STARTED).unwrap();
+        }
+
+        for card in [&map, &ticket] {
+            let step = engine.settle(card.id).unwrap();
+            assert!(
+                step.waiting.as_deref().unwrap().contains("wayfinder"),
+                "{:?}",
+                step.waiting
+            );
+            assert!(step.started_run.is_none());
+            assert_eq!(app.card(card.id).unwrap().column, "Not started");
+            assert!(app.store.runs_for_card(card.id).unwrap().is_empty());
+        }
+
+        // Even when every ticket is closed the map is not closed for them: the wayfinder session closes it.
+        app.close_card(ticket.id).unwrap();
+        engine.settle(map.id).unwrap();
+        let map_now = app.card(map.id).unwrap();
+        assert_eq!(
+            (map_now.column.as_str(), map_now.closed),
+            ("Not started", false)
+        );
+
+        // A task that is no question starts as any card does.
+        engine.settle(task.id).unwrap();
+        assert_eq!(app.card(task.id).unwrap().column, "In progress");
+    }
+
+    #[test]
     fn done_records_merged_for_a_card_whose_change_was_merged_and_closed_for_one_that_was_closed() {
         let (_dir, app, engine, repo) = setup();
         let card = app

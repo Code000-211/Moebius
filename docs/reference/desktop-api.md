@@ -23,7 +23,20 @@ protocol](bridge-protocol.md#the-environment-of-the-harness)) is accepted as wel
 agent operates Moebius with the [command line](cli.md). A request made with it acts as the agent: every decision it
 records has the decider `agent:Moebius` instead of `person`, and the run is the judgement's `run` (for a decision about
 another run, such as a steer, the judgement keeps that run, and the agent's run is in the context as `acting_run`).
-The run token of any other agent, and a revoked one, is answered with `401`. Two routes stay with a person and answer
+The run token of a run of the Grilling partner is accepted for the routes of [the issue tracker](#the-issue-tracker) only,
+as `agent:Grilling-partner`: `GET` and `POST /v1/repositories/{id}/issues`, `GET` and `PUT /v1/cards/{id}`, `PUT
+/v1/cards/{id}/parent` and `/labels`, `POST /v1/cards/{id}/blockers` and `DELETE /v1/cards/{id}/blockers/{number}`,
+`POST` and `DELETE /v1/cards/{id}/claim`, `POST /v1/cards/{id}/close` and `/reopen`, and `GET` and `POST
+/v1/cards/{id}/comments`: what `"$MOEBIUS" issue` does but delete an issue, with which it keeps a wayfinder map. It is held to its chat's repository
+and to wayfinder cards (those with a label that starts with `wayfinder:`, in any case): the routes of another
+repository (`{id}` of the issues, a card of it) answer `404` as for something that is not there, and a run that works in no
+repository gets `403` for all of them. `POST /v1/repositories/{id}/issues` answers `403` unless `labels` has a `wayfinder:`
+label and `parent` and `blocked_by` name wayfinder issues; `PUT /v1/cards/{id}` and the other changes (`parent`,
+`labels`, `blockers`, `claim`, `close`, `reopen`, `comments`) answer `403` for a card without a `wayfinder:` label, `PUT
+/v1/cards/{id}/labels` for a list without one, and `parent` and `blockers` for an issue that is no wayfinder card; reads
+(`GET` of an issue, its comments and the list) are open for the repository's cards. The message says what is refused. The
+Moebius agent and a person are not held to any of this. Every
+other route answers it `401`, as it does the run token of any other agent, and a revoked one. Two routes stay with a person and answer
 `403` with `only a person can do this` to a run token: `PUT /v1/secrets/{name}` (an agent must not set keys),
 `GET /v1/webhooks` and `POST /v1/webhooks/{forge}/secret` (they hold the webhook secrets),
 `POST /v1/session` and `POST /v1/session/codes` (a run token never signs in or makes a login code), `POST /v1/harness/setup` (moving the agents is a person's choice) and `GET /v1/runs/{id}/terminal`, `GET /v1/chats/{id}/tui`, `GET /v1/terminal` and `GET /v1/repositories/{id}/terminal` (the shells) and `GET /v1/ports/{port}/tunnel`, and `PUT /v1/client` (what the app says of itself). Where a route below says "a person" and "decider
@@ -1110,12 +1123,12 @@ included.
 
 An agent of the harness configuration repository, as its files say: `{"name": string, "settings": {"model", "protocol",
 "thinking", "token_budget", "harness", "runner", "skills", "extensions", "mcp", "tool_output", "engineering_skills"}, "instructions": string}` (`thinking`,
-`token_budget`, `harness` and `runner` are left out when not set; no `harness` is `pi-bolt`, no `runner` is the server itself; `tool_output` is left out when it is the defaults; `engineering_skills` is left out when it is `true` (the engineering skills of the agent's name, if it has any), is `false` for none, and is a list of names (`tdd`, `diagnosing-bugs`, `code-review`, `grilling`, `to-tickets`, `moebius-autonomous`) for exactly those: see [engineering skills](harness-configuration.md#engineering-skills). A `PUT` with any other name is refused with `422`, and so is a file with one). The files hold no secrets and are returned in full. Errors: `404` no such agent; `422` its files
+`token_budget`, `harness` and `runner` are left out when not set; no `harness` is `pi-bolt`, no `runner` is the server itself; `tool_output` is left out when it is the defaults; `engineering_skills` is left out when it is `true` (the engineering skills of the agent's name, if it has any), is `false` for none, and is a list of names (`tdd`, `diagnosing-bugs`, `code-review`, `grilling`, `to-tickets`, `wayfinder`, `domain-modeling`, `research`, `prototype`, `moebius-autonomous`) for exactly those: see [engineering skills](harness-configuration.md#engineering-skills). A `PUT` with any other name is refused with `422`, and so is a file with one). The files hold no secrets and are returned in full. Errors: `404` no such agent; `422` its files
 are broken (the message says how), or the server has no `[harness]` and its agents are in `moebius.toml`.
 
 A built-in agent (`Moebius`, `Grilling-partner`, `Coder`, `Reviewer`, `Retro-analyst`, `Autoresearcher`) also has `"built_in":
 {"instructions": string, "skills": [{"name": string, "description": string}], "engineering_skills": [...]}`: the instructions it is always given
-before its own, `engineering_skills` the skills of the same shape it is given besides by default, that is while its `engineering_skills` is not `false` or a list of its own (the Grilling partner's `grilling`, `to-tickets` and `moebius-autonomous`, the Coder's `tdd`, `diagnosing-bugs` and `moebius-autonomous`, the Reviewer's `code-review` and `moebius-autonomous`; empty for the others), and the built-in skills it always has before its own, which nobody can change. The Moebius agent's are
+before its own, `engineering_skills` the skills of the same shape it is given besides by default, that is while its `engineering_skills` is not `false` or a list of its own (the Grilling partner's `grilling`, `to-tickets`, `wayfinder`, `domain-modeling`, `research`, `prototype` and `moebius-autonomous`, the Coder's `tdd`, `diagnosing-bugs` and `moebius-autonomous`, the Reviewer's `code-review` and `moebius-autonomous`; empty for the others), and the built-in skills it always has before its own, which nobody can change. The Moebius agent's are
 the `moebius` skill and the task skills `moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions`, `moebius-plugins` and `moebius-report`; the Coder and the Reviewer have none; the others have the `moebius` skill. A built-in agent is answered
 without files (then `settings` and `instructions` are left out) and without `[harness]`. `PUT` saves only the agent's
 files and answers without `built_in`. A new agent that starts from an existing one (the Agents page, `moebius agent save
@@ -1189,7 +1202,7 @@ commit (left out when the text changed nothing, and always for a `rules_file`). 
 
 The skills an agent's `skills` can name, for an editor to offer: an array of `{"name": string, "description": string,
 "built_in": boolean, "source": {"url": string, "commit": string}}`, the built-in skills first (`moebius`, then the task skills `moebius-operate`, `moebius-configure`, `moebius-workflows`, `moebius-extensions`, `moebius-plugins` and `moebius-report`, then `moebius-autonomous`), then the
-engineering skills (`tdd`, `diagnosing-bugs`, `code-review`, `grilling`, `to-tickets`) with `built_in` true and a `source`, the repository they were copied from and the commit, unless the harness configuration repository has a skill of that name, then the
+engineering skills (`tdd`, `diagnosing-bugs`, `code-review`, `grilling`, `to-tickets`, `wayfinder`, `domain-modeling`, `research`, `prototype`) with `built_in` true and a `source`, the repository they were copied from and the commit, unless the harness configuration repository has a skill of that name, then the
 directories of `skills/` in the harness configuration repository by name; a directory with the name of a reserved built-in skill
 is left out (one with the name of an engineering skill replaces it). `description` is the `description` of the frontmatter of the skill's `SKILL.md`, empty when there is
 none. Without `[harness]` the array is empty.
