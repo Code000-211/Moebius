@@ -177,9 +177,9 @@ function Day({ view, wanted }: { view: RetroView; wanted: string | null }) {
             {warnings.map((warning) => (
               <div
                 key={warning}
-                className="flex items-start gap-4 rounded-control bg-attention-fill p-4 text-attention-text"
+                className="flex items-center gap-4 rounded-control bg-attention-fill p-4 text-attention-text"
               >
-                <WarningCircleIcon className="mt-1 size-4 shrink-0" aria-hidden="true" />
+                <WarningCircleIcon className="size-4 shrink-0" aria-hidden="true" />
                 <p className="m-0 min-w-0 flex-1 break-words text-base">{warning}</p>
                 {view.status === "failed" ? (
                   // The banner is the warning's own fill, so the button of it needs its border to read as a button.
