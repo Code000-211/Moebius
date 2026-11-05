@@ -166,6 +166,18 @@ describe("groupTurns", () => {
     expect(groupTurns([person("hi"), failure()], false)[0]?.blocks).toMatchObject([
       { kind: "error" },
     ]);
+    // Errors in a row at the end all stand: the last of them is where the chat ended.
+    const again: Entry = {
+      at: 0,
+      seq: seq(),
+      kind: "error",
+      source: "model",
+      message: "the model said no",
+    };
+    expect(groupTurns([person("hi"), failure(), again], false)[0]?.blocks).toMatchObject([
+      { kind: "error" },
+      { kind: "error" },
+    ]);
   });
 });
 
