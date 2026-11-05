@@ -402,8 +402,10 @@ Reviewer](../reference/harness-configuration.md#the-coder-and-the-reviewer)) and
 Agents page, with `moebius agent save Coder --model <m>`, or in `[agents.Coder]`, or every card stops in `In progress` with
 a `board_error` saying `the Coder agent needs a model`. Whatever you write in its `agents/Coder.md` or `instructions` comes
 after the built-in instructions. A round is a `code` run in a worktree of its own. Its prompt is the issue (its number, title
-and body), then: make the change, run what checks the repository has, stop when the issue is done, and Moebius commits what is
-left in the worktree. After a send-back it ends with `Notes from the last round:` and the reason.
+and body) and its comments (the newest 8,000 characters, with their authors), then: make the change, run what checks the
+repository has, stop when the issue is done, and Moebius commits what is left in the worktree. It is also told where the
+issue lives (kept by Moebius itself, or on the forge) and not to look for it with `gh` or another tracker's command line,
+since the run has no login for one. After a send-back it ends with `Notes from the last round:` and the reason.
 
 Moebius commits what is left uncommitted in the worktree. A `code` run that leaves nothing uncommitted and made no
 commit of its own has failed with `the agent changed nothing`; a commit of the agent's own counts as a change, so the
