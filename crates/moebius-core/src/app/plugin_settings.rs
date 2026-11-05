@@ -3,7 +3,9 @@
 //! the whole server (`app_settings`), which it shows on the Settings page. The values are kept in the store by plugin
 //! name (`store::plugin_settings`); the launcher gets its app settings and those of a run's repository in its launch
 //! request (see `harness::launch`). Only a person changes them, and each save is recorded as an
-//! `edit_project_settings` or `edit_app_settings` decision.
+//! `edit_project_settings` or `edit_app_settings` decision. A plugin may bring its own page for them (`settings_ui` of
+//! its manifest), which the web app loads from [`App::settings_ui`] and draws in place of the fields; the values are
+//! kept and checked here all the same.
 
 use std::collections::BTreeMap;
 
@@ -55,6 +57,8 @@ pub struct PluginSettings {
     pub plugin: String,
     pub version: String,
     pub settings: Vec<SettingView>,
+    /// Whether the plugin brings its own page for its settings, served by [`App::settings_ui`].
+    pub ui: bool,
 }
 
 /// The answer of `GET /v1/repositories/{id}/plugin-settings`: every plugin that has project settings, by name.
@@ -159,6 +163,17 @@ impl App {
         self.plugin_settings(scope, manifest)
     }
 
+    /// The source of the JavaScript module of the plugin's own page for its settings, for the web app to load.
+    pub fn settings_ui(&self, plugin: &str) -> Result<String> {
+        self.decisions
+            .host()
+            .manifests()
+            .into_iter()
+            .find(|manifest| manifest.name == plugin)
+            .and_then(|manifest| manifest.settings_ui)
+            .ok_or_else(|| AppError::NotFound(format!("a plugin {plugin} with a settings page")))
+    }
+
     /// The plugins that declare settings in `scope`, by name, with their values.
     fn settings_of(&self, scope: Scope) -> Result<Vec<PluginSettings>> {
         let mut plugins = Vec::new();
@@ -190,6 +205,7 @@ impl App {
                     setting,
                 })
                 .collect(),
+            ui: manifest.settings_ui.is_some(),
             plugin: manifest.name,
             version: manifest.version,
         })
@@ -239,6 +255,35 @@ mod tests {
                     input: SettingInput::Line,
                     language: None,
                 }],
+                settings_ui: None,
+            }
+        }
+
+        fn call(&self, _: Call) -> std::result::Result<Value, PluginError> {
+            Err(PluginError::Failed("not called".into()))
+        }
+    }
+
+    /// A launcher that draws its own page for its one setting of the server.
+    struct Drawn;
+
+    const PAGE: &str = "export default function mount() {}";
+
+    impl Plugin for Drawn {
+        fn manifest(&self) -> Manifest {
+            Manifest {
+                name: "drawn".into(),
+                version: "0.1".into(),
+                kinds: vec![Kind::Launcher],
+                project_settings: Vec::new(),
+                app_settings: vec![PluginSetting {
+                    key: "base".into(),
+                    label: "Base".into(),
+                    description: String::new(),
+                    input: SettingInput::Code,
+                    language: None,
+                }],
+                settings_ui: Some(PAGE.into()),
             }
         }
 
@@ -255,6 +300,7 @@ mod tests {
             .unwrap();
         let mut host = Host::new(Duration::from_secs(30));
         host.add(Boxed);
+        host.add(Drawn);
         let app = App::new(store, Arc::new(host), dir.path());
         (dir, app, repo.id)
     }
@@ -354,7 +400,7 @@ mod tests {
     fn the_servers_settings_are_kept_apart_from_a_repositorys_and_recorded_as_their_own_kind() {
         let (_dir, app, repo) = app();
         let listed = app.app_settings().unwrap();
-        assert_eq!(listed.plugins.len(), 1);
+        assert_eq!(listed.plugins.len(), 2);
         assert_eq!(listed.plugins[0].settings.len(), 1);
         assert_eq!(listed.plugins[0].settings[0].setting.key, "registry");
 
@@ -387,5 +433,36 @@ mod tests {
             app.save_plugin_settings(&agent, Scope::App, "box", &values, ""),
             Err(AppError::Forbidden(_))
         ));
+    }
+
+    #[test]
+    fn a_plugin_that_brings_its_own_page_says_so_and_it_is_served() {
+        let (_dir, app, repo) = app();
+        let listed = app.app_settings().unwrap();
+        let ui: Vec<(&str, bool)> = listed
+            .plugins
+            .iter()
+            .map(|plugin| (plugin.plugin.as_str(), plugin.ui))
+            .collect();
+        assert_eq!(ui, [("box", false), ("drawn", true)]);
+        assert_eq!(app.settings_ui("drawn").unwrap(), PAGE);
+        assert!(matches!(app.settings_ui("box"), Err(AppError::NotFound(_))));
+        assert!(matches!(
+            app.settings_ui("nobody"),
+            Err(AppError::NotFound(_))
+        ));
+
+        // Its values are kept and checked as any plugin's are.
+        let values = BTreeMap::from([("base".to_string(), "FROM debian\n".to_string())]);
+        app.save_plugin_settings(&Actor::Person, Scope::App, "drawn", &values, "")
+            .unwrap();
+        assert_eq!(app.store.app_settings("drawn").unwrap(), values);
+        let stray = BTreeMap::from([("other".to_string(), "x".to_string())]);
+        assert!(matches!(
+            app.save_plugin_settings(&Actor::Person, Scope::App, "drawn", &stray, ""),
+            Err(AppError::Invalid(_))
+        ));
+        // It has no project settings, so it is not among a repository's.
+        assert_eq!(app.plugin_project_settings(repo).unwrap().plugins.len(), 1);
     }
 }

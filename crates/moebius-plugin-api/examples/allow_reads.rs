@@ -24,6 +24,7 @@ impl Plugin for AllowReads {
             kinds: vec![Kind::Decider],
             project_settings: Vec::new(),
             app_settings: Vec::new(),
+            settings_ui: None,
         }
     }
 

@@ -579,7 +579,9 @@ describe("projects", () => {
 
     await box.getByRole("button", { name: "Save settings" }).click();
     await box.getByText("Saved. The plugin uses it from the next run.").waitFor();
-    expect(lastBody(fake().requests, "PUT", "/v1/repositories/1/plugin-settings/podman-sandbox")).toEqual({
+    expect(
+      lastBody(fake().requests, "PUT", "/v1/repositories/1/plugin-settings/podman-sandbox"),
+    ).toEqual({
       values: { dockerfile: "FROM docker.io/library/node:24-bookworm", network: "internet" },
     });
     expect(await box.getByRole("button", { name: "Save settings" }).isDisabled()).toBe(true);
@@ -1058,7 +1060,9 @@ describe("get started", () => {
 describe("settings", () => {
   it.skipIf(usesRealServer)("saves the settings a plugin asks of the whole server", async () => {
     await open("/plugin-settings");
-    const box = page.getByTestId("plugin-settings");
+    const box = page
+      .getByTestId("plugin-settings")
+      .filter({ has: page.getByRole("heading", { name: "podman-sandbox" }) });
     await page.getByRole("heading", { name: "Plugin settings", level: 1 }).waitFor();
     await box.getByRole("heading", { name: "podman-sandbox" }).waitFor();
     await box.getByLabel("Registry").fill("quay.io");
@@ -1070,6 +1074,26 @@ describe("settings", () => {
     await open("/plugin-settings");
     await box.getByRole("heading", { name: "podman-sandbox" }).waitFor();
     expect(await box.getByLabel("Registry").inputValue()).toBe("quay.io");
+  });
+
+  it.skipIf(usesRealServer)("draws a plugin's own page and saves what it reports", async () => {
+    await open("/plugin-settings");
+    const box = page
+      .getByTestId("plugin-settings")
+      .filter({ has: page.getByRole("heading", { name: "drawn-sandbox" }) });
+    await box.getByText("app page of drawn-sandbox").waitFor();
+    await box.getByTestId("code-editor").waitFor();
+    await box.getByRole("button", { name: "Start from Debian" }).click();
+    // The editor drawn again with the preset stays.
+    await box.getByText("FROM debian:stable-slim").waitFor();
+    expect(await box.getByTestId("code-editor").count()).toBe(1);
+    await box.getByRole("button", { name: "Save settings" }).click();
+    await box.getByText("Saved. The plugin uses it from the next run.").waitFor();
+    expect(lastBody(fake().requests, "PUT", "/v1/plugins/drawn-sandbox/settings")).toEqual({
+      values: { base: "FROM debian:stable-slim\n" },
+    });
+    await open("/plugin-settings");
+    await box.getByText("FROM debian:stable-slim").waitFor();
   });
 
   it("loads for a real server and for the fake", async () => {

@@ -11,6 +11,7 @@
 //!   or the address the browser ended on, when the browser could not reach the server.
 //! - `GET /v1/plugins/settings` and `PUT /v1/plugins/{plugin}/settings` `{values, reason}`: the settings plugins ask of
 //!   the whole server and the values it has, changed by a person (see [`crate::app::plugin_settings`]).
+//!   `GET /v1/plugins/{plugin}/settings-ui`: the JavaScript module of a plugin's own page for its settings.
 //! - `GET /v1/start`: whether the upstreams, Pi-Bolt, the Coder's model and a repository are in place, step by step.
 //! - `GET /v1/settings`: every key of `moebius.toml` with its value or default. `PUT /v1/settings` `{set, remove}` changes
 //!   the file. `PUT` and `DELETE /v1/secrets/{name}` keep and remove an API key. `POST /v1/server/restart` restarts the
@@ -21,7 +22,8 @@ use std::collections::BTreeMap;
 use axum::Extension;
 use axum::Router;
 use axum::extract::{Path as UrlPath, State};
-use axum::http::StatusCode;
+use axum::http::{StatusCode, header};
+use axum::response::IntoResponse;
 use axum::routing::{get, post, put};
 use serde::Deserialize;
 
@@ -48,6 +50,7 @@ pub(super) fn routes() -> Router<ApiState> {
         .route("/v1/plugins", get(plugins))
         .route("/v1/plugins/settings", get(plugin_settings))
         .route("/v1/plugins/{plugin}/settings", put(put_plugin_settings))
+        .route("/v1/plugins/{plugin}/settings-ui", get(plugin_settings_ui))
         .route("/v1/settings", get(settings).put(put_settings))
         .route("/v1/secrets/{name}", put(put_secret).delete(delete_secret))
         .route("/v1/server/restart", post(restart_server))
@@ -219,6 +222,21 @@ async fn put_plugin_settings(
         app.save_plugin_settings(&by, Scope::App, &plugin, &new.values, &new.reason)
     })
     .await
+}
+
+/// The module as JavaScript, never cached, so that a new version of the plugin is drawn on the next visit.
+async fn plugin_settings_ui(
+    State(state): State<ApiState>,
+    UrlPath(plugin): UrlPath<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    let axum::Json(source) = blocking(&state.app, move |app| app.settings_ui(&plugin)).await?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-store"),
+        ],
+        source,
+    ))
 }
 
 async fn settings(State(state): State<ApiState>) -> Result<axum::Json<SettingsView>, ApiError> {

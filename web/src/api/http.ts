@@ -51,6 +51,28 @@ export async function request<T>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
+  const response = await send(method, path, options);
+  if (response.status === 204) {
+    return undefined as T;
+  }
+  const text = await response.text();
+  if (text === "") {
+    return undefined as T;
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new ApiError(response.status, "the server's answer is not JSON");
+  }
+}
+
+/** Reads `path` as text, such as a plugin's page for its settings; it fails as `request` does. */
+export async function getText(path: string, options: RequestOptions = {}): Promise<string> {
+  return (await send("GET", path, options)).text();
+}
+
+/** Sends one request with the header and the cookie every call carries; an answer outside 200-299 is an `ApiError`. */
+async function send(method: Method, path: string, options: RequestOptions): Promise<Response> {
   const headers: Record<string, string> = { "X-Moebius": "1" };
   const init: RequestInit = {
     method,
@@ -74,18 +96,7 @@ export async function request<T>(
   if (!response.ok) {
     throw new ApiError(response.status, await messageOf(response));
   }
-  if (response.status === 204) {
-    return undefined as T;
-  }
-  const text = await response.text();
-  if (text === "") {
-    return undefined as T;
-  }
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    throw new ApiError(response.status, "the server's answer is not JSON");
-  }
+  return response;
 }
 
 /** The plain-text body of a failed answer, or a sentence for its status when the body is empty. */

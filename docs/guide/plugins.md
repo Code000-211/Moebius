@@ -39,6 +39,7 @@ impl Plugin for AllowReads {
             kinds: vec![Kind::Decider],
             project_settings: Vec::new(),
             app_settings: Vec::new(),
+            settings_ui: None,
         }
     }
 ```
@@ -96,6 +97,7 @@ impl Plugin for StartGate {
             kinds: vec![Kind::Decider],
             project_settings: Vec::new(),
             app_settings: Vec::new(),
+            settings_ui: None,
         }
     }
 
@@ -236,7 +238,9 @@ A plugin that needs something per repository, such as the Dockerfile of a sandbo
 `app_settings`. The web app then shows a box for the plugin on each repository's page or on the Settings page, a
 person fills it in, and a launcher finds the values in every launch request's `project_settings` (those of the run's
 repository) and `app_settings`, by key. The fields, the inputs and the rules are in
-[the plugin API](../reference/plugin-api.md#plugin-settings).
+[the plugin API](../reference/plugin-api.md#plugin-settings). To draw the box yourself, with presets or controls of
+your own, give the manifest's `settings_ui` the source of a JavaScript module, usually with `include_str!`; see
+[A page of its own](../reference/plugin-api.md#a-page-of-its-own).
 
 ## What the host guarantees
 

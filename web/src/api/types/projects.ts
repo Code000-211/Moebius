@@ -88,6 +88,8 @@ export interface PluginSettings {
   plugin: string;
   version: string;
   settings: PluginSetting[];
+  /** Whether the plugin brings its own page for these settings (`GET /v1/plugins/{plugin}/settings-ui`). */
+  ui: boolean;
 }
 
 /** `GET /v1/repositories/{id}/plugin-settings`: every running plugin that has project settings. */

@@ -2,8 +2,9 @@
  * The settings plugins ask of a person, one box per plugin that declares some in its manifest: those of a repository
  * on its page (`project_settings`) and those of the whole server on the Settings page (`app_settings`). The boxes know
  * nothing of any plugin: each setting is drawn from what the plugin declares, a field of one line or a code editor
- * (loaded when a plugin asks for one) in the language it names. Save replaces all of one plugin's values in the scope;
- * the plugin uses them from its next call, a launcher from the next run.
+ * (loaded when a plugin asks for one) in the language it names. A plugin that brings its own page for its settings is
+ * drawn by that page instead (`PluginPage`), and by the fields when the page cannot be drawn. Save replaces all of one
+ * plugin's values in the scope; the plugin uses them from its next call, a launcher from the next run.
  */
 import { type QueryKey, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useState } from "react";
@@ -16,11 +17,16 @@ import { Field } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonLines } from "../../ui/page/Skeleton";
+import { PluginPage } from "./PluginPage";
 
 const CodeEditor = lazy(() => import("../../ui/CodeEditor"));
 
 /** How the boxes of one scope read and save: the query's key, the read, the save of one plugin's values. */
 export interface SettingsScope {
+  /** Which settings these are, for a plugin's own page. */
+  kind: "app" | "project";
+  /** The repository's id in the `project` scope, else null. */
+  repository: number | null;
   queryKey: QueryKey;
   read: () => Promise<{ plugins: Plugin[] }>;
   save: (plugin: string, values: Record<string, string>) => Promise<Plugin>;
@@ -101,7 +107,10 @@ function PluginForm({
   const queryClient = useQueryClient();
   const saved = Object.fromEntries(plugin.settings.map((setting) => [setting.key, setting.value]));
   const [values, setValues] = useState<Record<string, string>>(saved);
-  const changed = plugin.settings.some((setting) => values[setting.key] !== setting.value);
+  // A plugin's page keeps what is typed itself, so a revert draws it again from the saved values.
+  const [drawn, setDrawn] = useState(0);
+  const [pageFailed, setPageFailed] = useState<string | null>(null);
+  const changed = plugin.settings.some((setting) => (values[setting.key] ?? "") !== setting.value);
   const save = useMutation({
     mutationFn: () => scope.save(plugin.plugin, values),
     onSuccess: (answer) => {
@@ -133,14 +142,41 @@ function PluginForm({
         if (changed && !save.isPending) save.mutate();
       }}
     >
-      {plugin.settings.map((setting) => (
-        <SettingControl
-          key={setting.key}
-          setting={setting}
-          value={values[setting.key] ?? ""}
-          onChange={(value) => edit(setting.key, value)}
+      {plugin.ui && pageFailed === null ? (
+        <PluginPage
+          key={drawn}
+          host={{
+            plugin: plugin.plugin,
+            version: plugin.version,
+            scope: scope.kind,
+            repository: scope.repository,
+            settings: plugin.settings,
+            values: saved,
+            change: (next) => {
+              setValues(next);
+              setNotice(null);
+            },
+          }}
+          onFailed={setPageFailed}
         />
-      ))}
+      ) : (
+        <>
+          {pageFailed !== null && (
+            <Notice tone="error">
+              <span className="font-semibold">The plugin's page could not be drawn. </span>
+              {pageFailed}. Its settings are shown as fields.
+            </Notice>
+          )}
+          {plugin.settings.map((setting) => (
+            <SettingControl
+              key={setting.key}
+              setting={setting}
+              value={values[setting.key] ?? ""}
+              onChange={(value) => edit(setting.key, value)}
+            />
+          ))}
+        </>
+      )}
       {notice && (
         <Notice tone={notice.tone}>
           {notice.tone === "error" && (
@@ -160,6 +196,7 @@ function PluginForm({
           disabled={!changed}
           onClick={() => {
             setValues(saved);
+            setDrawn((n) => n + 1);
             setNotice(null);
           }}
         >

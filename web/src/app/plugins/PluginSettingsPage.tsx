@@ -10,6 +10,8 @@ import { PageHeader } from "../../ui/page/PageHeader";
 import { PluginSettingsBoxes, type SettingsScope } from "./PluginSettingsBoxes";
 
 const APP_SCOPE: SettingsScope = {
+  kind: "app",
+  repository: null,
   queryKey: keys.appSettings,
   read: appSettings,
   save: saveAppSettings,

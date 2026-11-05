@@ -286,6 +286,7 @@ mod tests {
                 kinds: vec![Kind::Decider],
                 project_settings: Vec::new(),
                 app_settings: Vec::new(),
+                settings_ui: None,
             }
         }
         fn call(&self, call: Call) -> std::result::Result<Value, PluginError> {
@@ -307,6 +308,7 @@ mod tests {
                 kinds: vec![Kind::Decider],
                 project_settings: Vec::new(),
                 app_settings: Vec::new(),
+                settings_ui: None,
             }
         }
         fn call(&self, _: Call) -> std::result::Result<Value, PluginError> {

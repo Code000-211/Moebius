@@ -3,7 +3,7 @@
  * the plugins with their app settings, and the keys of `moebius.toml` (`crates/moebius-desktop/src/client/calls/server.rs`). An API key goes to
  * `storeSecret` once and is never read back.
  */
-import { del, get, post, put } from "../http";
+import { del, get, getText, post, put } from "../http";
 import type { AvailableModels } from "../types/chat";
 import type {
   Login,
@@ -58,6 +58,11 @@ export function saveAppSettings(
   values: Record<string, string>,
 ): Promise<PluginSettings> {
   return put<PluginSettings>(`/v1/plugins/${encodeURIComponent(plugin)}/settings`, { values });
+}
+
+/** The source of the JavaScript module of a plugin's own page for its settings. */
+export function settingsUi(plugin: string): Promise<string> {
+  return getText(`/v1/plugins/${encodeURIComponent(plugin)}/settings-ui`);
 }
 
 export function serverSettings(): Promise<ServerSettings> {

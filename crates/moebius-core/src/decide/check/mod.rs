@@ -152,6 +152,7 @@ pub(super) mod tests {
                 kinds: vec![Kind::Decider],
                 project_settings: Vec::new(),
                 app_settings: Vec::new(),
+                settings_ui: None,
             }
         }
         fn call(&self, call: Call) -> Result<Value, PluginError> {
