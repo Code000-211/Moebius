@@ -122,8 +122,12 @@ pub enum ConfigError {
     PluginPath { name: String },
     #[error("plugins.decides: {kind:?} is decided by two plugins")]
     PluginDecidesTwice { kind: String },
-    #[error("plugins.launches: {name:?} is a second launcher; only one plugin can be")]
-    LauncherTwice { name: String },
+    #[error("plugins.launch_agents: {name:?} names agents but is not a launcher (launches = true)")]
+    LaunchAgentsWithoutLaunches { name: String },
+    #[error(
+        "plugins.launches: {name:?} is never asked: {before:?} before it is a launcher for every agent; give {before:?} launch_agents or move it last"
+    )]
+    LauncherNeverAsked { name: String, before: String },
     #[error("registries.name: {name:?} is not a name (letters, digits, - and _)")]
     RegistryName { name: String },
     #[error("registries: two registries are named {name:?}")]
@@ -1038,15 +1042,34 @@ mod tests {
                 "must not be empty",
             ),
             (
-                plugin("a", "")
-                    + &plugin("b", "")
-                    + "launches = true\n[[plugins]]\nname = \"c\"\npath = \"p\"\nlaunches = true\n",
-                "second launcher",
+                plugin("a", "") + "launches = true\n" + &plugin("c", "") + "launches = true\n",
+                "never asked",
+            ),
+            (
+                plugin("a", "") + "launch_agents = [\"Moebius\"]\n",
+                "not a launcher",
             ),
         ] {
             let error = parse(&text).unwrap_err().to_string();
             assert!(error.contains(wanted), "{error}");
         }
+    }
+
+    #[test]
+    fn launchers_for_some_agents_come_before_one_for_the_rest() {
+        let launcher = |name: &str, agents: &str| {
+            format!("[[plugins]]\nname = \"{name}\"\npath = \"p\"\nlaunches = true\n{agents}")
+        };
+        let text = launcher("nono", "launch_agents = [\"Moebius\"]\n") + &launcher("podman", "");
+        let c = parse(&text).unwrap();
+        assert_eq!(c.plugins[0].launch_agents, ["Moebius"]);
+        assert!(c.plugins[1].launch_agents.is_empty());
+        // Scoped launchers need no launcher for the rest, and the one for the rest must be last.
+        assert!(parse(&launcher("nono", "launch_agents = [\"Moebius\"]\n")).is_ok());
+        assert!(
+            parse(&(launcher("podman", "") + &launcher("nono", "launch_agents = [\"Moebius\"]\n")))
+                .is_err()
+        );
     }
 
     #[test]

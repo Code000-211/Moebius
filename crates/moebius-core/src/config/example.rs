@@ -159,9 +159,11 @@ program = "claude"
 # path = "plugins/allow-reads"
 # args = ["--plugin"]
 # decides = ["start_card"]
-# One plugin may instead (or also) be the launcher: with `launches = true` it is asked before every harness process
-# starts and may wrap it, such as in a sandbox. A launcher that fails or is too slow fails the run.
+# A plugin may instead (or also) be a launcher: with `launches = true` it is asked before a harness process starts and
+# may wrap it, such as in a sandbox. A launcher that fails or is too slow fails the run. Several plugins may launch,
+# each for the agents of `launch_agents` (a run goes to the first that takes its agent; one for every agent comes last).
 # launches = true
+# launch_agents = ["Moebius"]
 
 # A machine that runs harnesses over SSH. An agent whose `runner` names it, or a column script that passes its name
 # to moebius.start_run, runs there: the run's branch is pushed to a clone under working_dir, the harness is started

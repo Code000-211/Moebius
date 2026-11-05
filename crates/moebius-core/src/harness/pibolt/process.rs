@@ -356,6 +356,10 @@ impl PiBolt {
         spot: Spot,
         command: &mut Command,
     ) -> Result<Option<(UrlsInside, Arc<Launched>)>, String> {
+        // A run that no launcher is configured for starts as it is.
+        let Some(plugin) = launcher.plugin_for(spot.stored) else {
+            return Ok(None);
+        };
         let remote = run.remote.as_ref().map(|remote| remote.runner());
         let mut read_only = vec![place.lens.to_path_buf(), place.bridge.to_path_buf()];
         read_only.extend(spot.agent.extensions.iter().cloned());
@@ -405,10 +409,10 @@ impl PiBolt {
             },
             clone: run.clone.as_deref(),
             runner: remote,
-            repository: launch_repository(app, launcher.plugin(), run.id, spot.card)?,
+            repository: launch_repository(app, plugin, run.id, spot.card)?,
             app_settings: app
                 .store
-                .app_settings(launcher.plugin())
+                .app_settings(plugin)
                 .map_err(|e| format!("cannot read the launcher's settings: {e}"))?,
             log: spot.log,
         };

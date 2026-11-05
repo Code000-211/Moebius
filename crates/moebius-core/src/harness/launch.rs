@@ -20,10 +20,17 @@ use crate::blobs::redact;
 /// How long a stop or cleanup command of a launcher may take before it is killed.
 const COMMAND_LIMIT: Duration = Duration::from_secs(30);
 
-/// The launcher plugin `plugin` of the plugin host.
+/// The launcher plugins of the plugin host, in the order of the configuration: a run goes to the first whose agents
+/// include the run's agent (or that names none), and to none, so it starts unwrapped, when no launcher takes it.
 pub struct Launcher {
     host: Arc<Host>,
+    plugins: Vec<Scoped>,
+}
+
+/// One launcher plugin and the agents it is asked about; empty, every agent.
+struct Scoped {
     plugin: String,
+    agents: Vec<String>,
 }
 
 /// The repository a run works in, by name, and the launcher's project settings for it, by key.
@@ -63,16 +70,31 @@ pub(crate) struct Launched {
 }
 
 impl Launcher {
+    /// A launcher that is asked about every run.
     pub fn new(host: Arc<Host>, plugin: impl Into<String>) -> Self {
+        Self::scoped(host, [(plugin.into(), Vec::new())])
+    }
+
+    /// Launchers in order, each with the agents it is asked about (empty: every agent).
+    pub fn scoped(
+        host: Arc<Host>,
+        plugins: impl IntoIterator<Item = (String, Vec<String>)>,
+    ) -> Self {
         Self {
             host,
-            plugin: plugin.into(),
+            plugins: plugins
+                .into_iter()
+                .map(|(plugin, agents)| Scoped { plugin, agents })
+                .collect(),
         }
     }
 
-    /// The launcher's name, which its project settings are kept under.
-    pub(crate) fn plugin(&self) -> &str {
-        &self.plugin
+    /// The launcher that wraps the runs of `agent`, which its settings are kept under; none when no launcher takes them.
+    pub(crate) fn plugin_for(&self, agent: &str) -> Option<&str> {
+        self.plugins
+            .iter()
+            .find(|each| each.agents.is_empty() || each.agents.iter().any(|name| name == agent))
+            .map(|each| each.plugin.as_str())
     }
 
     /// Asks the launcher how to start `command` (the process as the harness would start it). `Err` with why when the
@@ -83,19 +105,18 @@ impl Launcher {
         ask: Ask,
         command: &Command,
     ) -> Result<(Option<String>, Option<Wrapping>), String> {
+        let Some(plugin) = self.plugin_for(&ask.run.agent) else {
+            return Ok((None, None));
+        };
         let log = ask.log.to_path_buf();
         let request = request(ask, command);
         let remote = request.runner.is_some();
-        let answer = self
-            .host
-            .launch(&self.plugin, &request)
-            .map_err(|refusal| {
-                format!(
-                    "the launcher {} did not start the run: {}",
-                    self.plugin,
-                    redact(&refusal.to_string())
-                )
-            })?;
+        let answer = self.host.launch(plugin, &request).map_err(|refusal| {
+            format!(
+                "the launcher {plugin} did not start the run: {}",
+                redact(&refusal.to_string())
+            )
+        })?;
         let wrapped = match answer {
             LaunchAnswer::Unchanged { note } => return Ok((note, None)),
             LaunchAnswer::Wrapped(wrapped) => *wrapped,
@@ -119,15 +140,13 @@ impl Launcher {
         if remote {
             launched.finish();
             return Err(format!(
-                "the launcher {} wrapped a run on a runner, which it cannot",
-                self.plugin
+                "the launcher {plugin} wrapped a run on a runner, which it cannot"
             ));
         }
         if program.is_empty() {
             launched.finish();
             return Err(format!(
-                "the launcher {} answered a launch without a program",
-                self.plugin
+                "the launcher {plugin} answered a launch without a program"
             ));
         }
         let mut wrapped = Command::new(program);
@@ -145,22 +164,25 @@ impl Launcher {
         ))
     }
 
-    /// Asks the launcher what earlier runs left and removes it. `running` are the ids of the runs that exist. A
+    /// Asks every launcher what earlier runs left and removes it. `running` are the ids of the runs that exist. A
     /// launcher that does not answer is an error, so that the server does not start with a sandbox it cannot tidy.
     pub fn clean_leftovers(&self, running: &[i64]) -> Result<(), String> {
+        for each in &self.plugins {
+            self.clean_leftovers_of(&each.plugin, running)?;
+        }
+        Ok(())
+    }
+
+    fn clean_leftovers_of(&self, plugin: &str, running: &[i64]) -> Result<(), String> {
         let request = LeftoversRequest {
             running: running.to_vec(),
         };
-        let left = self
-            .host
-            .leftovers(&self.plugin, &request)
-            .map_err(|refusal| {
-                format!(
-                    "the launcher {} did not name its leftovers: {}",
-                    self.plugin,
-                    redact(&refusal.to_string())
-                )
-            })?;
+        let left = self.host.leftovers(plugin, &request).map_err(|refusal| {
+            format!(
+                "the launcher {plugin} did not name its leftovers: {}",
+                redact(&refusal.to_string())
+            )
+        })?;
         let mut failed = Vec::new();
         for command in &left.cleanup {
             if let Err(e) = run_command(command, COMMAND_LIMIT) {
@@ -171,8 +193,7 @@ impl Launcher {
         match failed.is_empty() {
             true => Ok(()),
             false => Err(format!(
-                "the launcher {} left what it could not clean up: {}",
-                self.plugin,
+                "the launcher {plugin} left what it could not clean up: {}",
                 failed.join("; ")
             )),
         }
@@ -427,6 +448,38 @@ mod tests {
         let marker = std::fs::read_to_string(dir.path().join("marker")).unwrap();
         assert_eq!(marker, "cleaned\n");
         assert!(!dir.path().join("marker.made").exists());
+    }
+
+    #[test]
+    fn a_run_goes_to_the_first_launcher_that_takes_its_agent_and_to_none_otherwise() {
+        let host = Arc::new(Host::new(Duration::from_secs(30)));
+        let named = |names: &[&str]| {
+            names
+                .iter()
+                .map(|name| name.to_string())
+                .collect::<Vec<_>>()
+        };
+        let both = Launcher::scoped(
+            host.clone(),
+            [
+                ("nono".to_string(), named(&["Moebius"])),
+                ("podman".to_string(), Vec::new()),
+            ],
+        );
+        assert_eq!(both.plugin_for("Moebius"), Some("nono"));
+        assert_eq!(both.plugin_for("Coder"), Some("podman"));
+        let only = Launcher::scoped(host, [("nono".to_string(), named(&["Moebius", "Retro"]))]);
+        assert_eq!(only.plugin_for("Retro"), Some("nono"));
+        assert_eq!(only.plugin_for("Coder"), None);
+
+        // A run no launcher takes starts as it is, and the launcher is not asked.
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("log");
+        let (note, wrapping) = only
+            .start(ask(dir.path(), None, &log), &Command::new("pi"))
+            .unwrap();
+        assert!(note.is_none() && wrapping.is_none());
+        only.clean_leftovers(&[]).unwrap_err();
     }
 
     #[test]

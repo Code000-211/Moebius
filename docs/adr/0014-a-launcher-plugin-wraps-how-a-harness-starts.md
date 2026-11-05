@@ -4,6 +4,11 @@ Amended 2026-11-05: the agent directory is read-write, not read-only as the firs
 because Pi keeps its credential store there; the request's `read_write` names it and the sessions and temporary
 directories.
 
+Amended 2026-11-05: several plugins may be launchers, each for the agents it names (`launch_agents`), so the Moebius
+agent, which the sandboxes leave out because it must reach the desktop API, can have a launcher of its own. A run goes
+to the first launcher in the file that takes its agent and starts unwrapped when none does; the fail-closed rule below
+holds for the launcher a run is given.
+
 Runs are the part of Moebius that does what no one wrote down: an agent runs as the server's user, in the server's file
 system, with a model's idea of what to type. The guard sees what a tool call says, not what it does. A sandbox the
 kernel enforces makes the boundary real, but which sandbox is right differs by machine and by need (nono on a laptop, a
@@ -12,7 +17,7 @@ So the core gets one generic hook, a **launcher**, and a sandbox is a plugin tha
 
 ## The decision
 
-A plugin of the new kind `launcher` (`[[plugins]]` with `launches = true`, at most one) is asked before the core starts
+A plugin of the new kind `launcher` (`[[plugins]]` with `launches = true`; see the amendment above for several) is asked before the core starts
 a harness process. It is sent the run (id, purpose, agent, chat or not, card), the program, arguments and complete
 environment, the working directory, the paths the process must read and those it must read and write, and the addresses
 it must reach (router, MCP gateway, tool-call check). It answers `unchanged`, or a wrapped launch: the program,
@@ -24,7 +29,7 @@ what earlier runs left. The reference is `docs/reference/plugin-api.md#launchers
 
 - **Fail closed.** A launcher that errors, does not answer within the host's time limit, answers nonsense, is not
   running or is not a launcher fails the run before the harness starts. The core never falls back to an unwrapped start
-  while a launcher is configured, and a server whose launcher cannot name its leftovers does not start.
+  for a run its launcher is asked about, and a server whose launcher cannot name its leftovers does not start.
 - **Nothing changes without one.** Without a launcher the harness starts exactly as before; the code path is not
   entered.
 - **Stop and cleanup are commands, not calls.** The core runs them itself, with a time limit, so a launcher that is a

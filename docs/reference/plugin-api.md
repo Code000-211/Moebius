@@ -285,7 +285,7 @@ whose text best matches the issue, one path per line). The `choice` is a JSON li
 ## Launchers
 
 A launcher is a plugin of the kind `launcher` that may wrap how a harness process is started, such as inside a sandbox.
-At most one plugin is the launcher: the `[[plugins]]` entry with [`launches = true`](configuration.md#plugins). A launcher
+Several plugins may be launchers: the `[[plugins]]` entries with [`launches = true`](configuration.md#plugins), each for the agents of its `launch_agents` (every agent, if it names none). A run goes to the first entry in the file that takes its agent, and is started unwrapped when none does, so one launcher can sandbox the Moebius agent while another takes the rest. A launcher
 is a `Plugin` like any other (the example `wrap_launcher.rs` is one compiled into a host); the server wires one only from
 `[[plugins]]`. **Without a launcher the
 harness starts exactly as before; the launcher code is not entered.** The reasons and the first launcher, a sandbox, are

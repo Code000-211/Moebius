@@ -119,6 +119,8 @@ impl Packages<'_> {
             args,
             decides: spec.decides.clone(),
             launches: spec.launches || spec.kind == "launcher",
+            // Which agents it is asked about is the launcher's, not the host's, to decide.
+            launch_agents: Vec::new(),
         };
         plugins::start(&self.live.get(), &plugin, self.app.decisions.host().limit())
             .map_err(PackageError::Refused)
