@@ -259,6 +259,126 @@ async fn the_moebius_agent_may_block_and_unblock_a_card_but_only_a_person_delete
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn the_moebius_agent_uses_the_tracker_routes_and_no_other_agent_does() {
+    let f = Fixture::start().await;
+    let store = &f.server.app.store;
+    let repository = store
+        .add_repository("demo", "/srv/demo", "none", "main")
+        .unwrap();
+    let issue = |title: &str| {
+        store
+            .add_card(repository.id, title, "", "person", "Backlog")
+            .unwrap()
+    };
+    let (map, ticket, other) = (issue("Map"), issue("Ticket"), issue("Other"));
+    let (run, moebius) = f.run("Moebius");
+    let (_, coder) = f.run("Coder");
+    let path =
+        |card: &moebius_core::store::Card, tail: &str| format!("/v1/cards/{}{tail}", card.id);
+    let routes = |token: &str| {
+        vec![
+            (
+                Method::GET,
+                format!("/v1/repositories/{}/issues", repository.id),
+                None,
+            ),
+            (Method::GET, path(&ticket, ""), None),
+            (
+                Method::PUT,
+                path(&ticket, "/parent"),
+                Some(json!({ "parent": map.number })),
+            ),
+            (
+                Method::PUT,
+                path(&ticket, "/labels"),
+                Some(json!({ "labels": ["wayfinder:spike"] })),
+            ),
+            (
+                Method::POST,
+                path(&ticket, "/blockers"),
+                Some(json!({ "blocker": other.number })),
+            ),
+            (
+                Method::DELETE,
+                path(&ticket, &format!("/blockers/{}", other.number)),
+                None,
+            ),
+            (
+                Method::POST,
+                path(&ticket, "/claim"),
+                Some(json!({ "by": "session 1" })),
+            ),
+            (
+                Method::POST,
+                path(&ticket, "/comments"),
+                Some(json!({ "body": "Use a queue." })),
+            ),
+            (Method::GET, path(&ticket, "/comments"), None),
+            (
+                Method::DELETE,
+                path(&ticket, "/claim"),
+                Some(json!({ "by": "session 1" })),
+            ),
+            (
+                Method::POST,
+                path(&ticket, "/close"),
+                Some(json!({ "reason": "decided" })),
+            ),
+            (Method::POST, path(&ticket, "/reopen"), Some(json!({}))),
+            (
+                Method::POST,
+                format!("/v1/repositories/{}/issues", repository.id),
+                Some(json!({ "title": token, "parent": map.number })),
+            ),
+        ]
+    };
+
+    // A coding run's token is no token for any of them, and changes nothing.
+    for (method, path, body) in routes("by a coder") {
+        assert_eq!(f.send(method, &path, &coder, body).await, 401, "{path}");
+    }
+    assert_eq!(store.card(ticket.id).unwrap().unwrap().parent, None);
+    assert_eq!(store.cards(repository.id).unwrap().len(), 3);
+
+    for (method, path, body) in routes("by the agent") {
+        assert_eq!(
+            f.send(method.clone(), &path, &moebius, body).await,
+            200,
+            "{method} {path}"
+        );
+    }
+    let tracked = store.card(ticket.id).unwrap().unwrap();
+    assert_eq!(tracked.parent, Some(map.number));
+    assert_eq!(tracked.labels, ["wayfinder:spike"]);
+    assert_eq!(
+        store.comments(ticket.id).unwrap()[0].author,
+        "agent:Moebius"
+    );
+    let closed = store.judgements("close_issue").unwrap();
+    assert_eq!(
+        (closed[0].decider.as_str(), closed[0].run_id),
+        ("agent:Moebius", Some(run))
+    );
+    assert_eq!(store.cards(repository.id).unwrap().len(), 4);
+
+    // It does not release the claim of somebody else, though a person does.
+    let person = f.server.token.to_string();
+    let claim = path(&other, "/claim");
+    assert_eq!(
+        f.send(
+            Method::POST,
+            &claim,
+            &person,
+            Some(json!({ "by": "session 9" }))
+        )
+        .await,
+        200
+    );
+    assert_eq!(f.send(Method::DELETE, &claim, &moebius, None).await, 403);
+    assert_eq!(f.send(Method::DELETE, &claim, &person, None).await, 200);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn deleting_chats_research_grillings_exports_and_replays_stays_with_a_person() {
     let f = Fixture::start().await;
     let (_, token) = f.run("Moebius");

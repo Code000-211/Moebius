@@ -35,7 +35,7 @@ read in pages of 1000 and never all held in memory. A judgement recorded while t
 | `decider` | string | Who decided: `person`, or a plugin as `<plugin>` or `<plugin>/<part>` (such as `guard/patterns`), or `none` when no decider answers the kind. |
 | `run` | number or null | The run the decision was made in. |
 | `card` | number or null | The card it was made for. |
-| `outcome` | string or null | What came of it, null until known: a card that is done gives each of its judgements without an outcome the card's outcome (`merged`), except those of `localize`, whose outcome is the files the change touched (below); a replayed refusal has `replayed: <how it ended>; <what happened to the files>` (see [the replays](harness-configuration.md#the-replays)); a `lint_report` has `fixed` or `ignored` and a `deep_check` `found something new`, `nothing new` or `not run` (see [the lens decisions](decision-model.md#the-lens-decisions)). |
+| `outcome` | string or null | What came of it, null until known: a card that is done gives each of its judgements without an outcome the card's outcome (`merged` when a change of the card was merged, `closed` when the card is done without one, closed on the forge or by a person, say), except those of `localize`, whose outcome is the files the change touched (below); a replayed refusal has `replayed: <how it ended>; <what happened to the files>` (see [the replays](harness-configuration.md#the-replays)); a `lint_report` has `fixed` or `ignored` and a `deep_check` `found something new`, `nothing new` or `not run` (see [the lens decisions](decision-model.md#the-lens-decisions)). |
 | `at` | number | When it was recorded, in seconds since 1970. |
 | `split` | string | `train` or `held_out`, see below. |
 

@@ -9,6 +9,8 @@ pub mod gitlab;
 pub mod poll;
 pub mod search;
 pub mod settings;
+#[cfg(test)]
+mod tracker_tests;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

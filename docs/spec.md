@@ -150,9 +150,9 @@ steer, stop) go through the same record.
 
 | Plugin | Does |
 |---|---|
-| GitHub forge | Acts as its own GitHub App with webhooks off; polls issues, pull requests, checks and reviews about every 30 seconds with conditional requests; opens and updates changes; maps trusted authors and "blocked by". |
-| GitLab forge | Reaches gitlab.com or a self-hosted GitLab with a personal, project or group access token from a file or the secrets; polls issues (conditional on the ETag where GitLab gives one), merge requests, their pipelines and approvals; opens, updates and merges changes as merge requests; maps trusted authors and "blocked by" as the GitHub forge does. |
-| Forgejo forge | Reaches Codeberg, or any Forgejo or Gitea, with an access token from a file or the secrets; polls issues (conditional on the ETag where the forge gives one), pull requests, the commit statuses of their head and their reviews; opens, updates and merges changes as pull requests; maps trusted authors and "blocked by" as the GitHub forge does. |
+| GitHub forge | Acts as its own GitHub App with webhooks off; polls issues, pull requests, checks and reviews about every 30 seconds with conditional requests; opens and updates changes; maps trusted authors and "blocked by"; reads and writes an issue's sub-issues, dependencies, labels and comments (see the issue tracker in `docs/reference/desktop-api.md`). |
+| GitLab forge | Reaches gitlab.com or a self-hosted GitLab with a personal, project or group access token from a file or the secrets; polls issues (conditional on the ETag where GitLab gives one), merge requests, their pipelines and approvals; opens, updates and merges changes as merge requests; maps trusted authors and "blocked by" as the GitHub forge does; reads and writes labels, comments, closing, blockers (links, on GitLab Premium and above) and a parent as a "Part of #n" line. |
+| Forgejo forge | Reaches Codeberg, or any Forgejo or Gitea, with an access token from a file or the secrets; polls issues (conditional on the ETag where the forge gives one), pull requests, the commit statuses of their head and their reviews; opens, updates and merges changes as pull requests; maps trusted authors and "blocked by" as the GitHub forge does; reads and writes labels, comments, closing, dependencies and a parent as a "Part of #n" line. |
 | Git forge (none) | For a repository without a forge: issues and changes live in Moebius; merging happens in the desktop app. |
 | Pi-Bolt harness | Starts `pi-bolt --mode rpc` per run with the agent's model, thinking level, instructions (`--append-system-prompt`), skills (`--skill`) and extensions; maps Pi's events to run events. |
 | Claude Code harness | Starts `claude -p --input-format stream-json --output-format stream-json --verbose` per run with the router as `ANTHROPIC_BASE_URL`, the run's token as its key, the agent's model, instructions, skills and MCP servers; maps its records to the same run events. |
@@ -186,7 +186,7 @@ steer, stop) go through the same record.
 | In progress | `code.luau` | One Coder run per round; when it ends, the change is pushed and the card moves to review. |
 | In review | `review.luau` | Waits for CI and runs the Reviewer along two axes; on failures, blocking findings or a merge conflict, back to In progress for the next round. |
 | Ready to merge | `merge.luau` | Puts the change in the inbox; a person merges it in the app or on the forge. |
-| Done | `done.luau` | Records the outcome on every judgement made for the card. |
+| Done | `done.luau` | Records the outcome on every judgement made for the card: `merged` when its change was merged, `closed` otherwise. |
 
 A card that reaches its round limit (default 5) or its token budget stops and goes to the inbox as stuck.
 

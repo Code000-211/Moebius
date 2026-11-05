@@ -61,6 +61,28 @@ export interface Card {
   attempts?: CardAttempt[];
   /** Set while a person or the Moebius agent holds the card: the board runs nothing for it. */
   held?: Held | null;
+  /** The issue number of the issue this one names as its parent. */
+  parent: number | null;
+  /**
+   * Whether the card counts as a sub-issue of its parent: a person can have vouched for it. One that does not (an
+   * outsider's issue nobody approved) is shown as a card of its own and holds nothing back, whatever it names.
+   */
+  counts_as_sub_issue: boolean;
+  /** The issue is closed, or its card is in Done. */
+  closed: boolean;
+  labels: string[];
+  /** Who claimed the issue: `person`, `agent:<name>` or a name a session gave. */
+  claimed_by: string | null;
+}
+
+/** A comment on an issue, written here or read from the forge. */
+export interface Comment {
+  id: number;
+  card_id: number;
+  /** A forge login, `person` or `agent:<name>`. */
+  author: string;
+  body: string;
+  at: number;
 }
 
 export interface CardAttempt {

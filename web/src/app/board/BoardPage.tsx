@@ -8,9 +8,9 @@
  * (`live/invalidation.ts`), so a card moves on this page when the server moves it. The chosen card and the filters are
  * in the address (`?card=`, `?column=`, `?agent=`, `?status=`), so a reload and a link keep them.
  */
-import { PlusIcon, TerminalWindowIcon } from "@phosphor-icons/react";
+import { CaretDownIcon, CaretRightIcon, PlusIcon, TerminalWindowIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { type SyntheticEvent, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { snapshot } from "../../api/calls/board";
 import { readSettings } from "../../api/calls/projects";
@@ -34,7 +34,7 @@ import { ReadFailed } from "../../ui/page/ReadFailed";
 import { ScrollFades } from "../../ui/page/ScrollFades";
 import { SkeletonBoard } from "../../ui/page/Skeleton";
 import { boardPath } from "../pages";
-import { BlockDialog, DeleteDialog } from "./CardDialogs";
+import { BlockDialog, DeleteDialog, ParentDialog } from "./CardDialogs";
 import { CardMenu } from "./CardMenu";
 import { ColumnMark } from "./ColumnMark";
 import { Dock } from "./Dock";
@@ -53,8 +53,12 @@ import {
   inboxOf,
   inspectedCard,
   issueUrl,
+  labelsOf,
   nextCard,
   pullUrl,
+  rootOf,
+  type Stack,
+  stackWords,
 } from "./model";
 import { NewIssueDialog } from "./NewIssueDialog";
 import { RepositoryTerminal } from "./RepositoryTerminal";
@@ -77,6 +81,8 @@ type CardMenuActions = {
   onBlock: (card: Card) => void;
   onUnblock: (card: Card) => void;
   onDelete: (card: Card) => void;
+  onAddSubIssue: (card: Card) => void;
+  onMoveParent: (card: Card) => void;
 };
 
 const ANY_COLUMN = "A card arrives when the column's script moves one in.";
@@ -115,7 +121,13 @@ export function BoardPage() {
   const [params, setParams] = useSearchParams();
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => snapshot() });
   const { decide, pending, notice, setNotice } = useDecisions();
-  const [creating, setCreating] = useState(false);
+  // The form of a new issue: closed, or open with the number of the issue it is a sub-issue of (none for a new issue of
+  // its own). The key makes a form opened for another parent start afresh.
+  const [creating, setCreating] = useState<{ parent: number | null } | null>(null);
+  // The card a menu asked to move below another, until the question is answered.
+  const [moving, setMoving] = useState<Card | null>(null);
+  // The stacks a person opened, by the id of the card at the top.
+  const [opened, setOpened] = useState<ReadonlySet<number>>(new Set());
   const [terminalOpen, setTerminalOpen] = useState(false);
   // The card a send-back needs a reason for, not a count: a count stays raised once it is raised, so every card
   // opened afterwards found the reason form waiting for it.
@@ -131,6 +143,7 @@ export function BoardPage() {
       column: params.get("column") ?? "",
       agent: params.get("agent") ?? "",
       status: params.get("status") ?? "",
+      label: params.get("label") ?? "",
     }),
     [params],
   );
@@ -191,7 +204,20 @@ export function BoardPage() {
     onBlock: setBlocking,
     onUnblock: (card: Card) => decide({ kind: "unblock", card: card.id, number: card.number }),
     onDelete: setDeleting,
+    onAddSubIssue: (card: Card) => setCreating({ parent: card.number }),
+    onMoveParent: setMoving,
   };
+  // A stack is open when a person opened it, and while the dock shows one of its sub-issues: closing it there would hide
+  // the card that is being read.
+  const inspectedTop = inspected ? rootOf(board, inspected) : undefined;
+  const stackOpen = (card: Card) => opened.has(card.id) || inspectedTop?.id === card.id;
+  const toggleStack = (card: Card) =>
+    setOpened((now) => {
+      const next = new Set(now);
+      if (stackOpen(card)) next.delete(card.id);
+      else next.add(card.id);
+      return next;
+    });
   function onDragEnd(result: DropResult) {
     // A decision is on its way: the buttons are disabled for the same moment, and a drag is another way to ask for one.
     if (pending) return;
@@ -246,7 +272,7 @@ export function BoardPage() {
                 <TerminalWindowIcon className="size-4" aria-hidden="true" />
                 Terminal
               </Button>
-              <Button onClick={() => setCreating(true)}>
+              <Button onClick={() => setCreating({ parent: null })}>
                 <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
                 New issue
               </Button>
@@ -264,6 +290,7 @@ export function BoardPage() {
             onRepository={(repository) => navigate(boardPath(repository))}
             columns={boardColumns(board)}
             agents={agentsOf(board)}
+            labels={labelsOf(board)}
             filters={filters}
             onChange={(next) => setQuery({ ...next })}
           />
@@ -283,7 +310,7 @@ export function BoardPage() {
           )}
           <ScrollFades className="flex-1 pb-3">
             <KanbanProvider onDragEnd={onDragEnd} renderOverlay={renderOverlay}>
-              {groups.map(({ column, cards, total }) => (
+              {groups.map(({ column, cards, total, stacks }) => (
                 <BoardColumn
                   key={column}
                   board={board}
@@ -291,6 +318,9 @@ export function BoardPage() {
                   name={column}
                   cards={cards}
                   total={total}
+                  stacks={stacks}
+                  stackOpen={stackOpen}
+                  onToggleStack={toggleStack}
                   busy={pending}
                   inspectedId={inspected?.id}
                   onSelect={(card) => setQuery({ card: String(card.id) })}
@@ -316,6 +346,7 @@ export function BoardPage() {
                 onAskAnswered={() => setRejectFor(null)}
                 onDecide={decide}
                 menu={menu}
+                onOpenCard={(card) => setQuery({ card: String(card.id) })}
                 onClose={() => {
                   setQuery({ card: "none" });
                   setRejectFor(null);
@@ -345,11 +376,20 @@ export function BoardPage() {
           setNotice({ tone: "ok", text });
         }}
       />
+      <ParentDialog
+        board={board}
+        card={moving}
+        onClose={() => setMoving(null)}
+        onDone={(text) => setNotice({ tone: "ok", text })}
+      />
       <NewIssueDialog
+        key={creating?.parent ?? "none"}
         repository={board.repository.id}
         name={board.repository.name}
-        open={creating}
-        onOpenChange={setCreating}
+        board={board}
+        parent={creating?.parent ?? null}
+        open={creating !== null}
+        onOpenChange={(open) => !open && setCreating(null)}
         onCreated={(card) => setNotice({ tone: "ok", text: `Created "${card.title}"` })}
       />
     </>
@@ -362,6 +402,9 @@ function BoardColumn({
   name,
   cards,
   total,
+  stacks,
+  stackOpen,
+  onToggleStack,
   busy,
   inspectedId,
   onSelect,
@@ -372,6 +415,10 @@ function BoardColumn({
   name: string;
   cards: Card[];
   total: number;
+  /** The stack of each card of the board that has sub-issues, by card id. */
+  stacks: Map<number, Stack>;
+  stackOpen: (card: Card) => boolean;
+  onToggleStack: (card: Card) => void;
   /** While a decision is on its way, when no card can be moved. */
   busy: boolean;
   inspectedId: number | undefined;
@@ -388,28 +435,50 @@ function BoardColumn({
       />
       <KanbanCards className="min-h-12">
         {cards.map((card) => {
-          const status = cardStatus(card, inboxOf(inbox, card), board);
+          const stack = stacks.get(card.id);
+          const open = stack !== undefined && stackOpen(card);
           return (
-            <KanbanCard
+            <div
               key={card.id}
-              id={String(card.id)}
-              name={`#${card.number} ${card.title}`}
-              testId={`card-${card.number}`}
-              column={name}
-              dragDisabled={busy}
-              isSelected={inspectedId === card.id}
-              isLive={status === "live"}
-              onOpen={() => onSelect(card)}
+              data-testid={stack ? `stack-${card.number}` : undefined}
+              className="flex min-w-0 flex-col gap-3"
             >
-              <CardContent
+              <BoardCard
                 board={board}
                 inbox={inbox}
                 card={card}
+                column={name}
                 cards={cards}
-                onOpen={() => onSelect(card)}
+                busy={busy}
+                inspectedId={inspectedId}
+                onSelect={onSelect}
                 menu={menu}
+                stack={stack}
+                open={open}
+                onToggleStack={() => onToggleStack(card)}
               />
-            </KanbanCard>
+              {open && stack.shown.length > 0 && (
+                // The sub-issues lie under their parent, in a stack of their own: each is a card that moves, blocks and
+                // deletes like any other, and says which column it is in, since it is not in this one.
+                <div className="ml-3 flex min-w-0 flex-col gap-3 border-l-2 border-hairline-strong pl-3">
+                  {stack.shown.map((child) => (
+                    <BoardCard
+                      key={child.id}
+                      board={board}
+                      inbox={inbox}
+                      card={child}
+                      column={child.column}
+                      cards={board.cards}
+                      busy={busy}
+                      inspectedId={inspectedId}
+                      onSelect={onSelect}
+                      menu={menu}
+                      inStack
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
           );
         })}
         {/* The column is already the surface under these words; a card of its own inside it is a second one, and one
@@ -417,6 +486,65 @@ function BoardColumn({
         {cards.length === 0 && <Empty plain centered body={COLUMN_EMPTY[name] ?? ANY_COLUMN} />}
       </KanbanCards>
     </KanbanBoard>
+  );
+}
+
+/** One card of a column, or of the stack under its parent. */
+function BoardCard({
+  board,
+  inbox,
+  card,
+  column,
+  cards,
+  busy,
+  inspectedId,
+  onSelect,
+  menu,
+  stack,
+  open = false,
+  onToggleStack,
+  inStack = false,
+}: {
+  board: Board;
+  inbox: InboxItem[];
+  card: Card;
+  /** The column the card is in: the one it is drawn in, or its own when it lies in the stack of its parent. */
+  column: string;
+  cards: Card[];
+  busy: boolean;
+  inspectedId: number | undefined;
+  onSelect: (card: Card) => void;
+  menu: CardMenuActions;
+  stack?: Stack;
+  open?: boolean;
+  onToggleStack?: () => void;
+  inStack?: boolean;
+}) {
+  const status = cardStatus(card, inboxOf(inbox, card), board);
+  return (
+    <KanbanCard
+      id={String(card.id)}
+      name={`#${card.number} ${card.title}`}
+      testId={`card-${card.number}`}
+      column={column}
+      dragDisabled={busy}
+      isSelected={inspectedId === card.id}
+      isLive={status === "live"}
+      onOpen={() => onSelect(card)}
+    >
+      <CardContent
+        board={board}
+        inbox={inbox}
+        card={card}
+        cards={cards}
+        onOpen={() => onSelect(card)}
+        menu={menu}
+        stack={stack}
+        open={open}
+        onToggleStack={onToggleStack}
+        inStack={inStack}
+      />
+    </KanbanCard>
   );
 }
 
@@ -428,6 +556,10 @@ function CardContent({
   cards,
   onOpen,
   menu,
+  stack,
+  open = false,
+  onToggleStack,
+  inStack = false,
 }: {
   board: Board;
   inbox: InboxItem[];
@@ -437,18 +569,34 @@ function CardContent({
   onOpen?: () => void;
   /** What the card's menu does; left out on the drag overlay, with the menu itself. */
   menu?: CardMenuActions;
+  /** The sub-issues of the card, when it has any: how many are done, and the control that opens them. */
+  stack?: Stack;
+  open?: boolean;
+  onToggleStack?: () => void;
+  /** The card lies in the stack of its parent, in a column that is not the one it is drawn in: it says which. */
+  inStack?: boolean;
 }) {
   const status = cardStatus(card, inboxOf(inbox, card), board);
   const change = changeOf(board, card);
   const coding = card.column === "In progress" || card.column === "In review";
-  const next = card.column === "Not started" ? nextCard(cards) : undefined;
+  const next = card.column === "Not started" ? nextCard(cards, board.cards) : undefined;
+  const detail = cardDetail(card, board.round_limit);
   return (
     <KanbanCardContent
       displayId={`#${card.number}`}
       issueUrl={issueUrl(board.repository, card)}
       title={card.title}
       preview={card.body}
-      detail={cardDetail(card, board.round_limit)}
+      detail={inStack ? [card.column, detail].filter(Boolean).join(" · ") : detail}
+      labels={card.labels}
+      claimedBy={card.claimed_by}
+      stack={
+        stack && onToggleStack ? (
+          <StackToggle card={card} stack={stack} open={open} onToggle={onToggleStack} />
+        ) : stack ? (
+          <p className="m-0 text-sm text-secondary">{stackWords(stack)}</p>
+        ) : undefined
+      }
       badges={cardBadges(card, status, next === card.id)}
       pullRequest={
         change?.pull_request != null
@@ -461,9 +609,43 @@ function CardContent({
       }
       rounds={coding ? { done: card.rounds, limit: board.round_limit } : null}
       isLoading={status === "live"}
-      muted={card.column === "Done"}
+      muted={card.column === "Done" || card.closed}
       onOpen={onOpen}
       menu={menu && <CardMenu card={card} {...menu} />}
     />
+  );
+}
+
+/** How many sub-issues of a card are done, and the control that opens the stack under it or shuts it. */
+function StackToggle({
+  card,
+  stack,
+  open,
+  onToggle,
+}: {
+  card: Card;
+  stack: Stack;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const Caret = open ? CaretDownIcon : CaretRightIcon;
+  // The card is dragged by its whole body and opened by a click on it; this control is neither.
+  const keep = (event: SyntheticEvent) => event.stopPropagation();
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      aria-label={`Sub-issues of #${card.number}`}
+      onPointerDown={keep}
+      onKeyDown={keep}
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle();
+      }}
+      className="-mx-2 flex min-h-10 cursor-pointer appearance-none items-center gap-2 rounded-control bg-transparent px-2 text-left text-sm text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text"
+    >
+      <Caret className="size-4 shrink-0" weight="bold" aria-hidden="true" />
+      {stackWords(stack)}
+    </button>
   );
 }

@@ -29,13 +29,24 @@ function card(extra: Partial<Card> = {}): Card {
     blocked_by: [],
     refusals: 0,
     change: null,
+    parent: null,
+    counts_as_sub_issue: true,
+    closed: false,
+    labels: [],
+    claimed_by: null,
     ...extra,
   };
 }
 
 /** A menu inside a card that listens for the keys and clicks a card and a dock act on. */
 function shown(of: Card) {
-  const actions = { onBlock: vi.fn(), onUnblock: vi.fn(), onDelete: vi.fn() };
+  const actions = {
+    onBlock: vi.fn(),
+    onUnblock: vi.fn(),
+    onDelete: vi.fn(),
+    onAddSubIssue: vi.fn(),
+    onMoveParent: vi.fn(),
+  };
   const reached = vi.fn();
   render(
     // biome-ignore lint/a11y/noStaticElementInteractions: stands for the card and the dock, which listen like this
@@ -62,6 +73,17 @@ describe("the menu of a card", () => {
     expect(screen.getByRole("menuitem", { name: "Block…" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "Delete…" })).toBeTruthy();
     expect(screen.queryByRole("menuitem", { name: "Unblock" })).toBeNull();
+  });
+
+  it("asks to add a sub-issue below the card and to move it to another parent", () => {
+    const { trigger, actions } = shown(card());
+    open(trigger);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Add a sub-issue…" }));
+    expect(actions.onAddSubIssue).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }));
+    open(trigger);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Move to another parent…" }));
+    expect(actions.onMoveParent).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }));
+    expect(actions.onBlock).not.toHaveBeenCalled();
   });
 
   it("asks to block the card, and to delete it, and does nothing else", () => {

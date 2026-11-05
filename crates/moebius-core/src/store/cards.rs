@@ -65,6 +65,18 @@ pub struct Card {
     /// Set while a person or the Moebius agent holds the card: the board runs no script for it and starts no run.
     #[serde(default)]
     pub held: Option<Held>,
+    /// The number of the issue this one is a sub-issue of, in the same repository.
+    #[serde(default)]
+    pub parent: Option<i64>,
+    /// Whether the issue is closed: it was closed, or its card is in Done.
+    #[serde(default)]
+    pub closed: bool,
+    /// The labels of the issue, in order.
+    #[serde(default)]
+    pub labels: Vec<String>,
+    /// Who claimed the issue: `person`, `agent:<name>` or a name a session gave; none while it is free.
+    #[serde(default)]
+    pub claimed_by: Option<String>,
 }
 
 /// Why and by whom a card is held (blocked), and since when.
@@ -98,6 +110,8 @@ fn card_statements(cards: &str, runs: &str, judgements: &str) -> Vec<String> {
         format!("DELETE FROM judgements WHERE id IN ({judgements})"),
         format!("DELETE FROM inbox_items WHERE card_id IN ({cards})"),
         format!("DELETE FROM dependencies WHERE card_id IN ({cards})"),
+        format!("DELETE FROM card_labels WHERE card_id IN ({cards})"),
+        format!("DELETE FROM card_comments WHERE card_id IN ({cards})"),
         format!("DELETE FROM card_moves WHERE card_id IN ({cards})"),
         format!("DELETE FROM attempts WHERE run_id IN ({runs}) OR card_id IN ({cards})"),
         format!("DELETE FROM trials WHERE run_id IN ({runs}) OR card_id IN ({cards})"),
@@ -275,6 +289,7 @@ impl Store {
             "DELETE FROM localize_indexed WHERE repository_id = ?1".to_string(),
             "DELETE FROM lessons WHERE repository_id = ?1".to_string(),
             "DELETE FROM deleted_cards WHERE repository_id = ?1".to_string(),
+            "DELETE FROM forge_seen WHERE repository_id = ?1".to_string(),
         ]);
         statements.extend(card_records_last(&runs, &changes, cards));
         statements.push("DELETE FROM repositories WHERE id = ?1".to_string());
@@ -322,6 +337,12 @@ impl Store {
         for statement in &statements {
             tx.execute(statement, [id])?;
         }
+        // What the forge was seen to say of the issue goes with the card, except whether the issue is closed: an issue that
+        // blocks another is done once its forge says so, card or not.
+        tx.execute(
+            "DELETE FROM forge_seen WHERE repository_id = ?1 AND number = ?2 AND field <> 'state'",
+            params![repository_id, number],
+        )?;
         if remember {
             tx.execute(
                 "INSERT OR REPLACE INTO deleted_cards (repository_id, number, at) VALUES (?1, ?2, ?3)",
@@ -405,12 +426,20 @@ impl Store {
             retried_after: None,
             confirmed: false,
             held: None,
+            parent: None,
+            closed: false,
+            labels: Vec::new(),
+            claimed_by: None,
         })
     }
 
-    fn cards_where(&self, clause: &str, params: impl rusqlite::Params) -> Result<Vec<Card>> {
+    pub(super) fn cards_where(
+        &self,
+        clause: &str,
+        params: impl rusqlite::Params,
+    ) -> Result<Vec<Card>> {
         self.rows(&format!(
-            "SELECT id, repository_id, number, title, body, author, column_name, created_at, note, retried_after, confirmed, held_by, held_reason, held_at FROM cards WHERE {clause} ORDER BY id"
+            "SELECT id, repository_id, number, title, body, author, column_name, created_at, note, retried_after, confirmed, held_by, held_reason, held_at, parent, (closed OR column_name = 'Done'), claimed_by, (SELECT json_group_array(label) FROM (SELECT label FROM card_labels WHERE card_id = cards.id ORDER BY label)) FROM cards WHERE {clause} ORDER BY id"
         ), params, |r| {
             Ok(Card {
                 id: r.get(0)?,
@@ -431,6 +460,16 @@ impl Store {
                         at: r.get::<_, Option<i64>>(13)?.unwrap_or(0),
                     })
                 }).transpose()?,
+                parent: r.get(14)?,
+                closed: r.get(15)?,
+                claimed_by: r.get(16)?,
+                labels: serde_json::from_str(&r.get::<_, String>(17)?).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        17,
+                        rusqlite::types::Type::Text,
+                        e.into(),
+                    )
+                })?,
             })
         })
     }

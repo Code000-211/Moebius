@@ -4,7 +4,8 @@
 // assignees, tags, relationships and the description preview; the "more actions" button is a slot (`menu`) the page
 // fills with its own menu, beside the title, and a state word may carry a hint, shown in a tooltip; both links are 40px
 // targets and only the issue number is monospaced; the state words are the shared `Status` pill, and the card is
-// opened by its title being a button, so the card itself stays a group the links sit in.
+// opened by its title being a button, so the card itself stays a group the links sit in; the labels of the issue, who
+// claimed it and a slot for the stack of its sub-issues (`stack`) are added.
 
 import type { ReactNode } from "react";
 import { cn } from "../lib/cn";
@@ -53,6 +54,12 @@ export type KanbanCardContentProps = {
   onOpen?: () => void;
   /** The card's menu, beside its title; left out on the drag overlay, which is only a picture of the card. */
   menu?: ReactNode;
+  /** The labels of the issue, as small words under its title. */
+  labels?: string[];
+  /** Who claimed the issue, said under the labels; none while it is free. */
+  claimedBy?: string | null;
+  /** What a card with sub-issues shows at its foot: how many are done, and the control that opens the stack. */
+  stack?: ReactNode;
   className?: string;
 };
 
@@ -69,6 +76,9 @@ export function KanbanCardContent({
   muted = false,
   onOpen,
   menu,
+  labels = [],
+  claimedBy,
+  stack,
   className,
 }: KanbanCardContentProps) {
   return (
@@ -132,6 +142,25 @@ export function KanbanCardContent({
         <FadedClamp text={preview.trim()} className="text-sm text-secondary" />
       )}
 
+      {/* The labels and the claim of the issue */}
+      {(labels.length > 0 || claimedBy) && (
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          {labels.map((label) => (
+            <span
+              key={label}
+              className="inline-flex max-w-full items-center rounded-full bg-hover px-2 py-0.5 text-xs text-secondary [overflow-wrap:anywhere]"
+            >
+              {label}
+            </span>
+          ))}
+          {claimedBy && (
+            <span className="text-sm text-secondary [overflow-wrap:anywhere]">
+              Claimed by {claimedBy}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Row 4: the agent and the round */}
       {detail && (
         <span className="text-sm text-secondary tabular-nums [overflow-wrap:anywhere]">
@@ -158,6 +187,9 @@ export function KanbanCardContent({
           ))}
         </div>
       )}
+
+      {/* The sub-issues of the card: how many are done, and the control that opens them */}
+      {stack}
 
       {/* Row 6: where the card lives outside Moebius, each link a 40px target */}
       {(issueUrl || pullRequest) && (

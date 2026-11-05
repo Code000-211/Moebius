@@ -8,7 +8,7 @@
  * history screen; the script's editor comes with its page.
  */
 import { useQuery } from "@tanstack/react-query";
-import { type ReactNode, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { cardRuns, history, script } from "../../api/calls/board";
 import { isApiError } from "../../api/http";
@@ -28,6 +28,7 @@ import { SkeletonLines } from "../../ui/page/Skeleton";
 import { Status, type Tone } from "../../ui/page/Status";
 import { CardMenu } from "./CardMenu";
 import type { Decision } from "./decisions";
+import { CommentsSection, EditIssueDialog, TrackerSection } from "./IssueSections";
 import {
   type CardStatus,
   cardStatus,
@@ -35,10 +36,12 @@ import {
   describeHistory,
   heldLine,
   issueUrl,
+  parentOf,
   STATUS_LABELS,
   tokens,
   waitingLine,
 } from "./model";
+import { Row } from "./Row";
 
 const STATUS_TONE: Record<CardStatus, Tone> = {
   held: "error",
@@ -56,17 +59,6 @@ const CHECKS: Record<string, string> = {
   success: "Green",
   failure: "Failed",
 };
-
-function Row({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-      <dt className="w-20 shrink-0 text-sm font-semibold text-secondary">{label}</dt>
-      <dd className="m-0 min-w-0 flex-1 text-base text-text [overflow-wrap:anywhere]">
-        {children}
-      </dd>
-    </div>
-  );
-}
 
 /** What the card waits for from a person, as buttons; sending a change back asks why first. */
 function Actions({
@@ -202,6 +194,7 @@ export function Dock({
   onAskAnswered,
   onDecide,
   menu,
+  onOpenCard,
   onClose,
 }: {
   board: Board;
@@ -217,9 +210,14 @@ export function Dock({
     onBlock: (card: Card) => void;
     onUnblock: (card: Card) => void;
     onDelete: (card: Card) => void;
+    onAddSubIssue: (card: Card) => void;
+    onMoveParent: (card: Card) => void;
   };
+  /** Shows another issue, such as the parent or a sub-issue, in the dock. */
+  onOpenCard: (card: Card) => void;
   onClose: () => void;
 }) {
+  const [editing, setEditing] = useState(false);
   const repository = board.repository;
   const status = cardStatus(card, item, board);
   const runs = useQuery({ queryKey: keys.cardRuns(card.id), queryFn: () => cardRuns(card.id) });
@@ -232,6 +230,7 @@ export function Dock({
   // its own.
   const now = useNow();
   const wait = board.waiting[String(card.id)];
+  const parent = parentOf(board, card);
   // The worktree of the run that made the change, from the runs read for the list below anyway.
   const worktree = changeWorktree(card, runs.data ?? []);
 
@@ -246,15 +245,38 @@ export function Dock({
     >
       <p className="m-0 -mt-2 px-4 pb-6 text-sm text-secondary">
         {repository.name} · {card.column} · by {card.author}
+        {parent && (
+          <>
+            {" · sub-issue of "}
+            <button
+              type="button"
+              onClick={() => onOpenCard(parent)}
+              className="cursor-pointer appearance-none bg-transparent p-0 text-sm text-secondary underline underline-offset-4 hover:text-text"
+            >
+              {`#${parent.number} ${parent.title}`}
+            </button>
+          </>
+        )}
       </p>
 
       {/* The issue is what the card asks for, and the card is only its title: without the body a person decides
           about a sentence they were never given. */}
-      {card.body.trim() !== "" && (
-        <KanbanIssueSection title="The issue">
+      <KanbanIssueSection title="The issue">
+        {card.body.trim() !== "" && (
           <Markdown content={card.body} keepNewlines className="max-w-prose" />
-        </KanbanIssueSection>
-      )}
+        )}
+        <Button
+          variant="secondary"
+          size="sm"
+          className="mt-4 w-fit"
+          onClick={() => setEditing(true)}
+        >
+          Edit issue
+        </Button>
+        <EditIssueDialog key={card.id} card={card} open={editing} onOpenChange={setEditing} />
+      </KanbanIssueSection>
+
+      <TrackerSection board={board} card={card} onOpen={onOpenCard} />
 
       {/* A change is what a person came to the card to weigh, so it follows the issue it answers instead of
           waiting behind the runs that made it. */}
@@ -309,6 +331,8 @@ export function Dock({
           </Button>
         )}
       </KanbanIssueSection>
+
+      <CommentsSection card={card} />
 
       <KanbanIssueSection title="Runs">
         <QueryText query={runs} empty={runs.data?.length === 0 ? "No runs yet" : undefined} />

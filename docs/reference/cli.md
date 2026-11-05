@@ -144,7 +144,20 @@ takes a repository's name.
 | `repos` | `GET /v1/snapshot` | Table `id name forge default_branch github project`. |
 | `repo add <name> <url> [--github <owner/repo> \| --gitlab <group/project> \| --forgejo <owner/repo>] [--trusted <login>]...` | `POST /v1/repositories` | The repository. `--github` selects the GitHub forge, `--gitlab` the GitLab forge with the project's path, `--forgejo` the Forgejo forge (Codeberg, Gitea) with the repository there. Without it, an absolute path that does not exist, or an empty folder, becomes a new repository. |
 | `repo remove <id> [--reason <why>]` | `DELETE /v1/repositories/{id}` | The repository, as it last was. Removes it with its cards, changes and chats, and deletes its clone; `409` while one of its runs is still going. |
-| `issue create <repository> <title> [--body <text>]` | `POST /v1/repositories/{id}/issues` | The card. |
+| `issue create <repository> <title> [--body <text>] [--parent <n>] [--label <label>]... [--blocked-by <n>]...` | `POST /v1/repositories/{id}/issues` | The card, and `warnings` when a step after the issue was created failed. `--parent` and `--blocked-by` are issue numbers of the repository, checked before the issue is created. |
+| `issue list <repository> [--parent <n>] [--label <label>] [--state open\|closed] [--claimed \| --unclaimed] [--blocked \| --unblocked]` | `GET /v1/repositories/{id}/issues` | Table `id number state title labels claimed_by blocked_by`. `--blocked` keeps the issues an issue that is not done blocks. The frontier of a map is `--parent <map> --state open --unblocked --unclaimed`. |
+| `issue show <card>` | `GET /v1/cards/{id}` | The issue as lines, then its sub-issues as a table. |
+| `issue edit <card> [--title <text>] [--body <text>]` | `GET /v1/cards/{id}`, then `PUT /v1/cards/{id}` | The card. What is not given stays. |
+| `issue close <card> [--reason <why>]` | `POST /v1/cards/{id}/close` | The card, now in `Done`. |
+| `issue reopen <card> [--reason <why>]` | `POST /v1/cards/{id}/reopen` | The card, back in `Backlog`. |
+| `issue claim <card> [--as <name>]` | `POST /v1/cards/{id}/claim` | The card. Fails (status 409) when somebody else claimed it; the name is the caller's when `--as` is left out. A claim is advisory: the name is free text, and nothing keeps anyone from working on the issue. |
+| `issue release <card> [--as <name>]` | `DELETE /v1/cards/{id}/claim` | The card. A person releases any claim; the Moebius agent only its own, under the name it claimed with (`--as`). Status 403 for somebody else's. |
+| `issue labels <card> [--add <label>]... [--remove <label>]...` | `GET /v1/cards/{id}`, then `PUT /v1/cards/{id}/labels` | The card, with its labels as they are now. |
+| `issue parent <card> <number\|none>` | `PUT /v1/cards/{id}/parent` | The card. The number is of the parent issue, with or without `#`. |
+| `issue blocker add <card> <number>` | `POST /v1/cards/{id}/blockers` | The numbers that block the issue. Refused (status 422) when that makes a cycle, a blocker that is an ancestor of the issue included. On a forge that keeps no blocking (GitLab without Premium) it writes the line `Blocked by #n` into the description. |
+| `issue blocker remove <card> <number>` | `DELETE /v1/cards/{id}/blockers/{number}` | The numbers that still block it. A line of the description that names the blocker is taken out. |
+| `issue comment <card> <text>` | `POST /v1/cards/{id}/comments` | The comment. |
+| `issue comments <card>` | `GET /v1/cards/{id}/comments` | Table `at author body`. |
 | `retro` | `GET /v1/retros` | Table `date status errors proposals`. |
 | `retro <date>` | `GET /v1/retros/{date}` | The Retro: its errors and proposals. |
 | `retro run [--date <date>]` | `POST /v1/retros` | The Retro, as above. |

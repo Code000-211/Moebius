@@ -42,6 +42,34 @@ CARD=$(curl -s -X POST -H "$AUTH" -H "$JSON" \
   -d '{"title": "Add a greeting", "body": "Add hello.txt that says hello."}' $API/v1/repositories/$REPO/issues | jq .id)
 ```
 
+## Track issues
+
+An issue can have sub-issues, blockers, labels, a claim and comments, and be closed and reopened, on every forge and
+without one. This is how a session plans: a map issue, its tickets as sub-issues, and a loop that claims the next ticket
+nothing blocks, resolves it with a comment and closes it. The reference's "The issue tracker" says which part lives on
+the forge.
+
+```sh
+MAP=$(curl -s -X POST -H "$AUTH" -H "$JSON" \
+  -d '{"title": "Plan the export", "labels": ["wayfinder:map"]}' $API/v1/repositories/$REPO/issues)
+MAP_NUMBER=$(echo "$MAP" | jq .number)
+TICKET=$(curl -s -X POST -H "$AUTH" -H "$JSON" \
+  -d "{\"title\": \"Pick the format\", \"parent\": $MAP_NUMBER}" $API/v1/repositories/$REPO/issues | jq .id)
+
+# The frontier: the map's open sub-issues that nothing blocks and nobody claimed.
+curl -s -H "$AUTH" "$API/v1/repositories/$REPO/issues?parent=$MAP_NUMBER&state=open&blocked=false&claimed=false" | jq -c '.[] | {id, number, title}'
+
+# Claim a ticket (409 when somebody has), say what was decided, close it.
+curl -s -X POST -H "$AUTH" -H "$JSON" -d '{"by": "session 1"}' $API/v1/cards/$TICKET/claim
+curl -s -X POST -H "$AUTH" -H "$JSON" -d '{"body": "CSV: every tool reads it."}' $API/v1/cards/$TICKET/comments
+curl -s -X POST -H "$AUTH" -H "$JSON" -d '{"reason": "decided"}' $API/v1/cards/$TICKET/close
+
+# Labels, blockers and the parent.
+curl -s -X PUT -H "$AUTH" -H "$JSON" -d '{"labels": ["wayfinder:decision"]}' $API/v1/cards/$TICKET/labels
+curl -s -X POST -H "$AUTH" -H "$JSON" -d '{"blocker": 1}' $API/v1/cards/$TICKET/blockers
+curl -s -X PUT -H "$AUTH" -H "$JSON" -d '{"parent": null}' $API/v1/cards/$TICKET/parent
+```
+
 ## Read and change a repository's files
 
 `GET /v1/repositories/{id}/tree?path=<dir>` lists a directory of the default branch (directories first) and

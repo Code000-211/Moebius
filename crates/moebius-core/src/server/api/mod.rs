@@ -5,6 +5,7 @@
 //! the API is a module of its own, whose doc comment lists its routes:
 //!
 //! - `cards`: the snapshot of every board, issues, cards and their changes, a card's runs and history.
+//! - `issues`: what is done to an issue besides editing it: its parent, blockers, labels, claim, comments, closing.
 //! - `repositories`: adding and editing repositories, and their column scripts and files.
 //! - `runs`: a run and its events, steering and stopping it.
 //! - `chats`: chats with an agent, and what grilling chats ended in.
@@ -38,6 +39,7 @@ mod events;
 mod extensions;
 mod harness;
 mod improve;
+mod issues;
 mod lessons;
 mod packages;
 mod ports;
@@ -56,10 +58,12 @@ mod whereabouts;
 mod testing;
 
 pub use cards::{
-    AttemptView, Board, CardView, ChangeView, EditedCard, Merged, NewIssue, RunView, Snapshot,
+    AttemptView, Board, CardView, ChangeView, CreatedIssue, EditedCard, Merged, NewIssue, RunView,
+    Snapshot,
 };
 pub use chats::{ChatMessage, ConfirmedIssues, NewChat, NewChatSettings};
 pub use improve::{DayUsage, UsageAnswer, UsageTotals};
+pub use issues::{Claim, NewBlocker, NewComment, NewLabels, NewParent};
 pub use repositories::{EditedRepository, NewRepository};
 pub use runs::Steer;
 pub use session::{CODE_LIFETIME, LoginCode, Sessions, login_url};
@@ -190,6 +194,7 @@ pub fn router(state: ApiState) -> Router {
     Router::new()
         .route("/v1/health", get(health))
         .merge(cards::routes())
+        .merge(issues::routes())
         .merge(repositories::routes())
         .merge(runs::routes())
         .merge(chats::routes())

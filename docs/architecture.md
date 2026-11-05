@@ -192,6 +192,25 @@ like the iced app and does not know anything the API does not say.
     one transaction (the statements it shares with `Store::delete_repository`). On a forge the card's number goes
     into `deleted_cards`, which `App::sync_issues` consults so that the poll never makes the card again. It records
     `delete_card` and publishes `card_deleted`.
+12ab. **Issues are a tracker.** An issue has a parent (`cards.parent`, an issue number of the same repository), blockers
+    (`dependencies`), labels (`card_labels`), a claim (`cards.claimed_by`), comments (`card_comments`) and a state
+    (`cards.closed`, which with a card in `Done` makes `Card::closed`), all in `store/issues.rs`. `App::set_parent`,
+    `set_labels`, `add_blocker` (refusing a cycle), `remove_blocker`, `claim_issue`, `release_issue`, `comment_issue`,
+    `close_issue` and `reopen_issue` (`app/issues/`) tell the forge first, through the `Forge` trait (`set_issue_labels`,
+    `set_issue_blocker`, `set_issue_parent` where `has_sub_issues`, `comment_issue`, `set_issue_open`; GitLab and Forgejo
+    keep a parent as a line `Part of #n` of the body), then store, then publish an event of their own
+    (`card_parent_changed`, `card_labels_changed`, `card_blocking_changed`, `card_claimed`, `card_released`,
+    `card_commented`, `card_closed`, `card_reopened`). The poll reads the forge's side back: the clients put labels, a
+    parent and a comment count in the forge-neutral `Issue`, `poll_issues` reads the comments and (`Polled::blockers`,
+    kept per issue while it is unchanged) the blockers of the issues it syncs, and `App::sync_issue_details` copies it
+    all and announces what changed. It acts only on what the forge changed since it was last seen to say it
+    (`forge_seen`, recorded once it is applied, and set to what Moebius wrote after a write), so a snapshot read before
+    a write of Moebius's own ended changes nothing (`App::stale_snapshot`); `poll_issues` also reads the blockers it
+    remembers again once old, when the forge listed nothing. Only issues a person can have vouched for count as
+    sub-issues (`App::counts_as_sub_issue`, which the snapshot's cards say too), and edges that would make issues wait
+    for each other are refused (`waits_for`) or, from a forge, ignored with a `forge_error`. The routes are in `server/api/issues.rs`; `GET /v1/repositories/{id}/issues` filters. A column
+    script sees `card.parent`, `card.children`, `card.labels` and `card.claimed_by`, and `moebius.close_issue` closes the
+    issue when the script returns (`Effects::close`); the default `ready.luau` uses both for a parent.
 12b. **A person chats.** A chat is a run without a card and with purpose `chat`. `POST /v1/chats` (`App::start_chat`)
     calls `PiBolt::start_chat`: the run (`Store::add_run` with no card, and `Store::set_run_repository` when it works
     in a repository) gets a worktree on `moebius/chat-<id>` from the repository's base ref (`Repos::add_chat_worktree`),
@@ -310,7 +329,8 @@ like the iced app and does not know anything the API does not say.
     the forge merges (`Repos::merge`, a `--no-ff` merge, `GitHub::merge_pull_request`, `GitLab::merge` or
     `Forgejo::merge`), and `App::change_merged`
     marks the change merged, resolves the inbox, publishes `change_merged` and moves the card to `Done`.
-15. **Done.** `done.luau` calls `moebius.record_outcome("merged")`, so every judgement made for the card gets an outcome.
+15. **Done.** `done.luau` calls `moebius.record_outcome`, with `merged` when a change of the card was merged (`card.merged`)
+    and `closed` otherwise, so every judgement made for the card gets an outcome.
 
 At start, `Server::new` ends the runs a previous server left going (`end_runs_of_a_previous_server`): they are marked
 `failed` and their worktrees (a chat's empty directory too) removed, so the board starts them again.
@@ -326,6 +346,7 @@ start; its version is `PRAGMA user_version`.
 | `cards` | One per issue: number (unique per repository), title, body, author, column, note (why it went back to coding). |
 | `card_moves` | Each move of a card (`Store::move_card`, called by `App::move_card`): from, to, the card's note then, time. Moves before this table existed are not recorded. |
 | `dependencies` | For a card, the issue numbers it is blocked by. |
+| `card_labels`, `card_comments` | The labels of a card's issue; its comments, each with the id it has on the forge when it has one. `cards` also has `parent`, `closed`, `claimed_by` and `claimed_at`. |
 | `changes` | A card's or chat's branch `moebius/card-<number>`: repository (none, with `harness_repository` set, for the harness configuration repository), card, state (`open`, `merged`, `closed`), pull request number, the published commit and time, checks with the commit they are for, failing checks, output of the repository's own checks, review. |
 | `runs` | One per harness run: card (none for a chat), agent, harness, purpose, status, worktree, repository (a chat's) or whether it works in the harness configuration repository, start and end, summary (the agent's final answer). |
 | `events` | Everything a run emitted, numbered per run, as JSON. |
@@ -385,7 +406,7 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | `cli/ssh.rs` | A server reached over SSH: one `ssh -L` that also reads the token, for `--ssh <host>` and `connect <host>`, waiting until the forwarded port answers, and the `connected.toml` that `connect` leaves for the commands that follow. |
 | `cli/window.rs` | The web app as a window of its own: finds a Chromium-based browser, builds its app-mode arguments with a profile folder of its own and starts it, or the default browser; for `open` and `connect`. |
 | `cli/api.rs` | `api`: any route, with a method and a JSON body. |
-| `cli/board.rs` | `board`, `card`, `inbox` (and `inbox act`, as the app's buttons) and `issue create`. |
+| `cli/board.rs` | `board`, `card`, `inbox` (and `inbox act`, as the app's buttons) and the `issue` commands (create, list, show, edit, close, reopen, claim, release, labels, parent, blocker, comment). |
 | `cli/chats.rs` | `chats`, `chat` (start, say, offer, end), `grillings` and `grilling`. |
 | `cli/automations.rs` | `automation` (list, save, run, delete). |
 | `cli/agents.rs` | `agents` and `agent` (show, save, delete). |
@@ -424,6 +445,9 @@ At the top:
 | `app/mod.rs` | `App`: the store, bus, repositories, forges and decisions put together, its errors and the lookups every operation shares; every change to a card is published on the bus. |
 | `app/repositories.rs` | Adding a repository (a path, a URL or GitHub), whom a GitHub repository trusts, and whether a card's issue is trusted. |
 | `app/cards.rs` | Cards and their issues: kept in line with the forge's issues, created, edited, approved, retried and moved; why a card waits, what blocks it, its history. |
+| `app/issues/mod.rs` | The issue tracker: parents and sub-issues, blocking that is written as well as read (cycles refused), labels, claims, comments, closing and reopening, creating an issue with all of that, and the queries over them. |
+| `app/issues/sync.rs` | What the poll copies besides an issue's text, acting only on what the forge changed; which sub-issues count; the graph of what waits for what. |
+| `app/issues/text.rs` | The lines of a description that hold a parent ("Part of #n") or a blocker ("Blocked by #n") where the forge has none. |
 | `app/stopping.rs` | Holding (blocking), releasing and deleting a card, which stops its runs and, for a delete, removes what it left in the clone. |
 | `app/runs.rs` | A person's hand in a run: steering, stopping, a shell in its worktree, a chat's terminal interface, and a shell on the server. |
 | `app/automations/mod.rs` | Automations: saving and listing them with their next firing, firing one (a chat with origin `automation`, or a skipped or failed firing), and the check once a minute that ends their answered chats and fires those that came due. |
@@ -481,6 +505,7 @@ At the top:
 |---|---|
 | `store/mod.rs` | The store: opening the SQLite database, its migrations, the connection and the server's local clock, the helpers that read rows, and every record type re-exported as `store::<Type>`. |
 | `store/cards.rs` | Repositories, their cards, whether a card is held, the issues that block a card, the moves of a card between columns, deleting a card or a repository with all it has, and the numbers of deleted cards. |
+| `store/issues.rs` | What an issue has besides its text: its parent, labels, claim, whether it was closed, and its comments. |
 | `store/changes.rs` | Changes: a branch offered for merging, with its pull request, checks and review. |
 | `store/attempts.rs` | Attempts: the runs a card was tried with at once, how each fared, which was picked and why, and the rounds of which none passed. |
 | `store/runs.rs` | Runs: an agent's work in a harness, from its start to its end. |
@@ -523,6 +548,7 @@ At the top:
 | `server/fake_forgejo.rs` | For the tests only: a fake Forgejo with one repository, a server that polls it, and the tests of the Forgejo forge through it. |
 | `server/api/mod.rs` | The desktop API: the state it needs, the token check, the router that merges the routes of its parts, how a failure becomes a status, and `GET /v1/health`. |
 | `server/api/cards.rs` | The snapshot of every board, issues, cards and their changes (edit, approve, block, unblock, delete, retry, merge, reject), a card's runs and history. |
+| `server/api/issues.rs` | The issue tracker's routes: the issue list and one issue, parent, labels, blockers, claim, close and reopen, comments. |
 | `server/api/repositories.rs` | Adding and editing repositories, and their column scripts and files. |
 | `server/api/runs.rs` | A run and its events in pages, steering and stopping it. |
 | `server/api/automations.rs` | Automations: list, add, read, replace, delete, run now, and their firings. |
@@ -558,7 +584,8 @@ At the top:
 | Module | What it is for |
 |---|---|
 | `repos/mod.rs` | Clones, worktrees, branches, pushes, merges and conflict checks through the `git` command line. |
-| `repos/forge.rs` | The `Forge` trait with the forges `none`, `github`, `gitlab` and `forgejo`, and the forge-neutral `Issue`. |
+| `repos/forge.rs` | The `Forge` trait with the forges `none`, `github`, `gitlab` and `forgejo`, and the forge-neutral `Issue` (with its labels, parent, blockers and comments). |
+| `repos/tracker_tests.rs` | Tests (only) of what the forge clients write and read for an issue tracker, against a fake forge that records its requests. |
 | `repos/github.rs` | The GitHub App client: JWT, installation tokens, issues newest-updated first with ETags (paging stops at the last poll's newest), pull requests, checks, reviews, merge. |
 | `repos/gitlab.rs` | The GitLab client: the access token, issues newest-updated first with ETags (paging stops at the last poll's newest), merge requests, pipelines and their failed jobs, approvals, merge. |
 | `repos/forgejo.rs` | The Forgejo client (Codeberg, Forgejo, Gitea): the access token, issues with ETags where given, pull requests, commit statuses, reviews, merge. |

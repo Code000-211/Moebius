@@ -28,6 +28,7 @@ export const keys = {
   cards: ["card"] as const,
   history: (card: number) => ["card", card, "history"] as const,
   cardRuns: (card: number) => ["card", card, "runs"] as const,
+  comments: (card: number) => ["card", card, "comments"] as const,
   /** The script of a column; `script_changed` makes all of them stale. */
   scripts: ["script"] as const,
   script: (repository: number, column: string) => ["script", repository, column] as const,

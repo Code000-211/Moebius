@@ -56,7 +56,12 @@ end
 | `card.confirmed` | boolean | True for a card made from a grilling a person confirmed (see `desktop-api.md`, grillings); the person has decided on it, so it needs no approval. |
 | `card.trusted` | boolean | True when the issue may move on without approval: it was made by a person in the desktop app on a repository without a forge, or its author is one of the repository's trusted GitHub logins (compared without regard to case). |
 | `card.test_first` | boolean | True when the card's repository works test first: its project has a `test-first` file in its settings. See Test first. |
-| `card.blocked_by` | table (array of numbers) | The issue numbers the card is blocked by that are not done yet. A number counts as not done when it has no card or its card is not in `Done`. Empty (never nil) when nothing blocks the card. The numbers come from "blocked by #12" lines in the issue's body on GitHub. |
+| `card.blocked_by` | table (array of numbers) | The issue numbers the card is blocked by that are not done yet. A number counts as not done when it has no card or its card is not in `Done`. Empty (never nil) when nothing blocks the card. The numbers come from "blocked by #12" lines in the issue's body on a forge, from the forge's own dependencies (GitHub's issue dependencies, GitLab's `is_blocked_by` links, Forgejo's dependencies) and from what was added through the API (see [the issue tracker](desktop-api.md#the-issue-tracker)). A closed issue is a card in `Done`, so its blocked issues stop waiting. |
+| `card.parent` | number or nil | The issue number of the card's parent issue, or nil. |
+| `card.children` | table (array of tables) | The card's sub-issues, oldest first; empty (never nil) when it has none. Each has `id` (the card's id), `number`, `title`, `state` (`open` or `closed`) and `column`. Only issues a person can have vouched for are listed: those of a trusted author, those a person approved and those of a confirmed grilling. An issue of anyone else that says "Part of #n" is shown under its parent but is not one of its `children`, so it cannot hold the parent back or close it. |
+| `card.merged` | boolean | True when a change of the card was merged. A card is in `Done` because its change was merged, or because its issue was closed (by a person, a script or the forge), which is when this is false. |
+| `card.labels` | table (array of strings) | The issue's labels, in order; empty when it has none. |
+| `card.claimed_by` | string or nil | Who claimed the issue (`person`, `agent:<name>` or a name a session gave), or nil. |
 | `card.rounds` | number | How many runs with purpose `code` the card has had since it was last retried, whatever their status (a running one counts), and how many rounds of attempts of which none passed (see Attempts). |
 | `card.reviews` | number | How many review rounds the card has had since it was last retried, whatever their status: the runs with purpose `review` and those with purpose `review-standards` (one per round of the two-axis review). |
 | `card.tokens` | number | The input and output tokens the card's runs used since it was last retried (cached tokens are not added; the teacher's count too). |
@@ -170,6 +175,15 @@ in memory (it is gone after a restart until the next tick), publishes `card_wait
 the snapshot's `waiting` (see the [desktop API](desktop-api.md)). A card that moves, or whose script does not wait, has
 no reason.
 
+`moebius.close_issue(reason)`
+: Closes the card's issue when the script returns, on its forge too, and moves the card to `Done`, whatever `moebius.move`
+was asked for. `reason` is optional text. A closed issue no longer blocks the issues it blocks. The default `ready.luau`
+uses it to close a parent whose last sub-issue is done. If the forge refuses, the card stays where it is and waits with
+the reason; the forge is told once as a `forge_error` (once however often the board tries again) and is not asked again
+for ten minutes (nor at every tick), unless a person closes the issue or the poll sees it closed first. An issue that
+was reopened (by a person, or on the forge) is not closed again by this call for the sub-issues that were done already:
+it stays where it is, waiting, until one of its sub-issues closes after the reopening.
+
 `moebius.publish_change()` returns the card's change as a table like `card.change`.
 : Publishes the work of the card's latest successful `code` run on the change's branch, `moebius/card-<number>`: the
 branch is pointed at that run's last commit and the forge is told. The first time this creates the change (on GitHub:
@@ -259,7 +273,7 @@ change is merged and when its change is closed.
 : The same as `moebius.ask("stuck", reason)`.
 
 `moebius.record_outcome(outcome)` returns a number.
-: Sets `outcome` (a string such as `merged`) on every judgement of the card that has none, and returns how many it set.
+: Sets `outcome` (a string such as `merged` or `closed`) on every judgement of the card that has none, and returns how many it set.
 
 `moebius.runs_active()` returns a number.
 : How many runs of cards have not ended, across all boards. Chats (runs without a card) are not counted, so they do
@@ -335,7 +349,7 @@ configuration and no repository, and it stores and starts nothing.
 | `--title` | `A card to check the script with` | The card's `title`. |
 | `--author` | `person` | The card's `author`. `card.trusted` is true only for `person`, as on a repository without a forge. |
 
-The made-up card has `id` and `number` 1, an empty `body`, `blocked_by` empty, `rounds`, `reviews` and `tokens` 0, and
+The made-up card has `id` and `number` 1, an empty `body`, `blocked_by`, `children` and `labels` empty, no `parent` or `claimed_by`, `merged` false, `rounds`, `reviews` and `tokens` 0, and
 `stopped` and `test_first` false, and `attempts` empty. It has no `note`, `change`, `run`, `review` or `selection`. The `moebius` table has every constant and function of
 this page, but records its calls instead of acting:
 
@@ -355,6 +369,7 @@ The output is one line for each call that does something, in the order of the ca
 |---|---|
 | `moved the card to <column>`, with ` (note: <note>)` when there is one | `moebius.move` |
 | `waited: <reason>` | `moebius.wait` |
+| `closed the issue and moved the card to Done`, then `: <reason>` when there is one | `moebius.close_issue` |
 | `started a run of <agent> for <purpose>`, then ` on <runner>` when a runner is given, with the note as above | `moebius.start_run` |
 | `started <n> attempts of <agent>`, with the note as above | `moebius.start_runs` |
 | `started judging attempt <run>` | `moebius.check_attempt` |
@@ -476,11 +491,11 @@ reason to judge. All of this comes after the checks and conflicts and before the
 | Script | What it does |
 |---|---|
 | `backlog.luau` | If `card.trusted` or `card.confirmed`, moves the card to `Not started`. Otherwise asks a person (`moebius.ask("approve_issue", ...)`) and waits; approving the issue in the desktop API moves the card to `Not started`. |
-| `ready.luau` | Waits while `card.blocked_by` is not empty, naming the issues. Waits with `the daily token budget is spent` when `moebius.day_budget` is set and `moebius.tokens_today()` has reached it. Waits while `moebius.runs_active() >= moebius.run_limit`. Otherwise moves the card to `In progress`. |
+| `ready.luau` | For a parent (`card.children` is not empty) that has no run and no change of its own, starts no work of its own: it waits with `waiting for sub-issues #3, #4` while a sub-issue is open, and closes the issue (`moebius.close_issue`) once every sub-issue is closed. Otherwise waits while `card.blocked_by` is not empty, naming the issues. Waits with `the daily token budget is spent` when `moebius.day_budget` is set and `moebius.tokens_today()` has reached it. Waits while `moebius.runs_active() >= moebius.run_limit`. Otherwise moves the card to `In progress`. |
 | `code.luau` | Waits while the latest run is `starting` or `running`. Moves the card to `In review` when the latest run is a `code` run that `succeeded` and the card has no `card.note`. Otherwise marks the card stuck with `stopped by a person` when `card.stopped`, with `the round limit is reached` when `card.rounds >= moebius.round_limit`, and with `the token budget of N is spent` when `card.tokens` has reached `moebius.agent_budget("Coder")`; waits with `the daily token budget is spent` when the day's budget is spent; and else starts a `Coder` run with purpose `code` and `card.note` as its note: the first round, a retry after a `code` run that `failed` or was `stopped`, or the next round after the card was sent back. |
 | `review.luau` | Waits while the latest run is going, and moves the card back to `In progress` when its latest run is neither a succeeded `code` run nor a review run (`review`, `review-standards` or `review-spec`). Then, in this order: publishes the change (`moebius.publish_change`) and starts its own checks (`moebius.run_checks`); waits while `card.change.checks` is `pending`; sends the card back to `In progress` when they are `failure`, with the note `The checks failed:` and the failing checks or the output; sends it back when `card.change.conflict` is set, with the conflicting files and the instruction to merge `card.change.base` into its branch and resolve them; when `card.test_first`, waits for the reproduction test and sends the card back when it does not hold (see Test first); without an agent `Reviewer` (`moebius.has_agent`, which is true on every server because the Reviewer is built in), offers the change; offers the change with `card.review.judgements` when `card.review.verdict` is `approve`; sends the card back with `card.review.findings` as the note when it is `changes`; otherwise reviews along two axes: starts a run with purpose `review-standards` and, once it succeeded, one with purpose `review-spec` (given the untestable reason of test first as its note). The agent of each axis is the agent `Standards` or `Spec` when the configuration has one, else the `Reviewer`. A review run that `failed` restarts the round with the Standards axis, until `card.reviews >= moebius.round_limit`, when the card is marked stuck with `the round limit is reached`. The card is marked stuck with `stopped by a person` when `card.stopped`, before anything else, and with `the token budget of N is spent` when `card.tokens` has reached `moebius.agent_budget("Reviewer")`; it waits with `the daily token budget is spent` while the day's budget is spent, instead of starting a review. |
 | `merge.luau` | Waits for a person to merge the change. The merge happens through the desktop API or, on GitHub, on the pull request. When the change no longer merges cleanly (the default branch moved), sends the card back to `In progress` with the conflict as the note; that resolves the change's inbox item. |
-| `done.luau` | Calls `moebius.record_outcome("merged")`, so every judgement made for the card learns how it ended. |
+| `done.luau` | Calls `moebius.record_outcome("merged")` when `card.merged` (a change of the card was merged) and `moebius.record_outcome("closed")` otherwise, so every judgement made for the card learns how it ended. |
 
 The default workflow needs an `[agents.Coder]` table in the configuration, because `code.luau` starts the agent
 `Coder`. An `[agents.Reviewer]` table is optional: with it every change is reviewed along two axes before it is offered, without

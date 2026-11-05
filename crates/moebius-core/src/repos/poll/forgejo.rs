@@ -2,17 +2,23 @@
 //! and its latest review.
 
 use super::{Polled, Request, Status};
-use crate::repos::forge::{ForgeError, Issue};
+use crate::repos::forge::{Comment, ForgeError, Issue, Remembered, seconds};
 use crate::repos::forgejo::{self, CommitStatus, Forgejo, Review};
 
 impl From<forgejo::Issue> for Issue {
     fn from(issue: forgejo::Issue) -> Self {
+        let open = issue.state == "open";
         Self {
             number: issue.number,
             title: issue.title,
             body: issue.body.unwrap_or_default(),
-            open: issue.state == "open",
+            open,
             author: issue.user.login,
+            labels: issue.labels.into_iter().map(|l| l.name).collect(),
+            comment_count: issue.comments,
+            updated: issue.updated_at.unwrap_or_default(),
+            blockers_unread: open,
+            ..Issue::default()
         }
     }
 }
@@ -21,8 +27,38 @@ impl Polled for Forgejo {
     const FORGE: &'static str = "forgejo";
 
     async fn issues(&self, name: &str) -> Result<Option<Vec<Issue>>, ForgeError> {
-        let issues = Forgejo::issues(self, name).await?;
-        Ok(issues.map(|issues| issues.into_iter().map(Issue::from).collect()))
+        let Some(issues) = Forgejo::issues(self, name).await? else {
+            return Ok(None);
+        };
+        Ok(Some(issues.into_iter().map(Issue::from).collect()))
+    }
+
+    fn remembered(&self) -> &Remembered {
+        &self.blockers
+    }
+
+    async fn blockers(&self, name: &str, number: i64, updated: &str) -> Option<Vec<i64>> {
+        if let Some(known) = self.blockers.get(name, number, updated) {
+            return Some(known);
+        }
+        // A repository with dependencies turned off leaves the issue with the blockers its body names.
+        let blockers = self.blocked_by(name, number).await.ok()?;
+        self.blockers.put(name, number, updated, blockers.clone());
+        Some(blockers)
+    }
+
+    async fn comments(&self, name: &str, number: i64) -> Result<Vec<Comment>, ForgeError> {
+        Ok(self
+            .issue_comments(name, number)
+            .await?
+            .into_iter()
+            .map(|c| Comment {
+                id: c.id,
+                author: c.user.login,
+                body: c.body,
+                at: seconds(&c.created_at),
+            })
+            .collect())
     }
 
     fn forget_issues(&self, name: &str) {

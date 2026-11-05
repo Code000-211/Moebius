@@ -74,7 +74,14 @@ GitLab, such as `group/project`, or the repository on Forgejo as `owner/repo`, o
 back to coding, or null), `retried_after` (the id of the card's latest run when a person last retried it, or null) and
 `confirmed` (true for a card made from a confirmed grilling, which needs no approval) and `held` (null, or `{"reason":
 string or null, "by": "person" or "agent:Moebius", "at": number}` while a person or the Moebius agent holds the card; see
-`POST /v1/cards/{id}/block`).
+`POST /v1/cards/{id}/block`). The card is also an issue of a tracker (see [the issue tracker](#the-issue-tracker)):
+`parent` (the number of the issue it is a sub-issue of, or null), `closed` (true when the issue was closed or the card is
+in `Done`), `labels` (array of text, in order) and `claimed_by` (who claimed it, or null).
+
+`Comment`: `id`, `card_id`, `author` (a forge login, `person` or `agent:<name>`), `body`, `at`.
+
+`Issue`: a `Card` with `state` (`open` or `closed`), `blocked_by` (the numbers of the issues that block it and are not
+done) and `children` (its sub-issues, oldest first, each `{"id", "number", "title", "state", "column"}`).
 `Run`: `id`, `card_id` (null for a chat), `agent`, `harness`, `purpose` (`code`, `review`, other purposes of column scripts,
 `chat`, `retro`, the Retro analyst's run, `trial`, the trial of a proposal on a card, or `research`, a round of the Autoresearcher), `status` (`starting`, `running`, `waiting`, `succeeded`, `failed` or `stopped`; `waiting` is a chat waiting for
 the person's next message), `worktree`, `started_at`, `ended_at`, `summary`, `repository_id` (the repository a chat
@@ -219,6 +226,8 @@ Everything the app shows. Response:
                     "default_branch": "main", "github": null, "trusted": []},
      "cards": [{"id": 1, "repository_id": 1, "number": 1, "title": "Add a feature", "body": "", "author": "person",
                 "column": "Backlog", "created_at": 1790000000, "note": null, "retried_after": null,
+                "parent": null, "closed": false, "labels": [], "claimed_by": null,
+                "counts_as_sub_issue": true,
                 "rounds": 0, "tokens": 0, "run": null, "blocked_by": [], "refusals": 0, "change": null}],
      "round_limit": 5,
      "waiting": {},
@@ -238,6 +247,7 @@ gets. Each entry of `cards` is a `Card` with what a board shows of it, so that a
 | `rounds`, `tokens` | The card's `code` runs (and rounds of attempts of which none passed) and the tokens of all its runs since it was last retried, as `card.rounds` and `card.tokens` in [column scripts](column-scripts.md). |
 | `run` | The card's latest run that is not an attempt, `{"id", "agent", "purpose", "status"}`, or null when it has none: an attempt that was not picked is shown by `attempts`, not here. A board counts the runs working on it from the cards whose `run.status` is `starting` or `running`. |
 | `blocked_by` | The numbers of the issues that block the card and are not done yet, as `card.blocked_by`. |
+| `counts_as_sub_issue` | Whether the card counts as a sub-issue of its `parent` (see [only issues a person can have vouched for](#the-issue-tracker)). A client that builds stacks, counts "done of total" or decides what is next from `parent` uses only the cards where this is true; one that is false is an ordinary top-level card, whatever parent it names. |
 | `refusals` | How many tool calls of that latest run were refused (its `tool_check` and `mcp_call` run events with the decision `refuse`). |
 | `attempts` | The latest group of attempts of a card that was tried several times at once (see [column scripts](column-scripts.md#attempts)), oldest first, each `{"run", "model", "status", "result", "output", "picked", "reason"}`: `model` the model or class the attempt was started with, or null; `status` its run's status; `result` `passed`, `failed` or null before it was judged; `output` why it failed; `picked` whether it was the one kept, and `reason` why. Absent when the card has no attempts. |
 | `change` | The card's open change, `{"id", "state", "checks", "review_verdict"}`, or null. `checks` is `pending`, `success`, `failure` or `none`, as `card.change.checks`; `review_verdict` is `approve` or `changes` once a review ended since the latest `code` run, else null. Whether the change conflicts is not in the snapshot. |
@@ -339,10 +349,26 @@ way a confirmed grilling opens its issues, and the card gets the issue's number 
 existing. The card is `confirmed`, since a person wrote it, and so moves on from `Backlog` without approval, whatever the
 repository's `trusted` list says.
 
-Request: `{"title": "...", "body": "..."}`. `title` is required and must not be empty or blank; `body` is optional.
+Request: `{"title": "...", "body": "...", "parent": number, "labels": [text], "blocked_by": [number]}`. `title` is
+required and must not be empty or blank; the others are optional. `parent` and `blocked_by` are issue numbers of the same
+repository and are set as `PUT /v1/cards/{id}/parent` and `POST /v1/cards/{id}/blockers` do, `labels` as `PUT
+/v1/cards/{id}/labels` does.
 
-Response: the `Card`. Errors: `404` no such repository; `422` the title is empty; `500` the forge refuses to open the
-issue (no card is made).
+What `parent` and `blocked_by` name is checked before anything is created: the issues have to exist in the repository,
+and a blocker must not wait for the parent (it would make the two wait for each other). If the issue is created and a
+later step is still refused by the forge (a label, say), the issue exists and is the answer, with a `warnings` field.
+
+Response: the `Card`, and `warnings` (array of text, one for each step that failed after the issue was created; left out
+when nothing failed). Errors: `404` no such repository, or no such parent or blocker; `422` the title is empty, or a
+blocker would make a cycle; `500` the forge refuses to open the issue (no card is made).
+
+### `GET /v1/repositories/{id}/issues`
+
+The issues of a repository, oldest first, as `Issue`s. Every filter that is given must match; they are query
+parameters: `parent` (an issue number: only its sub-issues), `label` (an exact label), `state` (`open` or `closed`),
+`claimed` (`true` or `false`) and `blocked` (`true` for the issues an issue that is not done blocks, `false` for the
+others). The frontier of a map of tickets, the open sub-issues that nothing blocks and nobody claimed, is
+`?parent=<map>&state=open&blocked=false&claimed=false`. Errors: `404` no such repository.
 
 ### `GET /v1/repositories/{id}/scripts/{column}`
 
@@ -465,12 +491,154 @@ string, "reason": string}`; `body` and `reason` are optional (`body` left out is
 decision. The title is trimmed and must not be blank. On a repository with a forge the issue is changed there first
 (for GitHub, `PATCH /repos/{owner}/{repo}/issues/{number}` with the installation's token; for GitLab,
 `PUT /projects/{path}/issues/{number}` with the access token; for Forgejo, `PATCH /repos/{owner}/{repo}/issues/{number}`
-with the access token), and "blocked by #n" in the
-new body becomes the card's blockers, as the poll reads them; without a forge the blockers stay as they are. Then the
+with the access token), and "blocked by #n" and "Part of #n" in the
+new body become the card's blockers and parent, as the poll reads them (what the old body said no longer counts, and the
+blockers and the parent the forge keeps itself stay); without a forge they stay as they are. Then the
 card is stored, the decision is recorded (kind `edit_card`, choice `edit_card`, decider `person` or `agent:Moebius`,
 the card's id; its context has `title`, `body`, `previous_title` and `previous_body`) and the event `card_updated` is
 sent. A title and body that change nothing record nothing. Response: the `Card`. Errors: `404` no such card; `422` the
 title is blank; `500` the forge refused the change, and then the card is as it was and nothing is recorded.
+
+### The issue tracker
+
+An issue has more than a title and a body: a parent, blockers, labels, a claim, comments and a state. All of it is read
+and written here, the same on every forge and without one, so that a planning session or a person works on issues through
+the API, `"$MOEBIUS" issue` and the web app alike. Issues are addressed by their card's id in the routes; the relations
+(`parent`, a blocker) name issue numbers of the same repository, as `Card.number` is. Every change is announced as its own
+event (see [the events](#get-v1events)).
+
+Where each thing lives depends on the forge; what a forge cannot express, Moebius keeps itself:
+
+| | Without a forge | GitHub | GitLab | Forgejo (and Gitea) |
+|---|---|---|---|---|
+| Parent | Moebius | Sub-issues (`parent_issue_url`, `POST /issues/{n}/sub_issues`) | A line `Part of #n` in the description | A line `Part of #n` in the description |
+| Blockers | Moebius | Issue dependencies (`blocked_by`), and "Blocked by #n" lines | Issue links of the type `is_blocked_by` (GitLab Premium and above; without them GitLab links the issues as `relates_to`, which blocks nothing, so Moebius writes the line "Blocked by #n" in the description instead, and takes it out again), and the lines | Issue dependencies, and the lines |
+| Labels | Moebius | Labels (made when they do not exist) | Labels (made when they do not exist) | Labels, by name (a label has to exist in the repository) |
+| Comments | Moebius | Comments | Notes written by people (GitLab's own notes are left out) | Comments |
+| State | Moebius | Open or closed | Opened or closed | Open or closed |
+| Claims | Moebius | Moebius | Moebius | Moebius |
+
+- **Polling keeps it current both ways.** What a change through the API writes to the forge is read back by the next poll,
+  and what someone changes on the forge becomes the card's parent, labels, blockers, comments and state. The poll acts on
+  what the forge *changed*: Moebius keeps, for each of those, what the forge was last seen to say, and a poll that says
+  the same is not a change. After Moebius writes to the forge it takes what it wrote for what the forge says, so that
+  someone who puts the old value back before the next poll is noticed; a snapshot whose read began before the write
+  ended (a slow poll) is left alone, because it may not have seen the write. What the poll could not apply (an edge
+  that would make issues wait for each other, see below) is reported as `forge_error` and not taken as seen, so it is
+  tried again when the issue is read again. The first poll after an upgrade announces nothing for issues that are
+  closed and in `Done` already.
+  A blocker, label or parent that a poll no longer finds on the forge, where it did
+  before, is dropped from the card. A forge that cannot list blockers (GitLab links or Forgejo dependencies turned
+  off, say, or a read that failed) leaves the card with the blockers it had from the forge, and changes only those the
+  description names. A poll that cannot read an issue's comments reports `forge_error` and reads them at the next poll.
+  What the poll reads besides the issue list costs requests only for the open issues it syncs (not the closed ones with
+  no card, nor the ones a person deleted): the blockers of an issue are read when the issue changed, or, because GitLab
+  does not always change an issue's time when a link changes, when what was read is ten minutes old, which is checked at every poll, five issues at a time, oldest first, also
+  when the forge answered that nothing changed. A comment is read when the forge's count differs from the comments
+  Moebius stored, and when the issue changed since its comments were read and it has any (a comment deleted and another
+  written between two polls leave the count as it was, and the issue's list says no more of them); comments edited or
+  deleted on the forge are not changed or removed in Moebius.
+- **Blockers** from the forge's own dependencies and from "Blocked by #n" lines in the description are added together.
+  Removing one through the API also takes the line out of the description. A blocker the forge says is closed counts as
+  done even when Moebius has no card for it (it was closed before the repository was added). Dependency lists are read
+  in all their pages.
+- **Only issues a person can have vouched for are sub-issues.** An issue says "Part of #n" (or has a parent on the
+  forge) whoever writes it, so a parent counts as its sub-issues only those whose author is trusted, that a person
+  approved or that a confirmed grilling made. Another issue is shown with the parent it names, but is not in
+  `Issue.children`, in `card.children` or in the filter `parent`, so it cannot stall a parent or close it, and its edges are left out of what makes issues wait for each other. A parent in
+  another repository (GitHub allows it) is ignored: the number would be that of another issue here.
+- **Nothing makes issues wait for each other.** An issue cannot be its own parent or blocker, nor be blocked by an
+  ancestor, nor have a parent that waits for it, directly or through others; what the API refuses with `422`, the poll
+  ignores when the forge says it.
+- **Claims are Moebius's own and advisory.** A run is not a forge user, so a claim is not an assignee: nothing is written
+  to the forge and the assignees the forge has are not read. A claim names a person (`person`), the Moebius agent
+  (`agent:<name>`) or a name a session gave itself, which is free text: the claim keeps honest sessions from taking the
+  same issue, it does not keep anyone out, and the default workflow does not look at it.
+- **Comments** read from the forge are stored once each, by the id they have there, and are read again when the forge's
+  count of an issue's comments differs from what Moebius has (and from what the forge said when they were last read, so
+  that a comment deleted on the forge is read once and not at every poll). A comment that is edited or deleted on the
+  forge is not changed or removed on the card. A comment written through the API is written to the forge as the forge's
+  own identity (the GitHub App, the access token) and kept with the author who wrote it here; if the poll read it from
+  the forge first, the stored one is the answer.
+- **Closing** an issue closes it on the forge and moves its card to `Done`, so that issues it blocks are not blocked any
+  more; a closed issue is its card in `Done`. A forge that reports an issue closed does the same, and one that reports a
+  closed issue open again moves its card back to `Backlog`. A card in `Done` because its change was merged is not reopened
+  by an issue the forge left open.
+
+### `GET /v1/cards/{id}`
+
+One issue: the `Issue` of the card, with its state, the blockers that are not done and its sub-issues. Errors: `404` no
+such card.
+
+### `PUT /v1/cards/{id}/parent`
+
+Makes the issue a sub-issue of another, or gives it none. Request: `{"parent": number or null}`, the issue number of the
+parent. On GitHub the sub-issue is made there; on GitLab and Forgejo the line `Part of #n` of the description is written
+(replacing the one it has) with the issue's edit, and the card's body shows it. The event `card_parent_changed` is sent;
+setting what is set changes nothing. The description is rewritten from the one the forge has now, so that an edit made there
+since the last poll is kept. Response: the `Card`. Errors: `404` no such card or parent; `422` the issue as its own parent,
+a parent that is below it, or a parent that waits for the issue (it is blocked by it, or by an issue that is); `500` the
+forge refused.
+
+### `PUT /v1/cards/{id}/labels`
+
+Replaces the issue's labels, on the forge too. Request: `{"labels": [text]}`; blank labels and repeats are dropped. The
+event `card_labels_changed` is sent. Response: the `Card`. Errors: `404` no such card; `500` the forge refused (a Forgejo
+repository without such a label, for one).
+
+### `POST /v1/cards/{id}/blockers`
+
+Makes an issue block this one, on the forge too. Request: `{"blocker": number}`, the issue number of the blocker, which
+must have a card. The event `card_blocking_changed` is sent; adding what is there changes nothing. Response: every blocker
+of the issue, as numbers, done or not. Where the forge keeps no blocking (GitLab without Premium links the issues as
+`relates_to`, which blocks nothing), the line "Blocked by #n" is written to the description instead. Errors: `404` no
+such card or blocker; `422` the issue as its own blocker, or a blocker that waits for this issue directly or through
+others (a cycle: it is blocked by this issue, or it is an ancestor of it); `500` the forge refused.
+
+### `DELETE /v1/cards/{id}/blockers/{number}`
+
+Stops the issue `number` from blocking this one, on the forge too; a line of the description that says it is blocked by it is
+taken out of the description. Response: the blockers that are left, as numbers. Errors: `404` no such card, or that issue
+is not a blocker; `500` the forge refused.
+
+### `POST /v1/cards/{id}/claim`
+
+Claims the issue, so that two sessions do not take the same one. Request: `{"by": text}`, optional: the name that claims,
+`person` or `agent:<name>` for the caller when left out; a claim is advisory (see above). Claiming again as the claimer changes
+nothing. The event
+`card_claimed` is sent. Response: the `Card`. Errors: `404` no such card; `409` somebody else claimed it, and the message
+says who.
+
+### `DELETE /v1/cards/{id}/claim`
+
+Releases the claim. A person releases any claim; the Moebius agent only the one it holds, as `agent:Moebius` or under the name
+it claimed with, which it gives as the optional request `{"by": text}`. The event `card_released` is sent. Response: the
+`Card`. Errors: `404` no such card; `403` the claim is somebody else's and the caller is the agent; `409` it is not
+claimed.
+
+### `POST /v1/cards/{id}/close`
+
+Closes the issue, on the forge too: its card moves to `Done` (the event `card_moved`) and the issues it blocks are not
+blocked by it any more. Request: `{"reason": string}` (optional). The decision is recorded (kind `close_issue`, with the
+title) and the event `card_closed` is sent. Closing a closed issue changes nothing. The card's outcome (see
+[the training export](training-export.md)) is `closed`, not `merged`, unless a change of the card was merged. Response: the `Card`. Errors: `404` no
+such card; `409` a run of the card is going (block the card to stop it first); `500` the forge refused.
+
+### `POST /v1/cards/{id}/reopen`
+
+Reopens a closed issue, on the forge too: its card moves from `Done` back to `Backlog`, where the workflow takes it up as
+it does a new issue. Request: `{"reason": string}` (optional). The decision is recorded (kind `reopen_issue`) and the event
+`card_reopened` is sent. Response: the `Card`. Errors: `404` no such card; `409` the issue is open; `500` the forge refused.
+
+### `GET /v1/cards/{id}/comments`
+
+The comments of the issue, oldest first, as `Comment`s. Errors: `404` no such card.
+
+### `POST /v1/cards/{id}/comments`
+
+Writes a comment, on the forge too. Request: `{"body": text}`, which must not be blank; secrets are redacted from it. The
+event `card_commented` is sent. Response: the `Comment` (the one the poll stored, when it read it from the forge first).
+Errors: `404` no such card; `422` the comment is blank; `500` the forge refused (nothing is stored).
 
 ### `POST /v1/cards/{id}/block`
 
@@ -2198,6 +2366,14 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `settings_moved` | The default branch of a repository still has a `.moebius/` folder, which is not read any more; said once for each repository while the server runs. | `{"repository": the repository's name, "message": string}` |
 | `card_added` | An issue became a card: created through the API or found on GitHub, GitLab or Forgejo. | The `Card`. |
 | `card_updated` | The title or body of a card changed: edited through the API, or changed on GitHub, GitLab or Forgejo; or it was held or released (`held`). | The `Card`. |
+| `card_parent_changed` | An issue got a parent, was moved to another or lost it, through the API or on the forge. | `{"card": id, "parent": issue number or null}` |
+| `card_labels_changed` | The labels of an issue changed, through the API or on the forge. | `{"card": id, "labels": [text]}` |
+| `card_blocking_changed` | A blocker was added or removed through the API, or the blockers the forge and the body name changed. | `{"card": id, "blocked_by": [number]}` (every blocker, done or not) |
+| `card_claimed` | An issue was claimed. Not sent for a claim by the claimer again. | `{"card": id, "by": text}` |
+| `card_released` | A claim was released. | `{"card": id}` |
+| `card_commented` | A comment was written through the API or read from the forge. | `{"card": id, "comment": the Comment}` |
+| `card_closed` | An issue was closed: through the API, by a column script (`moebius.close_issue`) or on the forge. Its card moves to `Done` (`card_moved`). | `{"card": id}` |
+| `card_reopened` | A closed issue was reopened, through the API or on the forge. A card in `Done` moves to `Backlog` (`card_moved`). | `{"card": id}` |
 | `card_deleted` | A card was deleted through the API, with everything stored for it. A client drops it, and closes what shows it. | `{"card": id}` |
 | `card_moved` | A card moved to another column. | `{"card": id, "from": column, "to": column}` |
 | `card_waiting` | The reason a card waits changed: set, replaced, or cleared because the card moved or its script did not wait. Not sent when it stays the same. | `{"card": id, "reason": string or null}` |

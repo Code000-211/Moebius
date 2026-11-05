@@ -30,7 +30,8 @@ A card is trusted when its issue was made through the desktop API on a repositor
 logins). On GitHub, GitLab and Forgejo the poll creates the cards, and an issue that is closed there moves its card to `Done`. The board's
 header names the trusted logins, and its pencil edits them (`PUT /v1/repositories/{id}`); a card's page has a pencil
 next to its title that edits the title and body in place (`PUT /v1/cards/{id}`), on a forge the issue too, where
-"blocked by #n" in the body sets its blockers.
+"blocked by #n" and "Part of #n" in the body set its blockers and its parent. An issue can also have sub-issues, labels, a
+claim and comments, and be closed and reopened: see [the issue tracker](../reference/desktop-api.md#the-issue-tracker).
 
 The board engine runs the script of every card's column on every tick (`board.tick_ms`, two seconds by default). When a
 script moves the card, the script of the next column runs at once. [Column scripts](column-scripts.md) says how to
@@ -45,10 +46,21 @@ a person (see below).
 
 ### Not started
 
-In this order: `waiting for #12, #13` while issues block the card (the numbers come from `blocked by #n` lines in the
-body of a GitHub issue, and an issue counts as done when its card is in `Done`); `the daily token budget is spent` when
+In this order: for a card with sub-issues that has no run and no change of its own, `waiting for sub-issues #3, #4` while one
+is open (such a card starts no work of its own, and once every sub-issue is closed the card closes its issue and goes to
+`Done`; a card that already has a run or a change goes on as any other card, whatever sub-issues it has); `waiting for #12, #13` while
+issues block the card (the numbers come from `blocked by #n` lines in the body of an issue on a forge, from the forge's own
+dependencies and from `moebius issue blocker add`, and an issue counts as done when it is closed, which is when its card
+is in `Done`); `the daily token budget is spent` when
 `budgets.day_tokens` is set and used up; `the run limit is reached` when `run_limit` runs of cards are going; else the
 card moves. Chats do not count against `run_limit`.
+
+**If you upgrade:** until this version a card with an issue that said "Part of #n" was an ordinary card. Now the issues
+that name it as their parent (as long as their author is trusted, a person approved them or a grilling they confirmed made
+them) are its sub-issues, and the default `ready.luau` makes such a card wait for them instead of coding it, and close its
+issue once they are all closed. A card that was started before it got sub-issues keeps its flow. `done.luau` now records
+the outcome `closed`, not `merged`, for a card that is done without a merged change. If you keep your own `ready.luau`
+or `done.luau` (see [column scripts](column-scripts.md)), nothing changes for you until you copy these rules in.
 
 ### In progress: the Coder
 

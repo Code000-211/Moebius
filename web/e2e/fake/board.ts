@@ -4,7 +4,9 @@
  * column, and the decisions). The state is kept per server and changes the way the real one does: approving, merging,
  * sending back, retrying and creating an issue move cards, resolve inbox items and send the events the real server
  * sends; blocking stops the card's run and holds the card, unblocking releases it, and deleting takes the card, its
- * changes and its inbox items and sends `card_deleted`. A test can also move a card as the board engine would (`moveCard`) and make the next request to a route fail
+ * changes and its inbox items and sends `card_deleted`. The issue tracker works the way the server's does: a parent (cycles
+ * refused), blockers (cycles refused, resolved when the blocker is closed), labels, a claim (a second claimant is refused),
+ * comments, and closing and reopening, each with the event of its own. A test can also move a card as the board engine would (`moveCard`) and make the next request to a route fail
  * (`refuseNext`), to see the page answer.
  */
 
@@ -33,6 +35,20 @@ interface FakeCard {
   change: { id: number; state: string; checks: string; review_verdict: string | null } | null;
   /** Set while a person or the Moebius agent holds the card. */
   held: { reason: string | null; by: string; at: number } | null;
+  parent: number | null;
+  counts_as_sub_issue: boolean;
+  /** The issue was closed; a card in Done counts as closed too (see `view`). */
+  closed: boolean;
+  labels: string[];
+  claimed_by: string | null;
+}
+
+interface FakeComment {
+  id: number;
+  card_id: number;
+  author: string;
+  body: string;
+  at: number;
 }
 
 interface FakeChange {
@@ -114,6 +130,11 @@ function card(id: number, extra: Partial<FakeCard>): FakeCard {
     refusals: 0,
     change: null,
     held: null,
+    parent: null,
+    counts_as_sub_issue: true,
+    closed: false,
+    labels: [],
+    claimed_by: null,
     ...extra,
   };
 }
@@ -165,7 +186,13 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
       tokens: 12_000,
       run: { id: 1, agent: "Coder", purpose: "code", status: "running" },
     }),
-    card(2, { title: "Fix the login redirect", column: "Backlog", author: "stranger" }),
+    card(2, {
+      title: "Fix the login redirect",
+      column: "Backlog",
+      author: "stranger",
+      // Nobody approved an outsider's issue: it counts as no sub-issue of the parent it names.
+      counts_as_sub_issue: false,
+    }),
     card(3, { title: "Document the API", column: "Not started" }),
     card(4, { title: LONG_TITLE, column: "Not started", blocked_by: [3] }),
     card(5, {
@@ -279,9 +306,162 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
     note(target.id, { kind: "moved", data: { from, to, note: why } });
     return { kind: "card_moved", data: { card: target.id, from, to } };
   }
-  const view = (c: FakeCard) => ({ ...c });
+  const view = (c: FakeCard) => ({ ...c, closed: c.closed || c.column === "Done" });
+  const comments = new Map<number, FakeComment[]>();
+  let nextComment = 1;
+  const numbered = (n: number) => cards.find((c) => c.number === n);
+  /** The cards below `of`, at any depth. */
+  const below = (of: FakeCard): FakeCard[] => {
+    const found: FakeCard[] = [];
+    const walk = (up: FakeCard) => {
+      for (const c of cards.filter((x) => x.parent === up.number && !found.includes(x))) {
+        found.push(c);
+        walk(c);
+      }
+    };
+    walk(of);
+    return found;
+  };
+  const isClosed = (c: FakeCard) => c.closed || c.column === "Done";
+  /** Whether `blocker` waits, through others, for `target`. */
+  const waitsFor = (blocker: FakeCard, target: FakeCard, seen = new Set<number>()): boolean => {
+    if (blocker.number === target.number) return true;
+    if (seen.has(blocker.number)) return false;
+    seen.add(blocker.number);
+    return blocker.blocked_by.some((n) => {
+      const next = numbered(n);
+      return next !== undefined && waitsFor(next, target, seen);
+    });
+  };
   const ok = (body: unknown) => ({ status: 200, body });
   const fail = (status: number, message: string) => ({ status, body: message });
+
+  /** The routes of the issue tracker; undefined when `path` is none of them. */
+  function tracker(method: string, path: string, body: unknown) {
+    const parts =
+      /^\/v1\/cards\/(\d+)\/(parent|labels|blockers|claim|close|reopen|comments)(?:\/(\d+))?$/.exec(
+        path,
+      );
+    if (!parts) return undefined;
+    const target = find(Number(parts[1]));
+    if (!target) return fail(404, `card ${parts[1]} not found`);
+    const given = (body ?? {}) as Record<string, unknown>;
+    const updated = (event: ServerEvent) => send(event);
+    switch (parts[2]) {
+      case "parent": {
+        if (method !== "PUT") return undefined;
+        const parent = given.parent === null ? null : Number(given.parent);
+        if (parent !== null) {
+          const up = numbered(parent);
+          if (!up) return fail(404, `issue #${parent} (the parent) not found`);
+          if (up.id === target.id) return fail(422, "an issue cannot be its own parent");
+          if (below(target).some((c) => c.id === up.id)) {
+            return fail(422, `#${parent} is below #${target.number}, so it cannot be its parent`);
+          }
+        }
+        target.parent = parent;
+        updated({ kind: "card_parent_changed", data: { card: target.id, parent } });
+        return ok(view(target));
+      }
+      case "labels": {
+        if (method !== "PUT") return undefined;
+        const names = Array.isArray(given.labels) ? (given.labels as string[]) : [];
+        target.labels = [...new Set(names.map((l) => l.trim()).filter((l) => l !== ""))].sort();
+        updated({ kind: "card_labels_changed", data: { card: target.id, labels: target.labels } });
+        return ok(view(target));
+      }
+      case "blockers": {
+        if (method === "POST") {
+          const number = Number(given.blocker);
+          const blocker = numbered(number);
+          if (!blocker) return fail(404, `issue #${number} (the blocker) not found`);
+          if (blocker.id === target.id) return fail(422, "an issue cannot be its own blocker");
+          if (waitsFor(blocker, target)) {
+            return fail(
+              422,
+              `#${number} already waits for #${target.number}, so it cannot block it`,
+            );
+          }
+          if (!target.blocked_by.includes(number) && !isClosed(blocker))
+            target.blocked_by.push(number);
+          updated({
+            kind: "card_blocking_changed",
+            data: { card: target.id, blocked_by: target.blocked_by },
+          });
+          return ok(target.blocked_by);
+        }
+        if (method === "DELETE") {
+          const number = Number(parts[3]);
+          if (!target.blocked_by.includes(number)) {
+            return fail(404, `#${number} among the blockers of #${target.number} not found`);
+          }
+          target.blocked_by = target.blocked_by.filter((n) => n !== number);
+          updated({
+            kind: "card_blocking_changed",
+            data: { card: target.id, blocked_by: target.blocked_by },
+          });
+          return ok(target.blocked_by);
+        }
+        return undefined;
+      }
+      case "claim": {
+        if (method === "POST") {
+          if (target.claimed_by !== null && target.claimed_by !== "person") {
+            return fail(409, `#${target.number} is claimed by ${target.claimed_by} already`);
+          }
+          const first = target.claimed_by === null;
+          target.claimed_by = "person";
+          if (first) updated({ kind: "card_claimed", data: { card: target.id, by: "person" } });
+          return ok(view(target));
+        }
+        if (method === "DELETE") {
+          if (target.claimed_by === null) return fail(409, `#${target.number} is not claimed`);
+          target.claimed_by = null;
+          updated({ kind: "card_released", data: { card: target.id } });
+          return ok(view(target));
+        }
+        return undefined;
+      }
+      case "close": {
+        if (method !== "POST") return undefined;
+        if (!target.closed) {
+          target.closed = true;
+          if (target.column !== "Done") send(move(target, "Done"));
+          for (const other of cards)
+            other.blocked_by = other.blocked_by.filter((n) => n !== target.number);
+          updated({ kind: "card_closed", data: { card: target.id } });
+        }
+        return ok(view(target));
+      }
+      case "reopen": {
+        if (method !== "POST") return undefined;
+        if (!isClosed(target)) return fail(409, `#${target.number} is open`);
+        target.closed = false;
+        if (target.column === "Done") send(move(target, "Backlog"));
+        updated({ kind: "card_reopened", data: { card: target.id } });
+        return ok(view(target));
+      }
+      case "comments": {
+        if (method === "GET") return ok(comments.get(target.id) ?? []);
+        if (method === "POST") {
+          const text = String(given.body ?? "").trim();
+          if (text === "") return fail(422, "a comment needs text");
+          const made: FakeComment = {
+            id: nextComment++,
+            card_id: target.id,
+            author: "person",
+            body: text,
+            at: ++clock,
+          };
+          comments.set(target.id, [...(comments.get(target.id) ?? []), made]);
+          updated({ kind: "card_commented", data: { card: target.id, comment: made } });
+          return ok(made);
+        }
+        return undefined;
+      }
+    }
+    return undefined;
+  }
 
   function decide(method: string, path: string, body: unknown) {
     const approve = /^\/v1\/cards\/(\d+)\/approve$/.exec(path);
@@ -318,6 +498,7 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
       if (!target) return fail(404, "no such card");
       if (target.column !== "Backlog") return fail(422, "the card is not in Backlog");
       resolve(target.id, ["approve_issue"]);
+      target.counts_as_sub_issue = true;
       send(move(target, "Not started"));
       send({ kind: "card_updated", data: view(target) });
       return ok(view(target));
@@ -412,19 +593,43 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
         return fail(refusal.status, refusal.message);
       }
       if (path === "/v1/repositories/1/issues" && method === "POST") {
-        const { title, body: text } = (body ?? {}) as { title?: string; body?: string };
+        const {
+          title,
+          body: text,
+          parent,
+        } = (body ?? {}) as { title?: string; body?: string; parent?: number };
         if (!title || title.trim() === "") return fail(422, "the title is empty");
+        if (parent !== undefined && !numbered(parent)) {
+          return fail(404, `issue #${parent} (the parent) not found`);
+        }
         const made = card(nextCard, {
           title: title.trim(),
           body: text ?? "",
           column: "Backlog",
           created_at: ++clock,
+          parent: parent ?? null,
         });
         nextCard += 1;
         cards = [...cards, made];
         send({ kind: "card_added", data: view(made) });
+        if (parent !== undefined) {
+          send({ kind: "card_parent_changed", data: { card: made.id, parent } });
+        }
         return ok(view(made));
       }
+      const edited = /^\/v1\/cards\/(\d+)$/.exec(path);
+      if (edited && method === "PUT") {
+        const target = find(Number(edited[1]));
+        if (!target) return fail(404, `card ${edited[1]} not found`);
+        const { title, body: text } = (body ?? {}) as { title?: string; body?: string };
+        if (!title || title.trim() === "") return fail(422, "an issue needs a title");
+        target.title = title.trim();
+        target.body = text ?? "";
+        send({ kind: "card_updated", data: view(target) });
+        return ok(view(target));
+      }
+      const tracked = tracker(method, path, body);
+      if (tracked) return tracked;
       const removed = /^\/v1\/cards\/(\d+)$/.exec(path);
       if (removed && method === "DELETE") {
         const target = find(Number(removed[1]));

@@ -2,7 +2,9 @@
 //! change.
 //!
 //! - `GET /v1/snapshot`: every repository with its cards (and what the board shows of each), and the open inbox.
-//! - `POST /v1/repositories/{id}/issues` `{title, body}`: creates an issue, which becomes a card in the backlog.
+//! - `POST /v1/repositories/{id}/issues` `{title, body, parent, labels, blocked_by}`: creates an issue, which becomes a
+//!   card in the backlog, answered with the card and, when the forge refused a step after the issue was created, its
+//!   `warnings`. The issue tracker's other routes are in `issues`.
 //! - `PUT /v1/cards/{id}` `{title, body}`: changes a card's title and body, and its issue on a forge.
 //! - `POST /v1/cards/{id}/approve` `{reason}`: a person approves an outside issue; its card moves to ready.
 //! - `POST /v1/cards/{id}/block` `{reason}` and `POST /v1/cards/{id}/unblock` `{reason}`: a person or the Moebius agent
@@ -20,11 +22,11 @@ use std::collections::BTreeMap;
 use axum::Extension;
 use axum::Router;
 use axum::extract::{Path as UrlPath, State};
-use axum::routing::{get, post, put};
+use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
 
 use super::{ApiError, ApiState, Reason, blocking, person_only};
-use crate::app::{App, BoardFacts, HistoryEntry, PERSON};
+use crate::app::{App, BoardFacts, HistoryEntry};
 use crate::board::latest_review;
 use crate::decide::Actor;
 use crate::store::{Card, Change, InboxItem, Repository, Run};
@@ -33,8 +35,16 @@ use crate::store::{Card, Change, InboxItem, Repository, Run};
 pub(super) fn routes() -> Router<ApiState> {
     Router::new()
         .route("/v1/snapshot", get(snapshot))
-        .route("/v1/repositories/{id}/issues", post(create_issue))
-        .route("/v1/cards/{id}", put(edit_card).delete(delete_card))
+        .route(
+            "/v1/repositories/{id}/issues",
+            post(create_issue).get(super::issues::list_issues),
+        )
+        .route(
+            "/v1/cards/{id}",
+            get(super::issues::show_issue)
+                .put(edit_card)
+                .delete(delete_card),
+        )
         .route("/v1/cards/{id}/approve", post(approve_issue))
         .route("/v1/cards/{id}/block", post(block_card))
         .route("/v1/cards/{id}/unblock", post(unblock_card))
@@ -69,6 +79,9 @@ pub struct CardView {
     pub run: Option<RunView>,
     /// The numbers of the issues that block the card and are not done.
     pub blocked_by: Vec<i64>,
+    /// Whether the card counts as a sub-issue of its `parent`: a person can have vouched for it (see
+    /// `App::counts_as_sub_issue`). One that does not is shown as a card of its own, and holds nothing back.
+    pub counts_as_sub_issue: bool,
     /// How many tool calls of the latest run were refused.
     pub refusals: i64,
     /// The card's open change.
@@ -126,6 +139,24 @@ pub struct NewIssue {
     pub title: String,
     #[serde(default)]
     pub body: String,
+    /// The issue number of its parent.
+    #[serde(default)]
+    pub parent: Option<i64>,
+    #[serde(default)]
+    pub labels: Vec<String>,
+    /// The issue numbers that block it.
+    #[serde(default)]
+    pub blocked_by: Vec<i64>,
+}
+
+/// The answer to `POST /v1/repositories/{id}/issues`: the new issue's card, and what could not be set on it after it was
+/// created (its parent, labels or blockers, when the forge refused), which is left out when nothing failed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CreatedIssue {
+    #[serde(flatten)]
+    pub card: Card,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 /// The body of `PUT /v1/cards/{id}`: the card's title and body, written anew.
@@ -146,8 +177,10 @@ pub struct Merged {
 /// What a board shows of a card, from the facts read for its whole board (`App::board_facts`). A card in Done carries
 /// none of it, which keeps the snapshot cheap to read on every event.
 fn card_view(app: &App, facts: &BoardFacts, card: Card) -> crate::app::Result<CardView> {
+    let counts_as_sub_issue = app.counts_as_sub_issue(&card);
     let mut view = CardView {
         card,
+        counts_as_sub_issue,
         rounds: 0,
         tokens: 0,
         run: None,
@@ -237,9 +270,17 @@ async fn create_issue(
     State(state): State<ApiState>,
     UrlPath(id): UrlPath<i64>,
     axum::Json(issue): axum::Json<NewIssue>,
-) -> Result<axum::Json<Card>, ApiError> {
+) -> Result<axum::Json<CreatedIssue>, ApiError> {
     blocking(&state.app, move |app| {
-        app.create_issue(id, &issue.title, &issue.body, PERSON)
+        let (card, warnings) = app.create_tracked_issue(
+            id,
+            &issue.title,
+            &issue.body,
+            issue.parent,
+            &issue.labels,
+            &issue.blocked_by,
+        )?;
+        Ok(CreatedIssue { card, warnings })
     })
     .await
 }
@@ -373,6 +414,7 @@ async fn card_history(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::PERSON;
     use crate::repos::git;
     use crate::server::api::testing::{code_and_offer, get, origin, post, start, until};
     use crate::store::Usage;

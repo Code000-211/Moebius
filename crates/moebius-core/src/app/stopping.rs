@@ -161,6 +161,7 @@ impl App {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .remove(&card_id);
+        self.close_settled(card_id);
         self.bus.publish(Event::CardDeleted { card: card_id });
         Ok(card)
     }

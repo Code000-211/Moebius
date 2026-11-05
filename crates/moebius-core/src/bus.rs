@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
 use crate::server::ports::Port;
-use crate::store::{Card, Change, Repository};
+use crate::store::{Card, Change, Comment, Repository};
 
 /// One thing that happened, as the desktop app receives it. It is built from an [`Event`] and deserializes from the
 /// `{kind, data}` a client is sent, so nothing outside [`Event`] can name a kind.
@@ -65,6 +65,37 @@ pub enum Event {
     CardWaiting {
         card: i64,
         reason: Option<String>,
+    },
+    /// An issue got a parent, was moved to another or lost it (`parent` is its number).
+    CardParentChanged {
+        card: i64,
+        parent: Option<i64>,
+    },
+    CardLabelsChanged {
+        card: i64,
+        labels: Vec<String>,
+    },
+    /// Every issue number that blocks the card, including those already done.
+    CardBlockingChanged {
+        card: i64,
+        blocked_by: Vec<i64>,
+    },
+    CardClaimed {
+        card: i64,
+        by: String,
+    },
+    CardReleased {
+        card: i64,
+    },
+    CardCommented {
+        card: i64,
+        comment: Comment,
+    },
+    CardClosed {
+        card: i64,
+    },
+    CardReopened {
+        card: i64,
     },
     ChatRenamed {
         run: i64,
@@ -273,6 +304,10 @@ mod tests {
             retried_after: None,
             confirmed: false,
             held: None,
+            parent: None,
+            closed: false,
+            labels: Vec::new(),
+            claimed_by: None,
         }
     }
 
@@ -376,6 +411,59 @@ mod tests {
                     reason: Some("waiting for a person".into()),
                 },
                 json!({"kind": "card_waiting", "data": {"card": 7, "reason": "waiting for a person"}}),
+            ),
+            (
+                Event::CardParentChanged {
+                    card: 7,
+                    parent: Some(3),
+                },
+                json!({"kind": "card_parent_changed", "data": {"card": 7, "parent": 3}}),
+            ),
+            (
+                Event::CardLabelsChanged {
+                    card: 7,
+                    labels: vec!["bug".into()],
+                },
+                json!({"kind": "card_labels_changed", "data": {"card": 7, "labels": ["bug"]}}),
+            ),
+            (
+                Event::CardBlockingChanged {
+                    card: 7,
+                    blocked_by: vec![2, 3],
+                },
+                json!({"kind": "card_blocking_changed", "data": {"card": 7, "blocked_by": [2, 3]}}),
+            ),
+            (
+                Event::CardClaimed {
+                    card: 7,
+                    by: "person".into(),
+                },
+                json!({"kind": "card_claimed", "data": {"card": 7, "by": "person"}}),
+            ),
+            (
+                Event::CardReleased { card: 7 },
+                json!({"kind": "card_released", "data": {"card": 7}}),
+            ),
+            (
+                Event::CardCommented {
+                    card: 7,
+                    comment: Comment {
+                        id: 1,
+                        card_id: 7,
+                        author: "leon".into(),
+                        body: "Hi".into(),
+                        at: 5,
+                    },
+                },
+                json!({"kind": "card_commented", "data": {"card": 7, "comment": {"id": 1, "card_id": 7, "author": "leon", "body": "Hi", "at": 5}}}),
+            ),
+            (
+                Event::CardClosed { card: 7 },
+                json!({"kind": "card_closed", "data": {"card": 7}}),
+            ),
+            (
+                Event::CardReopened { card: 7 },
+                json!({"kind": "card_reopened", "data": {"card": 7}}),
             ),
             (
                 Event::ChatRenamed {

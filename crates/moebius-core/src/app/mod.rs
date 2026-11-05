@@ -3,7 +3,7 @@
 //!
 //! This module holds `App` itself, its errors and the lookups every operation shares; the operations are grouped by
 //! what they act on: `repositories` adds and edits repositories, `cards` keeps cards in line with their issues and
-//! moves them, `stopping` holds, releases and deletes a card, `runs` is a person's hand in a running run (steering,
+//! moves them, `issues` is the issue tracker (parents, blocking, labels, claims, comments, closing), `issues` is the issue tracker (parents, blocking, labels, claims, comments, closing), `stopping` holds, releases and deletes a card, `runs` is a person's hand in a running run (steering,
 //! stopping, shells), `chats` starts and carries on chats, `changes` publishes, offers and merges changes, `checks`
 //! runs a repository's own checks on them, `packages` proposes installing, updating and removing Pi packages as changes
 //! of the harness configuration repository, `localize` gives a code run the files its issue is likely to touch and
@@ -21,6 +21,7 @@ mod chats;
 mod checks;
 mod deletions;
 mod diffs;
+mod issues;
 mod localize;
 mod packages;
 mod projects;
@@ -61,6 +62,8 @@ pub use chats::{ASSISTANT_ORIGIN, CHAT_ORIGIN, Chat, ChatSettings};
 pub(crate) use checks::tail;
 pub(crate) use deletions::list;
 pub use diffs::Diff;
+pub(crate) use issues::now_millis;
+pub use issues::{Child, IssueQuery, IssueView, state_of};
 pub use reproduce::{Reproduction, TestRun, parse as parse_reproduction};
 pub use whereabouts::{ClientInfo, OFFICIAL_REPOSITORY, ServerInfo};
 
@@ -166,6 +169,11 @@ pub struct App {
     /// Why each waiting card waits, as its column script last said (`moebius.wait`, `ask`, `stuck`). Not stored: a
     /// reason is rebuilt by the next tick after a restart.
     waiting: Mutex<HashMap<i64, String>>,
+    /// The cards whose forge refused to close their issue for a script, with when and what it said: not asked again for
+    /// a while (see `issues`). Not stored.
+    close_refused: Mutex<HashMap<i64, (std::time::Instant, String)>>,
+    /// How long a forge that refused to close an issue is left alone.
+    close_retry: Duration,
     forges: BTreeMap<&'static str, Box<dyn Forge>>,
     /// The harness configuration repository's clone, once the server has opened it.
     harness_repo: OnceLock<Arc<HarnessRepo>>,
@@ -201,6 +209,8 @@ impl App {
             researching: Mutex::default(),
             terminals: Arc::default(),
             waiting: Mutex::default(),
+            close_refused: Mutex::default(),
+            close_retry: Duration::from_secs(600),
             forges,
             harness_repo: OnceLock::new(),
             whereabouts: Default::default(),

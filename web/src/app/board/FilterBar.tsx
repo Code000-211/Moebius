@@ -1,12 +1,12 @@
 /**
- * The filters over a board: repository (opens that board), column, agent and status. Each is a labelled native select,
+ * The filters over a board: repository (opens that board), column, agent, status and label. Each is a labelled native select,
  * so the keyboard and screen readers work as they do everywhere and the value chosen is always in full; "Clear
  * filters" shows while any filter is set. The fields are 40px and sit on one row, grouped by the space between them.
  */
 import type { Repository } from "../../api/types/board";
 import { Button } from "../../ui/components/Button";
 import { Field, Select } from "../../ui/page/Field";
-import { type Filters, hasFilters, STATUS_LABELS } from "./model";
+import { type Filters, hasFilters, NO_FILTERS, STATUS_LABELS } from "./model";
 
 function Filter({
   label,
@@ -36,6 +36,8 @@ export interface FilterBarProps {
   /** The names of the columns, in the order of the board. */
   columns: string[];
   agents: string[];
+  /** The labels the issues of the board carry; the filter is left out while there are none. */
+  labels: string[];
   filters: Filters;
   onChange: (filters: Filters) => void;
 }
@@ -46,6 +48,7 @@ export function FilterBar({
   onRepository,
   columns,
   agents,
+  labels,
   filters,
   onChange,
 }: FilterBarProps) {
@@ -75,12 +78,16 @@ export function FilterBar({
         options={[["", "Any status"], ...Object.entries(STATUS_LABELS)]}
         onChange={(status) => onChange({ ...filters, status })}
       />
+      {(labels.length > 0 || filters.label !== "") && (
+        <Filter
+          label="Label"
+          value={filters.label}
+          options={[["", "Any label"], ...labels.map((l): [string, string] => [l, l])]}
+          onChange={(label) => onChange({ ...filters, label })}
+        />
+      )}
       {hasFilters(filters) && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => onChange({ column: "", agent: "", status: "" })}
-        >
+        <Button variant="ghost" size="sm" onClick={() => onChange(NO_FILTERS)}>
           Clear filters
         </Button>
       )}

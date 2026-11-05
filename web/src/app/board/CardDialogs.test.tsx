@@ -7,8 +7,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Card, Repository } from "../../api/types/board";
-import { BlockDialog, DeleteDialog } from "./CardDialogs";
+import type { Board, Card, Repository } from "../../api/types/board";
+import { BlockDialog, DeleteDialog, ParentDialog, parentChoices } from "./CardDialogs";
 
 afterEach(() => {
   cleanup();
@@ -32,6 +32,11 @@ const card = {
   blocked_by: [],
   refusals: 0,
   change: null,
+  parent: null,
+  counts_as_sub_issue: true,
+  closed: false,
+  labels: [],
+  claimed_by: null,
 } satisfies Card;
 
 const repository = (forge: string): Repository => ({
@@ -199,5 +204,65 @@ describe("deleting a card", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onClose).toHaveBeenCalled();
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("moving a card to another parent", () => {
+  const board = (cards: Card[]): Board => ({
+    repository: repository("github"),
+    cards,
+    round_limit: 5,
+    waiting: {},
+    changes: [],
+  });
+  const plan = { ...card, id: 1, number: 1, title: "The plan" };
+  const step = { ...card, id: 2, number: 2, title: "A step", parent: 1 };
+  const other = { ...card, id: 3, number: 3, title: "Another plan" };
+  const substep = { ...card, id: 4, number: 4, title: "A sub-step", parent: 2 };
+
+  it("offers every issue but the card and the issues below it, which would make a circle", () => {
+    const b = board([plan, step, other, substep]);
+    expect(parentChoices(b, step).map((c) => c.number)).toEqual([1, 3]);
+    expect(parentChoices(b, plan).map((c) => c.number)).toEqual([3]);
+  });
+
+  it("sends the parent that was chosen, none for no parent, and says what the server said when it refuses", async () => {
+    const fetch = server(200, JSON.stringify(step));
+    const done = vi.fn();
+    inClient(
+      <ParentDialog
+        board={board([plan, step, other])}
+        card={step}
+        onClose={() => {}}
+        onDone={done}
+      />,
+    );
+    // It starts on the parent it has; Move sends that again, which the server answers by changing nothing.
+    const choose = screen.getByLabelText("Parent");
+    choose.focus();
+    fireEvent.keyDown(choose, { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: "#3 Another plan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move" }));
+    await waitFor(() => expect(done).toHaveBeenCalledWith("#2 is a sub-issue of #3."));
+    const [url, init] = fetch.mock.calls[0] as unknown as [
+      string,
+      { method: string; body: string },
+    ];
+    expect([url, init.method, JSON.parse(init.body)]).toEqual([
+      "/v1/cards/2/parent",
+      "PUT",
+      { parent: 3 },
+    ]);
+  });
+
+  it("keeps the dialog open with the refusal beside the buttons", async () => {
+    server(422, "#1 is below #2, so it cannot be its parent");
+    const done = vi.fn();
+    inClient(
+      <ParentDialog board={board([plan, step])} card={step} onClose={() => {}} onDone={done} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Move" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("cannot be its parent");
+    expect(done).not.toHaveBeenCalled();
   });
 });

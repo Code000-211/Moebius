@@ -3,7 +3,7 @@
 //! This module opens the database, migrates its schema and holds what every kind of record shares: the connection, the
 //! clock and the helpers that read rows. Each kind of record has a module of its own, with its types and the methods of
 //! `Store` that read and write it: `cards` (repositories, cards, holds, dependencies, moves and the numbers of deleted
-//! cards), `changes`, `runs`, `events` (a run's events), `chats`, `judgements`, `replays`, `inbox`, `grillings`,
+//! cards), `issues` (parents, labels, claims and comments of issues), `changes`, `runs`, `events` (a run's events), `chats`, `judgements`, `replays`, `inbox`, `grillings`,
 //! `shadows` (the decision model's shadows and takeovers), `usage`, `found` (what the Retro collects), `retros`
 //! (Retros, proposals and trials), `lessons` (what the Retro learned from earlier cards), `attempts` (the runs a hard
 //! card gets in one go and which was picked), `research` (research, its runs and experiments) and `automations`
@@ -20,6 +20,7 @@ mod events;
 mod found;
 mod grillings;
 mod inbox;
+mod issues;
 mod judgements;
 mod lessons;
 mod localize;
@@ -47,6 +48,7 @@ pub use events::Event;
 pub use found::Found;
 pub use grillings::{Grilling, GrillingIssue};
 pub use inbox::InboxItem;
+pub use issues::Comment;
 pub use judgements::{Judgement, NewJudgement};
 pub use lessons::{Lesson, NewLesson};
 pub use localize::IndexedFile;
@@ -419,6 +421,7 @@ CREATE TABLE deleted_cards (
 ALTER TABLE research RENAME COLUMN token_budget TO budget_amount;
 ALTER TABLE research ADD COLUMN budget_kind TEXT NOT NULL DEFAULT 'tokens';
 "#,
+    issues::SCHEMA,
 ];
 
 pub fn now() -> i64 {

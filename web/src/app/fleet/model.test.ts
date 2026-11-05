@@ -32,6 +32,11 @@ const card = (id: number, number: number, run: CardRun | null, tokens = 0): Card
   blocked_by: [],
   refusals: 0,
   change: null,
+  parent: null,
+  counts_as_sub_issue: true,
+  closed: false,
+  labels: [],
+  claimed_by: null,
 });
 
 const run = (id: number, status: CardRun["status"]): CardRun => ({

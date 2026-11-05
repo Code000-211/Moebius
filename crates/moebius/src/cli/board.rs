@@ -40,7 +40,117 @@ pub enum IssueCommand {
         title: String,
         #[arg(long, default_value = "")]
         body: String,
+        /// The number of the issue it is a sub-issue of.
+        #[arg(long)]
+        parent: Option<i64>,
+        /// A label; give it again for more.
+        #[arg(long = "label")]
+        labels: Vec<String>,
+        /// The number of an issue that blocks it; give it again for more.
+        #[arg(long = "blocked-by")]
+        blocked_by: Vec<i64>,
     },
+    /// The issues of a repository, filtered: by parent, label, state, claim and blocking.
+    List {
+        /// The id of the repository.
+        repository: i64,
+        /// Only the sub-issues of this issue number.
+        #[arg(long)]
+        parent: Option<i64>,
+        #[arg(long)]
+        label: Option<String>,
+        #[arg(long)]
+        state: Option<IssueState>,
+        /// Only issues somebody claimed.
+        #[arg(long, conflicts_with = "unclaimed")]
+        claimed: bool,
+        /// Only issues nobody claimed.
+        #[arg(long)]
+        unclaimed: bool,
+        /// Only issues an issue that is not done blocks.
+        #[arg(long, conflicts_with = "unblocked")]
+        blocked: bool,
+        /// Only issues nothing blocks.
+        #[arg(long)]
+        unblocked: bool,
+    },
+    /// One issue: its state, labels, claim, blockers and sub-issues.
+    Show {
+        /// The id of the card.
+        card: i64,
+    },
+    /// Change an issue's title or body.
+    Edit {
+        card: i64,
+        #[arg(long)]
+        title: Option<String>,
+        #[arg(long)]
+        body: Option<String>,
+    },
+    /// Close an issue: its card goes to Done and its blockers count as resolved.
+    Close {
+        card: i64,
+        #[arg(long, default_value = "")]
+        reason: String,
+    },
+    /// Reopen a closed issue: its card goes back to the backlog.
+    Reopen {
+        card: i64,
+        #[arg(long, default_value = "")]
+        reason: String,
+    },
+    /// Claim an issue so that no other session takes it; fails when somebody else claimed it.
+    Claim {
+        card: i64,
+        /// Who claims; the caller when left out.
+        #[arg(long = "as")]
+        by: Option<String>,
+    },
+    /// Release the claim on an issue; a claim made under a name is released with that name.
+    Release {
+        card: i64,
+        /// The name the issue was claimed under.
+        #[arg(long = "as")]
+        by: Option<String>,
+    },
+    /// Add and remove labels.
+    Labels {
+        card: i64,
+        #[arg(long)]
+        add: Vec<String>,
+        #[arg(long)]
+        remove: Vec<String>,
+    },
+    /// Make an issue a sub-issue of the issue number `parent`, or of `none`.
+    Parent {
+        card: i64,
+        /// An issue number, or `none`.
+        parent: String,
+    },
+    /// Add and remove the issues that block an issue.
+    Blocker {
+        #[command(subcommand)]
+        command: BlockerCommand,
+    },
+    /// Write a comment on an issue.
+    Comment { card: i64, body: String },
+    /// The comments on an issue.
+    Comments { card: i64 },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum BlockerCommand {
+    /// Make the issue number `blocker` block the issue; refused when that makes a cycle.
+    Add { card: i64, blocker: i64 },
+    /// Stop the issue number `blocker` from blocking the issue.
+    Remove { card: i64, blocker: i64 },
+}
+
+/// The state an issue is filtered by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum IssueState {
+    Open,
+    Closed,
 }
 
 /// `board [repository]`.
@@ -89,20 +199,209 @@ pub fn inbox(
     Ok((inbox_request(found, *action, reason)?, Show::Object))
 }
 
-/// `issue create`.
-pub fn issue(command: &IssueCommand) -> Plan {
-    let IssueCommand::Create {
-        repository,
-        title,
-        body,
-    } = command;
-    Ok((
-        Request::post(
-            format!("/v1/repositories/{repository}/issues"),
-            json!({ "title": title, "body": body }),
+/// The text of `value` as a URL query component.
+fn encoded(value: &str) -> String {
+    value
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
+            other => format!("%{other:02X}"),
+        })
+        .collect()
+}
+
+/// The issue number `text` names, or none for `none`; a leading `#` is fine.
+fn issue_number(text: &str) -> Result<Option<i64>, String> {
+    if text.eq_ignore_ascii_case("none") {
+        return Ok(None);
+    }
+    text.trim_start_matches('#')
+        .parse()
+        .map(Some)
+        .map_err(|_| format!("{text:?} is not an issue number or none"))
+}
+
+/// The columns `issue list` shows.
+const ISSUES: &[&str] = &[
+    "id",
+    "number",
+    "state",
+    "title",
+    "labels",
+    "claimed_by",
+    "blocked_by",
+];
+
+/// `issue ...`: creating, listing, showing and changing issues. `get` reads a route, for the commands that change
+/// part of what an issue has.
+pub fn issue(command: &IssueCommand, get: &mut dyn FnMut(&str) -> Result<Value, String>) -> Plan {
+    let card_path = |card: &i64, rest: &str| format!("/v1/cards/{card}{rest}");
+    let reason = |reason: &String| json!({ "reason": reason });
+    Ok(match command {
+        IssueCommand::Create {
+            repository,
+            title,
+            body,
+            parent,
+            labels,
+            blocked_by,
+        } => {
+            let mut issue = json!({ "title": title, "body": body });
+            if let Some(parent) = parent {
+                issue["parent"] = json!(parent);
+            }
+            if !labels.is_empty() {
+                issue["labels"] = json!(labels);
+            }
+            if !blocked_by.is_empty() {
+                issue["blocked_by"] = json!(blocked_by);
+            }
+            (
+                Request::post(format!("/v1/repositories/{repository}/issues"), issue),
+                Show::Object,
+            )
+        }
+        IssueCommand::List {
+            repository,
+            parent,
+            label,
+            state,
+            claimed,
+            unclaimed,
+            blocked,
+            unblocked,
+        } => {
+            let mut query = Vec::new();
+            if let Some(parent) = parent {
+                query.push(format!("parent={parent}"));
+            }
+            if let Some(label) = label {
+                query.push(format!("label={}", encoded(label)));
+            }
+            match state {
+                Some(IssueState::Open) => query.push("state=open".into()),
+                Some(IssueState::Closed) => query.push("state=closed".into()),
+                None => {}
+            }
+            if *claimed || *unclaimed {
+                query.push(format!("claimed={claimed}"));
+            }
+            if *blocked || *unblocked {
+                query.push(format!("blocked={blocked}"));
+            }
+            let query = if query.is_empty() {
+                String::new()
+            } else {
+                format!("?{}", query.join("&"))
+            };
+            (
+                Request::get(format!("/v1/repositories/{repository}/issues{query}")),
+                Show::Table(ISSUES),
+            )
+        }
+        IssueCommand::Show { card } => (Request::get(card_path(card, "")), Show::Issue),
+        IssueCommand::Edit { card, title, body } => {
+            let current = get(&card_path(card, ""))?;
+            let text = |field: &str| current[field].as_str().unwrap_or_default().to_string();
+            (
+                Request::put(
+                    card_path(card, ""),
+                    json!({
+                        "title": title.clone().unwrap_or_else(|| text("title")),
+                        "body": body.clone().unwrap_or_else(|| text("body")),
+                    }),
+                ),
+                Show::Object,
+            )
+        }
+        IssueCommand::Close { card, reason: why } => (
+            Request::post(card_path(card, "/close"), reason(why)),
+            Show::Object,
         ),
-        Show::Object,
-    ))
+        IssueCommand::Reopen { card, reason: why } => (
+            Request::post(card_path(card, "/reopen"), reason(why)),
+            Show::Object,
+        ),
+        IssueCommand::Claim { card, by } => (
+            Request::post(card_path(card, "/claim"), json!({ "by": by })),
+            Show::Object,
+        ),
+        IssueCommand::Release { card, by } => (
+            Request::delete_with(
+                card_path(card, "/claim"),
+                by.as_ref().map(|by| json!({ "by": by })),
+            ),
+            Show::Object,
+        ),
+        IssueCommand::Labels { card, add, remove } => {
+            let current = get(&card_path(card, ""))?;
+            let mut labels: Vec<String> = current["labels"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|l| l.as_str().map(String::from))
+                .filter(|l| !remove.contains(l))
+                .collect();
+            for label in add {
+                if !labels.contains(label) {
+                    labels.push(label.clone());
+                }
+            }
+            (
+                Request::put(card_path(card, "/labels"), json!({ "labels": labels })),
+                Show::Object,
+            )
+        }
+        IssueCommand::Parent { card, parent } => (
+            Request::put(
+                card_path(card, "/parent"),
+                json!({ "parent": issue_number(parent)? }),
+            ),
+            Show::Object,
+        ),
+        IssueCommand::Blocker {
+            command: BlockerCommand::Add { card, blocker },
+        } => (
+            Request::post(card_path(card, "/blockers"), json!({ "blocker": blocker })),
+            Show::Raw,
+        ),
+        IssueCommand::Blocker {
+            command: BlockerCommand::Remove { card, blocker },
+        } => (
+            Request::delete(card_path(card, &format!("/blockers/{blocker}"))),
+            Show::Raw,
+        ),
+        IssueCommand::Comment { card, body } => (
+            Request::post(card_path(card, "/comments"), json!({ "body": body })),
+            Show::Object,
+        ),
+        IssueCommand::Comments { card } => (
+            Request::get(card_path(card, "/comments")),
+            Show::Table(&["at", "author", "body"]),
+        ),
+    })
+}
+
+/// An issue as `issue show` writes it: its fields, then its sub-issues.
+pub fn show_issue(issue: &Value) -> String {
+    let mut shown = issue.clone();
+    let children = shown
+        .as_object_mut()
+        .and_then(|fields| fields.remove("children"));
+    let mut text = super::object(&shown);
+    if let Some(children) = children.filter(|c| c.as_array().is_some_and(|c| !c.is_empty())) {
+        text += &format!(
+            "\nsub-issues:\n{}",
+            super::table(&children, &["number", "state", "column", "title"])
+                .lines()
+                .map(|line| format!("  {line}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+    }
+    text
 }
 
 /// The request that does `verb` to the inbox item `item`, as the app's button of that kind does.
@@ -438,5 +737,190 @@ mod tests {
                 .starts_with("card 12 #2 Second\nrepository: demo (1)")
         );
         assert_eq!(render(&Show::Card(99), &text).unwrap_err(), "no card 99");
+    }
+
+    /// The request the command line `args` stands for, as method, path and body; `current` is what a lookup of the
+    /// card answers.
+    fn issue_request(args: &[&str], current: Value) -> (String, String, Option<Value>) {
+        let (request, _) = crate::cli::tests::plan_with(
+            std::iter::once("issue")
+                .chain(args.iter().copied())
+                .collect::<Vec<_>>()
+                .as_slice(),
+            &mut |path| {
+                assert!(path.starts_with("/v1/cards/"), "{path}");
+                Ok(current.clone())
+            },
+        )
+        .unwrap();
+        (request.method.to_string(), request.path, request.body)
+    }
+
+    #[test]
+    fn the_issue_commands_map_to_the_tracker_routes() {
+        let nothing = json!({});
+        let route = |args: &[&str]| issue_request(args, nothing.clone());
+        assert_eq!(
+            route(&[
+                "create",
+                "1",
+                "Map",
+                "--parent",
+                "4",
+                "--label",
+                "wayfinder:map",
+                "--blocked-by",
+                "2",
+                "--blocked-by",
+                "3"
+            ]),
+            (
+                "POST".into(),
+                "/v1/repositories/1/issues".into(),
+                Some(
+                    json!({"title": "Map", "body": "", "parent": 4, "labels": ["wayfinder:map"], "blocked_by": [2, 3]})
+                )
+            )
+        );
+        assert_eq!(
+            route(&["list", "1"]),
+            ("GET".into(), "/v1/repositories/1/issues".into(), None)
+        );
+        assert_eq!(
+            route(&[
+                "list",
+                "1",
+                "--parent",
+                "4",
+                "--label",
+                "wayfinder:spike",
+                "--state",
+                "open",
+                "--unclaimed",
+                "--unblocked"
+            ])
+            .1,
+            "/v1/repositories/1/issues?parent=4&label=wayfinder%3Aspike&state=open&claimed=false&blocked=false"
+        );
+        assert_eq!(
+            route(&["list", "1", "--claimed", "--blocked", "--state", "closed"]).1,
+            "/v1/repositories/1/issues?state=closed&claimed=true&blocked=true"
+        );
+        assert_eq!(
+            route(&["show", "7"]),
+            ("GET".into(), "/v1/cards/7".into(), None)
+        );
+        assert_eq!(
+            route(&["close", "7", "--reason", "decided"]),
+            (
+                "POST".into(),
+                "/v1/cards/7/close".into(),
+                Some(json!({"reason": "decided"}))
+            )
+        );
+        assert_eq!(route(&["reopen", "7"]).1, "/v1/cards/7/reopen");
+        assert_eq!(
+            route(&["claim", "7", "--as", "session 1"]),
+            (
+                "POST".into(),
+                "/v1/cards/7/claim".into(),
+                Some(json!({"by": "session 1"}))
+            )
+        );
+        assert_eq!(route(&["claim", "7"]).2, Some(json!({"by": null})));
+        assert_eq!(
+            route(&["release", "7"]),
+            ("DELETE".into(), "/v1/cards/7/claim".into(), None)
+        );
+        assert_eq!(
+            route(&["release", "7", "--as", "session 1"]),
+            (
+                "DELETE".into(),
+                "/v1/cards/7/claim".into(),
+                Some(json!({"by": "session 1"}))
+            )
+        );
+        assert_eq!(
+            route(&["parent", "7", "#4"]),
+            (
+                "PUT".into(),
+                "/v1/cards/7/parent".into(),
+                Some(json!({"parent": 4}))
+            )
+        );
+        assert_eq!(
+            route(&["parent", "7", "none"]).2,
+            Some(json!({"parent": null}))
+        );
+        assert_eq!(
+            route(&["blocker", "add", "7", "3"]),
+            (
+                "POST".into(),
+                "/v1/cards/7/blockers".into(),
+                Some(json!({"blocker": 3}))
+            )
+        );
+        assert_eq!(
+            route(&["blocker", "remove", "7", "3"]),
+            ("DELETE".into(), "/v1/cards/7/blockers/3".into(), None)
+        );
+        assert_eq!(
+            route(&["comment", "7", "Use a queue."]),
+            (
+                "POST".into(),
+                "/v1/cards/7/comments".into(),
+                Some(json!({"body": "Use a queue."}))
+            )
+        );
+        assert_eq!(route(&["comments", "7"]).1, "/v1/cards/7/comments");
+        assert!(crate::cli::tests::plan(&["issue", "parent", "7", "soon"]).is_err());
+        assert!(
+            crate::cli::tests::plan(&["issue", "list", "1", "--claimed", "--unclaimed"]).is_err()
+        );
+    }
+
+    #[test]
+    fn editing_and_labelling_an_issue_keep_what_it_has() {
+        let current = json!({"title": "Old", "body": "Text", "labels": ["a", "b"]});
+        assert_eq!(
+            issue_request(&["edit", "7", "--title", "New"], current.clone()),
+            (
+                "PUT".into(),
+                "/v1/cards/7".into(),
+                Some(json!({"title": "New", "body": "Text"}))
+            )
+        );
+        assert_eq!(
+            issue_request(&["edit", "7", "--body", "Other"], current.clone()).2,
+            Some(json!({"title": "Old", "body": "Other"}))
+        );
+        assert_eq!(
+            issue_request(
+                &["labels", "7", "--add", "c", "--add", "a", "--remove", "b"],
+                current
+            )
+            .2,
+            Some(json!({"labels": ["a", "c"]}))
+        );
+    }
+
+    #[test]
+    fn an_issue_is_shown_with_its_sub_issues() {
+        let issue = json!({
+            "id": 7, "number": 4, "title": "Map", "state": "open", "labels": ["wayfinder:map"],
+            "blocked_by": [], "claimed_by": null,
+            "children": [
+                {"id": 8, "number": 5, "title": "Spike", "state": "closed", "column": "Done"},
+                {"id": 9, "number": 6, "title": "Decide", "state": "open", "column": "Backlog"}
+            ]
+        });
+        let text = render(&crate::cli::Show::Issue, &issue.to_string()).unwrap();
+        assert!(text.contains("title: Map"), "{text}");
+        assert!(text.contains("labels: [\"wayfinder:map\"]"), "{text}");
+        assert!(
+            text.contains("sub-issues:\n  5  closed  Done     Spike\n  6  open    Backlog  Decide"),
+            "{text}"
+        );
+        assert!(!text.contains("children"), "{text}");
     }
 }

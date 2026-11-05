@@ -50,9 +50,40 @@ pub struct Issue {
     pub user: User,
     /// When the issue last changed, in the form GitHub always writes it, so that it compares as text.
     #[serde(default)]
-    updated_at: Option<String>,
+    pub(crate) updated_at: Option<String>,
     /// Present on the items of the issues list that are pull requests.
     pull_request: Option<serde_json::Value>,
+    #[serde(default)]
+    pub labels: Vec<Label>,
+    /// The address of the issue this one is a sub-issue of, which ends in its number.
+    #[serde(default)]
+    pub parent_issue_url: Option<String>,
+    /// How many comments the issue has.
+    #[serde(default)]
+    pub comments: i64,
+    /// Present where the forge has issue dependencies.
+    #[serde(default)]
+    pub issue_dependencies_summary: Option<DependenciesSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Label {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct DependenciesSummary {
+    #[serde(default)]
+    pub total_blocked_by: i64,
+}
+
+/// A comment on an issue as GitHub lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct IssueComment {
+    pub id: i64,
+    pub user: User,
+    pub body: String,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -111,6 +142,11 @@ struct Created {
 }
 
 #[derive(Deserialize)]
+struct Identified {
+    id: i64,
+}
+
+#[derive(Deserialize)]
 struct Merged {
     sha: String,
 }
@@ -150,6 +186,8 @@ pub struct GitHub {
     /// The `updated_at` of the newest issue in the last full answer, per repository: the next poll stops paging once it
     /// reaches issues older than that.
     newest: StdMutex<HashMap<String, String>>,
+    /// The issues blocking each issue, as last read.
+    pub(crate) blockers: crate::repos::forge::Remembered,
 }
 
 impl GitHub {
@@ -163,6 +201,7 @@ impl GitHub {
             tokens: Mutex::new(HashMap::new()),
             etags: StdMutex::new(HashMap::new()),
             newest: StdMutex::new(HashMap::new()),
+            blockers: Default::default(),
         })
     }
 
@@ -356,6 +395,190 @@ impl GitHub {
         Ok(())
     }
 
+    /// Closes issue `number` in `github` as completed, or reopens it.
+    pub async fn set_issue_state(
+        &self,
+        github: &str,
+        number: i64,
+        open: bool,
+    ) -> Result<(), GitHubError> {
+        let request = if open {
+            json!({ "state": "open", "state_reason": "reopened" })
+        } else {
+            json!({ "state": "closed", "state_reason": "completed" })
+        };
+        self.repository_do(
+            github,
+            Method::PATCH,
+            &format!("/issues/{number}"),
+            Some(&request),
+        )
+        .await
+    }
+
+    /// Replaces the labels of issue `number` in `github`; GitHub makes the ones that do not exist.
+    pub async fn set_issue_labels(
+        &self,
+        github: &str,
+        number: i64,
+        labels: &[String],
+    ) -> Result<(), GitHubError> {
+        let request = json!({ "labels": labels });
+        self.repository_do(
+            github,
+            Method::PUT,
+            &format!("/issues/{number}/labels"),
+            Some(&request),
+        )
+        .await
+    }
+
+    /// Writes a comment on issue `number` in `github` and returns its id.
+    pub async fn create_issue_comment(
+        &self,
+        github: &str,
+        number: i64,
+        body: &str,
+    ) -> Result<i64, GitHubError> {
+        let request = json!({ "body": body });
+        let created: Identified = self
+            .repository_call(
+                github,
+                Method::POST,
+                &format!("/issues/{number}/comments"),
+                Some(&request),
+            )
+            .await?;
+        Ok(created.id)
+    }
+
+    /// The comments of issue `number` in `github`, oldest first.
+    pub async fn issue_comments(
+        &self,
+        github: &str,
+        number: i64,
+    ) -> Result<Vec<IssueComment>, GitHubError> {
+        let (owner, repo) = github
+            .split_once('/')
+            .ok_or_else(|| GitHubError::Repository(github.to_string()))?;
+        let token = self.installation_token(owner, repo).await?;
+        let mut url = format!(
+            "{}/repos/{github}/issues/{number}/comments?per_page=100",
+            self.api_url
+        );
+        let mut comments = Vec::new();
+        loop {
+            let response =
+                Self::succeeded(Self::authorize(self.http.get(&url), &token).send().await?).await?;
+            let next = self.next_page(response.headers());
+            comments.extend(response.json::<Vec<IssueComment>>().await?);
+            match next {
+                Some(next) => url = next,
+                None => return Ok(comments),
+            }
+        }
+    }
+
+    /// The id GitHub gives issue `number` of `github`, which sub-issues and dependencies are written with.
+    async fn issue_id(&self, github: &str, number: i64) -> Result<i64, GitHubError> {
+        let issue: Identified = self
+            .repository_call(github, Method::GET, &format!("/issues/{number}"), None)
+            .await?;
+        Ok(issue.id)
+    }
+
+    /// Makes issue `number` of `github` a sub-issue of `parent`, taking it from the parent it has, or takes it from
+    /// `previous` when `parent` is none.
+    pub async fn set_issue_parent(
+        &self,
+        github: &str,
+        number: i64,
+        parent: Option<i64>,
+        previous: Option<i64>,
+    ) -> Result<(), GitHubError> {
+        let id = self.issue_id(github, number).await?;
+        let request = json!({ "sub_issue_id": id, "replace_parent": true });
+        match (parent, previous) {
+            (Some(parent), _) => {
+                self.repository_do(
+                    github,
+                    Method::POST,
+                    &format!("/issues/{parent}/sub_issues"),
+                    Some(&request),
+                )
+                .await
+            }
+            (None, Some(previous)) => {
+                self.repository_do(
+                    github,
+                    Method::DELETE,
+                    &format!("/issues/{previous}/sub_issue"),
+                    Some(&request),
+                )
+                .await
+            }
+            (None, None) => Ok(()),
+        }
+    }
+
+    /// Makes issue `blocker` of `github` block issue `number`.
+    pub async fn add_blocker(
+        &self,
+        github: &str,
+        number: i64,
+        blocker: i64,
+    ) -> Result<(), GitHubError> {
+        let request = json!({ "issue_id": self.issue_id(github, blocker).await? });
+        self.repository_do(
+            github,
+            Method::POST,
+            &format!("/issues/{number}/dependencies/blocked_by"),
+            Some(&request),
+        )
+        .await
+    }
+
+    /// Stops issue `blocker` of `github` from blocking issue `number`.
+    pub async fn remove_blocker(
+        &self,
+        github: &str,
+        number: i64,
+        blocker: i64,
+    ) -> Result<(), GitHubError> {
+        let id = self.issue_id(github, blocker).await?;
+        self.repository_do(
+            github,
+            Method::DELETE,
+            &format!("/issues/{number}/dependencies/blocked_by/{id}"),
+            None,
+        )
+        .await
+    }
+
+    /// The numbers of the issues that block issue `number` of `github`, from all pages.
+    pub async fn blocked_by(&self, github: &str, number: i64) -> Result<Vec<i64>, GitHubError> {
+        let (owner, repo) = github
+            .split_once('/')
+            .ok_or_else(|| GitHubError::Repository(github.to_string()))?;
+        let token = self.installation_token(owner, repo).await?;
+        let mut url = format!(
+            "{}/repos/{github}/issues/{number}/dependencies/blocked_by?per_page=100",
+            self.api_url
+        );
+        let mut blockers = Vec::new();
+        loop {
+            let response =
+                Self::succeeded(Self::authorize(self.http.get(&url), &token).send().await?).await?;
+            let next = self.next_page(response.headers());
+            blockers.extend(response.json::<Vec<Created>>().await?);
+            match next {
+                Some(next) => url = next,
+                None => break,
+            }
+        }
+        Ok(blockers.into_iter().map(|b| b.number).collect())
+    }
+
     pub async fn pull_request(
         &self,
         github: &str,
@@ -427,6 +650,28 @@ impl GitHub {
             request = request.json(body);
         }
         self.send(request, &token).await
+    }
+
+    /// Calls the API at `/repos/{github}{path}` with the installation's token and ignores the answer's body.
+    async fn repository_do(
+        &self,
+        github: &str,
+        method: Method,
+        path: &str,
+        body: Option<&serde_json::Value>,
+    ) -> Result<(), GitHubError> {
+        let (owner, repo) = github
+            .split_once('/')
+            .ok_or_else(|| GitHubError::Repository(github.to_string()))?;
+        let token = self.installation_token(owner, repo).await?;
+        let mut request = self
+            .http
+            .request(method, format!("{}/repos/{github}{path}", self.api_url));
+        if let Some(body) = body {
+            request = request.json(body);
+        }
+        Self::succeeded(Self::authorize(request, &token).send().await?).await?;
+        Ok(())
     }
 
     /// Forgets the ETag of `github`, so the next call to [`GitHub::issues`] lists the issues again.

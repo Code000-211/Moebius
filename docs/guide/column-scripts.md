@@ -190,9 +190,10 @@ reason `the round limit of 2 is reached`. Answer it with `POST /v1/cards/{id}/re
 
 ### Wait for a dependency, except for urgent cards
 
-The default `ready.luau` waits while `card.blocked_by` is not empty. On GitHub that list comes from lines such as
-`blocked by #12` in the issue's body, and an issue counts as done when its card is in `Done`. Without a forge nothing
-fills it, so no card there is blocked. This version lets a card whose title contains `[urgent]` start anyway.
+The default `ready.luau` waits while `card.blocked_by` is not empty. On a forge that list comes from lines such as
+`blocked by #12` in the issue's body and from the forge's own dependencies; anywhere, `moebius issue blocker add` fills it.
+An issue counts as done when it is closed, which is when its card is in `Done`. This version lets a card whose title
+contains `[urgent]` start anyway.
 
 <!-- script: ready.luau; test: urgent-skips-blockers -->
 ```luau
@@ -220,6 +221,48 @@ end
 
 Try it on GitHub: open an issue whose body says `blocked by #12` while #12 is open. Its card waits in `Not started` with
 `waiting for #12`. Add `[urgent]` to the title and the next poll moves it on.
+
+### Leave a plan to its sub-issues, and a claimed card to its claimer
+
+An issue can have sub-issues (`card.children`, each with its `state`), labels (`card.labels`) and a claim
+(`card.claimed_by`), set with `moebius issue` or the API. The default `ready.luau` already treats a card with sub-issues as
+a plan (one that has no run or change of its own): it starts no work of its own while one is open, and closes the issue
+with the last. A claim is advisory, and the default workflow does not look at it. This version leaves a
+claimed card alone, and lets a card labelled `plan` close itself without work once its sub-issues are done.
+
+<!-- script: ready.luau -->
+```luau
+function on_card(card)
+  if card.claimed_by ~= nil then
+    moebius.wait("claimed by " .. card.claimed_by)
+    return
+  end
+  local open = {}
+  for _, child in ipairs(card.children) do
+    if child.state == "open" then
+      table.insert(open, "#" .. child.number)
+    end
+  end
+  if #open > 0 then
+    moebius.wait("waiting for sub-issues " .. table.concat(open, ", "))
+    return
+  end
+  for _, label in ipairs(card.labels) do
+    if label == "plan" then
+      moebius.close_issue("the plan has no work of its own")
+      return
+    end
+  end
+  if #card.blocked_by > 0 then
+    moebius.wait("waiting for #" .. card.blocked_by[1])
+    return
+  end
+  moebius.move("In progress")
+end
+```
+
+Try it: `moebius issue create 1 "Plan" --label plan`, then `moebius issue create 1 "Step" --parent 1`. The plan waits with
+`waiting for sub-issues #2`; `moebius issue close <step's card id>` lets the next tick close the plan too.
 
 ## How to try a script
 

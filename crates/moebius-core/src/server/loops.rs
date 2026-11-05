@@ -441,6 +441,92 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_poll_reads_labels_the_parent_and_the_comments_that_changed() {
+        let f = Fixture::new().await;
+        let mut two = issue(2, "open", "leon", "A ticket.");
+        two["labels"] = json!([{ "name": "wayfinder:spike" }]);
+        two["parent_issue_url"] = json!("https://api.github.com/repos/acme/widgets/issues/1");
+        two["comments"] = json!(1);
+        *f.fake.comments.lock().unwrap() = Some(vec![json!({
+            "id": 31, "user": { "login": "ada" }, "body": "Look at the queue.",
+            "created_at": "2026-03-04T05:06:07Z",
+        })]);
+        f.fake.set_issues(
+            "\"v1\"",
+            vec![issue(1, "open", "leon", "The map."), two.clone()],
+        );
+        f.server.poll_github().await;
+        let app = &f.server.app;
+        let ticket = f.card(2).unwrap();
+        assert_eq!(ticket.parent, Some(1));
+        assert_eq!(ticket.labels, ["wayfinder:spike"]);
+        let comments = app.comments(ticket.id).unwrap();
+        assert_eq!(
+            (comments[0].author.as_str(), comments[0].body.as_str()),
+            ("ada", "Look at the queue.")
+        );
+        assert_eq!(
+            app.issue(f.card(1).unwrap().id).unwrap().children[0].number,
+            2
+        );
+
+        // A second comment arrives, and the forge cannot list them: the issue is still synced, the failure is
+        // reported, and the comments are read at the next poll.
+        two["comments"] = json!(2);
+        two["labels"] = json!([]);
+        *f.fake.comments.lock().unwrap() = None;
+        f.fake.set_issues("\"v2\"", vec![two.clone()]);
+        let mut events = app.bus.subscribe();
+        f.server.poll_github().await;
+        assert!(f.card(2).unwrap().labels.is_empty());
+        let mut kinds = Vec::new();
+        while let Ok(event) = events.try_recv() {
+            kinds.push(event.kind);
+        }
+        assert_eq!(kinds, ["forge_error", "card_labels_changed"]);
+        *f.fake.comments.lock().unwrap() = Some(vec![
+            json!({ "id": 31, "user": { "login": "ada" }, "body": "Look at the queue.", "created_at": "2026-03-04T05:06:07Z" }),
+            json!({ "id": 32, "user": { "login": "leon" }, "body": "Done.", "created_at": "2026-03-04T05:07:07Z" }),
+        ]);
+        f.fake.set_issues("\"v3\"", vec![two]);
+        f.server.poll_github().await;
+        assert_eq!(app.comments(ticket.id).unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn the_poll_reads_comments_only_for_issues_it_syncs_and_not_again_for_a_count_the_forge_keeps()
+     {
+        let f = Fixture::new().await;
+        let reads = || {
+            f.fake
+                .comment_reads
+                .load(std::sync::atomic::Ordering::SeqCst)
+        };
+        let comment = |id: i64| json!({ "id": id, "user": { "login": "ada" }, "body": "Hm.", "created_at": "2026-03-04T05:06:07Z" });
+        // A closed issue Moebius has no card for is not synced, so what it says of its comments is not read.
+        let mut old = issue(9, "closed", "leon", "Old.");
+        old["comments"] = json!(3);
+        let mut two = issue(2, "open", "leon", "A ticket.");
+        two["comments"] = json!(2);
+        *f.fake.comments.lock().unwrap() = Some(vec![comment(1), comment(2)]);
+        f.fake.set_issues("\"v1\"", vec![old, two.clone()]);
+        f.server.poll_github().await;
+        assert_eq!(reads(), 1);
+        let ticket = f.card(2).unwrap();
+        assert_eq!(f.server.app.comments(ticket.id).unwrap().len(), 2);
+
+        // One is deleted on the forge: that is read once, and a count that stays is not read again and again.
+        two["comments"] = json!(1);
+        *f.fake.comments.lock().unwrap() = Some(vec![comment(1)]);
+        f.fake.set_issues("\"v2\"", vec![two.clone()]);
+        f.server.poll_github().await;
+        assert_eq!(reads(), 2);
+        f.fake.set_issues("\"v3\"", vec![two]);
+        f.server.poll_github().await;
+        assert_eq!(reads(), 2);
+    }
+
+    #[tokio::test]
     async fn a_repository_that_cannot_be_polled_is_reported_and_the_others_still_are() {
         let f = Fixture::new().await;
         let app = &f.server.app;

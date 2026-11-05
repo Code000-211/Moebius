@@ -35,12 +35,41 @@ pub struct Issue {
     pub author: User,
     /// When the issue last changed, in the form GitLab always writes it, so that it compares as text.
     #[serde(default)]
-    updated_at: Option<String>,
+    pub(crate) updated_at: Option<String>,
+    #[serde(default)]
+    pub labels: Vec<String>,
+    /// How many comments (notes written by people) the issue has.
+    #[serde(default)]
+    pub user_notes_count: i64,
+    #[serde(default)]
+    pub project_id: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct User {
     pub username: String,
+}
+
+/// A comment on an issue (a note) as GitLab lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Note {
+    pub id: i64,
+    pub body: String,
+    pub author: User,
+    pub created_at: String,
+    /// Set for what GitLab wrote itself, such as "changed the description".
+    #[serde(default)]
+    pub system: bool,
+}
+
+/// An issue linked to another, as the links of an issue list it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct IssueLink {
+    pub iid: i64,
+    pub project_id: i64,
+    pub issue_link_id: i64,
+    /// `relates_to`, `blocks` or `is_blocked_by`.
+    pub link_type: String,
 }
 
 /// A merge request as GitLab describes it.
@@ -112,6 +141,10 @@ pub struct GitLab {
     /// The `updated_at` of the newest issue in the last full answer, per project: the next poll stops paging once it
     /// reaches issues older than that.
     newest: Mutex<HashMap<String, String>>,
+    /// The issues blocking each issue, as last read.
+    pub(crate) blockers: crate::repos::forge::Remembered,
+    /// The id GitLab gives each project, as the issues list showed it: a link names the project of its issue by it.
+    projects: Mutex<HashMap<String, i64>>,
 }
 
 impl GitLab {
@@ -125,6 +158,8 @@ impl GitLab {
             token: token.trim().to_string(),
             etags: Mutex::new(HashMap::new()),
             newest: Mutex::new(HashMap::new()),
+            blockers: Default::default(),
+            projects: Mutex::new(HashMap::new()),
         }
     }
 
@@ -200,6 +235,23 @@ impl GitLab {
         Ok(Some(issues))
     }
 
+    /// Remembers that GitLab calls `project` by the id `id`.
+    pub(crate) fn remember_project(&self, project: &str, id: i64) {
+        self.projects
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(project.to_string(), id);
+    }
+
+    /// The id GitLab gives `project`, once an issues list has shown it.
+    pub(crate) fn project_id(&self, project: &str) -> Option<i64> {
+        self.projects
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(project)
+            .copied()
+    }
+
     /// Forgets the ETag of `project`, so the next call to [`GitLab::issues`] lists the issues again.
     pub fn forget_issues_etag(&self, project: &str) {
         self.etags().remove(project);
@@ -238,6 +290,167 @@ impl GitLab {
             )
             .await?;
         Ok(())
+    }
+
+    /// Closes issue `number` in `project`, or reopens it.
+    pub async fn set_issue_state(
+        &self,
+        project: &str,
+        number: i64,
+        open: bool,
+    ) -> Result<(), GitLabError> {
+        let request = json!({ "state_event": if open { "reopen" } else { "close" } });
+        self.project_do(
+            project,
+            Method::PUT,
+            &format!("/issues/{number}"),
+            Some(&request),
+        )
+        .await
+    }
+
+    /// Replaces the labels of issue `number` in `project`.
+    pub async fn set_issue_labels(
+        &self,
+        project: &str,
+        number: i64,
+        labels: &[String],
+    ) -> Result<(), GitLabError> {
+        let request = json!({ "labels": labels.join(",") });
+        self.project_do(
+            project,
+            Method::PUT,
+            &format!("/issues/{number}"),
+            Some(&request),
+        )
+        .await
+    }
+
+    /// Writes a comment on issue `number` in `project` and returns its id.
+    pub async fn create_note(
+        &self,
+        project: &str,
+        number: i64,
+        body: &str,
+    ) -> Result<i64, GitLabError> {
+        #[derive(Deserialize)]
+        struct Identified {
+            id: i64,
+        }
+        let request = json!({ "body": body });
+        let created: Identified = self
+            .project_call(
+                project,
+                Method::POST,
+                &format!("/issues/{number}/notes"),
+                Some(&request),
+            )
+            .await?;
+        Ok(created.id)
+    }
+
+    /// The comments of issue `number` in `project` that people wrote, oldest first.
+    pub async fn notes(&self, project: &str, number: i64) -> Result<Vec<Note>, GitLabError> {
+        let mut url = format!(
+            "{}/issues/{number}/notes?sort=asc&order_by=created_at&per_page=100",
+            self.project_url(project)
+        );
+        let mut notes = Vec::new();
+        loop {
+            let response =
+                Self::succeeded(self.authorize(self.http.get(&url)).send().await?).await?;
+            let next = self.next_page(response.headers());
+            notes.extend(response.json::<Vec<Note>>().await?);
+            match next {
+                Some(next) => url = next,
+                None => break,
+            }
+        }
+        notes.retain(|note| !note.system);
+        Ok(notes)
+    }
+
+    /// The links of issue `number` in `project`.
+    pub async fn issue_links(
+        &self,
+        project: &str,
+        number: i64,
+    ) -> Result<Vec<IssueLink>, GitLabError> {
+        self.project_call(
+            project,
+            Method::GET,
+            &format!("/issues/{number}/links"),
+            None,
+        )
+        .await
+    }
+
+    /// Makes issue `blocker` of `project` block issue `number`. Says whether GitLab holds it as blocking: without
+    /// Premium it links the issues as `relates_to` whatever is asked, which blocks nothing.
+    pub async fn add_blocker(
+        &self,
+        project: &str,
+        number: i64,
+        blocker: i64,
+    ) -> Result<bool, GitLabError> {
+        #[derive(Deserialize)]
+        struct Linked {
+            link_type: String,
+        }
+        let request = json!({
+            "target_project_id": project,
+            "target_issue_iid": blocker,
+            "link_type": "is_blocked_by",
+        });
+        let linked: Linked = self
+            .project_call(
+                project,
+                Method::POST,
+                &format!("/issues/{number}/links"),
+                Some(&request),
+            )
+            .await?;
+        Ok(linked.link_type == "is_blocked_by")
+    }
+
+    /// Stops issue `blocker` of `project` from blocking issue `number`. Says whether there was a link that blocked.
+    pub async fn remove_blocker(
+        &self,
+        project: &str,
+        number: i64,
+        blocker: i64,
+    ) -> Result<bool, GitLabError> {
+        let links = self.issue_links(project, number).await?;
+        let Some(link) = links
+            .iter()
+            .find(|l| l.iid == blocker && l.link_type == "is_blocked_by")
+        else {
+            return Ok(false);
+        };
+        self.project_do(
+            project,
+            Method::DELETE,
+            &format!("/issues/{number}/links/{}", link.issue_link_id),
+            None,
+        )
+        .await?;
+        Ok(true)
+    }
+
+    /// The description of issue `number` in `project` as it is now.
+    pub async fn issue_description(
+        &self,
+        project: &str,
+        number: i64,
+    ) -> Result<String, GitLabError> {
+        #[derive(Deserialize)]
+        struct Described {
+            description: Option<String>,
+        }
+        let issue: Described = self
+            .project_call(project, Method::GET, &format!("/issues/{number}"), None)
+            .await?;
+        Ok(issue.description.unwrap_or_default())
     }
 
     /// Opens a merge request in `project` that asks for `source` to be merged into `target`, and returns its number.
@@ -348,6 +561,24 @@ impl GitLab {
         }
         let response = self.authorize(request).send().await?;
         Ok(Self::succeeded(response).await?.json().await?)
+    }
+
+    /// Calls the API at `/projects/{project}{path}` and ignores the answer's body.
+    async fn project_do(
+        &self,
+        project: &str,
+        method: Method,
+        path: &str,
+        body: Option<&serde_json::Value>,
+    ) -> Result<(), GitLabError> {
+        let mut request = self
+            .http
+            .request(method, format!("{}{path}", self.project_url(project)));
+        if let Some(body) = body {
+            request = request.json(body);
+        }
+        Self::succeeded(self.authorize(request).send().await?).await?;
+        Ok(())
     }
 
     fn etags(&self) -> std::sync::MutexGuard<'_, HashMap<String, String>> {

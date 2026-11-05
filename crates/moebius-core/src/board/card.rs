@@ -2,6 +2,11 @@
 //!
 //! - `card.blocked_by`: the numbers of the issues blocking the card that are not done yet (an issue with no card counts
 //!   as not done); empty when nothing blocks.
+//! - `card.parent`, `card.children`, `card.labels`, `card.claimed_by`: the issue's parent (a number), its sub-issues
+//!   (each with `id`, `number`, `title`, `state` and `column`; only those a person can have vouched for, see
+//!   `App::counts_as_sub_issue`), its labels and who claimed it.
+//! - `card.merged`: whether a change of the card was merged, which is what tells a card that is done because its work
+//!   was merged from one that was closed.
 //! - `card.review`: the verdict and findings of the review since the card's latest `code` run, if there is one; for a
 //!   review along two axes also its `judgements` and the `standards` and `spec` axes (see `review`).
 //! - `card.note`: why the card went back to coding, if it did and no `code` run has succeeded since.
@@ -118,6 +123,27 @@ impl Engine {
         )?;
         let blocked_by = self.app.blocked_by(card).map_err(mlua::Error::external)?;
         t.set("blocked_by", blocked_by)?;
+        t.set("parent", card.parent)?;
+        t.set(
+            "merged",
+            self.app
+                .store
+                .has_merged_change(card.id)
+                .map_err(mlua::Error::external)?,
+        )?;
+        t.set("labels", card.labels.clone())?;
+        t.set("claimed_by", card.claimed_by.as_deref())?;
+        let children = lua.create_table()?;
+        for child in self.app.children_of(card).map_err(mlua::Error::external)? {
+            let c = lua.create_table()?;
+            c.set("id", child.id)?;
+            c.set("number", child.number)?;
+            c.set("title", child.title)?;
+            c.set("state", child.state)?;
+            c.set("column", child.column)?;
+            children.push(c)?;
+        }
+        t.set("children", children)?;
         let since_retry = || runs_since_retry(&runs, card);
         let count = |purpose: &str| since_retry().filter(|r| r.purpose == purpose).count();
         t.set("rounds", rounds)?;

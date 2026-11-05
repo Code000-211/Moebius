@@ -179,6 +179,11 @@ function card(id: number, extra: Record<string, unknown>) {
     refusals: 0,
     change: null,
     held: null,
+    parent: null,
+    counts_as_sub_issue: true,
+    closed: false,
+    labels: [] as string[],
+    claimed_by: null,
     ...extra,
   };
 }

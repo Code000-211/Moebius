@@ -63,6 +63,11 @@ fn made_up_card(lua: &Lua, column: &str, title: &str, author: &str) -> mlua::Res
     t.set("held", mlua::Value::Nil)?;
     t.set("test_first", false)?;
     t.set("blocked_by", lua.create_table()?)?;
+    t.set("parent", mlua::Value::Nil)?;
+    t.set("merged", false)?;
+    t.set("children", lua.create_table()?)?;
+    t.set("labels", lua.create_table()?)?;
+    t.set("claimed_by", mlua::Value::Nil)?;
     t.set("rounds", 0)?;
     t.set("reviews", 0)?;
     t.set("tokens", 0)?;
@@ -252,6 +257,18 @@ fn recording_api(
         "ask",
         lua.create_function(move |_, (kind, reason): (String, String)| {
             log(format!("asked a person ({kind}) and waited: {reason}"));
+            Ok(())
+        })?,
+    )?;
+
+    let log = record.clone();
+    m.set(
+        "close_issue",
+        lua.create_function(move |_, reason: Option<String>| {
+            log(format!(
+                "closed the issue and moved the card to Done{}",
+                reason.map_or(String::new(), |why| format!(": {why}"))
+            ));
             Ok(())
         })?,
     )?;

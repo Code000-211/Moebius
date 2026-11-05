@@ -14,7 +14,7 @@ use crate::repos::forge::Issue;
 use crate::store::{Card, Repository};
 
 /// The issue numbers an issue's body says it is blocked by: "blocked by #12", "Blocked by: #3, #4".
-fn blocked_by(body: &str) -> BTreeSet<i64> {
+pub(super) fn blocked_by(body: &str) -> BTreeSet<i64> {
     static BLOCKED: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"(?i)blocked by:?[ \t]*((?:#\d+[ \t,]*)+)").unwrap());
     static NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"#(\d+)").unwrap());
@@ -49,14 +49,33 @@ impl HistoryEntry {
 
 impl App {
     /// Brings the cards of `repository` in line with its issues on its forge: open issues get a card in the backlog,
-    /// changed titles and bodies are copied, closed issues move their card to done, and "blocked by #n" in a body
-    /// becomes the card's dependencies. A closed issue without a card is not worth one, and neither is one whose card a
-    /// person deleted.
+    /// changed titles and bodies are copied, closed issues move their card to done (a reopened one goes back to the
+    /// backlog), "blocked by #n" in a body and the forge's own dependencies become the card's dependencies, and the
+    /// parent, labels and comments are copied (see `issues`). A closed issue without a card is not worth one, and neither
+    /// is one whose card a person deleted; what the forge says of whether either is closed is kept, for the issues that
+    /// wait for it.
     pub fn sync_issues(&self, repository: &Repository, issues: &[Issue]) -> Result<()> {
+        self.sync_issues_read_at(repository, issues, super::issues::now_millis())
+    }
+
+    /// Like [`App::sync_issues`] for issues whose read began at `read_at` (milliseconds since the epoch): an issue that
+    /// Moebius wrote to since is left as it is, because the forge may not have said it yet (see `issues::sync`).
+    pub fn sync_issues_read_at(
+        &self,
+        repository: &Repository,
+        issues: &[Issue],
+        read_at: i64,
+    ) -> Result<()> {
         for issue in issues {
             let body = issue.body.as_str();
+            let state = if issue.open { "open" } else { "closed" };
             // A card a person deleted is not made again; the issue stays on the forge.
             if self.store.card_was_deleted(repository.id, issue.number)? {
+                self.store
+                    .set_forge_seen(repository.id, issue.number, "state", state)?;
+                continue;
+            }
+            if self.stale_snapshot(repository.id, issue.number, read_at)? {
                 continue;
             }
             let card = match self.store.card_by_number(repository.id, issue.number)? {
@@ -79,14 +98,14 @@ impl App {
                     self.bus.publish(Event::CardAdded(card.clone()));
                     card
                 }
-                None => continue,
+                None => {
+                    self.store
+                        .set_forge_seen(repository.id, issue.number, "state", state)?;
+                    continue;
+                }
             };
-            let mut blockers = blocked_by(body);
-            blockers.remove(&issue.number);
-            self.store.set_dependencies(card.id, &blockers)?;
-            if !issue.open && card.column != columns::DONE {
-                self.move_card(card.id, columns::DONE)?;
-            }
+            let card = self.card(card.id)?;
+            self.sync_issue_details(&card, issue)?;
         }
         Ok(())
     }
@@ -187,9 +206,22 @@ impl App {
         }
         self.store.set_card_text(card_id, title, body)?;
         if repository.forge != "none" {
-            let mut blockers = blocked_by(body);
+            // What the old body said no longer counts, what the new says does; blockers and a parent the forge keeps
+            // itself stay.
+            let mut blockers: BTreeSet<i64> =
+                self.store.dependencies(card_id)?.into_iter().collect();
+            for old in blocked_by(&card.body) {
+                blockers.remove(&old);
+            }
+            blockers.extend(blocked_by(body));
             blockers.remove(&card.number);
             self.store.set_dependencies(card_id, &blockers)?;
+            if !self.forge(&repository)?.has_sub_issues()
+                && super::issues::part_of(&card.body) == card.parent
+            {
+                self.store
+                    .set_parent(card_id, super::issues::part_of(body))?;
+            }
         }
         let context = BTreeMap::from([
             ("title".into(), title.to_string()),
@@ -365,12 +397,22 @@ impl App {
         }
     }
 
-    /// The numbers of the issues that block the card and are not done yet; an issue with no card counts as not done.
+    /// The numbers of the issues that block the card and are not done yet; an issue with no card counts as not done unless
+    /// the forge was seen to say it is closed.
     pub fn blocked_by(&self, card: &Card) -> Result<Vec<i64>> {
         let mut blocked_by = Vec::new();
         for number in self.store.dependencies(card.id)? {
-            let blocker = self.store.card_by_number(card.repository_id, number)?;
-            if blocker.is_none_or(|b| b.column != columns::DONE) {
+            let resolved = match self.store.card_by_number(card.repository_id, number)? {
+                Some(blocker) => blocker.column == columns::DONE,
+                // An issue with no card is done when the forge was seen to say it is closed.
+                None => {
+                    self.store
+                        .forge_seen(card.repository_id, number, "state")?
+                        .as_deref()
+                        == Some("closed")
+                }
+            };
+            if !resolved {
                 blocked_by.push(number);
             }
         }

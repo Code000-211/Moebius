@@ -474,6 +474,7 @@ describe("blocking, unblocking and deleting a card", () => {
       await item("Block…").waitFor({ state: "detached" });
       expect(await menuOf(card(3), 3).evaluate((el) => el === document.activeElement)).toBe(true);
       await page.keyboard.press("Enter");
+      await item("Block…").focus();
       await page.keyboard.press("Enter");
       await asking("Block #3").waitFor();
       // Enter in the menu was not the card's own Enter, which opens the card in the dock.

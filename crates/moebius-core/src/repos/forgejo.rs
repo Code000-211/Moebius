@@ -36,6 +36,28 @@ pub struct Issue {
     /// Set when the issue is a pull request, which the list leaves out when asked to.
     #[serde(default)]
     pub pull_request: Option<serde_json::Value>,
+    #[serde(default)]
+    pub labels: Vec<Label>,
+    /// How many comments the issue has.
+    #[serde(default)]
+    pub comments: i64,
+    /// When the issue last changed, in the form Forgejo always writes it, so that it compares as text.
+    #[serde(default)]
+    pub(crate) updated_at: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Label {
+    pub name: String,
+}
+
+/// A comment on an issue as Forgejo lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct IssueComment {
+    pub id: i64,
+    pub user: User,
+    pub body: String,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -103,6 +125,8 @@ pub struct Forgejo {
     /// ETag is of the first page, and Forgejo lists newest created first, so a change to an issue on a later page
     /// would not change it.
     etags: Mutex<HashMap<String, String>>,
+    /// The issues blocking each issue, as last read.
+    pub(crate) blockers: crate::repos::forge::Remembered,
 }
 
 impl Forgejo {
@@ -115,6 +139,7 @@ impl Forgejo {
             url,
             token: token.trim().to_string(),
             etags: Mutex::new(HashMap::new()),
+            blockers: Default::default(),
         }
     }
 
@@ -215,6 +240,157 @@ impl Forgejo {
         Ok(())
     }
 
+    /// Closes issue `number` in `repo`, or reopens it.
+    pub async fn set_issue_state(
+        &self,
+        repo: &str,
+        number: i64,
+        open: bool,
+    ) -> Result<(), ForgejoError> {
+        let request = json!({ "state": if open { "open" } else { "closed" } });
+        self.repo_do(
+            repo,
+            Method::PATCH,
+            &format!("/issues/{number}"),
+            Some(&request),
+        )
+        .await
+    }
+
+    /// Replaces the labels of issue `number` in `repo`, by name; a label that does not exist there is refused.
+    pub async fn set_issue_labels(
+        &self,
+        repo: &str,
+        number: i64,
+        labels: &[String],
+    ) -> Result<(), ForgejoError> {
+        let request = json!({ "labels": labels });
+        self.repo_do(
+            repo,
+            Method::PUT,
+            &format!("/issues/{number}/labels"),
+            Some(&request),
+        )
+        .await
+    }
+
+    /// Writes a comment on issue `number` in `repo` and returns its id.
+    pub async fn create_issue_comment(
+        &self,
+        repo: &str,
+        number: i64,
+        body: &str,
+    ) -> Result<i64, ForgejoError> {
+        #[derive(Deserialize)]
+        struct Identified {
+            id: i64,
+        }
+        let request = json!({ "body": body });
+        let created: Identified = self
+            .repo_call(
+                repo,
+                Method::POST,
+                &format!("/issues/{number}/comments"),
+                Some(&request),
+            )
+            .await?;
+        Ok(created.id)
+    }
+
+    /// The comments of issue `number` in `repo`, oldest first.
+    pub async fn issue_comments(
+        &self,
+        repo: &str,
+        number: i64,
+    ) -> Result<Vec<IssueComment>, ForgejoError> {
+        let mut url = format!(
+            "{}/repos/{repo}/issues/{number}/comments?limit=50",
+            self.api_url
+        );
+        let mut comments = Vec::new();
+        loop {
+            let response =
+                Self::succeeded(self.authorize(self.http.get(&url)).send().await?).await?;
+            let next = self.next_page(response.headers());
+            comments.extend(response.json::<Vec<IssueComment>>().await?);
+            match next {
+                Some(next) => url = next,
+                None => return Ok(comments),
+            }
+        }
+    }
+
+    /// The numbers of the issues issue `number` of `repo` depends on, which block it, from all pages.
+    pub async fn blocked_by(&self, repo: &str, number: i64) -> Result<Vec<i64>, ForgejoError> {
+        let mut url = format!(
+            "{}/repos/{repo}/issues/{number}/dependencies?limit=50",
+            self.api_url
+        );
+        let mut blockers = Vec::new();
+        loop {
+            let response =
+                Self::succeeded(self.authorize(self.http.get(&url)).send().await?).await?;
+            let next = self.next_page(response.headers());
+            blockers.extend(response.json::<Vec<Created>>().await?);
+            match next {
+                Some(next) => url = next,
+                None => break,
+            }
+        }
+        Ok(blockers.into_iter().map(|b| b.number).collect())
+    }
+
+    /// The description of issue `number` in `repo` as it is now.
+    pub async fn issue_body(&self, repo: &str, number: i64) -> Result<String, ForgejoError> {
+        #[derive(Deserialize)]
+        struct Described {
+            body: Option<String>,
+        }
+        let issue: Described = self
+            .repo_call(repo, Method::GET, &format!("/issues/{number}"), None)
+            .await?;
+        Ok(issue.body.unwrap_or_default())
+    }
+
+    /// Makes issue `number` of `repo` depend on issue `blocker`.
+    pub async fn add_blocker(
+        &self,
+        repo: &str,
+        number: i64,
+        blocker: i64,
+    ) -> Result<(), ForgejoError> {
+        self.blocker_call(repo, Method::POST, number, blocker).await
+    }
+
+    /// Makes issue `number` of `repo` not depend on issue `blocker` any more.
+    pub async fn remove_blocker(
+        &self,
+        repo: &str,
+        number: i64,
+        blocker: i64,
+    ) -> Result<(), ForgejoError> {
+        self.blocker_call(repo, Method::DELETE, number, blocker)
+            .await
+    }
+
+    async fn blocker_call(
+        &self,
+        repo: &str,
+        method: Method,
+        number: i64,
+        blocker: i64,
+    ) -> Result<(), ForgejoError> {
+        let (owner, name) = repo.split_once('/').unwrap_or(("", repo));
+        let request = json!({ "index": blocker, "owner": owner, "repo": name });
+        self.repo_do(
+            repo,
+            method,
+            &format!("/issues/{number}/dependencies"),
+            Some(&request),
+        )
+        .await
+    }
+
     /// Opens a pull request in `repo` that asks for `head` to be merged into `base`, and returns its number.
     pub async fn open_pull_request(
         &self,
@@ -290,6 +466,21 @@ impl Forgejo {
             .call(method, &format!("/repos/{repo}{path}"), body)
             .await?;
         Ok(Self::succeeded(response).await?.json().await?)
+    }
+
+    /// Calls the API at `/repos/{repo}{path}` and ignores the answer's body.
+    async fn repo_do(
+        &self,
+        repo: &str,
+        method: Method,
+        path: &str,
+        body: Option<&serde_json::Value>,
+    ) -> Result<(), ForgejoError> {
+        let response = self
+            .call(method, &format!("/repos/{repo}{path}"), body)
+            .await?;
+        Self::succeeded(response).await?;
+        Ok(())
     }
 
     async fn call(

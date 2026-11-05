@@ -127,7 +127,7 @@ pub enum Operate {
         #[command(subcommand)]
         command: RepoCommand,
     },
-    /// Create an issue.
+    /// Create, list, show and change issues: sub-issues, blocking, labels, claims, comments, closing.
     Issue {
         #[command(subcommand)]
         command: IssueCommand,
@@ -210,7 +210,7 @@ impl Operate {
             Board { repository } => board::board(repository),
             Card { id, history, runs } => board::card(*id, *history, *runs),
             Inbox { command } => board::inbox(command.as_ref(), get),
-            Issue { command } => board::issue(command),
+            Issue { command } => board::issue(command, get),
             Chats => chats::chats(),
             Chat { command } => chats::chat(command),
             Grillings => chats::grillings(),
@@ -248,6 +248,8 @@ pub enum Show {
     Raw,
     Board(Option<String>),
     Card(i64),
+    /// An issue with its sub-issues.
+    Issue,
     Inbox,
     /// The repositories of the snapshot's boards.
     Repositories,
@@ -306,6 +308,7 @@ pub fn render(show: &Show, text: &str) -> Result<String, String> {
         _ if value.is_null() => "done".into(),
         Show::Board(filter) => board::show_board(&value, filter.as_deref())?,
         Show::Card(id) => board::show_card(&value, *id)?,
+        Show::Issue => board::show_issue(&value),
         Show::Inbox => board::show_inbox(&value),
         Show::Repositories => repos::show_repositories(&value),
         Show::Table(columns) => table(&value, columns),

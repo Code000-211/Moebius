@@ -33,13 +33,121 @@ pub enum ForgeError {
 
 /// An issue on a forge, the same for every forge: its number there, its title and body, whether it is open, and the
 /// login of whoever opened it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Issue {
     pub number: i64,
     pub title: String,
     pub body: String,
     pub open: bool,
     pub author: String,
+    /// The names of its labels.
+    pub labels: Vec<String>,
+    /// The number of its parent issue, where the forge has sub-issues; the board also reads "Part of #n" from the body.
+    pub parent: Option<i64>,
+    /// The numbers of the issues that block it, where the forge keeps blocking and says so; none where it does not (the
+    /// board also reads "Blocked by #n" from the body).
+    pub blocked_by: Option<Vec<i64>>,
+    /// How many comments the forge says it has.
+    pub comment_count: i64,
+    /// Its comments, once the poll has read them because they changed; none when it did not.
+    pub comments: Option<Vec<Comment>>,
+    /// When the forge says the issue last changed, as the forge writes it; what a read of the issue's blockers is kept
+    /// with.
+    pub updated: String,
+    /// Whether the poll still has to read the issue's blockers (`blocked_by`) from the forge: it can, and the issue
+    /// may have some.
+    pub blockers_unread: bool,
+}
+
+/// A comment on an issue as a forge has it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Comment {
+    /// Its id on the forge.
+    pub id: i64,
+    pub author: String,
+    pub body: String,
+    /// When it was written, in seconds since the epoch; 0 when the forge's time could not be read.
+    pub at: i64,
+}
+
+/// Seconds since the epoch of a time the forges write in RFC 3339, 0 when it is not one.
+pub fn seconds(time: &str) -> i64 {
+    time::OffsetDateTime::parse(time, &time::format_description::well_known::Rfc3339)
+        .map_or(0, |t| t.unix_timestamp())
+}
+
+/// What a poll read about each issue of a forge that has no list of it (the issues blocking an issue), kept with the
+/// time the issue last changed, so that it is read again only for an issue that changed, or when the answer is old:
+/// a forge may not say that a link changed in the time its issue did.
+pub struct Remembered {
+    values: std::sync::Mutex<RememberedMap>,
+    lifetime: std::time::Duration,
+}
+
+/// The values by repository and issue number, each with the time of the issue they were read at and when they were read.
+type RememberedMap =
+    std::collections::HashMap<(String, i64), (String, Vec<i64>, std::time::Instant)>;
+
+impl Default for Remembered {
+    fn default() -> Self {
+        Self::lasting(std::time::Duration::from_secs(600))
+    }
+}
+
+impl Remembered {
+    /// A memory whose answers are read again once they are `lifetime` old.
+    pub fn lasting(lifetime: std::time::Duration) -> Self {
+        Self {
+            values: Default::default(),
+            lifetime,
+        }
+    }
+
+    /// What was read for issue `number` of `name` when it was last changed at `stamp`, if it is still that time and the
+    /// answer is not old.
+    pub fn get(&self, name: &str, number: i64, stamp: &str) -> Option<Vec<i64>> {
+        let remembered = self.values.lock().unwrap_or_else(|e| e.into_inner());
+        let (at, value, read) = remembered.get(&(name.to_string(), number))?;
+        (at == stamp && read.elapsed() < self.lifetime).then(|| value.clone())
+    }
+
+    /// The issues of `name` whose answer is old enough to be read again, oldest first and at most `limit` of them, each
+    /// with the time of the issue it was read at (which a new read passes to [`Remembered::get`] and `put`). A poll that
+    /// the forge answers with "not modified" never lists them, so it reads these itself, a few at a time.
+    pub fn due(&self, name: &str, limit: usize) -> Vec<(i64, String)> {
+        let remembered = self.values.lock().unwrap_or_else(|e| e.into_inner());
+        let mut old: Vec<_> = remembered
+            .iter()
+            .filter(|((n, _), (_, _, read))| n == name && read.elapsed() >= self.lifetime)
+            .map(|((_, number), (stamp, _, read))| (*read, *number, stamp.clone()))
+            .collect();
+        old.sort();
+        old.into_iter()
+            .take(limit)
+            .map(|(_, number, stamp)| (number, stamp))
+            .collect()
+    }
+
+    /// Forgets the answers for the issues of `name` that `keep` does not name: the issue is closed or gone.
+    pub fn retain(&self, name: &str, keep: impl Fn(i64) -> bool) {
+        let mut remembered = self.values.lock().unwrap_or_else(|e| e.into_inner());
+        remembered.retain(|(n, number), _| n != name || keep(*number));
+    }
+
+    pub fn put(&self, name: &str, number: i64, stamp: &str, value: Vec<i64>) {
+        let mut remembered = self.values.lock().unwrap_or_else(|e| e.into_inner());
+        remembered.insert(
+            (name.to_string(), number),
+            (stamp.to_string(), value, std::time::Instant::now()),
+        );
+    }
+}
+
+fn not_on_a_forge(repository: &Repository) -> ForgeError {
+    ForgeError::Invalid(format!(
+        "the issues of {} are not kept on a forge",
+        repository.name
+    ))
 }
 
 /// The `Authorization` header git sends to reach a forge over HTTPS as `user` with `token` as the password.
@@ -97,6 +205,66 @@ pub trait Forge: Send + Sync {
             "the issues of {} are not kept on a forge",
             repository.name
         )))
+    }
+    /// Closes the issue `number` on the forge, or reopens it. Only forges that keep issues have it.
+    fn set_issue_open(
+        &self,
+        repository: &Repository,
+        _number: i64,
+        _open: bool,
+    ) -> Result<(), ForgeError> {
+        Err(not_on_a_forge(repository))
+    }
+    /// Replaces the labels of the issue `number` on the forge.
+    fn set_issue_labels(
+        &self,
+        repository: &Repository,
+        _number: i64,
+        _labels: &[String],
+    ) -> Result<(), ForgeError> {
+        Err(not_on_a_forge(repository))
+    }
+    /// Writes a comment on the issue `number` and returns its id on the forge.
+    fn comment_issue(
+        &self,
+        repository: &Repository,
+        _number: i64,
+        _body: &str,
+    ) -> Result<i64, ForgeError> {
+        Err(not_on_a_forge(repository))
+    }
+    /// Whether the forge keeps the parent of an issue itself (GitHub's sub-issues). Where it does not, the parent is
+    /// a line "Part of #n" in the issue's body, which the board writes with `update_issue`.
+    fn has_sub_issues(&self) -> bool {
+        false
+    }
+    /// Makes the issue `number` a sub-issue of `parent`, or takes it from `previous` when `parent` is none. Only
+    /// where [`Forge::has_sub_issues`].
+    fn set_issue_parent(
+        &self,
+        repository: &Repository,
+        _number: i64,
+        _parent: Option<i64>,
+        _previous: Option<i64>,
+    ) -> Result<(), ForgeError> {
+        Err(not_on_a_forge(repository))
+    }
+    /// Makes the issue `blocker` block the issue `number` on the forge, or stops it from blocking. Says whether the
+    /// forge holds the blocking itself; when it does not (GitLab without Premium links issues but not as blocking),
+    /// the board writes, or removes, a line "Blocked by #n" in the issue's description.
+    fn set_issue_blocker(
+        &self,
+        repository: &Repository,
+        _number: i64,
+        _blocker: i64,
+        _blocks: bool,
+    ) -> Result<bool, ForgeError> {
+        Err(not_on_a_forge(repository))
+    }
+    /// The description the forge has for the issue `number` now, which the board edits instead of what it read at the
+    /// last poll. Only where the board writes into the description (no sub-issues, or no blocking).
+    fn issue_body(&self, repository: &Repository, _number: i64) -> Result<String, ForgeError> {
+        Err(not_on_a_forge(repository))
     }
     /// The HTTP header git needs to reach `url`, where the forge knows the repository as `name`; none if it needs
     /// none.
@@ -262,6 +430,77 @@ impl Forge for GitHubForge {
             .block_on(self.github.update_issue(name, number, title, body))?)
     }
 
+    fn set_issue_open(
+        &self,
+        repository: &Repository,
+        number: i64,
+        open: bool,
+    ) -> Result<(), ForgeError> {
+        let name = Self::github_name(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.github.set_issue_state(name, number, open))?)
+    }
+
+    fn set_issue_labels(
+        &self,
+        repository: &Repository,
+        number: i64,
+        labels: &[String],
+    ) -> Result<(), ForgeError> {
+        let name = Self::github_name(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.github.set_issue_labels(name, number, labels))?)
+    }
+
+    fn comment_issue(
+        &self,
+        repository: &Repository,
+        number: i64,
+        body: &str,
+    ) -> Result<i64, ForgeError> {
+        let name = Self::github_name(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.github.create_issue_comment(name, number, body))?)
+    }
+
+    fn set_issue_blocker(
+        &self,
+        repository: &Repository,
+        number: i64,
+        blocker: i64,
+        blocks: bool,
+    ) -> Result<bool, ForgeError> {
+        let name = Self::github_name(repository)?;
+        if blocks {
+            self.runtime
+                .block_on(self.github.add_blocker(name, number, blocker))?;
+        } else {
+            self.runtime
+                .block_on(self.github.remove_blocker(name, number, blocker))?;
+        }
+        Ok(true)
+    }
+
+    fn has_sub_issues(&self) -> bool {
+        true
+    }
+
+    fn set_issue_parent(
+        &self,
+        repository: &Repository,
+        number: i64,
+        parent: Option<i64>,
+        previous: Option<i64>,
+    ) -> Result<(), ForgeError> {
+        let name = Self::github_name(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.github.set_issue_parent(name, number, parent, previous))?)
+    }
+
     fn refresh(&self, repository: &Repository) -> Result<(), ForgeError> {
         let name = Self::github_name(repository)?;
         let clone = Path::new(&repository.path);
@@ -390,6 +629,66 @@ impl Forge for GitLabForge {
             .block_on(self.gitlab.update_issue(project, number, title, body))?)
     }
 
+    fn set_issue_open(
+        &self,
+        repository: &Repository,
+        number: i64,
+        open: bool,
+    ) -> Result<(), ForgeError> {
+        let name = Self::project(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.gitlab.set_issue_state(name, number, open))?)
+    }
+
+    fn set_issue_labels(
+        &self,
+        repository: &Repository,
+        number: i64,
+        labels: &[String],
+    ) -> Result<(), ForgeError> {
+        let name = Self::project(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.gitlab.set_issue_labels(name, number, labels))?)
+    }
+
+    fn comment_issue(
+        &self,
+        repository: &Repository,
+        number: i64,
+        body: &str,
+    ) -> Result<i64, ForgeError> {
+        let name = Self::project(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.gitlab.create_note(name, number, body))?)
+    }
+
+    fn set_issue_blocker(
+        &self,
+        repository: &Repository,
+        number: i64,
+        blocker: i64,
+        blocks: bool,
+    ) -> Result<bool, ForgeError> {
+        let name = Self::project(repository)?;
+        Ok(if blocks {
+            self.runtime
+                .block_on(self.gitlab.add_blocker(name, number, blocker))?
+        } else {
+            self.runtime
+                .block_on(self.gitlab.remove_blocker(name, number, blocker))?
+        })
+    }
+
+    fn issue_body(&self, repository: &Repository, number: i64) -> Result<String, ForgeError> {
+        let name = Self::project(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.gitlab.issue_description(name, number))?)
+    }
+
     fn refresh(&self, repository: &Repository) -> Result<(), ForgeError> {
         Self::project(repository)?;
         let clone = Path::new(&repository.path);
@@ -510,6 +809,67 @@ impl Forge for ForgejoForge {
         Ok(self
             .runtime
             .block_on(self.forgejo.update_issue(repo, number, title, body))?)
+    }
+
+    fn set_issue_open(
+        &self,
+        repository: &Repository,
+        number: i64,
+        open: bool,
+    ) -> Result<(), ForgeError> {
+        let name = Self::repo(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.forgejo.set_issue_state(name, number, open))?)
+    }
+
+    fn set_issue_labels(
+        &self,
+        repository: &Repository,
+        number: i64,
+        labels: &[String],
+    ) -> Result<(), ForgeError> {
+        let name = Self::repo(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.forgejo.set_issue_labels(name, number, labels))?)
+    }
+
+    fn comment_issue(
+        &self,
+        repository: &Repository,
+        number: i64,
+        body: &str,
+    ) -> Result<i64, ForgeError> {
+        let name = Self::repo(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.forgejo.create_issue_comment(name, number, body))?)
+    }
+
+    fn set_issue_blocker(
+        &self,
+        repository: &Repository,
+        number: i64,
+        blocker: i64,
+        blocks: bool,
+    ) -> Result<bool, ForgeError> {
+        let name = Self::repo(repository)?;
+        if blocks {
+            self.runtime
+                .block_on(self.forgejo.add_blocker(name, number, blocker))?;
+        } else {
+            self.runtime
+                .block_on(self.forgejo.remove_blocker(name, number, blocker))?;
+        }
+        Ok(true)
+    }
+
+    fn issue_body(&self, repository: &Repository, number: i64) -> Result<String, ForgeError> {
+        let name = Self::repo(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.forgejo.issue_body(name, number))?)
     }
 
     fn refresh(&self, repository: &Repository) -> Result<(), ForgeError> {

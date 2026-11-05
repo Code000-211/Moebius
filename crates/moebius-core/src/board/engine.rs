@@ -48,6 +48,8 @@ pub(super) struct Effects {
     pub(super) moved: Option<String>,
     pub(super) waiting: Option<String>,
     pub(super) started_run: Option<i64>,
+    /// Whether the script closed the card's issue.
+    pub(super) close: bool,
 }
 
 impl Engine {
@@ -122,6 +124,24 @@ impl Engine {
     /// Applies what a script did to `card`, which is the card as the script saw it.
     fn apply(&self, card: &Card, mut effects: Effects) -> Result<Step, BoardError> {
         let card_id = card.id;
+        if effects.close {
+            // Closed on the forge first; the card then goes to Done, whatever else the script asked for. A forge that
+            // refuses leaves the card where it is, waiting with the reason, and is not asked at every tick.
+            if let Some(reason) = self.app.close_for_script(card_id)? {
+                self.app.set_waiting(card_id, Some(reason.clone()));
+                return Ok(Step {
+                    moved: None,
+                    waiting: Some(reason),
+                    started_run: effects.started_run,
+                });
+            }
+            self.app.set_waiting(card_id, None);
+            return Ok(Step {
+                moved: (card.column != columns::DONE).then(|| columns::DONE.into()),
+                waiting: None,
+                started_run: effects.started_run,
+            });
+        }
         if let Some(to) = effects.move_to.take()
             && to != card.column
         {
@@ -462,5 +482,141 @@ mod tests {
         assert_eq!(held.get::<String>("by").unwrap(), "agent:Moebius");
         assert_eq!(held.get::<String>("reason").unwrap(), "needs a design");
         assert_eq!(held.get::<i64>("at").unwrap(), card.held.unwrap().at);
+    }
+
+    #[test]
+    fn a_script_reads_the_parent_the_children_the_labels_and_the_claim_of_a_card() {
+        let (_dir, app, engine, repo) = setup();
+        let map = app.create_issue(repo, "Map", "", PERSON).unwrap();
+        let ticket = app.create_issue(repo, "Ticket", "", PERSON).unwrap();
+        app.set_parent(ticket.id, Some(map.number)).unwrap();
+        app.set_labels(ticket.id, &["wayfinder:spike".into()])
+            .unwrap();
+        app.claim_issue(&crate::decide::Actor::Person, ticket.id, Some("session 1"))
+            .unwrap();
+        let lua = mlua::Lua::new();
+        let table = |card: &crate::store::Card| engine.card_table(&lua, card).unwrap();
+
+        let below = table(&app.card(ticket.id).unwrap());
+        assert_eq!(below.get::<i64>("parent").unwrap(), map.number);
+        assert_eq!(
+            below.get::<Vec<String>>("labels").unwrap(),
+            ["wayfinder:spike"]
+        );
+        assert_eq!(below.get::<String>("claimed_by").unwrap(), "session 1");
+        assert_eq!(
+            below.get::<mlua::Table>("children").unwrap().len().unwrap(),
+            0
+        );
+
+        let above = table(&app.card(map.id).unwrap());
+        assert_eq!(above.get::<Option<i64>>("parent").unwrap(), None);
+        let children: mlua::Table = above.get("children").unwrap();
+        let child: mlua::Table = children.get(1).unwrap();
+        assert_eq!(child.get::<i64>("number").unwrap(), ticket.number);
+        assert_eq!(child.get::<String>("title").unwrap(), "Ticket");
+        assert_eq!(child.get::<String>("state").unwrap(), "open");
+        assert_eq!(child.get::<String>("column").unwrap(), "Backlog");
+    }
+
+    #[test]
+    fn the_default_workflow_starts_no_work_on_a_parent_and_closes_it_with_its_last_sub_issue() {
+        let (_dir, app, engine, repo) = setup();
+        let map = app.create_issue(repo, "Map", "", PERSON).unwrap();
+        let (a, b) = (
+            app.create_issue(repo, "A", "", PERSON).unwrap(),
+            app.create_issue(repo, "B", "", PERSON).unwrap(),
+        );
+        for ticket in [&a, &b] {
+            app.set_parent(ticket.id, Some(map.number)).unwrap();
+        }
+        // The parent is ready, and waits for its open sub-issues instead of starting a run.
+        app.move_card(map.id, columns::NOT_STARTED).unwrap();
+        let step = engine.settle(map.id).unwrap();
+        assert_eq!(
+            step.waiting.as_deref(),
+            Some(&*format!(
+                "waiting for sub-issues #{}, #{}",
+                a.number, b.number
+            ))
+        );
+        assert!(app.store.runs_for_card(map.id).unwrap().is_empty());
+
+        app.close_card(a.id).unwrap();
+        let step = engine.settle(map.id).unwrap();
+        assert_eq!(
+            step.waiting.as_deref(),
+            Some(&*format!("waiting for sub-issues #{}", b.number))
+        );
+
+        // The last one closes it, and the issue is closed with it.
+        app.close_card(b.id).unwrap();
+        engine.settle(map.id).unwrap();
+        let map = app.card(map.id).unwrap();
+        assert_eq!((map.column.as_str(), map.closed), ("Done", true));
+        assert!(app.store.issue_closed(map.id).unwrap());
+    }
+
+    #[test]
+    fn an_outside_issue_that_names_a_parent_does_not_hold_or_close_it() {
+        let (_dir, app, engine, repo) = setup();
+        let map = app.create_issue(repo, "Map", "", PERSON).unwrap();
+        // Written by anyone, its description says "Part of #1"; nobody approved it.
+        let outside = app
+            .store
+            .add_card(repo, "Outside", "Part of #1", "mallory", columns::BACKLOG)
+            .unwrap();
+        app.store.set_parent(outside.id, Some(map.number)).unwrap();
+        app.move_card(map.id, columns::NOT_STARTED).unwrap();
+
+        // It is not a sub-issue, so the parent is a card like any other and starts its work, and closing the outside
+        // issue closes nothing.
+        let step = engine.settle(map.id).unwrap();
+        assert_eq!(app.card(map.id).unwrap().column, "In progress");
+        assert!(step.started_run.is_some());
+        app.close_card(outside.id).unwrap();
+        assert!(!app.card(map.id).unwrap().closed);
+    }
+
+    #[test]
+    fn a_parent_that_has_work_of_its_own_keeps_its_normal_flow() {
+        let (_dir, app, engine, repo) = setup();
+        let map = app.create_issue(repo, "Map", "", PERSON).unwrap();
+        let ticket = app.create_issue(repo, "Ticket", "", PERSON).unwrap();
+        app.set_parent(ticket.id, Some(map.number)).unwrap();
+        // It was coded before the ticket was put under it.
+        let run = app
+            .store
+            .add_run(Some(map.id), "Coder", "test", "code")
+            .unwrap();
+        app.store.set_run_status(run.id, "succeeded").unwrap();
+        app.move_card(map.id, columns::NOT_STARTED).unwrap();
+        let step = engine.tick(map.id).unwrap();
+        assert_eq!(step.moved.as_deref(), Some("In progress"));
+        assert!(!app.card(map.id).unwrap().closed);
+    }
+
+    #[test]
+    fn done_records_merged_for_a_card_whose_change_was_merged_and_closed_for_one_that_was_closed() {
+        let (_dir, app, engine, repo) = setup();
+        let card = app
+            .create_issue(repo, "Closed unmerged", "", PERSON)
+            .unwrap();
+        let judgement = |card_id| {
+            app.store
+                .add_judgement(&crate::store::NewJudgement {
+                    kind: "approve_issue".into(),
+                    choice: "approve".into(),
+                    decider: "person".into(),
+                    card_id: Some(card_id),
+                    ..Default::default()
+                })
+                .unwrap()
+        };
+        let made = judgement(card.id);
+        app.close_card(card.id).unwrap();
+        engine.settle(card.id).unwrap();
+        let outcome = |id| app.store.judgement(id).unwrap().unwrap().outcome;
+        assert_eq!(outcome(made.id).as_deref(), Some("closed"));
     }
 }

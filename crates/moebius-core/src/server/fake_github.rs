@@ -23,6 +23,10 @@ pub(super) struct FakeGitHub {
     pub(super) issues: Mutex<(String, Vec<Value>)>,
     pub(super) asked: Mutex<Vec<Option<String>>>,
     pub(super) pulls: Mutex<Pulls>,
+    /// The comments it answers for every issue; none makes the request fail.
+    pub(super) comments: Mutex<Option<Vec<Value>>>,
+    /// How many times the comments of an issue were asked for.
+    pub(super) comment_reads: std::sync::atomic::AtomicUsize,
 }
 
 /// The pull requests of the fake: what it was asked to open and merge, and what it answers about pull request 7.
@@ -72,6 +76,8 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
     let fake = Arc::new(FakeGitHub {
         issues: Mutex::new((String::new(), Vec::new())),
         asked: Mutex::new(Vec::new()),
+        comments: Mutex::new(Some(Vec::new())),
+        comment_reads: Default::default(),
         pulls: Mutex::new(Pulls {
             opened: Vec::new(),
             merged: Vec::new(),
@@ -116,6 +122,17 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
                     ([("etag", etag)], axum::Json(issues)).into_response()
                 },
             ),
+        )
+        .route(
+            "/repos/acme/widgets/issues/{number}/comments",
+            get(|State(fake): State<Arc<FakeGitHub>>| async move {
+                fake.comment_reads
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                match fake.comments.lock().unwrap().clone() {
+                    Some(comments) => axum::Json(comments).into_response(),
+                    None => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                }
+            }),
         )
         .route(
             "/repos/acme/widgets/pulls",

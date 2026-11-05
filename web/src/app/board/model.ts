@@ -114,12 +114,22 @@ export interface Filters {
   column: string;
   agent: string;
   status: string;
+  label: string;
 }
 
-export const NO_FILTERS: Filters = { column: "", agent: "", status: "" };
+export const NO_FILTERS: Filters = { column: "", agent: "", status: "", label: "" };
 
 export function hasFilters(filters: Filters): boolean {
-  return filters.column !== "" || filters.agent !== "" || filters.status !== "";
+  return (
+    filters.column !== "" || filters.agent !== "" || filters.status !== "" || filters.label !== ""
+  );
+}
+
+/** The labels the issues of a board carry, sorted. */
+export function labelsOf(board: Board): string[] {
+  const names = new Set<string>();
+  for (const card of board.cards) for (const label of card.labels ?? []) names.add(label);
+  return [...names].sort((a, b) => a.localeCompare(b));
 }
 
 /** The agents that run on the cards of a board, sorted. */
@@ -129,31 +139,129 @@ export function agentsOf(board: Board): string[] {
   return [...names].sort((a, b) => a.localeCompare(b));
 }
 
-function matches(card: Card, filters: Filters, inbox: readonly InboxItem[], board: Board): boolean {
-  if (filters.column !== "" && card.column !== filters.column) return false;
+/** Whether a card passes the filters that look at the card itself: its agent, its status and its label. */
+function matchesCard(
+  card: Card,
+  filters: Filters,
+  inbox: readonly InboxItem[],
+  board: Board,
+): boolean {
   if (filters.agent !== "" && card.run?.agent !== filters.agent) return false;
   if (filters.status !== "" && cardStatus(card, inboxOf(inbox, card), board) !== filters.status) {
     return false;
   }
+  if (filters.label !== "" && !(card.labels ?? []).includes(filters.label)) return false;
   return true;
+}
+
+/**
+ * The number of the issue `card` is a sub-issue of, as the server counts it: none for a card that names a parent but
+ * does not count as its sub-issue, which is an ordinary card of its own here.
+ */
+export function parentNumber(card: Card): number | null {
+  return card.counts_as_sub_issue ? card.parent : null;
+}
+
+/** The card the issue number `parent` names on the board, if it has one. */
+function cardNumbered(board: Board, parent: number | null | undefined): Card | undefined {
+  return parent == null ? undefined : board.cards.find((card) => card.number === parent);
+}
+
+/** The card that is the parent of `card`, if it is on the board. */
+export function parentOf(board: Board, card: Card): Card | undefined {
+  return cardNumbered(board, parentNumber(card));
+}
+
+/** The card at the top of the stack `card` is in: itself when it has no parent on the board. */
+export function rootOf(board: Board, card: Card): Card {
+  let top = card;
+  // A cycle cannot be made through the server, but a board that has one must not hang the page.
+  for (let depth = 0; depth < 32; depth++) {
+    const up = parentOf(board, top);
+    if (!up || up.id === card.id) return top;
+    top = up;
+  }
+  return top;
+}
+
+/** The issues below `card`, at any depth, in the order of their numbers. */
+export function descendants(board: Board, card: Card): Card[] {
+  const found: Card[] = [];
+  const seen = new Set<number>([card.id]);
+  const walk = (of: Card) => {
+    for (const child of board.cards
+      .filter((c) => parentNumber(c) === of.number && c.id !== of.id)
+      .sort((a, b) => a.number - b.number)) {
+      if (seen.has(child.id)) continue;
+      seen.add(child.id);
+      found.push(child);
+      walk(child);
+    }
+  };
+  walk(card);
+  return found;
+}
+
+/** Whether the issue is closed: it was closed, or its card is in Done. */
+export function isClosed(card: Card): boolean {
+  return card.closed || card.column === "Done";
+}
+
+/** A card with sub-issues, and how its stack stands. */
+export interface Stack {
+  /** The sub-issues the filters keep, in order. */
+  shown: Card[];
+  /** How many sub-issues it has in all. */
+  total: number;
+  /** How many of them are done. */
+  done: number;
+}
+
+/** The words of a stack's count on its card: "2 of 5 sub-issues done". */
+export function stackWords(stack: Stack): string {
+  return `${stack.done} of ${plural(stack.total, "sub-issue", "sub-issues")} done`;
 }
 
 export interface ColumnCards {
   /** The name of the column. */
   column: string;
-  /** The cards shown, in order. */
+  /** The cards shown, in order: the tops of the stacks, and the cards that have no parent on the board. */
   cards: Card[];
   /** How many cards the column has after the filters (Done shows only some of them). */
   total: number;
+  /** The stack of each card shown that has sub-issues, by card id. */
+  stacks: Map<number, Stack>;
 }
 
-/** The columns of a board with the cards each shows: filtered, ordered by number, Done newest first and cut. */
+/**
+ * The columns of a board with the cards each shows: filtered, ordered by number, Done newest first and cut. A card with
+ * sub-issues lies in its own column with its sub-issues in a stack under it, wherever they are; a sub-issue is not a card
+ * of its column. The filters apply to the sub-issues: the agent, the status and the label to each of them, and the column
+ * to the column it is in. A card whose own column is filtered out is not shown, and a card that does not pass the other
+ * filters is shown only for the sub-issues that do.
+ */
 export function groupByColumn(
   board: Board,
   inbox: readonly InboxItem[],
   filters: Filters,
 ): ColumnCards[] {
-  const kept = board.cards.filter((card) => matches(card, filters, inbox, board));
+  const inColumn = (card: Card) => filters.column === "" || card.column === filters.column;
+  const tops = board.cards.filter((card) => rootOf(board, card).id === card.id);
+  const stacks = new Map<number, Stack>();
+  const kept = tops.filter((card) => {
+    const below = descendants(board, card);
+    const shown = below.filter(
+      (child) => inColumn(child) && matchesCard(child, filters, inbox, board),
+    );
+    if (below.length > 0) {
+      stacks.set(card.id, {
+        shown,
+        total: below.length,
+        done: below.filter(isClosed).length,
+      });
+    }
+    return inColumn(card) && (matchesCard(card, filters, inbox, board) || shown.length > 0);
+  });
   return boardColumns(board)
     .filter((column) => filters.column === "" || column === filters.column)
     .map((column) => {
@@ -165,6 +273,7 @@ export function groupByColumn(
         column,
         cards: column === "Done" ? cards.slice(0, DONE_SHOWN) : cards,
         total: cards.length,
+        stacks,
       };
     });
 }
@@ -435,9 +544,17 @@ export function cardBadges(card: Card, status: CardStatus, next: boolean): CardB
   return badges;
 }
 
-/** The card the board starts next: the first in Not started that nothing blocks and nobody holds. */
-export function nextCard(cards: readonly Card[]): number | undefined {
-  return cards.find((card) => card.blocked_by.length === 0 && !isHeld(card))?.id;
+/**
+ * The card the board starts next: the first in Not started that nothing blocks and nobody holds, and that is not a
+ * parent with sub-issues still open, which waits for them instead.
+ */
+export function nextCard(cards: readonly Card[], all: readonly Card[] = cards): number | undefined {
+  return cards.find(
+    (card) =>
+      card.blocked_by.length === 0 &&
+      !isHeld(card) &&
+      !all.some((other) => parentNumber(other) === card.number && !isClosed(other)),
+  )?.id;
 }
 
 /**

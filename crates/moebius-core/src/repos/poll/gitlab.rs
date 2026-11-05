@@ -2,17 +2,23 @@
 //! the jobs that failed in it, and whether anyone approved it.
 
 use super::{Polled, Request, Status};
-use crate::repos::forge::{ForgeError, Issue};
+use crate::repos::forge::{Comment, ForgeError, Issue, Remembered, seconds};
 use crate::repos::gitlab::{self, GitLab, Job, Pipeline};
 
 impl From<gitlab::Issue> for Issue {
     fn from(issue: gitlab::Issue) -> Self {
+        let open = issue.state == "opened";
         Self {
             number: issue.iid,
             title: issue.title,
             body: issue.description.unwrap_or_default(),
-            open: issue.state == "opened",
+            open,
             author: issue.author.username,
+            labels: issue.labels,
+            comment_count: issue.user_notes_count,
+            updated: issue.updated_at.unwrap_or_default(),
+            blockers_unread: open,
+            ..Issue::default()
         }
     }
 }
@@ -21,8 +27,47 @@ impl Polled for GitLab {
     const FORGE: &'static str = "gitlab";
 
     async fn issues(&self, name: &str) -> Result<Option<Vec<Issue>>, ForgeError> {
-        let issues = GitLab::issues(self, name).await?;
-        Ok(issues.map(|issues| issues.into_iter().map(Issue::from).collect()))
+        let Some(issues) = GitLab::issues(self, name).await? else {
+            return Ok(None);
+        };
+        if let Some(first) = issues.first() {
+            self.remember_project(name, first.project_id);
+        }
+        Ok(Some(issues.into_iter().map(Issue::from).collect()))
+    }
+
+    fn remembered(&self) -> &Remembered {
+        &self.blockers
+    }
+
+    async fn blockers(&self, name: &str, number: i64, updated: &str) -> Option<Vec<i64>> {
+        if let Some(known) = self.blockers.get(name, number, updated) {
+            return Some(known);
+        }
+        // A project that cannot list links leaves the issue with the blockers its description names.
+        let links = self.issue_links(name, number).await.ok()?;
+        let project = self.project_id(name);
+        let blockers: Vec<i64> = links
+            .iter()
+            .filter(|l| l.link_type == "is_blocked_by" && project.is_none_or(|p| l.project_id == p))
+            .map(|l| l.iid)
+            .collect();
+        self.blockers.put(name, number, updated, blockers.clone());
+        Some(blockers)
+    }
+
+    async fn comments(&self, name: &str, number: i64) -> Result<Vec<Comment>, ForgeError> {
+        Ok(self
+            .notes(name, number)
+            .await?
+            .into_iter()
+            .map(|n| Comment {
+                id: n.id,
+                author: n.author.username,
+                body: n.body,
+                at: seconds(&n.created_at),
+            })
+            .collect())
     }
 
     fn forget_issues(&self, name: &str) {

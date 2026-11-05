@@ -40,6 +40,11 @@ const card = (id: number, number: number, extra: Partial<Card> = {}): Card => ({
   blocked_by: [],
   refusals: 0,
   change: null,
+  parent: null,
+  counts_as_sub_issue: true,
+  closed: false,
+  labels: [],
+  claimed_by: null,
   ...extra,
 });
 

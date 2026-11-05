@@ -2,27 +2,92 @@
 //! request with the check runs of its head commit and its latest review.
 
 use super::{Polled, Request, Status};
-use crate::repos::forge::{ForgeError, Issue};
+use crate::repos::forge::{Comment, ForgeError, Issue, Remembered, seconds};
 use crate::repos::github::{self, CheckRun, GitHub};
 
 impl From<github::Issue> for Issue {
     fn from(issue: github::Issue) -> Self {
+        // GitHub says how many issues block an issue: none is known without a read, some are read by `blockers`.
+        let total = issue
+            .issue_dependencies_summary
+            .as_ref()
+            .map(|summary| summary.total_blocked_by);
         Self {
             number: issue.number,
             title: issue.title,
             body: issue.body.unwrap_or_default(),
             open: issue.state == "open",
             author: issue.user.login,
+            labels: issue.labels.into_iter().map(|l| l.name).collect(),
+            // `issues` reads it, which knows the repository it is in.
+            parent: None,
+            blocked_by: (total == Some(0)).then(Vec::new),
+            comment_count: issue.comments,
+            comments: None,
+            updated: issue.updated_at.unwrap_or_default(),
+            blockers_unread: total.is_some_and(|total| total > 0),
         }
     }
+}
+
+/// The number of the parent a sub-issue's `parent_issue_url` names, none when the parent is in another repository
+/// than the sub-issue: its number means another issue here.
+fn parent_number(url: &str, repository: &str) -> Option<i64> {
+    let mut parts = url.rsplit('/');
+    let number = parts.next()?.parse().ok()?;
+    let (_issues, name, owner) = (parts.next()?, parts.next()?, parts.next()?);
+    (format!("{owner}/{name}").eq_ignore_ascii_case(repository)).then_some(number)
 }
 
 impl Polled for GitHub {
     const FORGE: &'static str = "github";
 
     async fn issues(&self, name: &str) -> Result<Option<Vec<Issue>>, ForgeError> {
-        let issues = GitHub::issues(self, name).await?;
-        Ok(issues.map(|issues| issues.into_iter().map(Issue::from).collect()))
+        let Some(issues) = GitHub::issues(self, name).await? else {
+            return Ok(None);
+        };
+        Ok(Some(
+            issues
+                .into_iter()
+                .map(|issue| {
+                    let parent_url = issue.parent_issue_url.clone();
+                    let mut issue = Issue::from(issue);
+                    // A parent in another repository is not one of the issues here.
+                    issue.parent = parent_url
+                        .as_deref()
+                        .and_then(|url| parent_number(url, name));
+                    issue
+                })
+                .collect(),
+        ))
+    }
+
+    fn remembered(&self) -> &Remembered {
+        &self.blockers
+    }
+
+    async fn blockers(&self, name: &str, number: i64, updated: &str) -> Option<Vec<i64>> {
+        if let Some(known) = self.blockers.get(name, number, updated) {
+            return Some(known);
+        }
+        // A forge that cannot list them leaves the issue with the blockers its body names.
+        let blockers = self.blocked_by(name, number).await.ok()?;
+        self.blockers.put(name, number, updated, blockers.clone());
+        Some(blockers)
+    }
+
+    async fn comments(&self, name: &str, number: i64) -> Result<Vec<Comment>, ForgeError> {
+        Ok(self
+            .issue_comments(name, number)
+            .await?
+            .into_iter()
+            .map(|c| Comment {
+                id: c.id,
+                author: c.user.login,
+                body: c.body,
+                at: seconds(&c.created_at),
+            })
+            .collect())
     }
 
     fn forget_issues(&self, name: &str) {

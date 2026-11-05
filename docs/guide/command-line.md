@@ -34,6 +34,8 @@ the route each one calls and what it writes, is in the [command line reference](
    moebius inbox act 12 merge --reason "reviewed"
    moebius settings set board.round_limit=7 budgets.day_tokens=5000000
    moebius issue create 1 "Cache the model downloads" --body "Downloads are slow."
+   moebius issue list 1 --state open --unblocked --unclaimed
+   moebius issue claim 7 --as "session 1"
    ```
 
 4. For anything without a command of its own, call the route with `api`; the body is JSON, a file, or `-` for

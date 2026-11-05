@@ -1,16 +1,16 @@
 /**
- * The two questions a card's menu asks before it acts: why to block it (the reason is optional), and whether to delete
- * it, with what that takes and, on a forge, what it leaves. Each sends its own request and, as the new-issue form does,
+ * The questions a card's menu asks before it acts: why to block it (the reason is optional), whether to delete it, with
+ * what that takes and, on a forge, what it leaves, and which issue is to be its parent. Each sends its own request and, as the new-issue form does,
  * keeps what the server refused in the dialog until the person leaves it; the card changes the way every card does,
  * through the event stream and the snapshot. The page holds the dialogs, outside the cards, so that one stays open when
  * the card under it is redrawn or goes.
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { block, deleteCard } from "../../api/calls/board";
+import { block, deleteCard, setParent } from "../../api/calls/board";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
-import type { Card, Repository } from "../../api/types/board";
+import type { Board, Card, Repository } from "../../api/types/board";
 import { Button } from "../../ui/components/Button";
 import {
   Dialog,
@@ -20,9 +20,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../ui/components/Dialog";
-import { Field, TextArea } from "../../ui/page/Field";
+import { Field, Select, TextArea } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
-import { deleteWords } from "./model";
+import { deleteWords, descendants, parentOf } from "./model";
 
 /**
  * The card a dialog is about, kept for as long as the dialog fades out: the page clears its card the moment the
@@ -174,6 +174,110 @@ export function DeleteDialog({
               </Button>
               <Button type="submit" variant="danger" disabled={send.isPending}>
                 {send.isPending ? "Deleting" : "Delete card"}
+              </Button>
+            </DialogFooter>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** The issues `card` may be moved below: every other issue of the board but its own sub-issues, which would make a circle. */
+export function parentChoices(board: Board, card: Card): Card[] {
+  const below = new Set(descendants(board, card).map((c) => c.id));
+  return board.cards
+    .filter((c) => c.id !== card.id && !below.has(c.id))
+    .sort((a, b) => a.number - b.number);
+}
+
+/** The words of an issue in a list of choices. */
+export const issueWords = (c: Card) => `#${c.number} ${c.title}`;
+
+export function ParentDialog({
+  board,
+  card,
+  onClose,
+  onDone,
+}: {
+  board: Board;
+  /** The card to move; the dialog is open while there is one. */
+  card: Card | null;
+  onClose: () => void;
+  /** The server moved the card: the sentence that says so. */
+  onDone: (text: string) => void;
+}) {
+  const queryClient = useQueryClient();
+  const shown = useShown(card);
+  // The number of the chosen parent, "none" for no parent; empty until a choice, which is the parent it has now.
+  const [chosen, setChosen] = useState<string | null>(null);
+  const send = useMutation({
+    mutationFn: ({ target, parent }: { target: Card; parent: number | null }) =>
+      setParent(target.id, parent),
+    onSuccess: (_, { target, parent }) => {
+      void queryClient.invalidateQueries({ queryKey: keys.snapshot });
+      setChosen(null);
+      onClose();
+      onDone(
+        parent === null
+          ? `#${target.number} is not a sub-issue any more.`
+          : `#${target.number} is a sub-issue of #${parent}.`,
+      );
+    },
+  });
+  const leave = () => {
+    send.reset();
+    setChosen(null);
+    onClose();
+  };
+  const current = shown ? parentOf(board, shown) : undefined;
+  const value = chosen ?? (current ? String(current.number) : "none");
+  return (
+    <Dialog open={card !== null} onOpenChange={(open) => !open && leave()}>
+      <DialogContent>
+        {shown && (
+          <form
+            className="flex flex-col gap-4 p-6"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!send.isPending) {
+                send.mutate({ target: shown, parent: value === "none" ? null : Number(value) });
+              }
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>{`Move #${shown.number} to another parent`}</DialogTitle>
+              <DialogDescription>
+                {shown.title}. It lies in its parent's stack on the board.
+              </DialogDescription>
+            </DialogHeader>
+            <Field label="Parent">
+              {(id) => (
+                <Select
+                  id={id}
+                  value={value}
+                  options={[
+                    ["none", "No parent"],
+                    ...parentChoices(board, shown).map((c): [string, string] => [
+                      String(c.number),
+                      issueWords(c),
+                    ]),
+                  ]}
+                  onChange={setChosen}
+                />
+              )}
+            </Field>
+            {send.isError && (
+              <Notice tone="error">
+                {refusal(send.error, "Could not move the issue. Try again.")}
+              </Notice>
+            )}
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={leave}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={send.isPending}>
+                {send.isPending ? "Moving" : "Move"}
               </Button>
             </DialogFooter>
           </form>

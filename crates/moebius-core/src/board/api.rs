@@ -8,6 +8,8 @@
 //! - `moebius.has_agent(name)`: whether an agent of that name is configured.
 //! - `moebius.move(column, note)`: moves the card when the script returns; `note` says why, for the next `code` run.
 //! - `moebius.wait(reason)`: leaves the card where it is.
+//! - `moebius.close_issue(reason)`: closes the card's issue (on its forge too) and moves the card to Done when the script
+//!   returns.
 //! - `moebius.publish_change() -> change`: publishes the card's latest successful `code` run on the branch of its
 //!   change (once per commit) and returns the change, as `card.change` is.
 //! - `moebius.run_checks() -> change`: starts the repository's own checks on the change, if it has any.
@@ -254,6 +256,15 @@ impl Engine {
             lua.create_function(move |_, (kind, reason): (String, String)| {
                 to_inbox_once(&app, card_id, &title, &kind, &reason)?;
                 fx.borrow_mut().waiting = Some(reason);
+                Ok(())
+            })?,
+        )?;
+
+        let fx = effects.clone();
+        m.set(
+            "close_issue",
+            lua.create_function(move |_, _reason: Option<String>| {
+                fx.borrow_mut().close = true;
                 Ok(())
             })?,
         )?;
