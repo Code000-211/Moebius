@@ -59,6 +59,12 @@ pub struct Manifest {
     /// keeps the values and hands a launcher them in every [`LaunchRequest`]. Older plugins leave it out.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub app_settings: Vec<PluginSetting>,
+    /// The plugin's own page for its settings in the web app: the source of a JavaScript module whose default export
+    /// draws it, in place of the fields the web app would draw from `project_settings` and `app_settings`, in both
+    /// scopes. The core still keeps, checks and records the values; the page only edits them. It runs in the web app
+    /// with the person's session, so it is as trusted as the plugin. Older plugins leave it out, and get the fields.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings_ui: Option<String>,
 }
 
 /// One setting a plugin asks of a person, for each repository (a sandbox's Dockerfile) or for the whole server.
@@ -383,6 +389,7 @@ mod tests {
                 kinds: vec![Kind::Decider],
                 project_settings: Vec::new(),
                 app_settings: Vec::new(),
+                settings_ui: None,
             }
         }
 

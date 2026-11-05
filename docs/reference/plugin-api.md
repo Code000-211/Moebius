@@ -39,6 +39,7 @@ must not rely on being called one at a time.
 | `kinds` | array of `Kind` | What the plugin is. A call whose kind is not in this list is refused with `WrongKind` before the plugin sees it. |
 | `project_settings` | array of `PluginSetting` | What a person sets for each repository for this plugin (see [Plugin settings](#plugin-settings)). Optional: left out, or empty, the plugin has none. |
 | `app_settings` | array of `PluginSetting` | What a person sets once for this plugin on the whole server (see [Plugin settings](#plugin-settings)). Optional, like `project_settings`. |
+| `settings_ui` | string | The source of a JavaScript module that draws the plugin's settings in the web app in place of the fields (see [A page of its own](#a-page-of-its-own)). Optional: left out, the web app draws the fields. |
 
 ### Plugin settings
 
@@ -66,6 +67,60 @@ run may do. They are stored and handed over as written, not redacted, so a setti
 
 ```json
 {"name": "box-run", "version": "0.1.0", "kinds": ["launcher"], "project_settings": [{"key": "dockerfile", "label": "Dockerfile", "description": "The image of the runs of this repository.", "input": "code", "language": "dockerfile"}], "app_settings": [{"key": "registry", "label": "Registry", "description": "Where base images come from."}]}
+```
+
+### A page of its own
+
+A plugin may draw its settings itself, with presets, a preview or controls of its own, by giving the source of an ES
+module in `settings_ui`. The web app loads it from
+[`GET /v1/plugins/{plugin}/settings-ui`](desktop-api.md#get-v1pluginspluginsettings-ui) and draws it in the plugin's box
+in both scopes, in place of the fields; the desktop app draws the fields. The settings the manifest declares are still
+what is kept: the page only edits their values. The box keeps its Save and Revert buttons, and the core checks and
+records a save as for any plugin, so a key the plugin does not declare is refused.
+
+The module's default export is called once with an element to draw in and a host, and may return a function that takes
+the page down. It is drawn again from the saved values after a save or a revert.
+
+| Host field | Type | Meaning |
+|---|---|---|
+| `plugin`, `version` | string | The plugin's name and version. |
+| `scope` | `"app"` or `"project"` | The Plugin settings page, or a repository's page. |
+| `repository` | number or null | The repository's id in the `project` scope. |
+| `settings` | array | The settings the plugin declares in this scope, each with its `value`, as [`GET /v1/repositories/{id}/plugin-settings`](desktop-api.md#get-v1repositoriesidplugin-settings) lists them. |
+| `values` | object | The saved values to start from, by key. |
+| `change(values)` | function | Reports every value of the scope by key; a key left out is emptied by a save. |
+| `codeEditor(element, {label, language, value, onChange})` | function | Draws the web app's code editor in `element`; returns a function that takes it down. |
+
+The page is drawn in the web app's document, so it can use the app's CSS variables (`--text`, `--text-secondary`,
+`--surface-sunken`, `--hairline`, `--radius-control`, `--font-sans`, `--font-mono`, `--size-body` and the others of
+`web/src/styles/theme.css`) and follows the light and dark themes through them. It runs with the person's session and
+can do whatever the person can, so a plugin with a page is trusted as much as the person who installed it. A module that
+cannot be loaded, or throws while it draws, is reported in the box, which draws the fields instead.
+
+```js
+export default function mount(element, host) {
+  const preset = document.createElement("button");
+  preset.type = "button";
+  preset.textContent = "Start from Debian";
+  const editor = document.createElement("div");
+  element.append(preset, editor);
+  let takeDown = () => {};
+  const draw = (value) => {
+    takeDown();
+    takeDown = host.codeEditor(editor, {
+      label: "Base Dockerfile",
+      language: "dockerfile",
+      value,
+      onChange: (base) => host.change({ base }),
+    });
+  };
+  preset.onclick = () => {
+    host.change({ base: "FROM debian:stable-slim\n" });
+    draw("FROM debian:stable-slim\n");
+  };
+  draw(host.values.base ?? "");
+  return () => takeDown();
+}
 ```
 
 ### `Kind`

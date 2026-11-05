@@ -53,7 +53,10 @@ pub(super) fn routes() -> Router<ApiState> {
             "/v1/repositories/{id}/settings/{file}",
             put(put_setting).delete(delete_setting),
         )
-        .route("/v1/repositories/{id}/plugin-settings", get(get_plugin_settings))
+        .route(
+            "/v1/repositories/{id}/plugin-settings",
+            get(get_plugin_settings),
+        )
         .route(
             "/v1/repositories/{id}/plugin-settings/{plugin}",
             put(put_plugin_settings),

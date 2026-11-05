@@ -219,7 +219,52 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         value: appValues.registry ?? "",
       },
     ],
+    ui: false,
   });
+  /** A plugin that draws its own page for its one setting of the server, a base Dockerfile with a preset. */
+  let drawnValues: Record<string, string> = {};
+  const drawnSettings = () => ({
+    plugin: "drawn-sandbox",
+    version: "0.1.0",
+    settings: [
+      {
+        key: "base",
+        label: "Base Dockerfile",
+        description: "",
+        input: "code",
+        language: "dockerfile",
+        value: drawnValues.base ?? "",
+      },
+    ],
+    ui: true,
+  });
+  /** Its page: a preset button over the web app's code editor. */
+  const drawnPage = `export default function mount(element, host) {
+  const said = document.createElement("p");
+  said.textContent = host.scope + " page of " + host.plugin;
+  const preset = document.createElement("button");
+  preset.type = "button";
+  preset.textContent = "Start from Debian";
+  const editor = document.createElement("div");
+  element.append(said, preset, editor);
+  let takeDown = () => {};
+  const draw = (value) => {
+    takeDown();
+    takeDown = host.codeEditor(editor, {
+      label: "Base Dockerfile",
+      language: "dockerfile",
+      value,
+      onChange: (next) => host.change({ base: next }),
+    });
+  };
+  preset.onclick = () => {
+    host.change({ base: "FROM debian:stable-slim\\n" });
+    draw("FROM debian:stable-slim\\n");
+  };
+  draw(host.values.base ?? "");
+  return () => takeDown();
+}
+`;
   /** The values of the sandbox plugin's project settings, by repository. */
   const pluginValues = new Map<number, Record<string, string>>();
   const pluginSettings = (id: number) => {
@@ -652,6 +697,8 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         path === "/v1/settings" ||
         path === "/v1/plugins/settings" ||
         path === "/v1/plugins/podman-sandbox/settings" ||
+        path === "/v1/plugins/drawn-sandbox/settings" ||
+        path === "/v1/plugins/drawn-sandbox/settings-ui" ||
         path === "/v1/proposals" ||
         path === "/v1/server" ||
         path === "/v1/server/restart" ||
@@ -661,7 +708,9 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         path === "/v1/harness/setup" ||
         path === "/v1/repositories" ||
         /^\/v1\/webhooks\/[a-z]+\/secret$/.test(path) ||
-        /^\/v1\/repositories\/\d+(\/(tree|files|search|settings|plugin-settings)(\/.*)?)?$/.test(path) ||
+        /^\/v1\/repositories\/\d+(\/(tree|files|search|settings|plugin-settings)(\/.*)?)?$/.test(
+          path,
+        ) ||
         /^\/v1\/(proposals|takeovers|grillings)\/\d+\/(merge|dismiss|confirm)$/.test(path) ||
         /^\/v1\/grillings\/\d+$/.test(path) ||
         path === "/v1/changes/9/merge" ||
@@ -707,7 +756,18 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         });
       }
       if (path === "/v1/settings" && method === "GET") return ok(response, settingsView());
-      if (path === "/v1/plugins/settings") return ok(response, { plugins: [appSettings()] });
+      if (path === "/v1/plugins/settings") {
+        return ok(response, { plugins: [drawnSettings(), appSettings()] });
+      }
+      if (path === "/v1/plugins/drawn-sandbox/settings-ui") {
+        response.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8" });
+        response.end(drawnPage);
+        return true;
+      }
+      if (path === "/v1/plugins/drawn-sandbox/settings" && method === "PUT") {
+        drawnValues = (body.values ?? {}) as Record<string, string>;
+        return ok(response, drawnSettings());
+      }
       if (path === "/v1/plugins/podman-sandbox/settings" && method === "PUT") {
         const values = (body.values ?? {}) as Record<string, string>;
         const unknown = Object.keys(values).find((key) => key !== "registry");
@@ -774,7 +834,9 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         return ok(response, made.repository);
       }
       const repository =
-        /^\/v1\/repositories\/(\d+)(?:\/(tree|files|search|settings|plugin-settings)(\/.*)?)?$/.exec(path);
+        /^\/v1\/repositories\/(\d+)(?:\/(tree|files|search|settings|plugin-settings)(\/.*)?)?$/.exec(
+          path,
+        );
       if (repository) {
         const id = Number(repository[1]);
         const all = [

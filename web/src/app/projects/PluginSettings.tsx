@@ -1,5 +1,5 @@
 /**
- * The settings plugins ask of a repository (`GET /v1/repositories/{id}/settings`), on the repository's page: the boxes
+ * The settings plugins ask of a repository (`GET /v1/repositories/{id}/plugin-settings`), on the repository's page: the boxes
  * of `plugins/PluginSettingsBoxes`, read and saved for this repository.
  */
 import { pluginProjectSettings, savePluginProjectSettings } from "../../api/calls/projects";
@@ -10,6 +10,8 @@ export function PluginSettings({ repository }: { repository: number }) {
   return (
     <PluginSettingsBoxes
       scope={{
+        kind: "project",
+        repository,
         queryKey: keys.pluginProjectSettings(repository),
         read: () => pluginProjectSettings(repository),
         save: (plugin, values) => savePluginProjectSettings(repository, plugin, values),

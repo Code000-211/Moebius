@@ -118,6 +118,7 @@ impl Plugin for DecisionModel {
             kinds: vec![Kind::Decider],
             project_settings: Vec::new(),
             app_settings: Vec::new(),
+            settings_ui: None,
         }
     }
 

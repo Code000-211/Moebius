@@ -344,6 +344,7 @@ mod tests {
                 kinds: vec![Kind::Launcher],
                 project_settings: Vec::new(),
                 app_settings: Vec::new(),
+                settings_ui: None,
             }
         }
 

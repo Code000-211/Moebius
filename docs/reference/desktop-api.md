@@ -454,12 +454,13 @@ The project settings of the repository: what each plugin asks of every repositor
 ([`project_settings`](plugin-api.md#plugin-settings)), with the value this repository has. Only plugins added to the
 server that declare some are listed, by name; the web app shows them on the repository's page. Response:
 `{"repository": number, "plugins": [{"plugin": string, "version": string, "settings": [{"key": string, "label": string,
-"description": string, "input": "line" or "code", "language": string or missing, "value": string}]}]}`, `value` empty
-when the repository has none. A plugin that is not running is left out, but its values are kept and come back with it.
+"description": string, "input": "line" or "code", "language": string or missing, "value": string}], "ui": boolean}]}`,
+`value` empty when the repository has none, and `ui` true when the plugin brings its own page for its settings
+([`GET /v1/plugins/{plugin}/settings-ui`](#get-v1pluginspluginsettings-ui)). A plugin that is not running is left out, but its values are kept and come back with it.
 Errors: `404` no such repository.
 
 ```json
-{"repository": 1, "plugins": [{"plugin": "podman-sandbox", "version": "0.2.0", "settings": [{"key": "dockerfile", "label": "Dockerfile", "description": "The image of the runs of this repository.", "input": "code", "language": "dockerfile", "value": "FROM docker.io/library/node:24-bookworm\n"}]}]}
+{"repository": 1, "plugins": [{"plugin": "podman-sandbox", "version": "0.2.0", "settings": [{"key": "dockerfile", "label": "Dockerfile", "description": "The image of the runs of this repository.", "input": "code", "language": "dockerfile", "value": "FROM docker.io/library/node:24-bookworm\n"}], "ui": false}]}
 ```
 
 ### `PUT /v1/repositories/{id}/plugin-settings/{plugin}`
@@ -1537,6 +1538,13 @@ A person replaces the values of one plugin's app settings, as
 same request, checks and errors (but for `404`: no plugin of that name with app settings is running). The decision has
 the kind `edit_app_settings`, and its context has `plugin` and `keys`. A launcher gets the new values at the next launch.
 Response: the plugin's entry as `GET` answers it.
+
+### `GET /v1/plugins/{plugin}/settings-ui`
+
+The JavaScript module of a plugin's own page for its settings ([`settings_ui`](plugin-api.md#a-page-of-its-own) of its
+manifest), as the plugin gave it, for the web app to draw in place of the fields. The answer is `text/javascript` with
+`Cache-Control: no-store`, so a new version of the plugin is drawn on the next visit. The same page serves both scopes.
+Errors: `404` no plugin of that name with a page is running.
 
 ### `GET /v1/start`
 
