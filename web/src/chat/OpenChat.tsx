@@ -104,7 +104,11 @@ export function ChatTitle({ chat, onNotice }: { chat: Chat; onNotice: (notice: s
           data-testid="chat-title-field"
         />
       ) : (
-        <span className="group flex min-w-0 flex-1 items-center gap-1" data-testid="chat-title">
+        <span
+          className="group flex min-w-0 flex-1 items-center gap-1"
+          data-testid="chat-title"
+          data-status={chat.status}
+        >
           <FadedLine
             text={name}
             keep="head"
@@ -465,11 +469,11 @@ export function OpenChat({
             }
             empty={thread.loaded ? "Start with one of these, or write your own." : undefined}
             // The starters are for the moment before anything is written; once a message is on its way they are in
-            // the way, and picking one would replace what was typed.
+            // the way, and picking one would replace what was typed. The chat's state is not part of this: a chat
+            // whose agent went away takes these words itself, and one that ended for good starts a new chat told
+            // them, so the sentence above them is true wherever the chat has nothing said in it.
             emptyAction={
-              open && thread.loaded && message.trim() === "" ? (
-                <Starters onPick={write} />
-              ) : undefined
+              thread.loaded && message.trim() === "" ? <Starters onPick={write} /> : undefined
             }
           />
         )}

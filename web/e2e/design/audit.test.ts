@@ -222,13 +222,9 @@ async function open(page: Page, what: NonNullable<Route["open"]>) {
     return;
   }
   if (what === "chats") {
-    // The list of chats is a menu that scrolls, so it is measured while it scrolls: a row of a list that caps its
-    // own height is shorter than its own words, and only the scrollable list shows it.
-    await page
-      .getByRole("button", { name: /^Chats \(/ })
-      .first()
-      .click();
-    await page.getByRole("menu").first().waitFor({ timeout: 5_000 });
+    // The column of chats is on the screen with the page and scrolls on its own, so nothing is opened to measure it:
+    // a row of a list that caps its own height is shorter than its own words, and only the scrollable list shows it.
+    await page.getByTestId("chat-list-rows").waitFor({ timeout: 5_000 });
     return;
   }
   if (what === "terminal") {

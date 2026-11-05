@@ -156,5 +156,16 @@ export function groupTurns(entries: Entry[], working: boolean): Turn[] {
     }
     index += 1;
   }
+  // A failure the conversation has gone past is not shown again: what came after it — the retry or the next
+  // message — answered it, and that is where the person is looking. Only the failure that ends the chat stands, and
+  // not while the agent works again; a retry that fails writes a new one. An unreachable MCP server keeps its line
+  // where it happened, since it explains the steps beside it rather than the end of the chat.
+  const end = turns[turns.length - 1];
+  for (const turn of turns) {
+    turn.blocks = turn.blocks.filter(
+      (block, at) =>
+        block.kind !== "error" || (!working && turn === end && at === turn.blocks.length - 1),
+    );
+  }
   return turns;
 }
