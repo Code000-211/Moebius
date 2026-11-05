@@ -34,6 +34,9 @@ const FleetPage = lazy(() =>
 const InboxPage = lazy(() =>
   import("./inbox/InboxPage").then((all) => ({ default: all.InboxPage })),
 );
+const PluginSettingsPage = lazy(() =>
+  import("./plugins/PluginSettingsPage").then((all) => ({ default: all.PluginSettingsPage })),
+);
 const PortsPage = lazy(() =>
   import("./ports/PortsPage").then((all) => ({ default: all.PortsPage })),
 );
@@ -75,6 +78,7 @@ const PAGES_BUILT = new Set([
   "mcp-servers",
   "models",
   "plugins",
+  "plugin-settings",
   "terminal",
   "ports",
   "inbox",
@@ -109,6 +113,7 @@ export const routes = [
       { path: "usage", element: <UsagePage /> },
       { path: "start", element: <StartPage /> },
       { path: "settings", element: <SettingsPage /> },
+      { path: "plugin-settings", element: <PluginSettingsPage /> },
       { path: "chat", element: <ChatPage /> },
       { path: "terminal", element: <TerminalPage /> },
       { path: "ports", element: <PortsPage /> },
