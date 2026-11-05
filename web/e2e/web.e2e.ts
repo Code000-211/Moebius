@@ -142,6 +142,7 @@ describe("the shell", () => {
       "General",
       "Models",
       "Plugins",
+      "Plugin settings",
       "Terminal",
       "Ports",
       "Usage",

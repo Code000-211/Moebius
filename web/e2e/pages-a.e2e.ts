@@ -1057,8 +1057,9 @@ describe("get started", () => {
 
 describe("settings", () => {
   it.skipIf(usesRealServer)("saves the settings a plugin asks of the whole server", async () => {
-    await open("/settings");
+    await open("/plugin-settings");
     const box = page.getByTestId("plugin-settings");
+    await page.getByRole("heading", { name: "Plugin settings", level: 1 }).waitFor();
     await box.getByRole("heading", { name: "podman-sandbox" }).waitFor();
     await box.getByLabel("Registry").fill("quay.io");
     await box.getByRole("button", { name: "Save settings" }).click();
@@ -1066,9 +1067,7 @@ describe("settings", () => {
     expect(lastBody(fake().requests, "PUT", "/v1/plugins/podman-sandbox/settings")).toEqual({
       values: { registry: "quay.io" },
     });
-    // The page's own Save is for moebius.toml, and stays quiet.
-    expect(await page.getByRole("button", { name: "Save", exact: true }).isDisabled()).toBe(true);
-    await open("/settings");
+    await open("/plugin-settings");
     await box.getByRole("heading", { name: "podman-sandbox" }).waitFor();
     expect(await box.getByLabel("Registry").inputValue()).toBe("quay.io");
   });

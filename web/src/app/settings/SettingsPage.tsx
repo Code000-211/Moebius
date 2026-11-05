@@ -4,12 +4,11 @@
  * server checks the file as `moebius serve` would read it and answers 422 with the message when it does not hold
  * together; that message is shown as it came, and a key whose own input cannot be typed right says so under the input
  * before anything is sent. A key the running server uses only after a restart makes a banner with a Restart button.
- * The page also shows the settings plugins ask of the whole server (only in the web app), the webhooks of the forges
- * and where this server runs.
+ * The page also shows the webhooks of the forges and where this server runs. What plugins ask of the server is on the
+ * Plugin settings page.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { appSettings, saveAppSettings } from "../../api/calls/models";
 import { serverInfo } from "../../api/calls/server";
 import { saveSettings, settings } from "../../api/calls/settings";
 import { sayError } from "../../api/errorText";
@@ -22,7 +21,6 @@ import { Field, Select } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 import { Body, PageHeader } from "../../ui/page/PageHeader";
 import { Reading, SkeletonCard } from "../../ui/page/Skeleton";
-import { PluginSettingsBoxes, type SettingsScope } from "../plugins/PluginSettingsBoxes";
 import { Appearance } from "./Appearance";
 import type { Form } from "./fields";
 import {
@@ -38,15 +36,6 @@ import { RestartBanner } from "./RestartBanner";
 import { WebhooksBox } from "./Webhooks";
 
 type Outcome = { tone: "ok" | "error"; text: string } | null;
-
-/** The plugins' settings of the whole server, each plugin in a box of its own with its own Save. */
-const APP_SCOPE: SettingsScope = {
-  queryKey: keys.appSettings,
-  read: appSettings,
-  save: saveAppSettings,
-  empty:
-    "No plugin on this server asks anything of it. One that does, such as a sandbox with a registry to pull from, shows its settings here.",
-};
 
 export function SettingsPage() {
   const data = useQuery({ queryKey: keys.settings, queryFn: () => settings() });
@@ -145,7 +134,6 @@ function SettingsForm({ initial }: { initial: ServerSettings }) {
             </Box>
           ))}
         </div>
-        <PluginSettingsBoxes scope={APP_SCOPE} />
         <WebhooksBox />
         <div className="grid items-start gap-6 xl:grid-cols-2">
           <Appearance />
