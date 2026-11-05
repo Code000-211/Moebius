@@ -192,11 +192,14 @@ impl Server {
                 app.decisions.route(kind, &plugin.name);
             }
         }
-        let launcher = config
+        let launchers: Vec<(String, Vec<String>)> = config
             .plugins
             .iter()
-            .find(|plugin| plugin.launches)
-            .map(|plugin| Arc::new(Launcher::new(host.clone(), plugin.name.clone())));
+            .filter(|plugin| plugin.launches)
+            .map(|plugin| (plugin.name.clone(), plugin.launch_agents.clone()))
+            .collect();
+        let launcher =
+            (!launchers.is_empty()).then(|| Arc::new(Launcher::scoped(host.clone(), launchers)));
         let github = match &config.github {
             Some(g) => {
                 let github = Arc::new(github_client(g)?);

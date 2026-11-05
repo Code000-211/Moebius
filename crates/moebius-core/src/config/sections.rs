@@ -264,10 +264,13 @@ pub struct PluginConfig {
     /// The kinds of decision it answers.
     #[serde(default)]
     pub decides: Vec<String>,
-    /// Whether it is the launcher: it is asked how to start every harness process and may wrap it, such as in a
-    /// sandbox. At most one plugin is.
+    /// Whether it is a launcher: it is asked how to start a harness process and may wrap it, such as in a sandbox.
+    /// Several plugins may be, each for its own agents (`launch_agents`); a run goes to the first that takes it.
     #[serde(default)]
     pub launches: bool,
+    /// The agents whose runs a launcher is asked about. Empty, every agent that no earlier launcher takes.
+    #[serde(default)]
+    pub launch_agents: Vec<String>,
 }
 
 /// A machine that runs harnesses over SSH, from `[[runners]]`.
@@ -629,9 +632,24 @@ pub(super) fn plugins(
             plugin.path = base.join(&plugin.path);
         }
     }
-    if let Some(second) = plugins.iter().filter(|plugin| plugin.launches).nth(1) {
-        return Err(ConfigError::LauncherTwice {
-            name: second.name.clone(),
+    let launchers: Vec<&PluginConfig> = plugins.iter().filter(|plugin| plugin.launches).collect();
+    if let Some(plugin) = plugins
+        .iter()
+        .find(|plugin| !plugin.launches && !plugin.launch_agents.is_empty())
+    {
+        return Err(ConfigError::LaunchAgentsWithoutLaunches {
+            name: plugin.name.clone(),
+        });
+    }
+    // A launcher for every agent takes whatever is left, so one after it would never be asked.
+    if let Some(index) = launchers
+        .iter()
+        .position(|plugin| plugin.launch_agents.is_empty())
+        && let Some(after) = launchers.get(index + 1)
+    {
+        return Err(ConfigError::LauncherNeverAsked {
+            name: after.name.clone(),
+            before: launchers[index].name.clone(),
         });
     }
     Ok(plugins)
