@@ -32,6 +32,17 @@ export function pageContext(pathname: string, snapshot: Snapshot | undefined): P
       repository: board ? id : null,
     };
   }
+  if (first === "projects" && second !== undefined) {
+    const id = Number(second);
+    const project = snapshot?.boards.find((each) => each.repository.id === id)?.repository;
+    const lines = ["Page: Projects > Project"];
+    if (project) lines.push(`Repository: ${project.name} (id ${project.id})`);
+    // Without this the agent takes a request on this page to be about the repository's code.
+    lines.push(
+      "This page is the project's settings (rules, checks, scripts and what plugins ask of it): a request made here is about those settings, not the code of the repository.",
+    );
+    return { text: lines.join("\n"), name: project ? project.name : "Project", repository: null };
+  }
   const page = first === undefined ? undefined : pageByPath(first);
   const lines = [
     page
@@ -40,6 +51,11 @@ export function pageContext(pathname: string, snapshot: Snapshot | undefined): P
         : `Page: ${page.title}`
       : `Page: ${pathname}`,
   ];
+  if (first === "settings" || first === "plugin-settings") {
+    lines.push(
+      "This page sets up Moebius itself (its settings, models and plugins): a request made here is about that setup, not the code of a repository.",
+    );
+  }
   if (first === "chat" && second !== undefined) lines.push(`Open chat: ${second}`);
   return { text: lines.join("\n"), name: page ? page.title : pathname, repository: null };
 }
