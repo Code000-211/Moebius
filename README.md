@@ -10,7 +10,7 @@ against your rules, and learns from what went wrong.
 [![CI](https://github.com/Code000-211/Moebius/actions/workflows/ci.yml/badge.svg)](https://github.com/Code000-211/Moebius/actions/workflows/ci.yml)
 ![Rust 1.90+](https://img.shields.io/badge/rust-1.90%2B-orange)
 ![Server: Linux and WSL 2](https://img.shields.io/badge/server-Linux%20%7C%20WSL%202-lightgrey)
-![App: Linux and Windows](https://img.shields.io/badge/app-Linux%20%7C%20Windows-lightgrey)
+![App: web](https://img.shields.io/badge/app-web-lightgrey)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 ![Status: early prototype](https://img.shields.io/badge/status-early%20prototype-yellow)
 
@@ -20,7 +20,10 @@ against your rules, and learns from what went wrong.
 > Moebius is an early prototype. It is not ready for real projects: try it on a throwaway repository and tell us what
 > you think. Things will change and break.
 
-![The board of a project, with the Moebius agent's floating chat](crates/moebius-desktop/tests/snapshots/floating-chat-open-tiny-skia.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/hero-dark.png">
+  <img src="docs/assets/screenshots/hero-light.png" alt="The board of a project with cards in every column, one of them blocked, and the Moebius agent's floating chat open on the right, answering a question with two commands">
+</picture>
 
 ## What it does
 
@@ -45,10 +48,12 @@ Moebius lets it decide alongside the teacher model until it agrees often enough 
 
 | | |
 |---|---|
-| 🗂 **Projects** | A Kanban board per repository, plus a file browser and a code editor. A column's behaviour is a Luau script you can open and edit from the board. |
+| 🗂 **Projects** | A Kanban board per repository, plus a file browser and a code editor. A column's behaviour is a Luau script you can open and edit from the board. A menu on every card blocks it, unblocks it or deletes it. |
 | 💬 **The Moebius agent, everywhere** | A floating chat on every page that knows what you are looking at: the file and line in the editor, the script or rule you are editing. Ask it to write an issue, a rule, an agent's instructions or a whole workflow. |
 | 🛰 **Fleet** | Every working agent at a glance, live. |
+| 🤖 **Coder and Reviewer** | Two built-in agents, each with its own instructions. Make a new agent blank or as a copy of any existing one, settings, skills and extensions included. |
 | ⌨️ **Chat or terminal** | Chat with any agent, or switch the same conversation into Pi-Bolt's own terminal interface. |
+| 🔁 **The Retro** | Reads the day's failed runs every night, and can be asked to try a failed day again. |
 | ⏰ **Automations** | Recurring work on a cron schedule: an agent, a prompt and a place, with "Run now" and the history of every run. |
 | 🧩 **Harnesses and runners** | Pi-Bolt or Claude Code per agent; runs on the server or on another machine over SSH, such as a GPU box. |
 | 🌐 **Forges** | GitHub, GitLab (also self-hosted), Forgejo and Codeberg, or plain git without a forge. |
@@ -56,24 +61,46 @@ Moebius lets it decide alongside the teacher model until it agrees often enough 
 | 🎯 **Better output** | What the research supports: a failing test before the fix, review on two axes with evidence, old tool outputs hidden and long ones cut, and Matt Pocock's engineering skills for the built-in agents. |
 | ✏️ **Edit in place** | Agents, skills, MCP servers, rules, scripts, settings, cards: a pencil on everything, saved as a commit or in the store. |
 | 🔌 **Your models** | Local OpenAI- or Anthropic-compatible servers, provider API keys or OAuth logins, behind one router that counts tokens, keeps budgets and falls back within a model class such as `strong`. |
-| 🧱 **Plugins** | Deciders compiled in, or as their own program in any language, speaking JSON Lines. |
-| 🧰 **A command line** | Everything the app does, as `moebius` commands, for scripts and for the agent itself. |
+| 🧱 **Plugins** | Deciders compiled in, or as their own program in any language, speaking JSON Lines. A launcher plugin wraps how a run starts: [`nono-sandbox`](https://github.com/Code000-211/moebius-plugins) runs every Pi-Bolt process in a sandbox. |
+| 📦 **Packages** | Find, install, update and remove plugins, workflows, rules and skills from registries, and Pi packages from pi.dev, on the Plugins page and in an agent's Extensions. Changes to your configuration wait in the inbox. |
+| 🔬 **Autoresearch** | Experiments against a baseline, with a budget of experiments or of tokens. |
+| 🧰 **A command line** | Everything the web app does, as `moebius` commands, for scripts and for the agent itself. |
 
 <table>
 <tr>
-<td><img src="crates/moebius-desktop/tests/snapshots/fleet-tiny-skia.png" alt="Fleet"></td>
-<td><img src="crates/moebius-desktop/tests/snapshots/project-editor-tiny-skia.png" alt="The editor of a project"></td>
+<td>
+<picture>
+<source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/fleet-dark.png">
+<img src="docs/assets/screenshots/fleet-light.png" alt="Fleet: three agents at work, the Coder on two cards and the Reviewer on a third, each with its latest steps">
+</picture>
+</td>
+<td>
+<picture>
+<source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/chat-dark.png">
+<img src="docs/assets/screenshots/chat-light.png" alt="A chat with the Coder at work: its tool calls checked and done, the last one still running, and the list of chats beside it">
+</picture>
+</td>
 </tr>
 <tr>
-<td><img src="crates/moebius-desktop/tests/snapshots/chat-working-tiny-skia.png" alt="A chat with an agent at work"></td>
-<td><img src="crates/moebius-desktop/tests/snapshots/rules-rule-edit-tiny-skia.png" alt="Rules, edited in place"></td>
+<td>
+<picture>
+<source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/rules-dark.png">
+<img src="docs/assets/screenshots/rules-light.png" alt="Rules in prose, one of them edited in place">
+</picture>
+</td>
+<td>
+<picture>
+<source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/inbox-dark.png">
+<img src="docs/assets/screenshots/inbox-light.png" alt="The inbox: a change ready to merge with its checks and review, an issue to approve, and a proposal from the Retro">
+</picture>
+</td>
 </tr>
 </table>
 
 ## How it fits together
 
 ```
-desktop app ──(private network, token)──▶ moebius server ──▶ GitHub, GitLab, Forgejo or plain git (polled)
+web app (browser) ──(private network, sign-in)──▶ moebius server ──▶ GitHub, GitLab, Forgejo or plain git (polled)
                                               │
                                               ├──▶ Pi-Bolt or Claude Code runs, one worktree each,
                                               │    on the server or over SSH on another machine
@@ -82,19 +109,18 @@ desktop app ──(private network, token)──▶ moebius server ──▶ Git
 ```
 
 One headless server holds the boards, runs the column scripts, starts the agents and keeps everything in SQLite. The
-web app it serves (`moebius open` shows it in a window of its own, `moebius connect <host>` over SSH) and the desktop app (Rust,
-[iced](https://iced.rs), kept until the web app has been used for a release: [ADR 0013](docs/adr/0013-the-web-app-is-the-front-end.md)) talk to it over a documented API, and so does the `moebius` command line.
+web app it serves (React, in any browser; `moebius open` shows it in a window of its own, `moebius connect <host>` over SSH) talks to it over a documented API, and so does the `moebius` command line. The desktop app (Rust, [iced](https://iced.rs)) still works and gets no new features; it stays until the web app has been used for a release ([ADR 0013](docs/adr/0013-the-web-app-is-the-front-end.md)).
 [`docs/architecture.md`](docs/architecture.md) follows a card through the system.
 
 ## Quick start
 
 You need Linux (on Windows, WSL 2 for the server), git, [Pi-Bolt](https://github.com/opensec-git/Pi-Bolt) installed as
 `pi-bolt`, and a model: a local OpenAI-compatible server (such as one on `http://127.0.0.1:8080`) or a provider API key.
-The desktop app and the `moebius` commands also run on Windows itself; the
+The `moebius` commands also run on Windows itself, and so does the legacy desktop app; the
 [Windows section of Running Moebius](docs/guide/running-moebius.md#on-windows) shows how.
 
 **1. Install.** From a [release](https://github.com/Code000-211/Moebius/releases) (Linux x86_64, and
-`moebius-windows-x86_64.zip` with the app and the commands for Windows; the page
+`moebius-windows-x86_64.zip` with the commands and the desktop app for Windows; the page
 [Running Moebius](docs/guide/running-moebius.md) shows how to check the download), or from source with Rust 1.90 or
 newer:
 
@@ -130,12 +156,12 @@ program = "/usr/local/bin/pi-bolt"
 moebius serve     # creates .moebius/ next to the file, with the API token in .moebius/token
 ```
 
-**4. Open the app.** `moebius open` shows the web app in a window of its own (a Chromium-based browser in app mode,
-signed in once with a code; the default browser if there is none). For a server on another machine, `moebius connect
-<host>` forwards its port over SSH and opens the window on it. Or start the desktop app instead (from a release for Linux or Windows, or `cargo run -p moebius-desktop`;
-on Windows it reaches a server in WSL at the same address), and give it the
-address `http://127.0.0.1:7171` and the content of `.moebius/token`. The **Get started** page lists what is still
-missing.
+**4. Open the web app.** `moebius open` shows it in a window of its own (a Chromium-based browser in app mode, signed
+in once with a code; the default browser if there is none). For a server on another machine, `moebius connect <host>`
+forwards its port over SSH and opens the window on it. Or open the server's address, `http://127.0.0.1:7171`, in any
+browser and sign in with the content of `.moebius/token`. The **Get started** page lists what is still missing. (The
+legacy desktop app takes the same address and token: a release for Linux or Windows, or
+`cargo run -p moebius-desktop`.)
 
 **5. Try it.** Give the Coder agent a model (on the Agents page, or below), add a project (a path that does not
 exist yet becomes a new, empty repository) and create an issue:
@@ -178,7 +204,7 @@ Or just ask the Moebius agent: it knows the guide and the reference, and builds 
 | [`docs/architecture.md`](docs/architecture.md) | How a card moves and which module does what. |
 | [`docs/reference/`](docs/reference/) | [Column scripts](docs/reference/column-scripts.md), [rules](docs/reference/rules.md), [configuration](docs/reference/configuration.md), [command line](docs/reference/cli.md), [desktop API](docs/reference/desktop-api.md), [router](docs/reference/router.md), [plugin API](docs/reference/plugin-api.md), [bridge protocol](docs/reference/bridge-protocol.md), [harness configuration](docs/reference/harness-configuration.md), [training export](docs/reference/training-export.md), [decision model](docs/reference/decision-model.md). |
 | [`docs/guide/`](docs/guide/README.md) | How to build on Moebius, one task per page. |
-| [`docs/design.md`](docs/design.md), [`docs/design-web.md`](docs/design-web.md) | The look of the desktop app, and the standard the web app is built to. |
+| [`docs/design-web.md`](docs/design-web.md), [`docs/design.md`](docs/design.md) | The standard the web app is built to, and the look of the desktop app. |
 | [`examples/`](examples/README.md) | Examples that run in CI. |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to work on Moebius: where new code goes, the checks, the commits. |
 
@@ -188,9 +214,10 @@ Or just ask the Moebius agent: it knows the guide and the reference, and builds 
 crates/
   moebius-core/        the server: app, config, store, router at the top;
                        server/ repos/ board/ decide/ harness/ improve/
-  moebius-desktop/     the desktop app: app/ client/ at the top; screens/ widgets/
+  moebius-desktop/     the legacy desktop app: app/ client/ at the top; screens/ widgets/
   moebius/             the moebius binary and its command line (cli/)
   moebius-plugin-api/  the plugin trait and its host
+web/                   the web app: React, TypeScript, Tailwind (src/, e2e/)
 docs/                  guide, reference, architecture, spec, decisions, plan
 examples/              examples that run in CI
 dist/                  the release packaging (systemd unit, desktop entry)
@@ -210,7 +237,19 @@ cargo run -p moebius-plugin-api --example wrap_launcher_process
 ```
 
 The end-to-end tests run only when `MOEBIUS_PI_BOLT` names a `pi-bolt` executable. The desktop app's render tests
-compare against the pictures in `crates/moebius-desktop/tests/snapshots/`. [`CONTRIBUTING.md`](CONTRIBUTING.md) says
+compare against the pictures in `crates/moebius-desktop/tests/snapshots/`.
+
+When you change `web/`, run its checks too, from `web/` (after `pnpm install`):
+
+```sh
+pnpm check   # tsc --noEmit and Biome
+pnpm test    # Vitest
+pnpm build   # into web/dist
+pnpm e2e     # Playwright, against a fake server; needs the build and Chromium
+```
+
+The pictures of this README are made by `pnpm screenshots` (after `pnpm build`): it opens the web app against the fake
+server of the end-to-end tests and writes `docs/assets/screenshots/`, each in the dark and the light theme. [`CONTRIBUTING.md`](CONTRIBUTING.md) says
 how to work in the repository; [`CLAUDE.md`](CLAUDE.md) (also [`AGENTS.md`](AGENTS.md)) says the same for coding
 agents.
 
