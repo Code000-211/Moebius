@@ -147,7 +147,8 @@ mod tests {
             .data_dir
             .join("runs")
             .join(s.run.to_string())
-            .join("out/1.txt");
+            .join("out")
+            .join("1.txt");
         let key = format!("sk-ant-{}", "k".repeat(30));
         let text: String = (1..=500).map(|i| format!("line {i} {key}\n")).collect();
         let post = |body: Value| {
