@@ -183,11 +183,19 @@ fn an_unchanged_answer_starts_pi_as_without_a_launcher() {
     assert_eq!(request.urls.check, "http://127.0.0.1:9");
     assert_eq!(request.runner, None);
     assert!(request.clone.is_some());
-    // The worktree is read and written, the agent directory and the extensions only read.
+    // The worktree and the agent directory are read and written (Pi writes its credential store there); the lens, the
+    // bridge and the agent's extensions only read.
     assert!(request.read_write.contains(&request.dir));
-    assert!(request.read_write.iter().any(|p| p.ends_with("tmp")));
-    assert!(request.read_write.iter().any(|p| p.ends_with("sessions")));
-    assert!(request.read_only.iter().any(|p| p.ends_with("agent")));
+    // A sandbox makes its rules from what is there, so the directories of the run it is told to write are made before
+    // the call. The worktree is gone once the run has ended, so only these three are checked.
+    for name in ["agent", "sessions", "tmp"] {
+        let path = request
+            .read_write
+            .iter()
+            .find(|p| p.ends_with(name))
+            .unwrap_or_else(|| panic!("the request does not name {name}"));
+        assert!(std::path::Path::new(path).is_dir(), "{path} was not made");
+    }
     assert!(
         request
             .read_only
