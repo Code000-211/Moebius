@@ -11,7 +11,8 @@
 //! - `DELETE /v1/research/{id}`, `/v1/exports/{id}` and `/v1/replays/{id}`: a person deletes a research with its
 //!   experiments, an export with its files, or a replay; none is for an agent's token.
 //! - `POST /v1/retros` `{date?}`, `GET /v1/retros` and `GET /v1/retros/{date}`: the Retro of a day (see
-//!   [`crate::improve::retro`]). `GET /v1/proposals`, `POST /v1/proposals/{id}/trial`, `/merge` and `/dismiss`: its
+//!   [`crate::improve::retro`]); `POST /v1/retros/{date}/retry` runs the analysis of a day whose analysis failed
+//!   again. `GET /v1/proposals`, `POST /v1/proposals/{id}/trial`, `/merge` and `/dismiss`: its
 //!   proposals, tried, merged or dismissed (see [`crate::improve::trial`] and, for those that change Moebius's own
 //!   configuration, [`crate::improve::own`]); a merged change to `moebius.toml` restarts the server when a key needs it.
 //! - `GET /v1/decision-model`: whether a decision model is configured, how well it agrees per kind and its takeovers.
@@ -59,6 +60,7 @@ pub(super) fn routes() -> Router<ApiState> {
         .route("/v1/exports/{id}/{file}", get(download_export))
         .route("/v1/retros", get(retros).post(start_retro))
         .route("/v1/retros/{date}", get(get_retro))
+        .route("/v1/retros/{date}/retry", post(retry_retro))
         .route("/v1/proposals", get(proposals))
         .route("/v1/proposals/{id}/trial", post(try_proposal))
         .route("/v1/proposals/{id}/merge", post(merge_proposal))
@@ -195,6 +197,21 @@ async fn start_retro(
             None => app.store.today()?,
         };
         retro::start(app, (&runs, &live), repo.as_ref(), &day)
+    })
+    .await
+}
+
+async fn retry_retro(
+    State(state): State<ApiState>,
+    UrlPath(date): UrlPath<String>,
+) -> Result<axum::Json<RetroView>, ApiError> {
+    let (runs, repo, live) = (
+        state.runs.clone(),
+        state.harness_repo.clone(),
+        state.config.clone(),
+    );
+    blocking(&state.app, move |app| {
+        retro::retry(app, (&runs, &live), repo.as_ref(), &date)
     })
     .await
 }

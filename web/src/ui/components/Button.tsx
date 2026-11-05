@@ -1,5 +1,5 @@
 // From BloopAI/vibe-kanban packages/ui/src/components/Button.tsx (Apache-2.0), changed to this app's design standard:
-// the variants are primary, secondary, ghost and danger; the primary fills with the ink colour and labels it with the
+// the variants are primary, secondary, ghost, danger and attention; the primary fills with the ink colour and labels it with the
 // canvas colour; nothing carries a border, a size under 40px, or a colour of its own; the focus ring comes from the
 // global `:focus-visible` rule in `styles/tailwind.css`; a button that cannot be pressed and has a reason stays
 // focusable (`aria-disabled`), shows the reason in the app's own tooltip on hover and on focus, and keeps it for a
@@ -17,7 +17,8 @@ import { Tooltip } from "./Tooltip";
  * One implementation of a button, for every page.
  *
  * `primary` is the one clear action of a screen and fills with the ink colour; `secondary` and `ghost` are quieter
- * alternatives beside it; `danger` is the destructive one, which says what it does in its label. Every size is at
+ * alternatives beside it; `danger` is the destructive one, which says what it does in its label, and `attention` is the
+ * action of a warning, which wears the warning's own colours. Every size is at
  * least 40px tall, which is the smallest touch target the standard allows.
  */
 const buttonVariants = cva(
@@ -29,6 +30,7 @@ const buttonVariants = cva(
         secondary: "bg-sunken text-text hover:bg-hover",
         ghost: "bg-transparent text-secondary hover:bg-hover hover:text-text",
         danger: "bg-error-fill text-error-text hover:bg-error-border/60",
+        attention: "bg-attention-fill text-attention-text hover:bg-attention-border/60",
         icon: "bg-transparent text-secondary hover:bg-hover hover:text-text",
       },
       size: {

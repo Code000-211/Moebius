@@ -452,6 +452,28 @@ describe("the Retro page", () => {
     await alert(/exists already/).waitFor();
   });
 
+  it.skipIf(usesRealServer)(
+    "analyses a day whose Retro failed again from the banner that says why",
+    async () => {
+      await fresh();
+      await open("/retro?day=2026-10-26", "Retro");
+      await region("Left out")
+        .getByText(/the server stopped while the analyst was going/)
+        .waitFor();
+      await region("Left out").getByRole("button", { name: "Retry" }).click();
+      expect(lastRequest()).toMatchObject({
+        method: "POST",
+        path: "/v1/retros/2026-10-26/retry",
+      });
+      // The reason it failed is gone with the analysis begun again, so there is nothing left to retry.
+      await region("Left out").waitFor({ state: "detached" });
+      await page
+        .getByRole("button", { name: dayOf("2026-10-26") })
+        .getByText("Proposed")
+        .waitFor();
+    },
+  );
+
   it.skipIf(usesRealServer)("edits a lesson in place and deletes one after asking", async () => {
     await fresh();
     await open("/retro", "Retro");

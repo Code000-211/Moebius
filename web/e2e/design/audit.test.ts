@@ -104,6 +104,8 @@ const routes: Route[] = [
   { path: "/automations", name: "automations" },
   { path: "/rules", name: "rules" },
   { path: "/retro", name: "retro" },
+  // A day whose analysis failed, whose banner offers making it again.
+  { path: "/retro?day=2026-10-26", name: "retro-failed" },
   { path: "/experiments", name: "experiments" },
   { path: "/decision-model", name: "decision-model" },
   { path: "/usage", name: "usage" },

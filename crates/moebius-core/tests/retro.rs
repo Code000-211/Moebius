@@ -361,6 +361,56 @@ async fn without_a_harness_repository_only_the_report_is_made() {
     assert!(server.app.store.run(3).unwrap().is_none());
 }
 
+/// A day whose analysis the server did not see through is `failed` with the reason; retrying it runs the analyst again
+/// on the report that is already stored, and the reason is gone.
+#[tokio::test]
+async fn a_retro_that_failed_is_analysed_again_on_its_stored_report() {
+    let (_dir, _origin, server, day) = bad_day_server(|_| "stalled".to_string());
+    let store = &server.app.store;
+    // What a server that stopped while the analyst was going leaves behind.
+    let report = moebius_core::improve::retro::report(store, &day).unwrap();
+    store
+        .add_retro(&day, &serde_json::to_value(&report).unwrap(), "analysing")
+        .unwrap();
+    store
+        .fail_analysing_retros("the server stopped while the analyst was going")
+        .unwrap();
+    let api = Api::start(&server).await;
+    let mut events = server.app.bus.subscribe();
+
+    let (status, retro) = api
+        .call(
+            reqwest::Method::POST,
+            &format!("/v1/retros/{day}/retry"),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(status, 200, "{retro}");
+    assert_eq!(retro["status"], "analysing");
+    assert_eq!(retro["warnings"], json!([]));
+    // The analyst is given the report of the day that failed, not a new one.
+    assert_eq!(retro["report"], json!(report));
+    assert_eq!(done(&mut events).await["status"], "proposed");
+
+    // A Retro that did not fail is not run again, and a day with no Retro has nothing to retry.
+    let (status, _) = api
+        .call(
+            reqwest::Method::POST,
+            &format!("/v1/retros/{day}/retry"),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(status, 422);
+    let (status, _) = api
+        .call(
+            reqwest::Method::POST,
+            "/v1/retros/1999-01-01/retry",
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(status, 404);
+}
+
 /// The fake analyst's directive to make the branch `proposal/<day>-<name>` with one commit that writes `file` with
 /// `text`.
 fn propose_file(day: &str, name: &str, file: &str, text: &str) -> String {
