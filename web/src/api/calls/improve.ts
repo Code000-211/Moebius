@@ -31,6 +31,11 @@ export function startRetro(): Promise<RetroView> {
   return post<RetroView>("/v1/retros", {});
 }
 
+/** Runs the analysis of a day whose Retro failed again, on the report it already has. */
+export function retryRetro(date: string): Promise<RetroView> {
+  return post<RetroView>(`/v1/retros/${date}/retry`, {});
+}
+
 /** The lessons of the Retro, the newest first, the retired ones too. */
 export function lessons(): Promise<Lesson[]> {
   return get<Lesson[]>("/v1/lessons?retired=true");

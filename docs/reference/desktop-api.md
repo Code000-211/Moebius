@@ -1877,6 +1877,17 @@ holds), "proposals" (how many), "at"}`.
 
 One Retro as the `RetroView`. Errors: `404` the day has none.
 
+### `POST /v1/retros/{date}/retry`
+
+Runs the analysis of a day whose Retro `failed` again (its run failed or was stopped, or the server stopped while the
+analyst was going): the report stored for the day is kept as it is, the analyst starts again on it, and the `warnings`
+that said why it failed are cleared. The analysis goes on after the response, which has the status `analysing`; its end
+is the event `retro_done`, and a run that fails again leaves the day `failed` with the new reason. Nothing retries by
+itself: the nightly schedule only ever looks for a day that has no Retro.
+
+Request: `{}`. Response: the `RetroView`. Errors: `404` the day has no Retro; `422` its Retro is not `failed`, or
+`[harness]` is no longer configured.
+
 ### `GET /v1/lessons`
 
 The lessons the Retro learned from earlier cards, newest first; the analyst writes them at the end of its answer from the

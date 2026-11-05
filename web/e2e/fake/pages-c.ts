@@ -533,12 +533,14 @@ export function createPagesCFake(
       );
     const oneExport = /^\/v1\/exports\/(\d+)$/.exec(path);
     const retroDay = /^\/v1\/retros\/(\d{4}-\d{2}-\d{2})$/.exec(path);
+    const retroRetry = /^\/v1\/retros\/(\d{4}-\d{2}-\d{2})\/retry$/.exec(path);
     const known =
       rules ||
       script ||
       one ||
       oneExport ||
       retroDay ||
+      retroRetry ||
       [
         "/v1/automations",
         "/v1/retros",
@@ -665,8 +667,28 @@ export function createPagesCFake(
           ? [
               "proposal/2026-10-28-code is left out: it changes src/main.rs, which is not harness configuration",
             ]
-          : [],
+          : day.status === "failed"
+            ? ["the server stopped while the analyst was going"]
+            : [],
         report: { date, errors: full ? report.errors : [] },
+        proposals: proposals.filter((each) => each.retro_date === date),
+      });
+    }
+    if (retroRetry && method === "POST") {
+      const date = retroRetry[1] as string;
+      const day = retroDays.find((each) => each.date === date);
+      if (!day) return reply(response, 404, `no Retro of ${date}`);
+      if (day.status !== "failed") {
+        return reply(response, 422, `the Retro of ${date} is ${day.status}, not failed`);
+      }
+      day.status = "proposed";
+      broadcast({ kind: "retro_done", data: { date, status: "proposed", proposals: 0 } });
+      return reply(response, 200, {
+        date,
+        status: "analysing",
+        warnings: [],
+        // The page reads the day again rather than showing this, so the report is the empty one.
+        report: { date, errors: [] },
         proposals: proposals.filter((each) => each.retro_date === date),
       });
     }

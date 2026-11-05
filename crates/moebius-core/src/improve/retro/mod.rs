@@ -223,6 +223,41 @@ pub fn start(
     view(&app.store, day)
 }
 
+/// Runs the Retro of a day that failed again: the report that is stored, the analyst made again, and the reason it
+/// failed cleared. Only a day whose analysis failed can be retried — a day that is `reported` had nothing to analyse,
+/// and one that is `proposed` has its analysis already. The schedule never retries by itself; a person asks with
+/// `POST /v1/retros/{date}/retry`.
+pub fn retry(
+    app: &Arc<App>,
+    (runs, live): (&Arc<dyn Runs>, &Arc<Live>),
+    repo: Option<&Arc<HarnessRepo>>,
+    day: &str,
+) -> Result<RetroView> {
+    let retro = app
+        .store
+        .retro(day)?
+        .ok_or_else(|| AppError::NotFound(format!("retro {day}")))?;
+    if retro.status != "failed" {
+        return Err(AppError::Invalid(format!(
+            "the Retro of {day} is {}, not failed",
+            retro.status
+        )));
+    }
+    let report: Report =
+        serde_json::from_value(retro.report).map_err(crate::store::StoreError::from)?;
+    let Some(repo) = repo else {
+        return Err(AppError::Invalid(format!(
+            "the Retro of {day} cannot analyse without [harness]"
+        )));
+    };
+    app.store.finish_retro(day, "analysing", &[])?;
+    if let Err(why) = launch(app, (runs, live), repo, &report) {
+        app.store.finish_retro(day, "failed", &[why])?;
+        publish_done(app, day)?;
+    }
+    view(&app.store, day)
+}
+
 /// Starts the analyst's run and the thread that waits for it.
 fn launch(
     app: &Arc<App>,

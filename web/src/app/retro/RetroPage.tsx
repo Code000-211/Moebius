@@ -1,7 +1,8 @@
 /**
  * The Retro page: the Retros of the days, the errors of the one chosen grouped by kind, the proposals the Retro
  * analyst made with their status and what their trials found, and under them the lessons it learned (`Lessons`).
- * "Run now" is `POST /v1/retros`; the server says when a Retro ends with `retro_done` and when a trial or a
+ * "Run now" is `POST /v1/retros`, and a day whose analysis failed is made again from the banner that says so
+ * (`POST /v1/retros/{date}/retry`); the server says when a Retro ends with `retro_done` and when a trial or a
  * proposal changes with `trial_done` and `proposal_status`, which `live/invalidation.ts` answers by reading again.
  *
  * The days are the list and the chosen day is the detail, so a person reads one day at a time: what was left out of
@@ -9,11 +10,11 @@
  * because a day of errors is long and the list of days should stay where it was left. `?day=` names the day to open on
  * and `?proposal=` the one to land on, which is how the Inbox leads here from a proposal it cannot show all of.
  */
-import { WarningCircleIcon } from "@phosphor-icons/react";
+import { ArrowClockwiseIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
-import { retro, retros, startRetro } from "../../api/calls/improve";
+import { retro, retros, retryRetro, startRetro } from "../../api/calls/improve";
 import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { Proposal, ReportError, RetroView } from "../../api/types/improve";
@@ -149,9 +150,17 @@ export function RetroPage() {
 /** One day: what was left out, its errors by kind and its proposals. */
 /** The day a person is reading. `wanted` is the proposal a link came in for. */
 function Day({ view, wanted }: { view: RetroView; wanted: string | null }) {
+  const queryClient = useQueryClient();
   const groups = groupErrors(view.report.errors);
   const proposals = view.proposals ?? [];
   const warnings = view.warnings ?? [];
+  const retry = useMutation({
+    mutationFn: retryRetro,
+    onSuccess: async (view) => {
+      await queryClient.invalidateQueries({ queryKey: keys.retros });
+      await queryClient.invalidateQueries({ queryKey: keys.retro(view.date) });
+    },
+  });
   return (
     <>
       {warnings.length > 0 && (
@@ -168,12 +177,30 @@ function Day({ view, wanted }: { view: RetroView; wanted: string | null }) {
             {warnings.map((warning) => (
               <div
                 key={warning}
-                className="flex items-start gap-4 rounded-control bg-attention-fill p-4 text-attention-text"
+                className="flex items-center gap-4 rounded-control bg-attention-fill p-4 text-attention-text"
               >
-                <WarningCircleIcon className="mt-1 size-4 shrink-0" aria-hidden="true" />
-                <p className="m-0 min-w-0 break-words text-base">{warning}</p>
+                <WarningCircleIcon className="size-4 shrink-0" aria-hidden="true" />
+                <p className="m-0 min-w-0 flex-1 break-words text-base">{warning}</p>
+                {view.status === "failed" ? (
+                  // The banner is the warning's own fill, so the button of it needs its border to read as a button.
+                  <Button
+                    size="sm"
+                    variant="attention"
+                    className="ring-1 ring-attention-border ring-inset"
+                    disabled={retry.isPending}
+                    onClick={() => retry.mutate(view.date)}
+                  >
+                    <ArrowClockwiseIcon className="size-4" aria-hidden="true" />
+                    {retry.isPending ? "Running" : "Retry"}
+                  </Button>
+                ) : null}
               </div>
             ))}
+            {retry.error && (
+              <Notice tone="error">
+                {sayError(retry.error, "Could not run the Retro again. Try again.")}
+              </Notice>
+            )}
           </div>
         </Box>
       )}
