@@ -510,7 +510,7 @@ describe("projects", () => {
     await page.getByTestId("trusted").getByText("No trusted authors").waitFor();
     await page.getByRole("button", { name: "Edit trusted authors" }).click();
     await page.getByLabel("Trusted authors").fill("leon, mona");
-    await page.getByRole("button", { name: "Save" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
     await page.getByTestId("trusted").getByText("Trusts leon, mona").waitFor();
     expect(lastBody(fake().requests, "PUT", "/v1/repositories/1")).toEqual({
       trusted: ["leon", "mona"],
@@ -519,7 +519,7 @@ describe("projects", () => {
     // A refusal is shown, and the logins stay.
     await page.getByRole("button", { name: "Edit trusted authors" }).click();
     fake().refuseNext("PUT", "/v1/repositories/1", 422, "a login is blank or has other characters");
-    await page.getByRole("button", { name: "Save" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
     await alert("a login is blank or has other characters").waitFor();
     await page.getByRole("button", { name: "Cancel" }).click();
     await page.getByTestId("trusted").getByText("Trusts leon, mona").waitFor();
@@ -556,6 +556,40 @@ describe("projects", () => {
     },
   );
 
+  it.skipIf(usesRealServer)("saves the settings a plugin asks of a repository", async () => {
+    await open("/projects/1");
+    const box = page.getByTestId("plugin-settings");
+    await box.getByRole("heading", { name: "podman-sandbox" }).waitFor();
+    const dockerfile = box.getByRole("textbox", { name: "Dockerfile" });
+    await dockerfile.waitFor();
+    expect(await box.getByRole("button", { name: "Save settings" }).isDisabled()).toBe(true);
+
+    await dockerfile.fill("FROM docker.io/library/node:24-bookworm");
+    await box.getByLabel("Network").fill("internet");
+    // A refusal is said with the server's sentence, and what was typed stays.
+    fake().refuseNext(
+      "PUT",
+      "/v1/repositories/1/plugin-settings/podman-sandbox",
+      422,
+      "Network is one line",
+    );
+    await box.getByRole("button", { name: "Save settings" }).click();
+    await alert("Network is one line").waitFor();
+    expect(await box.getByLabel("Network").inputValue()).toBe("internet");
+
+    await box.getByRole("button", { name: "Save settings" }).click();
+    await box.getByText("Saved. The plugin uses it from the next run.").waitFor();
+    expect(lastBody(fake().requests, "PUT", "/v1/repositories/1/plugin-settings/podman-sandbox")).toEqual({
+      values: { dockerfile: "FROM docker.io/library/node:24-bookworm", network: "internet" },
+    });
+    expect(await box.getByRole("button", { name: "Save settings" }).isDisabled()).toBe(true);
+
+    // What was saved is what the page shows when it is opened again.
+    await open("/projects/1");
+    await box.getByRole("textbox", { name: "Dockerfile" }).getByText("node:24-bookworm").waitFor();
+    expect(await box.getByLabel("Network").inputValue()).toBe("internet");
+  });
+
   it.skipIf(usesRealServer)("browses the files, edits one and saves it as a commit", async () => {
     await open("/projects/1");
     const tree = page.getByRole("list", { name: "Files" });
@@ -565,7 +599,7 @@ describe("projects", () => {
     const text = page.getByLabel("Text of src/main.rs");
     await text.waitFor();
     expect(await text.inputValue()).toContain("fn main()");
-    expect(await page.getByRole("button", { name: "Save" }).isDisabled()).toBe(true);
+    expect(await page.getByRole("button", { name: "Save", exact: true }).isDisabled()).toBe(true);
 
     await text.fill("fn main() {}\n");
     await page.getByText("Unsaved changes.").waitFor();
@@ -576,7 +610,7 @@ describe("projects", () => {
       409,
       "git push --quiet origin main failed: protected branch",
     );
-    await page.getByRole("button", { name: "Save" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
     await alert(
       "The server refused: git push --quiet origin main failed: protected branch",
     ).waitFor();
@@ -633,11 +667,14 @@ describe("projects", () => {
     "goes to a file by what is typed, with the keyboard or the mouse",
     async () => {
       await open("/projects/1");
+      // The plugin's settings above the files are read and drawn first, so that the tree stays where it is measured.
+      await page.getByRole("textbox", { name: "Dockerfile" }).waitFor();
       const field = page.getByRole("textbox", { name: "Go to file" });
       const tree = page.getByRole("list", { name: "Files", exact: true });
-      // Where the tree sits in the page, whatever the viewport is scrolled to.
-      const treeTop = () =>
-        tree.evaluate((list) => list.getBoundingClientRect().top + window.scrollY);
+      // Where the tree sits under the field, however far the page's scroller moved to show the field.
+      const fieldTop = () => field.evaluate((input) => input.getBoundingClientRect().top);
+      const treeTop = async () =>
+        (await tree.evaluate((list) => list.getBoundingClientRect().top)) - (await fieldTop());
       const before = await treeTop();
       await field.fill("mr");
       const matches = page.getByRole("list", { name: "Matching files" });
@@ -1019,6 +1056,23 @@ describe("get started", () => {
 });
 
 describe("settings", () => {
+  it.skipIf(usesRealServer)("saves the settings a plugin asks of the whole server", async () => {
+    await open("/settings");
+    const box = page.getByTestId("plugin-settings");
+    await box.getByRole("heading", { name: "podman-sandbox" }).waitFor();
+    await box.getByLabel("Registry").fill("quay.io");
+    await box.getByRole("button", { name: "Save settings" }).click();
+    await box.getByText("Saved. The plugin uses it from the next run.").waitFor();
+    expect(lastBody(fake().requests, "PUT", "/v1/plugins/podman-sandbox/settings")).toEqual({
+      values: { registry: "quay.io" },
+    });
+    // The page's own Save is for moebius.toml, and stays quiet.
+    expect(await page.getByRole("button", { name: "Save", exact: true }).isDisabled()).toBe(true);
+    await open("/settings");
+    await box.getByRole("heading", { name: "podman-sandbox" }).waitFor();
+    expect(await box.getByLabel("Registry").inputValue()).toBe("quay.io");
+  });
+
   it("loads for a real server and for the fake", async () => {
     await open("/settings");
     await page.getByRole("heading", { name: "Settings", level: 1 }).waitFor();
@@ -1035,7 +1089,7 @@ describe("settings", () => {
       // The level keeps the box of a key apart from a webhook of the same forge further down the page.
       await page.getByRole("heading", { name: box, exact: true, level: 2 }).waitFor();
     }
-    await page.getByRole("button", { name: "Save" }).waitFor();
+    await page.getByRole("button", { name: "Save", exact: true }).waitFor();
     await page.getByRole("heading", { name: "This server" }).waitFor();
     // How the app looks is chosen here rather than in the sidebar, and takes effect at once.
     await page.getByRole("heading", { name: "Appearance", exact: true, level: 2 }).waitFor();
@@ -1047,14 +1101,14 @@ describe("settings", () => {
   it("saves a key to the file of a real server and reads it back", async () => {
     await open("/settings");
     await page.getByLabel("Coding rounds a card").fill("9");
-    await page.getByRole("button", { name: "Save" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
     await page.getByText("Saved.").waitFor();
     await page.reload();
     await page.getByLabel("Coding rounds a card").waitFor();
     expect(await page.getByLabel("Coding rounds a card").inputValue()).toBe("9");
     // A wrong value is refused by the server with its own sentence.
     await page.getByLabel("Runs at a time").fill("0");
-    await page.getByRole("button", { name: "Save" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
     await alert(/run_limit|at least|range/i).waitFor();
   });
 
@@ -1078,7 +1132,7 @@ describe("settings", () => {
     await open("/settings");
     await page.getByLabel("Coding rounds a card").waitFor();
     // Nothing changed: Save waits for a change, so nothing can be sent.
-    expect(await page.getByRole("button", { name: "Save" }).isDisabled()).toBe(true);
+    expect(await page.getByRole("button", { name: "Save", exact: true }).isDisabled()).toBe(true);
     expect(fake().requests.filter((r) => r.path === "/v1/settings")).toHaveLength(0);
 
     // A key put back to what the file says is not sent.
@@ -1088,7 +1142,7 @@ describe("settings", () => {
     await page.getByLabel("Tokens a day").fill("");
     await pickOption(page, page.getByLabel("Regression gate"), "false");
     await page.getByLabel("MCP variables").fill("DOCS_TOKEN, OTHER");
-    await page.getByRole("button", { name: "Save" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
     await page.getByText("Saved.").waitFor();
     expect(lastBody(fake().requests, "PUT", "/v1/settings")).toEqual({
       set: {
@@ -1110,11 +1164,11 @@ describe("settings", () => {
       await page.getByLabel("App id").waitFor();
       await page.getByLabel("App id").fill("12");
       await page.getByLabel("Private key file").first().fill("/k.pem");
-      await page.getByRole("button", { name: "Save" }).click();
+      await page.getByRole("button", { name: "Save", exact: true }).click();
       await page.getByText("Saved.").waitFor();
       await page.getByLabel("App id").fill("");
       await page.getByLabel("Private key file").first().fill("");
-      await page.getByRole("button", { name: "Save" }).click();
+      await page.getByRole("button", { name: "Save", exact: true }).click();
       await page.getByText("Saved.").waitFor();
       expect(lastBody(fake().requests, "PUT", "/v1/settings")).toEqual({
         set: {},
@@ -1128,13 +1182,13 @@ describe("settings", () => {
     async () => {
       await open("/settings");
       await page.getByLabel("Board tick (ms)").fill("fast");
-      await page.getByRole("button", { name: "Save" }).click();
+      await page.getByRole("button", { name: "Save", exact: true }).click();
       await alert("Board tick (ms) is a whole number.").waitFor();
       expect(fake().requests.filter((r) => r.path === "/v1/settings")).toHaveLength(0);
 
       await page.getByLabel("Board tick (ms)").fill("");
       await page.getByLabel("Runs at a time").fill("0");
-      await page.getByRole("button", { name: "Save" }).click();
+      await page.getByRole("button", { name: "Save", exact: true }).click();
       await alert("run_limit must be at least 1").waitFor();
       // The input keeps what was typed.
       expect(await page.getByLabel("Runs at a time").inputValue()).toBe("0");
@@ -1146,7 +1200,7 @@ describe("settings", () => {
     async () => {
       await open("/settings");
       await page.getByLabel("Desktop API listens on").fill("127.0.0.1:9999");
-      await page.getByRole("button", { name: "Save" }).click();
+      await page.getByRole("button", { name: "Save", exact: true }).click();
       await page.getByText("Restart the server to use: listen").waitFor();
       await page.getByRole("button", { name: "Restart" }).click();
       await page.getByText("Restarting the server. The page reconnects by itself.").waitFor();

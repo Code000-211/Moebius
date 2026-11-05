@@ -73,6 +73,18 @@ pub struct LaunchRequest {
     /// answers [`LaunchAnswer::Unchanged`] (an answer that wraps it fails the run). None for a run on the server.
     #[serde(default)]
     pub runner: Option<String>,
+    /// The name in Moebius of the repository the run works in; none for a chat in an empty directory and for a run
+    /// in the harness configuration repository.
+    #[serde(default)]
+    pub repository: Option<String>,
+    /// The launcher's own project settings (`project_settings` of its manifest) as a person set them for that
+    /// repository, by key. A setting left empty is not in it, and without a repository it is empty.
+    #[serde(default)]
+    pub project_settings: BTreeMap<String, String>,
+    /// The launcher's own app settings (`app_settings` of its manifest) as a person set them for the server, by key.
+    /// A setting left empty is not in it.
+    #[serde(default)]
+    pub app_settings: BTreeMap<String, String>,
 }
 
 /// A command the core runs on the server: to stop a wrapped process, clean up after it, or remove leftovers. It runs
@@ -207,6 +219,8 @@ mod tests {
                 name: self.0.into(),
                 version: "0".into(),
                 kinds: vec![Kind::Launcher],
+                project_settings: Vec::new(),
+                app_settings: Vec::new(),
             }
         }
 
@@ -263,6 +277,9 @@ mod tests {
             },
             clone: Some("/clone".into()),
             runner: runner.map(String::from),
+            repository: None,
+            project_settings: BTreeMap::new(),
+            app_settings: BTreeMap::new(),
         }
     }
 

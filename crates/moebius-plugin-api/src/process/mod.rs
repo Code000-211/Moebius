@@ -192,6 +192,8 @@ impl Process {
                 name: self.shared.spec.name.clone(),
                 version: String::new(),
                 kinds: Vec::new(),
+                project_settings: Vec::new(),
+                app_settings: Vec::new(),
             })
     }
 
@@ -524,6 +526,8 @@ mod tests {
                 name: "first".into(),
                 version: "0".into(),
                 kinds: vec![Kind::Decider],
+                project_settings: Vec::new(),
+                app_settings: Vec::new(),
             }
         }
 

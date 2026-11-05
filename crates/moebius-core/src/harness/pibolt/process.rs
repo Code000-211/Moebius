@@ -16,7 +16,7 @@ use super::{BRIDGE, LENS, Live, PiBolt, kill_process, lock, run_dir, send};
 use crate::app::App;
 use crate::bus::Event;
 use crate::config::AgentConfig;
-use crate::harness::launch::{Ask, Launched, Launcher, Unstarted, Wrapping};
+use crate::harness::launch::{Ask, Launched, Launcher, RunRepository, Unstarted, Wrapping};
 use crate::harness::mcp;
 use crate::harness::remote::Local;
 use crate::harness::run::RunningRun;
@@ -53,6 +53,31 @@ struct Spot<'a> {
     agent: &'a AgentConfig,
     run_dir: &'a Path,
     log: &'a Path,
+}
+
+/// The repository a run works in, by name, with the launcher's project settings for it: a card's, or the one a chat or
+/// a research recorded. None for a run without one, such as a chat in an empty directory or a Retro.
+fn launch_repository(
+    app: &App,
+    launcher: &str,
+    run: i64,
+    card: Option<&Card>,
+) -> Result<Option<RunRepository>, String> {
+    let id = match card {
+        Some(card) => Some(card.repository_id),
+        None => app.run(run).map_err(|e| e.to_string())?.repository_id,
+    };
+    let Some(id) = id else {
+        return Ok(None);
+    };
+    let repository = app.repository(id).map_err(|e| e.to_string())?;
+    let settings = app.store.project_settings(id, launcher).map_err(|e| {
+        format!(
+            "cannot read the launcher's settings of {}: {e}",
+            repository.name
+        )
+    })?;
+    Ok(Some((repository.name, settings)))
 }
 
 impl PiBolt {
@@ -385,6 +410,11 @@ impl PiBolt {
             },
             clone: run.clone.as_deref(),
             runner: remote,
+            repository: launch_repository(app, launcher.plugin(), run.id, spot.card)?,
+            app_settings: app
+                .store
+                .app_settings(launcher.plugin())
+                .map_err(|e| format!("cannot read the launcher's settings: {e}"))?,
             log: spot.log,
         };
         let (note, wrapping) = launcher.start(ask, command)?;

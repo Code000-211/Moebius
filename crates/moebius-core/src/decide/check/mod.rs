@@ -150,6 +150,8 @@ pub(super) mod tests {
                 name: "rules".into(),
                 version: "0".into(),
                 kinds: vec![Kind::Decider],
+                project_settings: Vec::new(),
+                app_settings: Vec::new(),
             }
         }
         fn call(&self, call: Call) -> Result<Value, PluginError> {

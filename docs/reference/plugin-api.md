@@ -37,6 +37,36 @@ must not rely on being called one at a time.
 | `name` | string | The plugin's name; the host and the routes refer to it by this name. A plugin added with the name of another replaces it. |
 | `version` | string | The plugin's version, for people. |
 | `kinds` | array of `Kind` | What the plugin is. A call whose kind is not in this list is refused with `WrongKind` before the plugin sees it. |
+| `project_settings` | array of `PluginSetting` | What a person sets for each repository for this plugin (see [Plugin settings](#plugin-settings)). Optional: left out, or empty, the plugin has none. |
+| `app_settings` | array of `PluginSetting` | What a person sets once for this plugin on the whole server (see [Plugin settings](#plugin-settings)). Optional, like `project_settings`. |
+
+### Plugin settings
+
+A plugin may ask a person for settings in two scopes, each declared in its manifest:
+
+| Scope | Manifest field | Where the web app shows it | Kept by | Routes | A launcher gets it as |
+|---|---|---|---|---|---|
+| Each repository, such as the Dockerfile a sandbox builds its runs' image from | `project_settings` | The repository's page (`/projects/<id>`), under the plugin's name | repository, plugin name and key | [`GET` and `PUT /v1/repositories/{id}/plugin-settings`](desktop-api.md#get-v1repositoriesidplugin-settings) | `project_settings` of the run's repository |
+| The whole server, such as a registry every image comes from | `app_settings` | The Settings page (`/settings`), under the plugin's name | plugin name and key | [`GET /v1/plugins/settings` and `PUT /v1/plugins/{plugin}/settings`](desktop-api.md#get-v1pluginssettings) | `app_settings` |
+
+A launcher gets both in every [`LaunchRequest`](#the-method-launch); no other kind is handed them yet. Both scopes
+declare their settings the same way, each a `PluginSetting`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `key` | string | The name the value is kept and handed over under, unique among the plugin's settings of its scope. |
+| `label` | string | What the field is called on the page. |
+| `description` | string | What the setting does, shown under the field. Optional. |
+| `input` | `"line"` or `"code"` | `line` (the default) is a field of one line, which refuses a line break; `code` is an editor with line numbers, for a file. |
+| `language` | string | For `code`, the language the editor highlights: the web app knows `dockerfile`, `shell`, `lua`, `toml` and `yaml`, and shows any other as plain text. Optional. |
+
+Every value is text of at most 256 KiB; a setting with no value is left out of what the plugin gets, so a plugin
+treats a missing key as unset. Only a person changes the values, never an agent, since a launcher's settings say what a
+run may do. They are stored and handed over as written, not redacted, so a setting must not ask for a key or a token.
+
+```json
+{"name": "box-run", "version": "0.1.0", "kinds": ["launcher"], "project_settings": [{"key": "dockerfile", "label": "Dockerfile", "description": "The image of the runs of this repository.", "input": "code", "language": "dockerfile"}], "app_settings": [{"key": "registry", "label": "Registry", "description": "Where base images come from."}]}
+```
 
 ### `Kind`
 
@@ -226,6 +256,9 @@ a chat's Pi is started again). The parameters are a `LaunchRequest`:
 | `urls` | object | `router`, `gateway` and `check`: the addresses the process must reach as the server reaches them, such as `http://127.0.0.1:7172`, `http://127.0.0.1:7172/mcp` and `http://127.0.0.1:7172` (the tool-call check the bridge asks, `MOEBIUS_CHECK_URL`). |
 | `clone` | string or `null` | The clone of the repository the worktree belongs to, whose git directory the worktree's git uses; `null` without a repository. |
 | `runner` | string or `null` | The name of the `[[runners]]` machine when the run goes there over SSH, else `null`. |
+| `repository` | string or `null` | The name in Moebius of the repository the run works in; `null` for a chat in an empty directory and a run in the harness configuration repository. |
+| `project_settings` | map of string to string | The launcher's own [project settings](#plugin-settings) for that repository, by key, those without a value left out; empty without a repository. |
+| `app_settings` | map of string to string | The launcher's own [app settings](#plugin-settings), by key, those without a value left out. |
 
 The paths and URLs name what exists when the process starts. The agent directory, the sessions directory and the
 temporary directory (the last two for a run on this machine) are made before the call, and the agent directory is written
@@ -315,7 +348,7 @@ A launcher in its own process is a `[[plugins]]` entry with `launches = true`, s
 
 ```json
 < {"type":"manifest","manifest":{"name":"box-run","version":"0.1.0","kinds":["launcher"]}}
-> {"type":"call","id":1,"call":{"kind":"launcher","method":"launch","params":{"run":{"id":7,"purpose":"code","agent":"Coder","chat":false,"card":3},"program":"pi-bolt","args":["--mode","rpc"],"env":{"PATH":"/usr/bin"},"dir":"/data/worktrees/run-7","read_only":["/data/runs/7/moebius-bridge.ts","/data/runs/7/out"],"read_write":["/data/worktrees/run-7","/data/runs/7/agent","/data/runs/7/sessions"],"urls":{"router":"http://127.0.0.1:7172","gateway":"http://127.0.0.1:7172/mcp","check":"http://127.0.0.1:7172"},"clone":"/data/repos/demo","runner":null}}}
+> {"type":"call","id":1,"call":{"kind":"launcher","method":"launch","params":{"run":{"id":7,"purpose":"code","agent":"Coder","chat":false,"card":3},"program":"pi-bolt","args":["--mode","rpc"],"env":{"PATH":"/usr/bin"},"dir":"/data/worktrees/run-7","read_only":["/data/runs/7/moebius-bridge.ts","/data/runs/7/out"],"read_write":["/data/worktrees/run-7","/data/runs/7/agent","/data/runs/7/sessions"],"urls":{"router":"http://127.0.0.1:7172","gateway":"http://127.0.0.1:7172/mcp","check":"http://127.0.0.1:7172"},"clone":"/data/repos/demo","runner":null,"repository":"demo","project_settings":{},"app_settings":{}}}}
 < {"type":"reply","id":1,"result":{"answer":"unchanged"}}
 > {"type":"call","id":2,"call":{"kind":"launcher","method":"leftovers","params":{"running":[]}}}
 < {"type":"reply","id":2,"result":{"cleanup":[],"remove":["/tmp/run-3.profile"]}}

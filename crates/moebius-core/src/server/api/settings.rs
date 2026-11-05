@@ -9,6 +9,8 @@
 //!   confirmed the warning about the provider's terms; `GET` on the same route tells how it stands.
 //! - `POST /v1/models/upstreams/{place}/login/code` `{pasted}`: a person finishes a waiting `code` login with the code,
 //!   or the address the browser ended on, when the browser could not reach the server.
+//! - `GET /v1/plugins/settings` and `PUT /v1/plugins/{plugin}/settings` `{values, reason}`: the settings plugins ask of
+//!   the whole server and the values it has, changed by a person (see [`crate::app::plugin_settings`]).
 //! - `GET /v1/start`: whether the upstreams, Pi-Bolt, the Coder's model and a repository are in place, step by step.
 //! - `GET /v1/settings`: every key of `moebius.toml` with its value or default. `PUT /v1/settings` `{set, remove}` changes
 //!   the file. `PUT` and `DELETE /v1/secrets/{name}` keep and remove an API key. `POST /v1/server/restart` restarts the
@@ -25,6 +27,7 @@ use serde::Deserialize;
 
 use super::{ApiError, ApiState, blocking, person_only};
 use crate::app::AppError;
+use crate::app::plugin_settings::{AppSettings, PluginSettings, Scope};
 use crate::decide::Actor;
 use crate::router::{Login, LoginError, TERMS_WARNING};
 use crate::server::settings::{Changes, Saved, SettingsView};
@@ -43,6 +46,8 @@ pub(super) fn routes() -> Router<ApiState> {
         .route("/v1/models/upstreams/{place}/login/code", post(paste_login))
         .route("/v1/start", get(start_steps))
         .route("/v1/plugins", get(plugins))
+        .route("/v1/plugins/settings", get(plugin_settings))
+        .route("/v1/plugins/{plugin}/settings", put(put_plugin_settings))
         .route("/v1/settings", get(settings).put(put_settings))
         .route("/v1/secrets/{name}", put(put_secret).delete(delete_secret))
         .route("/v1/server/restart", post(restart_server))
@@ -196,6 +201,24 @@ async fn start_steps(State(state): State<ApiState>) -> Result<axum::Json<setup::
 
 async fn plugins(State(state): State<ApiState>) -> axum::Json<setup::Plugins> {
     axum::Json(setup::plugins(&state.app.decisions, &state.app.data_dir))
+}
+
+async fn plugin_settings(
+    State(state): State<ApiState>,
+) -> Result<axum::Json<AppSettings>, ApiError> {
+    blocking(&state.app, |app| app.app_settings()).await
+}
+
+async fn put_plugin_settings(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(plugin): UrlPath<String>,
+    axum::Json(new): axum::Json<super::repositories::NewSettings>,
+) -> Result<axum::Json<PluginSettings>, ApiError> {
+    blocking(&state.app, move |app| {
+        app.save_plugin_settings(&by, Scope::App, &plugin, &new.values, &new.reason)
+    })
+    .await
 }
 
 async fn settings(State(state): State<ApiState>) -> Result<axum::Json<SettingsView>, ApiError> {

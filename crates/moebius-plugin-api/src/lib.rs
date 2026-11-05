@@ -50,6 +50,45 @@ pub struct Manifest {
     pub name: String,
     pub version: String,
     pub kinds: Vec<Kind>,
+    /// What a person sets for each repository for this plugin, on the repository's page of the web app. The core
+    /// keeps the values and hands a launcher those of the run's repository in its [`LaunchRequest`]. Older plugins
+    /// leave it out.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub project_settings: Vec<PluginSetting>,
+    /// What a person sets once for this plugin on the whole server, on the Settings page of the web app. The core
+    /// keeps the values and hands a launcher them in every [`LaunchRequest`]. Older plugins leave it out.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub app_settings: Vec<PluginSetting>,
+}
+
+/// One setting a plugin asks of a person, for each repository (a sandbox's Dockerfile) or for the whole server.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PluginSetting {
+    /// The name the value is stored and handed over under, unique among the plugin's settings of its scope.
+    pub key: String,
+    /// What the field is called on the page.
+    pub label: String,
+    /// What the setting does, in a sentence or two, shown under the field.
+    #[serde(default)]
+    pub description: String,
+    /// The control the value is typed in.
+    #[serde(default)]
+    pub input: SettingInput,
+    /// For [`SettingInput::Code`], the language the editor highlights, such as `dockerfile`, `shell` or `lua`. The
+    /// web app highlights the languages it knows and shows any other as plain text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+}
+
+/// The control a [`PluginSetting`] is typed in. Every value is text.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SettingInput {
+    /// One line.
+    #[default]
+    Line,
+    /// A file of code, in an editor with line numbers.
+    Code,
 }
 
 /// One call into a plugin: a method of one of its kinds with its parameters.
@@ -342,6 +381,8 @@ mod tests {
                 name: self.0.to_string(),
                 version: "0".into(),
                 kinds: vec![Kind::Decider],
+                project_settings: Vec::new(),
+                app_settings: Vec::new(),
             }
         }
 

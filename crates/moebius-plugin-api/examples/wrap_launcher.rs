@@ -75,6 +75,8 @@ impl Plugin for BoxRun {
             name: "box-run".into(),
             version: "0.1.0".into(),
             kinds: vec![Kind::Launcher],
+            project_settings: Vec::new(),
+            app_settings: Vec::new(),
         }
     }
 
@@ -113,6 +115,8 @@ impl Plugin for Broken {
             name: "broken".into(),
             version: "0.1.0".into(),
             kinds: vec![Kind::Launcher],
+            project_settings: Vec::new(),
+            app_settings: Vec::new(),
         }
     }
 
@@ -147,6 +151,9 @@ fn request(runner: Option<&str>) -> LaunchRequest {
         },
         clone: Some("/data/repos/demo".into()),
         runner: runner.map(String::from),
+        repository: None,
+        project_settings: BTreeMap::new(),
+        app_settings: BTreeMap::new(),
     }
 }
 

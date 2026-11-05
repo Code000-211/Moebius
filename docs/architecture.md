@@ -461,6 +461,7 @@ At the top:
 | `app/attempts.rs` | Attempts: judging each attempt of a hard card by the repository's checks and its reproduction test on a thread of its own, settling a round (one picked, or none passed), and reading a selection run's pick. |
 | `app/projects.rs` | A project's settings read from the harness configuration repository (`App::project_file`), and the notice, once for each repository, that its default branch still has a `.moebius/` folder, which is not read. |
 | `app/localize.rs` | The hint of files a code run is given, whether a repository wants it, and the outcome recorded from the files the card's change touched at the end of a code run and on merge. |
+| `app/plugin_settings.rs` | The settings plugins ask of each repository and of the server in their manifest: what the repository's page and the Settings page show, a person's save checked against the manifest and recorded, kept by plugin name. |
 | `app/packages/mod.rs` | Pi packages as the API offers them: the catalog search, a package's info, the installed packages, and the branches that install, update and remove one offered as changes. |
 | `app/packages/updates.rs` | The nightly check of the installed packages for newer versions, and the `extension_update` inbox items. |
 | `app/whereabouts.rs` | Where Moebius runs: what the server found about itself at start, what the desktop app reported about itself, and the "Where Moebius runs" section of the Moebius agent's instructions built from both (with the official repository). In memory only. |
@@ -514,6 +515,7 @@ At the top:
 | `store/chats.rs` | Chats: where they were started, what they work in and how far a person has read them. |
 | `store/deletions.rs` | Deleting a chat, a research or a replay from the store in one transaction each; usage and judgements stay, without a run. |
 | `store/localize.rs` | The search index of `localize`: a repository's files in an FTS5 table of their own, split into words for ranking by BM25, and the commit it was made from. |
+| `store/plugin_settings.rs` | The values of plugins' settings, by repository, plugin and key, and by plugin and key for the server; a save replaces a plugin's values whole. |
 | `store/judgements.rs` | Judgements at decision points, their outcomes, and the refusals counted by rule. |
 | `store/replays.rs` | Replays of refused tool calls and the refusals still to replay. |
 | `store/inbox.rs` | The inbox: what waits for a person, until it is resolved. |

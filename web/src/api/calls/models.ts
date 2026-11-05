@@ -1,6 +1,6 @@
 /**
  * The calls of the Models and Plugins pages: what the server uses, the models its upstreams serve, the OAuth logins,
- * the plugins, and the keys of `moebius.toml` (`crates/moebius-desktop/src/client/calls/server.rs`). An API key goes to
+ * the plugins with their app settings, and the keys of `moebius.toml` (`crates/moebius-desktop/src/client/calls/server.rs`). An API key goes to
  * `storeSecret` once and is never read back.
  */
 import { del, get, post, put } from "../http";
@@ -13,6 +13,7 @@ import type {
   SavedSettings,
   ServerSettings,
 } from "../types/models";
+import type { AppSettings, PluginSettings } from "../types/projects";
 
 export function models(): Promise<Models> {
   return get<Models>("/v1/models");
@@ -44,6 +45,19 @@ export function pasteLogin(place: number, pasted: string): Promise<Login> {
 
 export function plugins(): Promise<Plugins> {
   return get<Plugins>("/v1/plugins");
+}
+
+/** What each running plugin asks of the whole server, with the values it has. */
+export function appSettings(): Promise<AppSettings> {
+  return get<AppSettings>("/v1/plugins/settings");
+}
+
+/** Replaces every value of one plugin's app settings; an empty value is none. */
+export function saveAppSettings(
+  plugin: string,
+  values: Record<string, string>,
+): Promise<PluginSettings> {
+  return put<PluginSettings>(`/v1/plugins/${encodeURIComponent(plugin)}/settings`, { values });
 }
 
 export function serverSettings(): Promise<ServerSettings> {
